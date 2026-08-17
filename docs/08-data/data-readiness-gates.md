@@ -1,0 +1,98 @@
+# Data Architecture Readiness Gates
+
+**Status:** proposed baseline
+
+A data model/table/storage change is not production-ready until applicable gates pass.
+
+## Gate D1 — Ownership
+
+- owning bounded context is named;
+- one logical writer is defined;
+- cross-domain reads/references are deliberate;
+- no generic `shared` ownership ambiguity.
+
+## Gate D2 — Tenant classification
+
+Every persisted object is classified as:
+
+- global/control-plane;
+- tenant-scoped pooled;
+- dedicated-cell but logically tenant-scoped;
+- public projection;
+- operational/system metadata.
+
+A pooled tenant table cannot ship without non-null `tenant_id`, database isolation policy and isolation tests.
+
+## Gate D3 — Relational integrity
+
+- PK/identity stable across relocation;
+- unique constraints use correct global/tenant scope;
+- parent/child tenant-safe FK pattern used where applicable;
+- impossible state protected by CHECK/NOT NULL/FK/unique constraints where database enforcement is appropriate;
+- money/time/value types are semantically correct.
+
+## Gate D4 — Access policy
+
+- normal runtime role is least privilege;
+- RLS/data policy tested under actual application role;
+- migration owner is distinct from normal runtime;
+- direct SQL/admin path cannot silently inherit stronger owner/superuser rights;
+- read/write policy is explicit.
+
+## Gate D5 — Query/index design
+
+- primary read/write query patterns documented;
+- indexes support required tenant/query dimensions;
+- no unbounded scan in interactive path without explicit acceptance;
+- current-state queries do not scale with full telemetry history;
+- pagination strategy has deterministic indexed sort where needed.
+
+## Gate D6 — Lifecycle
+
+- create/update/delete/archive semantics defined;
+- retention class defined;
+- deletion/anonymization/legal-retention behavior considered;
+- artifact/telemetry separation used where appropriate.
+
+## Gate D7 — Async/reliability
+
+If mutation emits work/events:
+
+- outbox or accepted equivalent atomicity exists;
+- event/job versioning defined;
+- consumer duplicate semantics defined;
+- idempotency record is durable when losing it could duplicate irreversible effects.
+
+## Gate D8 — Migration
+
+- migration is versioned;
+- backward/forward compatibility window defined;
+- large backfill is resumable/observable and not a blocking schema transaction;
+- rollback/forward-recovery considered;
+- RLS/privileges/indexes included in migration acceptance.
+
+## Gate D9 — Recovery
+
+- backup/reconstruction source identified;
+- tenant-level recovery impact understood;
+- encryption/key dependency documented;
+- recovery validation exists for critical data.
+
+## Gate D10 — Observability/security
+
+- slow/error path observable with tenant-safe correlation;
+- secret/PII logging policy defined;
+- audit class defined for privileged mutation;
+- no raw provider payload becomes trusted domain state without validation.
+
+## Gate D11 — Capacity
+
+For high-volume tables/streams:
+
+- expected cardinality/ingest/retention dimensions are modeled;
+- partition/specialization threshold has a benchmark plan;
+- backlog/storage growth cannot become unbounded silently.
+
+## Gate D12 — Relocation compatibility
+
+Tenant-scoped state can be selected, copied, validated and fenced by immutable `tenant_id`. Physical location/schema/server identifiers are not embedded as business identity.

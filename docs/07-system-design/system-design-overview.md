@@ -1,11 +1,13 @@
 # System Design Overview
 
 **Status:** proposed baseline  
-**Depends on:** ADR-001 through ADR-020
+**Depends on:** proposed ADR-001 through ADR-020
 
 ## Purpose
 
-This document turns the accepted JLMIRROR architecture into runtime mechanics. It defines how requests, tenant placement, authorization, transactions, asynchronous work, realtime delivery, failure containment and cross-cell operations behave without binding the design to an unselected queue/cache/cloud vendor.
+This document translates the **proposed JLMIRROR architecture baseline** into concrete runtime mechanics. Until ADR-001 through ADR-020 are explicitly promoted to `accepted` under repository governance, this System Design must be read as a proposed implementation of those proposed decisions rather than as authority over them.
+
+It defines how requests, tenant placement, authorization, transactions, asynchronous work, realtime delivery, failure containment and cross-cell operations behave without binding the design to an unselected queue/cache/cloud vendor.
 
 ## System shape
 
@@ -36,8 +38,8 @@ Tenant routing by immutable tenant_id
    +-- worker pools                 +-- worker pools
    +-- realtime gateway             +-- realtime gateway
    +-- transactional store          +-- transactional store
-   +-- telemetry adapter/plane       +-- telemetry adapter/plane
-   +-- ephemeral dependencies        +-- ephemeral dependencies
+   +-- telemetry adapter/plane      +-- telemetry adapter/plane
+   +-- ephemeral dependencies       +-- ephemeral dependencies
 ```
 
 The initial deployment MAY contain one cell. No tenant-facing contract may depend on there being exactly one cell.
@@ -59,7 +61,7 @@ The initial deployment MAY contain one cell. No tenant-facing contract may depen
 
 ### Web/BFF
 
-Owns browser-specific session handling, CSRF/browser protection, route composition and safe propagation to APIs. It does not own business rules.
+Owns the mandatory confidential browser-session boundary for the first-party Web application, plus browser-specific session handling, CSRF/browser protection, route composition and safe propagation to APIs. It does not own business rules. Long-lived platform access/refresh credentials are not intentionally exposed to browser JavaScript.
 
 ### Control Plane API
 
@@ -75,7 +77,7 @@ Execute durable asynchronous commands/jobs. Pools are separated by workload/secu
 
 ### Realtime gateway
 
-Maintains authorized long-lived connections and distributes protected realtime signals. Clients recover authoritative state through API resynchronization.
+Maintains authorized long-lived connections and distributes protected realtime signals. Authorization freshness is maintained after connection establishment; clients recover authoritative state through API resynchronization.
 
 ### Automation execution boundary
 

@@ -6,43 +6,41 @@
 ## Tenant-scoped HTTP lifecycle
 
 ```text
-Client
-  |
-  v
-Web/BFF or direct authorized API client
-  |
-  v
+First-party browser -> Web/BFF
+Machine/API principal -> API ingress
+                    |
+                    v
 Authentication verification
-  |
-  v
+                    |
+                    v
 Logical tenant selection/claim validation
-  |
-  v
+                    |
+                    v
 Trusted placement resolution
-  |
-  v
+                    |
+                    v
 Route to authoritative cell
-  |
-  v
+                    |
+                    v
 Cell validates placement admission/version
-  |
-  v
+                    |
+                    v
 Resolve TenantContext
-  |
-  v
+                    |
+                    v
 Validate request contract
-  |
-  v
+                    |
+                    v
 Evaluate server-side authorization
-  |
-  v
+                    |
+                    v
 Execute application use case
-  |
-  +--> authoritative transaction if mutating
-  |
-  +--> audit/outbox as required
-  |
-  v
+                    |
+                    +--> authoritative transaction if mutating
+                    |
+                    +--> audit/outbox as required
+                    |
+                    v
 Return versioned response contract
 ```
 
@@ -58,9 +56,13 @@ These are separate checks. A valid login is not tenant authorization; tenant mem
 
 ## Browser/BFF boundary
 
-Browser sessions use the BFF as a confidential-client boundary where appropriate. Browser-accessible code should not require long-lived platform credentials. The BFF may coordinate session refresh and request composition, but the API independently validates authentication/authorization.
+The first-party browser application **MUST** use the BFF as its confidential-client and session boundary. Browser JavaScript MUST NOT receive, persist, or intentionally operate with long-lived platform access credentials or refresh credentials.
 
-Machine clients may use the API directly under independently revocable machine credentials and tenant/permission scope.
+The BFF owns browser-facing session establishment/refresh orchestration, HttpOnly credential handling where applicable, CSRF/browser protections and request composition. The API independently validates authentication, tenant context and authorization and does not trust the BFF as an authorization oracle.
+
+A browser MAY connect directly only to an explicitly designed public endpoint or realtime transport whose browser credential semantics preserve this boundary—for example an HttpOnly session or a short-lived, narrowly scoped connection capability minted through the BFF. Such a path MUST NOT become a direct long-lived bearer/refresh-token flow in browser JavaScript.
+
+Machine/API principals may use the API directly under independently revocable machine credentials and explicit tenant/permission scope.
 
 ## Validation ordering
 

@@ -26,17 +26,29 @@ Cell transactional PostgreSQL uses encrypted backup and point-in-time recovery c
 
 ## Tenant-level recovery in pooled cells
 
-Physical PITR restores an entire database, not one logical tenant. Therefore tenant recovery uses an isolated recovery environment:
+Physical PITR restores an entire database, not one logical tenant. Tenant recovery therefore begins in an isolated recovery environment:
 
 ```text
 restore cell snapshot/PITR to quarantine
    -> select tenant rows by tenant_id across owned schemas
-   -> validate relationships/invariants/audit/outbox state
-   -> build tenant recovery set
-   -> controlled reintroduction/reconciliation into authoritative cell
+   -> validate relationships/invariants/audit/outbox/process state
+   -> build a tenant recovery set
+   -> materialize/validate in an isolated recovery target
+   -> fence the currently authoritative tenant if replacement is required
+   -> perform controlled cutover/reconciliation
 ```
 
-Recovery tooling must preserve tenant-safe relationships and not overwrite unrelated tenants.
+### Preferred replacement model
+
+When the requirement is to restore the tenant to an earlier coherent point, the preferred model is **restore as a new isolated target followed by controlled authority cutover using relocation-grade fencing semantics**. The currently active tenant is never overwritten piecemeal while it continues accepting writes.
+
+This produces one authoritative history at a time and reuses placement/write-fence controls already required for relocation.
+
+### In-place reconciliation
+
+Selective domain reconciliation into the existing authoritative tenant is allowed only when the owning domain defines merge semantics. It requires tenant write coordination/fencing appropriate to the mutated aggregates, idempotency/audit, and proof that unrelated current changes are not silently overwritten.
+
+A generic row-level "merge everything from backup" into a live tenant is prohibited.
 
 ## Recovery point/time objectives
 
@@ -91,6 +103,8 @@ Scheduled recovery tests prove:
 - restore procedure correctness;
 - RLS/tenant isolation after restore;
 - application/schema compatibility;
+- tenant recovery set completeness across bounded contexts;
+- write-fence/cutover safety for tenant-level replacement;
 - measured recovery duration and data-loss window.
 
 Results are operational evidence used to set/revise RPO/RTO.

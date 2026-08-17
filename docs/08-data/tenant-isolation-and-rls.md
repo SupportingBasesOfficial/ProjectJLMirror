@@ -14,7 +14,8 @@ Pooled tenant isolation combines:
 5. transaction-local tenant database context;
 6. PostgreSQL row-level security/data policy;
 7. tenant-safe composite relationships/indexes;
-8. audit and automated isolation tests.
+8. database-role/function hardening;
+9. audit and automated isolation tests.
 
 No single layer is considered sufficient.
 
@@ -38,6 +39,8 @@ COMMIT;
 ```
 
 The third argument `true` makes the value transaction-local. Connection pooling therefore cannot legitimately preserve one tenant's context for a later transaction.
+
+A transaction that cannot establish a valid tenant context must not execute protected tenant queries.
 
 ## Policy pattern
 
@@ -80,6 +83,23 @@ Logical privilege classes include:
 
 Exact role names are implementation details; least privilege and separation are not.
 
+Normal runtime roles MUST NOT have permission to `SET ROLE`/assume migration-owner, backup, superuser or other RLS-bypass privileges.
+
+## Privileged database functions
+
+Database functions are part of the tenant trust boundary.
+
+A `SECURITY DEFINER` function is prohibited by default for ordinary domain access. When one is genuinely required it MUST:
+
+- have a narrowly scoped owner/privilege set;
+- use a fixed safe `search_path` rather than caller-controlled lookup;
+- validate tenant/operation authorization explicitly where tenant data is touched;
+- avoid dynamic SQL from untrusted identifiers unless safely constrained;
+- be executable only by intended roles;
+- be covered by cross-tenant isolation tests and security review.
+
+No helper function may become an undocumented RLS escape hatch.
+
 ## Cross-tenant privileged operations
 
 A global/platform administrator does not use the normal tenant runtime role with `tenant_id=*`.
@@ -113,6 +133,7 @@ CI/integration tests MUST include known Tenant B identifiers executed under Tena
 - realtime subscription source queries;
 - export/data-admin paths;
 - worker processing;
-- caches where protected values are stored.
+- caches where protected values are stored;
+- privileged database functions and runtime role escalation attempts.
 
 A single leaked row is a release blocker.

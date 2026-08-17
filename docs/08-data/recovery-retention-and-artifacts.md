@@ -12,9 +12,10 @@ JLMIRROR distinguishes:
 - tenant-level logical recovery within a pooled cell;
 - telemetry recovery/reconstruction;
 - artifact/object recovery;
-- configuration/secret-reference recovery.
+- configuration/secret-reference recovery;
+- cryptographic authority/key-hierarchy recovery required to decrypt retained data.
 
-A backup is not a recovery capability until restoration is rehearsed.
+A backup is not a recovery capability until restoration **and required decryption** are rehearsed.
 
 ## Control Plane recovery
 
@@ -24,12 +25,36 @@ Placement/lifecycle metadata is high criticality. Recovery must restore a consis
 
 Cell transactional PostgreSQL uses encrypted backup and point-in-time recovery capabilities selected by platform design. Cell recovery occurs to a controlled target, validates schema/invariants and only then resumes admitted traffic.
 
+## Cryptographic recovery dependency
+
+Persisted ciphertext, encrypted database backups and protected objects are only recoverable if the required KMS/secret-manager key hierarchy remains available through an approved DR path.
+
+Recovery inventory therefore tracks, by protected data class:
+
+```text
+ciphertext / backup class
+key or key-alias/reference
+key version / cryptographic metadata as required
+recovery authority/provider scope
+retention/deletion dependency
+approved recovery mechanism
+```
+
+The selected platform must define provider-appropriate recovery for root/master/key-encryption-key authority, such as protected multi-region replication, recoverable provider-managed key authority, or controlled backup/escrow for customer-managed keys where technically supported and security-approved.
+
+Plaintext master/root keys are never copied into application databases, ordinary backup sets, source code or general runbooks. Recovery authority uses separate least-privilege access and stronger operational controls where appropriate.
+
+Keys needed by still-retained recoverable ciphertext/backups cannot be irreversibly destroyed unless the governed intent is cryptographic erasure of those retained copies.
+
+Reissuable third-party credentials normally use controlled reprovisioning/rotation rather than plaintext backup; recovery still restores the references/configuration and procedure needed to re-establish them.
+
 ## Tenant-level recovery in pooled cells
 
 Physical PITR restores an entire database, not one logical tenant. Tenant recovery therefore begins in an isolated recovery environment:
 
 ```text
 restore cell snapshot/PITR to quarantine
+   -> recover/validate required cryptographic authority
    -> select tenant rows by tenant_id across owned schemas
    -> validate relationships/invariants/audit/outbox/process state
    -> build a tenant recovery set
@@ -52,7 +77,7 @@ A generic row-level "merge everything from backup" into a live tenant is prohibi
 
 ## Recovery point/time objectives
 
-Numeric RPO/RTO values remain OPEN until commercial/SLO work. Targets are defined separately for Control Plane, cell transactional data, telemetry and artifacts because their business criticality differs.
+Numeric RPO/RTO values remain OPEN until commercial/SLO work. Targets are defined separately for Control Plane, cell transactional data, telemetry, artifacts and cryptographic authority because their business criticality/recovery paths differ.
 
 ## Retention policy
 
@@ -65,6 +90,8 @@ hot/current -> warm/rolled-up -> archive -> governed deletion
 ```
 
 Not every data class uses every stage.
+
+Retention policy must account for key lifecycle: deleting a key version may make otherwise retained encrypted data permanently unrecoverable.
 
 ## Deletion/anonymization
 
@@ -99,12 +126,16 @@ For delayed exports/reports, authorization is checked when requested and, where 
 Scheduled recovery tests prove:
 
 - backup readability;
-- key/secret availability required for decryption;
+- recovery-path availability of required KMS/secret-manager authority and key versions;
+- successful decryption of representative restored application ciphertext without exposing root/master plaintext to ordinary operators;
 - restore procedure correctness;
 - RLS/tenant isolation after restore;
 - application/schema compatibility;
 - tenant recovery set completeness across bounded contexts;
 - write-fence/cutover safety for tenant-level replacement;
+- retained-backup decryptability across key rotation/version changes;
 - measured recovery duration and data-loss window.
+
+A database/object restore that completes structurally but cannot decrypt required protected data is a failed rehearsal.
 
 Results are operational evidence used to set/revise RPO/RTO.

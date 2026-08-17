@@ -1,0 +1,39 @@
+# Failure and Degradation Matrix
+
+**Status:** proposed baseline  
+**Primary ADR:** ADR-017
+
+The system must fail predictably. `retry` is not a universal failure policy.
+
+| Dependency / failure | Tenant-facing behavior | Mutation behavior | Recovery / isolation |
+|---|---|---|---|
+| Control Plane unavailable | Stable admitted traffic may continue from bounded trusted placement cache; topology/admin operations unavailable | Tenant lifecycle/relocation/suspension changes fail closed | Preserve cell autonomy; alert; recover authority before topology changes |
+| Cell transactional DB unavailable | Affected cell/tenants unavailable or degraded; unrelated cells continue | Fail closed | Cell health removes traffic; database recovery/failover per platform design |
+| External monitoring provider unavailable | Stored monitoring/ITSM data may remain readable with explicit staleness | Provider-dependent sync/action fails fast after bounded policy | Per-tenant/provider circuit + bulkhead; no global outage |
+| Queue/job transport unavailable | Synchronous state may commit when durable outbox/job intent is stored; async progress pauses | Do not claim completed external side effect | Dispatcher resumes from durable state; bounded backlog |
+| Performance cache unavailable | Bypass where safe with concurrency protection | Authoritative writes continue if other dependencies healthy | Avoid cache stampede; alert degraded performance |
+| Security/session authority unavailable | Locally verifiable already-issued credentials MAY continue only within accepted policy; otherwise deny | Security-sensitive operation fails closed when authority cannot be established | Recover authority; no permissive fallback |
+| Realtime fanout/gateway unavailable | API/read state remains available; live updates pause | Authoritative writes continue | Clients reconnect/resync; no business truth lost |
+| Telemetry store unavailable | Historical queries/ingest degrade; current transactional state MAY continue | Telemetry ingestion buffers only within bounded durable policy; then backpressure/drop by explicit data policy | Protect core transactional system from unbounded buffering |
+| Object storage unavailable | New report/export artifacts and downloads degrade | Core domain mutations continue | Jobs retry within bounded policy; artifact state remains explicit |
+| Secret manager unavailable | Operations needing uncached/unleased secret fail; unrelated operations continue | No plaintext fallback | Existing short-lived secret lease only if accepted; recover secret authority |
+| Webhook destination slow/down | Only that destination delivery lags/fails | Originating committed business state is not rolled back | Destination-specific concurrency, retry/backoff, quarantine |
+| Reporting/AIOps worker pool saturated | Reports/derived findings delayed | Core transactional operations continue | Separate queue/pool/concurrency budget |
+| One tenant workload noisy | Tenant may be throttled/degraded | Preserve other tenants | Tenant quotas/bulkheads; candidate for dedicated cell |
+| Cell unavailable | Tenants in cell affected; other cells continue | No writes to unavailable cell | Cell recovery; future relocation/failover only through controlled placement process |
+
+## Queue/backlog protection
+
+Backlogs have per-workload observability, age/lag limits and admission/concurrency policy. The system must not accept infinite work it cannot drain.
+
+## Staleness
+
+Any degraded path serving previously stored state exposes freshness/staleness where material. It must not present stale provider data as newly confirmed state.
+
+## Health reporting
+
+Liveness, readiness and degraded dependency status are distinct. A process can be alive but not safe to receive tenant traffic.
+
+## Chaos/fault validation
+
+Pre-production validation must inject at least: provider timeout, provider throttling, cache loss, queue outage, cell DB loss, Control Plane loss, realtime loss, object-store loss, worker crash/restart and stale placement during relocation.

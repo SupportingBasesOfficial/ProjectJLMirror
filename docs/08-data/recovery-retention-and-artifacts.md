@@ -15,11 +15,11 @@ JLMIRROR distinguishes:
 - configuration/secret-reference recovery;
 - cryptographic authority/key-hierarchy recovery required to decrypt retained data.
 
-A backup is not a recovery capability until restoration, required decryption **and safety/accountability/security-authority reconciliation** are rehearsed for the applicable scope.
+A backup is not a recovery capability until restoration, required decryption **and safety/accountability/security-authority/governance continuity reconciliation** are rehearsed for the applicable scope.
 
 ## Scope-wide PITR continuity
 
-A point-in-time restore is allowed to move rollback-subject state to an earlier time; it is not allowed to erase later evidence that the platform still needs for security, idempotency, accountability or external-effect correctness.
+A point-in-time restore is allowed to move rollback-subject state to an earlier time; it is not allowed to erase later evidence or governed decisions that the platform still needs for security, idempotency, accountability, external-effect correctness, privacy/data-rights enforcement or legal retention.
 
 For any recovered authoritative scope that can roll back such state, recovery defines:
 
@@ -31,13 +31,13 @@ F = later authoritative reconciliation boundary
 
 When the old authority remains available, `F` is established with an explicit write/admission fence and final reconciliation watermark. When it is unavailable, `F` is reconstructed from surviving durable authorities/watermarks and any unresolved uncertainty is treated as unsafe rather than as proof that nothing happened.
 
-Until applicable continuity state has been reconciled, the recovered scope remains quarantined/non-authoritative for protected and effectful traffic. Restricted diagnostic/read-only access, if ever allowed, is a separate explicit operational policy and does not imply normal authority.
+Until applicable continuity state has been reconciled, the recovered scope remains quarantined/non-authoritative for protected and effectful traffic. Restricted diagnostic/read-only access, if ever allowed, is a separate explicit operational policy and does not imply normal authority. Protected data whose post-`R` erasure/anonymization state is unresolved MUST NOT be re-exposed merely because it exists in the restored image, and data whose legal-retention state is unresolved MUST NOT be destructively removed merely because an older snapshot lacks the hold.
 
 ## Control Plane recovery
 
 Placement/lifecycle metadata is high criticality. Recovery must restore a consistent tenant-to-cell authority and prevent routing to ambiguous/stale placement. Restore procedures include validation of cell/placement versions before normal topology changes resume.
 
-If Control Plane PITR can roll back tenant suspension, global/session revocation, placement lifecycle or another deny/fence authority, the later deny/fence state is continuity state and is reconciled before topology-changing or protected admission decisions resume. A restored older positive state does not automatically override a later authoritative deny.
+If Control Plane PITR can roll back tenant suspension, global/session revocation, placement lifecycle, governed erasure/retention control state or another deny/fence authority, the later authoritative state is continuity state and is reconciled before topology-changing or protected admission decisions resume. A restored older positive state does not automatically override a later authoritative deny or governance decision.
 
 ## Cell physical recovery
 
@@ -45,7 +45,7 @@ Cell transactional PostgreSQL uses encrypted backup and point-in-time recovery c
 
 ### Whole-cell PITR reconciliation
 
-Whole-cell PITR can roll back cell-owned membership/access state, tenant domain state, outbox/inbox/idempotency records, long-running process outcomes and required audit evidence for many tenants at once. The restored cell therefore executes this recovery lifecycle before normal admission:
+Whole-cell PITR can roll back cell-owned membership/access state, tenant domain state, outbox/inbox/idempotency records, long-running process outcomes, required audit evidence and governed deletion/anonymization/retention state for many tenants at once. The restored cell therefore executes this recovery lifecycle before normal admission:
 
 ```text
 restore cell to recovery point R in quarantine
@@ -55,17 +55,18 @@ restore cell to recovery point R in quarantine
    -> reconcile dedup/idempotency/process/outbox/external-effect outcomes
    -> restore/reference required immutable audit evidence
    -> reconcile membership/permission/tenant-deny and authorization freshness state
-   -> validate placement/admission and current security authorities
-   -> prove stale authority and completed effects are not retry/admission eligible
+   -> reconcile erasure/anonymization tombstones and current legal-retention state
+   -> validate placement/admission and current security/governance authorities
+   -> prove stale authority, erased data and completed effects are not admission/retry eligible
    -> enable protected/effectful admission
    -> post-admission verification as defense in depth
 ```
 
-If the prior cell is still available, `F` is a final write/admission fence/watermark. If the prior cell was lost, `F` and continuity are reconstructed from surviving replication/WAL/journal evidence, external audit/security authorities, provider acknowledgements and other durable records. Missing evidence creates an unresolved recovery condition; it does not authorize retry or access.
+If the prior cell is still available, `F` is a final write/admission fence/watermark. If the prior cell was lost, `F` and continuity are reconstructed from surviving replication/WAL/journal evidence, external audit/security/governance authorities, provider acknowledgements and other durable records. Missing evidence creates an unresolved recovery condition; it does not authorize retry, access or re-exposure of data whose governed erasure/anonymization status cannot be established.
 
-A restored cell SHALL NOT resume protected tenant traffic, schedulers or effectful workers until the applicable all-tenant safety/accountability/security-authority reconciliation is complete. If current authorization/deny state cannot be established, protected access fails closed. If an external effect outcome cannot be established, that operation is reconciled or quarantined before retry.
+A restored cell SHALL NOT resume protected tenant traffic, schedulers or effectful workers until the applicable all-tenant safety/accountability/security-authority/governance reconciliation is complete. If current authorization/deny state cannot be established, protected access fails closed. If an external effect outcome cannot be established, that operation is reconciled or quarantined before retry. If erasure/anonymization status is unresolved, the affected protected data remains unavailable; if legal-retention status is unresolved, destructive deletion remains blocked.
 
-Post-recovery authorization and tenant-isolation checks continue after admission, but they are defense in depth and do not replace the pre-admission reconciliation gate.
+Post-recovery authorization, governance and tenant-isolation checks continue after admission, but they are defense in depth and do not replace the pre-admission reconciliation gate.
 
 ## Cryptographic recovery dependency
 
@@ -86,7 +87,7 @@ The selected platform must define provider-appropriate recovery for root/master/
 
 Plaintext master/root keys are never copied into application databases, ordinary backup sets, source code or general runbooks. Recovery authority uses separate least-privilege access and stronger operational controls where appropriate.
 
-Keys needed by still-retained recoverable ciphertext/backups cannot be irreversibly destroyed unless the governed intent is cryptographic erasure of those retained copies.
+Keys needed by still-retained recoverable ciphertext/backups cannot be irreversibly destroyed unless the governed intent is cryptographic erasure of those retained copies. Conversely, when cryptographic erasure is the approved governed decision, recovery MUST NOT silently restore an older usable key path that defeats that erasure; the erasure decision/evidence is continuity state even when the destroyed key material itself is not recoverable.
 
 Reissuable third-party credentials normally use controlled reprovisioning/rotation rather than plaintext backup; recovery still restores the references/configuration and procedure needed to re-establish them.
 
@@ -102,8 +103,8 @@ restore cell snapshot/PITR to quarantine at recovery point R
    -> build a tenant recovery set
    -> materialize/validate in an isolated recovery target
    -> establish/fence current authoritative tenant at F
-   -> reconcile safety/accountability/security-authority interval (R, F]
-   -> verify no duplicate irreversible effect or revoked authority becomes eligible
+   -> reconcile safety/accountability/security-authority/governance interval (R, F]
+   -> verify no duplicate irreversible effect, revoked authority or erased data becomes eligible
    -> controlled authority cutover
 ```
 
@@ -111,17 +112,17 @@ restore cell snapshot/PITR to quarantine at recovery point R
 
 When the requirement is to restore tenant business/domain state to an earlier coherent point, the preferred model is **restore as a new isolated target followed by reconciliation and controlled authority cutover using relocation-grade fencing semantics**. The currently active tenant is never overwritten piecemeal while it continues accepting writes.
 
-This produces one authoritative business-state history at a time without pretending that all safety, accountability or security-authority evidence should travel backwards with it.
+This produces one authoritative business-state history at a time without pretending that all safety, accountability, security-authority or governance evidence should travel backwards with it.
 
 ### Recovery reconciliation interval
 
-Let `R` be the selected recovery point and `F` the final write fence on the currently authoritative tenant. All relevant records/effects in `(R, F]` are inventoried before cutover.
+Let `R` be the selected recovery point and `F` the final write fence on the currently authoritative tenant. All relevant records/effects/decisions in `(R, F]` are inventoried before cutover.
 
 The recovery manifest distinguishes:
 
 **Rollback subject state** — domain/business state intentionally restored to `R`.
 
-**Safety/accountability/security-authority continuity state** — state that cannot be forgotten merely because business state is being rolled back, including:
+**Safety/accountability/security-authority/governance continuity state** — state that cannot be forgotten merely because business state is being rolled back, including:
 
 - immutable audit records/intents;
 - inbox/deduplication receipts and idempotency outcomes;
@@ -132,6 +133,9 @@ The recovery manifest distinguishes:
 - session/credential revocations and logout invalidation state;
 - membership disablement/revocation, permission/scope removal and tenant suspension/access-denial state;
 - authorization/session generations, revocation generations, tombstones or equivalent freshness state whose loss could reactivate stale authority;
+- governed deletion/erasure decisions, anonymization/pseudonymization state and durable tombstones/evidence needed to prevent removed or de-identified protected data from becoming authoritative again;
+- current legal-retention/legal-hold decisions and effective state, including applicable hold placement/release decisions that constrain deletion or disclosure behavior;
+- governed cryptographic-erasure/key-destruction decisions/evidence where restoring an older usable key path would defeat the accepted erasure;
 - compensation and reconciliation state.
 
 For each irreversible/external operation after `R`, the owning domain must determine whether it was completed, externally accepted, compensatable, still pending, or ambiguous. The restored target does not become authoritative for effectful processing until required deduplication identities/outcomes are present and ambiguous operations are reconciled or quarantined.
@@ -148,9 +152,21 @@ Before protected traffic resumes, the recovered target SHALL reconcile revocatio
 
 If the business intent is specifically to reverse a post-`R` security revocation, that is a separate security-recovery operation. It requires current authorization, any applicable step-up/approval policy, explicit scope and immutable audit evidence; it is never an accidental side effect of ordinary PITR.
 
-A point-in-time restore MUST NOT blindly copy all post-`R` domain mutations forward, because doing so can defeat the recovery objective. Conversely it MUST NOT blindly discard all post-`R` reliability, audit or authorization-revocation history, because doing so can recreate duplicate side effects, erase accountability or resurrect access.
+A point-in-time restore MUST NOT blindly copy all post-`R` domain mutations forward, because doing so can defeat the recovery objective. Conversely it MUST NOT blindly discard all post-`R` reliability, audit, authorization-revocation or governance history, because doing so can recreate duplicate side effects, erase accountability, resurrect access or re-expose data that was governed out of active use.
 
 If immutable audit evidence for `(R, F]` resides in a protected external sink or retained source, that evidence remains authoritative and is linked/reintroduced as required before the old source is destroyed. Recovery-induced cleanup never serves as a mechanism to erase valid later audit history.
+
+### Governed erasure, anonymization and retention continuity
+
+Business/domain PITR MUST NOT implicitly reverse a governed deletion/erasure, anonymization or cryptographic-erasure decision that became effective after `R`.
+
+Before a recovered tenant/cell/control-plane authority can expose protected data restored from `R`, it SHALL reconcile the current governance state through `F` and re-apply or preserve all effective erasure/anonymization decisions and the durable tombstones/evidence needed to prove that those decisions remain enforced. The recovery process may reconstruct metadata required to enforce the decision, but MUST NOT reconstitute intentionally erased personal content merely to make the restored image look complete.
+
+Legal-retention/legal-hold state is also continuity state when it constrains whether data may be deleted, transformed, released or retained. Recovery SHALL reconcile the current authoritative hold/retention state, including applicable post-`R` hold placement or release decisions, before destructive lifecycle actions resume.
+
+Where privacy erasure and legal retention obligations interact, the restored system follows the currently authoritative governance policy rather than the stale policy at `R`. If the current decision cannot be established safely, the platform takes the conservative split posture: affected protected data is not re-exposed while erasure/anonymization status is unresolved, and destructive deletion is blocked while legal-retention status is unresolved.
+
+A deliberate reversal of an anonymization/erasure or retention decision, where legally and technically possible, is a distinct currently authorized and audited governance operation. It is never an incidental consequence of PITR.
 
 ### In-place reconciliation
 
@@ -176,11 +192,15 @@ Not every data class uses every stage.
 
 Retention policy must account for key lifecycle: deleting a key version may make otherwise retained encrypted data permanently unrecoverable.
 
-Retention for idempotency/deduplication/audit/reliability/revocation evidence must cover the recovery and replay windows in which losing that evidence could make an irreversible effect repeatable, accountability incomplete or stale authority valid again.
+Retention for idempotency/deduplication/audit/reliability/revocation/governance evidence must cover the recovery and replay windows in which losing that evidence could make an irreversible effect repeatable, accountability incomplete, stale authority valid again, erased data reappear or an active legal hold be forgotten.
 
 ## Deletion/anonymization
 
-Data-rights workflows distinguish physical deletion, anonymization, pseudonymization and legal retention. Auditability does not justify retaining unnecessary personal data forever.
+Data-rights workflows distinguish physical deletion, anonymization, pseudonymization, cryptographic erasure and legal retention. Auditability does not justify retaining unnecessary personal data forever.
+
+A governed deletion/anonymization/erasure decision has recovery semantics: durable tombstone/decision metadata sufficient to prevent accidental resurrection is retained separately from the content that the decision removes or renders irrecoverable, subject to the applicable legal/compliance policy. Recovery of an older backup does not by itself reverse the later decision.
+
+Legal-retention/hold metadata likewise survives or is reconstructed across PITR when needed to prevent an older snapshot from incorrectly deleting data that the current policy requires to retain. Any eventual hold release is also reconciled from current authoritative policy rather than inferred from the snapshot at `R`.
 
 ## Object/artifact storage
 
@@ -202,19 +222,25 @@ status
 
 Object namespaces use immutable tenant identity, not mutable slug. Access is mediated by application authorization or short-lived scoped download capability; storage paths are not authorization.
 
-## Artifact authorization
+## Delayed export/report/import authorization
 
-For a user-requested delayed/asynchronous export or report:
+For a user-requested delayed/asynchronous **export or report**:
 
 1. authorization is checked when the request/process is created;
 2. authorization is checked again before the delayed job begins or performs the protected export action;
 3. authorization is checked again before the completed artifact is released or a download capability is minted.
 
-These rechecks are **mandatory**, not policy-optional, when the operation is delayed/asynchronous under `SEC-EXEC-003`. If membership/scope/permission was revoked, the job/release fails closed and records a safe audited outcome.
+For a user-requested delayed/asynchronous **import**:
+
+1. authorization is checked when the import request/process is created;
+2. the worker re-establishes current tenant context and checks current membership/permission/scope immediately before the delayed import begins any protected mutation;
+3. a resumed/multi-stage import rechecks current authorization before a later mutation stage whenever the prior authorization decision may no longer be fresh; persisted job metadata or the request-time decision is never treated as continuing human authority.
+
+These execution-time rechecks are **mandatory**, not policy-optional, under `SEC-EXEC-003`. If membership/scope/permission or tenant access was revoked before delayed import execution, the import fails closed before mutating tenant data and records a safe audited outcome. Validation/parsing that is deliberately allowed before authorization MUST remain bounded/untrusted and MUST NOT mutate protected tenant state or reveal protected resource existence.
 
 A downloadable capability is short-lived and scoped to one artifact/tenant. If a policy requires revocation after capability issuance, delivery uses an application-mediated or otherwise revocable mechanism instead of an irrevocable permanent link.
 
-Scheduled/system-generated exports use an explicitly authorized service principal/process policy rather than inheriting stale authority from a human who once configured the schedule.
+Scheduled/system-generated exports or imports use an explicitly authorized service principal/process policy rather than inheriting stale authority from a human who once configured the schedule.
 
 ## Restore rehearsal
 
@@ -227,17 +253,22 @@ Scheduled recovery tests prove:
 - RLS/tenant isolation after restore;
 - application/schema compatibility;
 - whole-cell recovery remains quarantined until all affected tenant continuity classes required for protected/effectful admission are reconciled;
-- whole-cell restore does not reactivate later-revoked membership/permission/tenant access or repeat already-completed external effects;
+- whole-cell restore does not reactivate later-revoked membership/permission/tenant access, re-expose later-erased/anonymized protected data or repeat already-completed external effects;
 - tenant recovery set completeness across bounded contexts;
-- explicit inventory and reconciliation of `(R, F]` reliability/audit/external-effect/security-revocation state;
+- explicit inventory and reconciliation of `(R, F]` reliability/audit/external-effect/security-revocation/governance state;
 - already-completed irreversible effects are not repeated after cutover;
 - post-`R` immutable audit evidence remains available after source cleanup;
 - a session/capability or membership grant valid at `R` but revoked in `(R, F]` remains rejected after restore and cutover;
 - authorization/session generation or equivalent revocation freshness does not move backwards during recovery;
+- governed erasure/anonymization decisions effective in `(R,F]` remain enforced after restore, with removed protected content not becoming authoritative again;
+- current legal-retention/legal-hold state survives or is reconstructed so PITR neither destroys protected retained data nor relies on stale hold state;
+- governed cryptographic-erasure intent is not defeated by restoring an older usable key path;
 - write-fence/cutover safety for tenant-level replacement;
 - retained-backup decryptability across key rotation/version changes;
 - measured recovery duration and data-loss window.
 
-A database/object restore that completes structurally but cannot decrypt required protected data, suppress duplicate irreversible effects, preserve required accountability evidence or preserve effective revocation/deny state is a failed rehearsal.
+Authorization tests for delayed work additionally revoke membership/import permission after a delayed import is queued but before execution and prove the worker performs zero protected tenant mutation.
+
+A database/object restore that completes structurally but cannot decrypt required protected data, suppress duplicate irreversible effects, preserve required accountability evidence, preserve effective revocation/deny state or preserve current governed erasure/retention decisions is a failed rehearsal.
 
 Results are operational evidence used to set/revise RPO/RTO.

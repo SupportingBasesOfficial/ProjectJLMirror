@@ -14,9 +14,12 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Authorization | UI omission cannot bypass server policy; cross-tenant privileged operations are distinct and audited |
 | Browser/BFF | First-party browser never receives/persists long-lived platform access or refresh credentials; browser protected API flow remains behind confidential BFF session boundary |
 | Browser realtime handshake | Untrusted/null Origin, ambient-cookie-only, expired/replayed/wrong-scope/wrong-tenant capability is rejected before `101 Switching Protocols`; no unauthorized protected socket is retained |
-| Browser realtime authorization freshness | Mint a valid capability, then revoke/suspend session, membership, permission/scope or tenant access before presentation; handshake is rejected before `101` despite valid capability signature/expiry |
-| Realtime authorization | Active protected subscription loses access after membership/permission/session/tenant revocation within accepted bound; missed invalidation is caught by bounded revalidation |
+| Browser realtime authorization freshness | Mint a valid capability, then revoke/suspend session, membership, permission/scope or tenant access before presentation; gateway proves current underlying authority and rejects before `101` despite valid capability signature/expiry |
+| Realtime subscription authorization | After successful handshake, each protected subscription receives fresh tenant/resource authorization; active protected subscription loses access after membership/permission/session/tenant revocation within accepted bound; missed invalidation is caught by bounded revalidation |
 | Transactions | Mutation + required audit/audit-intent + outbox commit atomically; injected dispatcher failure loses no committed event/audit intent |
+| Inbox co-resident effect completion | Crash before co-resident inbox/effect commit leaves neither completed receipt nor committed effect; crash after atomic commit but before broker ack/redelivery leaves both receipt/result and effect durable so replay does not execute again |
+| Inbox cross-authority effect completion | For effect outside inbox transaction, effect authority commits stable operation/result identity with the effect; crash/redelivery reconciles that identity before retry, so neither receipt-first loss nor effect-first duplication is possible |
+| Inbox ambiguous external outcome | External consumer effect times out or crashes after possible acceptance; existing operation identity enters reconciliation/quarantine and lease/receipt timeout alone never authorizes blind duplicate execution |
 | API idempotency concurrency | Fire simultaneous requests with identical canonical scope/key/fingerprint; database uniqueness/atomic claim yields exactly one logical executor, contenders observe in-progress/completed claim and no duplicate effect occurs; same scope/key with different fingerprint conflicts before execution |
 | API idempotency local completion | For a co-resident local mutation, crash after domain mutation statement but before transaction commit/claim finalization leaves no committed mutation; crash after commit but before response leaves domain result + completed claim/result linkage durable and retry replays without re-executing |
 | API idempotency cross-authority result linkage | If claim and local effect are not co-resident, effect authority commits stable operation/result identity with the mutation; claim recovery discovers/finalizes that result and does not re-run the logical mutation |
@@ -57,6 +60,12 @@ The following failures block release regardless of other test success:
 - interactive SQL principal can alter the tenant authority trusted by pooled data policy;
 - stale placement can write after relocation fence/cutover;
 - recovery-driven relocation activates target admission or routes protected/effectful traffic before required `(R,F]` security-authority, reliability, audit and external-effect continuity is reconciled;
+- a valid but stale realtime capability can receive `101` after its underlying session/membership/permission/tenant authority was revoked before presentation;
+- protected realtime subscription admission is treated as equivalent to handshake admission, allowing a socket to bypass current authorization at either stage;
+- a co-resident inbox receipt can commit as completed without the protected local consumer effect, allowing redelivery to suppress a missing effect;
+- a co-resident consumer effect can commit without completed inbox/result linkage, allowing redelivery to execute the logical effect again after crash;
+- a cross-authority inbox effect can commit without stable operation/result identity that redelivery/recovery can reconcile before retry;
+- an ambiguous external inbox effect can be retried solely because receipt/lease timeout expired while provider outcome remains unknown;
 - two concurrent requests with the same effective idempotency scope/key can both become logical executors because claim uniqueness/atomic acquisition is absent or bypassed;
 - same idempotency scope/key with a different request fingerprint can execute instead of conflicting;
 - a co-resident local idempotent mutation can commit while claim completion/result linkage remains non-atomic or unrecoverably `in_progress`, making retry ambiguous or re-executable;

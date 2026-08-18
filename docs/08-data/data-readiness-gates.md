@@ -56,12 +56,18 @@ A pooled tenant table cannot ship without non-null `tenant_id`, database isolati
 
 ## Gate D7 — Async/reliability
 
-If mutation emits work/events/signals or exposes idempotency semantics:
+If mutation emits work/events/signals, consumes at-least-once messages, or exposes idempotency semantics:
 
 - outbox or accepted equivalent atomicity exists;
 - conditional state transitions that require signals persist the transition/signal obligation atomically or through an equivalent durable advancement record;
 - event/job versioning defined;
 - consumer duplicate semantics defined;
+- inbox/dedup identity is durable where duplicate effect would be unsafe;
+- co-resident inbox receipt completion and protected consumer effect share one transaction/atomic boundary;
+- receipt-first without durable effect completion is prohibited because it can suppress an effect that never committed;
+- effect-first without durable receipt/result linkage is prohibited because redelivery can duplicate the effect;
+- cross-authority inbox effects persist a stable operation/result identity atomically with the effect and reconcile that authority before retry eligibility;
+- ambiguous external consumer effect is reconciled/quarantined; timeout, lease expiry or missing receipt completion alone does not authorize blind re-execution;
 - idempotency record is durable when losing it could duplicate irreversible effects;
 - API/application idempotency uses a non-null canonical effective scope plus database-enforced unique claim identity;
 - claim acquisition is atomic create-or-observe/compare-and-set before effectful processing; read-then-create without uniqueness/serialization is prohibited;
@@ -72,7 +78,7 @@ If mutation emits work/events/signals or exposes idempotency semantics:
 - crash after commit but before response delivery leaves a replayable completed claim/result and does not require re-executing the mutation;
 - if claim and local effect use different authorities, the effect authority atomically persists a stable operation/result record and claim recovery reconciles that record before retry eligibility;
 - ambiguous external outcome retains the existing claim/stable operation identity and reconciles before retry eligibility; timeout/lease expiry alone does not authorize blind re-execution;
-- replay after crash does not depend on an in-memory "transition happened" or "claim owner probably died" assumption.
+- replay after crash does not depend on an in-memory "transition happened", "claim owner probably died" or "receipt exists so effect must have happened" assumption.
 
 ## Gate D8 — Migration
 

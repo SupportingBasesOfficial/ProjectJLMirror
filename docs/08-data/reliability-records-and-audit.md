@@ -39,7 +39,42 @@ Conceptual uniqueness:
 UNIQUE(consumer_contract, message_id)
 ```
 
-The receipt/effect is committed atomically where feasible.
+Inbox deduplication is not merely a pre-processing lookup. The receipt and the logical effect it protects require a crash-safe completion protocol.
+
+### Co-resident inbox effect completion
+
+When the inbox receipt and the authoritative consumer effect are co-resident in the same transactional database boundary, they SHALL commit atomically. A representative pattern is:
+
+```text
+BEGIN
+  create/lock inbox receipt for (consumer_contract, message_id)
+  verify not already completed
+  perform authoritative local consumer effect
+  persist required audit/outbox/result linkage
+  mark inbox receipt completed with stable effect/result reference
+COMMIT
+```
+
+The consumer MUST NOT durably mark a message processed before the protected local effect is durable, and MUST NOT commit the local effect while leaving no durable completed receipt/result linkage from which redelivery can deterministically no-op or replay the established result.
+
+Therefore:
+
+- crash before commit leaves neither a completed receipt nor committed local effect;
+- crash after commit leaves both the local effect and completed receipt/result linkage durable;
+- redelivery after response/ack loss observes the completed receipt and MUST NOT execute the logical effect again.
+
+### Cross-authority inbox effects
+
+When the inbox authority and protected effect cannot share one transaction, neither unsafe ordering is acceptable:
+
+- **receipt first, effect later** without durable linkage can lose the effect after a crash because redelivery sees the message as processed;
+- **effect first, receipt later** without durable linkage can duplicate the effect after a crash because redelivery sees no receipt.
+
+The effect authority therefore SHALL persist a stable `operation_id` / effect-result record atomically with the effect, or use an equivalent protocol that makes effect outcome durably discoverable. The inbox record references that stable identity and completion/retry reconciles authoritative effect state before deciding whether execution is still eligible.
+
+For an externally irreversible or otherwise ambiguous effect, the existing operation identity is reconciled against provider/domain truth. Timeout, lease expiry or missing inbox completion alone MUST NOT authorize blind re-execution.
+
+The exact broker acknowledgement ordering is transport-specific and belongs to later async-contract/implementation design; the baseline invariant is that a crash cannot convert an already-completed effect into retry eligibility or a pre-recorded receipt into silent effect loss.
 
 ## HTTP/API idempotency
 
@@ -138,7 +173,7 @@ Point-in-time business-state recovery MUST NOT blindly roll back the evidence th
 
 For recovery point `R` and later write fence `F`, the recovery reconciliation interval `(R, F]` inventories reliability records including:
 
-- inbox/deduplication receipts;
+- inbox/deduplication receipts and stable effect/result identities;
 - API/job idempotency claims and outcomes;
 - stable external operation/provider/payment identities;
 - process/execution final or externally committed outcomes;
@@ -224,13 +259,11 @@ External side-effect audit/reconciliation may add subsequent immutable records r
 
 ## Validation
 
+Inbox fault-injection tests crash before effect, after local effect statements but before commit, after atomic commit but before broker acknowledgement, and around cross-authority effect completion. Co-resident effects MUST prove receipt/effect atomicity. Cross-authority effects MUST prove stable operation/result discovery and reconciliation so redelivery neither loses nor duplicates the logical effect.
+
 Concurrency tests issue multiple simultaneous requests with the same effective idempotency scope/key. Exactly one may acquire executable ownership. Same-fingerprint contenders must not execute a second logical effect; different-fingerprint contenders must conflict. Tests MUST prove the uniqueness constraint/atomic claim, not merely application-level pre-check behavior.
 
-For co-resident local mutations, fault injection MUST crash immediately before local transaction commit, after the domain mutation statement but before claim finalization, and immediately after commit but before response delivery. The accepted outcomes are only: no mutation + non-completed claim before commit, or committed mutation + completed replayable claim after commit. A committed local mutation with an unrecoverably `in_progress` claim is prohibited.
-
-For cross-authority local effects, tests MUST prove the authoritative mutation persists a stable operation/result record atomically and that claim recovery can discover/finalize that result without re-running the logical mutation.
-
-Fault injection crashes the claim owner before domain mutation, during external calls and after a provider may have accepted the stable `operation_id` but before the claim is marked complete. Recovery MUST replay/reconcile the existing claim and MUST NOT blindly create a second irreversible effect.
+Fault injection crashes the claim owner before domain mutation, after local mutation, during external calls and after a provider may have accepted the stable `operation_id` but before the claim is marked complete. Recovery MUST replay/reconcile the existing claim and MUST NOT blindly create a second irreversible effect.
 
 Fault injection also covers crash before mutation commit, immediately after commit, before external audit delivery and during audit-sink outage. Required mutation success is accepted only if local audit evidence or durable audit intent survives and can be reconciled.
 

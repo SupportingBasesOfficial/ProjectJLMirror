@@ -7,7 +7,9 @@
 
 Realtime signals optimize operator experience; they are not authoritative state.
 
-A protected browser connection requires an accepted BFF-minted connection capability plus expected-Origin validation before protected delivery. Every protected subscription also requires current authorization for tenant/resource scope, and that authority MUST remain fresh for the lifetime of the subscription.
+A protected first-party browser connection requires an accepted BFF-minted connection capability, expected-Origin validation **and current authorization for the capability's principal/tenant/realtime scope before the protected WebSocket upgrade is accepted**. A capability proves bounded connection intent; it does not freeze session, membership, permission/scope or tenant-access authority until expiry. If current authority cannot be established safely at handshake time, the gateway rejects the upgrade and fails closed.
+
+Every protected subscription also requires current authorization for its tenant/resource scope, and that authority MUST remain fresh for the lifetime of the subscription. Handshake authorization and subscription authorization are separate gates; passing the former does not authorize arbitrary later subscriptions.
 
 Logical realtime envelope:
 
@@ -31,9 +33,18 @@ Clients reconnect and resynchronize authoritative state from API/read models. A 
 Browser --authenticated same-site--> BFF
         <-- short-lived scoped connection capability
 Browser --capability + expected Origin--> Realtime Gateway
+        -- validate capability + CURRENT underlying authority -->
+        <-- HTTP 101 only if all protected admission checks pass --
 ```
 
-Ambient session cookies alone are not sufficient authority for a protected direct browser socket. Capabilities are short-lived, scope-bound and replay-bounded; the gateway rejects untrusted/null origin, wrong tenant/scope, expired or reused capability according to contract.
+Before returning `101 Switching Protocols` for a protected first-party browser socket, the gateway SHALL validate:
+
+- allowlisted expected browser `Origin`;
+- capability authenticity, expiry, replay/reuse state and intended principal/tenant/realtime scope;
+- current session/credential, membership, permission/scope and tenant-access authority for the capability scope, either through a fresh authoritative evaluation or a trusted current authorization/session generation or revocation marker;
+- applicable pre-upgrade abuse/connection-admission limits.
+
+Ambient session cookies alone are not sufficient authority for a protected direct browser socket. A revoked or stale underlying authority MUST be rejected before upgrade even when the capability's signature and expiry remain valid. If authorization freshness cannot be established safely, no protected socket is admitted.
 
 ## Realtime authorization lifecycle
 
@@ -41,14 +52,15 @@ Long-lived connections do not freeze authorization at handshake time.
 
 The gateway must support:
 
+- current authorization during the HTTP handshake before accepting a protected browser WebSocket upgrade;
 - fresh authorization for each protected subscription;
 - active invalidation/revocation when session, membership, role/permission or tenant access changes;
 - removal of affected subscriptions or connection termination after revocation;
 - periodic bounded authorization revalidation as defense in depth;
-- fail-closed protected delivery when current authorization cannot be safely established;
+- fail-closed protected admission/delivery when current authorization cannot be safely established;
 - fresh evaluation on reconnect.
 
-An authorization revision/generation or equivalent mechanism may be used to efficiently identify stale sockets. The accepted propagation/revalidation bound is a security/SLO parameter and may not be unlimited.
+An authorization revision/generation or equivalent mechanism may be used to efficiently identify stale capabilities/sockets. The accepted propagation/revalidation bound is a security/SLO parameter and may not be unlimited.
 
 ## Realtime topology
 

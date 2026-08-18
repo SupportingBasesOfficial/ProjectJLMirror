@@ -117,7 +117,28 @@ Consumers therefore implement one or more of:
 
 ## Inbox
 
-A consumer records `(consumer_id, message/event_id)` or equivalent durable deduplication identity before/with effectful processing in the appropriate transaction. Duplicate messages produce the already-known logical result or no-op rather than duplicate irreversible effects.
+A consumer maintains a durable unique identity such as `(consumer_contract, message_id)` for messages whose duplicate logical effect would be unsafe. The receipt is not sufficient by itself; its completion must be crash-consistent with the protected effect.
+
+For a co-resident local effect, the consumer SHALL commit receipt completion and effect in one transaction:
+
+```text
+BEGIN
+  create/lock unique inbox receipt
+  verify message not already completed
+  apply authoritative consumer effect
+  persist required audit/outbox/result linkage
+  mark inbox receipt completed
+COMMIT
+```
+
+This forbids both unsafe orderings:
+
+- completed receipt before effect durability, which can lose the effect after crash/redelivery;
+- committed effect before durable receipt/result linkage, which can duplicate the effect after crash/redelivery.
+
+For a cross-authority or external effect that cannot share the inbox transaction, the effect authority persists a stable `operation_id` / result identity atomically with the effect, or an equivalent durable outcome protocol. Redelivery and receipt finalization reconcile that identity before deciding whether execution is still eligible. Unknown/ambiguous external outcome fails into reconciliation/quarantine rather than blind retry.
+
+Duplicate messages therefore either observe the already-completed receipt/result, reconcile an existing stable operation, or remain non-executable until ambiguity is resolved. Broker acknowledgement mechanics are transport-specific and may not weaken these invariants.
 
 ## Jobs
 
@@ -153,7 +174,7 @@ Errors are classified:
 
 Retry uses bounded attempts, backoff/jitter and workload-specific concurrency budgets.
 
-An expired local idempotency lease/timeout, if a later implementation uses leases, is not by itself proof that an effect did not occur. Local retries first reconcile durable domain/result state; externally ambiguous outcomes reconcile by stable operation identity before a new attempt becomes eligible.
+An expired local idempotency or inbox lease/timeout, if a later implementation uses leases, is not by itself proof that an effect did not occur. Local retries first reconcile durable domain/result state; externally ambiguous outcomes reconcile by stable operation identity before a new attempt becomes eligible.
 
 ## Process managers
 

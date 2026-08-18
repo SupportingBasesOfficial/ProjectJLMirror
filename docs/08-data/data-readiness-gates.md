@@ -51,7 +51,10 @@ A pooled tenant table cannot ship without non-null `tenant_id`, database isolati
 
 - create/update/delete/archive semantics defined;
 - retention class defined;
-- deletion/anonymization/legal-retention behavior considered;
+- deletion/erasure/anonymization/pseudonymization/legal-retention behavior defined rather than merely noted;
+- governed erasure/anonymization decisions retain durable tombstone/decision metadata sufficient to prevent accidental resurrection from backup without retaining the erased content itself unless policy requires otherwise;
+- legal-retention/legal-hold placement/release state has an authoritative lifecycle and recovery behavior;
+- cryptographic-erasure/key-destruction intent is coordinated with backup/recovery semantics so PITR cannot silently revive a key path that current policy intentionally destroyed;
 - artifact/telemetry separation used where appropriate.
 
 ## Gate D7 — Async/reliability
@@ -78,6 +81,7 @@ If mutation emits work/events/signals, consumes at-least-once messages, or expos
 - crash after commit but before response delivery leaves a replayable completed claim/result and does not require re-executing the mutation;
 - if claim and local effect use different authorities, the effect authority atomically persists a stable operation/result record and claim recovery reconciles that record before retry eligibility;
 - ambiguous external outcome retains the existing claim/stable operation identity and reconciles before retry eligibility; timeout/lease expiry alone does not authorize blind re-execution;
+- delayed user-authored imports re-establish current tenant context and current authorization before protected mutation; queued request-time authority is not durable execution authority;
 - replay after crash does not depend on an in-memory "transition happened", "claim owner probably died" or "receipt exists so effect must have happened" assumption.
 
 ## Gate D8 — Migration
@@ -90,7 +94,7 @@ If mutation emits work/events/signals, consumes at-least-once messages, or expos
 
 ## Gate D9 — Recovery
 
-For any PITR scope that can roll back protected authority/reliability state:
+For any PITR scope that can roll back protected authority/reliability/governance state:
 
 - backup/reconstruction source identified;
 - tenant/cell/control-plane recovery impact understood for the restored authority;
@@ -98,14 +102,18 @@ For any PITR scope that can roll back protected authority/reliability state:
 - recovery validation exists for critical data;
 - recovery defines point `R` and a later authoritative reconciliation boundary `F` appropriate to the scope;
 - if the old authority is unavailable, `F` and continuity are reconstructed from surviving durable authorities/watermarks and uncertainty is explicitly classified rather than assumed absent;
-- the `(R,F]` interval is classified into rollback-subject state versus safety/accountability/security-authority continuity state;
+- the `(R,F]` interval is classified into rollback-subject state versus safety/accountability/security-authority/governance continuity state;
 - deduplication/idempotency/process/external-operation outcomes needed to suppress duplicate irreversible effects survive or are reconciled before protected/effectful authority resumes;
 - immutable audit evidence required from `(R,F]` survives restore and source cleanup;
 - session/credential revocations, membership disablement/revocation, permission/scope removal, tenant suspension/access denial and authorization/session generation or equivalent freshness state from `(R,F]` survive or are reconciled before protected traffic resumes;
 - a restored positive grant at `R` cannot silently override a later deny/revocation from `(R,F]`;
+- governed deletion/erasure, anonymization/pseudonymization and approved cryptographic-erasure decisions from `(R,F]` survive or are reconciled before restored protected data becomes authoritative or visible;
+- durable tombstone/decision evidence prevents backup contents from silently resurrecting data removed or de-identified after `R`;
+- current legal-retention/legal-hold placement/release state is reconciled before destructive lifecycle actions resume;
+- unresolved erasure/anonymization status keeps affected protected data unavailable, while unresolved legal-retention status blocks destructive deletion;
 - whole-cell recovery remains quarantined/non-authoritative until continuity for all affected tenants required for protected/effectful admission is reconciled;
 - unresolved external-effect outcomes are quarantined/reconciled rather than retried blindly;
-- intentionally reversing a preserved security revocation is modeled as a separate authorized/audited security-recovery action rather than an implicit PITR effect.
+- intentionally reversing a preserved security revocation or governance decision is modeled as a separate authorized/audited recovery action rather than an implicit PITR effect.
 
 ## Gate D10 — Observability/security
 
@@ -126,4 +134,4 @@ For high-volume tables/streams:
 
 Tenant-scoped state can be selected, copied, validated and fenced by immutable `tenant_id`. Physical location/schema/server identifiers are not embedded as business identity.
 
-For recovery-driven relocation, the target can receive/reconcile required safety/accountability/security-authority continuity state without reapplying all business mutations that the recovery intentionally rolls back. Target admission remains inactive until that continuity is validated; post-cutover verification is defense in depth, not the first security gate.
+For recovery-driven relocation, the target can receive/reconcile required safety/accountability/security-authority/governance continuity state without reapplying all business mutations that the recovery intentionally rolls back. Target admission remains inactive until that continuity is validated; post-cutover verification is defense in depth, not the first security/governance gate.

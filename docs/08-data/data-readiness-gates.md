@@ -55,7 +55,10 @@ A pooled tenant table cannot ship without non-null `tenant_id`, database isolati
 - governed erasure/anonymization decisions retain durable tombstone/decision metadata sufficient to prevent accidental resurrection from backup without retaining the erased content itself unless policy requires otherwise;
 - legal-retention/legal-hold placement/release state has an authoritative lifecycle and recovery behavior;
 - cryptographic-erasure/key-destruction intent is coordinated with backup/recovery semantics so PITR cannot silently revive a key path that current policy intentionally destroyed;
-- artifact/telemetry separation used where appropriate.
+- artifact/telemetry separation used where appropriate;
+- protected artifacts that span transactional metadata and object storage use a stable `artifact_id`/tenant identity plus an explicit staged lifecycle; bytes are not releasable until verified terminal-ready metadata exists;
+- artifact creation/deletion has crash reconciliation for metadata-without-object, object-without-ready-metadata, missing/corrupt object, and interrupted deletion/erasure;
+- controlled staging/orphan object inventory is discoverable and subject to bounded governed reconciliation/GC; legal hold/retention/erasure policy is consulted before destructive cleanup.
 
 ## Gate D7 — Async/reliability
 
@@ -66,6 +69,8 @@ If mutation emits work/events/signals, consumes at-least-once messages, or expos
 - event/job versioning defined;
 - consumer duplicate semantics defined;
 - inbox/dedup identity is durable where duplicate effect would be unsafe;
+- inbox uniqueness includes a non-null canonical `message_identity_scope` derived from trusted tenant/source/producer context unless the consumer contract explicitly proves `message_id` is globally unique across every producer for the full deduplication window;
+- the same raw `message_id` from different authoritative scopes cannot suppress another tenant/source message, while exact redelivery in the same scope deduplicates;
 - co-resident inbox receipt completion and protected consumer effect share one transaction/atomic boundary;
 - receipt-first without durable effect completion is prohibited because it can suppress an effect that never committed;
 - effect-first without durable receipt/result linkage is prohibited because redelivery can duplicate the effect;
@@ -111,6 +116,7 @@ For any PITR scope that can roll back protected authority/reliability/governance
 - durable tombstone/decision evidence prevents backup contents from silently resurrecting data removed or de-identified after `R`;
 - current legal-retention/legal-hold placement/release state is reconciled before destructive lifecycle actions resume;
 - unresolved erasure/anonymization status keeps affected protected data unavailable, while unresolved legal-retention status blocks destructive deletion;
+- artifact metadata/object state is reconciled across PITR so restored metadata cannot falsely expose absent/wrong bytes and surviving object bytes cannot remain indefinitely untracked or bypass current governance;
 - whole-cell recovery remains quarantined/non-authoritative until continuity for all affected tenants required for protected/effectful admission is reconciled;
 - unresolved external-effect outcomes are quarantined/reconciled rather than retried blindly;
 - intentionally reversing a preserved security revocation or governance decision is modeled as a separate authorized/audited recovery action rather than an implicit PITR effect.
@@ -120,7 +126,8 @@ For any PITR scope that can roll back protected authority/reliability/governance
 - slow/error path observable with tenant-safe correlation;
 - secret/PII logging policy defined;
 - audit class defined for privileged mutation;
-- no raw provider payload becomes trusted domain state without validation.
+- no raw provider payload becomes trusted domain state without validation;
+- replay-consumption authority for protected capabilities treats state loss/restart as a security event requiring state continuity/reconciliation or epoch invalidation; missing replay state never authorizes redemption.
 
 ## Gate D11 — Capacity
 

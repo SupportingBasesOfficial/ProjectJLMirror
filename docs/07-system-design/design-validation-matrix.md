@@ -15,6 +15,7 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Browser/BFF | First-party browser never receives/persists long-lived platform access or refresh credentials; browser protected API flow remains behind confidential BFF session boundary |
 | Browser realtime handshake | Untrusted/null Origin, ambient-cookie-only, expired/replayed/wrong-scope/wrong-tenant capability is rejected before `101 Switching Protocols`; no unauthorized protected socket is retained |
 | Browser realtime authorization freshness | Mint a valid capability, then revoke/suspend session, membership, permission/scope or tenant access before presentation; gateway proves current underlying authority and rejects before `101` despite valid capability signature/expiry |
+| Browser realtime replay concurrency | Present one single-use capability concurrently to multiple gateway replicas; shared atomic consume/claim yields exactly one winner and at most one `101`, every loser is rejected; crash the winner after consume/before `101` and prove the capability remains consumed and requires remint |
 | Realtime subscription authorization | After successful handshake, each protected subscription receives fresh tenant/resource authorization; active protected subscription loses access after membership/permission/session/tenant revocation within accepted bound; missed invalidation is caught by bounded revalidation |
 | Transactions | Mutation + required audit/audit-intent + outbox commit atomically; injected dispatcher failure loses no committed event/audit intent |
 | Inbox co-resident effect completion | Crash before co-resident inbox/effect commit leaves neither completed receipt nor committed effect; crash after atomic commit but before broker ack/redelivery leaves both receipt/result and effect durable so replay does not execute again |
@@ -61,6 +62,8 @@ The following failures block release regardless of other test success:
 - stale placement can write after relocation fence/cutover;
 - recovery-driven relocation activates target admission or routes protected/effectful traffic before required `(R,F]` security-authority, reliability, audit and external-effect continuity is reconciled;
 - a valid but stale realtime capability can receive `101` after its underlying session/membership/permission/tenant authority was revoked before presentation;
+- two or more gateway replicas can concurrently redeem the same single-use realtime capability because replay state is checked non-atomically or only replica-locally;
+- a replay-losing realtime handshake can receive `101`, or an ambiguous post-consume gateway failure can make the same single-use capability eligible again instead of requiring remint;
 - protected realtime subscription admission is treated as equivalent to handshake admission, allowing a socket to bypass current authorization at either stage;
 - a co-resident inbox receipt can commit as completed without the protected local consumer effect, allowing redelivery to suppress a missing effect;
 - a co-resident consumer effect can commit without completed inbox/result linkage, allowing redelivery to execute the logical effect again after crash;

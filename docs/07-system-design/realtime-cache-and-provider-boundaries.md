@@ -9,6 +9,8 @@ Realtime signals optimize operator experience; they are not authoritative state.
 
 A protected first-party browser connection requires an accepted BFF-minted connection capability, expected-Origin validation **and current authorization for the capability's principal/tenant/realtime scope before the protected WebSocket upgrade is accepted**. A capability proves bounded connection intent; it does not freeze session, membership, permission/scope or tenant-access authority until expiry. If current authority cannot be established safely at handshake time, the gateway rejects the upgrade and fails closed.
 
+For replay resistance, capability admission also requires an atomic single-winner claim/consume against shared replay state before `101`. A replica-local or read-only "unused" check is insufficient in a horizontally scaled gateway because concurrent replicas could otherwise both admit the same single-use capability.
+
 Every protected subscription also requires current authorization for its tenant/resource scope, and that authority MUST remain fresh for the lifetime of the subscription. Handshake authorization and subscription authorization are separate gates; passing the former does not authorize arbitrary later subscriptions.
 
 Logical realtime envelope:
@@ -34,17 +36,23 @@ Browser --authenticated same-site--> BFF
         <-- short-lived scoped connection capability
 Browser --capability + expected Origin--> Realtime Gateway
         -- validate capability + CURRENT underlying authority -->
+        -- atomically consume replay identity (single winner) -->
         <-- HTTP 101 only if all protected admission checks pass --
 ```
 
 Before returning `101 Switching Protocols` for a protected first-party browser socket, the gateway SHALL validate:
 
 - allowlisted expected browser `Origin`;
-- capability authenticity, expiry, replay/reuse state and intended principal/tenant/realtime scope;
+- capability authenticity, expiry and intended principal/tenant/realtime scope;
 - current session/credential, membership, permission/scope and tenant-access authority for the capability scope, either through a fresh authoritative evaluation or a trusted current authorization/session generation or revocation marker;
-- applicable pre-upgrade abuse/connection-admission limits.
+- applicable pre-upgrade abuse/connection-admission limits;
+- atomic replay admission by claiming/consuming the capability's unique identity in shared state as the final gate before successful upgrade.
 
-Ambient session cookies alone are not sufficient authority for a protected direct browser socket. A revoked or stale underlying authority MUST be rejected before upgrade even when the capability's signature and expiry remain valid. If authorization freshness cannot be established safely, no protected socket is admitted.
+For a single-use capability, exactly one concurrent presentation can transition the capability from unused/available to consumed. Every losing handshake MUST be rejected before `101`, including presentations handled by different gateway replicas. If a bounded-use contract is selected later, the allowed use count must be enforced through an equivalently atomic shared counter/claim operation.
+
+Ambient session cookies alone are not sufficient authority for a protected direct browser socket. A revoked or stale underlying authority MUST be rejected before upgrade even when the capability's signature and expiry remain valid. If authorization freshness or atomic replay consumption cannot be established safely, no protected socket is admitted.
+
+If a gateway successfully consumes a single-use capability and then fails before completing the upgrade, the capability remains consumed and the client obtains a new one. The design prefers fail-safe credential burning over reopening replay eligibility after an ambiguous handshake failure.
 
 ## Realtime authorization lifecycle
 
@@ -53,11 +61,12 @@ Long-lived connections do not freeze authorization at handshake time.
 The gateway must support:
 
 - current authorization during the HTTP handshake before accepting a protected browser WebSocket upgrade;
+- atomic shared single-winner capability consumption before `101`;
 - fresh authorization for each protected subscription;
 - active invalidation/revocation when session, membership, role/permission or tenant access changes;
 - removal of affected subscriptions or connection termination after revocation;
 - periodic bounded authorization revalidation as defense in depth;
-- fail-closed protected admission/delivery when current authorization cannot be safely established;
+- fail-closed protected admission/delivery when current authorization or replay-consumption uniqueness cannot be safely established;
 - fresh evaluation on reconnect.
 
 An authorization revision/generation or equivalent mechanism may be used to efficiently identify stale capabilities/sockets. The accepted propagation/revalidation bound is a security/SLO parameter and may not be unlimited.
@@ -97,7 +106,7 @@ May accelerate policy/session checks but cannot invent authority. Revocation/inv
 
 ### Coordination/ephemeral state
 
-Rate counters, circuit state, ephemeral locks or realtime fanout state. Loss changes performance/degradation behavior but does not erase durable business truth.
+Rate counters, circuit state, ephemeral locks or realtime fanout state. Loss changes performance/degradation behavior but does not erase durable business truth. Replay-consumption state for a single-use protected capability is correctness-critical during its validity window and therefore requires an accepted shared single-winner authority rather than best-effort replica-local state.
 
 ### Idempotency/deduplication
 

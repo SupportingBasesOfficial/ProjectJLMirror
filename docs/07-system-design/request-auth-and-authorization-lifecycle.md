@@ -67,13 +67,18 @@ A protected first-party browser realtime connection may bypass the normal BFF re
 Before accepting the protected WebSocket upgrade, the realtime gateway MUST validate:
 
 - the expected allowlisted browser `Origin`;
-- the connection capability authenticity, expiry, replay state and intended principal/tenant/realtime scope;
+- the connection capability authenticity, expiry and intended principal/tenant/realtime scope;
 - **current authorization for that principal/tenant/realtime scope**, including current session, membership, permission/scope and tenant-access state, using either a fresh authoritative evaluation or a trusted authorization/session generation/revocation marker proven current at handshake time;
-- applicable pre-upgrade abuse/connection-admission limits.
+- applicable pre-upgrade abuse/connection-admission limits;
+- and, as the final replay-admission gate, atomically claim/consume the capability's unique replay identity in a shared authority so concurrent gateway replicas cannot both treat the same capability as unused.
+
+Capability replay protection is an admission mutation, not a read-only "is unused?" check. For a single-use capability, exactly one concurrent handshake may successfully transition the capability identity from unused/available to consumed; every losing handshake MUST be rejected before `101 Switching Protocols`. If the accepted contract permits a bounded use count greater than one, the shared authority MUST enforce that bound atomically.
+
+The atomic consume occurs only after the other required pre-upgrade validations pass and immediately before successful upgrade admission. If the gateway consumes the capability and then fails before returning `101`, the capability remains consumed and the client must obtain a new capability; fail-safe credential burning is preferred to replay ambiguity. If the shared replay/consume authority is unavailable or cannot prove single-winner consumption, protected upgrade admission fails closed.
 
 A capability proves that authority existed when it was minted; it does **not** freeze that authority until expiry. If the gateway cannot safely establish authorization freshness at handshake time, the protected upgrade fails closed.
 
-Failure of any required pre-upgrade check rejects the HTTP handshake before `101 Switching Protocols`; the gateway does not retain an unauthorized protected socket and then merely suppress subscriptions afterward.
+Failure of any required pre-upgrade check or atomic capability consumption rejects the HTTP handshake before `101 Switching Protocols`; the gateway does not retain an unauthorized or replay-losing protected socket and then merely suppress subscriptions afterward.
 
 The capability is bound to the intended principal/tenant/realtime purpose, expires quickly and is single-use or otherwise replay-bounded. It is not a refresh token or a general API bearer credential. An authorization/session generation carried by the capability is only a freshness reference and MUST be compared with trusted current state; it is not self-authorizing after revocation.
 

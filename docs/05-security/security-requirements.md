@@ -44,6 +44,8 @@
 
 **SEC-BROWSER-005** — Capability replay-consumption authority SHALL fail closed when unavailable or unable to prove the accepted use bound. If a single-use capability is atomically consumed but the winning gateway fails before completing the upgrade, that capability SHALL remain consumed and require reminting; recovery from an ambiguous handshake SHALL NOT reopen replay eligibility.
 
+**SEC-BROWSER-006** — Replay-authority restart, loss, restore or reinitialization SHALL NOT make a previously consumed still-valid capability redeemable. Missing replay state SHALL NOT mean unused. The accepted design SHALL either retain/reconcile registered capability/consumption state through the capability validity safety window or bind capabilities to a trusted replay epoch/generation that is advanced before admission resumes after state loss, invalidating outstanding capabilities from the lost epoch. If continuity/current epoch cannot be established safely, protected admission SHALL remain fail closed.
+
 ## Secrets
 
 **SEC-SEC-001** — Source code and ordinary configuration SHALL use secret references rather than production secret values.
@@ -91,6 +93,8 @@
 **SEC-GOV-003** — If post-recovery erasure/anonymization status cannot be established safely, affected protected data SHALL remain unavailable rather than be re-exposed. If legal-retention status cannot be established safely, destructive deletion SHALL remain blocked. Recovery uncertainty SHALL NOT be resolved by silently choosing the stale governance state at the recovery point.
 
 **SEC-GOV-004** — Recovery SHALL NOT restore or recreate an older usable cryptographic key path when the current governed intent is approved cryptographic erasure of the corresponding retained ciphertext. Erasure decision/evidence is continuity state even when the erased key material itself is intentionally unrecoverable.
+
+**SEC-GOV-005** — Protected artifact bytes stored outside transactional metadata SHALL use a stable tenant/artifact identity and a staged/reconcilable lifecycle. Bytes SHALL NOT become releasable merely because an object upload succeeded; only verified terminal-ready metadata may authorize release. Crash/recovery/orphan cleanup SHALL remain discoverable and subject to current erasure, retention and legal-hold policy so protected object data cannot become indefinitely untracked or be destructively removed under stale governance.
 
 ## Abuse protection
 

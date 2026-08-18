@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Monitoring current state and high-volume historical telemetry have different performance/lifecycle requirements. Current operational reads must not degrade linearly as retained history grows. When those data classes use different persistence authorities, ingestion must remain crash-consistent and current-state projections must not regress when accepted observations are replayed or delivered out of order.
+Monitoring current state and high-volume historical telemetry have different performance/lifecycle requirements. Current operational reads must not degrade linearly as retained history grows. When those data classes use different persistence authorities, ingestion must remain crash-consistent, accepted-observation identity must remain collision-safe across tenants/providers/sources, and current-state projections must not regress when accepted observations are replayed or delivered out of order.
 
 ## Separation
 
@@ -38,7 +38,8 @@ Logs/traces used for platform observability are operational telemetry and need n
 An accepted observation/sample contract carries at least:
 
 ```text
-observation_id / stable provider-derived dedup identity
+observation_identity_scope   non-null canonical trusted namespace
+observation_id               stable identity unique within that scope
 tenant_id
 resource_id
 metric_definition_id
@@ -47,11 +48,23 @@ observed_at
 ingested_at
 value + value_type/unit semantics
 quality/status metadata when applicable
-provider sequence/external identity when available
+provider observation/event/sequence identity when available
 projection_order_key / source generation semantics when required
 ```
 
-Provider-native IDs do not replace stable JLMIRROR resource/metric identity.
+The canonical deduplication identity is conceptually:
+
+```text
+UNIQUE(observation_identity_scope, observation_id)
+```
+
+`observation_identity_scope` is derived from trusted platform/integration context and includes every dimension required to make the source identity unambiguous, such as tenant/global boundary, provider/integration/source identity and source generation/stream when applicable. Provider payload text or caller-controlled fields do not get to select a weaker namespace.
+
+A provider-native observation/event/sequence ID MAY supply `observation_id` only inside that authoritative scope. The same provider-local value emitted by a different tenant, integration, source or generation is a different accepted observation and MUST NOT be suppressed. A constant/global scope is permitted only when the producing contract explicitly proves the ID is globally unique across every producer capable of reaching the acceptance boundary for the full deduplication retention window.
+
+When no safe provider-native stable identity exists, the platform assigns/persists an accepted-observation identity according to the ingestion contract; downstream projections consume the persisted canonical identity rather than inventing independent dedup keys.
+
+Provider-native IDs do not replace stable JLMIRROR resource/metric identity, and deduplication identity is distinct from projection ordering identity.
 
 `observed_at` is event time and is not, by itself, a sufficient monotonic authority for latest-state updates because provider clocks can skew or move backwards.
 
@@ -62,7 +75,7 @@ Ingestion declares exactly one durable acceptance point before multiple persiste
 ```text
 Provider
   -> adapter validation/normalization
-  -> derive observation_id / dedup identity
+  -> derive trusted observation_identity_scope + observation_id
   -> derive/validate projection ordering metadata
   -> DURABLE ACCEPTANCE
        |-> idempotent historical telemetry projection
@@ -76,11 +89,13 @@ Provider
 - a transactional persistence record plus outbox when PostgreSQL is the accepted ingestion authority; or
 - a specialized telemetry store only if it can provide the replay/checkpoint/reconciliation guarantees required to repair downstream projections.
 
+The durable acceptance authority enforces or otherwise proves uniqueness of the canonical scoped observation identity for the accepted deduplication window. A provider-local ID alone is not treated as globally unique unless the provider/source contract proves that property.
+
 The system does **not** acknowledge an observation as accepted after an uncoordinated write to one authority while another required write remains only in process memory.
 
 ## Projection ordering and monotonic current state
 
-Idempotency prevents the same observation from being applied twice; it does not by itself prevent an older distinct observation from arriving after a newer one. Every current/latest-state projection therefore defines a deterministic ordering contract for its projection key, such as `(tenant_id, source_id, resource_id, metric_definition_id)` or another owner-domain key.
+Idempotency prevents the same canonical accepted observation from being applied twice; it does not by itself prevent an older distinct observation from arriving after a newer one. Every current/latest-state projection therefore defines a deterministic ordering contract for its projection key, such as `(tenant_id, source_id, resource_id, metric_definition_id)` or another owner-domain key.
 
 The ordering contract MUST use an ordering token that can be compared monotonically for that projection key. Preferred inputs are:
 
@@ -117,7 +132,7 @@ Historical/event-time analytics may process late observations under their own ex
 
 ## Projection and reconciliation semantics
 
-Historical, current-state and signal writers consume durable observation/transition identities idempotently. Duplicate retries may reproduce delivery attempts but not duplicate the logical observation, state transition or effect.
+Historical, current-state and signal writers consume canonical scoped observation/transition identities idempotently. Duplicate retries within the same authoritative observation scope may reproduce delivery attempts but not duplicate the logical observation, state transition or effect. An equal raw provider ID from a different trusted scope remains independently processable.
 
 Each projection tracks a durable checkpoint/watermark or equivalent reconciliation state. A crash between projections leaves recoverable lag, not ambiguous success. Operators can compare acceptance/projection watermarks and replay/reconcile incomplete work.
 
@@ -171,8 +186,12 @@ coarse rollup -> long retention
 
 Rollup algorithms and windows require product/query accuracy requirements and capacity benchmarks; they are not hard-coded at this stage.
 
+## Identity validation
+
+Tests MUST feed the same raw provider-local observation/event ID from different authoritative tenant/source/generation scopes and prove both observations are accepted and projected independently. Exact redelivery of the same canonical scoped identity must deduplicate. Untrusted/provider payload fields must not be able to forge another scope or collapse two authoritative sources into one deduplication identity.
+
 ## Tenant relocation
 
-Telemetry is included in the relocation manifest. Large historical datasets may move asynchronously or via provider/storage-native transfer, but cutover must define which durable acceptance boundary is authoritative for new observations, transfer/replay watermarks, source generation/order-token continuity, pending transition/signal intent continuity, and how historical queries span/complete migration without split writes.
+Telemetry is included in the relocation manifest. Large historical datasets may move asynchronously or via provider/storage-native transfer, but cutover must define which durable acceptance boundary is authoritative for new observations, transfer/replay watermarks, canonical observation identity scope/source-generation continuity, pending transition/signal intent continuity, and how historical queries span/complete migration without split writes.
 
 No observation may be durably accepted as new authoritative input in both source and target after the relocation fence.

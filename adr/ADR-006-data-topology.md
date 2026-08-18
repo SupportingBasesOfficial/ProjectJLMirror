@@ -29,9 +29,11 @@ High-volume telemetry SHALL be behind a separate storage port/plane. PostgreSQL 
 
 When historical telemetry and transactional current-state live in different persistence authorities, ingestion SHALL NOT perform an uncoordinated dual write and then acknowledge success.
 
-Each accepted observation has a stable `observation_id` (or equivalent source identity) and exactly one declared **durable acceptance boundary** before downstream projections. The implementation may use a durable telemetry ingress journal/log, or a transactional write plus outbox when the transactional store is the acceptance authority. Historical samples, current-state projections and derived domain/integration signals are then produced idempotently from that durable handoff.
+Each accepted observation has a canonical scoped deduplication identity, conceptually `(observation_identity_scope, observation_id)`, and exactly one declared **durable acceptance boundary** before downstream projections. `observation_identity_scope` is non-null and derived from trusted tenant/global, provider/integration/source and source-generation context as required by the producer contract. A provider-local observation/event/sequence ID is not assumed globally unique across tenants or integrations; the same raw ID in a different authoritative scope remains a different observation. A constant/global scope is allowed only when global uniqueness across all producers for the full deduplication window is explicitly proven.
 
-If a specialized telemetry store itself is the durable acceptance authority, it must provide an accepted replay/checkpoint/reconciliation mechanism sufficient to rebuild or repair downstream current-state/signals. Provider acknowledgement/ingestion success is not emitted before the durable acceptance boundary succeeds.
+The implementation may use a durable telemetry ingress journal/log, or a transactional write plus outbox when the transactional store is the acceptance authority. Historical samples, current-state projections and derived domain/integration signals are then produced idempotently from that durable handoff using the persisted canonical identity.
+
+If a specialized telemetry store itself is the durable acceptance authority, it must provide an accepted replay/checkpoint/reconciliation mechanism sufficient to rebuild or repair downstream current-state/signals and enforce/prove the scoped observation identity contract. Provider acknowledgement/ingestion success is not emitted before the durable acceptance boundary succeeds.
 
 ### Artifact/object cross-store consistency
 
@@ -53,6 +55,7 @@ Ephemeral cache/pub-sub state SHALL NOT be durable business truth. Short-lived s
 - well-understood migration/backup tooling;
 - telemetry can evolve independently when volume demands it;
 - telemetry specialization does not introduce an implicit crash-prone dual write;
+- provider-local telemetry IDs cannot collide across authoritative tenant/source scopes merely because their raw values match;
 - object storage can scale binary artifacts without pretending metadata/object creation is atomic;
 - artifact bytes remain discoverable/reconcilable for retention, erasure and recovery.
 
@@ -60,7 +63,7 @@ Ephemeral cache/pub-sub state SHALL NOT be durable business truth. Short-lived s
 - PostgreSQL becomes a deliberate core dependency;
 - pooled cell database remains a shared failure resource;
 - data-plane routing/backup and migration need strong operations;
-- separate telemetry storage requires durable ingestion identity, projection checkpoints and reconciliation;
+- separate telemetry storage requires durable ingestion identity, scoped dedup namespace, projection checkpoints and reconciliation;
 - artifact object storage requires staged lifecycle, reconciliation and governed orphan cleanup.
 
 ## Validation
@@ -70,6 +73,7 @@ Ephemeral cache/pub-sub state SHALL NOT be durable business truth. Short-lived s
 - PITR/restore rehearsal;
 - telemetry benchmark before selecting retention/storage specialization;
 - crash/fault injection at every telemetry handoff boundary proves no accepted observation is silently split between authorities and duplicate retries are idempotent;
+- telemetry identity tests reuse the same provider-local observation ID across distinct tenant/source/generation scopes and prove neither legitimate observation suppresses the other, while exact same-scope replay deduplicates;
 - artifact fault injection before upload, after upload/before metadata finalize, after finalize/before response and during delete/erasure proves no completed-looking artifact points to absent/wrong bytes and no protected object remains indefinitely undiscoverable/unmanaged;
 - artifact reconciliation validates stable identity, object version/checksum and current governance before release or destructive cleanup;
 - no application superuser credentials in normal runtime.

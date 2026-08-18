@@ -11,7 +11,7 @@ A protected first-party browser connection requires an accepted BFF-minted conne
 
 For replay resistance, capability admission also requires an atomic single-winner claim/consume against shared replay state before `101`. A replica-local or read-only "unused" check is insufficient in a horizontally scaled gateway because concurrent replicas could otherwise both admit the same single-use capability.
 
-Every protected subscription also requires current authorization for its tenant/resource scope, and that authority MUST remain fresh for the lifetime of the subscription. Handshake authorization and subscription authorization are separate gates; passing the former does not authorize arbitrary later subscriptions.
+Every protected subscription also requires current authorization for its tenant/resource scope **and current trusted tenant placement/admission generation**, and both authorities MUST remain fresh for the lifetime of the subscription. Handshake authorization and subscription authorization are separate gates; passing the former does not authorize arbitrary later subscriptions.
 
 Logical realtime envelope:
 
@@ -69,23 +69,30 @@ If replay state is restored to an older point, the platform reconciles consumed 
 
 If a gateway successfully consumes a single-use capability and then fails before completing the upgrade, the capability remains consumed and the client obtains a new one. The design prefers fail-safe credential burning over reopening replay eligibility after an ambiguous handshake failure.
 
-## Realtime authorization lifecycle
+## Realtime authorization and placement lifecycle
 
-Long-lived connections do not freeze authorization at handshake time.
+Long-lived connections do not freeze authorization or tenant placement at handshake time.
 
 The gateway must support:
 
 - current authorization during the HTTP handshake before accepting a protected browser WebSocket upgrade;
 - replay-authority continuity validation before consuming a capability;
 - atomic shared single-winner capability consumption before `101`;
-- fresh authorization for each protected subscription;
+- fresh authorization and current trusted placement/admission generation for each protected subscription;
 - active invalidation/revocation when session, membership, role/permission or tenant access changes;
-- removal of affected subscriptions or connection termination after revocation;
-- periodic bounded authorization revalidation as defense in depth;
-- fail-closed protected admission/delivery when current authorization, replay-state continuity or replay-consumption uniqueness cannot be safely established;
-- fresh evaluation on reconnect.
+- placement-generation invalidation/retirement when a tenant relocates between cells;
+- removal of affected subscriptions or connection termination after authorization revocation or source-placement retirement;
+- periodic bounded authorization and placement/admission-generation revalidation as defense in depth;
+- fail-closed protected admission/delivery when current authorization, current placement generation, replay-state continuity or replay-consumption uniqueness cannot be safely established;
+- fresh authorization and placement resolution on reconnect/resubscribe.
 
-An authorization revision/generation or equivalent mechanism may be used to efficiently identify stale capabilities/sockets. The accepted propagation/revalidation bound is a security/SLO parameter and may not be unlimited.
+An authorization revision/generation or equivalent mechanism may be used to efficiently identify stale authorization state. A placement/admission generation such as trusted `placement_version`/cell admission generation identifies whether a tenant subscription still belongs on the current gateway/cell. The accepted propagation/revalidation bounds are security/reliability SLO parameters and may not be unlimited.
+
+### Placement changes and long-lived sockets
+
+A protected tenant subscription admitted on a cell is associated with the placement/admission generation current at subscription time. When relocation retires that generation, the source gateway must stop delivery for the affected tenant and remove the subscription or terminate the connection within the accepted bound. A multi-tenant connection may remain only for subscriptions whose placement generation remains current.
+
+The normal recovery path is client resubscription through the logical route: re-resolve current placement, reauthorize on the target generation, then snapshot/resynchronize authoritative API/read-model state. A best-effort relocation hint may accelerate this, but missed hints/invalidation messages are caught by bounded placement-generation revalidation. An open TCP/WebSocket transport on the source does not make a retired tenant subscription authoritative or healthy.
 
 ## Realtime topology
 
@@ -96,13 +103,13 @@ Committed state / integration event
 Realtime projection/fanout
         |
         v
-Authorized cell gateway
+Authorized current-placement cell gateway
         |
         v
 Connected client
 ```
 
-The selected pub/sub/fanout technology is replaceable behind the realtime port. Ephemeral fanout is not the authority for either business state or authorization truth.
+The selected pub/sub/fanout technology is replaceable behind the realtime port. Ephemeral fanout is not the authority for either business state, authorization truth or tenant placement truth.
 
 ## Cache classes
 
@@ -114,7 +121,7 @@ Derived/reconstructable values. On cache loss, bypass/fallback to authoritative 
 
 ### Routing/placement cache
 
-Contains trusted, versioned Control Plane placement metadata. May serve stable traffic only within bounded policy and must never override newer placement state.
+Contains trusted, versioned Control Plane placement metadata. May serve stable traffic only within bounded policy and must never override newer placement/admission state. Long-lived realtime subscriptions must revalidate the generation they were admitted under; a socket cannot indefinitely pin stale placement because a cache entry or connection stayed alive.
 
 ### Authorization/session acceleration cache
 

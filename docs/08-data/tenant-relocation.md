@@ -6,7 +6,7 @@
 
 ## Goal
 
-Move a tenant between cells without changing logical tenant/resource identities, without split authoritative writes and without trusting stale routing from requests/jobs. When the relocation mechanism is used for point-in-time recovery, it also preserves reconciled safety/accountability/security-authority/governance continuity across the recovery interval.
+Move a tenant between cells without changing logical tenant/resource identities, without split authoritative writes, without trusting stale routing from requests/jobs and without leaving long-lived realtime subscriptions attached to a retired source placement generation. When the relocation mechanism is used for point-in-time recovery, it also preserves reconciled safety/accountability/security-authority/governance continuity across the recovery interval.
 
 ## Preconditions
 
@@ -16,6 +16,7 @@ Move a tenant between cells without changing logical tenant/resource identities,
 - relocation operation has durable Control Plane state;
 - tenant-specific data classes/artifacts/telemetry are inventoried in a migration manifest;
 - pending async/process state is inventoried;
+- active realtime subscription retirement/resubscription behavior for the tenant is defined;
 - rollback boundary is declared before execution;
 - for recovery-driven relocation, recovery point `R`, current-source write fence `F` strategy and reconciliation classes are declared.
 
@@ -41,6 +42,7 @@ Post-cutover failure -> FORWARD_RECOVERY or controlled reverse relocation; never
 - validate target schema/capacity;
 - establish migration manifest/checkpoints;
 - establish async/outbox/job migration policy and watermarks;
+- establish realtime placement-generation retirement/resubscription policy;
 - ensure source remains authoritative;
 - mark placement `migrating` with current `placement_version`.
 
@@ -74,10 +76,11 @@ A normal relocation catches forward all required authoritative state. A recovery
 8. pending/unpublished outbox, inbox/deduplication, idempotency and owner-process state required for continuation is synchronized exactly according to manifest;
 9. for recovery-driven relocation, required security-authority continuity through `F` is synchronized/reconciled, including later session/credential revocations where applicable, membership disablement/revocation, permission/scope removals, tenant suspension/access-denial state and authorization/revocation generations or equivalent freshness markers;
 10. for recovery-driven relocation, required governance continuity through `F` is synchronized/reconciled, including applicable governed deletion/erasure or anonymization decisions and durable tombstones, current legal-retention/legal-hold state including relevant hold placement/release decisions, and approved cryptographic-erasure/key-destruction decisions/evidence whose loss could revive an older usable key path;
-11. final telemetry/artifact delta required for cutover is synchronized or explicitly marked for post-cutover historical completion;
-12. stale source writers are rejected even if they hold cached old placement.
+11. source realtime admission for the tenant's current placement generation enters draining/retiring state: no new protected tenant subscription may be admitted on a generation that will be retired by cutover;
+12. final telemetry/artifact delta required for cutover is synchronized or explicitly marked for post-cutover historical completion;
+13. stale source writers are rejected even if they hold cached old placement.
 
-The local write fence is critical: Control Plane cache invalidation alone is not sufficient protection.
+The local write fence is critical: Control Plane cache invalidation alone is not sufficient protection. The same principle applies to realtime: a placement-cache invalidation signal alone is not enough if the source gateway can continue treating an old-generation subscription as current.
 
 ## Async ownership at cutover
 
@@ -117,12 +120,34 @@ After those gates pass:
 
 - activate target tenant admission for the new placement generation;
 - atomically update Control Plane placement to target `cell_id` and increment `placement_version`;
+- retire the old source placement/admission generation for protected realtime subscriptions as part of the cutover authority change;
 - invalidate/propagate placement change;
-- route new units of work to target;
-- target schedulers/workers acquire tenant work only after target admission is authoritative;
-- source remains permanently write-fenced for that generation.
+- route new units of work and new protected tenant subscriptions to target;
+- target schedulers/workers/realtime subscriptions acquire tenant work/scope only after target admission is authoritative;
+- source remains permanently write-fenced for that generation;
+- source gateway removes the affected tenant subscriptions bound to the retired generation or terminates their connection; a multi-tenant connection may remain only if the relocated tenant's stale subscriptions are removed.
 
 Jobs/messages created before cutover re-resolve logical placement. Work that is safe to continue is re-enqueued/redirected according to job policy; stale physical routing is rejected.
+
+## Realtime subscriptions at cutover
+
+A protected tenant realtime subscription is bound to the tenant's current trusted placement/admission generation when the subscription is authorized. That binding is revalidated during the long-lived subscription lifecycle; a source-cell subscription does not retain authority merely because its WebSocket transport remains open.
+
+When relocation increments `placement_version` or retires the source admission generation, every affected old-generation source subscription becomes stale. The source gateway SHALL stop protected delivery for that tenant and remove the affected subscription or close the connection within the accepted bounded relocation-invalidation interval. A missed invalidation signal is caught by bounded placement/admission-generation revalidation; an old source socket MUST NOT remain apparently healthy and tenant-current indefinitely after the source generation is retired.
+
+The default handoff is **retire and resubscribe**, not transparent socket transfer:
+
+```text
+source subscription bound to generation N
+        -> generation N retired / placement moves
+        -> source subscription removed or connection closed
+        -> client re-resolves through logical BFF/realtime path
+        -> fresh authorization + current placement generation N+1
+        -> subscribe on target
+        -> snapshot/resynchronize authoritative state
+```
+
+A safe best-effort relocation/resubscribe hint MAY accelerate reconnection, but correctness does not depend on the hint being delivered. Any future transparent transfer mechanism must re-establish current authorization, trusted target placement/admission generation and replay/resynchronization semantics; copying socket/subscription memory across cells is not authority.
 
 ## VERIFYING
 
@@ -142,6 +167,8 @@ Post-cutover verification is defense in depth. Validate:
 - provider integrations/secrets references;
 - scheduled work ownership;
 - no accepted writes/effectful worker ownership at source after fence;
+- no protected tenant realtime subscription remains authorized on the retired source placement generation beyond the accepted invalidation/revalidation bound;
+- a reconnect/resubscribe resolves the target generation and snapshot/resync exposes current target-backed authoritative state;
 - for recovery, no completed `(R, F]` irreversible effect became retry-eligible and required later audit/governance evidence remains available;
 - representative API/worker/realtime flows.
 

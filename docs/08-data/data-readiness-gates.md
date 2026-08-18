@@ -71,6 +71,8 @@ If mutation emits work/events/signals, consumes at-least-once messages, or expos
 - inbox/dedup identity is durable where duplicate effect would be unsafe;
 - inbox uniqueness includes a non-null canonical `message_identity_scope` derived from trusted tenant/source/producer context unless the consumer contract explicitly proves `message_id` is globally unique across every producer for the full deduplication window;
 - the same raw `message_id` from different authoritative scopes cannot suppress another tenant/source message, while exact redelivery in the same scope deduplicates;
+- accepted telemetry observation deduplication uses a non-null canonical trusted `observation_identity_scope` plus stable observation identity unless the producer contract explicitly proves global uniqueness across all producers for the full deduplication window;
+- the same raw provider-local telemetry observation/event ID from different tenant/integration/source/generation scopes cannot suppress another legitimate observation, while exact replay in the same trusted scope deduplicates;
 - co-resident inbox receipt completion and protected consumer effect share one transaction/atomic boundary;
 - receipt-first without durable effect completion is prohibited because it can suppress an effect that never committed;
 - effect-first without durable receipt/result linkage is prohibited because redelivery can duplicate the effect;
@@ -142,3 +144,5 @@ For high-volume tables/streams:
 Tenant-scoped state can be selected, copied, validated and fenced by immutable `tenant_id`. Physical location/schema/server identifiers are not embedded as business identity.
 
 For recovery-driven relocation, the target can receive/reconcile required safety/accountability/security-authority/governance continuity state without reapplying all business mutations that the recovery intentionally rolls back. Target admission remains inactive until that continuity is validated; post-cutover verification is defense in depth, not the first security/governance gate.
+
+Long-lived protected realtime subscriptions are placement/admission-generation-bound. A relocation cannot complete while the old source generation can indefinitely retain the relocated tenant's subscription as current: affected source subscriptions are invalidated/removed or their connection is terminated within the accepted bound, and fresh target subscription/resync resolves the new placement generation.

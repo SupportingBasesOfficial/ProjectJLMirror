@@ -6,7 +6,7 @@
 
 ## Context
 
-Operators need near-real-time alerts, health/state updates and execution progress. Realtime transport is lossy across reconnects and multi-replica fanout; treating it as authoritative creates missed-state and duplicate-delivery bugs. Tenant/topic collisions are a security risk. Long-lived connections also outlive individual authorization decisions, so authorization checked only at connect/join time can become stale after membership, permission, session or tenant-state changes. Browser WebSockets additionally require explicit cross-site handshake protection because ambient cookies can be attached by a hostile origin and unauthenticated upgrades can consume persistent gateway resources. A short-lived connection capability is not sufficient by itself if authorization is revoked after issuance but before presentation, and single-use/replay-bounded semantics are not sufficient if multiple gateway replicas can concurrently observe the same capability as unused. Replay safety is also incomplete if the shared replay authority can forget consumed state while a signed capability remains valid.
+Operators need near-real-time alerts, health/state updates and execution progress. Realtime transport is lossy across reconnects and multi-replica fanout; treating it as authoritative creates missed-state and duplicate-delivery bugs. Tenant/topic collisions are a security risk. Long-lived connections also outlive individual authorization decisions and tenant placement generations, so authorization checked only at connect/join time can become stale after membership, permission, session, tenant-state or relocation changes. Browser WebSockets additionally require explicit cross-site handshake protection because ambient cookies can be attached by a hostile origin and unauthenticated upgrades can consume persistent gateway resources. A short-lived connection capability is not sufficient by itself if authorization is revoked after issuance but before presentation, and single-use/replay-bounded semantics are not sufficient if multiple gateway replicas can concurrently observe the same capability as unused. Replay safety is also incomplete if the shared replay authority can forget consumed state while a signed capability remains valid.
 
 Drivers: `FR-ALT-002`, `FR-ALT-004`, `INV-REALTIME-001`, `SEC-AUTHZ-*`, `SEC-BROWSER-*`, `SEC-ABUSE-*`, `TM-003`, `TM-004`, `QA-OBS-001`.
 
@@ -61,17 +61,26 @@ The implementation SHALL support all of the following semantics:
 - protected connection establishment evaluates authorization that is current at handshake time, not merely at capability issuance;
 - capability replay/redemption uses shared atomic single-winner semantics before `101`;
 - replay-authority continuity prevents consumed capabilities from becoming redeemable after state loss/restart/restore;
-- every new protected subscription evaluates current authorization;
+- every new protected subscription evaluates current authorization and current trusted tenant placement/admission generation;
 - authorization/session/membership changes that can remove access produce an invalidation/revocation signal or equivalent mechanism capable of reaching active realtime gateways;
 - affected subscriptions are re-evaluated and removed, or the connection is terminated, when access is revoked;
-- periodic bounded revalidation provides defense in depth when an invalidation signal is missed or delayed;
-- reconnect always performs fresh authentication/authorization rather than inheriting prior subscription authority;
-- a gateway that cannot safely establish current authorization, replay-consumption uniqueness or replay-state continuity fails closed for new protected admission/delivery;
+- tenant relocation/placement-generation retirement invalidates affected source-cell subscriptions or terminates their connection; a transport remaining open is not evidence that its tenant subscription remains current;
+- periodic bounded authorization **and placement/admission-generation** revalidation provides defense in depth when an invalidation signal is missed or delayed;
+- reconnect always performs fresh authentication/authorization and current placement resolution rather than inheriting prior subscription authority;
+- a gateway that cannot safely establish current authorization, current placement/admission generation, replay-consumption uniqueness or replay-state continuity fails closed for new protected admission/delivery;
 - any accepted propagation/revalidation delay is explicitly bounded by a later security/SLO policy rather than being unlimited.
 
 An authorization generation/version or equivalent freshness marker MAY be used so gateways can detect stale authorization state without embedding mutable permission sets as permanent socket authority.
 
-Clients SHALL tolerate duplicate delivery, reconnect and missed transient messages. On reconnect/gap detection, clients re-query authoritative API/read models or use a bounded replay mechanism where a feature explicitly provides one.
+### Placement-generation freshness and relocation
+
+A protected tenant subscription is bound to the trusted tenant placement/admission generation that was current when the subscription was admitted. It is not permanently bound to the physical gateway on which its WebSocket happened to be created.
+
+When tenant relocation retires the source generation or increments `placement_version`, the old source subscription becomes stale. The source gateway SHALL stop protected delivery for that tenant and remove the affected subscription or terminate the connection within the accepted bounded relocation-invalidation interval. If a multi-tenant connection remains open, only subscriptions whose placement/admission generation is still current may remain active.
+
+Correctness does not depend solely on receiving an invalidation message: bounded generation revalidation detects missed/delayed relocation signals. The default recovery path is to reconnect/resubscribe through the logical BFF/realtime route, resolve the current target placement, reauthorize, and snapshot/resynchronize authoritative state. A future transparent subscription transfer is allowed only if it re-establishes current authorization, target placement generation and resynchronization semantics; transport memory from the source is not authority.
+
+Clients SHALL tolerate duplicate delivery, reconnect and missed transient messages. On reconnect/gap detection or placement-generation retirement, clients re-query authoritative API/read models or use a bounded replay mechanism where a feature explicitly provides one.
 
 Durable events/jobs and database state remain authoritative. Ephemeral pub/sub may be used behind the gateway but loss of ephemeral fanout must not corrupt business state.
 
@@ -84,23 +93,25 @@ Durable events/jobs and database state remain authoritative. Ephemeral pub/sub m
 - no false exactly-once promise;
 - reconnect semantics are explicit;
 - revocation/permission changes do not leave indefinitely authorized stale sockets;
+- tenant relocation cannot leave an old source subscription indefinitely presenting itself as current after its placement generation is retired;
 - revocation between capability mint and presentation cannot obtain protected socket admission merely because the capability has not expired;
 - protected browser upgrades fail before persistent socket admission when cross-site/capability/current-authorization/replay-consumption checks fail.
 
 ### Negative / cost
 - connection lifecycle/heartbeats/backpressure need operations;
-- authorization invalidation and periodic revalidation add coordination/load;
+- authorization and placement-generation invalidation/periodic revalidation add coordination/load;
 - BFF connection-capability minting and shared atomic replay-consumption add a browser realtime control path;
 - replay authority requires continuity for the capability window or an epoch/generation invalidation mechanism;
 - pre-upgrade Origin/capability/current-authorization/admission/consume validation must be available on the handshake path;
 - fail-safe consume-before-upgrade can burn a capability on gateway failure and require remint;
 - replay-authority recovery may burn all capabilities from an affected epoch and require remint;
+- tenant relocation may intentionally force affected subscriptions/connections to resubscribe and resynchronize;
 - some edge/serverless platforms may be unsuitable for long-lived connections;
 - replay/current-state query paths must exist.
 
 ## Validation
 
-Test cross-tenant subscription attempts, reconnect storms, duplicate delivery, gateway restart, fanout dependency failure and stale authorization.
+Test cross-tenant subscription attempts, reconnect storms, duplicate delivery, gateway restart, fanout dependency failure, stale authorization and placement relocation.
 
 A release test MUST establish a protected subscription, then revoke membership/permission/session or suspend tenant access and verify that protected delivery stops according to the accepted bounded revocation policy without waiting for a manual reconnect. Failure to terminate/restrict a known unauthorized live subscription is release-blocking.
 
@@ -110,10 +121,12 @@ Replay-concurrency tests MUST present one single-use capability concurrently to 
 
 Replay-authority recovery tests MUST consume a capability, then restart/lose/restore the replay-state authority while that capability remains cryptographically valid. The old capability MUST remain rejected: either its registered consumed state survives/reconciles, or an advanced replay epoch invalidates it. Tests MUST prove that absent state after restart is rejected rather than interpreted as unused.
 
+Relocation tests MUST keep an active protected tenant subscription on the source gateway while the tenant cuts over to a new cell/placement generation. The retired source subscription must stop delivery and be removed/terminated within the accepted bound, and a reconnect/resubscribe must resolve the target generation and recover current target-backed state through snapshot/resync. A source socket remaining apparently healthy while indefinitely missing target updates is release-blocking.
+
 Security tests MUST also verify protected first-party browser handshakes from untrusted/null origins, with expired/replayed/wrong-scope/wrong-tenant capabilities, or with ambient cookie alone are rejected **before upgrade** and never receive `101`/persistent protected socket admission.
 
 A missed realtime frame must be recoverable through authoritative state.
 
 ## Exit / revisit conditions
 
-SSE or another transport may replace/supplement WebSocket for unidirectional/public workloads if it materially reduces cost/complexity while preserving these authorization, atomic replay-consumption, replay-authority continuity, pre-admission cross-site and recovery semantics.
+SSE or another transport may replace/supplement WebSocket for unidirectional/public workloads if it materially reduces cost/complexity while preserving these authorization, atomic replay-consumption, replay-authority continuity, placement-generation freshness, pre-admission cross-site and recovery semantics.

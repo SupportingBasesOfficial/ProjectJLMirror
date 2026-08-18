@@ -10,6 +10,7 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Tenant isolation | Known cross-tenant IDs leak zero protected rows through API, repository, reporting, realtime, export and workers |
 | Placement cache | Stable active traffic can use bounded cache; migration/suspension invalidates or is rejected by destination admission/version |
 | Relocation | Concurrent stale source writer is fenced; no source writes accepted after cutover; target becomes sole authority |
+| Relocation realtime generation | Keep an active protected tenant subscription on source during cutover; placement/admission generation retirement removes that source subscription or closes its connection within the accepted bound; reconnect/resubscribe resolves target generation and snapshot/resync observes current target-backed state rather than an indefinitely healthy stale source socket |
 | Recovery-driven relocation pre-cutover | Revoke session/membership/permission/tenant access in `(R,F]`; target admission remains non-active until later deny/revocation generation plus reliability/audit/external-effect/governance continuity is reconciled and validated; `VERIFYING` is only defense in depth |
 | Authorization | UI omission cannot bypass server policy; cross-tenant privileged operations are distinct and audited |
 | Browser/BFF | First-party browser never receives/persists long-lived platform access or refresh credentials; browser protected API flow remains behind confidential BFF session boundary |
@@ -17,7 +18,7 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Browser realtime authorization freshness | Mint a valid capability, then revoke/suspend session, membership, permission/scope or tenant access before presentation; gateway proves current underlying authority and rejects before `101` despite valid capability signature/expiry |
 | Browser realtime replay concurrency | Present one single-use capability concurrently to multiple gateway replicas; shared atomic consume/claim yields exactly one winner and at most one `101`, every loser is rejected; crash the winner after consume/before `101` and prove the capability remains consumed and requires remint |
 | Browser realtime replay-authority recovery | Consume a capability, then restart/lose/restore replay authority while the signed capability is still valid; old capability remains rejected because registered consumption survives/reconciles or replay epoch advances; missing replay state is never treated as unused |
-| Realtime subscription authorization | After successful handshake, each protected subscription receives fresh tenant/resource authorization; active protected subscription loses access after membership/permission/session/tenant revocation within accepted bound; missed invalidation is caught by bounded revalidation |
+| Realtime subscription authorization | After successful handshake, each protected subscription receives fresh tenant/resource authorization and current placement/admission generation; active protected subscription loses access after membership/permission/session/tenant revocation within accepted bound; missed authorization or placement invalidation is caught by bounded revalidation |
 | Transactions | Mutation + required audit/audit-intent + outbox commit atomically; injected dispatcher failure loses no committed event/audit intent |
 | Inbox namespace isolation | Feed identical raw `message_id` values through the same consumer contract from different authoritative tenant/source scopes; both legitimate messages execute independently; exact redelivery in the same trusted scope deduplicates; untrusted payload cannot choose the dedup namespace |
 | Inbox co-resident effect completion | Crash before co-resident inbox/effect commit leaves neither completed receipt nor committed effect; crash after atomic commit but before broker ack/redelivery leaves both receipt/result and effect durable so replay does not execute again |
@@ -44,6 +45,7 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Realtime outage | Authoritative write/read continues; reconnect/resync restores client state |
 | Control Plane outage | Stable admitted traffic behavior matches policy; topology-changing operations fail closed |
 | Cell DB outage | Affected cell is removed/degraded; unrelated cells continue |
+| Telemetry identity namespace | Feed the same raw provider-local observation/event ID from different trusted tenant/integration/source/generation scopes; all legitimate observations are accepted independently; exact replay in the same canonical scope deduplicates; provider/untrusted payload cannot choose a scope that collides with another authority |
 | Telemetry crash consistency | Crash at every durable-ingress/current-state/history/signal boundary leaves an accepted observation replayable/reconcilable; duplicate retry is idempotent; no uncoordinated dual-write success is acknowledged |
 | Telemetry ordering | Deliver observation N+1 before N and replay partitions out of order; latest/current projection remains at N+1 (or newer ordering token), stale observation is retained historically but cannot regress current state or emit a false latest-state transition |
 | Telemetry state/signal crash | Advance current projection, crash before normal post-update code, restart/replay; stable transition intent still causes the required signal exactly once logically under at-least-once transport |
@@ -67,6 +69,7 @@ The following failures block release regardless of other test success:
 - application runtime can bypass tenant RLS/data policy unexpectedly;
 - interactive SQL principal can alter the tenant authority trusted by pooled data policy;
 - stale placement can write after relocation fence/cutover;
+- relocation leaves a protected tenant realtime subscription active/current on the retired source placement generation beyond the accepted invalidation/revalidation bound, allowing an apparently healthy source socket to miss target updates indefinitely;
 - recovery-driven relocation activates target admission or routes protected/effectful traffic before required `(R,F]` security-authority, reliability, audit, governance and external-effect continuity is reconciled;
 - a valid but stale realtime capability can receive `101` after its underlying session/membership/permission/tenant authority was revoked before presentation;
 - two or more gateway replicas can concurrently redeem the same single-use realtime capability because replay state is checked non-atomically or only replica-locally;
@@ -103,6 +106,7 @@ The following failures block release regardless of other test success:
 - artifact cleanup can destroy held data or re-release governed-out data because object deletion/recovery ignored current governance state;
 - delayed user-requested export can execute/release after required authorization has been revoked;
 - delayed user-requested import can mutate protected tenant data after request-time membership/permission/tenant authority has been revoked before execution or resume;
+- provider-local telemetry observation/event IDs from different authoritative tenant/integration/source/generation scopes can collide and cause one legitimate observation to suppress another;
 - telemetry ingestion acknowledges an observation while neither a durable replayable acceptance record nor an equivalent recoverable authority exists for downstream projections;
 - out-of-order/replayed telemetry can replace a newer current/latest state or produce a stale latest-state transition;
 - tenant point-in-time recovery makes an already-completed post-recovery-point irreversible effect eligible to execute again because dedup/idempotency/process outcome evidence was rolled back;

@@ -30,7 +30,7 @@
 
 **SEC-AUTHZ-005** — Authorization/session generation, revocation tombstone or equivalent freshness state used to reject stale authority SHALL NOT move backwards as an incidental effect of business/domain or infrastructure recovery. If post-recovery authorization freshness cannot be established safely, protected admission SHALL fail closed. Reversing a preserved revocation requires a distinct currently authorized and audited security operation.
 
-**SEC-AUTHZ-006** — A recovered tenant, cell or other authority scope SHALL remain non-authoritative for protected/effectful traffic until applicable post-recovery-point security-authority, reliability/accountability and external-effect continuity has been reconciled through the accepted recovery boundary. Recovery uncertainty SHALL NOT be converted into authorization or retry eligibility.
+**SEC-AUTHZ-006** — A recovered tenant, cell or other authority scope SHALL remain non-authoritative for protected/effectful traffic until applicable post-recovery-point security-authority, reliability/accountability, governance and external-effect continuity has been reconciled through the accepted recovery boundary. Recovery uncertainty SHALL NOT be converted into authorization, data re-exposure or retry eligibility.
 
 ## Browser and realtime
 
@@ -68,7 +68,7 @@
 
 **SEC-EXEC-002** — Direct SQL/data administration SHALL use dedicated database/runtime privileges and SHALL NOT run as database superuser or unrestricted application owner.
 
-**SEC-EXEC-003** — Export/import SHALL validate authorization at request time and again before delayed/asynchronous execution and release/download. A delayed user-requested artifact SHALL NOT be released solely because the requester was authorized when the job was created.
+**SEC-EXEC-003** — Export/import SHALL validate authorization when the request/process is created and again immediately before delayed/asynchronous protected execution. Delayed exports/reports SHALL additionally reauthorize before release/download. A delayed import SHALL NOT mutate tenant data solely because the requester was authorized when the job was queued; workers SHALL re-establish current tenant context and current membership/permission/scope before protected mutation, and stale persisted human authority SHALL NOT be treated as continuing authorization.
 
 **SEC-EXEC-004** — Caller-authored SQL SHALL NOT be allowed to replace the tenant-binding input trusted by RLS/data policy. Interactive SQL against pooled protected data SHALL use a tenant binding the SQL principal cannot alter (for example a tenant-bound database principal/protected mapping) or a mediated/physically isolated query surface with equivalent guarantees.
 
@@ -82,11 +82,21 @@
 
 **SEC-AUD-004** — When the final audit sink is external, the atomically committed audit-intent evidence payload SHALL be append-only/protected from update or delete by normal application and dispatcher roles. Mutable delivery/retry metadata SHALL be segregated from immutable accountability evidence and governed retention/deletion SHALL require separate administrative authority.
 
+## Data governance and recovery
+
+**SEC-GOV-001** — A point-in-time recovery SHALL NOT implicitly reverse a governed deletion/erasure, anonymization/pseudonymization or approved cryptographic-erasure decision that became effective after the selected recovery point. Durable tombstone/decision evidence required to prevent erased or de-identified protected data from becoming authoritative again SHALL survive or be reconciled forward before recovered data is exposed.
+
+**SEC-GOV-002** — Current legal-retention/legal-hold state that constrains deletion, transformation, release or retention SHALL survive or be reconstructed across recovery before destructive lifecycle actions resume. Applicable post-recovery-point hold placement or release decisions SHALL be reconciled from current authoritative governance state rather than inferred from the restored snapshot.
+
+**SEC-GOV-003** — If post-recovery erasure/anonymization status cannot be established safely, affected protected data SHALL remain unavailable rather than be re-exposed. If legal-retention status cannot be established safely, destructive deletion SHALL remain blocked. Recovery uncertainty SHALL NOT be resolved by silently choosing the stale governance state at the recovery point.
+
+**SEC-GOV-004** — Recovery SHALL NOT restore or recreate an older usable cryptographic key path when the current governed intent is approved cryptographic erasure of the corresponding retained ciphertext. Erasure decision/evidence is continuity state even when the erased key material itself is intentionally unrecoverable.
+
 ## Abuse protection
 
 **SEC-ABUSE-001** — Rate/usage limits SHALL be enforceable across dimensions including principal/API key, tenant, route/operation and integration where required.
 
-**SEC-ABUSE-002** — Expensive capabilities such as reports, exports, SQL queries, automation and provider synchronization SHALL have explicit resource/concurrency controls.
+**SEC-ABUSE-002** — Expensive capabilities such as reports, exports, imports, SQL queries, automation and provider synchronization SHALL have explicit resource/concurrency controls.
 
 ## Supply chain and deployment
 

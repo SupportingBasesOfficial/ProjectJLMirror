@@ -39,13 +39,15 @@ If a specialized telemetry store itself is the durable acceptance authority, it 
 
 Generated binary artifacts SHALL be stored in object/blob storage with authoritative lifecycle metadata/reference in transactional state.
 
-Because PostgreSQL metadata and object bytes cannot be assumed to share an ACID transaction, artifact creation SHALL use a stable `artifact_id`/tenant identity, a monotonic lifecycle/upload generation and a staged lifecycle. The normal pattern commits a discoverable transactional artifact record and durable work intent before object upload, uploads bytes under a stable generation-bound non-public object identity, verifies version/checksum/size, and only then transitions metadata to terminal `READY/AVAILABLE` through a compare-and-set that proves the upload generation is still current. An equivalent storage-native staged manifest/fencing mechanism is acceptable if it provides the same discoverability, stale-writer rejection and reconciliation guarantees.
+Because PostgreSQL metadata and object bytes cannot be assumed to share an ACID transaction, artifact creation SHALL use a stable `artifact_id`/tenant identity, monotonic lifecycle/upload and delivery generations, and a staged lifecycle. The normal pattern commits a discoverable transactional artifact record and durable work intent before object upload, uploads bytes under a stable generation-bound non-public object identity, verifies version/checksum/size, and only then transitions metadata to terminal `READY/AVAILABLE` through a compare-and-set that proves the upload generation is still current. An equivalent storage-native staged manifest/fencing mechanism is acceptable if it provides the same discoverability, stale-writer rejection and reconciliation guarantees.
 
 Every upload attempt is bound to the generation that authorized it. A deletion/erasure transition advances or terminally fences that generation **before** object cleanup begins. An older worker may finish transport I/O, but it MUST NOT be able to publish/finalize its bytes as the current artifact after the generation fence. Cancellation is operational optimization, not correctness authority.
 
-Only terminal-ready metadata whose expected object identity/integrity and current generation have been verified may authorize artifact release. A crash after metadata creation, object upload, metadata finalization, response delivery or object deletion must leave a state that deterministic reconciliation can classify and repair/idempotently complete.
+Artifact delivery authority is also generation-bound. A download capability is acceptable only when the platform can make it unusable after its artifact delivery/lifecycle generation is fenced, either through an application-mediated current-state/generation check or an equivalent revocable storage/access generation. A direct signed capability that remains usable solely until expiry is not sufficient where current governance requires prompt revocation on deletion/erasure.
 
-Artifact deletion/erasure likewise uses durable intent/tombstone, metadata-level publisher fencing, idempotent object cleanup and a confirmed outcome. Confirmation is withheld until prior-generation upload/finalize attempts cannot publish and the relevant object/version inventory has been reconciled. If that proof is unavailable, the lifecycle remains `DELETING`/`RECONCILIATION_REQUIRED`; a successful delete API response alone is not proof of erasure.
+Only terminal-ready metadata whose expected object identity/integrity and current lifecycle/delivery generations have been verified may authorize artifact release. A crash after metadata creation, object upload, metadata finalization, response delivery or object deletion must leave a state that deterministic reconciliation can classify and repair/idempotently complete.
+
+Artifact deletion/erasure uses durable intent/tombstone, metadata-level publication fencing, delivery-capability fencing, idempotent object cleanup and a confirmed outcome. Confirmation is withheld until prior-generation upload/finalize attempts cannot publish, prior-generation delivery capabilities cannot release protected bytes, and the relevant object/version inventory has been reconciled. If that proof is unavailable, the lifecycle remains `DELETING`/`RECONCILIATION_REQUIRED`; a successful delete API response alone is not proof of erasure.
 
 A mutable stable object key that an already-started stale worker can recreate after deletion is not sufficient unless the selected object-store protocol provides equivalent generation/conditional-write fencing. Immutable/version-specific staging identities plus metadata-controlled publication are the default conceptual model.
 
@@ -64,15 +66,16 @@ Ephemeral cache/pub-sub state SHALL NOT be durable business truth. Short-lived s
 - provider-local telemetry IDs cannot collide across authoritative tenant/source scopes merely because their raw values match;
 - object storage can scale binary artifacts without pretending metadata/object creation is atomic;
 - artifact bytes remain discoverable/reconcilable for retention, erasure and recovery;
-- deletion/erasure cannot be invalidated by a previously authorized upload publishing after the object-delete step.
+- deletion/erasure cannot be invalidated by a previously authorized upload publishing after the object-delete step;
+- governed erasure cannot be bypassed by a previously minted delivery capability that outlives the artifact's current delivery generation.
 
 ### Negative / cost
 - PostgreSQL becomes a deliberate core dependency;
 - pooled cell database remains a shared failure resource;
 - data-plane routing/backup and migration need strong operations;
 - separate telemetry storage requires durable ingestion identity, scoped dedup namespace, projection checkpoints and reconciliation;
-- artifact object storage requires staged lifecycle, upload-generation fencing, reconciliation and governed orphan cleanup;
-- deletion confirmation may remain pending while stale upload/object-version state is reconciled.
+- artifact object storage requires staged lifecycle, upload-generation fencing, delivery-generation revocation and governed orphan cleanup;
+- deletion confirmation may remain pending while stale upload/object-version/delivery-capability state is reconciled.
 
 ## Validation
 
@@ -84,9 +87,10 @@ Ephemeral cache/pub-sub state SHALL NOT be durable business truth. Short-lived s
 - telemetry identity tests reuse the same provider-local observation ID across distinct tenant/source/generation scopes and prove neither legitimate observation suppresses the other, while exact same-scope replay deduplicates;
 - artifact fault injection before upload, after upload/before metadata finalize, after finalize/before response and during delete/erasure proves no completed-looking artifact points to absent/wrong bytes and no protected object remains indefinitely undiscoverable/unmanaged;
 - artifact deletion is raced against an already-started upload/finalize attempt and proves the delete/erasure transition fences the prior generation before cleanup, stale completion cannot publish/finalize, and `confirmed` is not recorded until prior-generation publisher/object state is reconciled;
-- artifact reconciliation validates stable identity, lifecycle generation, object version/checksum and current governance before release or destructive cleanup;
+- mint a still-valid artifact download capability, begin governed erasure before expiry and prove the older delivery generation/capability cannot release bytes before the artifact is treated as non-releasable/erased;
+- artifact reconciliation validates stable identity, lifecycle/delivery generations, object version/checksum and current governance before release or destructive cleanup;
 - no application superuser credentials in normal runtime.
 
 ## Exit / revisit conditions
 
-Revisit transactional store only with evidence that PostgreSQL cannot satisfy required consistency, scale, residency or operational requirements. Telemetry specialization is expected to be revisited earlier. Object-storage vendor/mechanism may change, but stable artifact identity, staged cross-store lifecycle, stale-writer generation fencing and governed reconciliation remain required.
+Revisit transactional store only with evidence that PostgreSQL cannot satisfy required consistency, scale, residency or operational requirements. Telemetry specialization is expected to be revisited earlier. Object-storage vendor/mechanism may change, but stable artifact identity, staged cross-store lifecycle, stale-writer generation fencing, delivery-capability fencing and governed reconciliation remain required.

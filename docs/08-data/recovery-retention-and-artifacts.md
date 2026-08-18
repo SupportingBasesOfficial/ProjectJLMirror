@@ -211,6 +211,7 @@ Large generated/exported binary content lives outside transactional PostgreSQL. 
 ```text
 artifact_id
 lifecycle_generation / upload_generation
+delivery_generation / capability generation
 stable object identity / storage reference
 current object version/reference when applicable
 tenant_id
@@ -239,6 +240,7 @@ Representative lifecycle:
 transactional metadata authority
   create artifact_id + tenant/governance/retention metadata
   lifecycle_generation = N
+  delivery_generation = D
   status = STAGING/PENDING_OBJECT
   persist stable generation-bound object attempt identity/reference
   persist durable outbox/job/process intent
@@ -261,11 +263,21 @@ COMMIT
 
 The binary upload MUST NOT be the first durable step for a protected artifact unless the selected storage protocol provides an equivalent discoverable staging manifest. In the normal contract, an artifact lifecycle record exists before object bytes are uploaded, so a crash after object upload cannot create tenant data with no durable artifact identity.
 
-Only a terminal `READY/AVAILABLE` artifact whose expected object version/identity and integrity metadata have been verified **and whose generation is still current** may be released/downloaded as complete. `STAGING`, `DELETING`, `RECONCILIATION_REQUIRED`, failed or otherwise non-terminal records are not treated as completed artifacts.
+Only a terminal `READY/AVAILABLE` artifact whose expected object version/identity and integrity metadata have been verified **and whose lifecycle/delivery generation is still current** may be released/downloaded as complete. `STAGING`, `DELETING`, `RECONCILIATION_REQUIRED`, failed or otherwise non-terminal records are not treated as completed artifacts.
 
 A stale upload attempt MAY finish transferring bytes after its generation has been fenced, but it MUST NOT be able to finalize/publish those bytes as the current artifact. Such bytes remain generation-identifiable staging/orphan state subject to reconciliation and governed cleanup.
 
 A crash after metadata creation but before upload leaves a discoverable staged record that may be safely retried or expired. A crash after upload but before metadata finalization leaves a discoverable staged record/object pair that reconciliation can verify and finalize idempotently only if its generation is still current; otherwise it is stale and cannot become ready.
+
+### Artifact delivery authority and revocation
+
+A download capability is authority to release protected bytes, not merely a convenience URL. It is bound to a specific tenant, artifact, object/version where applicable and the artifact's current **delivery/lifecycle generation**.
+
+The preferred contract is application-mediated or otherwise revocable delivery: presentation rechecks current artifact state/generation and authorization before bytes are released. A storage-native capability is acceptable only if its access generation/object version can be rendered unusable when governed deletion/erasure begins.
+
+A direct signed URL or equivalent capability that remains usable solely because its original expiry has not elapsed is **not sufficient** for an artifact whose governance policy requires prompt revocation on deletion/erasure. Such artifacts must use application-mediated delivery or an external storage/access mechanism with equivalent revocation/fencing semantics.
+
+When governed deletion/erasure begins, new delivery capability minting stops and the current delivery generation is advanced/fenced. Every outstanding capability from an older delivery generation MUST become unusable before the artifact is treated as non-releasable/erased. If this cannot be proven, lifecycle state remains `DELETING`/`RECONCILIATION_REQUIRED` and confirmed erasure is prohibited.
 
 ### Artifact reconciliation and garbage collection
 
@@ -284,19 +296,26 @@ Staging objects and orphan candidates have a bounded lifecycle/scan policy suffi
 
 ### Crash-consistent artifact deletion/erasure
 
-Deletion/erasure also spans authorities and uses an explicit **writer-fenced lifecycle**. Cancellation of workers is useful operationally but is not itself a correctness fence.
+Deletion/erasure also spans authorities and uses an explicit **writer-and-delivery-fenced lifecycle**. Cancellation of workers is useful operationally but is not itself a correctness fence.
 
-The metadata authority first makes the artifact non-releasable and advances or terminally fences its lifecycle/upload generation before object deletion begins. After that transition, every upload/finalize attempt created under an older generation is stale and MUST be unable to publish/finalize as current even if its object I/O later completes.
+The metadata authority first records the governed delete/erasure intent, stops new download-capability minting, makes the artifact unavailable to current mediated delivery and advances/fences both its lifecycle/upload generation and delivery generation. After those transitions, every upload/finalize attempt and delivery capability created under an older generation is stale and MUST be unable to publish/finalize or release protected bytes even if object I/O or a previously issued client request later completes.
 
 Representative lifecycle:
 
 ```text
 transactional metadata authority
   record governed delete/erasure intent or tombstone
-  mark artifact non-releasable / DELETING
-  advance/fence lifecycle_generation from N to N+1 (or terminal erasure generation)
+  stop new download-capability minting
+  mark artifact ERASURE_FENCING / non-releasable to mediated delivery
+  advance/fence lifecycle_generation from N to N+1
+  advance/fence delivery_generation from D to D+1
   prevent any generation <= N from finalizing/publishing
+  invalidate mediated capabilities from delivery generation <= D
 COMMIT
+        |
+        v
+revoke/fence any external storage-native delivery generation/capability
+if delivery is not fully application-mediated
         |
         v
 stop/cancel known upload workers when possible
@@ -306,23 +325,26 @@ idempotently delete/crypto-erase all object versions/attempt identities
 from generations fenced by the delete intent, under current retention/hold policy
         |
         v
-reconcile storage inventory and publisher state
+reconcile storage inventory, publisher state and delivery-capability state
         |
         v
 record confirmed deletion/erasure outcome ONLY when
-  no prior generation can still publish/finalize
+  no prior upload generation can still publish/finalize
+  no prior delivery generation/capability can still release bytes
   no relevant live object/version remains releasable
   required governance evidence is durable
 retain only metadata/evidence allowed and required by governance
 ```
 
+If an external direct capability cannot be revoked immediately, the artifact remains in an erasure-fencing state until the capability is rendered unusable; the platform MUST NOT claim prompt unavailability or confirmed erasure while that capability can still release protected bytes.
+
 A mutable stable object key that an old worker can recreate after deletion is not sufficient unless the storage protocol provides an equivalent conditional generation fence that prevents stale publication. Prefer immutable/version-specific attempt keys with metadata-controlled publication because stale attempts then remain discoverable without becoming current.
 
-A deletion/erasure outcome MUST NOT be marked confirmed merely because one delete request returned success. Confirmation proves that all upload attempts from fenced generations have lost publication authority and that the relevant object/version inventory has been reconciled. If in-flight/stale-writer state or object inventory is materially uncertain, the artifact remains `DELETING` or `RECONCILIATION_REQUIRED`; it does not become confirmed-erased optimistically.
+A deletion/erasure outcome MUST NOT be marked confirmed merely because one delete request returned success. Confirmation proves that all upload attempts from fenced generations have lost publication authority, all older delivery capabilities have lost release authority, and the relevant object/version inventory has been reconciled. If in-flight/stale-writer state, capability revocation state or object inventory is materially uncertain, the artifact remains `DELETING` or `RECONCILIATION_REQUIRED`; it does not become confirmed-erased optimistically.
 
-A metadata row is not simply deleted first while object bytes remain undiscoverable. Conversely, successful object deletion followed by a crash before metadata finalization is safe to reconcile because the stable artifact identity, generation fence and delete intent remain durable. Legal hold can block destructive object cleanup; privacy erasure can block re-exposure even when older backups still contain bytes.
+A metadata row is not simply deleted first while object bytes remain undiscoverable. Conversely, successful object deletion followed by a crash before metadata finalization is safe to reconcile because the stable artifact identity, generation fences and delete intent remain durable. Legal hold can block destructive object cleanup; privacy erasure can block re-exposure even when older backups still contain bytes.
 
-Artifact/object PITR and restore procedures reconcile metadata authority with object inventory/version/generation state before artifacts are made available. Restoring an older metadata snapshot cannot silently re-release an object governed out of use, restore an older unfenced upload generation, or permit a stale writer to republish bytes after erasure; restoring object bytes without current metadata/governance authority does not make them downloadable.
+Artifact/object PITR and restore procedures reconcile metadata authority with object inventory/version/generation and delivery-capability state before artifacts are made available. Restoring an older metadata snapshot cannot silently re-release an object governed out of use, restore an older unfenced upload/delivery generation, or permit a stale writer/capability to republish or release bytes after erasure; restoring object bytes without current metadata/governance authority does not make them downloadable.
 
 ## Delayed export/report/import authorization
 
@@ -340,7 +362,7 @@ For a user-requested delayed/asynchronous **import**:
 
 These execution-time rechecks are **mandatory**, not policy-optional, under `SEC-EXEC-003`. If membership/scope/permission or tenant access was revoked before delayed import execution, the import fails closed before mutating tenant data and records a safe audited outcome. Validation/parsing that is deliberately allowed before authorization MUST remain bounded/untrusted and MUST NOT mutate protected tenant state or reveal protected resource existence.
 
-A downloadable capability is short-lived and scoped to one artifact/tenant. It is minted/released only after the artifact lifecycle is terminal-ready and fresh authorization succeeds. If a policy requires revocation after capability issuance, delivery uses an application-mediated or otherwise revocable mechanism instead of an irrevocable permanent link.
+A downloadable capability is short-lived and scoped to one artifact/tenant/object generation. It is minted/released only after the artifact lifecycle is terminal-ready and fresh authorization succeeds. Governed deletion/erasure makes post-issuance revocation/fencing mandatory: previously issued capabilities from the retired delivery generation must become unusable before the artifact is treated as non-releasable/erased. For other artifact lifecycle changes, any additional revocation policy is defined explicitly rather than assumed from link expiry.
 
 Scheduled/system-generated exports or imports use an explicitly authorized service principal/process policy rather than inheriting stale authority from a human who once configured the schedule.
 
@@ -367,7 +389,8 @@ Scheduled recovery tests prove:
 - governed cryptographic-erasure intent is not defeated by restoring an older usable key path;
 - artifact crash points before upload, after upload/before finalize, after finalize/before response and during delete/erasure are reconciled without falsely available artifacts, untracked protected bytes or indefinite orphan retention;
 - artifact erasure races an already-started upload/finalization attempt: deletion fences the old generation before object cleanup, stale completion cannot publish/finalize, and confirmed erasure is withheld until prior-generation publisher/object state is reconciled;
-- artifact/object inventory after PITR reconciles stable artifact identity, metadata status, object version/checksum/generation and current governance before release or destructive cleanup;
+- mint a still-valid artifact download capability, begin governed erasure before capability expiry, and prove the retired delivery generation/capability can no longer release bytes before non-releasable/erased state is claimed;
+- artifact/object inventory after PITR reconciles stable artifact identity, metadata status, object version/checksum/generation, delivery-capability generation and current governance before release or destructive cleanup;
 - write-fence/cutover safety for tenant-level replacement;
 - retained-backup decryptability across key rotation/version changes;
 - measured recovery duration and data-loss window.

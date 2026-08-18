@@ -96,6 +96,8 @@
 
 **SEC-GOV-005** — Protected artifact bytes stored outside transactional metadata SHALL use a stable tenant/artifact identity and a staged/reconcilable lifecycle. Bytes SHALL NOT become releasable merely because an object upload succeeded; only verified terminal-ready metadata may authorize release. Crash/recovery/orphan cleanup SHALL remain discoverable and subject to current erasure, retention and legal-hold policy so protected object data cannot become indefinitely untracked or be destructively removed under stale governance.
 
+**SEC-GOV-006** — Governed artifact deletion/erasure SHALL fence both publication and delivery authority. Before an artifact is treated as non-releasable/erased, outstanding download capabilities from an older artifact delivery/lifecycle generation SHALL be revoked or rendered unusable through an application-mediated current-state check, revocable object/access generation or equivalent control. A direct capability that remains usable solely until its original expiry despite current governed erasure is not sufficient for an artifact whose policy requires prompt revocation. Confirmed erasure SHALL NOT be recorded while a known or materially uncertain older delivery capability can still release the protected bytes.
+
 ## Abuse protection
 
 **SEC-ABUSE-001** — Rate/usage limits SHALL be enforceable across dimensions including principal/API key, tenant, route/operation and integration where required.

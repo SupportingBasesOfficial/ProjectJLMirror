@@ -60,8 +60,10 @@ A pooled tenant table cannot ship without non-null `tenant_id`, database isolati
 - artifact upload attempts are bound to a non-null current lifecycle/upload generation or equivalent fencing token, and finalization proves that generation is still current;
 - deletion/erasure advances or terminally fences the artifact publication generation **before** object cleanup so an already-started stale upload cannot later republish/finalize bytes as current;
 - cancellation or worker lease expiry alone is not the artifact publication fence; stale attempts remain generation-identifiable and non-publishable even if transport I/O completes;
-- confirmed artifact deletion/erasure is recorded only after all prior-generation attempts are unable to publish/finalize and the relevant object/version inventory is reconciled under current governance; uncertainty leaves `DELETING`/`RECONCILIATION_REQUIRED`, not optimistic confirmation;
-- artifact creation/deletion has crash reconciliation for metadata-without-object, object-without-ready-metadata, stale-generation object attempts, missing/corrupt object, interrupted deletion/erasure and upload-vs-delete races;
+- artifact delivery/download capability authority is bound to a current delivery/lifecycle generation or equivalent revocable authority; governed deletion/erasure stops new capability minting and fences older capabilities before the artifact is treated as non-releasable/erased;
+- a direct download capability that remains usable solely until expiry is not accepted where governance requires prompt erasure revocation; use application-mediated current-state/generation checks or an equivalent revocable storage/access generation;
+- confirmed artifact deletion/erasure is recorded only after all prior-generation upload attempts are unable to publish/finalize, all prior-generation delivery capabilities are unable to release protected bytes, and the relevant object/version inventory is reconciled under current governance; uncertainty leaves `DELETING`/`RECONCILIATION_REQUIRED`, not optimistic confirmation;
+- artifact creation/deletion has crash reconciliation for metadata-without-object, object-without-ready-metadata, stale-generation object attempts, stale delivery capabilities, missing/corrupt object, interrupted deletion/erasure and upload-vs-delete races;
 - controlled staging/orphan object inventory is discoverable and subject to bounded governed reconciliation/GC; legal hold/retention/erasure policy is consulted before destructive cleanup.
 
 ## Gate D7 — Async/reliability
@@ -122,7 +124,7 @@ For any PITR scope that can roll back protected authority/reliability/governance
 - durable tombstone/decision evidence prevents backup contents from silently resurrecting data removed or de-identified after `R`;
 - current legal-retention/legal-hold placement/release state is reconciled before destructive lifecycle actions resume;
 - unresolved erasure/anonymization status keeps affected protected data unavailable, while unresolved legal-retention status blocks destructive deletion;
-- artifact metadata/object state is reconciled across PITR so restored metadata cannot falsely expose absent/wrong bytes, restored lifecycle generation cannot reopen a stale publisher, and surviving object bytes cannot remain indefinitely untracked or bypass current governance;
+- artifact metadata/object state is reconciled across PITR so restored metadata cannot falsely expose absent/wrong bytes, restored lifecycle/delivery generation cannot reopen a stale publisher or download capability, and surviving object bytes cannot remain indefinitely untracked or bypass current governance;
 - whole-cell recovery remains quarantined/non-authoritative until continuity for all affected tenants required for protected/effectful admission is reconciled;
 - unresolved external-effect outcomes are quarantined/reconciled rather than retried blindly;
 - intentionally reversing a preserved security revocation or governance decision is modeled as a separate authorized/audited recovery action rather than an implicit PITR effect.

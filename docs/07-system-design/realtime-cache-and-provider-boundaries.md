@@ -36,6 +36,7 @@ Browser --authenticated same-site--> BFF
         <-- short-lived scoped connection capability
 Browser --capability + expected Origin--> Realtime Gateway
         -- validate capability + CURRENT underlying authority -->
+        -- verify replay-authority continuity / capability registration or epoch -->
         -- atomically consume replay identity (single winner) -->
         <-- HTTP 101 only if all protected admission checks pass --
 ```
@@ -46,11 +47,25 @@ Before returning `101 Switching Protocols` for a protected first-party browser s
 - capability authenticity, expiry and intended principal/tenant/realtime scope;
 - current session/credential, membership, permission/scope and tenant-access authority for the capability scope, either through a fresh authoritative evaluation or a trusted current authorization/session generation or revocation marker;
 - applicable pre-upgrade abuse/connection-admission limits;
+- replay-authority continuity proving that the capability is eligible under the currently trusted replay state/epoch;
 - atomic replay admission by claiming/consuming the capability's unique identity in shared state as the final gate before successful upgrade.
 
 For a single-use capability, exactly one concurrent presentation can transition the capability from unused/available to consumed. Every losing handshake MUST be rejected before `101`, including presentations handled by different gateway replicas. If a bounded-use contract is selected later, the allowed use count must be enforced through an equivalently atomic shared counter/claim operation.
 
-Ambient session cookies alone are not sufficient authority for a protected direct browser socket. A revoked or stale underlying authority MUST be rejected before upgrade even when the capability's signature and expiry remain valid. If authorization freshness or atomic replay consumption cannot be established safely, no protected socket is admitted.
+Ambient session cookies alone are not sufficient authority for a protected direct browser socket. A revoked or stale underlying authority MUST be rejected before upgrade even when the capability's signature and expiry remain valid. If authorization freshness, replay-state continuity or atomic replay consumption cannot be established safely, no protected socket is admitted.
+
+### Replay-authority continuity and loss
+
+Replay-consumption state is correctness/security state for the entire capability validity/retry-safety window. It is not allowed to behave like disposable cache state.
+
+A capability that was already consumed MUST remain rejected after replay-store process restart, node loss, snapshot restore or reinitialization while its signed representation remains otherwise valid. The gateway MUST NOT interpret missing replay state as evidence that a capability is unused.
+
+The accepted implementation provides one of these equivalent contracts:
+
+- **registered-state model:** the BFF registers stable capability identity/use-bound state in the shared replay authority before the capability is returned to the browser; admission requires the registration to exist; consumed state is retained/recoverable until at least capability expiry plus accepted safety margin; or
+- **epoch/generation model:** each signed capability is bound to a trusted replay epoch/generation; replay-authority loss/reinitialization advances the current epoch before protected admission resumes, invalidating all outstanding capabilities from the lost epoch.
+
+If replay state is restored to an older point, the platform reconciles consumed state or advances the epoch before admission. If it cannot prove safe continuity or a trustworthy current epoch, protected admission remains fail closed. Reminting after an epoch advance is an accepted availability cost.
 
 If a gateway successfully consumes a single-use capability and then fails before completing the upgrade, the capability remains consumed and the client obtains a new one. The design prefers fail-safe credential burning over reopening replay eligibility after an ambiguous handshake failure.
 
@@ -61,12 +76,13 @@ Long-lived connections do not freeze authorization at handshake time.
 The gateway must support:
 
 - current authorization during the HTTP handshake before accepting a protected browser WebSocket upgrade;
+- replay-authority continuity validation before consuming a capability;
 - atomic shared single-winner capability consumption before `101`;
 - fresh authorization for each protected subscription;
 - active invalidation/revocation when session, membership, role/permission or tenant access changes;
 - removal of affected subscriptions or connection termination after revocation;
 - periodic bounded authorization revalidation as defense in depth;
-- fail-closed protected admission/delivery when current authorization or replay-consumption uniqueness cannot be safely established;
+- fail-closed protected admission/delivery when current authorization, replay-state continuity or replay-consumption uniqueness cannot be safely established;
 - fresh evaluation on reconnect.
 
 An authorization revision/generation or equivalent mechanism may be used to efficiently identify stale capabilities/sockets. The accepted propagation/revalidation bound is a security/SLO parameter and may not be unlimited.
@@ -106,7 +122,9 @@ May accelerate policy/session checks but cannot invent authority. Revocation/inv
 
 ### Coordination/ephemeral state
 
-Rate counters, circuit state, ephemeral locks or realtime fanout state. Loss changes performance/degradation behavior but does not erase durable business truth. Replay-consumption state for a single-use protected capability is correctness-critical during its validity window and therefore requires an accepted shared single-winner authority rather than best-effort replica-local state.
+Rate counters, circuit state, ephemeral locks or realtime fanout state may be ephemeral when loss only changes performance/degradation behavior and cannot change correctness or security authority.
+
+Replay-consumption state for a protected single-use/bounded-use capability is **not ordinary ephemeral coordination state** during the capability validity window. It requires an accepted shared single-winner authority plus continuity semantics: either registered state that survives/reconciles through the accepted validity window, or a replay epoch/generation that safely invalidates all outstanding capabilities after authority loss. Missing replay state is rejection/invalidity, never proof of unused state.
 
 ### Idempotency/deduplication
 

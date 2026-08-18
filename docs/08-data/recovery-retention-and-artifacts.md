@@ -15,7 +15,7 @@ JLMIRROR distinguishes:
 - configuration/secret-reference recovery;
 - cryptographic authority/key-hierarchy recovery required to decrypt retained data.
 
-A backup is not a recovery capability until restoration, required decryption **and safety/accountability reconciliation** are rehearsed for the applicable scope.
+A backup is not a recovery capability until restoration, required decryption **and safety/accountability/security-authority reconciliation** are rehearsed for the applicable scope.
 
 ## Control Plane recovery
 
@@ -60,8 +60,8 @@ restore cell snapshot/PITR to quarantine at recovery point R
    -> build a tenant recovery set
    -> materialize/validate in an isolated recovery target
    -> establish/fence current authoritative tenant at F
-   -> reconcile safety/accountability interval (R, F]
-   -> verify no duplicate irreversible effect becomes eligible
+   -> reconcile safety/accountability/security-authority interval (R, F]
+   -> verify no duplicate irreversible effect or revoked authority becomes eligible
    -> controlled authority cutover
 ```
 
@@ -69,7 +69,7 @@ restore cell snapshot/PITR to quarantine at recovery point R
 
 When the requirement is to restore tenant business/domain state to an earlier coherent point, the preferred model is **restore as a new isolated target followed by reconciliation and controlled authority cutover using relocation-grade fencing semantics**. The currently active tenant is never overwritten piecemeal while it continues accepting writes.
 
-This produces one authoritative business-state history at a time without pretending that all safety/accountability evidence should travel backwards with it.
+This produces one authoritative business-state history at a time without pretending that all safety, accountability or security-authority evidence should travel backwards with it.
 
 ### Recovery reconciliation interval
 
@@ -79,7 +79,7 @@ The recovery manifest distinguishes:
 
 **Rollback subject state** — domain/business state intentionally restored to `R`.
 
-**Safety/accountability continuity state** — state that cannot be forgotten merely because business state is being rolled back, including:
+**Safety/accountability/security-authority continuity state** — state that cannot be forgotten merely because business state is being rolled back, including:
 
 - immutable audit records/intents;
 - inbox/deduplication receipts and idempotency outcomes;
@@ -87,11 +87,26 @@ The recovery manifest distinguishes:
 - long-running process/execution outcomes;
 - committed/pending outbox state needed to determine whether an effect was already published/accepted;
 - security/compliance evidence;
+- session/credential revocations and logout invalidation state;
+- membership disablement/revocation, permission/scope removal and tenant suspension/access-denial state;
+- authorization/session generations, revocation generations, tombstones or equivalent freshness state whose loss could reactivate stale authority;
 - compensation and reconciliation state.
 
 For each irreversible/external operation after `R`, the owning domain must determine whether it was completed, externally accepted, compensatable, still pending, or ambiguous. The restored target does not become authoritative for effectful processing until required deduplication identities/outcomes are present and ambiguous operations are reconciled or quarantined.
 
-A point-in-time restore MUST NOT blindly copy all post-`R` domain mutations forward, because doing so can defeat the recovery objective. Conversely it MUST NOT blindly discard all post-`R` reliability/audit history, because doing so can recreate duplicate side effects or erase accountability.
+### Authorization revocation continuity
+
+Point-in-time business recovery MUST NOT implicitly re-grant access by restoring an older positive authorization state over a later revoke/deny/suspend event.
+
+A session revocation, credential revocation, membership disablement/revocation, permission/scope removal, tenant suspension or equivalent security denial that became effective in `(R, F]` is continuity state by default and SHALL be preserved or reconciled forward before the recovered target resumes protected traffic.
+
+Where authorization/session generation or revocation-marker semantics are used, recovery SHALL preserve a trustworthy generation/freshness value that is at least as restrictive as the reconciled security state. A capability/session/token minted against an older generation MUST remain stale after recovery and MUST NOT become valid merely because the underlying database was restored to `R`.
+
+Before protected traffic resumes, the recovered target SHALL reconcile revocation/deny state through `F` and then validate against the current authoritative security state at reintroduction time. If completeness or freshness of that authority cannot be established safely, protected admission fails closed.
+
+If the business intent is specifically to reverse a post-`R` security revocation, that is a separate security-recovery operation. It requires current authorization, any applicable step-up/approval policy, explicit scope and immutable audit evidence; it is never an accidental side effect of ordinary PITR.
+
+A point-in-time restore MUST NOT blindly copy all post-`R` domain mutations forward, because doing so can defeat the recovery objective. Conversely it MUST NOT blindly discard all post-`R` reliability, audit or authorization-revocation history, because doing so can recreate duplicate side effects, erase accountability or resurrect access.
 
 If immutable audit evidence for `(R, F]` resides in a protected external sink or retained source, that evidence remains authoritative and is linked/reintroduced as required before the old source is destroyed. Recovery-induced cleanup never serves as a mechanism to erase valid later audit history.
 
@@ -119,7 +134,7 @@ Not every data class uses every stage.
 
 Retention policy must account for key lifecycle: deleting a key version may make otherwise retained encrypted data permanently unrecoverable.
 
-Retention for idempotency/deduplication/audit/reliability evidence must cover the recovery and replay windows in which losing that evidence could make an irreversible effect repeatable or accountability incomplete.
+Retention for idempotency/deduplication/audit/reliability/revocation evidence must cover the recovery and replay windows in which losing that evidence could make an irreversible effect repeatable, accountability incomplete or stale authority valid again.
 
 ## Deletion/anonymization
 
@@ -170,13 +185,15 @@ Scheduled recovery tests prove:
 - RLS/tenant isolation after restore;
 - application/schema compatibility;
 - tenant recovery set completeness across bounded contexts;
-- explicit inventory and reconciliation of `(R, F]` reliability/audit/external-effect state;
+- explicit inventory and reconciliation of `(R, F]` reliability/audit/external-effect/security-revocation state;
 - already-completed irreversible effects are not repeated after cutover;
 - post-`R` immutable audit evidence remains available after source cleanup;
+- a session/capability or membership grant valid at `R` but revoked in `(R, F]` remains rejected after restore and cutover;
+- authorization/session generation or equivalent revocation freshness does not move backwards during recovery;
 - write-fence/cutover safety for tenant-level replacement;
 - retained-backup decryptability across key rotation/version changes;
 - measured recovery duration and data-loss window.
 
-A database/object restore that completes structurally but cannot decrypt required protected data, suppress duplicate irreversible effects, or preserve required accountability evidence is a failed rehearsal.
+A database/object restore that completes structurally but cannot decrypt required protected data, suppress duplicate irreversible effects, preserve required accountability evidence or preserve effective revocation/deny state is a failed rehearsal.
 
 Results are operational evidence used to set/revise RPO/RTO.

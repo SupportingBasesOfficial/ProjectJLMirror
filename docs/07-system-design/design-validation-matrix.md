@@ -36,8 +36,9 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Secret authority outage | No plaintext fallback; only accepted lease/cache behavior continues |
 | Cryptographic DR | Restored representative ciphertext/backups remain decryptable through approved KMS/key-recovery path after simulated loss of normal cryptographic authority |
 | Tenant PITR continuity | Restore business state to R, create completed irreversible effects/audit/idempotency records in (R,F], fence at F, reconcile and cut over; target cannot repeat those effects and post-R immutable accountability evidence survives source cleanup |
+| Tenant PITR authorization continuity | Create authority/capability before R, revoke/suspend session, membership, permission/scope or tenant access in (R,F], restore business state to R, reconcile and cut over; restored target preserves the later deny/revocation and rejects the stale authority before protected traffic resumes |
 | Migration | Mixed-version rollout validated; destructive change follows expand/migrate/contract |
-| Recovery | Cell restore and tenant-level recovery rehearsal completed with tenant isolation intact, required protected data decryptable and safety/accountability interval reconciled |
+| Recovery | Cell restore and tenant-level recovery rehearsal completed with tenant isolation intact, required protected data decryptable and safety/accountability/security-authority interval reconciled |
 | Observability | Request -> transaction -> outbox/job -> worker -> provider can be correlated without secret leakage |
 
 ## Release-blocking invariant tests
@@ -64,6 +65,8 @@ The following failures block release regardless of other test success:
 - out-of-order/replayed telemetry can replace a newer current/latest state or produce a stale latest-state transition;
 - tenant point-in-time recovery makes an already-completed post-recovery-point irreversible effect eligible to execute again because dedup/idempotency/process outcome evidence was rolled back;
 - tenant point-in-time recovery/source cleanup erases required immutable audit evidence from the recovery-to-fence interval;
+- tenant point-in-time recovery reactivates a session, membership, permission/scope, credential or tenant access that was revoked/suspended in `(R,F]`, or rolls back the freshness/generation state used to reject stale authority;
+- protected traffic resumes after recovery before required post-`R` authorization revocation/deny state is reconciled and validated;
 - secrets appear in logs/traces/events/queue payload/audit/client error;
 - migration makes active supported runtime versions access incompatible schema;
 - restore cannot re-establish verified tenant isolation;

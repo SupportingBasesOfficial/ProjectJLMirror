@@ -80,9 +80,12 @@ If mutation emits work/events/signals:
 - encryption/key dependency documented;
 - recovery validation exists for critical data;
 - point-in-time recovery defines recovery point `R` and final write fence `F`;
-- the `(R,F]` interval is classified into rollback-subject business state versus safety/accountability continuity state;
+- the `(R,F]` interval is classified into rollback-subject business state versus safety/accountability/security-authority continuity state;
 - deduplication/idempotency/process/external-operation outcomes needed to suppress duplicate irreversible effects survive or are reconciled before cutover;
-- immutable audit evidence required from `(R,F]` survives restore and source cleanup.
+- immutable audit evidence required from `(R,F]` survives restore and source cleanup;
+- session/credential revocations, membership disablement/revocation, permission/scope removal, tenant suspension/access denial and authorization/session generation or equivalent freshness state from `(R,F]` survive or are reconciled before protected traffic resumes;
+- a restored positive grant at `R` cannot silently override a later deny/revocation from `(R,F]`;
+- intentionally reversing a preserved security revocation is modeled as a separate authorized/audited security-recovery action rather than an implicit PITR effect.
 
 ## Gate D10 — Observability/security
 
@@ -103,4 +106,4 @@ For high-volume tables/streams:
 
 Tenant-scoped state can be selected, copied, validated and fenced by immutable `tenant_id`. Physical location/schema/server identifiers are not embedded as business identity.
 
-For recovery-driven relocation, the target can receive/reconcile required safety/accountability continuity state without reapplying all business mutations that the recovery intentionally rolls back.
+For recovery-driven relocation, the target can receive/reconcile required safety/accountability/security-authority continuity state without reapplying all business mutations that the recovery intentionally rolls back.

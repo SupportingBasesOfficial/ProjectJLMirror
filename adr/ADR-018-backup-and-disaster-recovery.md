@@ -10,9 +10,9 @@
 
 Encrypted database/object backups are insufficient if the independent cryptographic authority required to decrypt restored ciphertext is lost. Because ADR-015 keeps production secret/KMS root authority outside ordinary databases, DR must recover both protected data and the key hierarchy/configuration necessary to make that data usable.
 
-Point-in-time tenant recovery has an additional correctness risk: restoring business state to time `R` must not erase knowledge of irreversible external effects, deduplication receipts, process outcomes or immutable audit evidence that occurred between `R` and the final recovery write fence `F`. Otherwise a restored target can repeat an already-completed external action or lose accountability history.
+Point-in-time tenant recovery has an additional correctness risk: restoring business state to time `R` must not erase knowledge of irreversible external effects, deduplication receipts, process outcomes, immutable audit evidence or authorization revocations that occurred between `R` and the final recovery write fence `F`. Otherwise a restored target can repeat an already-completed external action, lose accountability history or resurrect access that had already been revoked.
 
-Drivers: `QA-REC-001`, `INV-RECOVERY-001`, `INV-SECRET-001`, `INV-ASYNC-001`, `FR-OPS-003`, `SEC-SEC-*`, `SEC-AUD-*`, `AP-11`.
+Drivers: `QA-REC-001`, `INV-RECOVERY-001`, `INV-SECRET-001`, `INV-ASYNC-001`, `FR-OPS-003`, `SEC-SEC-*`, `SEC-AUD-*`, `SEC-AUTHZ-*`, `SEC-BROWSER-*`, `AP-11`.
 
 ## Decision
 
@@ -32,11 +32,23 @@ For a tenant recovery from selected recovery point `R`, the system SHALL establi
 The recovery plan SHALL classify state into at least:
 
 - **rollback subject state:** business/domain state intentionally restored to `R`;
-- **safety/accountability continuity state:** records that must survive or be reconciled forward even though they occurred after `R`, including immutable audit evidence, inbox/deduplication receipts, idempotency outcomes, completed/attempted irreversible external operations, provider/payment operation identities, long-running process/execution outcomes, security/compliance evidence and other records required to prevent duplicate effects or loss of accountability.
+- **safety/accountability/security-authority continuity state:** records that must survive or be reconciled forward even though they occurred after `R`, including immutable audit evidence, inbox/deduplication receipts, idempotency outcomes, completed/attempted irreversible external operations, provider/payment operation identities, long-running process/execution outcomes, security/compliance evidence, session/credential revocations, membership disablement/revocation, permission/scope removal, tenant suspension/access denial, authorization/session generations or revocation tombstones, and other records required to prevent duplicate effects, loss of accountability or resurrection of stale authority.
 
-Before the restored target becomes authoritative, the reconciliation interval SHALL be examined and safety/accountability continuity state SHALL be merged/reconstructed/referenced into the recovery target or another durable authority under owning-domain rules. The procedure MUST NOT blindly replay all post-`R` business mutations, because the recovery intent may deliberately be to undo those mutations.
+Before the restored target becomes authoritative, the reconciliation interval SHALL be examined and continuity state SHALL be merged/reconstructed/referenced into the recovery target or another durable authority under owning-domain rules. The procedure MUST NOT blindly replay all post-`R` business mutations, because the recovery intent may deliberately be to undo those mutations.
 
 Every irreversible/external operation in `(R, F]` is classified into one of: already-completed/preserve dedup evidence, externally reconcile current truth, compensate under explicit domain policy, or quarantine for operator decision. A target SHALL NOT accept effectful retries until the identifiers/outcomes required to suppress duplicate irreversible effects are present and validated.
+
+### Authorization revocation continuity
+
+Ordinary business/domain PITR MUST NOT implicitly reverse a security denial that became effective after `R`.
+
+Session/credential revocation, membership disablement/revocation, permission/scope removal, tenant suspension/access denial and equivalent deny state from `(R, F]` SHALL be reconciled forward by default before protected traffic resumes.
+
+Where authorization/session generation or revocation-marker semantics are used, the recovered authority SHALL preserve a trustworthy current generation/freshness state that does not move backwards merely because the business database was restored. A capability, session or token minted against an older generation remains stale after recovery.
+
+Before reintroduction, the recovered target SHALL reconcile security deny/revocation state through `F` and then validate against the current authoritative security state. If completeness or freshness cannot be established safely, protected admission fails closed.
+
+Reversing a post-`R` revocation is a distinct security-recovery operation requiring current authorization, applicable step-up/approval and immutable audit evidence. It is not an incidental effect of PITR.
 
 Immutable audit evidence from `(R, F]` is not destroyed merely because domain state is rolled back to `R`; if the audit store itself is restored from an older snapshot, the missing evidence interval must be recovered from the protected source/replica/sink before old source cleanup can remove it.
 
@@ -64,11 +76,13 @@ RPO/RTO numerical objectives remain OPEN until SLO/business-tier work. Productio
 - encrypted restores remain actually usable after infrastructure/account/region loss scenarios;
 - point-in-time recovery does not silently recreate eligibility for already-completed irreversible effects;
 - audit/accountability history survives logical business-state rollback;
+- post-recovery-point authorization revocations remain effective unless explicitly reversed through a separate security operation;
 - evidence-based RPO/RTO becomes possible.
 
 ### Negative / cost
 - logical tenant restore tooling is non-trivial for pooled data;
 - point-in-time tenant recovery requires interval reconciliation rather than a simple pointer cutover;
+- security-revocation continuity adds another recovery dependency that must be inventoried and tested;
 - cryptographic authority introduces a separate critical recovery dependency;
 - restore rehearsals, external reconciliation and key-recovery controls consume operational capacity.
 
@@ -78,8 +92,10 @@ Scheduled restore tests SHALL cover control plane, a representative cell and ten
 
 A tenant PITR rehearsal SHALL create representative post-recovery-point irreversible effects and audit/idempotency records, then restore to the earlier point and prove the recovered target cannot repeat those effects and does not lose the post-point accountability evidence after cutover/source cleanup.
 
+A security recovery rehearsal SHALL establish a session/capability or membership/permission grant before `R`, revoke or suspend it in `(R, F]`, restore business state to `R`, reconcile the interval and prove the recovered target still rejects the stale authority before protected traffic resumes. Authorization/session generation or equivalent revocation freshness MUST NOT regress across recovery.
+
 At least one DR rehearsal SHALL simulate loss/unavailability of the normal secret/KMS environment and prove that representative restored encrypted application data can be decrypted through the approved recovery path without exposing plaintext root/master keys to ordinary application operators. Key-version rotation and retained-backup decryptability are also tested.
 
 ## Exit / revisit conditions
 
-Storage-specific backup technology and KMS/secret-provider mechanisms may change; multi-scope tested recovery, cryptographic recoverability and post-recovery-point safety/accountability reconciliation remain mandatory.
+Storage-specific backup technology and KMS/secret-provider mechanisms may change; multi-scope tested recovery, cryptographic recoverability, post-recovery-point safety/accountability reconciliation and revocation continuity remain mandatory.

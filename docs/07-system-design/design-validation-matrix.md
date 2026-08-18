@@ -17,6 +17,8 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Browser realtime authorization freshness | Mint a valid capability, then revoke/suspend session, membership, permission/scope or tenant access before presentation; handshake is rejected before `101` despite valid capability signature/expiry |
 | Realtime authorization | Active protected subscription loses access after membership/permission/session/tenant revocation within accepted bound; missed invalidation is caught by bounded revalidation |
 | Transactions | Mutation + required audit/audit-intent + outbox commit atomically; injected dispatcher failure loses no committed event/audit intent |
+| API idempotency concurrency | Fire simultaneous requests with identical canonical scope/key/fingerprint; database uniqueness/atomic claim yields exactly one logical executor, contenders observe in-progress/completed claim and no duplicate effect occurs; same scope/key with different fingerprint conflicts before execution |
+| API idempotency ambiguous outcome | Crash/timeout after an external provider may have accepted the stable operation identity but before local claim completion; recovery keeps the original claim, reconciles provider truth and does not authorize blind duplicate execution from timeout/lease expiry |
 | Transition signal atomicity | Crash immediately after successful conditional state advance cannot lose the required transition signal; replay discovers durable transition/outbox intent without re-advancing state |
 | Audit intent integrity | During external audit-sink outage, normal app/dispatcher roles cannot update/delete immutable audit-intent evidence; only segregated delivery metadata is mutable and original evidence remains reproducible |
 | Event delivery | Duplicate event causes no duplicate irreversible effect; poison message quarantines after bounded policy |
@@ -53,6 +55,9 @@ The following failures block release regardless of other test success:
 - interactive SQL principal can alter the tenant authority trusted by pooled data policy;
 - stale placement can write after relocation fence/cutover;
 - recovery-driven relocation activates target admission or routes protected/effectful traffic before required `(R,F]` security-authority, reliability, audit and external-effect continuity is reconciled;
+- two concurrent requests with the same effective idempotency scope/key can both become logical executors because claim uniqueness/atomic acquisition is absent or bypassed;
+- same idempotency scope/key with a different request fingerprint can execute instead of conflicting;
+- an in-progress/ambiguous idempotency claim can be stolen or blindly retried solely because a timeout/lease expired while an irreversible external outcome remains unknown;
 - required privileged audit record or durable atomic audit intent can be omitted on successful mutation;
 - normal runtime/dispatcher can rewrite or delete the only committed required-audit evidence payload before external delivery;
 - a committed current-state transition can lose its required signal because a crash occurred after state update but before signal intent durability;

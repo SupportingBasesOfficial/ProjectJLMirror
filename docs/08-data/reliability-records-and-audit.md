@@ -43,23 +43,61 @@ The receipt/effect is committed atomically where feasible.
 
 ## HTTP/API idempotency
 
-For operations exposing idempotency keys:
+For operations exposing idempotency keys, the platform persists a durable claim record before effectful processing begins.
+
+Conceptual fields:
 
 ```text
-tenant_id
-principal/credential scope when relevant
+idempotency_claim_id
+idempotency_scope        non-null canonical server-derived scope
+tenant_id                when tenant-scoped
+principal/credential scope metadata when relevant
 operation/route contract
 idempotency_key
 request_fingerprint
-status
+operation_id             stable identity for downstream/external effect when applicable
+status                    claimed | in_progress | completed | failed_terminal | reconciliation_required
 result_reference / response metadata
+claim_version / lease metadata when recovery policy requires it
 created_at
+updated_at
 expires_at
 ```
 
-Reusing the same key with a different request fingerprint returns conflict rather than silently executing a different operation.
+The effective scope is defined by the operation contract and includes the tenant/global boundary, operation identity and principal/credential dimension where that dimension is semantically required. Optional/null dimensions are normalized into the non-null canonical `idempotency_scope`; implementations MUST NOT rely on nullable unique-column behavior to provide exclusivity.
 
-Idempotency retention is long enough to cover the accepted retry/replay window for the operation and applicable recovery window.
+The durable store enforces one claim per effective scope and key, conceptually:
+
+```text
+UNIQUE(idempotency_scope, idempotency_key)
+```
+
+### Atomic claim protocol
+
+Idempotency is an admission/serialization primitive, not a post-execution lookup.
+
+Before any protected/effectful use-case processing that the key is intended to deduplicate, the request MUST atomically create-or-observe the durable claim using a database uniqueness/compare-and-set operation such as `INSERT ... ON CONFLICT` or an equivalent mechanism. A `SELECT` followed by an unprotected `INSERT` is not sufficient.
+
+For concurrent requests with the same effective scope and key:
+
+1. exactly one request can create/own the initial executable claim;
+2. the owner may proceed with the logical operation;
+3. another request with a different `request_fingerprint` receives an idempotency conflict and MUST NOT execute the operation;
+4. another request with the same fingerprint observes the existing claim and MUST NOT execute a second logical operation;
+5. if the claim is complete, the existing logical result is replayed according to the API contract;
+6. if the claim is still in progress, the caller receives/joins a deterministic in-progress/retry contract rather than becoming a second executor.
+
+The exact HTTP header/status/response representation belongs to API-contract design, but the single-winner durable claim semantics are baseline invariants.
+
+### Crash and external-effect recovery
+
+A process crash MUST NOT make claim ownership silently transferable while the original effect may still be in flight.
+
+For an irreversible or externally committed operation, the claim carries or deterministically derives a stable `operation_id` used for provider-side idempotency/reconciliation where the external contract permits it. If the platform cannot know whether the external effect completed, the claim moves to an explicit reconciliation/ambiguous state; recovery verifies provider/domain truth before retry eligibility is restored.
+
+Lease/timeout-based claim recovery, if used, MUST distinguish an abandoned local executor from an external effect whose outcome is unknown. Expiration alone MUST NOT authorize blind re-execution of a payment, destructive automation or other irreversible effect.
+
+Reusing the same key with a different request fingerprint returns conflict rather than silently executing a different operation. Idempotency retention is long enough to cover the accepted retry/replay window for the operation and applicable recovery window.
 
 ## Business process records
 
@@ -72,7 +110,7 @@ Point-in-time business-state recovery MUST NOT blindly roll back the evidence th
 For recovery point `R` and later write fence `F`, the recovery reconciliation interval `(R, F]` inventories reliability records including:
 
 - inbox/deduplication receipts;
-- API/job idempotency outcomes;
+- API/job idempotency claims and outcomes;
 - stable external operation/provider/payment identities;
 - process/execution final or externally committed outcomes;
 - pending/committed outbox state needed to distinguish delivered from undelivered effects;
@@ -157,7 +195,11 @@ External side-effect audit/reconciliation may add subsequent immutable records r
 
 ## Validation
 
-Fault injection covers crash before mutation commit, immediately after commit, before external audit delivery and during audit-sink outage. Required mutation success is accepted only if local audit evidence or durable audit intent survives and can be reconciled.
+Concurrency tests issue multiple simultaneous requests with the same effective idempotency scope/key. Exactly one may acquire executable ownership. Same-fingerprint contenders must not execute a second logical effect; different-fingerprint contenders must conflict. Tests MUST prove the uniqueness constraint/atomic claim, not merely application-level pre-check behavior.
+
+Fault injection crashes the claim owner before domain mutation, after local mutation, during external calls and after a provider may have accepted the stable `operation_id` but before the claim is marked complete. Recovery MUST replay/reconcile the existing claim and MUST NOT blindly create a second irreversible effect.
+
+Fault injection also covers crash before mutation commit, immediately after commit, before external audit delivery and during audit-sink outage. Required mutation success is accepted only if local audit evidence or durable audit intent survives and can be reconciled.
 
 Authorization tests prove normal application and dispatcher roles cannot update/delete committed audit evidence payloads. Delivery workers may mutate only explicitly separated delivery metadata. An external audit outage followed by dispatcher compromise/fault simulation must leave the original committed audit evidence intact and reproducible.
 

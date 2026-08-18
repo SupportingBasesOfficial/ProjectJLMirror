@@ -21,6 +21,29 @@ COMMIT
 
 The transaction does not include calls to external providers, email, WebSocket, payment networks, webhook destinations or another cell.
 
+## Idempotent request admission
+
+When an API/application operation exposes an idempotency key to prevent duplicate logical effects, the request MUST acquire or observe a durable single-winner idempotency claim **before effectful processing begins**.
+
+The effective claim identity is server-derived and includes the operation's canonical idempotency scope plus the caller-provided key. The durable store enforces uniqueness on that identity. Application code MUST NOT implement exclusivity with an unprotected read-then-create sequence.
+
+Conceptual flow:
+
+```text
+request
+  -> derive canonical idempotency scope
+  -> atomic create-or-observe claim
+       |
+       +-- new claim + matching fingerprint -> this request owns execution
+       +-- existing claim + different fingerprint -> conflict; no execution
+       +-- existing in-progress claim + same fingerprint -> join/retry contract; no second execution
+       +-- existing completed claim + same fingerprint -> replay logical result
+```
+
+Only the request that atomically acquires executable ownership may start the logical effect. For externally irreversible work, the claim carries or derives a stable `operation_id`; a crash/timeout with ambiguous external outcome enters reconciliation rather than allowing another contender to execute blindly.
+
+The exact HTTP header/status representation is defined later in API-contract design. The unique-scope, atomic-claim and single-executor semantics are system-design invariants.
+
 ## Cross-domain synchronous work
 
 Within the modular monolith, an application use case MAY invoke another domain's explicit application contract synchronously when an invariant truly requires immediate co-transactional behavior and both owners are in the same cell database boundary.
@@ -102,6 +125,8 @@ Errors are classified:
 - stale placement requiring re-resolution rather than blind retry.
 
 Retry uses bounded attempts, backoff/jitter and workload-specific concurrency budgets.
+
+An expired local idempotency lease/timeout, if a later implementation uses leases, is not by itself proof that an external irreversible effect did not occur. Ambiguous outcomes reconcile by stable operation identity before a new attempt becomes eligible.
 
 ## Process managers
 

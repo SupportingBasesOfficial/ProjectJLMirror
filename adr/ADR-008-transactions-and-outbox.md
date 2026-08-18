@@ -6,7 +6,7 @@
 
 ## Context
 
-JLMIRROR must mutate durable state and reliably trigger asynchronous consequences (notifications, webhooks, projections, workflows). Publishing directly to a broker before/after commit creates dual-write failure windows. Long external calls inside database transactions increase lock duration and couple availability. Required audit evidence has the same dual-write problem if appended only after the protected mutation commits. Projection transitions have the same failure mode when a state change and its required signal are persisted separately.
+JLMIRROR must mutate durable state and reliably trigger asynchronous consequences (notifications, webhooks, projections, workflows). Publishing directly to a broker before/after commit creates dual-write failure windows. Long external calls inside database transactions increase lock duration and couple availability. Required audit evidence has the same dual-write problem if appended only after the protected mutation commits. Projection transitions have the same failure mode when a state change and its required signal are persisted separately. API idempotency keys also fail under concurrency if callers merely check for an existing record before effectful processing without a unique atomic claim.
 
 Drivers: `INV-ASYNC-001`, `INV-DATA-004`, `QA-ASYNC-001`, `TM-011`, `SEC-AUD-001`, `SEC-AUD-003`, `SEC-AUD-004`, `AP-05`.
 
@@ -19,6 +19,23 @@ When a successful transaction must produce durable asynchronous consequences, do
 When an audit record is required for a local authoritative mutation and the audit record is owned in the same transactional boundary, the audit append SHALL commit atomically with the mutation. If final audit evidence is stored in another persistence authority, a durable audit intent SHALL commit atomically with the mutation and delivery to the external audit sink is retried/reconciled. A required audit trail MUST NOT depend solely on post-commit best effort.
 
 The immutable evidence payload of a required external audit intent SHALL be protected from update/delete by normal application and dispatcher roles. Mutable retry/delivery metadata SHALL be segregated so delivery progress can change without granting the dispatcher authority to rewrite the committed accountability statement.
+
+### Idempotency admission atomicity
+
+For an operation whose API/application contract accepts an idempotency key to suppress duplicate logical effects, executable ownership SHALL be established through a durable unique claim before effectful processing begins.
+
+The system derives a non-null canonical idempotency scope from trusted tenant/global context, operation identity and any principal/credential dimension that is part of that operation's semantics. The persistence authority enforces uniqueness for `(idempotency_scope, idempotency_key)` or an equivalent canonical identity.
+
+Claim acquisition uses one atomic create-or-observe/compare-and-set database operation. A read-then-insert sequence without a database uniqueness/serialization guarantee is prohibited.
+
+Concurrency semantics are:
+
+- one contender creates the executable claim and becomes the sole logical executor;
+- same key/scope with a different request fingerprint conflicts and executes nothing;
+- same key/scope/fingerprint observing an in-progress claim does not become a second executor;
+- same key/scope/fingerprint observing a completed claim reuses the established logical result according to the later API contract.
+
+For irreversible external work, the claim carries or deterministically derives a stable logical `operation_id`. A crash or timeout after an external request may leave the result ambiguous; that state is reconciled through the stable operation identity/provider truth before another execution is allowed. Claim timeout/lease expiration alone is not evidence that the external effect did not happen.
 
 ### State-transition signal atomicity
 
@@ -45,6 +62,7 @@ The same principle applies to any cross-persistence write: one authority must du
 
 ### Positive
 - removes the most common database/event dual-write gap;
+- concurrent idempotent requests have one durable logical executor rather than a race-prone pre-check;
 - required local audit cannot be lost in a crash after business commit;
 - external audit intent remains accountable even during sink/dispatcher failure;
 - a committed current-state transition cannot silently lose its required signal after worker crash;
@@ -54,6 +72,7 @@ The same principle applies to any cross-persistence write: one authority must du
 
 ### Negative / cost
 - outbox tables/dispatchers and retention/monitoring are required;
+- idempotency claims require unique scope design, lifecycle/retention and reconciliation of ambiguous external effects;
 - consumers must handle duplicate delivery;
 - state-transition producers need stable transition identity;
 - multi-step workflows become explicit state machines;
@@ -61,7 +80,11 @@ The same principle applies to any cross-persistence write: one authority must du
 
 ## Validation
 
-Fault injection SHALL cover crash before commit, after commit/before publish, duplicate publish, dispatcher restart and consumer replay. No committed event-worthy state may be permanently invisible to the dispatcher.
+Concurrency tests SHALL issue simultaneous same-scope/same-key requests and prove exactly one executable claim is acquired. Same-fingerprint contenders MUST NOT produce a second logical effect; different-fingerprint contenders MUST conflict. The test must exercise the database uniqueness/atomic claim path rather than only an application-level existence check.
+
+Fault injection for externally effectful idempotent operations SHALL crash after claim, during provider interaction and after possible provider acceptance but before local completion. Recovery MUST use the existing claim/stable operation identity and reconcile ambiguous outcome rather than blindly executing a second irreversible effect.
+
+Fault injection SHALL also cover crash before commit, after commit/before publish, duplicate publish, dispatcher restart and consumer replay. No committed event-worthy state may be permanently invisible to the dispatcher.
 
 For required audit, fault injection SHALL prove there is no state in which the protected mutation commits successfully while neither the required audit record nor its durable atomic audit intent exists. Role/permission tests SHALL additionally prove the dispatcher and normal application runtime cannot rewrite/delete committed audit-evidence payload while retaining the narrower ability to advance delivery metadata.
 
@@ -69,4 +92,4 @@ For transition-driven signals, fault injection SHALL crash the worker immediatel
 
 ## Exit / revisit conditions
 
-A broker supporting transactional integration with the authoritative database could justify a different mechanism, but equivalent atomicity, transition-signal recoverability and audit-evidence integrity guarantees must be demonstrated.
+A broker supporting transactional integration with the authoritative database could justify a different mechanism, but equivalent atomicity, transition-signal recoverability and audit-evidence integrity guarantees must be demonstrated. API-contract details may refine idempotency headers/status codes, but may not weaken the unique atomic-claim/single-executor invariant.

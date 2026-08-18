@@ -26,9 +26,11 @@
 
 **SEC-AUTHZ-003** — Authorization decisions SHOULD be explainable enough for audit/debugging without exposing secrets.
 
-**SEC-AUTHZ-004** — Point-in-time recovery SHALL NOT implicitly reactivate authority that was revoked after the selected recovery point. Session/credential revocation, membership disablement/revocation, permission/scope removal, tenant suspension/access denial and equivalent deny state SHALL survive or be reconciled forward before protected traffic resumes.
+**SEC-AUTHZ-004** — Tenant-level, whole-cell or other point-in-time recovery SHALL NOT implicitly reactivate authority that was revoked after the selected recovery point. Session/credential revocation, membership disablement/revocation, permission/scope removal, tenant suspension/access denial and equivalent deny state SHALL survive or be reconciled forward before protected traffic resumes.
 
-**SEC-AUTHZ-005** — Authorization/session generation, revocation tombstone or equivalent freshness state used to reject stale authority SHALL NOT move backwards as an incidental effect of business/domain recovery. If post-recovery authorization freshness cannot be established safely, protected admission SHALL fail closed. Reversing a preserved revocation requires a distinct currently authorized and audited security operation.
+**SEC-AUTHZ-005** — Authorization/session generation, revocation tombstone or equivalent freshness state used to reject stale authority SHALL NOT move backwards as an incidental effect of business/domain or infrastructure recovery. If post-recovery authorization freshness cannot be established safely, protected admission SHALL fail closed. Reversing a preserved revocation requires a distinct currently authorized and audited security operation.
+
+**SEC-AUTHZ-006** — A recovered tenant, cell or other authority scope SHALL remain non-authoritative for protected/effectful traffic until applicable post-recovery-point security-authority, reliability/accountability and external-effect continuity has been reconciled through the accepted recovery boundary. Recovery uncertainty SHALL NOT be converted into authorization or retry eligibility.
 
 ## Browser and realtime
 

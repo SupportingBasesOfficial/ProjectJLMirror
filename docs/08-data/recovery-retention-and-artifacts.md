@@ -17,13 +17,55 @@ JLMIRROR distinguishes:
 
 A backup is not a recovery capability until restoration, required decryption **and safety/accountability/security-authority reconciliation** are rehearsed for the applicable scope.
 
+## Scope-wide PITR continuity
+
+A point-in-time restore is allowed to move rollback-subject state to an earlier time; it is not allowed to erase later evidence that the platform still needs for security, idempotency, accountability or external-effect correctness.
+
+For any recovered authoritative scope that can roll back such state, recovery defines:
+
+```text
+R = selected recovery point
+F = later authoritative reconciliation boundary
+(R,F] = continuity interval that must be accounted for
+```
+
+When the old authority remains available, `F` is established with an explicit write/admission fence and final reconciliation watermark. When it is unavailable, `F` is reconstructed from surviving durable authorities/watermarks and any unresolved uncertainty is treated as unsafe rather than as proof that nothing happened.
+
+Until applicable continuity state has been reconciled, the recovered scope remains quarantined/non-authoritative for protected and effectful traffic. Restricted diagnostic/read-only access, if ever allowed, is a separate explicit operational policy and does not imply normal authority.
+
 ## Control Plane recovery
 
 Placement/lifecycle metadata is high criticality. Recovery must restore a consistent tenant-to-cell authority and prevent routing to ambiguous/stale placement. Restore procedures include validation of cell/placement versions before normal topology changes resume.
 
+If Control Plane PITR can roll back tenant suspension, global/session revocation, placement lifecycle or another deny/fence authority, the later deny/fence state is continuity state and is reconciled before topology-changing or protected admission decisions resume. A restored older positive state does not automatically override a later authoritative deny.
+
 ## Cell physical recovery
 
-Cell transactional PostgreSQL uses encrypted backup and point-in-time recovery capabilities selected by platform design. Cell recovery occurs to a controlled target, validates schema/invariants and only then resumes admitted traffic.
+Cell transactional PostgreSQL uses encrypted backup and point-in-time recovery capabilities selected by platform design. A restored cell first comes up in a controlled **recovery quarantine/non-authoritative state**; database/schema/invariant health is necessary but not sufficient to resume admitted traffic.
+
+### Whole-cell PITR reconciliation
+
+Whole-cell PITR can roll back cell-owned membership/access state, tenant domain state, outbox/inbox/idempotency records, long-running process outcomes and required audit evidence for many tenants at once. The restored cell therefore executes this recovery lifecycle before normal admission:
+
+```text
+restore cell to recovery point R in quarantine
+   -> recover/validate required cryptographic authority
+   -> establish reconciliation boundary F
+   -> inventory affected tenants and (R,F] continuity state
+   -> reconcile dedup/idempotency/process/outbox/external-effect outcomes
+   -> restore/reference required immutable audit evidence
+   -> reconcile membership/permission/tenant-deny and authorization freshness state
+   -> validate placement/admission and current security authorities
+   -> prove stale authority and completed effects are not retry/admission eligible
+   -> enable protected/effectful admission
+   -> post-admission verification as defense in depth
+```
+
+If the prior cell is still available, `F` is a final write/admission fence/watermark. If the prior cell was lost, `F` and continuity are reconstructed from surviving replication/WAL/journal evidence, external audit/security authorities, provider acknowledgements and other durable records. Missing evidence creates an unresolved recovery condition; it does not authorize retry or access.
+
+A restored cell SHALL NOT resume protected tenant traffic, schedulers or effectful workers until the applicable all-tenant safety/accountability/security-authority reconciliation is complete. If current authorization/deny state cannot be established, protected access fails closed. If an external effect outcome cannot be established, that operation is reconciled or quarantined before retry.
+
+Post-recovery authorization and tenant-isolation checks continue after admission, but they are defense in depth and do not replace the pre-admission reconciliation gate.
 
 ## Cryptographic recovery dependency
 
@@ -184,6 +226,8 @@ Scheduled recovery tests prove:
 - restore procedure correctness;
 - RLS/tenant isolation after restore;
 - application/schema compatibility;
+- whole-cell recovery remains quarantined until all affected tenant continuity classes required for protected/effectful admission are reconciled;
+- whole-cell restore does not reactivate later-revoked membership/permission/tenant access or repeat already-completed external effects;
 - tenant recovery set completeness across bounded contexts;
 - explicit inventory and reconciliation of `(R, F]` reliability/audit/external-effect/security-revocation state;
 - already-completed irreversible effects are not repeated after cutover;

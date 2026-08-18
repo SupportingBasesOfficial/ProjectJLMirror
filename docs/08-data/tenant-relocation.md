@@ -6,7 +6,7 @@
 
 ## Goal
 
-Move a tenant between cells without changing logical tenant/resource identities, without split authoritative writes and without trusting stale routing from requests/jobs. When the relocation mechanism is used for point-in-time recovery, it also preserves reconciled safety/accountability continuity across the recovery interval.
+Move a tenant between cells without changing logical tenant/resource identities, without split authoritative writes and without trusting stale routing from requests/jobs. When the relocation mechanism is used for point-in-time recovery, it also preserves reconciled safety/accountability/security-authority continuity across the recovery interval.
 
 ## Preconditions
 
@@ -44,7 +44,7 @@ Post-cutover failure -> FORWARD_RECOVERY or controlled reverse relocation; never
 - ensure source remains authoritative;
 - mark placement `migrating` with current `placement_version`.
 
-For recovery-driven relocation, the manifest separately classifies rollback-subject business state and safety/accountability continuity state from the post-recovery-point interval.
+For recovery-driven relocation, the manifest separately classifies rollback-subject business state and safety/accountability/security-authority continuity state from the post-recovery-point interval.
 
 ## COPYING
 
@@ -72,8 +72,9 @@ A normal relocation catches forward all required authoritative state. A recovery
 6. source outbox dispatcher stops publishing new tenant events after the declared fence/watermark;
 7. final transactional delta or recovery reconciliation inventory is established;
 8. pending/unpublished outbox, inbox/deduplication, idempotency and owner-process state required for continuation is synchronized exactly according to manifest;
-9. final telemetry/artifact delta required for cutover is synchronized or explicitly marked for post-cutover historical completion;
-10. stale source writers are rejected even if they hold cached old placement.
+9. for recovery-driven relocation, required security-authority continuity through `F` is synchronized/reconciled, including later session/credential revocations where applicable, membership disablement/revocation, permission/scope removals, tenant suspension/access-denial state and authorization/revocation generations or equivalent freshness markers;
+10. final telemetry/artifact delta required for cutover is synchronized or explicitly marked for post-cutover historical completion;
+11. stale source writers are rejected even if they hold cached old placement.
 
 The local write fence is critical: Control Plane cache invalidation alone is not sufficient protection.
 
@@ -94,7 +95,22 @@ For recovery-driven relocation, this rule extends through `(R, F]`: completed ir
 
 ## CUTOVER
 
-- activate target tenant admission for new placement generation only after migration/recovery preconditions pass;
+For a normal relocation, cutover proceeds only after the standard migration preconditions are complete.
+
+For a **recovery-driven relocation**, the target SHALL remain non-active/non-authoritative until **all** applicable pre-cutover continuity gates have passed. Before activating target tenant admission or routing protected/effectful traffic, the platform SHALL validate:
+
+- post-`R` deduplication/idempotency/process outcomes and external-operation reconciliation needed to prevent repeated irreversible effects;
+- required immutable audit/accountability evidence;
+- post-`R` session/credential revocations where applicable, membership disablement/revocation, permission/scope removal, tenant suspension/access-denial state and current authorization/revocation generation or equivalent freshness state;
+- current authoritative security state at reintroduction time, so a stale restored positive grant cannot override a later deny;
+- unresolved ambiguous operations are quarantined and cannot execute;
+- placement/admission generation is ready for the target and source remains fenced.
+
+If any required security-authority continuity or reliability/accountability evidence is incomplete, protected/effectful cutover fails closed. `VERIFYING` does not substitute for this pre-cutover gate.
+
+After those gates pass:
+
+- activate target tenant admission for the new placement generation;
 - atomically update Control Plane placement to target `cell_id` and increment `placement_version`;
 - invalidate/propagate placement change;
 - route new units of work to target;
@@ -103,13 +119,12 @@ For recovery-driven relocation, this rule extends through `(R, F]`: completed ir
 
 Jobs/messages created before cutover re-resolve logical placement. Work that is safe to continue is re-enqueued/redirected according to job policy; stale physical routing is rejected.
 
-A recovery-driven target SHALL NOT become effectfully authoritative until required post-recovery-point deduplication, idempotency, process outcome, immutable audit and external-operation reconciliation evidence has been validated.
-
 ## VERIFYING
 
-Validate:
+Post-cutover verification is defense in depth. Validate:
 
-- target authorization/tenant isolation;
+- target authorization/tenant isolation still matches current authoritative security state;
+- no reconciled revocation/deny state regressed after admission;
 - transactional domain counts/invariants;
 - outbox publication watermark and no duplicate unpublished transfer;
 - inbox/idempotency continuity;
@@ -126,7 +141,7 @@ Validate:
 
 Source tenant data is retained for a defined recovery window in a non-authoritative, write-fenced state, then deleted according to policy after completion evidence and recovery obligations are satisfied.
 
-For recovery-driven relocation, source cleanup cannot destroy the only remaining post-`R` immutable audit/reliability evidence. Required continuity evidence must first exist in its governed durable destination.
+For recovery-driven relocation, source cleanup cannot destroy the only remaining post-`R` immutable audit/reliability/security-authority evidence. Required continuity evidence must first exist in its governed durable destination.
 
 ## Rollback rule
 

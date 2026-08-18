@@ -10,7 +10,7 @@
 
 Encrypted database/object backups are insufficient if the independent cryptographic authority required to decrypt restored ciphertext is lost. Because ADR-015 keeps production secret/KMS root authority outside ordinary databases, DR must recover both protected data and the key hierarchy/configuration necessary to make that data usable.
 
-Point-in-time tenant recovery has an additional correctness risk: restoring business state to time `R` must not erase knowledge of irreversible external effects, deduplication receipts, process outcomes, immutable audit evidence or authorization revocations that occurred between `R` and the final recovery write fence `F`. Otherwise a restored target can repeat an already-completed external action, lose accountability history or resurrect access that had already been revoked.
+Point-in-time recovery has an additional correctness risk at any authoritative scope: restoring state to time `R` must not erase later knowledge required to prevent duplicate irreversible effects, preserve accountability or keep security revocations effective. Tenant-level and whole-cell PITR therefore require an explicit reconciliation boundary before the recovered authority can resume protected or effectful traffic.
 
 Drivers: `QA-REC-001`, `INV-RECOVERY-001`, `INV-SECRET-001`, `INV-ASYNC-001`, `FR-OPS-003`, `SEC-SEC-*`, `SEC-AUD-*`, `SEC-AUTHZ-*`, `SEC-BROWSER-*`, `AP-11`.
 
@@ -18,12 +18,43 @@ Drivers: `QA-REC-001`, `INV-RECOVERY-001`, `INV-SECRET-001`, `INV-ASYNC-001`, `F
 
 Recovery is designed at multiple scopes:
 
-1. **control plane:** encrypted backups/PITR as supported by selected store, with tested restoration of tenant/placement/catalog metadata;
-2. **cell transactional store:** automated backups plus point-in-time recovery capability;
+1. **control plane:** encrypted backups/PITR as supported by selected store, with tested restoration of tenant/placement/catalog metadata and continuity of authoritative security/lifecycle denies where applicable;
+2. **cell transactional store:** automated backups plus point-in-time recovery capability with whole-cell reconciliation before normal authority resumes;
 3. **tenant logical recovery:** tooling to restore/export a tenant into an isolated verification namespace/environment before controlled reintroduction;
 4. **object artifacts:** versioning/retention according to data policy where needed;
 5. **telemetry:** backup/retention strategy based on business value, cost and re-ingest possibility, separate from transactional assumptions;
 6. **cryptographic authority:** recoverable/reconstructable KMS/secret-manager configuration, key aliases/versions/policies and root/master key availability required to decrypt persisted ciphertext and encrypted backups.
+
+### Scope-wide PITR continuity invariant
+
+Any recovery scope that can roll back authorization/revocation state, deduplication/idempotency state, process outcomes, audit evidence or knowledge of external irreversible effects SHALL define:
+
+- recovery point `R`;
+- a later authoritative reconciliation boundary `F` representing the final trusted activity/evidence boundary that must be accounted for before restored authority resumes;
+- rollback-subject state that intentionally returns to `R`;
+- safety/accountability/security-authority continuity state from `(R, F]` that must survive, be reconstructed or be reconciled forward.
+
+If the previous authority is still reachable, `F` is established through an explicit write/admission fence and final synchronization/reconciliation boundary. If the previous authority is lost, `F` is derived from the best surviving durable authorities and watermarks available for that scope, such as replicated transactional/WAL evidence, protected audit sinks, idempotency/process records, security/revocation authorities and external-provider acknowledgements. Uncertainty is not treated as proof of absence.
+
+If the platform cannot establish enough continuity evidence to prove safe protected/effectful resumption, the recovered scope remains quarantined/non-authoritative for those operations and fails closed until reconciliation or an explicitly governed recovery decision resolves the uncertainty.
+
+### Whole-cell point-in-time recovery continuity
+
+A whole-cell PITR restores cell-owned state for many tenants at once, including organization/access state, outbox/inbox/idempotency/process records, tenant domain state and potentially audit intents. It therefore SHALL NOT resume normal admitted traffic merely because PostgreSQL starts and schema/invariant checks pass.
+
+The restored cell remains in a **recovery quarantine/non-authoritative admission state** while the platform:
+
+1. establishes recovery point `R` and reconciliation boundary `F` for the failed/replaced cell;
+2. inventories affected tenants and continuity-bearing records/effects in `(R, F]`;
+3. reconciles inbox/deduplication, idempotency outcomes, process/execution state, outbox publication/effect state and completed/ambiguous external operations;
+4. restores or references required immutable audit/accountability evidence;
+5. reconciles session/credential revocations where cell-owned or relevant, membership disablement/revocation, permission/scope removals, tenant suspension/access-denial state, authorization/session generations, revocation tombstones or equivalent freshness state;
+6. validates placement/admission state and current external/security authorities;
+7. proves that stale authority and already-completed irreversible effects cannot become eligible solely because the cell was restored to `R`.
+
+Only after those pre-admission gates pass may the cell resume protected tenant traffic and effectful workers/schedulers. Post-admission verification remains defense in depth; it is not the first authorization/reliability check.
+
+If the cell outage destroyed the only copy of continuity evidence for some operation, affected effectful work is quarantined or reconciled with its external authority before retry. Protected access whose current deny/revocation state cannot be established fails closed.
 
 ### Tenant point-in-time recovery continuity
 
@@ -77,10 +108,12 @@ RPO/RTO numerical objectives remain OPEN until SLO/business-tier work. Productio
 - point-in-time recovery does not silently recreate eligibility for already-completed irreversible effects;
 - audit/accountability history survives logical business-state rollback;
 - post-recovery-point authorization revocations remain effective unless explicitly reversed through a separate security operation;
+- whole-cell restoration cannot bypass the same continuity guarantees required of tenant-level restoration;
 - evidence-based RPO/RTO becomes possible.
 
 ### Negative / cost
 - logical tenant restore tooling is non-trivial for pooled data;
+- whole-cell PITR requires all-tenant continuity inventory/reconciliation before normal admission;
 - point-in-time tenant recovery requires interval reconciliation rather than a simple pointer cutover;
 - security-revocation continuity adds another recovery dependency that must be inventoried and tested;
 - cryptographic authority introduces a separate critical recovery dependency;
@@ -89,6 +122,8 @@ RPO/RTO numerical objectives remain OPEN until SLO/business-tier work. Productio
 ## Validation
 
 Scheduled restore tests SHALL cover control plane, a representative cell and tenant-scoped recovery. Integrity, authorization, placement, deduplication/process continuity and audit consistency are validated before reintroduction.
+
+A whole-cell PITR rehearsal SHALL restore a cell to `R` after creating representative later membership/permission revocations, idempotency receipts, immutable audit evidence and completed/ambiguous external effects. The recovered cell must remain non-authoritative until `(R, F]` continuity is reconciled and must prove that revoked access stays denied and already-completed effects are not repeated when admission resumes.
 
 A tenant PITR rehearsal SHALL create representative post-recovery-point irreversible effects and audit/idempotency records, then restore to the earlier point and prove the recovered target cannot repeat those effects and does not lose the post-point accountability evidence after cutover/source cleanup.
 

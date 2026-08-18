@@ -102,6 +102,8 @@
 
 **SEC-GOV-008** — Destructive artifact/object cleanup SHALL be serialized with legal-retention/legal-hold state. The destructive path SHALL carry an expected monotonic governance/retention generation or equivalent fencing authority and SHALL prove immediately at the irreversible delete/crypto-erasure boundary that the generation is still current and no effective hold prohibits deletion. Hold placement/release and deletion SHALL share a logical serialization mechanism so a governance mutation that wins the boundary invalidates stale deletion authority. A read-then-delete check-then-act sequence is insufficient; if the implementation cannot prove stale-delete rejection, destructive cleanup SHALL fail closed or remain reconciliation-required.
 
+**SEC-GOV-009** — Active artifact delivery lease admission SHALL be serialized with artifact delivery-generation retirement. Before the first protected byte is released, lease creation SHALL atomically verify a currently releasable artifact state, open delivery admission and the expected current `delivery_generation` while persisting the lease under the same logical authority that erasure uses to close admission/advance the generation. A read-current-generation followed by an unprotected later lease insert is prohibited. If erasure fencing wins the race, stale lease creation SHALL fail and zero protected bytes may be released; if lease admission wins first, the committed lease SHALL be included in the erasure abort/drain set before full non-releasability or confirmed erasure.
+
 ## Abuse protection
 
 **SEC-ABUSE-001** — Rate/usage limits SHALL be enforceable across dimensions including principal/API key, tenant, route/operation and integration where required.

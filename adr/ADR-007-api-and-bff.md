@@ -6,7 +6,7 @@
 
 ## Context
 
-The web UI benefits from server-side session handling and composition, while the platform also needs direct APIs for automation/integrations. Making the browser own refresh/API credentials expands attack surface; making the API trust the BFF would break defense in depth. Direct browser realtime connections add a cross-site WebSocket risk if ambient cookies alone authorize the socket. A BFF-minted realtime capability also cannot be treated as proof that authorization remains current if session, membership, permission or tenant access changes after issuance. In a horizontally scaled realtime gateway, replay protection is also unsafe if replicas merely read an "unused" capability state concurrently; a single-use capability needs a shared atomic consume/claim operation so exactly one handshake can win.
+The web UI benefits from server-side session handling and composition, while the platform also needs direct APIs for automation/integrations. Making the browser own refresh/API credentials expands attack surface; making the API trust the BFF would break defense in depth. Direct browser realtime connections add a cross-site WebSocket risk if ambient cookies alone authorize the socket. A BFF-minted realtime capability also cannot be treated as proof that authorization remains current if session, membership, permission or tenant access changes after issuance. In a horizontally scaled realtime gateway, replay protection is also unsafe if replicas merely read an "unused" capability state concurrently; a single-use capability needs a shared atomic consume/claim operation so exactly one handshake can win. Replay protection also fails if that shared authority can forget a previously consumed capability while its signed token is still cryptographically valid, because missing state could otherwise be misinterpreted as unused.
 
 Drivers: `FR-ID-002`, `FR-ID-004`, `FR-INT-001`, `INV-AUTHZ-001`, `SEC-ID-*`, `SEC-AUTHZ-*`, `SEC-BROWSER-*`.
 
@@ -46,6 +46,17 @@ For single-use capabilities, replay protection SHALL be a single-winner state tr
 
 A pre-upgrade read such as "capability appears unused" is insufficient. The shared consume authority must serialize competing replicas. If that authority is unavailable or cannot establish single-winner consumption, the protected upgrade fails closed.
 
+### Replay-authority continuity
+
+A cryptographically valid capability MUST NOT become redeemable merely because replay-state storage restarted, was restored from an older point, was reinitialized, or lost a nonce/receipt. **Missing replay state is never interpreted as unused.**
+
+The accepted implementation SHALL provide one of these equivalent fail-safe contracts, or a stronger one:
+
+1. **registered capability state:** before the BFF returns a capability to the browser, its stable capability identity and accepted use bound are durably/continuously registered in the shared replay authority; admission requires that registered record to exist, and consumed state is retained at least through capability expiry plus accepted clock/retry safety margin; or
+2. **replay epoch/generation:** the signed capability is bound to a replay-authority epoch/generation whose current value is trustworthy across replicas; replay-authority loss/reinitialization advances the epoch before protected admission resumes, thereby invalidating every capability minted under the lost epoch.
+
+If replay authority is restored from an older snapshot, its state/epoch MUST be reconciled so a previously consumed capability cannot become eligible again. If the platform cannot prove replay-state continuity or establish a safely advanced current epoch, protected admission remains fail closed and clients remint capabilities only after the authority is safe.
+
 The consume operation is the final replay-admission gate after the other required validation succeeds. If a gateway consumes the capability but fails before completing the HTTP upgrade, the capability remains consumed and the browser must request a new one; sacrificing that one capability is preferable to ambiguous reuse.
 
 The connection capability proves an authorization decision at mint time but does not freeze authorization until capability expiry. A capability-carried authorization/session generation is a reference that must be compared with trusted current state. If current authorization cannot be established safely, the protected upgrade fails closed.
@@ -69,13 +80,16 @@ The web delivery layer MAY use CDN/edge/serverless capabilities, but the core AP
 - cross-site pages cannot gain or retain protected WebSocket connections merely by causing ambient cookies to be attached;
 - a capability minted before revocation cannot establish a protected socket solely because it remains cryptographically valid;
 - concurrent replicas cannot both redeem the same single-use capability;
+- replay-authority restart/loss cannot turn a previously consumed capability into an apparently unused one;
 - invalid protected socket attempts are rejected before consuming long-lived gateway connection resources.
 
 ### Negative / cost
 - one additional request hop for typical browser calls;
 - session/BFF availability and CSRF policy require engineering;
 - direct realtime needs a connection-ticket mint/validation lifecycle, current-authorization check and shared atomic replay-consumption authority on the pre-upgrade path;
+- replay authority needs continuity across the capability validity window or an epoch/generation mechanism that safely invalidates outstanding capabilities after state loss;
 - fail-safe consume-before-upgrade semantics can burn a capability if the gateway fails after claim and before `101`, requiring the browser to mint another;
+- replay-authority recovery may invalidate all outstanding capabilities in an affected epoch, which is an accepted availability cost;
 - API version/contract discipline is mandatory.
 
 ## Validation
@@ -87,6 +101,8 @@ The web delivery layer MAY use CDN/edge/serverless capabilities, but the core AP
 - stolen/replayed/expired/wrong-tenant/wrong-scope connection capability is rejected before upgrade;
 - concurrent presentation of one single-use capability to multiple gateway replicas yields exactly one atomic consume winner and at most one `101`; every loser is rejected;
 - failure after successful capability consume but before `101` leaves that capability unusable and requires minting a new one rather than permitting replay;
+- replay-authority restart/loss is tested while a consumed capability remains cryptographically valid; the old capability remains rejected, either because its registered consumed state survives or because a new replay epoch invalidates all capabilities from the lost epoch;
+- missing capability state after authority recovery is rejected and is never treated as an unused capability;
 - a valid capability minted before session/membership/permission/tenant revocation is rejected if the underlying authority is no longer current when presented;
 - ambient cookie alone cannot establish a protected direct browser socket;
 - invalid protected socket attempts are not retained as upgraded idle connections;
@@ -94,4 +110,4 @@ The web delivery layer MAY use CDN/edge/serverless capabilities, but the core AP
 
 ## Exit / revisit conditions
 
-Revisit only if web delivery model changes; API independence remains required by machine/integration actors and protected browser realtime must preserve equivalent cross-site, current-authorization, single-winner replay-consumption and pre-upgrade admission defenses.
+Revisit only if web delivery model changes; API independence remains required by machine/integration actors and protected browser realtime must preserve equivalent cross-site, current-authorization, single-winner replay-consumption, replay-authority continuity and pre-upgrade admission defenses.

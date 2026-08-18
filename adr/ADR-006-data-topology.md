@@ -45,7 +45,9 @@ Every upload attempt is bound to the generation that authorized it. A deletion/e
 
 Artifact delivery authority is also generation-bound. A download capability is acceptable only when the platform can make it unusable after its artifact delivery/lifecycle generation is fenced, either through an application-mediated current-state/generation check or an equivalent revocable storage/access generation. A direct signed capability that remains usable solely until expiry is not sufficient where current governance requires prompt revocation on deletion/erasure.
 
-Capability redemption is not the end of delivery authorization. A protected download that has begun streaming uses a generation-bound active delivery lease/stream record or an equivalent stream-level fence. When erasure retires the delivery generation, older active streams are aborted, fenced or deterministically drained and their terminal state is observable. A mechanism that can reject only future capability presentations but cannot stop or account for an already-authorized stream cannot support a claim of prompt artifact non-releasability/confirmed erasure.
+Capability redemption is not the end of delivery authorization. Before the first protected byte, active-delivery lease/stream admission is serialized with delivery-generation retirement under one logical authority. Lease acquisition atomically verifies current releasable artifact state, open delivery admission and the expected current delivery generation while persisting the generation-bound active lease. A read of generation/status followed by an unprotected later lease insert is insufficient. If lease admission commits first, erasure must observe/include that lease in its abort/drain set; if erasure closes admission/advances the generation first, stale lease admission fails and no stream/first byte may start.
+
+A protected download that has begun streaming remains bound to that active delivery lease/stream record or an equivalent stream-level fence. When erasure retires the delivery generation, older active streams are aborted, fenced or deterministically drained and their terminal state is observable. A mechanism that can reject only future capability presentations but cannot prevent stale post-fence lease admission or stop/account for an already-authorized stream cannot support a claim of prompt artifact non-releasability/confirmed erasure.
 
 Legal-retention/legal-hold authority is versioned by a monotonic governance/retention generation or equivalent fencing state. Destructive object cleanup MUST NOT rely on a policy read followed by a later unconditional object deletion. Hold placement/release and destructive cleanup share one logical serialization authority: immediately before an irreversible object-delete/crypto-erasure boundary, the destructive path proves its expected governance generation is still current, no effective hold prohibits deletion and its destructive authorization token/fence is current. A governance mutation that wins that serialization boundary invalidates stale destructive authorization.
 
@@ -53,7 +55,7 @@ This serialization may be implemented by a single artifact-governance owner/proc
 
 Only terminal-ready metadata whose expected object identity/integrity and current lifecycle/delivery generations have been verified may authorize artifact release. A crash after metadata creation, object upload, metadata finalization, response delivery or object deletion must leave a state that deterministic reconciliation can classify and repair/idempotently complete.
 
-Artifact deletion/erasure uses durable intent/tombstone, metadata-level publication fencing, delivery-capability fencing, active-stream fencing/draining, governance-generation serialization, idempotent object cleanup and a confirmed outcome. Confirmation is withheld until prior-generation upload/finalize attempts cannot publish, prior-generation delivery capabilities cannot start/restart release, prior-generation active streams cannot release further protected bytes, each destructive action observed current governance/hold authority at its irreversible boundary, and the relevant object/version inventory has been reconciled. If that proof is unavailable, the lifecycle remains `ERASURE_FENCING`/`DELETING`/`RECONCILIATION_REQUIRED`; a successful delete API response alone is not proof of erasure.
+Artifact deletion/erasure uses durable intent/tombstone, metadata-level publication fencing, delivery-capability fencing, **serialized active-delivery admission**, active-stream fencing/draining, governance-generation serialization, idempotent object cleanup and a confirmed outcome. Confirmation is withheld until prior-generation upload/finalize attempts cannot publish, no retired delivery generation can admit a late lease, prior-generation delivery capabilities cannot start/restart release, prior-generation active streams cannot release further protected bytes, each destructive action observed current governance/hold authority at its irreversible boundary, and the relevant object/version inventory has been reconciled. If that proof is unavailable, the lifecycle remains `ERASURE_FENCING`/`DELETING`/`RECONCILIATION_REQUIRED`; a successful delete API response alone is not proof of erasure.
 
 A mutable stable object key that an already-started stale worker can recreate after deletion is not sufficient unless the selected object-store protocol provides equivalent generation/conditional-write fencing. Immutable/version-specific staging identities plus metadata-controlled publication are the default conceptual model.
 
@@ -73,7 +75,7 @@ Ephemeral cache/pub-sub state SHALL NOT be durable business truth. Short-lived s
 - object storage can scale binary artifacts without pretending metadata/object creation is atomic;
 - artifact bytes remain discoverable/reconcilable for retention, erasure and recovery;
 - deletion/erasure cannot be invalidated by a previously authorized upload publishing after the object-delete step;
-- governed erasure cannot be bypassed by a previously minted delivery capability or already-active stream that outlives the artifact's current delivery generation;
+- governed erasure cannot be bypassed by a previously minted delivery capability, late stale lease admission or already-active stream that outlives the artifact's current delivery generation;
 - a legal hold that wins the governance serialization boundary cannot be bypassed by a stale destructive worker using earlier policy state.
 
 ### Negative / cost
@@ -81,8 +83,8 @@ Ephemeral cache/pub-sub state SHALL NOT be durable business truth. Short-lived s
 - pooled cell database remains a shared failure resource;
 - data-plane routing/backup and migration need strong operations;
 - separate telemetry storage requires durable ingestion identity, scoped dedup namespace, projection checkpoints and reconciliation;
-- artifact object storage requires staged lifecycle, upload-generation fencing, delivery-generation revocation, active-stream tracking/fencing, governance-generation serialization and governed orphan cleanup;
-- deletion confirmation may remain pending while stale upload/object-version/delivery-capability/active-stream/governance state is reconciled.
+- artifact object storage requires staged lifecycle, upload-generation fencing, delivery-generation revocation, serialized lease admission, active-stream tracking/fencing, governance-generation serialization and governed orphan cleanup;
+- deletion confirmation may remain pending while stale upload/object-version/delivery-capability/lease/active-stream/governance state is reconciled.
 
 ## Validation
 
@@ -95,6 +97,7 @@ Ephemeral cache/pub-sub state SHALL NOT be durable business truth. Short-lived s
 - artifact fault injection before upload, after upload/before metadata finalize, after finalize/before response and during delete/erasure proves no completed-looking artifact points to absent/wrong bytes and no protected object remains indefinitely undiscoverable/unmanaged;
 - artifact deletion is raced against an already-started upload/finalize attempt and proves the delete/erasure transition fences the prior generation before cleanup, stale completion cannot publish/finalize, and `confirmed` is not recorded until prior-generation publisher/object state is reconciled;
 - mint a still-valid artifact download capability, begin governed erasure before expiry and prove the older delivery generation/capability cannot start a new release before the artifact is treated as fully non-releasable/erased;
+- pause redemption after reading releasable state/current delivery generation but before active-lease persistence, race erasure fencing, and prove exactly one serialized result: lease-first is durably included in abort/drain reconciliation; erasure-first rejects stale lease creation before any stream/first byte;
 - redeem a capability and begin streaming, then start erasure concurrently and prove the active older-generation delivery is aborted/drained or equivalently fenced before full non-releasability/confirmed erasure is claimed;
 - race legal-hold placement against destructive artifact cleanup and prove a governance-generation/hold mutation that wins serialization rejects the stale destructive authorization before object destruction;
 - artifact reconciliation validates stable identity, lifecycle/delivery/governance generations, active-stream state, object version/checksum and current governance before release or destructive cleanup;
@@ -102,4 +105,4 @@ Ephemeral cache/pub-sub state SHALL NOT be durable business truth. Short-lived s
 
 ## Exit / revisit conditions
 
-Revisit transactional store only with evidence that PostgreSQL cannot satisfy required consistency, scale, residency or operational requirements. Telemetry specialization is expected to be revisited earlier. Object-storage vendor/mechanism may change, but stable artifact identity, staged cross-store lifecycle, stale-writer generation fencing, delivery-capability/active-stream fencing, governance-generation serialization and governed reconciliation remain required.
+Revisit transactional store only with evidence that PostgreSQL cannot satisfy required consistency, scale, residency or operational requirements. Telemetry specialization is expected to be revisited earlier. Object-storage vendor/mechanism may change, but stable artifact identity, staged cross-store lifecycle, stale-writer generation fencing, delivery-capability/serialized-lease/active-stream fencing, governance-generation serialization and governed reconciliation remain required.

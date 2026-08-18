@@ -62,11 +62,19 @@ The BFF owns browser-facing session establishment/refresh orchestration, HttpOnl
 
 ### Protected direct realtime
 
-A protected first-party browser realtime connection may bypass the normal BFF request hop only after an authenticated same-site BFF request mints a short-lived, narrowly scoped connection capability. The browser presents that capability to the realtime gateway, which also validates an allowlisted expected `Origin` before protected delivery.
+A protected first-party browser realtime connection may bypass the normal BFF request hop only after an authenticated same-site BFF request mints a short-lived, narrowly scoped connection capability.
+
+Before accepting the protected WebSocket upgrade, the realtime gateway MUST validate:
+
+- the expected allowlisted browser `Origin`;
+- the connection capability authenticity, expiry, replay state and intended principal/tenant/realtime scope;
+- applicable pre-upgrade abuse/connection-admission limits.
+
+Failure of those checks rejects the HTTP handshake before `101 Switching Protocols`; the gateway does not retain an unauthorized protected socket and then merely suppress subscriptions afterward.
 
 The capability is bound to the intended principal/tenant/realtime purpose, expires quickly and is single-use or otherwise replay-bounded. It is not a refresh token or a general API bearer credential.
 
-An ambient HttpOnly session cookie by itself **MUST NOT** authorize a protected direct browser WebSocket. A future cookie-authenticated direct-socket design requires a separate security decision proving Origin validation plus an anti-CSRF/connection proof with equivalent protection.
+An ambient HttpOnly session cookie by itself **MUST NOT** authorize a protected direct browser WebSocket. A future cookie-authenticated direct-socket design requires a separate security decision proving pre-upgrade Origin validation plus an anti-CSRF/connection proof with equivalent protection.
 
 Public unauthenticated endpoints/transports are separate exposure contracts.
 

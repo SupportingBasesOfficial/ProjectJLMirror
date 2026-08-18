@@ -12,9 +12,10 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Relocation | Concurrent stale source writer is fenced; no source writes accepted after cutover; target becomes sole authority |
 | Authorization | UI omission cannot bypass server policy; cross-tenant privileged operations are distinct and audited |
 | Browser/BFF | First-party browser never receives/persists long-lived platform access or refresh credentials; browser protected API flow remains behind confidential BFF session boundary |
-| Browser realtime handshake | Protected direct socket rejects ambient-cookie-only, untrusted/null Origin, expired/replayed/wrong-scope/wrong-tenant connection capability |
+| Browser realtime handshake | Untrusted/null Origin, ambient-cookie-only, expired/replayed/wrong-scope/wrong-tenant capability is rejected before `101 Switching Protocols`; no unauthorized protected socket is retained |
 | Realtime authorization | Active protected subscription loses access after membership/permission/session/tenant revocation within accepted bound; missed invalidation is caught by bounded revalidation |
 | Transactions | Mutation + required audit/audit-intent + outbox commit atomically; injected dispatcher failure loses no committed event/audit intent |
+| Audit intent integrity | During external audit-sink outage, normal app/dispatcher roles cannot update/delete immutable audit-intent evidence; only segregated delivery metadata is mutable and original evidence remains reproducible |
 | Event delivery | Duplicate event causes no duplicate irreversible effect; poison message quarantines after bounded policy |
 | Job delivery | Worker crash after external timeout does not duplicate accepted logical side effect beyond contract |
 | Provider callback transport | Over-limit streamed/chunked callback is rejected before complete buffering/signature work; post-auth decompression/parser expansion is bounded |
@@ -27,6 +28,7 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Control Plane outage | Stable admitted traffic behavior matches policy; topology-changing operations fail closed |
 | Cell DB outage | Affected cell is removed/degraded; unrelated cells continue |
 | Telemetry crash consistency | Crash at every durable-ingress/current-state/history/signal boundary leaves an accepted observation replayable/reconcilable; duplicate retry is idempotent; no uncoordinated dual-write success is acknowledged |
+| Telemetry ordering | Deliver observation N+1 before N and replay partitions out of order; latest/current projection remains at N+1 (or newer ordering token), stale observation is retained historically but cannot regress current state or emit a false latest-state transition |
 | Telemetry outage | Buffer/backpressure remains bounded; transactional core protected from telemetry backlog |
 | Secret authority outage | No plaintext fallback; only accepted lease/cache behavior continues |
 | Cryptographic DR | Restored representative ciphertext/backups remain decryptable through approved KMS/key-recovery path after simulated loss of normal cryptographic authority |
@@ -43,15 +45,17 @@ The following failures block release regardless of other test success:
 - interactive SQL principal can alter the tenant authority trusted by pooled data policy;
 - stale placement can write after relocation fence/cutover;
 - required privileged audit record or durable atomic audit intent can be omitted on successful mutation;
+- normal runtime/dispatcher can rewrite or delete the only committed required-audit evidence payload before external delivery;
 - duplicate delivery can repeat an irreversible payment/destructive execution without contract protection;
 - first-party browser JavaScript is intentionally given long-lived platform access/refresh credentials;
-- protected browser socket can be established from an untrusted origin or with ambient cookie alone;
+- protected first-party browser WebSocket with untrusted/null Origin or invalid/absent capability can receive a successful upgrade/persistent admission;
 - known-revoked realtime subscription continues receiving protected events beyond the accepted revocation/revalidation bound;
 - oversized unauthenticated callback reaches complete-body/signature processing without transport enforcement;
 - forged/invalid-authentication provider callback can mutate protected domain state;
 - replayed provider callback can repeat an irreversible logical side effect;
 - delayed user-requested export can execute/release after required authorization has been revoked;
 - telemetry ingestion acknowledges an observation while neither a durable replayable acceptance record nor an equivalent recoverable authority exists for downstream projections;
+- out-of-order/replayed telemetry can replace a newer current/latest state or produce a stale latest-state transition;
 - secrets appear in logs/traces/events/queue payload/audit/client error;
 - migration makes active supported runtime versions access incompatible schema;
 - restore cannot re-establish verified tenant isolation;

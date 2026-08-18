@@ -30,7 +30,7 @@
 
 **SEC-BROWSER-001** — The first-party browser SHALL use the BFF as the confidential session boundary and SHALL NOT receive long-lived platform access or refresh credentials.
 
-**SEC-BROWSER-002** — A protected browser realtime connection that bypasses the normal BFF request hop SHALL use a short-lived, narrowly scoped connection capability minted through the BFF (or an explicitly reviewed equivalent) and SHALL validate the expected browser Origin. Ambient cookies alone SHALL NOT authorize a protected direct WebSocket connection.
+**SEC-BROWSER-002** — A protected first-party browser WebSocket SHALL validate the allowlisted expected browser Origin and the required short-lived BFF-minted connection capability **before the WebSocket upgrade is accepted**. Invalid/null/untrusted Origin, invalid/replayed/expired/wrong-scope capability, or ambient cookie alone SHALL be rejected during the HTTP handshake and SHALL NOT create a retained protected socket.
 
 **SEC-BROWSER-003** — Realtime connection capabilities SHALL be bounded in lifetime and scope, resistant to replay/reuse as appropriate to their contract, and SHALL NOT become general API bearer credentials.
 
@@ -69,6 +69,8 @@
 **SEC-AUD-002** — Security telemetry SHALL preserve correlation and actor/tenant context without leaking protected values.
 
 **SEC-AUD-003** — When audit evidence is required for a successful local authoritative mutation, the audit record or a durable audit intent SHALL commit atomically with that mutation. Post-commit best-effort audit alone is insufficient.
+
+**SEC-AUD-004** — When the final audit sink is external, the atomically committed audit-intent evidence payload SHALL be append-only/protected from update or delete by normal application and dispatcher roles. Mutable delivery/retry metadata SHALL be segregated from immutable accountability evidence and governed retention/deletion SHALL require separate administrative authority.
 
 ## Abuse protection
 

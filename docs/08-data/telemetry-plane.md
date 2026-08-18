@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Monitoring current state and high-volume historical telemetry have different performance/lifecycle requirements. Current operational reads must not degrade linearly as retained history grows. When those data classes use different persistence authorities, ingestion must remain crash-consistent.
+Monitoring current state and high-volume historical telemetry have different performance/lifecycle requirements. Current operational reads must not degrade linearly as retained history grows. When those data classes use different persistence authorities, ingestion must remain crash-consistent and current-state projections must not regress when accepted observations are replayed or delivered out of order.
 
 ## Separation
 
@@ -48,9 +48,12 @@ ingested_at
 value + value_type/unit semantics
 quality/status metadata when applicable
 provider sequence/external identity when available
+projection_order_key / source generation semantics when required
 ```
 
 Provider-native IDs do not replace stable JLMIRROR resource/metric identity.
+
+`observed_at` is event time and is not, by itself, a sufficient monotonic authority for latest-state updates because provider clocks can skew or move backwards.
 
 ## Durable acceptance boundary
 
@@ -60,9 +63,10 @@ Ingestion declares exactly one durable acceptance point before multiple persiste
 Provider
   -> adapter validation/normalization
   -> derive observation_id / dedup identity
+  -> derive/validate projection ordering metadata
   -> DURABLE ACCEPTANCE
        |-> idempotent historical telemetry projection
-       |-> idempotent current transactional-state projection when required
+       |-> monotonic current transactional-state projection when required
        |-> idempotent domain/integration signal projection
 ```
 
@@ -74,13 +78,31 @@ Provider
 
 The system does **not** acknowledge an observation as accepted after an uncoordinated write to one authority while another required write remains only in process memory.
 
+## Projection ordering and monotonic current state
+
+Idempotency prevents the same observation from being applied twice; it does not by itself prevent an older distinct observation from arriving after a newer one. Every current/latest-state projection therefore defines a deterministic ordering contract for its projection key, such as `(tenant_id, source_id, resource_id, metric_definition_id)` or another owner-domain key.
+
+The ordering contract MUST use an ordering token that can be compared monotonically for that projection key. Preferred inputs are:
+
+- a provider-native monotonic sequence/version when its semantics are reliable;
+- a provider sequence combined with an explicit source generation/epoch when the provider can reset counters;
+- or a platform-assigned acceptance ordinal/version established at the durable acceptance boundary when provider ordering is insufficient.
+
+A current-state writer performs a conditional compare-and-set/update: the incoming observation may replace current state only when its ordering token is strictly newer than the stored projection token, or when an explicitly defined deterministic tie-break rule says it wins. A stale/out-of-order observation remains valid historical telemetry but MUST NOT regress `metric_latest_state`, `resource_current_state` or equivalent current projections.
+
+Signals whose meaning is "current/latest state changed" are emitted only from an observation that successfully advances the corresponding current-state projection. Historical/event-time analytics may process late observations under their own explicit window/watermark semantics, but they do not masquerade as a newer current-state transition.
+
+Ordering semantics are source-aware. A reconnect, provider reset, tenant relocation or source reconfiguration that can invalidate sequence comparison introduces a new generation/epoch or equivalent boundary rather than reusing an ambiguous counter domain.
+
 ## Projection and reconciliation semantics
 
 Historical, current-state and signal writers consume the durable observation identity idempotently. Duplicate retries may reproduce delivery attempts but not duplicate the logical observation/effect.
 
 Each projection tracks a durable checkpoint/watermark or equivalent reconciliation state. A crash between projections leaves recoverable lag, not ambiguous success. Operators can compare acceptance/projection watermarks and replay/reconcile incomplete work.
 
-If a provider supports replay/resume tokens, those are tracked as source checkpoints but do not replace JLMIRROR's own accepted-observation identity.
+Reconciliation may replay observations in arbitrary delivery order; monotonic current-state compare-and-set semantics ensure replay cannot move latest state backwards.
+
+If a provider supports replay/resume tokens, those are tracked as source checkpoints but do not replace JLMIRROR's own accepted-observation identity or projection ordering contract.
 
 ## Unavailability/backpressure
 
@@ -114,7 +136,7 @@ Examples:
 
 Exact table names/models are determined with domain/API contract design.
 
-Current-state freshness includes projection watermark/observed-at semantics where operationally material.
+Current-state records include enough ordering/freshness metadata to prove why a value is considered current and to reject stale replay.
 
 ## Downsampling/rollups
 
@@ -130,6 +152,6 @@ Rollup algorithms and windows require product/query accuracy requirements and ca
 
 ## Tenant relocation
 
-Telemetry is included in the relocation manifest. Large historical datasets may move asynchronously or via provider/storage-native transfer, but cutover must define which durable acceptance boundary is authoritative for new observations, transfer/replay watermarks, and how historical queries span/complete migration without split writes.
+Telemetry is included in the relocation manifest. Large historical datasets may move asynchronously or via provider/storage-native transfer, but cutover must define which durable acceptance boundary is authoritative for new observations, transfer/replay watermarks, source generation/order-token continuity, and how historical queries span/complete migration without split writes.
 
 No observation may be durably accepted as new authoritative input in both source and target after the relocation fence.

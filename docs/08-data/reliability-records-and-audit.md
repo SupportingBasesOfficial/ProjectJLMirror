@@ -102,12 +102,41 @@ High-assurance future requirements MAY replicate/seal audit evidence to an exter
 When audit evidence is required for a local authoritative mutation, one of the following MUST commit atomically with the mutation:
 
 1. the required audit record itself, when audit storage is inside the same transactional boundary; or
-2. a durable audit intent/outbox record sufficient to deterministically produce the required external audit evidence, when the final audit sink is outside that boundary.
+2. a durable audit intent sufficient to deterministically produce the required external audit evidence, when the final audit sink is outside that boundary.
 
 A successful required-audit mutation may not exist in a state where neither the audit record nor its durable atomic intent exists. Post-commit best-effort logging/audit is not sufficient.
+
+## Tamper-resistant external audit intent
+
+An external-sink audit intent is accountability evidence, not a generic mutable delivery job. Its evidence payload MUST receive the same protection class as a local immutable audit record from the moment the business mutation commits.
+
+The committed evidence portion includes the stable audit identity, actor/tenant/action/resource context, safe change/outcome summary, policy/correlation metadata and destination/contract identity required to reproduce the external evidence deterministically. Normal application runtime and ordinary dispatchers MUST NOT be able to rewrite or delete that committed evidence payload.
+
+Mutable delivery state is segregated from immutable evidence. A representative model is:
+
+```text
+audit_intent_evidence (append-only / protected)
+  audit_intent_id
+  immutable evidence payload
+  created_at
+
+ audit_delivery_state (mutable by narrow dispatcher role)
+  audit_intent_id
+  delivery_status
+  attempt_count
+  next_attempt_at
+  last_error_class
+  delivered_at / receipt reference
+```
+
+Exact table names are implementation details. The normative rule is that retry bookkeeping may change while the accountability statement it is trying to deliver may not be rewritten by normal runtime.
+
+Deletion/retention of audit evidence uses governed administrative policy and separate privilege; an audit-sink outage MUST NOT create a window in which a buggy or compromised dispatcher can erase the only durable evidence of a committed privileged mutation.
 
 External side-effect audit/reconciliation may add subsequent immutable records representing attempts, provider acknowledgements and final outcome; those records do not replace the atomic accountability record/intent for the originating privileged mutation.
 
 ## Validation
 
 Fault injection covers crash before mutation commit, immediately after commit, before external audit delivery and during audit-sink outage. Required mutation success is accepted only if local audit evidence or durable audit intent survives and can be reconciled.
+
+Authorization tests prove normal application and dispatcher roles cannot update/delete committed audit evidence payloads. Delivery workers may mutate only explicitly separated delivery metadata. An external audit outage followed by dispatcher compromise/fault simulation must leave the original committed audit evidence intact and reproducible.

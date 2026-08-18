@@ -16,8 +16,10 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Browser realtime handshake | Untrusted/null Origin, ambient-cookie-only, expired/replayed/wrong-scope/wrong-tenant capability is rejected before `101 Switching Protocols`; no unauthorized protected socket is retained |
 | Browser realtime authorization freshness | Mint a valid capability, then revoke/suspend session, membership, permission/scope or tenant access before presentation; gateway proves current underlying authority and rejects before `101` despite valid capability signature/expiry |
 | Browser realtime replay concurrency | Present one single-use capability concurrently to multiple gateway replicas; shared atomic consume/claim yields exactly one winner and at most one `101`, every loser is rejected; crash the winner after consume/before `101` and prove the capability remains consumed and requires remint |
+| Browser realtime replay-authority recovery | Consume a capability, then restart/lose/restore replay authority while the signed capability is still valid; old capability remains rejected because registered consumption survives/reconciles or replay epoch advances; missing replay state is never treated as unused |
 | Realtime subscription authorization | After successful handshake, each protected subscription receives fresh tenant/resource authorization; active protected subscription loses access after membership/permission/session/tenant revocation within accepted bound; missed invalidation is caught by bounded revalidation |
 | Transactions | Mutation + required audit/audit-intent + outbox commit atomically; injected dispatcher failure loses no committed event/audit intent |
+| Inbox namespace isolation | Feed identical raw `message_id` values through the same consumer contract from different authoritative tenant/source scopes; both legitimate messages execute independently; exact redelivery in the same trusted scope deduplicates; untrusted payload cannot choose the dedup namespace |
 | Inbox co-resident effect completion | Crash before co-resident inbox/effect commit leaves neither completed receipt nor committed effect; crash after atomic commit but before broker ack/redelivery leaves both receipt/result and effect durable so replay does not execute again |
 | Inbox cross-authority effect completion | For effect outside inbox transaction, effect authority commits stable operation/result identity with the effect; crash/redelivery reconciles that identity before retry, so neither receipt-first loss nor effect-first duplication is possible |
 | Inbox ambiguous external outcome | External consumer effect times out or crashes after possible acceptance; existing operation identity enters reconciliation/quarantine and lease/receipt timeout alone never authorizes blind duplicate execution |
@@ -31,11 +33,14 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Job delivery | Worker crash after external timeout does not duplicate accepted logical side effect beyond contract |
 | Provider callback transport | Over-limit streamed/chunked callback is rejected before complete buffering/signature work; post-auth decompression/parser expansion is bounded |
 | Provider callbacks | Valid-shape forged/invalid-signature callback is rejected; stale/replayed callback does not repeat protected side effects; tenant binding comes from trusted integration configuration |
-| Delayed export | Authorization revoked after request but before execution/release prevents user-requested delayed artifact execution/release; capability is minted only after fresh authorization |
+| Artifact creation crash consistency | Inject crash before object upload, after upload/before metadata finalize, after finalize/before response and during retry; stable artifact lifecycle remains discoverable, only verified `READY/AVAILABLE` state is releasable, and no protected object remains indefinitely untracked |
+| Artifact integrity/reconciliation | Metadata/object version/checksum mismatch, missing object and controlled orphan object are detected; mismatched/missing artifacts are unavailable/quarantined, staged/orphan bytes are reconciled or governed-cleaned, and legal hold/erasure policy controls destructive cleanup |
+| Artifact deletion/erasure | Crash before/after object deletion while durable delete/erasure intent exists; object cleanup is idempotently reconciled, metadata cannot falsely release deleted bytes, and an interrupted delete does not create undiscoverable retained tenant data |
+| Delayed export | Authorization revoked after request but before execution/release prevents user-requested delayed artifact execution/release; capability is minted only after fresh authorization and terminal-ready artifact verification |
 | Delayed import | Queue a user-requested import while authorized, then revoke membership/import permission/tenant access before worker execution; worker re-establishes current tenant context and authorization and performs zero protected tenant mutation |
 | SQL administration | Interactive caller-authored SQL cannot alter the tenant binding used by data policy via `SET`, `set_config`, `SET ROLE`, session authorization or equivalent; normal app/migration owner credentials are unavailable |
 | Provider outage | One tenant/provider failure does not create global outage/retry storm |
-| Cache outage | Behavior matches cache class; no cache loss becomes durable data loss |
+| Cache outage | Behavior matches cache class; no cache loss becomes durable data loss or security replay eligibility |
 | Realtime outage | Authoritative write/read continues; reconnect/resync restores client state |
 | Control Plane outage | Stable admitted traffic behavior matches policy; topology-changing operations fail closed |
 | Cell DB outage | Affected cell is removed/degraded; unrelated cells continue |
@@ -48,10 +53,10 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Tenant PITR continuity | Restore business state to R, create completed irreversible effects/audit/idempotency records in (R,F], fence at F, reconcile and cut over; target cannot repeat those effects and post-R immutable accountability evidence survives source cleanup |
 | Tenant PITR authorization continuity | Create authority/capability before R, revoke/suspend session, membership, permission/scope or tenant access in (R,F], restore business state to R, reconcile and cut over; restored target preserves the later deny/revocation and rejects the stale authority before protected traffic resumes |
 | Tenant PITR governance continuity | Delete/erase or anonymize protected data and change legal-retention state in `(R,F]`, restore business data to `R`, reconcile and cut over; erased/de-identified data does not become authoritative/visible again, current retention/hold state is enforced, and approved crypto-erasure is not defeated by restoring an older key path |
-| Whole-cell PITR continuity | Across multiple tenants, create post-R revocations, idempotency receipts, audit evidence, governed erasure/anonymization/retention changes and completed/ambiguous external effects, restore the cell to R, and prove the cell remains quarantined until `(R,F]` continuity is reconciled; no stale grant, erased data or completed effect becomes eligible when admission resumes |
+| Whole-cell PITR continuity | Across multiple tenants, create post-R revocations, idempotency receipts, audit evidence, governed erasure/anonymization/retention changes, artifact lifecycle changes and completed/ambiguous external effects, restore the cell to R, and prove the cell remains quarantined until `(R,F]` continuity is reconciled; no stale grant, erased data, orphan artifact or completed effect becomes eligible when admission resumes |
 | Recovery scope uncertainty | If `F`/continuity cannot be completely established from the prior authority or surviving durable evidence, protected/effectful admission remains fail-closed, ambiguous work is quarantined, data with unresolved erasure/anonymization status remains unavailable, and destructive deletion with unresolved legal-retention status remains blocked |
 | Migration | Mixed-version rollout validated; destructive change follows expand/migrate/contract |
-| Recovery | Control-plane/cell/tenant restore rehearsals applicable to their scope complete with tenant isolation intact, required protected data decryptable where policy requires recoverability, and safety/accountability/security-authority/governance continuity reconciled before authority resumes |
+| Recovery | Control-plane/cell/tenant restore rehearsals applicable to their scope complete with tenant isolation intact, required protected data decryptable where policy requires recoverability, artifact metadata/object state reconciled, and safety/accountability/security-authority/governance continuity reconciled before authority resumes |
 | Observability | Request -> transaction -> outbox/job -> worker -> provider can be correlated without secret leakage |
 
 ## Release-blocking invariant tests
@@ -66,7 +71,11 @@ The following failures block release regardless of other test success:
 - a valid but stale realtime capability can receive `101` after its underlying session/membership/permission/tenant authority was revoked before presentation;
 - two or more gateway replicas can concurrently redeem the same single-use realtime capability because replay state is checked non-atomically or only replica-locally;
 - a replay-losing realtime handshake can receive `101`, or an ambiguous post-consume gateway failure can make the same single-use capability eligible again instead of requiring remint;
+- replay-authority restart/loss/restore can make a previously consumed still-valid capability redeemable because missing state is treated as unused or an old epoch is silently reused;
+- protected admission resumes after replay-state loss before consumed-state continuity is restored/reconciled or a safely advanced replay epoch invalidates outstanding capabilities;
 - protected realtime subscription admission is treated as equivalent to handshake admission, allowing a socket to bypass current authorization at either stage;
+- two authoritative tenant/source scopes using the same raw inbox `message_id` can collide under one consumer and cause one legitimate message to suppress the other;
+- untrusted message payload can select/forge an inbox namespace that bypasses or collides with trusted deduplication identity;
 - a co-resident inbox receipt can commit as completed without the protected local consumer effect, allowing redelivery to suppress a missing effect;
 - a co-resident consumer effect can commit without completed inbox/result linkage, allowing redelivery to execute the logical effect again after crash;
 - a cross-authority inbox effect can commit without stable operation/result identity that redelivery/recovery can reconcile before retry;
@@ -88,6 +97,10 @@ The following failures block release regardless of other test success:
 - oversized unauthenticated callback reaches complete-body/signature processing without transport enforcement;
 - forged/invalid-authentication provider callback can mutate protected domain state;
 - replayed provider callback can repeat an irreversible logical side effect;
+- artifact bytes can be uploaded/released without a discoverable stable artifact lifecycle record or equivalent staging manifest sufficient for reconciliation/governance;
+- artifact metadata can become terminal-ready while the expected object is absent, corrupt or integrity/version-mismatched;
+- a protected object surviving crash/restore can remain indefinitely untracked outside retention/erasure/legal-hold governance because no reconciliation/GC path can discover it;
+- artifact cleanup can destroy held data or re-release governed-out data because object deletion/recovery ignored current governance state;
 - delayed user-requested export can execute/release after required authorization has been revoked;
 - delayed user-requested import can mutate protected tenant data after request-time membership/permission/tenant authority has been revoked before execution or resume;
 - telemetry ingestion acknowledges an observation while neither a durable replayable acceptance record nor an equivalent recoverable authority exists for downstream projections;

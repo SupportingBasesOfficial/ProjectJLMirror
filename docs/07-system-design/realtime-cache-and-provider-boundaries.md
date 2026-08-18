@@ -7,7 +7,7 @@
 
 Realtime signals optimize operator experience; they are not authoritative state.
 
-A protected connection/subscription requires authentication plus authorization for tenant/resource scope before delivery, and that authority MUST remain fresh for the lifetime of the subscription.
+A protected browser connection requires an accepted BFF-minted connection capability plus expected-Origin validation before protected delivery. Every protected subscription also requires current authorization for tenant/resource scope, and that authority MUST remain fresh for the lifetime of the subscription.
 
 Logical realtime envelope:
 
@@ -24,6 +24,16 @@ payload
 ```
 
 Clients reconnect and resynchronize authoritative state from API/read models. A missed realtime message must not permanently corrupt UI state.
+
+## Browser realtime handshake
+
+```text
+Browser --authenticated same-site--> BFF
+        <-- short-lived scoped connection capability
+Browser --capability + expected Origin--> Realtime Gateway
+```
+
+Ambient session cookies alone are not sufficient authority for a protected direct browser socket. Capabilities are short-lived, scope-bound and replay-bounded; the gateway rejects untrusted/null origin, wrong tenant/scope, expired or reused capability according to contract.
 
 ## Realtime authorization lifecycle
 
@@ -113,9 +123,11 @@ Outbound connector requirements include:
 
 Inbound provider/webhook data is untrusted until both **authenticity/freshness** and **payload validity** are established.
 
-Where supported by the provider protocol, the callback adapter verifies the expected signature/MAC/certificate/authentication mechanism against the configured integration, uses raw-body verification when required, enforces timestamp/nonce/event-ID replay controls, and binds the callback to the tenant/integration from trusted configuration rather than caller-provided routing claims.
+The ingress first enforces a hard raw transport-body byte limit **before** complete buffering or signature/authentication work. `Content-Length` may permit earlier rejection but is not trusted as the only bound; streamed/chunked input is counted and terminated when it crosses the configured raw-body limit.
 
-Only after callback authentication/freshness checks does payload schema/size/semantic validation and normalization occur before domain state mutation.
+After the bounded raw body is available, where supported by the provider protocol, the callback adapter verifies the expected signature/MAC/certificate/authentication mechanism against the configured integration, uses the exact raw representation when required, enforces timestamp/nonce/event-ID replay controls, and binds the callback to the tenant/integration from trusted configuration rather than caller-provided routing claims.
+
+Only after callback authentication/freshness checks does parsing/decompression/schema/semantic validation and normalization occur before domain state mutation. Parsed/decompressed output has its own bounded size/complexity limits to prevent expansion attacks.
 
 Duplicate/replayed callbacks use stable provider event/operation identity and durable idempotency/deduplication when a repeated effect could be harmful.
 

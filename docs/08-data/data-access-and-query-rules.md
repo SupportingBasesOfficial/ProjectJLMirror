@@ -38,14 +38,25 @@ Interactive SQL is a privileged administrative capability, not a normal reposito
 
 It uses:
 
-- dedicated least-privilege database role;
-- explicit tenant scope;
+- dedicated least-privilege database/query principal;
+- explicit tenant scope resolved by trusted platform control;
+- a tenant binding that caller-authored SQL cannot replace;
 - read-only default;
 - statement/transaction timeout;
 - row/result-size limits;
 - restricted dangerous operations;
 - immutable audit;
 - no database superuser or normal migration-owner credential.
+
+### Tenant binding rule
+
+The normal application transaction may use a server-set transaction-local tenant GUC because the SQL statements are platform-owned. **Interactive arbitrary SQL may not rely on that mutable GUC as its sole RLS authority.**
+
+An implementation must use a tenant-bound database principal/protected principal-to-tenant mapping, a mediated query/read-model surface, or a physically tenant-isolated target with equivalent enforcement. The query principal cannot change its tenant authority through `SET`, `set_config`, role/session-authorization changes, search-path tricks or caller-controlled helper functions.
+
+If the implementation cannot prove that invariant, direct SQL to pooled protected base tables is not offered.
+
+Read-only transaction state does not by itself solve tenant switching; isolation is validated independently.
 
 ## Query observability
 

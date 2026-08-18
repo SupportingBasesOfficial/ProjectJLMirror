@@ -11,7 +11,7 @@ Pooled tenant isolation combines:
 2. validated logical tenant membership/context;
 3. server-side authorization;
 4. trusted cell placement/admission;
-5. transaction-local tenant database context;
+5. tenant binding appropriate to the query trust class;
 6. PostgreSQL row-level security/data policy;
 7. tenant-safe composite relationships/indexes;
 8. database-role/function hardening;
@@ -25,16 +25,16 @@ Every pooled protected tenant table carries non-null immutable `tenant_id`.
 
 Tables that are deliberately global/public/system-wide are explicitly classified and do not accidentally omit tenant policy.
 
-## Transaction-local context
+## Trusted application transaction context
 
-Database tenant context is established inside the transaction, never as process-global mutable state and never trusted from a caller-provided schema.
+For platform-owned application/worker SQL, database tenant context may be established inside the transaction after the server has resolved trusted logical tenant placement/authorization. It is never process-global state and never trusted from caller-provided physical routing.
 
-Canonical PostgreSQL pattern:
+Canonical application pattern:
 
 ```sql
 BEGIN;
-SELECT set_config('jlmirror.tenant_id', :tenant_id::text, true);
--- use case queries
+SELECT set_config('jlmirror.tenant_id', :trusted_server_tenant_id::text, true);
+-- platform-owned use case queries
 COMMIT;
 ```
 
@@ -42,9 +42,11 @@ The third argument `true` makes the value transaction-local. Connection pooling 
 
 A transaction that cannot establish a valid tenant context must not execute protected tenant queries.
 
-## Policy pattern
+**This GUC pattern is not an accepted tenant-binding mechanism for caller-authored arbitrary SQL.** A SQL principal can normally issue `SET`/`set_config` for custom settings, so a direct SQL surface must not use a caller-writable setting as the policy authority.
 
-Representative tenant table policy:
+## Policy pattern for trusted application runtime
+
+Representative application-runtime tenant table policy:
 
 ```sql
 ALTER TABLE monitoring.devices ENABLE ROW LEVEL SECURITY;
@@ -66,7 +68,21 @@ WITH CHECK (
 );
 ```
 
-The exact setting name may be standardized in implementation, but semantics are normative: missing tenant context does not produce broad access.
+The exact setting name may be standardized in implementation, but semantics are normative: missing trusted application tenant context does not produce broad access.
+
+## Interactive/direct SQL tenant binding
+
+Caller-authored SQL is a different trust class from platform-owned repository SQL.
+
+An interactive SQL path against pooled protected data SHALL use one of these accepted classes:
+
+1. a **tenant-bound database principal/session identity** whose tenant mapping is stored/controlled outside the caller's writable SQL state and used by the policy through a narrowly reviewed mechanism;
+2. a **mediated query surface/read model** that does not grant the caller direct access to pooled protected base tables and enforces tenant scope outside caller-authored SQL;
+3. a **physically tenant-isolated query target** for a dedicated isolation class.
+
+The caller MUST NOT be able to change the tenant authority by `SET`, `set_config`, `SET ROLE`, `SET SESSION AUTHORIZATION`, search-path manipulation or user-controlled helper functions. A dedicated console role has no role memberships/privileges that allow assumption of a broader tenant/bypass principal.
+
+If none of these bindings can be proven for an implementation, arbitrary SQL access to pooled protected base tables is prohibited.
 
 ## Database roles
 
@@ -79,11 +95,12 @@ Logical privilege classes include:
 - worker runtime where separate privilege is justified;
 - reporting/read runtime where separate privilege is justified;
 - privileged operator/data-administration role with explicitly narrower workflow;
+- tenant-bound interactive-query principal/class where offered;
 - observability/backup roles as required.
 
 Exact role names are implementation details; least privilege and separation are not.
 
-Normal runtime roles MUST NOT have permission to `SET ROLE`/assume migration-owner, backup, superuser or other RLS-bypass privileges.
+Normal runtime and interactive-query roles MUST NOT have permission to `SET ROLE`/assume migration-owner, backup, superuser or other RLS-bypass privileges.
 
 ## Privileged database functions
 
@@ -134,6 +151,7 @@ CI/integration tests MUST include known Tenant B identifiers executed under Tena
 - export/data-admin paths;
 - worker processing;
 - caches where protected values are stored;
-- privileged database functions and runtime role escalation attempts.
+- privileged database functions and runtime role escalation attempts;
+- interactive SQL attempts to mutate tenant/session authority (`SET`, `set_config`, role/session authorization, search-path/helper abuse).
 
 A single leaked row is a release blocker.

@@ -119,7 +119,17 @@ Object namespaces use immutable tenant identity, not mutable slug. Access is med
 
 ## Artifact authorization
 
-For delayed exports/reports, authorization is checked when requested and, where policy requires, again before artifact release/download. Revoked users do not retain indefinite access through stale permanent links.
+For a user-requested delayed/asynchronous export or report:
+
+1. authorization is checked when the request/process is created;
+2. authorization is checked again before the delayed job begins or performs the protected export action;
+3. authorization is checked again before the completed artifact is released or a download capability is minted.
+
+These rechecks are **mandatory**, not policy-optional, when the operation is delayed/asynchronous under `SEC-EXEC-003`. If membership/scope/permission was revoked, the job/release fails closed and records a safe audited outcome.
+
+A downloadable capability is short-lived and scoped to one artifact/tenant. If a policy requires revocation after capability issuance, delivery uses an application-mediated or otherwise revocable mechanism instead of an irrevocable permanent link.
+
+Scheduled/system-generated exports use an explicitly authorized service principal/process policy rather than inheriting stale authority from a human who once configured the schedule.
 
 ## Restore rehearsal
 

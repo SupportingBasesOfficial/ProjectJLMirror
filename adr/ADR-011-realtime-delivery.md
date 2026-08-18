@@ -6,13 +6,19 @@
 
 ## Context
 
-Operators need near-real-time alerts, health/state updates and execution progress. Realtime transport is lossy across reconnects and multi-replica fanout; treating it as authoritative creates missed-state and duplicate-delivery bugs. Tenant/topic collisions are a security risk. Long-lived connections also outlive individual authorization decisions, so authorization checked only at connect/join time can become stale after membership, permission, session or tenant-state changes.
+Operators need near-real-time alerts, health/state updates and execution progress. Realtime transport is lossy across reconnects and multi-replica fanout; treating it as authoritative creates missed-state and duplicate-delivery bugs. Tenant/topic collisions are a security risk. Long-lived connections also outlive individual authorization decisions, so authorization checked only at connect/join time can become stale after membership, permission, session or tenant-state changes. Browser WebSockets additionally require explicit cross-site handshake protection because ambient cookies can be attached by a hostile origin.
 
-Drivers: `FR-ALT-002`, `FR-ALT-004`, `INV-REALTIME-001`, `SEC-AUTHZ-*`, `TM-003`, `TM-004`, `QA-OBS-001`.
+Drivers: `FR-ALT-002`, `FR-ALT-004`, `INV-REALTIME-001`, `SEC-AUTHZ-*`, `SEC-BROWSER-*`, `TM-003`, `TM-004`, `QA-OBS-001`.
 
 ## Decision
 
 JLMIRROR SHALL use **WebSocket** as the initial authenticated browser realtime transport for operational subscriptions. The transport is a notification/update channel, not durable business truth.
+
+### Browser connection establishment
+
+A protected first-party browser socket SHALL use a BFF-mediated short-lived connection capability as defined by ADR-007. The realtime gateway SHALL validate an allowlisted expected browser `Origin` and the connection capability before protected delivery. Ambient session cookies alone SHALL NOT authorize a protected direct browser socket.
+
+The capability is narrowly scoped to the principal/tenant/realtime purpose, expires quickly, is non-refreshable as a general API credential and is single-use or otherwise replay-bounded according to the accepted contract. Public unauthenticated realtime/status paths, if any, are separate contracts.
 
 Every protected connection/subscription SHALL be authenticated and authorized before joining a tenant/resource scope. Fanout keys/channels use canonical tenant-aware namespaces. Realtime messages carry stable event/update ID, schema version, tenant scope, resource/topic and correlation metadata where applicable.
 
@@ -43,11 +49,13 @@ Durable events/jobs and database state remain authoritative. Ephemeral pub/sub m
 - horizontally scalable gateways are possible;
 - no false exactly-once promise;
 - reconnect semantics are explicit;
-- revocation/permission changes do not leave indefinitely authorized stale sockets.
+- revocation/permission changes do not leave indefinitely authorized stale sockets;
+- protected sockets do not inherit authority from ambient cross-site cookies alone.
 
 ### Negative / cost
 - connection lifecycle/heartbeats/backpressure need operations;
 - authorization invalidation and periodic revalidation add coordination/load;
+- BFF connection-capability minting and replay/expiry handling add a browser realtime control path;
 - some edge/serverless platforms may be unsuitable for long-lived connections;
 - replay/current-state query paths must exist.
 
@@ -57,8 +65,10 @@ Test cross-tenant subscription attempts, reconnect storms, duplicate delivery, g
 
 A release test MUST establish a protected subscription, then revoke membership/permission/session or suspend tenant access and verify that protected delivery stops according to the accepted bounded revocation policy without waiting for a manual reconnect. Failure to terminate/restrict a known unauthorized live subscription is release-blocking.
 
+Security tests MUST reject protected browser socket handshakes from untrusted/null origins, with expired/replayed/wrong-scope/wrong-tenant capabilities, and with only an ambient cookie but no accepted connection proof/capability.
+
 A missed realtime frame must be recoverable through authoritative state.
 
 ## Exit / revisit conditions
 
-SSE or another transport may replace/supplement WebSocket for unidirectional/public workloads if it materially reduces cost/complexity while preserving these authorization and recovery semantics.
+SSE or another transport may replace/supplement WebSocket for unidirectional/public workloads if it materially reduces cost/complexity while preserving these authorization, cross-site and recovery semantics.

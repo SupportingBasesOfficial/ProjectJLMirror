@@ -26,6 +26,14 @@
 
 **SEC-AUTHZ-003** — Authorization decisions SHOULD be explainable enough for audit/debugging without exposing secrets.
 
+## Browser and realtime
+
+**SEC-BROWSER-001** — The first-party browser SHALL use the BFF as the confidential session boundary and SHALL NOT receive long-lived platform access or refresh credentials.
+
+**SEC-BROWSER-002** — A protected browser realtime connection that bypasses the normal BFF request hop SHALL use a short-lived, narrowly scoped connection capability minted through the BFF (or an explicitly reviewed equivalent) and SHALL validate the expected browser Origin. Ambient cookies alone SHALL NOT authorize a protected direct WebSocket connection.
+
+**SEC-BROWSER-003** — Realtime connection capabilities SHALL be bounded in lifetime and scope, resistant to replay/reuse as appropriate to their contract, and SHALL NOT become general API bearer credentials.
+
 ## Secrets
 
 **SEC-SEC-001** — Source code and ordinary configuration SHALL use secret references rather than production secret values.
@@ -42,19 +50,25 @@
 
 **SEC-INT-003** — Webhook authentication/signature mechanisms SHALL support replay protection where the external protocol allows it.
 
+**SEC-INT-004** — Inbound callback endpoints SHALL enforce a hard transport/raw-body byte limit before buffering the complete body or performing signature/authentication work. Declared `Content-Length` MAY enable earlier rejection but SHALL NOT be the only limit; streaming byte accounting or an equivalent transport-enforced bound SHALL reject oversized bodies. Parser/decompression limits remain independently bounded after authenticity checks.
+
 ## Automation and data administration
 
 **SEC-EXEC-001** — Script/command execution SHALL use an execution boundary with explicit target scope, timeout, resource controls, credential context and result/output policy.
 
 **SEC-EXEC-002** — Direct SQL/data administration SHALL use dedicated database/runtime privileges and SHALL NOT run as database superuser or unrestricted application owner.
 
-**SEC-EXEC-003** — Export/import SHALL validate authorization at request time and again at execution/download time when asynchronous or delayed.
+**SEC-EXEC-003** — Export/import SHALL validate authorization at request time and again before delayed/asynchronous execution and release/download. A delayed user-requested artifact SHALL NOT be released solely because the requester was authorized when the job was created.
+
+**SEC-EXEC-004** — Caller-authored SQL SHALL NOT be allowed to replace the tenant-binding input trusted by RLS/data policy. Interactive SQL against pooled protected data SHALL use a tenant binding the SQL principal cannot alter (for example a tenant-bound database principal/protected mapping) or a mediated/physically isolated query surface with equivalent guarantees.
 
 ## Audit and telemetry
 
 **SEC-AUD-001** — Privileged security-sensitive mutations SHALL generate tamper-resistant audit records not mutable by normal application runtime.
 
 **SEC-AUD-002** — Security telemetry SHALL preserve correlation and actor/tenant context without leaking protected values.
+
+**SEC-AUD-003** — When audit evidence is required for a successful local authoritative mutation, the audit record or a durable audit intent SHALL commit atomically with that mutation. Post-commit best-effort audit alone is insufficient.
 
 ## Abuse protection
 

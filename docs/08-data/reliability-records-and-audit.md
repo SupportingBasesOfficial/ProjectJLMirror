@@ -99,6 +99,15 @@ High-assurance future requirements MAY replicate/seal audit evidence to an exter
 
 ## Audit transactionality
 
-Where an audit record is required for a local authoritative mutation, the audit append SHOULD commit in the same transaction so a successful privileged mutation cannot exist without its accountability record.
+When audit evidence is required for a local authoritative mutation, one of the following MUST commit atomically with the mutation:
 
-External side-effect audit/reconciliation may require subsequent records representing attempts and final provider outcome.
+1. the required audit record itself, when audit storage is inside the same transactional boundary; or
+2. a durable audit intent/outbox record sufficient to deterministically produce the required external audit evidence, when the final audit sink is outside that boundary.
+
+A successful required-audit mutation may not exist in a state where neither the audit record nor its durable atomic intent exists. Post-commit best-effort logging/audit is not sufficient.
+
+External side-effect audit/reconciliation may add subsequent immutable records representing attempts, provider acknowledgements and final outcome; those records do not replace the atomic accountability record/intent for the originating privileged mutation.
+
+## Validation
+
+Fault injection covers crash before mutation commit, immediately after commit, before external audit delivery and during audit-sink outage. Required mutation success is accepted only if local audit evidence or durable audit intent survives and can be reconciled.

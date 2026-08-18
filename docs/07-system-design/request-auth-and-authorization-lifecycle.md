@@ -1,7 +1,7 @@
 # Request, Authentication and Authorization Lifecycle
 
 **Status:** proposed baseline  
-**Primary ADRs:** ADR-005, ADR-007, ADR-014, ADR-017
+**Primary ADRs:** ADR-005, ADR-007, ADR-011, ADR-014, ADR-017
 
 ## Tenant-scoped HTTP lifecycle
 
@@ -60,13 +60,23 @@ The first-party browser application **MUST** use the BFF as its confidential-cli
 
 The BFF owns browser-facing session establishment/refresh orchestration, HttpOnly credential handling where applicable, CSRF/browser protections and request composition. The API independently validates authentication, tenant context and authorization and does not trust the BFF as an authorization oracle.
 
-A browser MAY connect directly only to an explicitly designed public endpoint or realtime transport whose browser credential semantics preserve this boundary—for example an HttpOnly session or a short-lived, narrowly scoped connection capability minted through the BFF. Such a path MUST NOT become a direct long-lived bearer/refresh-token flow in browser JavaScript.
+### Protected direct realtime
+
+A protected first-party browser realtime connection may bypass the normal BFF request hop only after an authenticated same-site BFF request mints a short-lived, narrowly scoped connection capability. The browser presents that capability to the realtime gateway, which also validates an allowlisted expected `Origin` before protected delivery.
+
+The capability is bound to the intended principal/tenant/realtime purpose, expires quickly and is single-use or otherwise replay-bounded. It is not a refresh token or a general API bearer credential.
+
+An ambient HttpOnly session cookie by itself **MUST NOT** authorize a protected direct browser WebSocket. A future cookie-authenticated direct-socket design requires a separate security decision proving Origin validation plus an anti-CSRF/connection proof with equivalent protection.
+
+Public unauthenticated endpoints/transports are separate exposure contracts.
 
 Machine/API principals may use the API directly under independently revocable machine credentials and explicit tenant/permission scope.
 
 ## Validation ordering
 
 Implementations MAY perform cheap syntax/size validation before expensive placement/database work, but protected use cases MUST NOT reveal protected resource existence before authentication/tenant authorization semantics are established.
+
+For untrusted callbacks/webhooks, transport-level raw byte bounds are allowed and required before expensive authentication/signature processing; this does not authorize or semantically validate the payload.
 
 The owning use case receives validated typed input, not raw transport payloads.
 

@@ -67,6 +67,10 @@ If mutation emits work/events/signals or exposes idempotency semantics:
 - claim acquisition is atomic create-or-observe/compare-and-set before effectful processing; read-then-create without uniqueness/serialization is prohibited;
 - same-scope/key/fingerprint concurrency has one logical executor and deterministic in-progress/completed replay semantics;
 - same-scope/key with a different fingerprint conflicts before effectful execution;
+- co-resident local idempotent mutation, required audit/outbox, stable result linkage and claim completion share one transaction or equivalent atomic boundary;
+- crash after a local mutation statement but before commit cannot leave a committed effect detached from a completed/replayable claim;
+- crash after commit but before response delivery leaves a replayable completed claim/result and does not require re-executing the mutation;
+- if claim and local effect use different authorities, the effect authority atomically persists a stable operation/result record and claim recovery reconciles that record before retry eligibility;
 - ambiguous external outcome retains the existing claim/stable operation identity and reconciles before retry eligibility; timeout/lease expiry alone does not authorize blind re-execution;
 - replay after crash does not depend on an in-memory "transition happened" or "claim owner probably died" assumption.
 

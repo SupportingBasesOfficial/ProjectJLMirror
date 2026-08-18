@@ -55,9 +55,9 @@ principal/credential scope metadata when relevant
 operation/route contract
 idempotency_key
 request_fingerprint
-operation_id             stable identity for downstream/external effect when applicable
+operation_id             stable logical operation/result identity
 status                    claimed | in_progress | completed | failed_terminal | reconciliation_required
-result_reference / response metadata
+result_reference / replayable response metadata
 claim_version / lease metadata when recovery policy requires it
 created_at
 updated_at
@@ -88,6 +88,35 @@ For concurrent requests with the same effective scope and key:
 6. if the claim is still in progress, the caller receives/joins a deterministic in-progress/retry contract rather than becoming a second executor.
 
 The exact HTTP header/status/response representation belongs to API-contract design, but the single-winner durable claim semantics are baseline invariants.
+
+### Local mutation completion atomicity
+
+Acquiring the claim serializes admission; it does not by itself prove that the resulting local mutation and replay result were durably finalized.
+
+When the idempotency claim and the authoritative local domain mutation are co-resident in the same transactional database boundary, successful completion SHALL atomically commit all state required to make the retry result unambiguous:
+
+```text
+BEGIN
+  lock / CAS the existing executable claim and verify fingerprint/ownership
+  perform the authoritative local domain mutation
+  persist required audit and outbox records
+  persist stable operation/result reference or replayable response metadata
+  transition the idempotency claim to completed
+COMMIT
+```
+
+The claim MUST NOT be marked `completed` before the protected local mutation is durable, and the local mutation MUST NOT commit successfully while the only durable claim remains indefinitely `in_progress` with no deterministic linkage to the committed result.
+
+The replayable result does not require storing every transport byte. It may be a stable domain/result reference plus response metadata sufficient to reconstruct the contractually equivalent logical response. What is mandatory is durable linkage from the claim to the already-committed logical result.
+
+Therefore:
+
+- crash before the transaction commits leaves neither the local mutation nor a completed claim;
+- crash after commit but before the HTTP response leaves both the local result and completed claim durable, so retry replays/reconstructs the established result;
+- a same-key retry MUST NOT re-run a local mutation merely because the original response was lost;
+- recovery of an `in_progress` claim MUST inspect authoritative operation/result state before transferring execution eligibility.
+
+If the claim authority and local effect authority cannot share one transaction, the effect authority MUST persist an equivalent stable `operation_id` / result record atomically with the mutation. The claim recovery path then reconciles that record and finalizes/replays the claim idempotently. An unlinked cross-authority local mutation plus later best-effort claim completion is prohibited for operations whose duplication would violate the idempotency contract.
 
 ### Crash and external-effect recovery
 
@@ -197,7 +226,11 @@ External side-effect audit/reconciliation may add subsequent immutable records r
 
 Concurrency tests issue multiple simultaneous requests with the same effective idempotency scope/key. Exactly one may acquire executable ownership. Same-fingerprint contenders must not execute a second logical effect; different-fingerprint contenders must conflict. Tests MUST prove the uniqueness constraint/atomic claim, not merely application-level pre-check behavior.
 
-Fault injection crashes the claim owner before domain mutation, after local mutation, during external calls and after a provider may have accepted the stable `operation_id` but before the claim is marked complete. Recovery MUST replay/reconcile the existing claim and MUST NOT blindly create a second irreversible effect.
+For co-resident local mutations, fault injection MUST crash immediately before local transaction commit, after the domain mutation statement but before claim finalization, and immediately after commit but before response delivery. The accepted outcomes are only: no mutation + non-completed claim before commit, or committed mutation + completed replayable claim after commit. A committed local mutation with an unrecoverably `in_progress` claim is prohibited.
+
+For cross-authority local effects, tests MUST prove the authoritative mutation persists a stable operation/result record atomically and that claim recovery can discover/finalize that result without re-running the logical mutation.
+
+Fault injection crashes the claim owner before domain mutation, during external calls and after a provider may have accepted the stable `operation_id` but before the claim is marked complete. Recovery MUST replay/reconcile the existing claim and MUST NOT blindly create a second irreversible effect.
 
 Fault injection also covers crash before mutation commit, immediately after commit, before external audit delivery and during audit-sink outage. Required mutation success is accepted only if local audit evidence or durable audit intent survives and can be reconciled.
 

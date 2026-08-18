@@ -40,9 +40,36 @@ request
        +-- existing completed claim + same fingerprint -> replay logical result
 ```
 
-Only the request that atomically acquires executable ownership may start the logical effect. For externally irreversible work, the claim carries or derives a stable `operation_id`; a crash/timeout with ambiguous external outcome enters reconciliation rather than allowing another contender to execute blindly.
+Only the request that atomically acquires executable ownership may start the logical effect.
 
-The exact HTTP header/status representation is defined later in API-contract design. The unique-scope, atomic-claim and single-executor semantics are system-design invariants.
+### Local completion and replay
+
+For an idempotent authoritative mutation that is co-resident with its claim in the same cell database, the operation is not considered durably complete until the domain effect and replay state are committed together.
+
+Preferred flow:
+
+```text
+BEGIN
+  lock/CAS executable claim
+  perform local domain mutation
+  persist required audit/outbox
+  persist stable result reference / replay metadata
+  mark claim completed
+COMMIT
+```
+
+This creates two safe crash classes:
+
+- before commit: no committed domain mutation and no completed claim;
+- after commit: committed mutation plus completed/replayable claim, even if the HTTP response is lost.
+
+A retry therefore observes durable truth rather than deciding whether to re-run based on process liveness. A committed local mutation with only an unrecoverable `in_progress` claim and no stable result linkage is forbidden.
+
+If claim and local effect are in different persistence authorities, the authoritative effect MUST atomically record a stable `operation_id`/result identity with the mutation. Claim recovery reconciles that record and finalizes the claim idempotently; it does not blindly execute the mutation again.
+
+For externally irreversible work, the claim carries or derives a stable `operation_id`; a crash/timeout with ambiguous external outcome enters reconciliation rather than allowing another contender to execute blindly.
+
+The exact HTTP header/status representation is defined later in API-contract design. The unique-scope, atomic-claim, single-executor and crash-consistent result-linkage semantics are system-design invariants.
 
 ## Cross-domain synchronous work
 
@@ -126,7 +153,7 @@ Errors are classified:
 
 Retry uses bounded attempts, backoff/jitter and workload-specific concurrency budgets.
 
-An expired local idempotency lease/timeout, if a later implementation uses leases, is not by itself proof that an external irreversible effect did not occur. Ambiguous outcomes reconcile by stable operation identity before a new attempt becomes eligible.
+An expired local idempotency lease/timeout, if a later implementation uses leases, is not by itself proof that an effect did not occur. Local retries first reconcile durable domain/result state; externally ambiguous outcomes reconcile by stable operation identity before a new attempt becomes eligible.
 
 ## Process managers
 

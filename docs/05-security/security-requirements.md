@@ -30,9 +30,11 @@
 
 **SEC-BROWSER-001** — The first-party browser SHALL use the BFF as the confidential session boundary and SHALL NOT receive long-lived platform access or refresh credentials.
 
-**SEC-BROWSER-002** — A protected first-party browser WebSocket SHALL validate the allowlisted expected browser Origin and the required short-lived BFF-minted connection capability **before the WebSocket upgrade is accepted**. Invalid/null/untrusted Origin, invalid/replayed/expired/wrong-scope capability, or ambient cookie alone SHALL be rejected during the HTTP handshake and SHALL NOT create a retained protected socket.
+**SEC-BROWSER-002** — A protected first-party browser WebSocket SHALL validate the allowlisted expected browser Origin, required short-lived BFF-minted connection capability **and current authorization for the capability scope before the WebSocket upgrade is accepted**. Invalid/null/untrusted Origin, invalid/replayed/expired/wrong-scope capability, revoked/stale underlying authority, or ambient cookie alone SHALL be rejected during the HTTP handshake and SHALL NOT create a retained protected socket.
 
 **SEC-BROWSER-003** — Realtime connection capabilities SHALL be bounded in lifetime and scope, resistant to replay/reuse as appropriate to their contract, and SHALL NOT become general API bearer credentials.
+
+**SEC-BROWSER-004** — A realtime connection capability SHALL NOT freeze session, membership, permission or tenant-access authority until its expiration. Pre-upgrade admission SHALL prove that the underlying authority remains current using a fresh authoritative decision or a trusted current authorization/session generation/revocation marker. If freshness cannot be established safely, new protected socket admission SHALL fail closed.
 
 ## Secrets
 

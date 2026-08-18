@@ -13,6 +13,7 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Authorization | UI omission cannot bypass server policy; cross-tenant privileged operations are distinct and audited |
 | Browser/BFF | First-party browser never receives/persists long-lived platform access or refresh credentials; browser protected API flow remains behind confidential BFF session boundary |
 | Browser realtime handshake | Untrusted/null Origin, ambient-cookie-only, expired/replayed/wrong-scope/wrong-tenant capability is rejected before `101 Switching Protocols`; no unauthorized protected socket is retained |
+| Browser realtime authorization freshness | Mint a valid capability, then revoke/suspend session, membership, permission/scope or tenant access before presentation; handshake is rejected before `101` despite valid capability signature/expiry |
 | Realtime authorization | Active protected subscription loses access after membership/permission/session/tenant revocation within accepted bound; missed invalidation is caught by bounded revalidation |
 | Transactions | Mutation + required audit/audit-intent + outbox commit atomically; injected dispatcher failure loses no committed event/audit intent |
 | Transition signal atomicity | Crash immediately after successful conditional state advance cannot lose the required transition signal; replay discovers durable transition/outbox intent without re-advancing state |
@@ -53,6 +54,7 @@ The following failures block release regardless of other test success:
 - duplicate delivery can repeat an irreversible payment/destructive execution without contract protection;
 - first-party browser JavaScript is intentionally given long-lived platform access/refresh credentials;
 - protected first-party browser WebSocket with untrusted/null Origin or invalid/absent capability can receive `101 Switching Protocols` or remain as an upgraded protected connection;
+- capability minted while authorized can still obtain protected `101` after the underlying session/membership/permission/tenant authority has been revoked or suspended before presentation;
 - known-revoked realtime subscription continues receiving protected events beyond the accepted revocation/revalidation bound;
 - oversized unauthenticated callback reaches complete-body/signature processing without transport enforcement;
 - forged/invalid-authentication provider callback can mutate protected domain state;

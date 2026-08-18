@@ -68,13 +68,16 @@ Before accepting the protected WebSocket upgrade, the realtime gateway MUST vali
 
 - the expected allowlisted browser `Origin`;
 - the connection capability authenticity, expiry, replay state and intended principal/tenant/realtime scope;
+- **current authorization for that principal/tenant/realtime scope**, including current session, membership, permission/scope and tenant-access state, using either a fresh authoritative evaluation or a trusted authorization/session generation/revocation marker proven current at handshake time;
 - applicable pre-upgrade abuse/connection-admission limits.
 
-Failure of those checks rejects the HTTP handshake before `101 Switching Protocols`; the gateway does not retain an unauthorized protected socket and then merely suppress subscriptions afterward.
+A capability proves that authority existed when it was minted; it does **not** freeze that authority until expiry. If the gateway cannot safely establish authorization freshness at handshake time, the protected upgrade fails closed.
 
-The capability is bound to the intended principal/tenant/realtime purpose, expires quickly and is single-use or otherwise replay-bounded. It is not a refresh token or a general API bearer credential.
+Failure of any required pre-upgrade check rejects the HTTP handshake before `101 Switching Protocols`; the gateway does not retain an unauthorized protected socket and then merely suppress subscriptions afterward.
 
-An ambient HttpOnly session cookie by itself **MUST NOT** authorize a protected direct browser WebSocket. A future cookie-authenticated direct-socket design requires a separate security decision proving pre-upgrade Origin validation plus an anti-CSRF/connection proof with equivalent protection.
+The capability is bound to the intended principal/tenant/realtime purpose, expires quickly and is single-use or otherwise replay-bounded. It is not a refresh token or a general API bearer credential. An authorization/session generation carried by the capability is only a freshness reference and MUST be compared with trusted current state; it is not self-authorizing after revocation.
+
+An ambient HttpOnly session cookie by itself **MUST NOT** authorize a protected direct browser WebSocket. A future cookie-authenticated direct-socket design requires a separate security decision proving pre-upgrade Origin validation, current authorization and an anti-CSRF/connection proof with equivalent protection.
 
 Public unauthenticated endpoints/transports are separate exposure contracts.
 

@@ -6,7 +6,7 @@
 
 ## Context
 
-Operators need near-real-time alerts, health/state updates and execution progress. Realtime transport is lossy across reconnects and multi-replica fanout; treating it as authoritative creates missed-state and duplicate-delivery bugs. Tenant/topic collisions are a security risk. Long-lived connections also outlive individual authorization decisions, so authorization checked only at connect/join time can become stale after membership, permission, session or tenant-state changes. Browser WebSockets additionally require explicit cross-site handshake protection because ambient cookies can be attached by a hostile origin and unauthenticated upgrades can consume persistent gateway resources.
+Operators need near-real-time alerts, health/state updates and execution progress. Realtime transport is lossy across reconnects and multi-replica fanout; treating it as authoritative creates missed-state and duplicate-delivery bugs. Tenant/topic collisions are a security risk. Long-lived connections also outlive individual authorization decisions, so authorization checked only at connect/join time can become stale after membership, permission, session or tenant-state changes. Browser WebSockets additionally require explicit cross-site handshake protection because ambient cookies can be attached by a hostile origin and unauthenticated upgrades can consume persistent gateway resources. A short-lived connection capability is not sufficient by itself if authorization is revoked after issuance but before presentation.
 
 Drivers: `FR-ALT-002`, `FR-ALT-004`, `INV-REALTIME-001`, `SEC-AUTHZ-*`, `SEC-BROWSER-*`, `SEC-ABUSE-*`, `TM-003`, `TM-004`, `QA-OBS-001`.
 
@@ -16,11 +16,22 @@ JLMIRROR SHALL use **WebSocket** as the initial authenticated browser realtime t
 
 ### Browser connection establishment
 
-A protected first-party browser socket SHALL use a BFF-mediated short-lived connection capability as defined by ADR-007. The realtime gateway MUST validate an allowlisted expected browser `Origin`, the connection capability and applicable pre-upgrade connection/rate limits **before accepting the protected WebSocket upgrade**. Invalid, missing, null/untrusted-origin, expired, replayed or wrong-scope capability handshakes are rejected at HTTP handshake time and MUST NOT receive a successful `101 Switching Protocols` response or become retained protected connections.
+A protected first-party browser socket SHALL use a BFF-mediated short-lived connection capability as defined by ADR-007.
+
+The realtime gateway MUST complete all required protected-connection admission checks **before accepting the WebSocket upgrade**, including:
+
+- allowlisted expected browser `Origin`;
+- capability authenticity, expiry, replay state and principal/tenant/realtime scope;
+- current session/membership/permission/tenant-access authorization for the capability scope, established through a fresh authoritative decision or a trusted current authorization/session generation/revocation marker;
+- applicable pre-upgrade connection/rate/abuse limits.
+
+The capability records/proves an authorization decision at issuance time; it MUST NOT be treated as an immutable authorization lease through its full expiration window. If current authorization cannot be safely established, a new protected upgrade fails closed.
+
+Invalid, missing, null/untrusted-origin, expired, replayed, wrong-scope, stale-authorization or revoked-authority handshakes are rejected at HTTP handshake time and MUST NOT receive a successful `101 Switching Protocols` response or become retained protected connections.
 
 Ambient session cookies alone SHALL NOT authorize a protected direct browser socket.
 
-The capability is narrowly scoped to the principal/tenant/realtime purpose, expires quickly, is non-refreshable as a general API credential and is single-use or otherwise replay-bounded according to the accepted contract. Public unauthenticated realtime/status paths, if any, are separate contracts with their own admission/rate-limit policy.
+The capability is narrowly scoped to the principal/tenant/realtime purpose, expires quickly, is non-refreshable as a general API credential and is single-use or otherwise replay-bounded according to the accepted contract. A capability MAY carry an authorization/session generation/version, but the gateway must compare that marker with trusted current state rather than accepting it as self-authorizing after revocation. Public unauthenticated realtime/status paths, if any, are separate contracts with their own admission/rate-limit policy.
 
 Every protected connection/subscription SHALL be authenticated and authorized before joining a tenant/resource scope. Fanout keys/channels use canonical tenant-aware namespaces. Realtime messages carry stable event/update ID, schema version, tenant scope, resource/topic and correlation metadata where applicable.
 
@@ -30,12 +41,13 @@ Authorization is not a one-time handshake property. A realtime gateway MUST stop
 
 The implementation SHALL support all of the following semantics:
 
-- connection establishment and every new protected subscription evaluate current authorization;
+- protected connection establishment evaluates authorization that is current at handshake time, not merely at capability issuance;
+- every new protected subscription evaluates current authorization;
 - authorization/session/membership changes that can remove access produce an invalidation/revocation signal or equivalent mechanism capable of reaching active realtime gateways;
 - affected subscriptions are re-evaluated and removed, or the connection is terminated, when access is revoked;
 - periodic bounded revalidation provides defense in depth when an invalidation signal is missed or delayed;
 - reconnect always performs fresh authentication/authorization rather than inheriting prior subscription authority;
-- a gateway that cannot safely establish current authorization fails closed for protected delivery;
+- a gateway that cannot safely establish current authorization fails closed for new protected admission/delivery;
 - any accepted propagation/revalidation delay is explicitly bounded by a later security/SLO policy rather than being unlimited.
 
 An authorization generation/version or equivalent freshness marker MAY be used so gateways can detect stale authorization state without embedding mutable permission sets as permanent socket authority.
@@ -52,13 +64,14 @@ Durable events/jobs and database state remain authoritative. Ephemeral pub/sub m
 - no false exactly-once promise;
 - reconnect semantics are explicit;
 - revocation/permission changes do not leave indefinitely authorized stale sockets;
-- protected browser upgrades fail before persistent socket admission when cross-site/capability checks fail.
+- revocation between capability mint and presentation cannot obtain protected socket admission merely because the capability has not expired;
+- protected browser upgrades fail before persistent socket admission when cross-site/capability/current-authorization checks fail.
 
 ### Negative / cost
 - connection lifecycle/heartbeats/backpressure need operations;
 - authorization invalidation and periodic revalidation add coordination/load;
 - BFF connection-capability minting and replay/expiry handling add a browser realtime control path;
-- pre-upgrade Origin/capability/admission validation must be available on the handshake path;
+- pre-upgrade Origin/capability/current-authorization/admission validation must be available on the handshake path;
 - some edge/serverless platforms may be unsuitable for long-lived connections;
 - replay/current-state query paths must exist.
 
@@ -68,7 +81,9 @@ Test cross-tenant subscription attempts, reconnect storms, duplicate delivery, g
 
 A release test MUST establish a protected subscription, then revoke membership/permission/session or suspend tenant access and verify that protected delivery stops according to the accepted bounded revocation policy without waiting for a manual reconnect. Failure to terminate/restrict a known unauthorized live subscription is release-blocking.
 
-Security tests MUST verify protected first-party browser handshakes from untrusted/null origins, with expired/replayed/wrong-scope/wrong-tenant capabilities, or with ambient cookie alone are rejected **before upgrade** and never receive `101`/persistent protected socket admission.
+Handshake security tests MUST mint a valid connection capability, then revoke/suspend the underlying session, membership, permission/scope or tenant access **before the capability is presented** and verify the protected handshake is rejected before upgrade despite a still-valid capability signature/expiry.
+
+Security tests MUST also verify protected first-party browser handshakes from untrusted/null origins, with expired/replayed/wrong-scope/wrong-tenant capabilities, or with ambient cookie alone are rejected **before upgrade** and never receive `101`/persistent protected socket admission.
 
 A missed realtime frame must be recoverable through authoritative state.
 

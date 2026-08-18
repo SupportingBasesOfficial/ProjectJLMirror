@@ -117,14 +117,17 @@ Consumers therefore implement one or more of:
 
 ## Inbox
 
-A consumer maintains a durable unique identity such as `(consumer_contract, message_id)` for messages whose duplicate logical effect would be unsafe. The receipt is not sufficient by itself; its completion must be crash-consistent with the protected effect.
+A consumer maintains a durable unique identity such as `(consumer_contract, message_identity_scope, message_id)` for messages whose duplicate logical effect would be unsafe. `message_identity_scope` is a non-null canonical namespace derived from trusted tenant/global, producer/source, integration/provider and source-generation context as required by the consumer contract; caller-controlled payload data does not get to select a weaker deduplication namespace. A constant/global scope is allowed only when the contract explicitly proves `message_id` is globally unique across every producer/source capable of feeding that consumer for the full deduplication retention window.
+
+The receipt is not sufficient by itself; its completion must be crash-consistent with the protected effect. The same raw `message_id` received from different authoritative scopes remains independently processable, while exact redelivery in the same trusted scope deduplicates.
 
 For a co-resident local effect, the consumer SHALL commit receipt completion and effect in one transaction:
 
 ```text
 BEGIN
-  create/lock unique inbox receipt
-  verify message not already completed
+  derive trusted message_identity_scope
+  create/lock unique inbox receipt for (consumer_contract, message_identity_scope, message_id)
+  verify message not already completed in that authoritative scope
   apply authoritative consumer effect
   persist required audit/outbox/result linkage
   mark inbox receipt completed
@@ -138,7 +141,7 @@ This forbids both unsafe orderings:
 
 For a cross-authority or external effect that cannot share the inbox transaction, the effect authority persists a stable `operation_id` / result identity atomically with the effect, or an equivalent durable outcome protocol. Redelivery and receipt finalization reconcile that identity before deciding whether execution is still eligible. Unknown/ambiguous external outcome fails into reconciliation/quarantine rather than blind retry.
 
-Duplicate messages therefore either observe the already-completed receipt/result, reconcile an existing stable operation, or remain non-executable until ambiguity is resolved. Broker acknowledgement mechanics are transport-specific and may not weaken these invariants.
+Duplicate messages therefore either observe the already-completed receipt/result within the same authoritative message identity scope, reconcile an existing stable operation, or remain non-executable until ambiguity is resolved. Broker acknowledgement mechanics are transport-specific and may not weaken these invariants.
 
 ## Jobs
 

@@ -56,6 +56,7 @@ restore cell to recovery point R in quarantine
    -> restore/reference required immutable audit evidence
    -> reconcile membership/permission/tenant-deny and authorization freshness state
    -> reconcile erasure/anonymization tombstones and current legal-retention state
+   -> reconcile artifact metadata/object lifecycle where the transactional snapshot can roll back artifact authority
    -> validate placement/admission and current security/governance authorities
    -> prove stale authority, erased data and completed effects are not admission/retry eligible
    -> enable protected/effectful admission
@@ -136,6 +137,7 @@ The recovery manifest distinguishes:
 - governed deletion/erasure decisions, anonymization/pseudonymization state and durable tombstones/evidence needed to prevent removed or de-identified protected data from becoming authoritative again;
 - current legal-retention/legal-hold decisions and effective state, including applicable hold placement/release decisions that constrain deletion or disclosure behavior;
 - governed cryptographic-erasure/key-destruction decisions/evidence where restoring an older usable key path would defeat the accepted erasure;
+- artifact lifecycle metadata/object reconciliation evidence needed to prevent protected object bytes from becoming untracked, indefinitely retained, falsely available or silently resurrected;
 - compensation and reconciliation state.
 
 For each irreversible/external operation after `R`, the owning domain must determine whether it was completed, externally accepted, compensatable, still pending, or ambiguous. The restored target does not become authoritative for effectful processing until required deduplication identities/outcomes are present and ambiguous operations are reconciled or quarantined.
@@ -208,9 +210,9 @@ Large generated/exported binary content lives outside transactional PostgreSQL. 
 
 ```text
 artifact_id
+stable object identity / storage reference
 tenant_id
 artifact_type
-storage_reference
 content_type
 size
 checksum
@@ -218,9 +220,78 @@ created_at
 expires_at/retention policy
 classification
 status
+object version/reference when applicable
+last reconciliation state/time when needed
 ```
 
-Object namespaces use immutable tenant identity, not mutable slug. Access is mediated by application authorization or short-lived scoped download capability; storage paths are not authorization.
+Object namespaces use immutable tenant identity and stable `artifact_id`, not mutable slug. Access is mediated by application authorization or short-lived scoped download capability; storage paths are not authorization.
+
+### Crash-consistent artifact creation
+
+Artifact metadata and object bytes are separate persistence authorities, so the platform SHALL use an explicit staged lifecycle rather than pretending their creation is one atomic transaction.
+
+Representative lifecycle:
+
+```text
+transactional metadata authority
+  create artifact_id + tenant/governance/retention metadata
+  status = STAGING/PENDING_OBJECT
+  persist stable object identity/reference or derivation
+  persist durable outbox/job/process intent
+COMMIT
+        |
+        v
+object worker uploads bytes to non-public staged object identity
+        |
+        v
+verify object identity/version + checksum + size
+        |
+        v
+transactionally finalize metadata
+  object reference/version/checksum/size
+  status = READY/AVAILABLE
+COMMIT
+```
+
+The binary upload MUST NOT be the first durable step for a protected artifact unless the selected storage protocol provides an equivalent discoverable staging manifest. In the normal contract, an artifact lifecycle record exists before object bytes are uploaded, so a crash after object upload cannot create tenant data with no durable artifact identity.
+
+Only a terminal `READY/AVAILABLE` artifact whose expected object version/identity and integrity metadata have been verified may be released/downloaded as complete. `STAGING`, `DELETING`, `RECONCILIATION_REQUIRED`, failed or otherwise non-terminal records are not treated as completed artifacts.
+
+A crash after metadata creation but before upload leaves a discoverable staged record that may be safely retried or expired. A crash after upload but before metadata finalization leaves a discoverable staged record/object pair that reconciliation can verify and finalize idempotently; it does not require blind re-upload and does not make the object externally available merely because bytes exist.
+
+### Artifact reconciliation and garbage collection
+
+The platform SHALL run or provide an equivalent deterministic reconciliation path over non-terminal artifact records and the controlled staging/object namespace.
+
+Reconciliation classifies at least:
+
+- metadata exists, object absent -> retry upload or fail/expire according to process policy;
+- metadata exists, object exists and matches stable identity/checksum -> idempotently finalize when policy permits;
+- metadata exists, object exists but integrity/version mismatches -> quarantine/reconciliation, never mark ready;
+- controlled staging/object bytes exist with no corresponding live metadata because of restore/operator/storage anomaly -> quarantine and governed cleanup using stable artifact/tenant identity rather than indefinite retention;
+- metadata says ready but object is absent/corrupt -> artifact is unavailable/reconciliation-required; a completed-looking metadata row MUST NOT cause release of nonexistent/wrong bytes.
+
+Staging objects and orphan candidates have a bounded lifecycle/scan policy sufficient to prevent inaccessible protected data from remaining indefinitely outside governance. Garbage collection is **governed**, not blind TTL deletion: current legal hold/retention/erasure policy is consulted before destructive removal, and required audit/evidence is preserved according to policy.
+
+### Crash-consistent artifact deletion/erasure
+
+Deletion/erasure also spans authorities and uses an explicit lifecycle:
+
+```text
+record governed delete/erasure intent or tombstone
+mark artifact non-releasable / DELETING as applicable
+        |
+        v
+idempotently delete/crypto-erase object bytes under current retention/hold policy
+        |
+        v
+record confirmed deletion/erasure outcome
+retain only metadata/evidence allowed and required by governance
+```
+
+A metadata row is not simply deleted first while object bytes remain undiscoverable. Conversely, successful object deletion followed by a crash before metadata finalization is safe to reconcile because the stable artifact identity and delete intent remain durable. Legal hold can block destructive object cleanup; privacy erasure can block re-exposure even when older backups still contain bytes.
+
+Artifact/object PITR and restore procedures reconcile metadata authority with object inventory/version state before artifacts are made available. Restoring an older metadata snapshot cannot silently re-release an object governed out of use, and restoring object bytes without current metadata/governance authority does not make them downloadable.
 
 ## Delayed export/report/import authorization
 
@@ -238,7 +309,7 @@ For a user-requested delayed/asynchronous **import**:
 
 These execution-time rechecks are **mandatory**, not policy-optional, under `SEC-EXEC-003`. If membership/scope/permission or tenant access was revoked before delayed import execution, the import fails closed before mutating tenant data and records a safe audited outcome. Validation/parsing that is deliberately allowed before authorization MUST remain bounded/untrusted and MUST NOT mutate protected tenant state or reveal protected resource existence.
 
-A downloadable capability is short-lived and scoped to one artifact/tenant. If a policy requires revocation after capability issuance, delivery uses an application-mediated or otherwise revocable mechanism instead of an irrevocable permanent link.
+A downloadable capability is short-lived and scoped to one artifact/tenant. It is minted/released only after the artifact lifecycle is terminal-ready and fresh authorization succeeds. If a policy requires revocation after capability issuance, delivery uses an application-mediated or otherwise revocable mechanism instead of an irrevocable permanent link.
 
 Scheduled/system-generated exports or imports use an explicitly authorized service principal/process policy rather than inheriting stale authority from a human who once configured the schedule.
 
@@ -263,12 +334,14 @@ Scheduled recovery tests prove:
 - governed erasure/anonymization decisions effective in `(R,F]` remain enforced after restore, with removed protected content not becoming authoritative again;
 - current legal-retention/legal-hold state survives or is reconstructed so PITR neither destroys protected retained data nor relies on stale hold state;
 - governed cryptographic-erasure intent is not defeated by restoring an older usable key path;
+- artifact crash points before upload, after upload/before finalize, after finalize/before response and during delete/erasure are reconciled without falsely available artifacts, untracked protected bytes or indefinite orphan retention;
+- artifact/object inventory after PITR reconciles stable artifact identity, metadata status, object version/checksum and current governance before release or destructive cleanup;
 - write-fence/cutover safety for tenant-level replacement;
 - retained-backup decryptability across key rotation/version changes;
 - measured recovery duration and data-loss window.
 
 Authorization tests for delayed work additionally revoke membership/import permission after a delayed import is queued but before execution and prove the worker performs zero protected tenant mutation.
 
-A database/object restore that completes structurally but cannot decrypt required protected data, suppress duplicate irreversible effects, preserve required accountability evidence, preserve effective revocation/deny state or preserve current governed erasure/retention decisions is a failed rehearsal.
+A database/object restore that completes structurally but cannot decrypt required protected data, suppress duplicate irreversible effects, preserve required accountability evidence, preserve effective revocation/deny state, preserve current governed erasure/retention decisions or reconcile artifact metadata/object lifecycle safely is a failed rehearsal.
 
 Results are operational evidence used to set/revise RPO/RTO.

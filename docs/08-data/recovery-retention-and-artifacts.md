@@ -210,7 +210,9 @@ Large generated/exported binary content lives outside transactional PostgreSQL. 
 
 ```text
 artifact_id
+lifecycle_generation / upload_generation
 stable object identity / storage reference
+current object version/reference when applicable
 tenant_id
 artifact_type
 content_type
@@ -220,7 +222,6 @@ created_at
 expires_at/retention policy
 classification
 status
-object version/reference when applicable
 last reconciliation state/time when needed
 ```
 
@@ -230,24 +231,29 @@ Object namespaces use immutable tenant identity and stable `artifact_id`, not mu
 
 Artifact metadata and object bytes are separate persistence authorities, so the platform SHALL use an explicit staged lifecycle rather than pretending their creation is one atomic transaction.
 
+Every upload attempt is bound to the artifact's current **lifecycle/upload generation** and to a stable immutable attempt/object-version identity. The object-storage protocol MUST prevent a stale worker from publishing bytes as the current artifact after that generation has been fenced. A version-specific immutable staging key plus transactional compare-and-set finalization is the default conceptual model; a provider-native conditional-write/lease/fencing mechanism is acceptable only if it provides equivalent single-current-generation semantics.
+
 Representative lifecycle:
 
 ```text
 transactional metadata authority
   create artifact_id + tenant/governance/retention metadata
+  lifecycle_generation = N
   status = STAGING/PENDING_OBJECT
-  persist stable object identity/reference or derivation
+  persist stable generation-bound object attempt identity/reference
   persist durable outbox/job/process intent
 COMMIT
         |
         v
-object worker uploads bytes to non-public staged object identity
+object worker uploads bytes to non-public immutable staged identity for generation N
         |
         v
 verify object identity/version + checksum + size
         |
         v
-transactionally finalize metadata
+transactionally finalize with CAS
+  require status still STAGING/PENDING_OBJECT
+  require lifecycle_generation still N
   object reference/version/checksum/size
   status = READY/AVAILABLE
 COMMIT
@@ -255,9 +261,11 @@ COMMIT
 
 The binary upload MUST NOT be the first durable step for a protected artifact unless the selected storage protocol provides an equivalent discoverable staging manifest. In the normal contract, an artifact lifecycle record exists before object bytes are uploaded, so a crash after object upload cannot create tenant data with no durable artifact identity.
 
-Only a terminal `READY/AVAILABLE` artifact whose expected object version/identity and integrity metadata have been verified may be released/downloaded as complete. `STAGING`, `DELETING`, `RECONCILIATION_REQUIRED`, failed or otherwise non-terminal records are not treated as completed artifacts.
+Only a terminal `READY/AVAILABLE` artifact whose expected object version/identity and integrity metadata have been verified **and whose generation is still current** may be released/downloaded as complete. `STAGING`, `DELETING`, `RECONCILIATION_REQUIRED`, failed or otherwise non-terminal records are not treated as completed artifacts.
 
-A crash after metadata creation but before upload leaves a discoverable staged record that may be safely retried or expired. A crash after upload but before metadata finalization leaves a discoverable staged record/object pair that reconciliation can verify and finalize idempotently; it does not require blind re-upload and does not make the object externally available merely because bytes exist.
+A stale upload attempt MAY finish transferring bytes after its generation has been fenced, but it MUST NOT be able to finalize/publish those bytes as the current artifact. Such bytes remain generation-identifiable staging/orphan state subject to reconciliation and governed cleanup.
+
+A crash after metadata creation but before upload leaves a discoverable staged record that may be safely retried or expired. A crash after upload but before metadata finalization leaves a discoverable staged record/object pair that reconciliation can verify and finalize idempotently only if its generation is still current; otherwise it is stale and cannot become ready.
 
 ### Artifact reconciliation and garbage collection
 
@@ -266,32 +274,55 @@ The platform SHALL run or provide an equivalent deterministic reconciliation pat
 Reconciliation classifies at least:
 
 - metadata exists, object absent -> retry upload or fail/expire according to process policy;
-- metadata exists, object exists and matches stable identity/checksum -> idempotently finalize when policy permits;
+- metadata exists, object exists and matches stable identity/checksum **and current generation** -> idempotently finalize when policy permits;
+- metadata/object belongs to a stale fenced generation -> never finalize as current; quarantine or governed-clean it;
 - metadata exists, object exists but integrity/version mismatches -> quarantine/reconciliation, never mark ready;
-- controlled staging/object bytes exist with no corresponding live metadata because of restore/operator/storage anomaly -> quarantine and governed cleanup using stable artifact/tenant identity rather than indefinite retention;
+- controlled staging/object bytes exist with no corresponding live metadata because of restore/operator/storage anomaly -> quarantine and governed cleanup using stable artifact/tenant/generation identity rather than indefinite retention;
 - metadata says ready but object is absent/corrupt -> artifact is unavailable/reconciliation-required; a completed-looking metadata row MUST NOT cause release of nonexistent/wrong bytes.
 
 Staging objects and orphan candidates have a bounded lifecycle/scan policy sufficient to prevent inaccessible protected data from remaining indefinitely outside governance. Garbage collection is **governed**, not blind TTL deletion: current legal hold/retention/erasure policy is consulted before destructive removal, and required audit/evidence is preserved according to policy.
 
 ### Crash-consistent artifact deletion/erasure
 
-Deletion/erasure also spans authorities and uses an explicit lifecycle:
+Deletion/erasure also spans authorities and uses an explicit **writer-fenced lifecycle**. Cancellation of workers is useful operationally but is not itself a correctness fence.
+
+The metadata authority first makes the artifact non-releasable and advances or terminally fences its lifecycle/upload generation before object deletion begins. After that transition, every upload/finalize attempt created under an older generation is stale and MUST be unable to publish/finalize as current even if its object I/O later completes.
+
+Representative lifecycle:
 
 ```text
-record governed delete/erasure intent or tombstone
-mark artifact non-releasable / DELETING as applicable
+transactional metadata authority
+  record governed delete/erasure intent or tombstone
+  mark artifact non-releasable / DELETING
+  advance/fence lifecycle_generation from N to N+1 (or terminal erasure generation)
+  prevent any generation <= N from finalizing/publishing
+COMMIT
         |
         v
-idempotently delete/crypto-erase object bytes under current retention/hold policy
+stop/cancel known upload workers when possible
         |
         v
-record confirmed deletion/erasure outcome
+idempotently delete/crypto-erase all object versions/attempt identities
+from generations fenced by the delete intent, under current retention/hold policy
+        |
+        v
+reconcile storage inventory and publisher state
+        |
+        v
+record confirmed deletion/erasure outcome ONLY when
+  no prior generation can still publish/finalize
+  no relevant live object/version remains releasable
+  required governance evidence is durable
 retain only metadata/evidence allowed and required by governance
 ```
 
-A metadata row is not simply deleted first while object bytes remain undiscoverable. Conversely, successful object deletion followed by a crash before metadata finalization is safe to reconcile because the stable artifact identity and delete intent remain durable. Legal hold can block destructive object cleanup; privacy erasure can block re-exposure even when older backups still contain bytes.
+A mutable stable object key that an old worker can recreate after deletion is not sufficient unless the storage protocol provides an equivalent conditional generation fence that prevents stale publication. Prefer immutable/version-specific attempt keys with metadata-controlled publication because stale attempts then remain discoverable without becoming current.
 
-Artifact/object PITR and restore procedures reconcile metadata authority with object inventory/version state before artifacts are made available. Restoring an older metadata snapshot cannot silently re-release an object governed out of use, and restoring object bytes without current metadata/governance authority does not make them downloadable.
+A deletion/erasure outcome MUST NOT be marked confirmed merely because one delete request returned success. Confirmation proves that all upload attempts from fenced generations have lost publication authority and that the relevant object/version inventory has been reconciled. If in-flight/stale-writer state or object inventory is materially uncertain, the artifact remains `DELETING` or `RECONCILIATION_REQUIRED`; it does not become confirmed-erased optimistically.
+
+A metadata row is not simply deleted first while object bytes remain undiscoverable. Conversely, successful object deletion followed by a crash before metadata finalization is safe to reconcile because the stable artifact identity, generation fence and delete intent remain durable. Legal hold can block destructive object cleanup; privacy erasure can block re-exposure even when older backups still contain bytes.
+
+Artifact/object PITR and restore procedures reconcile metadata authority with object inventory/version/generation state before artifacts are made available. Restoring an older metadata snapshot cannot silently re-release an object governed out of use, restore an older unfenced upload generation, or permit a stale writer to republish bytes after erasure; restoring object bytes without current metadata/governance authority does not make them downloadable.
 
 ## Delayed export/report/import authorization
 
@@ -335,7 +366,8 @@ Scheduled recovery tests prove:
 - current legal-retention/legal-hold state survives or is reconstructed so PITR neither destroys protected retained data nor relies on stale hold state;
 - governed cryptographic-erasure intent is not defeated by restoring an older usable key path;
 - artifact crash points before upload, after upload/before finalize, after finalize/before response and during delete/erasure are reconciled without falsely available artifacts, untracked protected bytes or indefinite orphan retention;
-- artifact/object inventory after PITR reconciles stable artifact identity, metadata status, object version/checksum and current governance before release or destructive cleanup;
+- artifact erasure races an already-started upload/finalization attempt: deletion fences the old generation before object cleanup, stale completion cannot publish/finalize, and confirmed erasure is withheld until prior-generation publisher/object state is reconciled;
+- artifact/object inventory after PITR reconciles stable artifact identity, metadata status, object version/checksum/generation and current governance before release or destructive cleanup;
 - write-fence/cutover safety for tenant-level replacement;
 - retained-backup decryptability across key rotation/version changes;
 - measured recovery duration and data-loss window.

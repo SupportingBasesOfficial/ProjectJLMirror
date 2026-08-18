@@ -33,11 +33,30 @@ Dispatchers may claim rows concurrently using PostgreSQL-safe claiming/locking s
 
 Consumers of at-least-once events maintain durable processed-message identity when duplicate effects would be unsafe.
 
+A raw `message_id` is not assumed globally unique across all tenants, integrations, providers or producers. Every inbox contract defines a **non-null authoritative message identity scope** that namespaces the producer/source domain in which `message_id` is unique.
+
+Conceptual fields include:
+
+```text
+consumer_contract
+message_identity_scope   non-null canonical trusted namespace
+message_id
+source/producer metadata when required for audit/reconciliation
+tenant_id when tenant-scoped
+status / result linkage
+```
+
 Conceptual uniqueness:
 
 ```text
-UNIQUE(consumer_contract, message_id)
+UNIQUE(consumer_contract, message_identity_scope, message_id)
 ```
+
+`message_identity_scope` is server-derived from trusted envelope/integration/producer context and includes every dimension required to prevent collisions, such as tenant/global boundary, provider/integration/source identity and source generation/stream when applicable. Caller-controlled payload text does not get to choose a namespace that weakens isolation.
+
+A consumer MAY use a constant/global scope only when its contract explicitly guarantees `message_id` uniqueness across every producer/source capable of feeding that consumer for the full deduplication retention window. Otherwise the authoritative source namespace is mandatory.
+
+This prevents, for example, Tenant A's provider event `42` from suppressing Tenant B's unrelated provider event `42`, while still allowing an exact redelivery of the same trusted scoped message to deduplicate.
 
 Inbox deduplication is not merely a pre-processing lookup. The receipt and the logical effect it protects require a crash-safe completion protocol.
 
@@ -47,7 +66,8 @@ When the inbox receipt and the authoritative consumer effect are co-resident in 
 
 ```text
 BEGIN
-  create/lock inbox receipt for (consumer_contract, message_id)
+  derive trusted message_identity_scope
+  create/lock inbox receipt for (consumer_contract, message_identity_scope, message_id)
   verify not already completed
   perform authoritative local consumer effect
   persist required audit/outbox/result linkage
@@ -61,7 +81,8 @@ Therefore:
 
 - crash before commit leaves neither a completed receipt nor committed local effect;
 - crash after commit leaves both the local effect and completed receipt/result linkage durable;
-- redelivery after response/ack loss observes the completed receipt and MUST NOT execute the logical effect again.
+- redelivery after response/ack loss observes the completed receipt and MUST NOT execute the logical effect again;
+- the same raw `message_id` in a different trusted tenant/source namespace remains independently processable and MUST NOT be suppressed by another scope's receipt.
 
 ### Cross-authority inbox effects
 
@@ -173,7 +194,7 @@ Point-in-time business-state recovery MUST NOT blindly roll back the evidence th
 
 For recovery point `R` and later write fence `F`, the recovery reconciliation interval `(R, F]` inventories reliability records including:
 
-- inbox/deduplication receipts and stable effect/result identities;
+- inbox/deduplication receipts with their trusted `message_identity_scope` and stable effect/result identities;
 - API/job idempotency claims and outcomes;
 - stable external operation/provider/payment identities;
 - process/execution final or externally committed outcomes;
@@ -258,6 +279,8 @@ Deletion/retention of audit evidence uses governed administrative policy and sep
 External side-effect audit/reconciliation may add subsequent immutable records representing attempts, provider acknowledgements and final outcome; those records do not replace the atomic accountability record/intent for the originating privileged mutation.
 
 ## Validation
+
+Inbox namespace tests feed the same raw `message_id` through the same `consumer_contract` from two different authoritative tenant/source scopes and prove both legitimate messages can execute independently. Exact redelivery within the same trusted scope MUST deduplicate. Tests also prove untrusted payload fields cannot forge a different scope to collide with or bypass another tenant/source receipt.
 
 Inbox fault-injection tests crash before effect, after local effect statements but before commit, after atomic commit but before broker acknowledgement, and around cross-authority effect completion. Co-resident effects MUST prove receipt/effect atomicity. Cross-authority effects MUST prove stable operation/result discovery and reconciliation so redelivery neither loses nor duplicates the logical effect.
 

@@ -10,7 +10,7 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Tenant isolation | Known cross-tenant IDs leak zero protected rows through API, repository, reporting, realtime, export and workers |
 | Placement cache | Stable active traffic can use bounded cache; migration/suspension invalidates or is rejected by destination admission/version |
 | Relocation | Concurrent stale source writer is fenced; no source writes accepted after cutover; target becomes sole authority |
-| Recovery-driven relocation pre-cutover | Revoke session/membership/permission/tenant access in `(R,F]`; target admission remains non-active until later deny/revocation generation plus reliability/audit/external-effect continuity is reconciled and validated; `VERIFYING` is only defense in depth |
+| Recovery-driven relocation pre-cutover | Revoke session/membership/permission/tenant access in `(R,F]`; target admission remains non-active until later deny/revocation generation plus reliability/audit/external-effect/governance continuity is reconciled and validated; `VERIFYING` is only defense in depth |
 | Authorization | UI omission cannot bypass server policy; cross-tenant privileged operations are distinct and audited |
 | Browser/BFF | First-party browser never receives/persists long-lived platform access or refresh credentials; browser protected API flow remains behind confidential BFF session boundary |
 | Browser realtime handshake | Untrusted/null Origin, ambient-cookie-only, expired/replayed/wrong-scope/wrong-tenant capability is rejected before `101 Switching Protocols`; no unauthorized protected socket is retained |
@@ -32,6 +32,7 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Provider callback transport | Over-limit streamed/chunked callback is rejected before complete buffering/signature work; post-auth decompression/parser expansion is bounded |
 | Provider callbacks | Valid-shape forged/invalid-signature callback is rejected; stale/replayed callback does not repeat protected side effects; tenant binding comes from trusted integration configuration |
 | Delayed export | Authorization revoked after request but before execution/release prevents user-requested delayed artifact execution/release; capability is minted only after fresh authorization |
+| Delayed import | Queue a user-requested import while authorized, then revoke membership/import permission/tenant access before worker execution; worker re-establishes current tenant context and authorization and performs zero protected tenant mutation |
 | SQL administration | Interactive caller-authored SQL cannot alter the tenant binding used by data policy via `SET`, `set_config`, `SET ROLE`, session authorization or equivalent; normal app/migration owner credentials are unavailable |
 | Provider outage | One tenant/provider failure does not create global outage/retry storm |
 | Cache outage | Behavior matches cache class; no cache loss becomes durable data loss |
@@ -43,13 +44,14 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Telemetry state/signal crash | Advance current projection, crash before normal post-update code, restart/replay; stable transition intent still causes the required signal exactly once logically under at-least-once transport |
 | Telemetry outage | Buffer/backpressure remains bounded; transactional core protected from telemetry backlog |
 | Secret authority outage | No plaintext fallback; only accepted lease/cache behavior continues |
-| Cryptographic DR | Restored representative ciphertext/backups remain decryptable through approved KMS/key-recovery path after simulated loss of normal cryptographic authority |
+| Cryptographic DR | Restored representative ciphertext/backups remain decryptable through approved KMS/key-recovery path after simulated loss of normal cryptographic authority, except where verified current policy intentionally crypto-erased that data |
 | Tenant PITR continuity | Restore business state to R, create completed irreversible effects/audit/idempotency records in (R,F], fence at F, reconcile and cut over; target cannot repeat those effects and post-R immutable accountability evidence survives source cleanup |
 | Tenant PITR authorization continuity | Create authority/capability before R, revoke/suspend session, membership, permission/scope or tenant access in (R,F], restore business state to R, reconcile and cut over; restored target preserves the later deny/revocation and rejects the stale authority before protected traffic resumes |
-| Whole-cell PITR continuity | Across multiple tenants, create post-R revocations, idempotency receipts, audit evidence and completed/ambiguous external effects, restore the cell to R, and prove the cell remains quarantined until `(R,F]` continuity is reconciled; no stale grant or completed effect becomes eligible when admission resumes |
-| Recovery scope uncertainty | If `F`/continuity cannot be completely established from the prior authority or surviving durable evidence, protected/effectful admission remains fail-closed and ambiguous work is quarantined rather than retried |
+| Tenant PITR governance continuity | Delete/erase or anonymize protected data and change legal-retention state in `(R,F]`, restore business data to `R`, reconcile and cut over; erased/de-identified data does not become authoritative/visible again, current retention/hold state is enforced, and approved crypto-erasure is not defeated by restoring an older key path |
+| Whole-cell PITR continuity | Across multiple tenants, create post-R revocations, idempotency receipts, audit evidence, governed erasure/anonymization/retention changes and completed/ambiguous external effects, restore the cell to R, and prove the cell remains quarantined until `(R,F]` continuity is reconciled; no stale grant, erased data or completed effect becomes eligible when admission resumes |
+| Recovery scope uncertainty | If `F`/continuity cannot be completely established from the prior authority or surviving durable evidence, protected/effectful admission remains fail-closed, ambiguous work is quarantined, data with unresolved erasure/anonymization status remains unavailable, and destructive deletion with unresolved legal-retention status remains blocked |
 | Migration | Mixed-version rollout validated; destructive change follows expand/migrate/contract |
-| Recovery | Control-plane/cell/tenant restore rehearsals applicable to their scope complete with tenant isolation intact, required protected data decryptable and safety/accountability/security-authority continuity reconciled before authority resumes |
+| Recovery | Control-plane/cell/tenant restore rehearsals applicable to their scope complete with tenant isolation intact, required protected data decryptable where policy requires recoverability, and safety/accountability/security-authority/governance continuity reconciled before authority resumes |
 | Observability | Request -> transaction -> outbox/job -> worker -> provider can be correlated without secret leakage |
 
 ## Release-blocking invariant tests
@@ -60,7 +62,7 @@ The following failures block release regardless of other test success:
 - application runtime can bypass tenant RLS/data policy unexpectedly;
 - interactive SQL principal can alter the tenant authority trusted by pooled data policy;
 - stale placement can write after relocation fence/cutover;
-- recovery-driven relocation activates target admission or routes protected/effectful traffic before required `(R,F]` security-authority, reliability, audit and external-effect continuity is reconciled;
+- recovery-driven relocation activates target admission or routes protected/effectful traffic before required `(R,F]` security-authority, reliability, audit, governance and external-effect continuity is reconciled;
 - a valid but stale realtime capability can receive `101` after its underlying session/membership/permission/tenant authority was revoked before presentation;
 - two or more gateway replicas can concurrently redeem the same single-use realtime capability because replay state is checked non-atomically or only replica-locally;
 - a replay-losing realtime handshake can receive `101`, or an ambiguous post-consume gateway failure can make the same single-use capability eligible again instead of requiring remint;
@@ -87,18 +89,22 @@ The following failures block release regardless of other test success:
 - forged/invalid-authentication provider callback can mutate protected domain state;
 - replayed provider callback can repeat an irreversible logical side effect;
 - delayed user-requested export can execute/release after required authorization has been revoked;
+- delayed user-requested import can mutate protected tenant data after request-time membership/permission/tenant authority has been revoked before execution or resume;
 - telemetry ingestion acknowledges an observation while neither a durable replayable acceptance record nor an equivalent recoverable authority exists for downstream projections;
 - out-of-order/replayed telemetry can replace a newer current/latest state or produce a stale latest-state transition;
 - tenant point-in-time recovery makes an already-completed post-recovery-point irreversible effect eligible to execute again because dedup/idempotency/process outcome evidence was rolled back;
 - tenant point-in-time recovery/source cleanup erases required immutable audit evidence from the recovery-to-fence interval;
 - tenant point-in-time recovery reactivates a session, membership, permission/scope, credential or tenant access that was revoked/suspended in `(R,F]`, or rolls back the freshness/generation state used to reject stale authority;
+- tenant or whole-cell PITR makes protected data erased/deleted/anonymized in `(R,F]` authoritative or visible again because governance tombstone/decision state was rolled back;
+- PITR performs destructive deletion while current legal-retention/legal-hold state is missing, stale or unreconciled;
+- PITR revives an older usable cryptographic key path that defeats a verified post-`R` governed cryptographic-erasure decision;
 - whole-cell PITR resumes protected traffic, schedulers or effectful workers before all applicable tenant continuity state is reconciled;
-- whole-cell PITR reactivates a later-revoked membership/permission/tenant access or makes an already-completed post-R external effect retry-eligible;
-- protected/effectful traffic resumes after recovery while required post-`R` authorization revocation/deny state or irreversible-effect outcome remains materially unknown;
+- whole-cell PITR reactivates a later-revoked membership/permission/tenant access, resurrects governed-out protected data or makes an already-completed post-R external effect retry-eligible;
+- protected/effectful traffic resumes after recovery while required post-`R` authorization revocation/deny, governance or irreversible-effect outcome remains materially unknown;
 - secrets appear in logs/traces/events/queue payload/audit/client error;
 - migration makes active supported runtime versions access incompatible schema;
 - restore cannot re-establish verified tenant isolation;
-- restored required ciphertext is unusable because its approved cryptographic recovery authority/key version is unavailable.
+- restored required ciphertext is unusable because its approved cryptographic recovery authority/key version is unavailable, unless verified current governance intentionally requires that ciphertext to remain irrecoverable.
 
 ## Evidence traceability
 

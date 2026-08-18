@@ -6,7 +6,7 @@
 
 ## Context
 
-JLMIRROR requires relational business invariants, transactions, authorization metadata, auditability, tenant-aware policies and evolving domain state. It also produces high-volume telemetry whose retention/cardinality/query profile can differ dramatically from transactional workloads. Binary reports/exports should not bloat the transactional database.
+JLMIRROR requires relational business invariants, transactions, authorization metadata, auditability, tenant-aware policies and evolving domain state. It also produces high-volume telemetry whose retention/cardinality/query profile can differ dramatically from transactional workloads. Binary reports/exports should not bloat the transactional database. Because artifact metadata and object bytes live in separate persistence authorities, artifact lifecycle also needs an explicit crash/reconciliation contract rather than an implicit cross-store transaction.
 
 Drivers: `FR-MON-003`, `FR-GOV-003`, `INV-DATA-*`, `INV-ASYNC-001`, `QA-PERF-001`, `QA-REC-001`, `SEC-TEN-002`.
 
@@ -33,9 +33,17 @@ Each accepted observation has a stable `observation_id` (or equivalent source id
 
 If a specialized telemetry store itself is the durable acceptance authority, it must provide an accepted replay/checkpoint/reconciliation mechanism sufficient to rebuild or repair downstream current-state/signals. Provider acknowledgement/ingestion success is not emitted before the durable acceptance boundary succeeds.
 
-Generated binary artifacts SHALL be stored in object/blob storage with metadata/reference in transactional state.
+### Artifact/object cross-store consistency
 
-Ephemeral cache/pub-sub state SHALL NOT be durable business truth.
+Generated binary artifacts SHALL be stored in object/blob storage with authoritative lifecycle metadata/reference in transactional state.
+
+Because PostgreSQL metadata and object bytes cannot be assumed to share an ACID transaction, artifact creation SHALL use a stable `artifact_id`/tenant identity and staged lifecycle. The normal pattern commits a discoverable transactional artifact record and durable work intent before object upload, uploads bytes under a stable non-public object identity, verifies version/checksum/size, and only then transitions metadata to terminal `READY/AVAILABLE`. An equivalent storage-native staged manifest is acceptable if it provides the same discoverability/reconciliation guarantees.
+
+Only terminal-ready metadata whose expected object identity/integrity has been verified may authorize artifact release. A crash after metadata creation, object upload, metadata finalization, response delivery or object deletion must leave a state that deterministic reconciliation can classify and repair/idempotently complete.
+
+Artifact deletion/erasure likewise uses durable intent/tombstone plus idempotent object cleanup and confirmed outcome; metadata is not simply discarded first while protected object bytes become undiscoverable. Controlled staging/orphan inventory is reconciled/garbage-collected under current retention, erasure and legal-hold policy so protected bytes cannot remain indefinitely outside governance.
+
+Ephemeral cache/pub-sub state SHALL NOT be durable business truth. Short-lived state whose loss changes correctness/security eligibility is not considered disposable merely because it has a TTL; its owning ADR defines required continuity/fail-closed semantics.
 
 ## Consequences
 
@@ -44,13 +52,16 @@ Ephemeral cache/pub-sub state SHALL NOT be durable business truth.
 - database-enforced tenant isolation is available;
 - well-understood migration/backup tooling;
 - telemetry can evolve independently when volume demands it;
-- telemetry specialization does not introduce an implicit crash-prone dual write.
+- telemetry specialization does not introduce an implicit crash-prone dual write;
+- object storage can scale binary artifacts without pretending metadata/object creation is atomic;
+- artifact bytes remain discoverable/reconcilable for retention, erasure and recovery.
 
 ### Negative / cost
 - PostgreSQL becomes a deliberate core dependency;
 - pooled cell database remains a shared failure resource;
 - data-plane routing/backup and migration need strong operations;
-- separate telemetry storage requires durable ingestion identity, projection checkpoints and reconciliation.
+- separate telemetry storage requires durable ingestion identity, projection checkpoints and reconciliation;
+- artifact object storage requires staged lifecycle, reconciliation and governed orphan cleanup.
 
 ## Validation
 
@@ -59,8 +70,10 @@ Ephemeral cache/pub-sub state SHALL NOT be durable business truth.
 - PITR/restore rehearsal;
 - telemetry benchmark before selecting retention/storage specialization;
 - crash/fault injection at every telemetry handoff boundary proves no accepted observation is silently split between authorities and duplicate retries are idempotent;
+- artifact fault injection before upload, after upload/before metadata finalize, after finalize/before response and during delete/erasure proves no completed-looking artifact points to absent/wrong bytes and no protected object remains indefinitely undiscoverable/unmanaged;
+- artifact reconciliation validates stable identity, object version/checksum and current governance before release or destructive cleanup;
 - no application superuser credentials in normal runtime.
 
 ## Exit / revisit conditions
 
-Revisit transactional store only with evidence that PostgreSQL cannot satisfy required consistency, scale, residency or operational requirements. Telemetry specialization is expected to be revisited earlier.
+Revisit transactional store only with evidence that PostgreSQL cannot satisfy required consistency, scale, residency or operational requirements. Telemetry specialization is expected to be revisited earlier. Object-storage vendor/mechanism may change, but stable artifact identity, staged cross-store lifecycle and governed reconciliation remain required.

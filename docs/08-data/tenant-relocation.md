@@ -6,7 +6,7 @@
 
 ## Goal
 
-Move a tenant between cells without changing logical tenant/resource identities, without split authoritative writes and without trusting stale routing from requests/jobs. When the relocation mechanism is used for point-in-time recovery, it also preserves reconciled safety/accountability/security-authority continuity across the recovery interval.
+Move a tenant between cells without changing logical tenant/resource identities, without split authoritative writes and without trusting stale routing from requests/jobs. When the relocation mechanism is used for point-in-time recovery, it also preserves reconciled safety/accountability/security-authority/governance continuity across the recovery interval.
 
 ## Preconditions
 
@@ -44,7 +44,7 @@ Post-cutover failure -> FORWARD_RECOVERY or controlled reverse relocation; never
 - ensure source remains authoritative;
 - mark placement `migrating` with current `placement_version`.
 
-For recovery-driven relocation, the manifest separately classifies rollback-subject business state and safety/accountability/security-authority continuity state from the post-recovery-point interval.
+For recovery-driven relocation, the manifest separately classifies rollback-subject business state and safety/accountability/security-authority/governance continuity state from the post-recovery-point interval. Governance continuity includes applicable governed deletion/erasure or anonymization decisions and tombstones, legal-retention/legal-hold state, and approved cryptographic-erasure/key-destruction decisions whose loss could re-expose data or enable a destructive lifecycle action under stale policy.
 
 ## COPYING
 
@@ -73,8 +73,9 @@ A normal relocation catches forward all required authoritative state. A recovery
 7. final transactional delta or recovery reconciliation inventory is established;
 8. pending/unpublished outbox, inbox/deduplication, idempotency and owner-process state required for continuation is synchronized exactly according to manifest;
 9. for recovery-driven relocation, required security-authority continuity through `F` is synchronized/reconciled, including later session/credential revocations where applicable, membership disablement/revocation, permission/scope removals, tenant suspension/access-denial state and authorization/revocation generations or equivalent freshness markers;
-10. final telemetry/artifact delta required for cutover is synchronized or explicitly marked for post-cutover historical completion;
-11. stale source writers are rejected even if they hold cached old placement.
+10. for recovery-driven relocation, required governance continuity through `F` is synchronized/reconciled, including applicable governed deletion/erasure or anonymization decisions and durable tombstones, current legal-retention/legal-hold state including relevant hold placement/release decisions, and approved cryptographic-erasure/key-destruction decisions/evidence whose loss could revive an older usable key path;
+11. final telemetry/artifact delta required for cutover is synchronized or explicitly marked for post-cutover historical completion;
+12. stale source writers are rejected even if they hold cached old placement.
 
 The local write fence is critical: Control Plane cache invalidation alone is not sufficient protection.
 
@@ -102,11 +103,15 @@ For a **recovery-driven relocation**, the target SHALL remain non-active/non-aut
 - post-`R` deduplication/idempotency/process outcomes and external-operation reconciliation needed to prevent repeated irreversible effects;
 - required immutable audit/accountability evidence;
 - post-`R` session/credential revocations where applicable, membership disablement/revocation, permission/scope removal, tenant suspension/access-denial state and current authorization/revocation generation or equivalent freshness state;
-- current authoritative security state at reintroduction time, so a stale restored positive grant cannot override a later deny;
+- applicable post-`R` governed deletion/erasure and anonymization decisions plus durable tombstones/evidence needed to prevent restored protected data from becoming authoritative or visible again;
+- current legal-retention/legal-hold state, including relevant post-`R` hold placement/release decisions, before any destructive lifecycle behavior can resume;
+- applicable approved cryptographic-erasure/key-destruction decisions/evidence, proving recovery does not revive an older usable key path that defeats current governed erasure;
+- current authoritative security **and governance** state at reintroduction time, so a stale restored grant, stale retention policy or older pre-erasure state cannot override a later authoritative decision;
 - unresolved ambiguous operations are quarantined and cannot execute;
+- protected data with unresolved erasure/anonymization status remains unavailable, and destructive deletion with unresolved legal-retention status remains blocked;
 - placement/admission generation is ready for the target and source remains fenced.
 
-If any required security-authority continuity or reliability/accountability evidence is incomplete, protected/effectful cutover fails closed. `VERIFYING` does not substitute for this pre-cutover gate.
+If any required security-authority, governance, reliability/accountability or external-effect continuity evidence is incomplete, protected/effectful cutover fails closed. `VERIFYING` does not substitute for this pre-cutover gate.
 
 After those gates pass:
 
@@ -125,6 +130,9 @@ Post-cutover verification is defense in depth. Validate:
 
 - target authorization/tenant isolation still matches current authoritative security state;
 - no reconciled revocation/deny state regressed after admission;
+- governed deletion/erasure or anonymization decisions remain enforced and no governed-out protected data became authoritative/visible again;
+- current legal-retention/legal-hold state remains enforced and no destructive lifecycle action ran under stale or unresolved retention state;
+- approved cryptographic erasure remains effective and recovery did not restore an older usable key path that defeats it;
 - transactional domain counts/invariants;
 - outbox publication watermark and no duplicate unpublished transfer;
 - inbox/idempotency continuity;
@@ -134,14 +142,14 @@ Post-cutover verification is defense in depth. Validate:
 - provider integrations/secrets references;
 - scheduled work ownership;
 - no accepted writes/effectful worker ownership at source after fence;
-- for recovery, no completed `(R, F]` irreversible effect became retry-eligible and required later audit evidence remains available;
+- for recovery, no completed `(R, F]` irreversible effect became retry-eligible and required later audit/governance evidence remains available;
 - representative API/worker/realtime flows.
 
 ## Cleanup
 
 Source tenant data is retained for a defined recovery window in a non-authoritative, write-fenced state, then deleted according to policy after completion evidence and recovery obligations are satisfied.
 
-For recovery-driven relocation, source cleanup cannot destroy the only remaining post-`R` immutable audit/reliability/security-authority evidence. Required continuity evidence must first exist in its governed durable destination.
+For recovery-driven relocation, source cleanup cannot destroy the only remaining post-`R` immutable audit/reliability/security-authority/governance evidence. Required continuity evidence must first exist in its governed durable destination. Source cleanup also SHALL NOT delete data whose current legal-retention/hold state requires continued preservation, nor preserve/re-expose content that current governed erasure requires to remain unavailable.
 
 ## Rollback rule
 

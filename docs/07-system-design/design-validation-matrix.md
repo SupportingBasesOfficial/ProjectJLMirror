@@ -15,6 +15,7 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Browser realtime handshake | Untrusted/null Origin, ambient-cookie-only, expired/replayed/wrong-scope/wrong-tenant capability is rejected before `101 Switching Protocols`; no unauthorized protected socket is retained |
 | Realtime authorization | Active protected subscription loses access after membership/permission/session/tenant revocation within accepted bound; missed invalidation is caught by bounded revalidation |
 | Transactions | Mutation + required audit/audit-intent + outbox commit atomically; injected dispatcher failure loses no committed event/audit intent |
+| Transition signal atomicity | Crash immediately after successful conditional state advance cannot lose the required transition signal; replay discovers durable transition/outbox intent without re-advancing state |
 | Audit intent integrity | During external audit-sink outage, normal app/dispatcher roles cannot update/delete immutable audit-intent evidence; only segregated delivery metadata is mutable and original evidence remains reproducible |
 | Event delivery | Duplicate event causes no duplicate irreversible effect; poison message quarantines after bounded policy |
 | Job delivery | Worker crash after external timeout does not duplicate accepted logical side effect beyond contract |
@@ -29,11 +30,13 @@ This matrix converts the design into evidence gates. Passing happy-path tests is
 | Cell DB outage | Affected cell is removed/degraded; unrelated cells continue |
 | Telemetry crash consistency | Crash at every durable-ingress/current-state/history/signal boundary leaves an accepted observation replayable/reconcilable; duplicate retry is idempotent; no uncoordinated dual-write success is acknowledged |
 | Telemetry ordering | Deliver observation N+1 before N and replay partitions out of order; latest/current projection remains at N+1 (or newer ordering token), stale observation is retained historically but cannot regress current state or emit a false latest-state transition |
+| Telemetry state/signal crash | Advance current projection, crash before normal post-update code, restart/replay; stable transition intent still causes the required signal exactly once logically under at-least-once transport |
 | Telemetry outage | Buffer/backpressure remains bounded; transactional core protected from telemetry backlog |
 | Secret authority outage | No plaintext fallback; only accepted lease/cache behavior continues |
 | Cryptographic DR | Restored representative ciphertext/backups remain decryptable through approved KMS/key-recovery path after simulated loss of normal cryptographic authority |
+| Tenant PITR continuity | Restore business state to R, create completed irreversible effects/audit/idempotency records in (R,F], fence at F, reconcile and cut over; target cannot repeat those effects and post-R immutable accountability evidence survives source cleanup |
 | Migration | Mixed-version rollout validated; destructive change follows expand/migrate/contract |
-| Recovery | Cell restore and tenant-level recovery rehearsal completed with tenant isolation intact and required protected data decryptable |
+| Recovery | Cell restore and tenant-level recovery rehearsal completed with tenant isolation intact, required protected data decryptable and safety/accountability interval reconciled |
 | Observability | Request -> transaction -> outbox/job -> worker -> provider can be correlated without secret leakage |
 
 ## Release-blocking invariant tests
@@ -46,9 +49,10 @@ The following failures block release regardless of other test success:
 - stale placement can write after relocation fence/cutover;
 - required privileged audit record or durable atomic audit intent can be omitted on successful mutation;
 - normal runtime/dispatcher can rewrite or delete the only committed required-audit evidence payload before external delivery;
+- a committed current-state transition can lose its required signal because a crash occurred after state update but before signal intent durability;
 - duplicate delivery can repeat an irreversible payment/destructive execution without contract protection;
 - first-party browser JavaScript is intentionally given long-lived platform access/refresh credentials;
-- protected first-party browser WebSocket with untrusted/null Origin or invalid/absent capability can receive a successful upgrade/persistent admission;
+- protected first-party browser WebSocket with untrusted/null Origin or invalid/absent capability can receive `101 Switching Protocols` or remain as an upgraded protected connection;
 - known-revoked realtime subscription continues receiving protected events beyond the accepted revocation/revalidation bound;
 - oversized unauthenticated callback reaches complete-body/signature processing without transport enforcement;
 - forged/invalid-authentication provider callback can mutate protected domain state;
@@ -56,6 +60,8 @@ The following failures block release regardless of other test success:
 - delayed user-requested export can execute/release after required authorization has been revoked;
 - telemetry ingestion acknowledges an observation while neither a durable replayable acceptance record nor an equivalent recoverable authority exists for downstream projections;
 - out-of-order/replayed telemetry can replace a newer current/latest state or produce a stale latest-state transition;
+- tenant point-in-time recovery makes an already-completed post-recovery-point irreversible effect eligible to execute again because dedup/idempotency/process outcome evidence was rolled back;
+- tenant point-in-time recovery/source cleanup erases required immutable audit evidence from the recovery-to-fence interval;
 - secrets appear in logs/traces/events/queue payload/audit/client error;
 - migration makes active supported runtime versions access incompatible schema;
 - restore cannot re-establish verified tenant isolation;

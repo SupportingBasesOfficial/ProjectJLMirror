@@ -1,12 +1,12 @@
 # Tenant Relocation Between Cells
 
 **Status:** proposed baseline  
-**Primary ADRs:** ADR-004, ADR-019  
+**Primary ADRs:** ADR-004, ADR-018, ADR-019  
 **Threat focus:** TM-012
 
 ## Goal
 
-Move a tenant between cells without changing logical tenant/resource identities, without split authoritative writes and without trusting stale routing from requests/jobs.
+Move a tenant between cells without changing logical tenant/resource identities, without split authoritative writes and without trusting stale routing from requests/jobs. When the relocation mechanism is used for point-in-time recovery, it also preserves reconciled safety/accountability continuity across the recovery interval.
 
 ## Preconditions
 
@@ -16,7 +16,8 @@ Move a tenant between cells without changing logical tenant/resource identities,
 - relocation operation has durable Control Plane state;
 - tenant-specific data classes/artifacts/telemetry are inventoried in a migration manifest;
 - pending async/process state is inventoried;
-- rollback boundary is declared before execution.
+- rollback boundary is declared before execution;
+- for recovery-driven relocation, recovery point `R`, current-source write fence `F` strategy and reconciliation classes are declared.
 
 ## State machine
 
@@ -43,6 +44,8 @@ Post-cutover failure -> FORWARD_RECOVERY or controlled reverse relocation; never
 - ensure source remains authoritative;
 - mark placement `migrating` with current `placement_version`.
 
+For recovery-driven relocation, the manifest separately classifies rollback-subject business state and safety/accountability continuity state from the post-recovery-point interval.
+
 ## COPYING
 
 Copy tenant-scoped transactional rows by domain, required telemetry and artifact references/objects according to manifest. Source continues normal service.
@@ -57,6 +60,8 @@ Apply deltas after the base snapshot until lag is below cutover threshold. Valid
 
 Track a durable synchronization watermark for transactional change propagation and, where applicable, telemetry transfer.
 
+A normal relocation catches forward all required authoritative state. A recovery-driven relocation does **not** blindly replay all business mutations after recovery point `R`; it reconciles the `(R, F]` interval according to ADR-018 and the recovery manifest.
+
 ## QUIESCING / write fence
 
 1. ingress/control policy stops admitting new tenant mutations to source;
@@ -65,7 +70,7 @@ Track a durable synchronization watermark for transactional change propagation a
 4. tenant schedulers stop acquiring new work;
 5. effectful workers either finish before the fence boundary or are safely cancelled/replayed under stable `operation_id` semantics;
 6. source outbox dispatcher stops publishing new tenant events after the declared fence/watermark;
-7. final transactional delta is synchronized;
+7. final transactional delta or recovery reconciliation inventory is established;
 8. pending/unpublished outbox, inbox/deduplication, idempotency and owner-process state required for continuation is synchronized exactly according to manifest;
 9. final telemetry/artifact delta required for cutover is synchronized or explicitly marked for post-cutover historical completion;
 10. stale source writers are rejected even if they hold cached old placement.
@@ -85,9 +90,11 @@ At cutover every pending unit is in one of these states:
 
 Inbox/deduplication and idempotency state required to recognize pre-cutover message/operation IDs is available at target before target starts effectful processing.
 
+For recovery-driven relocation, this rule extends through `(R, F]`: completed irreversible effects after `R` retain the receipts/operation identities needed to prevent replay even if corresponding business state is intentionally restored to `R`. Ambiguous external outcomes are reconciled or quarantined before target effectful processing begins.
+
 ## CUTOVER
 
-- activate target tenant admission for new placement generation;
+- activate target tenant admission for new placement generation only after migration/recovery preconditions pass;
 - atomically update Control Plane placement to target `cell_id` and increment `placement_version`;
 - invalidate/propagate placement change;
 - route new units of work to target;
@@ -95,6 +102,8 @@ Inbox/deduplication and idempotency state required to recognize pre-cutover mess
 - source remains permanently write-fenced for that generation.
 
 Jobs/messages created before cutover re-resolve logical placement. Work that is safe to continue is re-enqueued/redirected according to job policy; stale physical routing is rejected.
+
+A recovery-driven target SHALL NOT become effectfully authoritative until required post-recovery-point deduplication, idempotency, process outcome, immutable audit and external-operation reconciliation evidence has been validated.
 
 ## VERIFYING
 
@@ -110,11 +119,14 @@ Validate:
 - provider integrations/secrets references;
 - scheduled work ownership;
 - no accepted writes/effectful worker ownership at source after fence;
+- for recovery, no completed `(R, F]` irreversible effect became retry-eligible and required later audit evidence remains available;
 - representative API/worker/realtime flows.
 
 ## Cleanup
 
 Source tenant data is retained for a defined recovery window in a non-authoritative, write-fenced state, then deleted according to policy after completion evidence and recovery obligations are satisfied.
+
+For recovery-driven relocation, source cleanup cannot destroy the only remaining post-`R` immutable audit/reliability evidence. Required continuity evidence must first exist in its governed durable destination.
 
 ## Rollback rule
 

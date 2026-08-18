@@ -6,7 +6,7 @@
 
 ## Context
 
-JLMIRROR must mutate durable state and reliably trigger asynchronous consequences (notifications, webhooks, projections, workflows). Publishing directly to a broker before/after commit creates dual-write failure windows. Long external calls inside database transactions increase lock duration and couple availability. Required audit evidence has the same dual-write problem if appended only after the protected mutation commits.
+JLMIRROR must mutate durable state and reliably trigger asynchronous consequences (notifications, webhooks, projections, workflows). Publishing directly to a broker before/after commit creates dual-write failure windows. Long external calls inside database transactions increase lock duration and couple availability. Required audit evidence has the same dual-write problem if appended only after the protected mutation commits. Projection transitions have the same failure mode when a state change and its required signal are persisted separately.
 
 Drivers: `INV-ASYNC-001`, `INV-DATA-004`, `QA-ASYNC-001`, `TM-011`, `SEC-AUD-001`, `SEC-AUD-003`, `SEC-AUD-004`, `AP-05`.
 
@@ -20,6 +20,23 @@ When an audit record is required for a local authoritative mutation and the audi
 
 The immutable evidence payload of a required external audit intent SHALL be protected from update/delete by normal application and dispatcher roles. Mutable retry/delivery metadata SHALL be segregated so delivery progress can change without granting the dispatcher authority to rewrite the committed accountability statement.
 
+### State-transition signal atomicity
+
+When a conditional state transition semantically requires a downstream signal/event (for example a telemetry observation advancing a current-state projection), success of the state transition and durable existence of the signal intent MUST share one atomic durability boundary or an equivalent recoverable advancement record.
+
+For PostgreSQL-owned current state, the preferred pattern is:
+
+```text
+BEGIN
+  conditional state advance / compare-and-set
+  if advanced:
+      persist stable transition identity
+      append outbox/signal intent
+COMMIT
+```
+
+If the current-state authority is not the same database as the signal outbox, the authoritative state transition MUST durably persist a transition/advancement record sufficient for an idempotent dispatcher to produce the signal after crash/replay. A worker MUST NOT rely on the transient return value of a successful compare-and-set as the only evidence that a signal is required.
+
 External network calls SHALL NOT normally execute inside the database transaction. Multi-domain/external workflows requiring multiple durable steps use a process manager/saga-like orchestration with explicit compensation/reconciliation instead of pretending to have a distributed ACID transaction.
 
 The same principle applies to any cross-persistence write: one authority must durably accept the intent/observation first, and the remaining effects are idempotent projections/reconciled consequences rather than an uncoordinated dual write.
@@ -30,13 +47,15 @@ The same principle applies to any cross-persistence write: one authority must du
 - removes the most common database/event dual-write gap;
 - required local audit cannot be lost in a crash after business commit;
 - external audit intent remains accountable even during sink/dispatcher failure;
-- event/audit publication can retry safely;
+- a committed current-state transition cannot silently lose its required signal after worker crash;
+- event/audit/signal publication can retry safely;
 - transactions remain short and local;
 - eventual-consistency points are explicit.
 
 ### Negative / cost
 - outbox tables/dispatchers and retention/monitoring are required;
 - consumers must handle duplicate delivery;
+- state-transition producers need stable transition identity;
 - multi-step workflows become explicit state machines;
 - external audit sinks require protected durable intent plus segregated delivery state and reconciliation.
 
@@ -46,6 +65,8 @@ Fault injection SHALL cover crash before commit, after commit/before publish, du
 
 For required audit, fault injection SHALL prove there is no state in which the protected mutation commits successfully while neither the required audit record nor its durable atomic audit intent exists. Role/permission tests SHALL additionally prove the dispatcher and normal application runtime cannot rewrite/delete committed audit-evidence payload while retaining the narrower ability to advance delivery metadata.
 
+For transition-driven signals, fault injection SHALL crash the worker immediately after the state compare-and-set/advance and before ordinary post-update code. Replay/reconciliation MUST still discover the durable transition/signal intent and emit the logical signal once under idempotent delivery semantics.
+
 ## Exit / revisit conditions
 
-A broker supporting transactional integration with the authoritative database could justify a different mechanism, but equivalent atomicity and audit-evidence integrity guarantees must be demonstrated.
+A broker supporting transactional integration with the authoritative database could justify a different mechanism, but equivalent atomicity, transition-signal recoverability and audit-evidence integrity guarantees must be demonstrated.

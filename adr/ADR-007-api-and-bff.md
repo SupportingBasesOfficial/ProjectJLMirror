@@ -32,9 +32,11 @@ Browser -> BFF (authenticated same-site request)
 Browser -> Realtime Gateway (capability + expected Origin)
 ```
 
-The capability SHALL be short-lived, narrowly scoped to the principal/tenant/realtime purpose, non-refreshable as a general API credential, and single-use or otherwise replay-bounded according to its contract. The gateway SHALL validate an allowlisted expected `Origin` and the capability before protected subscription delivery.
+The capability SHALL be short-lived, narrowly scoped to the principal/tenant/realtime purpose, non-refreshable as a general API credential, and single-use or otherwise replay-bounded according to its contract.
 
-An ambient HttpOnly session cookie by itself SHALL NOT authorize a protected direct WebSocket connection. Any future cookie-authenticated socket design requires an explicit security decision proving Origin validation plus an anti-CSRF/connection proof with equivalent protection.
+For a **protected** browser WebSocket, the gateway SHALL validate the allowlisted expected `Origin`, connection capability, expiry/replay/scope/tenant binding and applicable pre-upgrade admission limits **before accepting the HTTP upgrade and before returning `101 Switching Protocols`**. An invalid, absent, expired, replayed, wrong-scope, wrong-tenant, untrusted-origin or null-origin request is rejected at the HTTP handshake and is not retained as an upgraded protected socket.
+
+An ambient HttpOnly session cookie by itself SHALL NOT authorize a protected direct WebSocket connection. Any future cookie-authenticated socket design requires an explicit security decision proving Origin validation plus an anti-CSRF/connection proof with equivalent protection before upgrade.
 
 Public unauthenticated endpoints are outside this protected exception and have their own exposure policy.
 
@@ -48,12 +50,13 @@ The web delivery layer MAY use CDN/edge/serverless capabilities, but the core AP
 - reduced browser credential exposure;
 - web and external clients share one authoritative business API;
 - BFF can optimize web-specific aggregation without duplicating domain rules;
-- cross-site pages cannot gain protected WebSocket access merely by causing ambient cookies to be attached.
+- cross-site pages cannot gain or retain protected WebSocket connections merely by causing ambient cookies to be attached;
+- invalid protected socket attempts are rejected before consuming long-lived gateway connection resources.
 
 ### Negative / cost
 - one additional request hop for typical browser calls;
 - session/BFF availability and CSRF policy require engineering;
-- direct realtime needs a connection-ticket mint/validation lifecycle;
+- direct realtime needs a connection-ticket mint/validation lifecycle and pre-upgrade admission checks;
 - API version/contract discipline is mandatory.
 
 ## Validation
@@ -61,11 +64,12 @@ The web delivery layer MAY use CDN/edge/serverless capabilities, but the core AP
 - browser JavaScript has no long-lived platform API secret;
 - API rejects unauthorized direct calls regardless of BFF;
 - CSRF/session fixation/logout/revocation scenarios tested;
-- hostile/untrusted/null Origin direct WebSocket handshakes are rejected for protected browser realtime;
-- stolen/replayed/expired/wrong-tenant connection capability is rejected;
+- hostile/untrusted/null Origin direct WebSocket handshakes are rejected before `101` for protected browser realtime;
+- stolen/replayed/expired/wrong-tenant/wrong-scope connection capability is rejected before upgrade;
 - ambient cookie alone cannot establish a protected direct browser socket;
+- invalid protected socket attempts are not retained as upgraded idle connections;
 - contract tests cover BFF/API compatibility.
 
 ## Exit / revisit conditions
 
-Revisit only if web delivery model changes; API independence remains required by machine/integration actors and protected browser realtime must preserve equivalent cross-site defenses.
+Revisit only if web delivery model changes; API independence remains required by machine/integration actors and protected browser realtime must preserve equivalent cross-site and pre-upgrade admission defenses.

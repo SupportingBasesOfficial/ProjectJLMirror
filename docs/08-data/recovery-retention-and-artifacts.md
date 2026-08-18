@@ -15,7 +15,7 @@ JLMIRROR distinguishes:
 - configuration/secret-reference recovery;
 - cryptographic authority/key-hierarchy recovery required to decrypt retained data.
 
-A backup is not a recovery capability until restoration **and required decryption** are rehearsed.
+A backup is not a recovery capability until restoration, required decryption **and safety/accountability reconciliation** are rehearsed for the applicable scope.
 
 ## Control Plane recovery
 
@@ -53,21 +53,47 @@ Reissuable third-party credentials normally use controlled reprovisioning/rotati
 Physical PITR restores an entire database, not one logical tenant. Tenant recovery therefore begins in an isolated recovery environment:
 
 ```text
-restore cell snapshot/PITR to quarantine
+restore cell snapshot/PITR to quarantine at recovery point R
    -> recover/validate required cryptographic authority
    -> select tenant rows by tenant_id across owned schemas
-   -> validate relationships/invariants/audit/outbox/process state
+   -> validate relationships/invariants/audit/outbox/process state at R
    -> build a tenant recovery set
    -> materialize/validate in an isolated recovery target
-   -> fence the currently authoritative tenant if replacement is required
-   -> perform controlled cutover/reconciliation
+   -> establish/fence current authoritative tenant at F
+   -> reconcile safety/accountability interval (R, F]
+   -> verify no duplicate irreversible effect becomes eligible
+   -> controlled authority cutover
 ```
 
 ### Preferred replacement model
 
-When the requirement is to restore the tenant to an earlier coherent point, the preferred model is **restore as a new isolated target followed by controlled authority cutover using relocation-grade fencing semantics**. The currently active tenant is never overwritten piecemeal while it continues accepting writes.
+When the requirement is to restore tenant business/domain state to an earlier coherent point, the preferred model is **restore as a new isolated target followed by reconciliation and controlled authority cutover using relocation-grade fencing semantics**. The currently active tenant is never overwritten piecemeal while it continues accepting writes.
 
-This produces one authoritative history at a time and reuses placement/write-fence controls already required for relocation.
+This produces one authoritative business-state history at a time without pretending that all safety/accountability evidence should travel backwards with it.
+
+### Recovery reconciliation interval
+
+Let `R` be the selected recovery point and `F` the final write fence on the currently authoritative tenant. All relevant records/effects in `(R, F]` are inventoried before cutover.
+
+The recovery manifest distinguishes:
+
+**Rollback subject state** — domain/business state intentionally restored to `R`.
+
+**Safety/accountability continuity state** — state that cannot be forgotten merely because business state is being rolled back, including:
+
+- immutable audit records/intents;
+- inbox/deduplication receipts and idempotency outcomes;
+- external provider/payment/automation operation identities and acknowledgements;
+- long-running process/execution outcomes;
+- committed/pending outbox state needed to determine whether an effect was already published/accepted;
+- security/compliance evidence;
+- compensation and reconciliation state.
+
+For each irreversible/external operation after `R`, the owning domain must determine whether it was completed, externally accepted, compensatable, still pending, or ambiguous. The restored target does not become authoritative for effectful processing until required deduplication identities/outcomes are present and ambiguous operations are reconciled or quarantined.
+
+A point-in-time restore MUST NOT blindly copy all post-`R` domain mutations forward, because doing so can defeat the recovery objective. Conversely it MUST NOT blindly discard all post-`R` reliability/audit history, because doing so can recreate duplicate side effects or erase accountability.
+
+If immutable audit evidence for `(R, F]` resides in a protected external sink or retained source, that evidence remains authoritative and is linked/reintroduced as required before the old source is destroyed. Recovery-induced cleanup never serves as a mechanism to erase valid later audit history.
 
 ### In-place reconciliation
 
@@ -92,6 +118,8 @@ hot/current -> warm/rolled-up -> archive -> governed deletion
 Not every data class uses every stage.
 
 Retention policy must account for key lifecycle: deleting a key version may make otherwise retained encrypted data permanently unrecoverable.
+
+Retention for idempotency/deduplication/audit/reliability evidence must cover the recovery and replay windows in which losing that evidence could make an irreversible effect repeatable or accountability incomplete.
 
 ## Deletion/anonymization
 
@@ -142,10 +170,13 @@ Scheduled recovery tests prove:
 - RLS/tenant isolation after restore;
 - application/schema compatibility;
 - tenant recovery set completeness across bounded contexts;
+- explicit inventory and reconciliation of `(R, F]` reliability/audit/external-effect state;
+- already-completed irreversible effects are not repeated after cutover;
+- post-`R` immutable audit evidence remains available after source cleanup;
 - write-fence/cutover safety for tenant-level replacement;
 - retained-backup decryptability across key rotation/version changes;
 - measured recovery duration and data-loss window.
 
-A database/object restore that completes structurally but cannot decrypt required protected data is a failed rehearsal.
+A database/object restore that completes structurally but cannot decrypt required protected data, suppress duplicate irreversible effects, or preserve required accountability evidence is a failed rehearsal.
 
 Results are operational evidence used to set/revise RPO/RTO.

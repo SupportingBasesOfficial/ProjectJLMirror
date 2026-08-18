@@ -56,12 +56,14 @@ A pooled tenant table cannot ship without non-null `tenant_id`, database isolati
 
 ## Gate D7 — Async/reliability
 
-If mutation emits work/events:
+If mutation emits work/events/signals:
 
 - outbox or accepted equivalent atomicity exists;
+- conditional state transitions that require signals persist the transition/signal obligation atomically or through an equivalent durable advancement record;
 - event/job versioning defined;
 - consumer duplicate semantics defined;
-- idempotency record is durable when losing it could duplicate irreversible effects.
+- idempotency record is durable when losing it could duplicate irreversible effects;
+- replay after crash does not depend on an in-memory "transition happened" flag.
 
 ## Gate D8 — Migration
 
@@ -76,7 +78,11 @@ If mutation emits work/events:
 - backup/reconstruction source identified;
 - tenant-level recovery impact understood;
 - encryption/key dependency documented;
-- recovery validation exists for critical data.
+- recovery validation exists for critical data;
+- point-in-time recovery defines recovery point `R` and final write fence `F`;
+- the `(R,F]` interval is classified into rollback-subject business state versus safety/accountability continuity state;
+- deduplication/idempotency/process/external-operation outcomes needed to suppress duplicate irreversible effects survive or are reconciled before cutover;
+- immutable audit evidence required from `(R,F]` survives restore and source cleanup.
 
 ## Gate D10 — Observability/security
 
@@ -96,3 +102,5 @@ For high-volume tables/streams:
 ## Gate D12 — Relocation compatibility
 
 Tenant-scoped state can be selected, copied, validated and fenced by immutable `tenant_id`. Physical location/schema/server identifiers are not embedded as business identity.
+
+For recovery-driven relocation, the target can receive/reconcile required safety/accountability continuity state without reapplying all business mutations that the recovery intentionally rolls back.

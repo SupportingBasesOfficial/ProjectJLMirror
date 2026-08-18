@@ -1,7 +1,7 @@
 # Reliability Records, Idempotency and Audit
 
 **Status:** proposed baseline  
-**Primary ADRs:** ADR-008, ADR-009, ADR-010
+**Primary ADRs:** ADR-008, ADR-009, ADR-010, ADR-018
 
 ## Outbox
 
@@ -59,11 +59,29 @@ expires_at
 
 Reusing the same key with a different request fingerprint returns conflict rather than silently executing a different operation.
 
-Idempotency retention is long enough to cover the accepted retry/replay window for the operation.
+Idempotency retention is long enough to cover the accepted retry/replay window for the operation and applicable recovery window.
 
 ## Business process records
 
 Long-running operations such as tenant provisioning/relocation, large exports, reconciliation and complex automation have owner-domain process records with stage/progress/error/resume state. Queue state alone is not the authoritative process history.
+
+## Recovery-surviving reliability evidence
+
+Point-in-time business-state recovery MUST NOT blindly roll back the evidence that prevents already-completed external effects from being repeated.
+
+For recovery point `R` and later write fence `F`, the recovery reconciliation interval `(R, F]` inventories reliability records including:
+
+- inbox/deduplication receipts;
+- API/job idempotency outcomes;
+- stable external operation/provider/payment identities;
+- process/execution final or externally committed outcomes;
+- pending/committed outbox state needed to distinguish delivered from undelivered effects;
+- compensation/reconciliation records;
+- immutable audit evidence.
+
+Owning domains define which business mutations are intentionally rolled back versus which reliability/accountability records are carried forward, reconstructed from an external authority, compensated or quarantined. The target cannot start effectful retry processing until required deduplication and irreversible-operation outcomes for the interval are present and validated.
+
+A recovery procedure SHALL NOT infer "operation did not happen" merely because the restored business database predates the local completion record; external systems and protected audit/reliability sources are reconciled before retry eligibility is established.
 
 ## Audit
 
@@ -96,6 +114,8 @@ Secrets, credential hashes/tokens and unnecessary regulated data are redacted be
 Normal application runtime may append permitted audit entries but cannot update/delete accepted immutable audit records. Retention/deletion required by law or policy is executed through governed administrative mechanisms, not normal application writes.
 
 High-assurance future requirements MAY replicate/seal audit evidence to an external immutable/WORM sink through a dedicated ADR.
+
+Point-in-time restoration of domain state does not authorize silent deletion of later immutable audit evidence. If the primary audit persistence is part of the restored scope, evidence in the recovery reconciliation interval must be recovered/reintroduced from its protected source or external sink before old authoritative copies may be cleaned up.
 
 ## Audit transactionality
 
@@ -140,3 +160,5 @@ External side-effect audit/reconciliation may add subsequent immutable records r
 Fault injection covers crash before mutation commit, immediately after commit, before external audit delivery and during audit-sink outage. Required mutation success is accepted only if local audit evidence or durable audit intent survives and can be reconciled.
 
 Authorization tests prove normal application and dispatcher roles cannot update/delete committed audit evidence payloads. Delivery workers may mutate only explicitly separated delivery metadata. An external audit outage followed by dispatcher compromise/fault simulation must leave the original committed audit evidence intact and reproducible.
+
+Recovery tests restore domain state to before a completed irreversible effect and prove post-point idempotency/deduplication/process/audit evidence is reconciled so the effect cannot be repeated merely because its original local business state was rolled back.

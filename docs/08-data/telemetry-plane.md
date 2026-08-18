@@ -1,7 +1,7 @@
 # Telemetry Plane
 
 **Status:** proposed baseline  
-**Primary ADR:** ADR-006
+**Primary ADRs:** ADR-006, ADR-008
 
 ## Purpose
 
@@ -67,7 +67,7 @@ Provider
   -> DURABLE ACCEPTANCE
        |-> idempotent historical telemetry projection
        |-> monotonic current transactional-state projection when required
-       |-> idempotent domain/integration signal projection
+       |-> durable transition/signal intent for successful current-state advances
 ```
 
 `DURABLE ACCEPTANCE` is an architectural contract, not a selected vendor. It may be:
@@ -90,17 +90,38 @@ The ordering contract MUST use an ordering token that can be compared monotonica
 
 A current-state writer performs a conditional compare-and-set/update: the incoming observation may replace current state only when its ordering token is strictly newer than the stored projection token, or when an explicitly defined deterministic tie-break rule says it wins. A stale/out-of-order observation remains valid historical telemetry but MUST NOT regress `metric_latest_state`, `resource_current_state` or equivalent current projections.
 
-Signals whose meaning is "current/latest state changed" are emitted only from an observation that successfully advances the corresponding current-state projection. Historical/event-time analytics may process late observations under their own explicit window/watermark semantics, but they do not masquerade as a newer current-state transition.
-
 Ordering semantics are source-aware. A reconnect, provider reset, tenant relocation or source reconfiguration that can invalidate sequence comparison introduces a new generation/epoch or equivalent boundary rather than reusing an ambiguous counter domain.
+
+## Atomic current-state advancement and signal intent
+
+A signal whose meaning is **"current/latest state changed"** is part of the successful state transition, not best-effort code after it.
+
+When an observation successfully advances a current-state projection, the system MUST durably persist a stable transition identity and the required signal/outbox intent atomically with that advancement, or persist an equivalent durable advancement record from which the signal can be produced after crash/replay.
+
+Preferred PostgreSQL-owned pattern:
+
+```text
+BEGIN
+  compare-and-set current projection by ordering token
+  if advanced:
+      persist transition_id / from_token / to_token
+      append current-state-changed outbox intent
+COMMIT
+```
+
+If the current-state projection lives in another persistence authority, that authority must atomically retain an advancement record/checkpoint that an idempotent signal projector can consume. The transient result `CAS updated 1 row` held only in worker memory is not sufficient.
+
+Therefore a crash after state advancement but before ordinary worker code continues leaves a durable signal obligation. Replay encountering an equal already-stored ordering token can discover the prior transition record/intent and complete publication without trying to move the state again.
+
+Historical/event-time analytics may process late observations under their own explicit window/watermark semantics, but stale observations do not masquerade as a newer current-state transition and do not create a second transition signal.
 
 ## Projection and reconciliation semantics
 
-Historical, current-state and signal writers consume the durable observation identity idempotently. Duplicate retries may reproduce delivery attempts but not duplicate the logical observation/effect.
+Historical, current-state and signal writers consume durable observation/transition identities idempotently. Duplicate retries may reproduce delivery attempts but not duplicate the logical observation, state transition or effect.
 
 Each projection tracks a durable checkpoint/watermark or equivalent reconciliation state. A crash between projections leaves recoverable lag, not ambiguous success. Operators can compare acceptance/projection watermarks and replay/reconcile incomplete work.
 
-Reconciliation may replay observations in arbitrary delivery order; monotonic current-state compare-and-set semantics ensure replay cannot move latest state backwards.
+Reconciliation may replay observations in arbitrary delivery order; monotonic current-state compare-and-set semantics ensure replay cannot move latest state backwards, while durable transition identities ensure a previously committed advance cannot lose its required signal.
 
 If a provider supports replay/resume tokens, those are tracked as source checkpoints but do not replace JLMIRROR's own accepted-observation identity or projection ordering contract.
 
@@ -136,7 +157,7 @@ Examples:
 
 Exact table names/models are determined with domain/API contract design.
 
-Current-state records include enough ordering/freshness metadata to prove why a value is considered current and to reject stale replay.
+Current-state records include enough ordering/freshness metadata to prove why a value is considered current and to reject stale replay. Transition records/intents include enough identity to recover required downstream signals without making the current row mutable history.
 
 ## Downsampling/rollups
 
@@ -152,6 +173,6 @@ Rollup algorithms and windows require product/query accuracy requirements and ca
 
 ## Tenant relocation
 
-Telemetry is included in the relocation manifest. Large historical datasets may move asynchronously or via provider/storage-native transfer, but cutover must define which durable acceptance boundary is authoritative for new observations, transfer/replay watermarks, source generation/order-token continuity, and how historical queries span/complete migration without split writes.
+Telemetry is included in the relocation manifest. Large historical datasets may move asynchronously or via provider/storage-native transfer, but cutover must define which durable acceptance boundary is authoritative for new observations, transfer/replay watermarks, source generation/order-token continuity, pending transition/signal intent continuity, and how historical queries span/complete migration without split writes.
 
 No observation may be durably accepted as new authoritative input in both source and target after the relocation fence.

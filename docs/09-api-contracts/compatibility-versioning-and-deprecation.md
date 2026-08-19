@@ -48,12 +48,14 @@ The following are breaking by default:
 - changing success/error semantics in a way that alters safe retry or authorization behavior;
 - changing idempotency scope/meaning such that an existing key can duplicate or suppress a different logical effect;
 - changing pagination ordering/cursor semantics in a way that invalidates active traversal beyond the cursor contract's documented lifecycle;
+- weakening cursor confidentiality, URL/log/referrer redaction or sensitive-query transport so previously protected state becomes URL/log visible;
 - changing an endpoint's response-cache class, shared-cache eligibility, variance dimensions or current-authorization revalidation requirements in a way that can make previously private/protected data more broadly reusable;
+- weakening artifact media classification, safe filename, browser-delivery/active-content isolation, parser sandbox/egress/resource bounds, archive extraction containment or XML external-resolution semantics;
 - exposing previously hidden physical/provider implementation semantics as required client input.
 
 Breaking changes require a new major contract or another explicitly governed compatibility mechanism.
 
-A security-tightening cache change MAY be deployable inside the same major when it preserves functional semantics for conforming clients, but it still requires explicit compatibility/security review because intermediaries and conditional requests may observe changed behavior. A cache policy becoming more permissive is never treated as an implementation-only optimization.
+A security-tightening cache/cursor/artifact/parser change MAY be deployable inside the same major when it preserves functional semantics for conforming clients, but it still requires explicit compatibility/security review because clients/intermediaries may observe changed behavior. A security policy becoming more permissive is never treated as an implementation-only optimization.
 
 ## Open versus closed enums
 
@@ -82,9 +84,9 @@ Request extensibility occurs through explicit versioned schemas or documented ex
 
 Schema compatibility is necessary but not sufficient.
 
-Changing a field from "current authoritative state" to "eventually consistent approximation", changing whether an operation is idempotent/retry-safe, or changing response-cache reuse semantics can be a semantic breaking/security change even if the JSON schema is unchanged.
+Changing a field from "current authoritative state" to "eventually consistent approximation", changing whether an operation is idempotent/retry-safe, changing response-cache reuse semantics, exposing cursor payloads that were previously confidential, or weakening artifact/parser safety can be a semantic breaking/security change even if the JSON schema is unchanged.
 
-Contract review therefore evaluates behavior, consistency, security, ownership, authorization, idempotency, retry and cache semantics in addition to shape.
+Contract review therefore evaluates behavior, consistency, security, ownership, authorization, idempotency, retry, cache, continuation confidentiality, artifact delivery and parser semantics in addition to shape.
 
 ## Response-cache compatibility
 
@@ -102,6 +104,39 @@ Compatibility review SHALL compare at least:
 A deployment, CDN or framework change SHALL NOT make an endpoint more cache-permissive than its accepted contract without a reviewed contract change. `Vary`, URL partitioning or tenant/principal labels do not substitute for authorization.
 
 Numeric TTL tuning may remain `OPEN-API-017` when not yet accepted, but the absence of a number does not make cache class or authorization/revalidation semantics implementation-private.
+
+## Cursor/query confidentiality compatibility
+
+Continuation/query transport is part of the security contract.
+
+Compatibility review SHALL compare:
+
+- whether cursor payload is server-side opaque, confidentiality+integrity protected, or otherwise equivalent;
+- whether confidential/restricted tenant/filter/search/resource-key state can become URL-visible;
+- cursor URL/history/log/analytics/referrer handling;
+- whether protected filter/search values are permitted in query strings;
+- current-authorization re-evaluation on continuation.
+
+Changing from a confidentiality-safe cursor/query design to signed/encoded plaintext or raw URL logging is a security regression even if clients still treat the token as opaque.
+
+## Artifact/parser compatibility
+
+Artifact delivery and untrusted-content processing carry security semantics independent of JSON schema.
+
+Compatibility review SHALL compare:
+
+- authoritative media-type classification;
+- safe download-name and `Content-Disposition` semantics;
+- `opaque_download` / `safe_inline` / active-inline isolation class;
+- active-content origin/capability isolation;
+- CDN/range/resume preservation of browser-delivery and erasure fencing;
+- parser/renderer isolation, secret scope and egress policy;
+- decompression/resource bounds;
+- archive extraction containment;
+- XML/structured-parser external resource resolution;
+- derived artifact independent classification.
+
+A framework/CDN/parser/runtime change that weakens one of these properties is security-sensitive even when no route/schema changes.
 
 ## Deprecation
 
@@ -146,6 +181,8 @@ Provider callback adapters version independently when external provider protocol
 
 Where a provider changes a callback protocol incompatibly, the adapter may temporarily support multiple provider versions while producing one stable JLMIRROR domain/application contract.
 
+A parser/library/profile change for XML or another active structured format must preserve the accepted deny-by-default external-resolution policy; a library default that re-enables DTD/entities/includes/schema/network resolution is a security regression, not a compatible implementation detail.
+
 ## Public projection compatibility
 
 Public status/projection consumers may be unauthenticated and difficult to inventory. Their compatibility changes therefore require the same or stronger caution as authenticated public APIs.
@@ -174,7 +211,7 @@ Provider-specific capabilities that genuinely differ are exposed as explicit cap
 
 ## Compatibility tests
 
-CI SHALL compare proposed contract changes with the currently accepted baseline and flag likely breaking changes in:
+CI SHALL compare proposed contract changes with the currently accepted baseline and flag likely breaking/security-sensitive changes in:
 
 - paths/methods;
 - request requiredness/type;
@@ -184,11 +221,15 @@ CI SHALL compare proposed contract changes with the currently accepted baseline 
 - operation idempotency declaration;
 - authorization declaration;
 - pagination/sort contract;
+- cursor confidentiality and URL/log/referrer policy;
+- protected query URL policy;
 - resource identity/scope;
 - response cache class/shared-cache eligibility;
-- cache variance/validator/revalidation/current-authorization semantics.
+- cache variance/validator/revalidation/current-authorization semantics;
+- artifact media/safe-filename/browser-delivery/active-content isolation;
+- parser/renderer isolation/egress/resource/archive/XML external-resolution policy.
 
-Automated schema diff is advisory for semantic compatibility; human/architecture/security review remains required for meaning changes, especially cache-policy changes that can alter protected-data reuse without changing schema.
+Automated schema diff is advisory for semantic compatibility; human/architecture/security review remains required for meaning changes, especially changes that can expose protected data or grant active content/parser behavior without changing schema.
 
 ## Version retirement
 

@@ -1,6 +1,6 @@
 # ADR-004 — Tenant Placement, Routing and Relocation
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** costly
 

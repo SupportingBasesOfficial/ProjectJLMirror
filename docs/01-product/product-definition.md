@@ -1,6 +1,6 @@
 # Product Definition
 
-**Status:** proposed baseline
+**Status:** accepted
 
 ## Product statement
 

@@ -1,6 +1,6 @@
 # Quality Attribute Scenarios
 
-**Status:** proposed baseline
+**Status:** accepted
 
 These scenarios make quality attributes testable. Numeric targets marked OPEN must be established by capacity/SLO work before production commitments.
 

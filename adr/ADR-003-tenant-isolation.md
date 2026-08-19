@@ -1,6 +1,6 @@
 # ADR-003 — Tenant Isolation Model and Isolation Classes
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** high-risk/costly once data volume grows
 

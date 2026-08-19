@@ -1,6 +1,6 @@
 # Runtime Topology
 
-**Status:** proposed
+**Status:** accepted
 
 ## Global request path
 

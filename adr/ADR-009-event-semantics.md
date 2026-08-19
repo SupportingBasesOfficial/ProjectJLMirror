@@ -1,6 +1,6 @@
 # ADR-009 — Domain and Integration Event Semantics
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** costly after external consumers exist
 

@@ -1,6 +1,6 @@
 # ADR-007 — Web BFF and API Boundary
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** reversible/costly depending on client adoption
 

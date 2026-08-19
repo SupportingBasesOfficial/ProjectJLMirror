@@ -1,6 +1,6 @@
 # ADR-002 — Control Plane and Cell-Based Data Plane
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** costly
 

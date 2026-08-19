@@ -1,6 +1,6 @@
 # ADR-014 — Observability Architecture
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** reversible at backend/vendor layer
 

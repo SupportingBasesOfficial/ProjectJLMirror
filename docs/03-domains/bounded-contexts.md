@@ -1,6 +1,6 @@
 # Bounded Contexts
 
-**Status:** proposed baseline
+**Status:** accepted
 
 Each context below defines what language and state it owns, what it consumes, and what it deliberately does not own.
 
@@ -30,7 +30,7 @@ Each context below defines what language and state it owns, what it consumes, an
 
 ## Monitoring
 
-**Owns:** monitoring source registration semantics, resource/device internal identity, external monitoring references, metric definitions, current health/state, normalized problems/observations, sync state/checkpoints.
+**Owns:** monitoring source registration semantics, resource/device internal identity, external monitoring references, metric definitions, current health/state, normalized problems/observations, synchronization state/checkpoints, and the canonical semantics/lifecycle of customer monitoring telemetry history including accepted metric samples and observation history. Historical telemetry MAY use a separate physical persistence authority behind the telemetry port without transferring logical domain ownership.
 
 **Consumes:** tenant context and provider-adapter input.
 
@@ -112,8 +112,8 @@ Each context below defines what language and state it owns, what it consumes, an
 
 ## Compliance & Governance
 
-**Owns:** compliance control catalog/application, evidence metadata, governance workflows and policy application state.
+**Owns:** compliance control catalog/application, evidence metadata, governance workflows, policy application state, and the immutable/append-only accountability ledger or protected audit-evidence authority required by platform governance. Domain owners remain responsible for producing required audit evidence atomically with protected mutations or through the accepted protected audit-intent protocol; ownership of the accountability ledger does not grant Compliance & Governance mutation authority over source business state.
 
-**Consumes:** audit/evidence from domain owners.
+**Consumes:** required audit/evidence emitted by domain owners and other governed platform authorities.
 
 **Does not silently mutate:** source business state to satisfy compliance; remediation goes through owning-domain commands.

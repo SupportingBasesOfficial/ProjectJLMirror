@@ -1,6 +1,6 @@
 # Product Exclusions and Non-Goals
 
-**Status:** proposed baseline
+**Status:** accepted
 
 The following are not product assumptions unless separately accepted by requirement or ADR.
 

@@ -1,6 +1,6 @@
 # System-Level Acceptance Criteria
 
-**Status:** proposed baseline
+**Status:** accepted
 
 These criteria define cross-cutting proof required before a capability can be considered production-ready. Domain-specific criteria will extend them.
 

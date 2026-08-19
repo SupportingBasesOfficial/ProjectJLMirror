@@ -1,6 +1,6 @@
 # Threat Model
 
-**Status:** initial proposed baseline
+**Status:** accepted baseline
 
 This document establishes threats that architecture and testing must explicitly address. It is not a substitute for feature-specific threat modeling.
 

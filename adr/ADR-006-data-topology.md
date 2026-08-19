@@ -1,6 +1,6 @@
 # ADR-006 — Data Topology and Transactional Storage
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** costly/high-risk for core transactional store
 

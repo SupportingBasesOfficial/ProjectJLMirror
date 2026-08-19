@@ -1,6 +1,6 @@
 # ADR-018 — Backup, Restore and Disaster-Recovery Model
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** costly
 

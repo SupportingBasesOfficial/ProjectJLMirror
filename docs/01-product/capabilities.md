@@ -1,6 +1,6 @@
 # Product Capabilities
 
-**Status:** proposed baseline
+**Status:** accepted
 
 Capabilities are product-level outcomes. They intentionally avoid freezing implementation technologies.
 

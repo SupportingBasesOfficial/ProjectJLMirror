@@ -1,6 +1,6 @@
 # System Invariants
 
-**Status:** proposed baseline
+**Status:** accepted
 
 Invariants are implementation-independent conditions that must remain true across HTTP requests, workers, jobs, events, integrations, administrative tools, migrations, and recovery paths.
 

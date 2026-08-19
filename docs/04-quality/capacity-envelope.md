@@ -1,6 +1,7 @@
 # Capacity Envelope
 
-**Status:** draft / open measurements
+**Status:** accepted
+**Measurements:** OPEN
 
 Architecture choices are not considered final until tested against a stated workload envelope.
 

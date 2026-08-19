@@ -1,6 +1,6 @@
 # ADR-008 — Transaction Boundaries and Transactional Outbox
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** costly after event consumers proliferate
 

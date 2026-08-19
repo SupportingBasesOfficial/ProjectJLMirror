@@ -1,6 +1,6 @@
 # ADR-019 — Scaling, Cell Expansion and Tenant Relocation
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** costly
 

@@ -1,6 +1,6 @@
 # Quality Attributes
 
-**Status:** proposed baseline
+**Status:** accepted
 
 Quality attributes are architectural inputs. Numeric objectives will be defined as measurable SLOs after the initial capacity envelope is established.
 

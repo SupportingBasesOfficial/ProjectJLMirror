@@ -1,6 +1,6 @@
 # ADR-010 — Durable Background Job Semantics
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** reversible at infrastructure layer if contract is preserved
 

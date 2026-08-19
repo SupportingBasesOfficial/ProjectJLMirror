@@ -1,6 +1,6 @@
 # Security Requirements
 
-**Status:** proposed baseline
+**Status:** accepted
 
 ## Identity and credentials
 

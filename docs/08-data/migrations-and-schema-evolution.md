@@ -1,6 +1,6 @@
 # Migrations and Schema Evolution
 
-**Status:** proposed baseline  
+**Status:** accepted  
 **Primary ADRs:** ADR-002, ADR-006, ADR-016, ADR-019
 
 ## Migration tracks

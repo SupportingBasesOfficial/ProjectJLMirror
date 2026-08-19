@@ -27,6 +27,10 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Secret response caching | Initial secret-bearing response is `no_store`; secret cannot be served from browser/proxy/CDN/idempotency replay state |
 | Public shared caching | Shared cache is allowed only for deliberately public projections with explicit safe variance/freshness/invalidation policy |
 | Protected artifact caching | CDN/cache optimization preserves current auth/releasability/delivery-generation/active-stream fencing or is disabled/non-shared |
+| Artifact media authority | Delivered media type/browser-execution classification is server-controlled and cannot be derived solely from uploader filename, extension or `Content-Type`; unknown/untrusted type fails toward non-executable download |
+| Artifact browser delivery | Every browser-reachable artifact declares `opaque_download`, `safe_inline` or equivalent accepted isolated-active profile; authorization to download never implies permission for bytes to execute on the application/BFF origin |
+| Active artifact isolation | Browser-active/script-capable content may execute inline only under a dedicated untrusted-content boundary that does not share application/BFF ambient credentials, service-worker/DOM origin trust, and preserves current artifact delivery fencing |
+| Opaque artifact download | Unknown/untrusted/browser-active content defaults to attachment/non-sniffable download semantics with safely encoded filename metadata; caller metadata cannot opt the object into inline execution or inject response headers |
 | Idempotency admission | Required effectful POST/command atomically create-or-observes durable claim before protected effect |
 | Idempotency fingerprint | Same key/scope with different semantic request conflicts before execution |
 | Idempotency concurrency | Simultaneous same key/fingerprint yields one logical executor |
@@ -52,7 +56,7 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Operation ambiguity | `reconciliation_required` cannot be turned into client retry eligibility without authoritative reconciliation |
 | Operation cancel | Cancellation is modeled as request/state; worker interruption alone is not accepted business cancellation and current cancellation authority is checked |
 | Artifact identity | API exposes stable artifact metadata identity; object-store path/vendor URL is not canonical identity |
-| Artifact release | Current auth + releasable state + generation-bound active delivery admission commit before first protected byte |
+| Artifact release | Current auth + releasable state + accepted browser-delivery profile + generation-bound active delivery admission commit before first protected byte |
 | Artifact erasure | API cannot report confirmed deletion/erasure while old capability/late lease/active stream/stale publisher/destructive-governance uncertainty remains |
 | Delayed export | Current authorization checked before execution and release, not only at request creation |
 | Delayed import | Worker re-establishes current tenant context/authority before protected mutation and on stale resumed stages |
@@ -76,7 +80,7 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Service extraction | Moving owner to new runtime/service does not change public IDs/routes/tenant semantics solely due to deployment topology |
 | Provider replacement | New provider adapter does not force canonical resource IDs/schema to become provider-native |
 | Contract source of truth | Machine-readable contract is reviewed canonical artifact; controller/ORM DTO does not define public schema by accident |
-| Breaking-change CI | Contract diff detects structural risk; semantic review checks security/ownership/retry/consistency/cache changes |
+| Breaking-change CI | Contract diff detects structural risk; semantic review checks security/ownership/retry/consistency/cache/browser-delivery changes |
 | Client resilience | Official client ignores compatible unknown response fields/open enum values and only auto-retries operations marked safe |
 | Data classification | Request/response/logging policy prevents secret/credential/regulated-data leakage |
 | Abuse limits | Body/page/filter/include/bulk/export/expensive operation constraints are explicit or explicitly OPEN with implementation blocked |
@@ -102,6 +106,10 @@ The following failures block acceptance/release regardless of other success:
 - shared-cache safety relies only on a caller-controlled tenant/principal header or `Vary` value instead of accepted public/protected authorization semantics;
 - cache class/variance/current-auth revalidation semantics can become more permissive without compatibility/security review;
 - protected artifact cache/CDN path bypasses current authorization/releasability/delivery-generation/active-stream fencing;
+- browser-active/script-capable artifact bytes can execute inline on an application/BFF/session-bearing origin or other boundary sharing first-party ambient credentials/DOM/service-worker trust;
+- browser execution/media type is trusted solely from uploader-controlled filename, extension or `Content-Type`;
+- unknown/untrusted/browser-active artifact can be served inline without accepted isolation instead of failing toward attachment/non-sniffable download semantics;
+- active-inline artifact delivery can use an isolated origin yet bypass current artifact authorization/releasability/delivery-generation/active-stream fencing or turn its delegated capability into a general API credential;
 - external provider-native identifier becomes canonical resource identity such that provider replacement would break clients;
 - retryable irreversible POST/command can execute twice because no atomic durable idempotency admission exists;
 - response loss after committed idempotent mutation causes re-execution rather than replay/reconstruction;
@@ -116,7 +124,7 @@ The following failures block acceptance/release regardless of other success:
 - operation status depends on in-memory worker/queue state such that restart loses externally promised progress/outcome;
 - possession of an `operation_id`/operation URL permits read/cancel/retry/result access without current authorization;
 - artifact metadata appears available while object/integrity/current generation is not verified;
-- protected artifact first byte can be released before current authorization/releasability/generation-bound lease admission commits;
+- protected artifact first byte can be released before current authorization/releasability/browser-delivery profile/generation-bound lease admission commits;
 - artifact erasure can report success while stale delivery/upload/destructive authority can still release/recreate/destroy incorrectly;
 - delayed import mutates tenant state using stale request-time human authorization after revocation;
 - protected WebSocket receives `101` without expected Origin/current auth/replay continuity/atomic consume;
@@ -129,7 +137,7 @@ The following failures block acceptance/release regardless of other success:
 - same provider-local callback ID from two trusted tenant/source scopes collides under one dedup identity;
 - provider callback returns success while required async work exists only in process memory;
 - callback-supplied URL can trigger unrestricted outbound fetch/redirect and bypass the trusted connector/SSRF boundary;
-- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/cache semantics;
+- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/cache/browser-delivery semantics;
 - service extraction/provider/storage migration forces consumers to change because public contract leaked internal topology;
 - database/ORM model is serialized directly as the public contract without deliberate schema/authorization review.
 

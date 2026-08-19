@@ -297,9 +297,40 @@ When an operation invokes complex or active-content parsers/renderers, its contr
 - safe temporary-file/storage lifecycle and cleanup under tenant/artifact identity;
 - structured/redacted diagnostics with no raw secret or unrestricted document-content leakage.
 
-Archive/decompression and nested-content processing remain bounded against expansion bombs and recursive parser abuse. Archive extraction additionally SHALL confine every materialized path to the intended staging root: absolute paths, parent traversal, separator tricks, symlink/hardlink escape, device/special files and equivalent filesystem redirection SHALL NOT write outside the accepted artifact-processing boundary.
+Archive/decompression and nested-content processing remain bounded against expansion bombs and recursive parser abuse.
 
-XML/XML-derived document processing SHALL disable DTD/external entities/XInclude/external schema or stylesheet resolution and equivalent active external-resolution features by default. If a specific format genuinely requires trusted schemas/catalogs, it SHALL use pinned local resources or an explicitly isolated deny-by-default resolver; attacker-controlled URIs SHALL NOT gain local-file or network authority.
+### Archive extraction identity and containment
+
+Archive processing SHALL establish one canonical logical member-name model **before** inspection/materialization decisions are trusted.
+
+For every archive member, the processing profile canonicalizes the destination identity under the semantics relevant to the actual staging filesystem and later consumers, including as applicable:
+
+- Unicode normalization;
+- case-folding/case-sensitivity behavior;
+- path separator conversion;
+- leading/trailing dot/space behavior;
+- platform-reserved names;
+- relative/absolute path interpretation.
+
+The archive is rejected if two input members:
+
+- have the same raw logical name when duplicates are not explicitly part of a safe format contract;
+- normalize/case-fold/convert to the same canonical destination;
+- alias the same file through path spelling differences;
+- create file-versus-directory or link-versus-file type collisions;
+- would cause an earlier inspected/scanned member to be overwritten or shadowed by later bytes.
+
+Containment also requires every materialized path to remain inside the intended staging root: absolute paths, parent traversal, separator tricks, symlink/hardlink escape, device/special files and equivalent filesystem redirection SHALL NOT write outside the accepted artifact-processing boundary.
+
+Materialization uses safe no-follow semantics and atomic create/no-replace behavior (or an equivalent primitive) so a validated member cannot change target/type between validation and creation and a later archive entry cannot silently replace a previously inspected file.
+
+A scanner/classifier and any later parser/consumer SHALL observe the same canonical member identity and bytes. A pipeline that scans one alias and executes/parses another colliding alias is prohibited even when both remain inside the staging root.
+
+## XML and structured active resolution
+
+XML/XML-derived document processing SHALL **reject DTD declarations by default** and disable external entities, XInclude, external schema/stylesheet/resource resolution and equivalent active external-resolution features.
+
+If a specific format genuinely requires a DTD, trusted schema/catalog or another active dependency, it SHALL use a separately reviewed profile with pinned local resources or an explicitly isolated deny-by-default resolver; attacker-controlled declarations/URIs SHALL NOT gain local-file or network authority. Parser/library upgrades cannot silently re-enable DTDs or active resolution.
 
 A generated preview/converted result receives its own artifact identity/version/classification and browser-delivery profile. It does **not** inherit `safe_inline` merely because an internal renderer produced it. The output must independently satisfy the accepted delivery classification before inline release.
 
@@ -407,7 +438,7 @@ create/import intent
 
 Request-time human authority does not persist as worker authority.
 
-Upload/staging validation SHALL treat declared filename/media type as untrusted metadata. A staged object does not become `safe_inline` or `active_inline_isolated` merely because the uploader declares a browser media type. Any complex archive/document parsing required by import follows the untrusted artifact processing boundary above.
+Upload/staging validation SHALL treat declared filename/media type as untrusted metadata. A staged object does not become `safe_inline` or `active_inline_isolated` merely because the uploader declares a browser media type. Any complex archive/document parsing required by import follows the untrusted artifact processing boundary above, including canonical archive-member collision rejection and safe no-follow/no-replace materialization.
 
 ## Governed deletion/erasure
 
@@ -417,4 +448,6 @@ If state is uncertain, the external operation remains non-terminal/reconciliatio
 
 ## Maximum-state rule
 
-Operation and artifact contracts SHALL remain valid when worker implementation, queue vendor, object store, cell placement, browser-delivery origin, parser/renderer implementation or process decomposition changes. A client tracks logical `operation_id` / `artifact_id`, never the transient execution mechanism.
+Operation and artifact contracts SHALL remain valid when worker implementation, queue vendor, object store, cell placement, browser-delivery origin, parser/renderer/archive implementation, filesystem semantics or process decomposition changes. A client tracks logical `operation_id` / `artifact_id`, never the transient execution mechanism.
+
+Changing archive/parser/runtime/filesystem implementation SHALL NOT weaken canonical member identity, collision rejection, staging-root containment or scanner-to-consumer byte equivalence.

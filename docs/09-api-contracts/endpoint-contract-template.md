@@ -425,6 +425,36 @@ Retry-After: may/shall/not used
 
 A request rejected before canonical message/entity acceptance does not create an idempotency claim or imply that a protected effect executed.
 
+## Provider callback-specific contract
+
+For `API surface: callback`, declare all of the following in addition to the generic request contract:
+
+```text
+Provider authentication profile: <provider-specific accepted profile>
+Authenticated exact representation: <raw body / body+headers / protocol metadata profile>
+Freshness evidence: <timestamp | nonce | sequence | provider metadata | none>
+Freshness binding: <covered by authenticator | independently trusted protocol metadata | weaker-trust profile>
+Freshness window/sequence policy: <accepted value/policy or OPEN-API-022>
+Replay identity source: <canonical structured entity | authenticated protocol metadata | accepted platform identity>
+Replay identity scope: <trusted tenant/integration/source dimensions>
+Replay admission: atomic_create_or_observe
+Durable coupling: <same authority transaction | durable inbox/work/effect linkage | stable operation reconciliation>
+Replay retention: <accepted policy or OPEN-API-022>
+Cross-authority ambiguity: <durable reconciliation behavior>
+Acknowledgement durability: <completed synchronously | durable async responsibility before success>
+```
+
+Rules:
+
+- freshness evidence used for security is bound to the same authenticated callback instance; a clock-window check alone does not make unbound metadata authoritative;
+- body-carried freshness/replay identity is derived from the same canonical structured entity used by callback/domain mapping;
+- replay admission is atomic create-or-observe and produces one logical executor under concurrent delivery;
+- replay admission cannot permanently consume an identity while required work has no durable responsibility unless a durable recoverable reconciliation state exists;
+- replay retention expiry does not convert unresolved ambiguous irreversible work into blind execution eligibility;
+- callback success acknowledgement never precedes required durable responsibility.
+
+Exact authenticator algorithm, signed-header set, numeric window, replay storage product and transaction topology remain `OPEN-API-022` until accepted for the provider profile.
+
 ## Long-running operation
 
 If applicable:
@@ -511,6 +541,7 @@ Classify externally important fields/enums and security/behavior dimensions. Doc
 - structured request entity parsing, duplicate/alias/member/part semantics and canonical propagation;
 - response-header grammar/cardinality/serialization ownership;
 - response-cache class/shared eligibility/variance/current-auth revalidation;
+- callback authentication/freshness binding/replay identity/atomic admission/durable coupling/reconciliation;
 - cursor confidentiality/browser transport/URL redaction;
 - browser-delivery/media-type/safe-filename/active-content isolation;
 - untrusted-content/archive/XML processing.
@@ -543,6 +574,8 @@ Consider, where applicable:
 - browser-active artifact on application origin;
 - deceptive artifact filename/media type;
 - malicious archive/parser/DTD/XXE/SSRF/resource exhaustion;
+- callback freshness evidence not bound to authenticated input;
+- callback replay admission race or consumed-without-durable-work state;
 - replayed callback/ticket;
 - provider outage.
 
@@ -569,7 +602,7 @@ Protected mutation/body-bearing endpoints additionally test:
 - response cache non-reuse/compatibility;
 - current continuation authorization/cursor confidentiality and browser transport;
 - BFF Origin/CORS/CSRF;
-- callback raw-body/signature/SSRF/XML protections;
+- callback raw-body/signature, authenticated freshness binding, atomic replay admission, crash/durable-coupling/reconciliation, SSRF/XML protections;
 - safe audit/error/observability behavior.
 
 Artifact/binary endpoints additionally test media authority, safe filename/header construction, active-inline isolation, range/CDN fencing, archive bounds/containment/member collision/no-replace semantics, parser secret/egress isolation, DTD/external-resolution denial and independent derivative classification.
@@ -589,6 +622,7 @@ Explain how the contract remains stable if:
 - HTTP protocol/version or proxy layers change while canonical semantics stay equivalent;
 - the structured-body parser/library changes while canonical entity semantics remain identical;
 - response-header serialization moves between framework/proxy layers without changing the accepted profile;
+- a provider callback authenticator/SDK/replay implementation changes while freshness binding and durable replay semantics remain identical;
 - CDN/cache is added or replaced;
 - cursor implementation changes without weakening browser transport/history policy;
 - artifact delivery/processing moves runtimes/vendors without weakening security invariants.

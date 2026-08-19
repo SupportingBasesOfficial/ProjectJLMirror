@@ -39,6 +39,16 @@ The exact identity-provider/token implementation remains separately selectable. 
 
 Cookie names and identity-provider-specific token shape are not Phase 09 business contracts.
 
+## Browser origin/CORS boundary
+
+Credentialed BFF access is deny-by-default across untrusted origins.
+
+If deployment topology requires cross-origin browser access, the accepted browser profile SHALL use an explicit allowlist and credential policy. A wildcard origin with credentialed protected responses is prohibited.
+
+CORS response headers are transport enforcement, not authorization. A request that passes CORS/Origin policy still requires the normal session, CSRF where applicable, tenant context and downstream owning authorization.
+
+The exact allowed origins/hostnames remain deployment/profile configuration, but an arbitrary-origin credentialed BFF is not an accepted default.
+
 ## BFF tenant scope
 
 When a human can belong to multiple tenants, tenant-scoped BFF routes use explicit logical scope:
@@ -98,6 +108,8 @@ Successful response conceptually:
 
 The ticket is a connection capability, not a platform access token.
 
+The ticket-mint response is a secret-bearing `no_store` response. Browser/proxy/CDN caches SHALL NOT retain or replay the ticket, and the BFF endpoint SHALL NOT rely on infrastructure defaults for this behavior.
+
 ## Ticket secrecy
 
 The ticket SHALL be:
@@ -109,13 +121,15 @@ The ticket SHALL be:
 - redacted from normal logs/traces/error telemetry;
 - unusable as a general HTTP API credential.
 
-The BFF SHALL NOT store the ticket in long-lived browser storage.
+The BFF SHALL NOT store the ticket in long-lived browser storage. Client code SHOULD hold it only for the immediate connection attempt and discard it after use/failure.
 
 ## Ticket presentation
 
 The exact browser-compatible presentation encoding is a transport detail, but the baseline requires that ticket evidence be available **before `101`** and be excluded/redacted from ordinary access logs.
 
 An implementation may use a narrowly reviewed query parameter or another browser-compatible pre-upgrade representation. It SHALL NOT defer authentication to the first WebSocket message because the accepted architecture requires current authorization/replay admission before upgrade.
+
+If a URL-carried representation is selected, ticket-bearing URLs are transient capability transport, not canonical/persistable URLs, and MUST be excluded from normal analytics, logs, histories and referrer-like propagation to the extent controllable by the platform profile.
 
 Ambient cookies alone are not sufficient authority for the direct protected socket.
 

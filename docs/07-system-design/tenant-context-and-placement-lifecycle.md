@@ -1,6 +1,6 @@
 # TenantContext and Placement Lifecycle
 
-**Status:** proposed baseline  
+**Status:** accepted  
 **Primary ADRs:** ADR-003, ADR-004, ADR-005
 
 ## TenantContext

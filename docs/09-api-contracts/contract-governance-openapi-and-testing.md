@@ -59,7 +59,7 @@ The machine-readable HTTP contract SHALL describe:
 - stable reusable components;
 - examples where they materially clarify semantics.
 
-OpenAPI/schema alone is not sufficient to capture all JLMIRROR semantics. Each operation also conforms to the Phase 09 idempotency, authorization, consistency, audit, tenant and compatibility declarations.
+OpenAPI/schema alone is not sufficient to capture all JLMIRROR semantics. Each operation also conforms to the Phase 09 idempotency, authorization, consistency, audit, tenant, response-cache and compatibility declarations.
 
 ## Stable operation ID
 
@@ -84,14 +84,25 @@ owner_domain
 tenant_scope
 authorization_action
 authorization_scope
+authorization_input_fields
+owning_authorization_authority
 step_up
 audit_class
 consistency_class
 idempotency_class
 optimistic_concurrency
 retry_class
+one_time_secret_behavior
+secret_recovery_authority
+credential_cutover_semantics
 long_running_operation
 request_limits
+response_cache_class
+shared_cache_eligibility
+cache_variance
+cache_revalidation
+current_authorization_before_cache_reuse
+cache_freshness_policy
 data_classification
 ```
 
@@ -104,17 +115,21 @@ An endpoint is not ready for implementation until review proves:
 1. one owning domain/use case;
 2. no database/provider/internal-topology leakage;
 3. explicit tenant/global scope;
-4. explicit authorization action/scope;
-5. request/response schema and bounds;
-6. retry/idempotency behavior;
-7. concurrency behavior where needed;
-8. consistency/result semantics;
-9. long-running operation behavior where needed;
-10. stable errors;
-11. audit/observability requirements;
-12. compatibility classification;
-13. security/privacy classification;
-14. required tests.
+4. explicit trusted placement/routing/TenantContext boundary where tenant-scoped;
+5. request-contract validation occurs before owning authorization consumes caller-controlled scope/resource fields;
+6. explicit authorization action/scope and owning authorization authority;
+7. request/response schema and bounds;
+8. retry/idempotency behavior;
+9. lockout-safe one-time-secret response-loss/recovery when applicable;
+10. concurrency behavior where needed;
+11. consistency/result semantics;
+12. long-running operation behavior where needed;
+13. stable errors;
+14. explicit response-cache class, shared-cache eligibility, variance/revalidation/current-auth policy;
+15. audit/observability requirements;
+16. compatibility classification, including cache/retry/auth/consistency semantics;
+17. security/privacy classification;
+18. required tests.
 
 ## Schema generation direction
 
@@ -148,12 +163,15 @@ Every implemented endpoint SHALL have contract tests that validate at minimum:
 - accepted methods/path;
 - required/forbidden fields;
 - unknown request-field rejection;
+- request fields used for authorization/resource selection are validated before owning policy consumes them;
 - success response schema;
 - expected error shape/codes;
 - authorization/tenant isolation behavior;
 - idempotency semantics when applicable;
+- lockout-safe one-time-secret response-loss/recovery when applicable;
 - concurrency preconditions when applicable;
 - pagination/cursor behavior when applicable;
+- response-cache class/headers/revalidation/non-reuse semantics;
 - size/complexity limits;
 - secret/topology leakage checks.
 
@@ -165,9 +183,9 @@ A server change that passes internal tests but breaks an accepted client contrac
 
 ## Breaking-change CI
 
-CI SHALL compare the proposed machine-readable contract against the accepted `main` baseline.
+CI SHALL compare the proposed machine-readable contract and validated semantic manifest against the accepted `main` baseline.
 
-It flags likely breaking changes such as:
+It flags likely breaking/security-sensitive changes such as:
 
 - removed path/method;
 - removed/renamed response field;
@@ -175,9 +193,17 @@ It flags likely breaking changes such as:
 - type/format changes;
 - closed enum changes;
 - changed status/error contract;
-- incompatible parameter changes.
+- incompatible parameter changes;
+- authorization action/scope/authority changes;
+- idempotency/retry classification changes;
+- consistency-class changes;
+- response cache class/shared-cache eligibility changes;
+- cache variance/validator/revalidation/current-authorization reuse changes;
+- one-time-secret recovery/cutover changes that could remove a previously safe recovery authority.
 
-The diff tool cannot prove semantic compatibility. Reviewers still inspect changes to idempotency, authorization, consistency, ownership and retry behavior.
+The diff tool cannot prove semantic compatibility. Reviewers still inspect changes to idempotency, authorization, consistency, ownership, retry, credential recovery and cache behavior.
+
+A deployment/framework/CDN configuration change that alters an endpoint's effective accepted cache semantics is subject to the same governance even if no OpenAPI schema changed.
 
 ## Golden examples/test vectors
 
@@ -185,14 +211,19 @@ High-risk contracts SHOULD include executable test vectors/examples for cases su
 
 - idempotent replay after response loss;
 - idempotency-key fingerprint conflict;
+- one-time-secret response loss with surviving recovery authority;
+- sole-credential rotation rejected or staged when recovery authority would otherwise be lost;
 - optimistic concurrency mismatch;
 - existence-concealing authorization denial;
+- request validation before owning authorization consumes caller-controlled resource scope;
+- cross-principal/tenant protected cache non-reuse;
+- cache-policy compatibility regression;
 - cursor continuation under deterministic sort;
 - long-running reconciliation state;
 - artifact unavailable/erasure-fencing behavior;
 - realtime ticket rejection before `101`.
 
-Examples are validated against schema so documentation cannot silently drift.
+Examples are validated against schema/manifest so documentation cannot silently drift.
 
 ## Mocking
 
@@ -210,6 +241,7 @@ SDKs SHALL:
 - tolerate compatible unknown response fields/open enum values;
 - implement automatic retry only where operation metadata proves retry safety;
 - expose stable problem/error codes;
+- treat one-time-secret response loss as explicit non-automatic recovery;
 - never infer physical tenant placement;
 - avoid hiding operation-resource semantics behind indefinite polling without cancellation/deadline controls.
 
@@ -222,7 +254,8 @@ Published API reference is generated or checked against the accepted machine-rea
 Contract changes require explicit security review when they introduce or materially change:
 
 - authentication/credential transport;
-- authorization scope;
+- authorization scope/authority or authorization input fields;
+- trusted routing/TenantContext ordering;
 - cross-tenant capability;
 - direct SQL/data administration;
 - automation execution;
@@ -232,7 +265,9 @@ Contract changes require explicit security review when they introduce or materia
 - realtime admission;
 - sensitive data exposure;
 - bulk/export/import limits;
-- idempotency/replay behavior for irreversible effects.
+- idempotency/replay behavior for irreversible effects;
+- one-time-secret creation/rotation/recovery/cutover semantics;
+- response-cache class, shared-cache eligibility, variance, freshness or current-auth revalidation semantics.
 
 ## ADR/RFC trigger
 

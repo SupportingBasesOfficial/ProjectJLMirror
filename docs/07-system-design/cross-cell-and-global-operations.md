@@ -1,6 +1,6 @@
 # Cross-Cell and Global Operations
 
-**Status:** proposed baseline  
+**Status:** accepted  
 **Primary ADRs:** ADR-002, ADR-004, ADR-019
 
 ## Principle

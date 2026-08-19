@@ -60,6 +60,8 @@ Tenant source: path | trusted integration mapping | platform operation target
 Physical placement input from caller: prohibited
 ```
 
+For tenant-scoped routes, document where trusted placement is resolved and where authoritative membership/resource authorization occurs. If membership/resource policy is cell-owned, placement resolution -> authoritative routing -> cell admission -> trusted TenantContext MUST precede the owning authorization decision. Earlier ingress/global checks are narrowing/fail-fast only.
+
 Explain any legitimate global scope.
 
 ## Authorization
@@ -70,9 +72,10 @@ Scope: platform | tenant | resource/group refinement
 Step-up: none | policy-driven | required
 Audit class: none | normal | privileged | security-critical
 Existence concealment: yes | no | conditional
+Owning authorization authority: <cell/domain/control-plane authority>
 ```
 
-Define any resource-level scope rules.
+Define any resource-level scope rules and distinguish ingress/global prechecks from the final owning authorization decision.
 
 ## Request
 
@@ -163,9 +166,13 @@ Completed replay behavior: <status/result>
 In-progress duplicate behavior: <409 or same 202 operation>
 Different-fingerprint behavior: 409 idempotency.key_reused
 Retention/recovery window: <accepted policy or OPEN>
+One-time-secret response: none | initial-presentation-only
+Secret response-loss recovery: <not applicable | safe metadata + explicit rotate/reissue/revoke flow>
 ```
 
 For external effects, describe stable `operation_id` / reconciliation behavior.
+
+If the endpoint creates/rotates/reissues non-retrievable secret material, document that the secret is excluded from idempotent replay state, a same-key response-loss retry cannot recreate the effect or re-present the secret, and the explicit authorized recovery action does not require possession of the lost secret.
 
 ## Optimistic concurrency
 
@@ -193,6 +200,32 @@ Example:
 
 Define `Location` behavior when applicable.
 
+For a secret-bearing success, explicitly identify the one-time secret field(s), response cache class `no_store`, logging/redaction restrictions and response-loss behavior.
+
+## Response cache contract
+
+Every endpoint MUST choose a cache class:
+
+```text
+Class: no_store | private_revalidate | public_shared | artifact_delivery_guarded
+Shared cache allowed: yes | no | only with proven guarded delivery
+Variance dimensions: <public-safe dimensions or none>
+Validator/revalidation: <ETag/conditional/none/policy>
+Freshness/TTL: <accepted value/policy or OPEN>
+Authorization re-evaluation before reuse: <required/not applicable>
+Sensitive response fields: <none/list>
+```
+
+Rules:
+
+- secret-bearing responses are always `no_store`;
+- protected API/BFF responses cannot become shared-cacheable from framework/CDN defaults;
+- `Vary` or equivalent keying is not authorization;
+- `public_shared` requires a deliberately public projection independent of protected caller authority;
+- protected artifact caching must preserve current authorization/releasability/delivery-generation/active-stream fencing or fall back to non-shared behavior.
+
+Exact public/private lifetime tuning may remain `OPEN-API-017`; absence of an accepted cache contract blocks implementation.
+
 ## Error contract
 
 List stable problem codes that callers may branch on.
@@ -206,6 +239,7 @@ resource.not_found
 validation.*
 concurrency.*
 idempotency.*
+secret.delivery_not_replayable
 rate_limit.*
 dependency.*
 domain-specific conflicts
@@ -221,6 +255,7 @@ State:
 Automatic retry safe: yes | no | only with valid idempotency key
 Safe statuses/classes: <documented>
 Ambiguous external outcome: <operation/reconciliation behavior>
+One-time-secret response loss: <not applicable | explicit non-replayable recovery>
 Retry-After: may/shall/not used
 ```
 
@@ -303,9 +338,12 @@ List relevant abuse/failure cases such as:
 
 - wrong tenant ID;
 - known resource ID from another tenant;
+- authorization attempted against stale/wrong cell placement;
 - revoked principal;
 - stale revision;
 - duplicate idempotency key;
+- lost one-time-secret response;
+- shared-cache cross-principal/tenant leakage;
 - oversized body;
 - expensive filter/include abuse;
 - replayed callback/ticket;
@@ -321,9 +359,12 @@ At minimum, protected mutation endpoints test:
 - authorized success;
 - unauthenticated denial;
 - wrong-tenant denial;
+- authoritative placement/routing before cell-owned authorization where applicable;
 - insufficient permission;
 - validation bounds;
 - idempotency/concurrency where applicable;
+- one-time-secret response-loss behavior where applicable;
+- response-cache headers/semantics and cross-principal/tenant non-reuse;
 - audit/operation linkage;
 - safe error leakage;
 - retry after response loss where applicable.
@@ -341,4 +382,5 @@ Explain how this contract remains stable if:
 - storage engine changes;
 - provider adapter changes;
 - client types multiply;
-- request volume/cardinality grows substantially.
+- request volume/cardinality grows substantially;
+- a CDN/reverse proxy/cache layer is added or replaced.

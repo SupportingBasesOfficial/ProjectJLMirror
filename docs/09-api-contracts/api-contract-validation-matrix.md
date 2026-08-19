@@ -92,21 +92,23 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Realtime subscription separation | Successful connection does not grant arbitrary subscriptions; Phase 10 must preserve current subscription authorization |
 | Provider callback framing | Callback framing/header canonicalization passes before signature/freshness/replay; signature verification and adapter processing observe the same bounded raw body; duplicate/conflicting provider-auth headers follow one explicit profile |
 | Provider callback raw bound | Chunked/streamed over-limit body rejected before complete buffering/signature work after canonical framing admission |
-| Provider callback auth | Invalid authenticity/freshness rejected before protected domain mutation |
+| Provider callback auth | Invalid authenticity rejected before protected domain mutation |
+| Provider callback freshness binding | Every timestamp/nonce/sequence value used as security freshness evidence is bound to the authenticated callback body/identity by the accepted authenticator or comes from independently trusted protocol metadata associated with this request; window checks alone cannot make unbound metadata authoritative |
 | Provider callback tenant binding | Payload tenant/account fields cannot reroute callback away from trusted integration mapping |
 | Provider callback replay | Exact replay cannot repeat protected effect; same raw event ID across trusted scopes does not collide; body-carried replay identity is derived from the same canonical structured entity later mapped to the owning use case |
+| Provider callback replay atomicity | Replay admission is atomic create-or-observe under trusted scope and coupled to durable inbox/work/effect responsibility; concurrent deliveries produce one logical executor, and cross-authority ambiguity enters durable reconciliation instead of blind re-admission |
 | Provider callback parse bound | Authenticated compressed/structured payload remains bounded after decompression/parsing |
 | Provider callback XML safety | XML callback profile **rejects every DTD declaration by default** plus external entities/XInclude/external schema/stylesheet/resource resolution; exceptional DTD/resolver profiles require separate review and pinned/isolated deny-by-default resources |
-| Provider callback durability | Success acknowledgement after async acceptance has durable replayable work authority |
+| Provider callback durability | Success acknowledgement after async acceptance has durable replayable work authority; replay identity cannot be independently consumed while required work remains only in memory or otherwise unrecoverable |
 | Provider callback SSRF | Callback-supplied URL cannot cause arbitrary outbound fetch; follow-up retrieval uses trusted provider destination/protocol/redirect/size/timeout policy |
 | Version compatibility | Additive change obeys unknown-field/open-enum rules; breaking change requires governed version boundary |
 | Semantic compatibility | Schema-compatible change does not silently alter consistency, idempotency, authorization, scope, cache or retry meaning |
 | Cache compatibility | Cache class, shared-cache eligibility, variance, validator/revalidation/current-auth requirements and security-relevant freshness policy are reviewed as semantic contract; a more permissive cache policy cannot ship as an implementation-only change |
-| Security-metadata compatibility | Weakening HTTP framing/method/trailer/content-coding/path/query/header/trusted-proxy semantics, structured-body parser/canonical-entity propagation, response-header grammar/cardinality/serialization ownership, cursor confidentiality/transport/logging, archive member identity, safe-filename handling, artifact browser-delivery/parser isolation or XML DTD/external-resolution policy is reviewed as a security-sensitive semantic change even if schemas remain unchanged |
+| Security-metadata compatibility | Weakening HTTP framing/method/trailer/content-coding/path/query/header/trusted-proxy semantics, structured-body parser/canonical-entity propagation, response-header grammar/cardinality/serialization ownership, callback freshness binding/replay atomicity/durable coupling, cursor confidentiality/transport/logging, archive member identity, safe-filename handling, artifact browser-delivery/parser isolation or XML DTD/external-resolution policy is reviewed as a security-sensitive semantic change even if schemas remain unchanged |
 | Service extraction | Moving owner to new runtime/service does not change public IDs/routes/tenant semantics solely due to deployment topology |
 | Provider replacement | New provider adapter does not force canonical resource IDs/schema to become provider-native |
 | Contract source of truth | Machine-readable contract is reviewed canonical artifact; controller/ORM DTO does not define public schema by accident |
-| Breaking-change CI | Contract diff detects structural risk; semantic review checks HTTP canonicalization/structured-entity/response-header/security/ownership/retry/consistency/cache/browser-delivery/cursor/parser changes |
+| Breaking-change CI | Contract diff detects structural risk; semantic review checks HTTP canonicalization/structured-entity/response-header/security/ownership/retry/consistency/cache/callback-freshness-replay/browser-delivery/cursor/parser changes |
 | Client resilience | Official client ignores compatible unknown response fields/open enum values and only auto-retries operations marked safe |
 | Data classification | Request/response/URL/logging policy prevents secret/credential/regulated/confidential-data leakage |
 | Abuse limits | Body/header/decoded-body/page/filter/include/bulk/export/expensive operation constraints are explicit or explicitly OPEN with implementation blocked |
@@ -193,13 +195,15 @@ The following failures block acceptance/release regardless of other success:
 - callback payload can choose a different tenant than trusted integration configuration;
 - oversized callback reaches complete buffering/authentication/parser work without hard raw bound;
 - duplicate/conflicting callback authentication/signature/freshness headers can be interpreted differently across hops;
+- callback freshness evidence can be accepted without proof that it is bound to the authenticated callback body/identity or independently trusted protocol metadata;
+- callback replay admission can create more than one logical executor under concurrent delivery, or consume replay identity without durable work responsibility and without recoverable reconciliation;
 - duplicate callback can repeat irreversible logical effect;
 - same provider-local callback ID from two trusted tenant/source scopes collides under one dedup identity;
 - body-carried callback event/replay identity can be parsed differently from the canonical payload consumed by the owning use case, allowing replay-key variation for the same logical event;
 - provider callback XML parser accepts a DTD under the default profile or permits external entity/XInclude/external schema/stylesheet resolution to read local files or reach network/internal services outside an explicitly accepted isolated exceptional profile;
 - provider callback returns success while required async work exists only in process memory;
 - callback-supplied URL can trigger unrestricted outbound fetch/redirect and bypass the trusted connector/SSRF boundary;
-- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/HTTP-framing/structured-body/response-header/path-query/cache/browser-delivery/cursor/archive/parser semantics;
+- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/HTTP-framing/structured-body/response-header/path-query/cache/callback-freshness-replay/browser-delivery/cursor/archive/parser semantics;
 - service extraction/provider/storage/gateway migration forces consumers or security semantics to change because public contract leaked internal topology or relied on parser disagreement;
 - database/ORM model is serialized directly as the public contract without deliberate schema/authorization review.
 

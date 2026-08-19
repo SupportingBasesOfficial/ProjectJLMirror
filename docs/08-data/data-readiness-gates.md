@@ -1,6 +1,6 @@
 # Data Architecture Readiness Gates
 
-**Status:** proposed baseline
+**Status:** accepted
 
 A data model/table/storage change is not production-ready until applicable gates pass.
 

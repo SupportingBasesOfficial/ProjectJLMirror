@@ -1,6 +1,6 @@
 # Logical Schemas and Data Ownership
 
-**Status:** proposed baseline
+**Status:** accepted
 
 Logical schemas communicate ownership. Exact file/ORM layout will follow implementation blueprint.
 

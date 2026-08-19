@@ -49,8 +49,8 @@ The following are breaking or security-sensitive by default:
 - changing query multiplicity/duplicate/order semantics;
 - **changing structured request entity parsing**, duplicate/alias member semantics, multipart part/boundary semantics, name normalization or which canonical entity is consumed by validation/auth/idempotency/use case;
 - changing success/error semantics affecting retry or authorization;
-- changing idempotency effective scope, fingerprint fields, completed/in-progress duplicate behavior, fingerprint mismatch behavior, retention/recovery authority or external-ambiguity reconciliation semantics;
-- changing callback accepted freshness evidence source, freshness binding, clock/window/sequence admissibility, trusted replay-identity scope, atomic replay admission, durable work coupling, replay retention/expiry, acknowledgement durability or post-effect ambiguity/reconciliation semantics;
+- changing idempotency effective scope, fingerprint fields, completed/in-progress duplicate behavior, fingerprint mismatch behavior, retention/recovery authority, external-ambiguity reconciliation or restore/PITR recovery-continuity semantics;
+- changing callback accepted freshness evidence source, freshness binding, clock/window/sequence admissibility, trusted replay-identity scope, atomic replay admission, durable work coupling, replay retention/expiry, replay restore/PITR recovery continuity, acknowledgement durability or post-effect ambiguity/reconciliation semantics;
 - changing pagination/cursor semantics beyond documented lifecycle;
 - weakening cursor payload confidentiality, exposed-token classification, browser-history-safe transport or URL/log/referrer redaction;
 - forcing protected query input into URL-visible transport;
@@ -85,9 +85,9 @@ Servers reject unknown request fields by default. Request extensibility uses exp
 
 Schema compatibility is necessary but insufficient.
 
-Changing current-authoritative state into an approximation, retry/idempotency meaning, callback freshness/replay/retention/acknowledgement authority, cache reuse, query multiplicity, structured-body duplicate semantics, response-header serialization, browser cursor transport, archive identity or XML parser policy can be security-breaking even if JSON/OpenAPI schemas do not change.
+Changing current-authoritative state into an approximation, retry/idempotency/recovery-continuity meaning, callback freshness/replay/retention/acknowledgement/recovery authority, cache reuse, query multiplicity, structured-body duplicate semantics, response-header serialization, browser cursor transport, archive identity or XML parser policy can be security-breaking even if JSON/OpenAPI schemas do not change.
 
-Review evaluates behavior, HTTP/request entity interpretation, response serialization, consistency, security, ownership, authorization, idempotency, retry, callback authentication/freshness/replay/durable responsibility/retention/acknowledgement/reconciliation, cache, continuation, artifact/parser and realtime semantics in addition to shape.
+Review evaluates behavior, HTTP/request entity interpretation, response serialization, consistency, security, ownership, authorization, idempotency, retry, restore/PITR continuity, callback authentication/freshness/replay/durable responsibility/retention/acknowledgement/reconciliation/recovery continuity, cache, continuation, artifact/parser and realtime semantics in addition to shape.
 
 ## HTTP message/framing compatibility
 
@@ -151,11 +151,14 @@ Compatibility review SHALL compare:
 - same-key/different-fingerprint conflict behavior;
 - retention/recovery window and the durable claim/result/tombstone/operation authority that preserves it;
 - external-effect ambiguity and reconciliation semantics;
+- **restore/PITR/partial-loss recovery continuity**, including whether missing/older recovered claim state remains fail-closed until accepted `(R,F]` continuity is reconciled;
 - interaction with one-time-secret response-loss recovery where applicable.
 
-Changing any of these dimensions can create false collisions, bypass conflict detection, or re-enable an irreversible effect after claim/result expiry even when the route and request/response schemas are unchanged.
+Changing any of these dimensions can create false collisions, bypass conflict detection, or re-enable an irreversible effect after claim/result expiry or state rollback even when the route and request/response schemas are unchanged.
 
-A retention reduction is incompatible/security-sensitive when it is shorter than an advertised safe retry/recovery interval or when no equivalent durable operation/tombstone authority continues preventing duplicate effect execution. Timeout, worker restart, lease expiry or claim aging never becomes new execution authority for an unresolved external outcome.
+A retention reduction is incompatible/security-sensitive when it is shorter than an advertised safe retry/recovery interval or when no equivalent durable operation/tombstone authority continues preventing duplicate effect execution. Timeout, worker restart, lease expiry, claim aging, restore to an older snapshot or partial idempotency-state loss never becomes new execution authority for an unresolved or possibly completed effect.
+
+A backup/recovery implementation change is compatible only if a restored idempotency authority preserves the accepted recovery-quarantine rule: missing/older claim/result/tombstone state is recovery uncertainty until surviving operation/outcome/audit/provider/external-effect evidence establishes continuity. A deployment that resumes effectful admission from restored absence without that proof is a security regression even if API schemas and ordinary-runtime tests are unchanged.
 
 ## Response-header compatibility
 
@@ -243,7 +246,7 @@ Provider callback adapters may version independently while normalizing into stab
 
 A callback parser/library change must preserve raw-body authenticity semantics, canonical structured entity interpretation after verification, default DTD rejection and external-resolution policy. Signature verification over one byte/entity meaning while adapter logic processes another is incompatible and unsafe.
 
-A provider protocol, SDK, gateway, replay store or callback middleware change must also preserve:
+A provider protocol, SDK, gateway, replay store, recovery topology or callback middleware change must also preserve:
 
 - which timestamp/nonce/sequence/protocol values are accepted as security freshness evidence;
 - the accepted clock/window/sequence admissibility policy for that evidence;
@@ -255,10 +258,13 @@ A provider protocol, SDK, gateway, replay store or callback middleware change mu
 - crash behavior between replay admission, durable responsibility, external effect outcome recording and acknowledgement;
 - replay retention/expiry behavior for unresolved and still-supported duplicate/recovery states;
 - coherence between freshness/provider-retry admissibility and replay/ambiguity-retention authority so older authenticated callbacks cannot become newly executable after ordinary replay-state expiry;
+- **replay restore/PITR/partial-loss continuity**, including the rule that missing/older recovered replay state is not unused until surviving inbox/effect/provider-ack/audit/reconciliation evidence is reconciled;
 - the durable-responsibility boundary required before provider-facing success acknowledgement;
 - the rule that a possibly completed cross-authority irreversible effect with no durable outcome remains reconciliation-blocked and cannot be attempted again until authoritative reconciliation resolves it.
 
-A time-window check over metadata that is no longer authenticator-bound is not a compatible implementation change. Widening an otherwise authenticator-bound freshness/sequence window is also security-sensitive because it changes which historical deliveries are admissible. Replacing an atomic durable replay protocol with a read-then-record duplicate check is likewise a security regression even when callback schemas and provider IDs are unchanged. Shortening replay/ambiguity retention so unresolved state can become executable, moving success acknowledgement ahead of durable responsibility, or converting a post-effect unknown outcome into automatic retry are also security regressions.
+A time-window check over metadata that is no longer authenticator-bound is not a compatible implementation change. Widening an otherwise authenticator-bound freshness/sequence window is also security-sensitive because it changes which historical deliveries are admissible. Replacing an atomic durable replay protocol with a read-then-record duplicate check is likewise a security regression even when callback schemas and provider IDs are unchanged. Shortening replay/ambiguity retention so unresolved state can become executable, moving success acknowledgement ahead of durable responsibility, converting a post-effect unknown outcome into automatic retry, or allowing restored replay absence to create a new executor are also security regressions.
+
+A replay-store restore or backup strategy is compatible only if affected callback admission stays quarantined/fail-closed until the accepted recovery boundary proves continuity. A still-fresh authenticated delivery does not make an unreconciled recovered replay store authoritative.
 
 ## Public projection compatibility
 
@@ -295,8 +301,8 @@ CI SHALL compare proposed contract/manifest changes with accepted baseline and f
 - protocol-translation/parser boundaries;
 - request requiredness/type and response fields/types;
 - enum/status/error semantics;
-- **idempotency class/effective scope/fingerprint/duplicate-result/mismatch/retention-recovery/external-ambiguity semantics**, plus authorization/consistency;
-- **callback accepted freshness evidence source, clock/window/sequence policy, freshness binding, replay identity scope, atomic replay admission, durable coupling, replay retention/expiry, acknowledgement durability and post-effect ambiguity/reconciliation**;
+- **idempotency class/effective scope/fingerprint/duplicate-result/mismatch/retention-recovery/external-ambiguity/recovery-continuity semantics**, plus authorization/consistency;
+- **callback accepted freshness evidence source, clock/window/sequence policy, freshness binding, replay identity scope, atomic replay admission, durable coupling, replay retention/expiry, replay recovery continuity, acknowledgement durability and post-effect ambiguity/reconciliation**;
 - **response-header profile, grammar/cardinality/serialization owner/multi-hop composition**;
 - pagination/cursor confidentiality/browser transport/logging;
 - protected query URL policy;
@@ -305,7 +311,7 @@ CI SHALL compare proposed contract/manifest changes with accepted baseline and f
 
 Automated schema diff is advisory. Human architecture/security review remains required for semantic changes invisible to schema.
 
-Gateway/proxy/runtime/provider-SDK tests SHOULD exercise conflicting framing, request-header/query ambiguity, path normalization, structured JSON/multipart differential parsing, full idempotency scope/fingerprint/retention/ambiguity behavior, callback raw-body/entity equivalence, accepted freshness source/window boundaries, authenticated freshness binding, freshness/replay-retention coherence, atomic replay admission/crash recovery, replay-retention/acknowledgement boundaries, post-effect/pre-outcome-record ambiguity recovery and realtime pre-`101` admission.
+Gateway/proxy/runtime/provider-SDK/recovery-topology tests SHOULD exercise conflicting framing, request-header/query ambiguity, path normalization, structured JSON/multipart differential parsing, full idempotency scope/fingerprint/retention/ambiguity/recovery-continuity behavior, callback raw-body/entity equivalence, accepted freshness source/window boundaries, authenticated freshness binding, freshness/replay-retention coherence, atomic replay admission/crash recovery, replay-retention/acknowledgement boundaries, post-effect/pre-outcome-record ambiguity recovery, replay restore/PITR/partial-loss continuity and realtime pre-`101` admission.
 
 Response-path tests SHOULD exercise dynamic header injection, duplicate singleton behavior across app/BFF/proxy/CDN and safe URI/list serialization.
 

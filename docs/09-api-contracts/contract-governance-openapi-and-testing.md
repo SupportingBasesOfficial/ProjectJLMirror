@@ -135,6 +135,8 @@ callback_freshness_binding_policy
 callback_replay_identity_scope
 callback_replay_admission_policy
 callback_replay_durable_coupling_policy
+callback_replay_retention_policy
+callback_acknowledgement_durability_policy
 callback_reconciliation_policy
 callback_xml_dtd_policy
 callback_xml_external_resolution_policy
@@ -171,7 +173,7 @@ An endpoint is not ready for implementation until review proves:
 21. explicit response-cache class, protected-error policy, sharing/variance/revalidation/current-auth policy;
 22. artifact/browser delivery, authoritative media type, safe filename and active-content isolation where applicable;
 23. isolated/bounded artifact/parser/archive processing, canonical archive member policy and XML DTD/external-resolution policy;
-24. callback authentication, cryptographically/trusted-protocol-bound freshness, trusted replay identity scope, atomic create-or-observe replay admission, durable inbox/work coupling, reconciliation, XML/SSRF policy and realtime admission policy where applicable;
+24. callback authentication, cryptographically/trusted-protocol-bound freshness, trusted replay identity scope, atomic create-or-observe replay admission, durable inbox/work coupling, replay retention/expiry, acknowledgement durability, post-effect ambiguity reconciliation, XML/SSRF policy and realtime admission policy where applicable;
 25. audit/observability requirements;
 26. compatibility classification including parser/entity/response-header/callback freshness-replay semantics;
 27. security/privacy classification;
@@ -238,8 +240,10 @@ Review MUST prove:
 - replay admission is atomic create-or-observe and produces one logical executor under simultaneous delivery;
 - new replay admission is coupled to durable inbox/work/effect responsibility, or cross-authority ambiguity creates a durable reconciliation state linked by stable operation identity;
 - a crash cannot leave a replay identity permanently consumed while required work is absent and unrecoverable;
+- if a cross-authority irreversible effect may have succeeded but its outcome is not yet durably recorded, the stable callback operation enters/retains `reconciliation_required` (or equivalent accepted ambiguity state) and no additional effect attempt is admitted until authoritative reconciliation determines the prior outcome;
 - replay retention/expiry cannot turn an unresolved prior irreversible effect into blind execution eligibility;
-- success acknowledgement cannot precede durable responsibility.
+- replay-retention policy covers every advertised duplicate/recovery/reconciliation window needed for correctness, or preserves an equivalent durable tombstone/operation authority that prevents unsafe re-admission after ordinary replay-record expiry;
+- success acknowledgement cannot precede durable responsibility, and the provider-facing acknowledgement semantics are contract metadata rather than framework defaults.
 
 A callback implementation that performs `check replay -> later record/queue work` does not satisfy this gate.
 
@@ -293,7 +297,7 @@ Every implemented endpoint SHALL test at minimum:
 - multi-hop response-header serialization when proxies/CDNs/BFFs participate;
 - response-cache class/revalidation/non-reuse including protected errors;
 - artifact/browser/parser/archive/XML safety where applicable;
-- callback raw-body/signature, authenticated freshness binding, atomic durable replay admission, crash/reconciliation, DTD/XML/SSRF boundary;
+- callback raw-body/signature, authenticated freshness binding, atomic durable replay admission, replay retention, acknowledgement durability, crash/reconciliation, DTD/XML/SSRF boundary;
 - realtime canonical ingress before `101`;
 - size/complexity limits;
 - secret/topology/confidential URL leakage checks.
@@ -333,7 +337,9 @@ At least the applicable vectors include:
 - concurrent same-identity deliveries create one logical executor/durable admission;
 - crash after replay reservation but before durable work cannot create an unrecoverable consumed-without-work state;
 - crash after durable admission but before acknowledgement preserves required work and duplicate observation;
+- **crash after a cross-authority irreversible effect may have succeeded but before its outcome is durably recorded must move/retain the stable operation in reconciliation and must not admit another effect attempt until authoritative reconciliation completes**;
 - replay retention expiry does not authorize unresolved ambiguous irreversible work to execute again without reconciliation;
+- acknowledgement success is emitted only after the profile's required durable-responsibility boundary and a crash before that boundary cannot produce false success;
 - two trusted integration/tenant/source scopes using the same provider-local event ID remain independent.
 
 Artifact/binary tests additionally cover media authority, safe filename, active-inline isolation, range/CDN fencing, archive expansion/containment/member collision/no-replace, parser secret/egress isolation, DTD/external-resolution denial and derivative classification.
@@ -364,7 +370,7 @@ It flags likely breaking/security-sensitive changes including:
 - idempotency/retry/concurrency/consistency changes;
 - **response-header profile changes**, including grammar, cardinality, serialization owner or multi-hop append/combine behavior;
 - response cache/shared-cache/protected-error/variance/revalidation changes;
-- **callback freshness-binding, replay identity scope, atomic replay admission, durable coupling or reconciliation changes**;
+- **callback freshness-binding, replay identity scope, atomic replay admission, durable coupling, replay retention/expiry, acknowledgement durability or reconciliation changes**;
 - cursor confidentiality/token classification/browser transport/logging changes;
 - protected query values becoming URL-visible;
 - artifact browser/media/filename/active-content changes;
@@ -405,6 +411,9 @@ The following block implementation/release regardless of happy-path tests:
 - callback freshness evidence is accepted without authenticated/trusted-protocol binding;
 - callback replay admission can create multiple logical executors under concurrency;
 - callback replay identity can be consumed without durable work responsibility and without a recoverable reconciliation state;
+- callback replay/ambiguity retention can expire while an unresolved irreversible outcome still exists and thereby make the same logical effect newly executable;
+- callback success can be acknowledged before the platform has reached the profile's durable-responsibility boundary;
+- after a cross-authority irreversible effect may have succeeded but before its outcome is durably recorded, recovery can admit another effect attempt instead of requiring authoritative reconciliation;
 - callback tenant binding/raw-bound/SSRF/XML safety can be bypassed;
 - realtime can receive `101` without canonical ingress/current auth/replay single-winner admission;
 - a schema-compatible change weakens any accepted security semantic without governed review.
@@ -429,6 +438,8 @@ High-risk contracts SHOULD maintain executable vectors for:
 - callback raw-body/signature equivalence;
 - callback authenticated-freshness binding;
 - callback concurrent/crash-safe atomic replay admission;
+- callback post-effect/pre-outcome-record crash forcing reconciliation without re-execution;
+- callback replay-retention and acknowledgement-durability boundaries;
 - realtime pre-`101` replay admission.
 
 Examples are validated against schema/manifest so docs cannot silently drift.
@@ -454,7 +465,7 @@ Explicit security review is required for material changes to:
 - response cache semantics;
 - cursor confidentiality/token transport;
 - artifact browser/media/filename/parser/archive/XML handling;
-- callback authentication/freshness binding/replay identity/atomic admission/durable coupling/reconciliation/SSRF/XML ingress;
+- callback authentication/freshness binding/replay identity/atomic admission/durable coupling/replay retention/acknowledgement durability/post-effect ambiguity reconciliation/SSRF/XML ingress;
 - realtime ingress;
 - sensitive data exposure/bulk/export/import bounds.
 

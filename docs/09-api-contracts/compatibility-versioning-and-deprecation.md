@@ -51,6 +51,7 @@ The following are breaking or security-sensitive by default:
 - changing success/error semantics affecting retry or authorization;
 - changing idempotency effective scope, fingerprint fields, completed/in-progress duplicate behavior, fingerprint mismatch behavior, retention/recovery authority, external-ambiguity reconciliation or restore/PITR recovery-continuity semantics;
 - changing callback accepted freshness evidence source, freshness binding, clock/window/sequence admissibility, trusted replay-identity scope, atomic replay admission, durable work coupling, replay retention/expiry, replay restore/PITR recovery continuity, acknowledgement durability or post-effect ambiguity/reconciliation semantics;
+- changing realtime ticket scope/expiry, current-authority or placement checks, atomic single-winner consumption, burn-on-ambiguity, replay-store recovery/epoch continuity or subscription-authorization separation;
 - changing pagination/cursor semantics beyond documented lifecycle;
 - weakening cursor payload confidentiality, exposed-token classification, browser-history-safe transport or URL/log/referrer redaction;
 - forcing protected query input into URL-visible transport;
@@ -85,9 +86,9 @@ Servers reject unknown request fields by default. Request extensibility uses exp
 
 Schema compatibility is necessary but insufficient.
 
-Changing current-authoritative state into an approximation, retry/idempotency/recovery-continuity meaning, callback freshness/replay/retention/acknowledgement/recovery authority, cache reuse, query multiplicity, structured-body duplicate semantics, response-header serialization, browser cursor transport, archive identity or XML parser policy can be security-breaking even if JSON/OpenAPI schemas do not change.
+Changing current-authoritative state into an approximation, retry/idempotency/recovery-continuity meaning, callback freshness/replay/retention/acknowledgement/recovery authority, realtime ticket/replay authority, cache reuse, query multiplicity, structured-body duplicate semantics, response-header serialization, browser cursor transport, archive identity or XML parser policy can be security-breaking even if JSON/OpenAPI schemas do not change.
 
-Review evaluates behavior, HTTP/request entity interpretation, response serialization, consistency, security, ownership, authorization, idempotency, retry, restore/PITR continuity, callback authentication/freshness/replay/durable responsibility/retention/acknowledgement/reconciliation/recovery continuity, cache, continuation, artifact/parser and realtime semantics in addition to shape.
+Review evaluates behavior, HTTP/request entity interpretation, response serialization, consistency, security, ownership, authorization, idempotency, retry, restore/PITR continuity, callback authentication/freshness/replay/durable responsibility/retention/acknowledgement/reconciliation/recovery continuity, realtime ticket/replay/current-authority/placement semantics, cache, continuation and artifact/parser semantics in addition to shape.
 
 ## HTTP message/framing compatibility
 
@@ -266,6 +267,25 @@ A time-window check over metadata that is no longer authenticator-bound is not a
 
 A replay-store restore or backup strategy is compatible only if affected callback admission stays quarantined/fail-closed until the accepted recovery boundary proves continuity. A still-fresh authenticated delivery does not make an unreconciled recovered replay store authoritative.
 
+## Realtime admission compatibility
+
+Protected realtime admission is a semantic/security contract independent of the concrete gateway, runtime or replay-store implementation.
+
+Compatibility review SHALL compare:
+
+- ticket scope across principal, logical tenant and bounded realtime connection authority;
+- ticket expiry policy and pre-`101` enforcement;
+- current session/credential and current membership/permission/tenant-access checks;
+- current trusted placement/admission-generation checks where applicable;
+- atomic shared single-winner consumption across replicas;
+- burn-on-ambiguity behavior after consume followed by crash or failed `101` completion;
+- replay-store restart/loss/restore continuity and trusted epoch/generation invalidation semantics;
+- separation between connection admission authority and later subscription authorization.
+
+Changing a gateway/runtime/replay store is compatible only if those semantics remain equivalent. Replacing atomic consume with a read/check flow, using replica-local replay state, making a consumed ticket reusable after an ambiguous upgrade failure, or interpreting missing restored replay state as `unused` is a security regression even when `/realtime/v1/connect`, the ticket shape and HTTP status behavior are unchanged.
+
+Ticket TTL values, ticket representation, replay-store product and epoch/generation encoding may remain OPEN. The single-winner, burn, current-authority/current-placement and fail-closed replay-continuity properties are not OPEN.
+
 ## Public projection compatibility
 
 Public projections remain subject to canonical request and response-header/cache semantics. Public does not mean parser ambiguity or unsafe response serialization is acceptable.
@@ -303,6 +323,7 @@ CI SHALL compare proposed contract/manifest changes with accepted baseline and f
 - enum/status/error semantics;
 - **idempotency class/effective scope/fingerprint/duplicate-result/mismatch/retention-recovery/external-ambiguity/recovery-continuity semantics**, plus authorization/consistency;
 - **callback accepted freshness evidence source, clock/window/sequence policy, freshness binding, replay identity scope, atomic replay admission, durable coupling, replay retention/expiry, replay recovery continuity, acknowledgement durability and post-effect ambiguity/reconciliation**;
+- **realtime ticket scope/expiry/current-authority/placement/atomic-single-winner/burn-on-ambiguity/replay-recovery/subscription-separation semantics**;
 - **response-header profile, grammar/cardinality/serialization owner/multi-hop composition**;
 - pagination/cursor confidentiality/browser transport/logging;
 - protected query URL policy;
@@ -311,7 +332,7 @@ CI SHALL compare proposed contract/manifest changes with accepted baseline and f
 
 Automated schema diff is advisory. Human architecture/security review remains required for semantic changes invisible to schema.
 
-Gateway/proxy/runtime/provider-SDK/recovery-topology tests SHOULD exercise conflicting framing, request-header/query ambiguity, path normalization, structured JSON/multipart differential parsing, full idempotency scope/fingerprint/retention/ambiguity/recovery-continuity behavior, callback raw-body/entity equivalence, accepted freshness source/window boundaries, authenticated freshness binding, freshness/replay-retention coherence, atomic replay admission/crash recovery, replay-retention/acknowledgement boundaries, post-effect/pre-outcome-record ambiguity recovery, replay restore/PITR/partial-loss continuity and realtime pre-`101` admission.
+Gateway/proxy/runtime/provider-SDK/recovery-topology tests SHOULD exercise conflicting framing, request-header/query ambiguity, path normalization, structured JSON/multipart differential parsing, full idempotency scope/fingerprint/retention/ambiguity/recovery-continuity behavior, callback raw-body/entity equivalence, accepted freshness source/window boundaries, authenticated freshness binding, freshness/replay-retention coherence, atomic replay admission/crash recovery, replay-retention/acknowledgement boundaries, post-effect/pre-outcome-record ambiguity recovery, replay restore/PITR/partial-loss continuity and realtime ticket scope/expiry/current-authority/placement/single-winner/burn/replay-recovery pre-`101` behavior.
 
 Response-path tests SHOULD exercise dynamic header injection, duplicate singleton behavior across app/BFF/proxy/CDN and safe URI/list serialization.
 

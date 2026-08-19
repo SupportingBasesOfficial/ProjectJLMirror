@@ -31,6 +31,7 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Artifact browser delivery | Every browser-reachable artifact declares `opaque_download`, `safe_inline` or equivalent accepted isolated-active profile; authorization to download never implies permission for bytes to execute on the application/BFF origin |
 | Active artifact isolation | Browser-active/script-capable content may execute inline only under a dedicated untrusted-content boundary that does not share application/BFF ambient credentials, service-worker/DOM origin trust, and preserves current artifact delivery fencing |
 | Opaque artifact download | Unknown/untrusted/browser-active content defaults to attachment/non-sniffable download semantics with safely encoded filename metadata; caller metadata cannot opt the object into inline execution or inject response headers |
+| Untrusted artifact processing | Complex document/archive/media classification, preview, conversion, extraction or rendering uses an isolated least-privilege bounded processing profile with no ordinary application secrets/unrestricted egress, bounded expansion/resources and no implicit macro/script/embedded-URL execution; derived output receives independent artifact identity/classification |
 | Idempotency admission | Required effectful POST/command atomically create-or-observes durable claim before protected effect |
 | Idempotency fingerprint | Same key/scope with different semantic request conflicts before execution |
 | Idempotency concurrency | Simultaneous same key/fingerprint yields one logical executor |
@@ -110,6 +111,9 @@ The following failures block acceptance/release regardless of other success:
 - browser execution/media type is trusted solely from uploader-controlled filename, extension or `Content-Type`;
 - unknown/untrusted/browser-active artifact can be served inline without accepted isolation instead of failing toward attachment/non-sniffable download semantics;
 - active-inline artifact delivery can use an isolated origin yet bypass current artifact authorization/releasability/delivery-generation/active-stream fencing or turn its delegated capability into a general API credential;
+- complex untrusted artifact/archive/document parsing, conversion, preview or metadata extraction runs in ordinary API/BFF business runtime with application secrets, unrestricted egress or unbounded CPU/memory/time/decompressed-output/nesting;
+- artifact processing automatically executes embedded scripts/macros or follows attacker-controlled URLs outside the accepted outbound/SSRF boundary;
+- a generated preview/conversion is treated as `safe_inline` without independent output classification/delivery policy;
 - external provider-native identifier becomes canonical resource identity such that provider replacement would break clients;
 - retryable irreversible POST/command can execute twice because no atomic durable idempotency admission exists;
 - response loss after committed idempotent mutation causes re-execution rather than replay/reconstruction;

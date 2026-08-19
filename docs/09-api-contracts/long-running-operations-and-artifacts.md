@@ -34,6 +34,8 @@ Platform-global operations use:
 
 `operation_id` is a stable platform identity independent of queue message IDs, worker attempts, provider request IDs and physical execution location.
 
+Possession of an `operation_id` or operation URL is **not bearer authority**. Every protected read, poll, cancel, retry/resume or result-access request re-establishes current authentication, tenant context and applicable authorization under the owning operation contract.
+
 ## `202 Accepted`
 
 When an endpoint accepts durable asynchronous responsibility:
@@ -74,7 +76,7 @@ Conceptual shape:
 }
 ```
 
-Fields are operation-type-specific where necessary. Sensitive internal worker/provider details are not exposed by default.
+Fields are operation-type-specific where necessary. Sensitive internal worker/provider details are not exposed by default. Principal/actor metadata is exposed only when the caller is authorized to see it under the operation's data-classification contract.
 
 ## Operation status taxonomy
 
@@ -151,6 +153,8 @@ A terminal successful operation exposes a stable result reference where applicab
 
 Large result data is represented through resources/artifacts rather than embedded into the operation indefinitely.
 
+A result reference does not grant authority to the result resource. Access is reauthorized under the result resource's current contract at dereference/download time.
+
 ## Error
 
 Operation failure uses the same stable problem/error-code vocabulary as synchronous API errors, but as durable operation state.
@@ -174,6 +178,8 @@ Clients poll the stable operation resource with bounded backoff. Responses MAY i
 
 Polling SHALL NOT require the original worker/queue node to remain alive.
 
+Every poll is a new protected read and re-evaluates current authorization. An operation created while a principal had access does not remain readable after that authority is revoked unless a separately accepted policy grants continuing access.
+
 ## Realtime acceleration
 
 Phase 10 MAY define operation-status realtime events to accelerate UI updates. Realtime remains advisory: clients can always recover current operation state through the authoritative API resource.
@@ -192,11 +198,15 @@ Cancellation response indicates accepted cancellation intent/current state; it d
 
 A worker transport interrupt alone is not proof that the business operation is cancelled.
 
+Cancellation requires current authorization at the time of the command. `requested_by` metadata or authority that existed at operation creation is not a durable cancellation grant.
+
 ## Resumption/retry
 
 Clients do not create a new operation merely because polling observed `waiting` or `reconciliation_required`.
 
 A retry/restart command is allowed only when the owning operation type exposes one and when current durable state proves a new attempt is safe.
+
+Retry/resume also re-establishes current authorization; stale operation ownership or a persisted request-time grant is insufficient.
 
 ## Artifact resource
 
@@ -255,14 +265,17 @@ The endpoint:
 
 1. authenticates the caller;
 2. resolves current tenant context;
-3. checks current authorization;
-4. verifies the artifact is currently releasable;
-5. acquires the accepted generation-bound active-delivery lease/fence before the first protected byte;
-6. streams or delegates delivery only through a mechanism preserving equivalent revocation/fencing semantics.
+3. validates the request/resource contract;
+4. checks current authorization;
+5. verifies the artifact is currently releasable;
+6. acquires the accepted generation-bound active-delivery lease/fence before the first protected byte;
+7. streams or delegates delivery only through a mechanism preserving equivalent revocation/fencing semantics.
 
 The logical API contract remains stable if the implementation later moves between application streaming, CDN/object-storage proxying or another mechanism.
 
 A direct vendor signed URL MAY be used internally only when it satisfies the accepted prompt-revocation, delivery-generation and active-stream fencing invariants. Vendor URL shape is never the canonical artifact identity.
+
+Protected artifact delivery uses the `artifact_delivery_guarded` cache class unless an endpoint deliberately proves stricter `no_store` behavior. A CDN/cache hit SHALL NOT bypass current authorization, releasability, delivery-generation admission or active-stream fencing.
 
 ## Range/resume
 

@@ -1,6 +1,6 @@
 # Reliability Records, Idempotency and Audit
 
-**Status:** proposed baseline  
+**Status:** accepted  
 **Primary ADRs:** ADR-008, ADR-009, ADR-010, ADR-018
 
 ## Outbox

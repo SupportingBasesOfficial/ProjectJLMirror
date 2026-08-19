@@ -1,6 +1,6 @@
 # Tenant Relocation Between Cells
 
-**Status:** proposed baseline  
+**Status:** accepted  
 **Primary ADRs:** ADR-004, ADR-018, ADR-019  
 **Threat focus:** TM-012
 

@@ -1,6 +1,6 @@
 # Consistency, Transactions and Asynchronous Processing
 
-**Status:** proposed baseline  
+**Status:** accepted  
 **Primary ADRs:** ADR-001, ADR-008, ADR-009, ADR-010
 
 ## Transaction ownership

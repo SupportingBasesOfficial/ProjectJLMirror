@@ -1,6 +1,6 @@
 # Recovery, Retention and Artifacts
 
-**Status:** proposed baseline  
+**Status:** accepted  
 **Primary ADR:** ADR-018
 
 ## Recovery scopes

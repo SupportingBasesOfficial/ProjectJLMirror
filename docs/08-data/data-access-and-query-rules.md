@@ -1,6 +1,6 @@
 # Data Access and Query Rules
 
-**Status:** proposed baseline
+**Status:** accepted
 
 ## Repository/application boundary
 

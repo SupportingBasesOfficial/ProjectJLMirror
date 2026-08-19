@@ -1,6 +1,6 @@
 # System Design Validation Matrix
 
-**Status:** proposed baseline
+**Status:** accepted
 
 This matrix converts the design into evidence gates. Passing happy-path tests is not enough.
 

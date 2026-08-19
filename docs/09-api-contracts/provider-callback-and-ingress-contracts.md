@@ -51,7 +51,7 @@ The ingress SHALL enforce a hard raw transport byte limit before complete buffer
 
 Provider profiles define a concrete maximum raw-body size before implementation/release. If not yet measured/accepted, the value is explicitly `OPEN`; unlimited callback bodies are prohibited.
 
-## Authentication/freshness ordering
+## Authentication/freshness/replay ordering
 
 Conceptual processing:
 
@@ -61,21 +61,25 @@ network/route admission
   -> obtain bounded raw representation
   -> provider/integration lookup from trusted route/config
   -> verify provider authenticity mechanism
-  -> verify timestamp/freshness/nonce/event identity where protocol supports it
-  -> enforce replay/dedup admission for harmful duplicate effects
-  -> only then parse/decompress/normalize semantic payload
-  -> apply bounded parsed/decompressed complexity limits
+  -> verify timestamp/freshness/nonce where available outside semantic parsing
+  -> bounded minimal extraction/parse only if required to establish trusted event/replay identity
+  -> enforce replay/dedup admission before protected logical effect
+  -> bounded full parse/decompress/normalize semantic payload
   -> resolve owning domain use case
   -> authoritative mutation / operation contract
 ```
 
 The exact cryptographic verification sequence may depend on a provider that requires the untouched raw bytes. The adapter preserves those raw bytes inside the accepted limit.
 
+If replay identity is carried inside the authenticated body, the adapter MAY perform only the minimum parsing/decompression needed to extract that identity before replay admission. That extraction is itself subject to explicit byte/depth/item/parser limits and SHALL NOT execute domain behavior, follow URLs or allocate unbounded structures.
+
+A provider profile SHALL NOT weaken replay protection merely because event identity requires bounded parsing; duplicate admission still occurs before the protected logical effect.
+
 ## Post-auth parse/decompression limits
 
 Authentication does not make the payload safe to parse without bounds.
 
-After authenticity/freshness checks, adapters enforce independent limits for:
+After authenticity/freshness checks, all parsing/decompression—including any minimal replay-identity extraction—enforces independent limits for:
 
 - decompressed byte size;
 - JSON/XML/object nesting depth;
@@ -188,10 +192,12 @@ Every callback profile SHALL test:
 - over-limit chunked body rejected before complete buffering/authentication;
 - invalid authentication/signature rejected;
 - stale timestamp/nonce/event replay rejected/deduplicated as appropriate;
+- bounded minimal replay-identity extraction cannot cause unbounded decompression/parser work or domain side effects;
 - tenant/integration payload forgery cannot reroute trusted tenant context;
 - post-auth parser/decompression expansion is bounded;
 - exact duplicate does not repeat protected effect;
 - same provider-local event ID in two trusted identity scopes is independently processable;
 - process crash after durable acceptance does not lose callback work;
 - process crash before durable acceptance does not return false success;
+- callback-supplied URLs cannot bypass trusted outbound destination/redirect/size/timeout policy;
 - provider outage/follow-up fetch failure remains isolated to the integration/workload.

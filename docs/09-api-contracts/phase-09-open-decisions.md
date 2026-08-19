@@ -41,6 +41,7 @@ Candidates may include a narrowly reviewed/redacted query representation or anot
 **Question:** Concrete defaults/maxima for:
 
 - JSON request body;
+- idempotency-key transport length/character profile;
 - per-endpoint strings/lists/nesting;
 - collection `limit`;
 - bulk item count;
@@ -58,6 +59,8 @@ Unlimited values are not an accepted default while this remains OPEN.
 **Question:** Minimum claim/result retention by operation class.
 
 **Already fixed:** retention must cover the documented client retry/replay/recovery window in which losing evidence could duplicate an effect. The API cannot advertise a longer safe retry window than durability supports.
+
+One-time-secret material is never made replayable merely to satisfy this retention window; secret-bearing retry semantics follow the explicit non-replayable recovery contract.
 
 ## OPEN-API-006 — Deprecation/support duration
 
@@ -124,6 +127,21 @@ Unlimited values are not an accepted default while this remains OPEN.
 The cross-cutting Phase 09 baseline does not itself finalize every domain endpoint/request/response schema.
 
 Endpoint-level contracts are added incrementally using the canonical endpoint template and domain surface map. A future endpoint is allowed only when its Product/domain use case exists; the absence of an endpoint today does not require changing the cross-cutting contract architecture later.
+
+## OPEN-API-017 — Response-cache tuning and exact header profiles
+
+**Question:** Exact freshness durations, stale allowances, validator policy and optional cache-control header combinations for endpoints whose accepted semantic class is `private_revalidate`, `public_shared` or `artifact_delivery_guarded`.
+
+**Already fixed:**
+
+- every endpoint declares a cache class before implementation;
+- secret-bearing responses are `no_store` and cannot be replayed from cache;
+- protected API/BFF data cannot become shared-cacheable because of framework/CDN defaults;
+- `Vary` or caller-supplied tenant/principal metadata is not authorization;
+- `public_shared` is limited to deliberately public projections independent of protected caller authority;
+- protected artifact caching must preserve current authorization/releasability/delivery-generation/active-stream fencing or remain non-shared.
+
+**Resolution evidence:** Product freshness expectations, security classification, revocation/erasure semantics, traffic/capacity evidence and cache/CDN implementation proofs. Numeric TTLs are not invented in advance.
 
 ## Not Phase 09 OPENs
 

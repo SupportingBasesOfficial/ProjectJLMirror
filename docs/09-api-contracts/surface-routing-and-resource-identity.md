@@ -23,11 +23,15 @@ Tenant-scoped machine routes use the explicit logical tenant path:
 
 The server SHALL:
 
-1. authenticate the principal/credential;
-2. verify that the principal is eligible for the named tenant;
-3. resolve current trusted placement;
-4. authorize the concrete operation/scope;
-5. route to the authoritative cell/application owner.
+1. authenticate the principal/credential at the ingress boundary;
+2. validate the logical tenant selection/credential claims needed to identify the intended tenant without treating them as final membership/resource authorization;
+3. resolve current trusted placement from authoritative control-plane metadata;
+4. route the request to the authoritative cell/application owner;
+5. have the cell validate current placement admission/version and construct the trusted `TenantContext`;
+6. evaluate current membership or machine tenant scope plus the concrete permission/resource policy at the owning server-side boundary;
+7. execute the owning application use case.
+
+Ingress/global checks MAY reject an obviously invalid/revoked credential or globally impossible tenant scope earlier, but they are only narrowing/fail-fast checks. They SHALL NOT substitute for the authoritative cell-owned membership, permission or resource-policy decision when that authority is cell-owned.
 
 A stale or malicious client cannot choose a physical target by changing URI/query/header fields.
 

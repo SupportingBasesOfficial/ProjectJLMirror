@@ -10,6 +10,12 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Contract ownership | One accepted owning domain/use case; route does not become a generic cross-domain mutation owner |
 | Logical identity | Resource IDs remain stable/opaque across provider replacement, tenant relocation and service extraction |
 | Physical routing isolation | Caller cannot select cell/database/schema/shard/cluster/secret reference through public path/query/header/body |
+| HTTP message canonicalization | Every externally reachable HTTP surface inherits `http-message-framing-and-canonicalization.md`; one accepted wire request has one canonical interpretation across gateway/BFF/proxy/owning-service hops before protected decisions |
+| HTTP framing ambiguity | Conflicting `Content-Length`/`Transfer-Encoding`, multiple differing lengths, malformed transfer coding/chunk framing and protocol-invalid framing metadata fail closed before auth/body processing/idempotency/effect |
+| Security-header cardinality | Security-sensitive headers have explicit cardinality/combine semantics; duplicate/conflicting authentication/idempotency/trusted-routing values cannot be resolved by arbitrary first/last/framework behavior |
+| Authority/proxy normalization | Host/authority and trusted proxy metadata have one authoritative interpretation; untrusted `Forwarded`/`X-Forwarded-*` cannot spoof scheme/host/client identity/redirect or routing authority |
+| Request-target consistency | Gateway, router, authorization, cache and owning service consume one canonical method/path/query meaning; malformed/ambiguous decoding, dot-segment/separator or authority forms cannot route one resource and authorize another |
+| HTTP-version translation | HTTP/1.x↔HTTP/2↔HTTP/3 translation validates source framing and reconstructs target messages from canonical semantics rather than forwarding incompatible hop/framing metadata |
 | Tenant scope | Tenant-scoped operation carries explicit logical tenant scope and validates current credential + placement + authoritative membership/resource authorization |
 | Tenant auth ordering | When membership/resource authority is cell-owned: authenticate -> logical tenant -> trusted placement -> route -> cell admission -> TenantContext -> request-contract validation -> owning membership/permission/resource authorization; ingress prechecks cannot substitute for the owning decision |
 | Authorization input safety | Owning authorization consumes only request fields validated under the trusted TenantContext/route; earlier cheap size/syntax checks cannot convert caller input into trusted authorization/resource scope or leak protected existence |
@@ -70,12 +76,13 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Delayed import | Worker re-establishes current tenant context/authority before protected mutation and on stale resumed stages |
 | Realtime ticket mint | BFF authenticates current session and creates bounded tenant/principal/scope ticket; ticket is not general API credential and mint response is `no_store` |
 | Realtime ticket transport | Ticket-bearing URL/transport is transient, redacted and excluded from normal logs/analytics/history/referrer-like propagation under the accepted profile |
-| Realtime pre-101 | Expected Origin + ticket + current underlying auth + placement + replay continuity + atomic single-winner consume all pass before `101` |
+| Realtime pre-101 | Canonical HTTP ingress + expected Origin + ticket + current underlying auth + placement + replay continuity + atomic single-winner consume all pass before `101` |
 | Realtime concurrency | Same single-use ticket presented to replicas yields at most one `101`; every loser rejected pre-upgrade |
 | Realtime crash after consume | Ticket remains burned; remint required |
 | Realtime replay-state recovery | Replay-state loss/restore cannot make consumed ticket redeemable; missing state never means unused |
 | Realtime subscription separation | Successful connection does not grant arbitrary subscriptions; Phase 10 must preserve current subscription authorization |
-| Provider callback raw bound | Chunked/streamed over-limit body rejected before complete buffering/signature work |
+| Provider callback framing | Callback framing/header canonicalization passes before signature/freshness/replay; signature verification and adapter processing observe the same bounded raw body; duplicate/conflicting provider-auth headers follow one explicit profile |
+| Provider callback raw bound | Chunked/streamed over-limit body rejected before complete buffering/signature work after canonical framing admission |
 | Provider callback auth | Invalid authenticity/freshness rejected before protected domain mutation |
 | Provider callback tenant binding | Payload tenant/account fields cannot reroute callback away from trusted integration mapping |
 | Provider callback replay | Exact replay cannot repeat protected effect; same raw event ID across trusted scopes does not collide |
@@ -86,19 +93,27 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Version compatibility | Additive change obeys unknown-field/open-enum rules; breaking change requires governed version boundary |
 | Semantic compatibility | Schema-compatible change does not silently alter consistency, idempotency, authorization, scope, cache or retry meaning |
 | Cache compatibility | Cache class, shared-cache eligibility, variance, validator/revalidation/current-auth requirements and security-relevant freshness policy are reviewed as semantic contract; a more permissive cache policy cannot ship as an implementation-only change |
-| Security-metadata compatibility | Weakening cursor confidentiality/logging, safe-filename handling, artifact browser-delivery/parser isolation or XML external-resolution policy is reviewed as a security-sensitive semantic change even if schemas remain unchanged |
+| Security-metadata compatibility | Weakening HTTP framing/header/request-target/trusted-proxy semantics, cursor confidentiality/logging, safe-filename handling, artifact browser-delivery/parser isolation or XML external-resolution policy is reviewed as a security-sensitive semantic change even if schemas remain unchanged |
 | Service extraction | Moving owner to new runtime/service does not change public IDs/routes/tenant semantics solely due to deployment topology |
 | Provider replacement | New provider adapter does not force canonical resource IDs/schema to become provider-native |
 | Contract source of truth | Machine-readable contract is reviewed canonical artifact; controller/ORM DTO does not define public schema by accident |
-| Breaking-change CI | Contract diff detects structural risk; semantic review checks security/ownership/retry/consistency/cache/browser-delivery/cursor/parser changes |
+| Breaking-change CI | Contract diff detects structural risk; semantic review checks HTTP canonicalization/security/ownership/retry/consistency/cache/browser-delivery/cursor/parser changes |
 | Client resilience | Official client ignores compatible unknown response fields/open enum values and only auto-retries operations marked safe |
 | Data classification | Request/response/URL/logging policy prevents secret/credential/regulated/confidential-data leakage |
-| Abuse limits | Body/page/filter/include/bulk/export/expensive operation constraints are explicit or explicitly OPEN with implementation blocked |
+| Abuse limits | Body/header/page/filter/include/bulk/export/expensive operation constraints are explicit or explicitly OPEN with implementation blocked |
 
 ## Release-blocking contract failures
 
 The following failures block acceptance/release regardless of other success:
 
+- two accepted HTTP hops can disagree on where one request ends and another begins;
+- conflicting `Content-Length`/`Transfer-Encoding`, multiple body lengths or malformed transfer framing can reach authentication, body parsing, idempotency admission or protected effect logic;
+- duplicate/conflicting `Authorization`, `Idempotency-Key` or another security-sensitive field can be resolved differently by edge and application code or by arbitrary first/last/framework behavior;
+- gateway/BFF/proxy and owning service can derive different credentials, idempotency keys, preconditions or cache/security meaning from one wire request;
+- untrusted `Forwarded`/`X-Forwarded-*` or conflicting Host/authority metadata can override trusted scheme/host/client identity/routing/security decisions;
+- request-target normalization can route one path/resource while authorization/cache/owning service consumes another interpretation;
+- HTTP-version translation can turn an invalid/ambiguous source request into a protected accepted request or propagate incompatible framing metadata downstream;
+- cache/proxy can accept/cache one interpretation of an ambiguous request while the owning service rejects or interprets another;
 - public/BFF caller can choose or override physical tenant placement;
 - tenant-scoped implementation performs cell-owned membership/resource authorization before trusted placement routing/cell admission/TenantContext/request-contract validation, or treats ingress authorization as a substitute for owning authorization;
 - owning authorization consumes unvalidated caller-controlled request fields as trusted scope/resource/policy input;
@@ -147,19 +162,21 @@ The following failures block acceptance/release regardless of other success:
 - protected artifact first byte can be released before current authorization/releasability/browser-delivery/safe-filename profile/generation-bound lease admission commits;
 - artifact erasure can report success while stale delivery/upload/destructive authority can still release/recreate/destroy incorrectly;
 - delayed import mutates tenant state using stale request-time human authorization after revocation;
-- protected WebSocket receives `101` without expected Origin/current auth/replay continuity/atomic consume;
+- protected WebSocket receives `101` on an ambiguously framed/canonicalized request or without expected Origin/current auth/replay continuity/atomic consume;
 - more than one gateway replica can receive `101` for one single-use realtime ticket;
 - replay-store loss can resurrect a previously consumed ticket;
 - ticket-bearing transport leaks through ordinary logs/analytics/history/referrer-like propagation contrary to the accepted profile;
+- callback framing/signature verification can cover bytes different from those processed as the callback body;
 - callback payload can choose a different tenant than trusted integration configuration;
 - oversized callback reaches complete buffering/authentication/parser work without hard raw bound;
+- duplicate/conflicting callback authentication/signature/freshness headers can be interpreted differently across hops;
 - duplicate callback can repeat irreversible logical effect;
 - same provider-local callback ID from two trusted tenant/source scopes collides under one dedup identity;
 - provider callback XML parser permits DTD/external entity/XInclude/external schema/stylesheet resolution to read local files or reach network/internal services outside an explicitly accepted isolated resolver profile;
 - provider callback returns success while required async work exists only in process memory;
 - callback-supplied URL can trigger unrestricted outbound fetch/redirect and bypass the trusted connector/SSRF boundary;
-- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/cache/browser-delivery/cursor/parser semantics;
-- service extraction/provider/storage migration forces consumers to change because public contract leaked internal topology;
+- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/HTTP-framing/cache/browser-delivery/cursor/parser semantics;
+- service extraction/provider/storage/gateway migration forces consumers or security semantics to change because public contract leaked internal topology or relied on parser disagreement;
 - database/ORM model is serialized directly as the public contract without deliberate schema/authorization review.
 
 ## Traceability

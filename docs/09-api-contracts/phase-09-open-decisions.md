@@ -22,11 +22,16 @@ An OPEN item remains unresolved until accepted through the appropriate contract/
 
 **Must not be decided by:** an arbitrary framework default or one identity provider's native model.
 
-## OPEN-API-002 — Browser session/CSRF profile
+## OPEN-API-002 — Browser session/CSRF/origin profile
 
-**Question:** Exact cookie names/attributes across deployment topology and the exact anti-CSRF token/header mechanism.
+**Question:** Exact cookie names/attributes across deployment topology, exact anti-CSRF token/header mechanism, and the concrete trusted browser Origin/CORS allowlist/credential profile for deployments that require cross-origin BFF access.
 
-**Already fixed:** HttpOnly/confidential BFF boundary and explicit CSRF protection for state-changing cookie-authenticated browser requests.
+**Already fixed:**
+
+- HttpOnly/confidential BFF boundary and explicit CSRF protection for state-changing cookie-authenticated browser requests;
+- credentialed BFF access is deny-by-default for untrusted origins;
+- any accepted cross-origin credentialed profile uses explicit trusted origins rather than wildcard credentialed access;
+- CORS/Origin enforcement does not replace authentication, CSRF, tenant context or authorization.
 
 ## OPEN-API-003 — Realtime ticket presentation encoding
 
@@ -137,6 +142,7 @@ Endpoint-level contracts are added incrementally using the canonical endpoint te
 - every endpoint declares a cache class before implementation;
 - secret-bearing responses are `no_store` and cannot be replayed from cache;
 - protected API/BFF data cannot become shared-cacheable because of framework/CDN defaults;
+- protected authentication/authorization/existence-concealing error variants cannot be shared across principals/tenants by default;
 - `Vary` or caller-supplied tenant/principal metadata is not authorization;
 - `public_shared` is limited to deliberately public projections independent of protected caller authority;
 - protected artifact caching must preserve current authorization/releasability/delivery-generation/active-stream fencing or remain non-shared.

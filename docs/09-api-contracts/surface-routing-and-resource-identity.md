@@ -9,6 +9,8 @@ External contract identity is logical. Physical topology is deliberately hidden 
 
 Clients interact with stable tenant, resource and operation identities. They do not select or persist cell IDs, database addresses, schema names, shard keys, region-internal hosts or provider-native storage identifiers as business routing authority.
 
+For every externally reachable HTTP surface, `http-message-framing-and-canonicalization.md` establishes one canonical method/authority/request-target/header/body-framing interpretation before routing, authentication, tenant selection, authorization, cache or protected effects consume the request.
+
 ## Canonical top-level scopes
 
 ### Tenant-scoped machine API
@@ -23,10 +25,11 @@ Tenant-scoped machine routes use the explicit logical tenant path:
 
 The server SHALL:
 
-1. authenticate the principal/credential at the ingress boundary;
+0. accept one canonical HTTP request interpretation at ingress, rejecting ambiguous framing, security-sensitive header conflicts, authority/proxy conflicts or request-target parser disagreement before protected logic;
+1. authenticate the principal/credential from that canonical request;
 2. validate the logical tenant selection/credential claims needed to identify the intended tenant without treating them as final membership/resource authorization;
 3. resolve current trusted placement from authoritative control-plane metadata;
-4. route the request to the authoritative cell/application owner;
+4. route the request to the authoritative cell/application owner using the same canonical request target interpreted at ingress;
 5. have the cell validate current placement admission/version and construct the trusted `TenantContext`;
 6. validate the request contract under that trusted route/context, including bounded path/query/header/body shape needed by the owning authorization/use case;
 7. evaluate current membership or machine tenant scope plus the concrete permission/resource policy at the owning server-side boundary;
@@ -34,9 +37,13 @@ The server SHALL:
 
 Request-contract validation before owning authorization does not permit protected resource existence or sensitive semantic validation to leak before the required authentication/tenant authority gates. Cheap transport-size/syntax rejection may occur earlier where safe, but caller-controlled fields are not consumed as trusted authorization inputs until validated under the authoritative context.
 
+Canonical HTTP ingress is an earlier transport-security boundary, not a substitute for request-contract validation. It proves that every hop agrees on the request being evaluated; request-contract validation proves that the agreed request fields are valid/bounded for the owning authorization/use case.
+
 Ingress/global checks MAY reject an obviously invalid/revoked credential or globally impossible tenant scope earlier, but they are only narrowing/fail-fast checks. They SHALL NOT substitute for the authoritative cell-owned membership, permission or resource-policy decision when that authority is cell-owned.
 
 A stale or malicious client cannot choose a physical target by changing URI/query/header fields.
+
+Untrusted `Forwarded`/`X-Forwarded-*`/Host-like metadata cannot become placement or routing authority. Trusted proxy metadata is normalized at the accepted edge boundary before routing.
 
 ### Platform/global machine API
 
@@ -47,6 +54,8 @@ Operations whose owner is truly platform-global use:
 ```
 
 Platform-global routes are not a wildcard tenant bypass. Any operation that targets one or more tenants declares those targets explicitly and uses distinct privileged authorization/audit semantics.
+
+Platform/global routes inherit the same canonical HTTP ingress; global privilege does not make ambiguous framing/header/authority input acceptable.
 
 ### Self/principal API
 
@@ -74,6 +83,8 @@ Tenant-scoped browser use cases SHOULD make the logical tenant explicit in the B
 
 The BFF may expose presentation-oriented composition, but it may not encode physical placement or bypass downstream server authorization.
 
+BFF session/Origin/CSRF handling operates on the canonical request produced by the accepted HTTP ingress profile; duplicate/conflicting session/security metadata cannot be interpreted differently by edge and BFF logic.
+
 ### Public projections
 
 Deliberately public data uses a separate namespace:
@@ -83,6 +94,8 @@ Deliberately public data uses a separate namespace:
 ```
 
 Protected tenant resources do not become public by moving under this prefix. Every public projection is explicitly modeled and reviewed.
+
+Public routes still inherit canonical HTTP framing/request-target/cache semantics; unauthenticated does not mean parser ambiguity is safe.
 
 ## Resource identifiers
 
@@ -137,6 +150,14 @@ Resource collections use plural nouns:
 
 URI structure reflects stable contract/resource semantics, not source-code package layout.
 
+### Request-target normalization
+
+Canonical URI semantics do not permit edge/application disagreement.
+
+The accepted surface profile rejects or canonically resolves malformed/ambiguous percent-encoding, dot segments, alternate/encoded path separators, conflicting authority forms or repeated decoding cases that could make a gateway route one logical resource while the owning service authorizes another.
+
+Exact normalization rules may be surface-specific, but every participating hop consumes the same accepted method/path/query meaning. A proxy/service extraction cannot introduce an additional independent path interpretation.
+
 ### Nesting
 
 Nesting is used only when the parent materially scopes identity or lifecycle. Deep nesting that mirrors database relationships is prohibited by default.
@@ -190,14 +211,20 @@ A successful tenant relocation SHALL NOT require external consumers to rewrite s
 
 A physical topology change MAY transiently alter availability according to the accepted degradation/relocation contract, but it must not redefine the resource's public identity.
 
+Adding/removing/replacing gateways, reverse proxies or service hops during topology evolution SHALL NOT change the canonical external request interpretation or permit routing/auth disagreement for the same wire request.
+
 ## Multi-region future
 
 If residency/region intent becomes externally configurable, it is modeled as policy/configuration metadata. It is not encoded into canonical resource IDs.
 
 Region-specific public hostnames MAY exist for latency/residency reasons, but canonical resource identity and authorization remain logical and portable.
 
+Authority/host selection for such profiles is still canonicalized at trusted ingress; untrusted forwarding metadata cannot select a privileged region/tenant route.
+
 ## URL persistence
 
 Clients MAY persist canonical resource URLs returned by the API. The platform therefore SHALL NOT return internal service discovery addresses or expiring infrastructure URLs as canonical resource identity.
 
 Artifact delivery URLs and realtime endpoints are capabilities/transport endpoints, not canonical resource identifiers, and may be short-lived.
+
+Canonical resource URLs reflect accepted logical path semantics, never an internal proxy-specific normalization quirk.

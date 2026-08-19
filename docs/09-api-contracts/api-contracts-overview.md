@@ -68,6 +68,16 @@ The baseline therefore requires:
 
 Exact gateway/proxy/runtime products remain replaceable.
 
+### Canonical structured request entity
+
+Transport framing proves which bytes belong to a request; it does not permit each protected component to choose its own interpretation of structured body fields.
+
+For JSON, multipart, XML and any other accepted structured request media type, the contract establishes one bounded canonical parsed entity before protected body fields are consumed by request validation, owning authorization, idempotency fingerprinting, body-carried callback replay/freshness identity or use-case/domain mapping.
+
+Duplicate/alias member names, multipart part-name/metadata/boundary ambiguity and equivalent parser disagreement fail closed under the accepted media-type profile. Retained raw bytes may remain necessary for provider signatures or audit evidence, but after canonical entity establishment they are not independently reparsed as a second semantic authority.
+
+Changing parser/library/runtime is implementation evolution only if the same accepted raw request still produces the same canonical entity and all protected consumers continue to observe that one entity.
+
 ### Explicit tenant semantics
 
 Every tenant-scoped contract SHALL carry an unambiguous logical `tenant_id` through its contract scope. A caller may identify the logical tenant it intends to operate on, but that value is never authority for physical placement and never bypasses membership/authorization.
@@ -97,6 +107,16 @@ Every operation SHALL identify whether its response represents:
 - a reconciliation/ambiguous outcome requiring operation tracking.
 
 A `2xx` response does not silently mean more consistency than the owning use case can prove.
+
+### Explicit response-header semantics
+
+Response headers are part of the contract/security boundary rather than string-formatted implementation decoration.
+
+Every endpoint inherits or declares a `response_header_profile` and one serialization/composition owner model for dynamic/security-relevant headers such as `Location`, `Link`, `ETag`, `Retry-After`, `Content-Disposition`, redirects, cache/security/CORS/authentication headers and request/correlation IDs.
+
+The profile defines bounded grammar/cardinality/serialization behavior and prevents CR/LF/NUL/control injection, obsolete folding, conflicting singleton output and app/BFF/proxy/CDN layers from independently appending security-relevant values with different meanings.
+
+A response-header serialization failure after an authoritative mutation committed does not make the business operation retryable. Idempotency, durable operation state or authoritative read/recovery semantics determine the outcome.
 
 ### Explicit cache semantics
 
@@ -146,6 +166,7 @@ A new externally consumed use case is not implementation-ready until its contrac
 - method/path or non-HTTP invocation shape;
 - canonical HTTP message/framing profile where HTTP is used;
 - security-sensitive header cardinality, request-target and trusted-proxy semantics where applicable;
+- structured request entity profile, duplicate/alias/boundary semantics and canonical-entity propagation where a structured body is accepted;
 - actor/principal classes;
 - tenant/global scope;
 - trusted placement/routing/TenantContext boundary where applicable;
@@ -153,6 +174,7 @@ A new externally consumed use case is not implementation-ready until its contrac
 - required authorization action/scope and owning authorization authority;
 - request schema and size/complexity bounds;
 - response/result semantics;
+- response-header profile and serialization/composition owner where HTTP headers are emitted;
 - response-cache class/shared-cache/revalidation/current-auth semantics;
 - artifact browser-delivery/media-type/active-content-isolation semantics where bytes are exposed;
 - untrusted artifact-processing isolation/resource/egress/output-classification semantics where parsing/rendering/conversion occurs;
@@ -164,7 +186,7 @@ A new externally consumed use case is not implementation-ready until its contrac
 - stable error codes/classes;
 - audit class;
 - observability/request-correlation requirements;
-- compatibility/deprecation implications, including HTTP framing/header/proxy/target, cache/security/browser-delivery semantics;
+- compatibility/deprecation implications, including HTTP framing/header/proxy/target, structured-body parser, response-header serialization, cache/security/browser-delivery semantics;
 - data classification and secret/PII handling constraints.
 
 The canonical endpoint template in this phase makes those fields reviewable before implementation.
@@ -185,7 +207,7 @@ Phase 09 does not select:
 
 Phase 09 MAY define exact HTTP representations where Gate B intentionally delegated them here, including path/version conventions, error representation, idempotency header semantics, pagination/cursor representation, long-running operation resources and conditional request conventions.
 
-Exact implementation products for artifact storage, malware/content scanning, parser/renderer sandboxing and isolated browser-active delivery are not selected by this baseline. Their required security properties are.
+Exact implementation products for structured request parsers, response-header serialization libraries, artifact storage, malware/content scanning, parser/renderer sandboxing and isolated browser-active delivery are not selected by this baseline. Their required security properties are.
 
 ## Maximum-state evolution test
 
@@ -200,6 +222,8 @@ Before a Phase 09 contract is accepted, reviewers SHOULD ask whether the contrac
 - a resource is relocated while clients remain active;
 - old and new application versions coexist during rolling deployment;
 - gateway/proxy/runtime products change or HTTP/1.x, HTTP/2 and HTTP/3 translation paths are introduced without changing accepted request semantics;
+- structured body parser/runtime libraries change without changing the canonical entity consumed by authorization/idempotency/use cases;
+- response framework/proxy/CDN composition changes without weakening the accepted response-header grammar/cardinality/serialization owner profile;
 - an operation times out after an external side effect may already have happened;
 - a credential rotation response is lost while the caller must still have a safe recovery authority;
 - a cache/CDN layer is added or replaced without changing authorization/canonical-request semantics;
@@ -207,4 +231,4 @@ Before a Phase 09 contract is accepted, reviewers SHOULD ask whether the contrac
 - preview/conversion/archive processing moves to a specialized isolated runtime without changing artifact identity;
 - a customer changes plan, identity provider, region, provider or isolation class without changing logical resource identity.
 
-If a contract requires callers to understand or rewrite around those implementation changes, or if infrastructure replacement changes the security interpretation of the same accepted request, the contract is not sufficiently decoupled.
+If a contract requires callers to understand or rewrite around those implementation changes, or if infrastructure replacement changes the security interpretation of the same accepted request/response contract, the contract is not sufficiently decoupled.

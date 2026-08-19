@@ -1,6 +1,6 @@
 # Architecture Dependency Rules
 
-**Status:** proposed
+**Status:** accepted
 
 These rules are intended to become automated architecture tests once implementation begins.
 

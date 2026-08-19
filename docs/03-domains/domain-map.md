@@ -1,6 +1,6 @@
 # Domain Map
 
-**Status:** proposed baseline
+**Status:** accepted
 
 JLMIRROR separates business domains, platform capabilities, and cross-cutting system capabilities. A bounded context is not automatically a microservice.
 
@@ -16,7 +16,7 @@ Owns principal identity, authentication bindings, MFA, sessions/credential lifec
 Owns tenant memberships, tenant users as membership views, roles, permissions, custom roles, tenant configuration/branding/feature enablement, and tenant authorization policy.
 
 ### Monitoring
-Owns Monitoring Sources, platform resource/device identity, metric definitions, current operational state, problems/observations normalized for platform use, health and synchronization semantics.
+Owns Monitoring Sources, platform resource/device identity, metric definitions, current operational state, problems/observations normalized for platform use, health, synchronization semantics, and canonical customer monitoring telemetry/history semantics including accepted metric samples and observation history. Historical telemetry may be physically specialized behind the telemetry port without transferring logical ownership.
 
 ### Alerting
 Owns alerts, notification policy, delivery intent/history, escalation and real-time operational notification semantics.
@@ -56,10 +56,10 @@ Owns governed export/import/direct-query operation records and policies. It is a
 Authentication enforcement, authorization enforcement, secrets protection, cryptographic policy, abuse prevention, secure runtime/network posture and security telemetry apply across boundaries. Domain ownership remains with the corresponding domains.
 
 ### Observability
-Logs, metrics, traces, errors, health and operational correlation are emitted by all runtimes. Platform observability storage is operational infrastructure, not a source of business ownership.
+Logs, metrics, traces, errors, health and operational correlation are emitted by all runtimes. Platform observability storage is operational infrastructure, not a source of business ownership and does not own customer Monitoring telemetry history.
 
 ### Compliance & Governance
-Compliance controls/evidence, retention/legal policy and data-rights workflows operate across domain evidence while respecting each domain's ownership.
+Owns compliance controls/evidence, retention/legal policy, data-rights workflows, and the immutable append-only accountability ledger/audit-evidence authority. It consumes required evidence from domain owners while respecting their source-state ownership and routes remediation through owning-domain commands.
 
 ## Decomposition principle
 

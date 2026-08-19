@@ -1,6 +1,6 @@
 # ADR-020 — Selective Evolution to Distributed Services
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** costly per extraction
 

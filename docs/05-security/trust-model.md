@@ -1,6 +1,6 @@
 # Security and Trust Model
 
-**Status:** proposed baseline
+**Status:** accepted
 
 ## Security posture
 

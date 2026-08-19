@@ -1,6 +1,6 @@
 # ADR-012 — Cache and Ephemeral-State Semantics
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** reversible if semantics remain stable
 

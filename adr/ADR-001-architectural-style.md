@@ -1,6 +1,6 @@
 # ADR-001 — Architectural Style: Modular Monolith with Independent Workers
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** costly but intentionally evolvable
 

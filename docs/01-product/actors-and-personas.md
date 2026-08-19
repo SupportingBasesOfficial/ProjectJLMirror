@@ -1,6 +1,6 @@
 # Actors and Personas
 
-**Status:** proposed baseline
+**Status:** accepted
 
 ## Human actors
 

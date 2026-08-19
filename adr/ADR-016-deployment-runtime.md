@@ -1,6 +1,6 @@
 # ADR-016 — Deployment and Runtime Architecture Beyond Edge Limits
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** costly but portable by design
 

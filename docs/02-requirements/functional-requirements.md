@@ -1,6 +1,6 @@
 # Functional Requirements
 
-**Status:** proposed baseline
+**Status:** accepted
 
 Requirements define externally meaningful behavior without selecting implementation technology unless the technology itself becomes an accepted constraint.
 
@@ -78,7 +78,7 @@ Requirements define externally meaningful behavior without selecting implementat
 
 **FR-AUTO-002** — Automation execution SHALL record target scope, initiating principal or trigger, policy/approval state, start/end state, result, failure, and audit metadata.
 
-**FR-AUTO-003** — Potentially dangerous execution SHALL be isolated from the primary API runtime according to the execution threat model.
+**FR-AUTO-003** — High-risk automation execution SHALL be isolated from the primary API runtime according to the execution threat model.
 
 **FR-AUTO-004** — Retriable automation SHALL define idempotency/deduplication and bounded retry semantics.
 

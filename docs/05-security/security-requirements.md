@@ -1,6 +1,6 @@
 # Security Requirements
 
-**Status:** proposed baseline
+**Status:** accepted
 
 ## Identity and credentials
 
@@ -14,7 +14,7 @@
 
 **SEC-TEN-001** — Tenant context SHALL be resolved from trusted logical identity and platform metadata. Caller-supplied physical schema, database URL, cluster or unrestricted secret reference SHALL NOT select tenant placement.
 
-**SEC-TEN-002** — Tenant isolation SHALL be enforced through multiple layers appropriate to the accepted data architecture, including application authorization and data-layer controls.
+**SEC-TEN-002** — Tenant isolation SHALL be enforced through multiple layers required by the accepted architecture/ADR baseline, including server-side application authorization and data-layer controls. Gate B Data Architecture MAY refine the concrete enforcement mechanisms, but its proposed status does not defer, create or weaken this already accepted isolation requirement.
 
 **SEC-TEN-003** — Cache keys, pub/sub topics, queue routing, observability dimensions, exports and read models containing protected tenant state SHALL include unambiguous tenant isolation semantics.
 

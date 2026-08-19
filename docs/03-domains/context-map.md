@@ -1,6 +1,6 @@
 # Context Map
 
-**Status:** proposed baseline
+**Status:** accepted
 
 The context map defines allowed semantic dependencies. It does not require network calls between contexts inside a modular monolith.
 
@@ -12,7 +12,7 @@ The context map defines allowed semantic dependencies. It does not require netwo
 
 ## Operational relationships
 
-- Monitoring publishes normalized resource/health/problem/metric-related facts consumed by Alerting, Infrastructure, AIOps and Reporting projections.
+- Monitoring publishes normalized resource/health/problem/metric-related facts consumed by Alerting, Infrastructure, AIOps and Reporting projections; Monitoring remains semantic owner of customer monitoring history even when high-volume telemetry uses a separate physical plane.
 - Alerting consumes operational facts and may publish Alert lifecycle facts to ITSM, Automation, Reporting and Integrations.
 - ITSM references Monitoring/Infrastructure resources through stable IDs/contracts; it does not mutate their internal storage.
 - Automation consumes authorized resource references and trigger events; execution results are owned by Automation and may publish domain/integration events.
@@ -30,8 +30,8 @@ The context map defines allowed semantic dependencies. It does not require netwo
 ## Governance relationships
 
 - Security policy/enforcement applies at every trust boundary.
-- Observability receives telemetry from every runtime without becoming owner of business state.
-- Compliance & Governance consumes audit/evidence and requests remediation through owning-domain interfaces.
+- Observability receives telemetry from every runtime without becoming owner of business state or customer Monitoring telemetry history.
+- Compliance & Governance owns the immutable accountability ledger/audit-evidence authority, consumes required audit/evidence produced by domain owners, and requests remediation through owning-domain interfaces rather than mutating their state directly.
 
 ## Forbidden relationship patterns
 

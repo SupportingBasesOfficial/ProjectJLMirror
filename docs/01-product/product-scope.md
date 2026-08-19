@@ -1,6 +1,6 @@
 # Product Scope
 
-**Status:** proposed baseline
+**Status:** accepted
 
 ## In scope
 

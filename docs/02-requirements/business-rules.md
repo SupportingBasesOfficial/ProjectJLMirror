@@ -1,6 +1,6 @@
 # Business Rules
 
-**Status:** proposed baseline
+**Status:** accepted
 
 Business rules define product semantics independent from controllers, tables, queues, caches, or frameworks.
 

@@ -1,11 +1,11 @@
 # Architecture Overview
 
-**Status:** proposed  
-**Baseline date:** 2026-08-17
+**Status:** accepted  
+**Baseline date:** 2026-08-18
 
 ## Purpose
 
-This document defines the proposed logical architecture derived from accepted product requirements, invariants, quality scenarios, domain ownership and the threat model. It intentionally separates architectural structure from replaceable infrastructure products.
+This document defines the accepted logical architecture derived from accepted product requirements, invariants, quality scenarios, domain ownership and the threat model. It intentionally separates architectural structure from replaceable infrastructure products.
 
 ## Primary drivers
 

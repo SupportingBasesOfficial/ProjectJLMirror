@@ -1,6 +1,6 @@
 # ADR-005 — Identity, Membership and Authorization Boundaries
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** costly
 

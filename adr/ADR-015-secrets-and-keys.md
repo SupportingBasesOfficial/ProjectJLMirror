@@ -1,6 +1,6 @@
 # ADR-015 — Secrets and Key-Management Architecture
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** costly for key lifecycle, reversible for provider
 

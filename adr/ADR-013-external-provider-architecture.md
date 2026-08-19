@@ -1,6 +1,6 @@
 # ADR-013 — External Provider Adapter Architecture
 
-**Status:** proposed  
+**Status:** accepted  
 **Date:** 2026-08-17  
 **Reversibility:** reversible if domain ports remain stable
 

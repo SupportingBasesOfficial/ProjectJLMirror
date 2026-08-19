@@ -100,7 +100,7 @@ For an endpoint whose initial successful response may contain a newly generated 
 3. if the response is lost, the same idempotency key MUST observe the already-completed logical effect and MUST NOT create/rotate/reissue another credential automatically;
 4. the retry MUST NOT re-present the original secret;
 5. the retry returns the stable created/rotated resource metadata/reference plus a deterministic non-secret recovery outcome;
-6. the caller must use an explicit authorized rotate/reissue/revoke operation with a new idempotency identity to obtain new secret material.
+6. any recovery that needs new secret material must be a separate explicitly authorized rotate/reissue/create operation with a new idempotency identity.
 
 The baseline recovery problem is:
 
@@ -112,9 +112,23 @@ Location: <stable credential/resource metadata URI when applicable>
 
 The response MAY include safe metadata identifying the completed logical resource and the allowed recovery action, but never the lost secret.
 
-An endpoint that rotates an already-working credential SHALL additionally document its lockout/continuity behavior after uncertain delivery. It MUST provide a recovery path that does not require possession of the newly lost secret and MUST NOT rely on replaying that secret from the idempotency store.
+### Lockout-safe credential rotation
 
-This exception changes only replay representation; it does not weaken atomic admission, deduplication, audit or result-linkage requirements.
+An endpoint that can replace or invalidate a currently usable credential SHALL define **credential continuity** separately from one-time presentation.
+
+A rotation/reissue contract MUST NOT invalidate the caller's only usable authority before the platform can prove one of these recovery-safe conditions:
+
+- a distinct still-valid principal/session/credential with sufficient authority can perform the required recovery action;
+- the old credential remains valid during a bounded staged/overlap cutover until a separately authorized activation/confirmation step safely retires it;
+- an accepted privileged recovery authority independent of the lost new secret can rotate/reissue or create replacement material.
+
+A nominal endpoint named `rotate`, `reissue`, `revoke` or `create` is not by itself proof of recovery. The endpoint contract SHALL identify **which surviving authority** can invoke the recovery path after the secret-bearing response is lost.
+
+`revoke -> create` is only a valid recovery strategy when the caller or operator still has separate current authority to execute the create step. If revocation would remove the sole authority needed to create a replacement, that flow is prohibited as a lockout-prone contract.
+
+Where product/security policy intentionally requires immediate old-credential invalidation, the operation MUST require/prove alternate recovery authority before admission rather than discovering after commit that the caller is locked out.
+
+This exception changes only replay representation and credential-delivery continuity; it does not weaken atomic admission, deduplication, current authorization, audit or result-linkage requirements.
 
 ## Different fingerprint conflict
 

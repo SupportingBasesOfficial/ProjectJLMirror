@@ -1,6 +1,6 @@
 # Telemetry Plane
 
-**Status:** proposed baseline  
+**Status:** accepted  
 **Primary ADRs:** ADR-006, ADR-008
 
 ## Purpose

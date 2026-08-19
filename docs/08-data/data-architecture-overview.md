@@ -1,6 +1,6 @@
 # Data Architecture Overview
 
-**Status:** proposed baseline  
+**Status:** accepted  
 **Primary ADRs:** ADR-003, ADR-006, ADR-008, ADR-018, ADR-019
 
 ## Purpose

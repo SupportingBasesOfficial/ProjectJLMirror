@@ -1,6 +1,6 @@
 # Realtime, Cache and Provider Boundaries
 
-**Status:** proposed baseline  
+**Status:** accepted  
 **Primary ADRs:** ADR-011, ADR-012, ADR-013, ADR-017
 
 ## Realtime contract

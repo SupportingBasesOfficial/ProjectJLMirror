@@ -1,6 +1,6 @@
 # Request, Authentication and Authorization Lifecycle
 
-**Status:** proposed baseline  
+**Status:** accepted  
 **Primary ADRs:** ADR-005, ADR-007, ADR-011, ADR-014, ADR-017
 
 ## Tenant-scoped HTTP lifecycle

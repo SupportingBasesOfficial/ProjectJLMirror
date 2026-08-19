@@ -1,6 +1,6 @@
 # Tenant Isolation and PostgreSQL RLS
 
-**Status:** proposed baseline  
+**Status:** accepted  
 **Primary ADR:** ADR-003
 
 ## Defense in depth

@@ -28,8 +28,11 @@ The server SHALL:
 3. resolve current trusted placement from authoritative control-plane metadata;
 4. route the request to the authoritative cell/application owner;
 5. have the cell validate current placement admission/version and construct the trusted `TenantContext`;
-6. evaluate current membership or machine tenant scope plus the concrete permission/resource policy at the owning server-side boundary;
-7. execute the owning application use case.
+6. validate the request contract under that trusted route/context, including bounded path/query/header/body shape needed by the owning authorization/use case;
+7. evaluate current membership or machine tenant scope plus the concrete permission/resource policy at the owning server-side boundary;
+8. execute the owning application use case.
+
+Request-contract validation before owning authorization does not permit protected resource existence or sensitive semantic validation to leak before the required authentication/tenant authority gates. Cheap transport-size/syntax rejection may occur earlier where safe, but caller-controlled fields are not consumed as trusted authorization inputs until validated under the authoritative context.
 
 Ingress/global checks MAY reject an obviously invalid/revoked credential or globally impossible tenant scope earlier, but they are only narrowing/fail-fast checks. They SHALL NOT substitute for the authoritative cell-owned membership, permission or resource-policy decision when that authority is cell-owned.
 

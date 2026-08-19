@@ -215,6 +215,22 @@ Define `Location` behavior when applicable.
 
 For a secret-bearing success, explicitly identify the one-time secret field(s), response cache class `no_store`, logging/redaction restrictions and response-loss behavior.
 
+For any endpoint that uploads, returns, previews, streams or delegates artifact/binary bytes, additionally declare:
+
+```text
+Browser delivery applicable: yes | no
+Browser delivery profile: opaque_download | safe_inline | active_inline_isolated | not_applicable
+Authoritative media-type source: <server-controlled validation/classification policy>
+Caller filename/extension/Content-Type trusted for browser execution: no
+Content-Disposition: attachment | inline only under accepted profile
+MIME sniffing: prohibited / nosniff-equivalent
+Active-content origin isolation: required | not applicable
+Ambient application/BFF credentials on active-content origin: prohibited | not applicable
+Delegated delivery capability scope: <artifact/delivery-generation bound or not applicable>
+```
+
+Unknown/untrusted/browser-active content defaults to `opaque_download`. A caller-controlled upload media type, filename or extension never authorizes inline execution. `active_inline_isolated` requires a dedicated untrusted-content browser boundary with no application/BFF ambient credential or DOM/service-worker trust and must preserve current authorization/releasability/delivery-generation/active-stream fencing.
+
 ## Response cache contract
 
 Every endpoint MUST choose a cache class:
@@ -238,7 +254,7 @@ Rules:
 - protected API/BFF responses cannot become shared-cacheable from framework/CDN defaults;
 - `Vary` or equivalent keying is not authorization;
 - `public_shared` requires a deliberately public projection independent of protected caller authority;
-- protected artifact caching must preserve current authorization/releasability/delivery-generation/active-stream fencing or fall back to non-shared behavior.
+- protected artifact caching must preserve current authorization/releasability/delivery-generation/active-stream fencing and browser-delivery profile or fall back to non-shared behavior.
 
 Exact public/private lifetime tuning may remain `OPEN-API-017`; absence of an accepted cache contract blocks implementation.
 
@@ -358,9 +374,10 @@ Classify externally important fields/enums and security/behavior policy dimensio
 - deprecated aliases, if any;
 - what would require a new major;
 - whether changing authorization/scope/idempotency/retry/consistency semantics is breaking;
-- whether changing response cache class, shared-cache eligibility, variance or current-authorization revalidation is breaking/security-sensitive.
+- whether changing response cache class, shared-cache eligibility, variance or current-authorization revalidation is breaking/security-sensitive;
+- whether changing browser-delivery/media-type/active-content-isolation semantics is security-sensitive or breaking for supported clients.
 
-A cache policy becoming more permissive is never treated as an implementation-only optimization.
+A cache or artifact browser-delivery policy becoming more permissive is never treated as an implementation-only optimization.
 
 ## Security abuse cases
 
@@ -380,6 +397,8 @@ List relevant abuse/failure cases such as:
 - stale cursor after authority revocation;
 - operation ID used as bearer authority;
 - wildcard/untrusted credentialed BFF origin;
+- browser-active artifact executing on application/BFF origin;
+- forged upload media type/filename causing inline execution or header injection;
 - oversized body;
 - expensive filter/include abuse;
 - replayed callback/ticket;
@@ -412,6 +431,16 @@ At minimum, protected mutation endpoints test:
 - safe error leakage;
 - retry after response loss where applicable.
 
+Artifact/binary endpoints additionally test, where applicable:
+
+- uploader-controlled filename/extension/media type cannot force executable inline delivery;
+- unknown/untrusted/browser-active content falls back to attachment/non-sniffable download semantics;
+- safely encoded filename metadata cannot inject response headers;
+- `safe_inline` accepts only the explicitly allowlisted validated content classes;
+- `active_inline_isolated` does not receive application/BFF ambient credentials or origin/service-worker trust;
+- delegated active-content delivery remains bound to the intended artifact/delivery generation and cannot become a general API credential;
+- range/resume/CDN paths preserve the same browser-delivery classification and current artifact fencing.
+
 ## OPEN items
 
 Explicitly list unresolved items. An omitted decision is not silently considered accepted.
@@ -426,4 +455,5 @@ Explain how this contract remains stable if:
 - provider adapter changes;
 - client types multiply;
 - request volume/cardinality grows substantially;
-- a CDN/reverse proxy/cache layer is added or replaced.
+- a CDN/reverse proxy/cache layer is added or replaced;
+- artifact delivery moves to a dedicated untrusted-content origin or another equivalent browser-isolation mechanism.

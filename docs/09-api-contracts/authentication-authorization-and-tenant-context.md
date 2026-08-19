@@ -67,7 +67,9 @@ Identity
   -> owning use case
 ```
 
-Membership, permission and resource-policy evaluation SHALL occur at the owning server-side authority after the request has been routed to the authoritative cell and a trusted current TenantContext exists when those authorities are cell-owned.
+Membership, permission and resource-policy evaluation SHALL occur at the owning server-side authority after the request has been routed to the authoritative cell, a trusted current TenantContext exists, and caller-controlled fields consumed by the owning policy have passed the request contract.
+
+Request-contract validation before owning authorization SHALL NOT become a protected-information oracle. Cheap transport bounds/syntax checks may fail early where safe, but semantic checks that would reveal protected resource existence remain behind the required authentication/tenant authority gates.
 
 Ingress/global checks MAY reject a credential or tenant target earlier when global authoritative evidence is sufficient, but such checks are only fail-fast/narrowing gates. They SHALL NOT be treated as proof of cell-owned membership or resource authorization and SHALL NOT bypass the owning authorization decision.
 
@@ -201,6 +203,9 @@ Every protected endpoint SHALL have contract/integration tests that prove at min
 - unauthenticated denial;
 - wrong-tenant denial;
 - authoritative placement/cell admission occurs before cell-owned membership/resource authorization;
+- trusted request-contract validation occurs after TenantContext construction and before owning authorization consumes caller-controlled resource/scope fields;
+- malformed/invalid caller resource/scope input cannot alter or widen authorization authority;
+- validation ordering does not leak protected resource existence before required auth/tenant authority gates;
 - ingress/global prechecks cannot substitute for owning authorization;
 - insufficient permission denial;
 - stale/revoked session or credential denial where applicable;

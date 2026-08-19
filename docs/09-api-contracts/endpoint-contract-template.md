@@ -43,19 +43,22 @@ Declare or inherit:
 HTTP message profile: <platform default | specialized accepted profile>
 Body framing policy: <accepted profile>
 Content-coding policy: <accepted profile | none>
+Connection rejection policy: <accepted platform profile>
 Method override policy: denied-by-default | explicitly accepted profile
 Request trailer policy: deny security-sensitive authority | specialized non-security profile
 Request-target profile: <accepted canonicalization profile>
 Query decoding/multiplicity profile: <accepted canonicalization profile>
+Structured request entity profile: <canonical JSON | canonical multipart | explicit media-specific profile | not applicable>
 Trusted proxy metadata policy: <platform profile | specialized profile>
 Security-sensitive header cardinality: <declared below or inherited platform manifest>
+Response header profile: <platform safe-response-header profile | specialized accepted profile>
 ```
 
 An endpoint SHALL NOT weaken the platform rule that one accepted wire request has one canonical interpretation at every downstream hop.
 
-Ambiguous `Content-Length`/`Transfer-Encoding`, conflicting body boundaries, conflicting authority/host meanings, malformed request-target/query decoding, duplicate singleton query values, method-override ambiguity, security-sensitive trailers, content-coding disagreement or ambiguous security-sensitive header values fail closed before protected application logic consumes them.
+Ambiguous framing, conflicting authority, malformed target/query decoding, duplicate singleton query values, method-override ambiguity, security-sensitive trailers, content-coding disagreement, unsafe connection reuse or ambiguous security-sensitive headers fail closed before protected application logic consumes them.
 
-If the surface requires raw-body verification (for example provider signatures), the exact bounded raw bytes associated with the already accepted framing are preserved for verification; framing canonicalization does not rewrite the signed body.
+If the surface requires raw-body verification, the exact bounded raw bytes associated with the accepted framing are preserved for verification; canonicalization SHALL NOT silently rewrite the signed body before verification.
 
 ## Purpose
 
@@ -94,7 +97,7 @@ Tenant source: path | trusted integration mapping | platform operation target
 Physical placement input from caller: prohibited
 ```
 
-For tenant-scoped routes, document where trusted placement is resolved and where authoritative membership/resource authorization occurs. Canonical path/query decoding occurs before placement resolution. If membership/resource policy is cell-owned, placement resolution -> authoritative routing -> cell admission -> trusted TenantContext -> request-contract validation MUST precede the owning authorization decision. Earlier ingress/global checks are narrowing/fail-fast only.
+For tenant-scoped routes, canonical path/query decoding occurs before placement resolution. If membership/resource policy is cell-owned, placement resolution -> authoritative routing -> cell admission -> trusted `TenantContext` -> request-contract validation MUST precede the owning authorization decision. Earlier ingress/global checks are narrowing/fail-fast only.
 
 Explain any legitimate global scope.
 
@@ -110,7 +113,7 @@ Owning authorization authority: <cell/domain/control-plane authority>
 Authorization input fields: <validated path/query/body/resource identifiers consumed by policy>
 ```
 
-Define any resource-level scope rules and distinguish ingress/global prechecks from the final owning authorization decision. Caller-controlled authorization/resource-scope inputs MUST be validated under the trusted route/TenantContext before the owning policy consumes them.
+Caller-controlled authorization/resource-scope inputs MUST be validated under the trusted route/`TenantContext` before the owning policy consumes them.
 
 ## Request
 
@@ -124,7 +127,7 @@ Path fields are extracted only from the canonical request target established at 
 
 ### Query parameters
 
-Document allowlisted fields/operators, defaults, data classification, maximum complexity and **multiplicity**.
+Document allowlisted fields/operators, defaults, classification, maximum complexity and multiplicity.
 
 For every query parameter declare:
 
@@ -136,13 +139,13 @@ Maximum repeated values: <bound/policy>
 URL visibility classification: public/non-sensitive | protected/non-URL
 ```
 
-Duplicate singleton parameters are rejected. A query key/value SHALL NOT have first-value semantics at one hop, last-value semantics at another and list semantics at a third. Alternate encodings that normalize to the same logical key participate in the same duplicate detection.
+Duplicate singleton parameters are rejected. Alternate encodings that normalize to the same logical key participate in the same duplicate detection. A query field SHALL NOT have first-value semantics at one hop, last-value semantics at another and list semantics at another.
 
-For every query parameter also declare whether URL placement is safe. Confidential/restricted search/filter values SHALL NOT be forced into query strings merely because the transport supports them. Where protected query input is required, use a bounded body-based query contract, server-side opaque query handle or equivalent reviewed representation that avoids browser/history/referrer/log exposure.
+Confidential/restricted search/filter values SHALL NOT be forced into query strings. Use a bounded body-based query contract, server-side opaque query handle or equivalent reviewed representation when protected query input is required.
 
 ### Headers
 
-Declare applicable headers and their canonical cardinality/combine semantics:
+Declare applicable headers and canonical cardinality/combine semantics:
 
 ```text
 Header: Authorization
@@ -157,13 +160,13 @@ Cardinality: protocol_defined_list | not_applicable
 Header: X-Correlation-Id
 Cardinality: strict_singleton | not accepted
 
-Other accepted authentication/content-negotiation/range/provider headers:
+Other accepted headers:
 <header> -> strict_singleton | protocol_defined_list | multi_value_with_canonical_rule
 ```
 
-`Authorization` and `Idempotency-Key` cannot reach protected logic with competing values. Security-sensitive duplicate fields without an explicit protocol-defined canonical rule are rejected rather than resolved by arbitrary first/last/framework behavior.
+`Authorization` and `Idempotency-Key` cannot reach protected logic with competing values. Security-sensitive duplicates without an explicit protocol-defined canonical rule are rejected rather than resolved by arbitrary first/last/framework behavior.
 
-For BFF cookie-authenticated flows, declare the accepted cookie/session/CSRF parsing profile. Duplicate security-relevant cookie names cannot produce different authentication/CSRF outcomes across edge and application parsers.
+For BFF cookie-authenticated flows, duplicate security-relevant cookie names cannot produce different authentication/CSRF outcomes across edge and application parsers.
 
 Request trailers SHALL NOT introduce or override authentication/session, idempotency, routing, CSRF/Origin, conditional/precondition, callback-security or realtime authority after initial header admission.
 
@@ -179,20 +182,59 @@ For each field specify:
 - bounds;
 - enum open/closed classification;
 - data classification;
-- whether mutable/immutable;
+- mutable/immutable;
 - semantic validation.
 
-Unknown request fields: rejected unless an explicit extension namespace is defined.
+Unknown request fields are rejected unless an explicit extension namespace is defined.
 
-If `Content-Encoding` or multipart/other structured transfer is accepted, declare the exact profile and independent raw/decoded/parser bounds. Unsupported or ambiguously ordered decoding is rejected.
+### Structured request entity canonicalization
+
+A structured request body is not trusted merely because framing and media type are accepted. Before request-contract validation, owning authorization, idempotency fingerprinting or the use case consumes body fields, the endpoint SHALL establish **one canonical parsed entity** under the declared media profile.
+
+For every accepted structured media type declare:
+
+```text
+Structured entity media type: <application/json | multipart/form-data | explicit profile>
+Member/part-name normalization: <exact profile>
+Duplicate member/part rule: reject | <explicit safe semantic rule>
+Alias/collision rule: reject after canonical-name normalization
+Nesting/container rule: <accepted deterministic profile>
+Per-part header/cardinality rule: <multipart only or not applicable>
+Boundary rule: <multipart only or not applicable>
+Canonical entity propagation: required
+```
+
+The canonical entity rules are security requirements:
+
+- **JSON:** duplicate object member names are rejected by default. Names that alias after the accepted Unicode/name-normalization profile are rejected. A parser/library SHALL NOT silently select first value, last value or merge duplicates for protected request fields. Number/string/Unicode handling used by validation/fingerprinting is deterministic under the accepted profile.
+- **Multipart:** the outer boundary and every nested boundary are parsed once under one accepted grammar. Duplicate or aliasing security-relevant part names, conflicting per-part `Content-Disposition` names, conflicting per-part media metadata or ambiguous nested multipart structure are rejected unless the endpoint explicitly defines a safe repeated-part semantic. Part-name normalization and multiplicity are bounded and deterministic.
+- **Other structured media:** XML, form encoding, protobuf-like, vendor-specific or future formats require an explicit canonical parse profile with equivalent duplicate/alias/name/nesting semantics before protected use.
+
+Raw bytes MAY be retained separately where signatures/audit require them, but after canonical entity establishment the following consumers SHALL observe the **same logical entity**, not independently reparse attacker-controlled raw body bytes:
+
+```text
+request-contract validation
+owning authorization policy inputs
+resource/tenant-scope body inputs where permitted
+idempotency fingerprint construction
+optimistic-concurrency/body precondition inputs
+callback semantic processing after authenticity verification
+cache semantics when body participates in an accepted key
+use-case/domain command mapping
+```
+
+If two accepted parsers could derive different body fields, the request fails closed before owning authorization or protected effect. Parsing once and then handing different independently reparsed raw representations to later layers is prohibited.
+
+If `Content-Encoding`, multipart or another structured transfer is accepted, declare independent raw/decoded/parser bounds. Unsupported or ambiguously ordered decoding is rejected.
 
 ## Request limits
 
 ```text
 Maximum raw body bytes: <value/policy>
 Maximum decoded/decompressed bytes: <value/policy or not applicable>
+Maximum structured members/parts: <value/policy or not applicable>
 Maximum item count: <value/policy>
-Maximum string/list depth/size: <value/policy>
+Maximum string/list/object depth/size: <value/policy>
 Maximum header bytes/count: <value/policy or OPEN platform profile>
 Timeout/deadline class: <policy>
 Query complexity class: <policy>
@@ -216,13 +258,7 @@ Explain read-after-write expectations where material.
 
 ## Transaction/effect boundary
 
-State:
-
-- authoritative owner;
-- local transaction scope;
-- external effects, if any;
-- outbox/audit obligations;
-- whether a durable operation is created.
+State authoritative owner, local transaction scope, external effects, outbox/audit obligations and whether a durable operation is created.
 
 No external network call is assumed to be part of an ordinary local database transaction.
 
@@ -242,11 +278,11 @@ Surviving recovery authority: <not applicable | concrete still-valid authority/s
 Credential cutover semantics: <not applicable | non-disruptive create | staged overlap | immediate with proven alternate authority>
 ```
 
+Idempotency admission begins only after canonical HTTP acceptance and canonical structured-entity establishment for fields used by the fingerprint. A raw body that could parse into two different logical entities cannot create a claim.
+
 For external effects, describe stable `operation_id` / reconciliation behavior.
 
-Idempotency admission begins only after canonical HTTP acceptance. Competing `Idempotency-Key` instances, method override, request-target/query ambiguity or content-coding disagreement SHALL NOT create competing claims/fingerprints.
-
-If the endpoint creates/rotates/reissues non-retrievable secret material, document that the secret is excluded from idempotent replay state, a same-key response-loss retry cannot recreate the effect or re-present the secret, and the explicit authorized recovery action does not require possession of the lost secret. If the operation can invalidate an existing credential, prove which still-valid authority survives to recover or use a staged/overlap cutover; a nominal recovery endpoint without usable authority is insufficient.
+If the endpoint creates/rotates/reissues non-retrievable secret material, the secret is excluded from replay state, same-key response-loss retry cannot recreate the effect or re-present the secret, and explicit recovery does not require possession of the lost secret. If the operation can invalidate an existing credential, prove a still-valid recovery authority or staged/overlap cutover.
 
 ## Optimistic concurrency
 
@@ -258,15 +294,11 @@ Missing precondition: 428 concurrency.precondition_required
 Mismatch: 412 concurrency.revision_mismatch
 ```
 
-Explain why concurrency is or is not required.
-
-`If-Match` follows one protocol-defined canonical parse meaning before precondition evaluation and cannot be introduced/overridden through trailers.
+`If-Match` follows one canonical protocol-defined parse meaning and cannot be introduced through trailers.
 
 ## Success responses
 
 List every normal success status and schema.
-
-Example:
 
 ```text
 201 Created -> <Resource>
@@ -276,9 +308,30 @@ Example:
 
 Define `Location` behavior when applicable.
 
-For a secret-bearing success, explicitly identify the one-time secret field(s), response cache class `no_store`, logging/redaction restrictions and response-loss behavior.
+For a secret-bearing success, identify the one-time secret fields, response cache class `no_store`, logging/redaction restrictions and response-loss behavior.
 
-For any endpoint that uploads, returns, previews, streams or delegates artifact/binary bytes, additionally declare:
+## Response header contract
+
+Every emitted response header inherits or declares a safe response-header construction profile. Dynamic header values SHALL NOT be assembled by unvalidated string concatenation.
+
+For every emitted dynamic or security-relevant header declare/inherit:
+
+```text
+Header: <name>
+Grammar/profile: <protocol-defined or platform-defined grammar>
+Cardinality: strict_singleton | protocol_defined_list | multi_value_with_canonical_rule
+Value source: server-derived | validated caller/provider/resource metadata
+Control characters: rejected
+Serialization owner: <single authoritative layer/profile>
+```
+
+The profile SHALL prevent CR/LF/NUL/control injection, obsolete folding, field delimiter injection, duplicate singleton conflict and unsafe comma/semicolon/quoted-string composition. `Location`, `Link`, `ETag`, `Retry-After`, `Content-Disposition`, cache/security/CORS/authentication headers, request/correlation IDs and redirects use accepted grammars rather than arbitrary strings.
+
+Proxy/BFF/CDN/application layers SHALL NOT independently append another conflicting singleton value. A response-header serialization failure after a business commit does not rewrite authoritative business truth; the client recovers through accepted idempotency/operation/read semantics.
+
+## Artifact/binary response contract
+
+For endpoints that upload, return, preview, stream or delegate artifact/binary bytes, additionally declare:
 
 ```text
 Browser delivery applicable: yes | no
@@ -305,17 +358,11 @@ Embedded URL retrieval: prohibited except through accepted outbound/SSRF policy
 Derived artifact classification: independent required | not applicable
 ```
 
-Unknown/untrusted/browser-active content defaults to `opaque_download`. A caller-controlled upload media type, filename or extension never authorizes inline execution. The download name is server-derived under a canonical policy that removes control/bidi/path ambiguity, avoids misleading executable extensions and can fall back to a neutral server-generated name.
+Unknown/untrusted/browser-active content defaults to `opaque_download`. Caller-controlled media metadata never authorizes inline execution. Download names are server-derived with a neutral fallback.
 
-`active_inline_isolated` requires a dedicated untrusted-content browser boundary with no application/BFF ambient credential or DOM/service-worker trust and must preserve current authorization/releasability/delivery-generation/active-stream fencing.
+`active_inline_isolated` requires a dedicated untrusted-content browser boundary with no application/BFF ambient credential or DOM/service-worker trust and preserves current authorization/releasability/delivery-generation/active-stream fencing.
 
-Complex document/archive/media parsing, preview, conversion, extraction or rendering of untrusted bytes uses an isolated least-privilege bounded processing profile. It SHALL NOT run with ordinary API/BFF application secrets or unrestricted egress merely because the uploader is authorized. Archive/decompression expansion, recursion, CPU/memory/time and generated-output volume are bounded.
-
-Archive extraction cannot escape its staging root and SHALL establish canonical member identity before materialization: duplicate/colliding Unicode/case/path/platform aliases are rejected, later members cannot overwrite a previously inspected canonical member, and materialization uses no-follow atomic/no-replace semantics or equivalent.
-
-XML/XML-derived parsing **rejects every DTD declaration by default** and disables external entities/XInclude/external schema/stylesheet/resource resolution. Any exceptional DTD/resolver format profile requires separate review, pinned/trusted resources, isolation and deny-by-default file/network authority.
-
-A derived preview/conversion receives independent artifact identity/classification and does not inherit `safe_inline` automatically.
+Complex untrusted parsing uses isolated least privilege with bounded resources and restricted egress. Archive extraction cannot escape staging root and establishes canonical member identity before materialization; duplicate/colliding Unicode/case/path/platform aliases are rejected and materialization is no-follow atomic/no-replace or equivalent. XML parsing rejects every DTD declaration by default and disables active external resolution unless a separately accepted isolated profile exists. Derived outputs receive independent identity/classification.
 
 ## Response cache contract
 
@@ -334,23 +381,20 @@ Protected error variants: <no_store/private policy>
 
 Rules:
 
-- the cache contract applies to success and error/conditional response variants;
+- cache contract applies to success, conditional, redirect and error variants;
 - secret-bearing responses are always `no_store`;
 - protected authentication/authorization/existence-concealing errors cannot become shared-cacheable by default;
 - protected API/BFF responses cannot become shared-cacheable from framework/CDN defaults;
-- `Vary` or equivalent keying is not authorization;
-- `public_shared` requires a deliberately public projection independent of protected caller authority;
-- protected artifact caching must preserve current authorization/releasability/delivery-generation/active-stream fencing and browser-delivery profile or fall back to non-shared behavior;
-- cache/proxy keying MUST consume the same canonical method/host/path/query/header semantics accepted by the owning service; ambiguous requests are not cache candidates;
-- duplicate query-key or content-coding interpretations cannot create a different cache key than the owning use case sees.
+- `Vary` is not authorization;
+- `public_shared` requires a deliberately public projection;
+- protected artifact caching preserves current authorization/releasability/delivery-generation/active-stream/browser-delivery semantics;
+- cache/proxy keying consumes the same canonical method/host/path/query/header/body semantics accepted by the owning service where body semantics participate in cache eligibility/keying.
 
-Exact public/private lifetime tuning may remain `OPEN-API-017`; absence of an accepted cache contract blocks implementation.
+Exact lifetime tuning may remain `OPEN-API-017`; absence of an accepted cache contract blocks implementation.
 
 ## Error contract
 
-List stable problem codes that callers may branch on.
-
-Minimum classes considered:
+List stable problem codes callers may branch on:
 
 ```text
 authentication.*
@@ -367,11 +411,9 @@ domain-specific conflicts
 
 Do not expose raw database/provider exception text.
 
-Transport/framing/path/query ambiguity errors are intentionally sparse and SHALL NOT reveal which parser/hop would have interpreted the rejected message differently.
+Transport/framing/path/query/structured-entity ambiguity errors are deliberately sparse and SHALL NOT reveal which parser would have accepted an alternate interpretation.
 
 ## Retry contract
-
-State:
 
 ```text
 Automatic retry safe: yes | no | only with valid idempotency key
@@ -381,7 +423,7 @@ One-time-secret response loss: <not applicable | explicit non-replayable recover
 Retry-After: may/shall/not used
 ```
 
-A request rejected before canonical message acceptance does not create an idempotency claim or imply that a protected effect executed.
+A request rejected before canonical message/entity acceptance does not create an idempotency claim or imply that a protected effect executed.
 
 ## Long-running operation
 
@@ -398,7 +440,7 @@ Cancel/retry/resume authority: <current action/scope>
 Result dereference authority: <current target-resource action/scope>
 ```
 
-`operation_id`/URL is never bearer authority. Poll/cancel/retry/resume/result access re-establishes current tenant/principal/resource authorization.
+`operation_id`/URL is never bearer authority. Poll/cancel/retry/resume/result access re-establishes current authorization.
 
 ## Pagination/filter/sort
 
@@ -415,42 +457,35 @@ Default limit: <value/policy>
 Maximum limit: <value/policy>
 Total count: absent | exact | approximate | optional
 Current authorization re-evaluated on each page: yes
-Cursor security binding: <tenant/query/sort plus any needed principal/scope dimensions>
+Cursor security binding: <tenant/query/sort plus needed principal/scope dimensions>
 Cursor payload confidentiality: <no protected payload | server-side opaque handle | confidential+integrity-protected envelope | equivalent>
 Cursor exposed-token classification: url_safe_non_sensitive_handle | protected_continuation_token
 Browser cursor transport: query allowed only for non-sensitive handle | non-URL-visible protected transport
-Cursor URL/logging policy: <redacted/hash/reference; no raw protected cursor logging/referrer propagation>
+Cursor URL/logging policy: <redacted/hash/reference>
 Sensitive query parameters allowed in URL: <no | explicit public/non-sensitive allowlist>
 ```
 
-A cursor/snapshot/watermark never freezes authorization. Each protected continuation request re-establishes current authority, and included/bulk items remain independently authorized where required.
+A cursor/snapshot/watermark never freezes authorization. Each continuation re-establishes current authority.
 
-"Opaque" does not mean confidential. If cursor state would reveal protected tenant/filter/search/last-item data, use confidentiality protection or server-side state. Base64/signing alone is insufficient for protected cursor payloads.
-
-A confidential token may still be a reusable protected continuation capability. Browser-facing protected continuation tokens SHALL NOT be required in address/history-visible query strings. URL cursor transport is accepted for browser use only when the exposed handle itself is explicitly classified non-sensitive for that surface; otherwise use a BFF/body/server-side continuation representation.
+"Opaque" does not mean confidential. A confidential token may still be a reusable protected continuation capability. Browser-facing protected continuation tokens SHALL NOT be required in address/history-visible query strings unless the exposed handle is explicitly classified non-sensitive for that surface.
 
 ## Data classification
 
-Classify request/response fields:
+Classify request/response fields as applicable:
 
 ```text
 public
 internal
 confidential
 restricted/credential
-regulated/PII where applicable
+regulated/PII
 ```
 
 Declare redaction/logging restrictions.
 
 ## Audit
 
-State:
-
-- audit required or not;
-- actor/tenant/action/resource/outcome fields;
-- whether audit record/intent must commit atomically with mutation;
-- high-risk reason/approval/step-up metadata where applicable.
+State whether audit is required; actor/tenant/action/resource/outcome fields; atomic audit intent obligations; and high-risk reason/approval/step-up metadata where applicable.
 
 ## Observability
 
@@ -462,128 +497,82 @@ correlation_id propagation
 operation_id linkage
 tenant-safe metrics/log dimensions
 provider/external-call linkage where applicable
-http message/framing/path/query rejection telemetry where applicable
+canonical-ingress/entity rejection telemetry where applicable
 ```
 
-No secrets in observability payloads. Raw protected cursor/query values are not logged merely because they appear in a URL. Rejected ambiguous requests log safe rejection classes rather than competing credential/header/body/query values.
+No secrets in observability payloads. Rejected ambiguous requests log safe rejection classes rather than competing raw values.
 
 ## Compatibility classification
 
-Classify externally important fields/enums and security/behavior policy dimensions. Document:
+Classify externally important fields/enums and security/behavior dimensions. Document whether changes to the following are breaking/security-sensitive:
 
-- open/closed enum behavior;
-- additive evolution options;
-- known future extension points;
-- deprecated aliases, if any;
-- what would require a new major;
-- whether changing authorization/scope/idempotency/retry/consistency semantics is breaking;
-- whether changing HTTP framing/header/method/trailer/content-coding/trusted-proxy/path/query interpretation is security-sensitive;
-- whether changing response cache class, shared-cache eligibility, variance or current-authorization revalidation is breaking/security-sensitive;
-- whether weakening cursor confidentiality/browser-transport/URL-redaction semantics is security-sensitive;
-- whether changing browser-delivery/media-type/safe-filename/active-content-isolation or untrusted-content/archive/XML-processing semantics is security-sensitive or breaking for supported clients.
+- authorization/scope/idempotency/retry/consistency;
+- HTTP framing/header/method/trailer/content-coding/trusted-proxy/path/query interpretation;
+- structured request entity parsing, duplicate/alias/member/part semantics and canonical propagation;
+- response-header grammar/cardinality/serialization ownership;
+- response-cache class/shared eligibility/variance/current-auth revalidation;
+- cursor confidentiality/browser transport/URL redaction;
+- browser-delivery/media-type/safe-filename/active-content isolation;
+- untrusted-content/archive/XML processing.
 
-A framing/canonicalization, query multiplicity, cache, cursor confidentiality/transport, artifact browser-delivery/safe-filename, archive-member or untrusted-content-processing policy becoming more permissive is never treated as an implementation-only optimization.
+A security policy becoming more permissive is never treated as an implementation-only optimization.
 
 ## Security abuse cases
 
-List relevant abuse/failure cases such as:
+Consider, where applicable:
 
 - conflicting `Content-Length`/`Transfer-Encoding` or multiple body lengths;
-- duplicate/conflicting `Authorization`, `Idempotency-Key` or other security-sensitive singleton input;
-- method override changing effective operation across hops;
-- security-sensitive trailer injection;
-- conflicting `Host`/authority/trusted-forwarding metadata;
-- repeated slash/dot-segment/encoded-separator/malformed percent/non-canonical UTF-8 path ambiguity before placement;
-- duplicate singleton query parameters or alternate-encoding collisions;
+- unsafe connection reuse after rejected framing/body;
+- duplicate/conflicting auth/idempotency headers;
+- method override or security-trailer injection;
+- conflicting Host/authority/trusted-forwarding metadata;
+- repeated slash/dot-segment/encoded-separator/non-canonical path ambiguity;
+- duplicate singleton query parameters/alternate encodings;
+- duplicate JSON object members or names that alias after normalization;
+- multipart duplicate/aliasing part names, conflicting per-part metadata or ambiguous nested boundaries;
+- one parser validating/authorizing one body meaning while another parser executes another;
 - content-coding/decompression interpretation mismatch;
-- HTTP-version translation causing edge/application interpretation mismatch;
-- wrong tenant ID;
-- known resource ID from another tenant;
-- authorization attempted against stale/wrong cell placement;
-- authorization consuming unvalidated caller-controlled resource/scope fields;
-- revoked principal;
-- stale revision;
-- duplicate idempotency key;
-- lost one-time-secret response;
-- secret rotation with no surviving recovery authority;
-- shared-cache cross-principal/tenant leakage;
-- protected error cache leakage;
-- stale cursor after authority revocation;
-- cursor exposing confidential filter/search/resource state through URL/history/log/referrer;
-- protected browser continuation token persisted in address/history-visible URL;
-- confidential query/search value placed directly in URL;
-- operation ID used as bearer authority;
-- wildcard/untrusted credentialed BFF origin;
-- browser-active artifact executing on application/BFF origin;
-- forged upload media type/filename causing inline execution or ambiguous/misleading download naming;
-- Unicode bidi/control/path/double-extension filename deception;
-- malicious archive/document causing parser RCE, SSRF, XXE, path traversal or expansion/resource exhaustion;
-- archive duplicate/Unicode/case/platform alias causing scanner-to-consumer byte substitution;
-- DTD/internal entity/default-attribute parser behavior under the normal XML profile;
-- generated preview incorrectly trusted as safe inline content;
-- oversized body/header/decoded body;
-- expensive filter/include abuse;
+- response header CRLF/control injection or conflicting singleton serialization;
+- wrong tenant/cross-tenant resource identity;
+- stale revision/revoked principal;
+- lost one-time-secret response/lockout;
+- shared-cache leakage;
+- protected cursor in browser history;
+- operation ID as bearer authority;
+- wildcard credentialed BFF origin;
+- browser-active artifact on application origin;
+- deceptive artifact filename/media type;
+- malicious archive/parser/DTD/XXE/SSRF/resource exhaustion;
 - replayed callback/ticket;
-- callback-supplied SSRF target;
-- XML callback attempting DTD/local-file/network external-entity/include/schema resolution;
-- provider outage;
-- cross-tenant existence probing.
+- provider outage.
 
 ## Contract tests
 
-List mandatory tests including happy path and invariant/fault cases.
+Every externally reachable endpoint tests applicable canonical HTTP ingress cases from `http-message-framing-and-canonicalization.md`.
 
-At minimum, externally reachable endpoints test the applicable canonical HTTP ingress cases from `http-message-framing-and-canonicalization.md`, including cross-hop/protocol-translation behavior when infrastructure introduces multiple HTTP parsers.
+Protected mutation/body-bearing endpoints additionally test:
 
-At minimum, protected mutation endpoints test:
+- conflicting framing rejected before auth/idempotency/effect;
+- duplicate/conflicting authentication/idempotency inputs rejected;
+- gateway and service consume one canonical path/query/authority interpretation;
+- duplicate JSON object members rejected under the default JSON profile;
+- aliasing JSON names cannot bypass duplicate detection;
+- multipart duplicate/alias part names and conflicting per-part metadata fail closed unless explicitly supported;
+- ambiguous/nested multipart boundaries cannot cause validation/auth/idempotency/use-case disagreement;
+- one canonical parsed entity is reused for validation, authorization inputs, idempotency fingerprint and command mapping;
+- structured entity rejected before owning authorization when accepted parsers could disagree;
+- authorized success/unauthenticated denial/wrong-tenant denial;
+- placement -> `TenantContext` -> request validation -> owning authorization ordering;
+- idempotency/concurrency and response-loss recovery;
+- response-header CRLF/control/duplicate-singleton injection attempts fail safely;
+- proxy/framework cannot append a second conflicting security-relevant response singleton;
+- response cache non-reuse/compatibility;
+- current continuation authorization/cursor confidentiality and browser transport;
+- BFF Origin/CORS/CSRF;
+- callback raw-body/signature/SSRF/XML protections;
+- safe audit/error/observability behavior.
 
-- conflicting framing rejected before authentication/idempotency/effect;
-- duplicate/conflicting authentication/idempotency headers cannot reach protected logic with competing values;
-- method override/trailer input cannot change protected authority after ingress admission;
-- gateway and owning service consume one canonical path/query/authority interpretation;
-- duplicate singleton query parameters and alternate encoding collisions are rejected;
-- authorized success;
-- unauthenticated denial;
-- wrong-tenant denial;
-- authoritative placement/routing + trusted request-contract validation before cell-owned authorization where applicable;
-- authorization policy does not consume unvalidated caller-controlled scope/resource fields;
-- insufficient permission;
-- raw/decoded/header/query validation bounds;
-- idempotency/concurrency where applicable;
-- one-time-secret response-loss behavior where applicable;
-- lockout-safe surviving recovery authority/cutover where secret rotation can invalidate existing authority;
-- response-cache headers/semantics and cross-principal/tenant non-reuse, including protected error variants;
-- compatibility tests for cache-policy changes;
-- current authorization on pagination/operation continuation where applicable;
-- cursor confidentiality and URL/logging non-disclosure where applicable;
-- protected browser cursor transport does not persist reusable continuation token in address/history-visible URL;
-- sensitive filter/search query values are not forced into URL-visible transport when classified protected;
-- BFF origin/CORS/CSRF behavior where applicable;
-- callback outbound-fetch/SSRF boundary where applicable;
-- callback XML profiles reject every DTD by default and active external resolution/local-file/network behavior where applicable;
-- audit/operation linkage;
-- safe error leakage;
-- retry after response loss where applicable.
-
-Artifact/binary endpoints additionally test, where applicable:
-
-- uploader-controlled filename/extension/media type cannot force executable inline delivery;
-- unknown/untrusted/browser-active content falls back to attachment/non-sniffable download semantics;
-- CRLF, controls, bidi, separators, reserved/special names and misleading extensions cannot create ambiguous or deceptive `Content-Disposition` names;
-- `filename`/`filename*` (when both emitted) resolve to the same logical safe name without duplicate/conflicting parameters;
-- safe fallback naming works when attacker metadata cannot be normalized safely;
-- `safe_inline` accepts only the explicitly allowlisted validated content classes;
-- `active_inline_isolated` does not receive application/BFF ambient credentials or origin/service-worker trust;
-- delegated active-content delivery remains bound to the intended artifact/delivery generation and cannot become a general API credential;
-- range/resume/CDN paths preserve the same browser-delivery classification and current artifact fencing;
-- malicious archive/document expansion is bounded and cannot consume unbounded CPU/memory/time/output;
-- archive extraction cannot escape staging root through path traversal, absolute paths, links or special files;
-- duplicate/archive names that collide after Unicode normalization, case folding, trailing-dot/space or platform path conversion are rejected before materialization;
-- archive materialization is no-follow and atomic/no-replace so validated/scanned members cannot be replaced or aliased before later parsing;
-- parser/renderer processing cannot access ordinary application secrets or unrestricted network destinations;
-- XML/XML-derived processing rejects every DTD declaration by default and cannot resolve local/network external entities/includes/schemas unless an explicitly accepted isolated exceptional profile exists;
-- embedded scripts/macros/URLs are not executed/fetched implicitly;
-- derived preview/conversion output is independently identified/classified before inline delivery.
+Artifact/binary endpoints additionally test media authority, safe filename/header construction, active-inline isolation, range/CDN fencing, archive bounds/containment/member collision/no-replace semantics, parser secret/egress isolation, DTD/external-resolution denial and independent derivative classification.
 
 ## OPEN items
 
@@ -591,16 +580,15 @@ Explicitly list unresolved items. An omitted decision is not silently considered
 
 ## Evolution notes
 
-Explain how this contract remains stable if:
+Explain how the contract remains stable if:
 
 - the domain is extracted into a service;
 - tenant moves cells/regions;
-- storage engine changes;
-- provider adapter changes;
-- client types multiply;
+- storage/provider/gateway/parser changes;
 - request volume/cardinality grows substantially;
-- gateway/reverse proxy/HTTP version changes while canonical request semantics stay equivalent;
-- a CDN/reverse proxy/cache layer is added or replaced;
-- cursor implementation moves between server-side state and a protected self-contained envelope without weakening browser transport/history policy;
-- artifact delivery moves to a dedicated untrusted-content origin or another equivalent browser-isolation mechanism;
-- artifact parsing/preview/conversion/archive extraction moves to a different isolated runtime/filesystem/vendor without changing external artifact identity or weakening canonical member/parser semantics.
+- HTTP protocol/version or proxy layers change while canonical semantics stay equivalent;
+- the structured-body parser/library changes while canonical entity semantics remain identical;
+- response-header serialization moves between framework/proxy layers without changing the accepted profile;
+- CDN/cache is added or replaced;
+- cursor implementation changes without weakening browser transport/history policy;
+- artifact delivery/processing moves runtimes/vendors without weakening security invariants.

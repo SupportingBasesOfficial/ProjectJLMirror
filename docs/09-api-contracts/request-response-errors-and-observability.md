@@ -30,6 +30,8 @@ A new resource was durably created. The response SHOULD identify the canonical r
 
 `201` is not returned if only a queued intent exists and the resource is not yet contractually created.
 
+`Location` and other server-generated links SHALL NOT copy protected cursor/query/credential material into a new URL unless the target contract explicitly requires a bounded non-reusable capability and applies its dedicated leakage controls.
+
 ### `202 Accepted`
 
 A durable operation/process has accepted responsibility for work that is not yet terminal, including long-running processing or an externally ambiguous effect being reconciled.
@@ -140,6 +142,8 @@ Conceptual shape:
   "correlation_id": "corr_opaque"
 }
 ```
+
+`instance` identifies the request/resource context at a safe level. It SHALL NOT echo raw query strings, cursors, secrets, one-time capabilities or confidential filter/search values. If the exact URL contained protected transport metadata, the problem representation uses the safe path/reference rather than reflecting that metadata.
 
 Validation problems MAY add bounded structured field errors:
 
@@ -287,9 +291,26 @@ X-Correlation-Id: <effective value>
 
 Correlation IDs are not authorization or idempotency keys.
 
+## URL/query confidentiality and logging
+
+URLs are operationally high-propagation data: browsers, reverse proxies, access logs, analytics, traces, referrers, support tooling and redirect targets may observe them even when the network connection uses HTTPS.
+
+Therefore:
+
+- endpoints classify path/query parameters for URL suitability;
+- credentials, one-time capabilities, confidential/restricted search/filter values and protected cursor payloads SHALL NOT be placed in URL text unless a separately accepted profile explicitly requires a bounded capability and defines leakage controls;
+- normal access logs/analytics/traces SHALL NOT record raw protected cursor/query values; use parameter-name-only logging, redaction, hashing/reference or another accepted safe representation;
+- error `instance`, tracing attributes and metrics labels SHALL NOT duplicate raw protected query strings;
+- server redirects/links SHALL NOT propagate protected query/cursor material to unrelated origins or third-party destinations;
+- referrer policy for any browser surface carrying bounded sensitive URL material SHALL prevent unintended propagation according to that surface's accepted profile.
+
+A cursor being opaque to clients does not make its URL representation non-sensitive. Encoding/signing alone is not confidentiality.
+
 ## Distributed tracing
 
 Implementation MAY additionally propagate accepted distributed tracing context. External tracing headers never grant tenant/resource authority and are filtered from logs/telemetry according to security policy.
+
+Trace/span attributes use safe normalized route templates and redacted query metadata rather than unbounded/raw protected URLs.
 
 ## Deadlines
 
@@ -314,9 +335,10 @@ External error responses SHALL NOT expose:
 - raw provider credentials;
 - internal filesystem paths;
 - sensitive policy rules that enable bypass;
-- protected data belonging to another tenant.
+- protected data belonging to another tenant;
+- raw protected cursor/query values.
 
-Internal logs/traces may capture richer diagnostics only under accepted redaction/classification policy.
+Internal logs/traces may capture richer diagnostics only under accepted redaction/classification policy; URL/query confidentiality rules still apply.
 
 ## Observability contract
 
@@ -335,7 +357,7 @@ latency
 downstream operation_id when created
 ```
 
-Observability fields never become a backdoor for secret/PII leakage.
+Observability fields never become a backdoor for secret/PII/confidential-query leakage. Route templates/operation IDs are preferred to raw URLs; protected cursor/search/filter text is represented only through accepted redacted/hash/reference forms.
 
 ## Health endpoints
 

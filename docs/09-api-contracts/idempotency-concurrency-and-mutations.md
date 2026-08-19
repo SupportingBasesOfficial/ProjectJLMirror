@@ -195,6 +195,34 @@ An endpoint SHALL NOT advertise a retry window longer than the platform can safe
 
 Numeric retention durations remain operation/SLO policy until separately accepted.
 
+## Recovery continuity after restore/PITR
+
+Idempotency authority inherits the accepted recovery-quarantine and `(R,F]` reconciliation model from `docs/08-data/recovery-retention-and-artifacts.md`.
+
+A restored, rolled-back or partially recovered idempotency store SHALL NOT interpret a missing, older or apparently unused claim/result/tombstone as evidence that the logical operation never executed. Absence after recovery is **recovery uncertainty**, not new-execution authority.
+
+Before protected/effectful admission resumes for an affected tenant/cell/operation scope, the applicable recovery gate SHALL reconcile the restored idempotency state against surviving continuity authorities as applicable, including:
+
+- stable operation/process state;
+- authoritative business outcomes;
+- outbox/inbox/dedup evidence;
+- required audit/accountability evidence;
+- provider acknowledgements or provider-side operation identity;
+- external-effect/reconciliation records;
+- other accepted `(R,F]` continuity evidence.
+
+If restore point/generation continuity is uncertain, or a surviving authority indicates an effect may have occurred after the restored idempotency snapshot, the operation remains fail-closed/reconciliation-blocked until authoritative reconciliation establishes whether execution is safe. A rollback, partial loss, mismatched backup generation or missing claim SHALL NOT create a fresh executor for an irreversible effect.
+
+The concrete backup product, storage engine, recovery-generation representation and topology are implementation/recovery-profile choices. The fixed Phase 09 property is that **recovered idempotency authority must prove continuity before absence can be treated as never-executed state**.
+
+Recovery therefore preserves the same invariant already required during ordinary runtime ambiguity:
+
+```text
+uncertainty != absence
+missing/older recovered claim != never executed
+restore/PITR != retry permission
+```
+
 ## Optimistic concurrency
 
 Mutable resources with lost-update risk use an opaque revision validator.
@@ -292,9 +320,9 @@ Each bulk endpoint SHALL declare:
 
 Cross-domain or high-volume bulk work SHOULD default to durable operation semantics instead of holding one database transaction across arbitrary item counts.
 
-## Canonical ingress fault tests
+## Canonical ingress and recovery fault tests
 
-Effectful/idempotent endpoints SHALL test, through the deployed edge/application path where applicable:
+Effectful/idempotent endpoints SHALL test, through the deployed edge/application/recovery path where applicable:
 
 - duplicate/conflicting `Idempotency-Key` rejected before claim creation;
 - `Idempotency-Key` in a request trailer cannot create/override the admitted key;
@@ -304,7 +332,11 @@ Effectful/idempotent endpoints SHALL test, through the deployed edge/application
 - conflicting framing/content coding cannot make the claim fingerprint cover bytes/semantics different from the use case;
 - duplicate/alias JSON members, multipart part-name/metadata/boundary ambiguity or equivalent structured parsing cannot make idempotency fingerprinting observe a logical body different from authorization/use-case mapping;
 - retained raw structured body is not independently reparsed into a competing idempotency meaning after canonical entity establishment;
-- canonical-ingress or canonical-entity rejection creates no durable claim/effect.
+- canonical-ingress or canonical-entity rejection creates no durable claim/effect;
+- restore/PITR to a point before an accepted idempotency claim/result while a later business/provider/external effect authority survives does **not** classify the same key as new or admit another effect;
+- partial loss of claim/result/tombstone state does not make missing state equivalent to `never executed`;
+- mismatched recovery generations or unresolved `(R,F]` continuity keep effectful admission quarantined/reconciliation-blocked;
+- reconciliation of surviving operation/outcome/audit/provider authorities is required before recovered absence may become eligible for new execution.
 
 ## SDK retry policy
 
@@ -314,4 +346,4 @@ An SDK MUST NOT automatically retry an effectful operation solely because it rec
 
 For one-time-secret operations, SDKs MUST treat `secret.delivery_not_replayable` as a recovery state requiring an explicit user/application decision; they MUST NOT automatically issue a replacement secret operation.
 
-SDKs cannot assume that a malformed/ambiguous transport or structured-body request created an idempotency claim; they should construct a new valid canonical request rather than replaying ambiguity.
+SDKs cannot assume that a malformed/ambiguous transport or structured-body request created an idempotency claim; they should construct a new valid canonical request rather than replaying ambiguity. SDKs likewise cannot infer from recovered/missing server-side idempotency state that an effectful request is safe to repeat; recovery admission remains server-authoritative.

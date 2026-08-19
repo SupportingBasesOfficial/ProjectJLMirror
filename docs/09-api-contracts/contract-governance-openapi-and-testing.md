@@ -59,7 +59,7 @@ The machine-readable HTTP contract SHALL describe:
 - stable reusable components;
 - examples where they materially clarify semantics.
 
-OpenAPI/schema alone is not sufficient to capture all JLMIRROR semantics. Each operation also conforms to the Phase 09 idempotency, authorization, consistency, audit, tenant, response-cache, cursor/query confidentiality, artifact-browser-delivery, safe-filename, untrusted-content-processing, parser-resolution and compatibility declarations.
+OpenAPI/schema alone is not sufficient to capture all JLMIRROR semantics. Each operation also conforms to the Phase 09 HTTP message/framing/canonicalization, idempotency, authorization, consistency, audit, tenant, response-cache, cursor/query confidentiality, artifact-browser-delivery, safe-filename, untrusted-content-processing, parser-resolution and compatibility declarations.
 
 ## Stable operation ID
 
@@ -82,6 +82,12 @@ Each operation definition SHALL carry/refer to structured metadata for:
 ```text
 owner_domain
 tenant_scope
+http_message_profile
+body_framing_policy
+security_header_cardinality
+trusted_proxy_metadata_policy
+request_target_profile
+protocol_translation_profile
 authorization_action
 authorization_scope
 authorization_input_fields
@@ -139,27 +145,30 @@ An endpoint is not ready for implementation until review proves:
 1. one owning domain/use case;
 2. no database/provider/internal-topology leakage;
 3. explicit tenant/global scope;
-4. explicit trusted placement/routing/TenantContext boundary where tenant-scoped;
-5. request-contract validation occurs before owning authorization consumes caller-controlled scope/resource fields;
-6. explicit authorization action/scope and owning authorization authority;
-7. BFF/browser Origin/CORS/CSRF profile where applicable;
-8. request/response schema and bounds;
-9. retry/idempotency behavior;
-10. lockout-safe one-time-secret response-loss/recovery when applicable;
-11. concurrency behavior where needed;
-12. consistency/result semantics;
-13. long-running operation behavior and current access authority where needed;
-14. current-authorization continuation semantics for pagination/history/bulk where applicable;
-15. cursor confidentiality/URL-log policy and sensitive query URL policy where collection/query contracts apply;
-16. stable errors;
-17. explicit response-cache class, protected-error policy, shared-cache eligibility, variance/revalidation/current-auth policy;
-18. artifact/binary browser-delivery profile, authoritative media-type policy, safe-filename policy and active-content isolation where applicable;
-19. isolated/bounded untrusted artifact-processing profile, archive extraction containment and XML/external-resolution policy where parsing/rendering/preview/conversion/extraction occurs;
-20. callback XML external-resolution and outbound-fetch/SSRF policy where applicable;
-21. audit/observability requirements;
-22. compatibility classification, including cache/retry/auth/consistency/cursor/browser-delivery/content-processing/parser semantics;
-23. security/privacy classification;
-24. required tests.
+4. inherited or specialized canonical HTTP message/framing profile, security-sensitive header cardinality, trusted-proxy policy and request-target semantics;
+5. explicit trusted placement/routing/TenantContext boundary where tenant-scoped;
+6. request-contract validation occurs before owning authorization consumes caller-controlled scope/resource fields;
+7. explicit authorization action/scope and owning authorization authority;
+8. BFF/browser Origin/CORS/CSRF profile where applicable;
+9. request/response schema and bounds;
+10. retry/idempotency behavior;
+11. lockout-safe one-time-secret response-loss/recovery when applicable;
+12. concurrency behavior where needed;
+13. consistency/result semantics;
+14. long-running operation behavior and current access authority where needed;
+15. current-authorization continuation semantics for pagination/history/bulk where applicable;
+16. cursor confidentiality/URL-log policy and sensitive query URL policy where collection/query contracts apply;
+17. stable errors;
+18. explicit response-cache class, protected-error policy, shared-cache eligibility, variance/revalidation/current-auth policy;
+19. artifact/binary browser-delivery profile, authoritative media-type policy, safe-filename policy and active-content isolation where applicable;
+20. isolated/bounded untrusted artifact-processing profile, archive extraction containment and XML/external-resolution policy where parsing/rendering/preview/conversion/extraction occurs;
+21. callback XML external-resolution and outbound-fetch/SSRF policy where applicable;
+22. audit/observability requirements;
+23. compatibility classification, including HTTP-framing/header/proxy/target, cache/retry/auth/consistency/cursor/browser-delivery/content-processing/parser semantics;
+24. security/privacy classification;
+25. required tests.
+
+For every externally reachable HTTP surface, review MUST prove the `http-message-framing-and-canonicalization.md` property: one accepted wire request has one canonical interpretation at every participating hop before authentication, tenant routing, idempotency, cache or protected effects. Ambiguous framing, competing security-sensitive headers, conflicting authority/trusted-proxy metadata or request-target parser disagreement fail closed. If HTTP-version translation exists, the test path includes the real translation boundary rather than only the application controller.
 
 For protected collection/query contracts, review MUST prove that URL-visible cursors do not expose confidential tenant/filter/search/resource state. "Opaque" is not treated as confidential by itself. If protected cursor state is self-contained, confidentiality+integrity protection is required; otherwise use a server-side opaque handle or equivalent. Normal logs/analytics/referrers SHALL NOT persist raw protected cursor/query values.
 
@@ -199,6 +208,9 @@ A generic `Status`, `Metadata`, `Resource`, `User` or `Error` schema SHALL NOT b
 Every implemented endpoint SHALL have contract tests that validate at minimum:
 
 - accepted methods/path;
+- canonical HTTP message/framing behavior and applicable cross-hop/protocol-translation ambiguity rejection;
+- security-sensitive header cardinality/combine semantics;
+- trusted proxy/authority/request-target normalization cannot diverge between edge and owning service;
 - required/forbidden fields;
 - unknown request-field rejection;
 - request fields used for authorization/resource selection are validated before owning policy consumes them;
@@ -216,7 +228,9 @@ Every implemented endpoint SHALL have contract tests that validate at minimum:
 - response-cache class/headers/revalidation/non-reuse semantics including protected errors;
 - artifact browser-delivery/media-type/safe-filename/isolation semantics where bytes are browser reachable;
 - untrusted artifact-processing isolation/resource/egress/archive/XML/output-classification semantics where parsing/rendering occurs;
+- callback raw-body/signature processing observes the same canonical framing and exact bounded raw bytes;
 - callback XML external-resolution and outbound-fetch/SSRF boundary where applicable;
+- realtime upgrade cannot bypass canonical HTTP ingress before `101`;
 - size/complexity limits;
 - secret/topology/confidential-URL leakage checks.
 
@@ -257,6 +271,10 @@ It flags likely breaking/security-sensitive changes such as:
 - closed enum changes;
 - changed status/error contract;
 - incompatible parameter changes;
+- HTTP message/framing profile becoming more permissive;
+- security-sensitive header cardinality/combine semantics changing;
+- trusted proxy/authority/request-target normalization policy changing;
+- protocol translation introducing/removing a parser boundary without equivalent ambiguity tests;
 - authorization action/scope/authority or authorization-input changes;
 - BFF origin/credential policy changes;
 - idempotency/retry classification changes;
@@ -277,14 +295,22 @@ It flags likely breaking/security-sensitive changes such as:
 - pagination/operation current-authorization semantics becoming weaker;
 - one-time-secret recovery/cutover changes that could remove a previously safe recovery authority.
 
-The diff tool cannot prove semantic compatibility. Reviewers still inspect changes to idempotency, authorization, consistency, ownership, retry, credential recovery, continuation authority/confidentiality, artifact browser execution/filename/processing, callback parser/egress and cache behavior.
+The diff tool cannot prove semantic compatibility. Reviewers still inspect changes to HTTP framing/canonicalization, idempotency, authorization, consistency, ownership, retry, credential recovery, continuation authority/confidentiality, artifact browser execution/filename/processing, callback parser/egress and cache behavior.
 
-A deployment/framework/CDN/browser-delivery/parser-runtime configuration change that alters an endpoint's effective accepted cache, cursor confidentiality, active-content, safe-filename or untrusted-processing semantics is subject to the same governance even if no OpenAPI schema changed.
+A deployment/framework/gateway/reverse-proxy/HTTP-runtime/CDN/browser-delivery/parser-runtime configuration change that alters an endpoint's effective accepted message framing, header cardinality, trusted-proxy/request-target interpretation, cache, cursor confidentiality, active-content, safe-filename or untrusted-processing semantics is subject to the same governance even if no OpenAPI schema changed.
 
 ## Golden examples/test vectors
 
 High-risk contracts SHOULD include executable test vectors/examples for cases such as:
 
+- conflicting `Content-Length`/`Transfer-Encoding` rejected before auth/body processing;
+- multiple conflicting body lengths rejected across the deployed proxy/application path;
+- duplicate/conflicting `Authorization` and `Idempotency-Key` rejected rather than first/last-selected;
+- Host/authority or untrusted forwarded-metadata conflict rejected;
+- ambiguous encoded path cannot route one resource while the owning service authorizes another;
+- HTTP-version translation cannot turn invalid framing into accepted protected work;
+- callback signature verification and adapter processing observe the same bounded raw body;
+- ambiguous realtime upgrade rejected before `101`;
 - idempotent replay after response loss;
 - idempotency-key fingerprint conflict;
 - one-time-secret response loss with surviving recovery authority;
@@ -341,6 +367,8 @@ SDKs SHALL:
 - preserve server-declared artifact download/inline and safe-filename semantics rather than overriding them from filename or guessed media type;
 - avoid hiding operation-resource semantics behind indefinite polling without cancellation/deadline controls.
 
+SDK behavior does not relax edge/server HTTP message canonicalization; malformed/ambiguous wire requests are server-side security failures regardless of client library intent.
+
 ## Documentation publishing
 
 Published API reference is generated or checked against the accepted machine-readable contract. Human guides may add workflow explanation but SHALL NOT contradict canonical schemas/semantics.
@@ -349,6 +377,7 @@ Published API reference is generated or checked against the accepted machine-rea
 
 Contract changes require explicit security review when they introduce or materially change:
 
+- HTTP message framing, header cardinality, request-target normalization, trusted proxy metadata or protocol translation;
 - authentication/credential transport;
 - authorization scope/authority or authorization input fields;
 - trusted routing/TenantContext ordering;
@@ -373,7 +402,7 @@ Contract changes require explicit security review when they introduce or materia
 
 A contract change requires a new/revised ADR or RFC when it changes a high-impact accepted architecture/security/data decision rather than merely specializing a representation already delegated to Phase 09.
 
-For example, changing `/api/v1` field naming does not necessarily require an ADR; changing tenant authority, browser credential boundary, consistency ownership or service extraction semantics does.
+For example, changing `/api/v1` field naming does not necessarily require an ADR; changing tenant authority, browser credential boundary, trusted HTTP message interpretation, consistency ownership or service extraction semantics does.
 
 ## Proposed-to-accepted promotion
 

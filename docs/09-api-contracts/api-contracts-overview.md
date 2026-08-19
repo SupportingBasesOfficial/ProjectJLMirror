@@ -19,7 +19,7 @@ JLMIRROR distinguishes these surfaces because their trust, compatibility and lif
 1. **Platform/Public Machine API** — versioned HTTP API for authorized external machine principals and approved integrations.
 2. **First-party Browser BFF API** — browser-facing confidential-session boundary. It may compose platform use cases for the Web client but SHALL NOT become a second business domain.
 3. **Protected Realtime Admission** — BFF-mediated capability minting plus direct protected WebSocket admission under accepted Origin/current-authorization/replay rules. Phase 09 owns admission representation; Phase 10 owns asynchronous message/event envelope mechanics.
-4. **Provider Callback Ingress** — adapter-owned inbound HTTP contracts subject to provider-specific authentication plus accepted raw-body/freshness/replay/tenant-binding rules.
+4. **Provider Callback Ingress** — adapter-owned inbound HTTP contracts subject to provider-specific authentication plus accepted raw-body, authenticated-freshness, canonical-entity, atomic durable replay, tenant-binding and SSRF/parser rules.
 5. **Public Projection API** — deliberately public/versioned projections such as public status output; it never exposes internal tables or protected tenant resources by default.
 6. **Internal Service/Application Contracts** — typed application contracts that may later cross process boundaries. HTTP is not required merely because an internal module has an explicit contract.
 
@@ -97,6 +97,23 @@ Every effectful contract SHALL classify whether client retry is:
 
 One-time secret creation/rotation additionally declares non-replayable secret-delivery recovery and proves a surviving recovery authority or staged cutover when an existing credential could be invalidated.
 
+### Explicit callback freshness and replay durability
+
+Provider callback authenticity, freshness, replay admission and durable responsibility form one security/correctness chain.
+
+For every callback profile:
+
+- freshness evidence used for security is bound to the authenticated callback body/identity by the accepted authenticator or comes from independently trusted protocol metadata associated with the same callback;
+- a clock-window check alone cannot make unbound metadata authoritative;
+- body-carried freshness and replay identity come from the same canonical entity consumed by domain mapping;
+- replay identity is scoped by trusted tenant/integration/source dimensions;
+- replay admission is atomic create-or-observe and yields one logical executor under concurrent delivery;
+- replay admission is coupled to durable inbox/work/effect responsibility, or cross-authority ambiguity enters durable reconciliation before another execution may be admitted;
+- success acknowledgement never outruns durable responsibility;
+- retention expiry does not make unresolved ambiguous irreversible work blindly executable again.
+
+Exact provider authenticator, signed-header set, numeric freshness window, replay storage product, transaction topology and reconciliation implementation remain `OPEN-API-022` until evidence accepts them.
+
 ### Explicit consistency semantics
 
 Every operation SHALL identify whether its response represents:
@@ -173,6 +190,7 @@ A new externally consumed use case is not implementation-ready until its contrac
 - request-contract validation ordering for fields consumed by authorization/resource selection;
 - required authorization action/scope and owning authorization authority;
 - request schema and size/complexity bounds;
+- provider callback authentication/freshness-binding/replay-identity/atomic-admission/durable-coupling/reconciliation semantics where applicable;
 - response/result semantics;
 - response-header profile and serialization/composition owner where HTTP headers are emitted;
 - response-cache class/shared-cache/revalidation/current-auth semantics;
@@ -186,7 +204,7 @@ A new externally consumed use case is not implementation-ready until its contrac
 - stable error codes/classes;
 - audit class;
 - observability/request-correlation requirements;
-- compatibility/deprecation implications, including HTTP framing/header/proxy/target, structured-body parser, response-header serialization, cache/security/browser-delivery semantics;
+- compatibility/deprecation implications, including HTTP framing/header/proxy/target, structured-body parser, callback freshness/replay, response-header serialization, cache/security/browser-delivery semantics;
 - data classification and secret/PII handling constraints.
 
 The canonical endpoint template in this phase makes those fields reviewable before implementation.
@@ -202,6 +220,7 @@ Phase 09 does not select:
 - telemetry physical engine;
 - exact gateway/reverse-proxy product or HTTP protocol deployment mix;
 - exact identity-provider or token protocol not already accepted elsewhere;
+- exact provider callback authenticator, signed-header set, freshness window, replay storage product or transaction/reconciliation topology;
 - numeric SLO/RPO/RTO/capacity targets without evidence;
 - domain capabilities that have not been accepted by Product/Requirements.
 
@@ -223,6 +242,7 @@ Before a Phase 09 contract is accepted, reviewers SHOULD ask whether the contrac
 - old and new application versions coexist during rolling deployment;
 - gateway/proxy/runtime products change or HTTP/1.x, HTTP/2 and HTTP/3 translation paths are introduced without changing accepted request semantics;
 - structured body parser/runtime libraries change without changing the canonical entity consumed by authorization/idempotency/use cases;
+- provider callback signature/authentication SDKs or replay infrastructure change without changing authenticated freshness, replay identity scope or durable one-executor semantics;
 - response framework/proxy/CDN composition changes without weakening the accepted response-header grammar/cardinality/serialization owner profile;
 - an operation times out after an external side effect may already have happened;
 - a credential rotation response is lost while the caller must still have a safe recovery authority;

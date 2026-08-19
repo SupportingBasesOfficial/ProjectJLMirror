@@ -272,6 +272,7 @@ Completed replay behavior: <status/result>
 In-progress duplicate behavior: <409 or same 202 operation>
 Different-fingerprint behavior: 409 idempotency.key_reused
 Retention/recovery window: <accepted policy or OPEN>
+Recovery continuity: <inherit platform (R,F] recovery quarantine/reconciliation | specialized accepted profile | not applicable>
 One-time-secret response: none | initial-presentation-only
 Secret response-loss recovery: <not applicable | safe metadata + explicit rotate/reissue/create/revoke flow>
 Surviving recovery authority: <not applicable | concrete still-valid authority/staged overlap/privileged recovery>
@@ -281,6 +282,8 @@ Credential cutover semantics: <not applicable | non-disruptive create | staged o
 Idempotency admission begins only after canonical HTTP acceptance and canonical structured-entity establishment for fields used by the fingerprint. A raw body that could parse into two different logical entities cannot create a claim.
 
 For external effects, describe stable `operation_id` / reconciliation behavior.
+
+For effectful idempotent endpoints, recovery continuity inherits the accepted Gate B recovery model unless a stricter accepted profile applies. After restore/PITR/partial state loss or mismatched recovery generations, missing/older claim/result/tombstone state is **recovery uncertainty**, not proof that the operation never executed. Effectful admission remains quarantined/fail-closed until surviving operation/outcome/outbox-inbox/audit/provider/external-effect authorities establish the applicable `(R,F]` continuity boundary. The concrete backup/storage/generation mechanism is implementation-level; the no-blind-retry property is not.
 
 If the endpoint creates/rotates/reissues non-retrievable secret material, the secret is excluded from replay state, same-key response-loss retry cannot recreate the effect or re-present the secret, and explicit recovery does not require possession of the lost secret. If the operation can invalidate an existing credential, prove a still-valid recovery authority or staged/overlap cutover.
 
@@ -440,6 +443,7 @@ Replay identity scope: <trusted tenant/integration/source dimensions>
 Replay admission: atomic_create_or_observe
 Durable coupling: <same authority transaction | durable inbox/work/effect linkage | stable operation reconciliation>
 Replay retention: <accepted policy or OPEN-API-022>
+Replay recovery continuity: <inherit platform (R,F] recovery quarantine/reconciliation | specialized accepted profile>
 Cross-authority ambiguity: <durable reconciliation behavior>
 Acknowledgement durability: <completed synchronously | durable async responsibility before success>
 ```
@@ -452,9 +456,10 @@ Rules:
 - replay admission cannot permanently consume an identity while required work has no durable responsibility unless a durable recoverable reconciliation state exists;
 - if a cross-authority irreversible effect may have succeeded but its outcome is not yet durably recorded, the stable operation/replay state enters or remains in reconciliation and **no new effect attempt is admitted until authoritative reconciliation resolves the prior outcome**;
 - replay retention expiry does not convert unresolved ambiguous irreversible work or still-supported recovery state into blind execution eligibility;
+- after replay-store restore/PITR/partial loss or mismatched recovery generations, missing/older replay state is recovery uncertainty rather than `unused`; affected callback admission remains quarantined/fail-closed until surviving inbox/effect/provider-ack/audit/reconciliation authorities prove continuity, and a still-fresh authenticated retry cannot bypass that gate;
 - callback success acknowledgement never precedes the declared required durable-responsibility boundary.
 
-Exact authenticator algorithm, signed-header set, numeric window, replay storage product, retention duration, provider-facing acknowledgement status mapping and transaction topology remain `OPEN-API-022` until accepted for the provider profile.
+Exact authenticator algorithm, signed-header set, numeric window, replay storage product, retention duration, provider-facing acknowledgement status mapping, recovery-generation encoding and transaction/recovery topology remain `OPEN-API-022` or platform recovery-profile decisions until accepted for the provider profile.
 
 ## Long-running operation
 
@@ -538,11 +543,12 @@ No secrets in observability payloads. Rejected ambiguous requests log safe rejec
 Classify externally important fields/enums and security/behavior dimensions. Document whether changes to the following are breaking/security-sensitive:
 
 - authorization/scope/idempotency/retry/consistency;
+- idempotency restore/PITR/partial-loss recovery continuity;
 - HTTP framing/header/method/trailer/content-coding/trusted-proxy/path/query interpretation;
 - structured request entity parsing, duplicate/alias/member/part semantics and canonical propagation;
 - response-header grammar/cardinality/serialization ownership;
 - response-cache class/shared eligibility/variance/current-auth revalidation;
-- callback authentication/freshness binding/replay identity/atomic admission/durable coupling/replay retention/acknowledgement durability/post-effect ambiguity/reconciliation;
+- callback authentication/freshness binding/replay identity/atomic admission/durable coupling/replay retention/replay recovery continuity/acknowledgement durability/post-effect ambiguity/reconciliation;
 - cursor confidentiality/browser transport/URL redaction;
 - browser-delivery/media-type/safe-filename/active-content isolation;
 - untrusted-content/archive/XML processing.
@@ -568,6 +574,7 @@ Consider, where applicable:
 - wrong tenant/cross-tenant resource identity;
 - stale revision/revoked principal;
 - lost one-time-secret response/lockout;
+- idempotency state restored/partially lost so a missing claim is misclassified as never executed;
 - shared-cache leakage;
 - protected cursor in browser history;
 - operation ID as bearer authority;
@@ -578,6 +585,7 @@ Consider, where applicable:
 - callback freshness evidence not bound to authenticated input;
 - callback replay admission race or consumed-without-durable-work state;
 - callback replay/ambiguity record expiry while unresolved work or outcome remains;
+- callback replay store restored/partially lost so a missing replay record is misclassified as unused;
 - callback success acknowledgement before durable responsibility;
 - callback crash after a possibly successful external irreversible effect but before durable outcome recording, followed by unsafe re-execution instead of reconciliation;
 - replayed callback/ticket;
@@ -601,12 +609,13 @@ Protected mutation/body-bearing endpoints additionally test:
 - authorized success/unauthenticated denial/wrong-tenant denial;
 - placement -> `TenantContext` -> request validation -> owning authorization ordering;
 - idempotency/concurrency and response-loss recovery;
+- restore/PITR/partial-loss of idempotency state cannot turn missing/older claim/result/tombstone into new execution authority before `(R,F]` continuity reconciliation;
 - response-header CRLF/control/duplicate-singleton injection attempts fail safely;
 - proxy/framework cannot append a second conflicting security-relevant response singleton;
 - response cache non-reuse/compatibility;
 - current continuation authorization/cursor confidentiality and browser transport;
 - BFF Origin/CORS/CSRF;
-- callback raw-body/signature, authenticated freshness binding, atomic replay admission, replay retention, acknowledgement durability, post-effect/pre-outcome-record crash, durable-coupling/reconciliation, SSRF/XML protections;
+- callback raw-body/signature, authenticated freshness binding, atomic replay admission, replay retention, replay restore/PITR continuity, acknowledgement durability, post-effect/pre-outcome-record crash, durable-coupling/reconciliation, SSRF/XML protections;
 - safe audit/error/observability behavior.
 
 Artifact/binary endpoints additionally test media authority, safe filename/header construction, active-inline isolation, range/CDN fencing, archive bounds/containment/member collision/no-replace semantics, parser secret/egress isolation, DTD/external-resolution denial and independent derivative classification.
@@ -622,11 +631,12 @@ Explain how the contract remains stable if:
 - the domain is extracted into a service;
 - tenant moves cells/regions;
 - storage/provider/gateway/parser changes;
+- backup/recovery topology or idempotency/replay storage changes while recovery-continuity semantics remain identical;
 - request volume/cardinality grows substantially;
 - HTTP protocol/version or proxy layers change while canonical semantics stay equivalent;
 - the structured-body parser/library changes while canonical entity semantics remain identical;
 - response-header serialization moves between framework/proxy layers without changing the accepted profile;
-- a provider callback authenticator/SDK/replay implementation changes while freshness binding, replay retention, acknowledgement durability and post-effect reconciliation semantics remain identical;
+- a provider callback authenticator/SDK/replay implementation changes while freshness binding, replay retention, replay recovery continuity, acknowledgement durability and post-effect reconciliation semantics remain identical;
 - CDN/cache is added or replaced;
 - cursor implementation changes without weakening browser transport/history policy;
 - artifact delivery/processing moves runtimes/vendors without weakening security invariants.

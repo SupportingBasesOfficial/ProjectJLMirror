@@ -48,9 +48,12 @@ The following are breaking by default:
 - changing success/error semantics in a way that alters safe retry or authorization behavior;
 - changing idempotency scope/meaning such that an existing key can duplicate or suppress a different logical effect;
 - changing pagination ordering/cursor semantics in a way that invalidates active traversal beyond the cursor contract's documented lifecycle;
+- changing an endpoint's response-cache class, shared-cache eligibility, variance dimensions or current-authorization revalidation requirements in a way that can make previously private/protected data more broadly reusable;
 - exposing previously hidden physical/provider implementation semantics as required client input.
 
 Breaking changes require a new major contract or another explicitly governed compatibility mechanism.
+
+A security-tightening cache change MAY be deployable inside the same major when it preserves functional semantics for conforming clients, but it still requires explicit compatibility/security review because intermediaries and conditional requests may observe changed behavior. A cache policy becoming more permissive is never treated as an implementation-only optimization.
 
 ## Open versus closed enums
 
@@ -79,9 +82,26 @@ Request extensibility occurs through explicit versioned schemas or documented ex
 
 Schema compatibility is necessary but not sufficient.
 
-Changing a field from "current authoritative state" to "eventually consistent approximation", or changing whether an operation is idempotent/retry-safe, is a semantic breaking change even if the JSON schema is unchanged.
+Changing a field from "current authoritative state" to "eventually consistent approximation", changing whether an operation is idempotent/retry-safe, or changing response-cache reuse semantics can be a semantic breaking/security change even if the JSON schema is unchanged.
 
-Contract review therefore evaluates behavior, consistency, security, ownership and error/retry semantics in addition to shape.
+Contract review therefore evaluates behavior, consistency, security, ownership, authorization, idempotency, retry and cache semantics in addition to shape.
+
+## Response-cache compatibility
+
+Each endpoint's accepted cache policy is part of its semantic/security contract.
+
+Compatibility review SHALL compare at least:
+
+- cache class (`no_store`, `private_revalidate`, `public_shared`, `artifact_delivery_guarded`);
+- whether shared-cache reuse is permitted;
+- cache key/variance dimensions that are contractually meaningful;
+- validator/revalidation behavior;
+- whether current authorization/releasability must be re-evaluated before reuse;
+- security-relevant freshness/invalidation semantics where accepted.
+
+A deployment, CDN or framework change SHALL NOT make an endpoint more cache-permissive than its accepted contract without a reviewed contract change. `Vary`, URL partitioning or tenant/principal labels do not substitute for authorization.
+
+Numeric TTL tuning may remain `OPEN-API-017` when not yet accepted, but the absence of a number does not make cache class or authorization/revalidation semantics implementation-private.
 
 ## Deprecation
 
@@ -164,9 +184,11 @@ CI SHALL compare proposed contract changes with the currently accepted baseline 
 - operation idempotency declaration;
 - authorization declaration;
 - pagination/sort contract;
-- resource identity/scope.
+- resource identity/scope;
+- response cache class/shared-cache eligibility;
+- cache variance/validator/revalidation/current-authorization semantics.
 
-Automated schema diff is advisory for semantic compatibility; human/architecture review remains required for meaning changes.
+Automated schema diff is advisory for semantic compatibility; human/architecture/security review remains required for meaning changes, especially cache-policy changes that can alter protected-data reuse without changing schema.
 
 ## Version retirement
 

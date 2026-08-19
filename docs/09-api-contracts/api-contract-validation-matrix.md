@@ -13,11 +13,14 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | HTTP message canonicalization | Every externally reachable HTTP surface inherits `http-message-framing-and-canonicalization.md`; one accepted wire request has one canonical interpretation across gateway/BFF/proxy/owning-service hops before protected decisions |
 | HTTP framing ambiguity | Conflicting `Content-Length`/`Transfer-Encoding`, multiple differing lengths, malformed transfer coding/chunk framing and protocol-invalid framing metadata fail closed before auth/body processing/idempotency/effect |
 | Security-header cardinality | Security-sensitive headers have explicit cardinality/combine semantics; duplicate/conflicting authentication/idempotency/trusted-routing values cannot be resolved by arbitrary first/last/framework behavior |
+| Method/trailer safety | Generic method override is deny-by-default; request trailers cannot introduce/override authentication, idempotency, routing, CSRF/Origin, precondition, callback or realtime authority after initial admission |
 | Authority/proxy normalization | Host/authority and trusted proxy metadata have one authoritative interpretation; untrusted `Forwarded`/`X-Forwarded-*` cannot spoof scheme/host/client identity/redirect or routing authority |
-| Request-target consistency | Gateway, router, authorization, cache and owning service consume one canonical method/path/query meaning; malformed/ambiguous decoding, dot-segment/separator or authority forms cannot route one resource and authorize another |
+| Path canonicalization before placement | Tenant/resource path is decoded/canonicalized once before placement resolution; repeated slash, dot-segment, encoded slash/backslash, malformed percent, invalid/non-canonical UTF-8 and double-decoding ambiguity cannot route/authorize different resources |
+| Query canonicalization/multiplicity | Query decoding is canonical before cache/auth/use case; singleton parameters reject duplicates/alternate-encoding collisions; genuinely repeated parameters define ordering/duplicate/count semantics |
 | HTTP-version translation | HTTP/1.x↔HTTP/2↔HTTP/3 translation validates source framing and reconstructs target messages from canonical semantics rather than forwarding incompatible hop/framing metadata |
+| Content coding | Raw and decoded limits are independent; malformed/unsupported/ambiguously ordered `Content-Encoding` cannot make edge/signature/size enforcement/application process different entity representations |
 | Tenant scope | Tenant-scoped operation carries explicit logical tenant scope and validates current credential + placement + authoritative membership/resource authorization |
-| Tenant auth ordering | When membership/resource authority is cell-owned: authenticate -> logical tenant -> trusted placement -> route -> cell admission -> TenantContext -> request-contract validation -> owning membership/permission/resource authorization; ingress prechecks cannot substitute for the owning decision |
+| Tenant auth ordering | When membership/resource authority is cell-owned: canonical ingress -> authenticate -> logical tenant -> trusted placement -> route -> cell admission -> TenantContext -> request-contract validation -> owning membership/permission/resource authorization; ingress prechecks cannot substitute for the owning decision |
 | Authorization input safety | Owning authorization consumes only request fields validated under the trusted TenantContext/route; earlier cheap size/syntax checks cannot convert caller input into trusted authorization/resource scope or leak protected existence |
 | Cross-tenant admin | Cross-tenant behavior uses distinct privileged platform operation; no wildcard tenant bypass on ordinary routes |
 | Browser boundary | First-party browser protected API flow remains behind BFF; browser JS does not receive long-lived platform access/refresh credentials |
@@ -41,19 +44,21 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Opaque artifact download | Unknown/untrusted/browser-active content defaults to attachment/non-sniffable download semantics; caller metadata cannot opt the object into inline execution or inject/ambiguate response headers/filename parameters |
 | Untrusted artifact processing | Complex document/archive/media classification, preview, conversion, extraction or rendering uses an isolated least-privilege bounded processing profile with no ordinary application secrets/unrestricted egress, bounded expansion/resources and no implicit macro/script/embedded-URL execution; derived output receives independent artifact identity/classification |
 | Archive extraction containment | Archive/member extraction remains inside the intended staging root; absolute/parent traversal, separator tricks, symlink/hardlink and special/device-file escape cannot materialize outside the accepted processing boundary |
-| XML/document active features | XML/XML-derived artifact processing disables DTD/external entities/XInclude/external schemas/stylesheets/resource resolution by default or uses an explicitly isolated deny-by-default resolver with trusted pinned resources |
-| Idempotency admission | Required effectful POST/command atomically create-or-observes durable claim before protected effect |
+| Archive member identity/collision | One canonical member-name model is established before scan/materialization; duplicates and Unicode/case/trailing-dot-space/platform/path normalization collisions are rejected; scanner and later consumer see the same canonical member bytes; materialization is no-follow atomic/no-replace or equivalent |
+| XML/document active features | XML/XML-derived artifact processing **rejects every DTD declaration by default** and disables external entities/XInclude/external schemas/stylesheets/resource resolution; any exceptional DTD/resolver profile is separately reviewed, pinned/isolated and deny-by-default |
+| Idempotency admission | Required effectful POST/command atomically create-or-observes durable claim before protected effect and only after canonical HTTP acceptance |
 | Idempotency fingerprint | Same key/scope with different semantic request conflicts before execution |
 | Idempotency concurrency | Simultaneous same key/fingerprint yields one logical executor |
 | Idempotency response loss | Retry after committed result but lost response replays/reconstructs logical result without re-execution |
 | One-time-secret response loss | Same-key retry after lost secret-bearing response does not duplicate effect and does not re-present/retain secret; safe metadata identifies the completed resource and explicit recovery semantics are deterministic |
 | Lockout-safe secret recovery | Before a secret rotation/reissue can invalidate the caller's only usable credential, the contract proves a still-valid alternate/current authority or a staged/overlap cutover that can authorize recovery without the lost new secret; revoke-plus-create is not treated as recovery when no authority remains to create |
 | Idempotency external ambiguity | Timeout/lease expiry with possible external effect yields operation/reconciliation; does not authorize blind retry |
-| Optimistic concurrency | Lost-update-sensitive mutation requires current revision/`If-Match`; missing/stale precondition has deterministic no-mutation response |
+| Optimistic concurrency | Lost-update-sensitive mutation requires current revision/`If-Match`; missing/stale precondition has deterministic no-mutation response; multi-value/precondition semantics are canonical across hops |
 | State transitions | Protected domain state-machine transitions use owning command semantics; generic PATCH cannot bypass transition policy |
 | Pagination | Deterministic order + tie-breaker; opaque cursor; no unbounded list contract |
 | Cursor scope | Cursor cannot be replayed to weaken tenant/filter/sort/endpoint scope and exposes no sensitive topology |
 | Cursor confidentiality | URL-visible cursor reveals no confidential/restricted tenant/filter/search/resource-key payload; protected cursor state uses server-side opaque handle, confidentiality+integrity protection or equivalent; encoding/signing alone is insufficient for protected plaintext |
+| Cursor browser transport | Browser-facing cursor token classified as protected/reusable is not placed in address/history-visible query transport; URL cursor is allowed only when exposed handle itself is explicitly non-sensitive for that browser surface or under a separately accepted non-browser machine profile |
 | Cursor URL/logging policy | Raw protected cursor values are redacted/hashed/referenced in normal logs/analytics/traces and cannot leak through redirects/referrers/third-party URLs |
 | Query URL confidentiality | Query/filter/search parameters are data-classified; confidential/restricted query state is not forced into URL-visible transport and uses a protected body/query-handle equivalent when necessary |
 | Cursor authorization freshness | Every protected page/historical continuation re-establishes current principal/tenant/resource authorization; old cursor/snapshot/watermark cannot freeze authority after revoke/suspend/scope reduction/relocation |
@@ -87,20 +92,20 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Provider callback tenant binding | Payload tenant/account fields cannot reroute callback away from trusted integration mapping |
 | Provider callback replay | Exact replay cannot repeat protected effect; same raw event ID across trusted scopes does not collide |
 | Provider callback parse bound | Authenticated compressed/structured payload remains bounded after decompression/parsing |
-| Provider callback XML safety | XML callback profile disables DTD/external entities/XInclude/external schema/stylesheet/resource resolution by default; local-file/network entity resolution is rejected unless an isolated deny-by-default resolver profile explicitly permits trusted pinned resources |
+| Provider callback XML safety | XML callback profile **rejects every DTD declaration by default** plus external entities/XInclude/external schema/stylesheet/resource resolution; exceptional DTD/resolver profiles require separate review and pinned/isolated deny-by-default resources |
 | Provider callback durability | Success acknowledgement after async acceptance has durable replayable work authority |
 | Provider callback SSRF | Callback-supplied URL cannot cause arbitrary outbound fetch; follow-up retrieval uses trusted provider destination/protocol/redirect/size/timeout policy |
 | Version compatibility | Additive change obeys unknown-field/open-enum rules; breaking change requires governed version boundary |
 | Semantic compatibility | Schema-compatible change does not silently alter consistency, idempotency, authorization, scope, cache or retry meaning |
 | Cache compatibility | Cache class, shared-cache eligibility, variance, validator/revalidation/current-auth requirements and security-relevant freshness policy are reviewed as semantic contract; a more permissive cache policy cannot ship as an implementation-only change |
-| Security-metadata compatibility | Weakening HTTP framing/header/request-target/trusted-proxy semantics, cursor confidentiality/logging, safe-filename handling, artifact browser-delivery/parser isolation or XML external-resolution policy is reviewed as a security-sensitive semantic change even if schemas remain unchanged |
+| Security-metadata compatibility | Weakening HTTP framing/method/trailer/content-coding/path/query/header/trusted-proxy semantics, cursor confidentiality/transport/logging, archive member identity, safe-filename handling, artifact browser-delivery/parser isolation or XML DTD/external-resolution policy is reviewed as a security-sensitive semantic change even if schemas remain unchanged |
 | Service extraction | Moving owner to new runtime/service does not change public IDs/routes/tenant semantics solely due to deployment topology |
 | Provider replacement | New provider adapter does not force canonical resource IDs/schema to become provider-native |
 | Contract source of truth | Machine-readable contract is reviewed canonical artifact; controller/ORM DTO does not define public schema by accident |
 | Breaking-change CI | Contract diff detects structural risk; semantic review checks HTTP canonicalization/security/ownership/retry/consistency/cache/browser-delivery/cursor/parser changes |
 | Client resilience | Official client ignores compatible unknown response fields/open enum values and only auto-retries operations marked safe |
 | Data classification | Request/response/URL/logging policy prevents secret/credential/regulated/confidential-data leakage |
-| Abuse limits | Body/header/page/filter/include/bulk/export/expensive operation constraints are explicit or explicitly OPEN with implementation blocked |
+| Abuse limits | Body/header/decoded-body/page/filter/include/bulk/export/expensive operation constraints are explicit or explicitly OPEN with implementation blocked |
 
 ## Release-blocking contract failures
 
@@ -109,10 +114,16 @@ The following failures block acceptance/release regardless of other success:
 - two accepted HTTP hops can disagree on where one request ends and another begins;
 - conflicting `Content-Length`/`Transfer-Encoding`, multiple body lengths or malformed transfer framing can reach authentication, body parsing, idempotency admission or protected effect logic;
 - duplicate/conflicting `Authorization`, `Idempotency-Key` or another security-sensitive field can be resolved differently by edge and application code or by arbitrary first/last/framework behavior;
+- security-sensitive request trailers can inject or override authority after initial header admission;
+- implicit method override can make edge/cache/security logic and the owning use case apply different effective methods;
 - gateway/BFF/proxy and owning service can derive different credentials, idempotency keys, preconditions or cache/security meaning from one wire request;
 - untrusted `Forwarded`/`X-Forwarded-*` or conflicting Host/authority metadata can override trusted scheme/host/client identity/routing/security decisions;
-- request-target normalization can route one path/resource while authorization/cache/owning service consumes another interpretation;
+- placement resolution can parse a tenant/resource path before canonical path decoding or downstream can reinterpret that path differently;
+- repeated slash, dot-segment, encoded separator, malformed percent, invalid/non-canonical UTF-8 or double-decoding can make edge/placement/cache/auth/application resolve different resources;
+- duplicate singleton query parameters or alternate encodings can be interpreted as first/last/list differently across hops;
+- a repeated query parameter lacks an explicit multiplicity/order/duplicate rule yet influences cache/auth/validation/use case;
 - HTTP-version translation can turn an invalid/ambiguous source request into a protected accepted request or propagate incompatible framing metadata downstream;
+- content-coding/decompression interpretation can make security verification/size enforcement and semantic processing operate on different entity representations;
 - cache/proxy can accept/cache one interpretation of an ambiguous request while the owning service rejects or interprets another;
 - public/BFF caller can choose or override physical tenant placement;
 - tenant-scoped implementation performs cell-owned membership/resource authorization before trusted placement routing/cell admission/TenantContext/request-contract validation, or treats ingress authorization as a substitute for owning authorization;
@@ -140,7 +151,8 @@ The following failures block acceptance/release regardless of other success:
 - active-inline artifact delivery can use an isolated origin yet bypass current artifact authorization/releasability/delivery-generation/active-stream fencing or turn its delegated capability into a general API credential;
 - complex untrusted artifact/archive/document parsing, conversion, preview or metadata extraction runs in ordinary API/BFF business runtime with application secrets, unrestricted egress or unbounded CPU/memory/time/decompressed-output/nesting;
 - archive extraction can escape the intended staging root through absolute/parent paths, path separator tricks, links or special/device files;
-- artifact/document XML parsing can resolve attacker-controlled external entities/includes/schemas/stylesheets/local files/network resources outside an explicitly accepted isolated resolver profile;
+- archive processing accepts duplicate/aliased member names that collide after Unicode/case/path/platform normalization, permits scanned bytes to be overwritten/shadowed, or materializes members without no-follow atomic/no-replace equivalence;
+- artifact/document XML parsing accepts a DTD under the default profile or can resolve attacker-controlled entities/includes/schemas/stylesheets/local files/network resources outside an explicitly accepted isolated exceptional profile;
 - artifact processing automatically executes embedded scripts/macros or follows attacker-controlled URLs outside the accepted outbound/SSRF boundary;
 - a generated preview/conversion is treated as `safe_inline` without independent output classification/delivery policy;
 - external provider-native identifier becomes canonical resource identity such that provider replacement would break clients;
@@ -152,6 +164,7 @@ The following failures block acceptance/release regardless of other success:
 - list/history endpoint permits effectively unbounded interactive scans with no accepted bound/export path;
 - cursor/snapshot/watermark remains usable to read protected data after current authority was revoked/suspended/reduced or tenant placement changed;
 - URL-visible cursor reveals confidential/restricted tenant/filter/search/resource-key payload because it was merely encoded/signed rather than confidentiality-protected/server-side opaque;
+- a browser-facing protected/reusable continuation token is placed in address/history-visible URL transport without proof that the exposed handle itself is non-sensitive for that surface;
 - raw protected cursor or confidential query/search state can leak through normal logs, analytics, referrers, browser history or redirect/third-party URLs;
 - client-authored filter/sort/include is converted into unrestricted database/query authority;
 - bulk read/mutation treats batch membership as authorization for individual unauthorized resources or leaks existence through mixed per-item errors;
@@ -172,10 +185,10 @@ The following failures block acceptance/release regardless of other success:
 - duplicate/conflicting callback authentication/signature/freshness headers can be interpreted differently across hops;
 - duplicate callback can repeat irreversible logical effect;
 - same provider-local callback ID from two trusted tenant/source scopes collides under one dedup identity;
-- provider callback XML parser permits DTD/external entity/XInclude/external schema/stylesheet resolution to read local files or reach network/internal services outside an explicitly accepted isolated resolver profile;
+- provider callback XML parser accepts a DTD under the default profile or permits external entity/XInclude/external schema/stylesheet resolution to read local files or reach network/internal services outside an explicitly accepted isolated exceptional profile;
 - provider callback returns success while required async work exists only in process memory;
 - callback-supplied URL can trigger unrestricted outbound fetch/redirect and bypass the trusted connector/SSRF boundary;
-- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/HTTP-framing/cache/browser-delivery/cursor/parser semantics;
+- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/HTTP-framing/path-query/cache/browser-delivery/cursor/archive/parser semantics;
 - service extraction/provider/storage/gateway migration forces consumers or security semantics to change because public contract leaked internal topology or relied on parser disagreement;
 - database/ORM model is serialized directly as the public contract without deliberate schema/authorization review.
 

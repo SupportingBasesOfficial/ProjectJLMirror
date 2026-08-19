@@ -66,9 +66,11 @@ Unlimited values are not an accepted default while this remains OPEN.
 
 **Question:** Minimum claim/result retention by operation class.
 
-**Already fixed:** retention must cover the documented client retry/replay/recovery window in which losing evidence could duplicate an effect. The API cannot advertise a longer safe retry window than durability supports.
+**Already fixed:** retention must cover the documented client retry/replay/recovery window in which losing evidence could duplicate an effect. The API cannot advertise a longer safe retry window than durability supports. Restore/PITR/partial loss cannot treat a missing or older recovered claim/result/tombstone as proof that an operation never executed; affected effectful admission remains subject to the accepted recovery-quarantine/`(R,F]` reconciliation boundary until continuity is proven.
 
 One-time-secret material is never made replayable merely to satisfy this retention window; secret-bearing retry semantics follow the explicit non-replayable recovery contract.
+
+**Intentionally OPEN:** exact retention duration, concrete claim/result/tombstone storage, backup/restore product, recovery-generation/epoch representation and recovery topology. These implementation choices do not weaken the fixed recovery-continuity property.
 
 ## OPEN-API-006 — Deprecation/support duration
 
@@ -256,7 +258,7 @@ Choosing a gateway/framework default does not resolve this OPEN item by itself. 
 
 ## OPEN-API-022 — Provider callback authentication/freshness/replay implementation profile
 
-**Question:** For each provider callback profile, what concrete authenticator/signature/certificate/token mechanism is used, which exact request bytes/headers/metadata it covers, which freshness evidence is available, what numeric clock/skew/sequence/replay-retention windows apply, what concrete durable replay/inbox/reconciliation implementation satisfies the accepted correctness properties, and what exact provider-facing acknowledgement status/retry mapping implements the accepted acknowledgement-durability semantics?
+**Question:** For each provider callback profile, what concrete authenticator/signature/certificate/token mechanism is used, which exact request bytes/headers/metadata it covers, which freshness evidence is available, what numeric clock/skew/sequence/replay-retention windows apply, what concrete durable replay/inbox/reconciliation implementation satisfies the accepted correctness properties, what backup/recovery mechanism and replay-generation continuity representation support restore/PITR, and what exact provider-facing acknowledgement status/retry mapping implements the accepted acknowledgement-durability semantics?
 
 **Already fixed:**
 
@@ -271,13 +273,15 @@ Choosing a gateway/framework default does not resolve this OPEN item by itself. 
 - crash between replay admission and durable work cannot create an unrecoverable consumed-without-work state;
 - if a cross-authority irreversible effect may have succeeded but the outcome is not durably recorded, the stable operation remains reconciliation-blocked and no new effect attempt is admitted until authoritative reconciliation resolves the prior outcome;
 - success acknowledgement requires the profile's declared durable-responsibility boundary;
-- retention expiry cannot turn unresolved ambiguous irreversible work or still-supported recovery state into automatic execution eligibility.
+- retention expiry cannot turn unresolved ambiguous irreversible work or still-supported recovery state into automatic execution eligibility;
+- restore/PITR/partial replay-state loss cannot treat missing/older replay state as unused; affected callback admission remains quarantined/fail-closed until surviving inbox/effect/provider-ack/audit/reconciliation authorities prove the accepted `(R,F]` continuity boundary;
+- a still-fresh authenticated callback cannot bypass unresolved recovery continuity or create a second logical executor after replay-state rollback.
 
-**Intentionally OPEN:** exact cryptographic algorithm/profile, provider SDK/library, certificate/token representation, signed-header set, numeric freshness window/skew, nonce/sequence storage mechanism, replay database/cache product, transaction topology, retention duration, exact provider-facing success/error/retry status mapping and cross-authority reconciliation implementation.
+**Intentionally OPEN:** exact cryptographic algorithm/profile, provider SDK/library, certificate/token representation, signed-header set, numeric freshness window/skew, nonce/sequence storage mechanism, replay database/cache product, transaction topology, retention duration, backup/restore product, recovery-generation/epoch representation, exact provider-facing success/error/retry status mapping and cross-authority reconciliation implementation.
 
-**Resolution evidence:** official provider protocol documentation, security analysis of exactly what the authenticator covers, deployed-path interoperability tests, concurrent-delivery tests, crash-point recovery tests including post-effect/pre-outcome-record fault injection, provider retry/acknowledgement behavior, retention/capacity evidence and failure/reconciliation exercises.
+**Resolution evidence:** official provider protocol documentation, security analysis of exactly what the authenticator covers, deployed-path interoperability tests, concurrent-delivery tests, crash-point recovery tests including post-effect/pre-outcome-record fault injection, restore/PITR/partial-loss and mismatched-generation continuity tests, provider retry/acknowledgement behavior, retention/capacity evidence and failure/reconciliation exercises.
 
-A provider/framework default does not resolve this OPEN item merely because it validates a happy-path webhook.
+A provider/framework/recovery product default does not resolve this OPEN item merely because it validates a happy-path webhook or restores a database successfully. The recovered replay authority is not authoritative until continuity is proven.
 
 ## Not Phase 09 OPENs
 

@@ -341,11 +341,14 @@ That profile SHALL use an isolated untrusted-content browser origin or equivalen
 
 - does not share first-party application/BFF ambient session cookies or credential authority;
 - does not share service-worker/DOM origin trust with the application/BFF surface;
+- prevents persistent browser state, storage, service-worker control or same-origin authority from crossing tenant/artifact/principal security boundaries unless an explicitly reviewed design proves equivalent isolation;
 - cannot use the artifact response itself to gain application/BFF authorization;
 - applies a restrictive sandbox/content-security/navigation/opener/referrer/cross-origin policy appropriate to the active format;
 - preserves current artifact authorization, releasability, delivery-generation admission and active-stream fencing before and during protected release.
 
-If a capability or delegated URL is used to bridge the authenticated application to the isolated content origin, it is bounded to the intended artifact/delivery generation and SHALL NOT become a general API credential.
+A sandboxed opaque/unique origin or an equivalent isolation mechanism is preferred when the browser capability permits it. A single shared active-content origin that allows one artifact to install persistent state/service-worker control over unrelated future tenant/artifact content is not an accepted isolation boundary.
+
+If a capability or delegated URL is used to bridge the authenticated application to the isolated content origin, it is bounded to the intended artifact/delivery generation and SHALL NOT become a general API credential. A reusable bearer credential SHALL NOT remain readable in active-document URL/state after protected delivery admission. Where a browser-visible capability is unavoidable, it SHALL be redeemed/burned or otherwise rendered unusable for subsequent protected access before active content can exploit it, and the delivery profile SHALL prevent referrer/log/history-like propagation from re-exposing it.
 
 The exact isolated hostname/origin, capability representation and sandbox/header composition are deployment/profile choices and remain OPEN until an active-inline product use case exists. The **isolation property is not OPEN**.
 

@@ -174,7 +174,11 @@ Policy-bearing transitions such as `approve`, `suspend`, `resolve`, `execute`, `
 
 Secrets, raw credentials, password-equivalent values and other non-retrievable secret material SHALL NOT appear in normal read representations after creation.
 
-Where a secret can be created/rotated, the contract may return the secret value exactly once under an explicit high-risk response contract; subsequent reads expose only metadata such as ID, label, status, scope, created time and last-used time as policy permits.
+Where a secret can be created/rotated, the secret value MAY appear only in an explicit high-risk **initial secret-bearing response**. This is an **at-most-once application-presentation contract**, not a claim that the server can prove the client received the bytes across an unreliable network.
+
+The platform SHALL NOT retain plaintext/recoverable secret material solely so an idempotency retry can reproduce that response. A same-operation replay after response loss MUST NOT re-present the secret. It returns only safe metadata/resource identity plus the documented secret-delivery recovery outcome from the idempotency contract.
+
+Subsequent normal reads expose only metadata such as ID, label, status, scope, created time and last-used time as policy permits. If the caller lost the initial secret-bearing response, recovery requires an explicit authorized rotate/reissue/revoke flow that creates new secret material rather than retrieving the old secret.
 
 ## Resource shape evolution
 

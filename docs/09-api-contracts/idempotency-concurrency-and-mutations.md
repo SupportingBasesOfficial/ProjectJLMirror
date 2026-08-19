@@ -64,9 +64,13 @@ For keyed operations, the server computes/persists a stable request fingerprint 
 
 The fingerprint SHALL be insensitive to transport details that do not alter the logical request, and SHALL include all fields whose difference would represent a different logical operation.
 
+For structured request bodies, the fingerprint is derived from the **same canonical parsed entity** consumed by request validation, owning authorization inputs and use-case/domain mapping. Duplicate/alias JSON members, multipart part-name/metadata/boundary ambiguity or equivalent structured-format parser disagreement fail closed before fingerprinting. Retained raw bytes SHALL NOT be independently reparsed by the idempotency layer into a competing semantic request.
+
+A contract whose business semantics intentionally depend on exact raw bytes must state that explicitly and still prove that authorization, fingerprinting and execution refer to one accepted logical entity/effect; a framework parser default cannot silently make raw bytes a second semantic authority.
+
 The same effective scope/key with a different fingerprint is a conflict and MUST NOT execute.
 
-Canonical HTTP normalization happens before fingerprinting. Fingerprinting SHALL NOT be used to “paper over” a wire request that different hops could parse into different methods, resources, headers or bodies.
+Canonical HTTP normalization and canonical structured-entity establishment happen before fingerprinting. Fingerprinting SHALL NOT be used to “paper over” a wire request or structured body that different hops/components could parse into different methods, resources, headers or body fields.
 
 ## Atomic admission
 
@@ -74,6 +78,7 @@ The accepted system invariant applies directly to the API contract:
 
 ```text
 canonical HTTP request
+  -> canonical structured entity when body is structured
   -> derive effective idempotency scope
   -> compute/validate semantic fingerprint
   -> atomic create-or-observe durable claim
@@ -85,7 +90,7 @@ canonical HTTP request
 
 A `SELECT` followed by an unprotected claim insert is not sufficient.
 
-No idempotency claim is created for a request rejected by framing/header/request-target/method/content-coding canonicalization before protected admission.
+No idempotency claim is created for a request rejected by framing/header/request-target/method/content-coding/structured-entity canonicalization before protected admission.
 
 ## Replay representation
 
@@ -242,7 +247,7 @@ Idempotency-Key: ...
 
 Idempotency protects duplicate execution of the same logical command. `If-Match` protects against executing it against a resource version the caller did not intend. They solve different races and MAY both be required.
 
-Canonical HTTP ingress ensures all hops agree that this is the same method, resource target, idempotency key and precondition before either race-control mechanism executes.
+Canonical HTTP ingress ensures all hops agree that this is the same method, resource target, idempotency key and precondition before either race-control mechanism executes. When the command carries a structured body, the same canonical structured entity is also shared by precondition-adjacent validation, idempotency fingerprinting, owning authorization and command mapping.
 
 ## Create-if-absent
 
@@ -297,7 +302,9 @@ Effectful/idempotent endpoints SHALL test, through the deployed edge/application
 - ambiguous request-target/authority cannot move one key into a different logical operation scope;
 - duplicate/multi-line `If-Match` has one accepted protocol interpretation or is rejected;
 - conflicting framing/content coding cannot make the claim fingerprint cover bytes/semantics different from the use case;
-- canonical-ingress rejection creates no durable claim/effect.
+- duplicate/alias JSON members, multipart part-name/metadata/boundary ambiguity or equivalent structured parsing cannot make idempotency fingerprinting observe a logical body different from authorization/use-case mapping;
+- retained raw structured body is not independently reparsed into a competing idempotency meaning after canonical entity establishment;
+- canonical-ingress or canonical-entity rejection creates no durable claim/effect.
 
 ## SDK retry policy
 
@@ -307,4 +314,4 @@ An SDK MUST NOT automatically retry an effectful operation solely because it rec
 
 For one-time-secret operations, SDKs MUST treat `secret.delivery_not_replayable` as a recovery state requiring an explicit user/application decision; they MUST NOT automatically issue a replacement secret operation.
 
-SDKs cannot assume that a malformed/ambiguous transport request created an idempotency claim; they should construct a new valid canonical request rather than replaying transport ambiguity.
+SDKs cannot assume that a malformed/ambiguous transport or structured-body request created an idempotency claim; they should construct a new valid canonical request rather than replaying ambiguity.

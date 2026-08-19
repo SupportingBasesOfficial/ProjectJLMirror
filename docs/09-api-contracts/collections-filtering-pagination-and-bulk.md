@@ -7,6 +7,8 @@
 
 Collection contracts are designed for large cardinality from the beginning. A list endpoint SHALL NOT rely on assumptions such as "this tenant will only ever have a few hundred rows" unless the product contract actually enforces that bound.
 
+Collection requests inherit `http-message-framing-and-canonicalization.md`. Query decoding/multiplicity is part of the canonical request and cannot be reparsed differently by gateway, cache, authorization or owning application logic.
+
 ## Default collection shape
 
 Paginated collections return:
@@ -45,12 +47,14 @@ Approximate counts are explicitly labeled approximate.
 
 ## Pagination request
 
-Canonical request parameters are:
+For machine/public collection profiles whose cursor is explicitly classified URL-safe/non-sensitive, a canonical request MAY use:
 
 ```text
 limit=<positive integer>
 cursor=<opaque value>
 ```
+
+This is **not** a universal requirement that every protected/browser cursor live in the query string.
 
 Every collection endpoint defines:
 
@@ -58,9 +62,39 @@ Every collection endpoint defines:
 - maximum `limit`;
 - stable default sort;
 - cursor binding semantics;
+- cursor data classification;
+- cursor transport profile;
+- query-parameter multiplicity;
 - whether historical snapshot consistency is promised.
 
-Clients MUST NOT assume the maximum page size is the same across all resource families.
+Clients MUST NOT assume the maximum page size or cursor transport is the same across all resource families/surfaces.
+
+## Canonical query decoding and multiplicity
+
+A query parameter has one accepted decoded name/value/multiplicity meaning before routing, cache, validation or authorization consumes it.
+
+The accepted surface profile SHALL reject malformed/non-canonical query encoding that could be interpreted differently across hops, including inconsistent percent-decoding or character-decoding behavior.
+
+Each parameter declares one multiplicity class:
+
+```text
+singleton
+repeated_list_with_canonical_order_semantics
+comma_list_under_one_singleton_parameter
+not_accepted
+```
+
+Examples such as `cursor`, `limit`, `q` and a normal scalar filter are singleton unless their endpoint contract explicitly says otherwise. Duplicate singleton keys are rejected. A gateway/proxy/framework SHALL NOT pick first while another picks last or aggregates into a list.
+
+A genuinely repeated parameter is allowed only when the endpoint defines:
+
+- whether order matters;
+- duplicate-value behavior;
+- normalization/decoding;
+- maximum count;
+- how it participates in authorization, cache keys, cursor binding and request fingerprinting.
+
+Different encoded spellings that normalize to the same logical key cannot bypass singleton/duplicate detection.
 
 ## Cursor requirements
 
@@ -76,9 +110,9 @@ The server-issued cursor binds enough context to prevent it from being safely re
 - deterministic last-item key;
 - expiration/version where the endpoint requires it.
 
-Cursor opacity is a client-compatibility property, **not** a confidentiality guarantee. A cursor carried in a URL/query parameter SHALL NOT expose confidential/restricted tenant data, protected search terms, raw resource keys, credentials, provider secrets, physical placement, or sensitive internal topology merely because the token is encoded or signed.
+Cursor opacity is a client-compatibility property, **not** a confidentiality guarantee. A URL-visible cursor SHALL NOT expose confidential/restricted tenant data, protected search terms, raw protected resource keys, credentials, provider secrets, physical placement or sensitive internal topology merely because the token is encoded or signed.
 
-If the cursor needs to bind protected state that would be unsafe to expose through URL/history/log/referrer surfaces, the implementation SHALL use one of the following accepted properties:
+If the cursor needs to bind protected state, the implementation SHALL use one of the following accepted properties:
 
 - a server-side opaque handle whose exposed value reveals no protected payload;
 - a self-contained envelope providing confidentiality and integrity for the protected cursor payload;
@@ -86,9 +120,26 @@ If the cursor needs to bind protected state that would be unsafe to expose throu
 
 Encoding/base64/signing without confidentiality is insufficient when the payload contains protected data.
 
-Raw cursor values are security-sensitive URL material. Normal access logs, analytics, traces, referrers and support telemetry SHALL NOT record full protected cursor values by default; use redaction, hashing/reference or another accepted safe representation. A cursor SHALL NOT be copied into third-party URLs or redirect targets.
+## Cursor transport and browser-history safety
 
-The server MAY encode/sign/encrypt cursors internally or use server-side state. Exact mechanism is implementation-specific as long as callers cannot use the cursor to weaken authorization, inject arbitrary database ordering/filter state, or recover protected payload data from URL-visible material.
+Confidentiality of cursor plaintext is not enough if the **cursor token itself** is a reusable protected capability/continuation value that can be retained in browser history, copied URLs or address-bar history.
+
+Every cursor contract therefore classifies the exposed token itself as one of:
+
+```text
+url_safe_non_sensitive_handle
+protected_continuation_token
+```
+
+`url_safe_non_sensitive_handle` MAY be carried in a query parameter only when the endpoint proves that disclosure/persistence of the handle itself does not grant protected continuation authority or reveal protected data beyond current reauthorization, and the handle is acceptable for the surface's URL/history policy.
+
+A `protected_continuation_token` SHALL NOT be required in browser-visible URL/query transport. Browser/BFF flows use a non-URL-visible continuation representation, such as a bounded POST/query body, BFF-mediated server-side continuation state, or another reviewed mechanism whose protected token is not placed in address/history/referrer-visible URL text.
+
+Machine-to-machine clients MAY use a URL-visible protected cursor only under an explicitly accepted non-browser profile that treats the full token as sensitive, excludes it from logs/referrers/redirects and documents the residual transport/storage risk. The default browser profile does not rely on that exception.
+
+Raw protected cursor values are security-sensitive material. Normal access logs, analytics, traces, referrers and support telemetry SHALL NOT record full protected cursor values by default; use redaction, hashing/reference or another accepted safe representation. A protected cursor SHALL NOT be copied into third-party URLs or redirect targets.
+
+The server MAY encode/sign/encrypt cursors internally or use server-side state. Exact mechanism is implementation-specific as long as callers cannot use the cursor to weaken authorization, inject arbitrary database ordering/filter state, recover protected payload data, or acquire a protected bearer-like continuation through unsafe browser URL persistence.
 
 A valid cursor is **not authorization**. Every page request re-establishes the current principal/session/credential state, tenant context and applicable membership/permission/resource scope before returning protected items. Revocation, tenant suspension, scope reduction or relocation between pages SHALL NOT remain bypassable merely because the caller holds an older valid cursor.
 
@@ -96,7 +147,7 @@ Cursor binding MAY include principal/security-scope dimensions when an endpoint 
 
 ## URL/query confidentiality
 
-Filter/search/query values are also exposed transport metadata when carried in a URL. An endpoint SHALL classify whether its accepted query parameters may contain confidential/restricted values.
+Filter/search/query values are exposed transport metadata when carried in a URL. An endpoint SHALL classify whether its accepted query parameters may contain confidential/restricted values.
 
 If a normal use case can require confidential search/filter input, the contract SHALL use a representation that does not depend on placing that protected input in browser/history/referrer/log-visible URL text, for example a bounded body-based query contract or a server-side opaque query handle. Exact representation is endpoint-specific.
 
@@ -136,14 +187,16 @@ An endpoint using offset semantics documents cardinality/cost bounds and may lat
 
 ## Filtering
 
-Filters are allowlisted per endpoint. Canonical simple filter syntax is:
+Filters are allowlisted per endpoint. A simple filter profile MAY use:
 
 ```text
 filter[field]=value
 filter[field]=value1,value2
 ```
 
-An endpoint contract defines each allowed operator/value syntax. The API SHALL NOT translate arbitrary client field names/operators directly into SQL.
+An endpoint contract defines each allowed operator/value syntax and multiplicity. Duplicate singleton filter keys are rejected; a framework cannot silently collapse/override them.
+
+The API SHALL NOT translate arbitrary client field names/operators directly into SQL.
 
 Advanced filter expressions, if introduced later, require their own bounded grammar, authorization review, complexity limits and compatibility contract.
 
@@ -151,11 +204,13 @@ Filter values follow the URL/query confidentiality rule above. A protected value
 
 ## Search
 
-Free-text/fuzzy search uses an explicit parameter such as:
+Free-text/fuzzy search MAY use an explicit parameter such as:
 
 ```text
 q=<text>
 ```
+
+only for a profile where URL visibility is acceptable for that data classification.
 
 Search semantics are endpoint-specific and SHOULD declare whether results are exact, prefix, token, fuzzy or provider-backed.
 
@@ -165,7 +220,7 @@ If search text may contain confidential customer/tenant data, credentials, secre
 
 ## Sorting
 
-Canonical sort syntax:
+Canonical sort syntax may use:
 
 ```text
 sort=field,-other_field
@@ -174,6 +229,8 @@ sort=field,-other_field
 Ascending is the default; `-` indicates descending.
 
 Sortable fields are allowlisted. Unknown/unsupported sort fields are rejected rather than ignored.
+
+`sort` is singleton under this syntax; repeated sort parameters are rejected unless a future profile explicitly defines repeated-list semantics.
 
 The server SHALL add a deterministic tie-breaker internally when the requested sort is not unique.
 
@@ -188,6 +245,8 @@ include=assignee,service
 Includes are bounded and explicitly costed. They SHALL NOT provide arbitrary graph traversal or bypass ownership/authorization boundaries.
 
 An included resource is authorized independently as required. A caller authorized to read an incident does not automatically gain access to every referenced protected object.
+
+`include` multiplicity is explicitly defined by the endpoint/profile; duplicate parameter instances cannot be interpreted differently across layers.
 
 ## Sparse fields
 
@@ -206,6 +265,8 @@ The endpoint defines maximum time span/result volume or an asynchronous export p
 Historical pagination identity remains based on platform-owned resource/observation semantics and SHALL NOT expose physical telemetry partitions or confidential cursor payload data.
 
 Current authorization is re-evaluated for each historical page/export admission; possession of an old cursor/watermark does not preserve access after revocation or scope reduction.
+
+Browser-facing historical continuation follows the cursor transport/history rule above.
 
 ## Bulk reads
 
@@ -287,6 +348,24 @@ The platform MAY enforce query complexity budgets based on filter count, include
 
 A rejected query returns a stable error explaining the supported bound at a safe level; it does not expose query plans or database internals.
 
+Malformed/duplicate query encodings are rejected before query-complexity evaluation can be used as an alternate parser path.
+
+## Required query/cursor tests
+
+Collection endpoints test, as applicable:
+
+- malformed/non-canonical query encoding rejected before routing/cache/auth/use case;
+- duplicate singleton `cursor`, `limit`, `q`, scalar filter or sort parameters rejected;
+- repeated-list parameters have one documented order/duplicate/canonicalization rule across gateway/cache/application;
+- alternate encoded spellings cannot bypass duplicate detection;
+- protected browser cursor is not placed in address/history-visible URL transport;
+- a URL-visible cursor is present only when its exposed handle is explicitly classified non-sensitive for that surface, or under a separately accepted non-browser machine profile;
+- protected cursor plaintext is not exposed by encoding/signing alone;
+- current authorization is re-established on every continuation;
+- normal logs/referrers/redirects do not persist protected cursor/query values.
+
 ## Future index/storage evolution
 
 Changing from PostgreSQL query execution to a read model, search engine, columnar store or extracted service SHALL NOT require changing the collection contract when externally meaningful filtering/sorting/pagination semantics remain equivalent.
+
+A future gateway/query parser/search engine extraction likewise cannot redefine query multiplicity/decoding or cursor transport semantics without compatibility/security review.

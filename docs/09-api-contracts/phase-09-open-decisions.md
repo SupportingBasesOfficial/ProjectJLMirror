@@ -77,13 +77,13 @@ One-time-secret material is never made replayable merely to satisfy this retenti
 
 **Question:** Multipart, resumable/chunked or dedicated staged-upload representation for large imports/attachments.
 
-**Already fixed:** protected bytes have stable artifact/staging identity before unmanaged persistence can become undiscoverable; upload is bounded/reconcilable/governed and cannot bypass current tenant authorization.
+**Already fixed:** protected bytes have stable artifact/staging identity before unmanaged persistence can become undiscoverable; upload is bounded/reconcilable/governed and cannot bypass current tenant authorization. Uploader-supplied filename, extension or media type is untrusted metadata and cannot by itself authorize inline browser execution or define the authoritative delivery media type.
 
 ## OPEN-API-008 — Artifact range/download optimization
 
 **Question:** Which artifact classes support HTTP range/resume/CDN acceleration and through which implementation mechanism.
 
-**Already fixed:** every new/resumed release remains subject to current auth/releasability/delivery-generation admission; implementation may not weaken prompt erasure/active-stream fencing.
+**Already fixed:** every new/resumed release remains subject to current auth/releasability/delivery-generation admission, active-stream fencing and the artifact's accepted browser-delivery profile; optimization may not weaken prompt erasure or active-content isolation.
 
 ## OPEN-API-009 — Exact tracing propagation profile
 
@@ -145,9 +145,27 @@ Endpoint-level contracts are added incrementally using the canonical endpoint te
 - protected authentication/authorization/existence-concealing error variants cannot be shared across principals/tenants by default;
 - `Vary` or caller-supplied tenant/principal metadata is not authorization;
 - `public_shared` is limited to deliberately public projections independent of protected caller authority;
-- protected artifact caching must preserve current authorization/releasability/delivery-generation/active-stream fencing or remain non-shared.
+- protected artifact caching must preserve current authorization/releasability/delivery-generation/active-stream/browser-delivery fencing or remain non-shared.
 
 **Resolution evidence:** Product freshness expectations, security classification, revocation/erasure semantics, traffic/capacity evidence and cache/CDN implementation proofs. Numeric TTLs are not invented in advance.
+
+## OPEN-API-018 — Active browser artifact isolation profile
+
+**Question:** If Product later requires inline rendering of browser-active/script-capable protected artifacts, what exact isolated hostname/origin, delegated delivery-capability representation, sandbox/content-security/navigation/opener/referrer/cross-origin header profile and browser integration are accepted?
+
+**Already fixed:**
+
+- authorization to download bytes does not authorize those bytes to execute in the application/BFF security origin;
+- unknown/untrusted/browser-active content defaults to `opaque_download` with server-controlled media type, attachment behavior and `nosniff`-equivalent protection;
+- uploader-supplied filename, extension or `Content-Type` cannot opt content into inline execution;
+- `safe_inline` is restricted to explicitly accepted, independently classified browser-inert content classes;
+- active-inline content requires an isolated untrusted-content browser boundary with no application/BFF ambient session cookies/credential authority and no application/BFF DOM/service-worker origin trust;
+- any delegated capability remains bounded to the intended artifact/delivery generation and cannot become a general API credential;
+- current artifact authorization, releasability, delivery-generation admission and active-stream erasure fencing remain mandatory.
+
+**Resolution evidence:** concrete Product need for active inline rendering, browser threat model, content classes/formats, CSP/sandbox design, cookie/origin topology, delegated-delivery revocation proof and end-to-end stored-XSS/security tests.
+
+No active-inline implementation may ship merely because an object store/CDN/browser can render the bytes while this profile remains unresolved.
 
 ## Not Phase 09 OPENs
 

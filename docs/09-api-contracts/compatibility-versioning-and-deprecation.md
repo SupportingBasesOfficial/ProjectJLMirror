@@ -5,7 +5,7 @@
 
 ## Principle
 
-Contract evolution is explicit. JLMIRROR SHALL NOT treat application deployment version, database schema version or service extraction as a reason for external consumers to change.
+Contract evolution is explicit. JLMIRROR SHALL NOT treat application deployment version, database schema version, gateway/proxy/runtime replacement or service extraction as a reason for external consumers to change or for the same accepted request to acquire a different security meaning.
 
 ## Major version namespace
 
@@ -36,7 +36,7 @@ Generally compatible response evolution includes:
 
 ## Breaking changes
 
-The following are breaking by default:
+The following are breaking or security-sensitive by default:
 
 - removing or renaming a field;
 - changing a field's type or semantic meaning;
@@ -45,6 +45,8 @@ The following are breaking by default:
 - making a previously optional request field mandatory;
 - reducing a documented allowed value/range in a way existing valid clients may violate;
 - changing a closed-enum value set;
+- changing accepted HTTP framing/header/request-target/trusted-proxy interpretation so the same wire request can acquire a different security or routing meaning;
+- making a previously rejected ambiguous request accepted because of gateway/proxy/runtime/parser change;
 - changing success/error semantics in a way that alters safe retry or authorization behavior;
 - changing idempotency scope/meaning such that an existing key can duplicate or suppress a different logical effect;
 - changing pagination ordering/cursor semantics in a way that invalidates active traversal beyond the cursor contract's documented lifecycle;
@@ -53,9 +55,9 @@ The following are breaking by default:
 - weakening artifact media classification, safe filename, browser-delivery/active-content isolation, parser sandbox/egress/resource bounds, archive extraction containment or XML external-resolution semantics;
 - exposing previously hidden physical/provider implementation semantics as required client input.
 
-Breaking changes require a new major contract or another explicitly governed compatibility mechanism.
+Breaking changes require a new major contract or another explicitly governed compatibility mechanism when client-visible semantics truly change. A pure security tightening MAY remain within the same major if conforming client behavior remains valid, but it still requires explicit security/compatibility review.
 
-A security-tightening cache/cursor/artifact/parser change MAY be deployable inside the same major when it preserves functional semantics for conforming clients, but it still requires explicit compatibility/security review because clients/intermediaries may observe changed behavior. A security policy becoming more permissive is never treated as an implementation-only optimization.
+A security-tightening HTTP-framing/cache/cursor/artifact/parser change MAY be deployable inside the same major when it preserves functional semantics for conforming clients, but a security policy becoming more permissive is never treated as an implementation-only optimization.
 
 ## Open versus closed enums
 
@@ -84,9 +86,32 @@ Request extensibility occurs through explicit versioned schemas or documented ex
 
 Schema compatibility is necessary but not sufficient.
 
-Changing a field from "current authoritative state" to "eventually consistent approximation", changing whether an operation is idempotent/retry-safe, changing response-cache reuse semantics, exposing cursor payloads that were previously confidential, or weakening artifact/parser safety can be a semantic breaking/security change even if the JSON schema is unchanged.
+Changing a field from "current authoritative state" to "eventually consistent approximation", changing whether an operation is idempotent/retry-safe, changing response-cache reuse semantics, exposing cursor payloads that were previously confidential, weakening artifact/parser safety, or changing how multiple HTTP hops interpret framing/security headers/request targets can be a semantic breaking/security change even if the JSON schema is unchanged.
 
-Contract review therefore evaluates behavior, consistency, security, ownership, authorization, idempotency, retry, cache, continuation confidentiality, artifact delivery and parser semantics in addition to shape.
+Contract review therefore evaluates behavior, HTTP message interpretation, consistency, security, ownership, authorization, idempotency, retry, cache, continuation confidentiality, artifact delivery and parser semantics in addition to shape.
+
+## HTTP message/framing compatibility
+
+`http-message-framing-and-canonicalization.md` is part of the security/compatibility contract for every externally reachable HTTP surface.
+
+Compatibility review SHALL compare at least:
+
+- accepted body framing and ambiguity rejection;
+- `Content-Length`/`Transfer-Encoding` handling;
+- security-sensitive header cardinality/combine semantics;
+- BFF security-relevant cookie/header parsing profile;
+- Host/authority and trusted-proxy metadata interpretation;
+- request-target/path/query normalization used by routing/authorization/cache/owning service;
+- HTTP-version translation behavior and hop-by-hop field handling;
+- callback exact-raw-body/signature consistency;
+- realtime canonical-ingress requirement before `101`;
+- cache/proxy interpretation of canonical request keys.
+
+Changing gateway, reverse proxy, HTTP server/library, protocol version mix or service topology is implementation evolution only if those canonical semantics remain equivalent and the cross-hop ambiguity tests still pass.
+
+A deployment change that makes a previously ambiguous/rejected request reach protected authentication/idempotency/authorization/effect logic is a security regression even when clients see the same OpenAPI schema.
+
+Numeric header limits and exact gateway configuration may remain `OPEN-API-021`; the one-wire-message/one-canonical-interpretation property is not OPEN.
 
 ## Response-cache compatibility
 
@@ -102,6 +127,8 @@ Compatibility review SHALL compare at least:
 - security-relevant freshness/invalidation semantics where accepted.
 
 A deployment, CDN or framework change SHALL NOT make an endpoint more cache-permissive than its accepted contract without a reviewed contract change. `Vary`, URL partitioning or tenant/principal labels do not substitute for authorization.
+
+A cache/proxy also cannot treat an ambiguous host/path/query/header request differently from the owning service. Canonical message interpretation precedes safe cache eligibility.
 
 Numeric TTL tuning may remain `OPEN-API-017` when not yet accepted, but the absence of a number does not make cache class or authorization/revalidation semantics implementation-private.
 
@@ -175,6 +202,8 @@ The first-party BFF may evolve more tightly with the first-party Web client than
 
 A BFF change cannot bypass downstream API/domain governance merely because the browser is deployed by the same organization.
 
+Gateway/BFF/session/parser changes also preserve canonical HTTP ingress, security-relevant cookie/header interpretation and trusted proxy/origin semantics.
+
 ## Provider callback compatibility
 
 Provider callback adapters version independently when external provider protocols require it. Provider-specific payload changes are normalized behind the adapter and SHALL NOT leak into unrelated public domain contracts.
@@ -183,9 +212,13 @@ Where a provider changes a callback protocol incompatibly, the adapter may tempo
 
 A parser/library/profile change for XML or another active structured format must preserve the accepted deny-by-default external-resolution policy; a library default that re-enables DTD/entities/includes/schema/network resolution is a security regression, not a compatible implementation detail.
 
+A gateway/runtime change must also preserve the exact bounded raw body/security-header interpretation authenticated by the callback profile. Signature verification over bytes different from those processed by the adapter is incompatible and unsafe.
+
 ## Public projection compatibility
 
 Public status/projection consumers may be unauthenticated and difficult to inventory. Their compatibility changes therefore require the same or stronger caution as authenticated public APIs.
+
+Public does not mean ambiguity-safe by default; request framing/cache/request-target interpretation still follows the canonical HTTP ingress profile.
 
 ## Webhook/event boundary
 
@@ -201,7 +234,9 @@ Mixed application/schema versions during rolling deployment SHALL continue servi
 
 Moving an owning context from the modular monolith into a separately deployed service SHALL NOT create a public API break.
 
-Internal routing may change. Public operation identity, tenant scope, authorization, idempotency and resource representation remain stable unless a separately governed external contract change is accepted.
+Internal routing may change. Public operation identity, tenant scope, authorization, idempotency, resource representation and canonical HTTP request meaning remain stable unless a separately governed external contract change is accepted.
+
+Introducing a new proxy/service hop during extraction triggers cross-hop framing/header/request-target regression tests; extra distribution cannot create a new parser-confusion authority boundary by accident.
 
 ## Provider replacement
 
@@ -214,6 +249,10 @@ Provider-specific capabilities that genuinely differ are exposed as explicit cap
 CI SHALL compare proposed contract changes with the currently accepted baseline and flag likely breaking/security-sensitive changes in:
 
 - paths/methods;
+- HTTP message/framing profile;
+- security-sensitive header cardinality/combine rules;
+- trusted proxy/authority/request-target normalization;
+- HTTP-version translation profile/parser boundary;
 - request requiredness/type;
 - response fields/types;
 - enum compatibility classification;
@@ -229,7 +268,9 @@ CI SHALL compare proposed contract changes with the currently accepted baseline 
 - artifact media/safe-filename/browser-delivery/active-content isolation;
 - parser/renderer isolation/egress/resource/archive/XML external-resolution policy.
 
-Automated schema diff is advisory for semantic compatibility; human/architecture/security review remains required for meaning changes, especially changes that can expose protected data or grant active content/parser behavior without changing schema.
+Automated schema diff is advisory for semantic compatibility; human/architecture/security review remains required for meaning changes, especially changes that can alter HTTP parser/security interpretation, expose protected data or grant active content/parser behavior without changing schema.
+
+Gateway/proxy/runtime changes SHOULD execute the deployed-path ambiguity suite, including conflicting framing, duplicate security headers, authority/proxy spoofing, request-target normalization, callback raw-body/signature equivalence and realtime pre-`101` canonical-ingress cases.
 
 ## Version retirement
 

@@ -152,6 +152,14 @@ callback_reconciliation_policy
 callback_xml_dtd_policy
 callback_xml_external_resolution_policy
 callback_outbound_fetch_policy
+realtime_ticket_scope_policy
+realtime_ticket_expiry_policy
+realtime_current_authority_policy
+realtime_placement_admission_policy
+realtime_atomic_single_winner_policy
+realtime_burn_on_ambiguity_policy
+realtime_replay_recovery_continuity_policy
+realtime_subscription_authorization_separation_policy
 data_classification
 ```
 
@@ -184,11 +192,12 @@ An endpoint is not ready for implementation until review proves:
 21. explicit response-cache class, protected-error policy, sharing/variance/revalidation/current-auth policy;
 22. artifact/browser delivery, authoritative media type, safe filename and active-content isolation where applicable;
 23. isolated/bounded artifact/parser/archive processing, canonical archive member policy and XML DTD/external-resolution policy;
-24. callback authentication, accepted freshness evidence source, cryptographically/trusted-protocol-bound freshness, governed freshness window/sequence policy, trusted replay identity scope, atomic create-or-observe replay admission, durable inbox/work coupling, replay retention/expiry, replay restore/PITR continuity, acknowledgement durability, post-effect ambiguity reconciliation, XML/SSRF policy and realtime admission policy where applicable;
-25. audit/observability requirements;
-26. compatibility classification including parser/entity/response-header/idempotency/callback freshness-replay/recovery-continuity semantics;
-27. security/privacy classification;
-28. required tests.
+24. callback authentication, accepted freshness evidence source, cryptographically/trusted-protocol-bound freshness, governed freshness window/sequence policy, trusted replay identity scope, atomic create-or-observe replay admission, durable inbox/work coupling, replay retention/expiry, replay restore/PITR continuity, acknowledgement durability, post-effect ambiguity reconciliation and XML/SSRF policy where applicable;
+25. realtime admission metadata where applicable, including bounded ticket scope/expiry, current authority, current placement/admission generation, atomic shared single-winner consume, burn-on-ambiguity, replay-store recovery/epoch continuity and subscription-authorization separation;
+26. audit/observability requirements;
+27. compatibility classification including parser/entity/response-header/idempotency/callback freshness-replay/recovery-continuity/realtime replay-admission semantics;
+28. security/privacy classification;
+29. required tests.
 
 ## Canonical HTTP gate
 
@@ -277,6 +286,23 @@ Review MUST prove:
 
 A callback implementation that performs `check replay -> later record/queue work` does not satisfy this gate.
 
+## Realtime admission governance gate
+
+Every `realtime-admission` endpoint SHALL govern the full pre-`101` ticket/replay authority rather than relying on gateway implementation defaults.
+
+Review MUST prove:
+
+- ticket scope is bounded to the intended principal, logical tenant and realtime connection scope and cannot become a general API credential;
+- ticket expiry is explicit and enforced before upgrade;
+- current underlying session/credential state and current membership/permission/tenant-access authority are re-established before `101`;
+- current trusted placement/admission generation is checked where applicable so relocation or retired source placement cannot remain authoritative;
+- replay admission uses an atomic shared single-winner consume across replicas; a read/check flow, replica-local memory or non-atomic consume is prohibited;
+- consumption is burn-on-ambiguity: after successful consume, crash or failed `101` completion cannot restore redeemability;
+- replay-store restart/loss/restore never turns missing state into `unused`; admission rejects/fails closed until accepted replay continuity is re-established or a trusted epoch/generation advance invalidates outstanding old tickets;
+- successful connection authority remains distinct from later subscription authorization, which Phase 10 must preserve.
+
+A gateway/runtime/replay-store change that weakens any of these dimensions is security-sensitive even when the route, status and OpenAPI schema remain unchanged.
+
 ## Artifact/parser gate
 
 Browser-reachable artifact bytes require deliberate delivery classification. Unknown/untrusted/browser-active content fails toward attachment/non-sniffable behavior; filenames are server-derived/unambiguous; active-inline uses an isolated untrusted-content boundary without application/BFF ambient credentials or origin/service-worker trust while preserving current artifact authorization/fencing.
@@ -328,7 +354,7 @@ Every implemented endpoint SHALL test at minimum:
 - response-cache class/revalidation/non-reuse including protected errors;
 - artifact/browser/parser/archive/XML safety where applicable;
 - callback raw-body/signature, accepted freshness source/window, authenticated freshness binding, atomic durable replay admission, replay retention, replay recovery continuity, acknowledgement durability, crash/reconciliation, DTD/XML/SSRF boundary;
-- realtime canonical ingress before `101`;
+- realtime ticket scope/expiry, current authority/placement, atomic single-winner consume, burn-on-ambiguity and replay recovery/epoch continuity before `101`;
 - size/complexity limits;
 - secret/topology/confidential URL leakage checks.
 
@@ -392,6 +418,18 @@ At least the applicable vectors include:
 - a still-fresh authenticated callback cannot bypass the restore/PITR recovery gate;
 - two trusted integration/tenant/source scopes using the same provider-local event ID remain independent.
 
+### Mandatory realtime admission vectors
+
+At least the applicable vectors include:
+
+- ticket scope/expiry mismatch rejects before `101`;
+- revoked/suspended current session, membership, permission, tenant access or retired placement generation rejects before consume/`101` under the accepted ordering;
+- simultaneous presentation of one ticket to multiple replicas yields at most one successful `101`;
+- a read/check replay flow or replica-local replay state cannot satisfy the single-winner profile;
+- crash after ticket consume but before completing `101` leaves the ticket burned and requires a fresh mint;
+- replay-store restart/loss/restore does not make a consumed still-valid ticket redeemable; missing state rejects unless accepted continuity or trusted epoch/generation invalidation is established;
+- a successful connection does not authorize arbitrary later subscriptions.
+
 Artifact/binary tests additionally cover media authority, safe filename, active-inline isolation, range/CDN fencing, archive expansion/containment/member collision/no-replace, parser secret/egress isolation, DTD/external-resolution denial and derivative classification.
 
 ## Consumer compatibility tests
@@ -422,13 +460,14 @@ It flags likely breaking/security-sensitive changes including:
 - **response-header profile changes**, including grammar, cardinality, serialization owner or multi-hop append/combine behavior;
 - response cache/shared-cache/protected-error/variance/revalidation changes;
 - **callback freshness/replay changes**, including accepted freshness evidence source, freshness binding, clock/window/sequence policy, replay identity scope, atomic replay admission, durable coupling, replay retention/expiry, replay recovery continuity, acknowledgement durability or reconciliation;
+- **realtime admission changes**, including ticket scope/expiry, current-authority or placement checks, atomic single-winner consume, burn-on-ambiguity, replay recovery/epoch continuity or subscription-authorization separation;
 - cursor confidentiality/token classification/browser transport/logging changes;
 - protected query values becoming URL-visible;
 - artifact browser/media/filename/active-content changes;
 - parser isolation/egress/resource/archive-member/XML policy weakening;
 - one-time-secret recovery/cutover weakening.
 
-Automated schema diff is advisory. Reviewers still inspect semantic changes to HTTP parsing, structured entity interpretation, response headers, authorization, idempotency, cache, callbacks, continuations, artifacts/parsers and recovery.
+Automated schema diff is advisory. Reviewers still inspect semantic changes to HTTP parsing, structured entity interpretation, response headers, authorization, idempotency, cache, callbacks, realtime admission, continuations, artifacts/parsers and recovery.
 
 A deployment/framework/gateway/reverse-proxy/parser/provider-SDK/CDN/change in backup/recovery topology is subject to the same governance if it alters effective semantics even when OpenAPI does not change.
 
@@ -472,7 +511,9 @@ The following block implementation/release regardless of happy-path tests:
 - callback success can be acknowledged before the platform has reached the profile's durable-responsibility boundary;
 - after a cross-authority irreversible effect may have succeeded but before its outcome is durably recorded, recovery can admit another effect attempt instead of requiring authoritative reconciliation;
 - callback tenant binding/raw-bound/SSRF/XML safety can be bypassed;
+- realtime admission lacks governed manifest metadata for ticket scope/expiry, current authority/placement, atomic single-winner consume, burn-on-ambiguity or replay recovery continuity;
 - realtime can receive `101` without canonical ingress/current auth/replay single-winner admission;
+- realtime consume can degrade to read/check or replica-local replay state, a consumed ticket can become reusable after crash, or restored missing replay state can be interpreted as unused;
 - a schema-compatible change weakens any accepted security semantic without governed review.
 
 ## Golden examples/test vectors
@@ -501,7 +542,8 @@ High-risk contracts SHOULD maintain executable vectors for:
 - callback post-effect/pre-outcome-record crash forcing reconciliation without re-execution;
 - callback replay-retention and acknowledgement-durability boundaries;
 - callback replay restore/PITR/partial-loss continuity;
-- realtime pre-`101` replay admission.
+- realtime ticket scope/expiry/current-authority/placement validation;
+- realtime atomic single-winner/burn-on-ambiguity/replay-store recovery continuity before `101`.
 
 Examples are validated against schema/manifest so docs cannot silently drift.
 
@@ -527,7 +569,7 @@ Explicit security review is required for material changes to:
 - cursor confidentiality/token transport;
 - artifact browser/media/filename/parser/archive/XML handling;
 - callback authentication/accepted freshness evidence/freshness binding/window-sequence policy/replay identity/atomic admission/durable coupling/replay retention/replay recovery continuity/acknowledgement durability/post-effect ambiguity reconciliation/SSRF/XML ingress;
-- realtime ingress;
+- realtime ticket scope/expiry/current-authority/placement checks, atomic single-winner consume, burn-on-ambiguity, replay recovery/epoch continuity or subscription-authorization separation;
 - sensitive data exposure/bulk/export/import bounds.
 
 ## ADR/RFC trigger

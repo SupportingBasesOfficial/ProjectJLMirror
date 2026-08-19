@@ -33,6 +33,26 @@ Operation ID: <domain.actionResource>
 Content-Type: application/json (or explicit alternative)
 ```
 
+## HTTP message/framing contract
+
+Every HTTP endpoint inherits `http-message-framing-and-canonicalization.md` before authentication, tenant routing, idempotency, cache selection or protected effects.
+
+Declare or inherit:
+
+```text
+HTTP message profile: <platform default | specialized accepted profile>
+Body framing policy: <accepted profile>
+Request-target profile: <accepted canonicalization profile>
+Trusted proxy metadata policy: <platform profile | specialized profile>
+Security-sensitive header cardinality: <declared below or inherited platform manifest>
+```
+
+An endpoint SHALL NOT weaken the platform rule that one accepted wire request has one canonical interpretation at every downstream hop.
+
+Ambiguous `Content-Length`/`Transfer-Encoding`, conflicting body boundaries, conflicting authority/host meanings, malformed request-target normalization, or ambiguous security-sensitive header values fail closed before protected application logic consumes them.
+
+If the surface requires raw-body verification (for example provider signatures), the exact bounded raw bytes associated with the already accepted framing are preserved for verification; framing canonicalization does not rewrite the signed body.
+
 ## Purpose
 
 State the externally meaningful business/system behavior. Do not describe controller/service classes or SQL implementation.
@@ -104,15 +124,28 @@ For every query parameter also declare its data classification and whether URL p
 
 ### Headers
 
-Declare applicable headers:
+Declare applicable headers and their canonical cardinality/combine semantics:
 
 ```text
-Idempotency-Key
-If-Match
-X-Correlation-Id
-accepted authentication profile
-content negotiation / range where applicable
+Header: Authorization
+Cardinality: strict_singleton
+
+Header: Idempotency-Key
+Cardinality: strict_singleton
+
+Header: If-Match
+Cardinality: protocol_defined_list | not_applicable
+
+Header: X-Correlation-Id
+Cardinality: strict_singleton | not accepted
+
+Other accepted authentication/content-negotiation/range/provider headers:
+<header> -> strict_singleton | protocol_defined_list | multi_value_with_canonical_rule
 ```
+
+`Authorization` and `Idempotency-Key` cannot reach protected logic with competing values. Security-sensitive duplicate fields without an explicit protocol-defined canonical rule are rejected rather than resolved by arbitrary first/last/framework behavior.
+
+For BFF cookie-authenticated flows, declare the accepted cookie/session/CSRF parsing profile. Duplicate security-relevant cookie names cannot produce different authentication/CSRF outcomes across edge and application parsers.
 
 ### Body schema
 
@@ -137,6 +170,7 @@ Unknown request fields: rejected unless an explicit extension namespace is defin
 Maximum body bytes: <value/policy>
 Maximum item count: <value/policy>
 Maximum string/list depth/size: <value/policy>
+Maximum header bytes/count: <value/policy or OPEN platform profile>
 Timeout/deadline class: <policy>
 Query complexity class: <policy>
 ```
@@ -271,7 +305,8 @@ Rules:
 - protected API/BFF responses cannot become shared-cacheable from framework/CDN defaults;
 - `Vary` or equivalent keying is not authorization;
 - `public_shared` requires a deliberately public projection independent of protected caller authority;
-- protected artifact caching must preserve current authorization/releasability/delivery-generation/active-stream fencing and browser-delivery profile or fall back to non-shared behavior.
+- protected artifact caching must preserve current authorization/releasability/delivery-generation/active-stream fencing and browser-delivery profile or fall back to non-shared behavior;
+- cache/proxy keying MUST consume the same canonical host/path/query/header semantics accepted by the owning service; ambiguous requests are not cache candidates.
 
 Exact public/private lifetime tuning may remain `OPEN-API-017`; absence of an accepted cache contract blocks implementation.
 
@@ -296,6 +331,8 @@ domain-specific conflicts
 
 Do not expose raw database/provider exception text.
 
+Transport/framing ambiguity errors are intentionally sparse and SHALL NOT reveal which parser/hop would have interpreted the rejected message differently.
+
 ## Retry contract
 
 State:
@@ -307,6 +344,8 @@ Ambiguous external outcome: <operation/reconciliation behavior>
 One-time-secret response loss: <not applicable | explicit non-replayable recovery>
 Retry-After: may/shall/not used
 ```
+
+A request rejected before canonical message acceptance does not create an idempotency claim or imply that a protected effect executed.
 
 ## Long-running operation
 
@@ -382,9 +421,10 @@ correlation_id propagation
 operation_id linkage
 tenant-safe metrics/log dimensions
 provider/external-call linkage where applicable
+http message/framing rejection telemetry where applicable
 ```
 
-No secrets in observability payloads. Raw protected cursor/query values are not logged merely because they appear in the URL.
+No secrets in observability payloads. Raw protected cursor/query values are not logged merely because they appear in the URL. Rejected ambiguous requests log safe rejection classes rather than competing credential/header/body values.
 
 ## Compatibility classification
 
@@ -396,16 +436,22 @@ Classify externally important fields/enums and security/behavior policy dimensio
 - deprecated aliases, if any;
 - what would require a new major;
 - whether changing authorization/scope/idempotency/retry/consistency semantics is breaking;
+- whether changing HTTP framing/header cardinality/trusted-proxy/request-target interpretation is security-sensitive;
 - whether changing response cache class, shared-cache eligibility, variance or current-authorization revalidation is breaking/security-sensitive;
 - whether weakening cursor confidentiality/URL-redaction semantics is security-sensitive;
 - whether changing browser-delivery/media-type/safe-filename/active-content-isolation or untrusted-content-processing semantics is security-sensitive or breaking for supported clients.
 
-A cache, cursor confidentiality, artifact browser-delivery/safe-filename or untrusted-content-processing policy becoming more permissive is never treated as an implementation-only optimization.
+A framing/canonicalization, cache, cursor confidentiality, artifact browser-delivery/safe-filename or untrusted-content-processing policy becoming more permissive is never treated as an implementation-only optimization.
 
 ## Security abuse cases
 
 List relevant abuse/failure cases such as:
 
+- conflicting `Content-Length`/`Transfer-Encoding` or multiple body lengths;
+- duplicate/conflicting `Authorization`, `Idempotency-Key` or other security-sensitive singleton input;
+- conflicting `Host`/authority/trusted-forwarding metadata;
+- malformed/ambiguous request target causing gateway/service route disagreement;
+- HTTP-version translation causing edge/application interpretation mismatch;
 - wrong tenant ID;
 - known resource ID from another tenant;
 - authorization attempted against stale/wrong cell placement;
@@ -439,8 +485,13 @@ List relevant abuse/failure cases such as:
 
 List mandatory tests including happy path and invariant/fault cases.
 
+At minimum, externally reachable endpoints test the applicable canonical HTTP ingress cases from `http-message-framing-and-canonicalization.md`, including cross-hop/protocol-translation behavior when infrastructure introduces multiple HTTP parsers.
+
 At minimum, protected mutation endpoints test:
 
+- conflicting framing rejected before authentication/idempotency/effect;
+- duplicate/conflicting authentication/idempotency headers cannot reach protected logic with competing values;
+- gateway and owning service consume one canonical request target/authority interpretation;
 - authorized success;
 - unauthenticated denial;
 - wrong-tenant denial;
@@ -495,6 +546,7 @@ Explain how this contract remains stable if:
 - provider adapter changes;
 - client types multiply;
 - request volume/cardinality grows substantially;
+- gateway/reverse proxy/HTTP version changes while canonical request semantics stay equivalent;
 - a CDN/reverse proxy/cache layer is added or replaced;
 - cursor implementation moves between server-side state and a protected self-contained envelope;
 - artifact delivery moves to a dedicated untrusted-content origin or another equivalent browser-isolation mechanism;

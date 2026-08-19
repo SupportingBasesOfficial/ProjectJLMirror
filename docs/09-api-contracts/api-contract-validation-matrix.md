@@ -86,6 +86,7 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Artifact erasure | API cannot report confirmed deletion/erasure while old capability/late lease/active stream/stale publisher/destructive-governance uncertainty remains |
 | Delayed export | Current authorization checked before execution and release, not only at request creation |
 | Delayed import | Worker re-establishes current tenant context/authority before protected mutation and on stale resumed stages |
+| Realtime manifest completeness | Every `realtime-admission` contract governs ticket scope/expiry, current-authority checks, current placement/admission-generation checks, atomic shared single-winner consume, burn-on-ambiguity, replay-store recovery/epoch continuity and subscription-authorization separation as semantic manifest dimensions |
 | Realtime ticket mint | BFF authenticates current session and creates bounded tenant/principal/scope ticket; ticket is not general API credential and mint response is `no_store` |
 | Realtime ticket transport | Ticket-bearing URL/transport is transient, redacted and excluded from normal logs/analytics/history/referrer-like propagation under the accepted profile |
 | Realtime pre-101 | Canonical HTTP ingress + expected Origin + ticket + current underlying auth + placement + replay continuity + atomic single-winner consume all pass before `101` |
@@ -113,11 +114,11 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Version compatibility | Additive change obeys unknown-field/open-enum rules; breaking change requires governed version boundary |
 | Semantic compatibility | Schema-compatible change does not silently alter consistency, idempotency, authorization, scope, cache or retry meaning |
 | Cache compatibility | Cache class, shared-cache eligibility, variance, validator/revalidation/current-auth requirements and security-relevant freshness policy are reviewed as semantic contract; a more permissive cache policy cannot ship as an implementation-only change |
-| Security-metadata compatibility | Weakening HTTP framing/method/trailer/content-coding/path/query/header/trusted-proxy semantics, structured-body parser/canonical-entity propagation, idempotency scope/fingerprint/duplicate/retention/external-ambiguity/recovery-continuity semantics, response-header grammar/cardinality/serialization ownership, callback freshness source/window/binding/replay atomicity/durable coupling/replay retention/replay recovery continuity/acknowledgement durability/post-effect reconciliation, cursor confidentiality/transport/logging, archive member identity, safe-filename handling, artifact browser-delivery/parser isolation or XML DTD/external-resolution policy is reviewed as a security-sensitive semantic change even if schemas remain unchanged |
+| Security-metadata compatibility | Weakening HTTP framing/method/trailer/content-coding/path/query/header/trusted-proxy semantics, structured-body parser/canonical-entity propagation, idempotency scope/fingerprint/duplicate/retention/external-ambiguity/recovery-continuity semantics, response-header grammar/cardinality/serialization ownership, callback freshness source/window/binding/replay atomicity/durable coupling/replay retention/replay recovery continuity/acknowledgement durability/post-effect reconciliation, realtime ticket scope/expiry/current-authority/placement/single-winner/burn/replay-recovery/subscription-separation, cursor confidentiality/transport/logging, archive member identity, safe-filename handling, artifact browser-delivery/parser isolation or XML DTD/external-resolution policy is reviewed as a security-sensitive semantic change even if schemas remain unchanged |
 | Service extraction | Moving owner to new runtime/service does not change public IDs/routes/tenant semantics solely due to deployment topology |
 | Provider replacement | New provider adapter does not force canonical resource IDs/schema to become provider-native |
 | Contract source of truth | Machine-readable contract is reviewed canonical artifact; controller/ORM DTO does not define public schema by accident |
-| Breaking-change CI | Contract diff detects structural risk; semantic review checks HTTP canonicalization/structured-entity/idempotency-recovery-continuity/response-header/security/ownership/retry/consistency/cache/callback-freshness-replay-recovery/browser-delivery/cursor/parser changes |
+| Breaking-change CI | Contract diff detects structural risk; semantic review checks HTTP canonicalization/structured-entity/idempotency-recovery-continuity/response-header/security/ownership/retry/consistency/cache/callback-freshness-replay-recovery/realtime-replay-admission/browser-delivery/cursor/parser changes |
 | Client resilience | Official client ignores compatible unknown response fields/open enum values and only auto-retries operations marked safe |
 | Data classification | Request/response/URL/logging policy prevents secret/credential/regulated/confidential-data leakage |
 | Abuse limits | Body/header/decoded-body/page/filter/include/bulk/export/expensive operation constraints are explicit or explicitly OPEN with implementation blocked |
@@ -199,9 +200,11 @@ The following failures block acceptance/release regardless of other success:
 - protected artifact first byte can be released before current authorization/releasability/browser-delivery/safe-filename profile/generation-bound lease admission commits;
 - artifact erasure can report success while stale delivery/upload/destructive authority can still release/recreate/destroy incorrectly;
 - delayed import mutates tenant state using stale request-time human authorization after revocation;
+- a `realtime-admission` endpoint lacks governed manifest metadata for ticket scope/expiry, current authority/placement, atomic single-winner consume, burn-on-ambiguity, replay recovery continuity or subscription separation;
 - protected WebSocket receives `101` on an ambiguously framed/canonicalized request or without expected Origin/current auth/replay continuity/atomic consume;
 - more than one gateway replica can receive `101` for one single-use realtime ticket;
-- replay-store loss can resurrect a previously consumed ticket;
+- a consumed realtime ticket can become redeemable again after consume-before-`101` crash/ambiguity instead of remaining burned;
+- replay-store loss/restore can resurrect a previously consumed ticket or missing state can be interpreted as unused without accepted continuity/epoch invalidation;
 - ticket-bearing transport leaks through ordinary logs/analytics/history/referrer-like propagation contrary to the accepted profile;
 - callback framing/signature verification can cover bytes different from those processed as the callback body;
 - callback payload can choose a different tenant than trusted integration configuration;
@@ -221,7 +224,7 @@ The following failures block acceptance/release regardless of other success:
 - provider callback XML parser accepts a DTD under the default profile or permits external entity/XInclude/external schema/stylesheet resolution to read local files or reach network/internal services outside an explicitly accepted isolated exceptional profile;
 - provider callback returns success while required async work exists only in process memory;
 - callback-supplied URL can trigger unrestricted outbound fetch/redirect and bypass the trusted connector/SSRF boundary;
-- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/HTTP-framing/structured-body/idempotency-recovery-continuity/response-header/path-query/cache/callback-freshness-replay-recovery/browser-delivery/cursor/archive/parser semantics;
+- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/HTTP-framing/structured-body/idempotency-recovery-continuity/response-header/path-query/cache/callback-freshness-replay-recovery/realtime-replay-admission/browser-delivery/cursor/archive/parser semantics;
 - service extraction/provider/storage/gateway migration forces consumers or security semantics to change because public contract leaked internal topology or relied on parser disagreement;
 - database/ORM model is serialized directly as the public contract without deliberate schema/authorization review.
 

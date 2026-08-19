@@ -28,11 +28,14 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Public shared caching | Shared cache is allowed only for deliberately public projections with explicit safe variance/freshness/invalidation policy |
 | Protected artifact caching | CDN/cache optimization preserves current auth/releasability/delivery-generation/active-stream fencing or is disabled/non-shared |
 | Artifact media authority | Delivered media type/browser-execution classification is server-controlled and cannot be derived solely from uploader filename, extension or `Content-Type`; unknown/untrusted type fails toward non-executable download |
+| Artifact safe filename | Download name is server-derived under a canonical policy; controls/bidi/path separators/reserved/special names/misleading extensions cannot create ambiguous or deceptive save behavior; `filename`/`filename*` are coherent and a neutral fallback always exists |
 | Artifact browser delivery | Every browser-reachable artifact declares `opaque_download`, `safe_inline` or equivalent accepted isolated-active profile; authorization to download never implies permission for bytes to execute on the application/BFF origin |
 | Active artifact isolation | Browser-active/script-capable content may execute inline only under a dedicated untrusted-content boundary that does not share application/BFF ambient credentials or DOM/service-worker origin trust, prevents persistent state/origin control from crossing tenant/artifact/principal boundaries, and preserves current artifact delivery fencing |
 | Active delivery capability | Any browser-visible capability used to bridge active isolated content is artifact/delivery-generation bounded, not a general API credential, and is redeemed/burned or otherwise unusable for subsequent protected access before active content can exfiltrate/reuse it |
-| Opaque artifact download | Unknown/untrusted/browser-active content defaults to attachment/non-sniffable download semantics with safely encoded filename metadata; caller metadata cannot opt the object into inline execution or inject response headers |
+| Opaque artifact download | Unknown/untrusted/browser-active content defaults to attachment/non-sniffable download semantics; caller metadata cannot opt the object into inline execution or inject/ambiguate response headers/filename parameters |
 | Untrusted artifact processing | Complex document/archive/media classification, preview, conversion, extraction or rendering uses an isolated least-privilege bounded processing profile with no ordinary application secrets/unrestricted egress, bounded expansion/resources and no implicit macro/script/embedded-URL execution; derived output receives independent artifact identity/classification |
+| Archive extraction containment | Archive/member extraction remains inside the intended staging root; absolute/parent traversal, separator tricks, symlink/hardlink and special/device-file escape cannot materialize outside the accepted processing boundary |
+| XML/document active features | XML/XML-derived artifact processing disables DTD/external entities/XInclude/external schemas/stylesheets/resource resolution by default or uses an explicitly isolated deny-by-default resolver with trusted pinned resources |
 | Idempotency admission | Required effectful POST/command atomically create-or-observes durable claim before protected effect |
 | Idempotency fingerprint | Same key/scope with different semantic request conflicts before execution |
 | Idempotency concurrency | Simultaneous same key/fingerprint yields one logical executor |
@@ -44,6 +47,9 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | State transitions | Protected domain state-machine transitions use owning command semantics; generic PATCH cannot bypass transition policy |
 | Pagination | Deterministic order + tie-breaker; opaque cursor; no unbounded list contract |
 | Cursor scope | Cursor cannot be replayed to weaken tenant/filter/sort/endpoint scope and exposes no sensitive topology |
+| Cursor confidentiality | URL-visible cursor reveals no confidential/restricted tenant/filter/search/resource-key payload; protected cursor state uses server-side opaque handle, confidentiality+integrity protection or equivalent; encoding/signing alone is insufficient for protected plaintext |
+| Cursor URL/logging policy | Raw protected cursor values are redacted/hashed/referenced in normal logs/analytics/traces and cannot leak through redirects/referrers/third-party URLs |
+| Query URL confidentiality | Query/filter/search parameters are data-classified; confidential/restricted query state is not forced into URL-visible transport and uses a protected body/query-handle equivalent when necessary |
 | Cursor authorization freshness | Every protected page/historical continuation re-establishes current principal/tenant/resource authorization; old cursor/snapshot/watermark cannot freeze authority after revoke/suspend/scope reduction/relocation |
 | Concurrent pagination | Live/snapshot/historical traversal semantics are explicitly documented; snapshot data semantics do not freeze authorization |
 | Filtering/sorting | Only allowlisted fields/operators; arbitrary client query grammar cannot become SQL injection/query-plan authority |
@@ -58,7 +64,7 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Operation ambiguity | `reconciliation_required` cannot be turned into client retry eligibility without authoritative reconciliation |
 | Operation cancel | Cancellation is modeled as request/state; worker interruption alone is not accepted business cancellation and current cancellation authority is checked |
 | Artifact identity | API exposes stable artifact metadata identity; object-store path/vendor URL is not canonical identity |
-| Artifact release | Current auth + releasable state + accepted browser-delivery profile + generation-bound active delivery admission commit before first protected byte |
+| Artifact release | Current auth + releasable state + accepted browser-delivery/safe-filename profile + generation-bound active delivery admission commit before first protected byte |
 | Artifact erasure | API cannot report confirmed deletion/erasure while old capability/late lease/active stream/stale publisher/destructive-governance uncertainty remains |
 | Delayed export | Current authorization checked before execution and release, not only at request creation |
 | Delayed import | Worker re-establishes current tenant context/authority before protected mutation and on stale resumed stages |
@@ -74,17 +80,19 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Provider callback tenant binding | Payload tenant/account fields cannot reroute callback away from trusted integration mapping |
 | Provider callback replay | Exact replay cannot repeat protected effect; same raw event ID across trusted scopes does not collide |
 | Provider callback parse bound | Authenticated compressed/structured payload remains bounded after decompression/parsing |
+| Provider callback XML safety | XML callback profile disables DTD/external entities/XInclude/external schema/stylesheet/resource resolution by default; local-file/network entity resolution is rejected unless an isolated deny-by-default resolver profile explicitly permits trusted pinned resources |
 | Provider callback durability | Success acknowledgement after async acceptance has durable replayable work authority |
 | Provider callback SSRF | Callback-supplied URL cannot cause arbitrary outbound fetch; follow-up retrieval uses trusted provider destination/protocol/redirect/size/timeout policy |
 | Version compatibility | Additive change obeys unknown-field/open-enum rules; breaking change requires governed version boundary |
 | Semantic compatibility | Schema-compatible change does not silently alter consistency, idempotency, authorization, scope, cache or retry meaning |
 | Cache compatibility | Cache class, shared-cache eligibility, variance, validator/revalidation/current-auth requirements and security-relevant freshness policy are reviewed as semantic contract; a more permissive cache policy cannot ship as an implementation-only change |
+| Security-metadata compatibility | Weakening cursor confidentiality/logging, safe-filename handling, artifact browser-delivery/parser isolation or XML external-resolution policy is reviewed as a security-sensitive semantic change even if schemas remain unchanged |
 | Service extraction | Moving owner to new runtime/service does not change public IDs/routes/tenant semantics solely due to deployment topology |
 | Provider replacement | New provider adapter does not force canonical resource IDs/schema to become provider-native |
 | Contract source of truth | Machine-readable contract is reviewed canonical artifact; controller/ORM DTO does not define public schema by accident |
-| Breaking-change CI | Contract diff detects structural risk; semantic review checks security/ownership/retry/consistency/cache/browser-delivery changes |
+| Breaking-change CI | Contract diff detects structural risk; semantic review checks security/ownership/retry/consistency/cache/browser-delivery/cursor/parser changes |
 | Client resilience | Official client ignores compatible unknown response fields/open enum values and only auto-retries operations marked safe |
-| Data classification | Request/response/logging policy prevents secret/credential/regulated-data leakage |
+| Data classification | Request/response/URL/logging policy prevents secret/credential/regulated/confidential-data leakage |
 | Abuse limits | Body/page/filter/include/bulk/export/expensive operation constraints are explicit or explicitly OPEN with implementation blocked |
 
 ## Release-blocking contract failures
@@ -112,9 +120,12 @@ The following failures block acceptance/release regardless of other success:
 - an isolated active-content origin allows persistent storage/service-worker/same-origin control from one tenant/artifact/principal context to govern unrelated future protected content across a security boundary;
 - a browser-visible artifact delivery bearer remains reusable/readable after active content begins executing and can be exfiltrated for later protected access or broader API authority;
 - browser execution/media type is trusted solely from uploader-controlled filename, extension or `Content-Type`;
+- artifact download filename can be controlled into ambiguous/deceptive values through bidi/control characters, path separators, reserved/special names, misleading extensions or conflicting `filename`/`filename*` parameters, or no safe server-generated fallback exists;
 - unknown/untrusted/browser-active artifact can be served inline without accepted isolation instead of failing toward attachment/non-sniffable download semantics;
 - active-inline artifact delivery can use an isolated origin yet bypass current artifact authorization/releasability/delivery-generation/active-stream fencing or turn its delegated capability into a general API credential;
 - complex untrusted artifact/archive/document parsing, conversion, preview or metadata extraction runs in ordinary API/BFF business runtime with application secrets, unrestricted egress or unbounded CPU/memory/time/decompressed-output/nesting;
+- archive extraction can escape the intended staging root through absolute/parent paths, path separator tricks, links or special/device files;
+- artifact/document XML parsing can resolve attacker-controlled external entities/includes/schemas/stylesheets/local files/network resources outside an explicitly accepted isolated resolver profile;
 - artifact processing automatically executes embedded scripts/macros or follows attacker-controlled URLs outside the accepted outbound/SSRF boundary;
 - a generated preview/conversion is treated as `safe_inline` without independent output classification/delivery policy;
 - external provider-native identifier becomes canonical resource identity such that provider replacement would break clients;
@@ -125,13 +136,15 @@ The following failures block acceptance/release regardless of other success:
 - stale optimistic-concurrency mutation silently overwrites a newer protected state when the endpoint requires revision safety;
 - list/history endpoint permits effectively unbounded interactive scans with no accepted bound/export path;
 - cursor/snapshot/watermark remains usable to read protected data after current authority was revoked/suspended/reduced or tenant placement changed;
+- URL-visible cursor reveals confidential/restricted tenant/filter/search/resource-key payload because it was merely encoded/signed rather than confidentiality-protected/server-side opaque;
+- raw protected cursor or confidential query/search state can leak through normal logs, analytics, referrers, browser history or redirect/third-party URLs;
 - client-authored filter/sort/include is converted into unrestricted database/query authority;
 - bulk read/mutation treats batch membership as authorization for individual unauthorized resources or leaks existence through mixed per-item errors;
 - `202 Accepted` is returned before the platform has durable responsibility for the operation;
 - operation status depends on in-memory worker/queue state such that restart loses externally promised progress/outcome;
 - possession of an `operation_id`/operation URL permits read/cancel/retry/result access without current authorization;
 - artifact metadata appears available while object/integrity/current generation is not verified;
-- protected artifact first byte can be released before current authorization/releasability/browser-delivery profile/generation-bound lease admission commits;
+- protected artifact first byte can be released before current authorization/releasability/browser-delivery/safe-filename profile/generation-bound lease admission commits;
 - artifact erasure can report success while stale delivery/upload/destructive authority can still release/recreate/destroy incorrectly;
 - delayed import mutates tenant state using stale request-time human authorization after revocation;
 - protected WebSocket receives `101` without expected Origin/current auth/replay continuity/atomic consume;
@@ -142,9 +155,10 @@ The following failures block acceptance/release regardless of other success:
 - oversized callback reaches complete buffering/authentication/parser work without hard raw bound;
 - duplicate callback can repeat irreversible logical effect;
 - same provider-local callback ID from two trusted tenant/source scopes collides under one dedup identity;
+- provider callback XML parser permits DTD/external entity/XInclude/external schema/stylesheet resolution to read local files or reach network/internal services outside an explicitly accepted isolated resolver profile;
 - provider callback returns success while required async work exists only in process memory;
 - callback-supplied URL can trigger unrestricted outbound fetch/redirect and bypass the trusted connector/SSRF boundary;
-- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/cache/browser-delivery semantics;
+- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/cache/browser-delivery/cursor/parser semantics;
 - service extraction/provider/storage migration forces consumers to change because public contract leaked internal topology;
 - database/ORM model is serialized directly as the public contract without deliberate schema/authorization review.
 

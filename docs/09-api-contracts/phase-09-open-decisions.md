@@ -79,6 +79,8 @@ One-time-secret material is never made replayable merely to satisfy this retenti
 
 **Already fixed:** protected bytes have stable artifact/staging identity before unmanaged persistence can become undiscoverable; upload is bounded/reconcilable/governed and cannot bypass current tenant authorization. Uploader-supplied filename, extension or media type is untrusted metadata and cannot by itself authorize inline browser execution or define the authoritative delivery media type.
 
+Exact parser/renderer/content-inspection/antimalware products used for optional preview/classification/conversion are not made canonical by this upload representation; if complex untrusted processing exists, the accepted isolation/resource/egress/output-classification properties apply.
+
 ## OPEN-API-008 — Artifact range/download optimization
 
 **Question:** Which artifact classes support HTTP range/resume/CDN acceleration and through which implementation mechanism.
@@ -160,10 +162,12 @@ Endpoint-level contracts are added incrementally using the canonical endpoint te
 - uploader-supplied filename, extension or `Content-Type` cannot opt content into inline execution;
 - `safe_inline` is restricted to explicitly accepted, independently classified browser-inert content classes;
 - active-inline content requires an isolated untrusted-content browser boundary with no application/BFF ambient session cookies/credential authority and no application/BFF DOM/service-worker origin trust;
+- active-content isolation must prevent persistent storage/service-worker/same-origin authority from crossing tenant/artifact/principal security boundaries unless an explicitly reviewed equivalent isolation mechanism proves safety;
 - any delegated capability remains bounded to the intended artifact/delivery generation and cannot become a general API credential;
+- a reusable delivery bearer cannot remain readable to active content after admission; browser-visible capability material must be burned/rendered unusable for later protected access and protected against referrer/log/history-like propagation;
 - current artifact authorization, releasability, delivery-generation admission and active-stream erasure fencing remain mandatory.
 
-**Resolution evidence:** concrete Product need for active inline rendering, browser threat model, content classes/formats, CSP/sandbox design, cookie/origin topology, delegated-delivery revocation proof and end-to-end stored-XSS/security tests.
+**Resolution evidence:** concrete Product need for active inline rendering, browser threat model, content classes/formats, CSP/sandbox design, cookie/origin/storage/service-worker topology, delegated-delivery redemption/revocation proof and end-to-end stored-XSS/cross-tenant security tests.
 
 No active-inline implementation may ship merely because an object store/CDN/browser can render the bytes while this profile remains unresolved.
 

@@ -1,6 +1,6 @@
 # Failure and Degradation Matrix
 
-**Status:** proposed baseline  
+**Status:** accepted  
 **Primary ADR:** ADR-017
 
 The system must fail predictably. `retry` is not a universal failure policy.

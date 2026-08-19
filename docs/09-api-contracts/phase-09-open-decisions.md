@@ -46,10 +46,12 @@ Candidates may include a narrowly reviewed/redacted query representation or anot
 **Question:** Concrete defaults/maxima for:
 
 - JSON request body;
+- decoded/decompressed request body where content coding is accepted;
 - total/per-field HTTP header bytes and header count;
 - idempotency-key transport length/character profile;
 - per-endpoint strings/lists/nesting;
 - collection `limit`;
+- repeated-query item count;
 - bulk item count;
 - include/filter complexity;
 - telemetry time windows;
@@ -74,13 +76,24 @@ One-time-secret material is never made replayable merely to satisfy this retenti
 
 **Already fixed:** normal supported contract elements are not removed casually inside a supported major; retirement is governed and instrumented.
 
-## OPEN-API-007 — Exact media/content profiles for binary upload
+## OPEN-API-007 — Exact media/content profiles for binary upload and archive processing
 
-**Question:** Multipart, resumable/chunked or dedicated staged-upload representation for large imports/attachments.
+**Question:** Multipart, resumable/chunked or dedicated staged-upload representation for large imports/attachments, and which concrete isolated archive/document processing runtime/filesystem profile is used when such content requires inspection or extraction.
 
-**Already fixed:** protected bytes have stable artifact/staging identity before unmanaged persistence can become undiscoverable; upload is bounded/reconcilable/governed and cannot bypass current tenant authorization. Uploader-supplied filename, extension or media type is untrusted metadata and cannot by itself authorize inline browser execution or define the authoritative delivery media type.
+**Already fixed:**
 
-Exact parser/renderer/content-inspection/antimalware products used for optional preview/classification/conversion are not made canonical by this upload representation; if complex untrusted processing exists, the accepted isolation/resource/egress/archive/XML/output-classification properties apply. XML/XML-derived parsing disables DTD/external entities/XInclude/external schema/stylesheet/resource resolution by default; archive extraction cannot escape the accepted staging root.
+- protected bytes have stable artifact/staging identity before unmanaged persistence can become undiscoverable;
+- upload is bounded/reconcilable/governed and cannot bypass current tenant authorization;
+- uploader-supplied filename, extension or media type is untrusted metadata and cannot authorize inline browser execution or define authoritative delivery media type;
+- complex untrusted parsing uses the accepted isolation/resource/egress/output-classification controls;
+- XML/XML-derived default processing rejects every DTD and disables external entities/XInclude/external schema/stylesheet/resource resolution;
+- archive expansion is bounded and extraction cannot escape the accepted staging root;
+- archive members have one canonical destination identity under the target filesystem semantics;
+- duplicate/Unicode/case/trailing-dot-space/path/platform aliases that collide are rejected before materialization;
+- a later member cannot overwrite/shadow a previously inspected/scanned canonical member;
+- materialization is no-follow and atomic/no-replace or an equivalent primitive, and scanner/consumer observe the same canonical member bytes.
+
+Exact parser/renderer/content-inspection/antimalware/archive libraries, sandbox product and filesystem implementation remain replaceable. A library/platform default does not weaken these properties.
 
 ## OPEN-API-008 — Artifact range/download optimization
 
@@ -104,7 +117,7 @@ Exact parser/renderer/content-inspection/antimalware products used for optional 
 
 **Question:** Which official SDKs, if any, are first-class and their release/support policy.
 
-**Already fixed:** generated/official clients preserve opaque IDs/cursors/revisions, tolerate compatible response evolution and only auto-retry operations whose contract proves safety. SDKs do not decode protected cursor payloads or override server-declared artifact filename/media/browser-delivery safety.
+**Already fixed:** generated/official clients preserve opaque IDs/cursors/revisions, tolerate compatible response evolution and only auto-retry operations whose contract proves safety. SDKs do not decode protected cursor payloads, place protected browser continuation tokens into URL history contrary to the endpoint profile, or override server-declared artifact filename/media/browser-delivery safety.
 
 ## OPEN-API-012 — Rate-limit representation
 
@@ -148,7 +161,8 @@ Endpoint-level contracts are added incrementally using the canonical endpoint te
 - protected authentication/authorization/existence-concealing error variants cannot be shared across principals/tenants by default;
 - `Vary` or caller-supplied tenant/principal metadata is not authorization;
 - `public_shared` is limited to deliberately public projections independent of protected caller authority;
-- protected artifact caching must preserve current authorization/releasability/delivery-generation/active-stream/browser-delivery/safe-filename fencing or remain non-shared.
+- protected artifact caching must preserve current authorization/releasability/delivery-generation/active-stream/browser-delivery/safe-filename fencing or remain non-shared;
+- cache/proxy keying consumes the same canonical method/authority/path/query/header meaning as the owning service; ambiguous or duplicate-query interpretations are not cache candidates.
 
 **Resolution evidence:** Product freshness expectations, security classification, revocation/erasure semantics, traffic/capacity evidence and cache/CDN implementation proofs. Numeric TTLs are not invented in advance.
 
@@ -172,23 +186,27 @@ Endpoint-level contracts are added incrementally using the canonical endpoint te
 
 No active-inline implementation may ship merely because an object store/CDN/browser can render the bytes while this profile remains unresolved.
 
-## OPEN-API-019 — Cursor confidentiality implementation profile
+## OPEN-API-019 — Cursor confidentiality and transport implementation profile
 
-**Question:** For endpoints whose cursor must bind protected tenant/filter/search/last-item/query state, which concrete mechanism is used: server-side opaque handle/state, confidentiality+integrity-protected self-contained envelope, or another equivalent design?
+**Question:** For endpoints whose cursor binds protected tenant/filter/search/last-item/query state, which concrete state/protection and surface-specific presentation mechanism is used: server-side opaque handle/state, confidentiality+integrity-protected self-contained envelope, BFF-mediated continuation state, bounded body-based continuation, or another equivalent design?
 
 **Already fixed:**
 
 - "opaque" does not imply confidential;
-- a URL-visible cursor may not expose confidential/restricted tenant data, protected filter/search text, raw protected resource keys, credentials or sensitive topology;
 - base64/encoding/signing without confidentiality is insufficient for protected cursor plaintext;
 - current authorization is re-evaluated on every continuation regardless of cursor validity;
+- cursor payload confidentiality and **exposed token sensitivity** are separate classifications;
+- a cryptographically confidential cursor may still be a reusable protected continuation token;
+- browser-facing protected/reusable continuation tokens SHALL NOT be required in address/history-visible query transport;
+- a browser URL cursor is acceptable only when the exposed handle itself is explicitly classified non-sensitive for that browser surface and does not grant protected continuation without current server authorization;
+- machine-to-machine URL-visible protected cursors require a separately accepted non-browser profile that treats the full token as sensitive and excludes it from logs/referrers/redirects;
 - raw protected cursor values are redacted/hashed/referenced rather than stored in normal logs/analytics/traces/referrers;
 - cursor material cannot be copied into third-party/redirect URLs as a convenience;
 - confidential/restricted filter/search input is not forced into URL-visible query parameters when the normal use case requires protected values.
 
-**Resolution evidence:** endpoint data classification, expected cursor lifetime/cardinality, state-store availability/recovery requirements, confidentiality/integrity proof, URL/logging/referrer behavior, replay/binding tests and operational cost evidence.
+**Resolution evidence:** endpoint/surface data classification, browser threat/history model, expected cursor lifetime/cardinality, state-store availability/recovery requirements, confidentiality/integrity proof, URL/logging/referrer behavior, replay/binding tests and operational cost evidence.
 
-The chosen mechanism may vary by endpoint/profile when semantics require it; clients still see an opaque cursor contract.
+The chosen mechanism may vary by endpoint/surface when semantics require it; clients still see an opaque continuation contract.
 
 ## OPEN-API-020 — Safe artifact filename rendering profile
 
@@ -212,22 +230,27 @@ A framework default does not become the canonical safe-filename policy merely be
 
 ## OPEN-API-021 — HTTP ingress deployment/profile details
 
-**Question:** Which concrete gateway/reverse-proxy/runtime products, HTTP protocol/version mix, trusted-proxy topology/configuration syntax, canonical internal request-envelope implementation, malformed-transport status mapping and numeric header limits are used in each deployment profile?
+**Question:** Which concrete gateway/reverse-proxy/runtime products, HTTP protocol/version mix, trusted-proxy topology/configuration syntax, canonical request-envelope implementation, exact path character/normalization repertoire, supported content codings, malformed-transport status mapping and numeric header limits are used in each deployment profile?
 
 **Already fixed:**
 
 - one accepted wire request has one canonical interpretation across all participating hops;
+- canonical path/query decoding/multiplicity occurs before tenant placement, cache, authorization and owning use case;
+- repeated slashes, dot segments, encoded slash/backslash, malformed percent encodings, invalid/non-canonical UTF-8, alternate encodings and double-decoding cannot make hops resolve different resources;
+- duplicate singleton query parameters are rejected; genuinely repeated parameters have one explicit order/duplicate/count rule;
 - ambiguous request framing fails closed before authentication, body parsing, idempotency admission, cache selection or protected effects;
 - conflicting `Content-Length`/`Transfer-Encoding`, competing body lengths and invalid transfer framing cannot reach protected application logic;
 - security-sensitive headers have explicit cardinality/combine semantics and conflicting authentication/idempotency/trusted-routing values are not arbitrarily first/last-selected;
+- generic method override is deny-by-default;
+- request trailers cannot inject or override security-sensitive authority after header admission;
+- raw and decoded body bounds are independent; `Content-Encoding` cannot cause edge/security verification and application to process different representations;
 - Host/authority and trusted proxy metadata have one authoritative interpretation; untrusted forwarding headers cannot override protected routing/scheme/client decisions;
-- gateway/router/cache/authorization/owning service consume the same canonical request target;
 - HTTP-version translation validates source protocol and reconstructs target messages from canonical semantics rather than forwarding incompatible framing metadata;
-- callback signature verification and callback processing observe the same exact bounded raw body;
+- callback signature verification and callback processing observe the same exact bounded raw body/content-coding profile;
 - realtime cannot return `101` for a request that failed canonical HTTP ingress;
-- cache/proxy and owning service cannot safely use different interpretations of ambiguous metadata.
+- cache/proxy and owning service cannot safely use different interpretations of method/authority/path/query/header/body metadata.
 
-**Resolution evidence:** deployed edge/proxy/runtime topology, supported HTTP-version paths, cross-hop request-smuggling/desynchronization tests, trusted-proxy configuration tests, header-limit/capacity evidence, cache/gateway integration tests and callback/realtime end-to-end verification.
+**Resolution evidence:** deployed edge/proxy/runtime topology, supported HTTP-version paths, cross-hop request-smuggling/desynchronization tests, path/query parser equivalence tests, trusted-proxy configuration tests, method/trailer/content-coding tests, header-limit/capacity evidence, cache/gateway integration tests and callback/realtime end-to-end verification.
 
 Choosing a gateway/framework default does not resolve this OPEN item by itself. The security properties in `http-message-framing-and-canonicalization.md` remain normative regardless of product choice.
 

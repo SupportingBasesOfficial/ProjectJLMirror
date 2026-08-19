@@ -227,9 +227,19 @@ MIME sniffing: prohibited / nosniff-equivalent
 Active-content origin isolation: required | not applicable
 Ambient application/BFF credentials on active-content origin: prohibited | not applicable
 Delegated delivery capability scope: <artifact/delivery-generation bound or not applicable>
+Untrusted server-side content processing: none | isolated_bounded
+Processing boundary: <isolated parser/renderer/worker profile or not applicable>
+Processing secret access: none | narrowly scoped explicit capability
+Processing egress: denied/restricted under accepted outbound policy
+Expansion/resource limits: <bytes/nesting/members/CPU/memory/time/output policy or OPEN with implementation blocked>
+Embedded macro/script execution: prohibited unless separately accepted
+Embedded URL retrieval: prohibited except through accepted outbound/SSRF policy
+Derived artifact classification: independent required | not applicable
 ```
 
 Unknown/untrusted/browser-active content defaults to `opaque_download`. A caller-controlled upload media type, filename or extension never authorizes inline execution. `active_inline_isolated` requires a dedicated untrusted-content browser boundary with no application/BFF ambient credential or DOM/service-worker trust and must preserve current authorization/releasability/delivery-generation/active-stream fencing.
+
+Complex document/archive/media parsing, preview, conversion, extraction or rendering of untrusted bytes uses an isolated least-privilege bounded processing profile. It SHALL NOT run with ordinary API/BFF application secrets or unrestricted egress merely because the uploader is authorized. Archive/decompression expansion, recursion, CPU/memory/time and generated-output volume are bounded. A derived preview/conversion receives independent artifact identity/classification and does not inherit `safe_inline` automatically.
 
 ## Response cache contract
 
@@ -375,9 +385,9 @@ Classify externally important fields/enums and security/behavior policy dimensio
 - what would require a new major;
 - whether changing authorization/scope/idempotency/retry/consistency semantics is breaking;
 - whether changing response cache class, shared-cache eligibility, variance or current-authorization revalidation is breaking/security-sensitive;
-- whether changing browser-delivery/media-type/active-content-isolation semantics is security-sensitive or breaking for supported clients.
+- whether changing browser-delivery/media-type/active-content-isolation or untrusted-content-processing semantics is security-sensitive or breaking for supported clients.
 
-A cache or artifact browser-delivery policy becoming more permissive is never treated as an implementation-only optimization.
+A cache, artifact browser-delivery or untrusted-content-processing policy becoming more permissive is never treated as an implementation-only optimization.
 
 ## Security abuse cases
 
@@ -399,6 +409,8 @@ List relevant abuse/failure cases such as:
 - wildcard/untrusted credentialed BFF origin;
 - browser-active artifact executing on application/BFF origin;
 - forged upload media type/filename causing inline execution or header injection;
+- malicious archive/document causing parser RCE, SSRF or expansion/resource exhaustion;
+- generated preview incorrectly trusted as safe inline content;
 - oversized body;
 - expensive filter/include abuse;
 - replayed callback/ticket;
@@ -439,7 +451,11 @@ Artifact/binary endpoints additionally test, where applicable:
 - `safe_inline` accepts only the explicitly allowlisted validated content classes;
 - `active_inline_isolated` does not receive application/BFF ambient credentials or origin/service-worker trust;
 - delegated active-content delivery remains bound to the intended artifact/delivery generation and cannot become a general API credential;
-- range/resume/CDN paths preserve the same browser-delivery classification and current artifact fencing.
+- range/resume/CDN paths preserve the same browser-delivery classification and current artifact fencing;
+- malicious archive/document expansion is bounded and cannot consume unbounded CPU/memory/time/output;
+- parser/renderer processing cannot access ordinary application secrets or unrestricted network destinations;
+- embedded scripts/macros/URLs are not executed/fetched implicitly;
+- derived preview/conversion output is independently identified/classified before inline delivery.
 
 ## OPEN items
 
@@ -456,4 +472,5 @@ Explain how this contract remains stable if:
 - client types multiply;
 - request volume/cardinality grows substantially;
 - a CDN/reverse proxy/cache layer is added or replaced;
-- artifact delivery moves to a dedicated untrusted-content origin or another equivalent browser-isolation mechanism.
+- artifact delivery moves to a dedicated untrusted-content origin or another equivalent browser-isolation mechanism;
+- artifact parsing/preview/conversion moves to a different isolated runtime or vendor without changing external artifact identity/contract.

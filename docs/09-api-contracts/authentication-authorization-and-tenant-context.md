@@ -44,7 +44,7 @@ Machine credentials SHALL be independently revocable and attributable. Their eff
 - expiration/lifecycle constraints;
 - applicable network/client policy when accepted.
 
-A credential MAY be restricted to one tenant or permitted to name multiple tenants. The request's `tenant_id` must still be authorized against the credential's current scope.
+A credential MAY be restricted to one tenant or permitted to name multiple tenants. The request's `tenant_id` must still be authorized against the credential's current scope at the authoritative owning boundary.
 
 Exact credential transport/format remains an authentication-profile decision until separately accepted. Phase 09 contracts SHALL NOT require business consumers to understand identity-provider internals.
 
@@ -56,13 +56,20 @@ A protected tenant route conceptually evaluates:
 Identity
   -> current credential/session validity
   -> intended tenant_id
-  -> current membership / machine tenant scope
   -> trusted placement resolution
-  -> current tenant admission
+  -> route to authoritative cell
+  -> current placement admission/version
+  -> trusted TenantContext construction
+  -> request-contract validation
+  -> current membership / machine tenant scope
   -> permission/action
   -> resource scope/policy
   -> owning use case
 ```
+
+Membership, permission and resource-policy evaluation SHALL occur at the owning server-side authority after the request has been routed to the authoritative cell and a trusted current TenantContext exists when those authorities are cell-owned.
+
+Ingress/global checks MAY reject a credential or tenant target earlier when global authoritative evidence is sufficient, but such checks are only fail-fast/narrowing gates. They SHALL NOT be treated as proof of cell-owned membership or resource authorization and SHALL NOT bypass the owning authorization decision.
 
 The server SHALL deny when any mandatory authority cannot be established safely.
 
@@ -123,7 +130,9 @@ A cross-tenant operation records/audits:
 
 The external API exposes logical tenant identity, never a trusted physical TenantContext object.
 
-After authentication/placement/authorization, internal execution constructs the accepted canonical TenantContext. Caller-controlled headers/body fields SHALL NOT be allowed to override trusted internal `cell_id`, `placement_version`, database target or authorization context.
+After authentication, trusted placement resolution, routing to the authoritative cell and current placement admission/version validation, the cell constructs the accepted canonical `TenantContext`. Request-contract validation and the owning membership/permission/resource authorization then execute against that trusted context before the protected use case runs.
+
+Caller-controlled headers/body fields SHALL NOT be allowed to override trusted internal `cell_id`, `placement_version`, database target or authorization context.
 
 ## No physical routing headers
 
@@ -191,6 +200,8 @@ Every protected endpoint SHALL have contract/integration tests that prove at min
 
 - unauthenticated denial;
 - wrong-tenant denial;
+- authoritative placement/cell admission occurs before cell-owned membership/resource authorization;
+- ingress/global prechecks cannot substitute for owning authorization;
 - insufficient permission denial;
 - stale/revoked session or credential denial where applicable;
 - resource-scope denial where applicable;

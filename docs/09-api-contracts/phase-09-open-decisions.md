@@ -79,13 +79,13 @@ One-time-secret material is never made replayable merely to satisfy this retenti
 
 **Already fixed:** protected bytes have stable artifact/staging identity before unmanaged persistence can become undiscoverable; upload is bounded/reconcilable/governed and cannot bypass current tenant authorization. Uploader-supplied filename, extension or media type is untrusted metadata and cannot by itself authorize inline browser execution or define the authoritative delivery media type.
 
-Exact parser/renderer/content-inspection/antimalware products used for optional preview/classification/conversion are not made canonical by this upload representation; if complex untrusted processing exists, the accepted isolation/resource/egress/output-classification properties apply.
+Exact parser/renderer/content-inspection/antimalware products used for optional preview/classification/conversion are not made canonical by this upload representation; if complex untrusted processing exists, the accepted isolation/resource/egress/archive/XML/output-classification properties apply. XML/XML-derived parsing disables DTD/external entities/XInclude/external schema/stylesheet/resource resolution by default; archive extraction cannot escape the accepted staging root.
 
 ## OPEN-API-008 — Artifact range/download optimization
 
 **Question:** Which artifact classes support HTTP range/resume/CDN acceleration and through which implementation mechanism.
 
-**Already fixed:** every new/resumed release remains subject to current auth/releasability/delivery-generation admission, active-stream fencing and the artifact's accepted browser-delivery profile; optimization may not weaken prompt erasure or active-content isolation.
+**Already fixed:** every new/resumed release remains subject to current auth/releasability/delivery-generation admission, active-stream fencing, safe-filename policy and the artifact's accepted browser-delivery profile; optimization may not weaken prompt erasure or active-content isolation.
 
 ## OPEN-API-009 — Exact tracing propagation profile
 
@@ -103,7 +103,7 @@ Exact parser/renderer/content-inspection/antimalware products used for optional 
 
 **Question:** Which official SDKs, if any, are first-class and their release/support policy.
 
-**Already fixed:** generated/official clients preserve opaque IDs/cursors/revisions, tolerate compatible response evolution and only auto-retry operations whose contract proves safety.
+**Already fixed:** generated/official clients preserve opaque IDs/cursors/revisions, tolerate compatible response evolution and only auto-retry operations whose contract proves safety. SDKs do not decode protected cursor payloads or override server-declared artifact filename/media/browser-delivery safety.
 
 ## OPEN-API-012 — Rate-limit representation
 
@@ -147,7 +147,7 @@ Endpoint-level contracts are added incrementally using the canonical endpoint te
 - protected authentication/authorization/existence-concealing error variants cannot be shared across principals/tenants by default;
 - `Vary` or caller-supplied tenant/principal metadata is not authorization;
 - `public_shared` is limited to deliberately public projections independent of protected caller authority;
-- protected artifact caching must preserve current authorization/releasability/delivery-generation/active-stream/browser-delivery fencing or remain non-shared.
+- protected artifact caching must preserve current authorization/releasability/delivery-generation/active-stream/browser-delivery/safe-filename fencing or remain non-shared.
 
 **Resolution evidence:** Product freshness expectations, security classification, revocation/erasure semantics, traffic/capacity evidence and cache/CDN implementation proofs. Numeric TTLs are not invented in advance.
 
@@ -170,6 +170,44 @@ Endpoint-level contracts are added incrementally using the canonical endpoint te
 **Resolution evidence:** concrete Product need for active inline rendering, browser threat model, content classes/formats, CSP/sandbox design, cookie/origin/storage/service-worker topology, delegated-delivery redemption/revocation proof and end-to-end stored-XSS/cross-tenant security tests.
 
 No active-inline implementation may ship merely because an object store/CDN/browser can render the bytes while this profile remains unresolved.
+
+## OPEN-API-019 — Cursor confidentiality implementation profile
+
+**Question:** For endpoints whose cursor must bind protected tenant/filter/search/last-item/query state, which concrete mechanism is used: server-side opaque handle/state, confidentiality+integrity-protected self-contained envelope, or another equivalent design?
+
+**Already fixed:**
+
+- "opaque" does not imply confidential;
+- a URL-visible cursor may not expose confidential/restricted tenant data, protected filter/search text, raw protected resource keys, credentials or sensitive topology;
+- base64/encoding/signing without confidentiality is insufficient for protected cursor plaintext;
+- current authorization is re-evaluated on every continuation regardless of cursor validity;
+- raw protected cursor values are redacted/hashed/referenced rather than stored in normal logs/analytics/traces/referrers;
+- cursor material cannot be copied into third-party/redirect URLs as a convenience;
+- confidential/restricted filter/search input is not forced into URL-visible query parameters when the normal use case requires protected values.
+
+**Resolution evidence:** endpoint data classification, expected cursor lifetime/cardinality, state-store availability/recovery requirements, confidentiality/integrity proof, URL/logging/referrer behavior, replay/binding tests and operational cost evidence.
+
+The chosen mechanism may vary by endpoint/profile when semantics require it; clients still see an opaque cursor contract.
+
+## OPEN-API-020 — Safe artifact filename rendering profile
+
+**Question:** What exact normalization/transliteration/fallback and `Content-Disposition filename`/`filename*` encoding implementation is adopted for browser download names across supported clients/platforms?
+
+**Already fixed:**
+
+- the delivery filename is server-derived and always has a neutral server-generated fallback;
+- original uploader/provider filename is untrusted metadata, not the response header value by default;
+- the policy removes/rejects CR/LF/NUL/control and bidi directionality ambiguity;
+- path separators, drive/UNC syntax, dot-segments and equivalent path interpretation cannot escape into saved path semantics;
+- platform-reserved/special names and dangerous leading/trailing dot/space forms are handled safely;
+- attacker-controlled misleading/double executable extensions cannot contradict the authoritative server media class; safe extension is server-derived or omitted;
+- duplicate/conflicting filename parameters are prohibited;
+- when both `filename` and `filename*` are emitted, they represent one normalized logical name with a conservative fallback rather than attacker-controlled alternatives;
+- header syntax/Unicode/percent encoding cannot create response splitting or parameter ambiguity.
+
+**Resolution evidence:** supported browser/OS matrix, Unicode security review, international filename requirements, header interoperability tests and executable/content-type confusion tests.
+
+A framework default does not become the canonical safe-filename policy merely because it passes a happy-path download test.
 
 ## Not Phase 09 OPENs
 

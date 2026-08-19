@@ -17,7 +17,7 @@ Idempotency-Key: <opaque client-generated key>
 
 The key is opaque to the platform. Clients SHALL NOT encode secrets in it.
 
-The accepted maximum key length is 255 UTF-8 bytes after transport decoding. Endpoint-specific profiles MAY impose a smaller documented limit.
+The key length and accepted character/encoding profile SHALL be bounded before implementation. The concrete transport limit remains `OPEN-API-004`; unlimited key size is not an accepted default.
 
 `Idempotency-Key` is not tenant scope, authorization, correlation or resource identity.
 

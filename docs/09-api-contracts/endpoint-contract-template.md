@@ -60,7 +60,7 @@ Tenant source: path | trusted integration mapping | platform operation target
 Physical placement input from caller: prohibited
 ```
 
-For tenant-scoped routes, document where trusted placement is resolved and where authoritative membership/resource authorization occurs. If membership/resource policy is cell-owned, placement resolution -> authoritative routing -> cell admission -> trusted TenantContext MUST precede the owning authorization decision. Earlier ingress/global checks are narrowing/fail-fast only.
+For tenant-scoped routes, document where trusted placement is resolved and where authoritative membership/resource authorization occurs. If membership/resource policy is cell-owned, placement resolution -> authoritative routing -> cell admission -> trusted TenantContext -> request-contract validation MUST precede the owning authorization decision. Earlier ingress/global checks are narrowing/fail-fast only.
 
 Explain any legitimate global scope.
 
@@ -73,9 +73,10 @@ Step-up: none | policy-driven | required
 Audit class: none | normal | privileged | security-critical
 Existence concealment: yes | no | conditional
 Owning authorization authority: <cell/domain/control-plane authority>
+Authorization input fields: <validated path/query/body/resource identifiers consumed by policy>
 ```
 
-Define any resource-level scope rules and distinguish ingress/global prechecks from the final owning authorization decision.
+Define any resource-level scope rules and distinguish ingress/global prechecks from the final owning authorization decision. Caller-controlled authorization/resource-scope inputs MUST be validated under the trusted route/TenantContext before the owning policy consumes them.
 
 ## Request
 
@@ -167,12 +168,14 @@ In-progress duplicate behavior: <409 or same 202 operation>
 Different-fingerprint behavior: 409 idempotency.key_reused
 Retention/recovery window: <accepted policy or OPEN>
 One-time-secret response: none | initial-presentation-only
-Secret response-loss recovery: <not applicable | safe metadata + explicit rotate/reissue/revoke flow>
+Secret response-loss recovery: <not applicable | safe metadata + explicit rotate/reissue/create/revoke flow>
+Surviving recovery authority: <not applicable | concrete still-valid authority/staged overlap/privileged recovery>
+Credential cutover semantics: <not applicable | non-disruptive create | staged overlap | immediate with proven alternate authority>
 ```
 
 For external effects, describe stable `operation_id` / reconciliation behavior.
 
-If the endpoint creates/rotates/reissues non-retrievable secret material, document that the secret is excluded from idempotent replay state, a same-key response-loss retry cannot recreate the effect or re-present the secret, and the explicit authorized recovery action does not require possession of the lost secret.
+If the endpoint creates/rotates/reissues non-retrievable secret material, document that the secret is excluded from idempotent replay state, a same-key response-loss retry cannot recreate the effect or re-present the secret, and the explicit authorized recovery action does not require possession of the lost secret. If the operation can invalidate an existing credential, prove which still-valid authority survives to recover or use a staged/overlap cutover; a nominal recovery endpoint without usable authority is insufficient.
 
 ## Optimistic concurrency
 
@@ -325,12 +328,17 @@ No secrets in observability payloads.
 
 ## Compatibility classification
 
-Classify externally important fields/enums as open/closed and document:
+Classify externally important fields/enums and security/behavior policy dimensions. Document:
 
+- open/closed enum behavior;
 - additive evolution options;
 - known future extension points;
 - deprecated aliases, if any;
-- what would require a new major.
+- what would require a new major;
+- whether changing authorization/scope/idempotency/retry/consistency semantics is breaking;
+- whether changing response cache class, shared-cache eligibility, variance or current-authorization revalidation is breaking/security-sensitive.
+
+A cache policy becoming more permissive is never treated as an implementation-only optimization.
 
 ## Security abuse cases
 
@@ -339,10 +347,12 @@ List relevant abuse/failure cases such as:
 - wrong tenant ID;
 - known resource ID from another tenant;
 - authorization attempted against stale/wrong cell placement;
+- authorization consuming unvalidated caller-controlled resource/scope fields;
 - revoked principal;
 - stale revision;
 - duplicate idempotency key;
 - lost one-time-secret response;
+- secret rotation with no surviving recovery authority;
 - shared-cache cross-principal/tenant leakage;
 - oversized body;
 - expensive filter/include abuse;
@@ -359,12 +369,15 @@ At minimum, protected mutation endpoints test:
 - authorized success;
 - unauthenticated denial;
 - wrong-tenant denial;
-- authoritative placement/routing before cell-owned authorization where applicable;
+- authoritative placement/routing + trusted request-contract validation before cell-owned authorization where applicable;
+- authorization policy does not consume unvalidated caller-controlled scope/resource fields;
 - insufficient permission;
 - validation bounds;
 - idempotency/concurrency where applicable;
 - one-time-secret response-loss behavior where applicable;
+- lockout-safe surviving recovery authority/cutover where secret rotation can invalidate existing authority;
 - response-cache headers/semantics and cross-principal/tenant non-reuse;
+- compatibility tests for cache-policy changes;
 - audit/operation linkage;
 - safe error leakage;
 - retry after response loss where applicable.

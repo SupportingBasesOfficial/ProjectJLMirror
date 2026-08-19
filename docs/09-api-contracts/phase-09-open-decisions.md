@@ -46,6 +46,7 @@ Candidates may include a narrowly reviewed/redacted query representation or anot
 **Question:** Concrete defaults/maxima for:
 
 - JSON request body;
+- total/per-field HTTP header bytes and header count;
 - idempotency-key transport length/character profile;
 - per-endpoint strings/lists/nesting;
 - collection `limit`;
@@ -208,6 +209,27 @@ The chosen mechanism may vary by endpoint/profile when semantics require it; cli
 **Resolution evidence:** supported browser/OS matrix, Unicode security review, international filename requirements, header interoperability tests and executable/content-type confusion tests.
 
 A framework default does not become the canonical safe-filename policy merely because it passes a happy-path download test.
+
+## OPEN-API-021 — HTTP ingress deployment/profile details
+
+**Question:** Which concrete gateway/reverse-proxy/runtime products, HTTP protocol/version mix, trusted-proxy topology/configuration syntax, canonical internal request-envelope implementation, malformed-transport status mapping and numeric header limits are used in each deployment profile?
+
+**Already fixed:**
+
+- one accepted wire request has one canonical interpretation across all participating hops;
+- ambiguous request framing fails closed before authentication, body parsing, idempotency admission, cache selection or protected effects;
+- conflicting `Content-Length`/`Transfer-Encoding`, competing body lengths and invalid transfer framing cannot reach protected application logic;
+- security-sensitive headers have explicit cardinality/combine semantics and conflicting authentication/idempotency/trusted-routing values are not arbitrarily first/last-selected;
+- Host/authority and trusted proxy metadata have one authoritative interpretation; untrusted forwarding headers cannot override protected routing/scheme/client decisions;
+- gateway/router/cache/authorization/owning service consume the same canonical request target;
+- HTTP-version translation validates source protocol and reconstructs target messages from canonical semantics rather than forwarding incompatible framing metadata;
+- callback signature verification and callback processing observe the same exact bounded raw body;
+- realtime cannot return `101` for a request that failed canonical HTTP ingress;
+- cache/proxy and owning service cannot safely use different interpretations of ambiguous metadata.
+
+**Resolution evidence:** deployed edge/proxy/runtime topology, supported HTTP-version paths, cross-hop request-smuggling/desynchronization tests, trusted-proxy configuration tests, header-limit/capacity evidence, cache/gateway integration tests and callback/realtime end-to-end verification.
+
+Choosing a gateway/framework default does not resolve this OPEN item by itself. The security properties in `http-message-framing-and-canonicalization.md` remain normative regardless of product choice.
 
 ## Not Phase 09 OPENs
 

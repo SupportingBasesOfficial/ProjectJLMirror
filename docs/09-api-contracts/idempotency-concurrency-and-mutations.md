@@ -7,6 +7,8 @@
 
 Effectful HTTP requests may be retried by clients, proxies, SDKs or operators after network failure. The API contract therefore distinguishes HTTP method idempotency from business-effect idempotency and defines durable replay behavior explicitly.
 
+For HTTP surfaces, all idempotency and concurrency semantics operate only after the request has passed `http-message-framing-and-canonicalization.md`. A malformed/ambiguous wire request cannot create a claim, choose an idempotency key, establish a precondition or execute a protected effect.
+
 ## Idempotency header
 
 Retry-safe effectful `POST`/command contracts use:
@@ -20,6 +22,8 @@ The key is opaque to the platform. Clients SHALL NOT encode secrets in it.
 The key length and accepted character/encoding profile SHALL be bounded before implementation. The concrete transport limit remains `OPEN-API-004`; unlimited key size is not an accepted default.
 
 `Idempotency-Key` is not tenant scope, authorization, correlation or resource identity.
+
+`Idempotency-Key` is a security-sensitive `strict_singleton` input under the canonical HTTP message profile. Duplicate/conflicting instances are rejected before claim creation or protected effect. A proxy and owning service SHALL NOT derive different effective keys by first/last/concatenation behavior, and a request trailer cannot introduce or override the key after header admission.
 
 ## When the key is required
 
@@ -45,11 +49,14 @@ The client supplies only the key. The server derives the effective scope from tr
 
 - API major version;
 - canonical operation/route contract identity;
+- canonical HTTP method and request-target interpretation;
 - tenant/global scope;
 - principal/credential dimension when semantically required;
 - resource/command scope where the operation contract requires it.
 
 A client-provided header/body field cannot select a weaker deduplication namespace.
+
+An implicit method override, alternate path normalization, untrusted forwarded authority or duplicate header interpretation cannot change the effective idempotency scope after an edge component has made a different decision. Such ambiguity is rejected at canonical ingress.
 
 ## Request fingerprint
 
@@ -59,13 +66,16 @@ The fingerprint SHALL be insensitive to transport details that do not alter the 
 
 The same effective scope/key with a different fingerprint is a conflict and MUST NOT execute.
 
+Canonical HTTP normalization happens before fingerprinting. Fingerprinting SHALL NOT be used to “paper over” a wire request that different hops could parse into different methods, resources, headers or bodies.
+
 ## Atomic admission
 
 The accepted system invariant applies directly to the API contract:
 
 ```text
-request
+canonical HTTP request
   -> derive effective idempotency scope
+  -> compute/validate semantic fingerprint
   -> atomic create-or-observe durable claim
        |-- new + matching request -> one logical executor
        |-- existing + different fingerprint -> conflict
@@ -74,6 +84,8 @@ request
 ```
 
 A `SELECT` followed by an unprotected claim insert is not sufficient.
+
+No idempotency claim is created for a request rejected by framing/header/request-target/method/content-coding canonicalization before protected admission.
 
 ## Replay representation
 
@@ -198,6 +210,8 @@ Contracts requiring optimistic concurrency require:
 If-Match: "<opaque-strong-revision>"
 ```
 
+`If-Match` is parsed once under the accepted protocol-defined list/cardinality semantics before application precondition logic. Duplicate field lines or proxy/application parsing differences cannot produce competing effective preconditions. Security-relevant preconditions cannot be introduced through request trailers.
+
 If the precondition is required but omitted:
 
 ```text
@@ -228,6 +242,8 @@ Idempotency-Key: ...
 
 Idempotency protects duplicate execution of the same logical command. `If-Match` protects against executing it against a resource version the caller did not intend. They solve different races and MAY both be required.
 
+Canonical HTTP ingress ensures all hops agree that this is the same method, resource target, idempotency key and precondition before either race-control mechanism executes.
+
 ## Create-if-absent
 
 Where a business resource has a natural/caller-chosen unique key, the endpoint contract MAY expose create-if-absent semantics. Database implementation details remain hidden.
@@ -244,6 +260,8 @@ The contract SHALL distinguish:
 - current-state business conflict (`409`);
 - field/input semantic invalidity (`422`);
 - authorization denial (`403`/concealed `404`).
+
+Generic HTTP method override cannot convert an endpoint not designed for PATCH into a PATCH mutation path.
 
 ## DELETE and repeated requests
 
@@ -269,6 +287,18 @@ Each bulk endpoint SHALL declare:
 
 Cross-domain or high-volume bulk work SHOULD default to durable operation semantics instead of holding one database transaction across arbitrary item counts.
 
+## Canonical ingress fault tests
+
+Effectful/idempotent endpoints SHALL test, through the deployed edge/application path where applicable:
+
+- duplicate/conflicting `Idempotency-Key` rejected before claim creation;
+- `Idempotency-Key` in a request trailer cannot create/override the admitted key;
+- method override cannot change the operation after routing/cache/idempotency interpretation;
+- ambiguous request-target/authority cannot move one key into a different logical operation scope;
+- duplicate/multi-line `If-Match` has one accepted protocol interpretation or is rejected;
+- conflicting framing/content coding cannot make the claim fingerprint cover bytes/semantics different from the use case;
+- canonical-ingress rejection creates no durable claim/effect.
+
 ## SDK retry policy
 
 Future generated/official SDKs SHALL derive automatic retry behavior from operation metadata.
@@ -276,3 +306,5 @@ Future generated/official SDKs SHALL derive automatic retry behavior from operat
 An SDK MUST NOT automatically retry an effectful operation solely because it received a network timeout. Automatic retry is permitted only when the method/endpoint is intrinsically retry-safe or a valid idempotency/operation contract makes replay safe.
 
 For one-time-secret operations, SDKs MUST treat `secret.delivery_not_replayable` as a recovery state requiring an explicit user/application decision; they MUST NOT automatically issue a replacement secret operation.
+
+SDKs cannot assume that a malformed/ambiguous transport request created an idempotency claim; they should construct a new valid canonical request rather than replaying transport ambiguity.

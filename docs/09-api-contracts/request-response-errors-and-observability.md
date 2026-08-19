@@ -3,6 +3,14 @@
 **Status:** proposed baseline  
 **Phase:** 09 — API & Contracts
 
+## Canonical HTTP request prerequisite
+
+Every externally reachable HTTP request described by this document first passes `http-message-framing-and-canonicalization.md`.
+
+Authentication, tenant routing, idempotency admission, cache selection, request-contract validation and protected use cases consume the resulting canonical request rather than independently interpreting raw framing, duplicate security-sensitive headers, trusted-proxy metadata or an ambiguous request target.
+
+A transport/framing/canonicalization rejection occurs before the request is treated as a valid protected operation and SHALL NOT create an idempotency claim, durable operation or protected domain effect.
+
 ## HTTP method semantics
 
 Phase 09 uses standard HTTP method intent:
@@ -15,6 +23,8 @@ Phase 09 uses standard HTTP method intent:
 - `HEAD` — MAY be supported where metadata/existence semantics are useful and safe.
 
 A route SHALL NOT use `GET` to trigger a protected state change.
+
+There is one canonical HTTP method. Generic method-override mechanisms such as `X-HTTP-Method-Override`, `X-Method-Override`, query/form `_method` or framework equivalents are not accepted by default. A future compatibility profile that requires method override must be explicitly reviewed under the canonical HTTP ingress contract so routing, CSRF, authorization, idempotency and caching all observe the same effective method.
 
 ## Success status semantics
 
@@ -70,6 +80,8 @@ artifact_delivery_guarded
 ```
 
 The cache contract applies to **all response variants**, including success, redirect where allowed, conditional responses and errors. An endpoint SHALL NOT define a safe success cache policy while leaving authentication/authorization/not-found/error responses to intermediary defaults.
+
+A cache/reverse proxy is eligible to process/cache a request only after applying the same canonical method/authority/path/query/header meaning accepted by the owning service. Ambiguous requests are not valid cache candidates.
 
 ### `no_store`
 
@@ -209,6 +221,8 @@ Preferred mapping:
 
 A route MAY use a more specific status when its contract documents the semantics. The machine-readable code remains the primary stable discriminator.
 
+Malformed transport/framing requests may be rejected by the edge/HTTP stack before the normal problem representation is available. Exact safe status mapping remains deployment/profile OPEN; such errors never reveal which parser/hop would have accepted an alternate interpretation.
+
 ## Ambiguous effect errors
 
 The API SHALL NOT return a generic retryable timeout when an irreversible external effect may already have occurred and a blind retry could duplicate it.
@@ -228,10 +242,11 @@ If the platform cannot establish safe durable tracking, the route fails conserva
 
 Cheap request-shape/size checks MAY run before expensive authorization/database work, but protected operations SHALL NOT reveal protected resource existence through semantic validation before required authentication/tenant-authorization gates.
 
-For tenant-scoped requests whose membership/resource authority is cell-owned, the accepted order is:
+For tenant-scoped HTTP requests whose membership/resource authority is cell-owned, the accepted order is:
 
 ```text
-authenticate
+canonical HTTP ingress
+ -> authenticate
  -> logical tenant intent
  -> trusted placement resolution
  -> authoritative route
@@ -242,26 +257,34 @@ authenticate
  -> use case
 ```
 
+Canonical HTTP ingress proves one accepted framing/header/authority/request-target/body interpretation. Request-contract validation later proves that the already agreed caller-controlled fields are valid and bounded under the trusted TenantContext before owning authorization consumes them. Neither gate substitutes for the other.
+
 Request-contract validation before owning authorization is specifically the validation needed to ensure caller-controlled path/query/header/body fields are well-formed, bounded and safe to consume as policy/resource inputs. It SHALL NOT perform protected semantic existence checks that would leak information before the owning authority gate.
 
-Provider callbacks remain subject to their separate rule: hard raw transport bounds are enforced before complete buffering/signature work.
+Provider callbacks remain subject to their specialized ordering: canonical HTTP framing first, then hard raw transport bounds before complete buffering/signature work, followed by provider authentication/freshness/replay rules.
 
-## Request limits
+## Request limits and content interpretation
 
 Every endpoint class declares applicable bounds such as:
 
-- maximum request-body bytes;
+- maximum request-body raw bytes;
+- maximum decoded/decompressed bytes where content coding is accepted;
+- maximum HTTP header count/bytes/per-field size under the platform profile;
 - maximum collection/bulk item count;
 - maximum string/list/object depth or complexity where relevant;
 - timeout/deadline policy where externally configurable;
 - upload limits;
 - filter/sort/include complexity.
 
+`Content-Encoding`/content-coding is explicitly interpreted by the accepted surface/endpoint profile. Unsupported, malformed or ambiguously ordered codings are rejected rather than decoded differently by edge and application. Raw and decoded size bounds are independent.
+
+Request trailers cannot introduce/override authentication, idempotency, tenant/routing, CSRF/Origin, conditional-precondition, callback-security or other protected authority after initial header admission unless an explicitly reviewed profile defines a safe non-security trailer field.
+
 Global infrastructure limits MAY be stricter during incident protection, but normal client contracts must define stable maximums or discoverable plan/policy constraints before relying on unlimited input.
 
 ## Request ID
 
-Every API/BFF request receives a server-generated opaque `request_id`.
+Every API/BFF request receives a server-generated opaque `request_id` after or as part of accepted ingress handling.
 
 The response exposes it using:
 
@@ -269,7 +292,7 @@ The response exposes it using:
 X-Request-Id: <opaque value>
 ```
 
-and error bodies include `request_id`.
+and error bodies include `request_id` where a normal application response exists.
 
 A client-supplied `X-Request-Id` is not trusted as the server's unique request identity.
 
@@ -289,7 +312,7 @@ When absent, the platform establishes a correlation ID. Responses SHOULD expose 
 X-Correlation-Id: <effective value>
 ```
 
-Correlation IDs are not authorization or idempotency keys.
+Correlation IDs are not authorization or idempotency keys. Their header cardinality follows the accepted HTTP message profile and cannot be interpreted differently across hops.
 
 ## URL/query confidentiality and logging
 
@@ -312,6 +335,8 @@ Implementation MAY additionally propagate accepted distributed tracing context. 
 
 Trace/span attributes use safe normalized route templates and redacted query metadata rather than unbounded/raw protected URLs.
 
+Tracing/proxy middleware consumes the canonical request meaning and must not reconstruct a competing route/authority/request target from raw untrusted forwarding metadata.
+
 ## Deadlines
 
 Clients SHOULD be allowed to enforce their own network timeout without changing operation correctness. Server-side deadline/cancellation behavior is endpoint-specific.
@@ -323,6 +348,8 @@ A client disconnect SHALL NOT be treated as proof that a committed mutation or a
 Responses MAY include `Retry-After` for throttling, temporary unavailability or in-progress idempotency/operation states where a later retry/read is safe.
 
 The presence of `Retry-After` does not override the operation's idempotency semantics.
+
+A request rejected at canonical HTTP ingress before protected admission may be retried only after the client constructs a valid unambiguous request; such a rejection is not evidence that an idempotency claim/effect existed.
 
 ## Error privacy
 
@@ -336,13 +363,15 @@ External error responses SHALL NOT expose:
 - internal filesystem paths;
 - sensitive policy rules that enable bypass;
 - protected data belonging to another tenant;
-- raw protected cursor/query values.
+- raw protected cursor/query values;
+- competing values from rejected security-sensitive headers/trailers;
+- raw malicious framing/body material beyond a safe diagnostic class.
 
-Internal logs/traces may capture richer diagnostics only under accepted redaction/classification policy; URL/query confidentiality rules still apply.
+Internal logs/traces may capture richer diagnostics only under accepted redaction/classification policy; URL/query confidentiality and rejected-ambiguity rules still apply.
 
 ## Observability contract
 
-Every externally meaningful request SHALL be correlatable to its owning use case and, where applicable, subsequent operation/job/provider work.
+Every externally meaningful accepted request SHALL be correlatable to its owning use case and, where applicable, subsequent operation/job/provider work.
 
 At minimum internal telemetry can associate:
 
@@ -357,10 +386,14 @@ latency
 downstream operation_id when created
 ```
 
-Observability fields never become a backdoor for secret/PII/confidential-query leakage. Route templates/operation IDs are preferred to raw URLs; protected cursor/search/filter text is represented only through accepted redacted/hash/reference forms.
+Transport-security telemetry may additionally record safe canonical-ingress rejection classes such as framing conflict, duplicate security header, authority conflict, invalid request target, method override rejection, security trailer rejection or content-coding conflict.
+
+Observability fields never become a backdoor for secret/PII/confidential-query leakage. Route templates/operation IDs are preferred to raw URLs; protected cursor/search/filter text is represented only through accepted redacted/hash/reference forms. Rejected credentials/header values and malicious raw request bodies are not logged as convenience diagnostics.
 
 ## Health endpoints
 
 Liveness/readiness/dependency health endpoints are operational contracts and SHALL distinguish process liveness from safe traffic readiness.
 
 Detailed dependency/internal topology health is not exposed publicly by default. External health views use deliberately safe projections.
+
+Health endpoints remain subject to canonical HTTP ingress; unauthenticated operational routes are not exempt from request-smuggling/framing defenses.

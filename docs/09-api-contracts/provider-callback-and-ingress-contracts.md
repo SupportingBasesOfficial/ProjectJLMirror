@@ -187,6 +187,27 @@ If a cross-authority irreversible effect may have succeeded but the authoritativ
 
 Replay-state expiry/retention SHALL NOT silently convert an unresolved prior delivery into permission to repeat an irreversible effect. The profile declares its replay-retention/expiry policy and preserves enough durable tombstone/operation/reconciliation authority to prevent unsafe re-admission for every unresolved or still-supported recovery case. Exact durations remain profile/SLO decisions until accepted.
 
+## Replay recovery continuity after restore/PITR
+
+Callback replay authority inherits the accepted recovery-quarantine and `(R,F]` reconciliation model from `docs/08-data/recovery-retention-and-artifacts.md`.
+
+A replay/inbox/dedup store restored to an older point, partially lost or recovered from a mismatched generation SHALL NOT interpret a missing/older replay record as evidence that a callback identity was never admitted. Missing replay state after recovery is **recovery uncertainty**, not unused identity.
+
+Before callback replay admission resumes for an affected tenant/integration/cell scope, the recovery gate SHALL reconcile restored replay state against surviving continuity authorities as applicable, including:
+
+- durable inbox/work/operation state;
+- authoritative domain outcomes;
+- provider acknowledgement or provider-side operation/event state;
+- audit/accountability evidence;
+- external-effect and reconciliation records;
+- other accepted `(R,F]` continuity evidence.
+
+A still-fresh authenticated callback does not bypass this recovery gate. If replay-generation continuity is unresolved, or any surviving authority indicates the callback/effect may already have been admitted or executed after the restored snapshot, the callback remains fail-closed/reconciliation-blocked and no new logical executor is created.
+
+Restore/PITR, partial replay-state loss, replica divergence or a missing replay record SHALL NOT turn a previously accepted callback into a fresh executable delivery. Absence may be treated as unused only after recovery reconciliation proves the relevant continuity boundary and current authority.
+
+The concrete replay store, backup technology, recovery-generation/epoch encoding and reconciliation topology remain implementation/recovery-profile choices. The fixed contract property is that **recovered replay authority must prove continuity before missing state can authorize execution**.
+
 ## Callback acknowledgement
 
 A successful HTTP callback response means only what the provider profile documents.
@@ -285,9 +306,9 @@ Provider callback profiles version independently from the canonical domain API. 
 
 The adapter normalizes multiple supported provider protocol versions into stable platform-owned application/domain contracts.
 
-Changing callback gateway/proxy/runtime or HTTP-version translation SHALL NOT alter which exact raw body/security-header meaning the provider profile authenticates. Changing the structured parser/profile SHALL NOT alter which canonical entity, replay identity or domain input is derived from the same authenticated body without explicit security/compatibility review. Changing freshness binding, replay admission atomicity, durable-inbox coupling, replay retention/expiry, acknowledgement durability or reconciliation semantics is likewise security-sensitive even when the provider payload schema is unchanged.
+Changing callback gateway/proxy/runtime or HTTP-version translation SHALL NOT alter which exact raw body/security-header meaning the provider profile authenticates. Changing the structured parser/profile SHALL NOT alter which canonical entity, replay identity or domain input is derived from the same authenticated body without explicit security/compatibility review. Changing freshness binding, replay admission atomicity, durable-inbox coupling, replay retention/expiry, replay recovery continuity, acknowledgement durability or reconciliation semantics is likewise security-sensitive even when the provider payload schema is unchanged.
 
-Such changes trigger canonical HTTP ingress, structured-entity, authenticated-freshness, acknowledgement-durability and atomic replay/reconciliation regression tests.
+Such changes trigger canonical HTTP ingress, structured-entity, authenticated-freshness, acknowledgement-durability, replay-recovery and atomic replay/reconciliation regression tests.
 
 ## Testing
 
@@ -322,5 +343,9 @@ Every callback profile SHALL test:
 - acknowledgement success is impossible before the profile's durable-responsibility boundary, including crash/fault injection immediately before that boundary;
 - process crash after durable acceptance does not lose callback work;
 - process crash before durable acceptance does not return false success;
+- restore/PITR to a point before a previously admitted callback replay/inbox record while a later inbox/effect/provider-ack/audit authority survives does not admit a second logical executor;
+- partial loss of replay/dedup state does not treat missing state as `unused` or `never executed`;
+- mismatched recovery generations or unresolved `(R,F]` continuity keep callback admission quarantined/fail-closed;
+- a still-fresh authenticated provider retry cannot resurrect execution before surviving inbox/effect/ack/reconciliation authorities are reconciled;
 - callback-supplied URLs cannot bypass trusted outbound destination/redirect/size/timeout policy;
 - provider outage/follow-up fetch failure remains isolated to the integration/workload.

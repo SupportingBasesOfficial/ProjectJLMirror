@@ -80,6 +80,10 @@ Cursor contents SHALL NOT expose raw database credentials, physical placement or
 
 The server MAY encode/sign/encrypt cursors internally. Exact mechanism is implementation-specific as long as callers cannot use the cursor to weaken authorization or inject arbitrary database ordering/filter state.
 
+A valid cursor is **not authorization**. Every page request re-establishes the current principal/session/credential state, tenant context and applicable membership/permission/resource scope before returning protected items. Revocation, tenant suspension, scope reduction or relocation between pages SHALL NOT remain bypassable merely because the caller holds an older valid cursor.
+
+Cursor binding MAY include principal/security-scope dimensions when an endpoint needs them to prevent unsafe replay, but such binding never replaces current authorization re-evaluation.
+
 ## Stable ordering
 
 Every cursor-paginated endpoint has a deterministic ordering with a stable tie-breaker.
@@ -103,6 +107,8 @@ Collection contracts SHALL state whether pagination is:
 The default does not promise database transaction snapshot isolation across multiple HTTP requests.
 
 Clients must not assume a multi-page traversal is a perfectly frozen dataset unless the endpoint explicitly promises it.
+
+A snapshot-like data view, when provided, freezes query-data semantics only to the documented extent; it does not freeze authorization. Each page still requires current authority.
 
 ## Offset pagination
 
@@ -177,6 +183,8 @@ The endpoint defines maximum time span/result volume or an asynchronous export p
 
 Historical pagination identity remains based on platform-owned resource/observation semantics and SHALL NOT expose physical telemetry partitions.
 
+Current authorization is re-evaluated for each historical page/export admission; possession of an old cursor/watermark does not preserve access after revocation or scope reduction.
+
 ## Bulk reads
 
 Bulk lookup endpoints MAY accept bounded sets of stable IDs when they materially reduce N+1 behavior.
@@ -189,6 +197,8 @@ They declare:
 - missing/unauthorized item behavior;
 - output ordering guarantees;
 - whether existence concealment is required.
+
+Every item/result remains subject to current tenant/resource authorization. Batch membership does not turn one authorized ID into authority over neighboring requested IDs.
 
 A bulk read SHALL NOT become an unbounded arbitrary-query API.
 
@@ -207,6 +217,8 @@ durable_operation
 `atomic_all_or_nothing` is allowed only when the entire batch belongs to one authoritative transaction boundary and is safely bounded.
 
 Large, cross-domain, external-effect or long-running bulk work uses a durable operation.
+
+Authorization scope for the batch is explicit. A bulk mutation SHALL NOT partially apply unauthorized items unless the endpoint's accepted per-item semantics intentionally permit mixed authorization outcomes without leaking protected existence.
 
 ## Per-item result shape
 
@@ -232,6 +244,8 @@ Per-item independent bulk operations return stable item correlation such as:
 ```
 
 The endpoint defines whether `client_ref` is required and how per-item idempotency is established.
+
+Where existence concealment applies, per-item error shape SHALL NOT reveal which foreign-tenant resource IDs exist.
 
 ## Imports instead of giant bulk payloads
 

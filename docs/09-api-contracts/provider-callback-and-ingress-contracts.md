@@ -9,6 +9,16 @@ Provider callbacks/webhooks are external untrusted ingress contracts. They are n
 
 This document defines the stable JLMIRROR ingress boundary while allowing each provider adapter to implement its required signature/certificate/token protocol.
 
+## Canonical HTTP ingress
+
+Every callback profile inherits `http-message-framing-and-canonicalization.md` before signature/freshness/replay/domain processing.
+
+The platform first establishes one unambiguous HTTP request framing/header/request-target interpretation. Ambiguous `Content-Length`/`Transfer-Encoding`, multiple conflicting body lengths, malformed transfer framing, conflicting authority, or duplicate/conflicting provider security headers without an explicit canonical rule fail closed.
+
+If a provider signature protocol signs the raw request body, verification uses the exact bounded raw body bytes associated with the already accepted framing. A gateway, adapter and downstream processor SHALL NOT verify one byte sequence while normalizing/parsing another as the callback body.
+
+Provider authentication/signature/timestamp/nonce headers declare explicit cardinality semantics. Competing values are rejected rather than selected by first/last/framework behavior.
+
 ## Namespace
 
 Where a generic platform prefix is applicable, callback routes use:
@@ -17,7 +27,7 @@ Where a generic platform prefix is applicable, callback routes use:
 /callbacks/v1/<provider-profile>/<opaque-callback-or-integration-reference>
 ```
 
-Some providers may require a provider-mandated path shape. Such exceptions remain adapter-owned and SHALL preserve the same trust/size/replay/tenant-binding invariants.
+Some providers may require a provider-mandated path shape. Such exceptions remain adapter-owned and SHALL preserve the same framing/trust/size/replay/tenant-binding invariants.
 
 No callback URI contains a database address, cell ID, secret value or other physical placement authority.
 
@@ -45,9 +55,11 @@ are treated as untrusted provider data unless independently matched to trusted c
 
 ## Raw-body hard limit
 
-The ingress SHALL enforce a hard raw transport byte limit before complete buffering or expensive signature/authentication/parsing work.
+After canonical framing admission establishes which bytes belong to this request body, ingress SHALL enforce a hard raw transport byte limit while reading and before complete buffering or expensive signature/authentication/parsing work.
 
 `Content-Length` MAY permit early rejection but is not trusted as the only bound. Chunked/streamed input is counted and terminated when it exceeds the accepted raw-body limit.
+
+Ambiguous framing is rejected before the adapter treats any body as authentic callback input; the hard raw bound cannot be bypassed by making different hops disagree about where the body ends.
 
 Provider profiles define a concrete maximum raw-body size before implementation/release. If not yet measured/accepted, the value is explicitly `OPEN`; unlimited callback bodies are prohibited.
 
@@ -56,11 +68,12 @@ Provider profiles define a concrete maximum raw-body size before implementation/
 Conceptual processing:
 
 ```text
-network/route admission
-  -> hard raw byte bound while reading
-  -> obtain bounded raw representation
+network/protocol admission
+  -> canonical HTTP framing/header/request-target admission
+  -> hard raw byte bound while reading the accepted body
+  -> obtain bounded exact raw representation
   -> provider/integration lookup from trusted route/config
-  -> verify provider authenticity mechanism
+  -> verify provider authenticity mechanism over the required exact representation
   -> verify timestamp/freshness/nonce where available outside semantic parsing
   -> bounded minimal extraction/parse only if required to establish trusted event/replay identity
   -> enforce replay/dedup admission before protected logical effect
@@ -69,7 +82,9 @@ network/route admission
   -> authoritative mutation / operation contract
 ```
 
-The exact cryptographic verification sequence may depend on a provider that requires the untouched raw bytes. The adapter preserves those raw bytes inside the accepted limit.
+The exact cryptographic verification sequence may depend on a provider that requires untouched raw bytes. The adapter preserves those exact accepted raw bytes inside the hard limit.
+
+HTTP framing/header canonicalization does not rewrite the signed body. It only ensures every hop agrees which bounded bytes constitute that body and which single security-header values/profile apply.
 
 If replay identity is carried inside the authenticated body, the adapter MAY perform only the minimum parsing/decompression needed to extract that identity before replay admission. That extraction is itself subject to explicit byte/depth/item/parser limits and SHALL NOT execute domain behavior, follow URLs or allocate unbounded structures.
 
@@ -137,6 +152,8 @@ Preferred semantics distinguish:
 
 The adapter SHALL NOT return a success code merely to stop provider retries if the platform has neither completed nor durably accepted the required logical work.
 
+A request rejected by canonical HTTP ingress never creates a false durable-acceptance or idempotency/replay state merely because a downstream parser would have accepted one interpretation.
+
 ## Durable acceptance
 
 If callback processing will continue asynchronously, success acknowledgement requires a durable acceptance record/outbox/job/observation boundary that survives process crash.
@@ -169,7 +186,7 @@ An unauthenticated callback does not become a trusted command merely because the
 
 ## Error responses
 
-Callback errors are intentionally sparse. They SHALL NOT expose tenant existence, internal stack traces, signature comparison detail, secret references or physical topology.
+Callback errors are intentionally sparse. They SHALL NOT expose tenant existence, internal stack traces, signature comparison detail, secret references, physical topology or which intermediary/parser would have accepted an ambiguous transport interpretation.
 
 Provider profiles MAY require specific status codes to control retry behavior. Such mapping is documented per provider and cannot turn an unsafe/ambiguous effect into blind re-execution.
 
@@ -182,6 +199,7 @@ Callback ingress supports independent protection by:
 - endpoint;
 - tenant after trusted resolution;
 - body/parse cost;
+- header/framing cost;
 - concurrency.
 
 A noisy/compromised provider integration SHALL NOT consume unbounded global capacity.
@@ -200,17 +218,25 @@ Callback headers, signatures, tokens and raw payloads are classified. Normal log
 
 Safe telemetry records callback profile, trusted integration/tenant identity, provider event ID hash/reference where appropriate, validation outcome, latency and correlation without leaking secret/regulated content.
 
+Framing/header rejection telemetry records only a safe rejection class such as `framing_conflict` or `duplicate_security_header`; it does not log competing signature/token values or unrestricted malicious payload bytes.
+
 ## Versioning
 
 Provider callback profiles version independently from the canonical domain API. A provider protocol change may add `/callbacks/v2` or provider-specific version handling without requiring `/api/v2` for JLMIRROR resources.
 
 The adapter normalizes multiple supported provider protocol versions into stable platform-owned application/domain contracts.
 
+Changing callback gateway/proxy/runtime or HTTP-version translation SHALL NOT alter which exact raw body/security-header meaning the provider profile authenticates. Such infrastructure changes trigger the canonical HTTP ingress regression tests.
+
 ## Testing
 
 Every callback profile SHALL test:
 
-- over-limit chunked body rejected before complete buffering/authentication;
+- conflicting `Content-Length`/`Transfer-Encoding`, multiple differing lengths or malformed framing rejected before signature/domain processing;
+- gateway/adapter signature verification and semantic processing observe the same exact bounded raw body;
+- duplicate/conflicting provider signature/auth/timestamp/nonce headers fail closed unless the provider profile defines one canonical protocol rule;
+- untrusted forwarded/authority metadata cannot reroute or alter trusted callback security context;
+- over-limit chunked/streamed body rejected before complete buffering/authentication;
 - invalid authentication/signature rejected;
 - stale timestamp/nonce/event replay rejected/deduplicated as appropriate;
 - bounded minimal replay-identity extraction cannot cause unbounded decompression/parser work or domain side effects;

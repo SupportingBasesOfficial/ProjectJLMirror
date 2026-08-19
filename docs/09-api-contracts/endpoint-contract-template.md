@@ -52,6 +52,16 @@ provider_callback_identity
 
 State which are accepted and which are rejected.
 
+For BFF/browser endpoints additionally declare:
+
+```text
+Credentialed cross-origin allowed: no | explicit allowlist only
+Origin/CORS profile: <accepted profile or OPEN profile reference>
+CSRF required for state change: yes | no/not applicable
+```
+
+Wildcard credentialed browser origins are prohibited. Origin/CORS enforcement is never authorization.
+
 ## Tenant/global scope
 
 ```text
@@ -217,11 +227,14 @@ Validator/revalidation: <ETag/conditional/none/policy>
 Freshness/TTL: <accepted value/policy or OPEN>
 Authorization re-evaluation before reuse: <required/not applicable>
 Sensitive response fields: <none/list>
+Protected error variants: <no_store/private policy>
 ```
 
 Rules:
 
+- the cache contract applies to success and error/conditional response variants;
 - secret-bearing responses are always `no_store`;
+- protected authentication/authorization/existence-concealing errors cannot become shared-cacheable by default;
 - protected API/BFF responses cannot become shared-cacheable from framework/CDN defaults;
 - `Vary` or equivalent keying is not authorization;
 - `public_shared` requires a deliberately public projection independent of protected caller authority;
@@ -272,7 +285,12 @@ Operation URI: /api/v1/.../operations/{operation_id}
 Cancellation supported: yes/no
 Terminal states: <subset>
 Result resource: <type/reference>
+Operation read authority: <current action/scope>
+Cancel/retry/resume authority: <current action/scope>
+Result dereference authority: <current target-resource action/scope>
 ```
+
+`operation_id`/URL is never bearer authority. Poll/cancel/retry/resume/result access re-establishes current tenant/principal/resource authorization.
 
 ## Pagination/filter/sort
 
@@ -287,7 +305,11 @@ Allowed includes: ...
 Default limit: <value/policy>
 Maximum limit: <value/policy>
 Total count: absent | exact | approximate | optional
+Current authorization re-evaluated on each page: yes
+Cursor security binding: <tenant/query/sort plus any needed principal/scope dimensions>
 ```
+
+A cursor/snapshot/watermark never freezes authorization. Each protected continuation request re-establishes current authority, and included/bulk items remain independently authorized where required.
 
 ## Data classification
 
@@ -354,9 +376,14 @@ List relevant abuse/failure cases such as:
 - lost one-time-secret response;
 - secret rotation with no surviving recovery authority;
 - shared-cache cross-principal/tenant leakage;
+- protected error cache leakage;
+- stale cursor after authority revocation;
+- operation ID used as bearer authority;
+- wildcard/untrusted credentialed BFF origin;
 - oversized body;
 - expensive filter/include abuse;
 - replayed callback/ticket;
+- callback-supplied SSRF target;
 - provider outage;
 - cross-tenant existence probing.
 
@@ -376,8 +403,11 @@ At minimum, protected mutation endpoints test:
 - idempotency/concurrency where applicable;
 - one-time-secret response-loss behavior where applicable;
 - lockout-safe surviving recovery authority/cutover where secret rotation can invalidate existing authority;
-- response-cache headers/semantics and cross-principal/tenant non-reuse;
+- response-cache headers/semantics and cross-principal/tenant non-reuse, including protected error variants;
 - compatibility tests for cache-policy changes;
+- current authorization on pagination/operation continuation where applicable;
+- BFF origin/CORS/CSRF behavior where applicable;
+- callback outbound-fetch/SSRF boundary where applicable;
 - audit/operation linkage;
 - safe error leakage;
 - retry after response loss where applicable.

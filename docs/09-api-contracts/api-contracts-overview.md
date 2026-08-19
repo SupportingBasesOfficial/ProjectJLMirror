@@ -52,6 +52,8 @@ Cross-domain orchestration is represented by an owning use case/process contract
 
 Every tenant-scoped contract SHALL carry an unambiguous logical `tenant_id` through its contract scope. A caller may identify the logical tenant it intends to operate on, but that value is never authority for physical placement and never bypasses membership/authorization.
 
+When membership/resource policy is cell-owned, the contract preserves the accepted lifecycle: authentication -> logical tenant -> trusted placement -> authoritative route/cell admission -> trusted `TenantContext` -> request-contract validation -> owning authorization -> use case. Caller-controlled request fields are never promoted into trusted authorization/resource scope before validation under that context.
+
 ### Explicit retry semantics
 
 Every effectful contract SHALL classify whether client retry is:
@@ -63,6 +65,8 @@ Every effectful contract SHALL classify whether client retry is:
 
 "Client can retry on timeout" is never an undocumented assumption.
 
+One-time secret creation/rotation additionally declares non-replayable secret-delivery recovery and proves a surviving recovery authority or staged cutover when an existing credential could be invalidated.
+
 ### Explicit consistency semantics
 
 Every operation SHALL identify whether its response represents:
@@ -73,6 +77,12 @@ Every operation SHALL identify whether its response represents:
 - a reconciliation/ambiguous outcome requiring operation tracking.
 
 A `2xx` response does not silently mean more consistency than the owning use case can prove.
+
+### Explicit cache semantics
+
+Every endpoint SHALL declare whether its responses are `no_store`, `private_revalidate`, `public_shared` or `artifact_delivery_guarded`, including shared-cache eligibility, variance/revalidation/current-auth behavior and security-relevant compatibility semantics.
+
+Framework, reverse-proxy and CDN defaults SHALL NOT silently make a protected response more cache-permissive than the accepted contract.
 
 ## Initial URI namespaces
 
@@ -104,17 +114,21 @@ A new externally consumed use case is not implementation-ready until its contrac
 - method/path or non-HTTP invocation shape;
 - actor/principal classes;
 - tenant/global scope;
-- required authorization action/scope;
+- trusted placement/routing/TenantContext boundary where applicable;
+- request-contract validation ordering for fields consumed by authorization/resource selection;
+- required authorization action/scope and owning authorization authority;
 - request schema and size/complexity bounds;
 - response/result semantics;
+- response-cache class/shared-cache/revalidation/current-auth semantics;
 - consistency class;
 - idempotency/retry behavior;
+- one-time-secret response-loss/recovery and surviving recovery authority where applicable;
 - optimistic-concurrency behavior where applicable;
 - long-running-operation behavior where applicable;
 - stable error codes/classes;
 - audit class;
 - observability/request-correlation requirements;
-- compatibility/deprecation implications;
+- compatibility/deprecation implications, including cache/security semantics;
 - data classification and secret/PII handling constraints.
 
 The canonical endpoint template in this phase makes those fields reviewable before implementation.
@@ -147,6 +161,8 @@ Before a Phase 09 contract is accepted, reviewers SHOULD ask whether the contrac
 - a resource is relocated while clients remain active;
 - old and new application versions coexist during rolling deployment;
 - an operation times out after an external side effect may already have happened;
+- a credential rotation response is lost while the caller must still have a safe recovery authority;
+- a cache/CDN layer is added or replaced without changing authorization semantics;
 - a customer changes plan, identity provider, region, provider or isolation class without changing logical resource identity.
 
 If a contract requires callers to understand or rewrite around those implementation changes, the contract is not sufficiently decoupled.

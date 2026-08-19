@@ -59,7 +59,7 @@ The machine-readable HTTP contract SHALL describe:
 - stable reusable components;
 - examples where they materially clarify semantics.
 
-OpenAPI/schema alone is not sufficient to capture all JLMIRROR semantics. Each operation also conforms to the Phase 09 idempotency, authorization, consistency, audit, tenant, response-cache and compatibility declarations.
+OpenAPI/schema alone is not sufficient to capture all JLMIRROR semantics. Each operation also conforms to the Phase 09 idempotency, authorization, consistency, audit, tenant, response-cache, artifact-browser-delivery and compatibility declarations.
 
 ## Stable operation ID
 
@@ -108,6 +108,12 @@ cache_revalidation
 current_authorization_before_cache_reuse
 protected_error_cache_policy
 cache_freshness_policy
+artifact_browser_delivery_profile
+artifact_authoritative_media_type_policy
+artifact_content_disposition_policy
+artifact_mime_sniffing_policy
+active_content_isolation_profile
+artifact_delegated_delivery_scope
 callback_outbound_fetch_policy
 data_classification
 ```
@@ -134,11 +140,14 @@ An endpoint is not ready for implementation until review proves:
 14. current-authorization continuation semantics for pagination/history/bulk where applicable;
 15. stable errors;
 16. explicit response-cache class, protected-error policy, shared-cache eligibility, variance/revalidation/current-auth policy;
-17. callback outbound-fetch/SSRF policy where applicable;
-18. audit/observability requirements;
-19. compatibility classification, including cache/retry/auth/consistency semantics;
-20. security/privacy classification;
-21. required tests.
+17. artifact/binary browser-delivery profile, authoritative media-type policy and active-content isolation where applicable;
+18. callback outbound-fetch/SSRF policy where applicable;
+19. audit/observability requirements;
+20. compatibility classification, including cache/retry/auth/consistency/browser-delivery semantics;
+21. security/privacy classification;
+22. required tests.
+
+For browser-reachable artifact bytes, review MUST prove that authorization to download is not treated as authority for inline execution. Unknown/untrusted/browser-active content fails toward attachment/non-sniffable download semantics, and any active-inline profile uses an isolated untrusted-content boundary without application/BFF ambient credentials or origin/service-worker trust while preserving current artifact authorization and fencing.
 
 ## Schema generation direction
 
@@ -183,9 +192,20 @@ Every implemented endpoint SHALL have contract tests that validate at minimum:
 - pagination/cursor current-authorization behavior when applicable;
 - operation-resource current authorization when applicable;
 - response-cache class/headers/revalidation/non-reuse semantics including protected errors;
+- artifact browser-delivery/media-type/isolation semantics where bytes are browser reachable;
 - callback outbound-fetch/SSRF boundary where applicable;
 - size/complexity limits;
 - secret/topology leakage checks.
+
+Artifact/binary contract tests additionally prove, where applicable:
+
+- uploader filename/extension/media type cannot force executable inline delivery;
+- unknown/untrusted/browser-active content falls back to attachment/non-sniffable download behavior;
+- filename metadata cannot inject response headers;
+- `safe_inline` is restricted to explicitly accepted validated classes;
+- active-inline content cannot execute with application/BFF ambient credentials or origin/service-worker trust;
+- delegated delivery remains artifact/delivery-generation bounded and preserves current authorization/releasability/active-stream fencing;
+- range/resume/CDN paths cannot weaken the accepted browser-delivery profile.
 
 ## Consumer compatibility tests
 
@@ -213,13 +233,16 @@ It flags likely breaking/security-sensitive changes such as:
 - response cache class/shared-cache eligibility changes;
 - protected-error cache policy changes;
 - cache variance/validator/revalidation/current-authorization reuse changes;
+- artifact browser-delivery profile becoming more permissive;
+- artifact authoritative media-type/content-disposition/sniffing policy changes;
+- active-content isolation or delegated-delivery scope changes;
 - pagination/operation current-authorization semantics becoming weaker;
 - one-time-secret recovery/cutover changes that could remove a previously safe recovery authority;
 - callback outbound destination/redirect policy becoming more permissive.
 
-The diff tool cannot prove semantic compatibility. Reviewers still inspect changes to idempotency, authorization, consistency, ownership, retry, credential recovery, continuation authority, callback egress and cache behavior.
+The diff tool cannot prove semantic compatibility. Reviewers still inspect changes to idempotency, authorization, consistency, ownership, retry, credential recovery, continuation authority, artifact browser execution, callback egress and cache behavior.
 
-A deployment/framework/CDN configuration change that alters an endpoint's effective accepted cache semantics is subject to the same governance even if no OpenAPI schema changed.
+A deployment/framework/CDN/browser-delivery configuration change that alters an endpoint's effective accepted cache or active-content semantics is subject to the same governance even if no OpenAPI schema changed.
 
 ## Golden examples/test vectors
 
@@ -238,6 +261,9 @@ High-risk contracts SHOULD include executable test vectors/examples for cases su
 - protected error non-reuse;
 - cache-policy compatibility regression;
 - BFF wildcard/untrusted credentialed origin rejection;
+- browser-active artifact forced to safe download on application/BFF origin;
+- active-inline artifact isolated from application/BFF ambient credentials and origin trust;
+- forged upload media type unable to opt into inline execution;
 - callback-supplied SSRF target rejection;
 - cursor continuation under deterministic sort;
 - long-running reconciliation state;
@@ -265,6 +291,7 @@ SDKs SHALL:
 - treat one-time-secret response loss as explicit non-automatic recovery;
 - never treat cursor or operation ID as authorization;
 - never infer physical tenant placement;
+- preserve server-declared artifact download/inline semantics rather than overriding them from filename or guessed media type;
 - avoid hiding operation-resource semantics behind indefinite polling without cancellation/deadline controls.
 
 ## Documentation publishing
@@ -282,7 +309,7 @@ Contract changes require explicit security review when they introduce or materia
 - cross-tenant capability;
 - direct SQL/data administration;
 - automation execution;
-- artifact upload/download;
+- artifact upload/download, browser-delivery class, media-type policy or active-content isolation;
 - callback/webhook ingress or callback-driven outbound retrieval;
 - public projection;
 - realtime admission;

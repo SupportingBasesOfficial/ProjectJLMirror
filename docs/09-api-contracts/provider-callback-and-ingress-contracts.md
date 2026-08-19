@@ -183,11 +183,15 @@ For a callback whose replay identity protects a logical effect, admission SHALL 
 
 A standalone `check replay -> later record work` sequence is prohibited. Concurrent delivery and crash boundaries cannot create multiple logical executors or permanently consume replay identity while required work has no durable responsibility.
 
-Replay-state expiry/retention SHALL NOT silently convert an unresolved prior delivery into permission to repeat an irreversible effect. Retention policy is tied to provider retry/freshness behavior, correctness and reconciliation evidence; exact durations remain profile/SLO decisions until accepted.
+If a cross-authority irreversible effect may have succeeded but the authoritative outcome has not yet been durably recorded, the stable operation/replay authority SHALL enter or retain an explicit ambiguity state such as `reconciliation_required`. That state blocks any additional effect attempt for the same logical callback until authoritative reconciliation establishes the prior outcome. Worker restart, lease expiry, timeout, provider retry or replay-record aging does not convert this uncertainty into permission to execute again.
+
+Replay-state expiry/retention SHALL NOT silently convert an unresolved prior delivery into permission to repeat an irreversible effect. The profile declares its replay-retention/expiry policy and preserves enough durable tombstone/operation/reconciliation authority to prevent unsafe re-admission for every unresolved or still-supported recovery case. Exact durations remain profile/SLO decisions until accepted.
 
 ## Callback acknowledgement
 
 A successful HTTP callback response means only what the provider profile documents.
+
+Every callback profile declares its **acknowledgement durability semantics**: which durable responsibility boundary must be reached before a success response is allowed, which duplicate/terminal states may be acknowledged as success, and which pre-admission/ambiguous states must remain non-success/retryable according to the provider contract.
 
 Preferred semantics distinguish:
 
@@ -208,6 +212,8 @@ If callback processing will continue asynchronously, success acknowledgement req
 Replay admission and durable acceptance SHALL satisfy the atomic/recoverable relationship defined above. A replay identity is not considered safely consumed merely because an in-memory or independently committed replay marker exists while required work has no durable responsibility.
 
 A callback received only in process memory is not durably accepted.
+
+If an irreversible external effect is performed after durable admission, its stable operation identity and ambiguity/reconciliation state remain durable across the interval until the authoritative outcome is recorded. A crash in that interval cannot cause the callback to be treated as a fresh executable delivery.
 
 ## Duplicate behavior
 
@@ -279,9 +285,9 @@ Provider callback profiles version independently from the canonical domain API. 
 
 The adapter normalizes multiple supported provider protocol versions into stable platform-owned application/domain contracts.
 
-Changing callback gateway/proxy/runtime or HTTP-version translation SHALL NOT alter which exact raw body/security-header meaning the provider profile authenticates. Changing the structured parser/profile SHALL NOT alter which canonical entity, replay identity or domain input is derived from the same authenticated body without explicit security/compatibility review. Changing freshness binding, replay admission atomicity, durable-inbox coupling or reconciliation semantics is likewise security-sensitive even when the provider payload schema is unchanged.
+Changing callback gateway/proxy/runtime or HTTP-version translation SHALL NOT alter which exact raw body/security-header meaning the provider profile authenticates. Changing the structured parser/profile SHALL NOT alter which canonical entity, replay identity or domain input is derived from the same authenticated body without explicit security/compatibility review. Changing freshness binding, replay admission atomicity, durable-inbox coupling, replay retention/expiry, acknowledgement durability or reconciliation semantics is likewise security-sensitive even when the provider payload schema is unchanged.
 
-Such changes trigger canonical HTTP ingress, structured-entity, authenticated-freshness and atomic replay regression tests.
+Such changes trigger canonical HTTP ingress, structured-entity, authenticated-freshness, acknowledgement-durability and atomic replay/reconciliation regression tests.
 
 ## Testing
 
@@ -310,8 +316,10 @@ Every callback profile SHALL test:
 - concurrent deliveries of one replay identity produce at most one logical executor/durable admission;
 - crash between replay reservation and durable work cannot leave an unrecoverable consumed-without-work state;
 - crash after durable admission but before acknowledgement preserves replay observation and required work;
+- **crash after a cross-authority irreversible effect may have succeeded but before the effect outcome is durably recorded keeps the stable operation in reconciliation and does not admit another effect attempt until authoritative reconciliation completes**;
 - same provider-local event ID in two trusted identity scopes is independently processable;
 - replay retention expiry does not turn unresolved ambiguous prior effect into blind execution eligibility;
+- acknowledgement success is impossible before the profile's durable-responsibility boundary, including crash/fault injection immediately before that boundary;
 - process crash after durable acceptance does not lose callback work;
 - process crash before durable acceptance does not return false success;
 - callback-supplied URLs cannot bypass trusted outbound destination/redirect/size/timeout policy;

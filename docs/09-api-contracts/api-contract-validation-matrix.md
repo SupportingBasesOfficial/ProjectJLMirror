@@ -10,7 +10,8 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Contract ownership | One accepted owning domain/use case; route does not become a generic cross-domain mutation owner |
 | Logical identity | Resource IDs remain stable/opaque across provider replacement, tenant relocation and service extraction |
 | Physical routing isolation | Caller cannot select cell/database/schema/shard/cluster/secret reference through public path/query/header/body |
-| Tenant scope | Tenant-scoped operation carries explicit logical tenant scope and validates current membership/credential scope + placement + authorization |
+| Tenant scope | Tenant-scoped operation carries explicit logical tenant scope and validates current credential + placement + authoritative membership/resource authorization |
+| Tenant auth ordering | When membership/resource authority is cell-owned: authenticate -> logical tenant -> trusted placement -> route -> cell admission -> TenantContext -> owning membership/permission/resource authorization; ingress prechecks cannot substitute for the owning decision |
 | Cross-tenant admin | Cross-tenant behavior uses distinct privileged platform operation; no wildcard tenant bypass on ordinary routes |
 | Browser boundary | First-party browser protected API flow remains behind BFF; browser JS does not receive long-lived platform access/refresh credentials |
 | Request schema | Unknown mutation fields rejected by default; types/nullability/bounds are explicit |
@@ -18,10 +19,16 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Provider identity | Provider-native IDs remain external references and cannot replace canonical platform resource identity |
 | Error safety | Stable machine `code`; no stack/SQL/physical placement/secrets/cross-tenant existence leakage |
 | Request correlation | Server request ID and effective correlation ID observable without becoming auth/idempotency authority |
+| Response cache class | Every endpoint declares `no_store`, `private_revalidate`, `public_shared` or `artifact_delivery_guarded`; infrastructure defaults cannot choose a more permissive class |
+| Protected cache isolation | Auth-dependent protected API/BFF response cannot be reused across principal/tenant boundary; `Vary`/caller metadata alone is not treated as authorization |
+| Secret response caching | Initial secret-bearing response is `no_store`; secret cannot be served from browser/proxy/CDN/idempotency replay state |
+| Public shared caching | Shared cache is allowed only for deliberately public projections with explicit safe variance/freshness/invalidation policy |
+| Protected artifact caching | CDN/cache optimization preserves current auth/releasability/delivery-generation/active-stream fencing or is disabled/non-shared |
 | Idempotency admission | Required effectful POST/command atomically create-or-observes durable claim before protected effect |
 | Idempotency fingerprint | Same key/scope with different semantic request conflicts before execution |
 | Idempotency concurrency | Simultaneous same key/fingerprint yields one logical executor |
 | Idempotency response loss | Retry after committed result but lost response replays/reconstructs logical result without re-execution |
+| One-time-secret response loss | Same-key retry after lost secret-bearing response does not duplicate effect and does not re-present/retain secret; safe metadata + explicit rotate/reissue/revoke recovery exists |
 | Idempotency external ambiguity | Timeout/lease expiry with possible external effect yields operation/reconciliation; does not authorize blind retry |
 | Optimistic concurrency | Lost-update-sensitive mutation requires current revision/`If-Match`; missing/stale precondition has deterministic no-mutation response |
 | State transitions | Protected domain state-machine transitions use owning command semantics; generic PATCH cannot bypass transition policy |
@@ -55,11 +62,11 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Provider callback parse bound | Authenticated compressed/structured payload remains bounded after decompression/parsing |
 | Provider callback durability | Success acknowledgement after async acceptance has durable replayable work authority |
 | Version compatibility | Additive change obeys unknown-field/open-enum rules; breaking change requires governed version boundary |
-| Semantic compatibility | Schema-compatible change does not silently alter consistency, idempotency, authorization, scope or retry meaning |
+| Semantic compatibility | Schema-compatible change does not silently alter consistency, idempotency, authorization, scope, cache or retry meaning |
 | Service extraction | Moving owner to new runtime/service does not change public IDs/routes/tenant semantics solely due to deployment topology |
 | Provider replacement | New provider adapter does not force canonical resource IDs/schema to become provider-native |
 | Contract source of truth | Machine-readable contract is reviewed canonical artifact; controller/ORM DTO does not define public schema by accident |
-| Breaking-change CI | Contract diff detects structural risk; semantic review checks security/ownership/retry/consistency changes |
+| Breaking-change CI | Contract diff detects structural risk; semantic review checks security/ownership/retry/consistency/cache changes |
 | Client resilience | Official client ignores compatible unknown response fields/open enum values and only auto-retries operations marked safe |
 | Data classification | Request/response/logging policy prevents secret/credential/regulated-data leakage |
 | Abuse limits | Body/page/filter/include/bulk/export/expensive operation constraints are explicit or explicitly OPEN with implementation blocked |
@@ -69,10 +76,16 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 The following failures block acceptance/release regardless of other success:
 
 - public/BFF caller can choose or override physical tenant placement;
+- tenant-scoped implementation performs cell-owned membership/resource authorization before trusted placement routing/cell admission/TenantContext, or treats ingress authorization as a substitute for owning authorization;
 - known cross-tenant resource ID returns or mutates protected state under the wrong tenant context;
 - implementation exposes long-lived platform access/refresh credentials to first-party browser JavaScript;
 - route authorization exists only in UI/BFF and not in owning server-side boundary;
 - response contract exposes raw secret/token or sensitive internal topology;
+- secret-bearing create/rotate response is cacheable, persisted for replay, or re-presented by same-key idempotency retry after response loss;
+- lost one-time-secret response causes automatic second credential/secret creation instead of observing the completed logical effect and requiring explicit recovery;
+- protected API/BFF response has no explicit cache class or can be shared across principals/tenants through framework/proxy/CDN defaults;
+- shared-cache safety relies only on a caller-controlled tenant/principal header or `Vary` value instead of accepted public/protected authorization semantics;
+- protected artifact cache/CDN path bypasses current authorization/releasability/delivery-generation/active-stream fencing;
 - external provider-native identifier becomes canonical resource identity such that provider replacement would break clients;
 - retryable irreversible POST/command can execute twice because no atomic durable idempotency admission exists;
 - response loss after committed idempotent mutation causes re-execution rather than replay/reconstruction;
@@ -95,7 +108,7 @@ The following failures block acceptance/release regardless of other success:
 - duplicate callback can repeat irreversible logical effect;
 - same provider-local callback ID from two trusted tenant/source scopes collides under one dedup identity;
 - provider callback returns success while required async work exists only in process memory;
-- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency semantics;
+- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/cache semantics;
 - service extraction/provider/storage migration forces consumers to change because public contract leaked internal topology;
 - database/ORM model is serialized directly as the public contract without deliberate schema/authorization review.
 

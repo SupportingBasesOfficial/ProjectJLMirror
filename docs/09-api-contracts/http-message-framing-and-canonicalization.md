@@ -7,128 +7,110 @@
 
 Every externally reachable HTTP surface SHALL convert the received wire message into one unambiguous canonical request before authentication, tenant routing, idempotency admission, authorization, cache lookup, callback verification or protected effects may rely on that request.
 
-The security property is simple:
+The security property is:
 
-> one accepted wire message -> one canonical request interpretation -> the same interpretation at every downstream hop.
+> one accepted wire message -> one canonical request interpretation -> one canonical structured entity where applicable -> the same logical meaning at every protected consumer.
 
-A request that can be interpreted differently by two accepted hops is rejected fail-closed rather than normalized differently by each hop.
+A request that accepted hops/parsers can interpret differently is rejected fail-closed.
 
-This contract applies to:
+This applies to machine API, BFF/browser routes, public projections, provider callbacks, realtime/WebSocket pre-`101` admission, reverse proxies/gateways/load balancers and service-to-service HTTP translation reconstructing accepted external requests.
 
-- machine API;
-- BFF/browser HTTP routes;
-- public HTTP projections;
-- provider callback/webhook ingress;
-- realtime/WebSocket HTTP upgrade admission before `101`;
-- reverse proxies, gateways, load balancers and service-to-service HTTP translation that terminate or reconstruct an accepted external request.
-
-Exact gateway/proxy/runtime products remain implementation choices.
+Exact gateway/proxy/runtime/parser products remain implementation choices.
 
 ## Threats addressed
 
-This boundary exists to prevent or contain:
+This boundary prevents or contains:
 
 - HTTP request smuggling/desynchronization;
-- ambiguous request-body boundaries;
+- ambiguous body boundaries;
 - authentication/header confusion;
-- duplicate idempotency execution caused by different header interpretations;
-- cache poisoning or cache-key disagreement;
-- route/authority confusion;
-- request-target/path/query parser confusion;
-- method-override confusion;
-- trusted-proxy header spoofing;
-- request-trailer privilege injection;
-- content-decoding/parser disagreement;
-- connection-reuse/pipelining desynchronization after rejected input;
+- duplicate idempotency effects;
+- cache poisoning/key disagreement;
+- route/authority/path/query confusion;
+- method override/trailer privilege injection;
+- content-decoding disagreement;
+- unsafe connection reuse after rejection;
+- **structured-body parser differentials**, including duplicate/alias JSON members and multipart part/boundary ambiguity;
 - HTTP-version translation inconsistencies;
-- callback signature/body verification against bytes different from those processed by the application;
-- WebSocket upgrade admission on an ambiguously framed request.
+- callback signature/body mismatch;
+- WebSocket upgrade on ambiguous input.
 
 ## Canonical ingress ordering
 
-Conceptual ordering for a normal accepted HTTP request:
+Conceptual ordering:
 
 ```text
 connection/protocol admission
   -> wire framing validation
-  -> header syntax/cardinality/trailer policy validation
-  -> authoritative method/request-target decoding + path/query canonicalization
-  -> trusted proxy metadata normalization
-  -> request/body hard bounds while reading
+  -> header syntax/cardinality/trailer validation
+  -> authoritative method/request-target + path/query canonicalization
+  -> trusted proxy normalization
+  -> raw body hard bounds while reading
+  -> content-coding/media-type admission
   -> canonical request envelope established
-  -> surface-specific authentication / tenant placement+routing / authorization / callback verification / cache / use case
+  -> authentication / logical tenant / trusted placement / authoritative route / cell admission / TenantContext
+  -> canonical structured entity parse where body fields are protected inputs
+  -> request-contract validation
+  -> owning authorization
+  -> idempotency/effect/use case under endpoint-specific ordering
 ```
 
-A surface MAY perform cheaper transport rejection earlier, but no protected decision treats an uncanonicalized message as authoritative input.
+Cheap fail-fast checks MAY occur earlier, but no protected decision treats uncanonicalized transport, target/query or structured entity as authoritative.
 
-**Placement routing never extracts authoritative `tenant_id` or another route scope from a path/query that has not yet passed this canonicalization boundary.**
+Placement routing never extracts authoritative tenant/resource scope from a non-canonical path/query.
 
-Provider callback signatures that require exact raw bytes are evaluated against the bounded raw body associated with the already accepted framing; canonicalization SHALL NOT silently rewrite signed body bytes before signature verification.
+Raw-body verification protocols preserve the exact bounded accepted bytes for signature verification; canonicalization SHALL NOT rewrite signed bytes before authenticity verification.
 
 ## Framing ambiguity is fail-closed
 
-Ingress SHALL reject requests whose body/message boundary is ambiguous under the accepted protocol profile.
-
-At minimum the accepted profile prevents:
+Ingress rejects ambiguous body/message boundaries. At minimum the accepted profile prevents:
 
 - conflicting `Content-Length` and `Transfer-Encoding` semantics;
 - multiple differing `Content-Length` values;
-- malformed, unsupported or ambiguous transfer-coding chains;
+- malformed/unsupported/ambiguous transfer-coding chains;
 - invalid chunk framing;
-- protocol-version-invalid hop/framing headers surviving translation;
-- a downstream hop receiving a body length/framing interpretation different from the ingress interpretation.
+- protocol-invalid hop/framing metadata surviving translation;
+- downstream body-length/framing interpretation differing from ingress.
 
-If an accepted intermediary permits a protocol-defined equivalent duplicate representation, it MUST reduce that representation to one canonical interpretation before forwarding. Ambiguity or parser disagreement fails closed.
-
-The platform SHALL NOT rely on application code to repair an ambiguous message after a proxy/gateway has already routed or authenticated it.
+Protocol-defined equivalent duplicate representation, if allowed, is reduced to one canonical interpretation before forwarding. Application code does not repair ambiguity after a proxy has already routed/authenticated it.
 
 ## Unsafe rejection and connection reuse
 
-Rejecting one logical request is not sufficient if unread or ambiguously framed bytes can survive on a reusable transport and later be interpreted as another request.
+Rejecting one logical request is insufficient if unread/ambiguous bytes survive on a reusable transport.
 
-After a framing, chunking, body-boundary, early-size, content-coding or equivalent transport rejection, every affected hop SHALL determine whether the remaining message boundary is **provably known** before reusing the client-side or downstream/backend connection.
+After framing, chunking, boundary, early-size, content-coding or equivalent rejection:
 
-The safe rule is:
+- protocol-safe drain MAY occur only when the rejected request boundary is provably known and the parser chain guarantees draining cannot reinterpret attacker bytes as another request;
+- unknown/ambiguous/malformed/truncated/unsafe-to-drain boundaries cause affected client and downstream/backend connection retirement;
+- an ambiguously/partially forwarded backend connection is retired independently; closing only the client side is insufficient;
+- early body-size rejection does not imply safe reuse while unread body bytes remain;
+- `Expect: 100-continue` and interim responses cannot make frontend/backend disagree whether body bytes belong to the rejected/current/next request;
+- rejected ambiguity never becomes a prefix of a later accepted request.
 
-- a protocol-safe drain MAY occur only when the rejected request boundary is known unambiguously and the accepted protocol/runtime guarantees that draining cannot reinterpret attacker-controlled bytes as another request;
-- when the boundary is unknown, ambiguous, malformed, truncated or cannot be safely drained under the deployed parser chain, the affected connection is closed/retired and MUST NOT return to a keep-alive, HTTP/1.x pipelining or backend connection pool;
-- a downstream/backend connection that may have received an ambiguous or partially forwarded request is retired independently; closing only the client side is insufficient when backend desynchronization is possible;
-- an early body-size rejection does not automatically justify reuse if unread body bytes remain and their boundary cannot be safely established;
-- `Expect: 100-continue` handling SHALL NOT cause one hop to consume/forward a body while another believes the request was rejected before body transmission;
-- interim responses do not authorize protected work, create idempotency claims or prove that the request body was safely consumed;
-- a transport rejected as ambiguous never becomes the prefix of a later accepted request on the same uncertain byte stream.
+HTTP/2/3 MAY retire only the affected stream when implementation proves connection state and cross-stream isolation are intact. Connection-level uncertainty or unsafe translation requires broader retirement.
 
-HTTP/2 or HTTP/3 stream-scoped rejection MAY retire only the affected stream when the protocol implementation proves connection-level framing/state is intact and cross-stream ambiguity is impossible under the accepted profile. Connection-level protocol errors, decoder state uncertainty or translation to an unsafe backend still require broader connection retirement as appropriate.
-
-Exact drain/close mechanics are deployment-profile details, but **unsafe connection reuse is not OPEN**.
+Exact drain/close primitive is OPEN; unsafe reuse is not.
 
 ## HTTP-version translation
 
-HTTP/1.x, HTTP/2 and HTTP/3 have different wire/framing rules. A gateway translating between versions SHALL:
+HTTP/1.x, HTTP/2 and HTTP/3 translation SHALL:
 
-- validate the source protocol before translation;
-- reject prohibited/invalid hop-specific framing metadata;
-- generate the target protocol message from the canonical request rather than blindly forwarding raw framing headers;
-- preserve one authoritative method, scheme, authority, request target and body;
-- never make an invalid source request valid merely by translation.
-
-Connection-specific/hop-by-hop fields that are not valid across the target protocol boundary are stripped/reconstructed according to the accepted protocol profile, not propagated as application metadata.
-
-If translation rejects a request after partially engaging a downstream connection, that downstream connection follows the same safe-retirement rule above; a frontend rejection cannot leave an uncertain backend byte stream reusable.
+- validate the source protocol;
+- reject invalid/prohibited hop-specific framing metadata;
+- construct target messages from canonical semantics rather than blindly forwarding framing fields;
+- preserve one authoritative method/scheme/authority/target/body;
+- never make an invalid source request valid merely through translation;
+- retire downstream connections after partial ambiguous forwarding when safe synchronization is not proven.
 
 ## Canonical method and method override
 
-There is one authoritative HTTP method for a request.
+There is one authoritative HTTP method.
 
-Method-override mechanisms such as `X-HTTP-Method-Override`, `X-Method-Override`, form/query `_method` or equivalent are **not accepted by default**. A framework, proxy or compatibility middleware SHALL NOT silently transform a `POST` into `PUT`, `PATCH`, `DELETE` or another method after routing/cache/security policy has already interpreted the original method.
+Generic override mechanisms such as `X-HTTP-Method-Override`, `X-Method-Override`, form/query `_method` or framework equivalents are denied by default. A future accepted compatibility profile must make every hop derive the same effective method before routing, CSRF, authorization, idempotency, cache and use-case selection.
 
-If a future externally supported profile genuinely requires method override, it requires an explicit reviewed contract that ensures every hop derives the same effective method before routing, authorization, CSRF, idempotency, cache and use-case selection. Until then, override inputs are rejected or ignored in a way that cannot alter protected behavior.
+## Security-sensitive request-header cardinality
 
-## Security-sensitive header cardinality
-
-Header names are case-insensitive, but duplicate field lines and multi-value semantics are not automatically safe.
-
-Every security-sensitive header used by a contract SHALL have an accepted cardinality/combine rule. Categories include:
+Every security-sensitive request header has an accepted cardinality/combine rule:
 
 ```text
 strict_singleton
@@ -137,89 +119,61 @@ multi_value_with_canonical_rule
 not_accepted
 ```
 
-Examples of values normally requiring strict single interpretation include authentication credentials, idempotency keys and trusted routing/proxy metadata.
+`Authorization` and `Idempotency-Key` do not reach protected logic with competing values. Duplicates are rejected instead of first/last selection.
 
-`Authorization` and `Idempotency-Key` SHALL NOT have two competing values reach protected application logic. Duplicate/conflicting instances are rejected rather than choosing first/last arbitrarily.
+Protocol-defined list fields such as supported `If-Match` forms are parsed once into one canonical meaning. BFF duplicate security-relevant cookie names fail closed or are normalized by one accepted parser before auth/CSRF logic.
 
-Conditional headers such as `If-Match` may have protocol-defined list semantics; where supported, the ingress parses that grammar once and propagates one canonical parsed meaning. Duplicate field lines cannot be allowed to produce different effective preconditions at different hops.
-
-For cookie-authenticated BFF flows, ambiguous duplicate security-relevant cookie names or cookie parsing differences SHALL fail closed or be normalized by one accepted cookie parser before authorization/CSRF logic consumes them.
-
-A header not explicitly accepted as multi-valued MUST NOT become multi-valued merely because a framework returns an array or concatenated string.
+A header does not become safely multi-valued merely because a framework exposes an array/concatenated string.
 
 ## Request trailers
 
-Request trailers, where the HTTP stack/protocol permits them, SHALL NOT introduce or override security-sensitive semantics after the initial canonical header set has been accepted.
-
-At minimum, trailers cannot supply or replace:
+Trailers cannot introduce/override:
 
 - authentication/session/credential fields;
-- `Idempotency-Key`;
+- idempotency keys;
 - tenant/routing/trusted-proxy metadata;
 - CSRF/Origin authority;
-- conditional/precondition fields such as `If-Match`;
+- preconditions such as `If-Match`;
 - content type/encoding/framing authority;
-- callback signature/freshness/replay identity headers;
+- callback signature/freshness/replay fields;
 - realtime ticket/admission authority.
 
-An endpoint that intentionally accepts a non-security trailer field must define it explicitly and ensure all participating hops support the same trailer semantics. Otherwise request trailers are ignored/rejected before protected logic according to the accepted platform profile.
+Non-security trailers require an explicit accepted profile with identical semantics across hops.
 
 ## Header syntax and control characters
 
-Malformed header syntax, invalid control characters, obsolete folding or separator/whitespace forms that can cause cross-hop parser disagreement are rejected under the accepted protocol profile.
-
-Numeric limits for total header bytes/count/per-field size remain evidence-driven, but unlimited header input is not accepted.
+Malformed request-header syntax, invalid controls, obsolete folding and whitespace/separator forms causing parser disagreement are rejected. Numeric header bounds remain evidence-driven but unlimited input is not accepted.
 
 ## Authority, host and trusted proxy metadata
 
-The request has one authoritative external authority/host meaning for routing/security decisions.
+The request has one authoritative scheme/authority/host meaning.
 
-Ingress SHALL reject or safely resolve conflicts between protocol authority metadata such as `Host`, `:authority`, absolute-form request targets and trusted proxy metadata. Two hops SHALL NOT select different tenants/routes/security policies because they disagree about authority.
-
-`Forwarded`, `X-Forwarded-*` or equivalent deployment metadata is trusted only when inserted/rewritten by an explicitly trusted proxy boundary. Untrusted client-supplied copies are removed, ignored or replaced before application logic consumes them.
-
-Client-controlled forwarded headers SHALL NOT select scheme, host, client identity, tenant placement, secure-cookie behavior or redirect destination.
+Conflicts among `Host`, `:authority`, absolute-form targets and trusted proxy metadata are rejected or safely normalized once. `Forwarded`/`X-Forwarded-*` are trusted only when inserted/rewritten by the explicit proxy trust boundary. Client-supplied copies cannot select scheme, host, client identity, tenant placement, secure-cookie behavior or redirect destination.
 
 ## Request-target canonicalization
 
-Routing, tenant placement, authorization, cache selection and downstream services SHALL consume the same canonical method/path/query interpretation.
+Routing, placement, authorization, cache and downstream services consume the same canonical method/path/query.
 
-### Path decoding/canonicalization
+### Path
 
-The accepted path profile SHALL define one decode/normalization model **before placement resolution** and reject inputs for which accepted hops could disagree.
+Before placement resolution, the accepted path profile addresses/rejects:
 
-At minimum the profile addresses/rejects, as appropriate:
+- malformed/incomplete percent escapes;
+- invalid/overlong/non-canonical encodings;
+- encoded security delimiters where not explicitly permitted;
+- encoded/alternate slash/backslash;
+- dot segments and encoded equivalents;
+- repeated/empty segment ambiguity;
+- duplicate normalization or double decoding;
+- Unicode normalization differences;
+- authority embedded in alternate target forms;
+- edge/service resource disagreement.
 
-- malformed or incomplete percent escapes;
-- overlong, invalid, non-canonical or otherwise disallowed UTF-8/character encodings;
-- percent-encoded octets whose decoding would create a path separator, control character or another security-sensitive delimiter when that surface does not explicitly permit it;
-- encoded or alternate slash/backslash separators;
-- dot segments and encoded dot-segment equivalents;
-- repeated slashes when different hops/frameworks could collapse or preserve them differently;
-- empty path-segment ambiguity where routing semantics differ;
-- duplicate or staged normalization passes;
-- decoding the same component more than once;
-- Unicode normalization differences when Unicode path material is supported;
-- authority embedded in alternate request-target forms;
-- a gateway routing one path while cell placement/authorization/owning service executes another.
+The canonical path is established once; downstream hops do not independently re-decode/collapse it.
 
-The canonical path representation is established once. Downstream hops consume that logical representation and SHALL NOT independently decode/collapse/rewrite it into a different resource path.
+### Query
 
-If the platform chooses a stricter surface policy—for example prohibiting encoded path separators or non-ASCII path identifiers—that policy is acceptable as long as it is explicit, fail-closed and consistent across hops. Exact permitted character repertoire remains surface/profile specific; **parser disagreement is not OPEN**.
-
-### Query decoding/canonicalization
-
-Query-string decoding is also part of the canonical request boundary.
-
-Every query parameter definition has one accepted:
-
-- decoded parameter-name representation;
-- decoded value representation;
-- character/percent-decoding policy;
-- multiplicity class;
-- ordering/duplicate behavior where repetition is genuinely supported.
-
-Multiplicity classes are equivalent to:
+Every query parameter defines decoded name/value, encoding policy, multiplicity and repetition semantics:
 
 ```text
 singleton
@@ -228,149 +182,165 @@ comma_list_under_singleton
 not_accepted
 ```
 
-Duplicate instances of a singleton parameter are rejected. Components SHALL NOT choose first-value, last-value, concatenation or array semantics independently.
+Duplicate singleton parameters are rejected. Repeated parameters define order significance, duplicate treatment, maximum count and participation in cache, validation, authorization, idempotency and cursor binding.
 
-For genuinely repeated parameters, the endpoint contract defines whether order matters, whether duplicate values are retained/rejected/canonicalized, maximum count and how the resulting canonical value participates in cache keys, validation, authorization, idempotency fingerprinting and cursor binding.
+Alternate encodings that normalize to the same logical name participate in duplicate detection. A service does not reparse raw query using framework-specific first/last/list rules.
 
-Malformed/non-canonical percent encoding, alternate encodings that normalize to the same logical parameter name, non-canonical character encodings or decoding differences that can bypass duplicate detection are rejected.
-
-Examples such as `cursor`, `limit`, scalar authorization-relevant filters and a normal scalar `q` are singleton unless a contract explicitly defines otherwise.
-
-The canonical query representation is propagated downstream; a service SHALL NOT reparse the original raw query string using a framework-specific first/last/list rule.
-
-Query canonicalization does not make confidential URL input safe. Cursor/query confidentiality and browser-history rules remain separate Phase 09 security properties.
-
-Exact path/query normalization rules MAY vary by external surface when there is a legitimate contract reason, but a surface cannot accept a request unless all participating hops share the same externally meaningful interpretation.
-
-Canonical resource identity remains logical and SHALL NOT expose or derive physical tenant placement.
+Canonical query semantics do not make confidential URL values safe; cursor/query confidentiality remains separate.
 
 ## Canonical request envelope
 
-After successful ingress normalization, downstream application components consume a canonical request envelope rather than independently reparsing ambiguous raw HTTP metadata.
-
-Conceptually the envelope contains validated meanings such as:
+After transport/target normalization, downstream components consume a canonical request envelope such as:
 
 ```text
 method
 authoritative scheme/authority
 canonical path + route parameters
-canonical classified query parameters with multiplicity resolved
+canonical classified query parameters
 normalized accepted headers
 trusted proxy/client metadata
 bounded raw body bytes where required
 accepted content-coding/media-type metadata
-parsed body only after the appropriate security boundary
 request_id / correlation context
 ```
 
-The envelope is an internal representation, not a new public API format.
+Raw HTTP metadata is not independently reparsed into competing meanings after this boundary.
 
-A service extraction, gateway replacement or HTTP-version change SHALL preserve the same canonical external semantics.
+## Body, content coding and media interpretation
 
-## Body, content coding and content interpretation
-
-Message framing decides **where the body ends**, not what the body means.
+Framing decides where the body ends, not what it means.
 
 After framing acceptance:
 
-- raw body byte limits still apply;
-- accepted `Content-Encoding`/content-coding semantics are explicitly parsed and independently bounded;
-- unsupported, malformed, multiply interpreted or inconsistently ordered content codings are rejected rather than decoded differently by different hops;
-- a proxy/gateway SHALL NOT transparently decode/re-encode a protected body in a way that makes callback signature verification, size enforcement or application parsing operate on a different security representation unless the profile explicitly defines that transformation end-to-end;
-- decompressed/decoded size, nesting and parser-resource limits remain independent from raw transport limits;
-- media type is validated by the target contract and duplicate/conflicting `Content-Type` interpretation is not allowed to diverge across hops;
-- callback raw-body signature protocols preserve exact accepted raw bytes and clearly define whether provider signatures cover transfer-decoded/raw entity bytes or another provider-specified representation;
-- multipart/archive/document parsing remains subject to its own parser/security limits;
-- body parsing does not retroactively change the accepted message boundary.
+- raw body limits apply;
+- content-coding is explicitly parsed and independently bounded;
+- unsupported/malformed/ambiguously ordered codings are rejected;
+- proxies do not transparently decode/re-encode protected bodies in a way that makes signature, size enforcement and application parse different representations unless the profile defines the transformation end-to-end;
+- decoded size/nesting/parser limits are independent from raw bounds;
+- duplicate/conflicting `Content-Type` meaning cannot differ across hops;
+- callback signature profiles define the exact raw/entity representation authenticated;
+- body parsing does not retroactively change framing boundaries.
 
-If body parsing or decoded-size enforcement rejects after bytes have already been read/forwarded, connection reuse still follows the safe-retirement rule; parser rejection does not imply unread bytes are safe to preserve for another request.
+Parser/decoded-size rejection after partial reads still obeys safe connection retirement.
 
-## BFF and browser routes
+## Canonical structured request entity
 
-BFF Origin/CORS/CSRF/session handling operates only on the canonical request.
+For structured media, canonical transport alone is insufficient. Before protected consumers use body fields, the endpoint establishes one **canonical parsed entity** under the accepted media profile.
 
-A duplicate/conflicting authentication/session/CSRF header, duplicate singleton query parameter or ambiguous request target cannot be resolved differently by edge infrastructure and BFF application code.
+### JSON profile
 
-Trusted proxy metadata used to determine secure origin/scheme is accepted only from the configured proxy trust boundary.
+Default protected JSON semantics require:
+
+- duplicate object member names rejected;
+- member names that alias after accepted Unicode/name normalization rejected;
+- no first-value/last-value/merge selection for duplicates;
+- deterministic number/string/Unicode interpretation for validation and idempotency fingerprinting;
+- unknown request fields handled by the endpoint schema, not silently swallowed by a parser differential;
+- accepted nesting/member bounds.
+
+A change in JSON library is safe only if these logical semantics remain equivalent.
+
+### Multipart profile
+
+For accepted multipart bodies:
+
+- outer and nested boundaries have one deterministic grammar;
+- duplicate/aliasing singleton part names are rejected unless the endpoint explicitly defines bounded repeated-part semantics;
+- part-name normalization/multiplicity is explicit;
+- conflicting per-part `Content-Disposition` names or media metadata cannot produce different logical parts across layers;
+- nested multipart ambiguity fails closed;
+- part count/header/decoded-size/nesting are bounded;
+- a part validated under one identity cannot later be consumed under another name/type interpretation.
+
+### Other structured media
+
+Form encoding, XML, protobuf-like/vendor formats or future structured media require an explicit equivalent profile for field/member naming, duplicates, aliases, nesting and deterministic decoding before protected use. XML retains the separately defined DTD/external-resolution protections.
+
+### Canonical entity propagation
+
+Raw bytes MAY remain available for signature/audit, but after canonical entity establishment these consumers SHALL use the same logical entity and SHALL NOT independently reparse attacker-controlled raw body bytes:
+
+```text
+request-contract validation
+owning authorization inputs
+body-derived resource/scope inputs where permitted
+idempotency fingerprinting
+optimistic-concurrency/body precondition inputs
+callback semantic processing after authenticity verification
+cache semantics when body participates in an accepted key
+use-case/domain command mapping
+```
+
+If two accepted parsers could derive different protected fields from the same accepted body, the request fails closed before owning authorization/effect.
+
+## BFF/browser routes
+
+BFF Origin/CORS/CSRF/session handling operates on the canonical request. Body-bearing BFF mutations additionally consume only the canonical structured entity. Duplicate cookie/header/query/body semantics cannot differ between edge and BFF application.
 
 ## Realtime/WebSocket upgrade
 
-The HTTP request that may become a realtime/WebSocket connection inherits this entire framing/canonicalization contract before any protected `101` response.
+Realtime admission inherits canonical HTTP ingress before `101`:
 
-Therefore:
+- ambiguous framing/header/path/query rejected;
+- expected Origin evaluated from canonical request;
+- ticket presentation has one canonical value;
+- conflicting upgrade/security interpretation cannot authorize differently;
+- method/trailer cannot introduce authority;
+- no `101` until canonical ingress and realtime invariants pass.
 
-- ambiguous body/framing/header/path/query requests are rejected before upgrade;
-- expected Origin is evaluated from the canonical request;
-- ticket/capability presentation has one canonical value;
-- conflicting upgrade/security header interpretations cannot result in one hop authorizing what another hop interpreted differently;
-- method-override/trailer mechanisms cannot introduce realtime authority after admission parsing;
-- no `101` occurs unless both this boundary and the realtime admission invariants pass.
-
-A rejected/aborted upgrade request does not leave an uncertain HTTP/1.x byte stream reusable; the connection/stream follows the safe-retirement rule when framing/body state is not provably synchronized.
+Rejected/aborted upgrades obey safe connection retirement when byte-stream synchronization is uncertain.
 
 ## Provider callbacks
 
-Callback ingress inherits this boundary before signature/freshness/replay/domain processing.
+Callback ingress inherits canonical transport before signature/freshness/replay/domain processing.
 
-In particular:
-
-- ambiguous framing cannot be used to make the gateway verify one body while the adapter processes another;
-- the raw-body hard limit applies to the body established by the accepted framing;
-- duplicate/conflicting signature, timestamp, nonce or callback-auth headers follow the provider profile's explicit cardinality rule;
-- callback security fields cannot be introduced/overridden through trailers;
-- provider-specific raw-signature verification receives the exact bounded raw representation associated with the canonical request;
-- content decoding cannot cause signature verification and semantic processing to authenticate different byte representations;
-- HTTP normalization never turns unauthenticated alternate bytes into trusted callback content.
-
-If a callback is rejected before its entire safely framed body is consumed, the ingress connection is drained only with a provably known boundary; otherwise the affected transport is retired so residual provider-controlled bytes cannot become another callback request.
+- raw bound applies to accepted framing;
+- callback auth/signature/timestamp/nonce headers have explicit cardinality;
+- security fields cannot enter via trailers;
+- signature verification receives the exact bounded representation required by provider profile;
+- content decoding cannot authenticate one representation while processing another;
+- after authenticity verification, structured callback bodies establish a canonical entity before semantic mapping/effect;
+- authenticated raw bytes are not reparsed by multiple components into different provider/resource/action values;
+- rejected partial bodies obey safe connection retirement.
 
 ## Cache interaction
 
-A cache/reverse proxy SHALL key and evaluate requests using the same canonical request semantics accepted by the application.
+Cache/reverse proxy uses the same canonical request semantics as the application. It cannot depend on alternate method, authority, path/query, request-header, trailer, framing/content-coding or structured-body interpretation.
 
-Cache behavior MUST NOT depend on an alternate interpretation of:
+If body participates in an accepted cache key/eligibility decision, it uses canonical entity semantics; raw parser-dependent duplicate behavior cannot split cache and origin meaning.
 
-- method or method override;
-- authority/host;
-- path/query decoding, normalization or duplicate-parameter semantics;
-- duplicate headers;
-- content negotiation;
-- authentication/security headers;
-- request trailers;
-- body framing or content coding.
-
-Requests with ambiguous cache-relevant/security-relevant metadata fail closed rather than being cached under one interpretation and served under another.
-
-A proxy/cache that rejects an unsafe HTTP/1.x request after partial body forwarding SHALL NOT return an uncertain backend connection to a reusable pool.
+A proxy rejecting after partial body forwarding does not return an uncertain backend connection to a pool.
 
 ## Logging and observability
 
-Security observability records the canonical request interpretation and the reason for rejected ambiguity without logging unrestricted raw credentials, protected query/cursor material or full malicious payloads.
+Security telemetry records safe canonical rejection classes without raw credentials/protected query/body payloads. Examples:
 
-Useful safe evidence may include:
+```text
+framing_conflict
+duplicate_security_header
+authority_conflict
+invalid_request_target
+duplicate_singleton_query
+method_override_rejected
+security_trailer_rejected
+content_coding_conflict
+structured_entity_duplicate_member
+structured_entity_alias_collision
+multipart_boundary_ambiguity
+connection_retired_after_rejection
+```
 
-- protocol/version;
-- ingress profile;
-- normalized route template;
-- rejection class such as `framing_conflict`, `duplicate_security_header`, `authority_conflict`, `invalid_request_target`, `duplicate_singleton_query`, `method_override_rejected`, `security_trailer_rejected`, `content_coding_conflict`, `connection_retired_after_rejection`;
-- request/correlation identity;
-- trusted proxy identity where applicable.
-
-Logs SHALL NOT become an oracle containing the rejected secret/header/query values themselves.
+Logs do not become an oracle for rejected secret/header/query/body values.
 
 ## Error behavior
 
-Framing/canonicalization rejection occurs before the request is treated as a valid protected application operation.
+Canonicalization rejection occurs before the request is treated as a valid protected operation and SHALL NOT create idempotency claim, durable operation or protected effect.
 
-External errors are deliberately sparse and do not reveal which intermediary/parser would have accepted the alternate interpretation.
-
-A framing/canonicalization rejection SHALL NOT create an idempotency claim, durable operation or protected domain effect.
-
-If the request boundary/connection state is not provably synchronized, error delivery is subordinate to connection safety: the platform may close/retire the transport rather than preserve keep-alive merely to deliver a richer error response.
+External errors remain sparse. When synchronization is uncertain, connection safety takes precedence over preserving keep-alive or returning a rich error.
 
 ## Contract metadata
 
-Endpoint/surface contracts SHALL declare or inherit:
+Endpoint/surface contracts declare/inherit:
 
 ```text
 http_message_profile
@@ -383,91 +353,79 @@ query_multiplicity_policy
 body_framing_policy
 content_coding_policy
 connection_rejection_policy
+structured_request_entity_profile
+structured_entity_duplicate_policy
+structured_entity_alias_normalization_policy
+structured_entity_canonical_propagation_policy
 ```
 
-A common platform profile MAY satisfy these fields for ordinary routes; an endpoint only specializes where its protocol requires it.
-
-Provider callback and realtime profiles additionally declare their protocol-specific security header/cardinality requirements.
+Provider callback/realtime profiles add protocol-specific security requirements.
 
 ## Required tests
 
-Edge/integration testing SHALL include, where protocol support makes the case applicable:
+Where applicable, deployed-path tests include:
 
-- `Content-Length` plus conflicting `Transfer-Encoding` rejected;
-- multiple differing `Content-Length` rejected;
-- malformed chunk framing rejected;
-- unsupported/prohibited framing metadata rejected during HTTP-version translation;
-- duplicate/conflicting `Authorization` rejected;
-- duplicate/conflicting `Idempotency-Key` rejected before claim/effect;
-- conditional-header multi-value input has one documented canonical interpretation;
-- duplicate security-relevant cookie ambiguity cannot change BFF auth/CSRF outcome;
-- security-sensitive values supplied through request trailers cannot introduce/override authority;
-- implicit method-override headers/query/body fields cannot change the protected method;
-- conflicting `Host`/authority forms rejected;
-- untrusted `Forwarded`/`X-Forwarded-*` cannot spoof trusted scheme/host/client metadata;
-- repeated slashes/dot segments/encoded slash/backslash/non-canonical UTF-8/malformed percent encodings cannot cause placement routing and application authorization to resolve different paths;
-- downstream path is not re-decoded after canonical routing;
-- duplicate singleton query parameters such as two `cursor` or `limit` values are rejected;
-- alternate encodings cannot bypass duplicate query-key detection;
-- repeated-list parameters have one documented canonical rule across gateway/cache/application;
-- unsupported/conflicting `Content-Encoding` or decoding-order interpretation cannot make edge and application process different entity meanings;
-- gateway -> service propagation contains only the canonical interpretation;
-- early body-size rejection followed by attempted HTTP/1.x keep-alive/pipelined reuse cannot turn residual bytes into a second request;
-- malformed chunk/framing rejection retires the client/backend connection when the boundary cannot be safely drained;
-- backend pooled connection is not reused after partial/ambiguous forwarding;
-- `Expect: 100-continue` rejection/acceptance cannot leave frontend/backend disagreeing whether body bytes belong to the current or next request;
-- HTTP/2 or HTTP/3 stream rejection does not contaminate other streams, and connection-level uncertainty retires the connection where required;
-- callback signature verification and callback processing use the same accepted raw body/content-coding profile;
-- callback raw-body limit cannot be bypassed by alternate framing or content coding;
-- realtime upgrade rejects ambiguous framing/security headers/path/query/trailers before `101`;
-- rejected realtime/callback request cannot leave uncertain residual bytes reusable;
-- cache/proxy and origin service cannot derive different cache/security meaning from duplicate/ambiguous metadata.
+- conflicting CL/TE and differing lengths;
+- malformed chunking;
+- protocol translation invalid framing;
+- duplicate `Authorization`/`Idempotency-Key`;
+- canonical `If-Match` semantics;
+- BFF duplicate security cookie ambiguity;
+- security trailer rejection;
+- method override rejection;
+- Host/authority/forwarded spoofing;
+- slash/dot/encoded separator/UTF-8/percent/double-decoding path cases;
+- duplicate singleton/alternate-encoded query keys;
+- repeated query canonical rule;
+- content-coding disagreement;
+- early size/framing rejection followed by attempted connection reuse;
+- backend pool retirement after ambiguous partial forwarding;
+- `Expect: 100-continue` synchronization;
+- duplicate JSON members and normalization aliases;
+- multipart duplicate/alias part names, per-part metadata conflict and ambiguous nested boundary;
+- parser differential vectors proving one canonical entity;
+- validation/auth/idempotency/use-case entity equivalence;
+- callback raw signature and canonical semantic entity equivalence;
+- realtime rejection before `101`;
+- cache/origin canonical meaning equivalence.
 
-Tests SHOULD exercise the actual deployed protocol translation and connection-pooling path where one exists, not only an in-process controller test.
+Tests exercise real protocol/parser boundaries where present, not only controller unit tests.
 
 ## Release-blocking failures
 
-The following block implementation/release:
+Release is blocked if:
 
-- two accepted hops can disagree on where one request ends and the next begins;
-- conflicting framing reaches application authentication or body processing;
-- an early/ambiguous rejection leaves unread/uncertain bytes on a reusable HTTP/1.x or downstream pooled connection such that they can be parsed as a subsequent request;
-- frontend connection is closed but an ambiguously/partially forwarded backend connection is returned to a reusable pool;
-- `Expect: 100-continue` or interim-response handling lets frontend/backend disagree whether the current request body was accepted/consumed;
-- duplicate security-sensitive headers are resolved by arbitrary first/last/framework behavior;
-- security-sensitive trailer fields can inject/override authority after initial header admission;
-- implicit method override can cause edge/cache/security logic and the owning service to apply different HTTP methods;
-- a gateway and owning service can authorize different credentials/idempotency keys/preconditions from one wire request;
-- untrusted forwarded metadata can override trusted scheme/authority/client identity;
-- placement routing can extract tenant/resource scope from a path before canonical decoding/normalization;
-- routing/placement/authorization/application can observe different path interpretations due to repeated slash, dot-segment, encoded separator, percent-decoding, UTF-8 or double-decoding differences;
-- duplicate/ambiguously encoded singleton query parameters can be interpreted as first/last/list differently across hops;
-- cache/authorization/use case can consume different canonical query values from one wire request;
-- content-coding/decompression interpretation can make security verification/size enforcement and semantic processing operate on different representations;
-- callback signature verification can cover bytes different from those processed as the callback body;
-- an ambiguous request can receive `101` realtime upgrade;
-- a proxy/cache can accept/cache a request interpretation the owning service would reject or interpret differently.
+- accepted hops disagree where a request ends;
+- rejected ambiguity leaves reusable uncertain connection state;
+- request headers/method/trailers/authority/path/query/content coding have competing meanings;
+- placement consumes non-canonical path/query;
+- a structured body can produce two logical entities under accepted parsers;
+- duplicate/alias JSON fields can be first/last/merged differently;
+- multipart part/boundary/per-part metadata ambiguity can make protected layers observe different fields;
+- owning authorization, idempotency or use case reparses raw body into a different entity after canonical parse;
+- callback signature verifies one body while semantic processing consumes another logical entity;
+- cache and origin derive different request meaning;
+- an ambiguous request receives realtime `101`.
 
 ## Compatibility and evolution
 
-Framing/header/method/trailer/content-coding/request-target/query/**connection-rejection** security semantics are part of the security contract even though they are often implemented in infrastructure.
+Framing/header/method/trailer/content-coding/connection-rejection/path/query/**structured-entity** semantics are part of the security contract.
 
-Changing gateway, proxy, HTTP runtime, protocol version, connection pooling or service topology SHALL trigger regression testing of this boundary.
-
-A change that makes ambiguity more permissive, alters security-sensitive header/trailer/method/path/query/content-decoding interpretation, or reuses connections that were previously retired after unsafe rejection requires explicit security/compatibility review even when OpenAPI request/response schemas are unchanged.
+Changing gateway, proxy, HTTP runtime, protocol version, connection pool, JSON/multipart parser, framework or service topology triggers regression review. A parser/library change that accepts previously rejected duplicate/alias/boundary ambiguity is security-sensitive even when OpenAPI schema is unchanged.
 
 ## Intentionally OPEN
 
-The following remain implementation/profile decisions until evidence requires standardization:
+Implementation/profile decisions remain OPEN for:
 
-- exact gateway/reverse-proxy product;
-- exact HTTP/1.x, HTTP/2 and HTTP/3 deployment mix;
-- exact numeric header count/byte limits;
-- exact trusted-proxy topology/configuration syntax;
-- exact library used to construct the canonical internal request envelope;
-- exact allowed path character repertoire/normalization profile per external surface, provided parser agreement/fail-closed rules hold;
-- exact supported non-identity content codings per endpoint/profile;
-- exact safe drain/connection-close primitive for each deployed protocol/runtime, provided uncertain boundaries are never reused;
-- exact rejection status mapping for malformed transport requests where the HTTP stack can safely return one.
+- gateway/reverse-proxy product;
+- HTTP version mix;
+- numeric header/body/entity limits;
+- trusted-proxy configuration syntax;
+- canonical internal request-envelope library;
+- allowed path character repertoire per surface;
+- supported non-identity content codings;
+- exact safe drain/close primitive;
+- exact JSON/multipart/parser library **provided canonical entity semantics are equivalent**;
+- malformed transport status mapping where safe to return one.
 
-These OPENs do **not** make ambiguity acceptance or unsafe connection reuse optional. The one-wire-message/one-canonical-interpretation property and fail-closed connection retirement are normative.
+These OPENs never make ambiguity, parser differential acceptance or unsafe connection reuse optional.

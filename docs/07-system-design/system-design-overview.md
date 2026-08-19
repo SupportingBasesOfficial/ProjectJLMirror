@@ -1,11 +1,11 @@
 # System Design Overview
 
-**Status:** proposed baseline  
+**Status:** accepted  
 **Depends on:** accepted ADR-001 through ADR-020
 
 ## Purpose
 
-This document translates the **accepted JLMIRROR architecture/ADR baseline** into concrete runtime mechanics. Gate A makes ADR-001 through ADR-020 normative upstream authorities, but this System Design itself remains a **proposed lower-level baseline** until it is separately promoted under Gate B. It may refine the accepted architecture but may not redefine it.
+This document translates the **accepted JLMIRROR architecture/ADR baseline** into concrete runtime mechanics. Under Gate B, this System Design is the accepted lower-level runtime baseline subordinate to the accepted upstream Product/Requirement/Security/Architecture authorities. It may refine the accepted architecture but may not redefine it.
 
 It defines how requests, tenant placement, authorization, transactions, asynchronous work, realtime delivery, failure containment and cross-cell operations behave without binding the design to an unselected queue/cache/cloud vendor.
 

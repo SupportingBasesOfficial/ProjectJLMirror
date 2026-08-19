@@ -54,6 +54,70 @@ because HTTP status plus typed response schemas already communicate transport su
 
 Collections use the collection contract defined in the pagination document.
 
+## Response cache contract
+
+Every endpoint SHALL declare an explicit response-cache class. Browser, reverse-proxy, gateway, CDN or framework defaults SHALL NOT silently decide whether a representation may be stored or shared.
+
+The baseline semantic classes are:
+
+```text
+no_store
+private_revalidate
+public_shared
+artifact_delivery_guarded
+```
+
+### `no_store`
+
+Use when a response contains or is materially derived from secrets, credential/session material, one-time secret presentation, security-sensitive mutation results, authorization-sensitive data whose storage is not explicitly accepted, or any response where retention by an intermediary would create unacceptable disclosure/replay risk.
+
+`no_store` SHALL emit behavior equivalent to `Cache-Control: no-store`. A more permissive infrastructure default cannot override it.
+
+Secret-bearing responses are always `no_store`.
+
+### `private_revalidate`
+
+A response may be stored only in a caller-private cache and must be revalidated according to the endpoint contract before reuse when freshness/authorization matters. Shared intermediaries SHALL NOT reuse it across principals or tenants.
+
+The endpoint SHALL declare:
+
+- the logical variance relevant to the representation;
+- validator/revalidation behavior where used (`ETag`/conditional request or equivalent);
+- whether authorization/membership freshness requires server re-evaluation before reuse;
+- any maximum freshness duration when accepted.
+
+A private cache key MUST NOT collapse different tenant/principal representations merely because the URI is identical in an intermediary implementation.
+
+### `public_shared`
+
+Shared caching is allowed only for a deliberately public projection whose representation does not depend on protected caller authority.
+
+The endpoint SHALL explicitly define:
+
+- public cacheability;
+- cache key/variance dimensions that are externally safe;
+- freshness/revalidation/staleness policy;
+- invalidation behavior where required;
+- numeric lifetime values or an explicit `OPEN` item before implementation.
+
+A protected tenant resource does not become `public_shared` merely because a CDN is available.
+
+### `artifact_delivery_guarded`
+
+Protected artifact bytes are governed by the accepted artifact delivery-generation, active-lease/stream and erasure-fencing invariants.
+
+A cache/CDN may participate only if its behavior preserves equivalent current authorization/releasability and revocation/fencing semantics. A cache hit SHALL NOT bypass current delivery admission when the artifact class requires it. If equivalent fencing cannot be proven, protected artifact delivery falls back to non-shared/no-store behavior.
+
+Public immutable artifacts, if Product later defines them, use a separate explicit public contract rather than inheriting protected artifact semantics.
+
+### Variance and authorization
+
+`Vary` or equivalent cache-key metadata is not an authorization mechanism. A shared cache SHALL NOT be made safe merely by adding a caller-controlled tenant/principal header to its key.
+
+Protected cacheability is accepted only when the endpoint contract proves that no representation can cross a tenant/principal/security boundary and that authorization/revocation semantics remain correct.
+
+Exact public/private freshness durations and optional optimization headers remain policy/evidence-driven under `OPEN-API-017`; `no_store` security semantics are not OPEN.
+
 ## Safe error model
 
 Errors use a consistent problem representation with a stable machine-readable `code` independent of human wording.
@@ -107,6 +171,7 @@ concurrency.precondition_required
 concurrency.revision_mismatch
 idempotency.key_reused
 idempotency.in_progress
+secret.delivery_not_replayable
 operation.reconciliation_required
 rate_limit.exceeded
 dependency.temporarily_unavailable
@@ -123,7 +188,7 @@ Preferred mapping:
 401  authentication missing/invalid/expired when reauthentication is required
 403  authenticated but not authorized, when existence disclosure is safe
 404  resource absent or existence intentionally concealed
-409  domain conflict / idempotency-key conflict or currently non-executable state
+409  domain conflict / idempotency-key conflict / one-time-secret replay conflict or currently non-executable state
 412  conditional request / revision precondition failed
 422  syntactically valid request that fails documented semantic validation
 428  required optimistic-concurrency precondition was omitted
@@ -154,6 +219,8 @@ If the platform cannot establish safe durable tracking, the route fails conserva
 ## Validation ordering and information leakage
 
 Cheap request-shape/size checks MAY run before expensive authorization/database work, but protected operations SHALL NOT reveal protected resource existence through semantic validation before required authentication/tenant-authorization gates.
+
+For tenant-scoped requests whose membership/resource authority is cell-owned, trusted placement resolution, authoritative routing, cell admission and `TenantContext` construction occur before the owning membership/resource authorization decision, consistent with the accepted lifecycle.
 
 Provider callbacks remain subject to their separate rule: hard raw transport bounds are enforced before complete buffering/signature work.
 

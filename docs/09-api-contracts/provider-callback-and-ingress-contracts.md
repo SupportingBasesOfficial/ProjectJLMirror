@@ -90,6 +90,25 @@ After authenticity/freshness checks, all parsing/decompression—including any m
 
 A small authenticated compressed body is not allowed to expand without bound.
 
+## XML and active parser features
+
+Provider authenticity does not make XML parser features trustworthy. Any callback profile that accepts XML or an XML-derived format SHALL use an explicitly hardened parser profile.
+
+By default, the callback parser SHALL disable or reject:
+
+- DTD processing where it can introduce entity or external-resource behavior;
+- general and parameter external entities;
+- external entity resolution against local files, network URLs or platform resources;
+- XInclude processing;
+- external schema/stylesheet/resource resolution;
+- parser features that perform implicit network/file retrieval or code/script execution.
+
+If a provider contract genuinely requires a schema/catalog or another external-looking dependency, the accepted profile SHALL use a pinned/trusted local resource or an explicitly isolated resolver with deny-by-default file/network access, strict allowlisting and bounded resource usage. Provider-controlled URIs SHALL NOT become resolver authority.
+
+XML parser selection/configuration is security-sensitive contract metadata for profiles that accept XML. A framework/library upgrade SHALL NOT silently re-enable active XML features.
+
+The same principle applies to other structured formats with equivalent active resolution/include/import behavior: external resource resolution is deny-by-default unless a separately accepted bounded resolver profile proves necessity and isolation.
+
 ## Replay identity
 
 Where a provider supplies a trustworthy stable event/callback ID, the adapter defines a canonical trusted identity scope including all dimensions needed to avoid cross-tenant/source collisions.
@@ -173,6 +192,8 @@ Inbound callback processing SHALL NOT automatically fetch arbitrary URLs contain
 
 If the provider contract requires follow-up retrieval, that retrieval uses the accepted outbound connector boundary with destination/protocol/redirect/size/timeout policy and trusted provider configuration.
 
+XML/XInclude/schema/entity resolution is not an exception to this rule. Parser-level external retrieval is disabled by default and cannot bypass the connector/SSRF boundary.
+
 ## Secrets/logging
 
 Callback headers, signatures, tokens and raw payloads are classified. Normal logs SHALL NOT record credentials/signature secrets or unrestricted raw payloads.
@@ -195,6 +216,10 @@ Every callback profile SHALL test:
 - bounded minimal replay-identity extraction cannot cause unbounded decompression/parser work or domain side effects;
 - tenant/integration payload forgery cannot reroute trusted tenant context;
 - post-auth parser/decompression expansion is bounded;
+- XML profiles reject DTD/external general or parameter entities, XInclude and external schema/stylesheet/resource resolution by default;
+- XML/local-file entity attempts cannot read host/runtime files;
+- XML/network entity/include/schema attempts cannot reach metadata services, loopback/private control endpoints or arbitrary external URLs;
+- any accepted resolver profile proves deny-by-default file/network policy, allowlisted trusted resources and bounded execution;
 - exact duplicate does not repeat protected effect;
 - same provider-local event ID in two trusted identity scopes is independently processable;
 - process crash after durable acceptance does not lose callback work;

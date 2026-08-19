@@ -1,6 +1,6 @@
 # Control Plane and Cell Design
 
-**Status:** proposed baseline  
+**Status:** accepted  
 **Primary ADRs:** ADR-002, ADR-003, ADR-004, ADR-016, ADR-017, ADR-019
 
 ## Control Plane responsibilities

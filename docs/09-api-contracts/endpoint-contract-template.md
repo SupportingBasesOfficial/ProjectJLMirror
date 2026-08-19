@@ -461,6 +461,33 @@ Rules:
 
 Exact authenticator algorithm, signed-header set, numeric window, replay storage product, retention duration, provider-facing acknowledgement status mapping, recovery-generation encoding and transaction/recovery topology remain `OPEN-API-022` or platform recovery-profile decisions until accepted for the provider profile.
 
+## Realtime admission-specific contract
+
+For `API surface: realtime-admission`, declare all of the following in addition to the generic HTTP/browser contract:
+
+```text
+Ticket scope: <principal + logical tenant + bounded realtime connection scope>
+Ticket expiry policy: <accepted short-lived policy or OPEN profile reference>
+Current authority checks: <current session/credential + membership/permission/tenant access>
+Placement/admission generation check: <current required | not applicable>
+Replay admission: atomic_shared_single_winner_consume
+Burn-on-ambiguity: required
+Replay recovery continuity: <missing restored state rejects until continuity re-established | trusted epoch/generation invalidates outstanding tickets>
+Subscription authorization separation: required
+```
+
+Rules:
+
+- ticket evidence is validated before `101` and is never treated as a general API credential;
+- ticket scope and expiry are validated together with expected Origin and the canonical ingress request;
+- current session/credential, membership/permission/tenant access and current placement/admission generation are checked before successful upgrade where applicable;
+- the final replay mutation is an atomic shared single-winner consume across replicas; `unused? -> consume later`, replica-local memory or another read/check flow does not satisfy this contract;
+- after successful consume, a crash or failure before completing `101` leaves the ticket burned; the client must obtain a fresh ticket;
+- replay-store restart/loss/restore cannot make a consumed ticket redeemable. Missing replay state is rejection unless accepted continuity is re-established or a trusted epoch/generation advance invalidates outstanding old tickets;
+- a successful connection grants only the bounded connection authority; later subscription authorization remains separate and Phase 10 must preserve it.
+
+Exact ticket TTL, representation/encoding, replay-store product, epoch/generation representation and gateway/runtime topology remain implementation/OPEN choices. Atomic single-winner, burn-on-ambiguity, current-authority/placement checks and fail-closed replay recovery are not OPEN.
+
 ## Long-running operation
 
 If applicable:
@@ -549,6 +576,7 @@ Classify externally important fields/enums and security/behavior dimensions. Doc
 - response-header grammar/cardinality/serialization ownership;
 - response-cache class/shared eligibility/variance/current-auth revalidation;
 - callback authentication/freshness binding/replay identity/atomic admission/durable coupling/replay retention/replay recovery continuity/acknowledgement durability/post-effect ambiguity/reconciliation;
+- realtime ticket scope/expiry/current-authority/placement checks/atomic single-winner/burn-on-ambiguity/replay recovery continuity/subscription separation;
 - cursor confidentiality/browser transport/URL redaction;
 - browser-delivery/media-type/safe-filename/active-content isolation;
 - untrusted-content/archive/XML processing.
@@ -588,6 +616,9 @@ Consider, where applicable:
 - callback replay store restored/partially lost so a missing replay record is misclassified as unused;
 - callback success acknowledgement before durable responsibility;
 - callback crash after a possibly successful external irreversible effect but before durable outcome recording, followed by unsafe re-execution instead of reconciliation;
+- realtime read/check replay admission or replica-local replay state admitting multiple winners;
+- realtime ticket consumed and then made reusable after crash/failed upgrade;
+- realtime replay store restored/lost so missing state is misclassified as unused;
 - replayed callback/ticket;
 - provider outage.
 
@@ -618,6 +649,8 @@ Protected mutation/body-bearing endpoints additionally test:
 - callback raw-body/signature, authenticated freshness binding, atomic replay admission, replay retention, replay restore/PITR continuity, acknowledgement durability, post-effect/pre-outcome-record crash, durable-coupling/reconciliation, SSRF/XML protections;
 - safe audit/error/observability behavior.
 
+For `realtime-admission`, additionally test ticket scope/expiry, expected Origin, current session/membership/permission/tenant access, current placement generation where applicable, simultaneous cross-replica single-winner consume, burn-on-ambiguity after consume-before-`101` failure, replay-store restart/loss/restore, trusted epoch/generation invalidation behavior and subscription-authorization separation.
+
 Artifact/binary endpoints additionally test media authority, safe filename/header construction, active-inline isolation, range/CDN fencing, archive bounds/containment/member collision/no-replace semantics, parser secret/egress isolation, DTD/external-resolution denial and independent derivative classification.
 
 ## OPEN items
@@ -637,6 +670,7 @@ Explain how the contract remains stable if:
 - the structured-body parser/library changes while canonical entity semantics remain identical;
 - response-header serialization moves between framework/proxy layers without changing the accepted profile;
 - a provider callback authenticator/SDK/replay implementation changes while freshness binding, replay retention, replay recovery continuity, acknowledgement durability and post-effect reconciliation semantics remain identical;
+- realtime gateway/runtime/replay store changes while ticket scope/expiry/current-authority/placement/single-winner/burn/recovery-continuity semantics remain identical;
 - CDN/cache is added or replaced;
 - cursor implementation changes without weakening browser transport/history policy;
 - artifact delivery/processing moves runtimes/vendors without weakening security invariants.

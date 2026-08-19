@@ -50,7 +50,7 @@ The following are breaking or security-sensitive by default:
 - **changing structured request entity parsing**, duplicate/alias member semantics, multipart part/boundary semantics, name normalization or which canonical entity is consumed by validation/auth/idempotency/use case;
 - changing success/error semantics affecting retry or authorization;
 - changing idempotency scope/meaning;
-- changing callback freshness binding, trusted replay-identity scope, atomic replay admission, durable work coupling or reconciliation semantics;
+- changing callback freshness binding, trusted replay-identity scope, atomic replay admission, durable work coupling, replay retention/expiry, acknowledgement durability or post-effect ambiguity/reconciliation semantics;
 - changing pagination/cursor semantics beyond documented lifecycle;
 - weakening cursor payload confidentiality, exposed-token classification, browser-history-safe transport or URL/log/referrer redaction;
 - forcing protected query input into URL-visible transport;
@@ -85,9 +85,9 @@ Servers reject unknown request fields by default. Request extensibility uses exp
 
 Schema compatibility is necessary but insufficient.
 
-Changing current-authoritative state into an approximation, retry/idempotency meaning, callback freshness/replay authority, cache reuse, query multiplicity, structured-body duplicate semantics, response-header serialization, browser cursor transport, archive identity or XML parser policy can be security-breaking even if JSON/OpenAPI schemas do not change.
+Changing current-authoritative state into an approximation, retry/idempotency meaning, callback freshness/replay/retention/acknowledgement authority, cache reuse, query multiplicity, structured-body duplicate semantics, response-header serialization, browser cursor transport, archive identity or XML parser policy can be security-breaking even if JSON/OpenAPI schemas do not change.
 
-Review evaluates behavior, HTTP/request entity interpretation, response serialization, consistency, security, ownership, authorization, idempotency, retry, callback authentication/freshness/replay/durability, cache, continuation, artifact/parser and realtime semantics in addition to shape.
+Review evaluates behavior, HTTP/request entity interpretation, response serialization, consistency, security, ownership, authorization, idempotency, retry, callback authentication/freshness/replay/durable responsibility/retention/acknowledgement/reconciliation, cache, continuation, artifact/parser and realtime semantics in addition to shape.
 
 ## HTTP message/framing compatibility
 
@@ -223,7 +223,7 @@ Provider callback adapters may version independently while normalizing into stab
 
 A callback parser/library change must preserve raw-body authenticity semantics, canonical structured entity interpretation after verification, default DTD rejection and external-resolution policy. Signature verification over one byte/entity meaning while adapter logic processes another is incompatible and unsafe.
 
-A provider protocol, SDK, gateway or callback middleware change must also preserve:
+A provider protocol, SDK, gateway, replay store or callback middleware change must also preserve:
 
 - which timestamp/nonce/sequence values are accepted as security freshness evidence;
 - how each freshness value is bound to the authenticated callback body/identity or independently trusted protocol metadata;
@@ -231,10 +231,12 @@ A provider protocol, SDK, gateway or callback middleware change must also preser
 - atomic create-or-observe replay admission;
 - one-logical-executor behavior under concurrent delivery;
 - durable inbox/work/effect coupling or explicit cross-authority reconciliation;
-- crash behavior between replay admission, durable responsibility and acknowledgement;
-- replay retention/expiry behavior for unresolved prior effects.
+- crash behavior between replay admission, durable responsibility, external effect outcome recording and acknowledgement;
+- replay retention/expiry behavior for unresolved and still-supported duplicate/recovery states;
+- the durable-responsibility boundary required before provider-facing success acknowledgement;
+- the rule that a possibly completed cross-authority irreversible effect with no durable outcome remains reconciliation-blocked and cannot be attempted again until authoritative reconciliation resolves it.
 
-A time-window check over metadata that is no longer authenticator-bound is not a compatible implementation change. Replacing an atomic durable replay protocol with a read-then-record duplicate check is likewise a security regression even when callback schemas and provider IDs are unchanged.
+A time-window check over metadata that is no longer authenticator-bound is not a compatible implementation change. Replacing an atomic durable replay protocol with a read-then-record duplicate check is likewise a security regression even when callback schemas and provider IDs are unchanged. Shortening replay/ambiguity retention so unresolved state can become executable, moving success acknowledgement ahead of durable responsibility, or converting a post-effect unknown outcome into automatic retry are also security regressions.
 
 ## Public projection compatibility
 
@@ -272,7 +274,7 @@ CI SHALL compare proposed contract/manifest changes with accepted baseline and f
 - request requiredness/type and response fields/types;
 - enum/status/error semantics;
 - idempotency/authorization/consistency;
-- **callback freshness binding, replay identity scope, atomic replay admission, durable coupling/reconciliation**;
+- **callback freshness binding, replay identity scope, atomic replay admission, durable coupling, replay retention/expiry, acknowledgement durability and post-effect ambiguity/reconciliation**;
 - **response-header profile, grammar/cardinality/serialization owner/multi-hop composition**;
 - pagination/cursor confidentiality/browser transport/logging;
 - protected query URL policy;
@@ -281,7 +283,7 @@ CI SHALL compare proposed contract/manifest changes with accepted baseline and f
 
 Automated schema diff is advisory. Human architecture/security review remains required for semantic changes invisible to schema.
 
-Gateway/proxy/runtime/provider-SDK tests SHOULD exercise conflicting framing, request-header/query ambiguity, path normalization, structured JSON/multipart differential parsing, callback raw-body/entity equivalence, authenticated freshness binding, atomic replay admission/crash recovery and realtime pre-`101` admission.
+Gateway/proxy/runtime/provider-SDK tests SHOULD exercise conflicting framing, request-header/query ambiguity, path normalization, structured JSON/multipart differential parsing, callback raw-body/entity equivalence, authenticated freshness binding, atomic replay admission/crash recovery, replay-retention/acknowledgement boundaries, post-effect/pre-outcome-record ambiguity recovery and realtime pre-`101` admission.
 
 Response-path tests SHOULD exercise dynamic header injection, duplicate singleton behavior across app/BFF/proxy/CDN and safe URI/list serialization.
 

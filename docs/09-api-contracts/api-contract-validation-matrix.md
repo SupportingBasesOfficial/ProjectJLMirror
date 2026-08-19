@@ -15,6 +15,7 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Authorization input safety | Owning authorization consumes only request fields validated under the trusted TenantContext/route; earlier cheap size/syntax checks cannot convert caller input into trusted authorization/resource scope or leak protected existence |
 | Cross-tenant admin | Cross-tenant behavior uses distinct privileged platform operation; no wildcard tenant bypass on ordinary routes |
 | Browser boundary | First-party browser protected API flow remains behind BFF; browser JS does not receive long-lived platform access/refresh credentials |
+| Browser origin/CORS | Credentialed BFF is deny-by-default for untrusted origins; any cross-origin profile uses explicit allowlist/credential policy and never wildcard credentialed origin; CORS is not authorization |
 | Request schema | Unknown mutation fields rejected by default; types/nullability/bounds are explicit |
 | Representation | Response is deliberate contract projection, not ORM/table/provider payload serialization |
 | Provider identity | Provider-native IDs remain external references and cannot replace canonical platform resource identity |
@@ -22,6 +23,7 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Request correlation | Server request ID and effective correlation ID observable without becoming auth/idempotency authority |
 | Response cache class | Every endpoint declares `no_store`, `private_revalidate`, `public_shared` or `artifact_delivery_guarded`; infrastructure defaults cannot choose a more permissive class |
 | Protected cache isolation | Auth-dependent protected API/BFF response cannot be reused across principal/tenant boundary; `Vary`/caller metadata alone is not treated as authorization |
+| Protected error caching | Authentication/authorization/step-up/existence-concealing protected errors cannot be shared across principals/tenants; safe cache policy applies to all response variants, not only success |
 | Secret response caching | Initial secret-bearing response is `no_store`; secret cannot be served from browser/proxy/CDN/idempotency replay state |
 | Public shared caching | Shared cache is allowed only for deliberately public projections with explicit safe variance/freshness/invalidation policy |
 | Protected artifact caching | CDN/cache optimization preserves current auth/releasability/delivery-generation/active-stream fencing or is disabled/non-shared |
@@ -36,22 +38,26 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | State transitions | Protected domain state-machine transitions use owning command semantics; generic PATCH cannot bypass transition policy |
 | Pagination | Deterministic order + tie-breaker; opaque cursor; no unbounded list contract |
 | Cursor scope | Cursor cannot be replayed to weaken tenant/filter/sort/endpoint scope and exposes no sensitive topology |
-| Concurrent pagination | Live/snapshot/historical traversal semantics are explicitly documented |
+| Cursor authorization freshness | Every protected page/historical continuation re-establishes current principal/tenant/resource authorization; old cursor/snapshot/watermark cannot freeze authority after revoke/suspend/scope reduction/relocation |
+| Concurrent pagination | Live/snapshot/historical traversal semantics are explicitly documented; snapshot data semantics do not freeze authorization |
 | Filtering/sorting | Only allowlisted fields/operators; arbitrary client query grammar cannot become SQL injection/query-plan authority |
 | Includes/expansion | Bounded include graph and independent authorization where referenced protected resources require it |
 | Historical telemetry | Time/resource/metric query is bounded or converted to export; no unlimited history scan API |
+| Bulk authorization | Every bulk item remains within current tenant/resource authority; mixed unauthorized outcomes preserve existence concealment and cannot widen batch authority |
 | Bulk mutation | Maximum batch size + atomicity/per-item semantics + idempotency + partial failure are explicit |
 | Large data | Oversized read/write workflow routes to governed export/import/operation rather than raising synchronous bounds indefinitely |
 | `202` semantics | Durable operation exists before accepted response; `202` never falsely means business success |
 | Operation durability | Operation status/progress/result survives worker restart and does not expose queue/node identity as canonical operation identity |
+| Operation access authorization | `operation_id`/URL is not bearer authority; read/poll/cancel/retry/resume/result access re-establish current tenant/principal/resource authorization |
 | Operation ambiguity | `reconciliation_required` cannot be turned into client retry eligibility without authoritative reconciliation |
-| Operation cancel | Cancellation is modeled as request/state; worker interruption alone is not accepted business cancellation |
+| Operation cancel | Cancellation is modeled as request/state; worker interruption alone is not accepted business cancellation and current cancellation authority is checked |
 | Artifact identity | API exposes stable artifact metadata identity; object-store path/vendor URL is not canonical identity |
 | Artifact release | Current auth + releasable state + generation-bound active delivery admission commit before first protected byte |
 | Artifact erasure | API cannot report confirmed deletion/erasure while old capability/late lease/active stream/stale publisher/destructive-governance uncertainty remains |
 | Delayed export | Current authorization checked before execution and release, not only at request creation |
 | Delayed import | Worker re-establishes current tenant context/authority before protected mutation and on stale resumed stages |
-| Realtime ticket mint | BFF authenticates current session and creates bounded tenant/principal/scope ticket; ticket is not general API credential |
+| Realtime ticket mint | BFF authenticates current session and creates bounded tenant/principal/scope ticket; ticket is not general API credential and mint response is `no_store` |
+| Realtime ticket transport | Ticket-bearing URL/transport is transient, redacted and excluded from normal logs/analytics/history/referrer-like propagation under the accepted profile |
 | Realtime pre-101 | Expected Origin + ticket + current underlying auth + placement + replay continuity + atomic single-winner consume all pass before `101` |
 | Realtime concurrency | Same single-use ticket presented to replicas yields at most one `101`; every loser rejected pre-upgrade |
 | Realtime crash after consume | Ticket remains burned; remint required |
@@ -63,6 +69,7 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Provider callback replay | Exact replay cannot repeat protected effect; same raw event ID across trusted scopes does not collide |
 | Provider callback parse bound | Authenticated compressed/structured payload remains bounded after decompression/parsing |
 | Provider callback durability | Success acknowledgement after async acceptance has durable replayable work authority |
+| Provider callback SSRF | Callback-supplied URL cannot cause arbitrary outbound fetch; follow-up retrieval uses trusted provider destination/protocol/redirect/size/timeout policy |
 | Version compatibility | Additive change obeys unknown-field/open-enum rules; breaking change requires governed version boundary |
 | Semantic compatibility | Schema-compatible change does not silently alter consistency, idempotency, authorization, scope, cache or retry meaning |
 | Cache compatibility | Cache class, shared-cache eligibility, variance, validator/revalidation/current-auth requirements and security-relevant freshness policy are reviewed as semantic contract; a more permissive cache policy cannot ship as an implementation-only change |
@@ -83,9 +90,11 @@ The following failures block acceptance/release regardless of other success:
 - owning authorization consumes unvalidated caller-controlled request fields as trusted scope/resource/policy input;
 - known cross-tenant resource ID returns or mutates protected state under the wrong tenant context;
 - implementation exposes long-lived platform access/refresh credentials to first-party browser JavaScript;
+- credentialed BFF permits arbitrary/wildcard untrusted origins or treats CORS as authorization;
 - route authorization exists only in UI/BFF and not in owning server-side boundary;
 - response contract exposes raw secret/token or sensitive internal topology;
-- secret-bearing create/rotate response is cacheable, persisted for replay, or re-presented by same-key idempotency retry after response loss;
+- authentication/authorization/existence-concealing protected errors can be served from a shared cache across principals/tenants;
+- secret-bearing create/rotate response or realtime ticket-mint response is cacheable, persisted for replay, or re-presented by same-key idempotency retry after response loss;
 - lost one-time-secret response causes automatic second credential/secret creation instead of observing the completed logical effect and requiring explicit recovery;
 - secret rotation/reissue can invalidate the caller's only usable credential before a still-valid alternate/current authority or staged/overlap recovery path is proven, leaving the caller unable to authorize recovery without the lost secret;
 - a documented `revoke` then `create` sequence is treated as recovery even though no surviving authority can authorize the create step;
@@ -100,9 +109,12 @@ The following failures block acceptance/release regardless of other success:
 - same idempotency key with different request semantics can execute instead of conflicting;
 - stale optimistic-concurrency mutation silently overwrites a newer protected state when the endpoint requires revision safety;
 - list/history endpoint permits effectively unbounded interactive scans with no accepted bound/export path;
+- cursor/snapshot/watermark remains usable to read protected data after current authority was revoked/suspended/reduced or tenant placement changed;
 - client-authored filter/sort/include is converted into unrestricted database/query authority;
+- bulk read/mutation treats batch membership as authorization for individual unauthorized resources or leaks existence through mixed per-item errors;
 - `202 Accepted` is returned before the platform has durable responsibility for the operation;
 - operation status depends on in-memory worker/queue state such that restart loses externally promised progress/outcome;
+- possession of an `operation_id`/operation URL permits read/cancel/retry/result access without current authorization;
 - artifact metadata appears available while object/integrity/current generation is not verified;
 - protected artifact first byte can be released before current authorization/releasability/generation-bound lease admission commits;
 - artifact erasure can report success while stale delivery/upload/destructive authority can still release/recreate/destroy incorrectly;
@@ -110,11 +122,13 @@ The following failures block acceptance/release regardless of other success:
 - protected WebSocket receives `101` without expected Origin/current auth/replay continuity/atomic consume;
 - more than one gateway replica can receive `101` for one single-use realtime ticket;
 - replay-store loss can resurrect a previously consumed ticket;
+- ticket-bearing transport leaks through ordinary logs/analytics/history/referrer-like propagation contrary to the accepted profile;
 - callback payload can choose a different tenant than trusted integration configuration;
 - oversized callback reaches complete buffering/authentication/parser work without hard raw bound;
 - duplicate callback can repeat irreversible logical effect;
 - same provider-local callback ID from two trusted tenant/source scopes collides under one dedup identity;
 - provider callback returns success while required async work exists only in process memory;
+- callback-supplied URL can trigger unrestricted outbound fetch/redirect and bypass the trusted connector/SSRF boundary;
 - a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/cache semantics;
 - service extraction/provider/storage migration forces consumers to change because public contract leaked internal topology;
 - database/ORM model is serialized directly as the public contract without deliberate schema/authorization review.

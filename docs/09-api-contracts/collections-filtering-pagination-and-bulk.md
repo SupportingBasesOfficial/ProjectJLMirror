@@ -76,13 +76,31 @@ The server-issued cursor binds enough context to prevent it from being safely re
 - deterministic last-item key;
 - expiration/version where the endpoint requires it.
 
-Cursor contents SHALL NOT expose raw database credentials, physical placement or sensitive internal topology.
+Cursor opacity is a client-compatibility property, **not** a confidentiality guarantee. A cursor carried in a URL/query parameter SHALL NOT expose confidential/restricted tenant data, protected search terms, raw resource keys, credentials, provider secrets, physical placement, or sensitive internal topology merely because the token is encoded or signed.
 
-The server MAY encode/sign/encrypt cursors internally. Exact mechanism is implementation-specific as long as callers cannot use the cursor to weaken authorization or inject arbitrary database ordering/filter state.
+If the cursor needs to bind protected state that would be unsafe to expose through URL/history/log/referrer surfaces, the implementation SHALL use one of the following accepted properties:
+
+- a server-side opaque handle whose exposed value reveals no protected payload;
+- a self-contained envelope providing confidentiality and integrity for the protected cursor payload;
+- or another reviewed mechanism with equivalent confidentiality, tamper resistance, scope binding and revocation/expiry behavior.
+
+Encoding/base64/signing without confidentiality is insufficient when the payload contains protected data.
+
+Raw cursor values are security-sensitive URL material. Normal access logs, analytics, traces, referrers and support telemetry SHALL NOT record full protected cursor values by default; use redaction, hashing/reference or another accepted safe representation. A cursor SHALL NOT be copied into third-party URLs or redirect targets.
+
+The server MAY encode/sign/encrypt cursors internally or use server-side state. Exact mechanism is implementation-specific as long as callers cannot use the cursor to weaken authorization, inject arbitrary database ordering/filter state, or recover protected payload data from URL-visible material.
 
 A valid cursor is **not authorization**. Every page request re-establishes the current principal/session/credential state, tenant context and applicable membership/permission/resource scope before returning protected items. Revocation, tenant suspension, scope reduction or relocation between pages SHALL NOT remain bypassable merely because the caller holds an older valid cursor.
 
 Cursor binding MAY include principal/security-scope dimensions when an endpoint needs them to prevent unsafe replay, but such binding never replaces current authorization re-evaluation.
+
+## URL/query confidentiality
+
+Filter/search/query values are also exposed transport metadata when carried in a URL. An endpoint SHALL classify whether its accepted query parameters may contain confidential/restricted values.
+
+If a normal use case can require confidential search/filter input, the contract SHALL use a representation that does not depend on placing that protected input in browser/history/referrer/log-visible URL text, for example a bounded body-based query contract or a server-side opaque query handle. Exact representation is endpoint-specific.
+
+Public/non-sensitive query parameters MAY remain in the URL, but logs/analytics still follow the endpoint data-classification policy. Sensitive query state is never considered safe merely because HTTPS encrypts the network hop.
 
 ## Stable ordering
 
@@ -129,6 +147,8 @@ An endpoint contract defines each allowed operator/value syntax. The API SHALL N
 
 Advanced filter expressions, if introduced later, require their own bounded grammar, authorization review, complexity limits and compatibility contract.
 
+Filter values follow the URL/query confidentiality rule above. A protected value SHALL NOT be forced into a URL solely because the simple filter syntax supports it.
+
 ## Search
 
 Free-text/fuzzy search uses an explicit parameter such as:
@@ -140,6 +160,8 @@ q=<text>
 Search semantics are endpoint-specific and SHOULD declare whether results are exact, prefix, token, fuzzy or provider-backed.
 
 Search ranking is not treated as stable ordering unless the contract explicitly defines a stable rank/tie-break behavior.
+
+If search text may contain confidential customer/tenant data, credentials, secrets, regulated values or other protected content, the endpoint SHALL NOT require that value in a URL-visible `q` parameter. It uses an accepted non-URL-sensitive query representation instead.
 
 ## Sorting
 
@@ -181,7 +203,7 @@ An unbounded "return all history" contract is prohibited.
 
 The endpoint defines maximum time span/result volume or an asynchronous export path for larger requests.
 
-Historical pagination identity remains based on platform-owned resource/observation semantics and SHALL NOT expose physical telemetry partitions.
+Historical pagination identity remains based on platform-owned resource/observation semantics and SHALL NOT expose physical telemetry partitions or confidential cursor payload data.
 
 Current authorization is re-evaluated for each historical page/export admission; possession of an old cursor/watermark does not preserve access after revocation or scope reduction.
 

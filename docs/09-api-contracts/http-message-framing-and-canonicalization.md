@@ -39,6 +39,7 @@ This boundary exists to prevent or contain:
 - trusted-proxy header spoofing;
 - request-trailer privilege injection;
 - content-decoding/parser disagreement;
+- connection-reuse/pipelining desynchronization after rejected input;
 - HTTP-version translation inconsistencies;
 - callback signature/body verification against bytes different from those processed by the application;
 - WebSocket upgrade admission on an ambiguously framed request.
@@ -81,6 +82,26 @@ If an accepted intermediary permits a protocol-defined equivalent duplicate repr
 
 The platform SHALL NOT rely on application code to repair an ambiguous message after a proxy/gateway has already routed or authenticated it.
 
+## Unsafe rejection and connection reuse
+
+Rejecting one logical request is not sufficient if unread or ambiguously framed bytes can survive on a reusable transport and later be interpreted as another request.
+
+After a framing, chunking, body-boundary, early-size, content-coding or equivalent transport rejection, every affected hop SHALL determine whether the remaining message boundary is **provably known** before reusing the client-side or downstream/backend connection.
+
+The safe rule is:
+
+- a protocol-safe drain MAY occur only when the rejected request boundary is known unambiguously and the accepted protocol/runtime guarantees that draining cannot reinterpret attacker-controlled bytes as another request;
+- when the boundary is unknown, ambiguous, malformed, truncated or cannot be safely drained under the deployed parser chain, the affected connection is closed/retired and MUST NOT return to a keep-alive, HTTP/1.x pipelining or backend connection pool;
+- a downstream/backend connection that may have received an ambiguous or partially forwarded request is retired independently; closing only the client side is insufficient when backend desynchronization is possible;
+- an early body-size rejection does not automatically justify reuse if unread body bytes remain and their boundary cannot be safely established;
+- `Expect: 100-continue` handling SHALL NOT cause one hop to consume/forward a body while another believes the request was rejected before body transmission;
+- interim responses do not authorize protected work, create idempotency claims or prove that the request body was safely consumed;
+- a transport rejected as ambiguous never becomes the prefix of a later accepted request on the same uncertain byte stream.
+
+HTTP/2 or HTTP/3 stream-scoped rejection MAY retire only the affected stream when the protocol implementation proves connection-level framing/state is intact and cross-stream ambiguity is impossible under the accepted profile. Connection-level protocol errors, decoder state uncertainty or translation to an unsafe backend still require broader connection retirement as appropriate.
+
+Exact drain/close mechanics are deployment-profile details, but **unsafe connection reuse is not OPEN**.
+
 ## HTTP-version translation
 
 HTTP/1.x, HTTP/2 and HTTP/3 have different wire/framing rules. A gateway translating between versions SHALL:
@@ -92,6 +113,8 @@ HTTP/1.x, HTTP/2 and HTTP/3 have different wire/framing rules. A gateway transla
 - never make an invalid source request valid merely by translation.
 
 Connection-specific/hop-by-hop fields that are not valid across the target protocol boundary are stripped/reconstructed according to the accepted protocol profile, not propagated as application metadata.
+
+If translation rejects a request after partially engaging a downstream connection, that downstream connection follows the same safe-retirement rule above; a frontend rejection cannot leave an uncertain backend byte stream reusable.
 
 ## Canonical method and method override
 
@@ -260,6 +283,8 @@ After framing acceptance:
 - multipart/archive/document parsing remains subject to its own parser/security limits;
 - body parsing does not retroactively change the accepted message boundary.
 
+If body parsing or decoded-size enforcement rejects after bytes have already been read/forwarded, connection reuse still follows the safe-retirement rule; parser rejection does not imply unread bytes are safe to preserve for another request.
+
 ## BFF and browser routes
 
 BFF Origin/CORS/CSRF/session handling operates only on the canonical request.
@@ -281,6 +306,8 @@ Therefore:
 - method-override/trailer mechanisms cannot introduce realtime authority after admission parsing;
 - no `101` occurs unless both this boundary and the realtime admission invariants pass.
 
+A rejected/aborted upgrade request does not leave an uncertain HTTP/1.x byte stream reusable; the connection/stream follows the safe-retirement rule when framing/body state is not provably synchronized.
+
 ## Provider callbacks
 
 Callback ingress inherits this boundary before signature/freshness/replay/domain processing.
@@ -294,6 +321,8 @@ In particular:
 - provider-specific raw-signature verification receives the exact bounded raw representation associated with the canonical request;
 - content decoding cannot cause signature verification and semantic processing to authenticate different byte representations;
 - HTTP normalization never turns unauthenticated alternate bytes into trusted callback content.
+
+If a callback is rejected before its entire safely framed body is consumed, the ingress connection is drained only with a provably known boundary; otherwise the affected transport is retired so residual provider-controlled bytes cannot become another callback request.
 
 ## Cache interaction
 
@@ -312,6 +341,8 @@ Cache behavior MUST NOT depend on an alternate interpretation of:
 
 Requests with ambiguous cache-relevant/security-relevant metadata fail closed rather than being cached under one interpretation and served under another.
 
+A proxy/cache that rejects an unsafe HTTP/1.x request after partial body forwarding SHALL NOT return an uncertain backend connection to a reusable pool.
+
 ## Logging and observability
 
 Security observability records the canonical request interpretation and the reason for rejected ambiguity without logging unrestricted raw credentials, protected query/cursor material or full malicious payloads.
@@ -321,7 +352,7 @@ Useful safe evidence may include:
 - protocol/version;
 - ingress profile;
 - normalized route template;
-- rejection class such as `framing_conflict`, `duplicate_security_header`, `authority_conflict`, `invalid_request_target`, `duplicate_singleton_query`, `method_override_rejected`, `security_trailer_rejected`, `content_coding_conflict`;
+- rejection class such as `framing_conflict`, `duplicate_security_header`, `authority_conflict`, `invalid_request_target`, `duplicate_singleton_query`, `method_override_rejected`, `security_trailer_rejected`, `content_coding_conflict`, `connection_retired_after_rejection`;
 - request/correlation identity;
 - trusted proxy identity where applicable.
 
@@ -334,6 +365,8 @@ Framing/canonicalization rejection occurs before the request is treated as a val
 External errors are deliberately sparse and do not reveal which intermediary/parser would have accepted the alternate interpretation.
 
 A framing/canonicalization rejection SHALL NOT create an idempotency claim, durable operation or protected domain effect.
+
+If the request boundary/connection state is not provably synchronized, error delivery is subordinate to connection safety: the platform may close/retire the transport rather than preserve keep-alive merely to deliver a richer error response.
 
 ## Contract metadata
 
@@ -349,6 +382,7 @@ request_target_profile
 query_multiplicity_policy
 body_framing_policy
 content_coding_policy
+connection_rejection_policy
 ```
 
 A common platform profile MAY satisfy these fields for ordinary routes; an endpoint only specializes where its protocol requires it.
@@ -378,12 +412,18 @@ Edge/integration testing SHALL include, where protocol support makes the case ap
 - repeated-list parameters have one documented canonical rule across gateway/cache/application;
 - unsupported/conflicting `Content-Encoding` or decoding-order interpretation cannot make edge and application process different entity meanings;
 - gateway -> service propagation contains only the canonical interpretation;
+- early body-size rejection followed by attempted HTTP/1.x keep-alive/pipelined reuse cannot turn residual bytes into a second request;
+- malformed chunk/framing rejection retires the client/backend connection when the boundary cannot be safely drained;
+- backend pooled connection is not reused after partial/ambiguous forwarding;
+- `Expect: 100-continue` rejection/acceptance cannot leave frontend/backend disagreeing whether body bytes belong to the current or next request;
+- HTTP/2 or HTTP/3 stream rejection does not contaminate other streams, and connection-level uncertainty retires the connection where required;
 - callback signature verification and callback processing use the same accepted raw body/content-coding profile;
 - callback raw-body limit cannot be bypassed by alternate framing or content coding;
 - realtime upgrade rejects ambiguous framing/security headers/path/query/trailers before `101`;
+- rejected realtime/callback request cannot leave uncertain residual bytes reusable;
 - cache/proxy and origin service cannot derive different cache/security meaning from duplicate/ambiguous metadata.
 
-Tests SHOULD exercise the actual deployed protocol translation path where one exists, not only an in-process controller test.
+Tests SHOULD exercise the actual deployed protocol translation and connection-pooling path where one exists, not only an in-process controller test.
 
 ## Release-blocking failures
 
@@ -391,6 +431,9 @@ The following block implementation/release:
 
 - two accepted hops can disagree on where one request ends and the next begins;
 - conflicting framing reaches application authentication or body processing;
+- an early/ambiguous rejection leaves unread/uncertain bytes on a reusable HTTP/1.x or downstream pooled connection such that they can be parsed as a subsequent request;
+- frontend connection is closed but an ambiguously/partially forwarded backend connection is returned to a reusable pool;
+- `Expect: 100-continue` or interim-response handling lets frontend/backend disagree whether the current request body was accepted/consumed;
 - duplicate security-sensitive headers are resolved by arbitrary first/last/framework behavior;
 - security-sensitive trailer fields can inject/override authority after initial header admission;
 - implicit method override can cause edge/cache/security logic and the owning service to apply different HTTP methods;
@@ -407,11 +450,11 @@ The following block implementation/release:
 
 ## Compatibility and evolution
 
-Framing/header/method/trailer/content-coding/request-target/query security semantics are part of the security contract even though they are often implemented in infrastructure.
+Framing/header/method/trailer/content-coding/request-target/query/**connection-rejection** security semantics are part of the security contract even though they are often implemented in infrastructure.
 
-Changing gateway, proxy, HTTP runtime, protocol version or service topology SHALL trigger regression testing of this boundary.
+Changing gateway, proxy, HTTP runtime, protocol version, connection pooling or service topology SHALL trigger regression testing of this boundary.
 
-A change that makes ambiguity more permissive or alters security-sensitive header/trailer/method/path/query/content-decoding interpretation requires explicit security/compatibility review even when OpenAPI request/response schemas are unchanged.
+A change that makes ambiguity more permissive, alters security-sensitive header/trailer/method/path/query/content-decoding interpretation, or reuses connections that were previously retired after unsafe rejection requires explicit security/compatibility review even when OpenAPI request/response schemas are unchanged.
 
 ## Intentionally OPEN
 
@@ -424,6 +467,7 @@ The following remain implementation/profile decisions until evidence requires st
 - exact library used to construct the canonical internal request envelope;
 - exact allowed path character repertoire/normalization profile per external surface, provided parser agreement/fail-closed rules hold;
 - exact supported non-identity content codings per endpoint/profile;
+- exact safe drain/connection-close primitive for each deployed protocol/runtime, provided uncertain boundaries are never reused;
 - exact rejection status mapping for malformed transport requests where the HTTP stack can safely return one.
 
-These OPENs do **not** make ambiguity acceptance optional. The one-wire-message/one-canonical-interpretation property is normative.
+These OPENs do **not** make ambiguity acceptance or unsafe connection reuse optional. The one-wire-message/one-canonical-interpretation property and fail-closed connection retirement are normative.

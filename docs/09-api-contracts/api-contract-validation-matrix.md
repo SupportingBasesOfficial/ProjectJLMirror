@@ -50,10 +50,12 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Archive extraction containment | Archive/member extraction remains inside the intended staging root; absolute/parent traversal, separator tricks, symlink/hardlink and special/device-file escape cannot materialize outside the accepted processing boundary |
 | Archive member identity/collision | One canonical member-name model is established before scan/materialization; duplicates and Unicode/case/trailing-dot-space/platform/path normalization collisions are rejected; scanner and later consumer see the same canonical member bytes; materialization is no-follow atomic/no-replace or equivalent |
 | XML/document active features | XML/XML-derived artifact processing **rejects every DTD declaration by default** and disables external entities/XInclude/external schemas/stylesheets/resource resolution; any exceptional DTD/resolver profile is separately reviewed, pinned/isolated and deny-by-default |
+| Idempotency manifest completeness | Effectful idempotent operations govern `idempotency_class`, trusted effective scope, canonical fingerprint fields, completed replay behavior, in-progress duplicate behavior, fingerprint mismatch behavior, retention/recovery policy and external-ambiguity reconciliation as semantic manifest dimensions; changing one cannot hide behind an unchanged class |
 | Idempotency admission | Required effectful POST/command atomically create-or-observes durable claim before protected effect and only after canonical HTTP acceptance |
 | Idempotency fingerprint | Same key/scope with different semantic request conflicts before execution |
 | Idempotency concurrency | Simultaneous same key/fingerprint yields one logical executor |
 | Idempotency response loss | Retry after committed result but lost response replays/reconstructs logical result without re-execution |
+| Idempotency retention/recovery | Claim/result/tombstone/operation authority covers the advertised safe retry/replay/recovery interval; expiry cannot make a previously completed irreversible effect newly executable |
 | One-time-secret response loss | Same-key retry after lost secret-bearing response does not duplicate effect and does not re-present/retain secret; safe metadata identifies the completed resource and explicit recovery semantics are deterministic |
 | Lockout-safe secret recovery | Before a secret rotation/reissue can invalidate the caller's only usable credential, the contract proves a still-valid alternate/current authority or a staged/overlap cutover that can authorize recovery without the lost new secret; revoke-plus-create is not treated as recovery when no authority remains to create |
 | Idempotency external ambiguity | Timeout/lease expiry with possible external effect yields operation/reconciliation; does not authorize blind retry |
@@ -93,7 +95,9 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Provider callback framing | Callback framing/header canonicalization passes before signature/freshness/replay; signature verification and adapter processing observe the same bounded raw body; duplicate/conflicting provider-auth headers follow one explicit profile |
 | Provider callback raw bound | Chunked/streamed over-limit body rejected before complete buffering/signature work after canonical framing admission |
 | Provider callback auth | Invalid authenticity rejected before protected domain mutation |
+| Provider callback freshness policy | Each provider profile declares the accepted freshness evidence source plus clock/window/sequence acceptance policy as governed semantic metadata; an undeclared source is not trusted, and widening admissibility is security-sensitive even when authenticator binding is unchanged |
 | Provider callback freshness binding | Every timestamp/nonce/sequence value used as security freshness evidence is bound to the authenticated callback body/identity by the accepted authenticator or comes from independently trusted protocol metadata associated with this request; window checks alone cannot make unbound metadata authoritative |
+| Provider callback freshness/replay coherence | Freshness/sequence acceptance and provider retry admissibility cannot exceed effective replay/ambiguity-retention authority in a way that makes an old authenticated delivery newly executable after ordinary replay state expires; equivalent durable tombstone/operation/reconciliation authority preserves the no-repeat property |
 | Provider callback tenant binding | Payload tenant/account fields cannot reroute callback away from trusted integration mapping |
 | Provider callback replay | Exact replay cannot repeat protected effect; same raw event ID across trusted scopes does not collide; body-carried replay identity is derived from the same canonical structured entity later mapped to the owning use case |
 | Provider callback replay atomicity | Replay admission is atomic create-or-observe under trusted scope and coupled to durable inbox/work/effect responsibility; concurrent deliveries produce one logical executor, and cross-authority ambiguity enters durable reconciliation instead of blind re-admission |
@@ -107,11 +111,11 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Version compatibility | Additive change obeys unknown-field/open-enum rules; breaking change requires governed version boundary |
 | Semantic compatibility | Schema-compatible change does not silently alter consistency, idempotency, authorization, scope, cache or retry meaning |
 | Cache compatibility | Cache class, shared-cache eligibility, variance, validator/revalidation/current-auth requirements and security-relevant freshness policy are reviewed as semantic contract; a more permissive cache policy cannot ship as an implementation-only change |
-| Security-metadata compatibility | Weakening HTTP framing/method/trailer/content-coding/path/query/header/trusted-proxy semantics, structured-body parser/canonical-entity propagation, response-header grammar/cardinality/serialization ownership, callback freshness binding/replay atomicity/durable coupling/replay retention/acknowledgement durability/post-effect reconciliation, cursor confidentiality/transport/logging, archive member identity, safe-filename handling, artifact browser-delivery/parser isolation or XML DTD/external-resolution policy is reviewed as a security-sensitive semantic change even if schemas remain unchanged |
+| Security-metadata compatibility | Weakening HTTP framing/method/trailer/content-coding/path/query/header/trusted-proxy semantics, structured-body parser/canonical-entity propagation, idempotency scope/fingerprint/duplicate/retention/external-ambiguity semantics, response-header grammar/cardinality/serialization ownership, callback freshness source/window/binding/replay atomicity/durable coupling/replay retention/acknowledgement durability/post-effect reconciliation, cursor confidentiality/transport/logging, archive member identity, safe-filename handling, artifact browser-delivery/parser isolation or XML DTD/external-resolution policy is reviewed as a security-sensitive semantic change even if schemas remain unchanged |
 | Service extraction | Moving owner to new runtime/service does not change public IDs/routes/tenant semantics solely due to deployment topology |
 | Provider replacement | New provider adapter does not force canonical resource IDs/schema to become provider-native |
 | Contract source of truth | Machine-readable contract is reviewed canonical artifact; controller/ORM DTO does not define public schema by accident |
-| Breaking-change CI | Contract diff detects structural risk; semantic review checks HTTP canonicalization/structured-entity/response-header/security/ownership/retry/consistency/cache/callback-freshness-replay/browser-delivery/cursor/parser changes |
+| Breaking-change CI | Contract diff detects structural risk; semantic review checks HTTP canonicalization/structured-entity/idempotency/response-header/security/ownership/retry/consistency/cache/callback-freshness-replay/browser-delivery/cursor/parser changes |
 | Client resilience | Official client ignores compatible unknown response fields/open enum values and only auto-retries operations marked safe |
 | Data classification | Request/response/URL/logging policy prevents secret/credential/regulated/confidential-data leakage |
 | Abuse limits | Body/header/decoded-body/page/filter/include/bulk/export/expensive operation constraints are explicit or explicitly OPEN with implementation blocked |
@@ -171,7 +175,9 @@ The following failures block acceptance/release regardless of other success:
 - artifact processing automatically executes embedded scripts/macros or follows attacker-controlled URLs outside the accepted outbound/SSRF boundary;
 - a generated preview/conversion is treated as `safe_inline` without independent output classification/delivery policy;
 - external provider-native identifier becomes canonical resource identity such that provider replacement would break clients;
+- an effectful idempotent endpoint lacks governed effective scope/fingerprint/duplicate/result/retention/external-ambiguity manifest semantics even though idempotency is enabled;
 - retryable irreversible POST/command can execute twice because no atomic durable idempotency admission exists;
+- idempotency retention/recovery authority expires inside an advertised safe retry/recovery interval and makes a completed irreversible effect executable again;
 - response loss after committed idempotent mutation causes re-execution rather than replay/reconstruction;
 - ambiguous external effect becomes retryable merely because HTTP timed out or a lease expired;
 - same idempotency key with different request semantics can execute instead of conflicting;
@@ -198,7 +204,9 @@ The following failures block acceptance/release regardless of other success:
 - callback payload can choose a different tenant than trusted integration configuration;
 - oversized callback reaches complete buffering/authentication/parser work without hard raw bound;
 - duplicate/conflicting callback authentication/signature/freshness headers can be interpreted differently across hops;
+- callback freshness evidence source or clock/window/sequence acceptance policy is absent from governed metadata, or changes without security-sensitive compatibility review;
 - callback freshness evidence can be accepted without proof that it is bound to the authenticated callback body/identity or independently trusted protocol metadata;
+- callback freshness/sequence admissibility can be widened beyond effective replay/ambiguity-retention authority so an old authenticated delivery becomes newly executable after ordinary replay state expires;
 - callback replay admission can create more than one logical executor under concurrent delivery, or consume replay identity without durable work responsibility and without recoverable reconciliation;
 - callback replay/ambiguity retention can expire while an unresolved or still-supported recovery state exists and thereby make the same logical effect newly executable;
 - callback success can be acknowledged before the profile's declared durable-responsibility boundary;
@@ -209,7 +217,7 @@ The following failures block acceptance/release regardless of other success:
 - provider callback XML parser accepts a DTD under the default profile or permits external entity/XInclude/external schema/stylesheet resolution to read local files or reach network/internal services outside an explicitly accepted isolated exceptional profile;
 - provider callback returns success while required async work exists only in process memory;
 - callback-supplied URL can trigger unrestricted outbound fetch/redirect and bypass the trusted connector/SSRF boundary;
-- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/HTTP-framing/structured-body/response-header/path-query/cache/callback-freshness-replay/browser-delivery/cursor/archive/parser semantics;
+- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/HTTP-framing/structured-body/idempotency/response-header/path-query/cache/callback-freshness-replay/browser-delivery/cursor/archive/parser semantics;
 - service extraction/provider/storage/gateway migration forces consumers or security semantics to change because public contract leaked internal topology or relied on parser disagreement;
 - database/ORM model is serialized directly as the public contract without deliberate schema/authorization review.
 

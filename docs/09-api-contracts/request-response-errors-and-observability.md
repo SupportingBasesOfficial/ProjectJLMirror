@@ -66,6 +66,65 @@ because HTTP status plus typed response schemas already communicate transport su
 
 Collections use the collection contract defined in the pagination document.
 
+## Safe response-header construction
+
+HTTP response headers are part of the external security/compatibility contract. A value is not safe merely because it originated from authenticated application state or because a framework exposes a `setHeader()` API.
+
+Every emitted response header SHALL be constructed from an explicit header grammar/profile that defines:
+
+- cardinality: singleton, protocol-defined list, repeatable under one canonical rule, or not emitted;
+- allowed value syntax/character repertoire;
+- canonical serialization/quoting/escaping;
+- length/count bounds where values can vary materially;
+- whether caller/provider/user-controlled data may contribute to the value and through which validated transformation;
+- whether duplicate field lines are permitted and, if so, their single protocol-defined meaning;
+- cache/proxy/client-visible semantics and compatibility classification.
+
+Generic unvalidated strings SHALL NOT be concatenated into response headers.
+
+At minimum, response construction SHALL reject or prevent:
+
+- CR/LF/NUL and other control-character injection capable of response splitting or parser confusion;
+- obsolete folding or raw line-break serialization from application values;
+- duplicate/conflicting singleton fields introduced by middleware layers;
+- unsafely concatenated comma/semicolon/quoted-string values whose grammar can be reinterpreted by intermediaries;
+- attacker-controlled absolute or cross-origin redirect/link destinations outside the endpoint's accepted allowlist/policy;
+- header values that echo raw credentials, protected cursor/query values or other secrets;
+- middleware/proxy layers appending a second security-relevant response value that changes the effective meaning seen by browsers, caches or clients.
+
+### Canonical response-header profiles
+
+Endpoint contracts SHALL declare or inherit safe construction semantics for every nontrivial response header they emit. Common platform profiles include at least:
+
+- `Location` — one canonical URI/reference generated from trusted route/resource/capability state; no CRLF/control injection; no implicit open redirect; protected query/cursor/credential data is not copied unless a separately accepted capability contract requires it;
+- `Link` — each target/relation/parameter is serialized through a structured grammar; untrusted values cannot terminate one link-value and inject another;
+- `ETag` — server-generated validator only, serialized under the accepted entity-tag grammar; caller/provider strings are never copied directly as validators;
+- `Retry-After` — generated from accepted bounded delay/date semantics, not raw dependency/provider text;
+- `Content-Disposition` — uses the dedicated artifact safe-filename policy and coherent `filename`/`filename*` semantics;
+- cache/security headers (`Cache-Control`, `Vary`, `Content-Security-Policy`, CORS-related fields, `WWW-Authenticate`, etc.) — generated from validated policy objects/profiles rather than arbitrary caller-controlled fragments;
+- `X-Request-Id` / `X-Correlation-Id` — bounded/canonical values under their dedicated policies; client-supplied correlation input is validated before echo;
+- redirect status + `Location` — redirect target and status are reviewed together; the target cannot be selected from untrusted forwarded host/scheme/path metadata.
+
+If a response header is not covered by a common profile, the endpoint contract defines its grammar/cardinality/validation before implementation.
+
+### Middleware and multi-hop response behavior
+
+Gateway, BFF, application, CDN and reverse-proxy layers SHALL NOT independently append/merge security-sensitive singleton response headers under conflicting rules.
+
+The deployed response path must prove that:
+
+- the final client/cache receives one accepted semantic value for singleton headers;
+- header normalization at one hop cannot transform a safely constructed value into multiple fields or another grammar;
+- proxy-generated redirects/errors do not bypass the same safe-header construction principles;
+- a response produced during malformed-request rejection does not reflect the rejected raw header/query/body material into response headers;
+- cache metadata is derived from the accepted response policy, not from injected response header text.
+
+### Response-header failure behavior
+
+If a required dynamic response header cannot be constructed safely, the platform fails closed for that response path rather than emitting the unsafe value. It may omit an optional header only when the endpoint contract permits omission; it SHALL NOT silently substitute unvalidated raw input.
+
+A header-construction failure does not roll back an already committed business effect. When the effect committed but response serialization failed, idempotency/operation/result-linkage semantics remain authoritative and the client follows the normal response-loss recovery contract.
+
 ## Response cache contract
 
 Every endpoint SHALL declare an explicit response-cache class. Browser, reverse-proxy, gateway, CDN or framework defaults SHALL NOT silently decide whether a representation may be stored or shared.
@@ -82,6 +141,8 @@ artifact_delivery_guarded
 The cache contract applies to **all response variants**, including success, redirect where allowed, conditional responses and errors. An endpoint SHALL NOT define a safe success cache policy while leaving authentication/authorization/not-found/error responses to intermediary defaults.
 
 A cache/reverse proxy is eligible to process/cache a request only after applying the same canonical method/authority/path/query/header meaning accepted by the owning service. Ambiguous requests are not valid cache candidates.
+
+Cache-relevant response headers are emitted only through the safe response-header construction contract above; response-header injection or duplicate-conflict behavior cannot redefine cacheability/variance/invalidation.
 
 ### `no_store`
 
@@ -238,6 +299,8 @@ with the operation indicating `reconciliation_required` or an equivalent non-ter
 
 If the platform cannot establish safe durable tracking, the route fails conservatively under its contract and SHALL NOT invite automatic blind retry.
 
+The `Location` emitted for an operation uses the safe response-header construction profile; a committed durable operation is not lost merely because header serialization fails.
+
 ## Validation ordering and information leakage
 
 Cheap request-shape/size checks MAY run before expensive authorization/database work, but protected operations SHALL NOT reveal protected resource existence through semantic validation before required authentication/tenant-authorization gates.
@@ -294,6 +357,8 @@ X-Request-Id: <opaque value>
 
 and error bodies include `request_id` where a normal application response exists.
 
+`X-Request-Id` is serialized through the safe response-header profile; the value is server-generated, bounded and cannot contain control/header-delimiter syntax.
+
 A client-supplied `X-Request-Id` is not trusted as the server's unique request identity.
 
 ## Correlation ID
@@ -312,7 +377,7 @@ When absent, the platform establishes a correlation ID. Responses SHOULD expose 
 X-Correlation-Id: <effective value>
 ```
 
-Correlation IDs are not authorization or idempotency keys. Their header cardinality follows the accepted HTTP message profile and cannot be interpreted differently across hops.
+Correlation IDs are not authorization or idempotency keys. Their header cardinality follows the accepted HTTP message profile and cannot be interpreted differently across hops. Any echoed response value is additionally serialized under the safe response-header construction policy; raw client text is never copied without validation.
 
 ## URL/query confidentiality and logging
 
@@ -328,6 +393,8 @@ Therefore:
 - referrer policy for any browser surface carrying bounded sensitive URL material SHALL prevent unintended propagation according to that surface's accepted profile.
 
 A cursor being opaque to clients does not make its URL representation non-sensitive. Encoding/signing alone is not confidentiality.
+
+Redirect and `Link` response headers are built from validated structured URI/reference values under the safe response-header construction contract; raw request/provider URL text is not reflected as header syntax.
 
 ## Distributed tracing
 
@@ -346,6 +413,8 @@ A client disconnect SHALL NOT be treated as proof that a committed mutation or a
 ## Retry guidance
 
 Responses MAY include `Retry-After` for throttling, temporary unavailability or in-progress idempotency/operation states where a later retry/read is safe.
+
+`Retry-After` is constructed from the accepted bounded response-header profile, not copied from arbitrary dependency text.
 
 The presence of `Retry-After` does not override the operation's idempotency semantics.
 
@@ -367,6 +436,8 @@ External error responses SHALL NOT expose:
 - competing values from rejected security-sensitive headers/trailers;
 - raw malicious framing/body material beyond a safe diagnostic class.
 
+Error response headers follow the same safe construction rules as success responses. Malformed input is never reflected into `Location`, `Link`, `WWW-Authenticate`, correlation, redirect or custom diagnostic header syntax.
+
 Internal logs/traces may capture richer diagnostics only under accepted redaction/classification policy; URL/query confidentiality and rejected-ambiguity rules still apply.
 
 ## Observability contract
@@ -386,9 +457,11 @@ latency
 downstream operation_id when created
 ```
 
-Transport-security telemetry may additionally record safe canonical-ingress rejection classes such as framing conflict, duplicate security header, authority conflict, invalid request target, method override rejection, security trailer rejection or content-coding conflict.
+Transport-security telemetry may additionally record safe canonical-ingress rejection classes such as framing conflict, duplicate security header, authority conflict, invalid request target, method override rejection, security trailer rejection, content-coding conflict or unsafe-connection retirement.
 
 Observability fields never become a backdoor for secret/PII/confidential-query leakage. Route templates/operation IDs are preferred to raw URLs; protected cursor/search/filter text is represented only through accepted redacted/hash/reference forms. Rejected credentials/header values and malicious raw request bodies are not logged as convenience diagnostics.
+
+Response-header construction failures are observable through safe header-name/profile/outcome diagnostics without logging the rejected untrusted value itself.
 
 ## Health endpoints
 
@@ -396,4 +469,4 @@ Liveness/readiness/dependency health endpoints are operational contracts and SHA
 
 Detailed dependency/internal topology health is not exposed publicly by default. External health views use deliberately safe projections.
 
-Health endpoints remain subject to canonical HTTP ingress; unauthenticated operational routes are not exempt from request-smuggling/framing defenses.
+Health endpoints remain subject to canonical HTTP ingress; unauthenticated operational routes are not exempt from request-smuggling/framing defenses. Health/error response headers are not exempt from safe response-header construction.

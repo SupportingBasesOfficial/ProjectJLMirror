@@ -221,6 +221,7 @@ Conceptual representation:
   "artifact_type": "report",
   "status": "available",
   "content_type": "application/pdf",
+  "download_name": "report.pdf",
   "size_bytes": 1234567,
   "checksum": {
     "algorithm": "sha256",
@@ -234,7 +235,7 @@ Conceptual representation:
 
 Storage bucket/key/object version is not part of the normal public resource representation.
 
-`content_type` and any browser-delivery classification are server-controlled contract metadata. A client-supplied upload `Content-Type`, filename or extension is untrusted input and SHALL NOT by itself authorize browser execution or determine the response media type used for protected delivery.
+`content_type`, browser-delivery classification and `download_name` are server-controlled delivery metadata. A client-supplied upload `Content-Type`, filename or extension is untrusted input and SHALL NOT by itself authorize browser execution, determine the delivered media type, or become the response filename without the safe-name policy below.
 
 ## Artifact status
 
@@ -270,7 +271,7 @@ The endpoint:
 3. validates the request/resource contract;
 4. checks current authorization;
 5. verifies the artifact is currently releasable;
-6. establishes the accepted browser-delivery/media-type profile for the artifact;
+6. establishes the accepted browser-delivery/media-type and safe-download-name profile for the artifact;
 7. acquires the accepted generation-bound active-delivery lease/fence before the first protected byte;
 8. streams or delegates delivery only through a mechanism preserving equivalent authorization, browser-isolation and revocation/fencing semantics.
 
@@ -278,7 +279,7 @@ The logical API contract remains stable if the implementation later moves betwee
 
 A direct vendor signed URL MAY be used internally only when it satisfies the accepted prompt-revocation, delivery-generation, active-stream and browser-delivery isolation invariants. Vendor URL shape is never the canonical artifact identity.
 
-Protected artifact delivery uses the `artifact_delivery_guarded` cache class unless an endpoint deliberately proves stricter `no_store` behavior. A CDN/cache hit SHALL NOT bypass current authorization, releasability, delivery-generation admission, active-stream fencing or the artifact's browser-delivery profile.
+Protected artifact delivery uses the `artifact_delivery_guarded` cache class unless an endpoint deliberately proves stricter `no_store` behavior. A CDN/cache hit SHALL NOT bypass current authorization, releasability, delivery-generation admission, active-stream fencing, safe-download-name policy or the artifact's browser-delivery profile.
 
 ## Untrusted artifact processing boundary
 
@@ -296,7 +297,9 @@ When an operation invokes complex or active-content parsers/renderers, its contr
 - safe temporary-file/storage lifecycle and cleanup under tenant/artifact identity;
 - structured/redacted diagnostics with no raw secret or unrestricted document-content leakage.
 
-Archive/decompression and nested-content processing remain bounded against expansion bombs and recursive parser abuse.
+Archive/decompression and nested-content processing remain bounded against expansion bombs and recursive parser abuse. Archive extraction additionally SHALL confine every materialized path to the intended staging root: absolute paths, parent traversal, separator tricks, symlink/hardlink escape, device/special files and equivalent filesystem redirection SHALL NOT write outside the accepted artifact-processing boundary.
+
+XML/XML-derived document processing SHALL disable DTD/external entities/XInclude/external schema or stylesheet resolution and equivalent active external-resolution features by default. If a specific format genuinely requires trusted schemas/catalogs, it SHALL use pinned local resources or an explicitly isolated deny-by-default resolver; attacker-controlled URIs SHALL NOT gain local-file or network authority.
 
 A generated preview/converted result receives its own artifact identity/version/classification and browser-delivery profile. It does **not** inherit `safe_inline` merely because an internal renderer produced it. The output must independently satisfy the accepted delivery classification before inline release.
 
@@ -325,7 +328,28 @@ This is the default for:
 
 The response SHALL use a server-controlled authoritative media type. Unknown content defaults to a non-executable generic binary media type rather than inheriting a client-controlled type.
 
-Browser delivery SHALL use `Content-Disposition: attachment` (with safely encoded filename metadata where present) and `X-Content-Type-Options: nosniff` or equivalent browser-enforced behavior. User-controlled filename/media metadata SHALL NOT be able to inject response headers or opt the object into inline execution.
+Browser delivery SHALL use `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff` or equivalent browser-enforced behavior. User-controlled filename/media metadata SHALL NOT be able to inject response headers or opt the object into inline execution.
+
+### Safe download filename contract
+
+A filename shown/saved by browsers or operating systems is a security-relevant presentation surface, not merely cosmetic metadata.
+
+The server SHALL derive a canonical safe `download_name` from trusted artifact identity/media classification plus optionally sanitized user-facing metadata. It SHALL always be able to fall back to a server-generated neutral name that does not depend on attacker-controlled text.
+
+Before use in `Content-Disposition`, filename metadata SHALL be processed under one unambiguous policy that:
+
+- applies a defined Unicode normalization profile before security checks;
+- rejects/removes control characters, CR/LF/NUL, bidi overrides/isolates and other directionality/control code points that can create misleading display;
+- strips or replaces path separators, drive/UNC syntax, dot-segments and other path interpretation characters;
+- avoids platform-reserved/special device names and dangerous leading/trailing dot/space forms;
+- prevents attacker-controlled double/misleading executable extensions from contradicting the authoritative delivered media class; the safe extension is server-derived from the accepted content classification or omitted;
+- produces one logical filename value, without duplicate/conflicting `Content-Disposition` parameters;
+- when both `filename` and `filename*` are emitted, uses a conservative ASCII fallback plus an encoded international form that represent the same normalized logical name rather than attacker-controlled alternatives;
+- escapes/encodes header syntax so quotes, semicolons, percent-encoding or Unicode cannot create response splitting or parameter ambiguity.
+
+Original uploaded filenames MAY be retained as separately classified metadata for authorized UI display/audit where useful, but they are not automatically the download header value.
+
+If safe normalization cannot produce an unambiguous name, the server-generated fallback is used.
 
 ### `safe_inline`
 
@@ -356,7 +380,7 @@ Browser-active protected content SHALL NOT execute inline on an application/BFF/
 
 ## Range/resume
 
-Byte-range/resumable download support MAY be added per artifact class. If supported, every resumed request re-enters current authorization/releasability/delivery-generation admission and the same browser-delivery profile; an old range request does not bypass current erasure fencing or active-content isolation.
+Byte-range/resumable download support MAY be added per artifact class. If supported, every resumed request re-enters current authorization/releasability/delivery-generation admission and the same browser-delivery/safe-name profile; an old range request does not bypass current erasure fencing or active-content isolation.
 
 ## Delayed export/report authorization
 

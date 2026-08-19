@@ -42,7 +42,7 @@ OpenAPI/schema alone is insufficient. Every operation also conforms to Phase 09 
 - response caching;
 - cursor/query confidentiality and browser transport;
 - artifact/browser/parser/archive/XML safety;
-- callback/realtime admission;
+- callback authentication/freshness/replay/durable admission and realtime admission;
 - observability, compatibility and OPEN discipline.
 
 ## Stable operation ID
@@ -130,6 +130,12 @@ artifact_archive_member_identity_policy
 artifact_xml_dtd_policy
 artifact_xml_external_resolution_policy
 derived_artifact_classification_policy
+callback_authentication_profile
+callback_freshness_binding_policy
+callback_replay_identity_scope
+callback_replay_admission_policy
+callback_replay_durable_coupling_policy
+callback_reconciliation_policy
 callback_xml_dtd_policy
 callback_xml_external_resolution_policy
 callback_outbound_fetch_policy
@@ -165,9 +171,9 @@ An endpoint is not ready for implementation until review proves:
 21. explicit response-cache class, protected-error policy, sharing/variance/revalidation/current-auth policy;
 22. artifact/browser delivery, authoritative media type, safe filename and active-content isolation where applicable;
 23. isolated/bounded artifact/parser/archive processing, canonical archive member policy and XML DTD/external-resolution policy;
-24. callback XML/SSRF and realtime admission policy where applicable;
+24. callback authentication, cryptographically/trusted-protocol-bound freshness, trusted replay identity scope, atomic create-or-observe replay admission, durable inbox/work coupling, reconciliation, XML/SSRF policy and realtime admission policy where applicable;
 25. audit/observability requirements;
-26. compatibility classification including parser/entity/response-header semantics;
+26. compatibility classification including parser/entity/response-header/callback freshness-replay semantics;
 27. security/privacy classification;
 28. required tests.
 
@@ -219,6 +225,24 @@ Review MUST prove:
 
 A framework's default response-header serializer is implementation evidence only after it proves conformance to the profile.
 
+## Callback freshness and replay gate
+
+Every provider callback profile SHALL prove freshness and replay as a single authenticated/durable correctness chain.
+
+Review MUST prove:
+
+- every timestamp/nonce/sequence/freshness value used for security is bound to the authenticated callback body/identity by the accepted authenticator, or comes from independently trusted protocol metadata associated with this request;
+- a time-window check alone does not promote unbound metadata into trusted freshness authority;
+- body-carried freshness and replay identity are derived from the same canonical structured entity consumed by domain mapping;
+- replay identity scope includes the trusted tenant/integration/source dimensions required to prevent collisions;
+- replay admission is atomic create-or-observe and produces one logical executor under simultaneous delivery;
+- new replay admission is coupled to durable inbox/work/effect responsibility, or cross-authority ambiguity creates a durable reconciliation state linked by stable operation identity;
+- a crash cannot leave a replay identity permanently consumed while required work is absent and unrecoverable;
+- replay retention/expiry cannot turn an unresolved prior irreversible effect into blind execution eligibility;
+- success acknowledgement cannot precede durable responsibility.
+
+A callback implementation that performs `check replay -> later record/queue work` does not satisfy this gate.
+
 ## Artifact/parser gate
 
 Browser-reachable artifact bytes require deliberate delivery classification. Unknown/untrusted/browser-active content fails toward attachment/non-sniffable behavior; filenames are server-derived/unambiguous; active-inline uses an isolated untrusted-content boundary without application/BFF ambient credentials or origin/service-worker trust while preserving current artifact authorization/fencing.
@@ -269,7 +293,7 @@ Every implemented endpoint SHALL test at minimum:
 - multi-hop response-header serialization when proxies/CDNs/BFFs participate;
 - response-cache class/revalidation/non-reuse including protected errors;
 - artifact/browser/parser/archive/XML safety where applicable;
-- callback raw-body/signature + DTD/XML/SSRF boundary;
+- callback raw-body/signature, authenticated freshness binding, atomic durable replay admission, crash/reconciliation, DTD/XML/SSRF boundary;
 - realtime canonical ingress before `101`;
 - size/complexity limits;
 - secret/topology/confidential URL leakage checks.
@@ -300,6 +324,18 @@ At least the applicable vectors include:
 - list-valued header serialization producing one canonical meaning across hops;
 - response-header serialization failure after mutation commit proving no automatic mutation re-execution.
 
+### Mandatory callback freshness/replay vectors
+
+At least the applicable vectors include:
+
+- freshness evidence whose authenticator/trusted-protocol binding is absent or invalid is rejected by the normal trusted profile;
+- body-carried freshness/replay identity is derived from the canonical structured entity;
+- concurrent same-identity deliveries create one logical executor/durable admission;
+- crash after replay reservation but before durable work cannot create an unrecoverable consumed-without-work state;
+- crash after durable admission but before acknowledgement preserves required work and duplicate observation;
+- replay retention expiry does not authorize unresolved ambiguous irreversible work to execute again without reconciliation;
+- two trusted integration/tenant/source scopes using the same provider-local event ID remain independent.
+
 Artifact/binary tests additionally cover media authority, safe filename, active-inline isolation, range/CDN fencing, archive expansion/containment/member collision/no-replace, parser secret/egress isolation, DTD/external-resolution denial and derivative classification.
 
 ## Consumer compatibility tests
@@ -328,15 +364,16 @@ It flags likely breaking/security-sensitive changes including:
 - idempotency/retry/concurrency/consistency changes;
 - **response-header profile changes**, including grammar, cardinality, serialization owner or multi-hop append/combine behavior;
 - response cache/shared-cache/protected-error/variance/revalidation changes;
+- **callback freshness-binding, replay identity scope, atomic replay admission, durable coupling or reconciliation changes**;
 - cursor confidentiality/token classification/browser transport/logging changes;
 - protected query values becoming URL-visible;
 - artifact browser/media/filename/active-content changes;
 - parser isolation/egress/resource/archive-member/XML policy weakening;
 - one-time-secret recovery/cutover weakening.
 
-Automated schema diff is advisory. Reviewers still inspect semantic changes to HTTP parsing, structured entity interpretation, response headers, authorization, idempotency, cache, continuations, artifacts/parsers, callbacks and recovery.
+Automated schema diff is advisory. Reviewers still inspect semantic changes to HTTP parsing, structured entity interpretation, response headers, authorization, idempotency, cache, callbacks, continuations, artifacts/parsers and recovery.
 
-A deployment/framework/gateway/reverse-proxy/parser/CDN change is subject to the same governance if it alters effective semantics even when OpenAPI does not change.
+A deployment/framework/gateway/reverse-proxy/parser/provider-SDK/CDN change is subject to the same governance if it alters effective semantics even when OpenAPI does not change.
 
 ## Release-blocking failures
 
@@ -365,7 +402,10 @@ The following block implementation/release regardless of happy-path tests:
 - protected cursor/token leaks through browser history/log/referrer policy;
 - stale cursor/operation/artifact authority survives revocation;
 - artifact browser/parser/archive/XML invariants can be bypassed;
-- callback tenant binding/replay/raw-bound/SSRF/XML safety can be bypassed;
+- callback freshness evidence is accepted without authenticated/trusted-protocol binding;
+- callback replay admission can create multiple logical executors under concurrency;
+- callback replay identity can be consumed without durable work responsibility and without a recoverable reconciliation state;
+- callback tenant binding/raw-bound/SSRF/XML safety can be bypassed;
 - realtime can receive `101` without canonical ingress/current auth/replay single-winner admission;
 - a schema-compatible change weakens any accepted security semantic without governed review.
 
@@ -387,6 +427,8 @@ High-risk contracts SHOULD maintain executable vectors for:
 - archive collision/no-replace behavior;
 - DTD/XXE/SSRF rejection;
 - callback raw-body/signature equivalence;
+- callback authenticated-freshness binding;
+- callback concurrent/crash-safe atomic replay admission;
 - realtime pre-`101` replay admission.
 
 Examples are validated against schema/manifest so docs cannot silently drift.
@@ -395,7 +437,7 @@ Examples are validated against schema/manifest so docs cannot silently drift.
 
 Mocks MAY accelerate development but do not prove domain/security semantics.
 
-Official SDKs preserve opaque IDs/cursors/revisions, current authorization semantics, browser-history-safe continuation transport, retry safety, one-time-secret recovery and artifact delivery semantics. SDK behavior does not relax server canonicalization/entity parsing/response-header requirements.
+Official SDKs preserve opaque IDs/cursors/revisions, current authorization semantics, browser-history-safe continuation transport, retry safety, one-time-secret recovery and artifact delivery semantics. SDK behavior does not relax server canonicalization/entity parsing/response-header/callback freshness-replay requirements.
 
 ## Security review triggers
 
@@ -412,7 +454,8 @@ Explicit security review is required for material changes to:
 - response cache semantics;
 - cursor confidentiality/token transport;
 - artifact browser/media/filename/parser/archive/XML handling;
-- callback/realtime ingress;
+- callback authentication/freshness binding/replay identity/atomic admission/durable coupling/reconciliation/SSRF/XML ingress;
+- realtime ingress;
 - sensitive data exposure/bulk/export/import bounds.
 
 ## ADR/RFC trigger

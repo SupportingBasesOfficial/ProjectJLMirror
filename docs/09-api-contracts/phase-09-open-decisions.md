@@ -256,7 +256,7 @@ Choosing a gateway/framework default does not resolve this OPEN item by itself. 
 
 ## OPEN-API-022 — Provider callback authentication/freshness/replay implementation profile
 
-**Question:** For each provider callback profile, what concrete authenticator/signature/certificate/token mechanism is used, which exact request bytes/headers/metadata it covers, which freshness evidence is available, what numeric clock/skew/sequence/replay-retention windows apply, and what concrete durable replay/inbox/reconciliation implementation satisfies the accepted correctness properties?
+**Question:** For each provider callback profile, what concrete authenticator/signature/certificate/token mechanism is used, which exact request bytes/headers/metadata it covers, which freshness evidence is available, what numeric clock/skew/sequence/replay-retention windows apply, what concrete durable replay/inbox/reconciliation implementation satisfies the accepted correctness properties, and what exact provider-facing acknowledgement status/retry mapping implements the accepted acknowledgement-durability semantics?
 
 **Already fixed:**
 
@@ -269,12 +269,13 @@ Choosing a gateway/framework default does not resolve this OPEN item by itself. 
 - replay admission is atomic create-or-observe and yields at most one logical executor for one trusted identity;
 - replay admission is coupled to durable inbox/work/effect responsibility, or a cross-authority durable reconciliation state prevents blind re-admission;
 - crash between replay admission and durable work cannot create an unrecoverable consumed-without-work state;
-- success acknowledgement requires durable responsibility;
-- retention expiry cannot turn unresolved ambiguous irreversible work into automatic execution eligibility.
+- if a cross-authority irreversible effect may have succeeded but the outcome is not durably recorded, the stable operation remains reconciliation-blocked and no new effect attempt is admitted until authoritative reconciliation resolves the prior outcome;
+- success acknowledgement requires the profile's declared durable-responsibility boundary;
+- retention expiry cannot turn unresolved ambiguous irreversible work or still-supported recovery state into automatic execution eligibility.
 
-**Intentionally OPEN:** exact cryptographic algorithm/profile, provider SDK/library, certificate/token representation, signed-header set, numeric freshness window/skew, nonce/sequence storage mechanism, replay database/cache product, transaction topology, retention duration and cross-authority reconciliation implementation.
+**Intentionally OPEN:** exact cryptographic algorithm/profile, provider SDK/library, certificate/token representation, signed-header set, numeric freshness window/skew, nonce/sequence storage mechanism, replay database/cache product, transaction topology, retention duration, exact provider-facing success/error/retry status mapping and cross-authority reconciliation implementation.
 
-**Resolution evidence:** official provider protocol documentation, security analysis of exactly what the authenticator covers, deployed-path interoperability tests, concurrent-delivery tests, crash-point recovery tests, provider retry behavior, retention/capacity evidence and failure/reconciliation exercises.
+**Resolution evidence:** official provider protocol documentation, security analysis of exactly what the authenticator covers, deployed-path interoperability tests, concurrent-delivery tests, crash-point recovery tests including post-effect/pre-outcome-record fault injection, provider retry/acknowledgement behavior, retention/capacity evidence and failure/reconciliation exercises.
 
 A provider/framework default does not resolve this OPEN item merely because it validates a happy-path webhook.
 

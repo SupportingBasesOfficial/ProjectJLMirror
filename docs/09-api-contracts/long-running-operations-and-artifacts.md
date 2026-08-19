@@ -234,6 +234,8 @@ Conceptual representation:
 
 Storage bucket/key/object version is not part of the normal public resource representation.
 
+`content_type` and any browser-delivery classification are server-controlled contract metadata. A client-supplied upload `Content-Type`, filename or extension is untrusted input and SHALL NOT by itself authorize browser execution or determine the response media type used for protected delivery.
+
 ## Artifact status
 
 External artifact status SHOULD remain a contract projection of the accepted internal lifecycle. Example states:
@@ -268,24 +270,76 @@ The endpoint:
 3. validates the request/resource contract;
 4. checks current authorization;
 5. verifies the artifact is currently releasable;
-6. acquires the accepted generation-bound active-delivery lease/fence before the first protected byte;
-7. streams or delegates delivery only through a mechanism preserving equivalent revocation/fencing semantics.
+6. establishes the accepted browser-delivery/media-type profile for the artifact;
+7. acquires the accepted generation-bound active-delivery lease/fence before the first protected byte;
+8. streams or delegates delivery only through a mechanism preserving equivalent authorization, browser-isolation and revocation/fencing semantics.
 
 The logical API contract remains stable if the implementation later moves between application streaming, CDN/object-storage proxying or another mechanism.
 
-A direct vendor signed URL MAY be used internally only when it satisfies the accepted prompt-revocation, delivery-generation and active-stream fencing invariants. Vendor URL shape is never the canonical artifact identity.
+A direct vendor signed URL MAY be used internally only when it satisfies the accepted prompt-revocation, delivery-generation, active-stream and browser-delivery isolation invariants. Vendor URL shape is never the canonical artifact identity.
 
-Protected artifact delivery uses the `artifact_delivery_guarded` cache class unless an endpoint deliberately proves stricter `no_store` behavior. A CDN/cache hit SHALL NOT bypass current authorization, releasability, delivery-generation admission or active-stream fencing.
+Protected artifact delivery uses the `artifact_delivery_guarded` cache class unless an endpoint deliberately proves stricter `no_store` behavior. A CDN/cache hit SHALL NOT bypass current authorization, releasability, delivery-generation admission, active-stream fencing or the artifact's browser-delivery profile.
+
+## Browser delivery safety and active content
+
+Authorization to download protected bytes is **not** authorization for those bytes to execute in the first-party browser security origin.
+
+Every browser-reachable artifact content contract SHALL classify delivery using an accepted profile equivalent to:
+
+```text
+opaque_download
+safe_inline
+active_inline_isolated
+```
+
+### `opaque_download`
+
+This is the default for:
+
+- user/provider supplied content that has not been proven browser-inert;
+- unknown/unrecognized media types;
+- script-capable/browser-active formats;
+- any artifact whose inline execution safety is uncertain.
+
+The response SHALL use a server-controlled authoritative media type. Unknown content defaults to a non-executable generic binary media type rather than inheriting a client-controlled type.
+
+Browser delivery SHALL use `Content-Disposition: attachment` (with safely encoded filename metadata where present) and `X-Content-Type-Options: nosniff` or equivalent browser-enforced behavior. User-controlled filename/media metadata SHALL NOT be able to inject response headers or opt the object into inline execution.
+
+### `safe_inline`
+
+Inline rendering is allowed only for explicitly allowlisted content classes whose browser behavior is accepted for the target surface and whose authoritative media type/content classification has been established independently from caller-controlled upload metadata.
+
+`safe_inline` is not a generic fallback for "the browser seems able to display it". If the platform cannot prove the accepted inline class, delivery falls back to `opaque_download`.
+
+### `active_inline_isolated`
+
+Browser-active/script-capable content MAY be rendered inline only when Product actually requires the capability and a dedicated security profile has been accepted.
+
+That profile SHALL use an isolated untrusted-content browser origin or equivalent browsing boundary that:
+
+- does not share first-party application/BFF ambient session cookies or credential authority;
+- does not share service-worker/DOM origin trust with the application/BFF surface;
+- cannot use the artifact response itself to gain application/BFF authorization;
+- applies a restrictive sandbox/content-security/navigation/opener/referrer/cross-origin policy appropriate to the active format;
+- preserves current artifact authorization, releasability, delivery-generation admission and active-stream fencing before and during protected release.
+
+If a capability or delegated URL is used to bridge the authenticated application to the isolated content origin, it is bounded to the intended artifact/delivery generation and SHALL NOT become a general API credential.
+
+The exact isolated hostname/origin, capability representation and sandbox/header composition are deployment/profile choices and remain OPEN until an active-inline product use case exists. The **isolation property is not OPEN**.
+
+Browser-active protected content SHALL NOT execute inline on an application/BFF/session-bearing origin merely because the caller is authorized to download it.
 
 ## Range/resume
 
-Byte-range/resumable download support MAY be added per artifact class. If supported, every resumed request re-enters current authorization/releasability/delivery-generation admission; an old range request does not bypass current erasure fencing.
+Byte-range/resumable download support MAY be added per artifact class. If supported, every resumed request re-enters current authorization/releasability/delivery-generation admission and the same browser-delivery profile; an old range request does not bypass current erasure fencing or active-content isolation.
 
 ## Delayed export/report authorization
 
 User-requested export/report operations reauthorize before protected execution and again before artifact release according to the accepted security baseline.
 
 The fact that an artifact was generated for a user does not grant permanent download authority after membership/permission/tenant access is revoked.
+
+Generated report/preview content that is browser-active follows the same delivery classification and isolation rules as uploaded attachments; provenance from an internal generator does not implicitly make arbitrary HTML/SVG-like output safe to execute on the application/BFF origin.
 
 ## Import contract
 
@@ -304,6 +358,8 @@ create/import intent
 
 Request-time human authority does not persist as worker authority.
 
+Upload/staging validation SHALL treat declared filename/media type as untrusted metadata. A staged object does not become `safe_inline` or `active_inline_isolated` merely because the uploader declares a browser media type.
+
 ## Governed deletion/erasure
 
 Deletion/erasure of an artifact that spans metadata and object storage uses a durable operation/resource state. The API SHALL NOT report confirmed erasure until the accepted upload-publication, delivery capability/lease/active-stream and governance/legal-hold reconciliation conditions have passed.
@@ -312,4 +368,4 @@ If state is uncertain, the external operation remains non-terminal/reconciliatio
 
 ## Maximum-state rule
 
-Operation and artifact contracts SHALL remain valid when worker implementation, queue vendor, object store, cell placement or process decomposition changes. A client tracks logical `operation_id` / `artifact_id`, never the transient execution mechanism.
+Operation and artifact contracts SHALL remain valid when worker implementation, queue vendor, object store, cell placement, browser-delivery origin or process decomposition changes. A client tracks logical `operation_id` / `artifact_id`, never the transient execution mechanism.

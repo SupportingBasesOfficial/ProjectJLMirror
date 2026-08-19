@@ -88,6 +88,8 @@ authorization_input_fields
 owning_authorization_authority
 step_up
 audit_class
+browser_origin_policy
+csrf_requirement
 consistency_class
 idempotency_class
 optimistic_concurrency
@@ -96,13 +98,17 @@ one_time_secret_behavior
 secret_recovery_authority
 credential_cutover_semantics
 long_running_operation
+operation_access_authorization
+pagination_authorization_freshness
 request_limits
 response_cache_class
 shared_cache_eligibility
 cache_variance
 cache_revalidation
 current_authorization_before_cache_reuse
+protected_error_cache_policy
 cache_freshness_policy
+callback_outbound_fetch_policy
 data_classification
 ```
 
@@ -118,18 +124,21 @@ An endpoint is not ready for implementation until review proves:
 4. explicit trusted placement/routing/TenantContext boundary where tenant-scoped;
 5. request-contract validation occurs before owning authorization consumes caller-controlled scope/resource fields;
 6. explicit authorization action/scope and owning authorization authority;
-7. request/response schema and bounds;
-8. retry/idempotency behavior;
-9. lockout-safe one-time-secret response-loss/recovery when applicable;
-10. concurrency behavior where needed;
-11. consistency/result semantics;
-12. long-running operation behavior where needed;
-13. stable errors;
-14. explicit response-cache class, shared-cache eligibility, variance/revalidation/current-auth policy;
-15. audit/observability requirements;
-16. compatibility classification, including cache/retry/auth/consistency semantics;
-17. security/privacy classification;
-18. required tests.
+7. BFF/browser Origin/CORS/CSRF profile where applicable;
+8. request/response schema and bounds;
+9. retry/idempotency behavior;
+10. lockout-safe one-time-secret response-loss/recovery when applicable;
+11. concurrency behavior where needed;
+12. consistency/result semantics;
+13. long-running operation behavior and current access authority where needed;
+14. current-authorization continuation semantics for pagination/history/bulk where applicable;
+15. stable errors;
+16. explicit response-cache class, protected-error policy, shared-cache eligibility, variance/revalidation/current-auth policy;
+17. callback outbound-fetch/SSRF policy where applicable;
+18. audit/observability requirements;
+19. compatibility classification, including cache/retry/auth/consistency semantics;
+20. security/privacy classification;
+21. required tests.
 
 ## Schema generation direction
 
@@ -167,11 +176,14 @@ Every implemented endpoint SHALL have contract tests that validate at minimum:
 - success response schema;
 - expected error shape/codes;
 - authorization/tenant isolation behavior;
+- BFF Origin/CORS/CSRF behavior where applicable;
 - idempotency semantics when applicable;
 - lockout-safe one-time-secret response-loss/recovery when applicable;
 - concurrency preconditions when applicable;
-- pagination/cursor behavior when applicable;
-- response-cache class/headers/revalidation/non-reuse semantics;
+- pagination/cursor current-authorization behavior when applicable;
+- operation-resource current authorization when applicable;
+- response-cache class/headers/revalidation/non-reuse semantics including protected errors;
+- callback outbound-fetch/SSRF boundary where applicable;
 - size/complexity limits;
 - secret/topology leakage checks.
 
@@ -194,14 +206,18 @@ It flags likely breaking/security-sensitive changes such as:
 - closed enum changes;
 - changed status/error contract;
 - incompatible parameter changes;
-- authorization action/scope/authority changes;
+- authorization action/scope/authority or authorization-input changes;
+- BFF origin/credential policy changes;
 - idempotency/retry classification changes;
 - consistency-class changes;
 - response cache class/shared-cache eligibility changes;
+- protected-error cache policy changes;
 - cache variance/validator/revalidation/current-authorization reuse changes;
-- one-time-secret recovery/cutover changes that could remove a previously safe recovery authority.
+- pagination/operation current-authorization semantics becoming weaker;
+- one-time-secret recovery/cutover changes that could remove a previously safe recovery authority;
+- callback outbound destination/redirect policy becoming more permissive.
 
-The diff tool cannot prove semantic compatibility. Reviewers still inspect changes to idempotency, authorization, consistency, ownership, retry, credential recovery and cache behavior.
+The diff tool cannot prove semantic compatibility. Reviewers still inspect changes to idempotency, authorization, consistency, ownership, retry, credential recovery, continuation authority, callback egress and cache behavior.
 
 A deployment/framework/CDN configuration change that alters an endpoint's effective accepted cache semantics is subject to the same governance even if no OpenAPI schema changed.
 
@@ -216,8 +232,13 @@ High-risk contracts SHOULD include executable test vectors/examples for cases su
 - optimistic concurrency mismatch;
 - existence-concealing authorization denial;
 - request validation before owning authorization consumes caller-controlled resource scope;
+- stale cursor rejected/re-authorized after revocation;
+- operation poll/cancel rejected after authority revocation;
 - cross-principal/tenant protected cache non-reuse;
+- protected error non-reuse;
 - cache-policy compatibility regression;
+- BFF wildcard/untrusted credentialed origin rejection;
+- callback-supplied SSRF target rejection;
 - cursor continuation under deterministic sort;
 - long-running reconciliation state;
 - artifact unavailable/erasure-fencing behavior;
@@ -242,6 +263,7 @@ SDKs SHALL:
 - implement automatic retry only where operation metadata proves retry safety;
 - expose stable problem/error codes;
 - treat one-time-secret response loss as explicit non-automatic recovery;
+- never treat cursor or operation ID as authorization;
 - never infer physical tenant placement;
 - avoid hiding operation-resource semantics behind indefinite polling without cancellation/deadline controls.
 
@@ -256,18 +278,21 @@ Contract changes require explicit security review when they introduce or materia
 - authentication/credential transport;
 - authorization scope/authority or authorization input fields;
 - trusted routing/TenantContext ordering;
+- BFF credentialed origin/CORS/CSRF behavior;
 - cross-tenant capability;
 - direct SQL/data administration;
 - automation execution;
 - artifact upload/download;
-- callback/webhook ingress;
+- callback/webhook ingress or callback-driven outbound retrieval;
 - public projection;
 - realtime admission;
 - sensitive data exposure;
 - bulk/export/import limits;
+- pagination/history continuation authorization semantics;
+- operation read/cancel/retry/resume/result authorization;
 - idempotency/replay behavior for irreversible effects;
 - one-time-secret creation/rotation/recovery/cutover semantics;
-- response-cache class, shared-cache eligibility, variance, freshness or current-auth revalidation semantics.
+- response-cache class, protected-error caching, shared-cache eligibility, variance, freshness or current-auth revalidation semantics.
 
 ## ADR/RFC trigger
 

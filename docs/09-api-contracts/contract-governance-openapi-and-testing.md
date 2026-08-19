@@ -36,13 +36,13 @@ OpenAPI/schema alone is insufficient. Every operation also conforms to Phase 09 
 - connection rejection/retirement;
 - structured request entity canonicalization;
 - authentication/authorization/tenant/placement;
-- idempotency/concurrency/retry;
+- idempotency/concurrency/retry/recovery continuity;
 - consistency and durable operations;
 - response-header construction;
 - response caching;
 - cursor/query confidentiality and browser transport;
 - artifact/browser/parser/archive/XML safety;
-- callback authentication/freshness/replay/durable admission and realtime admission;
+- callback authentication/freshness/replay/durable admission/recovery continuity and realtime admission;
 - observability, compatibility and OPEN discipline.
 
 ## Stable operation ID
@@ -98,6 +98,7 @@ idempotency_in_progress_duplicate_policy
 idempotency_fingerprint_mismatch_policy
 idempotency_retention_recovery_policy
 idempotency_external_ambiguity_policy
+idempotency_recovery_continuity_policy
 optimistic_concurrency
 retry_class
 one_time_secret_behavior
@@ -145,6 +146,7 @@ callback_replay_identity_scope
 callback_replay_admission_policy
 callback_replay_durable_coupling_policy
 callback_replay_retention_policy
+callback_replay_recovery_continuity_policy
 callback_acknowledgement_durability_policy
 callback_reconciliation_policy
 callback_xml_dtd_policy
@@ -170,7 +172,7 @@ An endpoint is not ready for implementation until review proves:
 9. BFF Origin/CORS/CSRF profile where applicable;
 10. request/response schema, query multiplicity and raw/decoded/header/entity bounds;
 11. structured media duplicate/alias/member/part/boundary semantics;
-12. complete retry/idempotency behavior, including trusted effective scope, canonical fingerprint fields, same-key duplicate/result behavior, mismatch behavior, retention/recovery authority and external-ambiguity reconciliation;
+12. complete retry/idempotency behavior, including trusted effective scope, canonical fingerprint fields, same-key duplicate/result behavior, mismatch behavior, retention/recovery authority, external-ambiguity reconciliation and restore/PITR recovery continuity;
 13. lockout-safe one-time-secret recovery when applicable;
 14. concurrency behavior where needed;
 15. consistency/result semantics;
@@ -182,9 +184,9 @@ An endpoint is not ready for implementation until review proves:
 21. explicit response-cache class, protected-error policy, sharing/variance/revalidation/current-auth policy;
 22. artifact/browser delivery, authoritative media type, safe filename and active-content isolation where applicable;
 23. isolated/bounded artifact/parser/archive processing, canonical archive member policy and XML DTD/external-resolution policy;
-24. callback authentication, accepted freshness evidence source, cryptographically/trusted-protocol-bound freshness, governed freshness window/sequence policy, trusted replay identity scope, atomic create-or-observe replay admission, durable inbox/work coupling, replay retention/expiry, acknowledgement durability, post-effect ambiguity reconciliation, XML/SSRF policy and realtime admission policy where applicable;
+24. callback authentication, accepted freshness evidence source, cryptographically/trusted-protocol-bound freshness, governed freshness window/sequence policy, trusted replay identity scope, atomic create-or-observe replay admission, durable inbox/work coupling, replay retention/expiry, replay restore/PITR continuity, acknowledgement durability, post-effect ambiguity reconciliation, XML/SSRF policy and realtime admission policy where applicable;
 25. audit/observability requirements;
-26. compatibility classification including parser/entity/response-header/idempotency/callback freshness-replay semantics;
+26. compatibility classification including parser/entity/response-header/idempotency/callback freshness-replay/recovery-continuity semantics;
 27. security/privacy classification;
 28. required tests.
 
@@ -246,7 +248,9 @@ Review MUST prove:
 - the fingerprint uses the same canonical logical request entity consumed by authorization/use-case semantics and declares exactly which semantic fields participate;
 - completed duplicate, in-progress duplicate and same-key/different-fingerprint behavior are deterministic and contract-visible where applicable;
 - retention/recovery policy preserves the advertised safe retry/replay/recovery window or an equivalent durable operation/tombstone authority prevents a previously completed irreversible effect from becoming executable again;
-- external-effect ambiguity is linked to stable operation/reconciliation authority and timeout, lease expiry, restart or claim aging never becomes blind retry permission.
+- external-effect ambiguity is linked to stable operation/reconciliation authority and timeout, lease expiry, restart or claim aging never becomes blind retry permission;
+- after restore/PITR/partial state loss, missing or older claim/result/tombstone state is treated as recovery uncertainty rather than `never executed` until the accepted `(R,F]` recovery gate reconciles surviving operation/outcome/audit/provider/external-effect authorities;
+- effectful admission remains quarantined/fail-closed when recovery-generation continuity is unresolved.
 
 A change to any of these dimensions is security-sensitive even if `idempotency_class` and the request/response schema remain unchanged.
 
@@ -268,6 +272,7 @@ Review MUST prove:
 - replay retention/expiry cannot turn an unresolved prior irreversible effect into blind execution eligibility;
 - replay-retention policy covers every advertised duplicate/recovery/reconciliation window needed for correctness, or preserves an equivalent durable tombstone/operation authority that prevents unsafe re-admission after ordinary replay-record expiry;
 - the accepted freshness/sequence admissibility policy and replay/ambiguity-retention authority are coherent: widening freshness acceptance or provider retry admissibility cannot make an older authenticated callback newly executable merely because ordinary replay state has expired;
+- after replay-store restore/PITR/partial loss, missing or older replay state is unsafe until surviving inbox/effect/provider-ack/audit/reconciliation authorities are reconciled under the accepted recovery boundary; a still-fresh callback cannot create a new executor while continuity is unresolved;
 - success acknowledgement cannot precede durable responsibility, and the provider-facing acknowledgement semantics are contract metadata rather than framework defaults.
 
 A callback implementation that performs `check replay -> later record/queue work` does not satisfy this gate.
@@ -315,14 +320,14 @@ Every implemented endpoint SHALL test at minimum:
 - required/forbidden fields and unknown-field rejection;
 - authorization/tenant isolation and placement ordering;
 - BFF Origin/CORS/CSRF;
-- complete idempotency scope/fingerprint/duplicate/retention/external-ambiguity behavior, one-time-secret recovery and concurrency where applicable;
+- complete idempotency scope/fingerprint/duplicate/retention/external-ambiguity/recovery-continuity behavior, one-time-secret recovery and concurrency where applicable;
 - pagination/cursor current authorization, confidentiality and browser-history-safe transport;
 - operation-resource current authorization;
 - response-header grammar/cardinality/control-character/duplicate-singleton safety;
 - multi-hop response-header serialization when proxies/CDNs/BFFs participate;
 - response-cache class/revalidation/non-reuse including protected errors;
 - artifact/browser/parser/archive/XML safety where applicable;
-- callback raw-body/signature, accepted freshness source/window, authenticated freshness binding, atomic durable replay admission, replay retention, acknowledgement durability, crash/reconciliation, DTD/XML/SSRF boundary;
+- callback raw-body/signature, accepted freshness source/window, authenticated freshness binding, atomic durable replay admission, replay retention, replay recovery continuity, acknowledgement durability, crash/reconciliation, DTD/XML/SSRF boundary;
 - realtime canonical ingress before `101`;
 - size/complexity limits;
 - secret/topology/confidential URL leakage checks.
@@ -351,7 +356,9 @@ At least the applicable vectors include:
 - completed duplicate observes/reconstructs the accepted logical result without re-execution;
 - in-progress duplicate follows the endpoint's declared deterministic policy;
 - retention/claim expiry cannot make a previously completed irreversible effect executable again inside any advertised safe retry/recovery window;
-- possible external success followed by timeout/crash/lease loss enters stable reconciliation and cannot be retried solely because local claim/lease state aged.
+- possible external success followed by timeout/crash/lease loss enters stable reconciliation and cannot be retried solely because local claim/lease state aged;
+- restore/PITR to an older idempotency state while a later authoritative outcome/external effect survives does not classify a missing claim as new;
+- partial loss or mismatched recovery generations fail closed until `(R,F]` continuity is reconciled; missing/older recovered claim/result/tombstone state is never treated as `never executed` by default.
 
 ### Mandatory response-header vectors
 
@@ -380,6 +387,9 @@ At least the applicable vectors include:
 - **crash after a cross-authority irreversible effect may have succeeded but before its outcome is durably recorded must move/retain the stable operation in reconciliation and must not admit another effect attempt until authoritative reconciliation completes**;
 - replay retention expiry does not authorize unresolved ambiguous irreversible work to execute again without reconciliation;
 - acknowledgement success is emitted only after the profile's required durable-responsibility boundary and a crash before that boundary cannot produce false success;
+- restore/PITR to replay state older than an admitted callback while later inbox/effect/provider-ack/audit evidence survives does not admit a second executor;
+- partial replay-state loss/mismatched recovery generations keep admission quarantined until surviving continuity authorities are reconciled;
+- a still-fresh authenticated callback cannot bypass the restore/PITR recovery gate;
 - two trusted integration/tenant/source scopes using the same provider-local event ID remain independent.
 
 Artifact/binary tests additionally cover media authority, safe filename, active-inline isolation, range/CDN fencing, archive expansion/containment/member collision/no-replace, parser secret/egress isolation, DTD/external-resolution denial and derivative classification.
@@ -407,11 +417,11 @@ It flags likely breaking/security-sensitive changes including:
 - protocol translation/parser-boundary changes;
 - authorization action/scope/authority/input changes;
 - BFF origin/credential changes;
-- **idempotency semantic changes**, including effective trusted scope, fingerprint fields, completed/in-progress duplicate behavior, fingerprint mismatch behavior, retention/recovery policy or external-ambiguity reconciliation;
+- **idempotency semantic changes**, including effective trusted scope, fingerprint fields, completed/in-progress duplicate behavior, fingerprint mismatch behavior, retention/recovery policy, external-ambiguity reconciliation or recovery-continuity policy;
 - retry/concurrency/consistency changes;
 - **response-header profile changes**, including grammar, cardinality, serialization owner or multi-hop append/combine behavior;
 - response cache/shared-cache/protected-error/variance/revalidation changes;
-- **callback freshness/replay changes**, including accepted freshness evidence source, freshness binding, clock/window/sequence policy, replay identity scope, atomic replay admission, durable coupling, replay retention/expiry, acknowledgement durability or reconciliation;
+- **callback freshness/replay changes**, including accepted freshness evidence source, freshness binding, clock/window/sequence policy, replay identity scope, atomic replay admission, durable coupling, replay retention/expiry, replay recovery continuity, acknowledgement durability or reconciliation;
 - cursor confidentiality/token classification/browser transport/logging changes;
 - protected query values becoming URL-visible;
 - artifact browser/media/filename/active-content changes;
@@ -420,7 +430,7 @@ It flags likely breaking/security-sensitive changes including:
 
 Automated schema diff is advisory. Reviewers still inspect semantic changes to HTTP parsing, structured entity interpretation, response headers, authorization, idempotency, cache, callbacks, continuations, artifacts/parsers and recovery.
 
-A deployment/framework/gateway/reverse-proxy/parser/provider-SDK/CDN change is subject to the same governance if it alters effective semantics even when OpenAPI does not change.
+A deployment/framework/gateway/reverse-proxy/parser/provider-SDK/CDN/change in backup/recovery topology is subject to the same governance if it alters effective semantics even when OpenAPI does not change.
 
 ## Release-blocking failures
 
@@ -435,8 +445,9 @@ The following block implementation/release regardless of happy-path tests:
 - multipart duplicate/alias parts, per-part metadata or boundaries can make validation/auth/idempotency/use case observe different values;
 - request validation or owning authorization reparses raw structured body independently after canonical entity establishment;
 - idempotency fingerprint uses a different entity interpretation than authorization/use case;
-- an effectful idempotent endpoint lacks governed effective scope, fingerprint, duplicate/result, retention/recovery or external-ambiguity semantics in the validated manifest;
+- an effectful idempotent endpoint lacks governed effective scope, fingerprint, duplicate/result, retention/recovery, external-ambiguity or recovery-continuity semantics in the validated manifest;
 - idempotency retention/recovery authority can expire inside an advertised safe retry/recovery window and make a completed irreversible effect executable again;
+- restored/partially lost/older idempotency state can interpret missing claim/result/tombstone as `never executed` or admit an effect before `(R,F]` recovery continuity is reconciled;
 - unvalidated response data can inject CRLF/control delimiters/additional headers;
 - security-relevant singleton response headers can be emitted twice with different meanings across app/proxy/CDN layers;
 - dynamic response headers have no declared grammar/cardinality/serialization owner;
@@ -457,6 +468,7 @@ The following block implementation/release regardless of happy-path tests:
 - callback replay admission can create multiple logical executors under concurrency;
 - callback replay identity can be consumed without durable work responsibility and without a recoverable reconciliation state;
 - callback replay/ambiguity retention can expire while an unresolved irreversible outcome still exists and thereby make the same logical effect newly executable;
+- restored/partially lost/older callback replay state can treat missing replay authority as unused or allow a still-fresh callback to execute before surviving inbox/effect/provider-ack/audit/reconciliation state is reconciled;
 - callback success can be acknowledged before the platform has reached the profile's durable-responsibility boundary;
 - after a cross-authority irreversible effect may have succeeded but before its outcome is durably recorded, recovery can admit another effect attempt instead of requiring authoritative reconciliation;
 - callback tenant binding/raw-bound/SSRF/XML safety can be bypassed;
@@ -473,6 +485,7 @@ High-risk contracts SHOULD maintain executable vectors for:
 - structured JSON/multipart differential parsing;
 - canonical body entity -> auth/idempotency/use-case equivalence;
 - full idempotency scope/fingerprint/duplicate/retention/external-ambiguity semantics;
+- idempotency restore/PITR/partial-loss recovery continuity;
 - safe response-header serialization and multi-hop duplication;
 - one-time-secret response loss;
 - optimistic concurrency;
@@ -487,6 +500,7 @@ High-risk contracts SHOULD maintain executable vectors for:
 - callback concurrent/crash-safe atomic replay admission;
 - callback post-effect/pre-outcome-record crash forcing reconciliation without re-execution;
 - callback replay-retention and acknowledgement-durability boundaries;
+- callback replay restore/PITR/partial-loss continuity;
 - realtime pre-`101` replay admission.
 
 Examples are validated against schema/manifest so docs cannot silently drift.
@@ -507,12 +521,12 @@ Explicit security review is required for material changes to:
 - authentication/authorization/tenant routing;
 - BFF CORS/CSRF/origin;
 - cross-tenant capability/direct query/automation;
-- idempotency effective scope/fingerprint/duplicate behavior/retention/recovery/external ambiguity/one-time-secret recovery;
+- idempotency effective scope/fingerprint/duplicate behavior/retention/recovery/external ambiguity/recovery continuity/one-time-secret recovery;
 - response-header grammar/cardinality/serialization ownership;
 - response cache semantics;
 - cursor confidentiality/token transport;
 - artifact browser/media/filename/parser/archive/XML handling;
-- callback authentication/accepted freshness evidence/freshness binding/window-sequence policy/replay identity/atomic admission/durable coupling/replay retention/acknowledgement durability/post-effect ambiguity reconciliation/SSRF/XML ingress;
+- callback authentication/accepted freshness evidence/freshness binding/window-sequence policy/replay identity/atomic admission/durable coupling/replay retention/replay recovery continuity/acknowledgement durability/post-effect ambiguity reconciliation/SSRF/XML ingress;
 - realtime ingress;
 - sensitive data exposure/bulk/export/import bounds.
 

@@ -34,6 +34,7 @@ This boundary exists to prevent or contain:
 - duplicate idempotency execution caused by different header interpretations;
 - cache poisoning or cache-key disagreement;
 - route/authority confusion;
+- request-target/path/query parser confusion;
 - method-override confusion;
 - trusted-proxy header spoofing;
 - request-trailer privilege injection;
@@ -50,14 +51,16 @@ Conceptual ordering for a normal accepted HTTP request:
 connection/protocol admission
   -> wire framing validation
   -> header syntax/cardinality/trailer policy validation
-  -> authoritative method/request-target normalization
+  -> authoritative method/request-target decoding + path/query canonicalization
   -> trusted proxy metadata normalization
   -> request/body hard bounds while reading
   -> canonical request envelope established
-  -> surface-specific authentication / tenant routing / authorization / callback verification / cache / use case
+  -> surface-specific authentication / tenant placement+routing / authorization / callback verification / cache / use case
 ```
 
 A surface MAY perform cheaper transport rejection earlier, but no protected decision treats an uncanonicalized message as authoritative input.
+
+**Placement routing never extracts authoritative `tenant_id` or another route scope from a path/query that has not yet passed this canonicalization boundary.**
 
 Provider callback signatures that require exact raw bytes are evaluated against the bounded raw body associated with the already accepted framing; canonicalization SHALL NOT silently rewrite signed body bytes before signature verification.
 
@@ -156,20 +159,65 @@ Client-controlled forwarded headers SHALL NOT select scheme, host, client identi
 
 ## Request-target canonicalization
 
-Routing, authorization, cache selection and downstream services SHALL consume the same canonical method/path/query interpretation.
+Routing, tenant placement, authorization, cache selection and downstream services SHALL consume the same canonical method/path/query interpretation.
 
-The accepted request-target profile SHALL prevent parser disagreement around, as applicable:
+### Path decoding/canonicalization
 
-- malformed percent encoding;
-- invalid character encoding;
-- dot segments;
-- encoded or alternate path separators;
-- duplicate/ambiguous path normalization;
-- authority embedded in alternate request-target forms;
+The accepted path profile SHALL define one decode/normalization model **before placement resolution** and reject inputs for which accepted hops could disagree.
+
+At minimum the profile addresses/rejects, as appropriate:
+
+- malformed or incomplete percent escapes;
+- overlong, invalid, non-canonical or otherwise disallowed UTF-8/character encodings;
+- percent-encoded octets whose decoding would create a path separator, control character or another security-sensitive delimiter when that surface does not explicitly permit it;
+- encoded or alternate slash/backslash separators;
+- dot segments and encoded dot-segment equivalents;
+- repeated slashes when different hops/frameworks could collapse or preserve them differently;
+- empty path-segment ambiguity where routing semantics differ;
+- duplicate or staged normalization passes;
 - decoding the same component more than once;
-- a gateway routing one path while the owning service authorizes another.
+- Unicode normalization differences when Unicode path material is supported;
+- authority embedded in alternate request-target forms;
+- a gateway routing one path while cell placement/authorization/owning service executes another.
 
-Exact path-normalization rules MAY vary by external surface, but a surface cannot accept a request unless all participating hops share the same externally meaningful interpretation.
+The canonical path representation is established once. Downstream hops consume that logical representation and SHALL NOT independently decode/collapse/rewrite it into a different resource path.
+
+If the platform chooses a stricter surface policy—for example prohibiting encoded path separators or non-ASCII path identifiers—that policy is acceptable as long as it is explicit, fail-closed and consistent across hops. Exact permitted character repertoire remains surface/profile specific; **parser disagreement is not OPEN**.
+
+### Query decoding/canonicalization
+
+Query-string decoding is also part of the canonical request boundary.
+
+Every query parameter definition has one accepted:
+
+- decoded parameter-name representation;
+- decoded value representation;
+- character/percent-decoding policy;
+- multiplicity class;
+- ordering/duplicate behavior where repetition is genuinely supported.
+
+Multiplicity classes are equivalent to:
+
+```text
+singleton
+repeated_list_with_canonical_rule
+comma_list_under_singleton
+not_accepted
+```
+
+Duplicate instances of a singleton parameter are rejected. Components SHALL NOT choose first-value, last-value, concatenation or array semantics independently.
+
+For genuinely repeated parameters, the endpoint contract defines whether order matters, whether duplicate values are retained/rejected/canonicalized, maximum count and how the resulting canonical value participates in cache keys, validation, authorization, idempotency fingerprinting and cursor binding.
+
+Malformed/non-canonical percent encoding, alternate encodings that normalize to the same logical parameter name, non-canonical character encodings or decoding differences that can bypass duplicate detection are rejected.
+
+Examples such as `cursor`, `limit`, scalar authorization-relevant filters and a normal scalar `q` are singleton unless a contract explicitly defines otherwise.
+
+The canonical query representation is propagated downstream; a service SHALL NOT reparse the original raw query string using a framework-specific first/last/list rule.
+
+Query canonicalization does not make confidential URL input safe. Cursor/query confidentiality and browser-history rules remain separate Phase 09 security properties.
+
+Exact path/query normalization rules MAY vary by external surface when there is a legitimate contract reason, but a surface cannot accept a request unless all participating hops share the same externally meaningful interpretation.
 
 Canonical resource identity remains logical and SHALL NOT expose or derive physical tenant placement.
 
@@ -182,8 +230,8 @@ Conceptually the envelope contains validated meanings such as:
 ```text
 method
 authoritative scheme/authority
-canonical route/path parameters
-classified query parameters
+canonical path + route parameters
+canonical classified query parameters with multiplicity resolved
 normalized accepted headers
 trusted proxy/client metadata
 bounded raw body bytes where required
@@ -216,7 +264,7 @@ After framing acceptance:
 
 BFF Origin/CORS/CSRF/session handling operates only on the canonical request.
 
-A duplicate/conflicting authentication/session/CSRF header or ambiguous request target cannot be resolved differently by edge infrastructure and BFF application code.
+A duplicate/conflicting authentication/session/CSRF header, duplicate singleton query parameter or ambiguous request target cannot be resolved differently by edge infrastructure and BFF application code.
 
 Trusted proxy metadata used to determine secure origin/scheme is accepted only from the configured proxy trust boundary.
 
@@ -226,7 +274,7 @@ The HTTP request that may become a realtime/WebSocket connection inherits this e
 
 Therefore:
 
-- ambiguous body/framing/header requests are rejected before upgrade;
+- ambiguous body/framing/header/path/query requests are rejected before upgrade;
 - expected Origin is evaluated from the canonical request;
 - ticket/capability presentation has one canonical value;
 - conflicting upgrade/security header interpretations cannot result in one hop authorizing what another hop interpreted differently;
@@ -255,7 +303,7 @@ Cache behavior MUST NOT depend on an alternate interpretation of:
 
 - method or method override;
 - authority/host;
-- path/query normalization;
+- path/query decoding, normalization or duplicate-parameter semantics;
 - duplicate headers;
 - content negotiation;
 - authentication/security headers;
@@ -273,11 +321,11 @@ Useful safe evidence may include:
 - protocol/version;
 - ingress profile;
 - normalized route template;
-- rejection class such as `framing_conflict`, `duplicate_security_header`, `authority_conflict`, `invalid_request_target`, `method_override_rejected`, `security_trailer_rejected`, `content_coding_conflict`;
+- rejection class such as `framing_conflict`, `duplicate_security_header`, `authority_conflict`, `invalid_request_target`, `duplicate_singleton_query`, `method_override_rejected`, `security_trailer_rejected`, `content_coding_conflict`;
 - request/correlation identity;
 - trusted proxy identity where applicable.
 
-Logs SHALL NOT become an oracle containing the rejected secret/header values themselves.
+Logs SHALL NOT become an oracle containing the rejected secret/header/query values themselves.
 
 ## Error behavior
 
@@ -298,6 +346,7 @@ request_trailer_policy
 method_override_policy
 trusted_proxy_metadata_policy
 request_target_profile
+query_multiplicity_policy
 body_framing_policy
 content_coding_policy
 ```
@@ -322,12 +371,16 @@ Edge/integration testing SHALL include, where protocol support makes the case ap
 - implicit method-override headers/query/body fields cannot change the protected method;
 - conflicting `Host`/authority forms rejected;
 - untrusted `Forwarded`/`X-Forwarded-*` cannot spoof trusted scheme/host/client metadata;
-- ambiguous/malformed percent-encoding/path normalization cannot route and authorize different resources;
+- repeated slashes/dot segments/encoded slash/backslash/non-canonical UTF-8/malformed percent encodings cannot cause placement routing and application authorization to resolve different paths;
+- downstream path is not re-decoded after canonical routing;
+- duplicate singleton query parameters such as two `cursor` or `limit` values are rejected;
+- alternate encodings cannot bypass duplicate query-key detection;
+- repeated-list parameters have one documented canonical rule across gateway/cache/application;
 - unsupported/conflicting `Content-Encoding` or decoding-order interpretation cannot make edge and application process different entity meanings;
 - gateway -> service propagation contains only the canonical interpretation;
 - callback signature verification and callback processing use the same accepted raw body/content-coding profile;
 - callback raw-body limit cannot be bypassed by alternate framing or content coding;
-- realtime upgrade rejects ambiguous framing/security headers/trailers before `101`;
+- realtime upgrade rejects ambiguous framing/security headers/path/query/trailers before `101`;
 - cache/proxy and origin service cannot derive different cache/security meaning from duplicate/ambiguous metadata.
 
 Tests SHOULD exercise the actual deployed protocol translation path where one exists, not only an in-process controller test.
@@ -343,7 +396,10 @@ The following block implementation/release:
 - implicit method override can cause edge/cache/security logic and the owning service to apply different HTTP methods;
 - a gateway and owning service can authorize different credentials/idempotency keys/preconditions from one wire request;
 - untrusted forwarded metadata can override trusted scheme/authority/client identity;
-- routing and authorization can observe different normalized request targets;
+- placement routing can extract tenant/resource scope from a path before canonical decoding/normalization;
+- routing/placement/authorization/application can observe different path interpretations due to repeated slash, dot-segment, encoded separator, percent-decoding, UTF-8 or double-decoding differences;
+- duplicate/ambiguously encoded singleton query parameters can be interpreted as first/last/list differently across hops;
+- cache/authorization/use case can consume different canonical query values from one wire request;
 - content-coding/decompression interpretation can make security verification/size enforcement and semantic processing operate on different representations;
 - callback signature verification can cover bytes different from those processed as the callback body;
 - an ambiguous request can receive `101` realtime upgrade;
@@ -351,11 +407,11 @@ The following block implementation/release:
 
 ## Compatibility and evolution
 
-Framing/header/method/trailer/content-coding/request-target security semantics are part of the security contract even though they are often implemented in infrastructure.
+Framing/header/method/trailer/content-coding/request-target/query security semantics are part of the security contract even though they are often implemented in infrastructure.
 
 Changing gateway, proxy, HTTP runtime, protocol version or service topology SHALL trigger regression testing of this boundary.
 
-A change that makes ambiguity more permissive or alters security-sensitive header/trailer/method/content-decoding interpretation requires explicit security/compatibility review even when OpenAPI request/response schemas are unchanged.
+A change that makes ambiguity more permissive or alters security-sensitive header/trailer/method/path/query/content-decoding interpretation requires explicit security/compatibility review even when OpenAPI request/response schemas are unchanged.
 
 ## Intentionally OPEN
 
@@ -366,6 +422,7 @@ The following remain implementation/profile decisions until evidence requires st
 - exact numeric header count/byte limits;
 - exact trusted-proxy topology/configuration syntax;
 - exact library used to construct the canonical internal request envelope;
+- exact allowed path character repertoire/normalization profile per external surface, provided parser agreement/fail-closed rules hold;
 - exact supported non-identity content codings per endpoint/profile;
 - exact rejection status mapping for malformed transport requests where the HTTP stack can safely return one.
 

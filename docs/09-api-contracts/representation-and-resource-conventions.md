@@ -176,9 +176,15 @@ Secrets, raw credentials, password-equivalent values and other non-retrievable s
 
 Where a secret can be created/rotated, the secret value MAY appear only in an explicit high-risk **initial secret-bearing response**. This is an **at-most-once application-presentation contract**, not a claim that the server can prove the client received the bytes across an unreliable network.
 
+The initial secret-bearing response is always `no_store` and subject to explicit logging/redaction rules. Browser/proxy/CDN/idempotency replay state SHALL NOT retain the secret for later reproduction.
+
 The platform SHALL NOT retain plaintext/recoverable secret material solely so an idempotency retry can reproduce that response. A same-operation replay after response loss MUST NOT re-present the secret. It returns only safe metadata/resource identity plus the documented secret-delivery recovery outcome from the idempotency contract.
 
-Subsequent normal reads expose only metadata such as ID, label, status, scope, created time and last-used time as policy permits. If the caller lost the initial secret-bearing response, recovery requires an explicit authorized rotate/reissue/revoke flow that creates new secret material rather than retrieving the old secret.
+Subsequent normal reads expose only metadata such as ID, label, status, scope, created time and last-used time as policy permits.
+
+If the caller lost the initial secret-bearing response, any operation that obtains **new** secret material is a separate explicitly authorized create/rotate/reissue action with a new idempotency identity. A revoke action may remove old authority but does not itself create replacement secret material.
+
+When rotation/reissue can invalidate an existing credential, the contract MUST preserve a still-valid alternate/current recovery authority or a staged/overlap cutover. It SHALL NOT invalidate the caller's sole usable authority and then require that lost/new secret to authorize recovery.
 
 ## Resource shape evolution
 

@@ -7,6 +7,21 @@
 
 This document translates the accepted browser/BFF and realtime security invariants into concrete Phase 09 HTTP/admission contracts without defining the Phase 10 realtime message/event envelope.
 
+## Canonical HTTP ingress
+
+BFF and realtime upgrade requests inherit `http-message-framing-and-canonicalization.md` before session/Origin/CSRF/ticket/replay logic consumes the request.
+
+Therefore:
+
+- ambiguous request framing is rejected before BFF authentication or state-changing handling;
+- security-sensitive headers/cookies used by the BFF have one accepted cardinality/parse meaning;
+- trusted proxy scheme/host/client metadata is accepted only from the configured proxy boundary;
+- request-target normalization is identical at edge and BFF/owning service;
+- a protected realtime request cannot receive `101` unless canonical HTTP ingress has already succeeded;
+- gateway/proxy translation cannot cause the edge to validate one credential/Origin/ticket request while the application consumes another interpretation.
+
+Exact gateway/runtime products remain implementation choices; the one-request/one-canonical-interpretation property does not.
+
 ## Browser boundary
 
 The first-party Web application communicates with the BFF under:
@@ -39,6 +54,8 @@ The exact identity-provider/token implementation remains separately selectable. 
 
 Cookie names and identity-provider-specific token shape are not Phase 09 business contracts.
 
+Security-relevant session/CSRF cookie names SHALL NOT be interpreted differently by edge and BFF parsers. Duplicate/conflicting values for a security-relevant cookie or header fail closed unless the accepted browser profile defines one canonical parse rule that every hop shares.
+
 ## Browser origin/CORS boundary
 
 Credentialed BFF access is deny-by-default across untrusted origins.
@@ -48,6 +65,8 @@ If deployment topology requires cross-origin browser access, the accepted browse
 CORS response headers are transport enforcement, not authorization. A request that passes CORS/Origin policy still requires the normal session, CSRF where applicable, tenant context and downstream owning authorization.
 
 The exact allowed origins/hostnames remain deployment/profile configuration, but an arbitrary-origin credentialed BFF is not an accepted default.
+
+Origin/scheme/host evaluation uses the canonical request plus trusted proxy metadata. Untrusted client-supplied forwarding headers cannot rewrite the effective protected origin or secure-scheme decision.
 
 ## BFF tenant scope
 
@@ -69,6 +88,8 @@ A route that is safe only because a cookie has `SameSite` set is insufficient if
 
 The exact CSRF token/header name may be implementation-specific until a browser session profile is accepted, but the requirement itself is mandatory.
 
+A duplicate/conflicting anti-CSRF header/cookie presentation cannot be first-value-selected by one hop and last-value-selected by another. The browser profile declares its accepted cardinality and parser semantics.
+
 ## Protected realtime flow
 
 The canonical browser flow is:
@@ -79,6 +100,7 @@ Browser
   -> BFF authorizes bounded realtime intent
   -> BFF mints short-lived single-use connection ticket
   -> Browser opens direct protected WebSocket using ticket + expected Origin
+  -> Gateway accepts one canonical HTTP upgrade request
   -> Gateway validates current underlying authority + replay continuity
   -> Gateway atomically consumes ticket as final protected admission gate
   -> HTTP 101 only for the winner that passes every gate
@@ -133,6 +155,8 @@ If a URL-carried representation is selected, ticket-bearing URLs are transient c
 
 Ambient cookies alone are not sufficient authority for the direct protected socket.
 
+Ticket presentation has one canonical value at the accepted HTTP ingress. Duplicate/conflicting ticket/capability representations cannot be resolved differently across gateway replicas or proxy/application hops.
+
 ## Realtime endpoint
 
 The logical protected endpoint is:
@@ -141,9 +165,9 @@ The logical protected endpoint is:
 /realtime/v1/connect
 ```
 
-Before returning `101 Switching Protocols`, the gateway SHALL validate in order sufficient to preserve the accepted security contract:
+Before returning `101 Switching Protocols`, the gateway SHALL first accept the HTTP request under `http-message-framing-and-canonicalization.md`, then validate in order sufficient to preserve the accepted security contract:
 
-- expected allowlisted browser `Origin`;
+- expected allowlisted browser `Origin` from the canonical request;
 - ticket authenticity/integrity;
 - ticket expiry;
 - intended principal/tenant/realtime scope;
@@ -155,6 +179,8 @@ Before returning `101 Switching Protocols`, the gateway SHALL validate in order 
 - atomic shared single-winner ticket consumption as the final admission mutation.
 
 Any required failure rejects the HTTP handshake before `101`.
+
+Ambiguous framing, conflicting authority/Origin/ticket input, invalid request-target interpretation or other canonical-ingress failure is itself sufficient to reject the upgrade before replay-ticket consumption.
 
 ## Single winner
 
@@ -170,6 +196,8 @@ If a gateway consumes the ticket and crashes before completing `101`, the ticket
 
 The browser obtains a fresh ticket through the BFF. Availability cost is preferred over reopening replay eligibility.
 
+Canonical HTTP ingress failures occur before ticket consumption; they do not create a misleading partial admission state.
+
 ## Replay-authority loss
 
 A consumed still-valid ticket SHALL NOT become usable after replay-store restart/loss/restore.
@@ -181,6 +209,8 @@ Missing replay state means rejection unless accepted continuity is re-establishe
 A protected realtime admission failure MUST NOT receive `101`.
 
 Pre-upgrade rejection uses safe HTTP status/problem representation appropriate to the failure class, for example authentication/authorization/throttling/unavailability. The response does not expose sensitive replay or authorization internals.
+
+Transport/framing ambiguity rejection also avoids revealing which intermediary/parser would have accepted an alternate interpretation.
 
 Browser UI may treat many security denials as "obtain a fresh ticket / reauthenticate / resync" rather than relying on exact hidden policy reason.
 
@@ -236,10 +266,24 @@ A realtime message stream SHALL NOT be the only durable source from which the UI
 
 Any future unauthenticated/public realtime surface is a separate contract with deliberate public projections. It SHALL NOT inherit protected tenant topics or schemas merely by omitting authentication.
 
+## Required ingress tests
+
+The deployed BFF/realtime path SHALL test, where applicable:
+
+- conflicting `Content-Length`/`Transfer-Encoding` or body length rejected before BFF session/state handling;
+- duplicate/conflicting authentication/session/CSRF headers or security-relevant cookie names fail closed under the accepted profile;
+- untrusted forwarding headers cannot spoof protected Origin/scheme/host;
+- edge and BFF resolve one canonical tenant-scoped route/request target;
+- duplicate/conflicting realtime ticket presentation cannot produce multiple interpretations;
+- an ambiguously framed/targeted realtime handshake never receives `101`;
+- HTTP-version translation does not make invalid upgrade/framing metadata acceptable;
+- ordinary realtime replay/single-winner/current-auth tests still pass after gateway/proxy/runtime changes.
+
 ## Phase boundary
 
 Phase 09 accepts:
 
+- canonical HTTP ingress before BFF/realtime security logic;
 - BFF browser-session boundary;
 - logical ticket minting endpoint/profile;
 - protected pre-`101` admission semantics;
@@ -255,4 +299,4 @@ Phase 10 defines:
 - event naming/versioning;
 - transport-level message delivery semantics.
 
-Phase 10 may not weaken the Phase 09 pre-upgrade security contract.
+Phase 10 may not weaken the Phase 09 canonical HTTP ingress or pre-upgrade security contract.

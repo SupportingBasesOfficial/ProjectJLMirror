@@ -81,13 +81,40 @@ A completed same-fingerprint retry returns the contractually equivalent logical 
 
 The platform SHOULD preserve/reconstruct:
 
-- equivalent HTTP success class/status;
+- equivalent HTTP success class/status where safe;
 - canonical resource/operation identity;
 - response representation or stable result reference;
 - relevant `Location` header;
 - safe contract metadata needed by the caller.
 
 Transport-ephemeral values such as request ID are allowed to differ between the original response and replay.
+
+### One-time secret response exception
+
+A secret-producing create/rotate/reissue operation is still subject to the same atomic admission and one-logical-effect rules, but **secret material itself is excluded from replayable completed-result state**.
+
+For an endpoint whose initial successful response may contain a newly generated API secret, recovery code or other non-retrievable credential material:
+
+1. the initial secret-bearing response MAY present that secret under the explicit high-risk representation contract;
+2. the platform SHALL NOT retain plaintext/recoverable secret material solely to make that response replayable;
+3. if the response is lost, the same idempotency key MUST observe the already-completed logical effect and MUST NOT create/rotate/reissue another credential automatically;
+4. the retry MUST NOT re-present the original secret;
+5. the retry returns the stable created/rotated resource metadata/reference plus a deterministic non-secret recovery outcome;
+6. the caller must use an explicit authorized rotate/reissue/revoke operation with a new idempotency identity to obtain new secret material.
+
+The baseline recovery problem is:
+
+```text
+409 Conflict
+code: secret.delivery_not_replayable
+Location: <stable credential/resource metadata URI when applicable>
+```
+
+The response MAY include safe metadata identifying the completed logical resource and the allowed recovery action, but never the lost secret.
+
+An endpoint that rotates an already-working credential SHALL additionally document its lockout/continuity behavior after uncertain delivery. It MUST provide a recovery path that does not require possession of the newly lost secret and MUST NOT rely on replaying that secret from the idempotency store.
+
+This exception changes only replay representation; it does not weaken atomic admission, deduplication, audit or result-linkage requirements.
 
 ## Different fingerprint conflict
 
@@ -119,7 +146,7 @@ An endpoint whose effect is represented by a durable operation MAY instead retur
 
 When the idempotency claim and authoritative mutation are co-resident, successful completion commits the mutation, required audit/outbox, stable result linkage and completed claim atomically.
 
-A retry after response loss SHALL discover/replay the committed result rather than execute the mutation again.
+A retry after response loss SHALL discover/replay the committed result rather than execute the mutation again. For one-time-secret operations, the committed safe result linkage explicitly excludes the secret material and follows the recovery rule above.
 
 ## Cross-authority/external effects
 
@@ -233,3 +260,5 @@ Cross-domain or high-volume bulk work SHOULD default to durable operation semant
 Future generated/official SDKs SHALL derive automatic retry behavior from operation metadata.
 
 An SDK MUST NOT automatically retry an effectful operation solely because it received a network timeout. Automatic retry is permitted only when the method/endpoint is intrinsically retry-safe or a valid idempotency/operation contract makes replay safe.
+
+For one-time-secret operations, SDKs MUST treat `secret.delivery_not_replayable` as a recovery state requiring an explicit user/application decision; they MUST NOT automatically issue a replacement secret operation.

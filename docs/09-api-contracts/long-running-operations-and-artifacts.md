@@ -39,7 +39,7 @@ Platform-global operations use:
 When an endpoint accepts durable asynchronous responsibility:
 
 ```text
-HTTP/1.1 202 Accepted
+202 Accepted
 Location: /api/v1/tenants/{tenant_id}/operations/{operation_id}
 ```
 

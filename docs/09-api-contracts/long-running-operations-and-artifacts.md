@@ -280,6 +280,28 @@ A direct vendor signed URL MAY be used internally only when it satisfies the acc
 
 Protected artifact delivery uses the `artifact_delivery_guarded` cache class unless an endpoint deliberately proves stricter `no_store` behavior. A CDN/cache hit SHALL NOT bypass current authorization, releasability, delivery-generation admission, active-stream fencing or the artifact's browser-delivery profile.
 
+## Untrusted artifact processing boundary
+
+Media classification, archive inspection, preview generation, document conversion, metadata extraction, thumbnailing and similar processing of user/provider-supplied bytes are security-sensitive parser/renderer operations. They SHALL NOT be treated as safe merely because the artifact was authenticated, uploaded by an authorized user or stored successfully.
+
+When an operation invokes complex or active-content parsers/renderers, its contract SHALL identify an accepted processing profile that provides, as applicable:
+
+- an isolated least-privilege execution boundary separate from ordinary API/BFF business runtime;
+- no platform/application secret access unless a narrowly scoped processing capability is explicitly required;
+- no unrestricted network/metadata-service/private-control-plane egress;
+- CPU, memory, wall-time, input, decompressed/expanded-output, nesting/member-count and generated-output bounds;
+- no implicit execution of macros/scripts/embedded programs;
+- no automatic retrieval of attacker-controlled embedded URLs outside the accepted outbound/SSRF policy;
+- deterministic failure/timeout behavior that cannot mark partially processed bytes as trusted/safe;
+- safe temporary-file/storage lifecycle and cleanup under tenant/artifact identity;
+- structured/redacted diagnostics with no raw secret or unrestricted document-content leakage.
+
+Archive/decompression and nested-content processing remain bounded against expansion bombs and recursive parser abuse.
+
+A generated preview/converted result receives its own artifact identity/version/classification and browser-delivery profile. It does **not** inherit `safe_inline` merely because an internal renderer produced it. The output must independently satisfy the accepted delivery classification before inline release.
+
+Exact parser/renderer/sandbox/antimalware products are implementation choices; the isolation and bounded-processing properties are contract/security requirements when such processing exists.
+
 ## Browser delivery safety and active content
 
 Authorization to download protected bytes is **not** authorization for those bytes to execute in the first-party browser security origin.
@@ -358,7 +380,7 @@ create/import intent
 
 Request-time human authority does not persist as worker authority.
 
-Upload/staging validation SHALL treat declared filename/media type as untrusted metadata. A staged object does not become `safe_inline` or `active_inline_isolated` merely because the uploader declares a browser media type.
+Upload/staging validation SHALL treat declared filename/media type as untrusted metadata. A staged object does not become `safe_inline` or `active_inline_isolated` merely because the uploader declares a browser media type. Any complex archive/document parsing required by import follows the untrusted artifact processing boundary above.
 
 ## Governed deletion/erasure
 
@@ -368,4 +390,4 @@ If state is uncertain, the external operation remains non-terminal/reconciliatio
 
 ## Maximum-state rule
 
-Operation and artifact contracts SHALL remain valid when worker implementation, queue vendor, object store, cell placement, browser-delivery origin or process decomposition changes. A client tracks logical `operation_id` / `artifact_id`, never the transient execution mechanism.
+Operation and artifact contracts SHALL remain valid when worker implementation, queue vendor, object store, cell placement, browser-delivery origin, parser/renderer implementation or process decomposition changes. A client tracks logical `operation_id` / `artifact_id`, never the transient execution mechanism.

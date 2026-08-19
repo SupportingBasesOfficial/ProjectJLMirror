@@ -59,7 +59,7 @@ The machine-readable HTTP contract SHALL describe:
 - stable reusable components;
 - examples where they materially clarify semantics.
 
-OpenAPI/schema alone is not sufficient to capture all JLMIRROR semantics. Each operation also conforms to the Phase 09 idempotency, authorization, consistency, audit, tenant, response-cache, artifact-browser-delivery, untrusted-content-processing and compatibility declarations.
+OpenAPI/schema alone is not sufficient to capture all JLMIRROR semantics. Each operation also conforms to the Phase 09 idempotency, authorization, consistency, audit, tenant, response-cache, cursor/query confidentiality, artifact-browser-delivery, safe-filename, untrusted-content-processing, parser-resolution and compatibility declarations.
 
 ## Stable operation ID
 
@@ -100,6 +100,9 @@ credential_cutover_semantics
 long_running_operation
 operation_access_authorization
 pagination_authorization_freshness
+cursor_confidentiality_policy
+cursor_url_logging_policy
+sensitive_query_url_policy
 request_limits
 response_cache_class
 shared_cache_eligibility
@@ -110,6 +113,7 @@ protected_error_cache_policy
 cache_freshness_policy
 artifact_browser_delivery_profile
 artifact_authoritative_media_type_policy
+artifact_safe_filename_policy
 artifact_content_disposition_policy
 artifact_mime_sniffing_policy
 active_content_isolation_profile
@@ -118,7 +122,10 @@ artifact_untrusted_processing_profile
 artifact_processing_secret_scope
 artifact_processing_egress_policy
 artifact_processing_resource_bounds
+artifact_archive_extraction_policy
+artifact_xml_external_resolution_policy
 derived_artifact_classification_policy
+callback_xml_external_resolution_policy
 callback_outbound_fetch_policy
 data_classification
 ```
@@ -143,19 +150,24 @@ An endpoint is not ready for implementation until review proves:
 12. consistency/result semantics;
 13. long-running operation behavior and current access authority where needed;
 14. current-authorization continuation semantics for pagination/history/bulk where applicable;
-15. stable errors;
-16. explicit response-cache class, protected-error policy, shared-cache eligibility, variance/revalidation/current-auth policy;
-17. artifact/binary browser-delivery profile, authoritative media-type policy and active-content isolation where applicable;
-18. isolated/bounded untrusted artifact-processing profile where parsing/rendering/preview/conversion/extraction occurs;
-19. callback outbound-fetch/SSRF policy where applicable;
-20. audit/observability requirements;
-21. compatibility classification, including cache/retry/auth/consistency/browser-delivery/content-processing semantics;
-22. security/privacy classification;
-23. required tests.
+15. cursor confidentiality/URL-log policy and sensitive query URL policy where collection/query contracts apply;
+16. stable errors;
+17. explicit response-cache class, protected-error policy, shared-cache eligibility, variance/revalidation/current-auth policy;
+18. artifact/binary browser-delivery profile, authoritative media-type policy, safe-filename policy and active-content isolation where applicable;
+19. isolated/bounded untrusted artifact-processing profile, archive extraction containment and XML/external-resolution policy where parsing/rendering/preview/conversion/extraction occurs;
+20. callback XML external-resolution and outbound-fetch/SSRF policy where applicable;
+21. audit/observability requirements;
+22. compatibility classification, including cache/retry/auth/consistency/cursor/browser-delivery/content-processing/parser semantics;
+23. security/privacy classification;
+24. required tests.
 
-For browser-reachable artifact bytes, review MUST prove that authorization to download is not treated as authority for inline execution. Unknown/untrusted/browser-active content fails toward attachment/non-sniffable download semantics, and any active-inline profile uses an isolated untrusted-content boundary without application/BFF ambient credentials or origin/service-worker trust while preserving current artifact authorization and fencing.
+For protected collection/query contracts, review MUST prove that URL-visible cursors do not expose confidential tenant/filter/search/resource state. "Opaque" is not treated as confidential by itself. If protected cursor state is self-contained, confidentiality+integrity protection is required; otherwise use a server-side opaque handle or equivalent. Normal logs/analytics/referrers SHALL NOT persist raw protected cursor/query values.
 
-For complex untrusted artifact processing, review MUST prove isolation from ordinary API/BFF secrets and unrestricted egress, bounded CPU/memory/time/decompressed-output/nesting/member counts, no implicit macro/script/embedded-URL execution, and independent classification of generated derivative artifacts.
+For browser-reachable artifact bytes, review MUST prove that authorization to download is not treated as authority for inline execution. Unknown/untrusted/browser-active content fails toward attachment/non-sniffable download semantics, download filenames are server-derived and unambiguous, and any active-inline profile uses an isolated untrusted-content boundary without application/BFF ambient credentials or origin/service-worker trust while preserving current artifact authorization and fencing.
+
+For complex untrusted artifact processing, review MUST prove isolation from ordinary API/BFF secrets and unrestricted egress, bounded CPU/memory/time/decompressed-output/nesting/member counts, archive staging-root containment, no implicit macro/script/embedded-URL execution, XML active external-resolution denial by default, and independent classification of generated derivative artifacts.
+
+For XML callback profiles, review MUST prove that DTD/external entities/XInclude/external schema/stylesheet/resource resolution cannot read local files or reach network/internal services unless a separately accepted isolated deny-by-default resolver profile explicitly allows trusted pinned resources.
 
 ## Schema generation direction
 
@@ -198,25 +210,31 @@ Every implemented endpoint SHALL have contract tests that validate at minimum:
 - lockout-safe one-time-secret response-loss/recovery when applicable;
 - concurrency preconditions when applicable;
 - pagination/cursor current-authorization behavior when applicable;
+- cursor confidentiality and URL/log/referrer non-disclosure when protected cursor state exists;
+- confidential query/filter/search input is not forced into URL-visible transport;
 - operation-resource current authorization when applicable;
 - response-cache class/headers/revalidation/non-reuse semantics including protected errors;
-- artifact browser-delivery/media-type/isolation semantics where bytes are browser reachable;
-- untrusted artifact-processing isolation/resource/egress/output-classification semantics where parsing/rendering occurs;
-- callback outbound-fetch/SSRF boundary where applicable;
+- artifact browser-delivery/media-type/safe-filename/isolation semantics where bytes are browser reachable;
+- untrusted artifact-processing isolation/resource/egress/archive/XML/output-classification semantics where parsing/rendering occurs;
+- callback XML external-resolution and outbound-fetch/SSRF boundary where applicable;
 - size/complexity limits;
-- secret/topology leakage checks.
+- secret/topology/confidential-URL leakage checks.
 
 Artifact/binary contract tests additionally prove, where applicable:
 
 - uploader filename/extension/media type cannot force executable inline delivery;
 - unknown/untrusted/browser-active content falls back to attachment/non-sniffable download behavior;
-- filename metadata cannot inject response headers;
+- filename metadata cannot inject or ambiguate response headers;
+- controls/bidi/path separators/reserved names/misleading extensions cannot create a deceptive saved filename;
+- `filename`/`filename*` encode one coherent logical name and a server-generated fallback exists;
 - `safe_inline` is restricted to explicitly accepted validated classes;
 - active-inline content cannot execute with application/BFF ambient credentials or origin/service-worker trust;
 - delegated delivery remains artifact/delivery-generation bounded and preserves current authorization/releasability/active-stream fencing;
 - range/resume/CDN paths cannot weaken the accepted browser-delivery profile;
 - archive/decompression recursion and expanded output remain bounded;
+- archive extraction cannot escape staging root through traversal, absolute paths, links or special/device files;
 - parser/renderer cannot access ordinary application secrets or unrestricted network destinations;
+- XML/XML-derived processing cannot resolve external entities/includes/schemas/stylesheets/local files/network resources by default;
 - embedded script/macro execution and attacker-controlled URL retrieval do not occur implicitly;
 - generated preview/conversion output receives independent artifact identity/classification before release.
 
@@ -246,18 +264,22 @@ It flags likely breaking/security-sensitive changes such as:
 - response cache class/shared-cache eligibility changes;
 - protected-error cache policy changes;
 - cache variance/validator/revalidation/current-authorization reuse changes;
+- cursor protection moving from confidential/server-side opaque to merely encoded/signed plaintext;
+- cursor/query logging/referrer policy becoming more permissive;
+- confidential query values becoming URL-visible;
 - artifact browser-delivery profile becoming more permissive;
-- artifact authoritative media-type/content-disposition/sniffing policy changes;
+- artifact authoritative media-type/content-disposition/safe-filename/sniffing policy changes;
 - active-content isolation or delegated-delivery scope changes;
 - untrusted artifact-processing profile moving to a less isolated runtime or gaining broader secret/network authority;
+- archive extraction containment or XML external-resolution policy becoming weaker;
 - artifact-processing expansion/resource bounds becoming weaker or derived-output classification being removed;
+- callback XML external-resolution or outbound destination/redirect policy becoming more permissive;
 - pagination/operation current-authorization semantics becoming weaker;
-- one-time-secret recovery/cutover changes that could remove a previously safe recovery authority;
-- callback outbound destination/redirect policy becoming more permissive.
+- one-time-secret recovery/cutover changes that could remove a previously safe recovery authority.
 
-The diff tool cannot prove semantic compatibility. Reviewers still inspect changes to idempotency, authorization, consistency, ownership, retry, credential recovery, continuation authority, artifact browser execution/processing, callback egress and cache behavior.
+The diff tool cannot prove semantic compatibility. Reviewers still inspect changes to idempotency, authorization, consistency, ownership, retry, credential recovery, continuation authority/confidentiality, artifact browser execution/filename/processing, callback parser/egress and cache behavior.
 
-A deployment/framework/CDN/browser-delivery/parser-runtime configuration change that alters an endpoint's effective accepted cache, active-content or untrusted-processing semantics is subject to the same governance even if no OpenAPI schema changed.
+A deployment/framework/CDN/browser-delivery/parser-runtime configuration change that alters an endpoint's effective accepted cache, cursor confidentiality, active-content, safe-filename or untrusted-processing semantics is subject to the same governance even if no OpenAPI schema changed.
 
 ## Golden examples/test vectors
 
@@ -271,6 +293,8 @@ High-risk contracts SHOULD include executable test vectors/examples for cases su
 - existence-concealing authorization denial;
 - request validation before owning authorization consumes caller-controlled resource scope;
 - stale cursor rejected/re-authorized after revocation;
+- protected cursor containing tenant/filter/key state remains unreadable in URL-visible form and raw value is not logged;
+- confidential search/filter input uses non-URL-visible representation;
 - operation poll/cancel rejected after authority revocation;
 - cross-principal/tenant protected cache non-reuse;
 - protected error non-reuse;
@@ -279,9 +303,13 @@ High-risk contracts SHOULD include executable test vectors/examples for cases su
 - browser-active artifact forced to safe download on application/BFF origin;
 - active-inline artifact isolated from application/BFF ambient credentials and origin trust;
 - forged upload media type unable to opt into inline execution;
+- bidi/control/path/double-extension filename input resolves to safe canonical fallback/header semantics;
 - archive/decompression bomb bounded without exhausting the business runtime;
+- archive traversal/link escape cannot write outside staging root;
 - parser/renderer exploit or embedded URL cannot reach application secrets/private network under the processing profile;
+- XML external entity/XInclude/schema attempts cannot read local files or perform network retrieval;
 - derived preview remains non-inline until independently classified;
+- callback XML XXE/local-file/network-resolution rejection;
 - callback-supplied SSRF target rejection;
 - cursor continuation under deterministic sort;
 - long-running reconciliation state;
@@ -303,13 +331,14 @@ Official SDK generation MAY be introduced from accepted contracts.
 SDKs SHALL:
 
 - preserve opaque IDs/cursors/revisions;
+- treat cursors as non-inspectable transport values and not decode/log protected cursor payloads;
 - tolerate compatible unknown response fields/open enum values;
 - implement automatic retry only where operation metadata proves retry safety;
 - expose stable problem/error codes;
 - treat one-time-secret response loss as explicit non-automatic recovery;
 - never treat cursor or operation ID as authorization;
 - never infer physical tenant placement;
-- preserve server-declared artifact download/inline semantics rather than overriding them from filename or guessed media type;
+- preserve server-declared artifact download/inline and safe-filename semantics rather than overriding them from filename or guessed media type;
 - avoid hiding operation-resource semantics behind indefinite polling without cancellation/deadline controls.
 
 ## Documentation publishing
@@ -327,8 +356,9 @@ Contract changes require explicit security review when they introduce or materia
 - cross-tenant capability;
 - direct SQL/data administration;
 - automation execution;
-- artifact upload/download, browser-delivery class, media-type policy, active-content isolation or untrusted parser/renderer processing;
-- callback/webhook ingress or callback-driven outbound retrieval;
+- cursor confidentiality, URL/query exposure or continuation logging policy;
+- artifact upload/download, safe filename, browser-delivery class, media-type policy, active-content isolation or untrusted parser/renderer processing;
+- callback/webhook ingress, XML parser external-resolution behavior or callback-driven outbound retrieval;
 - public projection;
 - realtime admission;
 - sensitive data exposure;

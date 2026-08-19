@@ -9,6 +9,8 @@ Authentication, tenant membership, authorization and physical placement are sepa
 
 A valid credential does not imply tenant access. A tenant ID in the URI does not prove membership. A routed request does not prove authorization. A BFF does not become an authorization oracle for the downstream API.
 
+For externally reachable HTTP surfaces, authentication itself consumes only a request that has already passed `http-message-framing-and-canonicalization.md`. Framing/header/authority/request-target ambiguity is rejected before any credential, tenant or authorization interpretation is accepted.
+
 ## Principal classes
 
 Phase 09 recognizes these logical principal classes:
@@ -33,6 +35,8 @@ Browser JavaScript SHALL NOT intentionally receive or persist long-lived platfor
 
 The BFF owns browser-specific session/cookie handling, CSRF protections and safe request composition. The downstream API still independently resolves tenant context and evaluates authorization.
 
+Security-relevant cookie/header parsing uses one accepted canonical meaning across the trusted edge and BFF. Duplicate/conflicting session/authentication/CSRF material cannot be resolved differently by different hops.
+
 ## Machine/API principals
 
 Machine credentials SHALL be independently revocable and attributable. Their effective authority includes:
@@ -48,12 +52,15 @@ A credential MAY be restricted to one tenant or permitted to name multiple tenan
 
 Exact credential transport/format remains an authentication-profile decision until separately accepted. Phase 09 contracts SHALL NOT require business consumers to understand identity-provider internals.
 
+`Authorization` or equivalent machine-credential transport follows explicit security-sensitive header cardinality semantics. Competing credential values cannot reach authentication logic and be selected by first/last/framework behavior.
+
 ## Tenant-scoped authorization
 
 A protected tenant route conceptually evaluates:
 
 ```text
-Identity
+canonical HTTP ingress
+  -> Identity
   -> current credential/session validity
   -> intended tenant_id
   -> trusted placement resolution
@@ -68,6 +75,8 @@ Identity
 ```
 
 Membership, permission and resource-policy evaluation SHALL occur at the owning server-side authority after the request has been routed to the authoritative cell, a trusted current TenantContext exists, and caller-controlled fields consumed by the owning policy have passed the request contract.
+
+Canonical HTTP ingress and request-contract validation are different gates. The former proves every participating HTTP hop agrees on the request/framing/security-header/request-target meaning. The latter validates the agreed caller-controlled fields under the trusted TenantContext before owning authorization consumes them.
 
 Request-contract validation before owning authorization SHALL NOT become a protected-information oracle. Cheap transport bounds/syntax checks may fail early where safe, but semantic checks that would reveal protected resource existence remain behind the required authentication/tenant authority gates.
 
@@ -132,7 +141,7 @@ A cross-tenant operation records/audits:
 
 The external API exposes logical tenant identity, never a trusted physical TenantContext object.
 
-After authentication, trusted placement resolution, routing to the authoritative cell and current placement admission/version validation, the cell constructs the accepted canonical `TenantContext`. Request-contract validation and the owning membership/permission/resource authorization then execute against that trusted context before the protected use case runs.
+After canonical HTTP ingress, authentication, trusted placement resolution, routing to the authoritative cell and current placement admission/version validation, the cell constructs the accepted canonical `TenantContext`. Request-contract validation and the owning membership/permission/resource authorization then execute against that trusted context before the protected use case runs.
 
 Caller-controlled headers/body fields SHALL NOT be allowed to override trusted internal `cell_id`, `placement_version`, database target or authorization context.
 
@@ -150,6 +159,8 @@ X-Secret-Ref
 ```
 
 An internal trusted transport may carry signed/authenticated routing metadata between platform components, but that is not a public client contract.
+
+Trusted proxy metadata is likewise not ordinary caller authority. `Forwarded`, `X-Forwarded-*` or equivalent deployment metadata is accepted only from the configured trusted proxy boundary after canonicalization; untrusted copies cannot select tenant placement, credential interpretation or protected routing.
 
 ## Existence concealment
 
@@ -188,7 +199,7 @@ Realtime connection admission and realtime subscription authorization are separa
 
 A BFF-minted connection capability proves bounded connection intent. It does not grant arbitrary subscriptions and does not freeze authority until expiry.
 
-Protected subscription details/message envelopes belong to the later async/realtime contract layer, but Phase 09 fixes the pre-`101` admission behavior in the dedicated BFF/realtime document.
+Protected subscription details/message envelopes belong to the later async/realtime contract layer, but Phase 09 fixes canonical HTTP ingress plus the pre-`101` admission behavior in the dedicated BFF/realtime document.
 
 ## Provider callbacks
 
@@ -196,10 +207,14 @@ Provider callback identity is derived from configured integration/provider authe
 
 A callback route may include an opaque integration/callback identifier for lookup, but the adapter SHALL bind the resulting tenant/integration context from trusted configuration and authenticated callback evidence.
 
+Callback authentication also consumes the canonical framed/header interpretation defined by the callback ingress contract; duplicate/conflicting provider-auth headers or body-framing ambiguity cannot create alternate identities.
+
 ## Authorization contract tests
 
 Every protected endpoint SHALL have contract/integration tests that prove at minimum:
 
+- ambiguous HTTP framing/security-sensitive credential headers cannot reach authentication/authorization with competing interpretations;
+- gateway/BFF/proxy and owning service agree on canonical authority/request target used for credential and tenant/resource selection;
 - unauthenticated denial;
 - wrong-tenant denial;
 - authoritative placement/cell admission occurs before cell-owned membership/resource authorization;
@@ -213,3 +228,5 @@ Every protected endpoint SHALL have contract/integration tests that prove at min
 - no physical routing override;
 - expected cross-tenant privileged behavior when such a route exists;
 - error response does not leak protected resource existence or internal topology beyond the accepted contract.
+
+Tests that cross a gateway/proxy/runtime boundary SHOULD exercise the actual deployed parser/translation path; controller-only tests are insufficient proof against request ambiguity.

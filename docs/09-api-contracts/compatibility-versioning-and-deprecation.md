@@ -49,8 +49,8 @@ The following are breaking or security-sensitive by default:
 - changing query multiplicity/duplicate/order semantics;
 - **changing structured request entity parsing**, duplicate/alias member semantics, multipart part/boundary semantics, name normalization or which canonical entity is consumed by validation/auth/idempotency/use case;
 - changing success/error semantics affecting retry or authorization;
-- changing idempotency scope/meaning;
-- changing callback freshness binding, trusted replay-identity scope, atomic replay admission, durable work coupling, replay retention/expiry, acknowledgement durability or post-effect ambiguity/reconciliation semantics;
+- changing idempotency effective scope, fingerprint fields, completed/in-progress duplicate behavior, fingerprint mismatch behavior, retention/recovery authority or external-ambiguity reconciliation semantics;
+- changing callback accepted freshness evidence source, freshness binding, clock/window/sequence admissibility, trusted replay-identity scope, atomic replay admission, durable work coupling, replay retention/expiry, acknowledgement durability or post-effect ambiguity/reconciliation semantics;
 - changing pagination/cursor semantics beyond documented lifecycle;
 - weakening cursor payload confidentiality, exposed-token classification, browser-history-safe transport or URL/log/referrer redaction;
 - forcing protected query input into URL-visible transport;
@@ -136,6 +136,26 @@ Compatibility review SHALL compare:
 A parser/library/framework replacement is **not compatible** merely because it accepts the same nominal JSON schema or multipart fields. It is incompatible/security-sensitive if first-value, last-value, duplicate merge, Unicode aliasing, multipart boundary or per-part interpretation changes the logical entity.
 
 A change that lets authorization validate one entity while idempotency/use case executes another is a P1-class compatibility regression regardless of OpenAPI diff.
+
+## Idempotency compatibility
+
+Idempotency is a semantic/security contract, not a boolean capability.
+
+Compatibility review SHALL compare:
+
+- `idempotency_class`;
+- server-derived effective trusted scope and the dimensions that distinguish independent logical operations;
+- canonical fingerprint fields and normalization;
+- completed duplicate replay/result behavior;
+- in-progress duplicate behavior;
+- same-key/different-fingerprint conflict behavior;
+- retention/recovery window and the durable claim/result/tombstone/operation authority that preserves it;
+- external-effect ambiguity and reconciliation semantics;
+- interaction with one-time-secret response-loss recovery where applicable.
+
+Changing any of these dimensions can create false collisions, bypass conflict detection, or re-enable an irreversible effect after claim/result expiry even when the route and request/response schemas are unchanged.
+
+A retention reduction is incompatible/security-sensitive when it is shorter than an advertised safe retry/recovery interval or when no equivalent durable operation/tombstone authority continues preventing duplicate effect execution. Timeout, worker restart, lease expiry or claim aging never becomes new execution authority for an unresolved external outcome.
 
 ## Response-header compatibility
 
@@ -225,7 +245,8 @@ A callback parser/library change must preserve raw-body authenticity semantics, 
 
 A provider protocol, SDK, gateway, replay store or callback middleware change must also preserve:
 
-- which timestamp/nonce/sequence values are accepted as security freshness evidence;
+- which timestamp/nonce/sequence/protocol values are accepted as security freshness evidence;
+- the accepted clock/window/sequence admissibility policy for that evidence;
 - how each freshness value is bound to the authenticated callback body/identity or independently trusted protocol metadata;
 - trusted replay-identity scope across tenant/integration/source dimensions;
 - atomic create-or-observe replay admission;
@@ -233,10 +254,11 @@ A provider protocol, SDK, gateway, replay store or callback middleware change mu
 - durable inbox/work/effect coupling or explicit cross-authority reconciliation;
 - crash behavior between replay admission, durable responsibility, external effect outcome recording and acknowledgement;
 - replay retention/expiry behavior for unresolved and still-supported duplicate/recovery states;
+- coherence between freshness/provider-retry admissibility and replay/ambiguity-retention authority so older authenticated callbacks cannot become newly executable after ordinary replay-state expiry;
 - the durable-responsibility boundary required before provider-facing success acknowledgement;
 - the rule that a possibly completed cross-authority irreversible effect with no durable outcome remains reconciliation-blocked and cannot be attempted again until authoritative reconciliation resolves it.
 
-A time-window check over metadata that is no longer authenticator-bound is not a compatible implementation change. Replacing an atomic durable replay protocol with a read-then-record duplicate check is likewise a security regression even when callback schemas and provider IDs are unchanged. Shortening replay/ambiguity retention so unresolved state can become executable, moving success acknowledgement ahead of durable responsibility, or converting a post-effect unknown outcome into automatic retry are also security regressions.
+A time-window check over metadata that is no longer authenticator-bound is not a compatible implementation change. Widening an otherwise authenticator-bound freshness/sequence window is also security-sensitive because it changes which historical deliveries are admissible. Replacing an atomic durable replay protocol with a read-then-record duplicate check is likewise a security regression even when callback schemas and provider IDs are unchanged. Shortening replay/ambiguity retention so unresolved state can become executable, moving success acknowledgement ahead of durable responsibility, or converting a post-effect unknown outcome into automatic retry are also security regressions.
 
 ## Public projection compatibility
 
@@ -273,8 +295,8 @@ CI SHALL compare proposed contract/manifest changes with accepted baseline and f
 - protocol-translation/parser boundaries;
 - request requiredness/type and response fields/types;
 - enum/status/error semantics;
-- idempotency/authorization/consistency;
-- **callback freshness binding, replay identity scope, atomic replay admission, durable coupling, replay retention/expiry, acknowledgement durability and post-effect ambiguity/reconciliation**;
+- **idempotency class/effective scope/fingerprint/duplicate-result/mismatch/retention-recovery/external-ambiguity semantics**, plus authorization/consistency;
+- **callback accepted freshness evidence source, clock/window/sequence policy, freshness binding, replay identity scope, atomic replay admission, durable coupling, replay retention/expiry, acknowledgement durability and post-effect ambiguity/reconciliation**;
 - **response-header profile, grammar/cardinality/serialization owner/multi-hop composition**;
 - pagination/cursor confidentiality/browser transport/logging;
 - protected query URL policy;
@@ -283,7 +305,7 @@ CI SHALL compare proposed contract/manifest changes with accepted baseline and f
 
 Automated schema diff is advisory. Human architecture/security review remains required for semantic changes invisible to schema.
 
-Gateway/proxy/runtime/provider-SDK tests SHOULD exercise conflicting framing, request-header/query ambiguity, path normalization, structured JSON/multipart differential parsing, callback raw-body/entity equivalence, authenticated freshness binding, atomic replay admission/crash recovery, replay-retention/acknowledgement boundaries, post-effect/pre-outcome-record ambiguity recovery and realtime pre-`101` admission.
+Gateway/proxy/runtime/provider-SDK tests SHOULD exercise conflicting framing, request-header/query ambiguity, path normalization, structured JSON/multipart differential parsing, full idempotency scope/fingerprint/retention/ambiguity behavior, callback raw-body/entity equivalence, accepted freshness source/window boundaries, authenticated freshness binding, freshness/replay-retention coherence, atomic replay admission/crash recovery, replay-retention/acknowledgement boundaries, post-effect/pre-outcome-record ambiguity recovery and realtime pre-`101` admission.
 
 Response-path tests SHOULD exercise dynamic header injection, duplicate singleton behavior across app/BFF/proxy/CDN and safe URI/list serialization.
 

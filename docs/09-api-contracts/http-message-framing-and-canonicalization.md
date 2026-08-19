@@ -34,7 +34,10 @@ This boundary exists to prevent or contain:
 - duplicate idempotency execution caused by different header interpretations;
 - cache poisoning or cache-key disagreement;
 - route/authority confusion;
+- method-override confusion;
 - trusted-proxy header spoofing;
+- request-trailer privilege injection;
+- content-decoding/parser disagreement;
 - HTTP-version translation inconsistencies;
 - callback signature/body verification against bytes different from those processed by the application;
 - WebSocket upgrade admission on an ambiguously framed request.
@@ -46,9 +49,9 @@ Conceptual ordering for a normal accepted HTTP request:
 ```text
 connection/protocol admission
   -> wire framing validation
-  -> header syntax/cardinality validation
+  -> header syntax/cardinality/trailer policy validation
+  -> authoritative method/request-target normalization
   -> trusted proxy metadata normalization
-  -> authoritative request-target normalization
   -> request/body hard bounds while reading
   -> canonical request envelope established
   -> surface-specific authentication / tenant routing / authorization / callback verification / cache / use case
@@ -87,6 +90,14 @@ HTTP/1.x, HTTP/2 and HTTP/3 have different wire/framing rules. A gateway transla
 
 Connection-specific/hop-by-hop fields that are not valid across the target protocol boundary are stripped/reconstructed according to the accepted protocol profile, not propagated as application metadata.
 
+## Canonical method and method override
+
+There is one authoritative HTTP method for a request.
+
+Method-override mechanisms such as `X-HTTP-Method-Override`, `X-Method-Override`, form/query `_method` or equivalent are **not accepted by default**. A framework, proxy or compatibility middleware SHALL NOT silently transform a `POST` into `PUT`, `PATCH`, `DELETE` or another method after routing/cache/security policy has already interpreted the original method.
+
+If a future externally supported profile genuinely requires method override, it requires an explicit reviewed contract that ensures every hop derives the same effective method before routing, authorization, CSRF, idempotency, cache and use-case selection. Until then, override inputs are rejected or ignored in a way that cannot alter protected behavior.
+
 ## Security-sensitive header cardinality
 
 Header names are case-insensitive, but duplicate field lines and multi-value semantics are not automatically safe.
@@ -109,6 +120,23 @@ Conditional headers such as `If-Match` may have protocol-defined list semantics;
 For cookie-authenticated BFF flows, ambiguous duplicate security-relevant cookie names or cookie parsing differences SHALL fail closed or be normalized by one accepted cookie parser before authorization/CSRF logic consumes them.
 
 A header not explicitly accepted as multi-valued MUST NOT become multi-valued merely because a framework returns an array or concatenated string.
+
+## Request trailers
+
+Request trailers, where the HTTP stack/protocol permits them, SHALL NOT introduce or override security-sensitive semantics after the initial canonical header set has been accepted.
+
+At minimum, trailers cannot supply or replace:
+
+- authentication/session/credential fields;
+- `Idempotency-Key`;
+- tenant/routing/trusted-proxy metadata;
+- CSRF/Origin authority;
+- conditional/precondition fields such as `If-Match`;
+- content type/encoding/framing authority;
+- callback signature/freshness/replay identity headers;
+- realtime ticket/admission authority.
+
+An endpoint that intentionally accepts a non-security trailer field must define it explicitly and ensure all participating hops support the same trailer semantics. Otherwise request trailers are ignored/rejected before protected logic according to the accepted platform profile.
 
 ## Header syntax and control characters
 
@@ -159,6 +187,7 @@ classified query parameters
 normalized accepted headers
 trusted proxy/client metadata
 bounded raw body bytes where required
+accepted content-coding/media-type metadata
 parsed body only after the appropriate security boundary
 request_id / correlation context
 ```
@@ -167,16 +196,19 @@ The envelope is an internal representation, not a new public API format.
 
 A service extraction, gateway replacement or HTTP-version change SHALL preserve the same canonical external semantics.
 
-## Body and content interpretation
+## Body, content coding and content interpretation
 
 Message framing decides **where the body ends**, not what the body means.
 
 After framing acceptance:
 
 - raw body byte limits still apply;
-- content encoding/decompression remains independently bounded;
-- media type is validated by the target contract;
-- callback raw-body signature protocols preserve exact accepted raw bytes;
+- accepted `Content-Encoding`/content-coding semantics are explicitly parsed and independently bounded;
+- unsupported, malformed, multiply interpreted or inconsistently ordered content codings are rejected rather than decoded differently by different hops;
+- a proxy/gateway SHALL NOT transparently decode/re-encode a protected body in a way that makes callback signature verification, size enforcement or application parsing operate on a different security representation unless the profile explicitly defines that transformation end-to-end;
+- decompressed/decoded size, nesting and parser-resource limits remain independent from raw transport limits;
+- media type is validated by the target contract and duplicate/conflicting `Content-Type` interpretation is not allowed to diverge across hops;
+- callback raw-body signature protocols preserve exact accepted raw bytes and clearly define whether provider signatures cover transfer-decoded/raw entity bytes or another provider-specified representation;
 - multipart/archive/document parsing remains subject to its own parser/security limits;
 - body parsing does not retroactively change the accepted message boundary.
 
@@ -198,6 +230,7 @@ Therefore:
 - expected Origin is evaluated from the canonical request;
 - ticket/capability presentation has one canonical value;
 - conflicting upgrade/security header interpretations cannot result in one hop authorizing what another hop interpreted differently;
+- method-override/trailer mechanisms cannot introduce realtime authority after admission parsing;
 - no `101` occurs unless both this boundary and the realtime admission invariants pass.
 
 ## Provider callbacks
@@ -209,7 +242,9 @@ In particular:
 - ambiguous framing cannot be used to make the gateway verify one body while the adapter processes another;
 - the raw-body hard limit applies to the body established by the accepted framing;
 - duplicate/conflicting signature, timestamp, nonce or callback-auth headers follow the provider profile's explicit cardinality rule;
+- callback security fields cannot be introduced/overridden through trailers;
 - provider-specific raw-signature verification receives the exact bounded raw representation associated with the canonical request;
+- content decoding cannot cause signature verification and semantic processing to authenticate different byte representations;
 - HTTP normalization never turns unauthenticated alternate bytes into trusted callback content.
 
 ## Cache interaction
@@ -218,12 +253,14 @@ A cache/reverse proxy SHALL key and evaluate requests using the same canonical r
 
 Cache behavior MUST NOT depend on an alternate interpretation of:
 
+- method or method override;
 - authority/host;
 - path/query normalization;
 - duplicate headers;
 - content negotiation;
 - authentication/security headers;
-- body framing.
+- request trailers;
+- body framing or content coding.
 
 Requests with ambiguous cache-relevant/security-relevant metadata fail closed rather than being cached under one interpretation and served under another.
 
@@ -236,7 +273,7 @@ Useful safe evidence may include:
 - protocol/version;
 - ingress profile;
 - normalized route template;
-- rejection class such as `framing_conflict`, `duplicate_security_header`, `authority_conflict`, `invalid_request_target`;
+- rejection class such as `framing_conflict`, `duplicate_security_header`, `authority_conflict`, `invalid_request_target`, `method_override_rejected`, `security_trailer_rejected`, `content_coding_conflict`;
 - request/correlation identity;
 - trusted proxy identity where applicable.
 
@@ -248,7 +285,7 @@ Framing/canonicalization rejection occurs before the request is treated as a val
 
 External errors are deliberately sparse and do not reveal which intermediary/parser would have accepted the alternate interpretation.
 
-A framing rejection SHALL NOT create an idempotency claim, durable operation or protected domain effect.
+A framing/canonicalization rejection SHALL NOT create an idempotency claim, durable operation or protected domain effect.
 
 ## Contract metadata
 
@@ -257,9 +294,12 @@ Endpoint/surface contracts SHALL declare or inherit:
 ```text
 http_message_profile
 security_header_cardinality
+request_trailer_policy
+method_override_policy
 trusted_proxy_metadata_policy
 request_target_profile
 body_framing_policy
+content_coding_policy
 ```
 
 A common platform profile MAY satisfy these fields for ordinary routes; an endpoint only specializes where its protocol requires it.
@@ -278,13 +318,16 @@ Edge/integration testing SHALL include, where protocol support makes the case ap
 - duplicate/conflicting `Idempotency-Key` rejected before claim/effect;
 - conditional-header multi-value input has one documented canonical interpretation;
 - duplicate security-relevant cookie ambiguity cannot change BFF auth/CSRF outcome;
+- security-sensitive values supplied through request trailers cannot introduce/override authority;
+- implicit method-override headers/query/body fields cannot change the protected method;
 - conflicting `Host`/authority forms rejected;
 - untrusted `Forwarded`/`X-Forwarded-*` cannot spoof trusted scheme/host/client metadata;
 - ambiguous/malformed percent-encoding/path normalization cannot route and authorize different resources;
+- unsupported/conflicting `Content-Encoding` or decoding-order interpretation cannot make edge and application process different entity meanings;
 - gateway -> service propagation contains only the canonical interpretation;
-- callback signature verification and callback processing use the same accepted raw body;
-- callback raw-body limit cannot be bypassed by alternate framing;
-- realtime upgrade rejects ambiguous framing/security headers before `101`;
+- callback signature verification and callback processing use the same accepted raw body/content-coding profile;
+- callback raw-body limit cannot be bypassed by alternate framing or content coding;
+- realtime upgrade rejects ambiguous framing/security headers/trailers before `101`;
 - cache/proxy and origin service cannot derive different cache/security meaning from duplicate/ambiguous metadata.
 
 Tests SHOULD exercise the actual deployed protocol translation path where one exists, not only an in-process controller test.
@@ -296,20 +339,23 @@ The following block implementation/release:
 - two accepted hops can disagree on where one request ends and the next begins;
 - conflicting framing reaches application authentication or body processing;
 - duplicate security-sensitive headers are resolved by arbitrary first/last/framework behavior;
+- security-sensitive trailer fields can inject/override authority after initial header admission;
+- implicit method override can cause edge/cache/security logic and the owning service to apply different HTTP methods;
 - a gateway and owning service can authorize different credentials/idempotency keys/preconditions from one wire request;
 - untrusted forwarded metadata can override trusted scheme/authority/client identity;
 - routing and authorization can observe different normalized request targets;
+- content-coding/decompression interpretation can make security verification/size enforcement and semantic processing operate on different representations;
 - callback signature verification can cover bytes different from those processed as the callback body;
 - an ambiguous request can receive `101` realtime upgrade;
 - a proxy/cache can accept/cache a request interpretation the owning service would reject or interpret differently.
 
 ## Compatibility and evolution
 
-Framing/header/request-target security semantics are part of the security contract even though they are often implemented in infrastructure.
+Framing/header/method/trailer/content-coding/request-target security semantics are part of the security contract even though they are often implemented in infrastructure.
 
 Changing gateway, proxy, HTTP runtime, protocol version or service topology SHALL trigger regression testing of this boundary.
 
-A change that makes ambiguity more permissive or alters security-sensitive header interpretation requires explicit security/compatibility review even when OpenAPI request/response schemas are unchanged.
+A change that makes ambiguity more permissive or alters security-sensitive header/trailer/method/content-decoding interpretation requires explicit security/compatibility review even when OpenAPI request/response schemas are unchanged.
 
 ## Intentionally OPEN
 
@@ -320,6 +366,7 @@ The following remain implementation/profile decisions until evidence requires st
 - exact numeric header count/byte limits;
 - exact trusted-proxy topology/configuration syntax;
 - exact library used to construct the canonical internal request envelope;
+- exact supported non-identity content codings per endpoint/profile;
 - exact rejection status mapping for malformed transport requests where the HTTP stack can safely return one.
 
 These OPENs do **not** make ambiguity acceptance optional. The one-wire-message/one-canonical-interpretation property is normative.

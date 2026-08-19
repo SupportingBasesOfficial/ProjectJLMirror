@@ -25,6 +25,8 @@ JLMIRROR distinguishes these surfaces because their trust, compatibility and lif
 
 A surface MAY share domain schemas or generated types with another surface when semantics are genuinely identical, but shared implementation SHALL NOT erase the trust boundary between surfaces.
 
+All externally reachable HTTP surfaces additionally inherit `http-message-framing-and-canonicalization.md`: an accepted wire request must have one canonical framing/header/authority/request-target interpretation before authentication, routing, idempotency, cache decisions or protected effects.
+
 ## Normative design goals
 
 ### Contract stability over implementation stability
@@ -36,6 +38,7 @@ Public contract identity SHALL remain independent of:
 - provider-native identifiers and payloads;
 - cell/database/cluster placement;
 - queue/cache/pub-sub vendor;
+- gateway/reverse-proxy product or HTTP runtime;
 - monolith versus extracted service placement;
 - internal class/module/file names;
 - object-storage paths or signed-URL vendor formats.
@@ -48,11 +51,28 @@ Every protected operation SHALL name one owning bounded context/application capa
 
 Cross-domain orchestration is represented by an owning use case/process contract, not by exposing distributed storage coupling to the caller.
 
+### Canonical HTTP message interpretation
+
+HTTP transport is not trusted to be unambiguous merely because a framework produced a request object.
+
+Before an externally received HTTP request can influence authentication, BFF session/CSRF handling, tenant routing, idempotency admission, cache selection, callback verification, realtime `101` admission or a protected use case, the accepted ingress establishes one canonical request interpretation according to `http-message-framing-and-canonicalization.md`.
+
+The baseline therefore requires:
+
+- fail-closed ambiguous body framing;
+- explicit security-sensitive header cardinality/combine semantics;
+- one trusted authority/host/proxy-metadata interpretation;
+- one canonical request target consumed consistently by routing/authorization/cache/owning service;
+- safe HTTP-version translation that reconstructs from canonical semantics rather than forwarding incompatible framing metadata;
+- downstream propagation of only the normalized request meaning.
+
+Exact gateway/proxy/runtime products remain replaceable.
+
 ### Explicit tenant semantics
 
 Every tenant-scoped contract SHALL carry an unambiguous logical `tenant_id` through its contract scope. A caller may identify the logical tenant it intends to operate on, but that value is never authority for physical placement and never bypasses membership/authorization.
 
-When membership/resource policy is cell-owned, the contract preserves the accepted lifecycle: authentication -> logical tenant -> trusted placement -> authoritative route/cell admission -> trusted `TenantContext` -> request-contract validation -> owning authorization -> use case. Caller-controlled request fields are never promoted into trusted authorization/resource scope before validation under that context.
+When membership/resource policy is cell-owned, the contract preserves the accepted lifecycle: canonical HTTP ingress -> authentication -> logical tenant -> trusted placement -> authoritative route/cell admission -> trusted `TenantContext` -> request-contract validation -> owning authorization -> use case. Caller-controlled request fields are never promoted into trusted authorization/resource scope before validation under that context.
 
 ### Explicit retry semantics
 
@@ -84,6 +104,8 @@ Every endpoint SHALL declare whether its responses are `no_store`, `private_reva
 
 Framework, reverse-proxy and CDN defaults SHALL NOT silently make a protected response more cache-permissive than the accepted contract.
 
+A cache/proxy cannot key or accept a request under an interpretation different from the canonical request consumed by the owning service.
+
 ### Explicit artifact browser-execution and processing semantics
 
 Authorization to access protected artifact bytes SHALL NOT implicitly authorize those bytes to execute within the first-party application/BFF browser security origin.
@@ -106,6 +128,8 @@ The proposed major-version namespaces are:
 
 Exact hostnames/deployment routing remain infrastructure choices. URI paths never encode cell, database, shard, region-internal host, provider secret or other physical placement authority.
 
+URI/request-target interpretation is canonical per surface; edge and owning service cannot independently normalize one wire target into different logical routes/resources.
+
 ## API major version
 
 `v1` is the first externally supported major contract family. Compatible additive evolution occurs within a major version under the compatibility rules in this phase. Breaking semantic changes require a new major contract or another explicitly accepted compatibility mechanism.
@@ -120,6 +144,8 @@ A new externally consumed use case is not implementation-ready until its contrac
 - stable operation identity/name;
 - surface and major version;
 - method/path or non-HTTP invocation shape;
+- canonical HTTP message/framing profile where HTTP is used;
+- security-sensitive header cardinality, request-target and trusted-proxy semantics where applicable;
 - actor/principal classes;
 - tenant/global scope;
 - trusted placement/routing/TenantContext boundary where applicable;
@@ -138,7 +164,7 @@ A new externally consumed use case is not implementation-ready until its contrac
 - stable error codes/classes;
 - audit class;
 - observability/request-correlation requirements;
-- compatibility/deprecation implications, including cache/security/browser-delivery semantics;
+- compatibility/deprecation implications, including HTTP framing/header/proxy/target, cache/security/browser-delivery semantics;
 - data classification and secret/PII handling constraints.
 
 The canonical endpoint template in this phase makes those fields reviewable before implementation.
@@ -152,6 +178,7 @@ Phase 09 does not select:
 - event/message envelope details owned by Phase 10;
 - cloud/orchestrator/storage vendors;
 - telemetry physical engine;
+- exact gateway/reverse-proxy product or HTTP protocol deployment mix;
 - exact identity-provider or token protocol not already accepted elsewhere;
 - numeric SLO/RPO/RTO/capacity targets without evidence;
 - domain capabilities that have not been accepted by Product/Requirements.
@@ -172,11 +199,12 @@ Before a Phase 09 contract is accepted, reviewers SHOULD ask whether the contrac
 - browser, CLI, automation agents and third-party integrations consume the platform concurrently;
 - a resource is relocated while clients remain active;
 - old and new application versions coexist during rolling deployment;
+- gateway/proxy/runtime products change or HTTP/1.x, HTTP/2 and HTTP/3 translation paths are introduced without changing accepted request semantics;
 - an operation times out after an external side effect may already have happened;
 - a credential rotation response is lost while the caller must still have a safe recovery authority;
-- a cache/CDN layer is added or replaced without changing authorization semantics;
+- a cache/CDN layer is added or replaced without changing authorization/canonical-request semantics;
 - a tenant/provider uploads malicious or browser-active artifact content;
 - preview/conversion/archive processing moves to a specialized isolated runtime without changing artifact identity;
 - a customer changes plan, identity provider, region, provider or isolation class without changing logical resource identity.
 
-If a contract requires callers to understand or rewrite around those implementation changes, the contract is not sufficiently decoupled.
+If a contract requires callers to understand or rewrite around those implementation changes, or if infrastructure replacement changes the security interpretation of the same accepted request, the contract is not sufficiently decoupled.

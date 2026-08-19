@@ -109,18 +109,21 @@ A small authenticated compressed body is not allowed to expand without bound.
 
 Provider authenticity does not make XML parser features trustworthy. Any callback profile that accepts XML or an XML-derived format SHALL use an explicitly hardened parser profile.
 
-By default, the callback parser SHALL disable or reject:
+By default, the callback parser SHALL **unconditionally reject DTD declarations**, including DTDs that appear to contain only internal entities or default attributes. Implementations SHALL NOT decide that an arbitrary DTD is "harmless" and enable it under the normal callback profile.
 
-- DTD processing where it can introduce entity or external-resource behavior;
+The default callback parser also SHALL disable or reject:
+
 - general and parameter external entities;
 - external entity resolution against local files, network URLs or platform resources;
 - XInclude processing;
 - external schema/stylesheet/resource resolution;
 - parser features that perform implicit network/file retrieval or code/script execution.
 
-If a provider contract genuinely requires a schema/catalog or another external-looking dependency, the accepted profile SHALL use a pinned/trusted local resource or an explicitly isolated resolver with deny-by-default file/network access, strict allowlisting and bounded resource usage. Provider-controlled URIs SHALL NOT become resolver authority.
+If a provider contract genuinely requires a DTD/schema/catalog or another active/external XML dependency, that requirement uses a **separately reviewed exceptional parser profile** with pinned/trusted resources or an explicitly isolated resolver, deny-by-default file/network access, strict allowlisting and bounded resource usage. Provider-controlled URIs or declarations SHALL NOT become resolver authority.
 
-XML parser selection/configuration is security-sensitive contract metadata for profiles that accept XML. A framework/library upgrade SHALL NOT silently re-enable active XML features.
+DTD acceptance is therefore never an implementation-library default. Any exceptional DTD-capable profile must prove why the format requires it and how entity expansion, default-attribute interpretation, local/network resolution and parser-version drift remain bounded and deterministic.
+
+XML parser selection/configuration is security-sensitive contract metadata for profiles that accept XML. A framework/library upgrade SHALL NOT silently re-enable DTDs or other active XML features.
 
 The same principle applies to other structured formats with equivalent active resolution/include/import behavior: external resource resolution is deny-by-default unless a separately accepted bounded resolver profile proves necessity and isolation.
 
@@ -242,10 +245,11 @@ Every callback profile SHALL test:
 - bounded minimal replay-identity extraction cannot cause unbounded decompression/parser work or domain side effects;
 - tenant/integration payload forgery cannot reroute trusted tenant context;
 - post-auth parser/decompression expansion is bounded;
-- XML profiles reject DTD/external general or parameter entities, XInclude and external schema/stylesheet/resource resolution by default;
+- XML profiles reject **every DTD declaration by default**, including internal-only DTD/entity/default-attribute cases;
+- XML profiles reject external general or parameter entities, XInclude and external schema/stylesheet/resource resolution by default;
 - XML/local-file entity attempts cannot read host/runtime files;
 - XML/network entity/include/schema attempts cannot reach metadata services, loopback/private control endpoints or arbitrary external URLs;
-- any accepted resolver profile proves deny-by-default file/network policy, allowlisted trusted resources and bounded execution;
+- any exceptional DTD/resolver profile proves separate review, deny-by-default file/network policy, pinned/allowlisted trusted resources and bounded expansion/execution;
 - exact duplicate does not repeat protected effect;
 - same provider-local event ID in two trusted identity scopes is independently processable;
 - process crash after durable acceptance does not lose callback work;

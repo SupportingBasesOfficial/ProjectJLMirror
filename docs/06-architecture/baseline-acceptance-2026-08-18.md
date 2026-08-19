@@ -62,11 +62,11 @@ The following are known OPEN decisions and are **not** implied by acceptance of 
 
 `OPEN` means evidence or a later contract/ADR is still required. It does not weaken the already accepted security, isolation, consistency, recovery or ownership invariants.
 
-## Gate B remains required
+## Gate B follow-on
 
-`docs/07-system-design/*` and `docs/08-data/*` remain a **proposed System/Data baseline** after Gate A. They were heavily reviewed and merged in PR #3, but their formal governance promotion is intentionally separated into **Gate B** so the lower design layer is accepted only after its upstream Product/Requirement/Security/ADR authorities are formally accepted.
+Gate A intentionally left `docs/07-system-design/*` and `docs/08-data/*` as a proposed lower-level baseline pending a separate governance decision. Their later acceptance is recorded independently by **Gate B** in `docs/06-architecture/system-data-acceptance-2026-08-18.md`; that follow-on does not retroactively expand the scope of Gate A or alter the hierarchy established here.
 
-Phase 09 API & Contracts SHALL NOT begin as a normative implementation phase until Gate B is accepted. Phase 10 Events/Async Contracts follows the accepted Phase 09 boundary and does not begin merely because ADR-009/010 are accepted.
+Once Gate B is accepted and merged, Phase 09 API & Contracts may begin as a normative design phase under the accepted upstream Product/Requirement/Security/Architecture/System/Data authorities. Phase 10 Events/Async Contracts remains a separate later boundary and does not begin merely because Gate A or Gate B is accepted.
 
 ## Change discipline
 

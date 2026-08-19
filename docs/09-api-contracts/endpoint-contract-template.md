@@ -42,14 +42,18 @@ Declare or inherit:
 ```text
 HTTP message profile: <platform default | specialized accepted profile>
 Body framing policy: <accepted profile>
+Content-coding policy: <accepted profile | none>
+Method override policy: denied-by-default | explicitly accepted profile
+Request trailer policy: deny security-sensitive authority | specialized non-security profile
 Request-target profile: <accepted canonicalization profile>
+Query decoding/multiplicity profile: <accepted canonicalization profile>
 Trusted proxy metadata policy: <platform profile | specialized profile>
 Security-sensitive header cardinality: <declared below or inherited platform manifest>
 ```
 
 An endpoint SHALL NOT weaken the platform rule that one accepted wire request has one canonical interpretation at every downstream hop.
 
-Ambiguous `Content-Length`/`Transfer-Encoding`, conflicting body boundaries, conflicting authority/host meanings, malformed request-target normalization, or ambiguous security-sensitive header values fail closed before protected application logic consumes them.
+Ambiguous `Content-Length`/`Transfer-Encoding`, conflicting body boundaries, conflicting authority/host meanings, malformed request-target/query decoding, duplicate singleton query values, method-override ambiguity, security-sensitive trailers, content-coding disagreement or ambiguous security-sensitive header values fail closed before protected application logic consumes them.
 
 If the surface requires raw-body verification (for example provider signatures), the exact bounded raw bytes associated with the already accepted framing are preserved for verification; framing canonicalization does not rewrite the signed body.
 
@@ -90,7 +94,7 @@ Tenant source: path | trusted integration mapping | platform operation target
 Physical placement input from caller: prohibited
 ```
 
-For tenant-scoped routes, document where trusted placement is resolved and where authoritative membership/resource authorization occurs. If membership/resource policy is cell-owned, placement resolution -> authoritative routing -> cell admission -> trusted TenantContext -> request-contract validation MUST precede the owning authorization decision. Earlier ingress/global checks are narrowing/fail-fast only.
+For tenant-scoped routes, document where trusted placement is resolved and where authoritative membership/resource authorization occurs. Canonical path/query decoding occurs before placement resolution. If membership/resource policy is cell-owned, placement resolution -> authoritative routing -> cell admission -> trusted TenantContext -> request-contract validation MUST precede the owning authorization decision. Earlier ingress/global checks are narrowing/fail-fast only.
 
 Explain any legitimate global scope.
 
@@ -116,11 +120,25 @@ Define any resource-level scope rules and distinguish ingress/global prechecks f
 |---|---|---:|---|
 | `tenant_id` | opaque string | yes/no | Logical tenant scope, never placement authority |
 
+Path fields are extracted only from the canonical request target established at ingress. The endpoint SHALL NOT depend on framework-specific re-decoding/collapse semantics after placement routing.
+
 ### Query parameters
 
-Document allowlisted fields/operators, defaults and maximum complexity.
+Document allowlisted fields/operators, defaults, data classification, maximum complexity and **multiplicity**.
 
-For every query parameter also declare its data classification and whether URL placement is safe. Confidential/restricted search/filter values SHALL NOT be forced into query strings merely because the transport supports them. Where protected query input is required, use a bounded body-based query contract, server-side opaque query handle or equivalent reviewed representation that avoids browser/history/referrer/log exposure.
+For every query parameter declare:
+
+```text
+Multiplicity: singleton | repeated_list_with_canonical_rule | comma_list_under_singleton | not_accepted
+Duplicate behavior: reject | <explicit canonical rule>
+Order significance: yes/no/not_applicable
+Maximum repeated values: <bound/policy>
+URL visibility classification: public/non-sensitive | protected/non-URL
+```
+
+Duplicate singleton parameters are rejected. A query key/value SHALL NOT have first-value semantics at one hop, last-value semantics at another and list semantics at a third. Alternate encodings that normalize to the same logical key participate in the same duplicate detection.
+
+For every query parameter also declare whether URL placement is safe. Confidential/restricted search/filter values SHALL NOT be forced into query strings merely because the transport supports them. Where protected query input is required, use a bounded body-based query contract, server-side opaque query handle or equivalent reviewed representation that avoids browser/history/referrer/log exposure.
 
 ### Headers
 
@@ -147,6 +165,8 @@ Other accepted authentication/content-negotiation/range/provider headers:
 
 For BFF cookie-authenticated flows, declare the accepted cookie/session/CSRF parsing profile. Duplicate security-relevant cookie names cannot produce different authentication/CSRF outcomes across edge and application parsers.
 
+Request trailers SHALL NOT introduce or override authentication/session, idempotency, routing, CSRF/Origin, conditional/precondition, callback-security or realtime authority after initial header admission.
+
 ### Body schema
 
 Define typed request fields and semantics.
@@ -164,10 +184,13 @@ For each field specify:
 
 Unknown request fields: rejected unless an explicit extension namespace is defined.
 
+If `Content-Encoding` or multipart/other structured transfer is accepted, declare the exact profile and independent raw/decoded/parser bounds. Unsupported or ambiguously ordered decoding is rejected.
+
 ## Request limits
 
 ```text
-Maximum body bytes: <value/policy>
+Maximum raw body bytes: <value/policy>
+Maximum decoded/decompressed bytes: <value/policy or not applicable>
 Maximum item count: <value/policy>
 Maximum string/list depth/size: <value/policy>
 Maximum header bytes/count: <value/policy or OPEN platform profile>
@@ -221,6 +244,8 @@ Credential cutover semantics: <not applicable | non-disruptive create | staged o
 
 For external effects, describe stable `operation_id` / reconciliation behavior.
 
+Idempotency admission begins only after canonical HTTP acceptance. Competing `Idempotency-Key` instances, method override, request-target/query ambiguity or content-coding disagreement SHALL NOT create competing claims/fingerprints.
+
 If the endpoint creates/rotates/reissues non-retrievable secret material, document that the secret is excluded from idempotent replay state, a same-key response-loss retry cannot recreate the effect or re-present the secret, and the explicit authorized recovery action does not require possession of the lost secret. If the operation can invalidate an existing credential, prove which still-valid authority survives to recover or use a staged/overlap cutover; a nominal recovery endpoint without usable authority is insufficient.
 
 ## Optimistic concurrency
@@ -234,6 +259,8 @@ Mismatch: 412 concurrency.revision_mismatch
 ```
 
 Explain why concurrency is or is not required.
+
+`If-Match` follows one protocol-defined canonical parse meaning before precondition evaluation and cannot be introduced/overridden through trailers.
 
 ## Success responses
 
@@ -270,7 +297,9 @@ Processing secret access: none | narrowly scoped explicit capability
 Processing egress: denied/restricted under accepted outbound policy
 Expansion/resource limits: <bytes/nesting/members/CPU/memory/time/output policy or OPEN with implementation blocked>
 Archive extraction containment: <staging-root confinement/no traversal/symlink/device escape or not applicable>
-XML active external resolution: disabled | isolated deny-by-default resolver | not applicable
+Archive member canonicalization/collision policy: <canonical names + duplicate/alias rejection + atomic no-replace or not applicable>
+XML DTD policy: reject-by-default | separately accepted exceptional isolated profile | not applicable
+XML external resolution: disabled | isolated deny-by-default resolver | not applicable
 Embedded macro/script execution: prohibited unless separately accepted
 Embedded URL retrieval: prohibited except through accepted outbound/SSRF policy
 Derived artifact classification: independent required | not applicable
@@ -280,7 +309,13 @@ Unknown/untrusted/browser-active content defaults to `opaque_download`. A caller
 
 `active_inline_isolated` requires a dedicated untrusted-content browser boundary with no application/BFF ambient credential or DOM/service-worker trust and must preserve current authorization/releasability/delivery-generation/active-stream fencing.
 
-Complex document/archive/media parsing, preview, conversion, extraction or rendering of untrusted bytes uses an isolated least-privilege bounded processing profile. It SHALL NOT run with ordinary API/BFF application secrets or unrestricted egress merely because the uploader is authorized. Archive/decompression expansion, recursion, CPU/memory/time and generated-output volume are bounded. Archive extraction cannot escape its staging root through absolute/parent paths, separator tricks, links or special files. XML/XML-derived parsing disables DTD/external entities/XInclude/external schema/stylesheet/resource resolution by default or uses an explicitly isolated deny-by-default resolver. A derived preview/conversion receives independent artifact identity/classification and does not inherit `safe_inline` automatically.
+Complex document/archive/media parsing, preview, conversion, extraction or rendering of untrusted bytes uses an isolated least-privilege bounded processing profile. It SHALL NOT run with ordinary API/BFF application secrets or unrestricted egress merely because the uploader is authorized. Archive/decompression expansion, recursion, CPU/memory/time and generated-output volume are bounded.
+
+Archive extraction cannot escape its staging root and SHALL establish canonical member identity before materialization: duplicate/colliding Unicode/case/path/platform aliases are rejected, later members cannot overwrite a previously inspected canonical member, and materialization uses no-follow atomic/no-replace semantics or equivalent.
+
+XML/XML-derived parsing **rejects every DTD declaration by default** and disables external entities/XInclude/external schema/stylesheet/resource resolution. Any exceptional DTD/resolver format profile requires separate review, pinned/trusted resources, isolation and deny-by-default file/network authority.
+
+A derived preview/conversion receives independent artifact identity/classification and does not inherit `safe_inline` automatically.
 
 ## Response cache contract
 
@@ -306,7 +341,8 @@ Rules:
 - `Vary` or equivalent keying is not authorization;
 - `public_shared` requires a deliberately public projection independent of protected caller authority;
 - protected artifact caching must preserve current authorization/releasability/delivery-generation/active-stream fencing and browser-delivery profile or fall back to non-shared behavior;
-- cache/proxy keying MUST consume the same canonical host/path/query/header semantics accepted by the owning service; ambiguous requests are not cache candidates.
+- cache/proxy keying MUST consume the same canonical method/host/path/query/header semantics accepted by the owning service; ambiguous requests are not cache candidates;
+- duplicate query-key or content-coding interpretations cannot create a different cache key than the owning use case sees.
 
 Exact public/private lifetime tuning may remain `OPEN-API-017`; absence of an accepted cache contract blocks implementation.
 
@@ -331,7 +367,7 @@ domain-specific conflicts
 
 Do not expose raw database/provider exception text.
 
-Transport/framing ambiguity errors are intentionally sparse and SHALL NOT reveal which parser/hop would have interpreted the rejected message differently.
+Transport/framing/path/query ambiguity errors are intentionally sparse and SHALL NOT reveal which parser/hop would have interpreted the rejected message differently.
 
 ## Retry contract
 
@@ -374,19 +410,24 @@ Cursor mode: live | snapshot-like | historical-window
 Allowed filters: ...
 Allowed sorts: ...
 Allowed includes: ...
+Query multiplicity rules: <per parameter>
 Default limit: <value/policy>
 Maximum limit: <value/policy>
 Total count: absent | exact | approximate | optional
 Current authorization re-evaluated on each page: yes
 Cursor security binding: <tenant/query/sort plus any needed principal/scope dimensions>
 Cursor payload confidentiality: <no protected payload | server-side opaque handle | confidential+integrity-protected envelope | equivalent>
+Cursor exposed-token classification: url_safe_non_sensitive_handle | protected_continuation_token
+Browser cursor transport: query allowed only for non-sensitive handle | non-URL-visible protected transport
 Cursor URL/logging policy: <redacted/hash/reference; no raw protected cursor logging/referrer propagation>
 Sensitive query parameters allowed in URL: <no | explicit public/non-sensitive allowlist>
 ```
 
 A cursor/snapshot/watermark never freezes authorization. Each protected continuation request re-establishes current authority, and included/bulk items remain independently authorized where required.
 
-"Opaque" does not mean confidential. If cursor state would reveal protected tenant/filter/search/last-item data through URL/history/log/referrer exposure, use confidentiality protection or server-side state. Base64/signing alone is insufficient for protected cursor payloads.
+"Opaque" does not mean confidential. If cursor state would reveal protected tenant/filter/search/last-item data, use confidentiality protection or server-side state. Base64/signing alone is insufficient for protected cursor payloads.
+
+A confidential token may still be a reusable protected continuation capability. Browser-facing protected continuation tokens SHALL NOT be required in address/history-visible query strings. URL cursor transport is accepted for browser use only when the exposed handle itself is explicitly classified non-sensitive for that surface; otherwise use a BFF/body/server-side continuation representation.
 
 ## Data classification
 
@@ -421,10 +462,10 @@ correlation_id propagation
 operation_id linkage
 tenant-safe metrics/log dimensions
 provider/external-call linkage where applicable
-http message/framing rejection telemetry where applicable
+http message/framing/path/query rejection telemetry where applicable
 ```
 
-No secrets in observability payloads. Raw protected cursor/query values are not logged merely because they appear in the URL. Rejected ambiguous requests log safe rejection classes rather than competing credential/header/body values.
+No secrets in observability payloads. Raw protected cursor/query values are not logged merely because they appear in a URL. Rejected ambiguous requests log safe rejection classes rather than competing credential/header/body/query values.
 
 ## Compatibility classification
 
@@ -436,12 +477,12 @@ Classify externally important fields/enums and security/behavior policy dimensio
 - deprecated aliases, if any;
 - what would require a new major;
 - whether changing authorization/scope/idempotency/retry/consistency semantics is breaking;
-- whether changing HTTP framing/header cardinality/trusted-proxy/request-target interpretation is security-sensitive;
+- whether changing HTTP framing/header/method/trailer/content-coding/trusted-proxy/path/query interpretation is security-sensitive;
 - whether changing response cache class, shared-cache eligibility, variance or current-authorization revalidation is breaking/security-sensitive;
-- whether weakening cursor confidentiality/URL-redaction semantics is security-sensitive;
-- whether changing browser-delivery/media-type/safe-filename/active-content-isolation or untrusted-content-processing semantics is security-sensitive or breaking for supported clients.
+- whether weakening cursor confidentiality/browser-transport/URL-redaction semantics is security-sensitive;
+- whether changing browser-delivery/media-type/safe-filename/active-content-isolation or untrusted-content/archive/XML-processing semantics is security-sensitive or breaking for supported clients.
 
-A framing/canonicalization, cache, cursor confidentiality, artifact browser-delivery/safe-filename or untrusted-content-processing policy becoming more permissive is never treated as an implementation-only optimization.
+A framing/canonicalization, query multiplicity, cache, cursor confidentiality/transport, artifact browser-delivery/safe-filename, archive-member or untrusted-content-processing policy becoming more permissive is never treated as an implementation-only optimization.
 
 ## Security abuse cases
 
@@ -449,8 +490,12 @@ List relevant abuse/failure cases such as:
 
 - conflicting `Content-Length`/`Transfer-Encoding` or multiple body lengths;
 - duplicate/conflicting `Authorization`, `Idempotency-Key` or other security-sensitive singleton input;
+- method override changing effective operation across hops;
+- security-sensitive trailer injection;
 - conflicting `Host`/authority/trusted-forwarding metadata;
-- malformed/ambiguous request target causing gateway/service route disagreement;
+- repeated slash/dot-segment/encoded-separator/malformed percent/non-canonical UTF-8 path ambiguity before placement;
+- duplicate singleton query parameters or alternate-encoding collisions;
+- content-coding/decompression interpretation mismatch;
 - HTTP-version translation causing edge/application interpretation mismatch;
 - wrong tenant ID;
 - known resource ID from another tenant;
@@ -465,6 +510,7 @@ List relevant abuse/failure cases such as:
 - protected error cache leakage;
 - stale cursor after authority revocation;
 - cursor exposing confidential filter/search/resource state through URL/history/log/referrer;
+- protected browser continuation token persisted in address/history-visible URL;
 - confidential query/search value placed directly in URL;
 - operation ID used as bearer authority;
 - wildcard/untrusted credentialed BFF origin;
@@ -472,12 +518,14 @@ List relevant abuse/failure cases such as:
 - forged upload media type/filename causing inline execution or ambiguous/misleading download naming;
 - Unicode bidi/control/path/double-extension filename deception;
 - malicious archive/document causing parser RCE, SSRF, XXE, path traversal or expansion/resource exhaustion;
+- archive duplicate/Unicode/case/platform alias causing scanner-to-consumer byte substitution;
+- DTD/internal entity/default-attribute parser behavior under the normal XML profile;
 - generated preview incorrectly trusted as safe inline content;
-- oversized body;
+- oversized body/header/decoded body;
 - expensive filter/include abuse;
 - replayed callback/ticket;
 - callback-supplied SSRF target;
-- XML callback attempting local-file/network external-entity/include/schema resolution;
+- XML callback attempting DTD/local-file/network external-entity/include/schema resolution;
 - provider outage;
 - cross-tenant existence probing.
 
@@ -491,14 +539,16 @@ At minimum, protected mutation endpoints test:
 
 - conflicting framing rejected before authentication/idempotency/effect;
 - duplicate/conflicting authentication/idempotency headers cannot reach protected logic with competing values;
-- gateway and owning service consume one canonical request target/authority interpretation;
+- method override/trailer input cannot change protected authority after ingress admission;
+- gateway and owning service consume one canonical path/query/authority interpretation;
+- duplicate singleton query parameters and alternate encoding collisions are rejected;
 - authorized success;
 - unauthenticated denial;
 - wrong-tenant denial;
 - authoritative placement/routing + trusted request-contract validation before cell-owned authorization where applicable;
 - authorization policy does not consume unvalidated caller-controlled scope/resource fields;
 - insufficient permission;
-- validation bounds;
+- raw/decoded/header/query validation bounds;
 - idempotency/concurrency where applicable;
 - one-time-secret response-loss behavior where applicable;
 - lockout-safe surviving recovery authority/cutover where secret rotation can invalidate existing authority;
@@ -506,10 +556,11 @@ At minimum, protected mutation endpoints test:
 - compatibility tests for cache-policy changes;
 - current authorization on pagination/operation continuation where applicable;
 - cursor confidentiality and URL/logging non-disclosure where applicable;
+- protected browser cursor transport does not persist reusable continuation token in address/history-visible URL;
 - sensitive filter/search query values are not forced into URL-visible transport when classified protected;
 - BFF origin/CORS/CSRF behavior where applicable;
 - callback outbound-fetch/SSRF boundary where applicable;
-- callback XML profiles reject active external resolution/local-file/network entity behavior where applicable;
+- callback XML profiles reject every DTD by default and active external resolution/local-file/network behavior where applicable;
 - audit/operation linkage;
 - safe error leakage;
 - retry after response loss where applicable.
@@ -527,8 +578,10 @@ Artifact/binary endpoints additionally test, where applicable:
 - range/resume/CDN paths preserve the same browser-delivery classification and current artifact fencing;
 - malicious archive/document expansion is bounded and cannot consume unbounded CPU/memory/time/output;
 - archive extraction cannot escape staging root through path traversal, absolute paths, links or special files;
+- duplicate/archive names that collide after Unicode normalization, case folding, trailing-dot/space or platform path conversion are rejected before materialization;
+- archive materialization is no-follow and atomic/no-replace so validated/scanned members cannot be replaced or aliased before later parsing;
 - parser/renderer processing cannot access ordinary application secrets or unrestricted network destinations;
-- XML/XML-derived processing cannot resolve local/network external entities/includes/schemas unless an explicitly accepted isolated resolver profile exists;
+- XML/XML-derived processing rejects every DTD declaration by default and cannot resolve local/network external entities/includes/schemas unless an explicitly accepted isolated exceptional profile exists;
 - embedded scripts/macros/URLs are not executed/fetched implicitly;
 - derived preview/conversion output is independently identified/classified before inline delivery.
 
@@ -548,6 +601,6 @@ Explain how this contract remains stable if:
 - request volume/cardinality grows substantially;
 - gateway/reverse proxy/HTTP version changes while canonical request semantics stay equivalent;
 - a CDN/reverse proxy/cache layer is added or replaced;
-- cursor implementation moves between server-side state and a protected self-contained envelope;
+- cursor implementation moves between server-side state and a protected self-contained envelope without weakening browser transport/history policy;
 - artifact delivery moves to a dedicated untrusted-content origin or another equivalent browser-isolation mechanism;
-- artifact parsing/preview/conversion moves to a different isolated runtime or vendor without changing external artifact identity/contract.
+- artifact parsing/preview/conversion/archive extraction moves to a different isolated runtime/filesystem/vendor without changing external artifact identity or weakening canonical member/parser semantics.

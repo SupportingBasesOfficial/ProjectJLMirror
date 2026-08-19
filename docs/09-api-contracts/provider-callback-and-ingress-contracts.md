@@ -74,10 +74,12 @@ network/protocol admission
   -> obtain bounded exact raw representation
   -> provider/integration lookup from trusted route/config
   -> verify provider authenticity mechanism over the required exact representation
-  -> verify timestamp/freshness/nonce where available outside semantic parsing
-  -> bounded minimal extraction/parse only if required to establish trusted event/replay identity
+  -> verify freshness/timestamp/nonce carried outside the structured body where available
+  -> bounded canonical structured-entity parse/decompress exactly once when the body is structured
+  -> verify body-carried freshness/timestamp/nonce from that same canonical entity where applicable
+  -> derive trusted event/replay identity from that same canonical entity or trusted protocol metadata
   -> enforce replay/dedup admission before protected logical effect
-  -> bounded full parse/decompress/normalize semantic payload
+  -> map the same canonical entity into the normalized owning-domain input
   -> resolve owning domain use case
   -> authoritative mutation / operation contract
 ```
@@ -86,15 +88,19 @@ The exact cryptographic verification sequence may depend on a provider that requ
 
 HTTP framing/header canonicalization does not rewrite the signed body. It only ensures every hop agrees which bounded bytes constitute that body and which single security-header values/profile apply.
 
-If replay identity is carried inside the authenticated body, the adapter MAY perform only the minimum parsing/decompression needed to extract that identity before replay admission. That extraction is itself subject to explicit byte/depth/item/parser limits and SHALL NOT execute domain behavior, follow URLs or allocate unbounded structures.
+For structured callback bodies, authentication of the raw representation is followed by one bounded canonical entity parse under the accepted media-type profile. JSON duplicate/alias member semantics, multipart part-name/boundary semantics, XML parser semantics and equivalent structured-format ambiguity are resolved fail-closed before replay identity or protected semantic mapping consumes body fields.
 
-A provider profile SHALL NOT weaken replay protection merely because event identity requires bounded parsing; duplicate admission still occurs before the protected logical effect.
+Replay admission and domain/use-case mapping SHALL consume the **same canonical parsed entity**. An adapter SHALL NOT perform a first/last/merge-style "minimal parse" to derive an event ID and later reparse the raw body with different semantics for business processing. Retained raw bytes exist only for signature verification, audit/evidence or protocol-specific diagnostics under data-classification rules; they are not a second semantic authority after canonical entity establishment.
+
+If a provider's event identity or freshness data is inside the authenticated body, that value is derived from the canonical entity. Duplicate or normalization-aliasing event-ID fields fail closed rather than selecting a replay identity different from the event identity observed by the owning use case.
+
+A provider profile SHALL NOT weaken replay protection merely because event identity requires structured parsing; canonical parsing remains bounded and replay/dedup admission still occurs before the protected logical effect.
 
 ## Post-auth parse/decompression limits
 
 Authentication does not make the payload safe to parse without bounds.
 
-After authenticity/freshness checks, all parsing/decompression—including any minimal replay-identity extraction—enforces independent limits for:
+After authenticity checks, canonical parsing/decompression enforces independent limits for:
 
 - decompressed byte size;
 - JSON/XML/object nesting depth;
@@ -104,6 +110,8 @@ After authenticity/freshness checks, all parsing/decompression—including any m
 - parser execution/resource budget.
 
 A small authenticated compressed body is not allowed to expand without bound.
+
+Structured parser profiles additionally define duplicate/member/part/boundary/alias semantics so one authenticated raw body cannot become two different logical entities across replay admission and domain processing.
 
 ## XML and active parser features
 
@@ -136,6 +144,8 @@ Conceptual identity:
 ```text
 callback_identity_scope + provider_event_id
 ```
+
+When `provider_event_id` is body-carried, it is taken only from the canonical structured entity established after authenticity verification. The replay guard and owning-domain mapper SHALL NOT derive that identity through independent parses of the raw body.
 
 The same raw provider event ID from two different authoritative integrations/tenants/sources SHALL NOT suppress one another.
 
@@ -229,7 +239,7 @@ Provider callback profiles version independently from the canonical domain API. 
 
 The adapter normalizes multiple supported provider protocol versions into stable platform-owned application/domain contracts.
 
-Changing callback gateway/proxy/runtime or HTTP-version translation SHALL NOT alter which exact raw body/security-header meaning the provider profile authenticates. Such infrastructure changes trigger the canonical HTTP ingress regression tests.
+Changing callback gateway/proxy/runtime or HTTP-version translation SHALL NOT alter which exact raw body/security-header meaning the provider profile authenticates. Changing the structured parser/profile SHALL NOT alter which canonical entity, replay identity or domain input is derived from the same authenticated body without explicit security/compatibility review. Such infrastructure/parser changes trigger the canonical HTTP ingress and structured-entity regression tests.
 
 ## Testing
 
@@ -242,7 +252,9 @@ Every callback profile SHALL test:
 - over-limit chunked/streamed body rejected before complete buffering/authentication;
 - invalid authentication/signature rejected;
 - stale timestamp/nonce/event replay rejected/deduplicated as appropriate;
-- bounded minimal replay-identity extraction cannot cause unbounded decompression/parser work or domain side effects;
+- authenticated structured body is parsed to one canonical entity before replay identity/domain mapping consumes body fields;
+- duplicate/aliasing JSON event-ID members, multipart event-ID parts or equivalent structured ambiguity cannot make replay admission and domain mapping observe different event identities;
+- replay guard, freshness checks carried in the body and owning-domain mapping consume the same canonical structured entity;
 - tenant/integration payload forgery cannot reroute trusted tenant context;
 - post-auth parser/decompression expansion is bounded;
 - XML profiles reject **every DTD declaration by default**, including internal-only DTD/entity/default-attribute cases;

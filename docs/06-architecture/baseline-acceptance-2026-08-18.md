@@ -43,7 +43,7 @@ Gate A is not considered complete merely because statuses were changed. The gove
 
 ## Intentionally OPEN after Gate A
 
-The following remain explicitly OPEN and are **not** implied by acceptance of this baseline:
+The following are known OPEN decisions and are **not** implied by acceptance of this baseline. This inventory is not permission to treat an explicitly deferred or "to be defined" item elsewhere in the accepted baseline as resolved; such an item remains OPEN until separately accepted through its appropriate later phase/ADR/RFC/governance decision.
 
 - queue technology/vendor;
 - cache/replay-authority product or primitive;
@@ -55,8 +55,9 @@ The following remain explicitly OPEN and are **not** implied by acceptance of th
 - exact globally unique ID generation algorithm;
 - exact authentication/token protocol details not already constrained by the accepted trust/BFF model;
 - numeric SLO, RPO, RTO, percentile latency, queue-lag and propagation/revalidation thresholds;
-- exact HTTP status/header/idempotency representation, which belongs to Phase 09 API & Contracts;
+- exact HTTP status/header/idempotency representations **not already constrained by the accepted baseline**, which belong to Phase 09 API & Contracts. In particular, the accepted protected-WebSocket contract already requires a successful upgrade to return `101 Switching Protocols`, and rejected protected admission MUST NOT receive `101`;
 - exact broker acknowledgement/partition/transport mechanics, which belong to Phase 10 Events/Async Contracts;
+- artifact provenance/signing policy and related software-supply-chain release-signing details deferred by `TM-014`, which remain OPEN for the supply-chain phase;
 - future service extraction decisions, which require the measured drivers and prerequisites of ADR-020.
 
 `OPEN` means evidence or a later contract/ADR is still required. It does not weaken the already accepted security, isolation, consistency, recovery or ownership invariants.

@@ -59,7 +59,7 @@ The machine-readable HTTP contract SHALL describe:
 - stable reusable components;
 - examples where they materially clarify semantics.
 
-OpenAPI/schema alone is not sufficient to capture all JLMIRROR semantics. Each operation also conforms to the Phase 09 idempotency, authorization, consistency, audit, tenant, response-cache, artifact-browser-delivery and compatibility declarations.
+OpenAPI/schema alone is not sufficient to capture all JLMIRROR semantics. Each operation also conforms to the Phase 09 idempotency, authorization, consistency, audit, tenant, response-cache, artifact-browser-delivery, untrusted-content-processing and compatibility declarations.
 
 ## Stable operation ID
 
@@ -114,6 +114,11 @@ artifact_content_disposition_policy
 artifact_mime_sniffing_policy
 active_content_isolation_profile
 artifact_delegated_delivery_scope
+artifact_untrusted_processing_profile
+artifact_processing_secret_scope
+artifact_processing_egress_policy
+artifact_processing_resource_bounds
+derived_artifact_classification_policy
 callback_outbound_fetch_policy
 data_classification
 ```
@@ -141,13 +146,16 @@ An endpoint is not ready for implementation until review proves:
 15. stable errors;
 16. explicit response-cache class, protected-error policy, shared-cache eligibility, variance/revalidation/current-auth policy;
 17. artifact/binary browser-delivery profile, authoritative media-type policy and active-content isolation where applicable;
-18. callback outbound-fetch/SSRF policy where applicable;
-19. audit/observability requirements;
-20. compatibility classification, including cache/retry/auth/consistency/browser-delivery semantics;
-21. security/privacy classification;
-22. required tests.
+18. isolated/bounded untrusted artifact-processing profile where parsing/rendering/preview/conversion/extraction occurs;
+19. callback outbound-fetch/SSRF policy where applicable;
+20. audit/observability requirements;
+21. compatibility classification, including cache/retry/auth/consistency/browser-delivery/content-processing semantics;
+22. security/privacy classification;
+23. required tests.
 
 For browser-reachable artifact bytes, review MUST prove that authorization to download is not treated as authority for inline execution. Unknown/untrusted/browser-active content fails toward attachment/non-sniffable download semantics, and any active-inline profile uses an isolated untrusted-content boundary without application/BFF ambient credentials or origin/service-worker trust while preserving current artifact authorization and fencing.
+
+For complex untrusted artifact processing, review MUST prove isolation from ordinary API/BFF secrets and unrestricted egress, bounded CPU/memory/time/decompressed-output/nesting/member counts, no implicit macro/script/embedded-URL execution, and independent classification of generated derivative artifacts.
 
 ## Schema generation direction
 
@@ -193,6 +201,7 @@ Every implemented endpoint SHALL have contract tests that validate at minimum:
 - operation-resource current authorization when applicable;
 - response-cache class/headers/revalidation/non-reuse semantics including protected errors;
 - artifact browser-delivery/media-type/isolation semantics where bytes are browser reachable;
+- untrusted artifact-processing isolation/resource/egress/output-classification semantics where parsing/rendering occurs;
 - callback outbound-fetch/SSRF boundary where applicable;
 - size/complexity limits;
 - secret/topology leakage checks.
@@ -205,7 +214,11 @@ Artifact/binary contract tests additionally prove, where applicable:
 - `safe_inline` is restricted to explicitly accepted validated classes;
 - active-inline content cannot execute with application/BFF ambient credentials or origin/service-worker trust;
 - delegated delivery remains artifact/delivery-generation bounded and preserves current authorization/releasability/active-stream fencing;
-- range/resume/CDN paths cannot weaken the accepted browser-delivery profile.
+- range/resume/CDN paths cannot weaken the accepted browser-delivery profile;
+- archive/decompression recursion and expanded output remain bounded;
+- parser/renderer cannot access ordinary application secrets or unrestricted network destinations;
+- embedded script/macro execution and attacker-controlled URL retrieval do not occur implicitly;
+- generated preview/conversion output receives independent artifact identity/classification before release.
 
 ## Consumer compatibility tests
 
@@ -236,13 +249,15 @@ It flags likely breaking/security-sensitive changes such as:
 - artifact browser-delivery profile becoming more permissive;
 - artifact authoritative media-type/content-disposition/sniffing policy changes;
 - active-content isolation or delegated-delivery scope changes;
+- untrusted artifact-processing profile moving to a less isolated runtime or gaining broader secret/network authority;
+- artifact-processing expansion/resource bounds becoming weaker or derived-output classification being removed;
 - pagination/operation current-authorization semantics becoming weaker;
 - one-time-secret recovery/cutover changes that could remove a previously safe recovery authority;
 - callback outbound destination/redirect policy becoming more permissive.
 
-The diff tool cannot prove semantic compatibility. Reviewers still inspect changes to idempotency, authorization, consistency, ownership, retry, credential recovery, continuation authority, artifact browser execution, callback egress and cache behavior.
+The diff tool cannot prove semantic compatibility. Reviewers still inspect changes to idempotency, authorization, consistency, ownership, retry, credential recovery, continuation authority, artifact browser execution/processing, callback egress and cache behavior.
 
-A deployment/framework/CDN/browser-delivery configuration change that alters an endpoint's effective accepted cache or active-content semantics is subject to the same governance even if no OpenAPI schema changed.
+A deployment/framework/CDN/browser-delivery/parser-runtime configuration change that alters an endpoint's effective accepted cache, active-content or untrusted-processing semantics is subject to the same governance even if no OpenAPI schema changed.
 
 ## Golden examples/test vectors
 
@@ -264,6 +279,9 @@ High-risk contracts SHOULD include executable test vectors/examples for cases su
 - browser-active artifact forced to safe download on application/BFF origin;
 - active-inline artifact isolated from application/BFF ambient credentials and origin trust;
 - forged upload media type unable to opt into inline execution;
+- archive/decompression bomb bounded without exhausting the business runtime;
+- parser/renderer exploit or embedded URL cannot reach application secrets/private network under the processing profile;
+- derived preview remains non-inline until independently classified;
 - callback-supplied SSRF target rejection;
 - cursor continuation under deterministic sort;
 - long-running reconciliation state;
@@ -309,7 +327,7 @@ Contract changes require explicit security review when they introduce or materia
 - cross-tenant capability;
 - direct SQL/data administration;
 - automation execution;
-- artifact upload/download, browser-delivery class, media-type policy or active-content isolation;
+- artifact upload/download, browser-delivery class, media-type policy, active-content isolation or untrusted parser/renderer processing;
 - callback/webhook ingress or callback-driven outbound retrieval;
 - public projection;
 - realtime admission;

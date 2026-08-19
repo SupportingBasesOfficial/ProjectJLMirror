@@ -100,6 +100,8 @@ Define any resource-level scope rules and distinguish ingress/global prechecks f
 
 Document allowlisted fields/operators, defaults and maximum complexity.
 
+For every query parameter also declare its data classification and whether URL placement is safe. Confidential/restricted search/filter values SHALL NOT be forced into query strings merely because the transport supports them. Where protected query input is required, use a bounded body-based query contract, server-side opaque query handle or equivalent reviewed representation that avoids browser/history/referrer/log exposure.
+
 ### Headers
 
 Declare applicable headers:
@@ -222,7 +224,8 @@ Browser delivery applicable: yes | no
 Browser delivery profile: opaque_download | safe_inline | active_inline_isolated | not_applicable
 Authoritative media-type source: <server-controlled validation/classification policy>
 Caller filename/extension/Content-Type trusted for browser execution: no
-Content-Disposition: attachment | inline only under accepted profile
+Safe download-name policy: <server-derived canonical/fallback policy>
+Content-Disposition filename semantics: <single logical filename; coherent filename/filename* profile>
 MIME sniffing: prohibited / nosniff-equivalent
 Active-content origin isolation: required | not applicable
 Ambient application/BFF credentials on active-content origin: prohibited | not applicable
@@ -232,14 +235,18 @@ Processing boundary: <isolated parser/renderer/worker profile or not applicable>
 Processing secret access: none | narrowly scoped explicit capability
 Processing egress: denied/restricted under accepted outbound policy
 Expansion/resource limits: <bytes/nesting/members/CPU/memory/time/output policy or OPEN with implementation blocked>
+Archive extraction containment: <staging-root confinement/no traversal/symlink/device escape or not applicable>
+XML active external resolution: disabled | isolated deny-by-default resolver | not applicable
 Embedded macro/script execution: prohibited unless separately accepted
 Embedded URL retrieval: prohibited except through accepted outbound/SSRF policy
 Derived artifact classification: independent required | not applicable
 ```
 
-Unknown/untrusted/browser-active content defaults to `opaque_download`. A caller-controlled upload media type, filename or extension never authorizes inline execution. `active_inline_isolated` requires a dedicated untrusted-content browser boundary with no application/BFF ambient credential or DOM/service-worker trust and must preserve current authorization/releasability/delivery-generation/active-stream fencing.
+Unknown/untrusted/browser-active content defaults to `opaque_download`. A caller-controlled upload media type, filename or extension never authorizes inline execution. The download name is server-derived under a canonical policy that removes control/bidi/path ambiguity, avoids misleading executable extensions and can fall back to a neutral server-generated name.
 
-Complex document/archive/media parsing, preview, conversion, extraction or rendering of untrusted bytes uses an isolated least-privilege bounded processing profile. It SHALL NOT run with ordinary API/BFF application secrets or unrestricted egress merely because the uploader is authorized. Archive/decompression expansion, recursion, CPU/memory/time and generated-output volume are bounded. A derived preview/conversion receives independent artifact identity/classification and does not inherit `safe_inline` automatically.
+`active_inline_isolated` requires a dedicated untrusted-content browser boundary with no application/BFF ambient credential or DOM/service-worker trust and must preserve current authorization/releasability/delivery-generation/active-stream fencing.
+
+Complex document/archive/media parsing, preview, conversion, extraction or rendering of untrusted bytes uses an isolated least-privilege bounded processing profile. It SHALL NOT run with ordinary API/BFF application secrets or unrestricted egress merely because the uploader is authorized. Archive/decompression expansion, recursion, CPU/memory/time and generated-output volume are bounded. Archive extraction cannot escape its staging root through absolute/parent paths, separator tricks, links or special files. XML/XML-derived parsing disables DTD/external entities/XInclude/external schema/stylesheet/resource resolution by default or uses an explicitly isolated deny-by-default resolver. A derived preview/conversion receives independent artifact identity/classification and does not inherit `safe_inline` automatically.
 
 ## Response cache contract
 
@@ -333,9 +340,14 @@ Maximum limit: <value/policy>
 Total count: absent | exact | approximate | optional
 Current authorization re-evaluated on each page: yes
 Cursor security binding: <tenant/query/sort plus any needed principal/scope dimensions>
+Cursor payload confidentiality: <no protected payload | server-side opaque handle | confidential+integrity-protected envelope | equivalent>
+Cursor URL/logging policy: <redacted/hash/reference; no raw protected cursor logging/referrer propagation>
+Sensitive query parameters allowed in URL: <no | explicit public/non-sensitive allowlist>
 ```
 
 A cursor/snapshot/watermark never freezes authorization. Each protected continuation request re-establishes current authority, and included/bulk items remain independently authorized where required.
+
+"Opaque" does not mean confidential. If cursor state would reveal protected tenant/filter/search/last-item data through URL/history/log/referrer exposure, use confidentiality protection or server-side state. Base64/signing alone is insufficient for protected cursor payloads.
 
 ## Data classification
 
@@ -372,7 +384,7 @@ tenant-safe metrics/log dimensions
 provider/external-call linkage where applicable
 ```
 
-No secrets in observability payloads.
+No secrets in observability payloads. Raw protected cursor/query values are not logged merely because they appear in the URL.
 
 ## Compatibility classification
 
@@ -385,9 +397,10 @@ Classify externally important fields/enums and security/behavior policy dimensio
 - what would require a new major;
 - whether changing authorization/scope/idempotency/retry/consistency semantics is breaking;
 - whether changing response cache class, shared-cache eligibility, variance or current-authorization revalidation is breaking/security-sensitive;
-- whether changing browser-delivery/media-type/active-content-isolation or untrusted-content-processing semantics is security-sensitive or breaking for supported clients.
+- whether weakening cursor confidentiality/URL-redaction semantics is security-sensitive;
+- whether changing browser-delivery/media-type/safe-filename/active-content-isolation or untrusted-content-processing semantics is security-sensitive or breaking for supported clients.
 
-A cache, artifact browser-delivery or untrusted-content-processing policy becoming more permissive is never treated as an implementation-only optimization.
+A cache, cursor confidentiality, artifact browser-delivery/safe-filename or untrusted-content-processing policy becoming more permissive is never treated as an implementation-only optimization.
 
 ## Security abuse cases
 
@@ -405,16 +418,20 @@ List relevant abuse/failure cases such as:
 - shared-cache cross-principal/tenant leakage;
 - protected error cache leakage;
 - stale cursor after authority revocation;
+- cursor exposing confidential filter/search/resource state through URL/history/log/referrer;
+- confidential query/search value placed directly in URL;
 - operation ID used as bearer authority;
 - wildcard/untrusted credentialed BFF origin;
 - browser-active artifact executing on application/BFF origin;
-- forged upload media type/filename causing inline execution or header injection;
-- malicious archive/document causing parser RCE, SSRF or expansion/resource exhaustion;
+- forged upload media type/filename causing inline execution or ambiguous/misleading download naming;
+- Unicode bidi/control/path/double-extension filename deception;
+- malicious archive/document causing parser RCE, SSRF, XXE, path traversal or expansion/resource exhaustion;
 - generated preview incorrectly trusted as safe inline content;
 - oversized body;
 - expensive filter/include abuse;
 - replayed callback/ticket;
 - callback-supplied SSRF target;
+- XML callback attempting local-file/network external-entity/include/schema resolution;
 - provider outage;
 - cross-tenant existence probing.
 
@@ -437,8 +454,11 @@ At minimum, protected mutation endpoints test:
 - response-cache headers/semantics and cross-principal/tenant non-reuse, including protected error variants;
 - compatibility tests for cache-policy changes;
 - current authorization on pagination/operation continuation where applicable;
+- cursor confidentiality and URL/logging non-disclosure where applicable;
+- sensitive filter/search query values are not forced into URL-visible transport when classified protected;
 - BFF origin/CORS/CSRF behavior where applicable;
 - callback outbound-fetch/SSRF boundary where applicable;
+- callback XML profiles reject active external resolution/local-file/network entity behavior where applicable;
 - audit/operation linkage;
 - safe error leakage;
 - retry after response loss where applicable.
@@ -447,13 +467,17 @@ Artifact/binary endpoints additionally test, where applicable:
 
 - uploader-controlled filename/extension/media type cannot force executable inline delivery;
 - unknown/untrusted/browser-active content falls back to attachment/non-sniffable download semantics;
-- safely encoded filename metadata cannot inject response headers;
+- CRLF, controls, bidi, separators, reserved/special names and misleading extensions cannot create ambiguous or deceptive `Content-Disposition` names;
+- `filename`/`filename*` (when both emitted) resolve to the same logical safe name without duplicate/conflicting parameters;
+- safe fallback naming works when attacker metadata cannot be normalized safely;
 - `safe_inline` accepts only the explicitly allowlisted validated content classes;
 - `active_inline_isolated` does not receive application/BFF ambient credentials or origin/service-worker trust;
 - delegated active-content delivery remains bound to the intended artifact/delivery generation and cannot become a general API credential;
 - range/resume/CDN paths preserve the same browser-delivery classification and current artifact fencing;
 - malicious archive/document expansion is bounded and cannot consume unbounded CPU/memory/time/output;
+- archive extraction cannot escape staging root through path traversal, absolute paths, links or special files;
 - parser/renderer processing cannot access ordinary application secrets or unrestricted network destinations;
+- XML/XML-derived processing cannot resolve local/network external entities/includes/schemas unless an explicitly accepted isolated resolver profile exists;
 - embedded scripts/macros/URLs are not executed/fetched implicitly;
 - derived preview/conversion output is independently identified/classified before inline delivery.
 
@@ -472,5 +496,6 @@ Explain how this contract remains stable if:
 - client types multiply;
 - request volume/cardinality grows substantially;
 - a CDN/reverse proxy/cache layer is added or replaced;
+- cursor implementation moves between server-side state and a protected self-contained envelope;
 - artifact delivery moves to a dedicated untrusted-content origin or another equivalent browser-isolation mechanism;
 - artifact parsing/preview/conversion moves to a different isolated runtime or vendor without changing external artifact identity/contract.

@@ -450,10 +450,11 @@ Rules:
 - body-carried freshness/replay identity is derived from the same canonical structured entity used by callback/domain mapping;
 - replay admission is atomic create-or-observe and produces one logical executor under concurrent delivery;
 - replay admission cannot permanently consume an identity while required work has no durable responsibility unless a durable recoverable reconciliation state exists;
-- replay retention expiry does not convert unresolved ambiguous irreversible work into blind execution eligibility;
-- callback success acknowledgement never precedes required durable responsibility.
+- if a cross-authority irreversible effect may have succeeded but its outcome is not yet durably recorded, the stable operation/replay state enters or remains in reconciliation and **no new effect attempt is admitted until authoritative reconciliation resolves the prior outcome**;
+- replay retention expiry does not convert unresolved ambiguous irreversible work or still-supported recovery state into blind execution eligibility;
+- callback success acknowledgement never precedes the declared required durable-responsibility boundary.
 
-Exact authenticator algorithm, signed-header set, numeric window, replay storage product and transaction topology remain `OPEN-API-022` until accepted for the provider profile.
+Exact authenticator algorithm, signed-header set, numeric window, replay storage product, retention duration, provider-facing acknowledgement status mapping and transaction topology remain `OPEN-API-022` until accepted for the provider profile.
 
 ## Long-running operation
 
@@ -541,7 +542,7 @@ Classify externally important fields/enums and security/behavior dimensions. Doc
 - structured request entity parsing, duplicate/alias/member/part semantics and canonical propagation;
 - response-header grammar/cardinality/serialization ownership;
 - response-cache class/shared eligibility/variance/current-auth revalidation;
-- callback authentication/freshness binding/replay identity/atomic admission/durable coupling/reconciliation;
+- callback authentication/freshness binding/replay identity/atomic admission/durable coupling/replay retention/acknowledgement durability/post-effect ambiguity/reconciliation;
 - cursor confidentiality/browser transport/URL redaction;
 - browser-delivery/media-type/safe-filename/active-content isolation;
 - untrusted-content/archive/XML processing.
@@ -576,6 +577,9 @@ Consider, where applicable:
 - malicious archive/parser/DTD/XXE/SSRF/resource exhaustion;
 - callback freshness evidence not bound to authenticated input;
 - callback replay admission race or consumed-without-durable-work state;
+- callback replay/ambiguity record expiry while unresolved work or outcome remains;
+- callback success acknowledgement before durable responsibility;
+- callback crash after a possibly successful external irreversible effect but before durable outcome recording, followed by unsafe re-execution instead of reconciliation;
 - replayed callback/ticket;
 - provider outage.
 
@@ -602,7 +606,7 @@ Protected mutation/body-bearing endpoints additionally test:
 - response cache non-reuse/compatibility;
 - current continuation authorization/cursor confidentiality and browser transport;
 - BFF Origin/CORS/CSRF;
-- callback raw-body/signature, authenticated freshness binding, atomic replay admission, crash/durable-coupling/reconciliation, SSRF/XML protections;
+- callback raw-body/signature, authenticated freshness binding, atomic replay admission, replay retention, acknowledgement durability, post-effect/pre-outcome-record crash, durable-coupling/reconciliation, SSRF/XML protections;
 - safe audit/error/observability behavior.
 
 Artifact/binary endpoints additionally test media authority, safe filename/header construction, active-inline isolation, range/CDN fencing, archive bounds/containment/member collision/no-replace semantics, parser secret/egress isolation, DTD/external-resolution denial and independent derivative classification.
@@ -622,7 +626,7 @@ Explain how the contract remains stable if:
 - HTTP protocol/version or proxy layers change while canonical semantics stay equivalent;
 - the structured-body parser/library changes while canonical entity semantics remain identical;
 - response-header serialization moves between framework/proxy layers without changing the accepted profile;
-- a provider callback authenticator/SDK/replay implementation changes while freshness binding and durable replay semantics remain identical;
+- a provider callback authenticator/SDK/replay implementation changes while freshness binding, replay retention, acknowledgement durability and post-effect reconciliation semantics remain identical;
 - CDN/cache is added or replaced;
 - cursor implementation changes without weakening browser transport/history policy;
 - artifact delivery/processing moves runtimes/vendors without weakening security invariants.

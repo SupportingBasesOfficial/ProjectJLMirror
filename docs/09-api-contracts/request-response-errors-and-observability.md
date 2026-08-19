@@ -67,6 +67,8 @@ public_shared
 artifact_delivery_guarded
 ```
 
+The cache contract applies to **all response variants**, including success, redirect where allowed, conditional responses and errors. An endpoint SHALL NOT define a safe success cache policy while leaving authentication/authorization/not-found/error responses to intermediary defaults.
+
 ### `no_store`
 
 Use when a response contains or is materially derived from secrets, credential/session material, one-time secret presentation, security-sensitive mutation results, authorization-sensitive data whose storage is not explicitly accepted, or any response where retention by an intermediary would create unacceptable disclosure/replay risk.
@@ -74,6 +76,8 @@ Use when a response contains or is materially derived from secrets, credential/s
 `no_store` SHALL emit behavior equivalent to `Cache-Control: no-store`. A more permissive infrastructure default cannot override it.
 
 Secret-bearing responses are always `no_store`.
+
+Authentication, authorization, step-up and existence-concealing protected error responses default to `no_store` unless a stricter reviewed endpoint contract proves an equally safe behavior. A shared cache SHALL NOT reuse a protected `401`, `403` or concealed `404` across principals/tenants.
 
 ### `private_revalidate`
 
@@ -220,7 +224,21 @@ If the platform cannot establish safe durable tracking, the route fails conserva
 
 Cheap request-shape/size checks MAY run before expensive authorization/database work, but protected operations SHALL NOT reveal protected resource existence through semantic validation before required authentication/tenant-authorization gates.
 
-For tenant-scoped requests whose membership/resource authority is cell-owned, trusted placement resolution, authoritative routing, cell admission and `TenantContext` construction occur before the owning membership/resource authorization decision, consistent with the accepted lifecycle.
+For tenant-scoped requests whose membership/resource authority is cell-owned, the accepted order is:
+
+```text
+authenticate
+ -> logical tenant intent
+ -> trusted placement resolution
+ -> authoritative route
+ -> cell admission/current placement version
+ -> trusted TenantContext
+ -> request-contract validation
+ -> owning membership/permission/resource authorization
+ -> use case
+```
+
+Request-contract validation before owning authorization is specifically the validation needed to ensure caller-controlled path/query/header/body fields are well-formed, bounded and safe to consume as policy/resource inputs. It SHALL NOT perform protected semantic existence checks that would leak information before the owning authority gate.
 
 Provider callbacks remain subject to their separate rule: hard raw transport bounds are enforced before complete buffering/signature work.
 

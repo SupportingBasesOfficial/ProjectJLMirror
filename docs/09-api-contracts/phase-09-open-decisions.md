@@ -254,6 +254,30 @@ A framework default does not become the canonical safe-filename policy merely be
 
 Choosing a gateway/framework default does not resolve this OPEN item by itself. The security properties in `http-message-framing-and-canonicalization.md` remain normative regardless of product choice.
 
+## OPEN-API-022 — Provider callback authentication/freshness/replay implementation profile
+
+**Question:** For each provider callback profile, what concrete authenticator/signature/certificate/token mechanism is used, which exact request bytes/headers/metadata it covers, which freshness evidence is available, what numeric clock/skew/sequence/replay-retention windows apply, and what concrete durable replay/inbox/reconciliation implementation satisfies the accepted correctness properties?
+
+**Already fixed:**
+
+- callback framing and raw-body identity are canonical before authentication processing;
+- provider authentication cannot derive tenant authority from payload fields;
+- every freshness timestamp/nonce/sequence used as security authority is bound to the authenticated callback body/identity by the accepted authenticator or comes from independently trusted protocol metadata associated with the same request;
+- a clock-window check alone cannot make unbound metadata trustworthy;
+- structured body-carried freshness/replay identity is derived from the same canonical entity consumed by domain mapping;
+- replay identity scope includes trusted tenant/integration/source dimensions needed to prevent collisions;
+- replay admission is atomic create-or-observe and yields at most one logical executor for one trusted identity;
+- replay admission is coupled to durable inbox/work/effect responsibility, or a cross-authority durable reconciliation state prevents blind re-admission;
+- crash between replay admission and durable work cannot create an unrecoverable consumed-without-work state;
+- success acknowledgement requires durable responsibility;
+- retention expiry cannot turn unresolved ambiguous irreversible work into automatic execution eligibility.
+
+**Intentionally OPEN:** exact cryptographic algorithm/profile, provider SDK/library, certificate/token representation, signed-header set, numeric freshness window/skew, nonce/sequence storage mechanism, replay database/cache product, transaction topology, retention duration and cross-authority reconciliation implementation.
+
+**Resolution evidence:** official provider protocol documentation, security analysis of exactly what the authenticator covers, deployed-path interoperability tests, concurrent-delivery tests, crash-point recovery tests, provider retry behavior, retention/capacity evidence and failure/reconciliation exercises.
+
+A provider/framework default does not resolve this OPEN item merely because it validates a happy-path webhook.
+
 ## Not Phase 09 OPENs
 
 The following remain outside Phase 09 and are not silently decided here:

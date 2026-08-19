@@ -84,6 +84,14 @@ Every endpoint SHALL declare whether its responses are `no_store`, `private_reva
 
 Framework, reverse-proxy and CDN defaults SHALL NOT silently make a protected response more cache-permissive than the accepted contract.
 
+### Explicit artifact browser-execution and processing semantics
+
+Authorization to access protected artifact bytes SHALL NOT implicitly authorize those bytes to execute within the first-party application/BFF browser security origin.
+
+Browser-reachable artifact contracts declare a server-controlled media classification and browser-delivery profile. Unknown, untrusted or browser-active/script-capable content fails toward non-executable download behavior. Inline browser-active rendering requires a separately accepted isolated untrusted-content boundary that does not share application/BFF ambient credential or origin/service-worker trust and still preserves current artifact authorization/releasability/delivery fencing.
+
+Complex parsing, archive expansion, preview generation, conversion or metadata extraction of untrusted bytes is a separate processing trust boundary. Such work is isolated and bounded when it exists; upload authorization or successful persistence does not make document/media parsers safe to run with ordinary application secrets or unrestricted egress.
+
 ## Initial URI namespaces
 
 The proposed major-version namespaces are:
@@ -120,6 +128,8 @@ A new externally consumed use case is not implementation-ready until its contrac
 - request schema and size/complexity bounds;
 - response/result semantics;
 - response-cache class/shared-cache/revalidation/current-auth semantics;
+- artifact browser-delivery/media-type/active-content-isolation semantics where bytes are exposed;
+- untrusted artifact-processing isolation/resource/egress/output-classification semantics where parsing/rendering/conversion occurs;
 - consistency class;
 - idempotency/retry behavior;
 - one-time-secret response-loss/recovery and surviving recovery authority where applicable;
@@ -128,7 +138,7 @@ A new externally consumed use case is not implementation-ready until its contrac
 - stable error codes/classes;
 - audit class;
 - observability/request-correlation requirements;
-- compatibility/deprecation implications, including cache/security semantics;
+- compatibility/deprecation implications, including cache/security/browser-delivery semantics;
 - data classification and secret/PII handling constraints.
 
 The canonical endpoint template in this phase makes those fields reviewable before implementation.
@@ -148,6 +158,8 @@ Phase 09 does not select:
 
 Phase 09 MAY define exact HTTP representations where Gate B intentionally delegated them here, including path/version conventions, error representation, idempotency header semantics, pagination/cursor representation, long-running operation resources and conditional request conventions.
 
+Exact implementation products for artifact storage, malware/content scanning, parser/renderer sandboxing and isolated browser-active delivery are not selected by this baseline. Their required security properties are.
+
 ## Maximum-state evolution test
 
 Before a Phase 09 contract is accepted, reviewers SHOULD ask whether the contract remains coherent if all of the following become true later:
@@ -163,6 +175,8 @@ Before a Phase 09 contract is accepted, reviewers SHOULD ask whether the contrac
 - an operation times out after an external side effect may already have happened;
 - a credential rotation response is lost while the caller must still have a safe recovery authority;
 - a cache/CDN layer is added or replaced without changing authorization semantics;
+- a tenant/provider uploads malicious or browser-active artifact content;
+- preview/conversion/archive processing moves to a specialized isolated runtime without changing artifact identity;
 - a customer changes plan, identity provider, region, provider or isolation class without changing logical resource identity.
 
 If a contract requires callers to understand or rewrite around those implementation changes, the contract is not sufficiently decoupled.

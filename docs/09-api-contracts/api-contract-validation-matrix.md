@@ -19,6 +19,8 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Query canonicalization/multiplicity | Query decoding is canonical before cache/auth/use case; singleton parameters reject duplicates/alternate-encoding collisions; genuinely repeated parameters define ordering/duplicate/count semantics |
 | HTTP-version translation | HTTP/1.x↔HTTP/2↔HTTP/3 translation validates source framing and reconstructs target messages from canonical semantics rather than forwarding incompatible hop/framing metadata |
 | Content coding | Raw and decoded limits are independent; malformed/unsupported/ambiguously ordered `Content-Encoding` cannot make edge/signature/size enforcement/application process different entity representations |
+| Structured request entity | Every accepted structured request media type has one bounded canonical parse profile; duplicate/alias JSON members, multipart part-name/metadata/boundary ambiguity and equivalent structured-format parser ambiguity fail closed before protected body fields reach validation, authorization, idempotency or use-case mapping |
+| Structured entity propagation | Request validation, owning authorization inputs, idempotency fingerprinting, body-dependent preconditions, callback replay identity/freshness where body-carried, and use-case/domain mapping consume the same canonical parsed entity; retained raw bytes are not independently reparsed as a second semantic authority |
 | Tenant scope | Tenant-scoped operation carries explicit logical tenant scope and validates current credential + placement + authoritative membership/resource authorization |
 | Tenant auth ordering | When membership/resource authority is cell-owned: canonical ingress -> authenticate -> logical tenant -> trusted placement -> route -> cell admission -> TenantContext -> request-contract validation -> owning membership/permission/resource authorization; ingress prechecks cannot substitute for the owning decision |
 | Authorization input safety | Owning authorization consumes only request fields validated under the trusted TenantContext/route; earlier cheap size/syntax checks cannot convert caller input into trusted authorization/resource scope or leak protected existence |
@@ -30,6 +32,8 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Provider identity | Provider-native IDs remain external references and cannot replace canonical platform resource identity |
 | Error safety | Stable machine `code`; no stack/SQL/physical placement/secrets/cross-tenant existence leakage |
 | Request correlation | Server request ID and effective correlation ID observable without becoming auth/idempotency authority |
+| Response header profile | Every endpoint inherits or declares bounded grammar/cardinality/serialization rules for emitted headers and one serialization owner/composition model across application/BFF/proxy/CDN hops; dynamic `Location`, `Link`, `ETag`, `Retry-After`, `Content-Disposition`, redirect, cache/security/CORS/authentication and request/correlation headers cannot depend on raw string concatenation or conflicting singleton composition |
+| Response header failure recovery | CR/LF/NUL/control injection, obsolete folding, invalid URI/header-value grammar and conflicting singleton output fail safely; a response-header serialization failure after a committed mutation cannot trigger blind mutation replay and must recover through authoritative idempotency/operation/read semantics |
 | Response cache class | Every endpoint declares `no_store`, `private_revalidate`, `public_shared` or `artifact_delivery_guarded`; infrastructure defaults cannot choose a more permissive class |
 | Protected cache isolation | Auth-dependent protected API/BFF response cannot be reused across principal/tenant boundary; `Vary`/caller metadata alone is not treated as authorization |
 | Protected error caching | Authentication/authorization/step-up/existence-concealing protected errors cannot be shared across principals/tenants; safe cache policy applies to all response variants, not only success |
@@ -90,7 +94,7 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Provider callback raw bound | Chunked/streamed over-limit body rejected before complete buffering/signature work after canonical framing admission |
 | Provider callback auth | Invalid authenticity/freshness rejected before protected domain mutation |
 | Provider callback tenant binding | Payload tenant/account fields cannot reroute callback away from trusted integration mapping |
-| Provider callback replay | Exact replay cannot repeat protected effect; same raw event ID across trusted scopes does not collide |
+| Provider callback replay | Exact replay cannot repeat protected effect; same raw event ID across trusted scopes does not collide; body-carried replay identity is derived from the same canonical structured entity later mapped to the owning use case |
 | Provider callback parse bound | Authenticated compressed/structured payload remains bounded after decompression/parsing |
 | Provider callback XML safety | XML callback profile **rejects every DTD declaration by default** plus external entities/XInclude/external schema/stylesheet/resource resolution; exceptional DTD/resolver profiles require separate review and pinned/isolated deny-by-default resources |
 | Provider callback durability | Success acknowledgement after async acceptance has durable replayable work authority |
@@ -98,11 +102,11 @@ This matrix turns the Phase 09 contract model into review and implementation evi
 | Version compatibility | Additive change obeys unknown-field/open-enum rules; breaking change requires governed version boundary |
 | Semantic compatibility | Schema-compatible change does not silently alter consistency, idempotency, authorization, scope, cache or retry meaning |
 | Cache compatibility | Cache class, shared-cache eligibility, variance, validator/revalidation/current-auth requirements and security-relevant freshness policy are reviewed as semantic contract; a more permissive cache policy cannot ship as an implementation-only change |
-| Security-metadata compatibility | Weakening HTTP framing/method/trailer/content-coding/path/query/header/trusted-proxy semantics, cursor confidentiality/transport/logging, archive member identity, safe-filename handling, artifact browser-delivery/parser isolation or XML DTD/external-resolution policy is reviewed as a security-sensitive semantic change even if schemas remain unchanged |
+| Security-metadata compatibility | Weakening HTTP framing/method/trailer/content-coding/path/query/header/trusted-proxy semantics, structured-body parser/canonical-entity propagation, response-header grammar/cardinality/serialization ownership, cursor confidentiality/transport/logging, archive member identity, safe-filename handling, artifact browser-delivery/parser isolation or XML DTD/external-resolution policy is reviewed as a security-sensitive semantic change even if schemas remain unchanged |
 | Service extraction | Moving owner to new runtime/service does not change public IDs/routes/tenant semantics solely due to deployment topology |
 | Provider replacement | New provider adapter does not force canonical resource IDs/schema to become provider-native |
 | Contract source of truth | Machine-readable contract is reviewed canonical artifact; controller/ORM DTO does not define public schema by accident |
-| Breaking-change CI | Contract diff detects structural risk; semantic review checks HTTP canonicalization/security/ownership/retry/consistency/cache/browser-delivery/cursor/parser changes |
+| Breaking-change CI | Contract diff detects structural risk; semantic review checks HTTP canonicalization/structured-entity/response-header/security/ownership/retry/consistency/cache/browser-delivery/cursor/parser changes |
 | Client resilience | Official client ignores compatible unknown response fields/open enum values and only auto-retries operations marked safe |
 | Data classification | Request/response/URL/logging policy prevents secret/credential/regulated/confidential-data leakage |
 | Abuse limits | Body/header/decoded-body/page/filter/include/bulk/export/expensive operation constraints are explicit or explicitly OPEN with implementation blocked |
@@ -124,6 +128,9 @@ The following failures block acceptance/release regardless of other success:
 - a repeated query parameter lacks an explicit multiplicity/order/duplicate rule yet influences cache/auth/validation/use case;
 - HTTP-version translation can turn an invalid/ambiguous source request into a protected accepted request or propagate incompatible framing metadata downstream;
 - content-coding/decompression interpretation can make security verification/size enforcement and semantic processing operate on different entity representations;
+- a structured request body can be interpreted with different duplicate/alias/member/part/boundary semantics by validation, authorization, idempotency, callback replay admission or the owning use case;
+- a structured request media type has no accepted canonical entity profile or protected components independently reparse retained raw bytes and derive different logical values;
+- a body-carried callback replay/freshness/event identity can be derived from a different parse than the canonical entity used for domain mapping;
 - cache/proxy can accept/cache one interpretation of an ambiguous request while the owning service rejects or interprets another;
 - public/BFF caller can choose or override physical tenant placement;
 - tenant-scoped implementation performs cell-owned membership/resource authorization before trusted placement routing/cell admission/TenantContext/request-contract validation, or treats ingress authorization as a substitute for owning authorization;
@@ -133,6 +140,9 @@ The following failures block acceptance/release regardless of other success:
 - credentialed BFF permits arbitrary/wildcard untrusted origins or treats CORS as authorization;
 - route authorization exists only in UI/BFF and not in owning server-side boundary;
 - response contract exposes raw secret/token or sensitive internal topology;
+- an endpoint emits dynamic/security-relevant response headers without an accepted bounded grammar/cardinality profile or without one declared serialization/composition owner across application/BFF/proxy/CDN layers;
+- caller/provider/resource-derived response-header data can inject CR/LF/NUL/control characters, obsolete folding, invalid URI/header grammar or conflicting singleton values, or infrastructure can append a second security-relevant singleton with another meaning;
+- a response-header serialization failure after a committed mutation causes the mutation to be blindly retried rather than recovered through authoritative idempotency/operation/read semantics;
 - authentication/authorization/existence-concealing protected errors can be served from a shared cache across principals/tenants;
 - secret-bearing create/rotate response or realtime ticket-mint response is cacheable, persisted for replay, or re-presented by same-key idempotency retry after response loss;
 - lost one-time-secret response causes automatic second credential/secret creation instead of observing the completed logical effect and requiring explicit recovery;
@@ -185,10 +195,11 @@ The following failures block acceptance/release regardless of other success:
 - duplicate/conflicting callback authentication/signature/freshness headers can be interpreted differently across hops;
 - duplicate callback can repeat irreversible logical effect;
 - same provider-local callback ID from two trusted tenant/source scopes collides under one dedup identity;
+- body-carried callback event/replay identity can be parsed differently from the canonical payload consumed by the owning use case, allowing replay-key variation for the same logical event;
 - provider callback XML parser accepts a DTD under the default profile or permits external entity/XInclude/external schema/stylesheet resolution to read local files or reach network/internal services outside an explicitly accepted isolated exceptional profile;
 - provider callback returns success while required async work exists only in process memory;
 - callback-supplied URL can trigger unrestricted outbound fetch/redirect and bypass the trusted connector/SSRF boundary;
-- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/HTTP-framing/path-query/cache/browser-delivery/cursor/archive/parser semantics;
+- a supposedly compatible same-major change removes/renames/reinterprets accepted behavior or changes safe retry/security/consistency/HTTP-framing/structured-body/response-header/path-query/cache/browser-delivery/cursor/archive/parser semantics;
 - service extraction/provider/storage/gateway migration forces consumers or security semantics to change because public contract leaked internal topology or relied on parser disagreement;
 - database/ORM model is serialized directly as the public contract without deliberate schema/authorization review.
 

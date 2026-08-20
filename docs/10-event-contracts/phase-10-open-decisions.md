@@ -254,7 +254,8 @@ The first-party Phase 10 realtime protocol baseline uses bounded canonical JSON;
 
 - internal event existence does not automatically create an external webhook Product feature;
 - external disclosure requires explicit Product/security/data approval;
-- tenant subscription binding and destination security are mandatory when enabled.
+- tenant subscription binding and destination security are mandatory when enabled;
+- each admitted delivery is bound to the tenant/subscription disclosure scope and exact authorized destination configuration generation under which the obligation was created.
 
 ## OPEN-EVT-022 — Outbound webhook signature/auth profile
 
@@ -265,18 +266,29 @@ The first-party Phase 10 realtime protocol baseline uses bounded canonical JSON;
 - authenticity covers the intended payload/delivery identity and freshness-relevant metadata;
 - unbound timestamp is insufficient;
 - secrets are referenced/stored in secret authority, never normal payload/log;
-- retry preserves delivery/source identity.
+- retry preserves delivery/source identity;
+- attempt-scoped authentication metadata may change only under the accepted profile and cannot mutate webhook semantic payload, contract version, tenant/subscription scope or destination configuration generation.
 
-## OPEN-EVT-023 — Webhook retry and external delivery SLO
+## OPEN-EVT-023 — Webhook retry, delivery identity and destination-generation implementation
 
-**Question:** Attempts/window/backoff/throttling/terminal policy and ordering if required by a specific webhook contract.
+**Question:** Attempts/window/backoff/throttling/terminal policy, concrete storage/representation of the immutable delivery semantic snapshot, globally unique delivery-ID generation mechanism, destination configuration-generation representation, and the Product-specific cancel/fence/quarantine/reissue behavior when destination/disclosure authority changes.
 
 **Already fixed:**
 
 - external delivery is at least once unless stronger end-to-end proof exists;
-- subscriber timeout may redeliver same delivery ID;
+- one stable `webhook_delivery_id` identifies one immutable external semantic delivery obligation for the full supported retry/recovery horizon;
+- the default delivery-ID namespace is globally unique across tenants/subscriptions; any future scoped external identity must expose the complete stable scope required for deduplication;
+- retry of the same delivery ID preserves webhook contract/version, source identity, tenant/subscription scope, canonical semantic payload meaning and the exact bound destination configuration generation;
+- rolling deployment/current mutable state cannot change the semantic body represented by the same delivery ID;
+- subscriber timeout may redeliver the same immutable delivery obligation only while its bound destination generation remains eligible;
+- a destination/configuration generation change never silently retargets the existing delivery ID;
+- old-generation obligations are cancelled/fenced/quarantined or deliberately reissued according to accepted Product/security policy;
+- deliberate reissue under a new destination generation is a new delivery obligation with a new delivery ID and causation to the original;
 - one subscriber cannot exhaust global delivery capacity;
-- permanent/security failure reaches governed terminal state.
+- permanent/security failure reaches governed terminal state;
+- restore/PITR cannot resurrect retired destination generations or reconstruct an existing delivery ID with changed semantics.
+
+The exact ID algorithm, snapshot storage, generation encoding and per-Product cancel/quarantine/reissue choice remain OPEN; the stable identity/semantic-freeze/generation-fence properties are not OPEN.
 
 ## OPEN-EVT-024 — Webhook egress/SSRF implementation
 
@@ -286,18 +298,20 @@ The first-party Phase 10 realtime protocol baseline uses bounded canonical JSON;
 
 - arbitrary subscriber URL cannot reach prohibited metadata/internal/control-plane targets;
 - redirects cannot escape destination policy;
-- response/time/size/concurrency are bounded.
+- response/time/size/concurrency are bounded;
+- redirects or retries cannot escape the delivery obligation's bound destination-configuration authority.
 
 ## OPEN-EVT-025 — Recovery-generation and reconciliation tooling
 
-**Question:** Exact epoch/generation encoding, `(R,F]` inventory automation, broker/history/inbox reconciliation tools and activation gates.
+**Question:** Exact epoch/generation encoding, `(R,F]` inventory automation, broker/history/inbox/webhook reconciliation tools and activation gates.
 
 **Already fixed:**
 
 - missing restored state is uncertainty, not absence;
 - effectful async admission remains fail-closed until required continuity is proven;
-- stale producer/replay/authorization authority does not revive;
-- offset/outbox/inbox state alone cannot contradict surviving external/audit/effect evidence.
+- stale producer/replay/authorization/webhook-destination authority does not revive;
+- offset/outbox/inbox state alone cannot contradict surviving external/audit/effect evidence;
+- webhook recovery preserves stable delivery identity, semantic snapshot/reproduction authority and destination-generation fences.
 
 ## OPEN-EVT-026 — Numeric retention / replay / quarantine horizons
 
@@ -308,7 +322,8 @@ The first-party Phase 10 realtime protocol baseline uses bounded canonical JSON;
 - replay support does not exceed safe schema/dedup/data evidence;
 - unresolved irreversible ambiguity never expires into blind retry;
 - legal hold/erasure governance overrides ordinary broker cleanup as required;
-- schema definitions/readers remain available for supported retained history.
+- schema definitions/readers remain available for supported retained history;
+- webhook retry/recovery cannot outlive the identity/snapshot/destination-generation evidence needed to prove what the stable delivery ID means and where it may still be sent.
 
 ## OPEN-EVT-027 — Cross-region / residency deployment
 

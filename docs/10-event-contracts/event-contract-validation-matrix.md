@@ -17,6 +17,7 @@ The matrix must be satisfied by contract/profile where applicable. `N/A` require
 | Producer authority | allowed logical producer and scope | producer credential/ACL tests | unauthorized capability can publish protected contract |
 | Tenant/global scope | explicit tenant/global policy | tenant isolation tests | payload can forge/override tenant or missing tenant treated as global |
 | Message identity | stable message ID and trusted identity scope | redelivery/collision tests | same logical message gets new ID on ordinary retry or cross-source IDs collide |
+| Message content equivalence | canonical immutable-content fingerprint/original/equivalent comparison authority retained for supported dedup/recovery horizon | same-ID equivalent/mismatch/minimization/PITR tests | same scoped ID with changed immutable meaning can be silently suppressed as a normal duplicate or comparison evidence expires while the ID remains replayable/redeliverable |
 | Envelope integrity | canonical bounded message profile | parser/duplicate/size tests | different parsers derive different protected envelope meaning |
 | Payload schema | required/optional fields, bounds, enum policy | machine schema + fixtures | malformed/oversized payload reaches protected effect |
 | Data classification | classification and secret policy | lint/redaction/log tests | credentials/secrets in ordinary payload/log/quarantine |
@@ -77,14 +78,19 @@ The following classes are permanent Phase 10 evidence where the affected feature
 - concurrent dispatchers claim same backlog;
 - broker outage while authoritative mutations continue;
 - restore to before publication while broker/consumer evidence survives;
-- stale producer/source generation publishes after retirement.
+- stale producer/source generation publishes after retirement;
+- producer bug/recovery defect attempts to reuse an existing trusted scoped `message_id` with changed immutable contract content.
 
-Expected invariant: one committed logical fact keeps one stable message identity; publication may duplicate but cannot disappear silently or become a new semantic fact.
+Expected invariant: one committed logical fact keeps one stable message identity; publication may duplicate but cannot disappear silently, become a new semantic fact under the old ID or have conflicting reuse accepted as ordinary redelivery.
 
 ### Consumer fault vectors
 
 - simultaneous duplicate delivery;
 - same raw message ID under different trusted source/tenant scope;
+- same trusted scoped message ID with identical immutable semantic content is recognized as a normal duplicate;
+- same trusted scoped message ID with changed contract version, trusted immutable scope/subject semantics or canonical payload fails closed as integrity/producer-contract failure;
+- original payload is minimized/erased but retained fingerprint/equivalence evidence still detects conflicting reuse;
+- comparison fingerprint/evidence is lost or rolled back while the same scoped ID can still redeliver/replay, and the consumer fails closed rather than declaring a safe duplicate;
 - crash after receipt admission before effect;
 - crash during local effect before transaction commit;
 - crash after atomic local commit before broker acknowledgement;
@@ -92,7 +98,7 @@ Expected invariant: one committed logical fact keeps one stable message identity
 - provider timeout after effect may have committed;
 - worker lease expires while original executor may still be active.
 
-Expected invariant: no lost completed effect and no duplicate protected logical effect.
+Expected invariant: no lost completed effect, no duplicate protected logical effect and no silent suppression of conflicting immutable content under an already-used scoped message identity.
 
 ### Delayed-authority vectors
 
@@ -125,12 +131,14 @@ Expected invariant: delayed message does not preserve stale authority or placeme
 - delayed old-generation historical fact remains valid where contracted;
 - stale current-source command is rejected;
 - replay preserves original message identity;
+- replay of same ID with content differing from retained immutable-equivalence evidence is rejected/quarantined;
 - projection rebuild uses isolated generation;
 - replay cannot invoke irreversible production side effect twice.
 
 ### Recovery vectors
 
 - inbox state restored before surviving business/provider effect;
+- message-content fingerprint/equivalence evidence restored older than surviving/redelivered message content;
 - outbox state restored before surviving broker publication;
 - broker offset rewound after completed effects;
 - old producer generation restored as apparently current;
@@ -139,7 +147,7 @@ Expected invariant: delayed message does not preserve stale authority or placeme
 - old schema/version required after restore/replay;
 - revoked authorization/security generation predates restore point.
 
-Expected invariant: recovery uncertainty blocks unsafe effectful admission until `(R,F]` reconciliation proves eligibility.
+Expected invariant: recovery uncertainty blocks unsafe effectful admission and unsafe duplicate classification until `(R,F]` reconciliation proves eligibility and message-content equivalence.
 
 ### Realtime vectors
 
@@ -188,6 +196,7 @@ contract/version/message_class
 producer authority
 tenant scope
 message identity/scope
+message-content equivalence/fingerprint policy
 producer generation
 payload field semantics/data classification
 outbox publication boundary
@@ -232,6 +241,8 @@ Phase 10 implementation/release is blocked if any applicable condition exists:
 - uncommitted message can publish as committed fact;
 - same logical publication retry invents a new message identity;
 - producer/payload can forge another tenant/contract namespace;
+- same trusted scoped `message_id` with changed immutable content can be acknowledged/suppressed as a normal duplicate;
+- message-content equivalence fingerprint/original/equivalent evidence can expire, be erased or be lost in recovery while the same scoped ID remains legitimately redeliverable/replayable and duplicate classification still proceeds;
 - consumer acks before durable responsibility;
 - inbox/dedup is read-then-write or crash-inconsistent for protected effects;
 - ambiguous external effect becomes blind retry;
@@ -239,7 +250,7 @@ Phase 10 implementation/release is blocked if any applicable condition exists:
 - ordering assumption is stronger than the contract;
 - replay can repeat irreversible effects or bypass production dedup truth;
 - restored missing state is treated as absence/no prior effect;
-- supported replay outlives schema/dedup evidence needed for safety;
+- supported replay outlives schema/dedup/equivalence evidence needed for safety;
 - realtime protocol can keep revoked/retired subscription delivering protected data;
 - realtime correctness requires never missing a message;
 - external webhook can SSRF prohibited targets, leak cross-tenant data or sign ambiguous/unbound content;

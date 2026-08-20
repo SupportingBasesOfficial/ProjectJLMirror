@@ -474,6 +474,9 @@ Replay admission: atomic_shared_single_winner_consume
 Burn-on-ambiguity: required
 Replay recovery continuity: <missing restored state rejects until continuity re-established | trusted epoch/generation invalidates outstanding tickets>
 Subscription authorization separation: required
+Subscription authorization freshness: <current on subscribe + governed bounded revalidation during lifetime>
+Subscription active invalidation: <revocation/disable/scope-removal/tenant-suspension retires affected protected subscriptions within accepted security bound>
+Subscription placement retirement: <retired placement/admission generation invalidates affected subscription/connection authority and requires current route+auth+resubscribe/resync>
 ```
 
 Rules:
@@ -484,9 +487,12 @@ Rules:
 - the final replay mutation is an atomic shared single-winner consume across replicas; `unused? -> consume later`, replica-local memory or another read/check flow does not satisfy this contract;
 - after successful consume, a crash or failure before completing `101` leaves the ticket burned; the client must obtain a fresh ticket;
 - replay-store restart/loss/restore cannot make a consumed ticket redeemable. Missing replay state is rejection unless accepted continuity is re-established or a trusted epoch/generation advance invalidates outstanding old tickets;
-- a successful connection grants only the bounded connection authority; later subscription authorization remains separate and Phase 10 must preserve it.
+- a successful connection grants only the bounded connection authority; later subscription authorization remains separate;
+- protected subscription creation re-establishes current tenant/resource authorization and current placement/admission generation rather than inheriting frozen connection-time authority;
+- active protected subscriptions remain subject to governed bounded revalidation and/or equivalent active invalidation for session revocation, membership disable/revocation, permission/scope removal and tenant suspension/access denial;
+- retirement of a source placement/admission generation retires affected protected subscription/connection authority; an open socket does not keep a retired generation authoritative and the client must use current routing/authorization plus resubscribe/resync before protected delivery resumes.
 
-Exact ticket TTL, representation/encoding, replay-store product, epoch/generation representation and gateway/runtime topology remain implementation/OPEN choices. Atomic single-winner, burn-on-ambiguity, current-authority/placement checks and fail-closed replay recovery are not OPEN.
+Exact ticket TTL, representation/encoding, replay-store product, epoch/generation representation, subscription revalidation interval, invalidation transport/fanout mechanism, socket-close strategy and gateway/runtime topology remain implementation/OPEN choices. Atomic single-winner, burn-on-ambiguity, current-authority/placement checks, fail-closed replay recovery and non-stale protected-subscription authority are not OPEN. Phase 10 defines subscription message/request formats rather than the authorization-freshness property.
 
 ## Long-running operation
 
@@ -576,7 +582,7 @@ Classify externally important fields/enums and security/behavior dimensions. Doc
 - response-header grammar/cardinality/serialization ownership;
 - response-cache class/shared eligibility/variance/current-auth revalidation;
 - callback authentication/freshness binding/replay identity/atomic admission/durable coupling/replay retention/replay recovery continuity/acknowledgement durability/post-effect ambiguity/reconciliation;
-- realtime ticket scope/expiry/current-authority/placement checks/atomic single-winner/burn-on-ambiguity/replay recovery continuity/subscription separation;
+- realtime ticket scope/expiry/current-authority/placement checks/atomic single-winner/burn-on-ambiguity/replay recovery continuity/subscription separation/subscription authorization freshness/active invalidation/placement-generation retirement;
 - cursor confidentiality/browser transport/URL redaction;
 - browser-delivery/media-type/safe-filename/active-content isolation;
 - untrusted-content/archive/XML processing.
@@ -619,6 +625,8 @@ Consider, where applicable:
 - realtime read/check replay admission or replica-local replay state admitting multiple winners;
 - realtime ticket consumed and then made reusable after crash/failed upgrade;
 - realtime replay store restored/lost so missing state is misclassified as unused;
+- realtime protected subscription continuing after session/membership/permission/scope/tenant authority is revoked because lifecycle freshness/invalidation is absent;
+- realtime protected subscription or source socket continuing under a retired placement/admission generation;
 - replayed callback/ticket;
 - provider outage.
 
@@ -649,7 +657,7 @@ Protected mutation/body-bearing endpoints additionally test:
 - callback raw-body/signature, authenticated freshness binding, atomic replay admission, replay retention, replay restore/PITR continuity, acknowledgement durability, post-effect/pre-outcome-record crash, durable-coupling/reconciliation, SSRF/XML protections;
 - safe audit/error/observability behavior.
 
-For `realtime-admission`, additionally test ticket scope/expiry, expected Origin, current session/membership/permission/tenant access, current placement generation where applicable, simultaneous cross-replica single-winner consume, burn-on-ambiguity after consume-before-`101` failure, replay-store restart/loss/restore, trusted epoch/generation invalidation behavior and subscription-authorization separation.
+For `realtime-admission`, additionally test ticket scope/expiry, expected Origin, current session/membership/permission/tenant access, current placement generation where applicable, simultaneous cross-replica single-winner consume, burn-on-ambiguity after consume-before-`101` failure, replay-store restart/loss/restore, trusted epoch/generation invalidation behavior, subscription-authorization separation, subscription authorization freshness/active invalidation and placement-generation retirement while the connection remains open.
 
 Artifact/binary endpoints additionally test media authority, safe filename/header construction, active-inline isolation, range/CDN fencing, archive bounds/containment/member collision/no-replace semantics, parser secret/egress isolation, DTD/external-resolution denial and independent derivative classification.
 
@@ -670,7 +678,7 @@ Explain how the contract remains stable if:
 - the structured-body parser/library changes while canonical entity semantics remain identical;
 - response-header serialization moves between framework/proxy layers without changing the accepted profile;
 - a provider callback authenticator/SDK/replay implementation changes while freshness binding, replay retention, replay recovery continuity, acknowledgement durability and post-effect reconciliation semantics remain identical;
-- realtime gateway/runtime/replay store changes while ticket scope/expiry/current-authority/placement/single-winner/burn/recovery-continuity semantics remain identical;
+- realtime gateway/runtime/replay store changes while ticket scope/expiry/current-authority/placement/single-winner/burn/recovery-continuity and protected-subscription freshness/invalidation/placement-retirement semantics remain identical;
 - CDN/cache is added or replaced;
 - cursor implementation changes without weakening browser transport/history policy;
 - artifact delivery/processing moves runtimes/vendors without weakening security invariants.

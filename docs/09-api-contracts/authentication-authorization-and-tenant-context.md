@@ -199,7 +199,9 @@ Realtime connection admission and realtime subscription authorization are separa
 
 A BFF-minted connection capability proves bounded connection intent. It does not grant arbitrary subscriptions and does not freeze authority until expiry.
 
-Protected subscription details/message envelopes belong to the later async/realtime contract layer, but Phase 09 fixes canonical HTTP ingress plus the pre-`101` admission behavior in the dedicated BFF/realtime document.
+Phase 09 owns the protected realtime **authority lifecycle**: canonical HTTP ingress, pre-`101` admission, current session/membership/permission/tenant authorization, subscription-specific authorization, bounded authorization freshness/active invalidation during the connection lifetime, and placement/admission-generation retirement. A successful connection or subscription SHALL NOT freeze authority after session revocation, membership/permission/scope removal, tenant suspension or tenant relocation.
+
+Phase 10 defines the realtime message envelope plus subscription request/ack representation and delivery semantics. Those message/protocol contracts SHALL preserve, and cannot defer or weaken, the Phase 09 authorization freshness, active-invalidation and placement-retirement requirements.
 
 ## Provider callbacks
 
@@ -225,6 +227,7 @@ Every protected endpoint SHALL have contract/integration tests that prove at min
 - insufficient permission denial;
 - stale/revoked session or credential denial where applicable;
 - resource-scope denial where applicable;
+- for long-lived protected realtime subscriptions, post-admission session revocation, membership/permission/scope removal, tenant suspension and placement-generation retirement stop protected delivery within the accepted authority-freshness/invalidation bound;
 - no physical routing override;
 - expected cross-tenant privileged behavior when such a route exists;
 - error response does not leak protected resource existence or internal topology beyond the accepted contract.

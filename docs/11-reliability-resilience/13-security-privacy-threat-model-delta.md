@@ -2,7 +2,7 @@
 
 **Status:** proposed baseline  
 **Phase:** 11 — Reliability & Resilience  
-**Authority:** accepted Security requirements, threat model, trust-boundary model, ADR-015/017, System Design, Data Architecture, Phase 09/10 and the post–Phase 10 roadmap
+**Authority:** accepted Security requirements, threat model, trust-boundary model, ADR-014/015/017/018/019, System Design, Data Architecture, Phase 09/10 and the post–Phase 10 roadmap
 
 ## Purpose
 

@@ -54,7 +54,9 @@ Runtime instance, queue, topic, cell, region, provider product or deployment nam
 
 No required field may disappear. If a conditional subdimension has no applicable case, the manifest records `no_applicable_case` plus condition, accepted authority and reviewable evidence.
 
-The canonical catalog MAY be normalized across multiple tables only when every table is keyed by the exact pair `reliability_profile_id` and `profile_version`. The join of those tables is one manifest record and SHALL materialize every required field exactly once for every key. Implicit defaults, narrative inheritance and unresolved policy references are forbidden. A named policy reference is valid only when its complete value is defined in the same accepted package and the profile row selects it explicitly.
+The canonical catalog MAY be normalized across multiple tables only when every table is keyed by the exact pair `reliability_profile_id` and `profile_version`. The join of those tables is one manifest record and SHALL materialize every required field exactly once for every key. `status` and applicable operation/contract/runtime-role classes SHALL be keyed profile data; document status or headings cannot supply them. Implicit defaults, narrative inheritance and unresolved policy references are forbidden. A named policy reference is valid only when its complete value is defined in the same accepted package and the profile row selects it explicitly.
+
+Deterministic derived fields are permitted only through the exact formulas defined in `07-capability-resilience-profiles.md`. `ALL-FAULT-VECTORS(profile_key)` SHALL include binding-, profile-, circuit- and cross-profile vectors. `ALL-RELEASE-BLOCKERS(profile_key)` SHALL include the canonical blocker of every final vector. `evidence_requirements` SHALL cover the entire final vector set; a profile-specific seed list cannot replace these derived fields.
 
 ## Canonical enums
 
@@ -108,12 +110,16 @@ These are the single canonical evidence-level enums for the Phase 11 package and
 - Each capability/dependency map row references at least one manifest profile.
 - Each failure class maps to one allowed mode and fault vector.
 - Each retryable class maps to stable identity, safety mechanism and aggregate budget.
+- Every retry policy materializes attempts, elapsed time, concurrency, queued count, bytes and attributable cost; it also records speculation and redrive as bounded or as `no_applicable_case` with a condition. Bare `OPEN` aliases are invalid: every unresolved numeric/backoff/jitter value names its exact `OPEN-REL-*` owner.
+- Every circuit policy uses only canonical failure-class/degradation enums, and each selecting profile materializes exact counted classes, exclusion of every other class, open mapping and fallback authority. Conditional prose such as “as applicable” is invalid.
 - Each ambiguity class maps to a reconciliation owner and durable evidence.
 - Each recovery profile maps continuity state to a resumption gate.
 - Each security-sensitive profile maps relevant `SEC-*`/`TM-*` authorities.
 - Each OPEN reference exists in `12-phase-11-open-decisions-and-blockers.md`.
 - Each blocker reference exists in the validation matrix or global blocker registry.
 - Each compatibility-sensitive field maps to `10-compatibility-and-change-classification.md`.
+- Each profile key materializes `status` and exact applicable operation/contract/runtime-role classes.
+- Each final fault vector is present in all four evidence levels and contributes its canonical blocker to the final release-blocker set.
 
 Dangling references, unknown enums, missing owners or retry without safety mapping are conformance failures.
 

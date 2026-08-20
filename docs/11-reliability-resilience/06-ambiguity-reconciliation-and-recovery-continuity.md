@@ -5,7 +5,7 @@
 
 ## Purpose
 
-This document defines reliability behavior when outcome, identity equivalence, current authority or recovery continuity cannot be proven. It inherits ADR-015, Data Architecture and Phase 09/10 `(R,F]` semantics without turning recovery into ordinary retry.
+This document defines reliability behavior when outcome, identity equivalence, current authority or recovery continuity cannot be proven. It inherits ADR-018, Data Architecture and Phase 09/10 `(R,F]` semantics without turning recovery into ordinary retry. ADR-015 remains the separate authority for secrets and key management where cryptographic continuity is involved.
 
 ## Universal rule
 

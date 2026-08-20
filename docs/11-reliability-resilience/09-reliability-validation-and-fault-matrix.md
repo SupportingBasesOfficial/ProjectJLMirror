@@ -116,6 +116,8 @@ fault_vector
   -> release_blocker_disposition
 ```
 
+For every profile key, coverage SHALL be computed from `ALL-FAULT-VECTORS(profile_key)` in `07`. The coverage engine SHALL then resolve the canonical `Release blocker` cell of every vector into `ALL-RELEASE-BLOCKERS(profile_key)`. A profile fails conformance if any binding-derived, circuit-derived or cross-profile vector is absent at any required evidence level, or if its blocker is absent from the final profile blocker set.
+
 `not_applicable` SHALL NOT be used to omit a mandatory artifact or overlay. A vector MAY be out of scope for a component only when the common artifact remains present and records a reviewed, evidence-backed non-applicability decision without weakening the phase gate.
 
 ## 7. Reliability release blockers
@@ -150,4 +152,4 @@ fault_vector
 
 ## 8. Phase 11 acceptance use
 
-Phase 11 may pass design acceptance only when every vector has a normative expected outcome, explicit forbidden outcomes, isolation boundary, convergence condition, evidence requirement, and blocker mapping. Execution results remain future evidence and SHALL be tracked by the appropriate implementation, release, and Operations gates.
+Phase 11 may pass design acceptance only when every vector has a normative expected outcome, explicit forbidden outcomes, isolation boundary, convergence condition, evidence requirement, and blocker mapping; and every profile's final vector set expands into the same complete evidence and blocker set. Execution results remain future evidence and SHALL be tracked by the appropriate implementation, release, and Operations gates.

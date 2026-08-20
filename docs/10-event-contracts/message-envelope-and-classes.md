@@ -49,6 +49,32 @@ For accepted event outbox records whose upstream schema names the identity `even
 
 For jobs, the accepted durable `job_id` is the message identity of that work command unless a separately accepted wrapper contract needs another transport instance ID. Any such wrapper ID is operational metadata and cannot weaken job idempotency.
 
+### Message identity semantic-equivalence invariant
+
+A scoped `message_id` identifies not only a duplicate-suppression slot but one immutable logical message meaning.
+
+Therefore, whenever a consumer may receive the same scoped ID again during redelivery, replay or recovery, the platform must retain or be able to derive enough durable comparison evidence to prove that the repeated representation is semantically equivalent to the original immutable message.
+
+Accepted evidence may be:
+
+- a canonical fingerprint over immutable contract/envelope/payload semantics;
+- the original immutable canonical representation;
+- another durable comparison authority with equivalent guarantees.
+
+The evidence profile covers every field whose difference would make the repeated ID denote a different logical message, including contract/version, trusted tenant/source scope and canonical immutable payload semantics. Mutable transport attempt metadata is excluded from that equivalence comparison.
+
+The following is never a normal duplicate:
+
+```text
+same trusted message_identity_scope
++ same message_id
++ different immutable semantic content
+```
+
+That condition is an integrity/producer-contract failure and fails closed into governed quarantine/reconciliation. A consumer must not silently keep the first payload, silently keep the last payload or acknowledge the conflicting reuse as successful duplicate processing.
+
+The equivalence evidence survives for at least the supported dedup/redelivery/replay/recovery horizon, or an alternate durable authority must prove the same invariant. Payload minimization/erasure may replace full retained content with a safe fingerprint/tombstone, but it cannot erase the last comparison evidence while the scoped ID can still legitimately reappear.
+
 ## `message_class`
 
 Allowed semantic classes are intentionally small:
@@ -381,6 +407,7 @@ The following are prohibited:
 - using broker offset as the only duplicate-effect identity;
 - treating a correlation ID as idempotency or authorization;
 - reusing one `message_id` for semantically different payloads;
+- treating same scoped `message_id` with different immutable content as successful duplicate suppression;
 - mutating the historical meaning of an already-published contract version.
 
 ## Required contract tests
@@ -389,7 +416,9 @@ Every implemented envelope profile tests as applicable:
 
 - malformed/unknown contract identity/version rejection;
 - payload cannot override trusted tenant/producer/generation context;
-- same `message_id` + same trusted scope redelivers safely;
+- same `message_id` + same trusted scope + equivalent immutable semantic content redelivers safely;
+- same trusted scoped `message_id` + changed immutable semantic content fails closed as integrity/producer-contract failure;
+- content-equivalence evidence remains sufficient after permitted payload minimization/erasure and throughout supported dedup/recovery horizon;
 - same raw `message_id` from different authoritative scopes does not collide where IDs are not globally unique;
 - secrets/forbidden data fail contract validation/redaction policy;
 - oversized/deep payload rejected/quarantined before unbounded work;

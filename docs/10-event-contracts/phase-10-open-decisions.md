@@ -37,6 +37,7 @@ Candidates may include JSON Schema, Protobuf, Avro or equivalent reviewed profil
 - explicit required/optional/null/enum semantics;
 - payload/envelope authority cannot be overridden by parser ambiguity;
 - historical contract meaning is preserved;
+- duplicate-sensitive consumers have one deterministic immutable-content equivalence profile for a scoped message identity;
 - no dynamic untrusted schema/code loading.
 
 The first-party Phase 10 realtime protocol baseline uses bounded canonical JSON; future protocol revisions may choose another explicitly versioned representation.
@@ -50,7 +51,7 @@ The first-party Phase 10 realtime protocol baseline uses bounded canonical JSON;
 - reviewed contract is canonical;
 - version provenance/history is retained;
 - semantic manifest is compared in addition to payload schema;
-- supported historical replay retains the schema/reader/upcaster required to interpret messages;
+- supported historical replay retains the schema/reader/upcaster required to interpret messages and preserve content-equivalence evidence;
 - registry access is authenticated/authorized.
 
 ## OPEN-EVT-004 — Contract-version syntax
@@ -107,7 +108,7 @@ The first-party Phase 10 realtime protocol baseline uses bounded canonical JSON;
 - ack/checkpoint does not precede durable consumer responsibility;
 - lease/timeout expiry does not prove effect absence;
 - broker progress is not business-effect truth;
-- offset rewind remains safe through inbox/effect idempotency.
+- offset rewind remains safe through inbox/effect idempotency and scoped-ID content-equivalence checks.
 
 ## OPEN-EVT-009 — Quarantine / DLQ implementation
 
@@ -120,6 +121,7 @@ The first-party Phase 10 realtime protocol baseline uses bounded canonical JSON;
 - retry is bounded;
 - redrive is privileged/audited/currently authorized;
 - redrive cannot bypass dedup/reconciliation;
+- conflicting same-ID/different-content arrivals fail closed into governed integrity/quarantine handling;
 - payload retention obeys data classification.
 
 ## OPEN-EVT-010 — Message/payload/batch limits
@@ -132,17 +134,24 @@ The first-party Phase 10 realtime protocol baseline uses bounded canonical JSON;
 - parsing/decompression is bounded;
 - large artifacts/telemetry are referenced/routed to appropriate specialized planes rather than embedded without bound.
 
-## OPEN-EVT-011 — Inbox/dedup storage and retention durations
+## OPEN-EVT-011 — Inbox/dedup storage, content-equivalence evidence and retention durations
 
-**Question:** Concrete store/table design and per-contract retention horizon.
+**Question:** Concrete store/table design, canonical fingerprint/hash algorithm or equivalent comparison representation, and per-contract retention horizon.
 
 **Already fixed:**
 
 - identity is `(consumer_contract, trusted message_identity_scope, message_id)` or equivalent;
+- a repeated scoped identity is a normal duplicate only when durable evidence proves equivalent immutable contract/envelope/payload semantics;
+- same scoped ID with different immutable semantic content is integrity/producer-contract failure, not successful duplicate suppression;
+- accepted comparison evidence may be a canonical fingerprint, retained immutable original, or equivalent durable authority;
+- the equivalence profile covers every immutable field whose change would make the same scoped ID denote a different logical message;
 - local inbox/effect completion is atomic when co-resident;
 - cross-authority effects use stable operation/result reconciliation;
-- retention covers supported redelivery/replay/recovery danger window or another durable authority proves effect outcome;
-- restore missing state is not `never processed`.
+- comparison evidence is retained for the supported redelivery/replay/recovery horizon, or another durable authority proves equivalence;
+- payload minimization/erasure cannot remove the last comparison evidence while the ID can still legitimately reappear;
+- restore missing receipt or comparison evidence is not `never processed` or `safe duplicate`.
+
+The exact hash algorithm/store/schema is OPEN; the durable equivalence and fail-closed mismatch properties are not OPEN.
 
 ## OPEN-EVT-012 — Outbox dispatcher implementation and retention
 
@@ -152,9 +161,9 @@ The first-party Phase 10 realtime protocol baseline uses bounded canonical JSON;
 
 - required outbox is committed with authoritative mutation;
 - immutable fact evidence is not rewritten by retry workers;
-- broker-ack ambiguity retries the same message identity;
+- broker-ack ambiguity retries the same message identity and immutable message meaning;
 - broker outage preserves committed backlog;
-- recovery preserves/reconstructs stable message identity.
+- recovery preserves/reconstructs stable message identity and semantic content.
 
 ## OPEN-EVT-013 — Producer/source generation encoding
 
@@ -174,10 +183,11 @@ The first-party Phase 10 realtime protocol baseline uses bounded canonical JSON;
 **Already fixed:**
 
 - replay is privileged/audited/bounded;
-- same historical message preserves original message identity;
+- same historical message preserves original message identity and immutable semantic meaning;
+- duplicate-sensitive replay retains or reconstructs the content-equivalence evidence needed to reject conflicting same-ID reuse;
 - irreversible production side effects cannot be repeated by disabling dedup;
 - projection rebuild uses isolated generation/target;
-- supported replay never exceeds safe schema/data/dedup/recovery evidence.
+- supported replay never exceeds safe schema/data/dedup/equivalence/recovery evidence.
 
 ## OPEN-EVT-015 — Upcaster / historical reader implementation
 
@@ -188,7 +198,8 @@ The first-party Phase 10 realtime protocol baseline uses bounded canonical JSON;
 - historical semantic meaning is immutable;
 - upcasting cannot fabricate newer historical facts;
 - source message identity/tenant/occurrence semantics remain traceable;
-- supported retained history remains interpretable.
+- supported retained history remains interpretable;
+- upcasting preserves or deterministically maps any message-content equivalence evidence required by duplicate-sensitive consumers.
 
 ## OPEN-EVT-016 — Service-to-broker authentication/authorization
 
@@ -308,9 +319,10 @@ The exact ID algorithm, snapshot storage, generation encoding and per-Product ca
 **Already fixed:**
 
 - missing restored state is uncertainty, not absence;
-- effectful async admission remains fail-closed until required continuity is proven;
+- missing/older content-comparison evidence is not proof of a safe duplicate;
+- effectful async admission and duplicate classification remain fail-closed until required continuity/equivalence is proven;
 - stale producer/replay/authorization/webhook-destination authority does not revive;
-- offset/outbox/inbox state alone cannot contradict surviving external/audit/effect evidence;
+- offset/outbox/inbox state alone cannot contradict surviving external/audit/effect/equivalence evidence;
 - webhook recovery preserves stable delivery identity, semantic snapshot/reproduction authority and destination-generation fences.
 
 ## OPEN-EVT-026 — Numeric retention / replay / quarantine horizons
@@ -319,7 +331,9 @@ The exact ID algorithm, snapshot storage, generation encoding and per-Product ca
 
 **Already fixed:**
 
-- replay support does not exceed safe schema/dedup/data evidence;
+- replay support does not exceed safe schema/dedup/content-equivalence/data evidence;
+- message-content comparison evidence survives as long as the scoped ID can legitimately redeliver/replay/recover, or an alternate durable authority proves equivalence;
+- unresolved same-ID/content conflicts never age into benign duplicate success;
 - unresolved irreversible ambiguity never expires into blind retry;
 - legal hold/erasure governance overrides ordinary broker cleanup as required;
 - schema definitions/readers remain available for supported retained history;
@@ -344,6 +358,7 @@ The exact ID algorithm, snapshot storage, generation encoding and per-Product ca
 
 - retirement is measured/governed;
 - supported producers/consumers/history must no longer depend on the retired version or a retained adapter/reader must exist;
+- retained message-content equivalence evidence remains until duplicate/replay/recovery support for the associated identities safely ends or migrates;
 - external webhook subscribers require explicit migration policy when Product enables them.
 
 ## OPEN discipline

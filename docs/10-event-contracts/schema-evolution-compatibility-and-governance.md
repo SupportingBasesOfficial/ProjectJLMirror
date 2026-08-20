@@ -82,6 +82,11 @@ current_placement_policy
 current_authorization_policy
 realtime_projection_policy
 outbound_webhook_projection_policy
+outbound_webhook_delivery_identity_namespace_policy
+outbound_webhook_delivery_semantic_freeze_policy
+outbound_webhook_destination_generation_policy
+outbound_webhook_configuration_change_policy
+outbound_webhook_attempt_auth_metadata_policy
 observability_policy
 audit_policy
 compatibility_class
@@ -89,6 +94,8 @@ deprecation_state
 ```
 
 `not_applicable` is an explicit value where a dimension genuinely does not apply. Silent omission is not accepted for security/correctness-sensitive dimensions.
+
+For an outbound webhook contract, the manifest must make it impossible for the same `webhook_delivery_id` to change external semantic meaning or disclosure destination silently. It therefore records whether delivery identity is globally unique or explicitly scoped, what immutable semantic snapshot/reproduction authority backs retries, which destination configuration generation is bound to the obligation, how generation changes cancel/quarantine/reissue work, and which authentication metadata is attempt-scoped.
 
 ## Consumer manifest
 
@@ -143,6 +150,10 @@ Breaking changes include more than schema deletion. Examples:
 - changing acknowledgement/completion boundary;
 - changing authorization/current-placement requirements;
 - broadening external webhook disclosure;
+- changing outbound webhook delivery-ID namespace or dedup scope;
+- allowing one stable webhook delivery ID to reconstruct a different contract version or semantic payload;
+- changing destination-generation binding or old-generation cancel/quarantine/reissue semantics;
+- retargeting an existing webhook delivery obligation to a new destination/configuration generation;
 - changing field meaning/units while keeping name/type;
 - turning a previously closed enum into incompatible semantic behavior.
 
@@ -198,7 +209,7 @@ An open enum requires consumers to tolerate unknown future values without unsafe
 
 A closed enum adding a value is potentially breaking and requires compatibility review/version change.
 
-Consumers SHALL NOT map unknown security/policy states to "allowed".
+Consumers SHALL NOT map unknown security/policy states to `allowed`.
 
 ## Renames and aliases
 
@@ -265,7 +276,7 @@ Dual publication is a migration mechanism, not permanent architecture by default
 
 A consumer declares exactly which contract versions it accepts.
 
-"Latest" is not a stable compatibility policy.
+`Latest` is not a stable compatibility policy.
 
 Unsupported versions fail into a governed compatibility/quarantine path rather than being parsed optimistically.
 
@@ -292,9 +303,16 @@ Before Product exposes one, it defines:
 - deprecation notice/support period;
 - subscriber migration/observability;
 - signature profile compatibility;
-- retry/ordering semantics.
+- retry/ordering semantics;
+- delivery-ID namespace/dedup contract;
+- immutable per-delivery semantic snapshot/reproduction policy;
+- destination configuration-generation binding;
+- cancel/quarantine/reissue behavior when destination/disclosure authority changes;
+- attempt-scoped authentication metadata allowed to change on retry.
 
 An internal integration-event change does not automatically break external webhooks when the projection adapter preserves webhook semantics.
+
+Once a `webhook_delivery_id` exists, rolling deployment or projection-adapter replacement is compatible only if the same ID still yields the same contract version, source identity, tenant/subscription disclosure scope, semantic payload meaning and bound destination configuration generation. A new destination/configuration generation cannot inherit the old delivery ID merely because the source event is the same.
 
 ## Schema registry
 
@@ -413,6 +431,11 @@ Schema/history retention:
 ```text
 Realtime projection:
 Outbound webhook projection:
+Webhook delivery identity namespace:
+Webhook immutable delivery semantic snapshot/reproduction policy:
+Webhook destination configuration generation binding:
+Webhook configuration-change cancel/quarantine/reissue policy:
+Webhook attempt-scoped authentication metadata policy:
 Other read-model/integration projections:
 ```
 
@@ -442,6 +465,7 @@ Review compares:
 - ordering/replay;
 - recovery/retention;
 - realtime/webhook external implications;
+- webhook delivery-ID namespace, semantic freeze, destination generation and configuration-change fencing;
 - deployment skew and service extraction.
 
 ## Security-sensitive semantic changes
@@ -462,6 +486,11 @@ The following trigger security/correctness review even if payload schema is unch
 - retention/recovery continuity;
 - data classification/logging;
 - webhook disclosure/signing/destination policy;
+- webhook delivery-ID namespace/dedup scope;
+- webhook immutable semantic-snapshot/reproduction policy;
+- webhook destination-configuration generation/fence policy;
+- webhook cancel/quarantine/reissue semantics;
+- webhook classification of attempt-scoped authentication metadata;
 - realtime subscription/protocol behavior that could affect protected delivery.
 
 ## CI requirements
@@ -476,6 +505,9 @@ CI/release tooling SHOULD eventually provide:
 - envelope authority tests;
 - replay fixture tests;
 - consumer idempotency/fault tests;
+- outbound webhook delivery-ID namespace collision tests;
+- outbound webhook rolling-deploy retry semantic-freeze tests;
+- outbound webhook destination-generation/fencing/reissue tests;
 - data-classification/secret linting;
 - contract/catalog consistency;
 - version uniqueness/provenance.
@@ -522,7 +554,12 @@ Compatibility tests reject contracts that expose or depend on:
 - schema registry cannot be poisoned by untrusted message schema URL;
 - dual-publish migration does not duplicate protected consumer effect;
 - replay of old version remains interpretable throughout supported retention;
-- event contract does not change merely because service/broker topology changes.
+- event contract does not change merely because service/broker topology changes;
+- one external endpoint receiving multiple subscriptions/tenants cannot observe a collision in documented webhook delivery identity;
+- same webhook delivery ID retried across old/new dispatcher/projection versions preserves exact external contract version and semantic payload meaning;
+- same webhook delivery ID cannot be retargeted when destination configuration generation changes;
+- deliberate webhook reissue under a new configuration generation receives a new delivery ID and explicit causation;
+- webhook configuration-generation/semantic-freeze changes are detected by semantic-manifest compatibility diff even when external payload schema is unchanged.
 
 ## Intentionally OPEN
 
@@ -532,6 +569,8 @@ Compatibility tests reject contracts that expose or depend on:
 - compatibility-diff implementation;
 - catalog UI/product;
 - deprecation duration values;
-- exact dual-publish mechanics.
+- exact dual-publish mechanics;
+- exact storage representation for webhook immutable semantic snapshots and destination generations;
+- exact Product-specific cancel/quarantine/reissue choice for a retired webhook destination generation.
 
 The semantic-manifest completeness, historical meaning, compatibility and governance properties are fixed.

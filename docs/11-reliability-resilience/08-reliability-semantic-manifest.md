@@ -121,6 +121,8 @@ These are the single canonical evidence-level enums for the Phase 11 package and
 - Each profile key materializes `status` and exact applicable operation/contract/runtime-role classes.
 - Each final fault vector is present in all four evidence levels and contributes its canonical blocker to the final release-blocker set.
 - Optional operational telemetry, durably accepted customer observations and mandatory audit use distinct profile keys; no loss, shedding or fallback rule may cross an acceptance boundary by data-plane naming alone.
+- A terminal trust or permanent-contract class SHALL NOT inherit ordinary circuit half-open probing or circuit-driven re-enablement. Any trust restoration is an independently authorized transition backed by accepted evidence.
+- A profile whose physical durability mechanism remains OPEN SHALL select mechanism-neutral circuit/evidence records; topology-specific broker, outbox, journal, stream or store vectors become mandatory only after the owning OPEN closes that mechanism.
 
 Dangling references, unknown enums, missing owners or retry without safety mapping are conformance failures.
 

@@ -50,6 +50,10 @@ The matrix must be satisfied by contract/profile where applicable. `N/A` require
 | Realtime resync | snapshot/resync behavior | gap/loss/reconnect tests | client requires complete socket history for correctness |
 | Realtime backpressure | bounded buffering/coalesce/drop/resync profile | slow-client tests | unbounded confidential message buffering |
 | Outbound webhook Product gate | explicit approved external contract | catalog/authorization tests | internal event automatically becomes externally subscribable |
+| Webhook delivery identity namespace | global uniqueness or explicit stable external scope | multi-tenant/multi-subscription collision tests | receiver can suppress a legitimate delivery because another subscription/tenant reused the same documented delivery identity |
+| Webhook immutable delivery semantics | same delivery ID binds contract/version/source/scope/semantic payload | rolling-deploy/retry/current-state mutation tests | same delivery ID can authenticate a different contract version or semantic payload on retry |
+| Webhook destination generation | delivery obligation binds exact authorized subscription/destination generation | config-change/revocation/in-flight ambiguity tests | same delivery ID can silently target a different destination generation or old revoked destination remains blindly retryable |
+| Webhook configuration-change policy | cancel/fence, quarantine or deliberate reissue under new identity | reissue/causation tests | generation change silently retargets old obligation or reissue reuses old delivery ID |
 | Webhook identity | event vs delivery identity | timeout/redelivery tests | timeout invents new event/delivery semantics |
 | Webhook destination security | SSRF/redirect/timeout/size policy | egress security tests | subscriber URL reaches prohibited internal/control targets |
 | Webhook authenticity | signing profile and bound freshness | verification vectors | unbound timestamp or ambiguous signed representation |
@@ -156,13 +160,22 @@ Expected invariant: recovery uncertainty blocks unsafe effectful admission until
 - SSRF/private-network destination;
 - redirect escape;
 - signature timestamp/body tamper;
+- one external endpoint receives multiple tenants/subscriptions whose local generators would otherwise collide;
 - subscriber receives request but response is lost;
 - repeated retry preserves delivery/source identity;
+- retry after projection mapper/dispatcher rolling upgrade preserves same webhook contract version and semantic payload for the same delivery ID;
+- mutable current domain state changes after delivery obligation creation and retry still preserves original semantic payload;
+- destination URL/configuration generation changes while a delivery is pending and the old delivery is never silently retargeted;
+- destination is revoked while an in-flight attempt has ambiguous outcome and no further old-generation retry is admitted automatically;
+- deliberate reissue to a new destination generation receives a new delivery ID with causation to the original;
 - cross-tenant subscription/filter attack;
 - signing secret rotation/revocation;
 - permanent 4xx/profile failure -> terminal/quarantine;
 - one slow endpoint cannot exhaust all delivery workers;
-- restore before local success evidence while subscriber may already have received request.
+- restore before local success/config-generation evidence while subscriber may already have received request;
+- restore cannot resurrect a retired destination generation or reconstruct an existing delivery ID with changed semantic payload.
+
+Expected invariant: one webhook delivery identity maps to one immutable semantic disclosure obligation and one authorized destination generation; retries may repeat transport attempts but cannot mutate meaning or retarget silently.
 
 ## Compatibility acceptance tests
 
@@ -187,6 +200,11 @@ retention/recovery continuity
 current authorization/placement requirements
 realtime protocol/projection behavior
 webhook disclosure/signing/destination semantics
+webhook delivery identity namespace
+webhook immutable delivery semantic snapshot/reproduction policy
+webhook destination configuration generation binding
+webhook cancel/quarantine/reissue policy
+webhook attempt-scoped authentication metadata policy
 ```
 
 A security/correctness change cannot hide behind an unchanged payload schema.
@@ -225,6 +243,11 @@ Phase 10 implementation/release is blocked if any applicable condition exists:
 - realtime protocol can keep revoked/retired subscription delivering protected data;
 - realtime correctness requires never missing a message;
 - external webhook can SSRF prohibited targets, leak cross-tenant data or sign ambiguous/unbound content;
+- webhook delivery ID namespace can collide across the receiver's supported tenant/subscription space;
+- the same webhook delivery ID can change contract version, tenant/subscription scope or semantic payload across retry/recovery/rolling deployment;
+- an existing webhook delivery can silently retarget a changed destination configuration generation;
+- a revoked/retired webhook destination generation can continue blind retries or be resurrected by restore;
+- a deliberate webhook reissue under new destination authority reuses the old delivery ID instead of creating a causally linked new obligation;
 - secrets/credentials enter ordinary payload/log/quarantine;
 - schema-identical semantic changes escape compatibility review;
 - service/broker/provider/cell physical identity leaks into canonical async contract.

@@ -33,7 +33,7 @@ Acceptance of this roadmap does **not**:
 - open all five phases simultaneously;
 - weaken or reinterpret accepted Product, Requirements, Quality, Security, ADR, System Design, Data Architecture, Phase 09 or Phase 10 authority;
 - turn a proposed future capability into accepted Product scope;
-- make AI-BLACKBOX or any other diagnostic system a normative authority;
+- make AI-BLACKBOX or any other diagnostic system a normative or decision authority at any stage;
 - authorize release or production merely because documentation exists.
 
 ## Governance and authority
@@ -83,7 +83,7 @@ Rules:
 
 Each Phase 11–15 package SHALL produce enforcement-oriented artifacts, not only narrative overviews.
 
-At minimum, each phase defines or explicitly marks `not_applicable` for:
+Each phase SHALL publish every common enforcement artifact below. The artifact itself SHALL NOT be omitted, waived or marked `not_applicable`:
 
 - overview, purpose and authority inheritance;
 - semantic profiles and state/classification models;
@@ -100,7 +100,11 @@ At minimum, each phase defines or explicitly marks `not_applicable` for:
 - OPEN-decision registry with owner, evidence and closure gate;
 - traceability to accepted upstream requirements and downstream consumers.
 
-An overview without enforceable profiles, evidence requirements and blockers is insufficient for phase acceptance.
+Only a genuinely conditional subprofile, dimension, case or vector *inside* one of those artifacts may be marked `not_applicable`. Each such marking SHALL identify the condition, accepted authority and reviewable evidence proving why no applicable case exists. It cannot replace analysis of the surrounding risk class or waive a cross-phase invariant.
+
+An OPEN-decision registry with no remaining decisions SHALL still be published as an explicitly empty registry with closure evidence. A validation, compatibility or fault/adversarial artifact with no case in a conditional category SHALL record explicit no-applicable-case evidence instead of disappearing. Phase-specific required outputs and acceptance criteria are additive to this common pattern and cannot waive it.
+
+An overview without enforceable profiles, ownership, validation, compatibility classification, fault/adversarial coverage, evidence requirements, blockers, OPEN discipline and traceability is insufficient for phase acceptance.
 
 ## Cross-phase invariants
 
@@ -611,6 +615,7 @@ The final gate SHALL assemble or reference:
 - cross-layer Security/Privacy assurance review;
 - Capacity/Performance/Cost evidence plan;
 - Verification/Assurance master matrix;
+- common enforcement-artifact conformance register, including evidence for every conditional applicability or empty entry;
 - consolidated OPEN-decision register;
 - compatibility/change-classification matrix;
 - implementation conformance and release-blocker register;
@@ -642,7 +647,8 @@ Implementation may begin only when:
 - recovery continuity and compatibility are coherent across all phases;
 - supply-chain and release authority are defined before code/artifacts can be promoted;
 - implementation sequencing does not invent Product capabilities or leapfrog endpoint/event contracts;
-- machine/enforcement-oriented manifests, matrices, fault vectors and blockers exist where the phase requires them;
+- every phase contains the complete common enforcement-artifact set, and every conditional `not_applicable` or empty entry carries the required explicit evidence;
+- diagnostic automation is traceably excluded from granting, denying or determining protected decision eligibility at every stage;
 - the exact final gate HEAD has passed independent adversarial review and panoramic audit;
 - explicit authorization is given to begin implementation.
 
@@ -673,6 +679,8 @@ This roadmap itself is accepted only when:
 - the document distinguishes normative design acceptance from future implementation/release/runtime evidence;
 - no vendor, topology, unsupported numeric threshold or unaccepted Product capability is selected;
 - no downstream phase or implementation is started as part of roadmap formalization;
+- the common enforcement-artifact pattern cannot be bypassed through omission, blanket `not_applicable` markings or unsupported empty registries;
+- AI-assisted diagnostic output cannot act directly, indirectly, jointly or intermediately as authority for a protected decision;
 - an adversarial review examines the entire roadmap as one governance system and actively searches for P0/P1/P2 omissions, leapfrog paths and ambiguous authority;
 - every valid finding is corrected across its full governance class, followed by panoramic review;
 - the exact final HEAD receives a satisfactory review;
@@ -690,11 +698,13 @@ The roadmap or a subordinate phase SHALL NOT advance when any of the following i
 - a security/recovery/correctness decision is hidden as a numeric or infrastructure default;
 - a proposed capability lacks Product/domain authority;
 - a phase contains narrative goals without enforcement artifacts, tests, evidence and blockers;
+- a common enforcement artifact is omitted, waived, marked `not_applicable`, or left empty without the required explicit evidence;
 - recovery continuity first appears only in Operations;
 - audit is treated as ordinary observability;
 - supply-chain scope is reduced to CI/CD workflow plus scanner;
 - topology/provider identity leaks into canonical business or contract identity;
 - an OPEN decision has no owner/evidence/closure gate;
+- AI-assisted output is used as an authority, vote, veto, score, ranking, threshold input or eligibility condition for a protected decision, even when another actor or deterministic rule issues the final decision;
 - a review covers an older SHA than the current HEAD;
 - material P0/P1/P2 findings remain unresolved or were patched locally without panoramic class review;
 - acceptance is claimed from documentation where runtime evidence is required;
@@ -712,7 +722,7 @@ AI-BLACKBOX or another AI-assisted diagnostic capability may later support:
 - incident evidence synthesis;
 - comparison of observed behavior with accepted contracts.
 
-It SHALL remain a subordinate diagnostic, red-team or evidence-assistance tool. It is not authorized to become the sole or final authority for:
+It SHALL remain a subordinate diagnostic, red-team or evidence-assistance tool. Its output SHALL NOT grant, deny, determine, score as an authoritative input, or establish eligibility at any stage for:
 
 - authentication or authorization;
 - tenant or placement authority;
@@ -723,7 +733,11 @@ It SHALL remain a subordinate diagnostic, red-team or evidence-assistance tool. 
 - Product or architecture decisions;
 - SLO/vendor/topology selection.
 
-Its hypotheses and outputs require provenance, data classification, reproducibility where applicable and accountable human/governance review. It cannot be a hidden production dependency or replace deterministic evidence required by an accepted gate.
+For those decisions, AI output is prohibited as direct, indirect, intermediate or joint authority, including as a vote, veto, ranking, risk score, confidence threshold, admission condition or exception trigger. Wrapping AI output in a deterministic rule, human approval or multi-party workflow does not make it authoritative evidence.
+
+AI may prioritize diagnostic investigation or propose hypotheses only when doing so cannot grant or deny a protected action, alter its eligibility, suppress a mandatory deterministic check or delay a required fail-closed/reconciliation path. The accountable authority SHALL independently re-establish the decision from accepted, trusted and non-AI-authoritative evidence. Removing or ignoring the AI output cannot change the protected decision's eligibility, authority or outcome.
+
+Its hypotheses and outputs require provenance, data classification, reproducibility where applicable and accountable human/governance review. It cannot be a hidden production dependency, manufacture authority, or replace deterministic evidence required by an accepted gate.
 
 # Roadmap acceptance effect
 

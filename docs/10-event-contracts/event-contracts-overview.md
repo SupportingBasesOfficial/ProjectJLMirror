@@ -21,6 +21,7 @@ The architecture must remain coherent when:
 - a consumer crashes before, during or after an effect;
 - a cell/store is restored to an earlier point while later external effects or reliability evidence survive;
 - realtime clients disconnect, miss messages or remain connected during authorization/placement changes;
+- an outbound webhook destination is changed/revoked while delivery is pending or outcome is ambiguous;
 - event volume grows by orders of magnitude without forcing raw telemetry through one general-purpose broker.
 
 ## Normative inheritance
@@ -81,6 +82,8 @@ A realtime message accelerates a client view of already-authoritative state or p
 ### Outbound webhook delivery
 
 An outbound webhook is an external delivery projection of an accepted platform event/contract. It has independent delivery identity, authentication/signing, retry and endpoint-security semantics and does not make the destination authoritative for platform state.
+
+One webhook delivery identity represents one immutable external semantic delivery obligation. Retry of that identity preserves the webhook contract/version, source identity, tenant/subscription disclosure scope, semantic payload meaning and bound authorized destination configuration generation. A destination/configuration change cannot silently retarget an existing delivery identity.
 
 ## Facts, commands and projections are not interchangeable
 
@@ -200,7 +203,7 @@ Replaying an old event does not authorize repeating an already-completed irrever
 
 Async correctness must survive restore/PITR/partial-loss scenarios.
 
-After recovery, missing outbox/inbox/dedup/consumer offset/replay state is not automatically interpreted as "never published", "never consumed" or "safe to execute".
+After recovery, missing outbox/inbox/dedup/consumer offset/replay/webhook-delivery state is not automatically interpreted as `never published`, `never consumed`, `safe to execute` or `safe to resend somewhere else`.
 
 The accepted `(R,F]` recovery interval reconciles as applicable:
 
@@ -209,11 +212,12 @@ The accepted `(R,F]` recovery interval reconciles as applicable:
 - inbox/dedup receipts;
 - stable process/operation results;
 - provider/external acknowledgements;
+- webhook delivery semantic snapshot and destination-generation/fence evidence;
 - audit/accountability evidence;
 - consumer progress/checkpoints;
 - source/producer generation authority.
 
-A restored cell/consumer remains fail-closed or reconciliation-blocked for duplicate-sensitive effects until continuity is established.
+A restored cell/consumer/dispatcher remains fail-closed or reconciliation-blocked for duplicate/disclosure-sensitive effects until continuity is established.
 
 ## Realtime boundary
 
@@ -222,6 +226,27 @@ Phase 10 defines the realtime message/request/ack protocol representation only a
 A realtime message never becomes authorization. The gateway must continue enforcing Phase 09 current session/membership/permission/tenant and placement-generation lifecycle rules throughout the subscription.
 
 When authority or placement is retired, Phase 10 delivery stops because Phase 09 says the subscription is no longer authorized; the message protocol does not override that decision.
+
+## Outbound webhook retry boundary
+
+Outbound webhook transport ambiguity is not permission to mutate meaning or destination.
+
+For one stable webhook delivery identity:
+
+```text
+same delivery ID
+  -> same external contract/version
+  -> same source event identity
+  -> same tenant/subscription disclosure scope
+  -> same semantic payload meaning
+  -> same bound destination configuration generation
+```
+
+Only explicitly attempt-scoped authentication/transport metadata may change across attempts.
+
+If destination/disclosure configuration changes, the existing obligation is fenced/cancelled/quarantined according to the accepted profile. A deliberate resend under new authority is a new delivery obligation with a new delivery ID and causation back to the original.
+
+The exact storage form of the semantic snapshot and configuration generation remains OPEN; their safety properties do not.
 
 ## Telemetry volume boundary
 
@@ -252,7 +277,10 @@ Async compatibility includes more than payload fields. Security/correctness-sens
 - consumer effect/idempotency policy;
 - retention/recovery continuity;
 - data classification;
-- realtime/webhook projection behavior.
+- realtime/webhook projection behavior;
+- webhook delivery identity namespace;
+- webhook immutable delivery semantic snapshot/reproduction policy;
+- webhook destination-generation binding and configuration-change fence/reissue behavior.
 
 A change can therefore be breaking even when a JSON schema is unchanged.
 
@@ -277,6 +305,7 @@ A new async contract is not implementation-ready until it declares at minimum:
 - observability/audit requirements;
 - compatibility/deprecation implications;
 - realtime/webhook projection semantics where applicable;
+- for outbound webhook profiles: delivery-ID namespace, immutable semantic snapshot/reproduction authority, bound destination configuration generation, generation-change cancel/quarantine/reissue policy and attempt-scoped authentication metadata;
 - numeric limits or explicit OPEN items.
 
 ## What Phase 10 intentionally does not select
@@ -290,6 +319,8 @@ Phase 10 does not prematurely select:
 - exact wire serialization for every contract where logical semantics suffice;
 - numeric retry/retention/backoff/dead-letter thresholds without evidence;
 - deployment-specific topic/queue naming;
+- webhook delivery-snapshot storage product or destination-generation encoding;
+- Product-specific webhook cancel/quarantine/reissue choice before an external webhook profile exists;
 - service extraction boundaries not justified by the accepted architecture;
 - new Product capabilities merely because an event architecture could support them.
 
@@ -308,7 +339,10 @@ Before a Phase 10 contract is accepted, reviewers SHOULD ask whether it remains 
 - a consumer crashes after an external effect but before acknowledgement;
 - a recovery restores local inbox/outbox state backward while external effects survive;
 - realtime clients miss every message and must fully resynchronize;
+- an outbound webhook response is lost while its destination is subsequently replaced/revoked;
+- an outbound webhook retry crosses a rolling deployment/projection mapper change;
+- webhook delivery/configuration state is restored backward while external disclosure already occurred;
 - provider adapters change without changing platform event semantics;
 - one workload grows 100x and requires independent partitioning/scaling.
 
-If a consumer must understand physical topology, provider-native schemas or broker internals to remain correct, the contract is insufficiently decoupled.
+If a consumer must understand physical topology, provider-native schemas or broker internals to remain correct, or if the same stable external delivery identity can change meaning/destination because implementation state changed, the contract is insufficiently decoupled.

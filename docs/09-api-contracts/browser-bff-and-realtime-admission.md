@@ -123,10 +123,11 @@ Successful response conceptually:
 {
   "ticket": "opaque-short-lived-single-use-value",
   "expires_at": "2026-08-18T22:30:00Z",
-  "websocket_url": "wss://<logical-realtime-host>/realtime/v1/connect",
-  "protocol_version": "1"
+  "websocket_url": "wss://<logical-realtime-host>/realtime/v1/connect"
 }
 ```
+
+This Phase 09 response deliberately defines no realtime message/subscription protocol version. Any Phase 10 protocol negotiation/versioning is a separate contract. If the HTTP admission representation later requires its own version marker, that field must be explicitly scoped/named as admission-contract metadata and SHALL NOT imply the Phase 10 message/subscription protocol version.
 
 The ticket is a connection capability, not a platform access token.
 
@@ -238,6 +239,8 @@ The gateway/runtime supports active invalidation and bounded revalidation for:
 - tenant suspension/access denial;
 - tenant relocation/placement-generation retirement.
 
+An already-established protected subscription SHALL stop protected delivery within the accepted security bound when its underlying browser session is revoked/logged out, even if the TCP/WebSocket connection remains technically open until the selected invalidation/close mechanism completes.
+
 A source socket remaining TCP-open after relocation does not make the retired tenant subscription authoritative.
 
 ## Relocation
@@ -277,7 +280,8 @@ The deployed BFF/realtime path SHALL test, where applicable:
 - duplicate/conflicting realtime ticket presentation cannot produce multiple interpretations;
 - an ambiguously framed/targeted realtime handshake never receives `101`;
 - HTTP-version translation does not make invalid upgrade/framing metadata acceptable;
-- ordinary realtime replay/single-winner/current-auth tests still pass after gateway/proxy/runtime changes.
+- session revocation/logout after a protected subscription is established stops further protected delivery within the accepted authority-freshness/invalidation bound;
+- ordinary realtime replay/single-winner/current-auth/subscription-lifecycle tests still pass after gateway/proxy/runtime changes.
 
 ## Phase boundary
 
@@ -289,6 +293,9 @@ Phase 09 accepts:
 - protected pre-`101` admission semantics;
 - current authorization/replay/placement checks;
 - single-winner ticket consumption;
+- separation of connection admission from protected subscription authorization;
+- protected subscription authorization freshness and active invalidation during connection lifetime;
+- placement/admission-generation retirement plus retire/resubscribe/resync responsibility;
 - reconnect/resync responsibility.
 
 Phase 10 defines:
@@ -297,6 +304,7 @@ Phase 10 defines:
 - subscription request/ack format;
 - sequence/cursor/replay fields;
 - event naming/versioning;
-- transport-level message delivery semantics.
+- transport-level message delivery semantics;
+- any message/subscription protocol negotiation or version representation.
 
-Phase 10 may not weaken the Phase 09 canonical HTTP ingress or pre-upgrade security contract.
+Phase 10 may not weaken or defer the Phase 09 canonical HTTP ingress, pre-upgrade security contract, subscription authority lifecycle, active invalidation or placement-retirement requirements.

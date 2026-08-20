@@ -16,6 +16,7 @@ The consumer contract declares:
 - accepted producer/message contracts and versions;
 - tenant/global scope;
 - message identity scope derivation;
+- message-content equivalence evidence policy;
 - effect owner;
 - duplicate/effect completion policy;
 - ordering profile if any;
@@ -131,6 +132,8 @@ A duplicate message under the same trusted identity scope:
 
 A duplicate is not an error requiring a new message identity.
 
+A delivery is eligible to be classified as an ordinary duplicate only after the consumer can establish that the repeated scoped identity still denotes the **same immutable logical message content** under the accepted contract.
+
 ## Same ID, different semantic content
 
 If the same trusted identity scope and `message_id` arrives with semantically different immutable contract content, the consumer treats it as integrity/producer-contract failure.
@@ -138,10 +141,21 @@ If the same trusted identity scope and `message_id` arrives with semantically di
 It SHALL NOT:
 
 - silently process the second payload;
+- silently suppress the second payload as an ordinary duplicate;
 - overwrite the original inbox/evidence;
 - select first/last based on arrival order.
 
-The contract may persist a safe fingerprint/hash of the canonical message contract to detect inconsistent reuse.
+For every duplicate-sensitive consumer, the durable correctness evidence SHALL retain enough information to compare repeated deliveries for semantic equivalence throughout the full dedup/redelivery/replay/recovery horizon. The accepted evidence may be one of:
+
+- a safe canonical fingerprint/hash over the immutable contract identity plus immutable envelope/payload semantics;
+- the original immutable canonical message representation where classification/retention permits it;
+- another durable comparison authority that proves equivalence without depending on mutable current state.
+
+The comparison profile defines exactly which immutable fields are covered. At minimum it cannot omit dimensions whose change would make the same scoped `message_id` represent a different logical message, such as contract/version, trusted tenant/source scope, immutable subject/occurrence identity where applicable, and canonical payload semantics.
+
+A fingerprint is therefore not optional merely because the full payload is not retained. If payload erasure/minimization removes the original bytes, a safe surviving fingerprint/tombstone/equivalent comparison authority remains for as long as the scoped ID can legitimately reappear and be deduplicated.
+
+A mismatch is fail-closed integrity evidence. It enters a governed producer-integrity/quarantine path and cannot acknowledge success as though a normal duplicate had been observed.
 
 ## Cross-authority effects
 
@@ -245,6 +259,8 @@ Acceptable mechanisms include:
 
 The contract records which mechanism provides safety.
 
+If such a lightweight mechanism still classifies repeated `message_id` values as duplicates, it must retain equivalent message-content comparison evidence whenever silent content-reuse suppression would violate the contract.
+
 ## Notification consumers
 
 Email/SMS/push/webhook-like external notifications are externally visible effects and require a stable operation/delivery identity when duplicate delivery would be harmful or confusing.
@@ -255,9 +271,11 @@ A message receipt alone is insufficient deduplication if the external channel ca
 
 Inbox/dedup evidence is retained for at least the period during which the same logical message may be redelivered/replayed/recovered and duplication would remain unsafe.
 
+The retained correctness evidence includes the message-content equivalence fingerprint/original/equivalent authority required to detect scoped `message_id` reuse with different immutable content for that same horizon.
+
 Exact retention is contract/SLO evidence-driven and OPEN.
 
-A consumer SHALL NOT advertise/support replay farther back than its effect-safety evidence can handle unless a separate replay reconciliation mechanism exists.
+A consumer SHALL NOT advertise/support replay farther back than its effect-safety and content-equivalence evidence can handle unless a separate replay reconciliation mechanism exists.
 
 ## Recovery continuity
 
@@ -266,6 +284,7 @@ After restore/PITR/partial loss:
 ```text
 missing inbox receipt != never processed
 older result linkage != effect absent
+missing content-equivalence evidence != safe duplicate
 ```
 
 Before duplicate-sensitive execution resumes, recovery reconciles `(R,F]` against surviving:
@@ -274,10 +293,11 @@ Before duplicate-sensitive execution resumes, recovery reconciles `(R,F]` agains
 - operation/process records;
 - provider/external acknowledgements;
 - outbox/inbox evidence;
+- message-content fingerprint/original/equivalence evidence;
 - audit/accountability;
 - broker/replay/checkpoint evidence where trustworthy.
 
-If outcome remains uncertain, execution stays fail-closed/reconciliation-blocked.
+If outcome or message-content equivalence remains uncertain, execution stays fail-closed/reconciliation-blocked. Recovery SHALL NOT downgrade a same-ID/different-content integrity ambiguity into ordinary duplicate success because a restored snapshot lost the original comparison evidence.
 
 ## Replay interaction
 
@@ -293,6 +313,8 @@ The consumer contract declares whether replay should:
 Replay SHALL NOT disable the normal inbox and thereby repeat irreversible effects.
 
 A projection rebuild that needs to process historical messages again uses a distinct projection generation/build identity rather than pretending original effect receipts never existed.
+
+Supported replay that depends on normal deduplication also retains enough message-content equivalence evidence to reject historical ID reuse with changed immutable semantics.
 
 ## Consumer schema validation
 
@@ -313,12 +335,14 @@ Inbox records store only what is required for correctness/recovery/audit.
 They SHOULD prefer:
 
 - message identity;
-- safe fingerprint;
+- safe canonical fingerprint/equivalence evidence;
 - result/operation linkage;
 - status/timestamps;
 - trusted source metadata;
 
 rather than copying the full confidential payload indefinitely.
+
+Data minimization may replace full retained content with a safe fingerprint/tombstone, but it cannot erase the last evidence needed to distinguish an ordinary duplicate from conflicting reuse during the supported dedup/recovery horizon.
 
 ## Consumer isolation
 
@@ -341,6 +365,7 @@ consumer_contract
 producer_contract/version
 message class
 admitted/completed/duplicate/reconciled/quarantined counts
+content-identity mismatch/integrity-failure counts
 processing latency
 inbox contention
 current placement re-resolution
@@ -355,6 +380,10 @@ Every duplicate-sensitive consumer tests as applicable:
 
 - simultaneous same-message deliveries;
 - same raw ID across distinct authoritative source/tenant scopes;
+- same scoped `message_id` with identical canonical immutable content is classified as a normal duplicate;
+- same scoped `message_id` with changed contract version, trusted immutable scope/subject semantics or canonical payload fails closed as integrity/producer-contract failure;
+- original payload is minimized/erased but surviving fingerprint/equivalence evidence still detects conflicting same-ID content reuse;
+- restore to a point before local fingerprint/equivalence evidence while conflicting/surviving message evidence exists does not classify the new arrival as a safe duplicate;
 - crash after inbox admission but before local effect;
 - crash after local effect statements but before transaction commit;
 - crash after atomic commit before broker acknowledgement;
@@ -372,9 +401,10 @@ Every duplicate-sensitive consumer tests as applicable:
 - inbox table/store product;
 - receipt state naming;
 - exact retention duration;
+- exact fingerprint/hash algorithm and storage representation, subject to accepted collision/security properties;
 - worker/service auth mechanism;
 - broker consumer-group topology;
 - provider-side idempotency implementation;
 - projection rebuild tooling.
 
-The trusted scoped identity, atomic/crash-safe effect completion and fail-closed ambiguity/recovery properties are fixed.
+The trusted scoped identity, durable message-content equivalence evidence, atomic/crash-safe effect completion and fail-closed ambiguity/recovery properties are fixed.

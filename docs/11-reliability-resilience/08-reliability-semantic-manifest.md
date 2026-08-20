@@ -120,6 +120,7 @@ These are the single canonical evidence-level enums for the Phase 11 package and
 - Each compatibility-sensitive field maps to `10-compatibility-and-change-classification.md`.
 - Each profile key materializes `status` and exact applicable operation/contract/runtime-role classes.
 - Each final fault vector is present in all four evidence levels and contributes its canonical blocker to the final release-blocker set.
+- Optional operational telemetry, durably accepted customer observations and mandatory audit use distinct profile keys; no loss, shedding or fallback rule may cross an acceptance boundary by data-plane naming alone.
 
 Dangling references, unknown enums, missing owners or retry without safety mapping are conformance failures.
 
@@ -143,6 +144,7 @@ Future conformance tooling SHALL reject:
 - unsupported numeric literal replacing an OPEN decision;
 - vendor/topology name as canonical contract identity;
 - evidence claimed at a higher level than produced;
+- acknowledged customer observation without durable scoped identity/responsibility, or optional-loss behavior applied after durable acceptance;
 - AI output as protected decision authority, score, veto or eligibility condition.
 
 ## Change control

@@ -90,7 +90,8 @@ A restored scope remains non-authoritative for protected/effectful work until:
 6. duplicate/content-equivalence evidence covers the supported horizon;
 7. stale source/replay/destination/delivery generations are retired;
 8. tenant isolation and cryptographic usability/erasure intent are validated;
-9. explicit admission evidence is durably recorded.
+9. accepted customer-observation identities, acceptance/projection watermarks, monotonic current-state tokens and pending transition/signal intents are reconciled where the recovered scope includes customer telemetry;
+10. explicit admission evidence is durably recorded.
 
 Starting a database, passing schema checks, restoring an offset or observing liveness is insufficient.
 

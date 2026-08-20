@@ -148,6 +148,8 @@ Exact weights, quotas and reservation values remain OPEN.
 
 High-volume telemetry may backpressure, buffer or drop only according to its accepted data-class contract. Transactional core capacity must remain protected, and loss/gaps are explicit rather than represented as complete data.
 
+Optional operational telemetry MAY shed only before its declared optional acceptance boundary. Customer monitoring observations that crossed their durable acceptance boundary SHALL NOT be reclassified as optional or dropped under pressure: downstream historical, current-state and signal projections defer from the durable accepted-observation record, preserve checkpoints and stop new intake before overwriting accepted responsibility.
+
 ## Batching
 
 Batching SHALL preserve individual logical identities unless the contract defines one atomic batch command.
@@ -197,4 +199,3 @@ After restore/PITR:
 ## Release blockers
 
 Release is blocked by any unbounded accepted backlog/buffer/retry population, any path where one tenant/destination can exhaust unrelated capacity, any overflow rule that loses required evidence, any replay/recovery path that starves current correctness/security authority, or any brownout that weakens an invariant.
-

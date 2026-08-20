@@ -43,7 +43,7 @@ An OPEN SHALL include an accountable authority, evidence requirement, and closur
 | `OPEN-REL-017` | Realtime is non-authoritative, placement/auth generation-bound, overload-aware and resynchronizable. | Session limits, buffer/drop policy, reconnect budget and runtime transport. | `3`; Product/Phase 12/13; disconnect, revocation, skew and resync benchmarks; before production eligibility. |
 | `OPEN-REL-018` | Webhook delivery, if Product-approved, requires immutable delivery identity, destination isolation, ambiguity and bounded retry. | Whether/families of outbound webhooks, destination semantics, retry horizons and limits. | `4`; Product authority; accepted feature contract plus adversarial destination evidence; no implementation before Product gate. |
 | `OPEN-REL-019` | Artifacts are integrity-verified, tenant/generation-bound, and governed by revocation/erasure/quarantine. | Object-store product/topology, capability mechanism, streaming continuation and availability profile. | `2`; Data/Security/Phase 13; mismatch, outage and governance-race tests; mechanism before implementation, numerics before production. |
-| `OPEN-REL-020` | Telemetry cannot become business authority and loss SHALL be explicit; mandatory audit boundaries fail according to Security/Data policy. | Telemetry products, local buffer/shedding mechanisms, loss tolerances and retention. | `3`; Phase 12/Security/Data; overload/loss and confidentiality evidence; before production eligibility. |
+| `OPEN-REL-020` | Optional operational telemetry cannot become business authority and its loss is explicit; customer monitoring observations acknowledged after their separate durable acceptance boundary remain recoverable and project monotonically; mandatory audit boundaries fail according to Security/Data policy. | Optional/customer/audit telemetry products and numeric buffer, loss-tolerance, checkpoint-lag, retention, cardinality and storage/cost envelopes; the customer durable-acceptance/projection mechanism is owned separately by `OPEN-REL-030`. | `3`; Phase 12/Security/Data; optional-loss, durable-acceptance/projection, overload, relocation and confidentiality evidence; before production eligibility. |
 | `OPEN-REL-021` | Fault evidence SHALL be bounded, reproducible, attributable, isolated and cleanup-safe. | Fault/chaos tooling, execution environments and production-like rehearsal policy. | `2`; Verification overlay with Phase 14/15; tool conformance and safe rehearsal; before executable fault program. |
 | `OPEN-REL-022` | Capacity is multi-dimensional and includes tenant skew, retry amplification, recovery and cost. | Numeric envelopes and rearchitecture triggers. | `3`; Product/business plus Capacity overlay; representative benchmarks and cost evidence; before production eligibility. |
 | `OPEN-REL-023` | Availability and recovery claims require accepted objectives and measurement semantics. | SLOs, error budgets, RPO/RTO and convergence targets. | `3`; Product/business with Phase 12/15; measured baseline and recovery drills; before production eligibility. |
@@ -53,6 +53,7 @@ An OPEN SHALL include an accountable authority, evidence requirement, and closur
 | `OPEN-REL-027` | Critical capabilities, incidents, ambiguity, quarantine, recovery and break-glass need accountable operational ownership. | Named owners, staffing, runbooks, escalation and communications platform. | `1`; Phase 15 for ownership semantics, `3` for staffing numerics; table-top/rehearsal evidence; ownership before implementation readiness, staffing before production. |
 | `OPEN-REL-028` | Reliability-breaking changes require compatible rollout, pause/abort and rollback/forward-recovery behavior. | Deployment tooling, wave sizes, health gates, pause/abort thresholds and emergency mechanism. | `2`; Phase 14; mixed-version, rollout and recovery evidence; mechanism before implementation readiness, numerics before production. |
 | `OPEN-REL-029` | Configuration authority is schema-valid, scope-bound, generation-monotonic, compatibly distributed and recovery-aware independently of secret material. | Configuration store/distribution product, schema tooling, rollout mechanism, last-known-good horizon and convergence targets. | `2`; configuration-owning capability with Phase 13/14 and Security; malformed/partial/restore fault evidence; authority/schema semantics before implementation, mechanism through Phase 13/14, numerics before production. |
+| `OPEN-REL-030` | Customer monitoring observations are acknowledged only after canonical scoped identity and durable acceptance responsibility exist; accepted observations remain replayable into idempotent historical, monotonic current-state and durable transition/signal projections across restart, recovery and relocation. | Concrete durable acceptance authority/mechanism, projection persistence/transport, checkpoint implementation and reconciliation orchestration. | `2`; Data/monitoring owner with Phase 13/14; `FV-TEL-002` conformance including crash, backlog, replay and relocation; select and conform the mechanism before implementing the customer-telemetry ingestion/projection path. |
 
 Where a row contains sub-decisions with different gates, downstream owners SHALL split them into separate records before closure rather than close the entire OPEN with partial evidence.
 
@@ -96,6 +97,7 @@ Phase 11 SHALL NOT be accepted while any of the following is true:
 Even after Phase 11 merge, implementation remains blocked until downstream phases close at least:
 
 - `OPEN-REL-013`, `OPEN-REL-026`, and the ownership-semantic portion of `OPEN-REL-027`;
+- `OPEN-REL-030` before any customer-telemetry durable acceptance/projection path is implemented;
 - runtime responsibility, isolation, identity, secrets, lifecycle, cell and fencing mechanisms from Phase 13;
 - build/release authority, artifact trust, compatibility rollout and recovery change classes from Phase 14;
 - operational ownership, recovery admission, runbook/break-glass and incident authority from Phase 15;
@@ -105,7 +107,7 @@ Implementation work that exists solely to generate evidence for a class-2 decisi
 
 ## 7. Release and production blockers
 
-The blockers `RB-REL-001` through `RB-REL-025` in the fault matrix apply to their respective evidence gates. Additionally:
+The blockers `RB-REL-001` through `RB-REL-026` in the fault matrix apply to their respective evidence gates. Additionally:
 
 - production eligibility is blocked while applicable class-3 OPENs lack accepted numbers and runtime evidence;
 - a Product-gated capability is blocked until Product authority and its full contract exist;

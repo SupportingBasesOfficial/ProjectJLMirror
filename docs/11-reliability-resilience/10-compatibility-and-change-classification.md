@@ -84,7 +84,7 @@ Silence SHALL mean unsupported, not compatible. A rollout mechanism SHALL NOT in
 
 - A downstream version SHALL NOT extend an upstream end-to-end deadline without an accepted contract.
 - Mixed versions SHALL NOT create nested retry multiplication beyond the aggregate attempt budget.
-- A version that classifies an outcome as `ambiguous` SHALL NOT interoperate with a peer that blindly converts it to retryable absence.
+- A version that classifies an outcome as `external_outcome_ambiguous` SHALL NOT interoperate with a peer that blindly converts it to retryable absence.
 - Retry-policy changes SHALL preserve stable operation and effect identity.
 
 ### 6.2 Authority and generations

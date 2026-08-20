@@ -130,11 +130,12 @@ Phase 11 uses logical capability ownership, not future team names:
 - artifact/governance owners control release, erasure and delivery-generation eligibility;
 - Security authority owns current authorization/revocation/deny decisions and their fail-closed behavior;
 - each configuration-owning capability owns accepted content/schema/applicability while Platform Management owns governed distribution and generation evidence;
+- each protected-effect capability owns its mandatory audit boundary with Security/Data policy; optional telemetry cannot weaken or substitute that boundary;
 - Phase 12 later defines diagnostic signal ownership;
 - Phase 13 later maps logical roles to runtime isolation;
 - Phase 15 later assigns operational/on-call/runbook authority.
 
-No generic worker, queue administrator, infrastructure retry mechanism or AI-assisted diagnostic system may decide whether a protected ambiguous effect is safe to repeat.
+No generic worker, queue administrator, infrastructure retry mechanism or AI-assisted diagnostic system may decide whether a protected ambiguous effect is safe to repeat or whether any protected gate is eligible to pass.
 
 ## Phase boundary
 

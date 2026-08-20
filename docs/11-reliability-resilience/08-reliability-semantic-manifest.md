@@ -27,6 +27,8 @@ Runtime instance, queue, topic, cell, region, provider product or deployment nam
 
 | Field | Requirement |
 |---|---|
+| `owning_capability` | logical accountable capability; named operational ownership remains Phase 15 |
+| `scope` | tenant/cell/provider/destination/workload/global dimensions governed by the record |
 | `authority_refs` | accepted Product/INV/QA/SEC/TM/ADR/System/Data/API/Event references |
 | `truth_authority` | durable/current authority proving state/effect/eligibility |
 | `criticality` | authority/correctness/confidentiality/durability/blast-radius/recovery dimensions |
@@ -51,6 +53,8 @@ Runtime instance, queue, topic, cell, region, provider product or deployment nam
 | `open_decisions` | owner, evidence, closure gate and non-default rule |
 
 No required field may disappear. If a conditional subdimension has no applicable case, the manifest records `no_applicable_case` plus condition, accepted authority and reviewable evidence.
+
+The canonical catalog MAY be normalized across multiple tables only when every table is keyed by the exact pair `reliability_profile_id` and `profile_version`. The join of those tables is one manifest record and SHALL materialize every required field exactly once for every key. Implicit defaults, narrative inheritance and unresolved policy references are forbidden. A named policy reference is valid only when its complete value is defined in the same accepted package and the profile row selects it explicitly.
 
 ## Canonical enums
 
@@ -113,33 +117,9 @@ These are the single canonical evidence-level enums for the Phase 11 package and
 
 Dangling references, unknown enums, missing owners or retry without safety mapping are conformance failures.
 
-## Example logical profile
+## Canonical record location and serialization boundary
 
-```yaml
-reliability_profile_id: provider_call.effectful
-profile_version: 1
-owning_capability: accepted owning application process
-scope: tenant_integration
-authority_refs: [QA-AVAIL-001, QA-BULK-001, ADR-013, ADR-017]
-truth_authority: stable platform operation plus provider reconciliation authority
-failure_classes:
-  slow_or_timed_out: reconciliation_blocked
-  throttled: queued_or_deferred
-  contract_permanent: capability_unavailable
-identity_policy: preserve stable operation_id across attempts
-retry_policy:
-  eligibility: only after classified safe outcome
-  aggregate_budget: OPEN-REL-006
-bulkhead_policy:
-  dimensions: [tenant, integration, provider, operation_class]
-recovery_policy:
-  continuity: operation outcomes and acknowledgements in (R,F]
-  admission: fail_closed_until_reconciled
-fault_vectors: [FV-EXT-002]
-release_blockers: [RB-REL-008]
-```
-
-This is illustrative syntax, not a selected serialization/tool.
+The complete logical records are materialized in `07-capability-resilience-profiles.md`. A future YAML, JSON, schema or generated representation SHALL encode the complete normalized join for a profile key; a partial illustrative record is deliberately not normative and SHALL NOT be used as a template. Serialization/tool choice remains OPEN.
 
 ## Static governance checks
 

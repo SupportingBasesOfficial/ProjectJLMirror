@@ -61,7 +61,7 @@ Where a row contains sub-decisions with different gates, downstream owners SHALL
 Phase 11 closes the following semantic decisions within roadmap authority:
 
 - capability/dependency criticality vocabulary and required profile fields;
-- failure and degradation vocabulary, including `ambiguous`, `recovery_blocked`, and explicit staleness;
+- failure and degradation vocabulary, including `external_outcome_ambiguous`, `recovery_continuity_blocked`, and explicit staleness;
 - fail-closed boundaries for uncertain authority, revocation, generations, and sensitive operations;
 - deadline propagation and the rule that timeout is not completion truth;
 - retry eligibility, stable identity, aggregate-budget, circuit, bulkhead, backpressure, and bounded-backlog requirements;
@@ -105,7 +105,7 @@ Implementation work that exists solely to generate evidence for a class-2 decisi
 
 ## 7. Release and production blockers
 
-The blockers `RB-REL-001` through `RB-REL-023` in the fault matrix apply to their respective evidence gates. Additionally:
+The blockers `RB-REL-001` through `RB-REL-024` in the fault matrix apply to their respective evidence gates. Additionally:
 
 - production eligibility is blocked while applicable class-3 OPENs lack accepted numbers and runtime evidence;
 - a Product-gated capability is blocked until Product authority and its full contract exist;

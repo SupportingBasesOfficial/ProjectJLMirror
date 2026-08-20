@@ -244,7 +244,7 @@ Phase 11 SHALL define:
 
 ## Required outputs
 
-The phase package is expected to include dedicated documents or explicit sections for:
+The phase package SHALL include dedicated documents or explicit sections for:
 
 - Reliability & Resilience overview;
 - capability/dependency criticality map;

@@ -18,6 +18,7 @@ The architecture must remain coherent when:
 - queue/broker technology changes;
 - old and new application versions coexist during rolling deployment;
 - broker delivery is duplicated, delayed, reordered or temporarily unavailable;
+- a producer bug/recovery defect reuses a scoped message ID with different immutable content;
 - a consumer crashes before, during or after an effect;
 - a cell/store is restored to an earlier point while later external effects or reliability evidence survive;
 - realtime clients disconnect, miss messages or remain connected during authorization/placement changes;
@@ -36,6 +37,9 @@ The following are already fixed and remain normative:
 - default event/job delivery is **at least once**;
 - broker semantics alone never justify an exactly-once business claim;
 - consumers protect duplicate-sensitive effects using inbox/idempotency/natural uniqueness/CAS/reconciliation as appropriate;
+- a repeated trusted scoped message identity is treated as a benign duplicate only when durable evidence proves the same immutable logical message semantics;
+- same scoped `message_id` with different immutable content is integrity/producer-contract failure, never successful duplicate suppression;
+- content-equivalence evidence survives the supported dedup/redelivery/replay/recovery horizon or an alternate durable authority proves equivalence;
 - a message/job does not carry durable human authorization merely because an earlier request had it;
 - workers re-resolve current tenant placement and establish their own trusted `TenantContext` before protected execution;
 - provider-native models remain adapter-owned and do not become platform ubiquitous language;
@@ -128,6 +132,8 @@ All published Phase 10 messages inherit a common logical envelope. Exact wire se
 
 The canonical logical fields are defined in `message-envelope-and-classes.md` and include stable message identity, contract identity/version, producer authority, tenant/global scope, timestamps, correlation/causation and optional subject/ordering metadata.
 
+A stable scoped message identity denotes one immutable logical message meaning. Duplicate-sensitive consumers therefore retain a canonical fingerprint, immutable original or equivalent comparison authority sufficient to detect reuse of the same scoped ID with different immutable semantics throughout the supported dedup/recovery horizon.
+
 Payloads contain contract data only. Secrets, access tokens, refresh tokens, raw credentials and unrestricted provider secrets are forbidden.
 
 ## Tenant isolation
@@ -138,10 +144,11 @@ Every consumer:
 
 1. validates the accepted message contract;
 2. derives trusted message identity scope;
-3. re-resolves current placement where protected tenant state is touched;
-4. establishes its own `TenantContext`;
-5. performs current authorization/policy checks where the work requires authority at execution time;
-6. executes under the consumer's owning-domain contract.
+3. verifies message-content equivalence when the scoped identity was already admitted;
+4. re-resolves current placement where protected tenant state is touched;
+5. establishes its own `TenantContext`;
+6. performs current authorization/policy checks where the work requires authority at execution time;
+7. executes under the consumer's owning-domain contract.
 
 A broker route/topic is not sufficient tenant authority.
 
@@ -153,6 +160,8 @@ The dispatcher publishes after commit. It may retry publication, but it does not
 
 Published contract identity and immutable payload/evidence are separated from mutable dispatch attempt state.
 
+The same scoped `message_id` cannot be reused to publish different immutable semantic content. If such reuse is observed, consumers fail closed rather than choosing first/last content by arrival order.
+
 ## Delivery semantics
 
 Default delivery is **at least once**.
@@ -160,6 +169,8 @@ Default delivery is **at least once**.
 Therefore:
 
 - duplicate delivery is expected;
+- benign duplicate classification requires the same scoped message identity **and equivalent immutable message content**;
+- conflicting content under an already-used scoped ID is integrity failure/quarantine, not duplicate success;
 - broker acknowledgement is not the business completion boundary;
 - consumer effects must be crash-safe;
 - retry after timeout/lease loss first reconciles durable effect state when outcome can be ambiguous;
@@ -192,24 +203,26 @@ A replay contract defines:
 - source authority and replay range;
 - whether the original message identity is preserved;
 - consumer eligibility and dedup interaction;
+- message-content equivalence evidence available for retained duplicate-sensitive identities;
 - authorization/data-retention constraints;
 - ordering/gap expectations;
 - observability and audit;
 - behavior when original contract versions are no longer directly consumable.
 
-Replaying an old event does not authorize repeating an already-completed irreversible side effect.
+Replaying an old event does not authorize repeating an already-completed irreversible side effect or suppressing changed historical content under a reused ID.
 
 ## Recovery continuity
 
 Async correctness must survive restore/PITR/partial-loss scenarios.
 
-After recovery, missing outbox/inbox/dedup/consumer offset/replay/webhook-delivery state is not automatically interpreted as `never published`, `never consumed`, `safe to execute` or `safe to resend somewhere else`.
+After recovery, missing outbox/inbox/dedup/content-equivalence/consumer offset/replay/webhook-delivery state is not automatically interpreted as `never published`, `never consumed`, `same duplicate`, `safe to execute` or `safe to resend somewhere else`.
 
 The accepted `(R,F]` recovery interval reconciles as applicable:
 
 - committed business facts;
 - outbox publication state;
 - inbox/dedup receipts;
+- message-content fingerprint/original/equivalence evidence;
 - stable process/operation results;
 - provider/external acknowledgements;
 - webhook delivery semantic snapshot and destination-generation/fence evidence;
@@ -217,7 +230,7 @@ The accepted `(R,F]` recovery interval reconciles as applicable:
 - consumer progress/checkpoints;
 - source/producer generation authority.
 
-A restored cell/consumer/dispatcher remains fail-closed or reconciliation-blocked for duplicate/disclosure-sensitive effects until continuity is established.
+A restored cell/consumer/dispatcher remains fail-closed or reconciliation-blocked for duplicate/disclosure-sensitive effects until continuity and required equivalence are established.
 
 ## Realtime boundary
 
@@ -269,6 +282,7 @@ Async compatibility includes more than payload fields. Security/correctness-sens
 - contract identity/version;
 - tenant/global scope;
 - message identity scope;
+- message-content equivalence/fingerprint coverage and retention;
 - producer authority/generation;
 - delivery/ack policy;
 - retry/quarantine policy;
@@ -292,6 +306,7 @@ A new async contract is not implementation-ready until it declares at minimum:
 - stable `contract_name` and version policy;
 - tenant/global scope;
 - canonical message identity and trusted identity scope;
+- canonical message-content equivalence/fingerprint policy and evidence retention/recovery horizon where duplicate suppression applies;
 - payload schema and data classification;
 - correlation/causation policy;
 - publication/outbox boundary;
@@ -316,6 +331,7 @@ Phase 10 does not prematurely select:
 - partition count or queue topology;
 - broker-specific acknowledgement modes;
 - schema-registry vendor;
+- exact canonical message fingerprint/hash algorithm or evidence-store representation;
 - exact wire serialization for every contract where logical semantics suffice;
 - numeric retry/retention/backoff/dead-letter thresholds without evidence;
 - deployment-specific topic/queue naming;
@@ -331,13 +347,14 @@ These remain OPEN implementation/profile decisions unless a contract requires an
 Before a Phase 10 contract is accepted, reviewers SHOULD ask whether it remains correct when:
 
 - delivery is duplicated and reordered;
+- a scoped `message_id` is accidentally or maliciously reused with different immutable content after the original full payload was minimized;
 - producer and consumer versions differ during rolling deployment;
 - a tenant relocates between cells while messages are in flight;
 - a consumer is extracted to another service/region;
 - broker technology is replaced;
 - a message is replayed months later under a retained contract version;
 - a consumer crashes after an external effect but before acknowledgement;
-- a recovery restores local inbox/outbox state backward while external effects survive;
+- a recovery restores local inbox/outbox/fingerprint state backward while external effects/messages survive;
 - realtime clients miss every message and must fully resynchronize;
 - an outbound webhook response is lost while its destination is subsequently replaced/revoked;
 - an outbound webhook retry crosses a rolling deployment/projection mapper change;
@@ -345,4 +362,4 @@ Before a Phase 10 contract is accepted, reviewers SHOULD ask whether it remains 
 - provider adapters change without changing platform event semantics;
 - one workload grows 100x and requires independent partitioning/scaling.
 
-If a consumer must understand physical topology, provider-native schemas or broker internals to remain correct, or if the same stable external delivery identity can change meaning/destination because implementation state changed, the contract is insufficiently decoupled.
+If a consumer must understand physical topology, provider-native schemas or broker internals to remain correct, if the same scoped message identity can silently hide different immutable content, or if the same stable external delivery identity can change meaning/destination because implementation state changed, the contract is insufficiently decoupled.

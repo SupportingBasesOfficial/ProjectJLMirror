@@ -60,6 +60,7 @@ allowed_consumer_contracts or discovery policy
 tenant_scope_policy
 message_identity_policy
 message_identity_scope_policy
+message_content_equivalence_policy
 producer_generation_policy
 subject_identity_policy
 payload_schema_profile
@@ -95,6 +96,8 @@ deprecation_state
 
 `not_applicable` is an explicit value where a dimension genuinely does not apply. Silent omission is not accepted for security/correctness-sensitive dimensions.
 
+`message_content_equivalence_policy` defines which immutable contract/envelope/payload semantics are covered by the retained fingerprint/original/equivalent comparison authority, how long that evidence survives, and what fail-closed behavior applies when the same trusted scoped `message_id` arrives with mismatching or unavailable comparison evidence.
+
 For an outbound webhook contract, the manifest must make it impossible for the same `webhook_delivery_id` to change external semantic meaning or disclosure destination silently. It therefore records whether delivery identity is globally unique or explicitly scoped, what immutable semantic snapshot/reproduction authority backs retries, which destination configuration generation is bound to the obligation, how generation changes cancel/quarantine/reissue work, and which authentication metadata is attempt-scoped.
 
 ## Consumer manifest
@@ -105,6 +108,8 @@ Each consumer additionally declares:
 consumer_contract
 accepted_contract_name/version range
 trusted message_identity_scope derivation
+message-content fingerprint/original/equivalence evidence profile
+message-content equivalence retention/recovery horizon
 effect owner/effect class
 inbox/idempotency mechanism
 local transaction or cross-authority completion profile
@@ -116,6 +121,8 @@ retry/quarantine policy
 ```
 
 A broker subscription/group alone is not a complete consumer contract.
+
+A duplicate-sensitive consumer cannot declare normal duplicate behavior without also declaring how it proves that a repeated scoped `message_id` still carries the same immutable logical message semantics after payload minimization, redelivery, replay and restore/PITR.
 
 ## Contract versioning model
 
@@ -140,6 +147,8 @@ Breaking changes include more than schema deletion. Examples:
 
 - changing tenant/global scope;
 - weakening/changing message identity namespace;
+- weakening/changing message-content equivalence coverage so scoped ID reuse with changed immutable meaning can be suppressed as a duplicate;
+- shortening/removing fingerprint/original/equivalence evidence while the same scoped IDs remain redeliverable/replayable/recoverable;
 - changing fact into command semantics;
 - changing at-least-once duplicate behavior in a way old consumers cannot safely handle;
 - adding a new required ordering guarantee old producers cannot satisfy;
@@ -196,6 +205,8 @@ Security-sensitive consumers still validate known protected fields strictly and 
 
 Unknown-field tolerance does not mean arbitrary payload execution.
 
+The message-content equivalence profile also defines whether compatible unknown/additive fields participate in the canonical fingerprint for that contract/version. Producer and consumer implementations cannot independently choose different equivalence coverage for the same scoped message identity.
+
 ## Enums
 
 Enums are explicitly:
@@ -231,6 +242,8 @@ New code SHALL NOT reinterpret an old event according to current business rules 
 
 Upcasters/adapters may transform representation for current code, but must preserve historical semantic meaning and retain traceability to original contract/version.
 
+For duplicate-sensitive consumers, any canonical fingerprint/equivalence transformation across supported historical versions must be deterministic and preserve the original message's immutable semantic identity; a new reader/upcaster cannot cause the same original scoped `message_id` to compare against a different meaning silently.
+
 ## Upcasting
 
 An upcaster is allowed only when:
@@ -240,6 +253,7 @@ An upcaster is allowed only when:
 - does not require unavailable current mutable state unless the replay contract explicitly permits reconciliation;
 - does not fabricate a historical fact that was not represented by the source message;
 - preserves tenant/source/message identity and occurrence semantics as required;
+- preserves or deterministically maps the message-content equivalence evidence required by duplicate-sensitive consumers;
 - does not bypass data-classification/erasure restrictions.
 
 Upcasting code/version is part of supported replay compatibility evidence.
@@ -266,6 +280,7 @@ A producer MAY temporarily publish multiple contract versions during migration o
 - the owning fact is not duplicated into multiple business effects accidentally;
 - consumer routing/subscription is explicit;
 - event identities/causation preserve traceability;
+- each version's message identity/content-equivalence semantics remain unambiguous;
 - dual-publish duration is bounded;
 - retirement criteria are measured;
 - recovery/replay semantics for both versions are defined.
@@ -363,6 +378,7 @@ Owning producer capability:
 Tenant/global scope:
 Message identity policy:
 Trusted message identity scope:
+Message-content equivalence/fingerprint policy:
 Producer/source generation policy:
 Subject identity:
 ```
@@ -401,6 +417,9 @@ Quarantine/terminal behavior:
 ```text
 Consumer contract(s):
 Inbox/idempotency/effect mechanism:
+Message-content comparison authority:
+Comparison-evidence retention/recovery horizon:
+Same-ID/different-content failure behavior:
 Local vs cross-authority completion:
 External ambiguity/reconciliation:
 Current placement:
@@ -421,6 +440,7 @@ Projection rebuild behavior:
 
 ```text
 Dedup retention/recovery horizon:
+Message-content equivalence retention/recovery horizon:
 (R,F] continuity evidence:
 Restore/PITR behavior:
 Schema/history retention:
@@ -460,6 +480,7 @@ Review compares:
 - payload/envelope schema;
 - producer/consumer ownership;
 - tenant/security/data classification;
+- message identity scope and message-content equivalence/fingerprint policy;
 - delivery/ack/retry/quarantine;
 - inbox/effect completion;
 - ordering/replay;
@@ -475,6 +496,9 @@ The following trigger security/correctness review even if payload schema is unch
 - producer authority/ACL namespace;
 - tenant/global scope;
 - message identity scope;
+- message-content equivalence/fingerprint coverage;
+- message-content comparison-evidence retention/recovery horizon;
+- same-ID/different-content mismatch handling;
 - producer generation policy;
 - consumer inbox/idempotency policy;
 - ack durable boundary;
@@ -501,6 +525,9 @@ CI/release tooling SHOULD eventually provide:
 - semantic-manifest completeness;
 - compatibility diff;
 - duplicate/alias parser tests;
+- same-scoped-message-ID equivalent-content and conflicting-content tests;
+- payload-minimization plus retained-equivalence-evidence tests;
+- restore/PITR content-equivalence continuity tests;
 - old/new producer-consumer fixture tests;
 - envelope authority tests;
 - replay fixture tests;
@@ -523,6 +550,7 @@ A contract/version is retired only when:
 - no supported producer still emits it, or migration adapter exists;
 - no supported consumer requires it;
 - retained replay history is either still readable through retained reader/upcaster or no longer supported/retained under accepted policy;
+- duplicate-sensitive consumers no longer require retained message-content equivalence evidence for the version/identity horizon, or an equivalent migration authority exists;
 - realtime/webhook external subscribers have completed required migration where applicable;
 - observability proves retirement eligibility;
 - removal does not break recovery/legal/audit requirements.
@@ -532,6 +560,8 @@ A contract/version is retired only when:
 Removing an event field/version does not retroactively remove it from historical retained messages.
 
 Consumers/replay tools must still be able to interpret supported history according to retention policy.
+
+A field/reader used to calculate canonical equivalence for retained duplicate-sensitive IDs cannot be removed until retained evidence has been safely migrated or the associated redelivery/replay/recovery horizon has ended.
 
 ## No accidental topology contracts
 
@@ -549,10 +579,14 @@ Compatibility tests reject contracts that expose or depend on:
 - new consumer reads old supported message;
 - closed enum change is detected as incompatible;
 - same schema but changed tenant/idempotency/ack/replay policy is detected by manifest diff;
+- same scoped `message_id` with equivalent immutable content remains a legitimate duplicate across rolling producer/consumer versions;
+- same scoped `message_id` with changed immutable content is detected as integrity failure, including after full payload minimization when only retained fingerprint/equivalence evidence remains;
+- semantic-manifest diff detects weakening/removal of message-content equivalence coverage or retention while IDs remain replayable/redeliverable;
+- restore/PITR loss of comparison evidence does not downgrade conflicting reuse to normal duplicate success;
 - unsupported version quarantines rather than guesses;
-- historical upcast preserves message/tenant/occurrence meaning;
+- historical upcast preserves message/tenant/occurrence meaning and equivalence evidence;
 - schema registry cannot be poisoned by untrusted message schema URL;
-- dual-publish migration does not duplicate protected consumer effect;
+- dual-publish migration does not duplicate protected consumer effect or create ambiguous scoped-ID equivalence;
 - replay of old version remains interpretable throughout supported retention;
 - event contract does not change merely because service/broker topology changes;
 - one external endpoint receiving multiple subscriptions/tenants cannot observe a collision in documented webhook delivery identity;
@@ -570,7 +604,8 @@ Compatibility tests reject contracts that expose or depend on:
 - catalog UI/product;
 - deprecation duration values;
 - exact dual-publish mechanics;
+- exact canonical fingerprint/hash algorithm and storage representation, subject to accepted collision/security properties;
 - exact storage representation for webhook immutable semantic snapshots and destination generations;
 - exact Product-specific cancel/quarantine/reissue choice for a retired webhook destination generation.
 
-The semantic-manifest completeness, historical meaning, compatibility and governance properties are fixed.
+The semantic-manifest completeness, durable message-content equivalence, historical meaning, compatibility and governance properties are fixed.

@@ -30,7 +30,7 @@ The result is a profile, not a single score. Numeric availability targets belong
 
 Loss or uncertainty can grant stale access, placement, publication, delivery, erasure or retry authority. It fails closed for new protected decisions unless a separately accepted current local verification path proves authority.
 
-Examples: current authorization/revocation, tenant placement admission, replay-consumption authority, artifact governance/delivery-generation fences, producer/source generations.
+Examples: current authorization/revocation, tenant placement admission, configuration content/applicability/generation, replay-consumption authority, artifact governance/delivery-generation fences, producer/source generations.
 
 ### `transactional_truth_critical`
 
@@ -66,25 +66,28 @@ An implementation SHALL NOT downgrade a dependency from an authority/continuity 
 
 ## Capability/dependency map
 
-| Capability/dependency | Authority / truth | Minimum degradation | Required isolation | Resumption prerequisite |
-|---|---|---|---|---|
-| Control Plane placement/lifecycle | current tenant placement, cell admission intent, lifecycle deny state | bounded stable admitted traffic may continue only from trusted versioned state; topology changes stop | control plane vs cells; tenant lifecycle operations | current authority and generation/fence proven |
-| Cell transactional store | tenant transactional truth and co-resident reliability state | affected cell mutations unavailable/fail closed | cell is primary blast-radius unit | authoritative store/failover generation current; recovery gates pass |
-| Security/session authority | current authentication/authorization/revocation | deny new protected decisions unless current local verification is explicitly valid | principal/tenant/scope | current non-regressing generation/deny state proven |
-| Placement/reference cache | bounded trusted copy, not original authority | safe last-known-good only within profile and destination-cell admission | cache key tenant/version; protected fallback concurrency | freshness/admission remains provable |
-| Performance cache | derived data | bypass to authority only when safe and bounded; otherwise degrade | tenant/operation bulkhead | stampede controlled; authority healthy |
-| Replay/capability consume state | single/bounded-use correctness authority | protected admission fails closed | capability epoch/scope | continuity recovered or new trusted epoch invalidates old capabilities |
-| Secret/KMS authority | secret/key release and cryptographic usability | operations needing unavailable secrets fail; no plaintext fallback | runtime/cell/tenant/secret namespace | current key/secret authority and rotation state proven |
-| Outbox/publication | committed async intent | publication pauses; originating commit remains valid | cell/producer/contract | dispatcher resumes same immutable message identity |
-| Broker/job transport | delivery transport, not business truth | async progress pauses; bounded backlog | workload/tenant/consumer | durable intent/process truth reconciled before progress |
-| Consumer inbox/effect | duplicate/effect completion authority | duplicate-sensitive execution stops if evidence incomplete | consumer contract/source/tenant | outcome and content equivalence proven |
-| External provider | external truth may be unavailable/slow/ambiguous | provider-dependent capability fails fast/circuits; stored state only with explicit staleness | tenant/integration/provider/destination | provider and local operation truth reconciled |
-| Realtime fanout/gateway | advisory delivery only | live updates pause/shed; authoritative API/read state remains | connection/tenant/topic/cell | fresh auth/placement and resync |
-| Webhook delivery | external disclosure obligation when Product-enabled | destination-specific attempts pause/quarantine; business fact not rolled back | tenant/subscription/destination generation | immutable obligation and destination-generation eligibility proven |
-| Telemetry plane | high-volume historical/derived input by accepted class | bounded buffer/backpressure/drop only by declared data policy | telemetry vs transactional core; tenant/source | data-class policy and ordering/dedup state safe |
-| Object/artifact storage | protected bytes; metadata authority is separate | generation/releasability remains explicit; no false available state | tenant/artifact/generation | metadata/object integrity and governance fences reconcile |
-| Reporting/AIOps workers | optional/derived workload unless Product says otherwise | delay/shed/isolate | separate queue/pool/budget | backlog bounded and dependencies healthy |
-| Automation/SQL/admin/recovery | privileged effects | fail closed when scope/authority/isolation unavailable | dedicated trust envelope | current authority, target scope, audit and resource policy proven |
+| Capability/dependency | `reliability_profile_id` | `profile_version` | Authority / truth | Minimum degradation | Required isolation | Resumption prerequisite |
+|---|---|---|---|---|---|---|
+| Control Plane placement/lifecycle | `rel.control-plane-placement` | `1` | current tenant placement, cell admission intent, lifecycle deny state | bounded stable admitted traffic may continue only from trusted versioned state; topology changes stop | control plane vs cells; tenant lifecycle operations | current authority and generation/fence proven |
+| Cell transactional store | `rel.cell-transactional-store` | `1` | tenant transactional truth and co-resident reliability state | affected cell mutations unavailable/fail closed | cell is primary blast-radius unit | authoritative store/failover generation current; recovery gates pass |
+| Security/session authority | `rel.security-session-authority` | `1` | current authentication/authorization/revocation | deny new protected decisions unless current local verification is explicitly valid | principal/tenant/scope | current non-regressing generation/deny state proven |
+| Placement/reference cache | `rel.placement-reference-cache` | `1` | bounded trusted copy, not original authority | safe last-known-good only within profile and destination-cell admission | cache key tenant/version; protected fallback concurrency | freshness/admission remains provable |
+| Performance cache | `rel.performance-cache` | `1` | derived data | bypass to authority only when safe and bounded; otherwise degrade | tenant/operation bulkhead | stampede controlled; authority healthy |
+| Replay/capability consume state | `rel.replay-consume-state` | `1` | single/bounded-use correctness authority | protected admission fails closed | capability epoch/scope | continuity recovered or new trusted epoch invalidates old capabilities |
+| Secret/KMS authority | `rel.secret-key-authority` | `1` | secret/key release and cryptographic usability | operations needing unavailable secrets fail; no plaintext fallback | runtime/cell/tenant/secret namespace | current key/secret authority and rotation state proven |
+| Configuration authority/distribution | `rel.configuration-authority` | `1` | accepted configuration content, applicability, rollout and generation | last-known-good only when schema, signature/authority, scope and generation remain valid; unsafe or contradictory rollout stops | tenant/cell/runtime-role/config namespace and rollout generation | one accepted generation, target coverage and rollback/forward-recovery state proven |
+| Outbox/publication | `rel.outbox-publication` | `1` | committed async intent | publication pauses; originating commit remains valid | cell/producer/contract | dispatcher resumes same immutable message identity |
+| Broker/job transport | `rel.broker-job-transport` | `1` | delivery transport, not business truth | async progress pauses; bounded backlog | workload/tenant/consumer | durable intent/process truth reconciled before progress |
+| Consumer inbox/effect | `rel.consumer-inbox-effect` | `1` | duplicate/effect completion authority | duplicate-sensitive execution stops if evidence incomplete | consumer contract/source/tenant | outcome and content equivalence proven |
+| External provider | `rel.external-provider` | `1` | external truth may be unavailable/slow/ambiguous | provider-dependent capability fails fast/circuits; stored state only with explicit staleness | tenant/integration/provider/destination | provider and local operation truth reconciled |
+| Realtime fanout/gateway | `rel.realtime-fanout` | `1` | advisory delivery only | live updates pause/shed; authoritative API/read state remains | connection/tenant/topic/cell | fresh auth/placement and resync |
+| Webhook delivery | `rel.webhook-delivery` | `1` | external disclosure obligation when Product-enabled | destination-specific attempts pause/quarantine; business fact not rolled back | tenant/subscription/destination generation | immutable obligation and destination-generation eligibility proven |
+| Telemetry plane | `rel.telemetry-plane` | `1` | high-volume historical/derived input by accepted class | bounded buffer/backpressure/drop only by declared data policy | telemetry vs transactional core; tenant/source | data-class policy and ordering/dedup state safe |
+| Object/artifact storage | `rel.artifact-storage` | `1` | protected bytes; metadata authority is separate | generation/releasability remains explicit; no false available state | tenant/artifact/generation | metadata/object integrity and governance fences reconcile |
+| Reporting/AIOps workers | `rel.reporting-derived` | `1` | optional/derived workload unless Product says otherwise | delay/shed/isolate | separate queue/pool/budget | backlog bounded and dependencies healthy |
+| Automation/SQL/admin/recovery | `rel.privileged-operations` | `1` | privileged effects | fail closed when scope/authority/isolation unavailable | dedicated trust envelope | current authority, target scope, audit and resource policy proven |
+
+Every ID above SHALL resolve to exactly one versioned record in the canonical catalog in `07-capability-resilience-profiles.md`. A row without a resolvable profile is a Phase 11 acceptance blocker.
 
 ## Failure-domain hierarchy
 
@@ -140,4 +143,3 @@ Implementation conformance SHALL later prove:
 - continuity-critical evidence loss causes fail-closed/reconciliation behavior;
 - optional workload failure does not consume core authority capacity;
 - second-cell behavior does not change logical contract identity.
-

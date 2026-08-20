@@ -115,6 +115,7 @@ The normative semantic manifest is defined in `08-reliability-semantic-manifest.
 | `10-compatibility-and-change-classification.md` | semantic compatibility and change governance |
 | `11-traceability-and-evidence.md` | upstream/downstream traceability and evidence ownership |
 | `12-phase-11-open-decisions-and-blockers.md` | OPEN registry, closure gates and acceptance blockers |
+| `13-security-privacy-threat-model-delta.md` | changed trust boundaries, threat actors, confused-deputy analysis and security/privacy delta |
 
 All common enforcement artifacts required by the roadmap are mandatory. An empty registry or no-applicable-case entry carries explicit evidence; an artifact itself cannot be omitted or marked `not_applicable`.
 
@@ -128,6 +129,7 @@ Phase 11 uses logical capability ownership, not future team names:
 - each provider adapter owns provider-specific error normalization and retry mapping behind platform classes;
 - artifact/governance owners control release, erasure and delivery-generation eligibility;
 - Security authority owns current authorization/revocation/deny decisions and their fail-closed behavior;
+- each configuration-owning capability owns accepted content/schema/applicability while Platform Management owns governed distribution and generation evidence;
 - Phase 12 later defines diagnostic signal ownership;
 - Phase 13 later maps logical roles to runtime isolation;
 - Phase 15 later assigns operational/on-call/runbook authority.
@@ -168,4 +170,3 @@ Recovery continuity, semantic compatibility and OPEN-decision discipline are tra
 ## Acceptance effect
 
 If accepted, this package fixes the Phase 11 semantic reliability baseline and unlocks Phase 12 only. It does not select technology, authorize implementation, prove runtime reliability, authorize production or merge itself.
-

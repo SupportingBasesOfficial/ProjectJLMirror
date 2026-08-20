@@ -23,7 +23,7 @@ This document proves design-level continuity from accepted upstream authority to
 | Product and Requirements | Accepted capabilities, tenant behavior, authority boundaries, and Product-gated features; reliability SHALL not invent endpoints or delivery families. | `01`, `02`, `07`, `12` | Product-visible degradation and unsupported-capability rejection. |
 | Engineering Charter and foundation policies | Explicit authority, no vendor-first decisions, no leapfrogging, evidence-calibrated OPEN closure, recovery continuity. | `01`, `08`, `10`, `11`, `12` | Governance checks and immutable base/head trace. |
 | Quality attributes | Availability, consistency, scalability, performance, security, portability, operability, and cost remain coupled constraints. | `02`–`09`, `11` | Multi-dimensional capacity and fault suites. |
-| Security requirements and threat model | Network presence is not trust; least privilege, tenant isolation, revocation, secret safety, audit continuity, egress control, abuse resistance. | `02`–`09`, `11` | `FV-SEC-001`, `FV-SECRET-001`, `FV-PRIV-001` and security variants of all vectors. |
+| Security requirements and threat model | Network presence is not trust; least privilege, tenant isolation, revocation, secret/config safety, audit continuity, egress control, confused-deputy and abuse resistance. | `02`–`09`, `11`, `13` | `TM-REL-001`–`TM-REL-011`, `FV-SEC-001`, `FV-SECRET-001`, `FV-CONFIG-*`, `FV-PRIV-001` and security variants of all vectors. |
 | ADR-002 and ADR-004 | Cell architecture, tenant placement, isolation, and modular extraction boundaries. | `02`, `05`, `07` | Cell/tenant containment, noisy-neighbor, relocation vectors. |
 | ADR-008 through ADR-013 | External provider boundaries, async processing, realtime, caching, consistency, and integration isolation. | `03`–`07`, `09` | Provider ambiguity, broker/consumer, realtime, cache, and overload vectors. |
 | ADR-015 | Recovery authority, reconciliation interval `(R,F]`, and non-authoritative restored state. | `06`, `07`, `09` | `FV-REC-001` through `FV-REC-003`. |
@@ -35,7 +35,7 @@ This document proves design-level continuity from accepted upstream authority to
 | Data Architecture | Authoritative records, ledgers, generations, lifecycle, relocation, retention, erasure, audit, recovery, and artifacts. | `03`, `06`, `07`, `09`, `10` | Recovery, relocation, artifact governance, writer-fencing vectors. |
 | Phase 09 — API & Contracts | Error/uncertainty, idempotency, resource identity, cursors, ingress, artifacts, authorization and contract compatibility. | `03`, `04`, `06`–`10` | Stable operation identity, timeout truth, artifact and mixed-version vectors. |
 | Phase 10 — Events / Async Contracts | Envelope identity, outbox/inbox, delivery, retry, acknowledgement, quarantine, replay, generations, realtime/webhook, recovery. | `03`–`10` | `FV-ASYNC-*`, `FV-RT-*`, `FV-WH-*`, `FV-REC-*`. |
-| Post–Phase 10 Roadmap | Phase order, mandatory outputs, overlays, OPEN taxonomy, non-silo inheritance, gate and implementation prohibition. | `01`, `08`–`12` | Artifact-presence, blocker, review, and exact-base checks. |
+| Post–Phase 10 Roadmap | Phase order, mandatory outputs, overlays, OPEN taxonomy, non-silo inheritance, gate and implementation prohibition. | `01`, `08`–`13` | Artifact-presence, blocker, threat-delta, review, and exact-base checks. |
 
 Document numbers above refer to files in `docs/11-reliability-resilience/`.
 
@@ -50,7 +50,7 @@ The common artifact schema from the accepted roadmap is mandatory. Phase 11 sati
 | capability/dependency profile | `02`, `07-capability-resilience-profiles.md` |
 | failure/degradation profile | `03-failure-degradation-profiles.md` |
 | semantic/enforcement profile | `04`, `05`, `06`, `08-reliability-semantic-manifest.md` |
-| security/privacy assurance delta | Sections in every artifact plus this document Section 6 |
+| security/privacy assurance delta | `13-security-privacy-threat-model-delta.md`, sections in every artifact, plus this document Section 6 |
 | capacity/performance/cost delta | `02`, `04`, `05`, `07`, `09`, and Section 6 |
 | validation/fault matrix | `09-reliability-validation-and-fault-matrix.md` |
 | compatibility/change classification | `10-compatibility-and-change-classification.md` |
@@ -82,7 +82,7 @@ The chain SHALL preserve exact artifact/configuration/profile versions and the t
 
 ### 6.1 Security and privacy
 
-Phase 11 establishes that:
+Phase 11 establishes the following summary; the concrete threat actors, changed trust boundaries, confused-deputy cases and `TM-REL-*` mappings are normative in `13-security-privacy-threat-model-delta.md`:
 
 - outage or uncertainty SHALL NOT broaden authority;
 - tenant, cell, generation, and privileged-runtime isolation apply during failure and recovery;

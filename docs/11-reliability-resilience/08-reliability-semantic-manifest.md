@@ -91,13 +91,13 @@ capability_unavailable
 ### Evidence levels
 
 ```text
-normative_design
+design_acceptance
 implementation_conformance
-release
-production_runtime
+release_evidence
+runtime_evidence
 ```
 
-Document acceptance supplies only `normative_design` evidence.
+These are the single canonical evidence-level enums for the Phase 11 package and are defined semantically in `09-reliability-validation-and-fault-matrix.md`. Document acceptance supplies only `design_acceptance` evidence.
 
 ## Referential rules
 
@@ -136,7 +136,7 @@ recovery_policy:
   continuity: operation outcomes and acknowledgements in (R,F]
   admission: fail_closed_until_reconciled
 fault_vectors: [FV-EXT-002]
-release_blockers: [RB-REL-006]
+release_blockers: [RB-REL-008]
 ```
 
 This is illustrative syntax, not a selected serialization/tool.
@@ -164,4 +164,3 @@ Future conformance tooling SHALL reject:
 Changes to manifest semantics, enums, retry eligibility, degradation behavior, authority/fence, retention/equivalence horizon or resumption gates receive semantic compatibility review even when serialization shape is unchanged.
 
 Generated artifacts are subordinate to the reviewed normative source. Tooling defaults cannot add a failure class, permissive fallback or retry automatically.
-

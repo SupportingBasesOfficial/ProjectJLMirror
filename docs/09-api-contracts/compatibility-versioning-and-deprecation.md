@@ -1,0 +1,346 @@
+# Compatibility, Versioning and Deprecation
+
+**Status:** proposed baseline  
+**Phase:** 09 — API & Contracts
+
+## Principle
+
+Contract evolution is explicit. JLMIRROR SHALL NOT treat application version, database schema version, gateway/proxy/runtime/parser replacement or service extraction as a reason for consumers to change or for the same accepted request/response to acquire a different security meaning.
+
+## Major version namespace
+
+Externally supported HTTP surfaces use explicit major versions:
+
+```text
+/api/v1/...
+/bff/v1/...
+/realtime/v1/...
+/public/v1/...
+/callbacks/v1/...
+```
+
+A major version is a semantic compatibility family. Patch/minor application releases do not appear in the URI.
+
+## Compatibility within a major
+
+Within one supported major, changes SHALL be backward compatible for conforming clients unless an explicitly accepted exception exists.
+
+Generally compatible response evolution includes:
+
+- adding an optional response field;
+- adding an endpoint/resource family;
+- adding an optional request field whose omission preserves prior behavior;
+- adding link/metadata fields under already accepted response-header/representation semantics;
+- adding a value to an enum explicitly classified open;
+- increasing implementation capability without changing existing semantics.
+
+## Breaking/security-sensitive changes
+
+The following are breaking or security-sensitive by default:
+
+- removing/renaming a field;
+- changing type/semantic meaning;
+- changing tenant/global ownership or stable identifier meaning;
+- making an optional request field mandatory;
+- incompatibly reducing documented ranges;
+- changing a closed enum;
+- changing accepted HTTP framing/header/method/trailer/content-coding/path/query/trusted-proxy interpretation;
+- making a previously rejected ambiguous request accepted after gateway/proxy/runtime/parser change;
+- changing query multiplicity/duplicate/order semantics;
+- **changing structured request entity parsing**, duplicate/alias member semantics, multipart part/boundary semantics, name normalization or which canonical entity is consumed by validation/auth/idempotency/use case;
+- changing success/error semantics affecting retry or authorization;
+- changing idempotency effective scope, fingerprint fields, completed/in-progress duplicate behavior, fingerprint mismatch behavior, retention/recovery authority, external-ambiguity reconciliation or restore/PITR recovery-continuity semantics;
+- changing callback accepted freshness evidence source, freshness binding, clock/window/sequence admissibility, trusted replay-identity scope, atomic replay admission, durable work coupling, replay retention/expiry, replay restore/PITR recovery continuity, acknowledgement durability or post-effect ambiguity/reconciliation semantics;
+- changing realtime ticket scope/expiry, current-authority or placement checks, atomic single-winner consumption, burn-on-ambiguity, replay-store recovery/epoch continuity, subscription-authorization separation, protected-subscription authorization freshness, active invalidation or placement-generation retirement;
+- changing pagination/cursor semantics beyond documented lifecycle;
+- weakening cursor payload confidentiality, exposed-token classification, browser-history-safe transport or URL/log/referrer redaction;
+- forcing protected query input into URL-visible transport;
+- **changing response-header grammar/cardinality/serialization ownership** so the same logical response may emit a different security/cache/redirect meaning;
+- allowing application/proxy/CDN layers to add a conflicting singleton response header that was previously unique;
+- changing response-cache/shared-cache/current-authorization semantics;
+- weakening artifact media/safe-filename/browser isolation/parser/archive/XML semantics;
+- exposing physical/provider implementation semantics as required client input.
+
+Breaking changes require a new major or another explicitly governed mechanism when client-visible semantics truly change. A pure security tightening MAY remain within the same major if conforming clients remain valid, but still requires explicit security/compatibility review.
+
+A security policy becoming more permissive is never treated as an implementation-only optimization.
+
+## Open versus closed enums
+
+```text
+open enum   -> clients tolerate unknown future values
+closed enum -> unknown value indicates incompatible contract/client update requirement
+```
+
+Adding a value to a closed enum is breaking unless governance changes the classification before consumers rely on closure.
+
+## Unknown response fields
+
+Conforming clients ignore response fields they do not understand unless the representation is explicitly closed.
+
+## Unknown request fields
+
+Servers reject unknown request fields by default. Request extensibility uses explicit versioned schemas or documented extension namespaces, not silent passthrough.
+
+## Semantic compatibility
+
+Schema compatibility is necessary but insufficient.
+
+Changing current-authoritative state into an approximation, retry/idempotency/recovery-continuity meaning, callback freshness/replay/retention/acknowledgement/recovery authority, realtime ticket/replay/subscription-lifecycle authority, cache reuse, query multiplicity, structured-body duplicate semantics, response-header serialization, browser cursor transport, archive identity or XML parser policy can be security-breaking even if JSON/OpenAPI schemas do not change.
+
+Review evaluates behavior, HTTP/request entity interpretation, response serialization, consistency, security, ownership, authorization, idempotency, retry, restore/PITR continuity, callback authentication/freshness/replay/durable responsibility/retention/acknowledgement/reconciliation/recovery continuity, realtime ticket/replay/current-authority/placement/subscription-freshness/invalidation/placement-retirement semantics, cache, continuation and artifact/parser semantics in addition to shape.
+
+## HTTP message/framing compatibility
+
+`http-message-framing-and-canonicalization.md` is part of every external surface's security/compatibility contract.
+
+Compatibility review compares at least:
+
+- body framing and ambiguity rejection;
+- `Content-Length`/`Transfer-Encoding` handling;
+- unsafe-rejection connection retirement;
+- security-sensitive request-header cardinality;
+- request trailer and method-override policy;
+- BFF cookie/header parsing;
+- Host/authority/trusted-proxy interpretation;
+- canonical path decoding before placement;
+- slash/dot/encoded-separator/percent/UTF-8/double-decoding behavior;
+- canonical query decoding/multiplicity;
+- content-coding/raw/decoded limits;
+- HTTP-version translation;
+- callback exact-raw-body/signature semantics;
+- realtime pre-`101` ingress;
+- cache/proxy canonical request interpretation.
+
+Changing gateway, proxy, HTTP server/library, protocol mix, connection-pooling topology or service extraction is implementation evolution only if these semantics remain equivalent and deployed-path ambiguity tests pass.
+
+Numeric limits and exact gateway mechanics may remain OPEN; parser agreement and fail-closed semantics are not OPEN.
+
+## Structured request entity compatibility
+
+Structured body parsing is a security/compatibility dimension independent of schema shape.
+
+Compatibility review SHALL compare:
+
+- accepted structured media types;
+- member/field/part-name normalization;
+- duplicate member/part policy;
+- alias/collision detection after accepted normalization;
+- JSON duplicate-key behavior;
+- number/string/Unicode interpretation used by validation and idempotency fingerprinting;
+- multipart outer/nested boundary interpretation;
+- multipart repeated-part semantics and per-part header/media metadata rules;
+- nesting/container limits;
+- which canonical parsed entity is propagated to request validation, owning authorization inputs, idempotency fingerprinting, callback semantics and use-case mapping;
+- whether any layer reparses raw body bytes independently after canonical entity establishment.
+
+A parser/library/framework replacement is **not compatible** merely because it accepts the same nominal JSON schema or multipart fields. It is incompatible/security-sensitive if first-value, last-value, duplicate merge, Unicode aliasing, multipart boundary or per-part interpretation changes the logical entity.
+
+A change that lets authorization validate one entity while idempotency/use case executes another is a P1-class compatibility regression regardless of OpenAPI diff.
+
+## Idempotency compatibility
+
+Idempotency is a semantic/security contract, not a boolean capability.
+
+Compatibility review SHALL compare:
+
+- `idempotency_class`;
+- server-derived effective trusted scope and the dimensions that distinguish independent logical operations;
+- canonical fingerprint fields and normalization;
+- completed duplicate replay/result behavior;
+- in-progress duplicate behavior;
+- same-key/different-fingerprint conflict behavior;
+- retention/recovery window and the durable claim/result/tombstone/operation authority that preserves it;
+- external-effect ambiguity and reconciliation semantics;
+- **restore/PITR/partial-loss recovery continuity**, including whether missing/older recovered claim state remains fail-closed until accepted `(R,F]` continuity is reconciled;
+- interaction with one-time-secret response-loss recovery where applicable.
+
+Changing any of these dimensions can create false collisions, bypass conflict detection, or re-enable an irreversible effect after claim/result expiry or state rollback even when the route and request/response schemas are unchanged.
+
+A retention reduction is incompatible/security-sensitive when it is shorter than an advertised safe retry/recovery interval or when no equivalent durable operation/tombstone authority continues preventing duplicate effect execution. Timeout, worker restart, lease expiry, claim aging, restore to an older snapshot or partial idempotency-state loss never becomes new execution authority for an unresolved or possibly completed effect.
+
+A backup/recovery implementation change is compatible only if a restored idempotency authority preserves the accepted recovery-quarantine rule: missing/older claim/result/tombstone state is recovery uncertainty until surviving operation/outcome/audit/provider/external-effect evidence establishes continuity. A deployment that resumes effectful admission from restored absence without that proof is a security regression even if API schemas and ordinary-runtime tests are unchanged.
+
+## Response-header compatibility
+
+Every endpoint's `response_header_profile` and serialization owner are part of the semantic/security contract.
+
+Compatibility review SHALL compare:
+
+- emitted dynamic/security-relevant header set;
+- per-header grammar;
+- singleton/list/multi-value cardinality;
+- control-character/CRLF/NUL rejection;
+- URI/authority encoding rules for `Location`, `Link` and redirects;
+- `ETag`, `Retry-After`, `Content-Disposition`, cache/security/CORS/authentication header serialization;
+- request/correlation ID validation and output grammar;
+- which layer owns serialization;
+- whether BFF/proxy/CDN/application may append/combine values;
+- response-header behavior after a business mutation has already committed.
+
+Changing framework, response library, gateway, BFF, CDN or reverse-proxy configuration is security-sensitive if it alters these properties even when response bodies and OpenAPI schemas are unchanged.
+
+A deployment is not compatible if untrusted metadata can newly inject CRLF/control delimiters, a singleton can become duplicated/conflicting, list serialization becomes parser-dependent, or an unsafe redirect/`Location` meaning appears.
+
+Response serialization failure after commit does not change authoritative business outcome. Compatibility changes must preserve idempotency/operation/read recovery rather than creating new automatic mutation replay behavior.
+
+## Response-cache compatibility
+
+Compatibility review compares cache class, shared eligibility, key/variance dimensions, validators/revalidation, current authorization before reuse and security-relevant freshness/invalidation.
+
+A CDN/framework change cannot make an endpoint more cache-permissive without reviewed contract change. `Vary` or caller-supplied tenant/principal labels do not substitute for authorization.
+
+Cache/proxy cannot interpret request or response headers differently from the owning service.
+
+## Cursor/query compatibility
+
+Review compares cursor payload protection, exposed-token classification, browser transport, current authorization on continuation, URL/history/log/referrer handling, protected query URL policy and query multiplicity.
+
+Moving a protected reusable browser continuation token into address/history-visible URL transport, exposing protected plaintext via encoded/signed cursor or changing singleton query semantics to first/last parser defaults is a security regression.
+
+A machine-to-machine profile may accept a sensitive URL cursor only under an explicit non-browser profile; that does not relax browser policy.
+
+## Artifact/parser/archive compatibility
+
+Review compares:
+
+- authoritative media type;
+- safe `Content-Disposition`/filename;
+- opaque/safe-inline/active-inline isolation;
+- active-content capability/origin isolation;
+- range/CDN preservation of erasure/delivery fencing;
+- parser isolation/secret/egress policy;
+- decompression/resource bounds;
+- archive staging-root containment;
+- canonical archive-member normalization/collision rejection;
+- scanner-to-consumer byte equivalence;
+- no-follow atomic/no-replace materialization;
+- default DTD rejection;
+- XML external entity/include/schema/stylesheet/resource policy;
+- derivative artifact classification.
+
+Framework/CDN/parser/archive/filesystem/runtime changes that weaken these properties are security-sensitive even without route/schema changes.
+
+## Deprecation
+
+Deprecation identifies the element/version, replacement, reason when useful, earliest removal boundary/version, migration notes and compatibility constraints.
+
+Numeric support duration remains separately governed.
+
+## No removal inside a supported major by default
+
+Supported fields/routes SHOULD remain for the lifetime of their major unless continuation creates material security/compliance risk, the contract was explicitly experimental, or accepted emergency governance documents an exception.
+
+## Experimental contracts
+
+Experimental/preview lifecycle must be explicit. Experimental endpoints do not silently become critical production dependencies without formal promotion.
+
+## BFF compatibility
+
+BFF may evolve tightly with the first-party Web client but still preserves explicit major semantics and browser security invariants.
+
+BFF changes cannot bypass downstream domain/API governance. Gateway/BFF/session/parser changes preserve canonical HTTP ingress, canonical structured entity interpretation, response-header profile, cursor transport and trusted proxy/origin semantics.
+
+## Provider callback compatibility
+
+Provider callback adapters may version independently while normalizing into stable JLMIRROR semantics.
+
+A callback parser/library change must preserve raw-body authenticity semantics, canonical structured entity interpretation after verification, default DTD rejection and external-resolution policy. Signature verification over one byte/entity meaning while adapter logic processes another is incompatible and unsafe.
+
+A provider protocol, SDK, gateway, replay store, recovery topology or callback middleware change must also preserve:
+
+- which timestamp/nonce/sequence/protocol values are accepted as security freshness evidence;
+- the accepted clock/window/sequence admissibility policy for that evidence;
+- how each freshness value is bound to the authenticated callback body/identity or independently trusted protocol metadata;
+- trusted replay-identity scope across tenant/integration/source dimensions;
+- atomic create-or-observe replay admission;
+- one-logical-executor behavior under concurrent delivery;
+- durable inbox/work/effect coupling or explicit cross-authority reconciliation;
+- crash behavior between replay admission, durable responsibility, external effect outcome recording and acknowledgement;
+- replay retention/expiry behavior for unresolved and still-supported duplicate/recovery states;
+- coherence between freshness/provider-retry admissibility and replay/ambiguity-retention authority so older authenticated callbacks cannot become newly executable after ordinary replay-state expiry;
+- **replay restore/PITR/partial-loss continuity**, including the rule that missing/older recovered replay state is not unused until surviving inbox/effect/provider-ack/audit/reconciliation evidence is reconciled;
+- the durable-responsibility boundary required before provider-facing success acknowledgement;
+- the rule that a possibly completed cross-authority irreversible effect with no durable outcome remains reconciliation-blocked and cannot be attempted again until authoritative reconciliation resolves it.
+
+A time-window check over metadata that is no longer authenticator-bound is not a compatible implementation change. Widening an otherwise authenticator-bound freshness/sequence window is also security-sensitive because it changes which historical deliveries are admissible. Replacing an atomic durable replay protocol with a read-then-record duplicate check is likewise a security regression even when callback schemas and provider IDs are unchanged. Shortening replay/ambiguity retention so unresolved state can become executable, moving success acknowledgement ahead of durable responsibility, converting a post-effect unknown outcome into automatic retry, or allowing restored replay absence to create a new executor are also security regressions.
+
+A replay-store restore or backup strategy is compatible only if affected callback admission stays quarantined/fail-closed until the accepted recovery boundary proves continuity. A still-fresh authenticated delivery does not make an unreconciled recovered replay store authoritative.
+
+## Realtime admission compatibility
+
+Protected realtime admission and protected subscription-lifecycle freshness are semantic/security contracts independent of the concrete gateway, runtime or replay-store implementation.
+
+Compatibility review SHALL compare:
+
+- ticket scope across principal, logical tenant and bounded realtime connection authority;
+- ticket expiry policy and pre-`101` enforcement;
+- current session/credential and current membership/permission/tenant-access checks;
+- current trusted placement/admission-generation checks where applicable;
+- atomic shared single-winner consumption across replicas;
+- burn-on-ambiguity behavior after consume followed by crash or failed `101` completion;
+- replay-store restart/loss/restore continuity and trusted epoch/generation invalidation semantics;
+- separation between connection admission authority and later subscription authorization;
+- authorization freshness for protected subscription creation and lifetime revalidation;
+- active invalidation behavior for session revocation, membership disable/revocation, permission/scope removal and tenant suspension/access denial;
+- placement/admission-generation retirement behavior for already-active subscriptions/connections, including forced retirement/resubscribe/resync through current authority.
+
+Changing a gateway/runtime/replay store is compatible only if those semantics remain equivalent. Replacing atomic consume with a read/check flow, using replica-local replay state, making a consumed ticket reusable after an ambiguous upgrade failure, interpreting missing restored replay state as `unused`, letting protected subscriptions continue after authority revocation without the accepted bounded freshness/invalidation policy, or letting a retired source generation remain authoritative is a security regression even when `/realtime/v1/connect`, the ticket shape and HTTP status behavior are unchanged.
+
+Ticket TTL values, ticket representation, replay-store product, epoch/generation encoding, exact subscription revalidation interval, invalidation transport/fanout mechanism and socket-close strategy may remain OPEN. The single-winner, burn, current-authority/current-placement, fail-closed replay-continuity and non-stale protected-subscription authority properties are not OPEN.
+
+## Public projection compatibility
+
+Public projections remain subject to canonical request and response-header/cache semantics. Public does not mean parser ambiguity or unsafe response serialization is acceptable.
+
+## Webhook/event boundary
+
+Outbound webhook/event envelope compatibility belongs to Phase 10. Phase 09 management API version does not automatically version event envelopes.
+
+## Database/schema changes
+
+Database evolution is internal unless externally meaningful API semantics change. Mixed application/schema versions must continue serving declared-compatible API majors safely.
+
+## Service extraction
+
+Moving an owning context into a service SHALL NOT create a public break. Public IDs/routes/tenant scope/auth/idempotency/canonical request entity/response-header semantics remain stable unless separately governed.
+
+Introducing proxy/service hops triggers framing/header/path/query/body-parser and response-header multi-hop tests.
+
+## Provider replacement
+
+Replacing external providers does not require consumers to replace canonical JLMIRROR IDs/paths. Provider-specific capabilities use explicit extensions rather than redefining core resources.
+
+## Compatibility tests
+
+CI SHALL compare proposed contract/manifest changes with accepted baseline and flag likely breaking/security-sensitive changes in:
+
+- paths/methods;
+- HTTP framing/method/trailer/content-coding/connection-rejection profile;
+- request header cardinality;
+- trusted proxy/authority/path/query normalization;
+- query multiplicity;
+- **structured request entity profile, duplicate/alias rules, multipart semantics and canonical propagation**;
+- protocol-translation/parser boundaries;
+- request requiredness/type and response fields/types;
+- enum/status/error semantics;
+- **idempotency class/effective scope/fingerprint/duplicate-result/mismatch/retention-recovery/external-ambiguity/recovery-continuity semantics**, plus authorization/consistency;
+- **callback accepted freshness evidence source, clock/window/sequence policy, freshness binding, replay identity scope, atomic replay admission, durable coupling, replay retention/expiry, replay recovery continuity, acknowledgement durability and post-effect ambiguity/reconciliation**;
+- **realtime ticket scope/expiry/current-authority/placement/atomic-single-winner/burn-on-ambiguity/replay-recovery/subscription-separation/subscription-freshness/active-invalidation/placement-retirement semantics**;
+- **response-header profile, grammar/cardinality/serialization owner/multi-hop composition**;
+- pagination/cursor confidentiality/browser transport/logging;
+- protected query URL policy;
+- response cache class/variance/revalidation/current-auth semantics;
+- artifact media/filename/browser/parser/archive/XML policies.
+
+Automated schema diff is advisory. Human architecture/security review remains required for semantic changes invisible to schema.
+
+Gateway/proxy/runtime/provider-SDK/recovery-topology tests SHOULD exercise conflicting framing, request-header/query ambiguity, path normalization, structured JSON/multipart differential parsing, full idempotency scope/fingerprint/retention/ambiguity/recovery-continuity behavior, callback raw-body/entity equivalence, accepted freshness source/window boundaries, authenticated freshness binding, freshness/replay-retention coherence, atomic replay admission/crash recovery, replay-retention/acknowledgement boundaries, post-effect/pre-outcome-record ambiguity recovery, replay restore/PITR/partial-loss continuity and realtime ticket scope/expiry/current-authority/placement/single-winner/burn/replay-recovery plus protected-subscription revocation/invalidation/placement-retirement behavior.
+
+Response-path tests SHOULD exercise dynamic header injection, duplicate singleton behavior across app/BFF/proxy/CDN and safe URI/list serialization.
+
+Parser/archive tests SHOULD exercise duplicate/alias JSON fields, multipart ambiguity, DTD/XXE, archive collisions/no-replace and scanner-to-consumer byte equivalence.
+
+## Version retirement
+
+Retiring a major is governed product/operational work including consumer inventory where possible, migration guidance, usage telemetry, security/support posture and controlled disablement.

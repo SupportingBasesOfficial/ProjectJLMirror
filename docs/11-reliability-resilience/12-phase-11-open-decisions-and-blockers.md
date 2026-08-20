@@ -105,7 +105,7 @@ Implementation work that exists solely to generate evidence for a class-2 decisi
 
 ## 7. Release and production blockers
 
-The blockers `RB-REL-001` through `RB-REL-024` in the fault matrix apply to their respective evidence gates. Additionally:
+The blockers `RB-REL-001` through `RB-REL-025` in the fault matrix apply to their respective evidence gates. Additionally:
 
 - production eligibility is blocked while applicable class-3 OPENs lack accepted numbers and runtime evidence;
 - a Product-gated capability is blocked until Product authority and its full contract exist;

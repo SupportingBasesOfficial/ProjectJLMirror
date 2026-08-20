@@ -29,6 +29,7 @@ This document proves design-level continuity from accepted upstream authority to
 | ADR-015 | Recovery authority, reconciliation interval `(R,F]`, and non-authoritative restored state. | `06`, `07`, `09` | `FV-REC-001` through `FV-REC-003`. |
 | ADR-016 | Deployment boundary and versioned compatibility constraints. | `08`, `10` | `FV-COMP-001`; Phase 14 rollout evidence. |
 | ADR-017 | Reliability and resilience authority, failure containment, overload, recovery, and fault evidence. | Entire Phase 11 package | Entire fault matrix and blockers. |
+| Retry/circuit enforcement continuity | Pre-send timeout, cancellation race, restart/state loss, half-open probes and circuit-open critical work cannot reset budgets or create authority. | `04`, `07`, `09` | `FV-RETRY-001`–`FV-RETRY-003`, `FV-CIRCUIT-001`, `FV-CIRCUIT-002`; `RB-REL-025`. |
 | ADR-018 and ADR-019 | Observability and operational authority remain downstream; design SHALL expose evidence requirements without choosing SLOs/runbooks now. | `01`, `08`, `09`, `11`, `12` | Signal requirements handed to Phase 12; operational evidence to Phase 15. |
 | ADR-020 | Runtime capability remains product-neutral and portable. | `02`, `07`, `08`, `12` | Capability-profile conformance; no vendor coupling. |
 | System Design | Control Plane/cell authority, placement, cross-cell behavior, async consistency, identity, provider, cache, realtime, and failure semantics. | `02`–`09` | Control-plane, cell, placement, async, cache, provider, realtime vectors. |

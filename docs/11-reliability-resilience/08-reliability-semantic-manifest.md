@@ -38,14 +38,14 @@ Runtime instance, queue, topic, cell, region, provider product or deployment nam
 | `prohibited_fallbacks` | explicit unsafe behavior |
 | `identity_policy` | operation/message/delivery/lease/generation identity under retry/failover |
 | `deadline_timeout_policy` | stage/overall semantics and ambiguity behavior |
-| `retry_policy` | eligibility, aggregate budget, backoff/jitter and terminal path |
-| `circuit_policy` | scope, counted failures, open/probe and state-loss behavior |
+| `retry_policy` | eligibility/safety, aggregate attempt/elapsed/concurrency/bytes/cost budget, backoff, jitter and terminal path |
+| `circuit_policy` | protected scope, counted/excluded failures, open behavior, probe concurrency, retry/backlog interaction, state-loss behavior, fallback authority, evidence and numeric OPENs |
 | `bulkhead_policy` | tenant/workload/provider/destination/cell/privilege isolation |
 | `backpressure_policy` | admission, bound, overflow, fairness and drain behavior |
 | `ambiguity_policy` | durable states, owner/evidence and retry gate |
 | `recovery_policy` | continuity state, `(R,F]`, quarantine/resumption gate |
 | `security_privacy` | auth/tenant/secrets/classification/abuse/governance constraints |
-| `capacity_cost` | resource dimensions, amplification and evidence-driven bounds |
+| `capacity_cost` | resource dimensions, amplification, evidence-driven bounds and exact OPEN owner for every unresolved numeric envelope/trigger |
 | `evidence_requirements` | design, implementation, release and runtime evidence separately |
 | `fault_vectors` | deterministic/concurrency/chaos/load/recovery cases |
 | `compatibility_class` | consequences of changing semantics |

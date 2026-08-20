@@ -173,20 +173,21 @@ Lease expiry:
 
 Implementation evidence SHALL include:
 
-- timeout before request leaves process;
-- timeout after remote acceptance but before response;
-- nested retries across client/API/worker/provider;
-- process restart resetting local attempt counters/circuit state;
-- provider throttling with synchronized tenant fleet;
-- half-open probe storm;
-- stale worker after lease transfer;
-- queue outage followed by backlog surge;
-- tenant/destination retry storm while unrelated workloads remain available;
-- cancellation racing effect commit;
-- circuit open during recovery/control work;
-- deadline expiry while outcome is ambiguous.
+- timeout before request leaves process (`FV-RETRY-001`);
+- timeout after remote acceptance but before response (`FV-EXT-002`);
+- nested retries across client/API/worker/provider (`FV-OVER-001`);
+- process restart resetting local attempt counters/circuit state (`FV-RETRY-002`);
+- provider throttling with synchronized tenant fleet (`FV-EXT-001`, `FV-CIRCUIT-001`);
+- half-open probe storm (`FV-CIRCUIT-001`);
+- stale worker after lease transfer (`FV-ASYNC-002`);
+- queue outage followed by backlog surge (`FV-ASYNC-001`, `FV-OVER-003`);
+- tenant/destination retry storm while unrelated workloads remain available (`FV-OVER-001`, `FV-OVER-002`);
+- cancellation racing effect commit (`FV-RETRY-003`);
+- circuit open during recovery/control work (`FV-CIRCUIT-002`);
+- deadline expiry while outcome is ambiguous (`FV-EXT-002`).
+
+Every executable coverage record SHALL include the exact selecting profile key and its cross-profile retry/circuit vector union.
 
 ## Release blockers
 
 Release is blocked if an effectful path treats timeout, circuit-open, process death, lease expiry or redelivery as proof of effect absence; if retry amplification is unbounded across layers; if one tenant/destination can consume all workers; or if a retry changes logical identity/destination/generation without an explicit new operation.
-

@@ -18,7 +18,7 @@ JLMIRROR distinguishes these surfaces because their trust, compatibility and lif
 
 1. **Platform/Public Machine API** — versioned HTTP API for authorized external machine principals and approved integrations.
 2. **First-party Browser BFF API** — browser-facing confidential-session boundary. It may compose platform use cases for the Web client but SHALL NOT become a second business domain.
-3. **Protected Realtime Admission** — BFF-mediated capability minting plus direct protected WebSocket admission under accepted Origin/current-authorization/replay rules. Phase 09 owns admission representation; Phase 10 owns asynchronous message/event envelope mechanics.
+3. **Protected Realtime Admission** — BFF-mediated capability minting plus direct protected WebSocket admission under accepted Origin/current-authorization/replay rules. Phase 09 also owns the protected subscription authority lifecycle after admission: subscription-specific current authorization, bounded freshness/active invalidation and placement-generation retirement. Phase 10 owns subscription request/ack representation plus asynchronous message/event envelope and delivery mechanics and cannot weaken those Phase 09 authority invariants.
 4. **Provider Callback Ingress** — adapter-owned inbound HTTP contracts subject to provider-specific authentication plus accepted raw-body, authenticated-freshness, canonical-entity, atomic durable replay, recovery-continuity, tenant-binding and SSRF/parser rules.
 5. **Public Projection API** — deliberately public/versioned projections such as public status output; it never exposes internal tables or protected tenant resources by default.
 6. **Internal Service/Application Contracts** — typed application contracts that may later cross process boundaries. HTTP is not required merely because an internal module has an explicit contract.
@@ -207,6 +207,7 @@ A new externally consumed use case is not implementation-ready until its contrac
 - request-contract validation ordering for fields consumed by authorization/resource selection;
 - required authorization action/scope and owning authorization authority;
 - request schema and size/complexity bounds;
+- protected realtime admission plus subscription authority-lifecycle semantics — current subscription authorization, bounded freshness/active invalidation and placement-generation retirement — where applicable, without defining Phase 10 message/request/ack representation;
 - provider callback authentication/freshness-binding/replay-identity/atomic-admission/durable-coupling/replay-recovery-continuity/reconciliation semantics where applicable;
 - response/result semantics;
 - response-header profile and serialization/composition owner where HTTP headers are emitted;
@@ -221,7 +222,7 @@ A new externally consumed use case is not implementation-ready until its contrac
 - stable error codes/classes;
 - audit class;
 - observability/request-correlation requirements;
-- compatibility/deprecation implications, including HTTP framing/header/proxy/target, structured-body parser, idempotency/callback recovery continuity, callback freshness/replay, response-header serialization, cache/security/browser-delivery semantics;
+- compatibility/deprecation implications, including HTTP framing/header/proxy/target, structured-body parser, idempotency/callback recovery continuity, callback freshness/replay, realtime authority lifecycle, response-header serialization, cache/security/browser-delivery semantics;
 - data classification and secret/PII handling constraints.
 
 The canonical endpoint template in this phase makes those fields reviewable before implementation.
@@ -233,6 +234,7 @@ Phase 09 does not select:
 - queue/event-broker technology;
 - broker acknowledgement/partition mechanics;
 - event/message envelope details owned by Phase 10;
+- realtime subscription request/ack representation, message-protocol negotiation/versioning or transport-level message delivery semantics owned by Phase 10;
 - cloud/orchestrator/storage vendors;
 - telemetry physical engine;
 - exact gateway/reverse-proxy product or HTTP protocol deployment mix;

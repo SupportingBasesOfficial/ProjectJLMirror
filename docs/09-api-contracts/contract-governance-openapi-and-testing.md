@@ -437,6 +437,7 @@ At least the applicable vectors include:
 - crash after ticket consume but before completing `101` leaves the ticket burned and requires a fresh mint;
 - replay-store restart/loss/restore does not make a consumed still-valid ticket redeemable; missing state rejects unless accepted continuity or trusted epoch/generation invalidation is established;
 - a successful connection does not authorize arbitrary later subscriptions;
+- revoking/logging out the underlying browser session after a protected subscription is established retires/stops protected delivery within the accepted authorization-freshness/active-invalidation bound, even if the socket itself remains technically open during cleanup;
 - a protected subscription created under current authority is denied/retired when membership/permission/scope/tenant access becomes invalid under the accepted bounded revalidation/active-invalidation policy;
 - retiring a tenant placement/admission generation retires affected protected subscriptions/connection authority and requires current routing/authorization plus resubscribe/resync before protected delivery resumes.
 

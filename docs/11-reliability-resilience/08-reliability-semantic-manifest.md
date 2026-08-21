@@ -95,7 +95,13 @@ compromised_or_untrusted
 governance_blocked
 ```
 
-Historical comparison evidence/profile/verifier loss does not create a new enum. For duplicate-sensitive effect/replay eligibility it is materialized as `recovery_continuity_blocked`; compromised/untrusted comparison authority is `compromised_or_untrusted`, as fixed by `14`.
+Message-equivalence verifier/profile problems do not create a new enum. For duplicate-sensitive effect/replay eligibility:
+
+- a required historical verifier dependency that is temporarily unreachable while evidence/profile continuity remains intact is `unavailable` and maps to `reconciliation_blocked`;
+- missing, rolled-back, mismatched, uninterpretable or retired-without-valid-migration comparison evidence/profile/verifier-generation continuity is `recovery_continuity_blocked` and maps to `reconciliation_blocked`;
+- compromised/untrusted comparison authority is `compromised_or_untrusted` and maps to `fail_closed`.
+
+Reachability restoration can clear only the `unavailable` condition after the same historical authority successfully proves equivalence; it does not by itself repair a continuity or trust defect.
 
 ### Degradation modes
 
@@ -146,7 +152,7 @@ These are the single canonical evidence-level enums for the Phase 11 package and
 - A profile whose physical durability mechanism remains OPEN SHALL select mechanism-neutral circuit/evidence records; topology-specific broker, outbox, journal, stream or store vectors become mandatory only after the owning OPEN closes that mechanism.
 - Reliability admission and cost/budget classification SHALL inherit the exact accepted Phase 09/10 canonical interpretation. Unvalidated payload text, aliases, duplicate members, malformed encodings, caller-selected tenant/source fields, claimed operation names, or attacker-controlled cost hints SHALL NOT select a cheaper budget, another tenant scope, a privileged workload class, or broader admission authority. A conservative pre-validation claim may use only transport facts or already-trusted canonical metadata.
 - When final canonical interpretation resolves a different resource/cost class from a provisional claim, the implementation SHALL atomically acquire/adjust to the authoritative budget or reject before expensive/effectful continuation. Continuing under an underpriced provisional claim, maintaining two semantic parsers, or using budget classification as authorization is prohibited.
-- For `rel.consumer-inbox-effect@1` and duplicate-sensitive replay, a benign `duplicate` requires the trusted scoped identity plus proven equivalent immutable content under the accepted historical comparison profile. Missing/unavailable/rolled-back/uninterpretable comparison evidence/profile/verifier maps to `recovery_continuity_blocked:reconciliation_blocked`; compromised/untrusted comparison authority maps to `compromised_or_untrusted:fail_closed`.
+- For `rel.consumer-inbox-effect@1` and duplicate-sensitive replay, a benign `duplicate` requires the trusted scoped identity plus proven equivalent immutable content under the accepted historical comparison profile. Temporary historical-verifier outage maps to `unavailable:reconciliation_blocked`; continuity loss maps to `recovery_continuity_blocked:reconciliation_blocked`; compromised comparison authority maps to `compromised_or_untrusted:fail_closed`.
 - Message-equivalence comparison occurs only after trusted scoped identity derivation. Fingerprint/MAC/profile references SHALL NOT become authorization, routing, ordering, public identity, reverse lookup or cross-tenant/cross-consumer equality authority.
 - Comparison/profile/KMS/migration work is bounded and attributable under `OPEN-REL-022`; mechanism selection remains `OPEN-REL-016` where keyed verifier material is required; evidence horizon remains `OPEN-REL-025`.
 
@@ -168,6 +174,7 @@ Future conformance tooling SHALL reject:
 - failover without generation/fence and stale-writer rejection;
 - recovery without `(R,F]` continuity/resumption gate;
 - duplicate-sensitive effect/replay profile missing protected comparison evidence, stable comparison-profile/version, required historical verifier lifecycle or fail-closed unknown-equivalence behavior;
+- temporary verifier outage, continuity loss and compromised verifier trust collapsed into one permissive retry/default class;
 - duplicate classification based only on scoped identity when immutable semantic equality has not been proven;
 - low-entropy confidential comparison evidence exposed through unsafe plain-digest logging/export, or any unrestricted cross-scope fingerprint/equality oracle;
 - historical verifier/profile loss, retirement, rollback or mismatch becoming duplicate success, replay/effect eligibility or unrelated current authority;

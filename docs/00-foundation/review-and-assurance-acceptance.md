@@ -1,6 +1,7 @@
 # Review and Assurance Governance — Acceptance Record
 
-**Status:** ACCEPTED  
+**Record status:** PROPOSED UNTIL EXPLICITLY AUTHORIZED MERGE  
+**Target package lifecycle state:** ACCEPTED ON MERGE OF THIS RECORD  
 **Authority anchor:** `main@3606c1890a2f6ef9fbd7f44ab4046e25281312e7` / merged PR #12  
 **Scope:** lifecycle-state normalization for the Review and Assurance Governance package only  
 
@@ -10,9 +11,11 @@ This record removes ambiguity between the repository merge state of PR #12 and p
 
 It changes no technical assurance, security, recovery, compatibility, capacity, review, automation or merge semantics.
 
-## Accepted package
+This record does not self-authorize. Its target lifecycle transition takes effect only if this exact change is separately reviewed, explicitly merge-authorized, and merged through the repository governance process.
 
-The following exact documents, as merged by PR #12 into `main@3606c1890a2f6ef9fbd7f44ab4046e25281312e7`, are accepted normative Foundation authority:
+## Accepted package target
+
+Upon authorized merge of this record, the following exact documents, as merged by PR #12 into `main@3606c1890a2f6ef9fbd7f44ab4046e25281312e7`, are recorded as accepted normative Foundation authority:
 
 1. `docs/00-foundation/review-and-assurance-governance.md` — blob `d97923d5059669cfb4c8389e7775358759d43b4d`;
 2. `docs/00-foundation/review-and-assurance-validation.md` — blob `3007171e233240332127e04b5fff38e1e485d64f`.
@@ -21,17 +24,17 @@ The PR-template hardening merged by the same PR remains repository workflow supp
 
 ## Lifecycle-state correction
 
-The `**Status:** PROPOSED` headers retained inside the two accepted documents above are proposal-era metadata from the PR #12 review branch.
+The `**Status:** PROPOSED` headers retained inside the two target documents above are proposal-era metadata from the PR #12 review branch.
 
-For repository states that include this acceptance record, those headers SHALL NOT be interpreted as the current lifecycle state of the accepted package. The current lifecycle state is `ACCEPTED` as declared by this record.
+For repository states that include this record **after its explicitly authorized merge**, those embedded headers SHALL NOT be interpreted as the current lifecycle state of the accepted package. The package lifecycle state is then `ACCEPTED` by completion of the transition defined here.
 
-Likewise, conditional wording inside `review-and-assurance-governance.md` such as `Until this proposed governance is accepted` and `If accepted` describes the pre-acceptance transition that was satisfied when PR #12 was explicitly authorized and squash-merged.
+Likewise, conditional wording inside `review-and-assurance-governance.md` such as `Until this proposed governance is accepted` and `If accepted` describes the pre-acceptance transition that is completed only when this record itself passes review, receives separate merge authorization, and is merged.
 
-This record supersedes that proposal-era lifecycle interpretation only. It does not rewrite, waive or reinterpret any substantive rule in either accepted document.
+This record supersedes that proposal-era lifecycle interpretation only after its authorized merge. It does not rewrite, waive or reinterpret any substantive rule in either target document.
 
-## Effective assurance authority
+## Effective assurance authority after transition
 
-From acceptance of this record forward:
+After authorized merge of this record:
 
 - the JLMIRROR Native Assurance Gate is an accepted repository-wide assurance mechanism;
 - external AI/code-review availability is additional evidence and is not a mandatory progression dependency;
@@ -51,11 +54,17 @@ It does not accept PR #10, PR #11, Phase 11 PR #9, or any later phase by implica
 
 Each such change still requires its own exact-current-HEAD Native Assurance Gate and separate merge authorization under the accepted governance.
 
+## Future-change fencing
+
+This acceptance transition is bound to the exact target blobs listed above. A later change to either governance document creates a new repository state and does not inherit exact-HEAD validation merely from this record.
+
+Substantive future changes remain subject to the accepted change discipline, exact-current-HEAD review, panoramic correction and merge authorization requirements.
+
 ## Traceability
 
 This lifecycle correction exists because `docs/00-foundation/document-governance.md` defines `draft`, `proposed`, `accepted`, and `superseded` document states, while PR #12 had already been explicitly authorized and merged but its two new documents retained `PROPOSED` proposal-branch labels.
 
-The authoritative accepted merge is:
+The target accepted baseline is:
 
 ```text
 PR #12 reviewed HEAD  a67303fa323044c2ac67556688eb2b256c36afc5

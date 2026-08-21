@@ -201,9 +201,11 @@ After restore/PITR:
 - recovery reconciliation spans many tenants in one cell;
 - large report/export output reaches storage/worker limits;
 - provider throttle affects many tenants simultaneously;
-- malformed/duplicate/alias payload fields attempt to select a cheaper cost class, different tenant budget or privileged workload class before canonical validation and are rejected/bounded without changing trusted scope;
-- a conservative pre-validation claim is refined to a more expensive canonical cost class and the implementation acquires the correct budget or rejects before effect rather than continuing under the cheaper provisional claim.
+- **`FV-OVER-002` adversarial admission variant:** malformed/duplicate/alias payload fields attempt to select a cheaper cost class, different tenant budget or privileged workload class before canonical validation; the test proves trusted scope remains unchanged, the attempt is bounded/rejected, and unrelated tenants/workloads remain isolated;
+- **`FV-OVER-002` provisional-budget variant:** a conservative pre-validation claim is refined to a more expensive canonical cost class; the test proves the correct authoritative budget is acquired or the request is rejected before effect, never continued under the cheaper provisional claim.
+
+These two admission variants are mandatory whenever the selected profile admits work whose final resource class can depend on structured request/message content. They are executions of the existing canonical `FV-OVER-002` and therefore inherit `RB-REL-013` and the profile's four evidence levels; they do not create a new failure enum, OPEN or fault-vector identity.
 
 ## Release blockers
 
-Release is blocked by any unbounded accepted backlog/buffer/retry population, any path where one tenant/destination can exhaust unrelated capacity, any overflow rule that loses required evidence, any replay/recovery path that starves current correctness/security authority, any pre-validation cost/scope derivation that lets untrusted payload semantics choose a cheaper or different admission bucket, or any brownout that weakens an invariant.
+Release is blocked by any unbounded accepted backlog/buffer/retry population, any path where one tenant/destination can exhaust unrelated capacity, any overflow rule that loses required evidence, any replay/recovery path that starves current correctness/security authority, any pre-validation cost/scope derivation that lets untrusted payload semantics choose a cheaper or different admission bucket (an `RB-REL-013` isolation failure), or any brownout that weakens an invariant.

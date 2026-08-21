@@ -141,6 +141,30 @@ Consumers validate:
 
 The exact broker-integrity/auth profile remains OPEN, but consumers may not silently accept malformed or cross-contract messages.
 
+## Message-equivalence evidence
+
+Duplicate-sensitive consumers need durable evidence that a repeated scoped `message_id` still represents the **same immutable semantic message**, not merely the same identifier reused with different content.
+
+That comparison evidence may be implemented as:
+
+- a canonical collision-resistant fingerprint/digest under an accepted profile;
+- an authenticated digest/MAC when payload entropy/classification makes plain digest disclosure unsafe;
+- protected retained immutable content;
+- another deterministic evidence form that proves semantic equivalence over the contract-defined immutable comparison surface.
+
+The exact algorithm/storage mechanism remains OPEN, but these properties are fixed:
+
+- evidence covers every immutable field whose difference would make same-ID reuse an integrity failure;
+- comparison uses the same canonical structured interpretation as contract validation, not parser-specific raw-text accidents;
+- evidence remains available for the full supported dedup/redelivery/replay/recovery horizon or equivalent surviving authority proves comparison;
+- same scoped ID with non-equivalent evidence fails closed into integrity/quarantine handling and is never accepted as an ordinary duplicate;
+- loss/rollback of comparison evidence is recovery uncertainty, not permission to assume equivalence;
+- evidence inherits the payload's confidentiality/retention/erasure risk and SHALL NOT become a new side channel.
+
+A plain unsalted/unkeyed digest of low-entropy confidential values may permit offline guessing and is not automatically a safe storage/logging representation. Where that risk exists, the accepted profile uses a protected comparison mechanism such as keyed/authenticated hashing or protected retained evidence. Fingerprints/MACs are not logged casually and are not exposed externally as message identifiers.
+
+Erasure/minimization may replace full payload retention with the smallest governed comparison evidence sufficient for duplicate/recovery safety, but erasure cannot remove all equivalence evidence while the same logical message remains eligible to redeliver/replay and duplicate suppression still matters.
+
 ## Provider-originated data
 
 Provider callbacks are untrusted external ingress until Phase 09 authentication/freshness/replay/canonical parsing/tenant binding completes.
@@ -178,6 +202,8 @@ secret_or_credential
 
 `secret_or_credential` content is not permitted in ordinary async payloads.
 
+Derived correctness evidence such as message fingerprints, authenticated digests, tombstones and result-linkage metadata is classified deliberately rather than assumed harmless. If the derivation can reveal or test confidential source values, it receives corresponding protection, retention and logging restrictions.
+
 ## Secret references
 
 When work requires secret material, the message carries an opaque reference/identity rather than the secret.
@@ -207,6 +233,8 @@ Avoid:
 
 Consumers needing current mutable state may receive a stable resource reference and fetch an authorized projection instead of receiving a stale oversized snapshot.
 
+Correctness evidence is minimized independently from payload retention. A consumer may retain a protected canonical fingerprint/result linkage after deleting full payload bytes, but only when that evidence still satisfies classification, erasure and recovery requirements.
+
 ## Encryption
 
 Transport/storage encryption is required according to security/data policy.
@@ -223,7 +251,8 @@ Normal logs SHALL NOT contain:
 - unrestricted confidential payloads;
 - full regulated records;
 - protected cursor/capability values;
-- webhook signing material.
+- webhook signing material;
+- message-equivalence fingerprints/MACs when their classification or offline-guessing risk makes them unsuitable for ordinary observability.
 
 Safe observability uses:
 
@@ -252,6 +281,8 @@ Remediation tooling applies:
 - redacted/safe views;
 - audit;
 - bounded export/download.
+
+For same-ID/different-content integrity failures, quarantine/diagnostics may retain governed comparison evidence and safe reason classes without exposing unrestricted conflicting payloads to ordinary operators.
 
 ## Replay security
 
@@ -361,6 +392,7 @@ After restore/PITR:
 - stale authorization caches/generations do not regain authority;
 - stale producer generations remain retired where required;
 - missing inbox/replay state is uncertainty, not permission;
+- missing/older message-equivalence evidence is uncertainty, not proof that a same-ID arrival matches the original message;
 - quarantined/ambiguous effects remain blocked until reconciliation;
 - audit/security evidence in `(R,F]` is restored/reconciled.
 
@@ -392,6 +424,9 @@ Implementations test:
 - generic worker credential cannot access unrelated tenant/domain secrets;
 - provider payload cannot spoof internal producer/contract identity;
 - secret values fail message schema/publication/logging rules;
+- same scoped message ID with different canonical immutable content is detected even after full payload retention has been minimized;
+- equivalence-evidence retention/restore loss cannot convert same-ID/different-content into an accepted duplicate;
+- low-entropy confidential payload comparison evidence is not exposed through naive ordinary logs or externally visible identifiers;
 - quarantine/replay admin tooling enforces tenant/operator scope;
 - realtime buffered message is not delivered after authority retirement beyond accepted fence;
 - webhook destination cannot SSRF internal/control-plane targets;
@@ -406,6 +441,7 @@ Implementations test:
 - exact data-classification labels mapping;
 - cross-region topology;
 - end-to-end message signature profile where needed;
+- message-equivalence fingerprint/MAC algorithm and storage representation;
 - replay/quarantine admin UI implementation.
 
-The trust, tenant isolation, current authority, data minimization and fail-closed recovery properties are fixed.
+The trust, tenant isolation, current authority, message-equivalence integrity, data minimization and fail-closed recovery properties are fixed.

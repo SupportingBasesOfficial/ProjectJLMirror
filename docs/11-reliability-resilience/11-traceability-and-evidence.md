@@ -134,7 +134,9 @@ Future evidence records SHALL include:
 | `negative_results` | Failures, missing evidence, and excluded coverage preserved. |
 | `owner_and_review` | Accountable human/governance authority and independent review. |
 | `retention_and_integrity` | Required lifetime, access, provenance, and tamper evidence. |
-| `blocker_disposition` | Blockers satisfied, open, waived only where governance explicitly permits, and justification. |
+| `blocker_disposition` | Exactly `satisfied`, `open`, or `no_applicable_case`. `no_applicable_case` is valid only for a genuinely conditional blocker/case and SHALL record the condition, accepted authority and reviewable evidence proving non-applicability. An applicable blocker cannot be waived, overridden by justification, or converted to pass by tooling, AI, operator, Product convenience, runtime health or missing evidence. |
+
+A blocker that remains applicable stays `open` until its accepted satisfaction evidence exists. Creating a new exception/waiver class is itself an upstream governance change and SHALL NOT be inferred from this evidence schema.
 
 ## 9. Phase 11 evidence gate
 

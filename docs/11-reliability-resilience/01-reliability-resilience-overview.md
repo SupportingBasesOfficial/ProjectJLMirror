@@ -2,8 +2,8 @@
 
 **Status:** proposed baseline  
 **Phase:** 11 — Reliability & Resilience  
-**Authority anchor:** `main@6d8550b67ddeb6ca1ecac71df36a1185cd3b3c92`  
-**Accepted predecessor:** Phase 10 — Events / Async Contracts and the accepted post-Phase-10 roadmap
+**Authority anchor:** accepted `main@0872fa5cd672f79cc83cec81df2d580186fcdae2`  
+**Accepted predecessor:** Phase 10 — Events / Async Contracts, the accepted post-Phase-10 roadmap, and the accepted Review and Assurance Governance package
 
 ## Purpose
 
@@ -30,10 +30,13 @@ This package SHALL preserve the complete accepted repository authority. In parti
 - ambiguous external outcomes reconcile by stable operation identity before retry eligibility;
 - current placement and current authorization are re-established where accepted contracts require them;
 - replay, restore, relocation and failover cannot resurrect retired authority or blindly repeat protected effects;
+- duplicate-sensitive message admission inherits the accepted Phase 10 rule that trusted scoped identity alone is insufficient: equivalent immutable content must be proven under the accepted canonical comparison profile and required historical verifier authority, with unknown equivalence remaining fail-closed/reconciliation-blocked;
+- message-equivalence evidence inherits source-data confidentiality risk, cannot become a cross-scope oracle/authority surface, and comparison/profile/KMS work remains bounded;
 - Phase 09 owns realtime connection/subscription authority; Phase 10 owns async/realtime message representation;
 - outbound webhooks remain Product-gated and, when enabled, retain immutable delivery meaning and destination-generation binding;
 - secrets never enter ordinary payloads, logs, traces, metrics labels, quarantine views or audit snapshots;
-- recovery preserves `(R,F]`, `uncertainty != absence` and recovery quarantine.
+- recovery preserves `(R,F]`, `uncertainty != absence` and recovery quarantine;
+- exact-HEAD Native Assurance, tool-neutral evidence and separate explicit merge authorization follow the accepted Review and Assurance Governance package; external reviewer availability is additional evidence, not a mandatory progression dependency.
 
 A Phase 11 rule that appears to conflict with accepted upstream authority is invalid until the owning authority is explicitly amended through governance.
 
@@ -49,7 +52,7 @@ Failure of one tenant, provider, destination, consumer contract, workload class,
 
 ### REL-P-03 — Degradation preserves invariants
 
-A degraded mode may reduce freshness, throughput or optional capability. It SHALL NOT weaken tenant isolation, authorization, audit, idempotency, message-integrity comparison, recovery fences, erasure/retention governance or secret handling.
+A degraded mode may reduce freshness, throughput or optional capability. It SHALL NOT weaken tenant isolation, authorization, audit, idempotency, message-integrity comparison, historical comparison-profile/verifier continuity, recovery fences, erasure/retention governance or secret handling.
 
 ### REL-P-04 — Every retry has a safety proof and a budget
 
@@ -116,6 +119,7 @@ The normative semantic manifest is defined in `08-reliability-semantic-manifest.
 | `11-traceability-and-evidence.md` | upstream/downstream traceability and evidence ownership |
 | `12-phase-11-open-decisions-and-blockers.md` | OPEN registry, closure gates and acceptance blockers |
 | `13-security-privacy-threat-model-delta.md` | changed trust boundaries, threat actors, confused-deputy analysis and security/privacy delta |
+| `14-message-equivalence-reliability-continuity.md` | mandatory normalized extension for Phase 10 comparison-evidence confidentiality, historical comparison-profile/verifier continuity, anti-oracle/capacity behavior and duplicate-sensitive recovery |
 
 All common enforcement artifacts required by the roadmap are mandatory. An empty registry or no-applicable-case entry carries explicit evidence; an artifact itself cannot be omitted or marked `not_applicable`.
 
@@ -125,10 +129,11 @@ Phase 11 uses logical capability ownership, not future team names:
 
 - an owning domain/application capability owns its business effect and compensation/reconciliation semantics;
 - Platform Management owns tenant placement/cell lifecycle authority already accepted upstream;
-- each consumer contract owns its inbox/effect completion and quarantine behavior;
+- each consumer contract owns its inbox/effect completion, message-equivalence admission and quarantine behavior;
 - each provider adapter owns provider-specific error normalization and retry mapping behind platform classes;
 - artifact/governance owners control release, erasure and delivery-generation eligibility;
 - Security authority owns current authorization/revocation/deny decisions and their fail-closed behavior;
+- the accepted secret/key authority owns any historical verifier material required by a keyed message-equivalence profile, while the consumer/recovery contract owns whether historical equivalence is sufficiently proven for effect eligibility;
 - each configuration-owning capability owns accepted content/schema/applicability while Platform Management owns governed distribution and generation evidence;
 - the customer-monitoring ingestion capability owns the durable accepted-observation boundary, scoped identity, replay/checkpoint continuity and monotonic projection contract; it is distinct from optional operational telemetry;
 - each protected-effect capability owns its mandatory audit boundary with Security/Data policy; optional telemetry cannot weaken or substitute that boundary;
@@ -165,7 +170,7 @@ Every reliability profile SHALL include:
 
 1. **Security / Privacy:** authority, revocation, tenant isolation, secret/data classification, abuse, disclosure and recovery-governance continuity.
 2. **Capacity / Performance / Cost:** bounded resource dimensions, tenant skew, amplification paths, measurement points and evidence-driven closure gates.
-3. **Verification / Assurance:** deterministic tests, concurrency/fault injection, chaos/load/skew vectors, evidence provenance and release blockers.
+3. **Verification / Assurance:** deterministic tests, concurrency/fault injection, chaos/load/skew vectors, evidence provenance, exact-HEAD Native Assurance and release blockers.
 
 Recovery continuity, semantic compatibility and OPEN-decision discipline are transversal and cannot be delegated to a final section only.
 

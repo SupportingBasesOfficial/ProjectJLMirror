@@ -245,16 +245,18 @@ Every circuit record below materializes the protected scope, counted/excluded fa
 
 This keyed table completes the selected circuit record. `counted_failure_classes`, `excluded_failure_classes`, `open_degradation_mapping` and `fallback_authority` are literal joined fields. A canonical failure not in `counted_failure_classes` is excluded from dependency-health counting; it still follows the profile failure-to-mode binding. No implementation may add a counted class or choose a different open mode by default.
 
+Terminal trust dispositions are never ordinary dependency-health signals. For every profile, `compromised_or_untrusted` SHALL be excluded from circuit counted classes, half-open/probe transitions and circuit-driven re-enablement even when the same profile also uses a circuit for availability or staleness. The class continues to follow its exact canonical failure-to-mode binding. Trust may be restored only by the profile's independently accountable current Security/cryptographic/configuration/integration authority from accepted evidence; circuit state, reachability, successful probes, elapsed time, restart or failover are never sufficient restoration authority.
+
 | Profile key | Counted canonical failure classes | Exact open degradation mapping | Exact fallback authority |
 |---|---|---|---|
 | `rel.control-plane-placement@1` | `unavailable`, `partitioned`, `stale`, `identity_conflict` | `unavailable[placement_fallback_state=verified_unexpired_lease_and_destination_admitted]→stale_tolerant`; `unavailable[placement_fallback_state=fallback_ineligible]→fail_closed`; `partitioned[placement_fallback_state=verified_unexpired_lease_and_destination_admitted]→stale_tolerant`; `partitioned[placement_fallback_state=fallback_ineligible]→fail_closed`; `stale→fail_closed`; `identity_conflict→fail_closed` | current Control Plane generation or the same verified bounded lease; no lifecycle/placement mutation |
 | `rel.cell-transactional-store@1` | `unavailable`, `slow_or_timed_out`, `partitioned` | `unavailable→fail_closed`; `slow_or_timed_out→fail_fast` while commit uncertainty remains durable; `partitioned→fail_closed` | current single-writer transactional authority only |
-| `rel.security-session-authority@1` | `unavailable`, `stale`, `compromised_or_untrusted` | `unavailable→fail_closed`; `stale→fail_closed`; `compromised_or_untrusted→fail_closed` | current authentication/authorization/revocation/deny authority only |
+| `rel.security-session-authority@1` | `unavailable`, `stale` | `unavailable→fail_closed`; `stale→fail_closed` | current authentication/authorization/revocation/deny authority only |
 | `rel.placement-reference-cache@1` | `unavailable`, `stale`, `identity_conflict` | `unavailable[placement_cache_fallback_state=verified_unexpired_copy_and_destination_admitted]→stale_tolerant`; `unavailable[placement_cache_fallback_state=fallback_ineligible]→fail_closed`; `stale→fail_closed`; `identity_conflict→fail_closed` | current placement authority or the exact verified bounded copy plus destination admission only |
 | `rel.performance-cache@1` | `unavailable`, `saturated`, `stale` | `unavailable→fail_fast` to bounded origin; `saturated→shed_or_reject`; `stale[stale_read_state=product_authorized_within_freshness_contract]→stale_tolerant`; `stale[stale_read_state=not_authorized_or_outside_contract]→fail_fast` | authoritative origin under remaining deadline/bulkhead, or Product-authorized bounded stale result only |
 | `rel.replay-consume-state@1` | `unavailable`, `stale`, `out_of_order_or_gap` | `unavailable→fail_closed`; `stale→fail_closed`; `out_of_order_or_gap→fail_closed` | current consumption/equivalence/dedup authority only |
-| `rel.secret-key-authority@1` | `unavailable`, `stale`, `compromised_or_untrusted` | `unavailable→capability_unavailable`; `stale→fail_closed`; `compromised_or_untrusted→fail_closed` | current secret/key generation and valid namespace-bound lease only |
-| `rel.configuration-authority@1` | `unavailable`, `stale`, `out_of_order_or_gap`, `identity_conflict`, `compromised_or_untrusted` | `unavailable[configuration_fallback_state=verified_permitted_last_known_good]→stale_tolerant`; `unavailable[configuration_fallback_state=fallback_ineligible]→fail_closed`; every other counted class→`fail_closed` | current accepted configuration generation or verified permitted last-known-good only |
+| `rel.secret-key-authority@1` | `unavailable`, `stale` | `unavailable→capability_unavailable`; `stale→fail_closed` | current secret/key generation and valid namespace-bound lease only |
+| `rel.configuration-authority@1` | `unavailable`, `stale`, `out_of_order_or_gap`, `identity_conflict` | `unavailable[configuration_fallback_state=verified_permitted_last_known_good]→stale_tolerant`; `unavailable[configuration_fallback_state=fallback_ineligible]→fail_closed`; `stale→fail_closed`; `out_of_order_or_gap→fail_closed`; `identity_conflict→fail_closed` | current accepted configuration generation or verified permitted last-known-good only |
 | `rel.outbox-publication@1` | `unavailable`, `throttled`, `saturated` | `unavailable→queued_or_deferred`; `throttled→queued_or_deferred`; `saturated[intent_state=not_committed]→shed_or_reject`; `saturated[intent_state=committed]→queued_or_deferred` without changing immutable message identity | committed immutable outbox intent only |
 | `rel.broker-job-transport@1` | `unavailable`, `throttled`, `saturated` | `unavailable→queued_or_deferred`; `throttled→shed_or_reject`; `saturated→shed_or_reject` | durable intent/checkpoint plus inbox/process authority only |
 | `rel.consumer-inbox-effect@1` | `no_applicable_case(condition=v1 has no dependency-health class eligible to open a circuit; authority=accepted Phase 10 consumer contract plus this profile's failure bindings; evidence=FV-CIRCUIT-002[branch=no_applicable_case])` | circuit cannot open from duplicate, identity conflict, ambiguity, poison or permanent content; those classes retain their exact profile modes; no half-open/probe state exists | inbox/effect/result truth only |
@@ -269,6 +271,8 @@ This keyed table completes the selected circuit record. `counted_failure_classes
 | `rel.privileged-operations@1` | `unavailable`, `slow_or_timed_out`, `saturated` | `unavailable→fail_closed`; `slow_or_timed_out→reconciliation_blocked`; `saturated[recovery_capacity_state=outside_accepted_reservation]→shed_or_reject`; `saturated[recovery_capacity_state=inside_accepted_reservation]→queued_or_deferred` with current authority/audit recheck | current scoped authorization, target truth, audit and stable operation identity only |
 
 For `rel.external-provider@1`, both `compromised_or_untrusted` and `contract_permanent` are deliberately excluded from circuit-health counting and ordinary half-open recovery. They retain their canonical `capability_unavailable` binding and `FV-EXT-003` evidence. A compromised trust disposition can be cleared only by independently accountable Security/integration authority from accepted evidence; circuit state, successful probe, elapsed time or provider response cannot re-enable it. A permanent contract result terminates the stable operation's ordinary retry/probe path; any later distinct operation requires its own accepted Product/contract cause and identity.
+
+For `rel.security-session-authority@1`, `rel.secret-key-authority@1`, and `rel.configuration-authority@1`, `compromised_or_untrusted` is likewise deliberately excluded from circuit-health counting and ordinary half-open recovery. It retains the profile's exact `fail_closed` binding and the corresponding `FV-SEC-001`, `FV-SECRET-001`, or `FV-CONFIG-001` evidence. Re-enablement requires independently accountable current Security, cryptographic, or configuration authority respectively, plus accepted evidence for the same scope/generation; no circuit transition, successful probe, elapsed time, restart, failover, cache refill or dependency response can clear the trust disposition.
 
 ### Bulkhead, backpressure, ambiguity and recovery fields
 
@@ -377,6 +381,7 @@ Database HA product, replica/quorum topology, failover timers, storage sizing an
 - Locally verifiable credentials may continue only under an explicitly accepted current-verification profile; cached/stale positive membership or permission is insufficient.
 - Revocation/deny generations never regress through failover or restore.
 - Reversing a deny is a separate current authorized/audited action, not a reliability fallback.
+- A `compromised_or_untrusted` disposition is terminal for ordinary circuit recovery: no successful probe, half-open transition, reachability check, restart or elapsed time can restore trust. Re-enablement requires independently accountable current Security authority and accepted evidence for the same scope/generation.
 
 ## Placement/performance/security caches
 
@@ -393,6 +398,7 @@ Exact cache products, TTLs and invalidation transports remain OPEN.
 - Only accepted bounded current leases may continue; a stale cached secret cannot defeat revocation/rotation policy.
 - Secret outage affects only operations requiring that namespace; service identities remain least-privilege.
 - Recovery must restore approved key authority or preserve intentional crypto-erasure.
+- `compromised_or_untrusted` never enters ordinary circuit half-open/probe recovery; re-enablement requires independently accountable cryptographic/Security authority and accepted evidence for the exact namespace/generation.
 
 ## Configuration authority and distribution
 
@@ -402,6 +408,7 @@ Exact cache products, TTLs and invalidation transports remain OPEN.
 - A partial rollout is an explicit degraded state. Admission is bounded to the combinations declared compatible; affected mutations or privileged behavior stop when safety cannot be proven.
 - Rollback SHALL NOT resurrect revoked authority, retired endpoints/sources, erased data access, unsafe retry policy or earlier governance decisions. Unsafe rollback requires forward recovery/reconciliation.
 - Resumption requires one accepted configuration generation, mechanically validated content, target coverage evidence and disposition of nodes/cells/tenants that observed another generation.
+- A `compromised_or_untrusted` configuration disposition remains fail-closed outside ordinary circuit recovery. Probe success, reachability, restart or cache refill cannot clear it; independently accountable configuration/Security authority must establish a reviewed trusted generation from accepted evidence.
 
 Configuration store/product, distribution transport, schema tooling, rollout mechanism, cache horizon and numeric convergence targets remain OPEN.
 

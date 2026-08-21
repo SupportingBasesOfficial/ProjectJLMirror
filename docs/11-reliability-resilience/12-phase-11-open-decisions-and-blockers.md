@@ -30,7 +30,7 @@ An OPEN SHALL include an accountable authority, evidence requirement, and closur
 | `OPEN-REL-004` | Region loss SHALL not create dual authority or violate residency/placement. | Region topology, active/passive policy, failover geography and capacity. | `3`; Product/Data/Phase 13/15; capacity, residency and recovery evidence; before production eligibility. |
 | `OPEN-REL-005` | End-to-end deadlines are propagated and timeout never invents completion truth. | Numeric deadline profiles by operation/capability. | `3`; Product/Phase 12 with measured latency; load and fault distributions; before production eligibility. |
 | `OPEN-REL-006` | Retries require semantic eligibility, stable identity, aggregate budgets, backoff and jitter. | Attempt counts, elapsed budgets, delay curves and jitter ranges. | `3`; Reliability/Phase 12 with provider/runtime evidence; amplification tests; before production eligibility. |
-| `OPEN-REL-007` | Circuits isolate unhealthy dependencies and use bounded recovery probes. | Algorithm, state thresholds, windows and probe budgets. | `2`; Phase 13 implementation owner; fault/load comparison; select before implementation of the adapter, tune before production. |
+| `OPEN-REL-007` | Where a profile's exact circuit selector has a non-empty applicable failure-class set, circuits isolate unhealthy dependencies and use bounded recovery probes; a `no_applicable_case` profile has no circuit-open/half-open/probe implementation obligation and retains negative circuit evidence only. | Algorithm, state thresholds, windows and probe budgets **only for profiles with an applicable circuit selector**. | `2`; Phase 13 implementation owner; fault/load comparison on the exact applicable profile scope; select before implementation of that circuit-bearing adapter/profile, tune before production. `no_applicable_case` does not select or close an algorithm branch. |
 | `OPEN-REL-008` | Bulkheads and concurrency preserve tenant, workload and dependency isolation. | Pool mapping, concurrency/reservation sizes and adaptive-control mechanism. | `2`; Phase 13 with Capacity overlay; skew and saturation benchmarks; mechanism before implementation, numbers before production. |
 | `OPEN-REL-009` | Backlogs are bounded, attributable, age-aware and have explicit overflow behavior. | Queue/buffer sizes, age limits, storage pressure thresholds and spill mechanism. | `3`; Phase 12/13/15 with capacity evidence; burst, outage and drain benchmarks; before production eligibility. |
 | `OPEN-REL-010` | Fairness protects unrelated tenants and critical live/recovery work. | Scheduling algorithm, priority weights, reserved recovery capacity, premium Product tiers if any. | `2`; Product plus Phase 13; adversarial tenant-skew and starvation evidence; Product terms before differentiated behavior, mechanism before implementation. |
@@ -56,6 +56,8 @@ An OPEN SHALL include an accountable authority, evidence requirement, and closur
 | `OPEN-REL-030` | Customer monitoring observations are acknowledged only after canonical scoped identity and durable acceptance responsibility exist; accepted observations remain replayable into idempotent historical, monotonic current-state and durable transition/signal projections across restart, recovery and relocation. | Concrete durable acceptance authority/mechanism, projection persistence/transport, checkpoint implementation and reconciliation orchestration. | `2`; Data/monitoring owner with Phase 13/14; `FV-TEL-002` conformance including crash, backlog, replay and relocation; select and conform the mechanism before implementing the customer-telemetry ingestion/projection path. |
 
 Where a row contains sub-decisions with different gates, downstream owners SHALL split them into separate records before closure rather than close the entire OPEN with partial evidence.
+
+OPEN applicability is part of conformance. `OPEN-REL-007` SHALL enter a profile's final `open_decisions` only through the exact `CIRCUIT-OPEN(profile_key)` branch in `07-capability-resilience-profiles.md`. A non-empty counted circuit-failure set imports `OPEN-REL-007`; `no_applicable_case` imports no circuit implementation OPEN and keeps only its dedicated negative evidence. Tooling SHALL reject both an applicable circuit profile missing `OPEN-REL-007` and a no-circuit profile carrying it as an implementation obligation.
 
 ## 4. Decisions Phase 11 closes
 
@@ -85,7 +87,8 @@ Phase 11 SHALL NOT be accepted while any of the following is true:
 - retry/backlog/concurrency is unbounded or lacks tenant/workload isolation;
 - recovery can restore authority before `(R,F]`, revocation, erasure, hold, audit, and generation reconciliation;
 - physical topology leaks into public API/event identity;
-- an OPEN lacks a class, owner, evidence requirement, or gate;
+- an OPEN lacks a class, owner, evidence requirement, gate or applicable profile scope;
+- a profile's final OPEN set contradicts its exact circuit applicability branch;
 - a vendor, topology, numeric target, Product behavior, or downstream mechanism is canonized without authority/evidence;
 - AI output is used as approval, waiver, score, vote, veto, or intermediate normative authority;
 - fault vectors lack deterministic expected/forbidden outcomes and blocker mappings;

@@ -17,6 +17,7 @@ The following surfaces SHALL be versioned or otherwise bound to an immutable sem
 - deadline propagation, timeout truth, and cancellation behavior;
 - retry eligibility, aggregate attempt budget, backoff, and ambiguity handling;
 - circuit, bulkhead, concurrency, queue, and backpressure policy;
+- canonical request/message interpretation used for admission scope and resource/cost classification;
 - admission, fairness, shedding, overflow, and backlog recovery behavior;
 - tenant, cell, generation, provider, destination, and workload isolation;
 - acknowledgement, lease, checkpoint, quarantine, redrive, and replay boundaries;
@@ -51,7 +52,7 @@ Every reliability change record SHALL answer:
 2. Can old callers and new callees agree on deadline and cancellation semantics?
 3. Can they agree on retry eligibility and stable operation/message/effect identity?
 4. Can acknowledgement, lease, checkpoint, and quarantine boundaries coexist?
-5. Can old and new admission, fairness, circuit, and backlog policies coexist without feedback amplification?
+5. Can old and new canonical parsing/admission policies derive the same trusted tenant/workload/cost scope and coexist without feedback amplification or budget bypass?
 6. Does either version broaden authority or accept stale security/placement evidence?
 7. Can failover, relocation, rollback, and `(R,F]` recovery converge across versions?
 8. Are API/event schema compatibility classifications sufficient, or is behavior independently breaking?
@@ -72,6 +73,7 @@ For every participant pair that can coexist, the change SHALL declare a matrix e
 | authority behavior | Lease, generation, fencing, and revocation compatibility. |
 | work identity | Operation, message, effect, attempt, and artifact identity continuity. |
 | failure behavior | Timeout, retry, acknowledgement, degradation, and ambiguity outcome. |
+| admission classification | Canonical interpretation, trusted scope/cost-class derivation, provisional-budget adjustment and rejection behavior. |
 | capacity behavior | Amplification and isolation expectations. |
 | recovery behavior | Rollback safety or required forward recovery/reconciliation. |
 | evidence | Conformance and fault vectors covering the combination. |
@@ -102,6 +104,8 @@ Silence SHALL mean unsupported, not compatible. A rollout mechanism SHALL NOT in
 ### 6.4 Overload and backpressure
 
 - New admission or queue policies SHALL not allow an old producer to bypass tenant/workload isolation.
+- Coexisting versions SHALL derive admission scope and cost class from the same accepted canonical request/message interpretation. Aliases, duplicate fields, malformed encodings, caller-selected scope labels, or alternate normalization paths SHALL NOT cause the same logical input to enter a cheaper or different tenant/workload budget.
+- A provisional pre-validation budget SHALL be upgraded to the final canonical authoritative class or rejected before expensive/effectful continuation; mixed versions SHALL NOT continue under the cheaper provisional claim.
 - Retry, circuit, batching, and drain changes SHALL be tested as a closed feedback system, not component by component only.
 - Maintenance, replay, migration, and recovery work SHALL retain their class and checkpoint across versions.
 
@@ -119,6 +123,7 @@ Silence SHALL mean unsupported, not compatible. A rollout mechanism SHALL NOT in
 | Stop retrying a previously retryable ambiguous external effect. | `compatible_stricter` and possibly `behavior_breaking` | Safety improves, but Product-visible completion may change. |
 | Change timeout ownership from caller to an independent callee budget. | `behavior_breaking` | Work may continue after caller expiry and create new ambiguity. |
 | Allow stale authorization when the authority service is unavailable. | `security_breaking` | Missing evidence becomes permission. |
+| Change canonical parsing or normalization so the same logical input can receive a cheaper or different tenant/workload budget before final validation. | `security_breaking` + `capacity_risk` | Admission and isolation semantics changed even if the API/event schema is unchanged. |
 | Change message identity or inbox equivalence. | `recovery_breaking` | Old/new redelivery and reconciliation cannot be assumed to converge. |
 | Increase worker concurrency without changing schemas. | `capacity_risk` | Provider, database, queue, and tenant isolation may be destabilized. |
 | Add outbound webhook behavior before Product approval. | `product_gated` | Reliability cannot invent the feature contract. |
@@ -164,6 +169,7 @@ A reliability change is release-blocked when:
 - authority, revocation, generation, or fencing behavior differs without deterministic rejection;
 - retry, timeout, acknowledgement, or ambiguity semantics can produce duplicate or orphaned effects;
 - overload behavior can create feedback amplification or cross-tenant interference without evidence;
+- canonical parsing/admission differences can classify the same logical request/message into different tenant/workload/cost budgets or let a provisional cheaper claim survive final canonical interpretation;
 - rollback is claimed safe despite irreversible external effects or recovery/governance discontinuity;
 - evidence is missing, weaker than claimed, or not attributable to exact versions;
 - a Product-gated capability is introduced without accepted Product authority.

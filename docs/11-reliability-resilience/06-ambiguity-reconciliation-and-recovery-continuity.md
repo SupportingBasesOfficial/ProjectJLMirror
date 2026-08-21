@@ -26,13 +26,13 @@ retained comparison bytes != proven equivalence when historical interpretation a
 | `external_effect_unknown` | provider may have accepted request | reconcile stable operation identity/provider truth |
 | `publication_unknown` | broker may have accepted while outbox state rolled back | republish same immutable logical message identity safely |
 | `consumer_effect_unknown` | effect may have committed but inbox completion missing | reconcile effect/result authority before execution/duplicate classification |
-| `identity_equivalence_unknown` | scoped message ID exists but comparison evidence is missing **or evidence exists while the required historical comparison profile/verifier authority is unavailable, retired, mismatched, rolled back or unknown** | classify the protected path as `recovery_continuity_blocked`; fail/reconciliation block; recover trusted comparison authority or complete an accepted equality-preserving migration |
+| `identity_equivalence_unknown` | scoped message ID exists but equality cannot currently be proven | if the required historical verifier dependency is temporarily unreachable while evidence/profile continuity is intact, classify the consumer/replay binding as `unavailable:reconciliation_blocked`; if evidence/profile/verifier-generation continuity is missing, rolled back, mismatched, retired without valid migration or unknown, classify it as `recovery_continuity_blocked:reconciliation_blocked`; recover trusted comparison authority or complete an accepted equality-preserving migration |
 | `authority_freshness_unknown` | auth/placement/generation state incomplete | deny protected admission until current authority proven |
 | `governance_unknown` | erasure/hold status incomplete | no re-exposure; destructive deletion blocked |
 | `delivery_unknown` | webhook/artifact bytes may have been disclosed | preserve identity/generation and reconcile; no retarget/re-release |
 | `recovery_boundary_unknown` | `F` or continuity inventory incomplete | scope remains recovery-quarantined |
 
-A compromised/untrusted comparison implementation, profile or verifier is not merely unavailable evidence. It is `compromised_or_untrusted` and fails closed under the affected comparison path until independently accountable authority establishes a trusted disposition.
+A compromised/untrusted comparison implementation, profile or verifier is neither an ordinary outage nor a continuity absence. It is `compromised_or_untrusted` and fails closed under the affected comparison path until independently accountable authority establishes a trusted disposition.
 
 ## Ambiguity state machine
 
@@ -87,7 +87,7 @@ The recovery manifest separates rollback-subject business/domain state from cont
 
 Continuity state includes as applicable inbox/dedup and content-equivalence evidence; the canonical comparison-profile/version and non-secret historical verifier/key-generation reference required to interpret that evidence; narrowly authorized historical verification authority where the selected evidence form requires it; idempotency claims/results; outbox/publication identities; process/operation/external outcomes; webhook obligation/destination fences; producer/source/replay generations; immutable audit; revocations; placement generations; erasure/hold/crypto-erasure decisions; and artifact lifecycle/delivery/governance generations.
 
-Retaining an uninterpretable fingerprint/MAC is not continuity. Restoring an obsolete verifier does not make it current authority for unrelated messages/scopes.
+Retaining an uninterpretable fingerprint/MAC is not continuity. Restoring an obsolete verifier does not make it current authority for unrelated messages/scopes. Temporary backend unavailability does not by itself mean the historical continuity metadata was lost, but it still blocks equality-dependent effect/replay admission until the same authority can be used.
 
 ## Recovery quarantine and admission
 
@@ -98,7 +98,7 @@ A restored scope remains non-authoritative for protected/effectful work until:
 3. affected identities/effects/authorities in `(R,F]` are inventoried;
 4. current authorization/placement/governance generations are proven non-regressed;
 5. ambiguous effects are completed, compensated, quarantined or made retry-eligible by the owner;
-6. duplicate/content-equivalence evidence covers the supported horizon **and the historical comparison profile/verifier authority required to interpret it is available/trusted or an accepted equality-preserving migration proves the same equality result**;
+6. duplicate/content-equivalence evidence covers the supported horizon **and the historical comparison profile/verifier authority required to interpret it is trusted, continuity-correct and usable, or an accepted equality-preserving migration proves the same equality result**;
 7. stale source/replay/destination/delivery generations are retired;
 8. tenant isolation and cryptographic usability/erasure intent are validated without reviving obsolete verifier authority outside its historical evidence generation;
 9. accepted customer-observation identities, acceptance/projection watermarks, monotonic current-state tokens and pending transition/signal intents are reconciled where the recovered scope includes customer telemetry;
@@ -141,7 +141,8 @@ For message-equivalence continuity, convergence means the same historical equali
 - outbox publish accepted but local state rolled back;
 - inbox effect survives but receipt/fingerprint rolls back;
 - same scoped message ID conflicts after PITR;
-- comparison evidence survives while its required historical comparison profile/verifier is unavailable, retired, mismatched or restored older;
+- required historical verifier backend is temporarily unavailable while evidence/profile continuity remains intact and the path remains `unavailable:reconciliation_blocked`;
+- comparison evidence survives while its required historical comparison profile/verifier continuity is missing, retired without valid migration, mismatched or restored older and the path remains `recovery_continuity_blocked:reconciliation_blocked`;
 - comparison-profile/key rotation crosses restore and historical equality must remain reproducible or the path remains reconciliation-blocked;
 - restored obsolete verifier/profile is presented for unrelated current work and is rejected as authority;
 - crafted duplicate identities attempt to create unbounded comparison/KMS work and remain bounded/tenant-scoped;
@@ -157,4 +158,4 @@ For message-equivalence continuity, convergence means the same historical equali
 
 ## Release blockers
 
-Release/recovery is blocked if ambiguity expires into retry, failover permits two writers, recovery resumes before continuity reconciliation, missing/uninterpretable equivalence or historical comparison authority becomes duplicate success/effect eligibility, a restored obsolete verifier becomes unrelated current authority, deny/governance generations regress, or an old destination/source/delivery generation regains authority.
+Release/recovery is blocked if ambiguity expires into retry, failover permits two writers, recovery resumes before continuity reconciliation, temporary verifier outage or missing/uninterpretable historical comparison authority becomes duplicate success/effect eligibility, a restored obsolete verifier becomes unrelated current authority, deny/governance generations regress, or an old destination/source/delivery generation regains authority.

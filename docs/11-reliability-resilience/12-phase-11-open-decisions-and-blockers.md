@@ -39,16 +39,16 @@ An OPEN SHALL include an accountable authority, evidence requirement, and closur
 | `OPEN-REL-013` | Failover, relocation and recovery use monotonic generations and fence stale actors. | Concrete lease/fence token mechanism and propagation implementation. | `1`; System/Data/Phase 13; stale-writer and delayed-message proofs; must close before writing authoritative failover paths. |
 | `OPEN-REL-014` | Ambiguous operations and `(R,F]` recovery require authoritative inquiry/reconciliation or remain blocked. | Reconciliation orchestration/tooling and automation degree. | `2`; Phase 13/15; ambiguity and incomplete-fact rehearsals; mechanism before implementation of recovery tooling. |
 | `OPEN-REL-015` | Cache and replay are derived, generation-aware and unable to broaden authority. | Cache product/topology, invalidation transport, replay window and epoch implementation. | `2`; Phase 13 with Data; loss/staleness/relocation conformance; before the derived-state implementation is selected. |
-| `OPEN-REL-016` | Secret/key bootstrap and rotation use verified generations and bounded leases; secrets never enter ordinary state. | Secret/KMS product, lease horizon, rotation overlap and emergency-recovery mechanism. | `2`; Security/Phase 13/15; bootstrap, rotation and recovery rehearsal; mechanism before implementation, numeric horizon before production. |
+| `OPEN-REL-016` | Secret/key bootstrap and rotation use verified generations and bounded leases; secrets never enter ordinary state. Where keyed/authenticated message-equivalence evidence is selected, historical verifier material remains secret-bound and generation-scoped, and its availability does not itself grant duplicate/effect eligibility. | Secret/KMS product, lease horizon, rotation overlap, emergency-recovery mechanism, and concrete historical-verifier implementation for keyed message-equivalence evidence. | `2`; Security/Phase 13/15; bootstrap, rotation, historical-verifier loss/restore and recovery rehearsal; mechanism before implementation, numeric horizon before production. |
 | `OPEN-REL-017` | Realtime is non-authoritative, placement/auth generation-bound, overload-aware and resynchronizable. | Session limits, buffer/drop policy, reconnect budget and runtime transport. | `3`; Product/Phase 12/13; disconnect, revocation, skew and resync benchmarks; before production eligibility. |
 | `OPEN-REL-018` | Webhook delivery, if Product-approved, requires immutable delivery identity, destination isolation, ambiguity and bounded retry. | Whether/families of outbound webhooks, destination semantics, retry horizons and limits. | `4`; Product authority; accepted feature contract plus adversarial destination evidence; no implementation before Product gate. |
 | `OPEN-REL-019` | Artifacts are integrity-verified, tenant/generation-bound, and governed by revocation/erasure/quarantine. | Object-store product/topology, capability mechanism, streaming continuation and availability profile. | `2`; Data/Security/Phase 13; mismatch, outage and governance-race tests; mechanism before implementation, numerics before production. |
 | `OPEN-REL-020` | Optional operational telemetry cannot become business authority and its loss is explicit; customer monitoring observations acknowledged after their separate durable acceptance boundary remain recoverable and project monotonically; mandatory audit boundaries fail according to Security/Data policy. | Optional/customer/audit telemetry products and numeric buffer, loss-tolerance, checkpoint-lag, retention, cardinality and storage/cost envelopes; the customer durable-acceptance/projection mechanism is owned separately by `OPEN-REL-030`. | `3`; Phase 12/Security/Data; optional-loss, durable-acceptance/projection, overload, relocation and confidentiality evidence; before production eligibility. |
 | `OPEN-REL-021` | Fault evidence SHALL be bounded, reproducible, attributable, isolated and cleanup-safe. | Fault/chaos tooling, execution environments and production-like rehearsal policy. | `2`; Verification overlay with Phase 14/15; tool conformance and safe rehearsal; before executable fault program. |
-| `OPEN-REL-022` | Capacity is multi-dimensional and includes tenant skew, retry amplification, recovery and cost. | Numeric envelopes and rearchitecture triggers. | `3`; Product/business plus Capacity overlay; representative benchmarks and cost evidence; before production eligibility. |
+| `OPEN-REL-022` | Capacity is multi-dimensional and includes tenant skew, retry amplification, recovery, message-equivalence comparison/KMS/migration work and cost. | Numeric envelopes and rearchitecture triggers. | `3`; Product/business plus Capacity overlay; representative benchmarks, crafted-duplicate amplification tests and cost evidence; before production eligibility. |
 | `OPEN-REL-023` | Availability and recovery claims require accepted objectives and measurement semantics. | SLOs, error budgets, RPO/RTO and convergence targets. | `3`; Product/business with Phase 12/15; measured baseline and recovery drills; before production eligibility. |
 | `OPEN-REL-024` | Specialized/privileged roles require separate trust, isolation, lifecycle and capacity envelopes. | Mapping to processes/nodes/sandboxes/runtimes and extraction sequence. | `2`; Phase 13 with Security; privilege, egress, saturation and portability tests; before role implementation. |
-| `OPEN-REL-025` | Idempotency, inbox/outbox, quarantine, replay and recovery evidence remain available for their accepted semantic horizons. | Numeric retention horizons and physical storage lifecycle. | `3`; Product/Data with Phase 09/10 owners; redelivery/recovery horizon evidence and cost; before production eligibility. |
+| `OPEN-REL-025` | Idempotency, inbox/outbox, quarantine, replay and recovery evidence remain available for their accepted semantic horizons; duplicate-sensitive equivalence evidence remains interpretable under its required canonical comparison-profile/version and historical verifier authority for the same supported horizon or an equality-preserving governed migration safely replaces it. | Numeric retention horizons, physical storage lifecycle and retained historical comparison-authority lifecycle implementation. | `3`; Product/Data with Phase 09/10 owners; redelivery/recovery/equivalence horizon evidence and cost; before production eligibility. |
 | `OPEN-REL-026` | Every reliability transition and blocker has evidence requirements consumable by Observability. | Signal names, telemetry schema, health/readiness semantics, alert and SLI mapping. | `1`; Phase 12; trace from failure state to evidence and negative tests; must close before implementation instrumentation contracts. |
 | `OPEN-REL-027` | Critical capabilities, incidents, ambiguity, quarantine, recovery and break-glass need accountable operational ownership. | Named owners, staffing, runbooks, escalation and communications platform. | `1`; Phase 15 for ownership semantics, `3` for staffing numerics; table-top/rehearsal evidence; ownership before implementation readiness, staffing before production. |
 | `OPEN-REL-028` | Reliability-breaking changes require compatible rollout, pause/abort and rollback/forward-recovery behavior. | Deployment tooling, wave sizes, health gates, pause/abort thresholds and emergency mechanism. | `2`; Phase 14; mixed-version, rollout and recovery evidence; mechanism before implementation readiness, numerics before production. |
@@ -69,6 +69,7 @@ Phase 11 closes the following semantic decisions within roadmap authority:
 - deadline propagation and the rule that timeout is not completion truth;
 - retry eligibility, stable identity, aggregate-budget, circuit, bulkhead, backpressure, and bounded-backlog requirements;
 - canonical Phase 09/10 interpretation remains the authority for admission tenant/workload/cost classification; provisional pre-validation resource claims are conservative and must be upgraded or rejected before effect;
+- confidentiality-safe scoped message-equivalence comparison, deterministic temporary-verifier-outage vs continuity-loss vs compromised-trust failure classes, historical comparison-profile/verifier continuity and anti-oracle/capacity obligations without selecting their implementation mechanism;
 - noisy-neighbor, maintenance/replay/recovery isolation requirements;
 - quarantine, redrive, fencing, reconciliation, and `(R,F]` recovery continuity;
 - reliability compatibility/change classification;
@@ -84,18 +85,23 @@ Phase 11 SHALL NOT be accepted while any of the following is true:
 - a critical capability lacks authority, dependencies, failure/degradation behavior, isolation, recovery, evidence, or owner handoff;
 - stable Control Plane impairment can be interpreted as fail-open or unlimited autonomy;
 - missing trust/recovery evidence can be interpreted as absence or permission;
+- duplicate-sensitive message equivalence can be accepted from scoped identity alone, from uninterpretable evidence, from a temporarily unavailable historical verifier without blocking, or from compromised/untrusted comparison authority;
+- low-entropy/cross-scope equivalence evidence can become an offline/equality oracle, authority token or unbounded comparison/KMS amplification path;
 - ambiguous external effects can receive blind retry;
 - retry/backlog/concurrency is unbounded or lacks tenant/workload isolation;
 - non-canonical/untrusted structured request or message semantics can select tenant/workload/cost admission class, or a cheaper provisional budget can survive the final canonical classification into expensive/effectful continuation;
-- recovery can restore authority before `(R,F]`, revocation, erasure, hold, audit, and generation reconciliation;
+- recovery can restore authority before `(R,F]`, revocation, erasure, hold, audit, historical comparison-profile/verifier continuity and generation reconciliation;
 - physical topology leaks into public API/event identity;
 - an OPEN lacks a class, owner, evidence requirement, gate or applicable profile scope;
 - a profile's final OPEN set contradicts its exact circuit applicability branch;
 - a vendor, topology, numeric target, Product behavior, or downstream mechanism is canonized without authority/evidence;
 - AI output is used as approval, waiver, score, vote, veto, or intermediate normative authority;
 - fault vectors lack deterministic expected/forbidden outcomes and blocker mappings;
+- the exact-final-HEAD Native Assurance Gate is not complete under the accepted Review and Assurance Governance package;
 - P0/P1/P2 findings or review threads remain unresolved at final merge authorization;
 - the reviewed HEAD, PR HEAD, or accepted base does not match the exact gate record.
+
+External reviewer/model absence, quota or outage is neither a clean signal nor a blocker by itself. Independence SHALL be claimed only when provenance demonstrates it.
 
 ## 6. Implementation-readiness blockers inherited from Phase 11
 
@@ -103,7 +109,7 @@ Even after Phase 11 merge, implementation remains blocked until downstream phase
 
 - `OPEN-REL-013`, `OPEN-REL-026`, and the ownership-semantic portion of `OPEN-REL-027`;
 - `OPEN-REL-030` before any customer-telemetry durable acceptance/projection path is implemented;
-- runtime responsibility, isolation, identity, secrets, lifecycle, cell and fencing mechanisms from Phase 13;
+- runtime responsibility, isolation, identity, secrets, historical verifier lifecycle where keyed comparison is selected, lifecycle, cell and fencing mechanisms from Phase 13;
 - build/release authority, artifact trust, compatibility rollout and recovery change classes from Phase 14;
 - operational ownership, recovery admission, runbook/break-glass and incident authority from Phase 15;
 - the full Implementation Readiness traceability and blocker gate.
@@ -117,7 +123,7 @@ The blockers `RB-REL-001` through `RB-REL-026` in the fault matrix apply to thei
 - production eligibility is blocked while applicable class-3 OPENs lack accepted numbers and runtime evidence;
 - a Product-gated capability is blocked until Product authority and its full contract exist;
 - an intentionally deferred capability SHALL be disabled and SHALL NOT leak through framework/runtime defaults;
-- a release SHALL be blocked when mixed-version reliability behavior is unsupported or when rollback would violate security, recovery, audit, revocation, erasure, or external-effect continuity;
+- a release SHALL be blocked when mixed-version reliability behavior is unsupported or when rollback would violate security, recovery, audit, revocation, erasure, message-equivalence/historical-verifier continuity or external-effect continuity;
 - production readiness SHALL not be inferred from document acceptance, implementation conformance, or release-candidate testing alone.
 
 ## 8. OPEN update protocol
@@ -135,8 +141,10 @@ capacity_performance_cost_delta
 compatibility_and_recovery_delta
 fault_vectors_and_blockers
 closure_class_and_gate
-independent_review
+review_assurance_provenance
 ```
+
+`review_assurance_provenance` records the exact review/assurance evidence actually used. It SHALL identify the reviewed SHA and provenance sufficient to support any independence claim. It does not require a named external reviewer/model and SHALL NOT turn reviewer quota, latency or outage into a progression dependency. Native Assurance remains the repository-default exact-HEAD gate unless accepted governance later changes that rule.
 
 Closing an OPEN SHALL update the semantic manifest, compatibility classification, fault/evidence matrix, and traceability in the same accepted change. A convenient implementation default SHALL never count as evidence.
 

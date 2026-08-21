@@ -117,6 +117,7 @@ These are the single canonical evidence-level enums for the Phase 11 package and
 - Each security-sensitive profile maps relevant `SEC-*`/`TM-*` authorities.
 - Each final OPEN reference exists in `12-phase-11-open-decisions-and-blockers.md`, is applicable to the selected profile state, and has accountable owner/evidence/closure gate. An OPEN cannot be inherited merely because a universal selector mentions its category.
 - Each blocker reference exists in the validation matrix or global blocker registry.
+- Each evidence record uses only `satisfied`, `open`, or evidence-backed `no_applicable_case` as its `blocker_disposition`. An applicable blocker remains `open` until accepted satisfaction evidence exists. `waived`, `override`, inferred pass and any equivalent unrecognized disposition are invalid unless a future accepted upstream governance change explicitly creates such a class; Phase 11 itself creates no waiver authority.
 - Each compatibility-sensitive field maps to `10-compatibility-and-change-classification.md`.
 - Each profile key materializes `status` and exact applicable operation/contract/runtime-role classes.
 - Each final fault vector is present in all four evidence levels and contributes its canonical blocker to the final release-blocker set.
@@ -152,6 +153,7 @@ Future conformance tooling SHALL reject:
 - `no_applicable_case` circuit selector inheriting an open/half-open/probe vector or `OPEN-REL-007`;
 - applicable non-empty circuit selector missing `OPEN-REL-007` from final `ALL-OPEN-DECISIONS`;
 - final OPEN reference that lacks registry owner/evidence/gate or contradicts profile applicability;
+- evidence with `blocker_disposition=waived`, an unknown disposition, an applicable blocker marked `no_applicable_case`, or a blocker marked `satisfied` without accepted attributable evidence;
 - vendor/topology name as canonical contract identity;
 - evidence claimed at a higher level than produced;
 - acknowledged customer observation without durable scoped identity/responsibility, or optional-loss behavior applied after durable acceptance;
@@ -159,6 +161,6 @@ Future conformance tooling SHALL reject:
 
 ## Change control
 
-Changes to manifest semantics, enums, retry eligibility, degradation behavior, authority/fence, retention/equivalence horizon or resumption gates receive semantic compatibility review even when serialization shape is unchanged.
+Changes to manifest semantics, enums, retry eligibility, degradation behavior, authority/fence, retention/equivalence horizon, blocker-disposition semantics or resumption gates receive semantic compatibility review even when serialization shape is unchanged.
 
-Generated artifacts are subordinate to the reviewed normative source. Tooling defaults cannot add a failure class, permissive fallback or retry automatically.
+Generated artifacts are subordinate to the reviewed normative source. Tooling defaults cannot add a failure class, permissive fallback, blocker waiver or retry automatically.

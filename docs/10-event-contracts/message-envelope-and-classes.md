@@ -57,11 +57,22 @@ Therefore, whenever a consumer may receive the same scoped ID again during redel
 
 Accepted evidence may be:
 
-- a canonical fingerprint over immutable contract/envelope/payload semantics;
-- the original immutable canonical representation;
-- another durable comparison authority with equivalent guarantees.
+- a canonical collision-resistant fingerprint/digest over the immutable comparison surface when its source-data classification and entropy make that representation safe;
+- an authenticated digest/MAC or equivalent protected comparison value when ordinary digest disclosure would create dictionary, correlation or oracle risk;
+- the original immutable canonical representation where classification/retention permits it;
+- another deterministic durable comparison authority with equivalent guarantees.
 
 The evidence profile covers every field whose difference would make the repeated ID denote a different logical message, including contract/version, trusted tenant/source scope and canonical immutable payload semantics. Mutable transport attempt metadata is excluded from that equivalence comparison.
+
+Comparison uses the same accepted canonical structured interpretation as protected contract validation and identifies/inherits a stable comparison-profile/version sufficient to reproduce the same equality result across supported redelivery/replay/recovery and parser/canonicalization evolution.
+
+Evidence is looked up and compared only after the trusted `(consumer_contract, message_identity_scope, message_id)` or accepted equivalent scope has been derived. A fingerprint/MAC SHALL NOT become a substitute for trusted message identity scope, a global reverse lookup, cross-tenant/cross-consumer equality namespace, tenant/authorization/routing/ordering authority, public identifier or bearer capability.
+
+A plain unsalted/unkeyed digest of low-entropy confidential immutable values is not automatically a safe retained/logged representation because offline guessing may reveal source data. Where that risk exists, the accepted profile uses a protected/keyed comparison form or protected retained evidence and applies the source data's classification, retention and observability restrictions to the derived evidence.
+
+When keyed/authenticated evidence is used, only non-secret comparison-profile/verifier generation references are retained with ordinary receipt/evidence metadata. Secret/key material remains behind the accepted secret/KMS boundary. Rotation or retirement preserves historical verification for the supported horizon or completes a reviewed equality-preserving migration before the old verifier is removed.
+
+Loss, rollback, retirement or temporary unavailability of the retained evidence, comparison profile or required historical verifier authority means **unknown equivalence**. Identity alone cannot convert that uncertainty into ordinary duplicate success or protected-effect eligibility; the affected scope remains fail-closed/reconciliation-blocked until accepted authority proves equivalence.
 
 The following is never a normal duplicate:
 
@@ -73,7 +84,9 @@ same trusted message_identity_scope
 
 That condition is an integrity/producer-contract failure and fails closed into governed quarantine/reconciliation. A consumer must not silently keep the first payload, silently keep the last payload or acknowledge the conflicting reuse as successful duplicate processing.
 
-The equivalence evidence survives for at least the supported dedup/redelivery/replay/recovery horizon, or an alternate durable authority must prove the same invariant. Payload minimization/erasure may replace full retained content with a safe fingerprint/tombstone, but it cannot erase the last comparison evidence while the scoped ID can still legitimately reappear.
+The equivalence evidence and any historical comparison-profile/verifier authority required to interpret it survive for at least the supported dedup/redelivery/replay/recovery horizon, or an alternate governed authority/equality-preserving migration must prove the same invariant. Payload minimization/erasure may replace full retained content with a protected fingerprint/tombstone, but it cannot erase the last usable comparison authority while the scoped ID can still legitimately reappear.
+
+Comparison/profile/KMS work is bounded and scoped so crafted duplicate IDs cannot create unbounded secret-store work or expose an equality oracle.
 
 ## `message_class`
 
@@ -259,6 +272,8 @@ At minimum, contracts distinguish whether payload fields may contain:
 
 Secret/credential material is prohibited from normal async payloads. Where a workflow requires a secret, messages carry an opaque secret reference/capability designed for the recipient and retrieve the secret through the accepted secret boundary.
 
+Derived message-equivalence evidence is classified deliberately rather than presumed harmless. If a digest/MAC/fingerprint can reveal or test confidential source values, it receives corresponding protection, retention and logging restrictions; verifier/profile references never authorize key access or message authority.
+
 ## Payload
 
 `payload` is contract-owned and versioned.
@@ -408,6 +423,8 @@ The following are prohibited:
 - treating a correlation ID as idempotency or authorization;
 - reusing one `message_id` for semantically different payloads;
 - treating same scoped `message_id` with different immutable content as successful duplicate suppression;
+- using a message-equivalence fingerprint/MAC/profile reference as authorization, routing, ordering or external identity;
+- exposing equivalence evidence as an unrestricted cross-scope equality/reverse-lookup surface;
 - mutating the historical meaning of an already-published contract version.
 
 ## Required contract tests
@@ -419,8 +436,15 @@ Every implemented envelope profile tests as applicable:
 - same `message_id` + same trusted scope + equivalent immutable semantic content redelivers safely;
 - same trusted scoped `message_id` + changed immutable semantic content fails closed as integrity/producer-contract failure;
 - content-equivalence evidence remains sufficient after permitted payload minimization/erasure and throughout supported dedup/recovery horizon;
+- low-entropy confidential immutable content is not exposed through naive plain-digest logs/exports or externally visible identifiers;
+- equivalent semantic content under different trusted tenant/consumer scopes cannot create unrestricted cross-scope correlation/deduplication;
+- canonicalization/comparison-profile migration preserves the historical equality result or affected identities remain reconciliation-blocked;
+- historical verifier/key-profile rotation, retirement, loss and restore cannot turn unknown equivalence into duplicate success or unrelated authority;
+- crafted duplicate identities cannot force unbounded comparison/KMS/secret-store work;
 - same raw `message_id` from different authoritative scopes does not collide where IDs are not globally unique;
 - secrets/forbidden data fail contract validation/redaction policy;
 - oversized/deep payload rejected/quarantined before unbounded work;
 - producer generation retirement prevents stale-source acceptance when the contract requires current source;
 - correlation/trace metadata cannot alter authority.
+
+The exact fingerprint/hash/MAC algorithm, domain-separation encoding, comparison-profile representation, historical verifier/KMS backend and storage representation remain OPEN; the immutable scoped-message meaning, confidentiality-safe comparison, historical verifiability and fail-closed unknown-equivalence properties are fixed.

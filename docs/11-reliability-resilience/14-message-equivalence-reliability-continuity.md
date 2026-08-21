@@ -51,7 +51,7 @@ Identity alone is never equivalence proof.
 
 ## Reliability failure bindings
 
-The following bindings are mandatory normalized extensions of the affected profiles and use only existing Phase 11 failure/degradation enums.
+The same root dependency failure can have different canonical meaning at different profile boundaries. The secret/key authority classifies its own reachability; the consumer/replay profiles classify whether protected message-effect eligibility can still be proven. These bindings SHALL be joined without overwriting the base `07` bindings.
 
 ### `rel.consumer-inbox-effect@1`
 
@@ -63,26 +63,35 @@ The following bindings are mandatory normalized extensions of the affected profi
 | comparison evidence/profile/verifier-generation continuity is missing, rolled back, retired without valid migration, mismatched or otherwise cannot be reconstructed for the supported historical identity | `recovery_continuity_blocked` | `reconciliation_blocked` |
 | comparison implementation/profile/evidence authority is compromised or cannot be trusted | `compromised_or_untrusted` | `fail_closed` |
 
-A temporary dependency outage and a continuity defect are deliberately distinct. Reachability restoration may clear `unavailable` only after the same historical comparison authority becomes usable and proves equivalence; it does not repair a `recovery_continuity_blocked` condition by itself.
+`07` does not otherwise materialize `unavailable`, `recovery_continuity_blocked` or `compromised_or_untrusted` for this consumer profile; this companion therefore supplies those exact conditional bindings rather than conflicting with an existing mode.
 
-The consumer cannot convert `unavailable`, `recovery_continuity_blocked` or `compromised_or_untrusted` into `duplicate`, new-effect eligibility or blind replay merely because time passed, a process restarted or a dependency became reachable. It resumes only after the owning comparison/recovery authority proves historical equivalence or an accepted equality-preserving migration establishes the same result.
+A temporary dependency outage and a continuity defect are deliberately distinct. Reachability restoration may clear `unavailable` only after the same historical comparison authority becomes usable and proves equivalence; it does not repair a `recovery_continuity_blocked` condition by itself.
 
 ### `rel.replay-consume-state@1`
 
-Duplicate-sensitive replay inherits the same distinction:
+The base `07` profile already owns a generic `unavailable:fail_closed` binding for replay/consume-state unavailability. This companion SHALL NOT redefine that failure class.
+
+At the replay profile boundary, inability to establish historical message equivalence because its required historical verifier is unavailable is represented as a **comparison-continuity inability**, not as a second generic `unavailable` mapping:
 
 | Condition | Canonical failure class | Required mode |
 |---|---|---|
-| required historical verifier dependency is temporarily unavailable while retained evidence/profile continuity is intact | `unavailable` | `reconciliation_blocked` |
-| historical message identity/evidence exists but comparison profile/verifier continuity is missing, rolled back, mismatched or retired without valid migration | `recovery_continuity_blocked` | `reconciliation_blocked` |
+| historical message identity/evidence exists but its required comparison profile/verifier cannot currently establish the supported historical equality result, including temporary verifier unavailability for that historical proof | `recovery_continuity_blocked` | `reconciliation_blocked` |
 | historical comparison profile/evidence authority is compromised or untrusted | `compromised_or_untrusted` | `fail_closed` |
-| conflicting immutable content appears under the same trusted scoped identity | `identity_conflict` | `reconciliation_blocked` |
+| conflicting immutable content appears under the same trusted scoped identity | `identity_conflict` | `reconciliation_blocked` (same base mode, with the stronger Phase 10 comparison semantics) |
 
-Operator replay authorization does not override these bindings.
+Thus `rel.replay-consume-state@1` keeps one deterministic generic `unavailable` mode from `07`, while historical equivalence-proof failure uses the distinct existing `recovery_continuity_blocked` class added by this normalized companion. Operator replay authorization does not override either binding.
 
 ### `rel.secret-key-authority@1`
 
-When keyed/authenticated message-equivalence evidence is selected, the secret/key profile additionally preserves this authority distinction:
+When keyed/authenticated message-equivalence evidence is selected, the secret/key profile retains its existing base binding:
+
+```text
+unavailable -> capability_unavailable
+```
+
+That describes the secret/key dependency itself. It does not imply that a consumer or replay operation may reinterpret missing verification as duplicate success.
+
+The profile additionally preserves this authority distinction:
 
 ```text
 historical verifier generation
@@ -92,7 +101,7 @@ current unrestricted cryptographic authority
 
 A restored or retained old verifier may be used only by the narrowly authorized historical comparison path for evidence bound to that generation. It does not authorize unrelated messages, tenants, consumers, encryption, signing or current key issuance merely because the key material is reachable.
 
-Temporary key/verifier backend outage remains an availability failure of that dependency. Missing/rolled-back historical verifier continuity is a recovery-continuity defect. Compromised verifier trust is a trust failure. These classes SHALL NOT be collapsed into one generic retry state.
+Temporary key/verifier backend outage remains an availability failure of the key dependency. Missing/rolled-back historical verifier continuity is a recovery-continuity defect. Compromised verifier trust is a trust failure. These classes SHALL NOT be collapsed into one generic retry state.
 
 ## Confidentiality and anti-oracle invariant
 
@@ -142,7 +151,7 @@ message identity/scope
 + required narrowly authorized historical verification authority
 ```
 
-A restore that has the fingerprint/MAC but not the accepted historical interpretation authority remains uncertain and is `recovery_continuity_blocked` when the authority mapping/state itself cannot be established. A merely reachable-but-temporarily unavailable historical verifier dependency remains `unavailable`; neither case permits duplicate success.
+A restore that has the fingerprint/MAC but not the accepted historical interpretation authority remains uncertain. For the consumer profile, temporary dependency outage can be `unavailable`; for replay/historical proof and for continuity defects, the protected replay path is `recovery_continuity_blocked`. Neither permits duplicate success.
 
 A restore that revives an obsolete verifier does not make that verifier current authority for unrelated work.
 
@@ -154,14 +163,15 @@ If an equality-preserving migration replaces an old profile/verifier, the migrat
 
 1. same trusted scoped ID + conflicting immutable semantic content -> `identity_conflict:reconciliation_blocked`;
 2. original full payload minimized but surviving protected evidence still distinguishes equivalent from conflicting reuse;
-3. required historical verifier backend temporarily unavailable while evidence/profile continuity remains intact -> `unavailable:reconciliation_blocked`, with no blind retry/effect eligibility;
-4. evidence/profile/verifier-generation continuity missing, rolled back, retired without valid migration, mismatched or restored older -> `recovery_continuity_blocked:reconciliation_blocked`;
-5. comparison authority/profile is compromised/untrusted -> `compromised_or_untrusted:fail_closed`;
-6. low-entropy confidential content cannot be recovered or tested through ordinary plain-digest logs, exports or operator surfaces;
-7. equal semantic content under different trusted tenant/consumer/message scopes cannot be correlated or deduplicated through a global equality lookup;
-8. comparison-profile/canonicalization or verifier/key rotation preserves historical equality through accepted retained authority or an equality-preserving migration before retirement;
-9. restored obsolete verifier/profile cannot become current authority for unrelated messages/scopes;
-10. crafted duplicate identities cannot generate unbounded comparison, KMS, secret-store or migration work.
+3. consumer path: required historical verifier backend temporarily unavailable while evidence/profile continuity remains intact -> `unavailable:reconciliation_blocked`, with no blind retry/effect eligibility;
+4. replay path: historical equality cannot currently be established by the required verifier, including verifier unavailability for that historical proof -> `recovery_continuity_blocked:reconciliation_blocked`, without redefining replay's generic base `unavailable` binding;
+5. evidence/profile/verifier-generation continuity missing, rolled back, retired without valid migration, mismatched or restored older -> `recovery_continuity_blocked:reconciliation_blocked`;
+6. comparison authority/profile is compromised/untrusted -> `compromised_or_untrusted:fail_closed`;
+7. low-entropy confidential content cannot be recovered or tested through ordinary plain-digest logs, exports or operator surfaces;
+8. equal semantic content under different trusted tenant/consumer/message scopes cannot be correlated or deduplicated through a global equality lookup;
+9. comparison-profile/canonicalization or verifier/key rotation preserves historical equality through accepted retained authority or an equality-preserving migration before retirement;
+10. restored obsolete verifier/profile cannot become current authority for unrelated messages/scopes;
+11. crafted duplicate identities cannot generate unbounded comparison, KMS, secret-store or migration work.
 
 Aggregate pass requires every applicable branch. Absence of implementation/runtime evidence is not a design failure, but omission of a branch from the Phase 11 evidence plan is a design-acceptance failure.
 
@@ -174,7 +184,7 @@ A change is at least `security_breaking` and/or `recovery_breaking`, with `capac
 - changes the canonical comparison surface/profile so historical equality may change;
 - weakens evidence confidentiality/domain separation or exposes cross-scope equality;
 - retires a historical verifier without retained verification or equality-preserving migration;
-- collapses temporary verifier outage and continuity loss into a retry/default that can widen eligibility;
+- collapses dependency availability, historical continuity and compromised-trust conditions into a retry/default that can widen eligibility;
 - changes unknown-equivalence handling into duplicate success or protected-effect eligibility;
 - changes recovery interpretation of retained evidence/profile/verifier generations;
 - materially changes comparison/KMS amplification or tenant isolation.

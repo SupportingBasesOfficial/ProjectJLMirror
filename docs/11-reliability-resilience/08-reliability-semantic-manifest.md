@@ -68,7 +68,7 @@ No required field may disappear. If a conditional subdimension has no applicable
 
 The canonical catalog MAY be normalized across multiple tables only when every table is keyed by the exact pair `reliability_profile_id` and `profile_version`. The join of those tables is one manifest record and SHALL materialize every required field exactly once for every key. `status` and applicable operation/contract/runtime-role classes SHALL be keyed profile data; document status or headings cannot supply them. Implicit defaults, narrative inheritance and unresolved policy references are forbidden. A named policy reference is valid only when its complete value is defined in the same accepted package and the profile row selects it explicitly.
 
-For ordinary profiles, the base logical records are materialized in `07-capability-resilience-profiles.md`. For the exact duplicate-sensitive/profile-verifier dimensions above, the complete record is the same-key normalized join of `07` plus `14-message-equivalence-reliability-continuity.md`; `14` does not redefine unrelated `07` fields.
+For ordinary profiles, the base logical records are materialized in `07-capability-resilience-profiles.md`. For the exact duplicate-sensitive/profile-verifier dimensions above, the complete record is the same-key normalized join of `07` plus `14-message-equivalence-reliability-continuity.md`; `14` does not redefine unrelated `07` fields and SHALL NOT create a second mode for a failure class already materialized by `07`.
 
 Deterministic derived fields are permitted only through the exact formulas defined in the normative Phase 11 catalog/normalized companions. `ALL-FAULT-VECTORS(profile_key)` SHALL include binding-, profile-, circuit- and cross-profile vectors, including mandatory `FV-ASYNC-003` equivalence-continuity branches from `14` for applicable profiles. `ALL-RELEASE-BLOCKERS(profile_key)` SHALL include the canonical blocker of every final vector. `ALL-OPEN-DECISIONS(profile_key)` SHALL include profile-specific and cross-profile OPENs plus `OPEN-REL-007` only through `CIRCUIT-OPEN(profile_key)` when the exact circuit selector has a non-empty applicable failure-class set. `evidence_requirements` SHALL cover the entire final vector set; a profile-specific seed list cannot replace these derived fields.
 
@@ -95,13 +95,15 @@ compromised_or_untrusted
 governance_blocked
 ```
 
-Message-equivalence verifier/profile problems do not create a new enum. For duplicate-sensitive effect/replay eligibility:
+Message-equivalence verifier/profile problems do not create a new enum. Their class is evaluated at the owning profile boundary:
 
-- a required historical verifier dependency that is temporarily unreachable while evidence/profile continuity remains intact is `unavailable` and maps to `reconciliation_blocked`;
-- missing, rolled-back, mismatched, uninterpretable or retired-without-valid-migration comparison evidence/profile/verifier-generation continuity is `recovery_continuity_blocked` and maps to `reconciliation_blocked`;
-- compromised/untrusted comparison authority is `compromised_or_untrusted` and maps to `fail_closed`.
+- `rel.secret-key-authority@1` retains its base `unavailable:capability_unavailable` for temporary key/verifier-service outage;
+- `rel.consumer-inbox-effect@1` maps a required historical verifier dependency temporarily unavailable while evidence/profile continuity remains intact to `unavailable:reconciliation_blocked`;
+- `rel.replay-consume-state@1` SHALL NOT redefine its base generic `unavailable:fail_closed`; inability to establish the required historical equality result, including historical-verifier unavailability for that proof, is `recovery_continuity_blocked:reconciliation_blocked` at the replay profile boundary;
+- missing, rolled-back, mismatched, uninterpretable or retired-without-valid-migration comparison evidence/profile/verifier-generation continuity is `recovery_continuity_blocked:reconciliation_blocked` for the affected duplicate-sensitive profile;
+- compromised/untrusted comparison authority is `compromised_or_untrusted:fail_closed`.
 
-Reachability restoration can clear only the `unavailable` condition after the same historical authority successfully proves equivalence; it does not by itself repair a continuity or trust defect.
+Reachability restoration can clear only the relevant temporary availability condition after the same historical authority successfully proves equivalence; it does not by itself repair a continuity or trust defect.
 
 ### Degradation modes
 
@@ -152,7 +154,8 @@ These are the single canonical evidence-level enums for the Phase 11 package and
 - A profile whose physical durability mechanism remains OPEN SHALL select mechanism-neutral circuit/evidence records; topology-specific broker, outbox, journal, stream or store vectors become mandatory only after the owning OPEN closes that mechanism.
 - Reliability admission and cost/budget classification SHALL inherit the exact accepted Phase 09/10 canonical interpretation. Unvalidated payload text, aliases, duplicate members, malformed encodings, caller-selected tenant/source fields, claimed operation names, or attacker-controlled cost hints SHALL NOT select a cheaper budget, another tenant scope, a privileged workload class, or broader admission authority. A conservative pre-validation claim may use only transport facts or already-trusted canonical metadata.
 - When final canonical interpretation resolves a different resource/cost class from a provisional claim, the implementation SHALL atomically acquire/adjust to the authoritative budget or reject before expensive/effectful continuation. Continuing under an underpriced provisional claim, maintaining two semantic parsers, or using budget classification as authorization is prohibited.
-- For `rel.consumer-inbox-effect@1` and duplicate-sensitive replay, a benign `duplicate` requires the trusted scoped identity plus proven equivalent immutable content under the accepted historical comparison profile. Temporary historical-verifier outage maps to `unavailable:reconciliation_blocked`; continuity loss maps to `recovery_continuity_blocked:reconciliation_blocked`; compromised comparison authority maps to `compromised_or_untrusted:fail_closed`.
+- For `rel.consumer-inbox-effect@1`, a benign `duplicate` requires the trusted scoped identity plus proven equivalent immutable content under the accepted historical comparison profile. Temporary required-verifier outage maps to `unavailable:reconciliation_blocked`; continuity loss maps to `recovery_continuity_blocked:reconciliation_blocked`; compromised comparison authority maps to `compromised_or_untrusted:fail_closed`.
+- For duplicate-sensitive `rel.replay-consume-state@1`, the base generic `unavailable:fail_closed` remains unchanged; historical-equivalence proof unavailable or continuity-defective maps through the companion to `recovery_continuity_blocked:reconciliation_blocked`, while compromised comparison authority maps to `compromised_or_untrusted:fail_closed`.
 - Message-equivalence comparison occurs only after trusted scoped identity derivation. Fingerprint/MAC/profile references SHALL NOT become authorization, routing, ordering, public identity, reverse lookup or cross-tenant/cross-consumer equality authority.
 - Comparison/profile/KMS/migration work is bounded and attributable under `OPEN-REL-022`; mechanism selection remains `OPEN-REL-016` where keyed verifier material is required; evidence horizon remains `OPEN-REL-025`.
 
@@ -174,7 +177,8 @@ Future conformance tooling SHALL reject:
 - failover without generation/fence and stale-writer rejection;
 - recovery without `(R,F]` continuity/resumption gate;
 - duplicate-sensitive effect/replay profile missing protected comparison evidence, stable comparison-profile/version, required historical verifier lifecycle or fail-closed unknown-equivalence behavior;
-- temporary verifier outage, continuity loss and compromised verifier trust collapsed into one permissive retry/default class;
+- temporary verifier outage, continuity loss and compromised verifier trust collapsed across profile boundaries into a conflicting or permissive retry/default class;
+- a normalized companion redefining an already-materialized base failure class to a second degradation mode;
 - duplicate classification based only on scoped identity when immutable semantic equality has not been proven;
 - low-entropy confidential comparison evidence exposed through unsafe plain-digest logging/export, or any unrestricted cross-scope fingerprint/equality oracle;
 - historical verifier/profile loss, retirement, rollback or mismatch becoming duplicate success, replay/effect eligibility or unrelated current authority;

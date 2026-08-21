@@ -10,7 +10,7 @@ This document defines how JLMIRROR produces, evaluates and preserves review and 
 
 It extends the Engineering Charter, Decision Policy, Document Governance and accepted post-Phase-10 roadmap. It does not weaken any accepted Product, Requirements, Security, Quality, ADR, System Design, Data Architecture, API, event-contract, reliability or recovery invariant.
 
-The goal is deterministic project-state awareness, reproducible exact-HEAD review, adversarial semantic validation, machine-assisted evidence, controlled correction and explicit human merge authorization.
+The goal is deterministic project-state awareness, reproducible exact-HEAD review, adversarial semantic validation, machine-assisted evidence, controlled correction and explicit user/operator merge authorization.
 
 ## Core law
 
@@ -71,7 +71,7 @@ In particular:
 - availability of an external reviewer does not permit bypassing deterministic repository-state checks, panoramic review or merge authorization;
 - a later valid external finding remains evidence that must be evaluated even if a prior native gate was clean.
 
-External review is therefore **additional independent evidence**, not the only path to assurance.
+External review is therefore **additional evidence**, not the only path to assurance. It is described as independent evidence only when review provenance actually demonstrates the relevant independence; use of a different service name, model endpoint or execution time does not by itself prove organizational, implementation or decision independence.
 
 ## Exact project-state law
 
@@ -194,11 +194,19 @@ A clean scanner result means only that the scanner did not report a covered find
 
 Security scanning therefore complements, rather than replaces, threat-model, contract, fault, recovery and adversarial review.
 
+## Mandatory validation companion
+
+`docs/00-foundation/review-and-assurance-validation.md` is the mandatory falsification and enforcement companion to this governance contract.
+
+The governance contract and its validation companion form one assurance authority package. A change SHALL NOT claim conformance to this governance while omitting, bypassing or silently weakening applicable validation vectors, automation privilege boundaries, evidence-integrity rules or acceptance blockers defined by that companion.
+
+Changes to either document require review of the other for semantic and coverage impact, even when only one file changes.
+
 ## Native Assurance Gate
 
 When a bounded change requires adversarial review, the JLMIRROR Native Assurance Gate SHALL be executable without reliance on a particular external AI/code-review service.
 
-The gate contains deterministic state verification plus independent review passes over the exact HEAD.
+The gate contains deterministic state verification plus deliberately separated adversarial review passes over the exact HEAD. Separation of passes improves falsification discipline but SHALL NOT be presented as external/organizational independence unless provenance proves that property.
 
 ### Pass 1 — Repository state and scope
 
@@ -399,7 +407,7 @@ When an external reviewer is unavailable because of quota, outage, latency, prod
 - execute the Native Assurance Gate on the exact HEAD;
 - preserve any previously discovered valid external findings;
 - block acceptance if the native gate identifies any unresolved material P0/P1/P2;
-- allow progression to `READY FOR MERGE` only when the required native gate and panoramic audit are clean and all other accepted prerequisites are satisfied;
+- allow progression to `READY_FOR_MERGE` only when the required native gate and panoramic audit are clean and all other accepted prerequisites are satisfied;
 - still require separate explicit merge authorization.
 
 If a later external review reports a valid material finding before merge, the change returns to hardening and the final gate restarts on the new HEAD.
@@ -463,7 +471,7 @@ The project SHALL NOT rely on auto-merge for normative gates.
 
 A merge-ready record identifies the exact reviewed HEAD.
 
-If HEAD changes between `READY FOR MERGE` and merge authorization, readiness is invalidated until the new exact HEAD satisfies the applicable gate.
+If HEAD changes between `READY_FOR_MERGE` and merge authorization, readiness is invalidated until the new exact HEAD satisfies the applicable gate.
 
 Where the merge API supports an expected-head condition, merge SHOULD be pinned to the reviewed HEAD.
 
@@ -575,7 +583,7 @@ This preserves the accepted roadmap principle that AI-assisted analysis is diagn
 
 Until this proposed governance is accepted, existing accepted repository authority remains unchanged.
 
-If accepted, this governance becomes the permanent assurance path for current and future normative work, including corrective upstream gates and Phases 11–15, without requiring any particular external reviewer to be available.
+If accepted, this governance and its mandatory validation companion become the permanent assurance path for current and future normative work, including corrective upstream gates and Phases 11–15, without requiring any particular external reviewer to be available.
 
 Existing valid findings discovered by previous reviewers remain valid evidence and SHALL NOT be discarded merely because the reviewing mechanism changes.
 
@@ -588,9 +596,11 @@ Fixed by this governance:
 - exact-HEAD review discipline;
 - repository-state-before-memory discipline;
 - tool/reviewer non-authority;
+- evidence-provenance discipline for any independence claim;
 - external-review non-dependency;
 - observer/blocker automation default;
 - no silent automated mutation;
+- mandatory assurance validation companion;
 - finding-to-property panoramic correction;
 - native multi-pass adversarial gate;
 - clean final HEAD requirement;

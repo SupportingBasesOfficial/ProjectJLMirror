@@ -128,6 +128,8 @@ These are the single canonical evidence-level enums for the Phase 11 package and
 - Every materialized `deadline_timeout_policy` selects `OPEN-REL-005` through the exact cross-profile OPEN join; numeric deadlines cannot come from framework, provider or runtime defaults.
 - A terminal trust or permanent-contract class SHALL NOT inherit ordinary circuit half-open probing or circuit-driven re-enablement. Any trust restoration is an independently authorized transition backed by accepted evidence.
 - A profile whose physical durability mechanism remains OPEN SHALL select mechanism-neutral circuit/evidence records; topology-specific broker, outbox, journal, stream or store vectors become mandatory only after the owning OPEN closes that mechanism.
+- Reliability admission and cost/budget classification SHALL inherit the exact accepted Phase 09/10 canonical interpretation. Unvalidated payload text, aliases, duplicate members, malformed encodings, caller-selected tenant/source fields, claimed operation names, or attacker-controlled cost hints SHALL NOT select a cheaper budget, another tenant scope, a privileged workload class, or broader admission authority. A conservative pre-validation claim may use only transport facts or already-trusted canonical metadata.
+- When final canonical interpretation resolves a different resource/cost class from a provisional claim, the implementation SHALL atomically acquire/adjust to the authoritative budget or reject before expensive/effectful continuation. Continuing under an underpriced provisional claim, maintaining two semantic parsers, or using budget classification as authorization is prohibited.
 
 Dangling references, unknown enums, missing owners, inapplicable OPEN inheritance or retry without safety mapping are conformance failures.
 
@@ -154,6 +156,8 @@ Future conformance tooling SHALL reject:
 - applicable non-empty circuit selector missing `OPEN-REL-007` from final `ALL-OPEN-DECISIONS`;
 - final OPEN reference that lacks registry owner/evidence/gate or contradicts profile applicability;
 - evidence with `blocker_disposition=waived`, an unknown disposition, an applicable blocker marked `no_applicable_case`, or a blocker marked `satisfied` without accepted attributable evidence;
+- admission/budget scope or cost class derived from non-canonical or untrusted structured payload semantics, parser aliases/duplicates, caller-controlled tenant/source/operation claims, or an alternate normalization path;
+- provisional pre-validation budget retained after canonical interpretation requires a different authoritative class, or expensive/effectful continuation before the authoritative claim is acquired;
 - vendor/topology name as canonical contract identity;
 - evidence claimed at a higher level than produced;
 - acknowledged customer observation without durable scoped identity/responsibility, or optional-loss behavior applied after durable acceptance;
@@ -161,6 +165,6 @@ Future conformance tooling SHALL reject:
 
 ## Change control
 
-Changes to manifest semantics, enums, retry eligibility, degradation behavior, authority/fence, retention/equivalence horizon, blocker-disposition semantics or resumption gates receive semantic compatibility review even when serialization shape is unchanged.
+Changes to manifest semantics, enums, retry eligibility, degradation behavior, admission/cost-class derivation, authority/fence, retention/equivalence horizon, blocker-disposition semantics or resumption gates receive semantic compatibility review even when serialization shape is unchanged.
 
 Generated artifacts are subordinate to the reviewed normative source. Tooling defaults cannot add a failure class, permissive fallback, blocker waiver or retry automatically.

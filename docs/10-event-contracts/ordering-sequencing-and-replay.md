@@ -194,7 +194,15 @@ Replay is not a generic mechanism to repeat irreversible business actions.
 
 When replay represents the **same historical logical message**, the original `message_id`, contract identity, occurrence time and trusted source scope are preserved.
 
-This allows normal inbox/effect safety to recognize that a production effect already happened.
+This allows normal inbox/effect safety to recognize that a production effect already happened, but identity alone is not enough for duplicate-sensitive replay: the consumer must still be able to prove that the replayed immutable semantic content is equivalent to the originally admitted message under the accepted historical comparison profile.
+
+Replay therefore preserves or makes available, for the supported duplicate-sensitive horizon:
+
+- message-content fingerprint/original/equivalent evidence;
+- the canonical comparison-profile/version required to interpret that evidence;
+- any non-secret historical verifier/key-generation references and narrowly authorized verifier authority required by the accepted evidence form.
+
+If historical equivalence cannot be proven because evidence, comparison profile or verifier authority is unavailable/retired/rolled back and no reviewed equality-preserving migration/equivalent authority exists, replay remains fail-closed/reconciliation-blocked for protected duplicate-sensitive effects. It SHALL NOT trust the repeated `message_id` alone or create a new effect simply because replay was operator initiated.
 
 If data is transformed into a new semantic message/command as a new business decision, it receives a new `message_id` and explicit causation link rather than masquerading as original redelivery.
 
@@ -230,6 +238,8 @@ It requires:
 
 A user cannot request arbitrary cross-tenant replay by submitting tenant/message IDs without trusted authorization.
 
+A replay operator's authorization does not grant authority to ignore missing historical equivalence evidence, use a fingerprint/MAC as a bearer capability, retrieve unrelated verifier material or query cross-tenant equality.
+
 ## Replay range
 
 Replay range is expressed in logical/source terms appropriate to the contract, such as:
@@ -255,18 +265,22 @@ Consumers/replay tooling may use:
 
 An upcaster must preserve historical semantic meaning. It cannot reinterpret an old fact as though newer fields/rules existed at occurrence time.
 
-The canonical historical evidence remains the original accepted message contract/data.
+For duplicate-sensitive replay, a reader/upcaster/canonicalizer also preserves the accepted historical comparison-profile semantics or participates in a reviewed equality-preserving evidence migration before the old profile/verifier authority is retired. A newer parser cannot silently recompute an old receipt under different equality rules.
+
+The canonical historical evidence remains the original accepted message contract/data plus the governed comparison authority required to prove equality where duplicate suppression is relied upon.
 
 ## Replay and retention
 
 The platform SHALL NOT promise replay farther back than it can safely retain:
 
 - message/event evidence;
-- schema/version definitions;
+- schema/version definitions and historical reader/upcaster semantics;
 - tenant/data-classification authorization;
-- consumer effect/dedup evidence required to prevent unsafe repetition.
+- consumer effect/dedup evidence required to prevent unsafe repetition;
+- message-content equivalence evidence required to reject same-ID conflicting immutable content;
+- comparison-profile/version and historical verifier authority required to interpret retained equivalence evidence.
 
-Retention windows remain evidence-driven OPEN decisions.
+Retaining an uninterpretable fingerprint/MAC is not safe replay retention. Retention windows and exact mechanisms remain evidence-driven OPEN decisions.
 
 ## Replay after restore/PITR
 
@@ -277,9 +291,11 @@ The system follows `(R,F]` recovery reconciliation rather than blindly replaying
 Rules:
 
 - missing restored inbox state does not mean old messages are safe to execute;
+- missing/older equivalence evidence or missing/mismatched historical comparison-profile/verifier authority does not mean an old scoped ID is a safe duplicate;
 - broker rewind does not authorize duplicate irreversible effect;
 - restored source generation cannot reactivate retired producer authority;
-- replay tooling reconciles stable operation/effect/audit evidence before enabling duplicate-sensitive execution;
+- restored obsolete comparison verifier/profile is not current authority for unrelated messages or scopes;
+- replay tooling reconciles stable operation/effect/audit/equivalence evidence and required historical comparison authority before enabling duplicate-sensitive execution;
 - projection-only rebuild may proceed in an isolated generation once its source evidence is trusted.
 
 ## Reordering around relocation
@@ -333,9 +349,10 @@ source generation mismatch
 replay job/range/progress
 projection rebuild generation
 quarantine/reconciliation
+historical comparison authority unavailable/profile-mismatch safe reason counts
 ```
 
-Payloads are not logged merely to diagnose ordering.
+Payloads, raw confidential comparison evidence and verifier material are not logged merely to diagnose ordering/replay.
 
 ## Required tests
 
@@ -349,8 +366,12 @@ Where applicable:
 - delayed historical fact from retired generation remains valid when contract says historical;
 - stale current-source command from retired generation cannot execute;
 - replay preserves original identity;
+- replay with the same scoped ID but conflicting immutable semantic content fails closed rather than being suppressed as a duplicate;
+- replay whose retained evidence exists but required historical comparison profile/verifier is unavailable remains reconciliation-blocked;
+- comparison-profile/canonicalization migration preserves historical equality before old authority retirement;
+- restored obsolete comparison verifier/profile cannot become current authority for unrelated messages;
 - projection rebuild uses isolated generation and cannot trigger irreversible production side effects;
-- old contract version can be replayed under retained reader/upcaster without semantic rewrite;
+- old contract version can be replayed under retained reader/upcaster without semantic rewrite or equivalence-profile drift;
 - restore/offset rewind cannot repeat protected effect.
 
 ## Intentionally OPEN
@@ -361,6 +382,7 @@ Where applicable:
 - replay retention duration;
 - rebuild tooling;
 - broker offset/checkpoint implementation;
-- source-generation encoding.
+- source-generation encoding;
+- exact comparison-profile representation, historical verifier/KMS backend and equality-preserving migration mechanism used by duplicate-sensitive replay.
 
-The scoped-ordering, identity/sequence separation and replay safety properties are fixed.
+The scoped-ordering, identity/sequence separation, confidentiality-safe historical message-equivalence verification and fail-closed replay safety properties are fixed.

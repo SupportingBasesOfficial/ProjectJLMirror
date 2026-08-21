@@ -25,6 +25,7 @@ Relevant evidence includes as applicable:
 - broker publication receipts/checkpoints;
 - consumer inbox/dedup receipts;
 - canonical message-content fingerprints/original/equivalence evidence needed to distinguish legitimate duplicate from conflicting scoped-ID reuse;
+- comparison-profile/version and historical verifier/key-generation authority needed to interpret retained equivalence evidence;
 - stable consumer effect/result identities;
 - process/job operation records;
 - provider/external operation acknowledgements;
@@ -42,7 +43,7 @@ Before effectful async admission resumes, the applicable recovery gate:
 
 1. establishes/validates recovery generation/fence state;
 2. identifies the `(R,F]` continuity interval;
-3. reconciles required reliability/effect/equivalence evidence;
+3. reconciles required reliability/effect/equivalence evidence **and the historical profile/verifier authority required to interpret it**;
 4. retires stale producer/consumer/replay/webhook-destination authority where continuity cannot be proven;
 5. releases only scopes whose correctness/security continuity is established.
 
@@ -65,9 +66,9 @@ If the authoritative business mutation itself is intentionally rolled back while
 
 ## Inbox recovery
 
-A restored inbox may lack a receipt for an effect that actually committed after `R`. It may also retain a receipt while losing the fingerprint/original/equivalence evidence required to prove what immutable message content that receipt represented.
+A restored inbox may lack a receipt for an effect that actually committed after `R`. It may also retain a receipt while losing the fingerprint/original/equivalence evidence required to prove what immutable message content that receipt represented, or retain evidence bytes while losing the historical comparison profile/verifier authority needed to interpret them.
 
-Missing/older receipt or missing/older content-equivalence evidence is recovery uncertainty.
+Missing/older receipt, missing/older content-equivalence evidence, or unavailable/mismatched historical comparison authority is recovery uncertainty.
 
 Before the same message becomes effect-eligible **or is classified as an ordinary duplicate**, recovery reconciles as applicable:
 
@@ -75,10 +76,12 @@ Before the same message becomes effect-eligible **or is classified as an ordinar
 - operation/result linkage;
 - provider/external acknowledgement;
 - original/canonical message-content fingerprint or equivalent immutable comparison evidence;
+- stable comparison-profile/version metadata;
+- non-secret verifier/key-generation references and the narrowly authorized historical verification authority required by the accepted evidence profile;
 - audit evidence;
 - other surviving inbox/outbox/process records.
 
-If effect outcome or message-content equivalence cannot be established, the message remains `reconciliation_required`/quarantined/fail-closed rather than executing again or being silently acknowledged as a benign duplicate.
+If effect outcome, message-content equivalence or the authority needed to prove historical equivalence cannot be established, the message remains `reconciliation_required`/quarantined/fail-closed rather than executing again or being silently acknowledged as a benign duplicate.
 
 A restored consumer SHALL NOT interpret:
 
@@ -86,15 +89,23 @@ A restored consumer SHALL NOT interpret:
 same scoped message_id + missing comparison evidence
 ```
 
+or:
+
+```text
+same scoped message_id + retained evidence + unavailable/unknown historical verifier/profile
+```
+
 as proof that the arriving content is equivalent to the originally processed message.
 
 If surviving evidence proves the same scoped ID is now associated with different immutable contract content, recovery records an integrity/producer-contract failure; it does not overwrite the historical receipt or select first/last payload by arrival order.
+
+A verifier/profile restored from an older point is not automatically current authority for unrelated receipts or new messages. Historical verifier access is scoped to the evidence/profile generation that requires it and remains behind the accepted secret/KMS authority.
 
 ## Broker offset/checkpoint recovery
 
 Broker offsets/checkpoints are transport progress, not business-effect truth.
 
-Moving an offset backward may redeliver messages. This is safe only because consumer effect completion is independently duplicate-safe **and repeated scoped IDs can still be checked for immutable-content equivalence**.
+Moving an offset backward may redeliver messages. This is safe only because consumer effect completion is independently duplicate-safe **and repeated scoped IDs can still be checked for immutable-content equivalence under the correct historical comparison authority**.
 
 Moving an offset forward must not skip messages for which the consumer has not reached its durable responsibility boundary.
 
@@ -185,9 +196,10 @@ A restore must not:
 - redirect replay to production side-effect consumers that were not originally targeted;
 - forget that a privileged replay was cancelled/disabled;
 - lose audit scope/range evidence;
-- restore message identity without the equivalence evidence needed to detect conflicting immutable-content reuse.
+- restore message identity without the equivalence evidence needed to detect conflicting immutable-content reuse;
+- restore equivalence evidence without the historical comparison profile/verifier authority needed to interpret it safely.
 
-Replay resumes only after current operator/service authority, target generation/process state and required content-equivalence evidence are re-established.
+Replay resumes only after current operator/service authority, target generation/process state, required content-equivalence evidence and its required historical comparison authority are re-established.
 
 ## Retention classes
 
@@ -199,6 +211,7 @@ Contracts classify retained evidence such as:
 message publication evidence
 consumer dedup/effect evidence
 message-content fingerprint/original/equivalence evidence
+comparison-profile/version + non-secret historical verifier references
 process/operation state
 quarantine evidence
 replay source/history
@@ -220,9 +233,11 @@ Dedup/idempotency evidence remains available for at least the period in which:
 
 For any consumer that classifies a repeated scoped `message_id` as a duplicate, correctness evidence also retains enough canonical fingerprint/original/equivalent authority to prove that the repeated immutable semantic content matches the originally admitted message throughout that same supported horizon.
 
+When the accepted comparison form depends on a historical canonicalization/profile/verifier generation, either that authority remains available for the same horizon or a governed migration proves equivalent historical comparison before retirement. Retaining an uninterpretable MAC/fingerprint is not sufficient correctness retention.
+
 A broker retention window longer than inbox correctness/equivalence evidence can create unsafe historical re-execution **or silent suppression of conflicting content** unless replay/consumer contracts explicitly handle it.
 
-Therefore replay support, dedup retention and message-content equivalence retention are designed together.
+Therefore replay support, dedup retention, message-content equivalence retention and historical comparison-authority retention/migration are designed together.
 
 For outbound webhooks, the supported retry/recovery horizon also retains enough immutable delivery-obligation and destination-generation/fence evidence to prove what bytes/semantics and disclosure authority a stable delivery ID represents. Expiring that evidence while the same ID may still be retried is prohibited.
 
@@ -255,6 +270,8 @@ Erasure does not permit rewriting historical audit evidence into a false stateme
 The implementation may separate immutable minimal evidence from deletable payload material.
 
 If full message payload is erased while a scoped `message_id` can still legitimately redeliver/replay, a safe surviving fingerprint/tombstone/equivalence authority must remain sufficient to reject conflicting immutable-content reuse without retaining unnecessary confidential payload bytes.
+
+Where policy also removes the last historical verifier/profile authority required to interpret that evidence, the old identity/replay path ceases to be effect-eligible or remains fail-closed; erasure does not manufacture equality.
 
 For a webhook delivery whose full payload may be erased, any surviving dedup/recovery identity/tombstone must still prevent an old stable delivery ID from being reconstructed later with different semantics or disclosure authority.
 
@@ -291,7 +308,7 @@ Reconciliation may compare:
 - provider authoritative state;
 - domain resource/process state;
 - payment/external operation identity;
-- retained message-content fingerprint/original/equivalence evidence;
+- retained message-content fingerprint/original/equivalence evidence plus its accepted historical comparison profile/verifier authority;
 - webhook delivery/generation/disclosure evidence;
 - audit/receipt evidence;
 - source system sequence/state.
@@ -322,7 +339,8 @@ After restore:
 - stale producer generations remain retired;
 - retired/revoked webhook destination generations remain fenced until continuity proves otherwise;
 - realtime subscriptions/capabilities follow current authority/replay epoch;
-- replay/admin actions require current authorization.
+- replay/admin actions require current authorization;
+- an old comparison verifier/profile is used only for the historical evidence generation that requires it and never becomes tenant/producer/effect authority merely because it was restored.
 
 ## Recovery and topology change
 
@@ -347,7 +365,10 @@ Recovery tests include:
 - restore before inbox completion while local/external effect survives;
 - restore/partial loss of message-content equivalence evidence while same scoped ID redelivers with identical content;
 - restore/partial loss of message-content equivalence evidence while same scoped ID redelivers with conflicting immutable content and consumer fails closed;
-- broker offset rewind with completed inbox effects;
+- equivalence evidence survives but its historical comparison profile/verifier authority is missing and duplicate/effect admission remains blocked;
+- restore predates comparison-profile/key rotation while surviving evidence requires a later historical verifier generation;
+- restored obsolete verifier/profile cannot become authority for unrelated messages;
+- broker offset rewound after completed inbox effects;
 - source generation retired after `R` but restore predates retirement;
 - process state restored before external provider success;
 - realtime resume/replay state lost -> resync/fail closed, not assumed continuity;
@@ -368,6 +389,8 @@ Release/recovery is blocked if:
 - same committed fact is recovered with a new semantic message identity causing duplicate effect;
 - same scoped message identity can be considered a benign duplicate without durable evidence sufficient to compare immutable semantic content;
 - content-equivalence evidence can be lost/expired/erased while the same scoped ID remains supported for redelivery/replay/recovery;
+- retained comparison evidence is unusable because its historical comparison profile/verifier authority was lost/retired/rolled back, yet duplicate/effect admission continues;
+- restored obsolete comparison verifier/profile can be treated as current authority for unrelated messages or scopes;
 - offset/checkpoint is the only evidence of completed consumer work;
 - old producer generation can regain current-source authority;
 - unresolved external ambiguity ages/expires into retry eligibility;
@@ -388,9 +411,9 @@ Release/recovery is blocked if:
 - reconciliation tooling;
 - legal-hold storage mechanism;
 - quarantine retention values;
-- exact canonical fingerprint/hash algorithm and storage representation, subject to accepted collision/security properties;
+- exact canonical fingerprint/hash/MAC algorithm, comparison-profile encoding, historical verifier/KMS backend and storage representation, subject to accepted collision/confidentiality/oracle/lifecycle properties;
 - exact storage representation for webhook semantic snapshots and destination-configuration generations;
 - exact Product-specific cancel/quarantine/reissue policy for retired webhook generations;
 - exact RPO/RTO/SLO values.
 
-The `(R,F]` continuity, fail-closed ambiguity, durable message-content equivalence, immutable webhook-delivery meaning/destination-generation continuity and reliability-evidence preservation properties are fixed.
+The `(R,F]` continuity, fail-closed ambiguity, durable and historically verifiable message-content equivalence, immutable webhook-delivery meaning/destination-generation continuity and reliability-evidence preservation properties are fixed.

@@ -61,6 +61,8 @@ tenant_scope_policy
 message_identity_policy
 message_identity_scope_policy
 message_content_equivalence_policy
+message_content_equivalence_evidence_security_policy
+message_content_equivalence_verifier_lifecycle_policy
 producer_generation_policy
 subject_identity_policy
 payload_schema_profile
@@ -98,6 +100,10 @@ deprecation_state
 
 `message_content_equivalence_policy` defines which immutable contract/envelope/payload semantics are covered by the retained fingerprint/original/equivalent comparison authority, how long that evidence survives, and what fail-closed behavior applies when the same trusted scoped `message_id` arrives with mismatching or unavailable comparison evidence.
 
+`message_content_equivalence_evidence_security_policy` declares how derived comparison evidence inherits source-data classification/confidentiality risk, whether low-entropy content requires a protected/keyed comparison form, how trusted scope/domain separation prevents cross-tenant/cross-consumer equality or correlation oracles, what logging/quarantine/export restrictions apply, and what resource bounds prevent comparison/KMS amplification.
+
+`message_content_equivalence_verifier_lifecycle_policy` declares the stable canonical comparison-profile/version, any non-secret verifier/key-generation reference required for historical validation, key/profile rotation and migration behavior, recovery handling when evidence or historical verifier authority is unavailable, and the rule that unknown historical equivalence remains fail-closed/reconciliation-blocked rather than becoming duplicate success or new-effect eligibility.
+
 For an outbound webhook contract, the manifest must make it impossible for the same `webhook_delivery_id` to change external semantic meaning or disclosure destination silently. It therefore records whether delivery identity is globally unique or explicitly scoped, what immutable semantic snapshot/reproduction authority backs retries, which destination configuration generation is bound to the obligation, how generation changes cancel/quarantine/reissue work, and which authentication metadata is attempt-scoped.
 
 ## Consumer manifest
@@ -110,6 +116,8 @@ accepted_contract_name/version range
 trusted message_identity_scope derivation
 message-content fingerprint/original/equivalence evidence profile
 message-content equivalence retention/recovery horizon
+comparison-evidence confidentiality/anti-oracle profile
+comparison-profile/version and historical verifier lifecycle
 effect owner/effect class
 inbox/idempotency mechanism
 local transaction or cross-authority completion profile
@@ -123,6 +131,8 @@ retry/quarantine policy
 A broker subscription/group alone is not a complete consumer contract.
 
 A duplicate-sensitive consumer cannot declare normal duplicate behavior without also declaring how it proves that a repeated scoped `message_id` still carries the same immutable logical message semantics after payload minimization, redelivery, replay and restore/PITR.
+
+When the comparison mechanism depends on protected/keyed verifier material, the consumer contract also declares how historical verifier/profile authority remains available or how the consumer fails closed while it is unavailable. A verifier/profile reference is never tenant, producer, authorization, routing, ordering or bearer authority.
 
 ## Contract versioning model
 
@@ -149,6 +159,10 @@ Breaking changes include more than schema deletion. Examples:
 - weakening/changing message identity namespace;
 - weakening/changing message-content equivalence coverage so scoped ID reuse with changed immutable meaning can be suppressed as a duplicate;
 - shortening/removing fingerprint/original/equivalence evidence while the same scoped IDs remain redeliverable/replayable/recoverable;
+- changing comparison canonicalization/profile so historical equality may produce a different answer without an equivalence-preserving migration;
+- weakening evidence confidentiality/domain-separation/anti-oracle policy so protected source values or cross-scope equality become observable;
+- retiring/rotating historical verifier authority without preserving verification or safely fencing affected duplicate-sensitive identities;
+- changing verifier/profile recovery so missing or rolled-back authority becomes ordinary duplicate success or effect eligibility;
 - changing fact into command semantics;
 - changing at-least-once duplicate behavior in a way old consumers cannot safely handle;
 - adding a new required ordering guarantee old producers cannot satisfy;
@@ -244,6 +258,8 @@ Upcasters/adapters may transform representation for current code, but must prese
 
 For duplicate-sensitive consumers, any canonical fingerprint/equivalence transformation across supported historical versions must be deterministic and preserve the original message's immutable semantic identity; a new reader/upcaster cannot cause the same original scoped `message_id` to compare against a different meaning silently.
 
+If a historical comparison profile or verifier generation is retired, a reviewed migration proves that retained receipts preserve the same equality result before the old authority is removed. Otherwise the affected identities remain supported only in a fail-closed/reconciliation-blocked state.
+
 ## Upcasting
 
 An upcaster is allowed only when:
@@ -254,6 +270,7 @@ An upcaster is allowed only when:
 - does not fabricate a historical fact that was not represented by the source message;
 - preserves tenant/source/message identity and occurrence semantics as required;
 - preserves or deterministically maps the message-content equivalence evidence required by duplicate-sensitive consumers;
+- preserves the accepted historical comparison-profile/verifier semantics or triggers a governed equivalence-preserving migration;
 - does not bypass data-classification/erasure restrictions.
 
 Upcasting code/version is part of supported replay compatibility evidence.
@@ -379,6 +396,8 @@ Tenant/global scope:
 Message identity policy:
 Trusted message identity scope:
 Message-content equivalence/fingerprint policy:
+Message-equivalence evidence confidentiality/anti-oracle policy:
+Message-equivalence comparison-profile/verifier lifecycle:
 Producer/source generation policy:
 Subject identity:
 ```
@@ -419,7 +438,10 @@ Consumer contract(s):
 Inbox/idempotency/effect mechanism:
 Message-content comparison authority:
 Comparison-evidence retention/recovery horizon:
+Comparison evidence classification/domain-separation/logging policy:
+Historical comparison-profile/verifier authority:
 Same-ID/different-content failure behavior:
+Behavior when historical verifier/profile is unavailable:
 Local vs cross-authority completion:
 External ambiguity/reconciliation:
 Current placement:
@@ -441,6 +463,7 @@ Projection rebuild behavior:
 ```text
 Dedup retention/recovery horizon:
 Message-content equivalence retention/recovery horizon:
+Comparison-profile/verifier recovery continuity:
 (R,F] continuity evidence:
 Restore/PITR behavior:
 Schema/history retention:
@@ -481,6 +504,7 @@ Review compares:
 - producer/consumer ownership;
 - tenant/security/data classification;
 - message identity scope and message-content equivalence/fingerprint policy;
+- equivalence-evidence confidentiality/anti-oracle behavior and comparison-profile/verifier lifecycle;
 - delivery/ack/retry/quarantine;
 - inbox/effect completion;
 - ordering/replay;
@@ -498,7 +522,10 @@ The following trigger security/correctness review even if payload schema is unch
 - message identity scope;
 - message-content equivalence/fingerprint coverage;
 - message-content comparison-evidence retention/recovery horizon;
+- message-equivalence evidence confidentiality/domain-separation/anti-oracle behavior;
+- message-equivalence canonical comparison-profile/version or historical verifier/key-generation lifecycle;
 - same-ID/different-content mismatch handling;
+- behavior when comparison evidence/profile/verifier authority is unavailable or restored older;
 - producer generation policy;
 - consumer inbox/idempotency policy;
 - ack durable boundary;
@@ -527,6 +554,11 @@ CI/release tooling SHOULD eventually provide:
 - duplicate/alias parser tests;
 - same-scoped-message-ID equivalent-content and conflicting-content tests;
 - payload-minimization plus retained-equivalence-evidence tests;
+- low-entropy comparison-evidence confidentiality tests;
+- cross-scope equality/correlation-oracle negative tests;
+- comparison canonicalization/profile migration tests;
+- historical verifier/key-profile rotation, loss and recovery tests;
+- bounded comparison/KMS/secret-store amplification tests;
 - restore/PITR content-equivalence continuity tests;
 - old/new producer-consumer fixture tests;
 - envelope authority tests;
@@ -551,6 +583,7 @@ A contract/version is retired only when:
 - no supported consumer requires it;
 - retained replay history is either still readable through retained reader/upcaster or no longer supported/retained under accepted policy;
 - duplicate-sensitive consumers no longer require retained message-content equivalence evidence for the version/identity horizon, or an equivalent migration authority exists;
+- any historical comparison-profile/verifier authority required for still-supported duplicate/replay/recovery semantics has either been retained or migrated with equality-preserving evidence;
 - realtime/webhook external subscribers have completed required migration where applicable;
 - observability proves retirement eligibility;
 - removal does not break recovery/legal/audit requirements.
@@ -562,6 +595,8 @@ Removing an event field/version does not retroactively remove it from historical
 Consumers/replay tools must still be able to interpret supported history according to retention policy.
 
 A field/reader used to calculate canonical equivalence for retained duplicate-sensitive IDs cannot be removed until retained evidence has been safely migrated or the associated redelivery/replay/recovery horizon has ended.
+
+A comparison profile or verifier generation required to interpret retained evidence cannot be removed merely because the current deployment no longer emits it; retirement must preserve historical equality semantics or fence the affected identities from duplicate/effect admission.
 
 ## No accidental topology contracts
 
@@ -582,7 +617,11 @@ Compatibility tests reject contracts that expose or depend on:
 - same scoped `message_id` with equivalent immutable content remains a legitimate duplicate across rolling producer/consumer versions;
 - same scoped `message_id` with changed immutable content is detected as integrity failure, including after full payload minimization when only retained fingerprint/equivalence evidence remains;
 - semantic-manifest diff detects weakening/removal of message-content equivalence coverage or retention while IDs remain replayable/redeliverable;
-- restore/PITR loss of comparison evidence does not downgrade conflicting reuse to normal duplicate success;
+- semantic-manifest diff detects weakening of equivalence-evidence confidentiality/anti-oracle policy or historical verifier/profile lifecycle even when message schema and ID scope are unchanged;
+- low-entropy confidential comparison evidence cannot be turned into an offline dictionary/logging oracle by an implementation change;
+- comparison profile/canonicalization migration preserves historical equality result before old profile retirement;
+- historical verifier/key-profile loss or retirement blocks/reconciles affected duplicate-sensitive identities rather than converting unknown equivalence to duplicate success;
+- restore/PITR loss of comparison evidence or verifier/profile authority does not downgrade conflicting reuse to normal duplicate success;
 - unsupported version quarantines rather than guesses;
 - historical upcast preserves message/tenant/occurrence meaning and equivalence evidence;
 - schema registry cannot be poisoned by untrusted message schema URL;
@@ -604,8 +643,8 @@ Compatibility tests reject contracts that expose or depend on:
 - catalog UI/product;
 - deprecation duration values;
 - exact dual-publish mechanics;
-- exact canonical fingerprint/hash algorithm and storage representation, subject to accepted collision/security properties;
+- exact canonical fingerprint/hash/MAC algorithm, domain-separation encoding, verifier/KMS backend and storage representation, subject to accepted collision/confidentiality/oracle/lifecycle properties;
 - exact storage representation for webhook immutable semantic snapshots and destination generations;
 - exact Product-specific cancel/quarantine/reissue choice for a retired webhook destination generation.
 
-The semantic-manifest completeness, durable message-content equivalence, historical meaning, compatibility and governance properties are fixed.
+The semantic-manifest completeness, durable and confidentiality-safe message-content equivalence, historical verifier/profile continuity, historical meaning, compatibility and governance properties are fixed.

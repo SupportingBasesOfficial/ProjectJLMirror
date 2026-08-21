@@ -18,6 +18,7 @@ The matrix must be satisfied by contract/profile where applicable. `N/A` require
 | Tenant/global scope | explicit tenant/global policy | tenant isolation tests | payload can forge/override tenant or missing tenant treated as global |
 | Message identity | stable message ID and trusted identity scope | redelivery/collision tests | same logical message gets new ID on ordinary retry or cross-source IDs collide |
 | Message content equivalence | canonical immutable-content fingerprint/original/equivalent comparison authority retained for supported dedup/recovery horizon | same-ID equivalent/mismatch/minimization/PITR tests | same scoped ID with changed immutable meaning can be silently suppressed as a normal duplicate or comparison evidence expires while the ID remains replayable/redeliverable |
+| Message-equivalence evidence security | comparison evidence uses the accepted canonical semantic profile, inherits source-data confidentiality risk, is scoped only after trusted consumer/message identity, and preserves historical verifier/profile authority or fails closed | low-entropy digest, cross-scope oracle, profile migration, key rotation/retirement, verifier-loss, restore and bounded-KMS/equality tests | evidence leaks confidential values/correlation, becomes an authority, historical equality cannot be proven yet duplicate/effect admission continues, or verifier/profile loss/rollback silently changes equivalence semantics |
 | Envelope integrity | canonical bounded message profile | parser/duplicate/size tests | different parsers derive different protected envelope meaning |
 | Payload schema | required/optional fields, bounds, enum policy | machine schema + fixtures | malformed/oversized payload reaches protected effect |
 | Data classification | classification and secret policy | lint/redaction/log tests | credentials/secrets in ordinary payload/log/quarantine |
@@ -91,6 +92,13 @@ Expected invariant: one committed logical fact keeps one stable message identity
 - same trusted scoped message ID with changed contract version, trusted immutable scope/subject semantics or canonical payload fails closed as integrity/producer-contract failure;
 - original payload is minimized/erased but retained fingerprint/equivalence evidence still detects conflicting reuse;
 - comparison fingerprint/evidence is lost or rolled back while the same scoped ID can still redeliver/replay, and the consumer fails closed rather than declaring a safe duplicate;
+- low-entropy confidential immutable content does not become recoverable through ordinary plain-digest logs, diagnostics, quarantine views or externally visible identifiers;
+- identical semantic content under different trusted tenant/consumer/message-identity scopes cannot be correlated or deduplicated through an unrestricted fingerprint/equality lookup;
+- canonicalization/comparison-profile upgrade preserves historical equality semantics or the affected identities remain fail-closed until an equivalence-preserving migration completes;
+- keyed/authenticated comparison evidence remains verifiable across accepted key/profile rotation, or old duplicate-sensitive identities remain fail-closed when historical verifier authority is unavailable/retired;
+- restore to before key/profile rotation does not resurrect obsolete verifier authority for unrelated messages;
+- historical verifier/profile loss or outage never changes unknown equivalence into normal duplicate success or protected-effect eligibility;
+- repeated crafted duplicate IDs cannot force unbounded KMS/secret-store/comparison work or expose an equality oracle;
 - crash after receipt admission before effect;
 - crash during local effect before transaction commit;
 - crash after atomic local commit before broker acknowledgement;
@@ -98,7 +106,7 @@ Expected invariant: one committed logical fact keeps one stable message identity
 - provider timeout after effect may have committed;
 - worker lease expires while original executor may still be active.
 
-Expected invariant: no lost completed effect, no duplicate protected logical effect and no silent suppression of conflicting immutable content under an already-used scoped message identity.
+Expected invariant: no lost completed effect, no duplicate protected logical effect, no silent suppression of conflicting immutable content, and no confidentiality/authority regression caused by the evidence used to prove equivalence.
 
 ### Delayed-authority vectors
 
@@ -132,6 +140,7 @@ Expected invariant: delayed message does not preserve stale authority or placeme
 - stale current-source command is rejected;
 - replay preserves original message identity;
 - replay of same ID with content differing from retained immutable-equivalence evidence is rejected/quarantined;
+- replay requiring a retired/unavailable historical comparison verifier remains blocked/reconciliation-required rather than trusting identity alone;
 - projection rebuild uses isolated generation;
 - replay cannot invoke irreversible production side effect twice.
 
@@ -139,6 +148,8 @@ Expected invariant: delayed message does not preserve stale authority or placeme
 
 - inbox state restored before surviving business/provider effect;
 - message-content fingerprint/equivalence evidence restored older than surviving/redelivered message content;
+- comparison evidence bytes survive but the historical canonicalization/profile/verifier authority needed to interpret them is missing or older;
+- restore predates comparison key/profile rotation while post-restore evidence references the newer historical verifier generation;
 - outbox state restored before surviving broker publication;
 - broker offset rewound after completed effects;
 - old producer generation restored as apparently current;
@@ -147,7 +158,7 @@ Expected invariant: delayed message does not preserve stale authority or placeme
 - old schema/version required after restore/replay;
 - revoked authorization/security generation predates restore point.
 
-Expected invariant: recovery uncertainty blocks unsafe effectful admission and unsafe duplicate classification until `(R,F]` reconciliation proves eligibility and message-content equivalence.
+Expected invariant: recovery uncertainty blocks unsafe effectful admission and unsafe duplicate classification until `(R,F]` reconciliation proves eligibility, message-content equivalence and the authority needed to interpret historical comparison evidence.
 
 ### Realtime vectors
 
@@ -197,6 +208,8 @@ producer authority
 tenant scope
 message identity/scope
 message-content equivalence/fingerprint policy
+message-equivalence evidence confidentiality/oracle policy
+message-equivalence comparison-profile/verifier lifecycle policy
 producer generation
 payload field semantics/data classification
 outbox publication boundary
@@ -233,6 +246,8 @@ All structured message profiles test:
 - active XML/external resolution disabled where any XML profile exists;
 - dangerous polymorphic deserialization/code-loading disabled.
 
+Message-equivalence comparison additionally uses the accepted canonical structured interpretation/profile; an implementation cannot hash one parser representation while protected contract validation uses another semantic interpretation.
+
 ## Release blockers
 
 Phase 10 implementation/release is blocked if any applicable condition exists:
@@ -243,6 +258,11 @@ Phase 10 implementation/release is blocked if any applicable condition exists:
 - producer/payload can forge another tenant/contract namespace;
 - same trusted scoped `message_id` with changed immutable content can be acknowledged/suppressed as a normal duplicate;
 - message-content equivalence fingerprint/original/equivalent evidence can expire, be erased or be lost in recovery while the same scoped ID remains legitimately redeliverable/replayable and duplicate classification still proceeds;
+- message-equivalence evidence can expose low-entropy confidential content, provide unrestricted cross-tenant/cross-consumer equality/correlation, or be logged/exported as harmless metadata contrary to classification;
+- equivalence comparison can proceed under a different/unversioned canonicalization profile from protected contract validation;
+- historical comparison profile/verifier authority can be lost, retired or rolled back while affected identities continue duplicate/effect admission without fail-closed reconciliation;
+- a comparison fingerprint/MAC/profile reference can be used as authorization, routing, ordering authority, external identity or bearer capability;
+- crafted duplicate/equality requests can create unbounded KMS/secret-store/comparison work or an unrestricted oracle;
 - consumer acks before durable responsibility;
 - inbox/dedup is read-then-write or crash-inconsistent for protected effects;
 - ambiguous external effect becomes blind retry;

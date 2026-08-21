@@ -19,18 +19,24 @@ This document defines behavior when demand exceeds safe capacity. It prevents ov
 
 ## Admission order
 
-Where applicable, work is admitted in this order:
+Admission inherits the canonical parsing/authentication boundaries already accepted in Phase 09 and Phase 10. Reliability controls SHALL NOT introduce a second parser, alternate normalization, or body-field interpretation that can disagree with the owning request/message contract.
 
-1. canonical transport/message bounds;
-2. authentication/trusted producer validation;
-3. logical tenant and current placement/admission checks;
-4. operation/workload/tenant cost class;
-5. concurrency/rate/backlog budget claim;
-6. canonical request/message validation;
-7. owning authorization/policy;
-8. durable/effectful execution.
+Where applicable, admission is staged as follows:
 
-Cheap safe rejection may precede expensive checks, but no early step may reveal protected existence or transform untrusted scope into authority.
+1. enforce canonical transport/framing/raw-byte and parser-complexity bounds that can be established without trusting semantic payload fields;
+2. perform the exact upstream authentication/trusted-producer step at the representation required by that contract (including exact-raw authentication only where the accepted ingress profile requires it);
+3. establish the canonical request/message envelope and structured interpretation required before protected semantic fields are consumed;
+4. establish logical tenant and current placement/admission from trusted authority;
+5. derive operation/workload/tenant cost class only from trusted canonical fields and accepted server-side contract metadata;
+6. claim concurrency/rate/backlog budget for the resulting authoritative scope/cost class;
+7. complete owning schema/contract validation and authorization/policy checks required before effect, preserving the same canonical interpretation;
+8. execute durable/effectful work only after all required authority and budget gates pass.
+
+A cheap pre-validation throttle MAY run before full semantic parsing, but it may use only transport facts or already-trusted canonical metadata and SHALL use a conservative class when the final cost/scope is not yet established. Unvalidated payload text, aliases, duplicate members, malformed encodings, caller-selected tenant/source fields, claimed operation names or attacker-controlled cost hints SHALL NOT select a cheaper budget, different tenant bucket, privileged workload class or wider admission scope.
+
+If final canonical validation changes the applicable resource class, the implementation atomically acquires/adjusts to the correct budget before expensive/effectful continuation or rejects; it does not continue under an underpriced provisional claim. Budget adjustment cannot leak protected resource existence or become authorization.
+
+Cheap safe rejection may precede expensive checks, but no early step may reveal protected existence, transform untrusted scope into authority, or create a semantic interpretation different from the owning Phase 09/10 contract.
 
 ## Overload states
 
@@ -194,8 +200,10 @@ After restore/PITR:
 - telemetry plane outage approaches buffer bounds;
 - recovery reconciliation spans many tenants in one cell;
 - large report/export output reaches storage/worker limits;
-- provider throttle affects many tenants simultaneously.
+- provider throttle affects many tenants simultaneously;
+- malformed/duplicate/alias payload fields attempt to select a cheaper cost class, different tenant budget or privileged workload class before canonical validation and are rejected/bounded without changing trusted scope;
+- a conservative pre-validation claim is refined to a more expensive canonical cost class and the implementation acquires the correct budget or rejects before effect rather than continuing under the cheaper provisional claim.
 
 ## Release blockers
 
-Release is blocked by any unbounded accepted backlog/buffer/retry population, any path where one tenant/destination can exhaust unrelated capacity, any overflow rule that loses required evidence, any replay/recovery path that starves current correctness/security authority, or any brownout that weakens an invariant.
+Release is blocked by any unbounded accepted backlog/buffer/retry population, any path where one tenant/destination can exhaust unrelated capacity, any overflow rule that loses required evidence, any replay/recovery path that starves current correctness/security authority, any pre-validation cost/scope derivation that lets untrusted payload semantics choose a cheaper or different admission bucket, or any brownout that weakens an invariant.

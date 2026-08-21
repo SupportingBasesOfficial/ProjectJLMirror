@@ -108,7 +108,7 @@ These are the single canonical evidence-level enums for the Phase 11 package and
 ## Referential rules
 
 - Each capability/dependency map row references at least one manifest profile.
-- Each failure class maps to one allowed mode and fault vector.
+- Each failure-class binding maps to exactly one allowed mode and at least one fault vector for every materialized operation state. If an accepted boundary changes the mode, the profile SHALL name a closed, machine-evaluable state selector and one exact mode for every selector value; prose conditions or implementation-local state are invalid.
 - Each retryable class maps to stable identity, safety mechanism and aggregate budget.
 - Every retry policy materializes attempts, elapsed time, concurrency, queued count, bytes and attributable cost; it also records speculation and redrive as bounded or as `no_applicable_case` with a condition. Bare `OPEN` aliases are invalid: every unresolved numeric/backoff/jitter value names its exact `OPEN-REL-*` owner.
 - Every circuit policy uses only canonical failure-class/degradation enums, and each selecting profile materializes exact counted classes, exclusion of every other class, open mapping and fallback authority. Conditional prose such as “as applicable” is invalid.
@@ -121,6 +121,7 @@ These are the single canonical evidence-level enums for the Phase 11 package and
 - Each profile key materializes `status` and exact applicable operation/contract/runtime-role classes.
 - Each final fault vector is present in all four evidence levels and contributes its canonical blocker to the final release-blocker set.
 - Optional operational telemetry, durably accepted customer observations and mandatory audit use distinct profile keys; no loss, shedding or fallback rule may cross an acceptance boundary by data-plane naming alone.
+- For durably accepted customer observations, `acceptance_state` has exactly `not_durably_accepted` and `durably_accepted`, derived from the canonical durable-acceptance record for the same scoped identity. Saturation before acceptance maps to `shed_or_reject` without acknowledgement; saturation after acceptance maps to `queued_or_deferred` for the bounded projection obligation and cannot discard or reject accepted work.
 - A terminal trust or permanent-contract class SHALL NOT inherit ordinary circuit half-open probing or circuit-driven re-enablement. Any trust restoration is an independently authorized transition backed by accepted evidence.
 - A profile whose physical durability mechanism remains OPEN SHALL select mechanism-neutral circuit/evidence records; topology-specific broker, outbox, journal, stream or store vectors become mandatory only after the owning OPEN closes that mechanism.
 

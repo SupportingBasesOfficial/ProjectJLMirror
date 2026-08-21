@@ -111,7 +111,7 @@ These are the single canonical evidence-level enums for the Phase 11 package and
 - Each failure-class binding maps to exactly one allowed mode and at least one fault vector for every materialized operation state. If an accepted boundary changes the mode, the profile SHALL name a closed, machine-evaluable state selector and one exact mode for every selector value; prose conditions or implementation-local state are invalid.
 - Each retryable class maps to stable identity, safety mechanism and aggregate budget.
 - Every retry policy materializes attempts, elapsed time, concurrency, queued count, bytes and attributable cost; it also records speculation and redrive as bounded or as `no_applicable_case` with a condition. Bare `OPEN` aliases are invalid: every unresolved numeric/backoff/jitter value names its exact `OPEN-REL-*` owner.
-- Every circuit policy uses only canonical failure-class/degradation enums, and each selecting profile materializes exact counted classes, exclusion of every other class, open mapping and fallback authority. Conditional prose such as “as applicable” is invalid.
+- Every circuit policy uses only canonical failure-class/degradation enums, and each selecting profile materializes exact counted classes, exclusion of every other class, open mapping and fallback authority. Conditional prose such as “as applicable” is invalid. A profile with `no_applicable_case` SHALL select a dedicated negative-evidence branch and SHALL NOT inherit vectors whose trigger requires circuit open, half-open or probes.
 - Each ambiguity class maps to a reconciliation owner and durable evidence.
 - Each recovery profile maps continuity state to a resumption gate.
 - Each security-sensitive profile maps relevant `SEC-*`/`TM-*` authorities.
@@ -121,7 +121,10 @@ These are the single canonical evidence-level enums for the Phase 11 package and
 - Each profile key materializes `status` and exact applicable operation/contract/runtime-role classes.
 - Each final fault vector is present in all four evidence levels and contributes its canonical blocker to the final release-blocker set.
 - Optional operational telemetry, durably accepted customer observations and mandatory audit use distinct profile keys; no loss, shedding or fallback rule may cross an acceptance boundary by data-plane naming alone.
+- For Control Plane placement fallback, `placement_fallback_state` has exactly `verified_unexpired_lease_and_destination_admitted` and `fallback_ineligible`. Only the first permits `stale_tolerant` for bounded already-admitted traffic; missing, expired, unverifiable or contradicted lease/admission evidence yields `fallback_ineligible:fail_closed`.
+- Every other state-qualified binding uses the closed selector/value sets materialized in `07-capability-resilience-profiles.md` for placement-cache fallback, Product-authorized stale reads/results, configuration last-known-good, outbox intent commitment, provider durable-path eligibility and privileged recovery reservation. A selector value missing accepted scoped authority evidence takes its explicitly restrictive branch; no unlisted/unknown value is permitted.
 - For durably accepted customer observations, `acceptance_state` has exactly `not_durably_accepted` and `durably_accepted`, derived from the canonical durable-acceptance record for the same scoped identity. Saturation before acceptance maps to `shed_or_reject` without acknowledgement; saturation after acceptance maps to `queued_or_deferred` for the bounded projection obligation and cannot discard or reject accepted work.
+- Every materialized `deadline_timeout_policy` selects `OPEN-REL-005` through the exact cross-profile OPEN join; numeric deadlines cannot come from framework, provider or runtime defaults.
 - A terminal trust or permanent-contract class SHALL NOT inherit ordinary circuit half-open probing or circuit-driven re-enablement. Any trust restoration is an independently authorized transition backed by accepted evidence.
 - A profile whose physical durability mechanism remains OPEN SHALL select mechanism-neutral circuit/evidence records; topology-specific broker, outbox, journal, stream or store vectors become mandatory only after the owning OPEN closes that mechanism.
 
@@ -145,6 +148,8 @@ Future conformance tooling SHALL reject:
 - secret-bearing ordinary payload/telemetry/quarantine policy;
 - missing tenant/provider/destination isolation;
 - unsupported numeric literal replacing an OPEN decision;
+- numeric deadline policy without exact `OPEN-REL-005` ownership;
+- `no_applicable_case` circuit selector inheriting an open/half-open/probe vector;
 - vendor/topology name as canonical contract identity;
 - evidence claimed at a higher level than produced;
 - acknowledged customer observation without durable scoped identity/responsibility, or optional-loss behavior applied after durable acceptance;

@@ -52,11 +52,25 @@ Runtime instance, queue, topic, cell, region, provider product or deployment nam
 | `release_blockers` | specific blocker identifiers |
 | `open_decisions` | applicable OPEN identifiers with owner, evidence, closure gate and non-default rule |
 
+For `rel.consumer-inbox-effect@1` and duplicate-sensitive `rel.replay-consume-state@1`, the manifest additionally SHALL materialize the normalized Phase-10-derived dimensions defined in `14-message-equivalence-reliability-continuity.md`:
+
+```text
+message_equivalence_comparison_authority
+message_equivalence_failure_binding
+message_equivalence_security_capacity_policy
+message_equivalence_recovery_continuity
+message_equivalence_compatibility_policy
+```
+
+Where a keyed/authenticated evidence form is selected, `rel.secret-key-authority@1` SHALL materialize the historical-verifier generation scope and the rule that historical verification authority does not become unrelated current cryptographic/effect authority.
+
 No required field may disappear. If a conditional subdimension has no applicable case, the manifest records `no_applicable_case` plus condition, accepted authority and reviewable evidence.
 
 The canonical catalog MAY be normalized across multiple tables only when every table is keyed by the exact pair `reliability_profile_id` and `profile_version`. The join of those tables is one manifest record and SHALL materialize every required field exactly once for every key. `status` and applicable operation/contract/runtime-role classes SHALL be keyed profile data; document status or headings cannot supply them. Implicit defaults, narrative inheritance and unresolved policy references are forbidden. A named policy reference is valid only when its complete value is defined in the same accepted package and the profile row selects it explicitly.
 
-Deterministic derived fields are permitted only through the exact formulas defined in `07-capability-resilience-profiles.md`. `ALL-FAULT-VECTORS(profile_key)` SHALL include binding-, profile-, circuit- and cross-profile vectors. `ALL-RELEASE-BLOCKERS(profile_key)` SHALL include the canonical blocker of every final vector. `ALL-OPEN-DECISIONS(profile_key)` SHALL include profile-specific and cross-profile OPENs plus `OPEN-REL-007` only through `CIRCUIT-OPEN(profile_key)` when the exact circuit selector has a non-empty applicable failure-class set. `evidence_requirements` SHALL cover the entire final vector set; a profile-specific seed list cannot replace these derived fields.
+For ordinary profiles, the base logical records are materialized in `07-capability-resilience-profiles.md`. For the exact duplicate-sensitive/profile-verifier dimensions above, the complete record is the same-key normalized join of `07` plus `14-message-equivalence-reliability-continuity.md`; `14` does not redefine unrelated `07` fields.
+
+Deterministic derived fields are permitted only through the exact formulas defined in the normative Phase 11 catalog/normalized companions. `ALL-FAULT-VECTORS(profile_key)` SHALL include binding-, profile-, circuit- and cross-profile vectors, including mandatory `FV-ASYNC-003` equivalence-continuity branches from `14` for applicable profiles. `ALL-RELEASE-BLOCKERS(profile_key)` SHALL include the canonical blocker of every final vector. `ALL-OPEN-DECISIONS(profile_key)` SHALL include profile-specific and cross-profile OPENs plus `OPEN-REL-007` only through `CIRCUIT-OPEN(profile_key)` when the exact circuit selector has a non-empty applicable failure-class set. `evidence_requirements` SHALL cover the entire final vector set; a profile-specific seed list cannot replace these derived fields.
 
 ## Canonical enums
 
@@ -80,6 +94,8 @@ recovery_continuity_blocked
 compromised_or_untrusted
 governance_blocked
 ```
+
+Historical comparison evidence/profile/verifier loss does not create a new enum. For duplicate-sensitive effect/replay eligibility it is materialized as `recovery_continuity_blocked`; compromised/untrusted comparison authority is `compromised_or_untrusted`, as fixed by `14`.
 
 ### Degradation modes
 
@@ -130,12 +146,15 @@ These are the single canonical evidence-level enums for the Phase 11 package and
 - A profile whose physical durability mechanism remains OPEN SHALL select mechanism-neutral circuit/evidence records; topology-specific broker, outbox, journal, stream or store vectors become mandatory only after the owning OPEN closes that mechanism.
 - Reliability admission and cost/budget classification SHALL inherit the exact accepted Phase 09/10 canonical interpretation. Unvalidated payload text, aliases, duplicate members, malformed encodings, caller-selected tenant/source fields, claimed operation names, or attacker-controlled cost hints SHALL NOT select a cheaper budget, another tenant scope, a privileged workload class, or broader admission authority. A conservative pre-validation claim may use only transport facts or already-trusted canonical metadata.
 - When final canonical interpretation resolves a different resource/cost class from a provisional claim, the implementation SHALL atomically acquire/adjust to the authoritative budget or reject before expensive/effectful continuation. Continuing under an underpriced provisional claim, maintaining two semantic parsers, or using budget classification as authorization is prohibited.
+- For `rel.consumer-inbox-effect@1` and duplicate-sensitive replay, a benign `duplicate` requires the trusted scoped identity plus proven equivalent immutable content under the accepted historical comparison profile. Missing/unavailable/rolled-back/uninterpretable comparison evidence/profile/verifier maps to `recovery_continuity_blocked:reconciliation_blocked`; compromised/untrusted comparison authority maps to `compromised_or_untrusted:fail_closed`.
+- Message-equivalence comparison occurs only after trusted scoped identity derivation. Fingerprint/MAC/profile references SHALL NOT become authorization, routing, ordering, public identity, reverse lookup or cross-tenant/cross-consumer equality authority.
+- Comparison/profile/KMS/migration work is bounded and attributable under `OPEN-REL-022`; mechanism selection remains `OPEN-REL-016` where keyed verifier material is required; evidence horizon remains `OPEN-REL-025`.
 
 Dangling references, unknown enums, missing owners, inapplicable OPEN inheritance or retry without safety mapping are conformance failures.
 
 ## Canonical record location and serialization boundary
 
-The complete logical records are materialized in `07-capability-resilience-profiles.md`. A future YAML, JSON, schema or generated representation SHALL encode the complete normalized join for a profile key; a partial illustrative record is deliberately not normative and SHALL NOT be used as a template. Serialization/tool choice remains OPEN.
+The complete logical records are materialized in `07-capability-resilience-profiles.md` plus the mandatory normalized companion `14-message-equivalence-reliability-continuity.md` for its explicitly applicable profile dimensions. A future YAML, JSON, schema or generated representation SHALL encode the complete normalized join for a profile key; a partial illustrative record is deliberately not normative and SHALL NOT be used as a template. Serialization/tool choice remains OPEN.
 
 ## Static governance checks
 
@@ -148,6 +167,11 @@ Future conformance tooling SHALL reject:
 - ambiguity without durable reconciliation state;
 - failover without generation/fence and stale-writer rejection;
 - recovery without `(R,F]` continuity/resumption gate;
+- duplicate-sensitive effect/replay profile missing protected comparison evidence, stable comparison-profile/version, required historical verifier lifecycle or fail-closed unknown-equivalence behavior;
+- duplicate classification based only on scoped identity when immutable semantic equality has not been proven;
+- low-entropy confidential comparison evidence exposed through unsafe plain-digest logging/export, or any unrestricted cross-scope fingerprint/equality oracle;
+- historical verifier/profile loss, retirement, rollback or mismatch becoming duplicate success, replay/effect eligibility or unrelated current authority;
+- crafted duplicate/equality inputs creating unbounded comparison/KMS/secret-store/migration work;
 - secret-bearing ordinary payload/telemetry/quarantine policy;
 - missing tenant/provider/destination isolation;
 - unsupported numeric literal replacing an OPEN decision;
@@ -165,6 +189,6 @@ Future conformance tooling SHALL reject:
 
 ## Change control
 
-Changes to manifest semantics, enums, retry eligibility, degradation behavior, admission/cost-class derivation, authority/fence, retention/equivalence horizon, blocker-disposition semantics or resumption gates receive semantic compatibility review even when serialization shape is unchanged.
+Changes to manifest semantics, enums, retry eligibility, degradation behavior, admission/cost-class derivation, authority/fence, retention/equivalence horizon, message-equivalence evidence confidentiality/domain separation, comparison-profile/version, historical verifier lifecycle, blocker-disposition semantics or resumption gates receive semantic compatibility review even when serialization shape is unchanged.
 
 Generated artifacts are subordinate to the reviewed normative source. Tooling defaults cannot add a failure class, permissive fallback, blocker waiver or retry automatically.

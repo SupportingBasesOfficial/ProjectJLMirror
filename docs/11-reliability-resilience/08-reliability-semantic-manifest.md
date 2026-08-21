@@ -50,13 +50,13 @@ Runtime instance, queue, topic, cell, region, provider product or deployment nam
 | `fault_vectors` | deterministic/concurrency/chaos/load/recovery cases |
 | `compatibility_class` | consequences of changing semantics |
 | `release_blockers` | specific blocker identifiers |
-| `open_decisions` | owner, evidence, closure gate and non-default rule |
+| `open_decisions` | applicable OPEN identifiers with owner, evidence, closure gate and non-default rule |
 
 No required field may disappear. If a conditional subdimension has no applicable case, the manifest records `no_applicable_case` plus condition, accepted authority and reviewable evidence.
 
 The canonical catalog MAY be normalized across multiple tables only when every table is keyed by the exact pair `reliability_profile_id` and `profile_version`. The join of those tables is one manifest record and SHALL materialize every required field exactly once for every key. `status` and applicable operation/contract/runtime-role classes SHALL be keyed profile data; document status or headings cannot supply them. Implicit defaults, narrative inheritance and unresolved policy references are forbidden. A named policy reference is valid only when its complete value is defined in the same accepted package and the profile row selects it explicitly.
 
-Deterministic derived fields are permitted only through the exact formulas defined in `07-capability-resilience-profiles.md`. `ALL-FAULT-VECTORS(profile_key)` SHALL include binding-, profile-, circuit- and cross-profile vectors. `ALL-RELEASE-BLOCKERS(profile_key)` SHALL include the canonical blocker of every final vector. `evidence_requirements` SHALL cover the entire final vector set; a profile-specific seed list cannot replace these derived fields.
+Deterministic derived fields are permitted only through the exact formulas defined in `07-capability-resilience-profiles.md`. `ALL-FAULT-VECTORS(profile_key)` SHALL include binding-, profile-, circuit- and cross-profile vectors. `ALL-RELEASE-BLOCKERS(profile_key)` SHALL include the canonical blocker of every final vector. `ALL-OPEN-DECISIONS(profile_key)` SHALL include profile-specific and cross-profile OPENs plus `OPEN-REL-007` only through `CIRCUIT-OPEN(profile_key)` when the exact circuit selector has a non-empty applicable failure-class set. `evidence_requirements` SHALL cover the entire final vector set; a profile-specific seed list cannot replace these derived fields.
 
 ## Canonical enums
 
@@ -111,11 +111,11 @@ These are the single canonical evidence-level enums for the Phase 11 package and
 - Each failure-class binding maps to exactly one allowed mode and at least one fault vector for every materialized operation state. If an accepted boundary changes the mode, the profile SHALL name a closed, machine-evaluable state selector and one exact mode for every selector value; prose conditions or implementation-local state are invalid.
 - Each retryable class maps to stable identity, safety mechanism and aggregate budget.
 - Every retry policy materializes attempts, elapsed time, concurrency, queued count, bytes and attributable cost; it also records speculation and redrive as bounded or as `no_applicable_case` with a condition. Bare `OPEN` aliases are invalid: every unresolved numeric/backoff/jitter value names its exact `OPEN-REL-*` owner.
-- Every circuit policy uses only canonical failure-class/degradation enums, and each selecting profile materializes exact counted classes, exclusion of every other class, open mapping and fallback authority. Conditional prose such as “as applicable” is invalid. A profile with `no_applicable_case` SHALL select a dedicated negative-evidence branch and SHALL NOT inherit vectors whose trigger requires circuit open, half-open or probes.
+- Every circuit policy uses only canonical failure-class/degradation enums, and each selecting profile materializes exact counted classes, exclusion of every other class, open mapping and fallback authority. Conditional prose such as “as applicable” is invalid. A profile with `no_applicable_case` SHALL select a dedicated negative-evidence branch, SHALL NOT inherit vectors whose trigger requires circuit open, half-open or probes, and SHALL NOT include `OPEN-REL-007` in its final `ALL-OPEN-DECISIONS`. A profile with a non-empty counted circuit-failure set SHALL include `OPEN-REL-007` through `CIRCUIT-OPEN(profile_key)` until that circuit implementation decision is validly closed.
 - Each ambiguity class maps to a reconciliation owner and durable evidence.
 - Each recovery profile maps continuity state to a resumption gate.
 - Each security-sensitive profile maps relevant `SEC-*`/`TM-*` authorities.
-- Each OPEN reference exists in `12-phase-11-open-decisions-and-blockers.md`.
+- Each final OPEN reference exists in `12-phase-11-open-decisions-and-blockers.md`, is applicable to the selected profile state, and has accountable owner/evidence/closure gate. An OPEN cannot be inherited merely because a universal selector mentions its category.
 - Each blocker reference exists in the validation matrix or global blocker registry.
 - Each compatibility-sensitive field maps to `10-compatibility-and-change-classification.md`.
 - Each profile key materializes `status` and exact applicable operation/contract/runtime-role classes.
@@ -128,7 +128,7 @@ These are the single canonical evidence-level enums for the Phase 11 package and
 - A terminal trust or permanent-contract class SHALL NOT inherit ordinary circuit half-open probing or circuit-driven re-enablement. Any trust restoration is an independently authorized transition backed by accepted evidence.
 - A profile whose physical durability mechanism remains OPEN SHALL select mechanism-neutral circuit/evidence records; topology-specific broker, outbox, journal, stream or store vectors become mandatory only after the owning OPEN closes that mechanism.
 
-Dangling references, unknown enums, missing owners or retry without safety mapping are conformance failures.
+Dangling references, unknown enums, missing owners, inapplicable OPEN inheritance or retry without safety mapping are conformance failures.
 
 ## Canonical record location and serialization boundary
 
@@ -149,7 +149,9 @@ Future conformance tooling SHALL reject:
 - missing tenant/provider/destination isolation;
 - unsupported numeric literal replacing an OPEN decision;
 - numeric deadline policy without exact `OPEN-REL-005` ownership;
-- `no_applicable_case` circuit selector inheriting an open/half-open/probe vector;
+- `no_applicable_case` circuit selector inheriting an open/half-open/probe vector or `OPEN-REL-007`;
+- applicable non-empty circuit selector missing `OPEN-REL-007` from final `ALL-OPEN-DECISIONS`;
+- final OPEN reference that lacks registry owner/evidence/gate or contradicts profile applicability;
 - vendor/topology name as canonical contract identity;
 - evidence claimed at a higher level than produced;
 - acknowledged customer observation without durable scoped identity/responsibility, or optional-loss behavior applied after durable acceptance;

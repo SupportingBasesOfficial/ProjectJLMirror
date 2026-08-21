@@ -59,18 +59,22 @@ The following bindings are mandatory normalized extensions of the affected profi
 |---|---|---|
 | same trusted scoped ID and proven equivalent immutable content | `duplicate` | `fail_fast` through the accepted dedup/result-return path; no protected effect re-execution |
 | same trusted scoped ID and non-equivalent immutable content | `identity_conflict` | `reconciliation_blocked` / governed integrity quarantine |
-| comparison evidence is missing, rolled back, uninterpretable, or its required historical comparison profile/verifier authority is unavailable, retired, mismatched or unknown | `recovery_continuity_blocked` | `reconciliation_blocked` |
+| required historical comparison/verifier dependency is temporarily unreachable/unavailable while the retained evidence/profile mapping itself remains intact and trusted | `unavailable` | `reconciliation_blocked` |
+| comparison evidence/profile/verifier-generation continuity is missing, rolled back, retired without valid migration, mismatched or otherwise cannot be reconstructed for the supported historical identity | `recovery_continuity_blocked` | `reconciliation_blocked` |
 | comparison implementation/profile/evidence authority is compromised or cannot be trusted | `compromised_or_untrusted` | `fail_closed` |
 
-The consumer cannot convert `recovery_continuity_blocked` into `duplicate`, new-effect eligibility or blind replay because a dependency later becomes reachable. It resumes only after the owning comparison/recovery authority proves historical equivalence or an accepted equality-preserving migration establishes the same result.
+A temporary dependency outage and a continuity defect are deliberately distinct. Reachability restoration may clear `unavailable` only after the same historical comparison authority becomes usable and proves equivalence; it does not repair a `recovery_continuity_blocked` condition by itself.
+
+The consumer cannot convert `unavailable`, `recovery_continuity_blocked` or `compromised_or_untrusted` into `duplicate`, new-effect eligibility or blind replay merely because time passed, a process restarted or a dependency became reachable. It resumes only after the owning comparison/recovery authority proves historical equivalence or an accepted equality-preserving migration establishes the same result.
 
 ### `rel.replay-consume-state@1`
 
-Duplicate-sensitive replay inherits the same rules:
+Duplicate-sensitive replay inherits the same distinction:
 
 | Condition | Canonical failure class | Required mode |
 |---|---|---|
-| historical message identity/evidence exists but required comparison profile/verifier continuity cannot be proven | `recovery_continuity_blocked` | `reconciliation_blocked` |
+| required historical verifier dependency is temporarily unavailable while retained evidence/profile continuity is intact | `unavailable` | `reconciliation_blocked` |
+| historical message identity/evidence exists but comparison profile/verifier continuity is missing, rolled back, mismatched or retired without valid migration | `recovery_continuity_blocked` | `reconciliation_blocked` |
 | historical comparison profile/evidence authority is compromised or untrusted | `compromised_or_untrusted` | `fail_closed` |
 | conflicting immutable content appears under the same trusted scoped identity | `identity_conflict` | `reconciliation_blocked` |
 
@@ -87,6 +91,8 @@ current unrestricted cryptographic authority
 ```
 
 A restored or retained old verifier may be used only by the narrowly authorized historical comparison path for evidence bound to that generation. It does not authorize unrelated messages, tenants, consumers, encryption, signing or current key issuance merely because the key material is reachable.
+
+Temporary key/verifier backend outage remains an availability failure of that dependency. Missing/rolled-back historical verifier continuity is a recovery-continuity defect. Compromised verifier trust is a trust failure. These classes SHALL NOT be collapsed into one generic retry state.
 
 ## Confidentiality and anti-oracle invariant
 
@@ -136,7 +142,7 @@ message identity/scope
 + required narrowly authorized historical verification authority
 ```
 
-A restore that has the fingerprint/MAC but not the accepted historical interpretation authority remains uncertain.
+A restore that has the fingerprint/MAC but not the accepted historical interpretation authority remains uncertain and is `recovery_continuity_blocked` when the authority mapping/state itself cannot be established. A merely reachable-but-temporarily unavailable historical verifier dependency remains `unavailable`; neither case permits duplicate success.
 
 A restore that revives an obsolete verifier does not make that verifier current authority for unrelated work.
 
@@ -148,13 +154,14 @@ If an equality-preserving migration replaces an old profile/verifier, the migrat
 
 1. same trusted scoped ID + conflicting immutable semantic content -> `identity_conflict:reconciliation_blocked`;
 2. original full payload minimized but surviving protected evidence still distinguishes equivalent from conflicting reuse;
-3. evidence bytes survive while required historical comparison profile/verifier is unavailable, retired, mismatched or restored older -> `recovery_continuity_blocked:reconciliation_blocked`;
-4. comparison authority/profile is compromised/untrusted -> `compromised_or_untrusted:fail_closed`;
-5. low-entropy confidential content cannot be recovered or tested through ordinary plain-digest logs, exports or operator surfaces;
-6. equal semantic content under different trusted tenant/consumer/message scopes cannot be correlated or deduplicated through a global equality lookup;
-7. comparison-profile/canonicalization or verifier/key rotation preserves historical equality through accepted retained authority or an equality-preserving migration before retirement;
-8. restored obsolete verifier/profile cannot become current authority for unrelated messages/scopes;
-9. crafted duplicate identities cannot generate unbounded comparison, KMS, secret-store or migration work.
+3. required historical verifier backend temporarily unavailable while evidence/profile continuity remains intact -> `unavailable:reconciliation_blocked`, with no blind retry/effect eligibility;
+4. evidence/profile/verifier-generation continuity missing, rolled back, retired without valid migration, mismatched or restored older -> `recovery_continuity_blocked:reconciliation_blocked`;
+5. comparison authority/profile is compromised/untrusted -> `compromised_or_untrusted:fail_closed`;
+6. low-entropy confidential content cannot be recovered or tested through ordinary plain-digest logs, exports or operator surfaces;
+7. equal semantic content under different trusted tenant/consumer/message scopes cannot be correlated or deduplicated through a global equality lookup;
+8. comparison-profile/canonicalization or verifier/key rotation preserves historical equality through accepted retained authority or an equality-preserving migration before retirement;
+9. restored obsolete verifier/profile cannot become current authority for unrelated messages/scopes;
+10. crafted duplicate identities cannot generate unbounded comparison, KMS, secret-store or migration work.
 
 Aggregate pass requires every applicable branch. Absence of implementation/runtime evidence is not a design failure, but omission of a branch from the Phase 11 evidence plan is a design-acceptance failure.
 
@@ -167,6 +174,7 @@ A change is at least `security_breaking` and/or `recovery_breaking`, with `capac
 - changes the canonical comparison surface/profile so historical equality may change;
 - weakens evidence confidentiality/domain separation or exposes cross-scope equality;
 - retires a historical verifier without retained verification or equality-preserving migration;
+- collapses temporary verifier outage and continuity loss into a retry/default that can widen eligibility;
 - changes unknown-equivalence handling into duplicate success or protected-effect eligibility;
 - changes recovery interpretation of retained evidence/profile/verifier generations;
 - materially changes comparison/KMS amplification or tenant isolation.

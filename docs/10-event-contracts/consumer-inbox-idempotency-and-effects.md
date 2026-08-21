@@ -17,6 +17,8 @@ The consumer contract declares:
 - tenant/global scope;
 - message identity scope derivation;
 - message-content equivalence evidence policy;
+- canonical comparison-profile/version and historical verifier lifecycle where the evidence form requires it;
+- equivalence-evidence classification, trusted-scope/domain-separation and anti-oracle policy;
 - effect owner;
 - duplicate/effect completion policy;
 - ordering profile if any;
@@ -145,15 +147,28 @@ It SHALL NOT:
 - overwrite the original inbox/evidence;
 - select first/last based on arrival order.
 
-For every duplicate-sensitive consumer, the durable correctness evidence SHALL retain enough information to compare repeated deliveries for semantic equivalence throughout the full dedup/redelivery/replay/recovery horizon. The accepted evidence may be one of:
+For every duplicate-sensitive consumer, the durable correctness evidence SHALL retain enough information to compare repeated deliveries for semantic equivalence throughout the full dedup/redelivery/replay/recovery horizon. Accepted evidence may be one of:
 
-- a safe canonical fingerprint/hash over the immutable contract identity plus immutable envelope/payload semantics;
+- a canonical collision-resistant fingerprint/digest over the immutable comparison surface when the source-data classification and entropy make that representation safe;
+- an authenticated digest/MAC or equivalent protected comparison value when ordinary digest disclosure would create dictionary, correlation or oracle risk;
 - the original immutable canonical message representation where classification/retention permits it;
 - another durable comparison authority that proves equivalence without depending on mutable current state.
 
 The comparison profile defines exactly which immutable fields are covered. At minimum it cannot omit dimensions whose change would make the same scoped `message_id` represent a different logical message, such as contract/version, trusted tenant/source scope, immutable subject/occurrence identity where applicable, and canonical payload semantics.
 
-A fingerprint is therefore not optional merely because the full payload is not retained. If payload erasure/minimization removes the original bytes, a safe surviving fingerprint/tombstone/equivalent comparison authority remains for as long as the scoped ID can legitimately reappear and be deduplicated.
+The comparison uses the same accepted canonical structured interpretation as protected contract validation. Each retained evidence record therefore identifies or inherits a stable comparison-profile/version sufficient to reproduce the same equality result throughout the supported horizon. Parser/canonicalization evolution cannot silently redefine equality for an already-admitted scoped identity.
+
+Comparison begins only after the trusted `(consumer_contract, message_identity_scope, message_id)` has been derived. A fingerprint/MAC is never a substitute for that identity scope and SHALL NOT become a global reverse lookup, cross-tenant/cross-consumer equality namespace, authorization token, routing key, ordering authority, public identifier or bearer capability.
+
+A plain unsalted/unkeyed digest of low-entropy confidential immutable content is not automatically safe: it may allow offline guessing even when the original payload was minimized. Where that risk exists, the accepted contract uses a protected/keyed comparison form or protected retained canonical evidence and applies the source data's classification, retention, logging and export restrictions to the derived evidence.
+
+When keyed/authenticated evidence is used, inbox records retain only non-secret comparison-profile/verifier generation references. Key material remains behind the accepted secret/KMS authority. Rotation/retirement preserves historical verification for the supported horizon or completes a reviewed equality-preserving evidence migration before the old verifier is retired.
+
+Loss, rollback, retirement or temporary unavailability of the evidence, comparison profile or required historical verifier authority is **unknown equivalence**, not a benign duplicate. The affected identity remains fail-closed/reconciliation-blocked and cannot become new protected-effect eligible until accepted authority proves equivalence.
+
+A fingerprint is therefore not optional merely because the full payload is not retained. If payload erasure/minimization removes the original bytes, a safe surviving fingerprint/tombstone/equivalent comparison authority remains for as long as the scoped ID can legitimately reappear and be deduplicated. If policy destroys the last usable comparison authority, the corresponding old identity/replay path ceases to be effect-eligible or stays reconciliation-blocked.
+
+Comparison/profile/KMS lookups are bounded and scoped so crafted duplicate IDs cannot create unbounded secret-store work or expose an equality oracle.
 
 A mismatch is fail-closed integrity evidence. It enters a governed producer-integrity/quarantine path and cannot acknowledge success as though a normal duplicate had been observed.
 
@@ -271,11 +286,11 @@ A message receipt alone is insufficient deduplication if the external channel ca
 
 Inbox/dedup evidence is retained for at least the period during which the same logical message may be redelivered/replayed/recovered and duplication would remain unsafe.
 
-The retained correctness evidence includes the message-content equivalence fingerprint/original/equivalent authority required to detect scoped `message_id` reuse with different immutable content for that same horizon.
+The retained correctness evidence includes the message-content equivalence fingerprint/original/equivalent authority **plus the comparison-profile/version and historical verifier authority required to interpret it** for that same horizon, or a governed equality-preserving migration/equivalent authority proves continuity. Retaining uninterpretable evidence bytes is not sufficient correctness retention.
 
 Exact retention is contract/SLO evidence-driven and OPEN.
 
-A consumer SHALL NOT advertise/support replay farther back than its effect-safety and content-equivalence evidence can handle unless a separate replay reconciliation mechanism exists.
+A consumer SHALL NOT advertise/support replay farther back than its effect-safety, content-equivalence evidence and historical comparison authority can handle unless a separate replay reconciliation mechanism exists.
 
 ## Recovery continuity
 
@@ -285,6 +300,7 @@ After restore/PITR/partial loss:
 missing inbox receipt != never processed
 older result linkage != effect absent
 missing content-equivalence evidence != safe duplicate
+missing historical comparison profile/verifier != safe duplicate
 ```
 
 Before duplicate-sensitive execution resumes, recovery reconciles `(R,F]` against surviving:
@@ -294,10 +310,14 @@ Before duplicate-sensitive execution resumes, recovery reconciles `(R,F]` agains
 - provider/external acknowledgements;
 - outbox/inbox evidence;
 - message-content fingerprint/original/equivalence evidence;
+- stable comparison-profile/version metadata and required non-secret historical verifier generation references;
+- narrowly authorized historical verification authority where the accepted evidence profile requires it;
 - audit/accountability;
 - broker/replay/checkpoint evidence where trustworthy.
 
-If outcome or message-content equivalence remains uncertain, execution stays fail-closed/reconciliation-blocked. Recovery SHALL NOT downgrade a same-ID/different-content integrity ambiguity into ordinary duplicate success because a restored snapshot lost the original comparison evidence.
+If outcome, message-content equivalence or the authority needed to prove historical equivalence remains uncertain, execution stays fail-closed/reconciliation-blocked. Recovery SHALL NOT downgrade a same-ID/different-content integrity ambiguity into ordinary duplicate success because a restored snapshot lost the original comparison evidence or historical verifier/profile authority.
+
+A restored obsolete verifier/profile is not current authority for unrelated messages or scopes; it is usable only under the historical evidence generation that requires it.
 
 ## Replay interaction
 
@@ -314,7 +334,7 @@ Replay SHALL NOT disable the normal inbox and thereby repeat irreversible effect
 
 A projection rebuild that needs to process historical messages again uses a distinct projection generation/build identity rather than pretending original effect receipts never existed.
 
-Supported replay that depends on normal deduplication also retains enough message-content equivalence evidence to reject historical ID reuse with changed immutable semantics.
+Supported replay that depends on normal deduplication also retains enough message-content equivalence evidence **and historical comparison-profile/verifier authority** to reject historical ID reuse with changed immutable semantics. If that authority is unavailable and no equality-preserving migration/equivalent authority exists, duplicate-sensitive replay remains reconciliation-blocked rather than trusting identity alone.
 
 ## Consumer schema validation
 
@@ -335,14 +355,17 @@ Inbox records store only what is required for correctness/recovery/audit.
 They SHOULD prefer:
 
 - message identity;
-- safe canonical fingerprint/equivalence evidence;
+- protected canonical fingerprint/equivalence evidence appropriate to source-data classification;
+- stable comparison-profile/version and non-secret verifier-generation reference where required;
 - result/operation linkage;
 - status/timestamps;
 - trusted source metadata;
 
 rather than copying the full confidential payload indefinitely.
 
-Data minimization may replace full retained content with a safe fingerprint/tombstone, but it cannot erase the last evidence needed to distinguish an ordinary duplicate from conflicting reuse during the supported dedup/recovery horizon.
+Data minimization may replace full retained content with a safe fingerprint/tombstone, but it cannot erase the last evidence or historical comparison authority needed to distinguish an ordinary duplicate from conflicting reuse during the supported dedup/recovery horizon.
+
+Derived comparison evidence is not assumed harmless metadata. Normal logs, metrics, quarantine and operator surfaces do not expose raw confidential content, unrestricted fingerprints/MACs or verifier material when the evidence profile makes those values sensitive or oracle-capable.
 
 ## Consumer isolation
 
@@ -366,13 +389,14 @@ producer_contract/version
 message class
 admitted/completed/duplicate/reconciled/quarantined counts
 content-identity mismatch/integrity-failure counts
+comparison-profile/verifier-unavailable safe reason counts
 processing latency
 inbox contention
 current placement re-resolution
 external ambiguity age/count
 ```
 
-Payload and secrets are redacted according to classification.
+Payload, secrets and protected equivalence evidence are redacted according to classification.
 
 ## Required fault tests
 
@@ -383,6 +407,13 @@ Every duplicate-sensitive consumer tests as applicable:
 - same scoped `message_id` with identical canonical immutable content is classified as a normal duplicate;
 - same scoped `message_id` with changed contract version, trusted immutable scope/subject semantics or canonical payload fails closed as integrity/producer-contract failure;
 - original payload is minimized/erased but surviving fingerprint/equivalence evidence still detects conflicting same-ID content reuse;
+- low-entropy confidential immutable content is not exposed through naive plain-digest logging, export or offline-guessable metadata;
+- equivalent content in different trusted tenant/consumer/message-identity scopes cannot be correlated or deduplicated through an unrestricted fingerprint/equality lookup;
+- comparison canonicalization/profile upgrade preserves the historical equality result or affected identities remain fail-closed until a reviewed equality-preserving migration completes;
+- keyed/authenticated evidence remains historically verifiable across accepted key/profile rotation, or affected identities remain reconciliation-blocked when the historical verifier is unavailable/retired;
+- restore to before comparison-profile/key rotation cannot resurrect an obsolete verifier as authority for unrelated messages;
+- historical verifier/profile loss never converts unknown equivalence into duplicate success or protected-effect eligibility;
+- crafted duplicate IDs cannot force unbounded KMS/secret-store/comparison work or expose an equality oracle;
 - restore to a point before local fingerprint/equivalence evidence while conflicting/surviving message evidence exists does not classify the new arrival as a safe duplicate;
 - crash after inbox admission but before local effect;
 - crash after local effect statements but before transaction commit;
@@ -401,10 +432,12 @@ Every duplicate-sensitive consumer tests as applicable:
 - inbox table/store product;
 - receipt state naming;
 - exact retention duration;
-- exact fingerprint/hash algorithm and storage representation, subject to accepted collision/security properties;
+- exact fingerprint/hash/MAC algorithm, domain-separation encoding and storage representation, subject to accepted collision/confidentiality/oracle properties;
+- exact comparison-profile/version representation and equality-preserving migration mechanism;
+- exact historical verifier/key-generation representation and KMS/secret backend;
 - worker/service auth mechanism;
 - broker consumer-group topology;
 - provider-side idempotency implementation;
 - projection rebuild tooling.
 
-The trusted scoped identity, durable message-content equivalence evidence, atomic/crash-safe effect completion and fail-closed ambiguity/recovery properties are fixed.
+The trusted scoped identity, durable confidentiality-safe message-content equivalence evidence, historical comparison-profile/verifier continuity, atomic/crash-safe effect completion and fail-closed ambiguity/recovery properties are fixed.

@@ -38,6 +38,7 @@ Candidates may include JSON Schema, Protobuf, Avro or equivalent reviewed profil
 - payload/envelope authority cannot be overridden by parser ambiguity;
 - historical contract meaning is preserved;
 - duplicate-sensitive consumers have one deterministic immutable-content equivalence profile for a scoped message identity;
+- the canonical comparison profile/version used for historical message-equivalence evidence remains reproducible or is migrated with equality-preserving evidence before retirement;
 - no dynamic untrusted schema/code loading.
 
 The first-party Phase 10 realtime protocol baseline uses bounded canonical JSON; future protocol revisions may choose another explicitly versioned representation.
@@ -51,7 +52,7 @@ The first-party Phase 10 realtime protocol baseline uses bounded canonical JSON;
 - reviewed contract is canonical;
 - version provenance/history is retained;
 - semantic manifest is compared in addition to payload schema;
-- supported historical replay retains the schema/reader/upcaster required to interpret messages and preserve content-equivalence evidence;
+- supported historical replay retains the schema/reader/upcaster and comparison-profile metadata required to interpret messages and preserve content-equivalence evidence;
 - registry access is authenticated/authorized.
 
 ## OPEN-EVT-004 — Contract-version syntax
@@ -122,7 +123,7 @@ The first-party Phase 10 realtime protocol baseline uses bounded canonical JSON;
 - redrive is privileged/audited/currently authorized;
 - redrive cannot bypass dedup/reconciliation;
 - conflicting same-ID/different-content arrivals fail closed into governed integrity/quarantine handling;
-- payload retention obeys data classification.
+- payload and derived equivalence evidence retention obey data classification and do not grant ordinary operators unrestricted confidential comparison material.
 
 ## OPEN-EVT-010 — Message/payload/batch limits
 
@@ -136,22 +137,27 @@ The first-party Phase 10 realtime protocol baseline uses bounded canonical JSON;
 
 ## OPEN-EVT-011 — Inbox/dedup storage, content-equivalence evidence and retention durations
 
-**Question:** Concrete store/table design, canonical fingerprint/hash algorithm or equivalent comparison representation, and per-contract retention horizon.
+**Question:** Concrete store/table design, canonical fingerprint/hash/MAC or equivalent comparison representation, comparison-profile/version encoding, historical verifier reference representation, and per-contract retention horizon.
 
 **Already fixed:**
 
 - identity is `(consumer_contract, trusted message_identity_scope, message_id)` or equivalent;
 - a repeated scoped identity is a normal duplicate only when durable evidence proves equivalent immutable contract/envelope/payload semantics;
 - same scoped ID with different immutable semantic content is integrity/producer-contract failure, not successful duplicate suppression;
-- accepted comparison evidence may be a canonical fingerprint, retained immutable original, or equivalent durable authority;
+- accepted comparison evidence may be a canonical collision-resistant fingerprint, authenticated digest/MAC, protected retained immutable original, or equivalent durable authority;
 - the equivalence profile covers every immutable field whose change would make the same scoped ID denote a different logical message;
+- comparison evidence uses the same canonical structured interpretation as protected contract validation and carries/inherits a stable comparison-profile version;
+- evidence is compared only after trusted scoped message identity is derived and cannot become a cross-tenant/cross-consumer reverse lookup or equality/correlation oracle;
+- low-entropy confidential source values are not automatically safe behind an ordinary plain digest; the accepted profile uses a protected comparison form when disclosure/dictionary risk requires it;
+- equivalence evidence is correctness/recovery evidence only, never authorization, routing, ordering authority, external identity or bearer capability;
 - local inbox/effect completion is atomic when co-resident;
 - cross-authority effects use stable operation/result reconciliation;
-- comparison evidence is retained for the supported redelivery/replay/recovery horizon, or another durable authority proves equivalence;
-- payload minimization/erasure cannot remove the last comparison evidence while the ID can still legitimately reappear;
-- restore missing receipt or comparison evidence is not `never processed` or `safe duplicate`.
+- comparison evidence and any profile/verifier authority required to interpret it remain available for the supported redelivery/replay/recovery horizon, or a governed migration/equivalent authority proves historical equality;
+- payload minimization/erasure cannot remove the last usable comparison authority while the ID can still legitimately reappear and remain effect-eligible;
+- restore missing receipt, comparison evidence or historical comparison authority is not `never processed` or `safe duplicate`;
+- comparison/KMS/secret-store verification work is bounded and cannot be exposed as an unrestricted equality oracle or amplification path.
 
-The exact hash algorithm/store/schema is OPEN; the durable equivalence and fail-closed mismatch properties are not OPEN.
+The exact hash/MAC algorithm, domain-separation encoding, store/schema, comparison-profile representation and implementation product remain OPEN; the durable, confidentiality-safe, scoped and fail-closed equivalence properties are not OPEN.
 
 ## OPEN-EVT-012 — Outbox dispatcher implementation and retention
 
@@ -184,7 +190,8 @@ The exact hash algorithm/store/schema is OPEN; the durable equivalence and fail-
 
 - replay is privileged/audited/bounded;
 - same historical message preserves original message identity and immutable semantic meaning;
-- duplicate-sensitive replay retains or reconstructs the content-equivalence evidence needed to reject conflicting same-ID reuse;
+- duplicate-sensitive replay retains or reconstructs the content-equivalence evidence and historical comparison authority needed to reject conflicting same-ID reuse;
+- unavailable historical comparison authority blocks/reconciles duplicate-sensitive effects rather than trusting identity alone;
 - irreversible production side effects cannot be repeated by disabling dedup;
 - projection rebuild uses isolated generation/target;
 - supported replay never exceeds safe schema/data/dedup/equivalence/recovery evidence.
@@ -199,7 +206,7 @@ The exact hash algorithm/store/schema is OPEN; the durable equivalence and fail-
 - upcasting cannot fabricate newer historical facts;
 - source message identity/tenant/occurrence semantics remain traceable;
 - supported retained history remains interpretable;
-- upcasting preserves or deterministically maps any message-content equivalence evidence required by duplicate-sensitive consumers.
+- upcasting preserves or deterministically maps any message-content equivalence evidence and comparison-profile semantics required by duplicate-sensitive consumers.
 
 ## OPEN-EVT-016 — Service-to-broker authentication/authorization
 
@@ -212,15 +219,22 @@ The exact hash algorithm/store/schema is OPEN; the durable equivalence and fail-
 - internal network/broker presence alone is not trust;
 - secrets are referenced, not embedded in messages.
 
-## OPEN-EVT-017 — Message encryption / KMS profile
+## OPEN-EVT-017 — Message encryption / KMS and historical verifier profile
 
-**Question:** Concrete encryption-at-rest/in-transit and key management for broker/history/quarantine stores.
+**Question:** Concrete encryption-at-rest/in-transit, key management, and historical verifier/key-generation storage/access profile for broker/history/quarantine and keyed message-equivalence evidence.
 
 **Already fixed:**
 
 - data classification controls storage/delivery/logging/retention;
 - encryption does not replace minimization/authorization;
-- secret/credential payloads are prohibited in ordinary messages.
+- secret/credential payloads are prohibited in ordinary messages;
+- when keyed/authenticated equivalence evidence is used, key material remains behind the accepted secret/KMS authority and is never copied into ordinary messages, inbox payloads, logs or quarantine records;
+- retained receipts/evidence carry only non-secret profile/key-generation references sufficient to locate the historical verification authority under narrow authorization;
+- key/profile rotation preserves historical comparison ability for the supported equivalence horizon or completes a governed equality-preserving migration before old verifier retirement;
+- temporary loss or retirement of historical verifier authority does not turn unknown equivalence into duplicate success or protected-effect eligibility;
+- restoring an old verifier/profile does not make it current authority for unrelated messages or scopes.
+
+The KMS/vendor, key type, crypto algorithm, rotation interval and verifier-storage product remain OPEN; historical verifiability, secret-boundary isolation and fail-closed verifier loss are fixed.
 
 ## OPEN-EVT-018 — Trace-context propagation
 
@@ -314,14 +328,16 @@ The exact ID algorithm, snapshot storage, generation encoding and per-Product ca
 
 ## OPEN-EVT-025 — Recovery-generation and reconciliation tooling
 
-**Question:** Exact epoch/generation encoding, `(R,F]` inventory automation, broker/history/inbox/webhook reconciliation tools and activation gates.
+**Question:** Exact epoch/generation encoding, `(R,F]` inventory automation, broker/history/inbox/webhook/equivalence-profile reconciliation tools and activation gates.
 
 **Already fixed:**
 
 - missing restored state is uncertainty, not absence;
 - missing/older content-comparison evidence is not proof of a safe duplicate;
-- effectful async admission and duplicate classification remain fail-closed until required continuity/equivalence is proven;
+- retained comparison evidence is not sufficient when the historical canonicalization/profile/verifier authority required to interpret it is missing, stale or unknown;
+- effectful async admission and duplicate classification remain fail-closed until required continuity/equivalence and historical comparison authority are proven;
 - stale producer/replay/authorization/webhook-destination authority does not revive;
+- restored obsolete comparison verifier/profile cannot become current authority for unrelated messages or scopes;
 - offset/outbox/inbox state alone cannot contradict surviving external/audit/effect/equivalence evidence;
 - webhook recovery preserves stable delivery identity, semantic snapshot/reproduction authority and destination-generation fences.
 
@@ -333,7 +349,8 @@ The exact ID algorithm, snapshot storage, generation encoding and per-Product ca
 
 - replay support does not exceed safe schema/dedup/content-equivalence/data evidence;
 - message-content comparison evidence survives as long as the scoped ID can legitimately redeliver/replay/recover, or an alternate durable authority proves equivalence;
-- unresolved same-ID/content conflicts never age into benign duplicate success;
+- any historical comparison profile/verifier generation required to interpret retained evidence survives for the same supported horizon or is replaced by an equality-preserving governed migration before retirement;
+- unresolved same-ID/content conflicts or unknown historical verifier state never age into benign duplicate success;
 - unresolved irreversible ambiguity never expires into blind retry;
 - legal hold/erasure governance overrides ordinary broker cleanup as required;
 - schema definitions/readers remain available for supported retained history;
@@ -358,7 +375,7 @@ The exact ID algorithm, snapshot storage, generation encoding and per-Product ca
 
 - retirement is measured/governed;
 - supported producers/consumers/history must no longer depend on the retired version or a retained adapter/reader must exist;
-- retained message-content equivalence evidence remains until duplicate/replay/recovery support for the associated identities safely ends or migrates;
+- retained message-content equivalence evidence and any historical comparison authority required to interpret it remain until duplicate/replay/recovery support for the associated identities safely ends or migrates;
 - external webhook subscribers require explicit migration policy when Product enables them.
 
 ## OPEN discipline

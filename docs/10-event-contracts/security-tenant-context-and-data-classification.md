@@ -141,6 +141,46 @@ Consumers validate:
 
 The exact broker-integrity/auth profile remains OPEN, but consumers may not silently accept malformed or cross-contract messages.
 
+## Message-equivalence evidence
+
+Duplicate-sensitive consumers need durable evidence that a repeated scoped `message_id` still represents the **same immutable semantic message**, not merely the same identifier reused with different content.
+
+That comparison evidence may be implemented as:
+
+- a canonical collision-resistant fingerprint/digest under an accepted profile;
+- an authenticated digest/MAC when payload entropy/classification makes plain digest disclosure unsafe;
+- protected retained immutable content;
+- another deterministic evidence form that proves semantic equivalence over the contract-defined immutable comparison surface.
+
+The exact algorithm/storage mechanism remains OPEN, but these properties are fixed:
+
+- evidence covers every immutable field whose difference would make same-ID reuse an integrity failure;
+- comparison uses the same canonical structured interpretation as contract validation, not parser-specific raw-text accidents;
+- the evidence record identifies/inherits a stable comparison-profile version sufficient to reproduce the same canonicalization/comparison surface for the supported horizon;
+- evidence comparison occurs only after the trusted `(consumer_contract, message_identity_scope, message_id)` has been derived; a fingerprint is never a substitute for that trusted identity scope;
+- where a digest/MAC construction supports domain separation, its input/context is bound to the accepted consumer/contract and trusted message-identity scope so the evidence cannot become an accidental cross-tenant/cross-consumer correlation namespace;
+- evidence remains available for the full supported dedup/redelivery/replay/recovery horizon or equivalent surviving authority proves comparison;
+- same scoped ID with non-equivalent evidence fails closed into integrity/quarantine handling and is never accepted as an ordinary duplicate;
+- loss/rollback of comparison evidence or of the historical comparison profile/key authority needed to interpret it is recovery uncertainty, not permission to assume equivalence;
+- evidence inherits the payload's confidentiality/retention/erasure risk and SHALL NOT become a new side channel;
+- evidence is correctness/recovery evidence only: it is not authorization, tenant routing, ordering authority, a public/external identifier, or a bearer capability.
+
+Comparison evidence SHALL NOT be used as a global reverse lookup such as `find tenant/message by fingerprint`. Lookup begins from trusted scoped message identity; only then may the corresponding evidence be compared. Implementations prevent unrestricted equality-oracle behavior across tenants, consumers or unrelated contract namespaces.
+
+A plain unsalted/unkeyed digest of low-entropy confidential values may permit offline guessing and is not automatically a safe storage/logging representation. Where that risk exists, the accepted profile uses a protected comparison mechanism such as keyed/authenticated hashing or protected retained evidence. Fingerprints/MACs are not logged casually and are not exposed externally as message identifiers.
+
+When keyed/authenticated comparison evidence is used:
+
+- the receipt/evidence retains a non-secret stable key/profile generation reference sufficient to determine the historical verification authority;
+- key material itself remains behind the accepted secret/KMS boundary and is never copied into the message, ordinary inbox payload, log or quarantine record;
+- key/profile rotation either preserves historical comparison ability for the supported dedup/replay/recovery horizon or performs an explicitly governed evidence migration that proves equivalence before retiring the old verifier;
+- loss, retirement or temporary unavailability of a historical verifier does **not** turn unknown equivalence into duplicate success or new effect eligibility; the affected identity stays fail-closed/reconciliation-blocked until an accepted authority proves equivalence;
+- successful verification with a current key/profile does not retroactively re-authorize, re-scope or otherwise reinterpret an old message.
+
+Canonicalization/comparison-profile evolution follows the same discipline. A new parser/canonicalization release may not silently recompute an old receipt under different rules and then treat a mismatch as message corruption or, worse, treat changed content as equivalent. Historical evidence remains interpretable under its accepted profile, or a reviewed deterministic migration preserves the old semantic comparison result before retirement.
+
+Erasure/minimization may replace full payload retention with the smallest governed comparison evidence sufficient for duplicate/recovery safety, but erasure cannot remove all equivalence evidence while the same logical message remains eligible to redeliver/replay and duplicate suppression still matters. If policy requires destroying the last usable comparison authority, the corresponding old identity/replay path must cease to be effect-eligible or remain fail-closed under the accepted governance/reconciliation policy; erasure cannot manufacture proof of equivalence.
+
 ## Provider-originated data
 
 Provider callbacks are untrusted external ingress until Phase 09 authentication/freshness/replay/canonical parsing/tenant binding completes.
@@ -178,6 +218,8 @@ secret_or_credential
 
 `secret_or_credential` content is not permitted in ordinary async payloads.
 
+Derived correctness evidence such as message fingerprints, authenticated digests, tombstones and result-linkage metadata is classified deliberately rather than assumed harmless. If the derivation can reveal or test confidential source values, it receives corresponding protection, retention and logging restrictions. Comparison-profile/key-generation references are also governed metadata: they may aid recovery/version selection but never grant key access or message authority.
+
 ## Secret references
 
 When work requires secret material, the message carries an opaque reference/identity rather than the secret.
@@ -191,6 +233,8 @@ The worker:
 - honors revocation/rotation.
 
 A secret reference is not authorization by itself.
+
+Keyed message-equivalence evidence follows the same secret boundary. The inbox/evidence record may retain a non-secret verifier/profile generation reference needed for historical comparison, but that reference does not authorize key retrieval by arbitrary workers. Only the narrowly authorized comparison/recovery path may obtain the required historical verifier material.
 
 ## Payload minimization
 
@@ -206,6 +250,8 @@ Avoid:
 - authorization/session/token state.
 
 Consumers needing current mutable state may receive a stable resource reference and fetch an authorized projection instead of receiving a stale oversized snapshot.
+
+Correctness evidence is minimized independently from payload retention. A consumer may retain a protected canonical fingerprint/result linkage plus the minimum comparison-profile/version reference after deleting full payload bytes, but only when that evidence still satisfies classification, erasure, historical verification and recovery requirements.
 
 ## Encryption
 
@@ -223,7 +269,8 @@ Normal logs SHALL NOT contain:
 - unrestricted confidential payloads;
 - full regulated records;
 - protected cursor/capability values;
-- webhook signing material.
+- webhook signing material;
+- message-equivalence fingerprints/MACs when their classification or offline-guessing risk makes them unsuitable for ordinary observability.
 
 Safe observability uses:
 
@@ -239,6 +286,8 @@ attempt/retry/quarantine state
 
 Payload sampling, if ever enabled, requires explicit classification/redaction policy.
 
+A safe reason may record that equivalence verification was unavailable, profile-mismatched or content-conflicting, but normal logs do not emit the compared confidential content, verifier material, raw MAC/fingerprint, or unrestricted cross-tenant equality data.
+
 ## Quarantine security
 
 Quarantine is a security/data store and inherits classification/retention controls.
@@ -252,6 +301,8 @@ Remediation tooling applies:
 - redacted/safe views;
 - audit;
 - bounded export/download.
+
+For same-ID/different-content integrity failures, quarantine/diagnostics may retain governed comparison evidence, comparison-profile references and safe reason classes without exposing unrestricted conflicting payloads or verifier material to ordinary operators.
 
 ## Replay security
 
@@ -267,6 +318,8 @@ Replay authorization includes:
 - external-effect safety.
 
 A replay operator cannot bypass tenant isolation by choosing arbitrary message IDs/offsets.
+
+Replay that depends on historical duplicate suppression also depends on the corresponding historical comparison authority. If its profile/verifier is unavailable or retired without a proved migration, replay remains blocked/reconciliation-required for duplicate-sensitive effects rather than treating the old receipt as equivalent by identity alone.
 
 ## Realtime security
 
@@ -315,7 +368,8 @@ Required properties:
 - tenant context trusted from producer boundary;
 - service ACLs scoped appropriately;
 - replay/admin tools respect tenant boundaries;
-- telemetry/logging do not leak payloads across tenants.
+- telemetry/logging do not leak payloads across tenants;
+- equivalence evidence is compared only inside the trusted consumer/message-identity scope and is not exposed as a cross-tenant correlation/oracle surface.
 
 ## Message spoofing / confused deputy
 
@@ -330,6 +384,8 @@ A message saying:
 has no authority unless that exact command contract, producer, tenant scope and current execution policy are accepted.
 
 Generic "action" event buses that let payload text select arbitrary privileged operations are prohibited.
+
+Message-equivalence evidence cannot widen this authority. A matching MAC/fingerprint proves only the accepted comparison statement for the already-derived scoped identity; it does not authenticate a new producer, tenant, command or permission.
 
 ## Schema/parser attacks
 
@@ -346,6 +402,8 @@ At minimum:
 
 Internal transport does not make parser input harmless because producers/integrations can be compromised or buggy.
 
+Message-equivalence evidence is computed/verified over the accepted canonical semantic interpretation, not over whichever parser representation a worker happens to produce. Canonicalization/comparison profiles are versioned and retained/migrated consistently with supported historical receipts.
+
 ## Supply chain / schema trust
 
 Generated message code/schema artifacts come from reviewed contract sources.
@@ -354,6 +412,8 @@ Consumers do not dynamically fetch untrusted schemas/code from message-provided 
 
 Schema-registry access is authenticated/authorized; registry compromise is included in threat modeling.
 
+Comparison-profile implementations and migrations are reviewed contract/security artifacts as well. A compromised or unreviewed canonicalizer/fingerprint implementation cannot silently redefine equality for previously admitted message identities.
+
 ## Recovery security
 
 After restore/PITR:
@@ -361,8 +421,12 @@ After restore/PITR:
 - stale authorization caches/generations do not regain authority;
 - stale producer generations remain retired where required;
 - missing inbox/replay state is uncertainty, not permission;
+- missing/older message-equivalence evidence is uncertainty, not proof that a same-ID arrival matches the original message;
+- missing historical comparison-profile/verifier authority is likewise uncertainty, not proof of equality or effect eligibility;
 - quarantined/ambiguous effects remain blocked until reconciliation;
 - audit/security evidence in `(R,F]` is restored/reconciled.
+
+Recovery reconciles not only evidence bytes but the profile/key-generation authority needed to interpret them. A restore that revives an old comparison key/profile does not make that verifier current authority for unrelated messages, and a restore that loses the historical verifier does not convert existing receipts into unverified duplicates.
 
 Recovery availability does not outrank tenant/security correctness.
 
@@ -381,6 +445,8 @@ Message surfaces enforce bounded:
 
 One tenant/provider/producer cannot create unbounded global cost.
 
+Comparison-evidence APIs/stores are not exposed as unrestricted hashing/equality oracles. Failed comparisons, historical-key lookups and migration work are rate/budget bounded according to the owning reliability/security profile so an attacker cannot force unbounded KMS/secret-store work through crafted duplicate IDs.
+
 ## Required security tests
 
 Implementations test:
@@ -392,6 +458,14 @@ Implementations test:
 - generic worker credential cannot access unrelated tenant/domain secrets;
 - provider payload cannot spoof internal producer/contract identity;
 - secret values fail message schema/publication/logging rules;
+- same scoped message ID with different canonical immutable content is detected even after full payload retention has been minimized;
+- equivalence-evidence retention/restore loss cannot convert same-ID/different-content into an accepted duplicate;
+- low-entropy confidential payload comparison evidence is not exposed through naive ordinary logs or externally visible identifiers;
+- same semantic content under different tenant/consumer scopes cannot use equivalence evidence to create cross-scope deduplication or an externally queryable correlation oracle;
+- comparison-profile/canonicalization upgrade preserves historical equality semantics or fails closed until a reviewed migration proves equivalence;
+- keyed/MAC evidence remains historically verifiable across accepted key rotation, or old duplicate-sensitive identities stay fail-closed when the verifier is unavailable/retired;
+- restore to before comparison-key/profile rotation does not resurrect obsolete verifier authority for unrelated messages;
+- historical verifier outage/loss never changes unknown equivalence into duplicate success or protected-effect eligibility;
 - quarantine/replay admin tooling enforces tenant/operator scope;
 - realtime buffered message is not delivered after authority retirement beyond accepted fence;
 - webhook destination cannot SSRF internal/control-plane targets;
@@ -406,6 +480,9 @@ Implementations test:
 - exact data-classification labels mapping;
 - cross-region topology;
 - end-to-end message signature profile where needed;
+- message-equivalence fingerprint/MAC algorithm, domain-separation construction and storage representation;
+- comparison-profile/version representation and migration mechanism;
+- historical verifier/key-generation retention or migration implementation;
 - replay/quarantine admin UI implementation.
 
-The trust, tenant isolation, current authority, data minimization and fail-closed recovery properties are fixed.
+The trust, tenant isolation, current authority, message-equivalence integrity, scoped/non-oracular comparison, historical profile/verifier continuity, data minimization and fail-closed recovery properties are fixed.

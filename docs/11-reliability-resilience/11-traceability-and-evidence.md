@@ -36,7 +36,7 @@ This document proves design-level continuity from accepted upstream authority to
 | ADR-020 | Runtime capability remains product-neutral and portable. | `02`, `07`, `08`, `12` | Capability-profile conformance; no vendor coupling. |
 | System Design | Control Plane/cell authority, placement, cross-cell behavior, async consistency, identity, provider, cache, realtime, and failure semantics. | `02`–`09` | Control-plane, cell, placement, async, cache, provider, realtime vectors. |
 | Data Architecture | Authoritative records, ledgers, generations, lifecycle, relocation, retention, erasure, audit, recovery, artifacts, and the customer-telemetry durable acceptance/projection contract. | `02`, `03`, `05`–`10`, `13` | Recovery, relocation, artifact governance, writer-fencing, `FV-TEL-002`, scoped observation identity, projection checkpoint and monotonic-state vectors. |
-| Phase 09 — API & Contracts | Error/uncertainty, idempotency, resource identity, cursors, ingress, artifacts, authorization and contract compatibility. | `03`, `04`, `06`–`10` | Stable operation identity, timeout truth, artifact and mixed-version vectors. |
+| Phase 09 — API & Contracts | Error/uncertainty, idempotency, resource identity, cursors, canonical ingress/structured interpretation, artifacts, authorization and contract compatibility. Reliability admission SHALL consume that same canonical interpretation before tenant/workload/cost classification becomes authoritative. | `03`, `04`, `05`, `06`–`10`, `13` | Stable operation identity, timeout truth, artifact and mixed-version vectors plus `FV-OVER-002` canonical-admission branches, `RB-REL-013` and `TM-REL-007`. |
 | Phase 10 — Events / Async Contracts | Envelope identity, outbox/inbox, delivery, retry, acknowledgement, quarantine, replay, generations, realtime/webhook, recovery. | `03`–`10` | `FV-ASYNC-*`, `FV-RT-*`, `FV-WH-*`, `FV-REC-*`. |
 | Post–Phase 10 Roadmap | Phase order, mandatory outputs, overlays, OPEN taxonomy, non-silo inheritance, gate and implementation prohibition. | `01`, `08`–`13` | Artifact-presence, blocker, threat-delta, review, and exact-base checks. |
 
@@ -89,6 +89,7 @@ Phase 11 establishes the following summary; the concrete threat actors, changed 
 
 - outage or uncertainty SHALL NOT broaden authority;
 - tenant, cell, generation, and privileged-runtime isolation apply during failure and recovery;
+- reliability admission/cost classification inherits the accepted canonical request/message interpretation; untrusted structured variants cannot select tenant/workload/budget authority;
 - secrets and sensitive evidence do not enter ordinary payloads, logs, or state;
 - revocation, erasure, legal hold, audit, and cryptographic authority survive or are reconciled after recovery;
 - egress and external-effect ambiguity remain bounded and attributable;

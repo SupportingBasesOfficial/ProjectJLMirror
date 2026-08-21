@@ -42,7 +42,9 @@ Examples: cell transactional data, control-plane placement/lifecycle state, co-r
 
 May be short-lived or auxiliary in normal operation, but loss changes duplicate/replay/recovery eligibility. It is not disposable cache state.
 
-Examples: message-content equivalence evidence, external operation outcomes, replay epochs, dedup receipts over the supported horizon, immutable webhook obligation/generation evidence.
+Examples: message-content equivalence evidence; the canonical comparison-profile/version and historical verifier authority required to interpret that evidence; external operation outcomes; replay epochs; dedup receipts over the supported horizon; immutable webhook obligation/generation evidence.
+
+For duplicate-sensitive message paths, retaining an otherwise intact fingerprint/MAC without the historical comparison profile/verifier authority needed to interpret it is continuity loss, not a usable duplicate proof. A restored historical verifier is scoped to its historical evidence generation and is not automatically current authority for unrelated work.
 
 ### `durable_progress_critical`
 
@@ -62,7 +64,7 @@ Failure may remove an optional capability while core authoritative operations co
 
 Examples: reporting/AIOps derived workloads when not on a critical decision path.
 
-An implementation SHALL NOT downgrade a dependency from an authority/continuity class to derived merely because it is stored in a cache, broker or TTL-based product.
+An implementation SHALL NOT downgrade a dependency from an authority/continuity class to derived merely because it is stored in a cache, broker, TTL-based product, digest record or historical-key/profile store.
 
 ## Capability/dependency map
 
@@ -73,12 +75,12 @@ An implementation SHALL NOT downgrade a dependency from an authority/continuity 
 | Security/session authority | `rel.security-session-authority` | `1` | current authentication/authorization/revocation | deny new protected decisions unless current local verification is explicitly valid | principal/tenant/scope | current non-regressing generation/deny state proven |
 | Placement/reference cache | `rel.placement-reference-cache` | `1` | bounded trusted copy, not original authority | safe last-known-good only within profile and destination-cell admission | cache key tenant/version; protected fallback concurrency | freshness/admission remains provable |
 | Performance cache | `rel.performance-cache` | `1` | derived data | bypass to authority only when safe and bounded; otherwise degrade | tenant/operation bulkhead | stampede controlled; authority healthy |
-| Replay/capability consume state | `rel.replay-consume-state` | `1` | single/bounded-use correctness authority | protected admission fails closed | capability epoch/scope | continuity recovered or new trusted epoch invalidates old capabilities |
-| Secret/KMS authority | `rel.secret-key-authority` | `1` | secret/key release and cryptographic usability | operations needing unavailable secrets fail; no plaintext fallback | runtime/cell/tenant/secret namespace | current key/secret authority and rotation state proven |
+| Replay/capability consume state | `rel.replay-consume-state` | `1` | single/bounded-use correctness authority plus duplicate-sensitive historical comparison authority when replay relies on inbox equivalence | protected admission fails closed/reconciliation-blocked when identity/equivalence or required historical profile/verifier continuity cannot be proven | capability epoch/scope and historical comparison namespace | continuity recovered, accepted equality-preserving migration completed, or a new trusted epoch invalidates old capabilities where the owning contract permits |
+| Secret/KMS authority | `rel.secret-key-authority` | `1` | secret/key release and cryptographic usability, including narrowly scoped historical verifier access when a keyed equivalence profile requires it | operations needing unavailable secrets fail; duplicate-sensitive equivalence remains blocked when a required historical verifier is unavailable; no plaintext fallback | runtime/cell/tenant/secret namespace and historical verifier generation | current key/secret authority and rotation state proven; historical verifier use remains generation-scoped |
 | Configuration authority/distribution | `rel.configuration-authority` | `1` | accepted configuration content, applicability, rollout and generation | last-known-good only when schema, signature/authority, scope and generation remain valid; unsafe or contradictory rollout stops | tenant/cell/runtime-role/config namespace and rollout generation | one accepted generation, target coverage and rollback/forward-recovery state proven |
 | Outbox/publication | `rel.outbox-publication` | `1` | committed async intent | publication pauses; originating commit remains valid | cell/producer/contract | dispatcher resumes same immutable message identity |
 | Broker/job transport | `rel.broker-job-transport` | `1` | delivery transport, not business truth | async progress pauses; bounded backlog | workload/tenant/consumer | durable intent/process truth reconciled before progress |
-| Consumer inbox/effect | `rel.consumer-inbox-effect` | `1` | duplicate/effect completion authority | duplicate-sensitive execution stops if evidence incomplete | consumer contract/source/tenant | outcome and content equivalence proven |
+| Consumer inbox/effect | `rel.consumer-inbox-effect` | `1` | duplicate/effect completion authority plus confidentiality-safe message-equivalence evidence and its required canonical comparison-profile/historical verifier authority | duplicate-sensitive execution stops/reconciliation-blocks if evidence, interpretation authority or trust is incomplete; conflicting content never becomes duplicate success | consumer contract/source/tenant/comparison namespace; equality/KMS work bounded per trusted scope | outcome and immutable-content equivalence proven under the accepted historical comparison authority and current admission; no cross-scope equality/oracle path |
 | External provider | `rel.external-provider` | `1` | external truth may be unavailable/slow/ambiguous | provider-dependent capability fails fast/circuits; stored state only with explicit staleness | tenant/integration/provider/destination | provider and local operation truth reconciled |
 | Realtime fanout/gateway | `rel.realtime-fanout` | `1` | advisory delivery only | live updates pause/shed; authoritative API/read state remains | connection/tenant/topic/cell | fresh auth/placement and resync |
 | Webhook delivery | `rel.webhook-delivery` | `1` | external disclosure obligation when Product-enabled | destination-specific attempts pause/quarantine; business fact not rolled back | tenant/subscription/destination generation | immutable obligation and destination-generation eligibility proven |
@@ -89,7 +91,7 @@ An implementation SHALL NOT downgrade a dependency from an authority/continuity 
 | Reporting/AIOps workers | `rel.reporting-derived` | `1` | optional/derived workload unless Product says otherwise | delay/shed/isolate | separate queue/pool/budget | backlog bounded and dependencies healthy |
 | Automation/SQL/admin/recovery | `rel.privileged-operations` | `1` | privileged effects | fail closed when scope/authority/isolation unavailable | dedicated trust envelope | current authority, target scope, audit and resource policy proven |
 
-Every ID above SHALL resolve to exactly one versioned record in the canonical catalog in `07-capability-resilience-profiles.md`. A row without a resolvable profile is a Phase 11 acceptance blocker.
+Every ID above SHALL resolve to exactly one versioned base record in the canonical catalog in `07-capability-resilience-profiles.md`; duplicate-sensitive comparison-continuity dimensions additionally SHALL resolve through the mandatory normalized extension in `14-message-equivalence-reliability-continuity.md` as required by `08-reliability-semantic-manifest.md`. A row without a complete resolvable joined profile is a Phase 11 acceptance blocker.
 
 ## Failure-domain hierarchy
 
@@ -118,9 +120,9 @@ Every capability SHALL declare:
 - durable asynchronous dependencies;
 - optional/derived dependencies;
 - authority dependencies;
-- recovery-continuity dependencies;
+- recovery-continuity dependencies, including historical comparison-profile/verifier authority where duplicate-sensitive equivalence depends on it;
 - external-provider dependencies;
-- amplification fanout and retry paths;
+- amplification fanout and retry paths, including comparison/KMS/evidence-migration work where applicable;
 - fallback path and the authority used by that fallback.
 
 A fallback is invalid when it:
@@ -128,7 +130,8 @@ A fallback is invalid when it:
 - depends recursively on the same failed authority;
 - increases load on an already saturated dependency without a concurrency bound;
 - changes tenant, authorization, data-classification or consistency semantics;
-- turns stale/missing evidence into permission;
+- turns stale/missing/uninterpretable evidence into permission;
+- uses an equivalence fingerprint/MAC/profile reference as a cross-scope lookup or authority;
 - requires an unaccepted Product behavior.
 
 ## Ownership and escalation handoff
@@ -142,6 +145,7 @@ Implementation conformance SHALL later prove:
 - failure injection at each declared domain contains impact at or below the declared blast radius;
 - shared dependency impairment does not bypass tenant/current-authority checks;
 - cache/fallback paths remain bounded under concurrency;
-- continuity-critical evidence loss causes fail-closed/reconciliation behavior;
+- continuity-critical evidence loss or loss of the authority required to interpret it causes fail-closed/reconciliation behavior;
+- low-entropy/cross-scope message-equivalence evidence cannot become a disclosure/correlation oracle and crafted duplicate IDs cannot create unbounded comparison/KMS work;
 - optional workload failure does not consume core authority capacity;
 - second-cell behavior does not change logical contract identity.

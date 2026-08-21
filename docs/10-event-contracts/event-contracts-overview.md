@@ -40,6 +40,8 @@ The following are already fixed and remain normative:
 - a repeated trusted scoped message identity is treated as a benign duplicate only when durable evidence proves the same immutable logical message semantics;
 - same scoped `message_id` with different immutable content is integrity/producer-contract failure, never successful duplicate suppression;
 - content-equivalence evidence survives the supported dedup/redelivery/replay/recovery horizon or an alternate durable authority proves equivalence;
+- the evidence used to prove equivalence inherits source-data confidentiality risk, is interpreted under a stable canonical comparison-profile/version and never becomes a cross-scope equality/oracle or authorization surface;
+- when historical verifier/profile authority is required to interpret retained evidence, that authority remains available or is replaced by a reviewed equality-preserving migration; unknown historical equivalence stays fail-closed/reconciliation-blocked;
 - a message/job does not carry durable human authorization merely because an earlier request had it;
 - workers re-resolve current tenant placement and establish their own trusted `TenantContext` before protected execution;
 - provider-native models remain adapter-owned and do not become platform ubiquitous language;
@@ -132,7 +134,9 @@ All published Phase 10 messages inherit a common logical envelope. Exact wire se
 
 The canonical logical fields are defined in `message-envelope-and-classes.md` and include stable message identity, contract identity/version, producer authority, tenant/global scope, timestamps, correlation/causation and optional subject/ordering metadata.
 
-A stable scoped message identity denotes one immutable logical message meaning. Duplicate-sensitive consumers therefore retain a canonical fingerprint, immutable original or equivalent comparison authority sufficient to detect reuse of the same scoped ID with different immutable semantics throughout the supported dedup/recovery horizon.
+A stable scoped message identity denotes one immutable logical message meaning. Duplicate-sensitive consumers therefore retain a protected canonical fingerprint/MAC, immutable original or equivalent comparison authority sufficient to detect reuse of the same scoped ID with different immutable semantics throughout the supported dedup/recovery horizon. The evidence is evaluated only after trusted message scope derivation, under the same canonical structured interpretation used for contract validation, and carries/inherits the stable comparison-profile/version and historical verifier authority required to preserve the original equality result.
+
+Low-entropy confidential content is not assumed safe behind an ordinary plain digest. Derived comparison evidence follows source-data classification, logging/export restrictions and anti-oracle/domain-separation policy; exact algorithm/KMS/storage choices remain OPEN.
 
 Payloads contain contract data only. Secrets, access tokens, refresh tokens, raw credentials and unrestricted provider secrets are forbidden.
 
@@ -144,7 +148,7 @@ Every consumer:
 
 1. validates the accepted message contract;
 2. derives trusted message identity scope;
-3. verifies message-content equivalence when the scoped identity was already admitted;
+3. verifies message-content equivalence under the retained canonical comparison profile and required historical verifier authority when the scoped identity was already admitted;
 4. re-resolves current placement where protected tenant state is touched;
 5. establishes its own `TenantContext`;
 6. performs current authorization/policy checks where the work requires authority at execution time;
@@ -169,8 +173,9 @@ Default delivery is **at least once**.
 Therefore:
 
 - duplicate delivery is expected;
-- benign duplicate classification requires the same scoped message identity **and equivalent immutable message content**;
+- benign duplicate classification requires the same scoped message identity **and equivalent immutable message content** proven under the accepted comparison profile/authority;
 - conflicting content under an already-used scoped ID is integrity failure/quarantine, not duplicate success;
+- missing/unavailable historical comparison authority is unknown equivalence and remains reconciliation-blocked rather than duplicate success;
 - broker acknowledgement is not the business completion boundary;
 - consumer effects must be crash-safe;
 - retry after timeout/lease loss first reconciles durable effect state when outcome can be ambiguous;
@@ -204,12 +209,14 @@ A replay contract defines:
 - whether the original message identity is preserved;
 - consumer eligibility and dedup interaction;
 - message-content equivalence evidence available for retained duplicate-sensitive identities;
+- canonical comparison-profile/version and historical verifier authority required to interpret that evidence;
+- behavior when that historical comparison authority is unavailable, retired or migrated;
 - authorization/data-retention constraints;
 - ordering/gap expectations;
 - observability and audit;
 - behavior when original contract versions are no longer directly consumable.
 
-Replaying an old event does not authorize repeating an already-completed irreversible side effect or suppressing changed historical content under a reused ID.
+Replaying an old event does not authorize repeating an already-completed irreversible side effect, trusting identity when historical equivalence cannot be proven, or suppressing changed historical content under a reused ID.
 
 ## Recovery continuity
 
@@ -223,6 +230,7 @@ The accepted `(R,F]` recovery interval reconciles as applicable:
 - outbox publication state;
 - inbox/dedup receipts;
 - message-content fingerprint/original/equivalence evidence;
+- comparison-profile/version plus non-secret historical verifier generation references and required verification authority;
 - stable process/operation results;
 - provider/external acknowledgements;
 - webhook delivery semantic snapshot and destination-generation/fence evidence;
@@ -230,7 +238,7 @@ The accepted `(R,F]` recovery interval reconciles as applicable:
 - consumer progress/checkpoints;
 - source/producer generation authority.
 
-A restored cell/consumer/dispatcher remains fail-closed or reconciliation-blocked for duplicate/disclosure-sensitive effects until continuity and required equivalence are established.
+Retaining comparison evidence bytes without the authority required to interpret them is not continuity. A restored cell/consumer/dispatcher remains fail-closed or reconciliation-blocked for duplicate/disclosure-sensitive effects until continuity, required equivalence and historical comparison authority are established. Restoring an obsolete verifier does not make it current authority for unrelated messages.
 
 ## Realtime boundary
 
@@ -283,6 +291,8 @@ Async compatibility includes more than payload fields. Security/correctness-sens
 - tenant/global scope;
 - message identity scope;
 - message-content equivalence/fingerprint coverage and retention;
+- equivalence-evidence classification, trusted-scope/domain-separation and anti-oracle behavior;
+- canonical comparison-profile/version and historical verifier/key-generation lifecycle;
 - producer authority/generation;
 - delivery/ack policy;
 - retry/quarantine policy;
@@ -306,7 +316,9 @@ A new async contract is not implementation-ready until it declares at minimum:
 - stable `contract_name` and version policy;
 - tenant/global scope;
 - canonical message identity and trusted identity scope;
-- canonical message-content equivalence/fingerprint policy and evidence retention/recovery horizon where duplicate suppression applies;
+- canonical message-content equivalence policy and evidence retention/recovery horizon where duplicate suppression applies;
+- equivalence-evidence classification/confidentiality, trusted-scope/domain-separation and logging/export policy;
+- canonical comparison-profile/version and historical verifier lifecycle, including fail-closed behavior when historical equality authority is unavailable;
 - payload schema and data classification;
 - correlation/causation policy;
 - publication/outbox boundary;
@@ -331,7 +343,7 @@ Phase 10 does not prematurely select:
 - partition count or queue topology;
 - broker-specific acknowledgement modes;
 - schema-registry vendor;
-- exact canonical message fingerprint/hash algorithm or evidence-store representation;
+- exact canonical message fingerprint/hash/MAC algorithm, domain-separation encoding, comparison-profile representation, historical verifier/KMS backend or evidence-store representation;
 - exact wire serialization for every contract where logical semantics suffice;
 - numeric retry/retention/backoff/dead-letter thresholds without evidence;
 - deployment-specific topic/queue naming;
@@ -348,6 +360,9 @@ Before a Phase 10 contract is accepted, reviewers SHOULD ask whether it remains 
 
 - delivery is duplicated and reordered;
 - a scoped `message_id` is accidentally or maliciously reused with different immutable content after the original full payload was minimized;
+- low-entropy confidential immutable content would be exposed by a naive plain digest or cross-scope equality lookup;
+- a comparison canonicalization/profile changes while historical receipts remain replayable;
+- a historical verifier/key generation is unavailable, retired or restored older than surviving evidence;
 - producer and consumer versions differ during rolling deployment;
 - a tenant relocates between cells while messages are in flight;
 - a consumer is extracted to another service/region;
@@ -362,4 +377,4 @@ Before a Phase 10 contract is accepted, reviewers SHOULD ask whether it remains 
 - provider adapters change without changing platform event semantics;
 - one workload grows 100x and requires independent partitioning/scaling.
 
-If a consumer must understand physical topology, provider-native schemas or broker internals to remain correct, if the same scoped message identity can silently hide different immutable content, or if the same stable external delivery identity can change meaning/destination because implementation state changed, the contract is insufficiently decoupled.
+If a consumer must understand physical topology, provider-native schemas or broker internals to remain correct, if the same scoped message identity can silently hide different immutable content or proceed when its historical equality authority is unavailable, if equivalence evidence leaks confidential/cross-scope equality information, or if the same stable external delivery identity can change meaning/destination because implementation state changed, the contract is insufficiently decoupled.

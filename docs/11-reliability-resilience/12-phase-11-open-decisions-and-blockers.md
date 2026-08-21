@@ -68,6 +68,7 @@ Phase 11 closes the following semantic decisions within roadmap authority:
 - fail-closed boundaries for uncertain authority, revocation, generations, and sensitive operations;
 - deadline propagation and the rule that timeout is not completion truth;
 - retry eligibility, stable identity, aggregate-budget, circuit, bulkhead, backpressure, and bounded-backlog requirements;
+- canonical Phase 09/10 interpretation remains the authority for admission tenant/workload/cost classification; provisional pre-validation resource claims are conservative and must be upgraded or rejected before effect;
 - noisy-neighbor, maintenance/replay/recovery isolation requirements;
 - quarantine, redrive, fencing, reconciliation, and `(R,F]` recovery continuity;
 - reliability compatibility/change classification;
@@ -85,6 +86,7 @@ Phase 11 SHALL NOT be accepted while any of the following is true:
 - missing trust/recovery evidence can be interpreted as absence or permission;
 - ambiguous external effects can receive blind retry;
 - retry/backlog/concurrency is unbounded or lacks tenant/workload isolation;
+- non-canonical/untrusted structured request or message semantics can select tenant/workload/cost admission class, or a cheaper provisional budget can survive the final canonical classification into expensive/effectful continuation;
 - recovery can restore authority before `(R,F]`, revocation, erasure, hold, audit, and generation reconciliation;
 - physical topology leaks into public API/event identity;
 - an OPEN lacks a class, owner, evidence requirement, gate or applicable profile scope;

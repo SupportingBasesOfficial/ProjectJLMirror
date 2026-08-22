@@ -57,7 +57,17 @@ reviewed source S
   -> production promotion of A
 ```
 
-Environment-specific behavior is provided through separately governed non-secret configuration and secret references, never by rebuilding source into a different artifact under the same release identity.
+Environment-specific behavior is provided through separately governed configuration and secret references, never by rebuilding source into a different artifact under the same release identity.
+
+## Artifact sameness vs configuration compatibility
+
+The same immutable artifact is promoted, but validation and production configuration are not required to be byte-identical.
+
+Production promotion binds an exact production configuration identity/generation plus evidence showing that release-relevant differences from validated configuration are compatible/equivalent, or that material target-specific differences were separately validated.
+
+Environment-specific endpoints, resource settings and secret references may differ under accepted profiles. Differences affecting trust, authorization, tenant isolation, network/egress, Product behavior, failure/retry semantics, schema/API/event behavior, runtime authority, SLI meaning, recovery or release gates are material and cannot inherit validation evidence silently.
+
+Production secret values are never copied into validation to manufacture configuration equality. Secret-purpose/reference semantics may be compared without exposing secret material.
 
 ## Promotion object
 
@@ -69,7 +79,9 @@ artifact_id / immutable artifact digest
 target_environment_class
 validation_scope_or_evidence_class
 runtime_profile_set
-configuration_generation_or_candidate
+target_configuration_identity/generation
+target_configuration_semantic_profile
+validation_to_target_configuration_evidence
 schema/contract compatibility set
 cell compatibility metadata version/evidence when applicable
 required evidence set
@@ -105,6 +117,8 @@ side states:
 
 For a cell-affecting release, production canary eligibility requires the applicable `validation.reference-cell@1` evidence unless a higher accepted authority explicitly classifies the release as `NO_APPLICABLE_CASE` with evidence.
 
+Reference-cell evidence binds the same immutable artifact and the validated configuration semantic profile. Production may use a distinct environment-scoped configuration only when the validation-to-target configuration relationship is explicitly accounted for.
+
 ## Production promotion
 
 Production promotion requires:
@@ -112,12 +126,14 @@ Production promotion requires:
 - exact immutable artifact identity;
 - accepted source/build/provenance evidence;
 - applicable validation scopes completed on the same artifact;
+- exact production configuration identity/generation and semantic profile;
+- validation-to-production configuration compatibility/equivalence evidence or target-specific validation for material differences;
 - compatible API/event/schema/runtime matrix;
 - current Control Plane cell compatibility metadata/evidence where placement/cutover safety depends on it;
 - required security/reliability/observability gates;
 - current release/promotion authority;
 - exact target cell/wave scope;
-- configuration/secret references appropriate to production;
+- environment-appropriate secret references without copying production secret values into validation;
 - no unresolved release-blocking ambiguity.
 
 ## Recovery environment
@@ -131,9 +147,12 @@ Cloud account/project/subscription, cluster, namespace, registry, region and pip
 ## Cross-environment prohibitions
 
 - production workload credentials are not copied down by convenience;
-- production secrets are not embedded into artifacts;
+- production secrets are not embedded into artifacts or validation configuration;
 - production tenant traffic/data are not admitted into lower environments without governed purpose/minimization;
 - validation success cannot directly mutate production;
+- validation evidence cannot be reused across a material target-configuration difference without explicit compatibility/validation evidence;
 - validation reference-cell state cannot become authoritative production placement state by reuse;
 - an artifact being present in a production registry/location is not promotion or deployment authority;
 - promotion metadata never changes canonical tenant/resource/API/event identity.
+
+`RLV-049` falsifies validation-to-production configuration evidence laundering.

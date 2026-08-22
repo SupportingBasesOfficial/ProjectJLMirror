@@ -161,7 +161,7 @@ Forbidden: restored policy state becomes current merely because the pipeline ser
 
 ### RLV-045 — Cell-affecting release skips validation reference cell
 Inject: a runtime/schema/cell-affecting release passes `validation.general@1` and attempts production canary without the accepted staging/reference-cell evidence.  
-Required: production canary admission is blocked until `validation.reference-cell@1` succeeds on the same immutable artifact/config/schema/runtime candidate or an evidence-backed `NO_APPLICABLE_CASE` is recorded.  
+Required: production canary admission is blocked until `validation.reference-cell@1` succeeds on the same immutable artifact under the required production-relevant semantic profiles, or an evidence-backed `NO_APPLICABLE_CASE` is recorded.  
 Forbidden: deployment product lacking a staging concept silently removes the accepted Data rollout stage.
 
 ### RLV-046 — Stale or forged cell compatibility metadata
@@ -178,6 +178,11 @@ Forbidden: both operations become current because they used different job/deploy
 Inject: effectful deployment command times out or loses its response after the target may have changed; automation starts a new deployment operation for the same intended release.  
 Required: the original stable `deployment_operation_id` is observed/reconciled against durable target/runtime evidence; effectful retry occurs only when eligibility is proven.  
 Forbidden: timeout/process death/lost response is treated as no deployment, or a new operation ID manufactures duplicate eligibility.
+
+### RLV-049 — Validation evidence reused for materially different production configuration
+Inject: immutable artifact A passes validation with configuration V, then production deployment uses configuration P whose trust/network/tenant/failure/schema/runtime/Product/recovery semantics differ materially without explicit compatibility/equivalence evidence or target-specific validation.  
+Required: production promotion/deployment is blocked until the exact P identity/profile is bound and the V->P semantic differences are proven compatible/equivalent or separately validated.  
+Forbidden: same artifact, same config key names or copied production secret values are used as proof that P was validated.
 
 ## Acceptance rule
 

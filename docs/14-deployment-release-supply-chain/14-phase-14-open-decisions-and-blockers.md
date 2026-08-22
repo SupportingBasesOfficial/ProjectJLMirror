@@ -72,6 +72,8 @@ Not OPEN:
 - secret values are excluded from artifacts and ordinary evidence;
 - mixed-version compatibility is explicit;
 - expand/migrate/contract is preserved;
+- cell/runtime/schema-affecting releases preserve the accepted Data staging/reference-cell step as `validation.reference-cell@1` inside `environment.validation@1` unless evidence-backed N/A applies;
+- Control Plane cell current/target runtime-schema compatibility metadata remains an explicit placement/rollout safety input rather than deployment-tool inference;
 - rollback never erases later authority/effects/evidence;
 - restored/rolled-back release policy cannot resurrect retired approval/principal/verifier authority;
 - ambiguous external effects remain reconciliation-required;
@@ -97,21 +99,23 @@ Phase 14 SHALL NOT be accepted while any applicable condition remains:
 11. runtime admission can bypass Phase 12/13 security/recovery predicates;
 12. running artifact identity cannot be proven equivalent to the approved immutable artifact;
 13. rollout target scope can be caller-controlled;
-14. mixed-version API/event/schema/runtime/config combinations are unspecified;
-15. destructive contract can race supported old runtimes;
-16. backfill is non-resumable/unbounded or relies on one long ordinary transaction;
-17. migration privilege is shared with serving runtime by default;
-18. abort/timeout can convert ambiguous effect into absence/retry;
-19. rollback can resurrect revoked/erased/retired authority or erase audit/effects;
-20. restore/rollback can make retired release-policy/approval/verifier authority current merely because old pipeline state is reachable;
-21. emergency change can edit production artifact in place or bypass accountability;
-22. drift auto-fix can silently mutate canonical state;
-23. artifact retirement/deletion destroys required evidence unsafely;
-24. environment/cell decommission can leave stale placement, credentials, data or routes;
-25. release evidence lacks exact source-trust/policy/artifact/config/target/profile provenance;
-26. applicable `RLV-*` vectors lack owner/expected result/evidence;
-27. tool/vendor/numeric choices are asserted without evidence or OPEN owner;
-28. deterministic/AI/tool status is represented as Phase acceptance, merge authorization or production release authorization.
+14. a cell/runtime/schema-affecting release can skip required `validation.reference-cell@1` evidence because tooling lacks a staging concept;
+15. stale/caller-controlled cell compatibility metadata can make an incompatible runtime/schema combination placement/deployment eligible;
+16. mixed-version API/event/schema/runtime/config combinations are unspecified;
+17. destructive contract can race supported old runtimes/cell compatibility states;
+18. backfill is non-resumable/unbounded or relies on one long ordinary transaction;
+19. migration privilege is shared with serving runtime by default;
+20. abort/timeout can convert ambiguous effect into absence/retry;
+21. rollback can resurrect revoked/erased/retired authority or erase audit/effects;
+22. restore/rollback can make retired release-policy/approval/verifier authority current merely because old pipeline state is reachable;
+23. emergency change can edit production artifact in place or bypass accountability;
+24. drift auto-fix can silently mutate canonical state;
+25. artifact retirement/deletion destroys required evidence unsafely;
+26. environment/cell decommission can leave stale placement, credentials, data or routes;
+27. release evidence lacks exact source-trust/policy/artifact/config/target/profile/validation-scope/cell-compatibility provenance;
+28. applicable `RLV-001..046` vectors lack owner/expected result/evidence;
+29. tool/vendor/numeric choices are asserted without evidence or OPEN owner;
+30. deterministic/AI/tool status is represented as Phase acceptance, merge authorization or production release authorization.
 
 ## Closure rule
 

@@ -68,6 +68,38 @@ Requirements:
 
 Workers are specialized by workload profile rather than one universal super-worker.
 
+### Canonical worker specialization IDs
+
+The initial prepared specialization set is:
+
+```text
+worker.outbox-publication@1
+worker.async-consumer@1
+worker.provider-integration@1
+worker.webhook-delivery@1
+worker.reporting-export@1
+worker.customer-telemetry@1
+worker.artifact-lifecycle@1
+worker.reconciliation@1
+```
+
+These are workload-isolation selectors under `runtime.worker@1`, not new business domains and not automatically separate deployables. A concrete worker instance declares exactly which accepted specialization set it implements.
+
+Canonical binding intent:
+
+| Worker specialization | Primary accepted reliability ownership | Typical Phase 12 evidence |
+|---|---|---|
+| `worker.outbox-publication@1` | `rel.outbox-publication@1`, `rel.broker-job-transport@1` | `health.async-worker@1`, `obs.async.progress@1`, `sli.async.progress@1` |
+| `worker.async-consumer@1` | `rel.consumer-inbox-effect@1`, `rel.broker-job-transport@1` | `health.async-worker@1`, plus `health.message-equivalence@1` where duplicate-sensitive proof applies |
+| `worker.provider-integration@1` | `rel.external-provider@1` plus durable transport/effect profile used by the operation | `health.provider-adapter@1`, `health.async-worker@1`, `sli.provider.outcome@1` |
+| `worker.webhook-delivery@1` | `rel.webhook-delivery@1` | `health.webhook-delivery@1`, with Product-gated SLI/alert applicability preserved from Phase 12 |
+| `worker.reporting-export@1` | `rel.reporting-derived@1` plus artifact profile when output becomes protected artifact | `health.async-worker@1`, `health.artifact@1` where applicable |
+| `worker.customer-telemetry@1` | `rel.customer-telemetry-acceptance@1` | `health.customer-telemetry@1`, `sli.customer-telemetry.acceptance@1` |
+| `worker.artifact-lifecycle@1` | `rel.artifact-storage@1` | `health.artifact@1`, Product applicability preserved for direct delivery SLI |
+| `worker.reconciliation@1` | the exact affected reliability profile plus `rel.privileged-operations@1` only when privileged scope is required | `health.recovery@1` / `health.async-worker@1` as applicable; `sli.recovery.convergence@1` where recovery-owned |
+
+Implementation SHALL NOT use the generic `runtime.worker@1` label to avoid declaring the actual specialization, privileges, queues/transports, state ports, egress and bulkhead budget.
+
 Required specialization dimensions include as applicable:
 
 - event/inbox effect processing;
@@ -81,11 +113,12 @@ Required specialization dimensions include as applicable:
 
 Requirements:
 
-- explicit concurrency/bulkhead budget per workload profile;
+- explicit concurrency/bulkhead budget per worker specialization;
 - at-least-once-safe behavior inherited from Phase 10/11;
 - current tenant/placement/authorization re-establishment where required;
 - bounded retry/backlog and no process-local dedup authority;
-- one workload class cannot consume unrelated global worker capacity without an accepted shared budget.
+- one workload class cannot consume unrelated global worker capacity without an accepted shared budget;
+- co-locating multiple worker specializations requires the same privilege/egress/state/resource-union evidence as co-locating top-level runtime profiles.
 
 ## `runtime.realtime@1`
 
@@ -189,13 +222,13 @@ Hard boundary:
 
 ## Co-location rule
 
-Two profiles MAY share a physical runtime only when the implementation proves:
+Two profiles or worker specializations MAY share a physical runtime only when the implementation proves:
 
-- no privilege union creates a broader effective principal than either profile permits;
+- no privilege union creates a broader effective principal than any selected profile permits;
 - network/secret/state access remains profile-scoped;
 - workload capacity/bulkheads remain enforceable;
 - lifecycle/drain behavior is compatible;
-- failure of one profile cannot silently defeat the isolation required by the other.
+- failure of one profile cannot silently defeat the isolation required by another.
 
 If those properties cannot be proven, the profiles require separate runtime isolation.
 

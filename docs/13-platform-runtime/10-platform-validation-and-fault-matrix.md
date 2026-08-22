@@ -11,7 +11,7 @@ This document defines adversarial and fault vectors that falsify Phase 13 runtim
 
 - design evidence — accepted Phase 13 contracts/manifests;
 - deterministic conformance evidence — static/profile/configuration checks;
-- security/isolation evidence — privilege, network, tenant and secret boundary tests;
+- security/isolation evidence — privilege, network, tenant, secret and environment-boundary tests;
 - lifecycle/fault evidence — restart, partition, drain, replacement, relocation and stale-generation tests;
 - capacity/cost evidence — saturation, skew and runaway-work tests;
 - runtime evidence — later environment-specific proof.
@@ -45,7 +45,7 @@ This document defines adversarial and fault vectors that falsify Phase 13 runtim
 
 ### PRTV-006 — Control Plane outage with stable traffic
 **Inject:** Control Plane unavailable while valid bounded last-known-good placement exists.  
-**Required:** only profiles allowed by Phase 11 continue, within currentness bounds; topology-changing operations fail closed.  
+**Required:** only profiles allowed by Phase 11 continue within currentness bounds; topology-changing operations fail closed.  
 **Forbidden:** cached placement grants unlimited/global authority.
 
 ### PRTV-007 — Control Plane stale cache after newer deny
@@ -80,13 +80,13 @@ This document defines adversarial and fault vectors that falsify Phase 13 runtim
 
 ### PRTV-013 — Credential rotation
 **Inject:** `workload_credential_generation` rotates while replicas overlap.  
-**Required:** accepted overlap/retirement rules preserve capability; old retired credential cannot create new authority.  
+**Required:** accepted overlap/retirement rules preserve capability; retired credential cannot create new authority.  
 **Forbidden:** rotation requires business identity change or broad fallback credential.
 
 ### PRTV-014 — Credential revocation
 **Inject:** serving workload credential revoked while process remains alive/reachable.  
-**Required:** protected calls fail according to profile and currentness evidence.  
-**Forbidden:** network presence or cached token makes revocation ineffective indefinitely.
+**Required:** protected calls fail according to profile/currentness evidence.  
+**Forbidden:** network presence or cached credential makes revocation ineffective indefinitely.
 
 ### PRTV-015 — Secret-reference privilege escape
 **Inject:** runtime requests secret-reference class outside its profile.  
@@ -99,18 +99,18 @@ This document defines adversarial and fault vectors that falsify Phase 13 runtim
 **Forbidden:** rollback reopens retired authority.
 
 ### PRTV-017 — Product authority laundering through config
-**Inject:** feature flag/deployed component suggests a Product-gated capability is enabled/disabled while upstream applicability remains OPEN.  
+**Inject:** feature flag/deployed component suggests Product-gated capability enabled/disabled while applicability remains OPEN.  
 **Required:** Product state remains governed upstream.  
 **Forbidden:** runtime configuration resolves Product authority.
 
 ### PRTV-018 — Connector SSRF/redirect boundary
-**Inject:** configured/requested external target attempts to escape accepted destination/protocol/address/redirect policy.  
+**Inject:** external target attempts to escape accepted destination/protocol/address/redirect policy.  
 **Required:** egress denied/revalidated within connector contract.  
 **Forbidden:** network product/default bypasses application egress policy.
 
 ### PRTV-019 — Parser network escape
 **Inject:** untrusted parser attempts arbitrary external egress.  
-**Required:** denied unless a separately accepted bounded fetch capability exists.  
+**Required:** denied unless separately accepted bounded fetch capability exists.  
 **Forbidden:** parser inherits normal application internet access.
 
 ### PRTV-020 — Parser secret/state-port escape
@@ -125,7 +125,7 @@ This document defines adversarial and fault vectors that falsify Phase 13 runtim
 
 ### PRTV-022 — Interactive query tenant-binding override
 **Inject:** caller-authored query attempts to alter pooled tenant binding.  
-**Required:** tenant binding remains outside query author's control or equivalent isolation prevents escape.  
+**Required:** binding remains outside query author's control or equivalent isolation prevents escape.  
 **Forbidden:** SQL text chooses protected tenant scope.
 
 ### PRTV-023 — Application principal attempts migration/admin
@@ -141,7 +141,7 @@ This document defines adversarial and fault vectors that falsify Phase 13 runtim
 ### PRTV-025 — Recovery restores retired authority
 **Inject:** old snapshot contains pre-revocation permission/credential/placement/governance state.  
 **Required:** current forward evidence/fences govern before protected resume.  
-**Forbidden:** snapshot state becomes current because it restored successfully.
+**Forbidden:** snapshot state becomes current because restore succeeded.
 
 ### PRTV-026 — Reliability-state loss after restore
 **Inject:** restored inbox/outbox/idempotency/replay state is missing later evidence.  
@@ -149,7 +149,7 @@ This document defines adversarial and fault vectors that falsify Phase 13 runtim
 **Forbidden:** missing restored evidence means operation never happened.
 
 ### PRTV-027 — Stateful port vendor-semantic mismatch
-**Inject:** replacement port implementation offers similar API but weaker transaction/durability/fence/failure semantics.  
+**Inject:** replacement port has similar API but weaker transaction/durability/fence/failure semantics.  
 **Required:** compatibility/conformance failure.  
 **Forbidden:** SDK/protocol compatibility is accepted as semantic compatibility.
 
@@ -159,9 +159,9 @@ This document defines adversarial and fault vectors that falsify Phase 13 runtim
 **Forbidden:** ordinary cache hit/miss decides irreversible protected outcome unless specialized authority explicitly owns it.
 
 ### PRTV-029 — Stale leader after failover
-**Inject:** old coordinator continues running after new leader/lease epoch.  
+**Inject:** old coordinator continues after new leader/lease epoch.  
 **Required:** fenced stale work rejected where concurrent authority unsafe.  
-**Forbidden:** two leaders both create protected effects from process-local belief.
+**Forbidden:** two leaders create protected effects from process-local belief.
 
 ### PRTV-030 — Noisy tenant/workload saturation
 **Inject:** one tenant/provider/destination/report/parser/worker class exhausts its envelope.  
@@ -170,73 +170,78 @@ This document defines adversarial and fault vectors that falsify Phase 13 runtim
 
 ### PRTV-031 — Scale-down with durable obligations
 **Inject:** replicas/workers reduced while requests/jobs/realtime/exports remain active.  
-**Required:** drain semantics preserve discoverable durable responsibility and resync/retry correctness.  
+**Required:** drain preserves discoverable durable responsibility and resync/retry correctness.  
 **Forbidden:** autoscaling deletes obligation/effect evidence.
 
 ### PRTV-032 — Second-cell provisioning
-**Inject:** create a new cell from accepted platform contracts.  
+**Inject:** create new cell from accepted platform contracts.  
 **Required:** conformance/identity/ports/observability validate before tenant admission; wrong-placement tenant rejected.  
 **Forbidden:** new cell needs new logical API/event/tenant identity semantics.
 
 ### PRTV-033 — Tenant relocation source/target race
-**Inject:** source and target both receive stale/concurrent work around placement cutover.  
-**Required:** placement/admission generations/fences yield one authoritative write path according to relocation contract.  
+**Inject:** source and target receive stale/concurrent work around placement cutover.  
+**Required:** placement/admission generations/fences yield one authoritative write path.  
 **Forbidden:** caller chooses winning cell or both accept effectful work.
 
 ### PRTV-034 — Relocation temporary double load
-**Inject:** data transfer/backfill/reconciliation plus normal serving pressure.  
-**Required:** multidimensional capacity/bulkheads prevent relocation from silently exhausting unrelated tenants.  
+**Inject:** transfer/backfill/reconciliation plus normal serving pressure.  
+**Required:** capacity/bulkheads protect unrelated tenants.  
 **Forbidden:** relocation is treated as free/background capacity.
 
 ### PRTV-035 — Observability/runtime semantic drift
-**Inject:** vendor runtime readiness/health state disagrees with accepted Phase 12 profile meaning.  
-**Required:** adapter/mapping preserves accepted semantics; vendor boolean cannot redefine readiness/quarantine.  
+**Inject:** vendor readiness/health disagrees with Phase 12 meaning.  
+**Required:** adapter preserves accepted semantics.  
 **Forbidden:** orchestrator status becomes Phase 12 authority.
 
 ### PRTV-036 — Vendor portability rehearsal
-**Inject:** map a runtime/state/network/identity capability to an alternative implementation.  
-**Required:** canonical tenant/API/event/failure/health/runtime profile semantics remain unchanged; gaps are explicit compatibility failures.  
-**Forbidden:** vendor replacement requires silent semantic contract rewrite.
+**Inject:** map runtime/state/network/identity capability to alternative implementation.  
+**Required:** canonical tenant/API/event/failure/health/runtime semantics remain unchanged; gaps are compatibility failures.  
+**Forbidden:** vendor replacement requires silent semantic rewrite.
 
 ### PRTV-037 — Co-location privilege union
-**Inject:** co-locate two runtime profiles or worker specializations whose original principals/secret/state/egress sets differ.  
-**Required:** effective principal and policy remain no broader than the declared co-location decision; otherwise co-location fails conformance and requires separation/upstream change.  
-**Forbidden:** physical co-location silently creates the union of both profiles' privileges.
+**Inject:** co-locate runtime profiles/worker specializations with differing principal/secret/state/egress sets.  
+**Required:** effective authority remains no broader than declared co-location decision or conformance fails.  
+**Forbidden:** physical co-location silently unions privileges.
 
 ### PRTV-038 — Quarantine bypass
-**Inject:** quarantined runtime becomes reachable/healthy or operator requests direct activation without revalidation of owning current-authority predicates.  
-**Required:** no direct `quarantined -> active`; transition proceeds through `validating` or controlled retirement.  
+**Inject:** quarantined runtime becomes reachable/healthy or direct activation requested without owning predicate revalidation.  
+**Required:** no direct `quarantined -> active`; use `validating` or controlled retirement.  
 **Forbidden:** reachability/tool/operator convenience clears quarantine.
 
 ### PRTV-039 — State-port authority collapse
-**Inject:** one physical backend/credential serves audit, customer telemetry, observability, transactional or reliability state and implementation treats those logical ports as one authority.  
-**Required:** logical ownership, credentials, durability/failure/recovery semantics remain independently enforceable.  
-**Forbidden:** physical co-location merges authority or lets ordinary telemetry/log mutation satisfy audit/business/reliability truth.
+**Inject:** one physical backend/credential serves multiple logical ports and implementation treats them as one authority.  
+**Required:** ownership, credentials, durability/failure/recovery semantics remain independently enforceable.  
+**Forbidden:** co-location lets observability/log mutation satisfy audit/business/reliability truth.
 
 ### PRTV-040 — Artifact/object release bypass
-**Inject:** object bytes/upload URL exist while authoritative artifact lifecycle/delivery generation/lease/current governance does not permit release.  
-**Required:** protected release denied; object-store success/capability alone is not release authority.  
-**Forbidden:** runtime exposes bytes solely because storage reports them present.
+**Inject:** object bytes/upload URL exist while artifact lifecycle/delivery generation/lease/governance disallows release.  
+**Required:** protected release denied.  
+**Forbidden:** storage presence/capability alone authorizes release.
 
 ### PRTV-041 — Secret value leakage through runtime materialization
-**Inject:** runtime receives connector/state/service secret material and emits config snapshot, env diagnostic, log, trace, metric, event/job, crash/export or ordinary audit snapshot.  
-**Required:** protected secret value is excluded; only permitted non-secret reference/provenance is observable.  
-**Forbidden:** secret injection at runtime becomes a reason to expose secret value in ordinary evidence.
+**Inject:** runtime receives secret material and emits config/env diagnostic/log/trace/metric/event/job/crash/export/artifact/ordinary audit evidence.  
+**Required:** secret value excluded; only permitted non-secret reference/provenance observable.  
+**Forbidden:** runtime injection makes secret value ordinary evidence.
 
 ### PRTV-042 — Generation-authority conflation
-**Inject:** implementation presents one current generation while another owning generation (placement/security/governance/replay/artifact/etc.) is stale or incompatible.  
-**Required:** each authority is checked under its own contract; one green/current generation cannot substitute for another.  
-**Forbidden:** `runtime_generation`, `configuration_generation`, `workload_credential_generation`, `placement_version` or `network_policy_generation` is treated as a universal currentness token.
+**Inject:** one current generation is green while another owning generation is stale/incompatible.  
+**Required:** each authority checked under own contract.  
+**Forbidden:** Phase 13 generation or upstream generation is treated as universal currentness token.
 
 ### PRTV-043 — Manifest field omission / implicit default
-**Inject:** an implementation maps a canonical runtime or worker specialization but leaves one required manifest field implicit, derives it from an unnamed vendor default, or supplies only the generic runtime label where an exact specialization/binding is required.  
-**Required:** conformance fails until every required schema field is backed by an exact canonical binding, fixed rule, explicit OPEN owner, or evidence-backed `NO_APPLICABLE_CASE` with enclosing impact/evidence path.  
-**Forbidden:** missing principal/lifecycle/ingress/egress/port/secret/currentness/resource/reliability/observability/recovery/vector/OPEN information is interpreted as a safe default.
+**Inject:** implementation maps runtime/worker but leaves required manifest field implicit or derives it from unnamed vendor default.  
+**Required:** conformance fails until every field has exact binding, fixed rule, explicit OPEN owner or evidence-backed `NO_APPLICABLE_CASE`.  
+**Forbidden:** missing principal/lifecycle/ingress/egress/port/secret/currentness/resource/reliability/observability/recovery/vector/OPEN information is a safe default.
+
+### PRTV-044 — Environment authority/data/credential bleed
+**Inject:** a `development`/`validation` runtime is mapped to production workload credentials, placement authority, authoritative tenant traffic or ungoverned production data; or a `recovery` environment is treated as production because recovered state/network is reachable.  
+**Required:** environment class remains non-authoritative; production authority requires current production principals/placement/config/security/governance; lower-environment production-derived data requires governed export/minimization; recovery handoff remains blocked until current resumption predicates are satisfied.  
+**Forbidden:** environment label grants authority, production secrets/data/traffic flow downward by convenience, recovery reachability becomes production readiness, or canonical tenant/resource IDs depend on physical environment mapping.
 
 ## Acceptance criteria
 
-Phase 13 SHALL NOT reach `READY_FOR_MERGE` while a material runtime/isolation/lifecycle/identity/network/state-port/capacity/recovery property lacks an expected outcome, owner/evidence path or evidence-backed `NO_APPLICABLE_CASE` for a genuinely conditional case.
+Phase 13 SHALL NOT reach `READY_FOR_MERGE` while a material runtime/isolation/lifecycle/identity/network/state-port/capacity/environment/recovery property lacks an expected outcome, owner/evidence path or evidence-backed `NO_APPLICABLE_CASE` for a genuinely conditional case.
 
-The runtime semantic manifest SHALL reference applicable vectors for every canonical runtime profile and worker specialization. Co-location, quarantine, port-authority, artifact-release, secret-materialization, generation-separation and manifest-completeness claims SHALL be covered by `PRTV-037..043` where applicable.
+The runtime semantic manifest SHALL reference applicable vectors for every canonical runtime profile and worker specialization. Co-location, quarantine, port-authority, artifact-release, secret-materialization, generation-separation, manifest-completeness and environment-isolation claims SHALL be covered by `PRTV-037..044` where applicable.
 
 Future implementation/release gates execute applicable vectors against exact implementation/release states. This design matrix is not proof that a future runtime has passed them.

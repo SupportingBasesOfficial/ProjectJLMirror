@@ -5,7 +5,7 @@
 
 ## Purpose
 
-This document defines the logical runtime ports through which JLMIRROR reaches durable or specialized state. Ports preserve accepted ownership and failure semantics while keeping storage/broker/cache/vendor products replaceable.
+This document defines the logical runtime ports through which JLMIRROR reaches durable or specialized state. Ports preserve accepted ownership, environment boundaries and failure semantics while keeping storage/broker/cache/vendor products replaceable.
 
 A port is an architectural capability contract, not a vendor SDK.
 
@@ -31,11 +31,28 @@ Physical co-location does not merge logical ownership. A database cluster contai
 
 The application/runtime profile receives only the port capabilities it needs. A universal database/storage credential is prohibited as the normal serving identity.
 
+## Environment binding rule
+
+Every concrete state-port binding records the runtime's canonical `environment_class` and the environment scope of the endpoint/credential/namespace or equivalent authority.
+
+Rules:
+
+- `environment.development@1` and `environment.validation@1` SHALL NOT bind to authoritative production transactional, placement, reliability, audit, customer-telemetry, artifact or secret/key authorities merely because a shared backend/route exists;
+- production-derived data exposed outside `environment.production@1` requires the owning governed export/minimization/access path; direct attachment to production state is not a testing shortcut;
+- `environment.recovery@1` may attach to restored/current affected state only through explicit recovery authority and remains subject to `(R,F]`, governance and security-currentness reconciliation before any production handoff;
+- a recovery copy of a port is not authoritative production truth by location/name alone;
+- physical backend sharing across environment classes requires credentials/namespaces/policies that preserve the logical authority boundary; physical co-location cannot make non-production writes authoritative production mutations;
+- moving a logical environment's port mapping to another provider/account/cluster is governed by `OPEN-PRT-035`/Phase 14 and by this port's semantic compatibility requirements;
+- environment class never replaces tenant isolation, current principal authority, placement or port-specific fencing.
+
+`PRTV-044` falsifies cross-environment state/credential authority bleed; `PRTV-039` remains the separate test for logical port-authority collapse.
+
 ## Transactional port
 
 `port.transactional@1` SHALL support:
 
 - tenant-scoped connection/transaction context derived from trusted TenantContext;
+- environment-scoped least-privilege connection authority;
 - local transaction semantics required by application use cases;
 - same-transaction mutation + audit intent/outbox where accepted;
 - separation between serving application role and schema/migration owner;
@@ -54,13 +71,15 @@ This port is correctness-sensitive. It stores/serves durable evidence required f
 - operation/reconciliation outcomes;
 - recovery fences and continuity evidence where owned here.
 
-A cache or broker delivery guarantee cannot silently replace this port's business-correctness obligations.
+A cache or broker delivery guarantee cannot silently replace this port's business-correctness obligations. A validation/development copy of reliability state cannot be used as production effect/dedup authority.
 
 ## Ephemeral/coordination port
 
 Default use is performance and coordination. Values may be lost without becoming business truth.
 
 If a capability requires stronger authority — such as single-winner replay consumption or a lease/fence — its specific authority/durability/currentness contract must be explicit. Calling a product "cache" does not make an authority ephemeral; calling a product "database" does not make every value authoritative.
+
+Environment sharing of an ephemeral product still requires namespace/key/credential isolation sufficient to prevent cross-environment authority or data collision.
 
 ## Broker/job-event transport
 
@@ -69,17 +88,19 @@ The runtime transport must support the accepted Phase 10/11 semantics but exact 
 Required runtime properties:
 
 - bounded message size and workload isolation;
+- environment + tenant routing/identity remain unambiguous and non-authoritative physical transport metadata cannot grant placement/tenant authority;
 - delivery metadata does not create tenant/placement authority;
 - redelivery/lease expiry/process death do not prove prior effect absence;
 - transport backlog is observable and bounded;
 - poison/unsupported work remains discoverable/quarantinable;
-- replay uses accepted identity/dedup semantics rather than transport reset as business replay authority.
+- replay uses accepted identity/dedup semantics rather than transport reset as business replay authority;
+- non-production/recovery transports cannot consume or acknowledge production obligations merely because broker connectivity exists.
 
 ## Artifact/object port
 
 Runtime access follows accepted artifact lifecycle, delivery-generation, active-stream/lease and erasure/legal-hold fences.
 
-Direct object-store capability alone cannot authorize protected release. Serving runtimes do not receive unrestricted bucket/account owner credentials.
+Direct object-store capability alone cannot authorize protected release. Serving runtimes do not receive unrestricted bucket/account owner credentials. Cross-environment object copying does not transfer artifact releasability or production governance authority.
 
 ## Customer telemetry vs observability ports
 
@@ -87,26 +108,30 @@ Direct object-store capability alone cannot authorize protected release. Serving
 
 Failure of platform observability does not redefine customer telemetry durable-acceptance semantics; customer telemetry existence does not replace platform diagnostic evidence.
 
+Environment isolation applies independently: test/validation observability may consume bounded evidence without becoming customer-telemetry or audit authority, and production customer telemetry is not copied into lower environments by convenience.
+
 ## Port currentness and generation
 
 Where a port's authority can become stale/security-sensitive, runtime evidence identifies an accepted configuration/authority generation sufficient to detect stale bindings.
 
-A restored runtime SHALL NOT reconnect to an obsolete port endpoint/credential/generation and treat it as current merely because connectivity succeeds.
+A restored runtime SHALL NOT reconnect to an obsolete port endpoint/credential/generation or wrong environment-class binding and treat it as current merely because connectivity succeeds.
 
 ## Failure and degradation
 
 Every port maps to one or more accepted Phase 11 reliability profiles and Phase 12 health/observability bindings. Phase 13 specifies how runtimes attach to the port; it does not change retry eligibility, fail-closed behavior or reconciliation requirements.
 
+Cross-environment port unavailability/misrouting is not repaired by falling back to a broader production credential or another environment's authority.
+
 ## Portability rule
 
-Vendor migration is valid only when the replacement preserves:
+Vendor/environment mapping migration is valid only when the replacement preserves:
 
 - authority/durability meaning;
-- tenant isolation;
+- tenant and environment isolation;
 - transaction/atomicity semantics;
 - failure/ambiguity behavior;
 - generation/fencing/recovery continuity;
 - security/secret boundaries;
 - Phase 12 signal/health meaning.
 
-A compatible SDK or wire protocol alone is insufficient evidence of semantic portability.
+A compatible SDK, wire protocol or reachable shared backend alone is insufficient evidence of semantic portability.

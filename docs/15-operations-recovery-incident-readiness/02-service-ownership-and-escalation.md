@@ -27,6 +27,27 @@ required_evidence
 OPEN decisions
 ```
 
+## Normalized catalog join
+
+The complete logical operations record for one accepted reliability profile is the same-key join of:
+
+```text
+Phase 11 reliability manifest/profile
+  + Phase 12 canonical reliability -> signal/health/SLI/alert join
+  + Phase 15 operations catalog row in this document
+  + applicable Phase 15 recovery-scope join in 11-operations-semantic-manifest.md
+```
+
+The join key is the exact accepted `reliability_profile_id@profile_version`. Therefore:
+
+- `criticality_class`, automatic failure/degradation semantics and protected authority come from Phase 11;
+- exact health/SLI/alert bindings come from the accepted Phase 12 same-key join;
+- logical operational owner, incident classes, manual runbook paths and escalation come from this Phase 15 table;
+- recovery-specific owner/admission/vector bindings come from the Phase 15 manifest;
+- no implementation may duplicate those upstream fields under a divergent local alias or omit them because a dashboard/service name looks equivalent.
+
+A future serializer/catalog MAY flatten this normalized join, but it SHALL preserve every field and exact key. A Phase 11 or Phase 12 same-key change invalidates the old Phase 15 joined record until compatibility review updates it.
+
 ## Criticality classes
 
 Phase 15 consumes the Phase 11 criticality model rather than inventing a parallel ranking. Operational ownership binds to the accepted reliability profile and its allowed degradation.
@@ -101,6 +122,8 @@ This table is mandatory. Every accepted Phase 11 reliability profile has an exac
 
 The exact accepted Phase 11 reliability profile set is the source set. A future Phase 11 profile addition/change is a Phase 15 compatibility input: Phase 15 conformance fails until an explicit operations catalog row exists or an accepted successor mapping is provided.
 
+The accepted Phase 12 same-key observability join is also mandatory input. If its health/SLI/alert mapping changes for a reliability key, the Phase 15 normalized record is stale until compatibility review confirms the operational owner/runbook/incident mapping remains correct or updates it.
+
 The table selects operational accountability and mandatory manual paths. It does not replace Phase 11 automatic failure behavior: automatic handling remains the accepted reliability profile itself until the profile enters a state requiring human escalation.
 
 ## Escalation
@@ -142,10 +165,10 @@ Bulk/cross-tenant actions require an explicitly accepted operation class with bo
 
 ## Service catalog minimum joins
 
-The catalog above covers the accepted Phase 11 reliability profile set and consumes the corresponding Phase 12 health/SLI/alert semantics. Phase 13 runtime/cell/control-plane and Phase 14 release/recovery surfaces are joined through the applicable rows and the Phase 15 recovery manifest.
+The catalog above covers the accepted Phase 11 reliability profile set and consumes the corresponding exact Phase 12 health/SLI/alert semantics through the normalized same-key join. Phase 13 runtime/cell/control-plane and Phase 14 release/recovery surfaces are joined through the applicable rows and the Phase 15 recovery manifest.
 
 Unknown ownership for a critical capability is a Phase 15 blocker, not an implementation TODO.
 
 ## Evidence
 
-Permanent evidence records exact reliability profile, logical owner profile, physical delegation/currentness, escalation transitions, privileged decisions, handoffs and unresolved ownership gaps without exposing unnecessary personal data or secrets.
+Permanent evidence records exact reliability profile, exact accepted Phase 12 observability profile set, logical owner profile, physical delegation/currentness, escalation transitions, privileged decisions, handoffs and unresolved ownership gaps without exposing unnecessary personal data or secrets.

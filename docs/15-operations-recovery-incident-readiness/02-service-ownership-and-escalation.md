@@ -41,7 +41,7 @@ Phase 11 reliability manifest/profile
 The join key is the exact accepted `reliability_profile_id@profile_version`. Therefore:
 
 - `criticality_class`, automatic failure/degradation semantics and protected authority come from Phase 11;
-- exact health/SLI/alert bindings come from the accepted Phase 12 same-key join;
+- exact health/SLI/alert and Product-applicability bindings come from the accepted Phase 12 same-key join;
 - logical operational owner, incident classes, manual runbook paths and escalation come from this Phase 15 table;
 - recovery-specific owner/admission/vector bindings come from the Phase 15 manifest;
 - no implementation may duplicate those upstream fields under a divergent local alias or omit them because a dashboard/service name looks equivalent.
@@ -118,11 +118,35 @@ This table is mandatory. Every accepted Phase 11 reliability profile has an exac
 | `rel.reporting-derived@1` | `owner.reporting@1` | `incident.availability-degradation@1`, `incident.data-integrity@1` | `runbook.degraded-operation@1`, `runbook.recovery@1` | domain/data owner if derived state could be mistaken for authoritative business truth |
 | `rel.privileged-operations@1` | `owner.privileged-operations@1` | `incident.security-authority@1`, `incident.recovery-continuity@1`, `incident.external-effect-ambiguity@1` | `runbook.break-glass@1`, `runbook.recovery@1`, `runbook.release-forward-recovery@1` | `role.security-authority@1`, `role.recovery-authority@1`, owning domain/process for effect outcome |
 
+## Product applicability preservation
+
+A catalog row means **prepared operational accountability**, not Product enablement.
+
+For any Phase 12 same-key join with an accepted Product selector, operational behavior consumes that selector unchanged. In particular:
+
+```text
+rel.webhook-delivery@1
+  -> webhook_product_state
+
+rel.artifact-storage@1 Product-facing delivery branch
+  -> artifact_delivery_product_state
+```
+
+Rules:
+
+- `product_state_unproven` remains the exact upstream OPEN state; it is neither enabled nor `NO_APPLICABLE_CASE`;
+- `product_not_enabled` / `product_not_exposed_delivery` do not erase underlying diagnostic, security, recovery or governance ownership where the prepared reliability profile still applies;
+- an owner/runbook/catalog entry cannot create a Product-facing SLO/alert/communication/release commitment;
+- operational tooling cannot infer Product applicability from deployment, configuration, feature flags, traffic, catalog presence or team ownership;
+- if upstream Product/Phase 12 applicability changes, the same-key operations record undergoes compatibility review before Product-facing operational commitments change.
+
+`OPRV-058` falsifies Product-applicability laundering through the operations catalog.
+
 ### Catalog completeness rule
 
 The exact accepted Phase 11 reliability profile set is the source set. A future Phase 11 profile addition/change is a Phase 15 compatibility input: Phase 15 conformance fails until an explicit operations catalog row exists or an accepted successor mapping is provided.
 
-The accepted Phase 12 same-key observability join is also mandatory input. If its health/SLI/alert mapping changes for a reliability key, the Phase 15 normalized record is stale until compatibility review confirms the operational owner/runbook/incident mapping remains correct or updates it.
+The accepted Phase 12 same-key observability join is also mandatory input. If its health/SLI/alert/Product-applicability mapping changes for a reliability key, the Phase 15 normalized record is stale until compatibility review confirms the operational owner/runbook/incident mapping remains correct or updates it.
 
 The table selects operational accountability and mandatory manual paths. It does not replace Phase 11 automatic failure behavior: automatic handling remains the accepted reliability profile itself until the profile enters a state requiring human escalation.
 
@@ -149,7 +173,7 @@ Every accepted Phase 11 failure/degradation class maps to either:
 1. the accepted automatic handling selected by the exact Phase 11 reliability profile; or
 2. an operational response owner and one of the mandatory runbook profiles above when manual intervention is required.
 
-Automatic handling cannot silently cross into incident closure, break-glass admission, domain outcome, redrive/replay eligibility or recovery completion authority.
+Automatic handling cannot silently cross into incident closure, break-glass admission, domain outcome, Product applicability, redrive/replay eligibility or recovery completion authority.
 
 ## Ownership currentness
 
@@ -165,10 +189,10 @@ Bulk/cross-tenant actions require an explicitly accepted operation class with bo
 
 ## Service catalog minimum joins
 
-The catalog above covers the accepted Phase 11 reliability profile set and consumes the corresponding exact Phase 12 health/SLI/alert semantics through the normalized same-key join. Phase 13 runtime/cell/control-plane and Phase 14 release/recovery surfaces are joined through the applicable rows and the Phase 15 recovery manifest.
+The catalog above covers the accepted Phase 11 reliability profile set and consumes the corresponding exact Phase 12 health/SLI/alert/Product-applicability semantics through the normalized same-key join. Phase 13 runtime/cell/control-plane and Phase 14 release/recovery surfaces are joined through the applicable rows and the Phase 15 recovery manifest.
 
 Unknown ownership for a critical capability is a Phase 15 blocker, not an implementation TODO.
 
 ## Evidence
 
-Permanent evidence records exact reliability profile, exact accepted Phase 12 observability profile set, logical owner profile, physical delegation/currentness, escalation transitions, privileged decisions, handoffs and unresolved ownership gaps without exposing unnecessary personal data or secrets.
+Permanent evidence records exact reliability profile, exact accepted Phase 12 observability/applicability profile set, logical owner profile, physical delegation/currentness, escalation transitions, privileged decisions, handoffs and unresolved ownership gaps without exposing unnecessary personal data or secrets.

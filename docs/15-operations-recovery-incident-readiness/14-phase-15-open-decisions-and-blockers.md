@@ -67,6 +67,9 @@ Not OPEN:
 - break-glass is separately admitted, scoped, revocable, audited and reviewed;
 - missing restored state is uncertainty, not absence/permission;
 - each mandatory recovery scope has R, F, quarantine, continuity inventory and admission proof;
+- `recovery.telemetry@1` separates `telemetry.operational-observability@1` from `telemetry.customer-monitoring@1` and cannot use one as authority/evidence for the other;
+- durably accepted customer-monitoring observations, projection/checkpoint/watermark currentness and pending obligations cannot regress silently after restore;
+- `recovery.artifact@1` separates restored bytes/integrity from current lifecycle, release, delivery and disclosure authority;
 - security revocation, erasure, legal hold, audit, reliability and crypto decisions do not regress silently;
 - ambiguous external/release effects remain reconciliation-blocked;
 - redrive/replay/quarantine preserve dedup/current authority/generations/capacity;
@@ -98,20 +101,21 @@ Phase 15 SHALL NOT be accepted while any applicable condition remains:
 18. stale worker/scheduler/realtime/source/destination generations can regain effectful authority;
 19. redrive/replay/quarantine can bypass idempotency/dedup/content-equivalence/current auth/capacity;
 20. realtime/webhook recovery can reuse stale authorization or retarget immutable obligations;
-21. restored artifacts can regain disclosure authority from existence alone;
-22. dependency/vendor green can close incident/recovery despite local blockers;
-23. observability loss can be interpreted as healthy silence;
-24. Phase 14 rollback/forward-recovery/config/target-state semantics can be bypassed operationally;
-25. maintenance can silently exceed accepted degradation without incident/escalation;
-26. recovery prioritization can become ungoverned cross-tenant authority;
-27. decommission can complete with stale placement/work/credentials/routes/data/evidence obligations;
-28. game-day can exercise production effects without bounded accepted scope;
-29. game-day results can fabricate unsupported numeric SLO/RPO/RTO/cadence commitments;
-30. operational evidence can leak secrets, tenant data or protected topology unnecessarily;
-31. incident/chat/tool output can substitute for durable authoritative operation/evidence records;
-32. applicable `OPRV-001..052` lacks owner/expected result/evidence;
-33. products/vendors/topology/numerics are asserted without accepted evidence or OPEN owner;
-34. Phase 15 documentation or tool status is represented as implementation readiness, production release or merge authorization.
+21. operational-observability restore can be treated as customer-monitoring continuity, or a restored customer-monitoring snapshot can forget/re-acknowledge durably accepted observations or regress projection/current-state watermarks;
+22. restored artifact bytes/tag/access object can regain release, delivery or disclosure authority despite newer retirement/revocation/erasure/delivery-generation state;
+23. dependency/vendor green can close incident/recovery despite local blockers;
+24. observability loss can be interpreted as healthy silence;
+25. Phase 14 rollback/forward-recovery/config/target-state semantics can be bypassed operationally;
+26. maintenance can silently exceed accepted degradation without incident/escalation;
+27. recovery prioritization can become ungoverned cross-tenant authority;
+28. decommission can complete with stale placement/work/credentials/routes/data/evidence obligations;
+29. game-day can exercise production effects without bounded accepted scope;
+30. game-day results can fabricate unsupported numeric SLO/RPO/RTO/cadence commitments;
+31. operational evidence can leak secrets, tenant data or protected topology unnecessarily;
+32. incident/chat/tool output can substitute for durable authoritative operation/evidence records;
+33. applicable `OPRV-001..054` lacks owner/expected result/evidence;
+34. products/vendors/topology/numerics are asserted without accepted evidence or OPEN owner;
+35. Phase 15 documentation or tool status is represented as implementation readiness, production release or merge authorization.
 
 ## Closure rule
 

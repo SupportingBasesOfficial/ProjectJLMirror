@@ -74,16 +74,23 @@ The following are fixed by Phase 13:
 
 - core application semantics cannot depend on edge-only runtime constraints;
 - runtime roles have explicit principal/isolation/lifecycle/network/state-port profiles;
+- every concrete `runtime.worker@1` declares exact `worker_specialization_id` values and per-specialization privilege/port/egress/resource budgets;
 - network presence is not trust;
 - service identity is not tenant authorization;
 - caller/provider/message physical routing does not select authoritative placement;
 - serving processes do not keep authoritative business/recovery truth only in memory;
 - ordinary source/configuration uses secret references, not production secret values;
+- runtime secret material is excluded from ordinary config snapshots/signals/events/jobs/artifacts/audit snapshots according to accepted classification rules;
 - serving application privilege is distinct from migration/admin/recovery privilege where applicable;
 - untrusted parsing/controlled execution use smaller trust envelopes;
+- co-location cannot silently create a union principal/secret/state/egress authority;
 - cells support provision/validate/admit/drain/replace/relocate capabilities under stable logical contracts;
+- `quarantined` runtime generations revalidate through owning authority predicates before normal protected admission; no direct reachability-driven activation;
+- predecessor/successor replacement generations remain distinguishable and retired generations do not become active again;
+- `runtime_generation`, `configuration_generation`, `workload_credential_generation`, `placement_version` and `network_policy_generation` remain distinct; upstream authority generations keep their owners;
+- state ports preserve accepted logical ownership and authority/failure/recovery semantics even when physically co-located;
+- object presence/upload success/direct storage capability does not grant protected artifact release authority;
 - stale runtime/config/network generations cannot override current placement/security/governance authority;
-- state ports preserve accepted authority/failure/recovery semantics independent of vendor;
 - capacity is multidimensional and noisy-neighbor/runaway work is bounded;
 - physical topology does not enter canonical tenant/API/event/resource identity;
 - Product applicability is not inferred from deployed runtime state;
@@ -94,30 +101,38 @@ The following are fixed by Phase 13:
 Phase 13 SHALL NOT be accepted while any applicable condition remains:
 
 1. a runtime role lacks explicit principal, isolation, lifecycle, network or state-port boundaries;
-2. an implementation requires edge-only runtime behavior for core domain correctness;
-3. internal network reachability can replace workload authentication/application authority;
-4. machine/service identity can become implicit wildcard tenant authorization;
-5. callers/messages/providers can choose physical tenant placement;
-6. stale placement/runtime/config/network authority can be admitted as current without owning evidence;
-7. cell lifecycle collapses into one liveness/readiness boolean;
-8. drain/restart/scale-down can erase or repeat durable protected effects blindly;
-9. secret values are stored in ordinary config/events/jobs/signals or shared broadly across profiles;
-10. serving application roles hold migration/admin/recovery super-authority by default;
-11. untrusted parsing or automation has unrestricted secret/state/network access;
-12. connector egress lacks bounded destination/redirect/protocol/response/concurrency controls;
-13. a state-port mapping weakens accepted transaction/durability/fencing/recovery semantics;
-14. cache/broker/vendor behavior is treated as business-correctness authority without accepted owner contract;
-15. recovery/restored runtime can reactivate retired security/governance/placement authority;
-16. cell replacement/relocation cannot fence stale source/runtime authority;
-17. second-cell provisioning would require canonical tenant/API/event identity changes;
-18. capacity uses one scalar and leaves tenant/workload/provider/recovery skew unbounded;
-19. coordinator/leader failure can create concurrent protected authority without fencing;
-20. vendor health/readiness semantics can redefine accepted Phase 12 health/quarantine meaning;
-21. vendor replacement requires semantic contract rewrite rather than adapter/conformance mapping;
-22. runtime deployment/configuration is represented as Product authority;
-23. validation/fault vectors lack owner/expected outcome/evidence path;
-24. a technology/numeric choice is asserted without evidence or explicit OPEN ownership;
-25. deterministic/AI/vendor-tool green status is represented as Phase acceptance or merge authorization.
+2. a concrete `runtime.worker@1` lacks an exact worker specialization or its specialization lacks explicit reliability/evidence/privilege/port/egress/resource bindings;
+3. an implementation requires edge-only runtime behavior for core domain correctness;
+4. internal network reachability can replace workload authentication/application authority;
+5. machine/service identity can become implicit wildcard tenant authorization;
+6. callers/messages/providers can choose physical tenant placement;
+7. stale placement/runtime/config/network authority can be admitted as current without owning evidence;
+8. one generation identity can substitute for another currentness/authority dimension;
+9. cell lifecycle collapses into one liveness/readiness boolean;
+10. quarantined runtime can return directly to active without revalidating the owning current-authority predicates;
+11. replacement collapses predecessor/successor generations or allows a retired generation to regain normal authority;
+12. drain/restart/scale-down can erase or repeat durable protected effects blindly;
+13. secret values are stored in ordinary config/events/jobs/signals/artifacts/audit snapshots or shared broadly across profiles;
+14. serving application roles hold migration/admin/recovery super-authority by default;
+15. co-location of runtime profiles/worker specializations silently unions principal, secret, state-port, egress or failure/resource authority;
+16. untrusted parsing or automation has unrestricted secret/state/network access;
+17. connector egress lacks bounded destination/redirect/protocol/response/concurrency controls;
+18. a state-port mapping weakens accepted transaction/durability/fencing/recovery semantics;
+19. physical co-location of state ports collapses audit, transactional, reliability, telemetry or other logical authorities;
+20. cache/broker/vendor behavior is treated as business-correctness authority without accepted owner contract;
+21. artifact/object bytes or storage capability can be released without current artifact lifecycle/delivery-generation/lease/governance authority;
+22. recovery/restored runtime can reactivate retired security/governance/placement authority;
+23. cell replacement/relocation cannot fence stale source/runtime authority;
+24. second-cell provisioning would require canonical tenant/API/event identity changes;
+25. capacity uses one scalar and leaves tenant/workload/provider/recovery skew unbounded;
+26. coordinator/leader failure can create concurrent protected authority without fencing;
+27. vendor health/readiness semantics can redefine accepted Phase 12 health/quarantine meaning;
+28. vendor replacement requires semantic contract rewrite rather than adapter/conformance mapping;
+29. runtime deployment/configuration is represented as Product authority;
+30. any applicable cross-cutting vector `PRTV-037..042` is absent from the owning runtime/worker manifest binding or lacks expected outcome/evidence;
+31. validation/fault vectors otherwise lack owner/expected outcome/evidence path;
+32. a technology/numeric choice is asserted without evidence or explicit OPEN ownership;
+33. deterministic/AI/vendor-tool green status is represented as Phase acceptance or merge authorization.
 
 ## Closure rule
 

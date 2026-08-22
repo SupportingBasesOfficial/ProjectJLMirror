@@ -13,6 +13,8 @@ Phase 15 adds/refines:
 - backup/restore mechanism -> recovery quarantine;
 - restored state -> current authority/reconciliation;
 - recovery operator -> Control Plane/cell/tenant scopes;
+- telemetry restore -> operational-observability vs customer-monitoring continuity;
+- artifact restore -> artifact bytes/integrity vs lifecycle/delivery/disclosure/release authority;
 - recovery process -> crypto/verifier/secret authority;
 - operator -> quarantine/redrive/replay;
 - operator -> relocation/maintenance/decommission workflows;
@@ -77,11 +79,19 @@ Rehearsal executes real production effects or invents business commitments. `OPR
 ### OPS-TM-019 — Chat/transcript as truth
 Unstructured operational text becomes authoritative state. `OPRV-049`.
 
+### OPS-TM-020 — Customer telemetry continuity laundering
+Operational-observability restore, process liveness or a lower restored customer-monitoring watermark is treated as proof that later durably accepted customer observations never existed. Controls: `recovery.telemetry@1` subscope separation, accepted observation identity and acceptance/projection/watermark reconciliation, no healthy-silence inference. `OPRV-034`, `OPRV-053`.
+
+### OPS-TM-021 — Artifact lifecycle/disclosure authority resurrection
+A backup restores artifact bytes/tag/access object older than retirement, revocation, erasure, delivery-generation or release-policy state and tooling re-enables download/deployment. Controls: immutable integrity separated from current lifecycle/delivery/disclosure/release authority, newer deny/retirement/erasure state precedence. `OPRV-032`, `OPRV-054`.
+
 ## Privacy
 
 Operational evidence and incident communications minimize tenant identifiers, customer data, topology, credentials, secret references and confidential payloads. Production-derived test/recovery data requires governed purpose, minimization, residency and isolation.
 
 Broad incident visibility does not grant broad data access. Diagnostic access remains purpose/scope bound and audited.
+
+Telemetry recovery evidence does not expose raw customer-monitoring payloads merely to prove acceptance/projection continuity. Artifact recovery evidence does not expose artifact bytes, access capabilities or internal locations beyond the minimum needed for reconciliation.
 
 ## AI boundary
 
@@ -89,8 +99,8 @@ AI may summarize evidence, suggest hypotheses, draft communications or identify 
 
 ## Recovery/security continuity
 
-Restore/PITR cannot move revocation, erasure, legal hold, audit, reliability, cryptographic, release-policy/verifier, target-config/target-state or placement authority backwards. Unknown continuity fails closed for protected operations.
+Restore/PITR cannot move revocation, erasure, legal hold, audit, reliability, cryptographic, release-policy/verifier, target-config/target-state, customer-monitoring acceptance/projection, artifact lifecycle/delivery/disclosure or placement authority backwards. Unknown continuity fails closed for protected operations.
 
 ## Portability
 
-Replacing incident, paging, backup, KMS, runbook, access or evidence products must preserve logical authority, identity, currentness, evidence, failure and recovery semantics.
+Replacing incident, paging, backup, KMS, telemetry, artifact-storage, runbook, access or evidence products must preserve logical authority, identity, currentness, evidence, failure and recovery semantics.

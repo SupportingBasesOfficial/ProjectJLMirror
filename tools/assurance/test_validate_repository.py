@@ -37,6 +37,7 @@ jobs:
       - uses: actions/checkout@{PINNED}
         with:
           persist-credentials: false
+          allow-unsafe-pr-checkout: false
       - run: python3 --version
 """
         temp, root = self.make_repo(workflow, "# OK\n\n[Self](index.md)\n")
@@ -55,6 +56,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          allow-unsafe-pr-checkout: false
 """
         temp, root = self.make_repo(workflow)
         with temp:
@@ -133,6 +135,67 @@ jobs:
         with temp:
             self.assertTrue(any("pull_request_target" in message for message in self.messages(root)))
 
+    def test_secret_reference_is_rejected(self) -> None:
+        workflow = """name: bad
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \"${{ secrets.PRODUCTION_TOKEN }}\"
+"""
+        temp, root = self.make_repo(workflow)
+        with temp:
+            self.assertTrue(any("references a GitHub secret" in message for message in self.messages(root)))
+
+    def test_secret_inheritance_is_rejected(self) -> None:
+        workflow = """name: bad
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  call:
+    uses: ./.github/workflows/reusable.yml
+    secrets: inherit
+"""
+        temp, root = self.make_repo(workflow)
+        with temp:
+            self.assertTrue(any("inherits secrets" in message for message in self.messages(root)))
+
+    def test_environment_binding_is_rejected(self) -> None:
+        workflow = """name: bad
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - run: echo no
+"""
+        temp, root = self.make_repo(workflow)
+        with temp:
+            self.assertTrue(any("binds a GitHub environment" in message for message in self.messages(root)))
+
+    def test_continue_on_error_is_rejected(self) -> None:
+        workflow = """name: bad
+on: [push]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: exit 1
+        continue-on-error: true
+"""
+        temp, root = self.make_repo(workflow)
+        with temp:
+            self.assertTrue(any("continue-on-error" in message for message in self.messages(root)))
+
     def test_checkout_credentials_must_not_persist(self) -> None:
         workflow = f"""name: bad
 on: [push]
@@ -143,10 +206,32 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@{PINNED}
+        with:
+          allow-unsafe-pr-checkout: false
 """
         temp, root = self.make_repo(workflow)
         with temp:
             self.assertTrue(any("persist-credentials" in message for message in self.messages(root)))
+
+    def test_unsafe_pr_checkout_must_be_disabled(self) -> None:
+        workflow = f"""name: bad
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@{PINNED}
+        with:
+          persist-credentials: false
+          allow-unsafe-pr-checkout: true
+"""
+        temp, root = self.make_repo(workflow)
+        with temp:
+            messages = self.messages(root)
+            self.assertTrue(any("unsafe pull-request checkout" in message for message in messages))
+            self.assertTrue(any("explicitly set allow-unsafe-pr-checkout: false" in message for message in messages))
 
     def test_mutating_command_is_rejected(self) -> None:
         workflow = """name: bad

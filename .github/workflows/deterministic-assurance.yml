@@ -29,6 +29,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 1
           persist-credentials: false
+          allow-unsafe-pr-checkout: false
 
       - name: Verify exact commit identity
         shell: bash

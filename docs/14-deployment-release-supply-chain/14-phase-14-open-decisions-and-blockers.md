@@ -52,20 +52,28 @@ Unknown applicability remains OPEN.
 | OPEN-RLS-034 | environment decommission tooling | Platform/Operations | stale-access/data/recovery proof |
 | OPEN-RLS-035 | release cost attribution implementation | FinOps/Release | accuracy/cardinality/cost evidence |
 | OPEN-RLS-036 | supply-chain portability rehearsal tooling | Release/Governance | alternative implementation evidence |
+| OPEN-RLS-037 | trusted release-policy storage/distribution/currentness mechanism | Governance/Security/Release | candidate-independent policy provenance, rollback/recovery and stale-policy rejection |
+| OPEN-RLS-038 | running artifact identity/runtime verification mechanism | Platform/Release | observed bytes/immutable identity equivalence, mixed-runtime and failure evidence |
+| OPEN-RLS-039 | untrusted-source validation isolation mechanism | Security/Platform/Release | secret/token/network denial, workflow self-escalation tests, bounded cost |
 
 ## Fixed properties
 
 Not OPEN:
 
 - one immutable artifact identity is promoted rather than rebuilt per environment;
+- source candidate vs accepted source trust is explicit; branch/event/validation success does not confer trusted release authority;
+- untrusted source validation cannot receive production/release/migration/signing authority by trigger or candidate workflow choice;
+- the trusted release-policy profile/version used for principal selection and release admission is not controlled unilaterally by the candidate source;
 - source/build/artifact/promotion/deployment/runtime verification are distinct trust stages;
 - release/build/deploy/migration/runtime principals are least-privilege and logically separated;
 - mutable tags/locations do not replace artifact identity;
+- runtime verification establishes the running artifact identity/equivalent rather than trusting deploy receipt/vendor green alone;
 - artifact/provenance mismatch fails closed;
 - secret values are excluded from artifacts and ordinary evidence;
 - mixed-version compatibility is explicit;
 - expand/migrate/contract is preserved;
 - rollback never erases later authority/effects/evidence;
+- restored/rolled-back release policy cannot resurrect retired approval/principal/verifier authority;
 - ambiguous external effects remain reconciliation-required;
 - progressive production rollout is bounded/pauseable/abortable;
 - environment label/tool defaults are not release authority;
@@ -81,25 +89,29 @@ Phase 14 SHALL NOT be accepted while any applicable condition remains:
 3. build inputs/toolchain cannot be reconstructed or materially verified;
 4. artifact provenance/integrity authenticity is undefined;
 5. one CI/CD principal can silently source-edit/build/forge/publish/promote/deploy/migrate/approve itself without bounded independent controls;
-6. production secrets can enter artifacts/logs/provenance/SBOM;
-7. environment mapping grants authority by label;
-8. current promotion/deployment authority is not revalidated on resume;
-9. runtime admission can bypass Phase 12/13 security/recovery predicates;
-10. rollout target scope can be caller-controlled;
-11. mixed-version API/event/schema/runtime/config combinations are unspecified;
-12. destructive contract can race supported old runtimes;
-13. backfill is non-resumable/unbounded or relies on one long ordinary transaction;
-14. migration privilege is shared with serving runtime by default;
-15. abort/timeout can convert ambiguous effect into absence/retry;
-16. rollback can resurrect revoked/erased/retired authority or erase audit/effects;
-17. emergency change can edit production artifact in place or bypass accountability;
-18. drift auto-fix can silently mutate canonical state;
-19. artifact retirement/deletion destroys required evidence unsafely;
-20. environment/cell decommission can leave stale placement, credentials, data or routes;
-21. release evidence lacks exact artifact/config/target/profile provenance;
-22. applicable `RLV-*` vectors lack owner/expected result/evidence;
-23. tool/vendor/numeric choices are asserted without evidence or OPEN owner;
-24. deterministic/AI/tool status is represented as Phase acceptance, merge authorization or production release authorization.
+6. untrusted/not-yet-accepted source can obtain production/release/migration/signing secrets, privileged network reachability or trusted artifact publication authority by trigger context;
+7. candidate workflow/policy can select a broader token/runner/environment/secret inheritance or rewrite the policy that decides its own trust without independent accepted authority;
+8. production secrets can enter artifacts/logs/provenance/SBOM;
+9. environment mapping grants authority by label;
+10. current promotion/deployment/release-policy authority is not revalidated on resume/recovery;
+11. runtime admission can bypass Phase 12/13 security/recovery predicates;
+12. running artifact identity cannot be proven equivalent to the approved immutable artifact;
+13. rollout target scope can be caller-controlled;
+14. mixed-version API/event/schema/runtime/config combinations are unspecified;
+15. destructive contract can race supported old runtimes;
+16. backfill is non-resumable/unbounded or relies on one long ordinary transaction;
+17. migration privilege is shared with serving runtime by default;
+18. abort/timeout can convert ambiguous effect into absence/retry;
+19. rollback can resurrect revoked/erased/retired authority or erase audit/effects;
+20. restore/rollback can make retired release-policy/approval/verifier authority current merely because old pipeline state is reachable;
+21. emergency change can edit production artifact in place or bypass accountability;
+22. drift auto-fix can silently mutate canonical state;
+23. artifact retirement/deletion destroys required evidence unsafely;
+24. environment/cell decommission can leave stale placement, credentials, data or routes;
+25. release evidence lacks exact source-trust/policy/artifact/config/target/profile provenance;
+26. applicable `RLV-*` vectors lack owner/expected result/evidence;
+27. tool/vendor/numeric choices are asserted without evidence or OPEN owner;
+28. deterministic/AI/tool status is represented as Phase acceptance, merge authorization or production release authorization.
 
 ## Closure rule
 

@@ -79,7 +79,7 @@ This document defines adversarial and fault vectors that falsify Phase 13 runtim
 **Forbidden:** socket pins old placement/authorization indefinitely.
 
 ### PRTV-013 — Credential rotation
-**Inject:** workload credential generation rotates while replicas overlap.  
+**Inject:** `workload_credential_generation` rotates while replicas overlap.  
 **Required:** accepted overlap/retirement rules preserve capability; old retired credential cannot create new authority.  
 **Forbidden:** rotation requires business identity change or broad fallback credential.
 
@@ -89,7 +89,7 @@ This document defines adversarial and fault vectors that falsify Phase 13 runtim
 **Forbidden:** network presence or cached token makes revocation ineffective indefinitely.
 
 ### PRTV-015 — Secret-reference privilege escape
-**Inject:** runtime requests secret reference class outside its profile.  
+**Inject:** runtime requests secret-reference class outside its profile.  
 **Required:** denied and auditable without secret disclosure.  
 **Forbidden:** reference possession or general secret principal grants access.
 
@@ -155,7 +155,7 @@ This document defines adversarial and fault vectors that falsify Phase 13 runtim
 
 ### PRTV-028 — Ephemeral cache becomes authority
 **Inject:** cache/coordination state missing or stale.  
-**Required:** business/security/recovery correctness falls back to owning authority or accepted fail-closed path.  
+**Required:** correctness falls back to owning authority or accepted fail-closed path.  
 **Forbidden:** ordinary cache hit/miss decides irreversible protected outcome unless specialized authority explicitly owns it.
 
 ### PRTV-029 — Stale leader after failover
@@ -204,7 +204,7 @@ This document defines adversarial and fault vectors that falsify Phase 13 runtim
 **Forbidden:** physical co-location silently creates the union of both profiles' privileges.
 
 ### PRTV-038 — Quarantine bypass
-**Inject:** quarantined runtime becomes reachable/healthy or operator requests direct activation without revalidation of the owning current-authority predicates.  
+**Inject:** quarantined runtime becomes reachable/healthy or operator requests direct activation without revalidation of owning current-authority predicates.  
 **Required:** no direct `quarantined -> active`; transition proceeds through `validating` or controlled retirement.  
 **Forbidden:** reachability/tool/operator convenience clears quarantine.
 
@@ -224,14 +224,19 @@ This document defines adversarial and fault vectors that falsify Phase 13 runtim
 **Forbidden:** secret injection at runtime becomes a reason to expose secret value in ordinary evidence.
 
 ### PRTV-042 — Generation-authority conflation
-**Inject:** implementation presents one current generation (for example runtime/config/network credential) while another owning generation (placement/security/governance/replay/artifact) is stale or incompatible.  
+**Inject:** implementation presents one current generation while another owning generation (placement/security/governance/replay/artifact/etc.) is stale or incompatible.  
 **Required:** each authority is checked under its own contract; one green/current generation cannot substitute for another.  
 **Forbidden:** `runtime_generation`, `configuration_generation`, `workload_credential_generation`, `placement_version` or `network_policy_generation` is treated as a universal currentness token.
+
+### PRTV-043 — Manifest field omission / implicit default
+**Inject:** an implementation maps a canonical runtime or worker specialization but leaves one required manifest field implicit, derives it from an unnamed vendor default, or supplies only the generic runtime label where an exact specialization/binding is required.  
+**Required:** conformance fails until every required schema field is backed by an exact canonical binding, fixed rule, explicit OPEN owner, or evidence-backed `NO_APPLICABLE_CASE` with enclosing impact/evidence path.  
+**Forbidden:** missing principal/lifecycle/ingress/egress/port/secret/currentness/resource/reliability/observability/recovery/vector/OPEN information is interpreted as a safe default.
 
 ## Acceptance criteria
 
 Phase 13 SHALL NOT reach `READY_FOR_MERGE` while a material runtime/isolation/lifecycle/identity/network/state-port/capacity/recovery property lacks an expected outcome, owner/evidence path or evidence-backed `NO_APPLICABLE_CASE` for a genuinely conditional case.
 
-The runtime semantic manifest SHALL reference applicable vectors for every canonical runtime profile and worker specialization. Co-location, quarantine, port-authority, artifact-release, secret-materialization and generation-separation claims SHALL be covered by `PRTV-037..042` where applicable.
+The runtime semantic manifest SHALL reference applicable vectors for every canonical runtime profile and worker specialization. Co-location, quarantine, port-authority, artifact-release, secret-materialization, generation-separation and manifest-completeness claims SHALL be covered by `PRTV-037..043` where applicable.
 
 Future implementation/release gates execute applicable vectors against exact implementation/release states. This design matrix is not proof that a future runtime has passed them.

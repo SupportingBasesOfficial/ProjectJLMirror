@@ -32,6 +32,9 @@ API compatibility family
 Event compatibility set
 promotion_state
 deployment_state
+deployment_operation_id
+expected_release_target_state_version
+resulting_release_target_state_version_or_pending
 rollout_scope/wave
 release principal identities
 required Phase 11 reliability gates
@@ -107,6 +110,34 @@ reconciliation_required
 irreversible_without_governed_migration
 ```
 
+## Release operation identity and target fencing
+
+Every effectful deployment (and any migration/backfill transition whose owning contract requires it) has a stable logical operation identity.
+
+For deployment:
+
+```text
+deployment_operation_id
+expected_release_target_state_version
+requested immutable artifact/config/target semantics
+resulting_release_target_state_version_or_pending
+terminal/reconciliation state
+```
+
+Rules:
+
+- same operation ID + same immutable semantics = create-or-observe/retry of the same logical operation;
+- same operation ID + conflicting immutable semantics = integrity conflict;
+- a new operation ID does not bypass an unresolved prior operation on the same protected target;
+- incompatible concurrent operations on the same target cannot both become current;
+- stale executors observing a newer target release state lose effectful eligibility;
+- timeout/process death/lost response does not prove target effect absence;
+- ambiguous operations become `reconciliation_required` until durable target/runtime evidence resolves them.
+
+`release_target_state_version` is owned by the Phase 14 release control plane. It is not `runtime_generation`, `placement_version`, cell admission, Product authority or tenant authorization.
+
+The exact coordination/CAS/lease/store mechanism remains `OPEN-RLS-027`.
+
 ## Canonical trust joins
 
 | Stage | Required identity/evidence | Forbidden substitution |
@@ -120,7 +151,8 @@ irreversible_without_governed_migration
 | validation general | same immutable artifact + validation config/profile + evidence | rebuild or different artifact identity |
 | validation reference cell | same artifact/config/schema/runtime candidate + reference-cell evidence | skipping because tooling lacks staging concept |
 | promotion | exact artifact + environment + evidence + current authority | registry presence or stale approval |
-| deployment | promotion + target + principal + compatibility + current policy | pipeline job existence |
+| deployment admission | stable operation ID + expected target state + promotion + target + principal + compatibility + current policy | pipeline job existence or stale executor |
+| deployment ambiguity resolution | durable operation/target/runtime evidence | timeout, crash or lost response as proof of no effect |
 | runtime verification | independently observed running artifact identity/equivalent + Phase 13/12 admission evidence | deploy-controller success or vendor green alone |
 
 ## Release policy currentness
@@ -156,6 +188,8 @@ Each deployment identifies exact Phase 13 runtime profiles/worker specialization
 
 Runtime verification proves that the executing/deployed runtime corresponds to the approved immutable artifact identity (or an explicitly reviewed equivalent identity mapping). A deployment-controller receipt, desired-state object or mutable image tag alone is not proof of running artifact identity.
 
+Release-target fencing and Phase 13 runtime/placement fencing are independent checks; one green/current value cannot substitute for the other.
+
 ## Mixed-version join
 
 A release declares old/new compatibility across runtime, schema, API, event and semantic configuration before coexistence is admitted.
@@ -173,17 +207,17 @@ observe_verify
 contract
 ```
 
-and the exact migration/backfill operation identities.
+and the exact migration/backfill operation identities/fences required by their owning contract.
 
 Before `contract`, active/supported cell compatibility metadata must no longer advertise a runtime/schema combination that depends on the structure being removed.
 
 ## Progressive rollout join
 
-Production deployment records validation scope, canary/wave scope, accepted pause/abort signals, capacity envelope, cell compatibility metadata where applicable and runtime verification evidence.
+Production deployment records validation scope, stable deployment operation identity, expected/resulting release-target state, canary/wave scope, accepted pause/abort signals, capacity envelope, cell compatibility metadata where applicable and runtime verification evidence.
 
 ## Cross-cutting validation
 
-`RLV-001..046` apply according to stage. `RLV-041..044` are mandatory where untrusted-source validation, candidate-controlled workflow/policy, runtime artifact verification or restored release-policy currentness can affect release authority. `RLV-045..046` are mandatory for cell-affecting releases/reference-cell and cell-compatibility metadata paths.
+`RLV-001..048` apply according to stage. `RLV-041..044` are mandatory where untrusted-source validation, candidate-controlled workflow/policy, runtime artifact verification or restored release-policy currentness can affect release authority. `RLV-045..046` are mandatory for cell-affecting releases/reference-cell and cell-compatibility metadata paths. `RLV-047..048` are mandatory for effectful deployment concurrency and ambiguous-outcome retry paths.
 
 Any future manifest field added with authority/compatibility effect is semantic and requires compatibility review.
 

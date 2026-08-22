@@ -17,6 +17,7 @@ Protected assets include:
 - runtime/topology diagnostic metadata;
 - error/stack diagnostic payloads;
 - health/recovery/security state;
+- duplicate-sensitive comparison outcome and historical-continuity state;
 - SLI/SLO/error-budget and alert state;
 - telemetry configuration/sampling/redaction rules;
 - observability query/export capability;
@@ -34,7 +35,9 @@ Secrets remain prohibited ordinary telemetry and are not an observability asset 
 - accidental developer instrumentation leakage;
 - noisy tenant/workload causing cost/availability exhaustion;
 - stale restored observability state;
-- malicious/misconfigured sampling/redaction/dashboard/alert rules.
+- malicious/misconfigured sampling/redaction/dashboard/alert rules;
+- attacker attempting to infer protected message/content equality from diagnostic outputs;
+- attacker shaping duplicate candidates to amplify comparison and observability work.
 
 ## Threats and required controls
 
@@ -138,6 +141,26 @@ Secrets remain prohibited ordinary telemetry and are not an observability asset 
 **Attack:** compromised pipeline drops/fabricates evidence and consumers treat silence as green.  
 **Control:** pipeline-integrity/self-observation, missing=`unknown`, independent authoritative audit/recovery state.
 
+### TM-OBS-021 — Comparison equality oracle
+
+**Attack:** a user/operator correlates duplicate-sensitive diagnostic data across tenant/consumer scopes to test whether protected content is equal.  
+**Control:** emit bounded outcome classes only; protect diagnostic references; current query authorization and tenant/consumer scope isolation; no generic equality search/export semantics.
+
+### TM-OBS-022 — Comparison-state authority laundering
+
+**Attack/failure:** a dashboard/health signal showing comparison service reachable is treated as proof that historical equivalence is valid or a duplicate/effect is eligible.  
+**Control:** observability records Phase 11 selected state only; current owning comparison/effect/recovery authority remains decisive; reachability cannot clear continuity/trust state.
+
+### TM-OBS-023 — Comparison work/cardinality amplification
+
+**Attack:** crafted message identities/content force expensive comparison calls while creating unique telemetry series/index entries.  
+**Control:** bounded tenant/workload/profile budgets; no message/content-derived metric dimensions; comparison outcomes aggregate into fixed classes; overload remains isolated.
+
+### TM-OBS-024 — Historical comparison state disclosure
+
+**Attack:** public or overbroad diagnostic surfaces reveal protected historical comparison generation/profile details useful for cross-scope inference or operational targeting.  
+**Control:** such references are privileged diagnostic identifiers only, minimized and non-public; metrics expose bounded state classes rather than sensitive references.
+
 ## Trust boundaries
 
 Conceptual boundaries:
@@ -154,6 +177,8 @@ untrusted request/provider input
 
 No later boundary can safely recover a secret that should never have been emitted.
 
+For duplicate-sensitive flows, the comparison/effect authority boundary remains outside the observability authority chain. Telemetry may observe its result/state but cannot become a second comparison authority.
+
 ## Privacy principles
 
 - minimize before emission;
@@ -162,8 +187,9 @@ No later boundary can safely recover a secret that should never have been emitte
 - avoid raw protected payloads;
 - bound retention/searchability/export;
 - prevent unnecessary cross-tenant correlation;
+- prevent duplicate/equality diagnostic data from becoming a cross-scope oracle;
 - apply erasure/governance continuity where retained telemetry contains governed protected data.
 
 ## Release blockers
 
-Future implementation/release is blocked by demonstrable secret leakage, cross-tenant query disclosure, uncontrolled cardinality, unsafe baggage/URL capture, telemetry backpressure amplification, missing evidence counted as success, or health semantics that can bypass security/recovery authority.
+Future implementation/release is blocked by demonstrable secret leakage, cross-tenant query disclosure, uncontrolled cardinality, unsafe baggage/URL capture, telemetry backpressure amplification, missing evidence counted as success, health semantics that can bypass security/recovery authority, comparison diagnostics that create an equality oracle, or generic availability health that masks historical comparison continuity/trust failure.

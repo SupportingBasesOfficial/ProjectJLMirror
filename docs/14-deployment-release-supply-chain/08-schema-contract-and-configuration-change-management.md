@@ -51,7 +51,7 @@ cell_id
 current admitted runtime/schema compatibility state
 target runtime/schema compatibility state
 release/artifact identity
-configuration generation
+target configuration generation/profile
 migration step/state
 compatibility metadata version/generation or equivalent
 ```
@@ -68,9 +68,11 @@ Rules:
 
 For cell/runtime/schema-affecting releases, the accepted Data rollout stage “staging/reference cell” is satisfied inside `environment.validation@1` as `validation.reference-cell@1`.
 
-The exact artifact/config/schema combination intended for production canary is validated there before production canary unless evidence-backed `NO_APPLICABLE_CASE` applies.
+The same immutable artifact and the production-relevant schema/runtime/configuration semantic profile are validated there before production canary unless evidence-backed `NO_APPLICABLE_CASE` applies.
 
-The reference cell is non-production authority and cannot be reused as production placement merely because its combination passed validation.
+The validation reference-cell configuration may use environment-specific non-production values and secret references. Production may use a distinct exact configuration identity/generation only when release evidence accounts for every material semantic difference through compatibility/equivalence or target-specific validation.
+
+The reference cell is non-production authority and cannot be reused as production placement or receive production secret material merely because its combination passed validation.
 
 ## API/event compatibility
 
@@ -96,12 +98,18 @@ Backfills are:
 
 ## Configuration changes
 
-Semantic configuration follows the same compatibility rigor as code. A config-only change that alters trust, tenant isolation, egress, failure handling, SLI meaning, runtime authority or Product behavior is not operationally trivial.
+Semantic configuration follows the same compatibility rigor as code. A config-only change that alters trust, tenant isolation, egress, failure handling, SLI meaning, runtime authority, schema/API/event behavior, recovery or Product behavior is not operationally trivial.
+
+Validation evidence records the exact configuration identity/profile used. Reuse of that evidence for a different target configuration requires explicit validation-to-target compatibility/equivalence evidence. A target-specific material difference triggers applicable revalidation and may change mixed-version/cell compatibility state.
+
+`RLV-049` falsifies promotion of a materially different production configuration using unrelated validation evidence.
 
 ## Secret changes
 
 Secret reference/credential rotation is separate from artifact/schema change unless the consuming protocol semantics require coordinated release. Rollback never resurrects retired credentials as current.
 
+Secret values are not copied between validation and production to establish configuration equality; compatibility reasons about reference purpose/policy and consuming semantics without exposing material.
+
 ## Runtime admission
 
-A cell/tenant is not admitted to a release combination that violates the declared matrix or current accepted cell compatibility metadata, even if individual components are independently healthy.
+A cell/tenant is not admitted to a release combination that violates the declared matrix, target configuration evidence or current accepted cell compatibility metadata, even if individual components are independently healthy.

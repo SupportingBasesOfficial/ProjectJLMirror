@@ -109,14 +109,16 @@ A source cell cannot directly mutate target-cell tenant operational state merely
 
 ## Network policy generation
 
-Network/egress policy has a versioned/configuration identity sufficient to detect stale policy where stale access would broaden authority.
+The canonical Phase 13 identity for semantically relevant runtime network/egress-policy currentness is `network_policy_generation`.
 
 Rules:
 
+- it is distinct from `runtime_generation`, `configuration_generation`, `workload_credential_generation`, `placement_version` and all upstream authorization/governance generations;
 - rollback cannot re-open a prohibited destination or retired privileged path silently;
 - network policy change is compatibility/security-sensitive when it broadens accessible trust zones/capabilities;
-- runtime restart is not sufficient evidence that new policy is active;
-- observability records policy/profile identity without exposing credentials or protected destination secrets.
+- runtime restart or a current `runtime_generation` is not sufficient evidence that the required `network_policy_generation` is active;
+- observability records policy/profile identity without exposing credentials or protected destination secrets;
+- `PRTV-042` applies whenever an implementation attempts to use another generation as proof of network-policy currentness.
 
 ## Failure behavior
 
@@ -134,8 +136,9 @@ Conformance tests SHALL falsify at least:
 - connector destination/redirect escaping allowed policy;
 - parser attempting egress;
 - cross-cell direct mutation attempt;
-- stale network policy reopening access;
+- stale `network_policy_generation` reopening access;
 - realtime relocation/drain requiring resync;
-- one destination/provider exhausting unrelated egress capacity.
+- one destination/provider exhausting unrelated egress capacity;
+- generation-authority conflation under `PRTV-042`.
 
 Exact ingress controller, load balancer, service discovery, mesh, proxy, DNS and private-connectivity products remain OPEN.

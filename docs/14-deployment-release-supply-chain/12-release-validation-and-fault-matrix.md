@@ -159,6 +159,16 @@ Inject: release system/approval/provenance-verifier policy is restored to an old
 Required: current release-policy/verifier authority is reconciled forward; privileged release advancement stays blocked until currentness is proven.  
 Forbidden: restored policy state becomes current merely because the pipeline service is reachable.
 
+### RLV-045 — Cell-affecting release skips validation reference cell
+Inject: a runtime/schema/cell-affecting release passes `validation.general@1` and attempts production canary without the accepted staging/reference-cell evidence.  
+Required: production canary admission is blocked until `validation.reference-cell@1` succeeds on the same immutable artifact/config/schema/runtime candidate or an evidence-backed `NO_APPLICABLE_CASE` is recorded.  
+Forbidden: deployment product lacking a staging concept silently removes the accepted Data rollout stage.
+
+### RLV-046 — Stale or forged cell compatibility metadata
+Inject: deployment/placement uses stale, caller-controlled or inconsistent current/target schema/runtime compatibility metadata for a cell.  
+Required: newer authoritative Control Plane compatibility/admission state wins; incompatible placement/cutover is rejected.  
+Forbidden: deployment success, caller hint or stale metadata makes an unsafe cell combination eligible.
+
 ## Acceptance rule
 
 Phase 14 SHALL NOT reach `READY_FOR_MERGE` while any applicable vector lacks owner, expected result, evidence path or evidence-backed `NO_APPLICABLE_CASE`.

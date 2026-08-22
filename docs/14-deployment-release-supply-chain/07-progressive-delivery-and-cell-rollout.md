@@ -49,6 +49,8 @@ configuration identity
 target environment
 validation scope/evidence class
 cell/target scope
+expected_release_target_state_version
+resulting_release_target_state_version_or_pending
 runtime profiles
 old/new runtime generations
 schema/contract compatibility state
@@ -58,7 +60,38 @@ admission gate profile
 pause/abort state
 runtime-observed artifact identity/equivalent
 runtime verification result
+terminal/reconciliation state
 ```
+
+`deployment_id` is the stable logical operation identity. Retrying the same logical deployment reuses that identity and observes its durable state/outcome rather than inventing a second executor.
+
+`release_target_state_version` is release-control state for one target scope. It does not replace Phase 13 runtime generation, placement version, tenant placement authority or cell admission authority.
+
+## Deployment create-or-observe
+
+Before an effectful deployment starts, the release control plane atomically creates-or-observes the durable deployment operation and verifies the expected target release state/version.
+
+For incompatible concurrent deployments targeting the same protected scope:
+
+- one compatible transition wins admission under a fenced/atomic equivalent;
+- a stale operation observing a newer target release state cannot continue effectful advancement;
+- same `deployment_id` with conflicting immutable artifact/config/target semantics is an integrity conflict, not a retry;
+- different operation IDs do not permit two incompatible target states to become current concurrently.
+
+The concrete coordination store/lease/CAS mechanism remains `OPEN-RLS-027`; the single-current-transition property is not OPEN.
+
+## Ambiguous deployment outcome
+
+Timeout, controller crash, runner loss or lost API response after an effectful release command creates ambiguity, not absence.
+
+The release system SHALL:
+
+1. preserve the same `deployment_id` and requested immutable target semantics;
+2. inspect durable release-controller and target/runtime evidence;
+3. classify the operation as completed, still in progress, safely not started, or `reconciliation_required`;
+4. retry effectful work only when the owning operation/fence semantics establish eligibility.
+
+Blindly issuing a new deployment operation because the previous call timed out is prohibited when the earlier effect may have occurred.
 
 ## Pre-admission gates
 
@@ -66,6 +99,7 @@ Before protected serving admission, applicable gates re-establish:
 
 - artifact integrity/provenance;
 - target promotion authority;
+- current deployment operation/fence and target release state;
 - applicable validation scope completion on the same immutable artifact;
 - Phase 13 runtime/environment conformance;
 - independently observed running artifact identity/equivalence;
@@ -100,15 +134,19 @@ For cell-affecting releases, production canary begins only after required refere
 
 ## Pause
 
-Rollout enters `paused` when an accepted gate cannot prove safe continuation. Pause preserves durable obligations and does not imply rollback eligibility.
+Rollout enters `paused` when an accepted gate cannot prove safe continuation. Pause preserves durable obligations, deployment operation identity/fences and does not imply rollback eligibility.
 
 ## Abort
 
 Abort stops new rollout advancement. Already-mutated state/external effects remain authoritative and are handled under rollback/forward-recovery classification.
 
+Abort of an operation with uncertain target effect records `reconciliation_required`; it does not reset the target state version or make a new deployment automatically eligible.
+
 ## Cell awareness
 
 Cell rollout preserves placement authority and source/target fencing. Deployment cannot move tenants between cells as an incidental rollout shortcut; relocation remains Control Plane authority.
+
+Release-target fencing and placement fencing are separate authorities and both apply where needed.
 
 ## Old/new coexistence
 
@@ -120,8 +158,8 @@ Each rollout scope verifies that the actually running workload corresponds to th
 
 ## Signals
 
-Admission/pause/abort uses accepted Phase 12 signal/health semantics. Vendor-native green/ready is adapter evidence only and cannot override recovery/security quarantine.
+Admission/pause/abort uses accepted Phase 12 signal/health semantics. Vendor-native green/ready is adapter evidence only and cannot override recovery/security quarantine or release-target fencing.
 
 ## Capacity
 
-Rollout accounts for temporary double footprint, reference-cell capacity, surge replicas, migration/backfill work, cache warmup, realtime reconnects, worker backlog and observability load. Absence of numeric thresholds does not permit unbounded rollout amplification.
+Rollout accounts for temporary double footprint, reference-cell capacity, surge replicas, migration/backfill work, cache warmup, realtime reconnects, worker backlog, observability load and ambiguous/retried release-controller work. Absence of numeric thresholds does not permit unbounded rollout amplification.

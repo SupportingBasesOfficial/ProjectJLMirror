@@ -15,6 +15,7 @@ Phase 14 adds/refines:
 - release authority -> promotion record;
 - release deployment operation -> release target state/fence;
 - validation.general -> validation.reference-cell for applicable cell releases;
+- validation configuration evidence -> target environment configuration identity/profile;
 - release system -> Control Plane cell compatibility metadata;
 - deployment principal -> target environment/cell;
 - release system -> secret/config authority;
@@ -104,11 +105,16 @@ Two deployment operations with incompatible artifact/config target semantics rac
 ### RLS-TM-026 — Ambiguous deployment replay
 A deployment call times out or loses its response after target mutation may have occurred, then automation creates another deployment operation and repeats the effect. Controls: same logical operation identity, durable outcome discovery, target/runtime evidence reconciliation and no retry eligibility from timeout/process death. `RLV-048`.
 
+### RLS-TM-027 — Validation-to-production configuration evidence laundering
+Artifact A is validated under configuration V, while production uses configuration P whose release-relevant trust, authorization, tenant-isolation, network/egress, failure/retry, schema/API/event, runtime-authority, Product, SLI, recovery or release-gate semantics differ materially. Automation reuses V evidence because artifact identity or config key names match, or copies production secret values into validation to manufacture superficial equality. Controls: exact target configuration identity/generation and semantic profile, explicit V->P compatibility/equivalence evidence or target-specific applicable validation, secret-reference purpose/policy comparison without secret-value copying. `RLV-049`.
+
 ## Privacy
 
 Release evidence minimizes tenant identifiers, physical topology, secret references and production data. Build/test evidence may use synthetic/minimized data; production-derived validation data follows Security governance.
 
 Untrusted-source validation and validation reference cells are not allowed to access production tenant data merely to improve test fidelity. Any production-derived dataset requires explicit governed export/minimization and remains non-authoritative.
+
+Production secret values are not copied into validation to prove configuration equivalence. Configuration evidence records only the minimum identity/profile, secret-reference purpose/policy and semantic differences required to establish release safety.
 
 Release-operation/fencing evidence exposes only the minimum target identity/state necessary for accountability and SHALL NOT become a public physical-topology or tenant-correlation oracle.
 
@@ -118,6 +124,8 @@ Rollback, restore, redeploy, registry recovery or CI/CD control-plane recovery c
 
 A restored release-target state that may predate a surviving deployment effect cannot authorize a second effect; current target/runtime evidence must be reconciled first.
 
+Restored configuration metadata that predates a newer production configuration generation cannot silently reuse older validation-to-target equivalence evidence. Exact current target configuration identity/profile is re-established before privileged release advancement.
+
 ## Supply-chain portability
 
-Replacing build/registry/CI/signing/orchestrator/coordination product must preserve trust/evidence semantics, including stable operation identity, target fencing, ambiguity discovery, reference-cell staging evidence and cell compatibility ownership/currentness. A vendor-specific verification badge or environment name is not a canonical security authority.
+Replacing build/registry/CI/signing/orchestrator/coordination/configuration product must preserve trust/evidence semantics, including stable operation identity, target fencing, ambiguity discovery, validation-to-target configuration evidence, reference-cell staging evidence and cell compatibility ownership/currentness. A vendor-specific verification badge or environment name is not a canonical security authority.

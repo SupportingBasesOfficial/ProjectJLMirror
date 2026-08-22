@@ -86,14 +86,16 @@ Canonical profile: `sli.realtime.delivery@1`.
 
 Candidate profile: `sli.webhook.convergence@1`.
 
-Product enablement alone does **not** activate a dedicated webhook SLI/SLO commitment. `OPEN-OBS-035` owns whether an enabled outbound-webhook capability requires the dedicated `sli.webhook.convergence@1` and corresponding alert commitment.
+`OPEN-OBS-037` owns whether accepted Product authority establishes the outbound-webhook capability as enabled, not enabled, or still unproven for this applicability decision. An unproven Product state remains OPEN; it is neither enablement nor `NO_APPLICABLE_CASE`.
 
-Until `OPEN-OBS-035` is closed by Product/SRE evidence:
+After Product enablement is established, `OPEN-OBS-035` separately owns whether an enabled outbound-webhook capability requires the dedicated `sli.webhook.convergence@1` and corresponding alert commitment. Product enablement alone therefore does **not** activate a dedicated webhook SLI/SLO commitment.
 
-- webhook diagnostic/health/security/recovery evidence remains required when the capability is enabled;
+Until the applicable OPEN decisions are closed by Product/SRE evidence:
+
+- webhook diagnostic/health/security/recovery evidence remains required where the prepared capability profile applies;
 - ordinary durable-progress/customer-impact evidence may still expose failures through applicable shared profiles;
 - no dedicated webhook SLO/error-budget commitment is asserted by Phase 12;
-- implementation/tool defaults SHALL NOT resolve the OPEN implicitly.
+- implementation/tool defaults SHALL NOT resolve either applicability OPEN implicitly.
 
 If `OPEN-OBS-035` later activates the profile, its semantics cover delivery-obligation terminal convergence, attempt latency and destination-isolated failure pressure. An ambiguous external outcome is never silently recorded as ordinary failure/success.
 
@@ -129,13 +131,15 @@ These SLIs observe accepted admission outcomes. They do not create placement/gen
 
 ### Protected artifact delivery
 
-Canonical profile where accepted Product authority exposes protected artifact delivery: `sli.artifact.delivery@1`.
+Candidate profile when accepted Product authority exposes protected artifact delivery: `sli.artifact.delivery@1`.
+
+`OPEN-OBS-037` also owns the Product applicability state for direct protected-artifact delivery exposure. Until accepted Product authority proves exposure or non-exposure, applicability remains OPEN. A proven non-exposed state may yield `NO_APPLICABLE_CASE`; an unproven state may not.
+
+When applicable, the profile covers:
 
 - eligible artifact lifecycle/delivery terminal outcome;
 - delivery latency/disruption as permitted by the artifact contract;
 - reconciliation/governance-blocked outcome classification.
-
-Unproven Product exposure is not treated as enabled exposure. The manifest's closed Product-state selector governs applicability.
 
 The SLI SHALL NOT treat a stale delivery capability or ongoing older-generation stream as successful merely because bytes were served; accepted artifact delivery-generation/lease/erasure authority remains decisive.
 
@@ -160,6 +164,8 @@ A direct service-level objective is `NO_APPLICABLE_CASE` when the property is a 
 The `NO_APPLICABLE_CASE` applies only to the **direct correctness SLI**. Operational/customer impact remains measurable through consuming API, async or recovery SLIs. This disposition SHALL be explicit in `10-observability-semantic-manifest.md`; omission is invalid.
 
 An availability SLI for an underlying dependency MAY be introduced later only if it does not imply an allowance to violate the hard correctness property.
+
+Unknown/unproven Product applicability is not a hard-correctness `NO_APPLICABLE_CASE`; it remains owned by `OPEN-OBS-037` until accepted Product evidence closes it.
 
 ## SLO governance
 
@@ -208,7 +214,8 @@ Exclusions SHALL be evidence-backed and semantically stable. The following are p
 - renaming an error class to remove it from the budget;
 - discarding a tenant/workload from aggregate SLI solely because it is degraded;
 - changing sampling in a way that makes SLI errors invisible without compatibility/governance review;
-- converting a hard correctness failure into an SLO exclusion to preserve reported compliance.
+- converting a hard correctness failure into an SLO exclusion to preserve reported compliance;
+- converting unproven Product applicability into `NO_APPLICABLE_CASE` to avoid a future commitment decision.
 
 ## Multi-tenant aggregation
 
@@ -230,4 +237,4 @@ Tests SHALL inject telemetry loss, denied/invalid requests, throttling, ambiguou
 
 Validation SHALL also prove that direct hard-correctness `NO_APPLICABLE_CASE` decisions do not remove the consuming operational/customer-impact SLI and cannot be used to hide service degradation.
 
-For Product-gated candidate profiles, validation SHALL prove that unknown Product state is not treated as enablement or disablement and that an OPEN applicability decision cannot be silently activated by implementation configuration.
+For Product-gated candidate profiles, validation SHALL prove that `product_state_unproven` remains bound to `OPEN-OBS-037`, is not treated as enablement/disablement or `NO_APPLICABLE_CASE`, and cannot be silently activated by implementation configuration. For enabled outbound webhooks, validation SHALL additionally prove that `OPEN-OBS-035` is not silently closed by implementation or tooling.

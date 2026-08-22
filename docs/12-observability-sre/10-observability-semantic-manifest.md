@@ -52,6 +52,8 @@ security_cardinality_constraints
 
 A `NO_APPLICABLE_CASE` SLI or alert decision is valid only when this manifest states why a direct service-level/action contract would be semantically wrong or redundant and names the indirect outcome profile that carries customer/system impact where applicable. Omission is not `NO_APPLICABLE_CASE`.
 
+An OPEN decision may appear in an applicability field only when the OPEN registry explicitly owns that semantic choice. It is not equivalent to `NO_APPLICABLE_CASE` and SHALL NOT be silently resolved by implementation.
+
 ## Core signal profiles
 
 | Profile | Family | Required meaning | Cardinality/security rule |
@@ -127,20 +129,20 @@ A single process may implement multiple profiles. One global `/health=true` does
 
 ## Core SLI profiles
 
-| SLI | Outcome semantics | Numeric objective |
+| SLI | Outcome semantics | Numeric objective / applicability |
 |---|---|---|
-| `sli.api.outcome@1` | eligible request success ratio by stable operation class | OPEN |
-| `sli.api.latency@1` | latency distribution for eligible operation class | OPEN |
-| `sli.async.progress@1` | accepted-work age/convergence and terminal outcome | OPEN |
-| `sli.provider.outcome@1` | eligible provider operation normalized outcome | OPEN |
-| `sli.realtime.delivery@1` | eligible admission/delivery/resync convergence | OPEN |
-| `sli.webhook.convergence@1` | enabled webhook obligation terminal convergence | OPEN / Product-gated |
-| `sli.customer-telemetry.acceptance@1` | durable observation acceptance/projection freshness | OPEN |
-| `sli.observability.integrity@1` | required signal delivery/propagation/evidence completeness | OPEN |
-| `sli.control-plane.admission@1` | placement/config/lifecycle operations for eligible control-plane work | OPEN |
-| `sli.cell.admission@1` | eligible cell admission outcome by stable workload class | OPEN |
-| `sli.artifact.delivery@1` | eligible protected artifact lifecycle/delivery outcome where Product exposes it | OPEN |
-| `sli.recovery.convergence@1` | recovery/reconciliation progress/evidence-gap convergence | OPEN |
+| `sli.api.outcome@1` | eligible request success ratio by stable operation class | objective OPEN |
+| `sli.api.latency@1` | latency distribution for eligible operation class | objective OPEN |
+| `sli.async.progress@1` | accepted-work age/convergence and terminal outcome | objective OPEN |
+| `sli.provider.outcome@1` | eligible provider operation normalized outcome | objective OPEN |
+| `sli.realtime.delivery@1` | eligible admission/delivery/resync convergence | objective OPEN |
+| `sli.webhook.convergence@1` | candidate enabled-webhook obligation terminal-convergence profile | activation/commitment `OPEN-OBS-035`; numeric objective OPEN if activated |
+| `sli.customer-telemetry.acceptance@1` | durable observation acceptance/projection freshness | objective OPEN |
+| `sli.observability.integrity@1` | required signal delivery/propagation/evidence completeness | objective OPEN |
+| `sli.control-plane.admission@1` | placement/config/lifecycle operations for eligible control-plane work | objective OPEN |
+| `sli.cell.admission@1` | eligible cell admission outcome by stable workload class | objective OPEN |
+| `sli.artifact.delivery@1` | eligible protected artifact lifecycle/delivery outcome where Product exposes it | objective OPEN when applicable |
+| `sli.recovery.convergence@1` | recovery/reconciliation progress/evidence-gap convergence | objective OPEN |
 
 Each SLI inherits missing-data=`unknown` unless its specialized profile proves another behavior.
 
@@ -170,37 +172,43 @@ This table is mandatory. Every profile, signal, health, SLI, alert and fault-vec
 | `rel.security-session-authority@1` | `obs.security.authority-freshness@1`, `obs.request.outcome@1` | `health.security-authority@1` | direct SLI=`NO_APPLICABLE_CASE`; impact=`sli.api.outcome@1` | `alert.security-trust@1`, `alert.customer-impact@1` | `OBSV-003`, `OBSV-013`, `OBSV-015`, `OBSV-027`; protected authority evidence values excluded from ordinary telemetry |
 | `rel.placement-reference-cache@1` | `obs.security.authority-freshness@1`, `obs.operation.state@1` | `health.control-plane@1` | direct SLI=`NO_APPLICABLE_CASE`; impact=`sli.control-plane.admission@1`, `sli.cell.admission@1` | `alert.recovery-continuity@1`, `alert.customer-impact@1` | `OBSV-013`, `OBSV-014`, `OBSV-021`; cached physical placement details privileged |
 | `rel.performance-cache@1` | `obs.request.outcome@1` | `health.api-bff@1` | `sli.api.outcome@1`, `sli.api.latency@1` | `alert.customer-impact@1`, `alert.capacity-saturation@1` | `OBSV-011`, `OBSV-025`; cache keys/content never become public telemetry dimensions |
-| `rel.replay-consume-state@1` | `obs.message-equivalence.admission@1`, `obs.message-equivalence.verifier@1`, `obs.recovery.reconciliation@1` | `health.message-equivalence@1`, `health.recovery@1` | direct SLI=`NO_APPLICABLE_CASE`; impact=`sli.recovery.convergence@1` | `alert.recovery-continuity@1`, `alert.security-trust@1` | `OBSV-023`, `OBSV-031`, `OBSV-032`, `OBSV-033`, `OBSV-034`, `OBSV-035`, `OBSV-036`; no comparison-derived equality lookup oracle |
-| `rel.secret-key-authority@1` | `obs.security.authority-freshness@1` | `health.security-authority@1` | direct SLI=`NO_APPLICABLE_CASE`; impact profiles=`sli.api.outcome@1`, `sli.async.progress@1`, `sli.recovery.convergence@1` | `alert.security-trust@1`, `alert.durable-progress@1` | `OBSV-015`, `OBSV-033`, `OBSV-034`, `OBSV-035`; protected authority references are non-public diagnostic identifiers |
+| `rel.replay-consume-state@1` | `obs.message-equivalence.admission@1`, `obs.message-equivalence.verifier@1`, `obs.recovery.reconciliation@1` | `health.message-equivalence@1`, `health.recovery@1` | direct SLI=`NO_APPLICABLE_CASE`; impact=`sli.recovery.convergence@1` | `alert.recovery-continuity@1`, `alert.security-trust@1` | `OBSV-023`, `OBSV-032`, `OBSV-033`, `OBSV-034`, `OBSV-035`, `OBSV-036`; no comparison-derived equality lookup oracle |
+| `rel.secret-key-authority@1` | `obs.security.authority-freshness@1` | `health.security-authority@1` | direct SLI=`NO_APPLICABLE_CASE`; impact profiles=`sli.api.outcome@1`, `sli.async.progress@1`, `sli.recovery.convergence@1` | `alert.security-trust@1`, `alert.durable-progress@1` | `OBSV-015`, `OBSV-027`; protected authority references are non-public diagnostic identifiers |
 | `rel.configuration-authority@1` | `obs.configuration.generation@1`, `obs.security.authority-freshness@1` | `health.control-plane@1`, `health.cell@1` | direct SLI=`NO_APPLICABLE_CASE`; impact=`sli.control-plane.admission@1`, `sli.cell.admission@1` | `alert.customer-impact@1`, `alert.security-trust@1` | `OBSV-013`, `OBSV-021`; configuration contents/secrets excluded |
 | `rel.outbox-publication@1` | `obs.async.progress@1`, `obs.operation.state@1` | `health.async-worker@1` | `sli.async.progress@1` | `alert.durable-progress@1`, `alert.capacity-saturation@1` | `OBSV-001`, `OBSV-016`, `OBSV-025`; message ID diagnostic only, not metric label |
 | `rel.broker-job-transport@1` | `obs.async.transport@1`, `obs.async.progress@1` | `health.async-worker@1` | `sli.async.progress@1` | `alert.durable-progress@1`, `alert.capacity-saturation@1` | `OBSV-008`, `OBSV-016`, `OBSV-025`; broker/topic physical identity not canonical contract identity |
-| `rel.consumer-inbox-effect@1` | `obs.async.progress@1`, `obs.message-equivalence.admission@1`, `obs.message-equivalence.verifier@1` | `health.async-worker@1`, `health.message-equivalence@1` | `sli.async.progress@1`; direct equivalence SLI=`NO_APPLICABLE_CASE` | `alert.durable-progress@1`, `alert.recovery-continuity@1`, `alert.security-trust@1` | `OBSV-016`, `OBSV-031`, `OBSV-032`, `OBSV-033`, `OBSV-034`, `OBSV-035`, `OBSV-036`; duplicate admission emits bounded class only |
+| `rel.consumer-inbox-effect@1` | `obs.async.progress@1`, `obs.message-equivalence.admission@1`, `obs.message-equivalence.verifier@1` | `health.async-worker@1`, `health.message-equivalence@1` | `sli.async.progress@1`; direct equivalence SLI=`NO_APPLICABLE_CASE` | `alert.durable-progress@1`, `alert.recovery-continuity@1`, `alert.security-trust@1` | `OBSV-016`, `OBSV-031`, `OBSV-033`, `OBSV-034`, `OBSV-035`, `OBSV-036`; duplicate admission emits bounded class only |
 | `rel.external-provider@1` | `obs.provider.operation@1`, `obs.operation.state@1`, `obs.recovery.reconciliation@1` | `health.provider-adapter@1` | `sli.provider.outcome@1` | `alert.customer-impact@1`, `alert.durable-progress@1`, `alert.capacity-saturation@1`, `alert.security-trust@1` | `OBSV-001`, `OBSV-015`, `OBSV-017`, `OBSV-025`; provider error/body bounded/redacted |
 | `rel.realtime-fanout@1` | `obs.realtime.lifecycle@1` | `health.realtime@1` | `sli.realtime.delivery@1` | `alert.customer-impact@1`, `alert.capacity-saturation@1` | `OBSV-001`, `OBSV-013`, `OBSV-025`; connection/auth capability not telemetry authority |
-| `rel.webhook-delivery@1` | `obs.webhook.delivery@1`, `obs.recovery.reconciliation@1` | `health.webhook-delivery@1` | if Product-enabled=`sli.webhook.convergence@1`; if Product-not-enabled=`NO_APPLICABLE_CASE` | if Product-enabled=`alert.durable-progress@1`, `alert.customer-impact@1`; if Product-not-enabled=`NO_APPLICABLE_CASE` | `OBSV-017`, `OBSV-019`, `OBSV-025`; destination generation separated from delivery identity; signing secrets excluded |
+| `rel.webhook-delivery@1` | `obs.webhook.delivery@1`, `obs.recovery.reconciliation@1` | `health.webhook-delivery@1` | if `product_enabled`=`OPEN-OBS-035`; if `product_not_enabled`=`NO_APPLICABLE_CASE`; if `product_state_unproven`=`NO_APPLICABLE_CASE` pending Product authority | if `product_enabled`=`OPEN-OBS-035`; if `product_not_enabled`=`NO_APPLICABLE_CASE`; if `product_state_unproven`=`NO_APPLICABLE_CASE` pending Product authority | `OBSV-017`, `OBSV-019`, `OBSV-025`; diagnostic/security/recovery evidence remains applicable regardless of Product-facing SLO/alert commitment |
 | `rel.telemetry-plane@1` | `obs.observability.pipeline@1` | `health.observability-pipeline@1` | `sli.observability.integrity@1` | `alert.telemetry-integrity@1`, `alert.capacity-saturation@1` | `OBSV-008`, `OBSV-010`, `OBSV-011`, `OBSV-026`; optional operational telemetry distinct from customer acceptance/audit |
 | `rel.customer-telemetry-acceptance@1` | `obs.telemetry.acceptance@1`, `obs.async.progress@1`, `obs.recovery.reconciliation@1` | `health.customer-telemetry@1` | `sli.customer-telemetry.acceptance@1` | `alert.customer-impact@1`, `alert.durable-progress@1`, `alert.capacity-saturation@1`, `alert.recovery-continuity@1` | `OBSV-010`, `OBSV-012`, `OBSV-016`, `OBSV-025`; observation identity scope is not observability authorization |
 | `rel.mandatory-audit-plane@1` | `obs.audit.responsibility-health@1` | `health.audit-plane@1` | direct SLI=`NO_APPLICABLE_CASE`; impact profiles=`sli.api.outcome@1`, `sli.async.progress@1` | `alert.customer-impact@1`, `alert.security-trust@1` | `OBSV-009`, `OBSV-011`, `OBSV-015`; ordinary telemetry never proves or copies audit evidence |
-| `rel.artifact-storage@1` | `obs.artifact.lifecycle@1`, `obs.recovery.reconciliation@1` | `health.artifact@1` | if Product-exposed-delivery=`sli.artifact.delivery@1`; otherwise=`NO_APPLICABLE_CASE` | `alert.customer-impact@1`, `alert.recovery-continuity@1`, `alert.capacity-saturation@1`, `alert.security-trust@1` | `OBSV-014`, `OBSV-024`, `OBSV-025`, `OBSV-028`; no artifact bytes/capabilities/secret URLs |
+| `rel.artifact-storage@1` | `obs.artifact.lifecycle@1`, `obs.recovery.reconciliation@1` | `health.artifact@1` | if `product_exposed_delivery`=`sli.artifact.delivery@1`; if `product_not_exposed_delivery`=`NO_APPLICABLE_CASE`; if `product_state_unproven`=`NO_APPLICABLE_CASE` pending Product authority | `alert.customer-impact@1`, `alert.recovery-continuity@1`, `alert.capacity-saturation@1`, `alert.security-trust@1` | `OBSV-014`, `OBSV-024`, `OBSV-025`, `OBSV-028`; diagnostic/security/recovery evidence remains applicable regardless of Product-facing delivery SLI |
 | `rel.reporting-derived@1` | `obs.request.outcome@1`, `obs.operation.state@1`, `obs.async.progress@1` | `health.api-bff@1`, `health.async-worker@1` | `sli.api.outcome@1`, `sli.async.progress@1` | `alert.customer-impact@1`, `alert.durable-progress@1`, `alert.capacity-saturation@1` | `OBSV-016`, `OBSV-025`, `OBSV-029`; report/filter payloads bounded/redacted |
 | `rel.privileged-operations@1` | `obs.operation.state@1`, `obs.security.authority-freshness@1`, `obs.recovery.reconciliation@1` | `health.security-authority@1`, `health.recovery@1`, `health.async-worker@1` | direct authorization SLI=`NO_APPLICABLE_CASE`; impact profiles=`sli.async.progress@1`, `sli.recovery.convergence@1` | `alert.security-trust@1`, `alert.recovery-continuity@1`, `alert.durable-progress@1` | `OBSV-003`, `OBSV-014`, `OBSV-015`, `OBSV-028`; privileged targets/credentials not ordinary dimensions |
 
 ### Closed applicability selectors
 
-The only Product-gated selectors in the join are:
+The Product-state selectors are:
 
 ```text
 webhook_product_state:
   product_enabled
   product_not_enabled
+  product_state_unproven
 
 artifact_delivery_product_state:
   product_exposed_delivery
   product_not_exposed_delivery
+  product_state_unproven
 ```
 
-Their values are derived from accepted Product authority, never implementation defaults or telemetry itself. Unknown/unproven Product state takes the restrictive `product_not_enabled` / `product_not_exposed_delivery` observability-contract branch for direct Product-facing SLI/alert commitments; it does not disable underlying diagnostic/security/recovery evidence.
+Their values are derived from accepted Product authority, never implementation defaults or telemetry itself.
+
+`product_state_unproven` is deliberately distinct from `product_not_enabled` / `product_not_exposed_delivery`. It yields no Product-facing SLI/alert commitment and does not assert absence. Underlying diagnostic, security, recovery and governance evidence obligations remain active where the prepared reliability profile applies.
+
+For webhook when `product_enabled`, `OPEN-OBS-035` remains the owner of whether a dedicated SLO/alert commitment is required. Phase 12 SHALL NOT silently resolve that OPEN through this manifest.
 
 Rows that list multiple exact impact SLI/alert profiles define the complete applicable consumer set; runtime operation class selects which member receives an observation, but no new profile identity or semantic alias may be invented locally.
 
@@ -244,8 +252,9 @@ Acceptance is blocked when:
 - an SLI references undefined/mutable signal semantics;
 - an alert has no owner/action class;
 - any accepted Phase 11 reliability profile lacks an explicit same-key Phase 12 join/applicability decision;
-- a join uses an undefined prose alias instead of an exact canonical profile/vector ID;
-- a conditional applicability branch has no closed accepted selector outcome or explicit `NO_APPLICABLE_CASE`;
+- a join uses an undefined prose alias instead of an exact canonical profile/vector/OPEN ID;
+- a conditional applicability branch has no closed accepted selector outcome, explicit OPEN owner or explicit `NO_APPLICABLE_CASE`;
+- Product state uncertainty is represented as Product absence/disablement;
 - a metric admits an unbounded protected dimension without evidence;
 - audit or customer telemetry is silently collapsed into operational observability;
 - a profile treats telemetry as authorization/retry/recovery authority;

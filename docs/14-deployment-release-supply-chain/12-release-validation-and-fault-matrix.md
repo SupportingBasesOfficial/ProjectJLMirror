@@ -77,7 +77,7 @@ Required: evidence equivalence proven or new target validation required.
 Required: jobs/effects/migrations remain discoverable; pause is not absence.
 
 ### RLV-020 — Abort after external effect ambiguity
-Required: reconciliation_required; no blind retry/rollback.
+Required: `reconciliation_required`; no blind retry/rollback.
 
 ### RLV-021 — Old runtime with incompatible schema
 Required: combination never admitted.
@@ -168,6 +168,16 @@ Forbidden: deployment product lacking a staging concept silently removes the acc
 Inject: deployment/placement uses stale, caller-controlled or inconsistent current/target schema/runtime compatibility metadata for a cell.  
 Required: newer authoritative Control Plane compatibility/admission state wins; incompatible placement/cutover is rejected.  
 Forbidden: deployment success, caller hint or stale metadata makes an unsafe cell combination eligible.
+
+### RLV-047 — Concurrent incompatible deployments race one target
+Inject: deployment A and deployment B, with different immutable artifact/config target semantics, both attempt to advance the same protected cell/target from the same predecessor release state.  
+Required: one compatible transition wins under atomic/fenced target-state admission; the loser observes a newer `release_target_state_version` and cannot continue effectful work.  
+Forbidden: both operations become current because they used different job/deployment IDs or separate runners.
+
+### RLV-048 — Ambiguous deployment retry duplicates target effect
+Inject: effectful deployment command times out or loses its response after the target may have changed; automation starts a new deployment operation for the same intended release.  
+Required: the original stable `deployment_operation_id` is observed/reconciled against durable target/runtime evidence; effectful retry occurs only when eligibility is proven.  
+Forbidden: timeout/process death/lost response is treated as no deployment, or a new operation ID manufactures duplicate eligibility.
 
 ## Acceptance rule
 

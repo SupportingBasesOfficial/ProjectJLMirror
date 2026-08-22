@@ -77,6 +77,10 @@ The following are fixed by Phase 12 and SHALL NOT be delegated to tooling defaul
 - alert profiles require owner/action/clear semantics;
 - telemetry pipeline failure/backpressure is bounded;
 - incompatible semantic changes require versioning/migration;
+- every accepted Phase 11 reliability profile has an explicit same-key Phase 12 observability applicability join;
+- duplicate-sensitive observability distinguishes temporary comparison dependency outage, historical comparison continuity loss and compromised comparison trust according to the owning Phase 11 profile;
+- comparison/equality diagnostics cannot become a cross-tenant/cross-consumer oracle, retry authority or duplicate proof;
+- correctness gates such as authorization, mandatory audit and message-equivalence proof cannot be weakened by assigning them an error-budget allowance;
 - exact-state evidence and separate merge authorization remain mandatory.
 
 ## Acceptance blockers
@@ -98,8 +102,16 @@ Phase 12 SHALL NOT be accepted while any applicable condition remains:
 13. critical compatibility/mixed-version behavior is undefined;
 14. leakage, broken propagation, cardinality explosion, telemetry loss and recovery-quarantine vectors lack expected outcomes;
 15. a backend/vendor/default is treated as architecture without decision evidence;
-16. deterministic/AI/scanner green evidence is represented as Phase acceptance or merge authorization.
+16. deterministic/AI/scanner green evidence is represented as Phase acceptance or merge authorization;
+17. any accepted Phase 11 `reliability_profile_id@version` lacks an explicit Phase 12 signal/health/SLI/alert/fault applicability row;
+18. duplicate-sensitive comparison observability collapses the accepted Phase 11 distinctions among temporary dependency outage, historical comparison continuity loss and compromised/untrusted comparison authority;
+19. ordinary telemetry exposes comparison-derived values or query behavior that can answer protected equality across tenant/consumer scopes;
+20. comparison-security-service work or its telemetry can be amplified without bounded tenant/workload/profile budgets;
+21. a direct SLO/error budget is used to tolerate failure of a hard correctness authority such as duplicate-equivalence proof, current authorization or mandatory audit;
+22. a healthy generic worker/security service state can mask an applicable `health.message-equivalence@1` continuity/trust block.
 
 ## Closure rule
 
 Closing one OPEN item does not authorize a downstream technology choice beyond its scope. Material closure changes Phase 12 or later owning authority through ordinary reviewed governance and exact-HEAD validation.
+
+The new join/comparison blockers above do not create a new technology decision. They enforce inherited Phase 10/11 properties using the existing Phase 12 signal, health, validation, security and capacity authorities.

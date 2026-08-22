@@ -16,6 +16,7 @@ accepted_reliability_profile_id@version
 accepted_health_profile_ids
 accepted_SLI_profile_ids
 accepted_alert_profile_ids
+accepted_product_applicability_binding_or_NO_APPLICABLE_CASE
 operational_owner_profile
 escalation_owner_profiles
 incident_class_set
@@ -31,7 +32,24 @@ OPEN decisions
 
 Omission is not `NO_APPLICABLE_CASE`. A conditional `NO_APPLICABLE_CASE` requires the condition, accepted authority and reviewable evidence.
 
-The complete logical capability-operations record is the same-key normalized join of the accepted Phase 11 reliability profile, accepted Phase 12 observability join, the Phase 15 operations catalog row in `02-service-ownership-and-escalation.md`, and applicable Phase 15 recovery joins in this manifest. A conforming catalog contains one record for every exact accepted `reliability_profile_id@profile_version`; implementation-local service aliases cannot create, omit or reinterpret records.
+The complete logical capability-operations record is the same-key normalized join of the accepted Phase 11 reliability profile, accepted Phase 12 observability/Product-applicability join, the Phase 15 operations catalog row in `02-service-ownership-and-escalation.md`, and applicable Phase 15 recovery joins in this manifest. A conforming catalog contains one record for every exact accepted `reliability_profile_id@profile_version`; implementation-local service aliases cannot create, omit or reinterpret records.
+
+## Product applicability binding
+
+Where the accepted Phase 12 same-key join defines a Product selector, Phase 15 records a reference to that exact selector/evidence rather than deriving a local state.
+
+At minimum:
+
+| Reliability profile / branch | Accepted Product binding |
+|---|---|
+| `rel.webhook-delivery@1` | `webhook_product_state` from Phase 12 |
+| `rel.artifact-storage@1` Product-facing delivery branch | `artifact_delivery_product_state` from Phase 12 |
+
+For those selectors, `product_state_unproven` remains upstream OPEN state; catalog presence is neither enablement nor `NO_APPLICABLE_CASE`. Not-enabled/not-exposed Product branches do not erase underlying diagnostic/security/recovery ownership where the prepared reliability profile applies.
+
+A profile with no Product-gated operational branch records an evidence-backed `NO_APPLICABLE_CASE` for this field based on its accepted upstream join; it does not invent a new Product selector.
+
+`OPRV-058` falsifies catalog-to-Product authority laundering.
 
 ## Incident record schema
 
@@ -214,7 +232,7 @@ runbook.incident-closure@1
 
 | Operation | Required upstream authority/evidence | Forbidden substitution |
 |---|---|---|
-| incident declaration | accepted detection/evidence + accountable operator policy | alert/AI score as autonomous incident authority |
+| incident declaration | accepted detection/evidence + accountable operator policy + applicable upstream Product state for Product-facing commitments | alert/AI/catalog presence as autonomous incident/Product authority |
 | break-glass admission | current Security/ops policy + proven dual-control applicability + approver + exact scope | incident status, operator role or unknown applicability alone |
 | restore | exact recovery scope + backup/restore evidence + R | backup success as resumption authority |
 | recovery admission | F + `(R,F]` reconciliation + current authorities + exact full/partial scope proof | service health/reachability or subcomponent health alone |
@@ -227,8 +245,8 @@ runbook.incident-closure@1
 
 ## Cross-cutting validation
 
-`OPRV-001..057` are canonical Phase 15 adversarial vectors. Implementations map every applicable vector to owner, expected result and evidence or an evidence-backed `NO_APPLICABLE_CASE` for a genuinely conditional subcase.
+`OPRV-001..058` are canonical Phase 15 adversarial vectors. Implementations map every applicable vector to owner, expected result and evidence or an evidence-backed `NO_APPLICABLE_CASE` for a genuinely conditional subcase.
 
 ## OPEN discipline
 
-Concrete products, topology and numerics resolve only through `OPEN-OPS-*` closure evidence. Tool defaults never become manifest authority silently.
+Concrete products, topology and numerics resolve only through `OPEN-OPS-*` closure evidence. Tool defaults never become manifest or Product authority silently.

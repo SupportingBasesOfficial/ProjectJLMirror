@@ -42,7 +42,7 @@ Exact wave sizes/durations remain OPEN.
 A `release.deployment@1` identifies:
 
 ```text
-deployment_id
+deployment_operation_id
 promotion_id
 artifact_id
 configuration identity
@@ -63,7 +63,7 @@ runtime verification result
 terminal/reconciliation state
 ```
 
-`deployment_id` is the stable logical operation identity. Retrying the same logical deployment reuses that identity and observes its durable state/outcome rather than inventing a second executor.
+`deployment_operation_id` is the canonical stable logical operation identity. Retrying the same logical deployment reuses that identity and observes its durable state/outcome rather than inventing a second executor.
 
 `release_target_state_version` is release-control state for one target scope. It does not replace Phase 13 runtime generation, placement version, tenant placement authority or cell admission authority.
 
@@ -75,7 +75,7 @@ For incompatible concurrent deployments targeting the same protected scope:
 
 - one compatible transition wins admission under a fenced/atomic equivalent;
 - a stale operation observing a newer target release state cannot continue effectful advancement;
-- same `deployment_id` with conflicting immutable artifact/config/target semantics is an integrity conflict, not a retry;
+- same `deployment_operation_id` with conflicting immutable artifact/config/target semantics is an integrity conflict, not a retry;
 - different operation IDs do not permit two incompatible target states to become current concurrently.
 
 The concrete coordination store/lease/CAS mechanism remains `OPEN-RLS-027`; the single-current-transition property is not OPEN.
@@ -86,7 +86,7 @@ Timeout, controller crash, runner loss or lost API response after an effectful r
 
 The release system SHALL:
 
-1. preserve the same `deployment_id` and requested immutable target semantics;
+1. preserve the same `deployment_operation_id` and requested immutable target semantics;
 2. inspect durable release-controller and target/runtime evidence;
 3. classify the operation as completed, still in progress, safely not started, or `reconciliation_required`;
 4. retry effectful work only when the owning operation/fence semantics establish eligibility.

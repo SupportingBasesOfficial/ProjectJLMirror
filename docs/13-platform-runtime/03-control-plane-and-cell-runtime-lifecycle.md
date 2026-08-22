@@ -7,11 +7,11 @@
 
 This document defines the portable runtime lifecycle for Control Plane and data-plane cells while preserving accepted tenant-placement, failure-containment and recovery semantics.
 
-Cell lifecycle is distinct from workload health. A lifecycle state controls admission and topology intent; Phase 12 health profiles expose runtime condition without becoming placement authority.
+Cell/runtime-generation lifecycle is distinct from workload health, tenant Product lifecycle and replacement/relocation operation state. A lifecycle state controls admission for one runtime/cell generation; Phase 12 health profiles expose runtime condition without becoming placement authority.
 
-## Cell lifecycle states
+## Cell/runtime-generation lifecycle
 
-The canonical lifecycle model is:
+The canonical per-generation lifecycle is:
 
 ```text
 provisioning
@@ -22,11 +22,13 @@ provisioning
   -> retired
 
 exception paths:
-  any pre-retired state -> quarantined
+  any non-retired state -> quarantined
   provisioning/validating -> failed
-  active/draining -> replacing
-  replacing -> validating/admitted OR quarantined/failed
+  quarantined -> validating OR draining/retired
+  failed -> provisioning only through a new explicit lifecycle attempt/generation
 ```
+
+`retired` is terminal for that `runtime_generation`. A retired generation SHALL NOT return to `active`; replacement creates or admits a successor generation.
 
 These names describe Phase 13 runtime lifecycle, not Product tenant lifecycle and not Phase 12 health values.
 
@@ -36,35 +38,48 @@ Runtime/data dependencies are being created or attached. No normal tenant traffi
 
 ### `validating`
 
-The candidate cell proves runtime conformance, dependency reachability/trust, state-port authority, observability bindings and required generation/fence state. Validation does not itself assign tenants.
+The candidate generation proves runtime conformance, dependency reachability/trust, state-port authority, observability bindings and required generation/fence state. Validation does not itself assign tenants.
 
 ### `admitted`
 
-The Control Plane may place eligible tenant workloads into the cell according to accepted placement/capacity policy. Admission does not imply every workload is presently healthy.
+The Control Plane may place eligible tenant workloads into the cell/generation according to accepted placement/capacity policy. Admission does not imply every workload is presently healthy.
 
 ### `active`
 
-The cell may serve tenants whose trusted placement and placement generation are admitted locally.
+The generation may serve tenants whose trusted placement and placement generation are admitted locally.
 
 ### `draining`
 
 No new tenant placement/admission beyond narrowly accepted drain/recovery work. Existing requests, sockets and durable jobs follow class-specific drain rules. Draining never deletes durable obligations or proves external-effect absence.
 
-### `replacing`
-
-A successor runtime/cell generation is being prepared while the predecessor is fenced/drained according to workload semantics. Replacement is not tenant relocation unless placement authority changes.
-
 ### `quarantined`
 
 Normal protected/effectful admission is blocked because current placement, security, recovery, governance or reliability continuity cannot be proven. Reachability alone cannot clear quarantine.
 
+A quarantined generation may return only through `validating`, after the owning authorities prove the predicates that caused quarantine are current/satisfied. If the generation will not resume, it proceeds through controlled drain/retirement. No telemetry signal or operator convenience directly transitions `quarantined -> active`.
+
 ### `retired`
 
-No tenant workload is authoritative in the cell. Retirement requires placement/lease/generation fences sufficient to reject stale work and defined handling of residual durable state.
+No tenant workload is authoritative in that generation. Retirement requires placement/lease/generation fences sufficient to reject stale work and defined handling of residual durable state.
 
 ### `failed`
 
-Provisioning/runtime conformance failed before safe admission or requires explicit recovery/replacement path. `failed` does not authorize destructive cleanup.
+Provisioning/runtime conformance failed before safe admission or requires explicit recovery/replacement path. `failed` does not authorize destructive cleanup and does not silently retry under the same authority assumption.
+
+## Replacement is an operation, not a generation state
+
+Cell/runtime replacement links at least two generation records:
+
+```text
+predecessor generation: active -> draining -> retired
+successor generation:   provisioning -> validating -> admitted -> active
+replacement operation:  prepared -> draining/preparing -> cutover -> completed
+                        OR reconciliation_blocked / failed
+```
+
+The exact operation-state representation may vary, but implementations SHALL NOT represent both predecessor and successor as one ambiguous `replacing` generation. Each generation retains its own admission/fence/currentness evidence.
+
+Replacement is not tenant relocation unless Control Plane placement authority changes the tenant's authoritative cell.
 
 ## Runtime generation
 
@@ -75,7 +90,8 @@ Rules:
 - runtime generation never appears as canonical tenant/resource identity;
 - increasing runtime generation does not itself move tenant placement;
 - restoring an older runtime generation cannot override current placement/security/governance generations;
-- stale instances SHALL be unable to regain protected admission merely because they can reach shared dependencies.
+- stale instances SHALL be unable to regain protected admission merely because they can reach shared dependencies;
+- predecessor and successor generations remain distinguishable throughout replacement/recovery.
 
 ## Placement admission join
 
@@ -132,7 +148,8 @@ Replacement SHALL prove:
 - secret/workload identity generations are current;
 - stale predecessor admission is fenced;
 - Phase 12 health/diagnostic profile identities remain semantically compatible;
-- durable async/realtime work can resume/reconcile without duplicate protected effects.
+- durable async/realtime work can resume/reconcile without duplicate protected effects;
+- predecessor retirement is terminal for its runtime generation.
 
 ## Tenant relocation support
 
@@ -168,6 +185,7 @@ Lifecycle emits Phase 12-compatible evidence for:
 - lifecycle state and runtime generation;
 - cell admission/readiness/degradation/drain/quarantine;
 - placement/configuration currentness gaps;
+- replacement predecessor/successor generation identity;
 - durable-progress and recovery reconciliation;
 - capacity/saturation.
 

@@ -24,6 +24,7 @@ active recovery/release/relocation operation IDs
 break-glass session IDs if any
 communication responsibility/status
 known ambiguity/recovery blockers
+residual_obligation_disposition
 required evidence
 closure criteria
 post-incident review state
@@ -82,21 +83,44 @@ Communications have explicit owner and audience class. Communications are fact/e
 
 Public/customer/internal/regulatory communication mechanisms and numeric cadences remain OPEN; responsibility, reviewability and classification are fixed.
 
+## Residual obligation disposition
+
+Incident lifecycle state is not the durable state of every underlying operation. The canonical residual selector is:
+
+```text
+residual_obligation_disposition:
+  none
+  reconciliation_owned_and_still_blocked
+  incident_closure_blocked
+```
+
+Rules:
+
+- `none` means required incident-scoped recovery/ambiguity obligations have reached accepted terminal/admitted dispositions;
+- `reconciliation_owned_and_still_blocked` is valid only when the underlying ambiguous/recovery operation has its own durable owner, stable identity/fence, exact scope, evidence, capacity/retention policy and remains explicitly **ineligible** for retry/redrive/replay/release/recovery advancement until its owning contract reconciles it;
+- `reconciliation_owned_and_still_blocked` does not mean the effect is absent, safe, compensated or retryable. It permits incident closure only when the accepted incident classification/closure policy no longer requires active command and the residual obligation is independently contained/isolated;
+- if the residual condition still threatens tenant isolation, current authority, uncontrolled effect repetition, data integrity, required customer communication or the accepted containment objective, the selector is `incident_closure_blocked`;
+- incident closure never mutates the durable underlying operation/recovery/quarantine state.
+
+`OPRV-043` falsifies hidden residual obligations; `OPRV-057` falsifies closure laundering that clears or weakens the underlying reconciliation block.
+
 ## Incident closure
 
 Closure requires:
 
 - affected capability has an accepted restored or safe-degraded state;
-- recovery/admission blockers are dispositioned;
-- unresolved ambiguous effects remain explicitly tracked rather than hidden by closure;
+- recovery/admission blockers are dispositioned under the selector above;
+- any allowed residual ambiguous effect is durably owned, isolated and still reconciliation-blocked under its original operation identity/authority;
 - break-glass sessions are revoked/expired and post-use review is queued/completed as required;
 - required evidence is retained;
 - follow-up owners exist for residual risk/actions;
 - communication obligations are dispositioned;
 - post-incident review requirement is recorded.
 
+Closing the incident cannot grant retry, redrive, replay, recovery, rollback, release, disclosure or access eligibility to an unresolved residual operation.
+
 Incident closure is an operational governance decision; AI/tool output is never direct, indirect or joint closure authority.
 
 ## Evidence
 
-Permanent evidence preserves command transitions, decisions, consulted authorities, affected operation IDs, communication decisions, unresolved ambiguity and closure basis without turning chat/transcript text into authoritative system state.
+Permanent evidence preserves command transitions, decisions, consulted authorities, affected operation IDs, communication decisions, residual disposition, unresolved ambiguity and closure basis without turning chat/transcript text into authoritative system state.

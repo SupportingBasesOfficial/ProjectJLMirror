@@ -23,6 +23,7 @@ This document binds Phase 13 runtime claims to accepted upstream authority and i
 | Phase 10 async contracts | at-least-once delivery, durable responsibility, inbox/outbox/idempotency, replay/recovery, webhook obligations |
 | Phase 11 reliability profiles | runtime failure/degradation and recovery behavior must be implementable without reinterpretation |
 | Phase 12 observability profiles | runtime lifecycle/health/signals preserve accepted meanings; vendor health is adapter evidence only |
+| Post-Phase-10 Roadmap | Phase 13 owns logical environment classes and portability/vendor-exit constraints; Phase 14 owns physical promotion/deployment mapping |
 | Review and Assurance Governance | exact-state review, observer-only automation, separate merge authorization |
 
 ## Runtime role trace
@@ -33,6 +34,7 @@ The canonical role chain is:
 accepted capability/workload
  -> runtime_profile_id
  -> worker_specialization_id when runtime.worker@1
+ -> allowed_environment_classes
  -> principal_class
  -> lifecycle_class
  -> isolation profile
@@ -48,7 +50,7 @@ accepted capability/workload
  -> applicable OPEN bindings
 ```
 
-No runtime may omit a link by relying on vendor defaults. `PRTV-043` is the mandatory falsification vector for missing/implicit manifest fields. Generic `runtime.worker@1` without a selected `worker.*@1` specialization is incomplete conformance evidence.
+No runtime may omit a link by relying on vendor defaults. `PRTV-043` is the mandatory falsification vector for missing/implicit manifest fields. Generic `runtime.worker@1` without a selected `worker.*@1` specialization is incomplete conformance evidence. Environment-class omission or unsafe cross-environment reuse is falsified by `PRTV-044`.
 
 ## Worker specialization trace
 
@@ -71,15 +73,17 @@ For each selected specialization, evidence binds:
 worker specialization
  -> exact reliability owner(s)
  -> exact Phase 12 health/SLI evidence
+ -> allowed environment classes inherited/refined from runtime profile
  -> queue/transport + state-port set
  -> secret/egress set
  -> concurrency/bulkhead budget
  -> specialization PRTV vectors
  -> PRTV-037 when co-located with another specialization
  -> PRTV-043 for record completeness
+ -> PRTV-044 for environment-boundary conformance
 ```
 
-Implementation cannot use a shared process name to erase those bindings.
+Implementation cannot use a shared process name or physical environment label to erase those bindings.
 
 ## Manifest-completeness trace
 
@@ -87,6 +91,7 @@ Every runtime record instantiates the schema through exact canonical IDs/rules o
 
 ```text
 runtime profile
+ -> allowed environment classes
  -> principal
  -> lifecycle
  -> isolation
@@ -104,6 +109,35 @@ runtime profile
 ```
 
 A missing field is not a safe default and not an implied `NO_APPLICABLE_CASE`. An implementation-selected OPEN is recorded with the exact `OPEN-PRT-*` ID and closure evidence; the design baseline may identify bounded candidate OPEN ranges without selecting a technology.
+
+## Environment-class trace
+
+Phase 13 fixes the logical classes:
+
+```text
+environment.development@1
+environment.validation@1
+environment.production@1
+environment.recovery@1
+```
+
+Their trace is:
+
+```text
+logical environment class
+ -> runtime/profile allowlist
+ -> environment-scoped workload principal / credential generation
+ -> configuration + secret-reference scope
+ -> network/egress + state-port bindings
+ -> data classification/minimization constraints
+ -> applicable lifecycle/currentness/recovery predicates
+ -> PRTV-044
+ -> physical mapping/promotion mechanism owned by OPEN-PRT-035 + Phase 14
+```
+
+Environment class is not Product, tenant, authorization, placement or recovery-completion authority. `environment.recovery@1` remains non-serving/quarantined for normal production authority until accepted recovery/currentness predicates are satisfied. `environment.validation@1` may be production-like in behavior without inheriting production tenant data, secrets, credentials or traffic by default.
+
+Physical cloud account/project/subscription/cluster/namespace/region mappings are implementation/release choices. They may strengthen isolation, but they do not redefine these semantic classes.
 
 ## Cell lifecycle trace
 
@@ -142,22 +176,23 @@ The evidence chain preserves the owner of each dimension. Upstream authorization
 
 ```text
 runtime_profile_id / worker_specialization_id
+ -> allowed_environment_classes
  -> service/workload principal
  -> allowed capability classes
  -> secret-reference classes
  -> state-port/network policy
  -> workload_credential_generation + configuration_generation
  -> revocation/currentness evidence
- -> PRTV-002/003/013/014/015/016/041/042/043 as applicable
+ -> PRTV-002/003/013/014/015/016/041/042/043/044 as applicable
 ```
 
 A service identity proves the machine caller; tenant/application authorization remains independently owned where required.
 
-`PRTV-041` proves that receiving a secret at runtime does not make the secret value admissible in ordinary config snapshots, logs, traces, metrics, events/jobs, artifacts, crash/export evidence or ordinary audit snapshots.
+`PRTV-041` proves that receiving a secret at runtime does not make the secret value admissible in ordinary config snapshots, logs, traces, metrics, events/jobs, artifacts, crash/export evidence or ordinary audit snapshots. `PRTV-044` proves the same credential/data authority is not silently reusable across logical environment classes.
 
 ## State-port trace
 
-Each canonical `port.*@1` maps to its owning accepted authority, allowed runtime/worker profiles, durability/consistency/fencing meaning, Phase 11 behavior, Phase 12 evidence and compatibility/portability tests.
+Each canonical `port.*@1` maps to its owning accepted authority, allowed runtime/worker/environment profiles, durability/consistency/fencing meaning, Phase 11 behavior, Phase 12 evidence and compatibility/portability tests.
 
 Physical backend co-location does not merge logical port authority. `PRTV-039` falsifies authority collapse among transactional, reliability, audit, customer-telemetry, observability and other state ports.
 
@@ -177,7 +212,7 @@ Object bytes, upload success, a storage URL or raw object capability cannot skip
 
 ## Co-location trace
 
-Whenever runtime profiles or worker specializations share a physical runtime, evidence records effective principal, secret-reference union, state-port union, egress/network union, resource/bulkhead coupling, lifecycle/failure coupling and `PRTV-037` result.
+Whenever runtime profiles or worker specializations share a physical runtime, evidence records effective principal, secret-reference union, state-port union, egress/network union, environment-class compatibility, resource/bulkhead coupling, lifecycle/failure coupling and `PRTV-037` result.
 
 If effective authority exceeds accepted profile unions, co-location fails rather than silently expanding the trust envelope.
 
@@ -185,16 +220,17 @@ If effective authority exceeds accepted profile unions, co-location fails rather
 
 ```text
 recovery point R
+ -> environment.recovery@1 isolated execution context
  -> current fence/evidence boundary F
  -> restored runtime/state ports
  -> current placement/security/governance/secret-key authority
  -> reliability/effect evidence reconciliation over (R,F]
  -> cell/runtime quarantine predicates satisfied
  -> validating
- -> destination admission restored
+ -> production-target runtime/admission authority restored through owning contracts
 ```
 
-`process started`, `port reachable` or `orchestrator healthy` cannot skip this chain.
+`process started`, `port reachable`, environment label or `orchestrator healthy` cannot skip this chain.
 
 ## Product applicability trace
 
@@ -202,10 +238,10 @@ recovery point R
 accepted Product authority
  -> upstream applicability decision / OPEN
  -> prepared runtime capability where appropriate
- -> runtime does not mutate Product truth
+ -> runtime/environment deployment does not mutate Product truth
 ```
 
-`OPEN-OBS-037` cannot be closed because a webhook/artifact runtime exists or does not exist.
+`OPEN-OBS-037` cannot be closed because a webhook/artifact runtime exists or does not exist in any environment class.
 
 ## Capacity and relocation trace
 
@@ -213,6 +249,7 @@ accepted Product authority
 accepted workload + tenant skew
  -> multidimensional runtime capacity profile
  -> worker/runtime specialization bulkheads
+ -> environment-specific capacity evidence without semantic rewrite
  -> saturation evidence
  -> scale class (replica / pool / state port / cell)
  -> if tenant relocation: Control Plane placement operation
@@ -229,6 +266,7 @@ Scaling mechanism cannot bypass relocation authority.
 Phase 14 consumes:
 
 - runtime and worker-specialization profile IDs and complete manifest mappings;
+- canonical logical environment classes and their isolation/authority meaning;
 - lifecycle/admission/draining/quarantine/retirement semantics;
 - workload identity and least-privilege boundaries;
 - `runtime_generation`, `configuration_generation`, `workload_credential_generation`, `placement_version` and `network_policy_generation` semantics;
@@ -236,25 +274,26 @@ Phase 14 consumes:
 - migration/admin runtime profile;
 - cell-aware rollout/replacement capabilities;
 - rollback restrictions against stale authority;
-- runtime conformance/fault evidence including `PRTV-037..043`.
+- runtime conformance/fault evidence including `PRTV-037..044`.
 
-Phase 14 decides build/promotion/deployment mechanisms but cannot redefine Phase 13 runtime semantics or fill omitted manifest fields with deployment-tool defaults.
+Phase 14 decides build/promotion/deployment mechanisms, physical environment mappings and IaC realization. It cannot redefine Phase 13 environment semantics, turn environment labels into authority, or fill omitted manifest fields with deployment-tool defaults.
 
 ## Downstream consumer: Phase 15
 
-Phase 15 consumes recovery runtime/quarantine/resumption predicates, privileged operational access boundaries, cell drain/replacement/relocation controls, observable lifecycle/capacity/security state, secret/credential rotation requirements and runtime fault/game-day vectors.
+Phase 15 consumes recovery runtime/quarantine/resumption predicates, privileged operational access boundaries, environment-specific operational access constraints, cell drain/replacement/relocation controls, observable lifecycle/capacity/security state, secret/credential rotation requirements and runtime fault/game-day vectors.
 
-Phase 15 defines human process/incident authority, not new runtime privilege.
+Phase 15 defines human process/incident authority, not new runtime or environment privilege.
 
 ## Downstream consumer: Implementation Readiness
 
-Implementation Readiness must prove that Product/Security/API/Event/Reliability/Observability/Platform/Release/Operations layers leave no runtime decision that code would need to invent silently.
+Implementation Readiness must prove that Product/Security/API/Event/Reliability/Observability/Platform/Release/Operations layers leave no runtime or environment-authority decision that code would need to invent silently.
 
 ## Evidence matrix
 
 | Claim | Design evidence now | Future conformance/runtime evidence |
 |---|---|---|
 | manifest completeness | manifest schema + exact record tables | `PRTV-043` / machine conformance ensuring no implicit field/default |
+| environment separation | overview + manifest + identity/security contracts | `PRTV-044` proving no authority/data/credential/traffic bleed and recovery not treated as production by reachability |
 | edge independence | overview/runtime profile | `PRTV-001` core-flow execution with edge removed/replaced |
 | network != trust | network/identity contracts | `PRTV-002`, `PRTV-003` denial tests |
 | workload least privilege | identity + manifest | principal/secret/state-port denial + `PRTV-037` co-location tests |
@@ -275,9 +314,9 @@ Implementation Readiness must prove that Product/Security/API/Event/Reliability/
 
 ## Permanent evidence requirements
 
-Implementation/release/runtime evidence preserves enough provenance to identify repository/source and Phase 13 profile state; runtime profile and worker-specialization set; runtime implementation/artifact identity when available; runtime/config/network/workload-credential/placement generations; separately owned upstream generations where material; environment/cell/workload; state-port/profile versions; exact manifest/OPEN bindings; test/fault/capacity scenario/result; timestamp/order; and evidence class.
+Implementation/release/runtime evidence preserves enough provenance to identify repository/source and Phase 13 profile state; runtime profile and worker-specialization set; canonical environment class and physical mapping evidence; runtime implementation/artifact identity when available; runtime/config/network/workload-credential/placement generations; separately owned upstream generations where material; cell/workload; state-port/profile versions; exact manifest/OPEN bindings; test/fault/capacity scenario/result; timestamp/order; and evidence class.
 
-Evidence from one runtime/profile/specialization/generation/manifest binding is not silently reused for a materially different one.
+Evidence from one runtime/profile/specialization/environment/generation/manifest binding is not silently reused for a materially different one.
 
 ## Native Assurance integration
 
@@ -287,4 +326,4 @@ Any material correction creates a new HEAD and requires applicable exact-HEAD ch
 
 ## Traceability blockers
 
-Acceptance is blocked when an accepted upstream property has no Phase 13 runtime owner/mapping; when a runtime or selected worker specialization lacks a complete manifest chain; when co-location/quarantine/state-port/artifact/secret/generation/manifest-completeness claims lack the applicable `PRTV-037..043` evidence path; when a later phase would need to invent authority meaning; or when Product/vendor/runtime state is used to bypass an upstream OPEN/owner.
+Acceptance is blocked when an accepted upstream property has no Phase 13 runtime owner/mapping; when a runtime or selected worker specialization lacks a complete manifest chain; when environment-class semantics or mapping are implicit; when co-location/quarantine/state-port/artifact/secret/generation/manifest-completeness/environment claims lack the applicable `PRTV-037..044` evidence path; when a later phase would need to invent authority meaning; or when Product/vendor/runtime/environment state is used to bypass an upstream OPEN/owner.

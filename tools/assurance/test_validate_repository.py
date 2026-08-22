@@ -60,6 +60,19 @@ jobs:
         with temp:
             self.assertTrue(any("immutable 40-hex" in message for message in self.messages(root)))
 
+    def test_job_level_reusable_workflow_must_be_pinned(self) -> None:
+        workflow = """name: bad
+on: [push]
+permissions:
+  contents: read
+jobs:
+  call:
+    uses: example/repo/.github/workflows/reusable.yml@main
+"""
+        temp, root = self.make_repo(workflow)
+        with temp:
+            self.assertTrue(any("immutable 40-hex" in message for message in self.messages(root)))
+
     def test_write_permission_is_rejected(self) -> None:
         workflow = """name: bad
 on: [push]
@@ -75,10 +88,39 @@ jobs:
         with temp:
             self.assertTrue(any("write permission" in message for message in self.messages(root)))
 
+    def test_inline_write_permission_is_rejected(self) -> None:
+        workflow = """name: bad
+on: [push]
+permissions: { contents: write }
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo no
+"""
+        temp, root = self.make_repo(workflow)
+        with temp:
+            self.assertTrue(any("inline write permission" in message for message in self.messages(root)))
+
     def test_pull_request_target_is_rejected(self) -> None:
         workflow = """name: bad
 on:
   pull_request_target:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo no
+"""
+        temp, root = self.make_repo(workflow)
+        with temp:
+            self.assertTrue(any("pull_request_target" in message for message in self.messages(root)))
+
+    def test_inline_pull_request_target_is_rejected(self) -> None:
+        workflow = """name: bad
+on: [push, pull_request_target]
 permissions:
   contents: read
 jobs:
@@ -127,7 +169,8 @@ jobs:
             self.assertTrue(any("broken relative Markdown link" in message for message in self.messages(root)))
 
     def test_private_key_marker_is_rejected(self) -> None:
-        temp, root = self.make_repo(markdown="# Secret\n\n-----BEGIN PRIVATE KEY-----\n")
+        marker = "-----BEGIN " + "PRIVATE KEY-----"
+        temp, root = self.make_repo(markdown=f"# Secret\n\n{marker}\n")
         with temp:
             self.assertTrue(any("private-key material" in message for message in self.messages(root)))
 

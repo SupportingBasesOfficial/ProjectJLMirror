@@ -7,7 +7,7 @@
 
 Phase 13 defines the portable logical runtime capabilities required to execute the accepted JLMIRROR contracts and satisfy accepted Phase 11 reliability and Phase 12 observability semantics without turning a cloud, orchestrator, service mesh, secret manager, broker or other infrastructure product into architecture by default.
 
-Phase 13 refines runtime responsibility, isolation, lifecycle, identity, communication, state ports, capacity and relocation. It does not redefine Product scope, tenant identity, authorization, transaction ownership, failure semantics, observability semantics or release/incident authority.
+Phase 13 refines runtime responsibility, isolation, lifecycle, identity, communication, state ports, capacity, environment classes and relocation. It does not redefine Product scope, tenant identity, authorization, transaction ownership, failure semantics, observability semantics or release/incident authority.
 
 ## Accepted authority inherited
 
@@ -36,6 +36,7 @@ PROCESS LIVENESS != WORKLOAD READINESS
 SERVICE IDENTITY != TENANT AUTHORIZATION
 RUNTIME INSTANCE ID != BUSINESS IDENTITY
 PHYSICAL TOPOLOGY != CANONICAL API/EVENT/RESOURCE IDENTITY
+ENVIRONMENT LABEL != AUTHORIZATION OR TENANT AUTHORITY
 SECRET REFERENCE != SECRET VALUE
 CONFIGURATION AVAILABILITY != CONFIGURATION CURRENTNESS
 RESTART != RECOVERY COMPLETION
@@ -64,16 +65,7 @@ Runtime class is a security/reliability profile, not automatically a separately 
 
 The Control Plane remains small and authoritative for placement/lifecycle intent. Cells remain the default tenant execution, failure-containment and horizontal-scale unit.
 
-A cell runtime SHALL be capable of:
-
-- provisioning from accepted configuration/identity inputs;
-- validating dependencies and runtime conformance before admission;
-- admitting only tenants/placement generations recognized by the cell;
-- serving accepted workload classes with explicit health/readiness profiles;
-- draining new admission while durable work reaches safe boundaries;
-- replacement without changing logical tenant/resource identities;
-- relocation under accepted placement/fencing/reconciliation authority;
-- remaining quarantined when recovery/current authority cannot be proven.
+A cell runtime SHALL be capable of provisioning from accepted configuration/identity inputs; validating dependencies/runtime conformance before admission; admitting only tenants/placement generations recognized by the cell; serving accepted workload classes with explicit health/readiness profiles; draining new admission while durable work reaches safe boundaries; replacement without changing logical tenant/resource identities; relocation under accepted placement/fencing/reconciliation authority; and remaining quarantined when recovery/current authority cannot be proven.
 
 Cell lifecycle and cell health are separate dimensions. `active` lifecycle does not imply every workload is healthy; a `draining` health/admission posture does not erase durable obligations.
 
@@ -85,13 +77,7 @@ A process restart, reschedule or replica replacement SHALL NOT convert missing l
 
 ## Identity and communication
 
-Every protected machine-to-machine call has:
-
-1. an authenticated workload/service principal;
-2. explicit allowed capability/service scope;
-3. independently reconstructed tenant/current authority where the application contract requires it;
-4. bounded destination and network policy;
-5. observable provenance without secret disclosure.
+Every protected machine-to-machine call has an authenticated workload/service principal; explicit allowed capability/service scope; independently reconstructed tenant/current authority where required; bounded destination/network policy; and observable provenance without secret disclosure.
 
 Workload identity authenticates the caller runtime. It never grants tenant/domain authority solely because two workloads share a network, cell, cluster, namespace or host.
 
@@ -113,24 +99,48 @@ Secret/key/version generations owned by upstream cryptographic, provider, replay
 
 These generations are diagnostic/fencing inputs only within their owning authorities. One generation cannot silently substitute for another.
 
+## Logical environment classes
+
+Phase 13 fixes four portable logical environment classes.
+
+### `environment.development@1`
+
+Used for local/shared development, integration and experimentation. It SHALL NOT receive authoritative production tenant traffic, production placement authority or production workload credentials by default. Synthetic/non-production data is the default. Any exceptional production-derived dataset requires explicit governed export/minimization authority and remains non-authoritative.
+
+### `environment.validation@1`
+
+Used for pre-production conformance, security, performance, fault, compatibility and release-candidate validation. Runtime semantics SHOULD be production-equivalent where fidelity is required, but the environment has no production serving authority by label. Production-derived data/credentials are not copied in by convenience; governed test data or narrowly authorized evidence paths are required.
+
+### `environment.production@1`
+
+Used for authoritative customer-serving workloads and current production Control Plane/cell/data authorities. Full accepted security, tenant, recovery, observability and governance contracts apply. Production authority comes from current principals/placement/configuration/governance, not from the string `production` alone.
+
+### `environment.recovery@1`
+
+Used for isolated restore, reconciliation, forensic/recovery validation and resumption preparation under `runtime.recovery@1`. It may access production recovery material only through explicit recovery authority. It is not a normal serving environment and cannot become production merely because recovered state is reachable; handoff/resumption requires current production placement/security/governance/recovery predicates.
+
+### Environment invariants
+
+- environment class is orthogonal to tenant/resource/API/event identity;
+- no canonical business/resource ID embeds an environment-specific physical account/cluster/region identifier;
+- credentials, secret references, state ports and network policies remain environment-scoped and least-privilege;
+- non-production environment class does not authorize production secrets/data/traffic;
+- production data copied to lower classes requires explicit governance, minimization and isolation evidence;
+- moving an artifact/configuration/runtime mapping between environment classes is a Phase 14 promotion/deployment concern and never changes Product truth by itself;
+- physical cloud account/project/subscription, cluster, namespace, region and promotion-pipeline mapping remain implementation/Phase 14 decisions.
+
 ## Portability
 
-Phase 13 contracts use logical runtime classes, capabilities, ports, lifecycle states and evidence. Vendor-specific objects map to these contracts; they do not redefine them.
+Phase 13 contracts use logical runtime classes, environment classes, capabilities, ports, lifecycle states and evidence. Vendor-specific objects map to these contracts; they do not redefine them.
 
-Replacing cloud/orchestrator/runtime/network/secret-manager/storage products MUST NOT require changing canonical tenant IDs, API/event semantics, Phase 11 failure classes or Phase 12 health/SLI meanings.
+Replacing cloud/orchestrator/runtime/network/secret-manager/storage products MUST NOT require changing canonical tenant IDs, API/event semantics, Phase 11 failure classes, Phase 12 health/SLI meanings or logical environment-class semantics.
 
 ## Boundary with later phases
 
-Phase 13 does not define:
+Phase 13 does not define source-to-artifact build/promotion authority, rollout/canary/rollback policy, infrastructure-as-code tooling, SBOM/signing/provenance mechanisms or human incident command/runbooks/on-call process.
 
-- source-to-artifact build/promotion authority;
-- rollout/canary/rollback policy;
-- infrastructure-as-code tooling;
-- SBOM/signing/provenance mechanisms;
-- human incident command/runbooks/on-call process.
-
-Those belong to Phase 14/15. Phase 13 supplies the runtime contracts those phases must deploy and operate.
+Those belong to Phase 14/15. Phase 13 supplies the runtime and logical environment contracts those phases must deploy and operate.
 
 ## Acceptance orientation
 
-Phase 13 can reach `READY_FOR_MERGE` only when runtime roles, isolation, lifecycle, identity, network, state ports, privileged execution, capacity/relocation, compatibility, security, recovery, validation, OPEN decisions and traceability form one enforceable system and no vendor/default silently becomes normative.
+Phase 13 can reach `READY_FOR_MERGE` only when runtime roles, isolation, lifecycle, identity, network, state ports, privileged execution, capacity/relocation, logical environment classes, compatibility, security, recovery, validation, OPEN decisions and traceability form one enforceable system and no vendor/default silently becomes normative.

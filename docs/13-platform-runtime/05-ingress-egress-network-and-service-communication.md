@@ -5,7 +5,7 @@
 
 ## Purpose
 
-This document defines portable network and service-communication boundaries for JLMIRROR runtimes. Network topology is a transport/control surface, never a substitute for identity, authorization, tenant isolation or placement authority.
+This document defines portable network and service-communication boundaries for JLMIRROR runtimes. Network topology is a transport/control surface, never a substitute for identity, authorization, tenant isolation, environment isolation or placement authority.
 
 ## Ingress classes
 
@@ -35,7 +35,10 @@ Every protected service call declares:
 
 ```text
 caller workload profile
+caller environment_class
 callee capability/service profile
+callee environment_class
+cross-environment policy if classes differ
 authenticated machine principal
 tenant-context requirement
 current authority requirement
@@ -53,6 +56,8 @@ The following do not create authority by themselves:
 
 - same host/node;
 - same cluster/namespace;
+- same physical cloud account/project/subscription;
+- same logical environment label;
 - private IP or VPC/subnet membership;
 - service-discovery registration;
 - possession of a routable DNS name;
@@ -60,6 +65,22 @@ The following do not create authority by themselves:
 - sidecar/mesh presence.
 
 Each protected boundary authenticates the machine/workload principal and evaluates the application authority required by that operation.
+
+## Environment network boundary
+
+The canonical logical environment classes are `environment.development@1`, `environment.validation@1`, `environment.production@1` and `environment.recovery@1`.
+
+Network rules:
+
+- network reachability across environment classes is deny-by-default unless an accepted bounded dependency, promotion, validation or recovery path requires it;
+- development/validation network paths SHALL NOT create access to production workload credentials, production placement authority or authoritative production tenant state merely because routes/firewall rules exist;
+- a validation runtime may test production-equivalent protocol/topology semantics without becoming a production principal or accepting production tenant traffic by label;
+- `environment.recovery@1` may reach affected production recovery authorities only under explicit recovery scope; such reachability does not permit normal production serving admission;
+- cross-environment service calls, state-port access and connector egress preserve both caller and destination environment provenance where needed for authorization/audit;
+- physical account/VPC/subnet/cluster separation MAY strengthen environment isolation, but physical co-location cannot weaken the logical boundary;
+- Phase 14 may change physical environment mappings only while preserving these semantics under `OPEN-PRT-035`.
+
+`PRTV-044` falsifies environment network/data/credential authority bleed.
 
 ## Egress classes
 
@@ -70,7 +91,7 @@ Every runtime profile receives one of:
 - `egress.connector-bounded@1` — approved external destinations through provider/integration policy;
 - `egress.privileged-bounded@1` — narrowly scoped migration/recovery/admin destinations with explicit privileged authorization.
 
-No general unrestricted-internet egress is assumed for serving runtimes.
+No general unrestricted-internet egress is assumed for serving runtimes. Egress capability is additionally bounded by the runtime's accepted environment class.
 
 ## Provider and webhook egress
 
@@ -82,7 +103,7 @@ External connector/webhook execution SHALL implement the accepted protections:
 - redirect policy and revalidation;
 - hard timeout/body/response bounds;
 - connection/concurrency budgets and destination isolation;
-- authentication/signing secret access only for the connector profile;
+- authentication/signing secret access only for the connector profile and environment class;
 - ambiguous external outcomes remain reconciliation-sensitive.
 
 DNS, proxy, service-mesh or cloud-network products cannot weaken these application-visible invariants.
@@ -113,18 +134,18 @@ The canonical Phase 13 identity for semantically relevant runtime network/egress
 
 Rules:
 
-- it is distinct from `runtime_generation`, `configuration_generation`, `workload_credential_generation`, `placement_version` and all upstream authorization/governance generations;
-- rollback cannot re-open a prohibited destination or retired privileged path silently;
-- network policy change is compatibility/security-sensitive when it broadens accessible trust zones/capabilities;
+- it is distinct from `runtime_generation`, `configuration_generation`, `workload_credential_generation`, `placement_version`, environment class and all upstream authorization/governance generations;
+- rollback cannot re-open a prohibited destination, cross-environment path or retired privileged path silently;
+- network policy change is compatibility/security-sensitive when it broadens accessible trust zones/capabilities/environments;
 - runtime restart or a current `runtime_generation` is not sufficient evidence that the required `network_policy_generation` is active;
-- observability records policy/profile identity without exposing credentials or protected destination secrets;
+- observability records policy/profile/environment identity without exposing credentials or protected destination secrets;
 - `PRTV-042` applies whenever an implementation attempts to use another generation as proof of network-policy currentness.
 
 ## Failure behavior
 
 Network partition/reachability loss maps to the owning Phase 11 profile; Phase 13 does not invent automatic retries.
 
-Trust failure remains distinct from reachability failure. A previously untrusted/compromised peer becoming reachable again does not restore trust without owning authority/evidence.
+Trust failure remains distinct from reachability failure. A previously untrusted/compromised peer becoming reachable again does not restore trust without owning authority/evidence. Cross-environment reachability becoming available again likewise does not grant production or recovery authority.
 
 ## Validation obligations
 
@@ -139,6 +160,8 @@ Conformance tests SHALL falsify at least:
 - stale `network_policy_generation` reopening access;
 - realtime relocation/drain requiring resync;
 - one destination/provider exhausting unrelated egress capacity;
-- generation-authority conflation under `PRTV-042`.
+- generation-authority conflation under `PRTV-042`;
+- development/validation runtime reaching production credential/state/placement authority by network convenience;
+- recovery reachability treated as normal production-serving authority under `PRTV-044`.
 
 Exact ingress controller, load balancer, service discovery, mesh, proxy, DNS and private-connectivity products remain OPEN.

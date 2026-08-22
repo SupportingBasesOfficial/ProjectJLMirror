@@ -95,19 +95,21 @@ Every protected machine-to-machine call has:
 
 Workload identity authenticates the caller runtime. It never grants tenant/domain authority solely because two workloads share a network, cell, cluster, namespace or host.
 
-## Configuration and secrets
+## Configuration, credentials and authority generations
 
 Ordinary runtime configuration carries secret references and non-secret semantic configuration. Secret/key material is obtained only by a workload identity whose profile permits the reference.
 
-Runtime state distinguishes:
+Phase 13 canonical runtime generations are:
 
 ```text
-configuration_generation
-secret_reference_generation
-workload_identity_generation
-placement_version
 runtime_generation
+configuration_generation
+workload_credential_generation
+placement_version
+network_policy_generation
 ```
+
+Secret/key/version generations owned by upstream cryptographic, provider, replay, artifact or governance contracts remain under those owners and are referenced rather than renamed by Phase 13.
 
 These generations are diagnostic/fencing inputs only within their owning authorities. One generation cannot silently substitute for another.
 

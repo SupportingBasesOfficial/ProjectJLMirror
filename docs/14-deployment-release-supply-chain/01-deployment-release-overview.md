@@ -33,6 +33,9 @@ DEPLOYED PROCESS != RUNTIME ADMISSION
 ENVIRONMENT LABEL != AUTHORIZATION
 VALIDATION REFERENCE CELL != PRODUCTION AUTHORITY
 DEPLOYMENT SUCCESS != CELL COMPATIBILITY AUTHORITY
+TIMEOUT/LOST RESPONSE != RELEASE EFFECT ABSENCE
+STALE RELEASE EXECUTOR != CURRENT TARGET AUTHORITY
+RELEASE TARGET STATE != PLACEMENT/RUNTIME AUTHORITY
 ROLLBACK != HISTORY ERASURE
 RESTORED RELEASE POLICY != CURRENT RELEASE AUTHORITY
 CI/CD PRINCIPAL != RUNTIME PRINCIPAL
@@ -71,7 +74,7 @@ Phase 14 defines stable logical objects:
 - `release.artifact@1` — immutable deployable artifact identity;
 - `release.provenance@1` — evidence linking source/build inputs/toolchain to artifact;
 - `release.promotion@1` — authorization to make one artifact eligible for one logical environment class;
-- `release.deployment@1` — bounded attempt to realize an approved promotion on an exact target scope;
+- `release.deployment@1` — bounded create-or-observe deployment operation over an exact target state/version;
 - `release.migration-operation@1` — controlled schema/data evolution execution;
 - `release.runtime-verification@1` — evidence that the actually running artifact/config/runtime mapping satisfies accepted admission predicates;
 - `release.emergency-change@1` — separately governed accelerated change path that cannot waive core invariants.
@@ -97,6 +100,16 @@ environment.validation@1 / validation.general@1
 ```
 
 `validation.reference-cell@1` is evidence scope only. Current trusted Control Plane cell runtime/schema compatibility metadata remains an explicit placement/rollout safety input.
+
+## Release concurrency and ambiguity boundary
+
+Every effectful promotion/deployment/migration transition has a durable logical operation identity and expected predecessor/target release state sufficient to make retries create-or-observe rather than blindly create another executor.
+
+For one protected target scope, incompatible concurrent release attempts are serialized/fenced or one loses admission under an atomic equivalent. A stale executor cannot advance merely because it still holds a process, lease or old approval.
+
+A timeout, worker crash or lost deployment-controller response does not prove that no release effect occurred. The same logical operation is observed/reconciled before retry; a new operation identity does not manufacture permission to repeat an unresolved effect.
+
+Phase 14 release-target state/version is release-control evidence only. It does not replace Phase 13 `runtime_generation`, `placement_version`, Control Plane placement authority or business/security authority.
 
 ## Runtime artifact boundary
 
@@ -127,4 +140,4 @@ Phase 14 defines machine/process release state, evidence and emergency-change au
 
 ## Acceptance orientation
 
-Phase 14 can reach `READY_FOR_MERGE` only when source-trust/evaluator isolation, source/build/artifact/provenance/promotion/deployment/runtime-verification trust, validation/reference-cell staging, cell compatibility metadata, release-policy continuity, mixed-version compatibility, migration/backfill, progressive delivery, rollback/forward recovery, emergency change, drift, retirement, decommissioning, evidence, security, capacity and OPEN decisions form one enforceable system without selecting a vendor/tool by default.
+Phase 14 can reach `READY_FOR_MERGE` only when source-trust/evaluator isolation, source/build/artifact/provenance/promotion/deployment/runtime-verification trust, release-operation concurrency/ambiguity control, validation/reference-cell staging, cell compatibility metadata, release-policy continuity, mixed-version compatibility, migration/backfill, progressive delivery, rollback/forward recovery, emergency change, drift, retirement, decommissioning, evidence, security, capacity and OPEN decisions form one enforceable system without selecting a vendor/tool by default.

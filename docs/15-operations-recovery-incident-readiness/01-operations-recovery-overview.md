@@ -7,14 +7,14 @@
 
 Phase 15 defines operational ownership, privileged procedures, incident readiness, recovery execution and permanent operational evidence for the architecture accepted through Phase 14.
 
-It does not redefine failure, observability, runtime, release, security, tenant, API, event or data semantics. It turns those accepted semantics into bounded human/machine operational procedures.
+It does not redefine failure, observability, runtime, release, security, tenant, Product, API, event or data semantics. It turns those accepted semantics into bounded human/machine operational procedures.
 
 ## Inherited authority
 
 Phase 15 inherits without reinterpretation:
 
 - Phase 11 failure, ambiguity, reconciliation, quarantine and `(R,F]` recovery continuity;
-- Phase 12 health, SLI, alert, diagnostic and evidence semantics;
+- Phase 12 health, SLI, alert, diagnostic, Product-applicability and evidence semantics;
 - Phase 13 runtime generations, placement/runtime fences, environment classes, workload identity, secret references, isolation and relocation boundaries;
 - Phase 14 release-operation identity, target-state fencing, rollback/forward-recovery, runtime artifact/configuration verification, drift and decommission semantics;
 - accepted Security authority for authorization, break-glass, revocation, erasure, legal hold, crypto-erasure, audit and secret/key continuity;
@@ -26,6 +26,7 @@ Phase 15 inherits without reinterpretation:
 
 ```text
 RUNBOOK != AUTHORITY
+OPERATIONAL OWNER/CATALOG ENTRY != PRODUCT APPLICABILITY
 ALERT != INCIDENT AUTHORITY
 INCIDENT DECLARATION != BREAK-GLASS AUTHORITY
 INCIDENT COMMAND != PRODUCT/SECURITY/DOMAIN AUTHORITY
@@ -35,12 +36,17 @@ REACHABLE RESTORED STATE != CURRENT AUTHORITY
 MISSING RESTORED STATE != ABSENCE
 R != F
 RECOVERY QUARANTINE != HEALTHY SERVING
+PARTIAL RECOVERY != PARTIAL AUTHORITY BY ASSUMPTION
 BREAK-GLASS != PERMANENT PRIVILEGE
 BREAK-GLASS != BYPASS OF AUDIT/REVOCATION/FENCING
+UNKNOWN DUAL-CONTROL APPLICABILITY != NO_APPLICABLE_CASE
 REDRIVE != RETRY ELIGIBILITY
 REPLAY != DUPLICATE SAFETY PROOF
+RESTORED TELEMETRY != CUSTOMER-OBSERVATION TRUTH
+RESTORED ARTIFACT BYTES != DISCLOSURE/RELEASE AUTHORITY
 RELOCATION != POINTER FLIP AFTER TARGET AUTHORITY
 INCIDENT CLOSURE != SYMPTOM DISAPPEARANCE
+INCIDENT CLOSURE != RESIDUAL EFFECT ELIGIBILITY
 AI/TOOL OUTPUT != INCIDENT/RECOVERY/BREAK-GLASS AUTHORITY
 ```
 
@@ -48,12 +54,12 @@ AI/TOOL OUTPUT != INCIDENT/RECOVERY/BREAK-GLASS AUTHORITY
 
 Phase 15 defines logical operational records:
 
-- `ops.service-owner@1` — accountable operational ownership for a capability/profile;
+- `ops.service-owner@1` — accountable operational ownership for an accepted capability/profile, without activating Product applicability;
 - `ops.incident@1` — one incident command lifecycle with immutable identity and current classification;
 - `ops.runbook-execution@1` — one bounded execution of an accepted runbook profile;
-- `ops.break-glass-session@1` — exceptional privileged access/action session with scope, expiry and review;
+- `ops.break-glass-session@1` — exceptional privileged access/action session with current policy, dual-control applicability, scope, expiry and review;
 - `ops.recovery-operation@1` — one recovery attempt over one exact recovery scope and boundary;
-- `ops.recovery-admission@1` — evidence that a recovered scope may resume protected work;
+- `ops.recovery-admission@1` — evidence that an exact full or partial recovered scope may resume specified protected work;
 - `ops.redrive-operation@1` — privileged redrive/replay/quarantine disposition operation;
 - `ops.relocation-operation@1` — operator-visible execution/evidence wrapper around accepted placement relocation authority;
 - `ops.decommission-operation@1` — bounded operational retirement/decommission execution;
@@ -61,9 +67,11 @@ Phase 15 defines logical operational records:
 
 ## Operational authority boundary
 
-Operational roles may diagnose, coordinate, execute accepted procedures and collect evidence. They do not manufacture domain outcome, tenant placement, authorization, release, retry, redrive, replay, cryptographic or Product authority.
+Operational roles may diagnose, coordinate, execute accepted procedures and collect evidence. They do not manufacture domain outcome, tenant placement, authorization, release, Product applicability, retry, redrive, replay, cryptographic or Product authority.
 
 Where an operation crosses an accepted authority boundary, the owning authority must issue or re-establish the required decision/state. The operator or incident commander cannot substitute judgment for missing authoritative state.
+
+A Phase 15 catalog row exists so ownership is known even for prepared/conditional capabilities. The row itself does not resolve Phase 12 Product applicability selectors, enable a Product-facing feature or create an SLO/alert commitment. `OPRV-058` falsifies this boundary.
 
 ## Incident lifecycle
 
@@ -81,7 +89,9 @@ detected
  -> closed
 ```
 
-Transitions are evidence-driven. `resolved` means the accepted operational objective is restored or safely degraded; `closed` additionally requires required evidence, follow-up ownership and no unresolved blocker that the incident classification requires.
+Transitions are evidence-driven. `resolved` means the accepted operational objective is restored or safely degraded; `closed` additionally requires required evidence, follow-up ownership and an accepted residual-obligation disposition.
+
+Closing incident command does not mutate a separately durable ambiguous/reconciliation-blocked operation. Its original identity/fence/owner/non-eligibility remains authoritative.
 
 ## Recovery lifecycle
 
@@ -94,11 +104,13 @@ requested
  -> restore_or_failover_in_progress
  -> reconciliation_in_progress
  -> admission_verification
- -> admitted | partially_admitted | blocked
+ -> blocked | partially_admitted | fully_admitted
  -> completed
 ```
 
 A recovery operation records `R`, `F` or an explicit state that `F` is not yet proven. Protected/effectful work remains blocked where current authority or continuity cannot be proven.
+
+Partial admission is explicit and action/subscope-specific; it requires proven independence from unresolved shared authorities and preserved isolation/fencing.
 
 ## Boundary R and F
 
@@ -112,7 +124,9 @@ The recovery procedure inventories and reconciles the interval before protected 
 
 ## Break-glass boundary
 
-Break-glass is a separately admitted exceptional authority profile. It is least-privilege, scoped, time-bounded/revocable, attributable, audited and subject to post-use review. Dual control is mandatory where the accepted Security/risk profile requires it; the exact implementation remains OPEN.
+Break-glass is a separately admitted exceptional authority profile. It is least-privilege, scoped, time-bounded/revocable, attributable, audited and subject to post-use review.
+
+Dual-control applicability is resolved by current accepted Security/Risk policy through a closed selector. If applicability is unproven, admission fails closed. The exact dual-control implementation/staffing remains OPEN.
 
 Break-glass cannot waive tenant isolation, immutable audit, erasure/legal hold, cryptographic currentness, operation fencing, ambiguous-effect reconciliation, release integrity or recovery quarantine.
 
@@ -131,6 +145,8 @@ recovery.crypto-authority@1
 
 Each scope has its own owner, authority, quarantine, `R`, `F`, continuity inventory, admission proof and evidence requirements.
 
+`recovery.telemetry@1` preserves the Phase 12 distinction between `telemetry.operational-observability@1` and `telemetry.customer-monitoring@1`. `recovery.artifact@1` preserves the distinction between physical bytes/integrity and lifecycle/delivery/disclosure/release authority.
+
 ## Boundary with Phase 14
 
 Phase 14 defines release state, rollback eligibility, forward recovery and emergency change semantics. Phase 15 executes operational procedures against those accepted states. Incident urgency cannot turn a Phase 14 `forward_recovery_required` or `reconciliation_required` state into rollback eligibility.
@@ -141,4 +157,4 @@ Phase 15 is the final normative pre-implementation operations phase. Its accepta
 
 ## Acceptance orientation
 
-Phase 15 can reach `READY_FOR_MERGE` only when ownership, incident command, runbook limits, break-glass, dependency degradation, all mandatory recovery scopes, `(R,F]`, crypto/secret recovery, async/replay/quarantine/realtime/webhook operations, relocation, maintenance, decommission, game-day, evidence, security, capacity, compatibility and OPEN decisions form one enforceable operational model without selecting products or unsupported numerics.
+Phase 15 can reach `READY_FOR_MERGE` only when exact service ownership, incident command/closure, runbook limits, break-glass/dual-control applicability, dependency degradation, all mandatory recovery scopes, full/partial admission, `(R,F]`, telemetry/artifact/crypto continuity, async/replay/quarantine/realtime/webhook operations, relocation, maintenance, decommission, game-day, evidence, security, capacity, compatibility and OPEN decisions form one enforceable operational model without selecting products or unsupported numerics.

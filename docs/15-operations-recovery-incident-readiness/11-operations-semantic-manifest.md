@@ -16,8 +16,8 @@ accepted_reliability_profile_id@version
 accepted_health_profile_ids
 accepted_SLI_profile_ids
 accepted_alert_profile_ids
-operational_owner
-escalation_owner
+operational_owner_profile
+escalation_owner_profiles
 incident_class_set
 automatic_handling_profile_or_NO_APPLICABLE_CASE
 mandatory_runbook_profiles
@@ -30,6 +30,8 @@ OPEN decisions
 ```
 
 Omission is not `NO_APPLICABLE_CASE`. A conditional `NO_APPLICABLE_CASE` requires the condition, accepted authority and reviewable evidence.
+
+The canonical Phase 11 reliability-profile source set and its Phase 15 operational-owner/runbook bindings are materialized in `02-service-ownership-and-escalation.md`. A conforming capability catalog contains one same-key record for every accepted Phase 11 reliability profile; implementation-local service aliases cannot create or omit records.
 
 ## Incident record schema
 
@@ -44,6 +46,7 @@ active operation IDs
 break_glass_session_ids
 communication owner/status
 recovery/ambiguity blockers
+residual_obligation_disposition
 closure evidence
 post-incident review state
 ```
@@ -65,11 +68,25 @@ quarantine state
 reconciliation operation IDs
 current security/governance/crypto/release/runtime authority evidence
 admission verification profile
-partial/full resumption scope
+resumption_mode
+partial_admission_profile_or_NO_APPLICABLE_CASE
 terminal state
 required_OPRV_vectors
 permanent evidence refs
 ```
+
+### Resumption selector
+
+```text
+resumption_mode:
+  blocked
+  partially_admitted
+  fully_admitted
+```
+
+If `resumption_mode=partially_admitted`, `partial_admission_profile` is mandatory and records exact admitted subscopes/resources, allowed operation classes, current authority evidence, shared-authority/dependency independence evidence, isolation/fencing, prohibited classes, residual quarantined obligations and revalidation/expiry trigger.
+
+Unknown shared-authority/dependency continuity cannot select `partially_admitted`; it remains `blocked`. `OPRV-056` falsifies this boundary.
 
 ## Mandatory recovery profiles
 
@@ -97,12 +114,12 @@ Each recovery profile requires owner + quarantine + R + F + continuity inventory
 
 | Recovery profile | Accepted upstream joins | Mandatory admission emphasis | Runbook profile | Required Phase 15 vectors |
 |---|---|---|---|---|
-| `recovery.control-plane@1` | `rel.control-plane-placement@1`, `health.control-plane@1`, Phase 13 placement/cell lifecycle, Phase 14 release-target/current-policy state | current placement/config/cell/release/security authority; stale writer/executor fencing; `(R,F]` | `runbook.recovery@1` | `OPRV-009..015`, `OPRV-019`, `OPRV-022`, `OPRV-035`, `OPRV-051`, `OPRV-052` |
-| `recovery.cell@1` | `rel.cell-transactional-store@1`, `health.cell@1`, Phase 13 runtime/config/network/workload generations, Phase 14 artifact/config verification | current cell lifecycle/runtime/config/placement/release state; durable work continuity; stale worker/writer fencing | `runbook.recovery@1` | `OPRV-009..015`, `OPRV-020`, `OPRV-022`, `OPRV-024`, `OPRV-036..038`, `OPRV-052` |
-| `recovery.tenant@1` | `rel.control-plane-placement@1`, `rel.security-session-authority@1`, relevant cell/data reliability profiles, current tenant placement/auth/governance | canonical tenant identity, current placement/auth/governance, tenant-scoped durable/effect continuity | `runbook.recovery@1`, `runbook.relocation@1` where relocation applies | `OPRV-011..014`, `OPRV-019`, `OPRV-021`, `OPRV-023`, `OPRV-042`, `OPRV-052` |
-| `recovery.telemetry@1` | `health.observability-pipeline@1`, `health.customer-telemetry@1`, `sli.observability.integrity@1`, `sli.customer-telemetry.acceptance@1`, `obs.recovery.reconciliation@1` | operational-observability blindness separated from durably accepted customer-observation continuity; no false healthy silence/projection regression | `runbook.recovery@1` | `OPRV-009..014`, `OPRV-034`, `OPRV-048`, `OPRV-052`, `OPRV-053` |
-| `recovery.artifact@1` | `health.artifact@1`, `obs.artifact.lifecycle@1`, Phase 09 artifact authority, Phase 14 artifact/release lifecycle | immutable integrity plus current lifecycle/delivery/disclosure/release authority; retired/consumed generations stay retired | `runbook.recovery@1`, `runbook.release-forward-recovery@1` as applicable | `OPRV-009..015`, `OPRV-032`, `OPRV-036..038`, `OPRV-052`, `OPRV-054` |
-| `recovery.crypto-authority@1` | `rel.secret-key-authority@1`, `health.security-authority@1`, `health.message-equivalence@1` where historical proof applies, Phase 14 release verifier continuity | current key/verifier/secret authority plus narrow historical-proof usability; revocation/erasure/currentness cannot regress | `runbook.crypto-secret-recovery@1` | `OPRV-012..018`, `OPRV-045`, `OPRV-051`, `OPRV-052` |
+| `recovery.control-plane@1` | `rel.control-plane-placement@1`, `health.control-plane@1`, Phase 13 placement/cell lifecycle, Phase 14 release-target/current-policy state | current placement/config/cell/release/security authority; stale writer/executor fencing; `(R,F]` | `runbook.recovery@1` | `OPRV-009..015`, `OPRV-019`, `OPRV-022`, `OPRV-035`, `OPRV-051`, `OPRV-052`, `OPRV-056` |
+| `recovery.cell@1` | `rel.cell-transactional-store@1`, `health.cell@1`, Phase 13 runtime/config/network/workload generations, Phase 14 artifact/config verification | current cell lifecycle/runtime/config/placement/release state; durable work continuity; stale worker/writer fencing | `runbook.recovery@1` | `OPRV-009..015`, `OPRV-020`, `OPRV-022`, `OPRV-024`, `OPRV-036..038`, `OPRV-052`, `OPRV-056` |
+| `recovery.tenant@1` | `rel.control-plane-placement@1`, `rel.security-session-authority@1`, relevant cell/data reliability profiles, current tenant placement/auth/governance | canonical tenant identity, current placement/auth/governance, tenant-scoped durable/effect continuity | `runbook.recovery@1`, `runbook.relocation@1` where relocation applies | `OPRV-011..014`, `OPRV-019`, `OPRV-021`, `OPRV-023`, `OPRV-042`, `OPRV-052`, `OPRV-056` |
+| `recovery.telemetry@1` | `health.observability-pipeline@1`, `health.customer-telemetry@1`, `sli.observability.integrity@1`, `sli.customer-telemetry.acceptance@1`, `obs.recovery.reconciliation@1` | operational-observability blindness separated from durably accepted customer-observation continuity; no false healthy silence/projection regression | `runbook.recovery@1` | `OPRV-009..014`, `OPRV-034`, `OPRV-048`, `OPRV-052`, `OPRV-053`, `OPRV-056` |
+| `recovery.artifact@1` | `health.artifact@1`, `obs.artifact.lifecycle@1`, Phase 09 artifact authority, Phase 14 artifact/release lifecycle | immutable integrity plus current lifecycle/delivery/disclosure/release authority; retired/consumed generations stay retired | `runbook.recovery@1`, `runbook.release-forward-recovery@1` as applicable | `OPRV-009..015`, `OPRV-032`, `OPRV-036..038`, `OPRV-052`, `OPRV-054`, `OPRV-056` |
+| `recovery.crypto-authority@1` | `rel.secret-key-authority@1`, `health.security-authority@1`, `health.message-equivalence@1` where historical proof applies, Phase 14 release verifier continuity | current key/verifier/secret authority plus narrow historical-proof usability; revocation/erasure/currentness cannot regress | `runbook.crypto-secret-recovery@1` | `OPRV-012..018`, `OPRV-045`, `OPRV-051`, `OPRV-052`, `OPRV-056` |
 
 A future implementation SHALL use exact accepted profile IDs where a normalized upstream catalog provides them. Tool/vendor object names are not valid substitutes.
 
@@ -126,6 +143,7 @@ permanent evidence refs
 
 ```text
 break_glass_session_id
+break_glass_policy_profile_and_version
 requester
 approver authority
 executor principal
@@ -133,11 +151,24 @@ incident/reason
 allowed actions
 scope
 time/expiry/revocation state
-dual_control_profile_or_NO_APPLICABLE_CASE
+dual_control_applicability_state
+dual_control_policy_evidence
+dual_control_execution_profile_or_NO_APPLICABLE_CASE
 credential/reference profile
 audit evidence
 post_use_review state
 ```
+
+Canonical selector:
+
+```text
+dual_control_applicability_state:
+  required_by_current_policy
+  not_required_by_current_policy_with_evidence
+  applicability_unproven
+```
+
+`applicability_unproven` blocks break-glass admission. `NO_APPLICABLE_CASE` for the execution profile is valid only with `not_required_by_current_policy_with_evidence` and exact accepted policy evidence. `OPRV-055` falsifies this boundary.
 
 ## Canonical incident classes
 
@@ -173,19 +204,19 @@ runbook.incident-closure@1
 | Operation | Required upstream authority/evidence | Forbidden substitution |
 |---|---|---|
 | incident declaration | accepted detection/evidence + accountable operator policy | alert/AI score as autonomous incident authority |
-| break-glass admission | current Security/ops policy + approver + exact scope | incident status or operator role alone |
+| break-glass admission | current Security/ops policy + proven dual-control applicability + approver + exact scope | incident status, operator role or unknown applicability alone |
 | restore | exact recovery scope + backup/restore evidence + R | backup success as resumption authority |
-| recovery admission | F + `(R,F]` reconciliation + current authorities + scope proof | service health/reachability alone |
+| recovery admission | F + `(R,F]` reconciliation + current authorities + exact full/partial scope proof | service health/reachability or subcomponent health alone |
 | telemetry recovery | exact telemetry subscope + Phase 12 continuity semantics | restored logs/metrics or projection reachability as customer-observation truth |
 | artifact recovery | immutable integrity + current lifecycle/delivery/disclosure/release authority | restored bytes/tag/access object as authority |
 | redrive/replay | current contract authority + dedup/effect/equivalence + generation + capacity | DLQ button/age |
 | relocation | current Control Plane placement authority + source/target fences | manual routing/pointer edit |
 | release recovery | Phase 14 current operation/target/config/runtime evidence | vendor rollback button |
-| incident closure | accepted closure criteria + residual ownership/evidence | symptom disappearance/tool green |
+| incident closure | accepted closure criteria + explicit residual-obligation disposition + evidence | symptom disappearance/tool green or hidden follow-up note |
 
 ## Cross-cutting validation
 
-`OPRV-001..054` are canonical Phase 15 adversarial vectors. Implementations map every applicable vector to owner, expected result and evidence or an evidence-backed `NO_APPLICABLE_CASE` for a genuinely conditional subcase.
+`OPRV-001..056` are canonical Phase 15 adversarial vectors. Implementations map every applicable vector to owner, expected result and evidence or an evidence-backed `NO_APPLICABLE_CASE` for a genuinely conditional subcase.
 
 ## OPEN discipline
 

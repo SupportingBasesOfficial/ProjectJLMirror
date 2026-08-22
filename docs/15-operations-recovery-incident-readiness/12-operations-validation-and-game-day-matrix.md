@@ -189,6 +189,11 @@ Inject: incident is operationally stabilized and closed while an ambiguous exter
 Required: the residual operation keeps its original stable identity, owner, evidence and reconciliation-blocked eligibility; incident closure does not mutate it. If the residual state still violates accepted containment/closure criteria, incident closure is blocked.
 Forbidden: incident state, follow-up ticket, elapsed time or closure status makes the ambiguous effect absent, safe, retryable, redriveable or rollback-eligible.
 
+### OPRV-058 — Operations catalog presence launders Product applicability
+Inject: an operational catalog/owner/runbook exists for `rel.webhook-delivery@1` or the Product-facing artifact delivery branch while the accepted Phase 12 Product selector is `product_state_unproven` or explicitly not enabled/exposed; operations tooling marks the Product capability enabled, creates a Product-facing commitment, or converts unproven to N/A based on catalog/deployment/config/team presence.
+Required: exact upstream Product/Phase 12 applicability state remains authoritative; catalog ownership stays preparedness/accountability only. `product_state_unproven` remains OPEN, and not-enabled/not-exposed does not erase underlying diagnostic/security/recovery ownership where applicable.
+Forbidden: owner, runbook, feature flag, deployment, traffic, environment, config or implementation existence becomes Product applicability authority.
+
 ## Game-day classes
 
 Implementation/runtime must eventually rehearse at minimum:
@@ -208,8 +213,9 @@ Implementation/runtime must eventually rehearse at minimum:
 - observability loss during incident;
 - break-glass admission with required/not-required/unproven dual-control selectors and revocation;
 - incident closure with a durably owned reconciliation-blocked residual effect;
+- Product-gated operational catalog row with unproven/not-enabled applicability;
 - decommission and vendor/dependency exit.
 
 ## Acceptance rule
 
-Phase 15 cannot reach `READY_FOR_MERGE` while an applicable vector `OPRV-001..057` lacks owner, expected result, evidence path or valid conditional `NO_APPLICABLE_CASE` evidence.
+Phase 15 cannot reach `READY_FOR_MERGE` while an applicable vector `OPRV-001..058` lacks owner, expected result, evidence path or valid conditional `NO_APPLICABLE_CASE` evidence.

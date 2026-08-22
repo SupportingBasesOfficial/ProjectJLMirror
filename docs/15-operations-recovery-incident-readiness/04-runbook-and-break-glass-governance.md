@@ -7,6 +7,7 @@
 ```text
 RUNBOOK != AUTHORITY
 BREAK-GLASS != AUTHORITY ESCAPE HATCH
+UNKNOWN DUAL-CONTROL APPLICABILITY != NO_APPLICABLE_CASE
 ```
 
 A runbook encodes an accepted procedure and its preconditions. It cannot create authority missing from Product, Security, domain, data, API/event, runtime or release contracts.
@@ -40,6 +41,7 @@ Canonical record:
 
 ```text
 break_glass_session_id
+break_glass_policy_profile_and_version
 requester
 approver_authority
 executor_principal
@@ -48,17 +50,39 @@ exact allowed actions
 resource/tenant/cell/environment scope
 start/expiry
 revocation/currentness
-dual_control_profile_or_NO_APPLICABLE_CASE
+dual_control_applicability_state
+dual_control_policy_evidence
+dual_control_execution_profile_or_NO_APPLICABLE_CASE
 credential/reference profile
 audit/evidence sink
 post_use_review_owner/status
 ```
 
+## Dual-control applicability
+
+The canonical selector is closed:
+
+```text
+dual_control_applicability_state:
+  required_by_current_policy
+  not_required_by_current_policy_with_evidence
+  applicability_unproven
+```
+
+Rules:
+
+- `required_by_current_policy` requires the accepted current Security/Risk policy evidence and the required independent approval/execution constraints before admission;
+- `not_required_by_current_policy_with_evidence` may use `dual_control_execution_profile_or_NO_APPLICABLE_CASE=NO_APPLICABLE_CASE`, but only with exact accepted policy evidence proving non-applicability for the same action/scope;
+- `applicability_unproven` is fail-closed for break-glass admission. It is not `NO_APPLICABLE_CASE` and cannot inherit the less restrictive branch;
+- `OPEN-OPS-010` owns the concrete dual-control implementation/applicability-mapping mechanism; it does not authorize an implementation to resolve unknown policy applicability locally.
+
+`OPRV-055` falsifies applicability laundering.
+
 ## Admission
 
 Break-glass requires explicit current policy and incident/operational justification. Where accepted Security/risk authority requires dual control, requester/approver/executor constraints are enforced; exact staffing/count/product remains OPEN.
 
-No emergency condition turns a denied or unknown authorization state into allowed state automatically.
+No emergency condition turns a denied, stale or unknown authorization/dual-control state into allowed state automatically.
 
 ## Least privilege
 
@@ -91,4 +115,4 @@ Break-glass cannot self-certify its own safe completion.
 
 ## Tool/AI boundary
 
-Automation may prefill evidence, detect policy mismatch or recommend a runbook. AI/tool output cannot admit break-glass, broaden scope, waive dual control, decide recovery eligibility or close the incident.
+Automation may prefill evidence, detect policy mismatch or recommend a runbook. AI/tool output cannot admit break-glass, select the dual-control applicability state, broaden scope, waive dual control, decide recovery eligibility or close the incident.

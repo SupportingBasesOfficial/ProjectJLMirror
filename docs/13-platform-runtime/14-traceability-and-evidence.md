@@ -33,16 +33,22 @@ The canonical role chain is:
 accepted capability/workload
  -> runtime_profile_id
  -> worker_specialization_id when runtime.worker@1
- -> workload principal
+ -> principal_class
+ -> lifecycle_class
  -> isolation profile
- -> ingress/egress profile
+ -> ingress/egress profiles
+ -> secret-reference classes
  -> state ports
+ -> currentness/admission checks
+ -> resource/concurrency profile
  -> exact Phase 11 reliability binding
  -> exact Phase 12 health/signal/SLI binding
+ -> recovery/fencing rule
  -> PRTV fault vectors
+ -> applicable OPEN bindings
 ```
 
-No runtime may omit a link by relying on vendor defaults. Generic `runtime.worker@1` without a selected `worker.*@1` specialization is incomplete conformance evidence.
+No runtime may omit a link by relying on vendor defaults. `PRTV-043` is the mandatory falsification vector for missing/implicit manifest fields. Generic `runtime.worker@1` without a selected `worker.*@1` specialization is incomplete conformance evidence.
 
 ## Worker specialization trace
 
@@ -70,9 +76,34 @@ worker specialization
  -> concurrency/bulkhead budget
  -> specialization PRTV vectors
  -> PRTV-037 when co-located with another specialization
+ -> PRTV-043 for record completeness
 ```
 
 Implementation cannot use a shared process name to erase those bindings.
+
+## Manifest-completeness trace
+
+Every runtime record instantiates the schema through exact canonical IDs/rules or explicit disposition:
+
+```text
+runtime profile
+ -> principal
+ -> lifecycle
+ -> isolation
+ -> ingress
+ -> egress
+ -> ports
+ -> secret-reference classes
+ -> currentness checks
+ -> resource profile
+ -> reliability
+ -> observability
+ -> recovery/fencing
+ -> vectors
+ -> OPEN bindings
+```
+
+A missing field is not a safe default and not an implied `NO_APPLICABLE_CASE`. An implementation-selected OPEN is recorded with the exact `OPEN-PRT-*` ID and closure evidence; the design baseline may identify bounded candidate OPEN ranges without selecting a technology.
 
 ## Cell lifecycle trace
 
@@ -87,7 +118,7 @@ Control Plane placement authority
  -> terminal retirement of old generation
 ```
 
-A quarantined generation can return to normal protected admission only through `validating` after owning authority predicates are satisfied. `PRTV-038` falsifies direct quarantine bypass.
+A quarantined generation returns to normal protected admission only through `validating` after owning authority predicates are satisfied. `PRTV-038` falsifies direct quarantine bypass.
 
 Health observes this chain but does not grant placement authority.
 
@@ -117,23 +148,16 @@ runtime_profile_id / worker_specialization_id
  -> state-port/network policy
  -> workload_credential_generation + configuration_generation
  -> revocation/currentness evidence
- -> PRTV-002/003/013/014/015/016/041/042 as applicable
+ -> PRTV-002/003/013/014/015/016/041/042/043 as applicable
 ```
 
 A service identity proves the machine caller; tenant/application authorization remains independently owned where required.
 
-Secret materialization evidence explicitly includes `PRTV-041`: receiving a secret at runtime does not make that value admissible in ordinary config snapshots, logs, traces, metrics, events/jobs, artifacts, crash/export evidence or ordinary audit snapshots.
+`PRTV-041` proves that receiving a secret at runtime does not make the secret value admissible in ordinary config snapshots, logs, traces, metrics, events/jobs, artifacts, crash/export evidence or ordinary audit snapshots.
 
 ## State-port trace
 
-Each canonical `port.*@1` maps to:
-
-- owning accepted data/security/reliability authority;
-- allowed runtime/worker profiles;
-- durability/consistency/fencing meaning;
-- Phase 11 failure/degradation behavior;
-- Phase 12 health/diagnostic evidence;
-- compatibility/portability tests.
+Each canonical `port.*@1` maps to its owning accepted authority, allowed runtime/worker profiles, durability/consistency/fencing meaning, Phase 11 behavior, Phase 12 evidence and compatibility/portability tests.
 
 Physical backend co-location does not merge logical port authority. `PRTV-039` falsifies authority collapse among transactional, reliability, audit, customer-telemetry, observability and other state ports.
 
@@ -149,24 +173,13 @@ runtime/worker artifact capability
  -> protected release
 ```
 
-Object bytes, upload success, a storage URL or raw object capability cannot skip the owning artifact lifecycle. `PRTV-040` is the mandatory release-bypass vector for mappings that can serve protected artifact bytes.
+Object bytes, upload success, a storage URL or raw object capability cannot skip the owning artifact lifecycle. `PRTV-040` is mandatory for mappings that can serve protected artifact bytes.
 
 ## Co-location trace
 
-Whenever runtime profiles or worker specializations share a physical process/runtime, evidence records:
+Whenever runtime profiles or worker specializations share a physical runtime, evidence records effective principal, secret-reference union, state-port union, egress/network union, resource/bulkhead coupling, lifecycle/failure coupling and `PRTV-037` result.
 
-```text
-selected profiles/specializations
- -> effective principal union
- -> secret-reference union
- -> state-port union
- -> egress/network union
- -> resource/bulkhead coupling
- -> lifecycle/failure coupling
- -> PRTV-037 result
-```
-
-If the resulting effective authority exceeds accepted profile unions, co-location fails rather than silently expanding the trust envelope.
+If effective authority exceeds accepted profile unions, co-location fails rather than silently expanding the trust envelope.
 
 ## Recovery continuity trace
 
@@ -185,8 +198,6 @@ recovery point R
 
 ## Product applicability trace
 
-Phase 13 inherits Product authority rather than deriving it from runtime deployment:
-
 ```text
 accepted Product authority
  -> upstream applicability decision / OPEN
@@ -194,7 +205,7 @@ accepted Product authority
  -> runtime does not mutate Product truth
 ```
 
-In particular, `OPEN-OBS-037` cannot be closed because a webhook/artifact runtime exists or does not exist.
+`OPEN-OBS-037` cannot be closed because a webhook/artifact runtime exists or does not exist.
 
 ## Capacity and relocation trace
 
@@ -217,28 +228,21 @@ Scaling mechanism cannot bypass relocation authority.
 
 Phase 14 consumes:
 
-- runtime and worker-specialization profile IDs and compatible implementation mappings;
+- runtime and worker-specialization profile IDs and complete manifest mappings;
 - lifecycle/admission/draining/quarantine/retirement semantics;
 - workload identity and least-privilege boundaries;
 - `runtime_generation`, `configuration_generation`, `workload_credential_generation`, `placement_version` and `network_policy_generation` semantics;
-- state-port compatibility and logical-authority separation requirements;
+- state-port compatibility and logical-authority separation;
 - migration/admin runtime profile;
-- cell-aware rollout and replacement capabilities;
+- cell-aware rollout/replacement capabilities;
 - rollback restrictions against stale authority;
-- runtime conformance/fault evidence, including `PRTV-037..042`.
+- runtime conformance/fault evidence including `PRTV-037..043`.
 
-Phase 14 decides build/promotion/deployment mechanisms but cannot redefine Phase 13 runtime semantics.
+Phase 14 decides build/promotion/deployment mechanisms but cannot redefine Phase 13 runtime semantics or fill omitted manifest fields with deployment-tool defaults.
 
 ## Downstream consumer: Phase 15
 
-Phase 15 consumes:
-
-- recovery runtime and quarantine/resumption predicates;
-- privileged operational access boundaries;
-- cell drain/replacement/relocation controls;
-- observable lifecycle/capacity/security state;
-- secret/credential rotation operational requirements;
-- runtime fault/game-day vectors.
+Phase 15 consumes recovery runtime/quarantine/resumption predicates, privileged operational access boundaries, cell drain/replacement/relocation controls, observable lifecycle/capacity/security state, secret/credential rotation requirements and runtime fault/game-day vectors.
 
 Phase 15 defines human process/incident authority, not new runtime privilege.
 
@@ -250,40 +254,30 @@ Implementation Readiness must prove that Product/Security/API/Event/Reliability/
 
 | Claim | Design evidence now | Future conformance/runtime evidence |
 |---|---|---|
+| manifest completeness | manifest schema + exact record tables | `PRTV-043` / machine conformance ensuring no implicit field/default |
 | edge independence | overview/runtime profile | `PRTV-001` core-flow execution with edge removed/replaced |
 | network != trust | network/identity contracts | `PRTV-002`, `PRTV-003` denial tests |
 | workload least privilege | identity + manifest | principal/secret/state-port denial + `PRTV-037` co-location tests |
-| worker specialization | roles + manifest | exact worker profile/queue/port/egress/bulkhead conformance |
+| worker specialization | roles + manifest | exact worker queue/port/egress/secret/bulkhead conformance |
 | secret/config currentness | identity/config contract | rotation/revocation/stale-config + `PRTV-041`, `PRTV-042` |
-| cell lifecycle | lifecycle contract | provision/validate/admit/drain/quarantine/replace rehearsal + `PRTV-038` |
+| cell lifecycle | lifecycle contract | provision/validate/admit/drain/quarantine/replace + `PRTV-038` |
 | placement fencing | lifecycle + manifest | stale source/placement generation tests |
-| durable drain semantics | runtime roles + Phase 11 join | worker/API/realtime scale-down fault tests |
+| durable drain semantics | runtime roles + Phase 11 join | worker/API/realtime scale-down tests |
 | state-port authority | port contract | semantic conformance/restore/failure + `PRTV-039` |
-| artifact release authority | port/manifest/security | `PRTV-040` object-presence/capability bypass test |
+| artifact release authority | port/manifest/security | `PRTV-040` object-presence/capability bypass |
 | parser/automation isolation | privileged execution | sandbox/egress/secret/resource tests |
 | migration/admin separation | privileged execution | application-principal denial + migration rehearsal |
 | recovery continuity | lifecycle/recovery trace | restore `(R,F]` reconciliation rehearsal |
 | multidimensional capacity | capacity model | load/skew/saturation/cost benchmarks |
 | second-cell portability | capacity/lifecycle | second-cell provisioning + wrong-placement rejection |
-| tenant relocation | capacity/lifecycle | source/target cutover/fence/reconciliation tests |
+| tenant relocation | capacity/lifecycle | source/target cutover/fence/reconciliation |
 | vendor portability | manifest + compatibility | alternative mapping rehearsal without semantic rewrite |
 
 ## Permanent evidence requirements
 
-Implementation/release/runtime evidence preserves enough provenance to identify:
+Implementation/release/runtime evidence preserves enough provenance to identify repository/source and Phase 13 profile state; runtime profile and worker-specialization set; runtime implementation/artifact identity when available; runtime/config/network/workload-credential/placement generations; separately owned upstream generations where material; environment/cell/workload; state-port/profile versions; exact manifest/OPEN bindings; test/fault/capacity scenario/result; timestamp/order; and evidence class.
 
-- repository/source and Phase 13 profile state;
-- runtime profile and `worker_specialization_id` set;
-- runtime implementation/version/image/artifact identity when later available;
-- runtime/cell/config/network/workload-credential/placement generations as applicable;
-- separately owned upstream generation identities where material to the test;
-- environment/cell/workload profile;
-- state-port/profile versions;
-- test/fault/capacity scenario and result;
-- timestamp/order and evidence class;
-- whether evidence is design, conformance, release or production evidence.
-
-Evidence from one runtime/profile/specialization/generation is not silently reused for a materially different one.
+Evidence from one runtime/profile/specialization/generation/manifest binding is not silently reused for a materially different one.
 
 ## Native Assurance integration
 
@@ -293,4 +287,4 @@ Any material correction creates a new HEAD and requires applicable exact-HEAD ch
 
 ## Traceability blockers
 
-Acceptance is blocked when an accepted upstream property has no Phase 13 runtime owner/mapping, when a runtime or selected worker specialization lacks a complete identity/isolation/network/port/failure/observability/vector chain, when co-location/quarantine/state-port/artifact/secret/generation claims lack the applicable `PRTV-037..042` evidence path, when a later phase would need to invent authority meaning, or when Product/vendor/runtime state is used to bypass an upstream OPEN/owner.
+Acceptance is blocked when an accepted upstream property has no Phase 13 runtime owner/mapping; when a runtime or selected worker specialization lacks a complete manifest chain; when co-location/quarantine/state-port/artifact/secret/generation/manifest-completeness claims lack the applicable `PRTV-037..043` evidence path; when a later phase would need to invent authority meaning; or when Product/vendor/runtime state is used to bypass an upstream OPEN/owner.

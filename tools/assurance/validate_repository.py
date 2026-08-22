@@ -39,6 +39,11 @@ PULL_REQUEST_TARGET_RE = re.compile(
     r"^\s*(?:pull_request_target\s*:|on\s*:\s*pull_request_target\s*$|on\s*:\s*\[[^\]]*\bpull_request_target\b[^\]]*\])",
     re.IGNORECASE | re.MULTILINE,
 )
+SECRET_REFERENCE_RE = re.compile(r"\$\{\{\s*secrets\.", re.IGNORECASE)
+SECRET_INHERIT_RE = re.compile(r"^\s*secrets:\s*inherit\s*(?:#.*)?$", re.IGNORECASE | re.MULTILINE)
+ENVIRONMENT_RE = re.compile(r"^\s*environment\s*:", re.IGNORECASE | re.MULTILINE)
+CONTINUE_ON_ERROR_RE = re.compile(r"^\s*continue-on-error:\s*true\s*(?:#.*)?$", re.IGNORECASE | re.MULTILINE)
+UNSAFE_CHECKOUT_TRUE_RE = re.compile(r"^\s*allow-unsafe-pr-checkout:\s*true\s*(?:#.*)?$", re.IGNORECASE | re.MULTILINE)
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 FENCE_RE = re.compile(r"^\s*```", re.MULTILINE)
 
@@ -99,6 +104,11 @@ def _check_workflow_policy(root: Path) -> list[Finding]:
             (WRITE_PERMISSION_RE, "workflow grants a write permission; the v1 assurance profile is read-only"),
             (INLINE_WRITE_PERMISSION_RE, "workflow grants an inline write permission; the v1 assurance profile is read-only"),
             (PULL_REQUEST_TARGET_RE, "pull_request_target is forbidden in the v1 assurance profile because untrusted PR content must not gain privileged execution context"),
+            (SECRET_REFERENCE_RE, "workflow references a GitHub secret; the v1 pull-request assurance profile is secretless"),
+            (SECRET_INHERIT_RE, "workflow inherits secrets; the v1 assurance profile is secretless"),
+            (ENVIRONMENT_RE, "workflow binds a GitHub environment; v1 does not admit environment-scoped credentials or deployment authority"),
+            (CONTINUE_ON_ERROR_RE, "workflow permits continue-on-error; assurance failures must remain job-failing evidence"),
+            (UNSAFE_CHECKOUT_TRUE_RE, "workflow enables unsafe pull-request checkout behavior; v1 requires it disabled"),
         ):
             for match in regex.finditer(text):
                 findings.append(Finding(rel, message, _line_for_offset(text, match.start())))
@@ -129,12 +139,20 @@ def _check_workflow_policy(root: Path) -> list[Finding]:
         for index, line in enumerate(lines):
             if "uses: actions/checkout@" not in line:
                 continue
-            window = "\n".join(lines[index + 1 : index + 15])
+            window = "\n".join(lines[index + 1 : index + 16])
             if not re.search(r"^\s*persist-credentials:\s*false\s*(?:#.*)?$", window, re.MULTILINE):
                 findings.append(
                     Finding(
                         rel,
                         "actions/checkout must set persist-credentials: false so analysis does not retain push credentials",
+                        index + 1,
+                    )
+                )
+            if not re.search(r"^\s*allow-unsafe-pr-checkout:\s*false\s*(?:#.*)?$", window, re.MULTILINE):
+                findings.append(
+                    Finding(
+                        rel,
+                        "actions/checkout must explicitly set allow-unsafe-pr-checkout: false in v1",
                         index + 1,
                     )
                 )
@@ -273,6 +291,7 @@ def main(argv: list[str]) -> int:
 
     print(f"JLMIRROR deterministic assurance profile: {PROFILE_ID}")
     print(f"Repository root: {root.resolve()}")
+    print(f"Python runtime: {sys.version.split()[0]}")
 
     if not findings:
         print("RESULT: PASS — no findings in the deterministic v1 coverage set")

@@ -10,6 +10,7 @@ RESTORE SUCCESS != AUTHORITY RESTORED
 MISSING RESTORED STATE != ABSENCE
 RESTORED TELEMETRY != OBSERVATION TRUTH
 RESTORED ARTIFACT BYTES != DISCLOSURE/RELEASE AUTHORITY
+PARTIAL RECOVERY != PARTIAL AUTHORITY BY ASSUMPTION
 ```
 
 ## Recovery scope record
@@ -30,8 +31,9 @@ affected continuity authorities
 quarantine state
 (R,F] inventory state
 reconciliation operations
+resumption_mode
+partial_admission_profile_or_NO_APPLICABLE_CASE
 admission evidence
-partial/full resumption scope
 terminal state
 ```
 
@@ -130,9 +132,40 @@ A restored datastore/process/cell does not receive protected serving/effect auth
 
 Recovery quarantine blocks protected work until the scope-specific admission manifest proves current authority and continuity.
 
-## Partial resumption
+## Resumption mode
 
-Safe unaffected or independently proven subscopes may resume only when the owning recovery profile establishes isolation and exact allowed actions. Partial resumption cannot infer missing evidence for the blocked remainder.
+The canonical selector is:
+
+```text
+resumption_mode:
+  blocked
+  partially_admitted
+  fully_admitted
+```
+
+`partially_admitted` requires a `partial_admission_profile` that materializes:
+
+```text
+exact admitted subscopes/resources
+exact allowed operation classes
+current authority evidence for every allowed class
+shared-authority/dependency independence evidence
+isolation/fencing evidence
+prohibited operation classes
+residual quarantined subscopes/obligations
+revalidation/expiry trigger
+```
+
+Rules:
+
+- partial admission is allowed only for subscopes whose required authorities/effects are independently proven current and isolated from unresolved recovery state;
+- a shared authority/dependency whose continuity is unknown keeps every dependent protected operation blocked;
+- a healthy/readable subcomponent is not evidence of authority independence;
+- partial admission never clears the unresolved `R/F`, ambiguity or quarantine obligations for excluded subscopes;
+- expansion from partial to full admission is a new evidence-driven transition, not an automatic consequence of time or load;
+- when safe independence cannot be proven, `resumption_mode=blocked`.
+
+`OPRV-056` falsifies unsafe partial admission.
 
 For `recovery.telemetry@1`, operational-observability restoration cannot automatically admit the customer-monitoring subscope, and vice versa.
 
@@ -158,4 +191,4 @@ A backup catalog itself is not proof that all recovery scopes are covered; each 
 
 ## Evidence
 
-Permanent recovery evidence distinguishes design requirements from actual drill/runtime results and records backup identity, recovery scope/subscope, R/F, affected authorities, reconciliation decisions, admission proof, unresolved uncertainty and post-recovery review.
+Permanent recovery evidence distinguishes design requirements from actual drill/runtime results and records backup identity, recovery scope/subscope, R/F, affected authorities, reconciliation decisions, resumption mode/partial profile, admission proof, unresolved uncertainty and post-recovery review.

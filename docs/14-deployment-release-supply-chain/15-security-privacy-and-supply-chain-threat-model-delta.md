@@ -13,6 +13,8 @@ Phase 14 adds/refines:
 - build executor -> artifact registry;
 - artifact -> provenance/attestation authority;
 - release authority -> promotion record;
+- validation.general -> validation.reference-cell for applicable cell releases;
+- release system -> Control Plane cell compatibility metadata;
 - deployment principal -> target environment/cell;
 - release system -> secret/config authority;
 - deployment -> migration/admin runtime;
@@ -48,13 +50,13 @@ Old queued job executes after revocation/supersession. Controls: currentness rev
 Vendor green bypasses recovery/security quarantine. Controls: Phase 12/13 semantic admission. `RLV-016`, `RLV-043`.
 
 ### RLS-TM-009 — Rollout blast-radius amplification
-Bad release changes all cells simultaneously. Controls: canary/bounded waves/pause/abort and capacity gates. `RLV-017..019`, `RLV-027`.
+Bad release changes all cells simultaneously. Controls: reference-cell validation when applicable, canary/bounded waves/pause/abort and capacity gates. `RLV-017..019`, `RLV-027`, `RLV-045`.
 
 ### RLS-TM-010 — Mixed-version semantic split
-Old/new runtime/schema/API/event disagree on authority/effect meaning. Controls: explicit compatibility matrix. `RLV-021..024`.
+Old/new runtime/schema/API/event disagree on authority/effect meaning. Controls: explicit compatibility matrix and current cell compatibility metadata. `RLV-021..024`, `RLV-046`.
 
 ### RLS-TM-011 — Migration race / destructive contract
-Controls: dedicated migration principal, lock/fence, expand/migrate/contract. `RLV-024..026`.
+Controls: dedicated migration principal, lock/fence, expand/migrate/contract and compatibility metadata proving old readers retired. `RLV-024..026`, `RLV-046`.
 
 ### RLS-TM-012 — Rollback authority resurrection
 Controls: change outcome classes, current authority/recovery continuity. `RLV-028..030`, `RLV-044`.
@@ -89,16 +91,22 @@ Deployment controller desired state/tag says artifact A while running workload e
 ### RLS-TM-022 — Release-policy/verifier rollback
 Restore or rollback reintroduces retired approval, broader historical CI principal or obsolete provenance verifier trust. Controls: forward reconciliation of release policy/verifier authority and fail-closed privileged release admission until currentness is proven. `RLV-044`.
 
+### RLS-TM-023 — Reference-cell stage bypass
+A cell/runtime/schema-affecting release skips the accepted staging/reference-cell step because the deployment platform exposes only “test” and “production”. Controls: `validation.reference-cell@1` as a required evidence scope inside `environment.validation@1`, explicit applicability/N/A evidence and production-canary gate. `RLV-045`.
+
+### RLS-TM-024 — Cell compatibility metadata spoof/staleness
+Release or placement consumes caller-controlled/stale current-target runtime/schema compatibility metadata and admits an incompatible cell/tenant cutover. Controls: trusted Control Plane ownership/currentness, exact release/migration binding, newer deny/incompatible state precedence. `RLV-046`.
+
 ## Privacy
 
 Release evidence minimizes tenant identifiers, physical topology, secret references and production data. Build/test evidence may use synthetic/minimized data; production-derived validation data follows Security governance.
 
-Untrusted-source validation is not allowed to access production tenant data merely to improve test fidelity. Any production-derived dataset requires explicit governed export/minimization and remains non-authoritative.
+Untrusted-source validation and validation reference cells are not allowed to access production tenant data merely to improve test fidelity. Any production-derived dataset requires explicit governed export/minimization and remains non-authoritative.
 
 ## Recovery/security continuity
 
-Rollback, restore, redeploy, registry recovery or CI/CD control-plane recovery cannot move authorization, revocation, erasure, legal-hold, reliability, release-policy or verifier authority backwards. When continuity cannot be proven, deployment/promotion admission remains blocked/quarantined.
+Rollback, restore, redeploy, registry recovery or CI/CD control-plane recovery cannot move authorization, revocation, erasure, legal-hold, reliability, release-policy, verifier or authoritative cell compatibility state backwards. When continuity cannot be proven, deployment/promotion/placement admission remains blocked/quarantined.
 
 ## Supply-chain portability
 
-Replacing build/registry/CI/signing/orchestrator product must preserve trust/evidence semantics. A vendor-specific verification badge is not a canonical security authority.
+Replacing build/registry/CI/signing/orchestrator product must preserve trust/evidence semantics, including reference-cell staging evidence and cell compatibility ownership/currentness. A vendor-specific verification badge or environment name is not a canonical security authority.

@@ -15,10 +15,10 @@ Examples: bounded replica/wave implementation tuning that does not alter authori
 Examples: equivalent physical registry, CI runner or deployment-controller replacement preserving the same logical profiles/evidence; new physical environment mapping preserving Phase 13 semantics.
 
 ### RLS-COMP-C — semantic breaking
-Includes changes to source trust-class meaning, trusted release-policy profile semantics, artifact identity, provenance meaning, promotion/deployment authority, environment mapping semantics, principal separation, runtime artifact verification meaning, mixed-version support, migration step meaning, rollback eligibility, pause/abort gates or evidence disposition.
+Includes changes to source trust-class meaning, trusted release-policy profile semantics, artifact identity, provenance meaning, promotion/deployment authority, validation-scope applicability, environment mapping semantics, principal separation, runtime artifact verification meaning, cell compatibility metadata semantics/currentness, mixed-version support, migration step meaning, rollback eligibility, pause/abort gates or evidence disposition.
 
 ### RLS-COMP-D — security/recovery sensitive
-Includes broadened CI/CD principal; untrusted-source validation gaining trusted release credentials/network/secrets; candidate-controlled policy self-escalation; secret exposure; weaker artifact/runtime identity verification; stale approval reuse; production/lower-environment bleed; rollback of release-policy/verifier/revocation/governance/reliability state; migration-owner reuse; supply-chain evidence loss; or release authority inferred from tool defaults.
+Includes broadened CI/CD principal; untrusted-source validation gaining trusted release credentials/network/secrets; candidate-controlled policy self-escalation; secret exposure; weaker artifact/runtime identity verification; stale approval reuse; production/lower-environment bleed; stale/forged cell compatibility metadata granting placement/cutover; rollback of release-policy/verifier/revocation/governance/reliability state; migration-owner reuse; supply-chain evidence loss; or release authority inferred from tool defaults.
 
 ## Source-trust compatibility
 
@@ -36,6 +36,22 @@ A policy change that broadens privilege, weakens currentness, accepts a previous
 
 Restore/downgrade of policy/verifier authority is compatible only if retired principals, approvals and verifier trust do not become current again. `RLV-044` applies.
 
+## Validation-scope compatibility
+
+`validation.general@1` and `validation.reference-cell@1` are Phase 14 rollout/evidence scopes inside the accepted `environment.validation@1` class.
+
+For cell/runtime/schema-affecting releases covered by the accepted Data rollout semantics, removing/skipping `validation.reference-cell@1`, treating it as a fifth environment, or replacing it with deployment-tool “staging” semantics that carry production authority is breaking.
+
+Changing applicability from required to `NO_APPLICABLE_CASE` requires explicit evidence and owning authority; tool absence is not compatibility evidence. `RLV-045` applies.
+
+## Cell compatibility metadata compatibility
+
+The meaning, owner and currentness of Control Plane cell current/target runtime-schema compatibility metadata are release/placement safety semantics.
+
+Changing the metadata so it becomes caller-controlled, inferred from deployment success, stale-tolerant beyond accepted authority, or no longer blocks incompatible placement/cutover is breaking/security-sensitive. `RLV-046` applies.
+
+Adding physical fields without changing these semantics may be implementation evolution.
+
 ## Tool replacement
 
 Replacing CI/CD, registry, scanner, signing service, orchestrator or cloud mechanism is compatible only when logical source/build/artifact/promotion/deployment/runtime-verification semantics and evidence remain equivalent.
@@ -52,22 +68,22 @@ Configuration-only changes may be semantic/security breaking. Changes to tenant/
 
 ## Mixed-version compatibility
 
-Review includes old/new combinations of API, event, runtime, schema, configuration and workers, plus current authority generations, release policy/verifier state and historical evidence interpretation.
+Review includes old/new combinations of API, event, runtime, schema, configuration and workers, plus validation scope, current cell compatibility metadata, current authority generations, release policy/verifier state and historical evidence interpretation.
 
 ## Migration compatibility
 
-Changing expand/migrate/contract ordering, backfill resume semantics, lock/fence ownership or destructive-contract prerequisites is breaking.
+Changing expand/migrate/contract ordering, backfill resume semantics, lock/fence ownership, validation reference-cell requirement, cell compatibility metadata transitions or destructive-contract prerequisites is breaking.
 
 ## Rollback compatibility
 
 A change from `rollback_eligible` to any stricter class is material. Rollback support cannot be advertised after irreversible schema/effect/security state makes old runtime unsafe.
 
-Rollback of release control-plane state is also unsafe when it would restore a retired promotion approval, broader old principal, obsolete verifier or weaker release policy.
+Rollback of release control-plane state is also unsafe when it would restore a retired promotion approval, broader old principal, obsolete verifier, weaker release policy or stale cell compatibility state.
 
 ## Evidence compatibility
 
-Changing provenance/SBOM/signature/attestation interpretation, verifier authority, runtime-artifact observation, retention or correlation is compatibility-sensitive even if artifact bytes are unchanged.
+Changing provenance/SBOM/signature/attestation interpretation, verifier authority, runtime-artifact observation, validation-scope evidence, cell compatibility metadata provenance/retention or correlation is compatibility-sensitive even if artifact bytes are unchanged.
 
 ## Downgrade
 
-If a previous runtime or release-policy/verifier state cannot safely interpret current authoritative state, downgrade is prohibited; forward recovery or quarantine is required.
+If a previous runtime, cell compatibility state or release-policy/verifier state cannot safely interpret current authoritative state, downgrade is prohibited; forward recovery or quarantine is required.

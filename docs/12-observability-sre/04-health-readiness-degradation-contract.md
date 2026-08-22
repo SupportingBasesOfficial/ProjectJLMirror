@@ -94,6 +94,28 @@ A dependency being reachable is not enough to declare it healthy/trusted. Probes
 
 Trust/security failures SHALL NOT heal merely because an ordinary circuit-breaker probe succeeds. A compromised/untrusted dependency remains blocked until the owning trust authority/evidence re-establishes eligibility.
 
+## Duplicate-sensitive comparison health
+
+Duplicate-sensitive inbox/replay paths SHALL expose three independent dimensions rather than one generic dependency state:
+
+```text
+comparison_dependency_availability
+historical_comparison_continuity
+comparison_trust_state
+```
+
+They SHALL preserve the owning Phase 11 boundary semantics:
+
+- a temporary comparison dependency outage may be an availability condition;
+- missing, rolled-back, mismatched or uninterpretable historical comparison authority is a continuity condition;
+- compromised/untrusted comparison authority is a trust condition.
+
+The health profile records the Phase 11 failure class and degradation mode selected by the owning profile. It does not independently decide admission, duplicate status, replay eligibility or effect safety.
+
+Returning network/service reachability may clear only the temporary availability dimension after the owning authority can again establish the required proof. It SHALL NOT clear a historical-continuity or trust failure.
+
+Comparison-health detail is privileged. Public health surfaces SHALL NOT expose protected comparison references or enable equality/correlation across tenant/consumer scopes.
+
 ## Control Plane and cells
 
 Health for Control Plane/cells SHALL expose separately:
@@ -110,6 +132,8 @@ A cell being reachable does not authorize placement or protected admission.
 ## Async/workers
 
 Worker health SHALL expose progress-oriented evidence such as accepted work age/backlog, lease progress, retry/quarantine/reconciliation pressure and dependency saturation. A process heartbeat without durable progress is insufficient evidence of healthy async processing.
+
+For duplicate-sensitive workers, process/queue health SHALL NOT mask `health.message-equivalence@1`; a worker can be alive while effect/replay admission remains reconciliation-blocked or fail-closed.
 
 ## Telemetry pipeline health
 
@@ -136,3 +160,5 @@ Health probes SHALL be bounded in time/work and SHALL NOT:
 ## Validation obligations
 
 Tests SHALL prove distinctions among liveness/readiness/degradation/draining/saturation/recovery quarantine; dependency outage without restart storm; trust failure that remains blocked after reachability returns; recovery quarantine that cannot be cleared by a probe; and worker heartbeat without progress not being reported as healthy durable progress.
+
+Duplicate-sensitive validation SHALL additionally prove that temporary comparison unavailability, historical comparison continuity loss and compromised comparison trust remain distinguishable and cannot be cleared by the wrong recovery predicate.

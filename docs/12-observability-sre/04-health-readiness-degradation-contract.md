@@ -96,7 +96,7 @@ Trust/security failures SHALL NOT heal merely because an ordinary circuit-breake
 
 ## Duplicate-sensitive comparison health
 
-Duplicate-sensitive inbox/replay paths SHALL expose three independent dimensions rather than one generic dependency state:
+Duplicate-sensitive inbox/replay paths SHALL expose three independent semantic dimensions (not an unproven claim of infrastructure independence):
 
 ```text
 comparison_dependency_availability
@@ -137,9 +137,11 @@ For duplicate-sensitive workers, process/queue health SHALL NOT mask `health.mes
 
 ## Telemetry pipeline health
 
-Observability pipeline health is self-observed through bounded independent signals such as exporter backlog/drop/error counters and last-success evidence. The design SHALL avoid recursive dependence where the only proof that telemetry is working is telemetry that requires the same failed path.
+Observability pipeline health is self-observed through bounded source-side and pipeline-edge signals such as exporter backlog/drop/error counters and last-success evidence. Each signal's failure coupling SHALL be explicit.
 
-Exact secondary/self-observation mechanism remains OPEN.
+The design SHALL avoid recursive dependence where the only proof that telemetry is working requires the same failed path. Where a future profile requires failure independence between evidence paths, that independence SHALL be demonstrated by topology/authority/failure-domain evidence rather than inferred from different signal names, processes or timestamps.
+
+Exact secondary/self-observation mechanism and any required failure-independence proof remain OPEN under `OPEN-OBS-025`.
 
 ## Public vs privileged health
 
@@ -162,3 +164,5 @@ Health probes SHALL be bounded in time/work and SHALL NOT:
 Tests SHALL prove distinctions among liveness/readiness/degradation/draining/saturation/recovery quarantine; dependency outage without restart storm; trust failure that remains blocked after reachability returns; recovery quarantine that cannot be cleared by a probe; and worker heartbeat without progress not being reported as healthy durable progress.
 
 Duplicate-sensitive validation SHALL additionally prove that temporary comparison unavailability, historical comparison continuity loss and compromised comparison trust remain distinguishable and cannot be cleared by the wrong recovery predicate.
+
+Self-observation validation SHALL record failure coupling for each evidence path and SHALL NOT label same-system/procedurally separated evidence as failure-independent unless the tested architecture proves the relevant independence.

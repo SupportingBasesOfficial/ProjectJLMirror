@@ -17,9 +17,27 @@ environment.production@1
 environment.recovery@1
 ```
 
+Phase 14 SHALL NOT invent a fifth logical `staging` environment class merely to satisfy rollout terminology. The accepted Data rollout step “staging/reference cell” is represented as a bounded validation scope inside `environment.validation@1`.
+
+## Validation scopes
+
+Within `environment.validation@1`, release evidence distinguishes at least:
+
+```text
+validation.general@1
+validation.reference-cell@1
+```
+
+These are rollout/evidence scopes, not new environment authorities.
+
+- `validation.general@1` covers ordinary pre-production functional, contract, security and integration validation appropriate to the release.
+- `validation.reference-cell@1` is required for cell/runtime/schema changes whose accepted Data/Platform semantics require proving the change on a production-like reference cell before production canary admission.
+
+A validation reference cell remains non-production authority. It may mirror production runtime semantics/config shape where necessary without receiving production tenant authority, production secrets or production placement authority by label.
+
 ## One-artifact promotion rule
 
-A release candidate is built once into immutable `release.artifact@1`. The same artifact identity is promoted between logical environments.
+A release candidate is built once into immutable `release.artifact@1`. The same artifact identity is promoted between logical environments/scopes.
 
 Forbidden default:
 
@@ -34,7 +52,8 @@ Required shape:
 reviewed source S
   -> build B
   -> immutable artifact A
-  -> validation promotion of A
+  -> validation.general of A
+  -> validation.reference-cell of A when applicable
   -> production promotion of A
 ```
 
@@ -48,10 +67,11 @@ A promotion record includes at least:
 promotion_id
 artifact_id / immutable artifact digest
 target_environment_class
-source_environment_or_evidence_class
+validation_scope_or_evidence_class
 runtime_profile_set
 configuration_generation_or_candidate
 schema/contract compatibility set
+cell compatibility metadata version/evidence when applicable
 required evidence set
 promotion_authority
 approved_at
@@ -83,13 +103,17 @@ side states:
 
 `environment.validation@1` is the mandatory logical pre-production conformance surface for release-candidate evidence that requires deployed behavior. It may be production-like but receives no production authority by label.
 
+For a cell-affecting release, production canary eligibility requires the applicable `validation.reference-cell@1` evidence unless a higher accepted authority explicitly classifies the release as `NO_APPLICABLE_CASE` with evidence.
+
 ## Production promotion
 
 Production promotion requires:
 
 - exact immutable artifact identity;
 - accepted source/build/provenance evidence;
+- applicable validation scopes completed on the same artifact;
 - compatible API/event/schema/runtime matrix;
+- current Control Plane cell compatibility metadata/evidence where placement/cutover safety depends on it;
 - required security/reliability/observability gates;
 - current release/promotion authority;
 - exact target cell/wave scope;
@@ -110,5 +134,6 @@ Cloud account/project/subscription, cluster, namespace, registry, region and pip
 - production secrets are not embedded into artifacts;
 - production tenant traffic/data are not admitted into lower environments without governed purpose/minimization;
 - validation success cannot directly mutate production;
+- validation reference-cell state cannot become authoritative production placement state by reuse;
 - an artifact being present in a production registry/location is not promotion or deployment authority;
 - promotion metadata never changes canonical tenant/resource/API/event identity.

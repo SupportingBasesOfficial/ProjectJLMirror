@@ -174,6 +174,21 @@ Inject: artifact bytes/tag/access object are restored from a snapshot older than
 Required: immutable integrity may be verified for reconciliation, but release/download/inline/delivery/disclosure remains blocked until current lifecycle/governance/release/delivery authority is reconciled; newer retirement/revocation/erasure/generation state wins.
 Forbidden: restored bytes, tag, URL, capability record or registry presence alone re-enables disclosure or deployment.
 
+### OPRV-055 — Unknown dual-control applicability laundered into no-applicable-case
+Inject: break-glass request targets a privileged operation, but the current accepted Security/Risk policy cannot prove whether dual control applies; tooling sets the execution profile to N/A and admits the session.
+Required: `dual_control_applicability_state=applicability_unproven` and break-glass admission remains fail-closed until current policy evidence selects `required_by_current_policy` or `not_required_by_current_policy_with_evidence`.
+Forbidden: missing policy mapping, tooling default, incident urgency, operator role or unavailable approver is treated as proof that dual control does not apply.
+
+### OPRV-056 — Partial recovery admission leaks unresolved shared authority
+Inject: one restored subcomponent is healthy/readable while a shared placement, authorization, crypto, release, data-integrity or continuity dependency remains unknown; operator marks the subcomponent partially admitted for protected operations.
+Required: partial admission is allowed only for exact operation classes/subscopes with proven independent current authority and isolation; unresolved shared authority keeps dependents blocked.
+Forbidden: component health, partial data availability, namespace separation or operator judgment substitutes for shared-authority independence evidence.
+
+### OPRV-057 — Incident closure clears residual reconciliation block
+Inject: incident is operationally stabilized and closed while an ambiguous external/release/recovery operation remains durably owned; closure workflow marks the residual effect retryable/completed or drops its original operation/fence because the incident is closed.
+Required: the residual operation keeps its original stable identity, owner, evidence and reconciliation-blocked eligibility; incident closure does not mutate it. If the residual state still violates accepted containment/closure criteria, incident closure is blocked.
+Forbidden: incident state, follow-up ticket, elapsed time or closure status makes the ambiguous effect absent, safe, retryable, redriveable or rollback-eligible.
+
 ## Game-day classes
 
 Implementation/runtime must eventually rehearse at minimum:
@@ -186,13 +201,15 @@ Implementation/runtime must eventually rehearse at minimum:
 - artifact restore across retirement/disclosure/delivery-generation changes;
 - crypto/verifier/secret recovery;
 - `(R,F]` missing-evidence scenarios;
+- partial-admission attempt with unresolved shared authority;
 - replay/redrive/quarantine ambiguity;
 - realtime/webhook recovery;
 - release rollback vs forward recovery;
 - observability loss during incident;
-- break-glass admission/revocation;
+- break-glass admission with required/not-required/unproven dual-control selectors and revocation;
+- incident closure with a durably owned reconciliation-blocked residual effect;
 - decommission and vendor/dependency exit.
 
 ## Acceptance rule
 
-Phase 15 cannot reach `READY_FOR_MERGE` while an applicable vector `OPRV-001..054` lacks owner, expected result, evidence path or valid conditional `NO_APPLICABLE_CASE` evidence.
+Phase 15 cannot reach `READY_FOR_MERGE` while an applicable vector `OPRV-001..057` lacks owner, expected result, evidence path or valid conditional `NO_APPLICABLE_CASE` evidence.

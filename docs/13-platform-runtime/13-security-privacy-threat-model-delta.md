@@ -5,7 +5,7 @@
 
 ## Purpose
 
-This document records the Phase 13 threat-model delta introduced by concrete runtime, identity, network, isolation, state-port and cell-lifecycle capabilities. It does not replace the accepted Security Requirements or system threat model.
+This document records the Phase 13 threat-model delta introduced by concrete runtime, identity, network, isolation, state-port, environment-class and cell-lifecycle capabilities. It does not replace the accepted Security Requirements or system threat model.
 
 ## Trust boundaries added/refined
 
@@ -21,6 +21,7 @@ Phase 13 makes explicit:
 - normal serving runtime -> automation/parser/admin/recovery runtime;
 - privileged orchestrator -> child execution identity;
 - physical co-location -> logical runtime/worker/port authority boundaries;
+- logical environment class -> workload/data/credential/network admission boundary;
 - runtime lifecycle/currentness -> Phase 12 health/diagnostic representation.
 
 ## Threats and required controls
@@ -113,6 +114,10 @@ Controls: complete runtime semantic manifest, explicit binding/OPEN/N/A disposit
 Vendor replacement preserves nominal API but weakens identity, isolation, network, durability, fence, manifest or recovery guarantees.  
 Controls: semantic manifest mapping, compatibility classification, portability rehearsal and negative tests. Vectors: `PRTV-027`, `PRTV-035`, `PRTV-036`, `PRTV-043`.
 
+### PRT-TM-023 — Environment authority/data/credential bleed
+A workload, credential, state-port binding, network path, data copy or restored environment is admitted across `environment.development@1`, `environment.validation@1`, `environment.production@1` or `environment.recovery@1` merely because the physical platform permits it or because environment labels match locally.  
+Controls: canonical environment-class binding in the runtime manifest; environment-scoped workload identity/configuration/secret/network/state-port policy; sanitized or explicitly governed production-derived data in non-production; recovery remains quarantined/non-serving until current production authorities and recovery predicates are re-established; environment name alone grants no tenant, Product, security or placement authority. Vector: `PRTV-044`.
+
 ## Tenant-isolation implications
 
 - workload/service principals do not replace tenant context;
@@ -120,11 +125,35 @@ Controls: semantic manifest mapping, compatibility classification, portability r
 - cell/dedicated-cell placement changes isolation/capacity, not tenant identity or Product semantics;
 - cross-cell direct operational mutation is not enabled by connectivity;
 - administrative cross-tenant capability remains explicit privileged authority;
-- co-location never widens tenant scope implicitly.
+- co-location never widens tenant scope implicitly;
+- environment class never substitutes for tenant context, principal authorization or placement authority;
+- development/validation environments do not receive production tenant data, secrets, credentials or traffic by default.
+
+## Environment-security implications
+
+The canonical logical environment classes are:
+
+```text
+environment.development@1
+environment.validation@1
+environment.production@1
+environment.recovery@1
+```
+
+Security meaning:
+
+- `environment.development@1` supports engineering/runtime development with non-production authority by default;
+- `environment.validation@1` supports integration/conformance/release validation under production-like semantics without automatically inheriting production tenant authority or unrestricted production secrets/data;
+- `environment.production@1` serves current Product/tenant workloads only through the same accepted identity, placement, authorization, state-port and runtime-profile contracts;
+- `environment.recovery@1` is an isolated recovery/reconciliation class; restored reachability, copied data or provider access does not make it normal production authority.
+
+The physical mapping of these classes remains governed by `OPEN-PRT-035` and Phase 14 promotion/deployment design. Physical account/project/cluster/namespace sameness or separation is implementation evidence, not the semantic definition.
 
 ## Privacy/data-minimization implications
 
 Runtime metadata SHALL minimize physical topology, secret/key references beyond operational need, tenant/resource IDs in high-cardinality telemetry, parser/automation inputs/outputs, provider destination/config details, and recovery/erasure/legal-hold internals.
+
+Production-derived data used outside `environment.production@1` requires an accepted purpose, classification, minimization/sanitization or equivalent protected handling, retention and access policy. Copying production state into validation/development because the runtime can reach it is prohibited.
 
 Diagnostic usefulness does not authorize broad retention/searchability. Phase 12 retention/classification and Security governance remain authoritative.
 
@@ -134,14 +163,18 @@ Phase 13 supplies runtime access/rotation/revocation capabilities but does not s
 
 Runtime recovery/rollback SHALL NOT recreate a retired key path when current governance requires erasure, nor retire historical verification authority still needed for accepted evidence without an equality/verification-preserving migration.
 
+Environment changes do not authorize reuse of production secret material in another environment class. Each runtime must prove its environment/profile-scoped secret access under current authority.
+
 ## Accountability
 
 Privileged runtime lifecycle, migration/admin, secret/key administration, recovery/fence advancement and cross-tenant platform operations require protected audit/accountability evidence. Ordinary runtime logs do not substitute for audit, even if physically stored in the same backend.
 
+Cross-environment movement of protected data, privileged credentials or recovery-to-production authority transitions require accountable evidence under the owning Security/Governance/Recovery contracts.
+
 ## Security compatibility blockers
 
-A Phase 13 change is security-sensitive when it broadens effective principal, secret references, egress destinations, state ports, tenant scope, physical placement control, parser/automation capability, recovery authority, artifact release capability, co-location union, generation substitution, manifest implicitness, or weakens stale-generation/fence behavior.
+A Phase 13 change is security-sensitive when it broadens effective principal, secret references, egress destinations, state ports, tenant scope, physical placement control, parser/automation capability, recovery authority, artifact release capability, co-location union, generation substitution, manifest implicitness, environment-class authority/data/credential reach, or weakens stale-generation/fence behavior.
 
 ## Evidence requirements
 
-Future conformance/runtime evidence includes privilege-denial tests, credential rotation/revocation, stale-generation rejection, parser/automation isolation, SSRF/egress tests, cross-cell placement races, recovery rollback, secret-leak scans, noisy-neighbor tests, split-brain fencing, state-port authority separation, artifact release denial, co-location union tests, manifest completeness and portability security comparison.
+Future conformance/runtime evidence includes privilege-denial tests, credential rotation/revocation, stale-generation rejection, parser/automation isolation, SSRF/egress tests, cross-cell placement races, recovery rollback, secret-leak scans, noisy-neighbor tests, split-brain fencing, state-port authority separation, artifact release denial, co-location union tests, manifest completeness, environment-boundary `PRTV-044` and portability security comparison.

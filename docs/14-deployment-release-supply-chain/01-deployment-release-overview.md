@@ -28,6 +28,9 @@ REVIEWED SOURCE != RELEASED ARTIFACT
 BUILD SUCCESS != ARTIFACT TRUST
 ARTIFACT EXISTS != PROMOTION AUTHORITY
 PROMOTED ARTIFACT != DEPLOYMENT AUTHORITY
+SAME IMMUTABLE ARTIFACT != SAME ENVIRONMENT CONFIGURATION
+VALIDATION CONFIG != TARGET CONFIG PROOF
+COPIED PRODUCTION SECRET != CONFIGURATION EQUIVALENCE
 DEPLOYED DESIRED STATE != RUNNING ARTIFACT PROOF
 DEPLOYED PROCESS != RUNTIME ADMISSION
 ENVIRONMENT LABEL != AUTHORIZATION
@@ -55,11 +58,12 @@ untrusted candidate source
   -> build trust
   -> immutable artifact identity
   -> provenance/integrity evidence
-  -> validation evidence on the same artifact
+  -> validation evidence on the same artifact under exact validation configuration
   -> reference-cell evidence where applicable
+  -> exact target configuration + validation-to-target semantic evidence
   -> promotion authority
   -> deployment authority
-  -> observed running artifact identity
+  -> observed running artifact identity + target configuration currentness
   -> runtime admission/verification
 ```
 
@@ -73,7 +77,7 @@ Phase 14 defines stable logical objects:
 - `release.build-record@1` — one build execution and its declared inputs;
 - `release.artifact@1` — immutable deployable artifact identity;
 - `release.provenance@1` — evidence linking source/build inputs/toolchain to artifact;
-- `release.promotion@1` — authorization to make one artifact eligible for one logical environment class;
+- `release.promotion@1` — authorization to make one artifact eligible for one logical environment class under an exact target configuration profile;
 - `release.deployment@1` — bounded create-or-observe deployment operation over an exact target state/version;
 - `release.migration-operation@1` — controlled schema/data evolution execution;
 - `release.runtime-verification@1` — evidence that the actually running artifact/config/runtime mapping satisfies accepted admission predicates;
@@ -84,6 +88,16 @@ Phase 14 defines stable logical objects:
 Not-yet-accepted source, including candidate workflow/build definitions, is untrusted for privileged release authority. It executes only under a bounded validation profile until accepted source/change authority establishes `source.accepted-review-state@1` for an exact source state.
 
 The candidate cannot choose a privileged evaluator, broader token, production secret, signing authority, deployment target or the trusted release-policy profile used to decide its own admission.
+
+## Configuration evidence boundary
+
+The one-artifact rule deliberately does not require byte-identical configuration across environments.
+
+Each validation and deployment context records the exact configuration identity/generation and release-relevant semantic profile. When target configuration differs from the configuration that produced reusable validation evidence, promotion/deployment requires explicit compatibility/equivalence evidence or target-specific applicable validation.
+
+Release-relevant differences include trust, authorization, tenant isolation, network/egress, Product behavior, failure/retry semantics, schema/API/event behavior, runtime authority, SLI meaning, recovery and release admission gates.
+
+Secret values are never used as an equality proof. Production secret values are not copied into validation merely to make configurations look identical; evidence compares secret-reference purpose/policy and consuming semantics without exposing secret material.
 
 ## Validation and cell rollout boundary
 
@@ -99,7 +113,7 @@ environment.validation@1 / validation.general@1
  -> remaining eligible production cells
 ```
 
-`validation.reference-cell@1` is evidence scope only. Current trusted Control Plane cell runtime/schema compatibility metadata remains an explicit placement/rollout safety input.
+`validation.reference-cell@1` is evidence scope only. The immutable artifact remains the same; environment-scoped configuration may differ only under the configuration evidence boundary above. Current trusted Control Plane cell runtime/schema compatibility metadata remains an explicit placement/rollout safety input.
 
 ## Release concurrency and ambiguity boundary
 
@@ -111,9 +125,11 @@ A timeout, worker crash or lost deployment-controller response does not prove th
 
 Phase 14 release-target state/version is release-control evidence only. It does not replace Phase 13 `runtime_generation`, `placement_version`, Control Plane placement authority or business/security authority.
 
-## Runtime artifact boundary
+## Runtime artifact/configuration boundary
 
-A deployment controller's desired state, mutable image tag or success receipt is not sufficient proof of what is executing. Runtime verification establishes the observed immutable artifact identity or an explicitly reviewed equivalent mapping before protected rollout admission proceeds.
+A deployment controller's desired state, mutable image tag or success receipt is not sufficient proof of what is executing. Runtime verification establishes the observed immutable artifact identity or an explicitly reviewed equivalent mapping and the exact target configuration currentness before protected rollout admission proceeds.
+
+Same-artifact validation evidence does not waive target-configuration validation/equivalence requirements.
 
 ## Release-policy continuity
 
@@ -140,4 +156,4 @@ Phase 14 defines machine/process release state, evidence and emergency-change au
 
 ## Acceptance orientation
 
-Phase 14 can reach `READY_FOR_MERGE` only when source-trust/evaluator isolation, source/build/artifact/provenance/promotion/deployment/runtime-verification trust, release-operation concurrency/ambiguity control, validation/reference-cell staging, cell compatibility metadata, release-policy continuity, mixed-version compatibility, migration/backfill, progressive delivery, rollback/forward recovery, emergency change, drift, retirement, decommissioning, evidence, security, capacity and OPEN decisions form one enforceable system without selecting a vendor/tool by default.
+Phase 14 can reach `READY_FOR_MERGE` only when source-trust/evaluator isolation, source/build/artifact/provenance/promotion/deployment/runtime-verification trust, validation-to-target configuration evidence, release-operation concurrency/ambiguity control, validation/reference-cell staging, cell compatibility metadata, release-policy continuity, mixed-version compatibility, migration/backfill, progressive delivery, rollback/forward recovery, emergency change, drift, retirement, decommissioning, evidence, security, capacity and OPEN decisions form one enforceable system without selecting a vendor/tool by default.

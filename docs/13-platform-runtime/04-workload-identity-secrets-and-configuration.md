@@ -20,7 +20,7 @@ workload_profile_id
 service_principal_id
 runtime_class
 cell/environment scope where applicable
-credential_generation
+workload_credential_generation
 issued_at / expires_at where mechanism supports it
 revocation/currentness evidence
 allowed capability classes
@@ -64,6 +64,8 @@ Reference rules:
 - runtime secret caches, if any, are bounded, protected, revocation-aware where required and non-authoritative;
 - a missing/expired/revoked secret cannot be replaced by an older restored value merely because it is locally available.
 
+Phase 13 does not invent a universal `secret_reference_generation`. When a secret/key/verifier authority exposes its own version/generation/currentness identity, that identity remains owned by the accepted upstream contract and is referenced explicitly rather than renamed into a generic runtime generation.
+
 ## Secret and key authority classes
 
 Phase 13 distinguishes at least:
@@ -89,13 +91,31 @@ Configuration is separated into:
 
 Feature flags/runtime config cannot convert unresolved Product scope/applicability into Product authority.
 
+## Canonical Phase 13 generations
+
+Semantically relevant runtime state distinguishes:
+
+```text
+runtime_generation
+configuration_generation
+workload_credential_generation
+placement_version
+network_policy_generation
+```
+
+Rules:
+
+- each generation has an explicit owning authority and cannot silently substitute for another;
+- upstream authorization/revocation, schema, replay, artifact-delivery, governance or cryptographic/verifier generations remain under their own contracts;
+- a runtime may reference those upstream generations when needed for currentness/recovery evidence, but Phase 13 does not rename them.
+
 ## Configuration generation
 
 Semantically relevant runtime configuration carries a monotonic/versioned generation or equivalent immutable identity sufficient to detect stale/incompatible state.
 
 Rules:
 
-- `configuration_generation` is distinct from `placement_version`, `runtime_generation`, `credential_generation` and data schema version;
+- `configuration_generation` is distinct from `placement_version`, `runtime_generation`, `workload_credential_generation`, `network_policy_generation` and data schema version;
 - stale configuration that would weaken security, recovery, tenant isolation or accepted failure behavior fails closed/quarantined rather than silently using an older permissive state;
 - last-known-good configuration use is allowed only for profiles whose upstream reliability semantics permit it and whose currentness bounds/evidence are satisfied;
 - config rollback cannot resurrect retired credentials, revoked authority, erased data policy or obsolete placement.
@@ -133,6 +153,7 @@ Acceptance/conformance evidence must prove:
 - cross-profile secret denial;
 - credential rotation/revocation without business-ID rewrite;
 - stale configuration rejection;
+- generation-role separation (`runtime_generation`, `configuration_generation`, `workload_credential_generation`, `placement_version`, `network_policy_generation`);
 - no secret-value propagation to ordinary state/signals;
 - bootstrap failure remains non-ready;
 - restored old runtime/config cannot re-enable revoked authority;

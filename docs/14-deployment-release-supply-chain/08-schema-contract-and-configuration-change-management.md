@@ -35,9 +35,42 @@ Every release with relevant changes declares supported combinations among:
 - event/message contract versions;
 - configuration generation/profile;
 - worker specialization versions;
-- artifact/runtime profile generations.
+- artifact/runtime profile generations;
+- applicable release-policy/verifier generation/profile.
 
 Compatibility is semantic, not just schema shape.
+
+## Cell compatibility metadata
+
+Accepted Data authority requires Control Plane cell metadata to record current/target schema compatibility information sufficient for placement and rollout safety.
+
+Phase 14 therefore treats cell compatibility metadata as an explicit release input/evidence surface. A cell-affecting release binds:
+
+```text
+cell_id
+current admitted runtime/schema compatibility state
+target runtime/schema compatibility state
+release/artifact identity
+configuration generation
+migration step/state
+compatibility metadata version/generation or equivalent
+```
+
+Rules:
+
+- release tooling cannot infer compatibility only from deployment success;
+- caller/tenant input cannot select target compatibility state;
+- placement/cutover to a cell remains blocked when its admitted current/target metadata is incompatible with the required contract set;
+- stale metadata cannot override a newer incompatible/deny state;
+- rollback/forward recovery updates compatibility state through the owning authority rather than rewriting history informally.
+
+## Validation reference cell
+
+For cell/runtime/schema-affecting releases, the accepted Data rollout stage “staging/reference cell” is satisfied inside `environment.validation@1` as `validation.reference-cell@1`.
+
+The exact artifact/config/schema combination intended for production canary is validated there before production canary unless evidence-backed `NO_APPLICABLE_CASE` applies.
+
+The reference cell is non-production authority and cannot be reused as production placement merely because its combination passed validation.
 
 ## API/event compatibility
 
@@ -46,6 +79,8 @@ A release cannot use deployment timing to weaken Phase 09/10 compatibility. Pars
 ## Contract step
 
 Destructive `CONTRACT` occurs only after evidence proves supported old runtime/readers/writers are retired and retention/recovery/governance allow the removal. Rollback needing the removed structure is no longer eligible after contract unless an explicit forward migration/recovery path exists.
+
+Before `CONTRACT`, the current cell compatibility metadata must no longer advertise any supported active runtime/schema combination that depends on the structure being removed.
 
 ## Backfill
 
@@ -56,6 +91,7 @@ Backfills are:
 - bounded by tenant/cell/workload capacity;
 - observable by progress/outcome;
 - independently pausable;
+- coordinated with the declared cell compatibility state when read/write semantics depend on migration progress;
 - not allowed to infer missing data as safe absence after restore/ambiguity.
 
 ## Configuration changes
@@ -68,4 +104,4 @@ Secret reference/credential rotation is separate from artifact/schema change unl
 
 ## Runtime admission
 
-A cell/tenant is not admitted to a release combination that violates the declared matrix, even if individual components are independently healthy.
+A cell/tenant is not admitted to a release combination that violates the declared matrix or current accepted cell compatibility metadata, even if individual components are independently healthy.

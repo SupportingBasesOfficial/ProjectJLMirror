@@ -25,7 +25,9 @@ artifact_attestation_profile
 runtime_profile_set
 target_environment_class
 validation_scope/evidence_class
-configuration_identity/generation
+target_configuration_identity/generation
+target_configuration_semantic_profile
+validation_to_target_configuration_evidence
 schema_state / migration compatibility
 cell_compatibility_metadata_identity_or_NO_APPLICABLE_CASE
 API compatibility family
@@ -68,6 +70,16 @@ validation.reference-cell@1
 These scopes both live inside `environment.validation@1`; they are not new Phase 13 environment classes.
 
 `validation.reference-cell@1` is mandatory for cell/runtime/schema-affecting releases covered by the accepted Data staged-rollout requirement unless an evidence-backed `NO_APPLICABLE_CASE` proves that the specific release does not require a reference-cell stage.
+
+## Configuration evidence rule
+
+The one-artifact rule does not create a one-configuration rule.
+
+Each target deployment records the exact target configuration identity/generation and semantic profile. Validation evidence may be reused across environment-scoped configurations only when `validation_to_target_configuration_evidence` proves that release-relevant differences are compatible/equivalent; material differences require target-specific applicable validation.
+
+Material dimensions include trust, authorization, tenant isolation, network/egress, Product behavior, failure/retry semantics, schema/API/event behavior, runtime authority, SLI meaning, recovery and release admission gates.
+
+Environment-specific secret values are never copied into validation to prove equality. Evidence compares allowed secret-reference purposes/policies and consuming semantics without disclosing secret material.
 
 ## Canonical release principals
 
@@ -119,7 +131,7 @@ For deployment:
 ```text
 deployment_operation_id
 expected_release_target_state_version
-requested immutable artifact/config/target semantics
+requested immutable artifact + exact target configuration + target semantics
 resulting_release_target_state_version_or_pending
 terminal/reconciliation state
 ```
@@ -148,12 +160,13 @@ The exact coordination/CAS/lease/store mechanism remains `OPEN-RLS-027`.
 | build | accepted source + authorized builder/profile + input record + trusted release-policy profile | successful job or candidate-selected privileged runner |
 | artifact | immutable content identity | mutable tag/location |
 | provenance | source+inputs+builder->artifact evidence | signature validity without trusted issuer/currentness |
-| validation general | same immutable artifact + validation config/profile + evidence | rebuild or different artifact identity |
-| validation reference cell | same artifact/config/schema/runtime candidate + reference-cell evidence | skipping because tooling lacks staging concept |
-| promotion | exact artifact + environment + evidence + current authority | registry presence or stale approval |
+| validation general | same immutable artifact + exact validation configuration/profile + evidence | rebuild or assumed target-config safety |
+| validation reference cell | same immutable artifact + production-relevant validation configuration semantic profile + schema/runtime evidence | copying production secrets or requiring byte-identical config |
+| target configuration | exact target config/generation/profile + validation-to-target compatibility/equivalence or target-specific validation | same artifact as proof that config is safe |
+| promotion | exact artifact + target config + environment + evidence + current authority | registry presence or stale approval |
 | deployment admission | stable operation ID + expected target state + promotion + target + principal + compatibility + current policy | pipeline job existence or stale executor |
 | deployment ambiguity resolution | durable operation/target/runtime evidence | timeout, crash or lost response as proof of no effect |
-| runtime verification | independently observed running artifact identity/equivalent + Phase 13/12 admission evidence | deploy-controller success or vendor green alone |
+| runtime verification | independently observed running artifact identity/equivalent + exact target config/currentness + Phase 13/12 admission evidence | deploy-controller success or vendor green alone |
 
 ## Release policy currentness
 
@@ -174,19 +187,21 @@ environment.validation@1 / validation.general@1
  -> bounded production waves
 ```
 
+The immutable artifact stays identical across this chain. Environment-scoped configuration identities may differ only with explicit validation-to-target configuration evidence.
+
 ## Cell compatibility metadata join
 
 When placement/rollout safety depends on cell runtime/schema compatibility, the release record binds the current accepted Control Plane cell compatibility metadata identity/version/equivalent.
 
 The metadata represents current/target runtime/schema compatibility sufficient for placement and release safety. It is not caller-selected and cannot be inferred from deployment success alone.
 
-A cell/tenant cannot be admitted or cut over when the current cell compatibility record disagrees with the release mixed-version matrix. Stale metadata does not override a newer deny/incompatible state.
+A cell/tenant cannot be admitted or cut over when the current cell compatibility record disagrees with the release mixed-version matrix or target configuration semantics. Stale metadata does not override a newer deny/incompatible state.
 
 ## Runtime join
 
 Each deployment identifies exact Phase 13 runtime profiles/worker specializations and allowed environment classes. Release principal authority does not transfer into runtime principals.
 
-Runtime verification proves that the executing/deployed runtime corresponds to the approved immutable artifact identity (or an explicitly reviewed equivalent identity mapping). A deployment-controller receipt, desired-state object or mutable image tag alone is not proof of running artifact identity.
+Runtime verification proves that the executing/deployed runtime corresponds to the approved immutable artifact identity (or an explicitly reviewed equivalent identity mapping) and the exact target configuration generation/currentness. A deployment-controller receipt, desired-state object or mutable image tag alone is not proof of running artifact identity/configuration safety.
 
 Release-target fencing and Phase 13 runtime/placement fencing are independent checks; one green/current value cannot substitute for the other.
 
@@ -209,15 +224,15 @@ contract
 
 and the exact migration/backfill operation identities/fences required by their owning contract.
 
-Before `contract`, active/supported cell compatibility metadata must no longer advertise a runtime/schema combination that depends on the structure being removed.
+Before `contract`, active/supported cell compatibility metadata must no longer advertise a runtime/schema/configuration combination that depends on the structure being removed.
 
 ## Progressive rollout join
 
-Production deployment records validation scope, stable deployment operation identity, expected/resulting release-target state, canary/wave scope, accepted pause/abort signals, capacity envelope, cell compatibility metadata where applicable and runtime verification evidence.
+Production deployment records validation scope, exact target configuration identity/profile/evidence, stable deployment operation identity, expected/resulting release-target state, canary/wave scope, accepted pause/abort signals, capacity envelope, cell compatibility metadata where applicable and runtime verification evidence.
 
 ## Cross-cutting validation
 
-`RLV-001..048` apply according to stage. `RLV-041..044` are mandatory where untrusted-source validation, candidate-controlled workflow/policy, runtime artifact verification or restored release-policy currentness can affect release authority. `RLV-045..046` are mandatory for cell-affecting releases/reference-cell and cell-compatibility metadata paths. `RLV-047..048` are mandatory for effectful deployment concurrency and ambiguous-outcome retry paths.
+`RLV-001..049` apply according to stage. `RLV-041..044` are mandatory where untrusted-source validation, candidate-controlled workflow/policy, runtime artifact verification or restored release-policy currentness can affect release authority. `RLV-045..046` are mandatory for cell-affecting releases/reference-cell and cell-compatibility metadata paths. `RLV-047..048` are mandatory for effectful deployment concurrency and ambiguous-outcome retry paths. `RLV-049` applies whenever validation evidence is reused for a different target configuration identity/profile.
 
 Any future manifest field added with authority/compatibility effect is semantic and requires compatibility review.
 

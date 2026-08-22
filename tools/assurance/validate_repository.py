@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Deterministic, observer-only repository assurance checks for JLMIRROR.
 
-The validator intentionally has no network access and performs no mutation.  It
+The validator intentionally has no network access and performs no mutation. It
 produces exact-run evidence for a bounded set of mechanically falsifiable
-properties.  A clean result is evidence for these checks only; it is never
+properties. A clean result is evidence for these checks only; it is never
 normative approval or merge authorization.
 """
 
@@ -20,14 +20,25 @@ PROFILE_ID = "jlmirror-deterministic-assurance/v1"
 WORKFLOW_SUFFIXES = {".yml", ".yaml"}
 TEXT_SUFFIXES = {".md", ".yml", ".yaml", ".py", ".json", ".toml", ".txt"}
 
-ACTION_USE_RE = re.compile(r"^\s*-\s*uses:\s*([^\s#]+)\s*(?:#.*)?$", re.MULTILINE)
+ACTION_USE_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*([^\s#]+)\s*(?:#.*)?$", re.MULTILINE)
 IMMUTABLE_ACTION_RE = re.compile(r"^[^@]+@[0-9a-fA-F]{40}$")
+_PERMISSION_KEYS = (
+    "actions|attestations|checks|contents|deployments|discussions|id-token|issues|"
+    "packages|pages|pull-requests|repository-projects|security-events|statuses"
+)
 WRITE_PERMISSION_RE = re.compile(
-    r"^\s*(?:actions|attestations|checks|contents|deployments|discussions|id-token|issues|packages|pages|pull-requests|repository-projects|security-events|statuses):\s*write\s*(?:#.*)?$",
+    rf"^\s*(?:{_PERMISSION_KEYS}):\s*write\s*(?:#.*)?$",
+    re.IGNORECASE | re.MULTILINE,
+)
+INLINE_WRITE_PERMISSION_RE = re.compile(
+    rf"^\s*permissions:\s*\{{[^}}\n]*\b(?:{_PERMISSION_KEYS})\s*:\s*write\b",
     re.IGNORECASE | re.MULTILINE,
 )
 WRITE_ALL_RE = re.compile(r"^\s*permissions:\s*write-all\s*(?:#.*)?$", re.IGNORECASE | re.MULTILINE)
-PULL_REQUEST_TARGET_RE = re.compile(r"^\s*pull_request_target\s*:", re.IGNORECASE | re.MULTILINE)
+PULL_REQUEST_TARGET_RE = re.compile(
+    r"^\s*(?:pull_request_target\s*:|on\s*:\s*pull_request_target\s*$|on\s*:\s*\[[^\]]*\bpull_request_target\b[^\]]*\])",
+    re.IGNORECASE | re.MULTILINE,
+)
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 FENCE_RE = re.compile(r"^\s*```", re.MULTILINE)
 
@@ -86,6 +97,7 @@ def _check_workflow_policy(root: Path) -> list[Finding]:
         for regex, message in (
             (WRITE_ALL_RE, "workflow grants permissions: write-all; observer-only workflows must not have canonical mutation authority"),
             (WRITE_PERMISSION_RE, "workflow grants a write permission; the v1 assurance profile is read-only"),
+            (INLINE_WRITE_PERMISSION_RE, "workflow grants an inline write permission; the v1 assurance profile is read-only"),
             (PULL_REQUEST_TARGET_RE, "pull_request_target is forbidden in the v1 assurance profile because untrusted PR content must not gain privileged execution context"),
         ):
             for match in regex.finditer(text):
@@ -211,12 +223,13 @@ def _check_markdown_integrity(root: Path) -> list[Finding]:
 
 def _check_text_hygiene(root: Path) -> list[Finding]:
     findings: list[Finding] = []
-    private_key_markers = (
-        "-----BEGIN PRIVATE KEY-----",
-        "-----BEGIN RSA PRIVATE KEY-----",
-        "-----BEGIN EC PRIVATE KEY-----",
-        "-----BEGIN OPENSSH PRIVATE KEY-----",
+    private_key_labels = (
+        "PRIVATE KEY",
+        "RSA PRIVATE KEY",
+        "EC PRIVATE KEY",
+        "OPENSSH PRIVATE KEY",
     )
+    private_key_markers = tuple(f"-----BEGIN {label}-----" for label in private_key_labels)
 
     for path in sorted(root.rglob("*")):
         if not path.is_file() or ".git" in path.parts or path.suffix.lower() not in TEXT_SUFFIXES:

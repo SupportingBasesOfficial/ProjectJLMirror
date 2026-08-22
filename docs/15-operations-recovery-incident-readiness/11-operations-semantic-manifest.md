@@ -31,7 +31,7 @@ OPEN decisions
 
 Omission is not `NO_APPLICABLE_CASE`. A conditional `NO_APPLICABLE_CASE` requires the condition, accepted authority and reviewable evidence.
 
-The canonical Phase 11 reliability-profile source set and its Phase 15 operational-owner/runbook bindings are materialized in `02-service-ownership-and-escalation.md`. A conforming capability catalog contains one same-key record for every accepted Phase 11 reliability profile; implementation-local service aliases cannot create or omit records.
+The complete logical capability-operations record is the same-key normalized join of the accepted Phase 11 reliability profile, accepted Phase 12 observability join, the Phase 15 operations catalog row in `02-service-ownership-and-escalation.md`, and applicable Phase 15 recovery joins in this manifest. A conforming catalog contains one record for every exact accepted `reliability_profile_id@profile_version`; implementation-local service aliases cannot create, omit or reinterpret records.
 
 ## Incident record schema
 
@@ -50,6 +50,17 @@ residual_obligation_disposition
 closure evidence
 post-incident review state
 ```
+
+### Residual obligation selector
+
+```text
+residual_obligation_disposition:
+  none
+  reconciliation_owned_and_still_blocked
+  incident_closure_blocked
+```
+
+`reconciliation_owned_and_still_blocked` requires a durable underlying operation with stable identity/fence, exact owner/scope/evidence and unchanged non-eligibility for retry/redrive/replay/release/recovery advancement. Incident closure cannot mutate that underlying state. `OPRV-057` falsifies this boundary.
 
 ## Recovery operation schema
 
@@ -212,11 +223,11 @@ runbook.incident-closure@1
 | redrive/replay | current contract authority + dedup/effect/equivalence + generation + capacity | DLQ button/age |
 | relocation | current Control Plane placement authority + source/target fences | manual routing/pointer edit |
 | release recovery | Phase 14 current operation/target/config/runtime evidence | vendor rollback button |
-| incident closure | accepted closure criteria + explicit residual-obligation disposition + evidence | symptom disappearance/tool green or hidden follow-up note |
+| incident closure | accepted closure criteria + explicit residual-obligation disposition + evidence | symptom disappearance/tool green, hidden follow-up note or mutation of underlying reconciliation state |
 
 ## Cross-cutting validation
 
-`OPRV-001..056` are canonical Phase 15 adversarial vectors. Implementations map every applicable vector to owner, expected result and evidence or an evidence-backed `NO_APPLICABLE_CASE` for a genuinely conditional subcase.
+`OPRV-001..057` are canonical Phase 15 adversarial vectors. Implementations map every applicable vector to owner, expected result and evidence or an evidence-backed `NO_APPLICABLE_CASE` for a genuinely conditional subcase.
 
 ## OPEN discipline
 

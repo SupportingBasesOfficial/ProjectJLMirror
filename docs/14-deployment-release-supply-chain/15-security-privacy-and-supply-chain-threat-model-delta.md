@@ -13,6 +13,7 @@ Phase 14 adds/refines:
 - build executor -> artifact registry;
 - artifact -> provenance/attestation authority;
 - release authority -> promotion record;
+- release deployment operation -> release target state/fence;
 - validation.general -> validation.reference-cell for applicable cell releases;
 - release system -> Control Plane cell compatibility metadata;
 - deployment principal -> target environment/cell;
@@ -97,16 +98,26 @@ A cell/runtime/schema-affecting release skips the accepted staging/reference-cel
 ### RLS-TM-024 — Cell compatibility metadata spoof/staleness
 Release or placement consumes caller-controlled/stale current-target runtime/schema compatibility metadata and admits an incompatible cell/tenant cutover. Controls: trusted Control Plane ownership/currentness, exact release/migration binding, newer deny/incompatible state precedence. `RLV-046`.
 
+### RLS-TM-025 — Concurrent release-target split brain
+Two deployment operations with incompatible artifact/config target semantics race from the same predecessor and both act as current. Controls: stable operation IDs, atomic/create-or-observe target transition, expected `release_target_state_version`, stale-executor fencing and separation from placement/runtime authority. `RLV-047`.
+
+### RLS-TM-026 — Ambiguous deployment replay
+A deployment call times out or loses its response after target mutation may have occurred, then automation creates another deployment operation and repeats the effect. Controls: same logical operation identity, durable outcome discovery, target/runtime evidence reconciliation and no retry eligibility from timeout/process death. `RLV-048`.
+
 ## Privacy
 
 Release evidence minimizes tenant identifiers, physical topology, secret references and production data. Build/test evidence may use synthetic/minimized data; production-derived validation data follows Security governance.
 
 Untrusted-source validation and validation reference cells are not allowed to access production tenant data merely to improve test fidelity. Any production-derived dataset requires explicit governed export/minimization and remains non-authoritative.
 
+Release-operation/fencing evidence exposes only the minimum target identity/state necessary for accountability and SHALL NOT become a public physical-topology or tenant-correlation oracle.
+
 ## Recovery/security continuity
 
-Rollback, restore, redeploy, registry recovery or CI/CD control-plane recovery cannot move authorization, revocation, erasure, legal-hold, reliability, release-policy, verifier or authoritative cell compatibility state backwards. When continuity cannot be proven, deployment/promotion/placement admission remains blocked/quarantined.
+Rollback, restore, redeploy, registry recovery or CI/CD control-plane recovery cannot move authorization, revocation, erasure, legal-hold, reliability, release-policy, verifier, release-target or authoritative cell compatibility state backwards. When continuity cannot be proven, deployment/promotion/placement admission remains blocked/quarantined/reconciliation-required.
+
+A restored release-target state that may predate a surviving deployment effect cannot authorize a second effect; current target/runtime evidence must be reconciled first.
 
 ## Supply-chain portability
 
-Replacing build/registry/CI/signing/orchestrator product must preserve trust/evidence semantics, including reference-cell staging evidence and cell compatibility ownership/currentness. A vendor-specific verification badge or environment name is not a canonical security authority.
+Replacing build/registry/CI/signing/orchestrator/coordination product must preserve trust/evidence semantics, including stable operation identity, target fencing, ambiguity discovery, reference-cell staging evidence and cell compatibility ownership/currentness. A vendor-specific verification badge or environment name is not a canonical security authority.

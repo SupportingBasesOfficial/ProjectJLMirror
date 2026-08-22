@@ -9,8 +9,9 @@ Phase 15 adds/refines:
 - alert/telemetry -> incident declaration;
 - incident commander -> operational owners;
 - operator -> runbook execution;
-- break-glass requester -> approver -> executor -> protected target;
+- break-glass requester -> current policy/applicability -> approver -> executor -> protected target;
 - backup/restore mechanism -> recovery quarantine;
+- restored state -> full/partial recovery admission;
 - restored state -> current authority/reconciliation;
 - recovery operator -> Control Plane/cell/tenant scopes;
 - telemetry restore -> operational-observability vs customer-monitoring continuity;
@@ -18,6 +19,7 @@ Phase 15 adds/refines:
 - recovery process -> crypto/verifier/secret authority;
 - operator -> quarantine/redrive/replay;
 - operator -> relocation/maintenance/decommission workflows;
+- incident closure -> residual reconciliation operations;
 - incident/recovery evidence -> closure/admission review.
 
 ## Threats
@@ -85,6 +87,15 @@ Operational-observability restore, process liveness or a lower restored customer
 ### OPS-TM-021 — Artifact lifecycle/disclosure authority resurrection
 A backup restores artifact bytes/tag/access object older than retirement, revocation, erasure, delivery-generation or release-policy state and tooling re-enables download/deployment. Controls: immutable integrity separated from current lifecycle/delivery/disclosure/release authority, newer deny/retirement/erasure state precedence. `OPRV-032`, `OPRV-054`.
 
+### OPS-TM-022 — Dual-control applicability laundering
+Break-glass tooling cannot prove whether current Security/Risk policy requires dual control, then treats the missing mapping as N/A or uses emergency urgency as a bypass. Controls: closed applicability selector, accepted policy evidence for both required and proven-not-required branches, unproven branch fail-closed. `OPRV-055`.
+
+### OPS-TM-023 — Partial recovery authority bleed
+A healthy/readable recovered component is admitted for protected work while an unresolved shared authorization, placement, crypto, release, data-integrity or continuity authority still governs it. Controls: exact partial-admission profile, current authority per operation class, shared-dependency independence proof, isolation/fencing and residual quarantine. `OPRV-056`.
+
+### OPS-TM-024 — Incident closure state laundering
+Closing incident coordination mutates an unresolved underlying operation from reconciliation-blocked to completed/retryable or loses its original identity/fence. Controls: explicit residual-obligation disposition, independently durable owner/state and invariant effect eligibility across incident closure. `OPRV-043`, `OPRV-057`.
+
 ## Privacy
 
 Operational evidence and incident communications minimize tenant identifiers, customer data, topology, credentials, secret references and confidential payloads. Production-derived test/recovery data requires governed purpose, minimization, residency and isolation.
@@ -93,14 +104,18 @@ Broad incident visibility does not grant broad data access. Diagnostic access re
 
 Telemetry recovery evidence does not expose raw customer-monitoring payloads merely to prove acceptance/projection continuity. Artifact recovery evidence does not expose artifact bytes, access capabilities or internal locations beyond the minimum needed for reconciliation.
 
+Break-glass/dual-control evidence identifies policy/profile/participants and decisions without exposing reusable credentials. Partial-admission evidence exposes only the scope/authority facts needed for review and must not become a cross-tenant topology oracle.
+
 ## AI boundary
 
-AI may summarize evidence, suggest hypotheses, draft communications or identify missing steps. It cannot be direct, indirect, intermediate or joint authority for authentication/authorization, tenant/placement authority, retry/redrive/replay/recovery eligibility, incident closure, break-glass admission, Product/architecture or protected release decisions.
+AI may summarize evidence, suggest hypotheses, draft communications or identify missing steps. It cannot be direct, indirect, intermediate or joint authority for authentication/authorization, tenant/placement authority, retry/redrive/replay/recovery eligibility, incident closure, break-glass admission or dual-control applicability, Product/architecture or protected release decisions.
 
 ## Recovery/security continuity
 
-Restore/PITR cannot move revocation, erasure, legal hold, audit, reliability, cryptographic, release-policy/verifier, target-config/target-state, customer-monitoring acceptance/projection, artifact lifecycle/delivery/disclosure or placement authority backwards. Unknown continuity fails closed for protected operations.
+Restore/PITR cannot move revocation, erasure, legal hold, audit, reliability, cryptographic, release-policy/verifier, target-config/target-state, customer-monitoring acceptance/projection, artifact lifecycle/delivery/disclosure or placement authority backwards. Unknown continuity fails closed for protected operations, including partial admission.
+
+Incident state transitions do not alter that continuity state.
 
 ## Portability
 
-Replacing incident, paging, backup, KMS, telemetry, artifact-storage, runbook, access or evidence products must preserve logical authority, identity, currentness, evidence, failure and recovery semantics.
+Replacing incident, paging, backup, KMS, telemetry, artifact-storage, runbook, access or evidence products must preserve logical authority, identity, currentness, dual-control applicability, partial-admission, residual-reconciliation, evidence, failure and recovery semantics.

@@ -164,6 +164,16 @@ Required: fail closed/reconcile forward.
 ### OPRV-052 — Recovery evidence lacks exact scope/R/F/current-authority provenance
 Required: admission/closure blocked until evidence complete.
 
+### OPRV-053 — Customer-monitoring telemetry recovery regresses durable acceptance/projection continuity
+Inject: `recovery.telemetry@1` restores a snapshot before a durably accepted customer observation or before a later projection/current-state watermark, while surviving evidence proves the newer acceptance/currentness existed.
+Required: customer-monitoring subscope remains quarantined/reconciliation-blocked until accepted observation identities, acceptance state, projection/checkpoint/watermark and pending transition obligations are reconciled forward.
+Forbidden: restored telemetry reachability, operational logs, missing snapshot row or a lower watermark is treated as proof that the observation never existed or may be acknowledged/reprocessed as new without owning dedup/replay semantics.
+
+### OPRV-054 — Artifact restore resurrects retired disclosure/release authority
+Inject: artifact bytes/tag/access object are restored from a snapshot older than a retirement, consumed delivery capability, revocation, erasure/legal-hold decision, delivery generation or release-policy change.
+Required: immutable integrity may be verified for reconciliation, but release/download/inline/delivery/disclosure remains blocked until current lifecycle/governance/release/delivery authority is reconciled; newer retirement/revocation/erasure/generation state wins.
+Forbidden: restored bytes, tag, URL, capability record or registry presence alone re-enables disclosure or deployment.
+
 ## Game-day classes
 
 Implementation/runtime must eventually rehearse at minimum:
@@ -171,6 +181,9 @@ Implementation/runtime must eventually rehearse at minimum:
 - whole Control Plane recovery;
 - cell recovery/failover with stale-writer fault;
 - tenant recovery/relocation;
+- operational-observability recovery under signal loss;
+- customer-monitoring telemetry recovery across accepted-observation/projection watermarks;
+- artifact restore across retirement/disclosure/delivery-generation changes;
 - crypto/verifier/secret recovery;
 - `(R,F]` missing-evidence scenarios;
 - replay/redrive/quarantine ambiguity;
@@ -182,4 +195,4 @@ Implementation/runtime must eventually rehearse at minimum:
 
 ## Acceptance rule
 
-Phase 15 cannot reach `READY_FOR_MERGE` while an applicable vector lacks owner, expected result, evidence path or valid conditional `NO_APPLICABLE_CASE` evidence.
+Phase 15 cannot reach `READY_FOR_MERGE` while an applicable vector `OPRV-001..054` lacks owner, expected result, evidence path or valid conditional `NO_APPLICABLE_CASE` evidence.

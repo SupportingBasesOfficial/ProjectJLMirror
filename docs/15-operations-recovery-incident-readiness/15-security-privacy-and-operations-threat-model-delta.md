@@ -6,6 +6,7 @@
 
 Phase 15 adds/refines:
 
+- accepted Product/Phase 12 applicability -> operations catalog/Product-facing commitments;
 - alert/telemetry -> incident declaration;
 - incident commander -> operational owners;
 - operator -> runbook execution;
@@ -96,6 +97,9 @@ A healthy/readable recovered component is admitted for protected work while an u
 ### OPS-TM-024 — Incident closure state laundering
 Closing incident coordination mutates an unresolved underlying operation from reconciliation-blocked to completed/retryable or loses its original identity/fence. Controls: explicit residual-obligation disposition, independently durable owner/state and invariant effect eligibility across incident closure. `OPRV-043`, `OPRV-057`.
 
+### OPS-TM-025 — Operations catalog Product-authority laundering
+A prepared reliability profile, owner/runbook record, deployment/configuration or team presence is treated as proof that a Product-gated webhook/artifact-delivery branch is enabled, disabled or N/A despite the accepted upstream selector being unproven or different. Controls: exact Phase 12 Product-applicability binding retained in the normalized operations record; catalog ownership is preparedness only; diagnostic/security/recovery ownership remains separate from Product-facing commitments. `OPRV-058`.
+
 ## Privacy
 
 Operational evidence and incident communications minimize tenant identifiers, customer data, topology, credentials, secret references and confidential payloads. Production-derived test/recovery data requires governed purpose, minimization, residency and isolation.
@@ -106,16 +110,18 @@ Telemetry recovery evidence does not expose raw customer-monitoring payloads mer
 
 Break-glass/dual-control evidence identifies policy/profile/participants and decisions without exposing reusable credentials. Partial-admission evidence exposes only the scope/authority facts needed for review and must not become a cross-tenant topology oracle.
 
+Product-applicability evidence references accepted upstream state without exposing implementation flags or hidden Product metadata as a public inference oracle.
+
 ## AI boundary
 
-AI may summarize evidence, suggest hypotheses, draft communications or identify missing steps. It cannot be direct, indirect, intermediate or joint authority for authentication/authorization, tenant/placement authority, retry/redrive/replay/recovery eligibility, incident closure, break-glass admission or dual-control applicability, Product/architecture or protected release decisions.
+AI may summarize evidence, suggest hypotheses, draft communications or identify missing steps. It cannot be direct, indirect, intermediate or joint authority for authentication/authorization, tenant/placement authority, Product applicability, retry/redrive/replay/recovery eligibility, incident closure, break-glass admission or dual-control applicability, Product/architecture or protected release decisions.
 
 ## Recovery/security continuity
 
 Restore/PITR cannot move revocation, erasure, legal hold, audit, reliability, cryptographic, release-policy/verifier, target-config/target-state, customer-monitoring acceptance/projection, artifact lifecycle/delivery/disclosure or placement authority backwards. Unknown continuity fails closed for protected operations, including partial admission.
 
-Incident state transitions do not alter that continuity state.
+Incident state transitions and operations-catalog state do not alter those upstream authorities.
 
 ## Portability
 
-Replacing incident, paging, backup, KMS, telemetry, artifact-storage, runbook, access or evidence products must preserve logical authority, identity, currentness, dual-control applicability, partial-admission, residual-reconciliation, evidence, failure and recovery semantics.
+Replacing incident, paging, backup, KMS, telemetry, artifact-storage, runbook, access or evidence products must preserve logical authority, Product-applicability bindings, identity, currentness, dual-control applicability, partial-admission, residual-reconciliation, evidence, failure and recovery semantics.

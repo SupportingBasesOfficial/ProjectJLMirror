@@ -36,6 +36,7 @@ Requires profile/conformance, mixed-version, security/capacity and rollback revi
 Includes changes to:
 
 - runtime role responsibility or trust envelope;
+- canonical manifest-field meaning, requiredness or disposition rules;
 - worker-specialization identity, responsibility, privilege, state-port, queue/transport or bulkhead meaning;
 - co-location that unions principals/secrets/state/network authority;
 - workload identity meaning or capability scope;
@@ -59,6 +60,19 @@ These cannot silently retain the same canonical Phase 13 profile/version.
 
 Breaking changes affecting tenant isolation, machine identity, secret/key authority, secret materialization/disclosure, privileged execution, physical placement authority, recovery quarantine, audit/governance continuity, state-port authority collapse, artifact release fencing, stale-runtime fencing or external egress are security/recovery-sensitive and release-blocking until owning authority proves safety.
 
+## Manifest completeness compatibility
+
+A runtime implementation is not compatible merely because omitted fields happen to receive safe defaults in one vendor/environment.
+
+Every required manifest field must remain represented by:
+
+- an exact canonical binding;
+- a fixed accepted rule;
+- an explicit OPEN owner for an implementation choice; or
+- an evidence-backed `NO_APPLICABLE_CASE` with an enclosing impact/evidence path.
+
+Changing a field from explicit to implicit/vendor-default is semantic because it removes enforceable authority/provenance. `PRTV-043` is the canonical falsification vector.
+
 ## Runtime-profile versioning
 
 A profile identity/version represents behavior and authority, not image tag/vendor object.
@@ -68,10 +82,13 @@ An implementation may change without canonical profile version only when it prov
 - principal/capability scope;
 - lifecycle/drain behavior;
 - ingress/egress/state-port access;
+- secret-reference classes;
 - currentness/generation checks;
+- resource/concurrency isolation;
 - failure/recovery behavior;
+- Phase 11 reliability binding;
 - Phase 12 health/observability mapping;
-- capacity/isolation envelope.
+- validation/OPEN bindings.
 
 ## Worker-specialization compatibility
 
@@ -98,7 +115,7 @@ Adding a specialization to an existing physical worker pool is not a non-semanti
 
 Combining two previously separate runtime profiles or worker specializations is semantic unless evidence proves the effective authority and failure envelope remain no broader.
 
-The review must compare:
+The review compares:
 
 ```text
 principal union
@@ -118,13 +135,7 @@ A replacement that preserves API shape but changes durability, isolation, consis
 
 Physical co-location of multiple logical ports does not merge their authority. `PRTV-039` SHALL prove that transactional, reliability, audit, customer-telemetry and observability meanings/roles remain enforceable even if one physical backend later implements several ports.
 
-Port migration must preserve historical/current evidence needed for:
-
-- idempotency/inbox/outbox/replay;
-- placement/configuration currentness;
-- audit/governance;
-- artifact release/erasure;
-- recovery continuity.
+Port migration preserves historical/current evidence needed for idempotency/inbox/outbox/replay, placement/configuration currentness, audit/governance, artifact release/erasure and recovery continuity.
 
 ## Workload identity, credential and secret compatibility
 
@@ -154,14 +165,7 @@ Upstream authorization/revocation, schema, replay, artifact-delivery, governance
 
 ## Network compatibility
 
-A networking implementation change is breaking when it:
-
-- broadens reachable destination/trust zones;
-- changes caller authentication semantics;
-- allows internal reachability to substitute for identity;
-- weakens connector redirect/SSRF controls;
-- changes cross-cell mutation capability;
-- removes required isolation/bulkhead behavior.
+A networking implementation change is breaking when it broadens reachable destination/trust zones, changes caller authentication semantics, lets internal reachability substitute for identity, weakens connector redirect/SSRF controls, changes cross-cell mutation capability, or removes required isolation/bulkhead behavior.
 
 Service mesh/proxy/discovery changes are not automatically semantic, but their effective policy must be proven equivalent.
 
@@ -169,7 +173,7 @@ Service mesh/proxy/discovery changes are not automatically semantic, but their e
 
 Vendor concepts such as readiness, desired replicas, pod/task state or VM health map into the accepted Phase 13 lifecycle/Phase 12 health model. They cannot redefine it.
 
-Changing `draining`, `quarantined`, `retired` or stale-generation rejection behavior is correctness/recovery breaking. A direct `quarantined -> active` shortcut is incompatible with the accepted lifecycle; `PRTV-038` requires revalidation through the owning authority predicates.
+Changing `draining`, `quarantined`, `retired` or stale-generation rejection behavior is correctness/recovery breaking. A direct `quarantined -> active` shortcut is incompatible; `PRTV-038` requires revalidation through owning authority predicates.
 
 Replacement keeps predecessor and successor generation identities distinct. Collapsing them into one implementation state that loses stale-generation/fence provenance is breaking.
 
@@ -183,7 +187,7 @@ Rolling coexistence of runtime/profile versions declares:
 
 - runtime and worker-specialization versions allowed simultaneously;
 - state-port/schema/message compatibility;
-- `workload_credential_generation` / configuration / network-policy overlap;
+- workload-credential/configuration/network-policy overlap;
 - placement/runtime generation boundaries and upstream generation dependencies;
 - which generation may admit/create new work;
 - drain/retirement/fence criteria;
@@ -202,22 +206,12 @@ Deploying/removing a runtime component does not change Product scope. A compatib
 
 ## Rollback
 
-Rollback is prohibited from silently:
-
-- restoring stale placement/config/network/workload-credential authority;
-- broadening secret/egress privileges or re-exposing secret material;
-- clearing recovery quarantine;
-- making consumed capabilities/replayed effects eligible;
-- restoring pre-erasure/legal-hold behavior;
-- reusing retired runtime generation as current;
-- collapsing state-port authority;
-- bypassing artifact release fences;
-- treating an older vendor health mapping as authoritative when its semantics differ.
+Rollback is prohibited from silently restoring stale placement/config/network/workload-credential authority, broadening secret/egress privileges, re-exposing secret material, clearing recovery quarantine, making consumed capabilities/replayed effects eligible, restoring pre-erasure/legal-hold behavior, reusing retired runtime generation as current, collapsing state-port authority, bypassing artifact release fences, or treating an older vendor health mapping as authoritative when its semantics differ.
 
 If safe downgrade cannot be proven, forward recovery or continued quarantine is required.
 
 ## Evidence
 
-Compatibility evidence includes semantic manifest diff, worker-specialization diff, effective-principal/policy diff, state-port authority diff, generation-ownership diff, mixed-version tests, stale-generation tests, credential/config rotation tests, co-location `PRTV-037`, quarantine `PRTV-038`, port-authority `PRTV-039`, artifact-release `PRTV-040`, secret-materialization `PRTV-041`, generation-separation `PRTV-042`, drain/relocation/recovery tests, capacity/security analysis and portability mapping.
+Compatibility evidence includes semantic manifest diff, manifest-completeness `PRTV-043`, worker-specialization diff, effective-principal/policy diff, state-port authority diff, generation-ownership diff, mixed-version tests, stale-generation tests, credential/config rotation tests, co-location `PRTV-037`, quarantine `PRTV-038`, port-authority `PRTV-039`, artifact-release `PRTV-040`, secret-materialization `PRTV-041`, generation-separation `PRTV-042`, drain/relocation/recovery tests, capacity/security analysis and portability mapping.
 
 Schema/API/config syntax compatibility alone is insufficient.

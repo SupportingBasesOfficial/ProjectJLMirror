@@ -201,8 +201,46 @@ Phase 12 acceptance defines obligations; it does not fabricate future runtime ev
 **Required:** treated as bounded evidence only.  
 **Forbidden:** tool status grants Phase acceptance or merge authorization.
 
+### OBSV-031 — Consumer comparison dependency outage
+
+**Inject:** `rel.consumer-inbox-effect@1` receives a duplicate-sensitive delivery while the required historical comparison dependency is temporarily unavailable and continuity evidence remains intact.  
+**Required:** observability reports `verifier_temporarily_unavailable` with Phase 11 `unavailable:reconciliation_blocked`; async health may remain live while effect admission is blocked.  
+**Forbidden:** generic worker green, blind retry or duplicate-success telemetry hides the block.
+
+### OBSV-032 — Replay historical-proof unavailable
+
+**Inject:** `rel.replay-consume-state@1` cannot establish historical equivalence during replay because the required historical proof path is unavailable.  
+**Required:** observability reports the owning Phase 11 outcome as `recovery_continuity_blocked:reconciliation_blocked`, while preserving the profile's separate generic `unavailable:fail_closed` binding.  
+**Forbidden:** Phase 12 collapses both into one generic unavailable state or suggests replay eligibility.
+
+### OBSV-033 — Historical comparison continuity loss
+
+**Inject:** comparison evidence/profile/verifier history is missing, rolled back, mismatched or no longer interpretable.  
+**Required:** health and operational signals remain `historical_comparison_continuity_blocked` / recovery-continuity blocked until owning reconciliation authority resolves it.  
+**Forbidden:** service reachability or fresh current verifier health clears the historical block.
+
+### OBSV-034 — Comparison trust compromise
+
+**Inject:** comparison authority is classified compromised/untrusted while the service remains reachable.  
+**Required:** security/trust health remains blocked and Phase 11 `compromised_or_untrusted:fail_closed` is visible at the owning profile boundary.  
+**Forbidden:** ordinary availability probe/SLI reports safe duplicate/effect admission.
+
+### OBSV-035 — Equality-oracle attempt
+
+**Inject:** operator/tenant searches logs, metrics, traces, dashboards or exports using known protected message/content-derived values across scopes.  
+**Required:** no unrestricted equality/correlation oracle exists; telemetry exposes bounded outcome classes only and query authorization preserves tenant/consumer scope.  
+**Forbidden:** comparison evidence or derived equality token can answer whether protected content in another scope is equal.
+
+### OBSV-036 — Comparison-work amplification
+
+**Inject:** attacker floods crafted duplicate/identity-conflict candidates intended to trigger expensive comparison/security-service work and high-cardinality telemetry.  
+**Required:** comparison work and its observability are bounded by profile/workload/tenant budgets; no message/content value becomes a metric dimension; unrelated workloads remain isolated.  
+**Forbidden:** one attacker can amplify comparison work or telemetry cardinality without bound.
+
 ## Acceptance criteria
 
 Phase 12 SHALL NOT reach `READY_FOR_MERGE` while a material vector lacks a defined expected outcome, owner/evidence path or an evidence-backed no-applicable-case disposition.
+
+The canonical Phase 11 → Phase 12 join in `10-observability-semantic-manifest.md` SHALL reference applicable vectors for every accepted Phase 11 reliability profile. A missing profile join is a validation failure, not deferred implementation detail.
 
 Future implementation/release gates SHALL execute the applicable vectors against exact implementation/release states rather than treating this document as proof of runtime success.

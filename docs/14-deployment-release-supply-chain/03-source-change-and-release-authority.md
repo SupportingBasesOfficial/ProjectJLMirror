@@ -73,6 +73,26 @@ Candidate source cannot select or weaken it unilaterally. Restore/rollback of re
 
 If current release-policy authority cannot be proven, privileged advancement fails closed until reconciled forward.
 
+## Target configuration authority/evidence
+
+Configuration is a separately identified release input. Same immutable artifact does not confer authority to deploy any environment configuration.
+
+Every target promotion/deployment decision binds:
+
+```text
+target_configuration_identity/generation
+target_configuration_semantic_profile
+validation_to_target_configuration_evidence
+```
+
+When validation evidence was produced under a different configuration identity/profile, the approval authority SHALL require explicit release-relevant semantic compatibility/equivalence evidence or target-specific applicable validation before treating the target configuration as eligible.
+
+Differences affecting trust, authorization, tenant isolation, network/egress, Product behavior, failure/retry semantics, schema/API/event behavior, runtime authority, SLI meaning, recovery or release admission are material.
+
+Production secret values are not copied into validation or approval evidence to manufacture equality. Secret-reference purpose/policy and consuming semantics are compared without disclosing secret material.
+
+`RLV-049` is the canonical falsification path.
+
 ## Release authority
 
 Promotion/deployment approvals are explicit bounded decisions over:
@@ -81,14 +101,15 @@ Promotion/deployment approvals are explicit bounded decisions over:
 - exact accepted source/build/provenance relationship;
 - target environment and validation scope;
 - runtime/cell/wave scope;
-- configuration candidate/generation;
+- exact target configuration identity/generation and semantic profile;
+- validation-to-target configuration compatibility/equivalence or target-specific validation evidence;
 - migration/backfill and cell compatibility state;
 - compatibility evidence;
 - required release evidence;
 - trusted release-policy profile/currentness;
 - expiry/supersession where applicable.
 
-An approval is not a reusable bearer capability for an arbitrary later artifact/config/target.
+An approval is not a reusable bearer capability for an arbitrary later artifact/configuration/target. Changing target configuration identity/profile invalidates silent approval reuse unless the owning evidence explicitly covers the new state.
 
 ## Separation of duties
 
@@ -110,10 +131,12 @@ Future release automation may have bounded write authority to release systems, b
 
 Release/promotion/deployment credentials, approvals, policy profiles and verifier authorities are revocable/retirable according to their owning contracts. Revocation does not require changing artifact identity.
 
-A stale approval/principal/policy/verifier cannot become current because an old pipeline run resumes or a restored release system is reachable. Resume revalidates current source trust, policy, principal, artifact/config/target and approval state.
+A stale approval/principal/policy/verifier cannot become current because an old pipeline run resumes or a restored release system is reachable. Resume revalidates current source trust, policy, principal, artifact, exact target configuration identity/profile/evidence, target and approval state.
+
+A restored or superseded target configuration generation cannot regain release eligibility merely because an older approval/equivalence record is still readable.
 
 ## Evidence
 
-Every privileged release mutation is attributable to exact source trust state, trusted policy profile/version, principal, requested operation, target, artifact/config/migration/cell-compatibility state, result and timestamp/order without exposing secret material.
+Every privileged release mutation is attributable to exact source trust state, trusted policy profile/version, principal, requested operation, target, artifact, target configuration identity/generation/profile and validation-to-target evidence, migration/cell-compatibility state, result and timestamp/order without exposing secret material.
 
-`RLV-041`, `RLV-042` and `RLV-044` are canonical falsification paths for this authority boundary.
+`RLV-041`, `RLV-042`, `RLV-044` and `RLV-049` are canonical falsification paths for this authority boundary.

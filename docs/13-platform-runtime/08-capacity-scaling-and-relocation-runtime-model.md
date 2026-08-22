@@ -16,7 +16,7 @@ Capacity SHALL be evaluated across at least the applicable dimensions below:
 ```text
 tenant count and tenant skew
 request concurrency / operation mix
-worker concurrency by workload class
+worker_specialization_id concurrency and queue ownership
 durable backlog age and volume
 provider/destination concurrency
 realtime connection/fanout pressure
@@ -35,20 +35,43 @@ One scalar such as CPU, tenant count or queue depth is not a complete capacity m
 
 ## Capacity envelope
 
-Every runtime/workload profile declares:
+Every runtime profile and every selected `worker_specialization_id` declares:
 
 - resource dimensions it consumes;
 - admission/concurrency controls;
+- queue/transport ownership where applicable;
 - saturation/queueing signals;
 - tenant/workload/destination isolation dimensions;
+- state-port/connection pressure it can create;
 - degradation/shedding behavior inherited from Phase 11;
 - Phase 12 health/SLI/alert bindings;
 - evidence required to raise/lower limits;
 - scale-up/scale-out/relocation triggers as OPEN numerics until benchmark/runtime evidence exists.
 
+A generic `runtime.worker@1` pool cannot be capacity-modeled without its exact selected worker specializations.
+
+## Worker-specialization bulkheads
+
+The initial prepared worker specializations are separately accountable for queue/concurrency/resource pressure:
+
+```text
+worker.outbox-publication@1
+worker.async-consumer@1
+worker.provider-integration@1
+worker.webhook-delivery@1
+worker.reporting-export@1
+worker.customer-telemetry@1
+worker.artifact-lifecycle@1
+worker.reconciliation@1
+```
+
+Physical co-location MAY share compute only when per-specialization admission/concurrency/backlog and state/egress pressure remain attributable and bounded. Shared process/host placement is not evidence of a safe shared budget.
+
+`PRTV-037` applies to privilege/resource coupling created by co-location; `PRTV-030` applies to noisy-neighbor saturation; `PRTV-043` applies if the implementation omits the specialization/resource binding.
+
 ## Noisy-neighbor isolation
 
-A tenant, provider, destination, report, parser, migration, recovery job or workload class SHALL NOT have an unbounded path to unrelated shared capacity.
+A tenant, provider, destination, report, parser, migration, recovery job or worker specialization SHALL NOT have an unbounded path to unrelated shared capacity.
 
 Isolation mechanisms MAY be implemented through separate queues/pools/quotas/runtime groups/cells or other reviewed mechanisms. The mechanism remains replaceable; the boundedness property does not.
 
@@ -62,11 +85,11 @@ Adds/removes interchangeable stateless runtime instances within a stable runtime
 
 ### Workload-pool scaling
 
-Changes capacity for one worker/realtime/automation/parser class while preserving bulkheads and durable-work semantics.
+Changes capacity for one exact worker specialization, realtime, automation or parser workload while preserving bulkheads and durable-work semantics. Scaling one worker specialization cannot implicitly expand another specialization's principal/secret/state/egress envelope.
 
 ### Stateful-port scaling
 
-Expands/reconfigures a storage/broker/cache/telemetry/object dependency while preserving its port authority, compatibility, fencing and recovery semantics.
+Expands/reconfigures a storage/broker/cache/telemetry/object dependency while preserving its logical port authority, compatibility, fencing and recovery semantics. Physical scale/co-location cannot trigger `PRTV-039` authority collapse.
 
 ### Cell expansion
 
@@ -86,7 +109,8 @@ Scale-down/drain SHALL ensure:
 - in-flight requests reach bounded safe outcome;
 - durable job leases/outcomes remain discoverable;
 - realtime clients resync/reconnect where required;
-- process-local cache loss cannot resurrect stale authority.
+- process-local cache loss cannot resurrect stale authority;
+- worker specialization identity and durable responsibility remain discoverable across replica churn.
 
 ## Coordination and leadership
 
@@ -112,7 +136,7 @@ Second/new cell provisioning must prove:
 - tenant isolation and placement admission;
 - health/observability coverage;
 - ability to reject a tenant/version not assigned to the cell;
-- capacity profile published before placement.
+- runtime and worker-specialization capacity profiles published before placement.
 
 A new cell cannot require customer-visible tenant ID/resource ID changes.
 
@@ -129,15 +153,17 @@ Runtime support includes:
 7. post-cutover `(R,F]`/ambiguous effects are reconciled before unsafe replay/resume;
 8. old physical resources are retired only after governance/recovery obligations permit it.
 
-Relocation capacity must account for temporary dual footprint, copy/backfill/reconciliation load and control-plane pressure.
+Relocation capacity must account for temporary dual footprint, copy/backfill/reconciliation load, worker-specialization backlog and control-plane pressure.
 
 ## Recovery and scaling interaction
 
 Autoscaling/replacement during recovery cannot erase quarantine or spawn many replicas of stale authority. Recovery-state/current-generation admission gates apply before new replicas process protected/effectful work.
 
+Scaling a recovery/reconciliation worker does not grant broader recovery authority; exact worker/runtime profile and affected scope remain authoritative.
+
 ## Cost attribution
 
-Phase 13 requires cost/usage evidence to be attributable at least to runtime/workload/cell and, where safe/useful, tenant/integration classes without creating unsafe high-cardinality telemetry.
+Phase 13 requires cost/usage evidence to be attributable at least to runtime profile, worker specialization, cell and, where safe/useful, tenant/integration classes without creating unsafe high-cardinality telemetry.
 
 Cost controls SHALL detect runaway retry/backlog/query/parser/provider/recovery work. Exact prices/budgets remain OPEN.
 
@@ -151,6 +177,7 @@ Conformance/runtime evidence later SHALL include:
 
 - stateless replica replacement;
 - scale-down during in-flight requests/jobs/realtime;
+- per-worker-specialization saturation and bulkhead isolation;
 - stale leader after failover;
 - one tenant/provider/destination/workload saturation;
 - second-cell provisioning and rejection of wrong-placement tenant;
@@ -158,6 +185,7 @@ Conformance/runtime evidence later SHALL include:
 - temporary relocation double-load;
 - recovery plus autoscaling interaction;
 - migration/backfill pressure against serving workloads;
-- capacity/cost measurement across multiple dimensions.
+- capacity/cost measurement across multiple dimensions;
+- manifest completeness for worker specialization/resource bindings under `PRTV-043`.
 
 Exact replica/node/cell/region/autoscaling/partition numerics remain OPEN.

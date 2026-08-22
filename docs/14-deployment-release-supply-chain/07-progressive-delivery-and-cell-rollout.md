@@ -45,7 +45,9 @@ A `release.deployment@1` identifies:
 deployment_operation_id
 promotion_id
 artifact_id
-configuration identity
+target_configuration_identity/generation
+target_configuration_semantic_profile
+validation_to_target_configuration_evidence
 target environment
 validation scope/evidence class
 cell/target scope
@@ -75,7 +77,7 @@ For incompatible concurrent deployments targeting the same protected scope:
 
 - one compatible transition wins admission under a fenced/atomic equivalent;
 - a stale operation observing a newer target release state cannot continue effectful advancement;
-- same `deployment_operation_id` with conflicting immutable artifact/config/target semantics is an integrity conflict, not a retry;
+- same `deployment_operation_id` with conflicting immutable artifact/configuration/target semantics is an integrity conflict, not a retry;
 - different operation IDs do not permit two incompatible target states to become current concurrently.
 
 The concrete coordination store/lease/CAS mechanism remains `OPEN-RLS-027`; the single-current-transition property is not OPEN.
@@ -86,7 +88,7 @@ Timeout, controller crash, runner loss or lost API response after an effectful r
 
 The release system SHALL:
 
-1. preserve the same `deployment_operation_id` and requested immutable target semantics;
+1. preserve the same `deployment_operation_id` and requested immutable artifact + exact target configuration/target semantics;
 2. inspect durable release-controller and target/runtime evidence;
 3. classify the operation as completed, still in progress, safely not started, or `reconciliation_required`;
 4. retry effectful work only when the owning operation/fence semantics establish eligibility.
@@ -101,6 +103,8 @@ Before protected serving admission, applicable gates re-establish:
 - target promotion authority;
 - current deployment operation/fence and target release state;
 - applicable validation scope completion on the same immutable artifact;
+- exact target configuration identity/generation/profile;
+- explicit validation-to-target configuration compatibility/equivalence or target-specific validation for material differences;
 - Phase 13 runtime/environment conformance;
 - independently observed running artifact identity/equivalence;
 - configuration/network/workload-credential currentness;
@@ -114,9 +118,13 @@ Before protected serving admission, applicable gates re-establish:
 
 A cell-affecting release SHALL NOT skip from general validation directly to production canary merely because the deployment product has no staging concept.
 
-The reference-cell stage proves the exact artifact/config/runtime/schema combination on a bounded production-like cell profile while remaining non-production authority. It cannot receive production placement authority, credentials or tenant traffic merely to increase fidelity.
+The reference-cell stage proves the same immutable artifact under a production-relevant configuration semantic profile, schema/runtime combination and bounded production-like cell profile while remaining non-production authority.
+
+The validation reference-cell configuration MAY use environment-specific values and non-production secret references. Production canary may use a different exact configuration identity only when material differences are explicitly accounted for by compatibility/equivalence evidence or target-specific validation. Production secret values are never copied down merely to make the configurations identical.
 
 If a specific release truly has no applicable reference-cell case, the release manifest records evidence-backed `NO_APPLICABLE_CASE`; omission/tool limitation is not sufficient.
+
+`RLV-049` falsifies reuse of validation evidence across an unaccounted material production-configuration difference.
 
 ## Cell compatibility metadata
 
@@ -128,9 +136,9 @@ Stale or caller-controlled compatibility metadata cannot override destination-ce
 
 ## Canary
 
-Canary scope is selected by release authority, never caller/tenant input. Canary evidence cannot be generalized to incompatible runtime/profile/cell/environment states without explicit equivalence.
+Canary scope is selected by release authority, never caller/tenant input. Canary evidence cannot be generalized to incompatible runtime/profile/cell/environment/configuration states without explicit equivalence.
 
-For cell-affecting releases, production canary begins only after required reference-cell evidence is satisfied.
+For cell-affecting releases, production canary begins only after required reference-cell evidence and validation-to-production configuration evidence are satisfied.
 
 ## Pause
 

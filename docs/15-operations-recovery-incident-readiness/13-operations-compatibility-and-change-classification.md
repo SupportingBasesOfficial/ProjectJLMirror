@@ -15,10 +15,18 @@ Formatting, contact presentation or evidence-view changes that preserve authorit
 Incident, paging, backup, DR, KMS, runbook or automation product replacement preserving exact logical profiles, authority, evidence and failure semantics.
 
 ### OPS-COMP-C — semantic breaking
-Changes to incident lifecycle/closure, recovery state/R/F meaning, runbook authority, redrive/replay eligibility, relocation/decommission semantics, evidence disposition or ownership boundaries.
+Changes to incident lifecycle/closure/residual disposition, recovery state/R/F/resumption mode, operational-owner mapping, runbook authority, redrive/replay eligibility, relocation/decommission semantics, evidence disposition or ownership boundaries.
 
 ### OPS-COMP-D — security/recovery sensitive
-Changes that broaden break-glass, weaken separation/dual control, make stale authority current, weaken tenant isolation, expose secrets/data, allow missing restored state as permission, regress revocation/erasure/legal hold/audit/crypto decisions, bypass ambiguity reconciliation or allow AI/tool output into protected authority decisions.
+Changes that broaden break-glass, weaken separation/dual control or its applicability proof, make stale authority current, weaken partial-admission independence/isolation, weaken tenant isolation, expose secrets/data, allow missing restored state as permission, regress revocation/erasure/legal hold/audit/crypto/customer-telemetry/artifact-authority decisions, bypass ambiguity reconciliation, clear a residual reconciliation block on incident closure, or allow AI/tool output into protected authority decisions.
+
+## Normalized operations catalog compatibility
+
+The accepted Phase 11 reliability key + Phase 12 same-key observability join + Phase 15 operational owner/runbook row form one normalized operations record.
+
+A Phase 11 profile addition/change, Phase 12 same-key health/SLI/alert change, or change in Phase 15 logical owner/incident/runbook/escalation mapping is compatibility-relevant. Removing a row or silently mapping an implementation-local alias to a different owner/path is breaking.
+
+Changing a physical assignee/on-call rotation can remain operational state only when logical owner/current delegation/revocation/escalation semantics remain unchanged.
 
 ## Ownership compatibility
 
@@ -28,6 +36,8 @@ Changing an owner/rotation mechanism is compatible only if current delegation/re
 
 Changing classification may be breaking when it alters mandatory authority, communication, recovery or evidence paths. Renaming a severity label is not automatically semantic, but mapping a security/recovery incident to a weaker response is.
 
+`residual_obligation_disposition` semantics are compatibility-sensitive. A change that permits incident closure to mutate an underlying reconciliation-blocked operation into completed/retryable/absent state is breaking. `OPRV-057` applies.
+
 ## Runbook compatibility
 
 A runbook version is semantic when steps/preconditions/authority/effect identity/abort/recovery behavior changes. Old paused executions cannot silently resume under a materially different runbook without revalidation/migration of execution state.
@@ -36,9 +46,15 @@ A runbook version is semantic when steps/preconditions/authority/effect identity
 
 Broadening actions, duration, target scope, credential authority, approval/dual-control rules or post-use review is security-sensitive.
 
+The selector values `required_by_current_policy`, `not_required_by_current_policy_with_evidence` and `applicability_unproven` are semantic. Changing unknown applicability into N/A/allow, or allowing implementation defaults to select the branch, is breaking. `OPRV-055` applies.
+
 ## Recovery compatibility
 
-Changing recovery profile owner, R/F interpretation, continuity inventory, admission criteria, partial-resumption meaning or failover writer fencing is breaking unless an accepted migration proves equivalent safety.
+Changing recovery profile/subprofile owner, R/F interpretation, continuity inventory, admission criteria, resumption-mode meaning or failover writer fencing is breaking unless an accepted migration proves equivalent safety.
+
+For `partially_admitted`, changing the required exact operation scope, shared-authority independence evidence, isolation/fencing, prohibited operations, residual quarantine or revalidation behavior is security/recovery-sensitive. `OPRV-056` applies.
+
+The Phase 12 operational-observability vs customer-monitoring distinction and Phase 09/14 artifact bytes vs lifecycle/disclosure/release distinction remain mandatory recovery compatibility boundaries. `OPRV-053` and `OPRV-054` apply.
 
 ## Crypto recovery compatibility
 
@@ -54,8 +70,8 @@ Phase 14 operation identity, target-state fencing, config evidence and rollback/
 
 ## Evidence compatibility
 
-Changing evidence identity, retention, auditability or correlation can be security/recovery breaking even if procedure steps are unchanged.
+Changing evidence identity, retention, auditability or correlation can be security/recovery breaking even if procedure steps are unchanged. Evidence changes must preserve exact recovery scope/subscope, R/F, resumption mode/partial profile, dual-control policy/applicability and residual operation identity where applicable.
 
 ## OPEN transitions
 
-Closing an `OPEN-OPS-*` decision is a compatibility-relevant change when it selects a product/mechanism/numeric that affects authority/failure/evidence semantics. Closure cannot silently redefine a fixed property.
+Closing an `OPEN-OPS-*` decision is a compatibility-relevant change when it selects a product/mechanism/numeric that affects authority/failure/evidence semantics. Closure cannot silently redefine a fixed property or resolve an unknown applicability/authority state permissively.

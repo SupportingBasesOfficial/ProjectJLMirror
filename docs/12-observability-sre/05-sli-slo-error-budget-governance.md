@@ -84,9 +84,18 @@ Canonical profile: `sli.realtime.delivery@1`.
 
 ### Outbound webhooks
 
-Canonical profile when Product enables the capability: `sli.webhook.convergence@1`.
+Candidate profile: `sli.webhook.convergence@1`.
 
-Only when Product enables them: delivery obligation terminal-outcome/convergence, attempt latency and destination-isolated failure pressure. An ambiguous external outcome is not silently recorded as ordinary failure/success.
+Product enablement alone does **not** activate a dedicated webhook SLI/SLO commitment. `OPEN-OBS-035` owns whether an enabled outbound-webhook capability requires the dedicated `sli.webhook.convergence@1` and corresponding alert commitment.
+
+Until `OPEN-OBS-035` is closed by Product/SRE evidence:
+
+- webhook diagnostic/health/security/recovery evidence remains required when the capability is enabled;
+- ordinary durable-progress/customer-impact evidence may still expose failures through applicable shared profiles;
+- no dedicated webhook SLO/error-budget commitment is asserted by Phase 12;
+- implementation/tool defaults SHALL NOT resolve the OPEN implicitly.
+
+If `OPEN-OBS-035` later activates the profile, its semantics cover delivery-obligation terminal convergence, attempt latency and destination-isolated failure pressure. An ambiguous external outcome is never silently recorded as ordinary failure/success.
 
 ### Telemetry ingestion/current projections
 
@@ -120,11 +129,13 @@ These SLIs observe accepted admission outcomes. They do not create placement/gen
 
 ### Protected artifact delivery
 
-Canonical profile where Product exposes protected artifact delivery: `sli.artifact.delivery@1`.
+Canonical profile where accepted Product authority exposes protected artifact delivery: `sli.artifact.delivery@1`.
 
 - eligible artifact lifecycle/delivery terminal outcome;
 - delivery latency/disruption as permitted by the artifact contract;
 - reconciliation/governance-blocked outcome classification.
+
+Unproven Product exposure is not treated as enabled exposure. The manifest's closed Product-state selector governs applicability.
 
 The SLI SHALL NOT treat a stale delivery capability or ongoing older-generation stream as successful merely because bytes were served; accepted artifact delivery-generation/lease/erasure authority remains decisive.
 
@@ -166,6 +177,8 @@ An SLO proposal requires:
 Numeric SLO targets, windows and percentiles are **OPEN** until this evidence exists.
 
 A default copied from a vendor, framework or industry blog is not sufficient authority.
+
+A candidate SLI whose activation is itself OPEN SHALL NOT receive a numeric SLO before the applicability OPEN is closed.
 
 ## Error budgets
 
@@ -209,10 +222,12 @@ A change to SLI population, numerator, measurement boundary, unit, missing-data 
 
 Historical comparisons SHALL identify the profile version used; incompatible periods are not silently spliced.
 
-Changing an applicability decision between a direct SLI and `NO_APPLICABLE_CASE` is semantic governance and requires review of the underlying authority rationale.
+Changing an applicability decision between a direct SLI, an OPEN applicability owner and `NO_APPLICABLE_CASE` is semantic governance and requires review of the underlying authority rationale.
 
 ## Validation obligations
 
 Tests SHALL inject telemetry loss, denied/invalid requests, throttling, ambiguous effects, tenant skew and SLI profile changes to prove that metrics cannot be gamed into false success and that unsupported numerics remain OPEN.
 
 Validation SHALL also prove that direct hard-correctness `NO_APPLICABLE_CASE` decisions do not remove the consuming operational/customer-impact SLI and cannot be used to hide service degradation.
+
+For Product-gated candidate profiles, validation SHALL prove that unknown Product state is not treated as enablement or disablement and that an OPEN applicability decision cannot be silently activated by implementation configuration.

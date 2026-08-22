@@ -237,10 +237,16 @@ Phase 12 acceptance defines obligations; it does not fabricate future runtime ev
 **Required:** comparison work and its observability are bounded by profile/workload/tenant budgets; no message/content value becomes a metric dimension; unrelated workloads remain isolated.  
 **Forbidden:** one attacker can amplify comparison work or telemetry cardinality without bound.
 
+### OBSV-037 — Product applicability uncertainty laundering
+
+**Inject:** a Product-gated Phase 12 profile has no accepted Product evidence proving enabled/exposed or not enabled/not exposed; implementation configuration, feature flag state, missing deployment, UI absence or current runtime behavior suggests one side.  
+**Required:** applicability remains `OPEN-OBS-037`; implementation/runtime evidence may inform Product but cannot convert the state to enabled, disabled or `NO_APPLICABLE_CASE`. If accepted Product later proves webhook enablement, `OPEN-OBS-035` still separately owns the dedicated webhook SLI/alert commitment.  
+**Forbidden:** uncertainty is treated as absence, implementation defaults create Product authority, or `NO_APPLICABLE_CASE` is used without accepted non-applicability evidence.
+
 ## Acceptance criteria
 
 Phase 12 SHALL NOT reach `READY_FOR_MERGE` while a material vector lacks a defined expected outcome, owner/evidence path or an evidence-backed `NO_APPLICABLE_CASE` disposition.
 
-The canonical Phase 11 → Phase 12 join in `10-observability-semantic-manifest.md` SHALL reference applicable vectors for every accepted Phase 11 reliability profile. A missing profile join is a validation failure, not deferred implementation detail.
+The canonical Phase 11 → Phase 12 join in `10-observability-semantic-manifest.md` SHALL reference applicable vectors for every accepted Phase 11 reliability profile. Product-gated applicability SHALL additionally satisfy `OBSV-037` wherever `OPEN-OBS-037` applies. A missing profile join or applicability vector is a validation failure, not deferred implementation detail.
 
 Future implementation/release gates SHALL execute the applicable vectors against exact implementation/release states rather than treating this document as proof of runtime success.

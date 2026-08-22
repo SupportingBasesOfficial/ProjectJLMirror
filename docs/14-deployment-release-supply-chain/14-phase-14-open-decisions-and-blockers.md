@@ -32,7 +32,7 @@ Unknown applicability remains OPEN.
 | OPEN-RLS-014 | deployment controller/orchestrator integration | Platform/Release | Phase 13 semantic mapping |
 | OPEN-RLS-015 | IaC tool/mechanism | Platform/Release | review, drift, state, recovery evidence |
 | OPEN-RLS-016 | physical environment/account/cluster mapping | Platform/Release | Phase 13 isolation + promotion evidence |
-| OPEN-RLS-017 | configuration distribution/promotion mechanism | Platform/Release | generation/currentness/rollback evidence |
+| OPEN-RLS-017 | configuration distribution/promotion and validation-to-target evidence mechanism | Platform/Release/Security | exact generation/currentness, semantic-diff/equivalence or target-specific validation, rollback and secret-reference safety evidence |
 | OPEN-RLS-018 | secret change orchestration mechanism | Security/Platform | rotation/revocation/least privilege |
 | OPEN-RLS-019 | production approval mechanism | Governance/Release | currentness, attribution, bypass controls |
 | OPEN-RLS-020 | canary selection mechanism | Release/Platform | bounded target and representativeness |
@@ -61,6 +61,10 @@ Unknown applicability remains OPEN.
 Not OPEN:
 
 - one immutable artifact identity is promoted rather than rebuilt per environment;
+- the one-artifact rule does not imply one configuration identity across environments;
+- each target deployment binds the exact target configuration identity/generation and semantic profile;
+- validation evidence for one environment-scoped configuration is reusable for another only with explicit release-relevant semantic compatibility/equivalence evidence or target-specific applicable validation;
+- production secret values are not copied into validation to manufacture configuration equality; secret-reference purpose/policy and consuming semantics are compared without disclosing secret material;
 - source candidate vs accepted source trust is explicit; branch/event/validation success does not confer trusted release authority;
 - untrusted source validation cannot receive production/release/migration/signing authority by trigger or candidate workflow choice;
 - the trusted release-policy profile/version used for principal selection and release admission is not controlled unilaterally by the candidate source;
@@ -107,21 +111,23 @@ Phase 14 SHALL NOT be accepted while any applicable condition remains:
 15. deployment timeout/crash/lost response can be treated as no effect or bypassed with a new operation ID before reconciliation;
 16. a cell/runtime/schema-affecting release can skip required `validation.reference-cell@1` evidence because tooling lacks a staging concept;
 17. stale/caller-controlled cell compatibility metadata can make an incompatible runtime/schema combination placement/deployment eligible;
-18. mixed-version API/event/schema/runtime/config combinations are unspecified;
-19. destructive contract can race supported old runtimes/cell compatibility states;
-20. backfill is non-resumable/unbounded or relies on one long ordinary transaction;
-21. migration privilege is shared with serving runtime by default;
-22. abort/timeout can convert ambiguous external/release effect into absence/retry;
-23. rollback can resurrect revoked/erased/retired authority or erase audit/effects;
-24. restore/rollback can make retired release-policy/approval/verifier or stale release-target authority current merely because old pipeline state is reachable;
-25. emergency change can edit production artifact in place or bypass accountability/fencing;
-26. drift auto-fix can silently mutate canonical state;
-27. artifact retirement/deletion destroys required evidence unsafely;
-28. environment/cell decommission can leave stale placement, credentials, data or routes;
-29. release evidence lacks exact source-trust/policy/artifact/config/target/profile/operation/target-state/validation-scope/cell-compatibility provenance;
-30. applicable `RLV-001..048` vectors lack owner/expected result/evidence;
-31. tool/vendor/numeric choices are asserted without evidence or OPEN owner;
-32. deterministic/AI/tool status is represented as Phase acceptance, merge authorization or production release authorization.
+18. validation evidence can be reused for a materially different target configuration without exact target config identity/profile plus compatibility/equivalence evidence or target-specific validation;
+19. production secret copying or matching config key names can be treated as proof that target configuration semantics were validated;
+20. mixed-version API/event/schema/runtime/config combinations are unspecified;
+21. destructive contract can race supported old runtimes/cell compatibility states;
+22. backfill is non-resumable/unbounded or relies on one long ordinary transaction;
+23. migration privilege is shared with serving runtime by default;
+24. abort/timeout can convert ambiguous external/release effect into absence/retry;
+25. rollback can resurrect revoked/erased/retired authority or erase audit/effects;
+26. restore/rollback can make retired release-policy/approval/verifier or stale release-target authority current merely because old pipeline state is reachable;
+27. emergency change can edit production artifact in place or bypass accountability/fencing;
+28. drift auto-fix can silently mutate canonical state;
+29. artifact retirement/deletion destroys required evidence unsafely;
+30. environment/cell decommission can leave stale placement, credentials, data or routes;
+31. release evidence lacks exact source-trust/policy/artifact/target-config/target/profile/operation/target-state/validation-scope/cell-compatibility provenance;
+32. applicable `RLV-001..049` vectors lack owner/expected result/evidence;
+33. tool/vendor/numeric choices are asserted without evidence or OPEN owner;
+34. deterministic/AI/tool status is represented as Phase acceptance, merge authorization or production release authorization.
 
 ## Closure rule
 

@@ -139,6 +139,26 @@ Required: rejected by governance.
 ### RLV-040 — Mixed-version evidence reused after material HEAD/artifact/config change
 Required: old evidence remains historical; exact new state revalidated.
 
+### RLV-041 — Untrusted source receives privileged release context
+Inject: fork/not-yet-accepted source executes validation while requesting production secrets, trusted signing/provenance authority, artifact overwrite/publish authority, migration authority or production deploy credentials.  
+Required: job remains under `principal.release-untrusted-validation@1` or equivalent bounded profile and privileged capabilities are denied.  
+Forbidden: PR/branch/workflow trigger implicitly grants trusted release authority.
+
+### RLV-042 — Candidate workflow self-escalates policy
+Inject: candidate source changes workflow/policy to select privileged runner/environment, broaden token permissions, inherit secrets, weaken approvals or alter the policy used to classify itself.  
+Required: privileged admission is decided by a trusted policy/profile version outside the candidate's unilateral control; escalation fails.  
+Forbidden: source under evaluation chooses the authority of its evaluator.
+
+### RLV-043 — Running artifact differs from approved artifact
+Inject: deployment controller reports success while the actual running workload resolves to different bytes/immutable identity than the approved `release.artifact@1`.  
+Required: runtime verification fails and protected rollout admission pauses/aborts.  
+Forbidden: desired-state object, mutable tag or deploy receipt substitutes for observed running artifact identity.
+
+### RLV-044 — Release-policy/verifier rollback after restore
+Inject: release system/approval/provenance-verifier policy is restored to an older state that trusts retired principal, approval, signing/verifier authority or broader historical permission.  
+Required: current release-policy/verifier authority is reconciled forward; privileged release advancement stays blocked until currentness is proven.  
+Forbidden: restored policy state becomes current merely because the pipeline service is reachable.
+
 ## Acceptance rule
 
 Phase 14 SHALL NOT reach `READY_FOR_MERGE` while any applicable vector lacks owner, expected result, evidence path or evidence-backed `NO_APPLICABLE_CASE`.

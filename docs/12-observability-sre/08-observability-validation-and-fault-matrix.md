@@ -174,8 +174,8 @@ Phase 12 acceptance defines obligations; it does not fabricate future runtime ev
 ### OBSV-026 — Observability self-blindness
 
 **Inject:** primary telemetry transport fails completely.  
-**Required:** accepted independent/bounded health evidence reveals the evidence gap or state becomes explicitly unknown.  
-**Forbidden:** no telemetry is interpreted as “all green”.
+**Required:** source-side/secondary evidence either reveals the evidence gap or state becomes explicitly unknown; the failure coupling of that evidence path is recorded. If a design claims failure independence from the primary path, injected faults SHALL prove the relevant independence.  
+**Forbidden:** no telemetry is interpreted as “all green”, or same-system/procedurally separate evidence is labeled independent merely because it has a different signal/process name.
 
 ### OBSV-027 — Health endpoint disclosure
 
@@ -239,7 +239,7 @@ Phase 12 acceptance defines obligations; it does not fabricate future runtime ev
 
 ## Acceptance criteria
 
-Phase 12 SHALL NOT reach `READY_FOR_MERGE` while a material vector lacks a defined expected outcome, owner/evidence path or an evidence-backed no-applicable-case disposition.
+Phase 12 SHALL NOT reach `READY_FOR_MERGE` while a material vector lacks a defined expected outcome, owner/evidence path or an evidence-backed `NO_APPLICABLE_CASE` disposition.
 
 The canonical Phase 11 → Phase 12 join in `10-observability-semantic-manifest.md` SHALL reference applicable vectors for every accepted Phase 11 reliability profile. A missing profile join is a validation failure, not deferred implementation detail.
 

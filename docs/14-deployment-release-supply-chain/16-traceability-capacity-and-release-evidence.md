@@ -8,7 +8,7 @@
 |---|---|
 | Security `SEC-SUPPLY-001` | integrity/security checks for dependencies, build inputs, secrets and release artifacts |
 | Security `SEC-SUPPLY-002` | runtime principal separated from migration/admin owner |
-| Data migrations | expand/deploy-compatible/migrate/switch/observe/contract; progressive cell rollout; mixed-version rules |
+| Data migrations | expand/deploy-compatible/migrate/switch/observe/contract; test -> staging/reference cell -> production canary -> bounded waves; mixed-version and cell compatibility metadata |
 | Phase 09 | API semantic compatibility, deprecation, parser/idempotency/realtime/artifact semantics |
 | Phase 10 | event compatibility, at-least-once/idempotency/replay/ambiguity semantics |
 | Phase 11 | failure, ambiguity, bounded retry/backlog, reconciliation and recovery continuity |
@@ -28,6 +28,9 @@ exact candidate source
  -> authorized build record
  -> immutable artifact identity
  -> provenance/SBOM/attestation evidence
+ -> validation.general@1
+ -> validation.reference-cell@1 when applicable
+ -> current cell compatibility metadata for cell-affecting release
  -> promotion decision
  -> deployment target/wave
  -> configuration + migration compatibility
@@ -37,7 +40,7 @@ exact candidate source
  -> retained release evidence
 ```
 
-No link may be replaced by a vendor badge/default, workflow trigger, mutable tag or desired-state receipt.
+No link may be replaced by a vendor badge/default, workflow trigger, mutable tag, deployment success or desired-state receipt.
 
 ## Source-trust / evaluator trace
 
@@ -53,6 +56,33 @@ candidate source SHA
 ```
 
 The candidate cannot choose the policy/profile that upgrades its own trust. `RLV-041` and `RLV-042` falsify this boundary.
+
+## Validation/reference-cell trace
+
+For cell/runtime/schema-affecting releases:
+
+```text
+same immutable artifact/config/schema/runtime candidate
+ -> environment.validation@1 / validation.general@1
+ -> environment.validation@1 / validation.reference-cell@1
+ -> accepted reference-cell evidence
+ -> production canary eligibility
+```
+
+`validation.reference-cell@1` is an evidence scope, not a new environment authority. Skipping it requires an evidence-backed `NO_APPLICABLE_CASE`, never tool limitation. `RLV-045` falsifies bypass.
+
+## Cell compatibility metadata trace
+
+```text
+accepted mixed-version matrix
+ -> Control Plane cell current/target runtime-schema compatibility metadata
+ -> metadata identity/currentness
+ -> target cell release admission
+ -> placement/cutover eligibility
+ -> runtime verification
+```
+
+Stale, caller-controlled or deployment-inferred metadata cannot override newer incompatible/deny state. `RLV-046` falsifies this boundary.
 
 ## Runtime artifact trace
 
@@ -91,8 +121,10 @@ Permanent release evidence identifies enough provenance to distinguish:
 - build/artifact/provenance identities;
 - dependency/toolchain profiles;
 - artifact digest/equivalent;
+- validation scope(s) and reference-cell evidence where applicable;
 - configuration generation;
 - schema/API/event/runtime compatibility set;
+- Control Plane cell compatibility metadata identity/currentness where applicable;
 - logical environment and physical target mapping;
 - cell/wave/runtime profiles;
 - runtime-observed artifact identity/equivalent proof;
@@ -104,7 +136,7 @@ Permanent release evidence identifies enough provenance to distinguish:
 - rollback/forward-recovery class;
 - OPEN dispositions.
 
-Evidence from one source trust/policy/artifact/config/target/wave is not silently reused for a materially different state.
+Evidence from one source trust/policy/artifact/config/validation-scope/cell-compatibility/target/wave is not silently reused for a materially different state.
 
 ## Capacity/performance/cost dimensions
 
@@ -117,8 +149,10 @@ artifact registry/storage/egress
 scanner/provenance/signing/verifier work
 CI/CD queue/runtime cost
 parallel environment deployments
+validation reference-cell capacity
 canary + surge/double runtime footprint
 cell rollout concurrency
+cell compatibility metadata propagation/currentness work
 migration/backfill database/IO/lock load
 worker backlog during drains
 realtime reconnect/resync amplification
@@ -138,11 +172,11 @@ A retry storm in CI/CD or migration/backfill is a release-system overload condit
 
 ## Phase 15 consumers
 
-Phase 15 consumes release evidence, current deployment state, emergency-change records, rollback/forward-recovery classifications, artifact retirement/decommission state, release-policy currentness and recovery-sensitive deployment controls. Phase 15 may execute operational procedures but cannot redefine Phase 14 release authority.
+Phase 15 consumes release evidence, current deployment state, emergency-change records, rollback/forward-recovery classifications, artifact retirement/decommission state, release-policy currentness, reference-cell/cell compatibility evidence and recovery-sensitive deployment controls. Phase 15 may execute operational procedures but cannot redefine Phase 14 release authority.
 
 ## Implementation Readiness consumer
 
-Implementation Readiness must prove that code/tooling need not invent source trust transition, evaluator privilege, source/build/artifact/promotion/deployment authority, runtime-artifact verification, migration sequencing, rollback class, environment mapping semantics, release-policy currentness or evidence provenance.
+Implementation Readiness must prove that code/tooling need not invent source trust transition, evaluator privilege, source/build/artifact/promotion/deployment authority, validation reference-cell applicability, cell compatibility metadata semantics, runtime-artifact verification, migration sequencing, rollback class, environment mapping semantics, release-policy currentness or evidence provenance.
 
 ## Native Assurance
 

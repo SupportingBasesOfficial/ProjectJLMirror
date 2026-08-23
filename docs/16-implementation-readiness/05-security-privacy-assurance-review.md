@@ -11,7 +11,7 @@ This review verifies that implementation can select mechanisms without inventing
 Every slice SHALL preserve at least the applicable boundaries:
 
 - browser JS -> BFF confidential boundary;
-- external principal -> identity authority -> current platform authorization;
+- external principal -> identity authority -> authentication-strength evidence -> current platform authorization;
 - workload identity -> service authentication -> application authorization;
 - request ingress -> canonical HTTP meaning -> tenant placement -> use case;
 - producer/provider -> canonical event/callback meaning -> trusted scope -> domain;
@@ -25,13 +25,17 @@ Every slice SHALL preserve at least the applicable boundaries:
 
 The C1 profiles in `04-must-close-identity-and-fencing-profiles.md` satisfy readiness only if implementations preserve:
 
-- OIDC code + PKCE at the BFF for first-party browser login;
+- OIDC Authorization Code + PKCE S256 at the BFF for first-party browser login;
+- per-transaction `state` + `nonce` binding and exact callback/token issuer/audience/client validation;
 - browser exclusion from long-lived platform credentials;
-- asymmetric attributable machine authentication;
+- policy-driven MFA/step-up/re-authentication currentness for privileged human operations, with trusted assurance evidence such as accepted `acr`/`amr` semantics rather than UI/role/default inference;
+- asymmetric attributable machine authentication using replay-resistant `private_key_jwt` assertions with unique `jti`, current key generation and exact token-endpoint audience;
 - SPIFFE-compatible short-lived workload identity + mTLS service authentication;
 - strict separation between authenticated service identity and tenant/domain authorization;
 - environment/trust-domain isolation;
 - current issuer/bundle/credential generations and revocation.
+
+A valid login/session/token/certificate is never enough when the current owning policy requires stronger authentication assurance, current authorization, placement or tenant scope.
 
 ## Tenant isolation
 
@@ -68,6 +72,7 @@ Every implementation slice maps stored/transmitted/evidence fields to accepted c
 Restore/PITR/rollback SHALL NOT regress:
 
 - revocation/deny state;
+- authentication-strength/current-policy state used for privileged admission;
 - erasure/legal hold;
 - cryptographic authority;
 - audit/reliability evidence;
@@ -81,13 +86,14 @@ Untrusted candidate source cannot acquire release/signing/migration/production s
 
 ## AI boundary
 
-AI may generate hypotheses, tests, summaries or code drafts. AI output SHALL NOT be direct, indirect, intermediate or joint authority for authentication, authorization, tenant/placement authority, Product applicability, retry/redrive/replay/recovery eligibility, incident closure, break-glass, release/merge approval or architecture decisions.
+AI may generate hypotheses, tests, summaries or code drafts. AI output SHALL NOT be direct, indirect, intermediate or joint authority for authentication, authentication-strength/step-up decisions, authorization, tenant/placement authority, Product applicability, retry/redrive/replay/recovery eligibility, incident closure, break-glass, release/merge approval or architecture decisions.
 
 ## Security blockers
 
 Implementation authorization is blocked for a slice if any applicable item lacks:
 
 - current principal/credential profile;
+- current authentication-strength/step-up policy and trusted evidence path for privileged human operations;
 - explicit tenant boundary;
 - least-privilege state-port/egress profile;
 - secret-reference handling;
@@ -95,4 +101,4 @@ Implementation authorization is blocked for a slice if any applicable item lacks
 - recovery continuity;
 - abuse/SSRF/confused-deputy evidence plan;
 - security compatibility classification;
-- applicable adversarial tests.
+- applicable adversarial tests, including `IRV-031` and `IRV-032` where the identity slice applies.

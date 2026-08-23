@@ -194,6 +194,11 @@ Inject: an operational catalog/owner/runbook exists for `rel.webhook-delivery@1`
 Required: exact upstream Product/Phase 12 applicability state remains authoritative; catalog ownership stays preparedness/accountability only. `product_state_unproven` remains OPEN, and not-enabled/not-exposed does not erase underlying diagnostic/security/recovery ownership where applicable.
 Forbidden: owner, runbook, feature flag, deployment, traffic, environment, config or implementation existence becomes Product applicability authority.
 
+### OPRV-059 — Canonical runbook profile retains its ID while authority semantics drift
+Inject: an execution system loads a canonical Phase 15 runbook ID such as `runbook.recovery@1`, but omits a required role/precondition, adds a protected effect step, broadens scope, substitutes tool/dashboard state for the accepted authority input, or resumes a paused execution after materially changing the profile without version/migration review.
+Required: execution is rejected or remains paused until the exact accepted profile/version, current roles, preconditions, authority inputs, prohibited substitutions and underlying operation state are satisfied; materially changed semantics require an accepted successor/version and compatibility handling.
+Forbidden: canonical profile name, local YAML/workflow success, incident urgency, AI-generated step or administrator permission makes the altered procedure authoritative.
+
 ## Game-day classes
 
 Implementation/runtime must eventually rehearse at minimum:
@@ -214,8 +219,9 @@ Implementation/runtime must eventually rehearse at minimum:
 - break-glass admission with required/not-required/unproven dual-control selectors and revocation;
 - incident closure with a durably owned reconciliation-blocked residual effect;
 - Product-gated operational catalog row with unproven/not-enabled applicability;
+- canonical runbook execution with one omitted precondition/role and a materially changed paused profile;
 - decommission and vendor/dependency exit.
 
 ## Acceptance rule
 
-Phase 15 cannot reach `READY_FOR_MERGE` while an applicable vector `OPRV-001..058` lacks owner, expected result, evidence path or valid conditional `NO_APPLICABLE_CASE` evidence.
+Phase 15 cannot reach `READY_FOR_MERGE` while an applicable vector `OPRV-001..059` lacks owner, expected result, evidence path or valid conditional `NO_APPLICABLE_CASE` evidence.

@@ -20,13 +20,25 @@ Implementation authorization SHALL NOT be issued while any applicable condition 
 12. implementation evidence cannot distinguish L1/L2/L3/L4 provenance;
 13. AI/tool output can grant/deny protected action eligibility;
 14. deterministic assurance is absent on exact implementation HEAD;
-15. an implementation PR changes normative architecture to fit code without an owning governance change.
+15. an implementation PR changes normative architecture to fit code without an owning governance change;
+16. a privileged human operation can treat valid login/session/role as sufficient when current Security policy requires stronger MFA/step-up/re-authentication assurance;
+17. machine client authentication accepts replayed `private_key_jwt` assertions or a retired client-key generation.
 
 ## Slice-specific blockers
 
 ### `impl.identity-bff@1`
 
-Blocked unless IR-D-001 is accepted and the implementation preserves BFF confidential token handling, OIDC/PKCE validation, asymmetric machine auth, current authorization and CSRF/Origin contracts.
+Blocked unless IR-D-001/002 are accepted and the implementation preserves:
+
+- BFF confidential token handling and browser exclusion from long-lived platform credentials;
+- exact OIDC `state` + PKCE S256 + per-transaction `nonce` binding and issuer/audience/client checks;
+- current authorization/tenant membership independent from token/session validity;
+- policy-driven MFA/step-up/re-authentication currentness for privileged operations using trusted authentication-assurance evidence;
+- asymmetric machine authentication with unique-`jti` replay rejection and current client-key generation;
+- internal workload/service mTLS identity kept separate from tenant/domain authorization;
+- Phase 09 CSRF/Origin contracts.
+
+`IRV-008..012`, `IRV-031` and `IRV-032` are mandatory identity-slice falsification anchors.
 
 ### `impl.control-plane@1` / `impl.cell-data-runtime@1`
 

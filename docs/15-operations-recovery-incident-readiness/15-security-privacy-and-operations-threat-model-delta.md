@@ -9,6 +9,7 @@ Phase 15 adds/refines:
 - accepted Product/Phase 12 applicability -> operations catalog/Product-facing commitments;
 - alert/telemetry -> incident declaration;
 - incident commander -> operational owners;
+- canonical runbook profile/version -> execution engine/local procedure steps;
 - operator -> runbook execution;
 - break-glass requester -> current policy/applicability -> approver -> executor -> protected target;
 - backup/restore mechanism -> recovery quarantine;
@@ -100,6 +101,11 @@ Closing incident coordination mutates an unresolved underlying operation from re
 ### OPS-TM-025 — Operations catalog Product-authority laundering
 A prepared reliability profile, owner/runbook record, deployment/configuration or team presence is treated as proof that a Product-gated webhook/artifact-delivery branch is enabled, disabled or N/A despite the accepted upstream selector being unproven or different. Controls: exact Phase 12 Product-applicability binding retained in the normalized operations record; catalog ownership is preparedness only; diagnostic/security/recovery ownership remains separate from Product-facing commitments. `OPRV-058`.
 
+### OPS-TM-026 — Runbook profile authority laundering
+An execution engine, local YAML/workflow or AI-generated procedure retains a canonical `runbook.*@1` identifier while dropping a required role/current-authority precondition, broadening effect scope, substituting dashboard/tool state for an accepted authority, or resuming a paused execution under materially changed semantics. Controls: canonical profile/version resolution to the materialized Phase 15 definition, closed role/authority matrix, current-precondition enforcement, stable underlying operation identity/fence, local-alias rejection and compatibility/version migration. `OPRV-002`, `OPRV-059`.
+
+The canonical runbook name is not a capability token. Possessing an execution tool, administrator role or workflow file does not prove that the selected profile's current preconditions are satisfied.
+
 ## Privacy
 
 Operational evidence and incident communications minimize tenant identifiers, customer data, topology, credentials, secret references and confidential payloads. Production-derived test/recovery data requires governed purpose, minimization, residency and isolation.
@@ -112,16 +118,20 @@ Break-glass/dual-control evidence identifies policy/profile/participants and dec
 
 Product-applicability evidence references accepted upstream state without exposing implementation flags or hidden Product metadata as a public inference oracle.
 
+Runbook evidence records profile/version, role/precondition disposition and operation references; it does not copy protected credentials, secret values, unrestricted payloads or sensitive topology merely to prove that a step was considered/executed.
+
 ## AI boundary
 
-AI may summarize evidence, suggest hypotheses, draft communications or identify missing steps. It cannot be direct, indirect, intermediate or joint authority for authentication/authorization, tenant/placement authority, Product applicability, retry/redrive/replay/recovery eligibility, incident closure, break-glass admission or dual-control applicability, Product/architecture or protected release decisions.
+AI may summarize evidence, suggest hypotheses, draft communications or identify missing steps. It cannot be direct, indirect, intermediate or joint authority for authentication/authorization, tenant/placement authority, Product applicability, runbook-profile applicability or protected-step admission, retry/redrive/replay/recovery eligibility, incident closure, break-glass admission or dual-control applicability, Product/architecture or protected release decisions.
+
+AI-generated runbook steps remain untrusted procedure suggestions until they are contained by an accepted canonical profile and current authoritative preconditions; wrapping an AI suggestion in a workflow does not make it an accepted runbook semantic.
 
 ## Recovery/security continuity
 
 Restore/PITR cannot move revocation, erasure, legal hold, audit, reliability, cryptographic, release-policy/verifier, target-config/target-state, customer-monitoring acceptance/projection, artifact lifecycle/delivery/disclosure or placement authority backwards. Unknown continuity fails closed for protected operations, including partial admission.
 
-Incident state transitions and operations-catalog state do not alter those upstream authorities.
+Incident state transitions, operations-catalog state and runbook execution state do not alter those upstream authorities.
 
 ## Portability
 
-Replacing incident, paging, backup, KMS, telemetry, artifact-storage, runbook, access or evidence products must preserve logical authority, Product-applicability bindings, identity, currentness, dual-control applicability, partial-admission, residual-reconciliation, evidence, failure and recovery semantics.
+Replacing incident, paging, backup, KMS, telemetry, artifact-storage, runbook, access or evidence products must preserve logical authority, Product-applicability bindings, exact canonical runbook profile/version semantics, identity, currentness, dual-control applicability, partial-admission, residual-reconciliation, evidence, failure and recovery semantics.

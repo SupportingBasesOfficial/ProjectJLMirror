@@ -30,6 +30,8 @@ The C1 profiles in `04-must-close-identity-and-fencing-profiles.md` satisfy read
 - browser exclusion from long-lived platform credentials;
 - policy-driven MFA/step-up/re-authentication currentness for privileged human operations, with trusted assurance evidence such as accepted `acr`/`amr` semantics rather than UI/role/default inference;
 - asymmetric attributable machine authentication using replay-resistant `private_key_jwt` assertions with unique `jti`, current key generation and exact token-endpoint audience;
+- one logical machine-assertion replay authority across token-boundary replicas, with atomic single-winner `{client_principal,jti}` admission and fail-closed behavior when unused-state or continuity cannot be proven;
+- replay-state recovery that never turns missing/restored state into proof that a still-relevant assertion is unused;
 - SPIFFE-compatible short-lived workload identity + mTLS service authentication;
 - strict separation between authenticated service identity and tenant/domain authorization;
 - environment/trust-domain isolation;
@@ -73,6 +75,7 @@ Restore/PITR/rollback SHALL NOT regress:
 
 - revocation/deny state;
 - authentication-strength/current-policy state used for privileged admission;
+- machine-assertion replay state/generation needed to reject previously accepted assertions through their safety interval;
 - erasure/legal hold;
 - cryptographic authority;
 - audit/reliability evidence;
@@ -98,7 +101,8 @@ Implementation authorization is blocked for a slice if any applicable item lacks
 - least-privilege state-port/egress profile;
 - secret-reference handling;
 - revocation/currentness behavior;
+- replay-authority concurrency/failure/recovery behavior for replay-sensitive authentication or capability paths;
 - recovery continuity;
 - abuse/SSRF/confused-deputy evidence plan;
 - security compatibility classification;
-- applicable adversarial tests, including `IRV-031` and `IRV-032` where the identity slice applies.
+- applicable adversarial tests, including `IRV-031..033` where the identity slice applies.

@@ -1,11 +1,12 @@
 # Implementation Readiness — C1 Identity and Fencing Profiles
 
 **Status:** proposed closure record  
-**Closes on acceptance:** `OPEN-API-001`, `OPEN-PRT-008`, `OPEN-PRT-011`, `OPEN-PRT-039`
+**C1 closure on acceptance:** `OPEN-API-001`; the protocol/trust-shape subdecision of `OPEN-PRT-008`; `OPEN-PRT-011`; `OPEN-PRT-039`  
+**Residual C2 after acceptance:** the replaceable workload-identity issuer/attestation backend portion of `OPEN-PRT-008`
 
-These decisions are concrete protocol/mechanism profiles required to implement protected paths correctly. They do not select an identity SaaS, service mesh, cloud or orchestrator vendor.
+These decisions are concrete protocol/mechanism profiles required to implement protected paths correctly. They do not select an identity SaaS, workload-identity control-plane product, service mesh, cloud or orchestrator vendor.
 
-# IR-D-001 — Human and machine authentication/token profile
+# IR-D-001 — Human and external machine authentication/token profile
 
 ## Human first-party browser
 
@@ -21,15 +22,19 @@ OIDC Authorization Code Flow
 
 Requirements:
 
-- the browser never receives platform refresh tokens or long-lived access credentials;
+- the browser never receives platform refresh tokens or long-lived platform access credentials;
 - authorization-code callback validates issuer, audience/client, exact redirect binding, `state`, PKCE verifier and OIDC `nonce` where applicable;
+- authorization response/code is accepted only for the initiating BFF session/transaction and cannot be replayed across browser sessions;
 - tokens received from the identity authority remain server-side at the BFF/security boundary;
 - the browser receives only an opaque, high-entropy session handle in a `Secure`, `HttpOnly`, host-bound cookie profile;
+- session identifiers rotate or are replaced at privilege/authentication boundary changes where session-fixation resistance requires it;
 - session validity is not current authorization: every protected operation re-establishes current membership/permission/tenant authority as required by accepted contracts;
 - logout/revocation/session retirement invalidates server-side session authority even if a browser cookie remains present;
-- ambient cookie possession does not replace CSRF/Origin controls from Phase 09.
+- ambient cookie possession does not replace CSRF/Origin controls from Phase 09;
+- token validation rejects wrong issuer, audience, authorized-party/client binding or expired/not-yet-valid token state according to the accepted token profile;
+- raw authorization codes/tokens/session handles are excluded from ordinary logs/telemetry.
 
-The exact IdP product and session store product remain C2 choices.
+The exact IdP product, BFF session-store product and Phase 09 CSRF implementation mechanism remain C2 choices under their existing fixed semantics.
 
 ## External machine/API principal
 
@@ -45,15 +50,21 @@ Requirements:
 
 - each machine principal has attributable client identity and independently revocable credential generation;
 - client private keys remain in accepted secret/key authority, never application payload/config/logs;
-- access tokens are short-lived, audience-bound and permission/scope constrained;
+- `private_key_jwt` assertions are short-lived, audience-bound to the token endpoint, uniquely replay-resistant within their accepted validity window and signed by the current registered key generation;
+- access tokens are short-lived, issuer/audience/client/permission constrained and rejected when the relevant principal/credential generation is retired;
 - tenant/resource authority is derived by the platform authorization model, not from arbitrary client-supplied tenant claims;
-- token validity alone never proves current authorization or placement.
+- token validity alone never proves current authorization or placement;
+- shared, non-attributable long-lived bearer secrets are not the canonical machine-principal profile.
 
 A future accepted sender-constrained extension may strengthen this profile without weakening these rules.
 
+## Internal service credential portion of OPEN-API-001
+
+Phase 09 `OPEN-API-001` also asked for internal service credential transport where not already fixed. That portion is closed jointly by IR-D-002 below: internal service peers use the accepted short-lived workload certificate identity plus mTLS service-authentication profile. Therefore `OPEN-API-001` is closed only by the combination of IR-D-001 and IR-D-002.
+
 # IR-D-002 — Internal workload identity and service authentication
 
-Canonical workload identity profile:
+Canonical workload identity/protocol profile:
 
 ```text
 SPIFFE-compatible workload URI identity
@@ -61,25 +72,33 @@ SPIFFE-compatible workload URI identity
 + mutual TLS for service-to-service peer authentication
 ```
 
-This profile selects an interoperable identity/protocol shape, not a SPIRE/service-mesh vendor.
+This closes the C1 protocol/trust-shape decision needed by protected implementation. It does **not** choose the concrete workload-identity issuer/attestation/control-plane product. That backend remains a C2 subdecision of `OPEN-PRT-008` and must later be selected through bounded conformance evidence.
 
 ## Identity
 
 A workload identity has canonical form equivalent to:
 
 ```text
-spiffe://<accepted-trust-domain>/<environment>/<runtime-profile>/<workload-id>
+spiffe://<accepted-trust-domain>/<environment-class>/<runtime-profile>/<workload-id>
 ```
 
-Physical pod/node/IP/instance/cell identifiers are not authorization identity unless an accepted profile explicitly binds them as non-canonical evidence.
+Rules:
+
+- `environment-class` and `runtime-profile` are logical security/runtime classes, not physical topology identifiers;
+- physical pod/node/IP/instance/cell/cluster/region identifiers are not canonical workload authorization identity unless an accepted profile explicitly binds one as subordinate non-canonical evidence;
+- a workload identity authenticates a service/runtime principal, never a tenant/business principal;
+- identity syntax cannot be used to bypass accepted placement/current-authorization lookup.
 
 ## Issuance and currentness
 
 - workload certificates are short-lived and automatically rotated;
+- workload attestation/issuance backend must prove the requested logical workload identity from accepted runtime evidence rather than caller-selected strings;
 - issuer/trust-bundle currentness and revocation/retirement are Security authority;
 - a restored or stale issuer/bundle cannot become current merely because TLS succeeds;
 - private keys are non-exported where the selected runtime permits and never ordinary configuration;
-- trust domains/environment bindings cannot let development/validation/recovery identities authenticate as production identities.
+- trust domains/environment bindings cannot let development/validation/recovery identities authenticate as production identities;
+- certificate SAN/identity parsing is canonical and exact; alternate textual encodings cannot map one certificate to multiple workload principals;
+- expired, not-yet-valid, untrusted-chain or retired-trust-bundle credentials fail service authentication.
 
 ## Service authentication vs application authorization
 
@@ -91,20 +110,27 @@ It does not grant:
 - placement authority;
 - domain/business permission;
 - replay/retry eligibility;
-- Product applicability.
+- Product applicability;
+- database/broker superuser authority.
 
 Application authorization maps the authenticated workload identity to exact service permissions/contracts and re-establishes tenant/current authority separately.
 
 ## Broker/state-port adaptation
 
-Where a broker/database/vendor cannot consume the certificate profile directly, a narrow adapter MAY exchange current workload identity for a short-lived vendor credential. The adapter cannot broaden scope and the vendor credential remains derived/non-canonical authority.
+Where a broker/database/vendor cannot consume the certificate profile directly, a narrow adapter MAY exchange current workload identity for a short-lived vendor credential. The adapter:
+
+- authenticates the current workload identity first;
+- maps only to the least-privilege state-port/contract scope;
+- cannot broaden tenant/domain permissions;
+- emits an independently revocable short-lived credential;
+- records credential generation/currentness without making the vendor identity canonical platform identity.
 
 # IR-D-003 — Concrete runtime generation/fence mechanism
 
 Canonical initial mechanism:
 
 ```text
-scope-local monotonically increasing 64-bit fence epoch
+scope-local monotonically increasing positive PostgreSQL BIGINT fence epoch
 stored in the owning authoritative PostgreSQL state
 allocated/advanced transactionally
 checked at every protected effect boundary
@@ -118,20 +144,22 @@ For each fenced authority scope:
 
 ```text
 fence_scope_id
-current_fence_epoch
+current_fence_epoch       # positive signed BIGINT, no wraparound semantics
 current_generation_id
 state/currentness
-updated_at   # evidence only, never ordering authority
+updated_at                # evidence only, never ordering authority
 ```
 
-`current_fence_epoch` increases monotonically. `current_generation_id` remains a stable opaque generation identity and does not replace other generations such as `placement_version`, `configuration_generation`, `workload_credential_generation` or `network_policy_generation`.
+`current_fence_epoch` increases monotonically and SHALL NOT wrap, reset or be reused. Approaching implementation/storage exhaustion is a governed migration blocker long before the signed `BIGINT` maximum; overflow fails closed rather than wrapping.
+
+`current_generation_id` remains a stable opaque generation identity and does not replace other generations such as `placement_version`, `configuration_generation`, `workload_credential_generation` or `network_policy_generation`.
 
 ## Acquisition / replacement
 
 A new effectful holder becomes eligible only after an owning transaction atomically:
 
 1. verifies the expected predecessor/current state;
-2. increments `current_fence_epoch`;
+2. increments `current_fence_epoch` using a compare/lock/update primitive that admits one winning successor for that predecessor;
 3. records the successor generation/current state;
 4. persists required audit/outbox evidence where that authority requires it.
 
@@ -139,19 +167,35 @@ Lease timeout/process death alone never increments authority or proves the old h
 
 ## Effect admission
 
-Every protected effect carries or resolves `{fence_scope_id, fence_epoch}`. The effect owner rejects an epoch lower than current.
+Every protected effect carries or resolves `{fence_scope_id, fence_epoch}` through an authenticated/trusted internal context. Caller-controlled public input cannot choose a higher epoch as authority.
 
-Where authoritative state and effect are co-resident in PostgreSQL, the current-epoch predicate is checked in the same transaction as the protected mutation.
+The effect owner rejects an epoch lower than the current epoch and rejects an epoch whose scope/generation binding is invalid for the requested operation.
 
-For cross-authority/external effects, the stable operation/reconciliation contract remains authoritative; a fence does not convert ambiguous outcome into absence.
+Where authoritative fence state and protected effect are co-resident in PostgreSQL, the current-epoch predicate is checked in the same transaction as the protected mutation.
+
+Where the effect authority is separate, one of the following is required:
+
+- the target maintains/consults an authoritative monotonic accepted epoch for the same fence scope before the effect; or
+- the operation uses the accepted stable operation/create-or-observe/reconciliation protocol so that a stale source cannot gain a new effect attempt merely from an epoch claim.
+
+A fence token never converts an ambiguous cross-authority outcome into absence.
 
 ## Recovery
 
-Restore/PITR SHALL NOT move an effective fence epoch backwards. If restored state may be behind surviving evidence/current authority, the scope remains quarantined and reconciliation advances/fences forward before effectful admission.
+Restore/PITR SHALL NOT move an effective fence epoch backwards. Recovery inventory compares restored epoch/generation with surviving current authority, audit/effect/release/placement evidence. If a higher surviving epoch may exist or equality cannot be proven, the scope remains quarantined and reconciliation advances/fences forward before effectful admission.
+
+A recovered lower epoch is never made current by resetting external actors to match the backup.
 
 ## Portability
 
-PostgreSQL is the initial concrete implementation because accepted architecture already uses PostgreSQL for transactional business/authority truth. A future authority store may replace it only if it proves equivalent atomic compare/advance, monotonic fencing, recovery continuity and stale-actor rejection.
+PostgreSQL is the initial concrete implementation because accepted architecture already uses PostgreSQL for transactional business/authority truth. A future authority store may replace it only if it proves equivalent:
+
+- atomic predecessor check + monotonic advance;
+- one-current-successor behavior;
+- authenticated scope binding;
+- stale-actor rejection at effect boundaries;
+- restore/PITR forward continuity;
+- interoperability with stable-operation reconciliation.
 
 # Compatibility
 
@@ -161,7 +205,9 @@ The following are semantic/security breaking and require reviewed migration:
 - changing machine authentication to shared non-attributable bearer secrets;
 - allowing workload network presence to substitute for mTLS identity;
 - changing workload identity so environment/trust domain can broaden production authority;
+- allowing caller-selected workload URI strings to become issuance authority;
 - replacing monotonic fencing with wall-clock/process/lease-expiry authority;
+- allowing fence reuse/wrap/reset;
 - allowing a restored lower epoch to become current;
 - collapsing runtime fence epoch into unrelated placement/config/security generations.
 
@@ -169,13 +215,18 @@ The following are semantic/security breaking and require reviewed migration:
 
 Before an implementation slice claims conformance, tests SHALL cover:
 
-- OIDC state/nonce/PKCE mix-up and token audience/issuer rejection;
+- OIDC state/nonce/PKCE mix-up and token audience/issuer/client rejection;
+- authorization-code/session replay across browser sessions;
 - browser inability to read long-lived platform credentials;
+- `private_key_jwt` replay/wrong-audience/retired-key rejection;
 - machine credential revocation/rotation;
 - cross-environment workload identity rejection;
+- caller-requested workload identity different from attested runtime identity;
 - expired/stale workload certificate and trust-bundle rejection;
 - tenant authorization not derivable from mTLS identity alone;
 - stale writer/worker with old fence epoch after failover/replacement;
 - concurrent acquisition race with one winning epoch;
+- wrong-scope/forged higher epoch rejection;
 - restore/PITR with a surviving higher epoch;
+- no epoch wrap/reset/reuse behavior;
 - cross-authority ambiguity remaining reconciliation-blocked despite fencing.

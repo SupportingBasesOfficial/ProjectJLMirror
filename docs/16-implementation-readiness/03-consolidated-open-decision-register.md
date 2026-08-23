@@ -6,7 +6,7 @@
 
 This readiness overlay does not rewrite source OPEN registries. It assigns the roadmap closure class used by the Implementation Readiness Gate and records whether a source OPEN has been semantically satisfied by a later accepted phase, remains open as a replaceable implementation choice, blocks production only, is Product-gated, or is intentionally deferred.
 
-If a source OPEN ID is missing from this register, the gate fails closed.
+If a source OPEN ID or an explicitly split subdecision is missing, multiply classified or silently collapsed, the gate fails closed.
 
 ## Closure classes
 
@@ -20,59 +20,90 @@ C5 intentionally_deferred_future_capability
 
 A class is about the unresolved decision, not about the importance of the fixed invariant. C2 technology may be replaced only while preserving all fixed semantics.
 
-## Phase 09 overlay
+Where a source OPEN contains subdecisions with different closure gates, this overlay splits them as `.A`, `.B`, etc. The source OPEN ID remains the lineage anchor; the suffix is readiness bookkeeping, not a new upstream authority.
+
+## Phase 09 overlay — `OPEN-API-001..022`
 
 | IDs | Class | Readiness disposition |
 |---|---|---|
-| `OPEN-API-001` | C1 | PROPOSED SATISFIED by IR-D-001 plus `docs/09-api-contracts/implementation-readiness-closures.md`; becomes closed only if this gate is accepted |
-| `OPEN-API-002` | C2 | cookie/CSRF/origin implementation profile chosen under Phase 09 fixed security semantics |
-| `OPEN-API-003` | C5 | deferred with `impl.realtime@1`; cannot appear until that slice is separately activated |
-| `OPEN-API-004` | C3 | numeric request/page/bulk limits require benchmark/abuse evidence before production |
-| `OPEN-API-005` | C3 | numeric idempotency retention; recovery semantics already fixed |
-| `OPEN-API-006` | C3 | support/deprecation duration requires Product/support evidence |
+| `OPEN-API-001` | C1 | PROPOSED SATISFIED by IR-D-001 + IR-D-002 and the Phase 09 closure record; closes only if this gate is accepted |
+| `OPEN-API-002` | C2 | cookie/CSRF/origin implementation profile under fixed Phase 09 browser security semantics |
+| `OPEN-API-003` | C5 | realtime ticket presentation deferred with `impl.realtime@1` |
+| `OPEN-API-004..006` | C3 | request/page/bulk limits, idempotency retention and support/deprecation durations require evidence before production |
 | `OPEN-API-007..010` | C2 | content-processing, artifact optimization, tracing and contract-tooling mechanisms |
-| `OPEN-API-011` | C4 | official public SDK scope requires accepted Product need |
+| `OPEN-API-011` | C4 | official public SDK scope requires Product authority |
 | `OPEN-API-012..013` | C2 | rate-limit/problem representation profiles |
 | `OPEN-API-014` | C4 | public projection resource families require Product authority |
-| `OPEN-API-015` | C5 | privileged direct-query surface deferred from initial implementation wave |
-| `OPEN-API-016` | C4 | endpoint-specific contract exists only for accepted Product/domain use cases; no endpoint may be invented by implementation |
-| `OPEN-API-017` | C3 | cache freshness numerics/tuning before production of applicable surfaces |
-| `OPEN-API-018` | C4 | browser-active inline artifact rendering requires explicit Product need and threat-model acceptance |
-| `OPEN-API-019` | C5 | protected cursor mechanism closes with the first authorized slice that needs such continuation; no address/history-visible protected token default |
-| `OPEN-API-020..021` | C2 | filename and concrete HTTP ingress/profile implementation under fixed canonicalization/security semantics |
+| `OPEN-API-015` | C5 | privileged direct-query surface deferred from initial wave |
+| `OPEN-API-016` | C4 | endpoint-specific contracts exist only for accepted Product/domain use cases |
+| `OPEN-API-017` | C3 | cache freshness/tuning numerics before production of applicable surfaces |
+| `OPEN-API-018` | C4 | active browser-inline artifact profile requires explicit Product need + threat-model acceptance |
+| `OPEN-API-019` | C5 | protected cursor mechanism deferred until an authorized slice requires it; no protected URL-history default |
+| `OPEN-API-020..021` | C2 | filename and concrete HTTP-ingress implementation under fixed canonicalization/security semantics |
 | `OPEN-API-022` | C4 | provider callback trust profile closes per accepted provider/Product integration before that adapter is implemented |
 
-## Phase 10 overlay
+## Phase 10 overlay — `OPEN-EVT-001..028`
 
 | IDs | Class | Readiness disposition |
 |---|---|---|
-| `OPEN-EVT-001..005` | C2 | transport/serialization/catalog/version/topology mechanisms are replaceable under fixed event semantics |
-| `OPEN-EVT-006..007` | C3 | partition/retry numerics require capacity/fault evidence |
-| `OPEN-EVT-008..018` | C2 | ack, quarantine, equivalence store, outbox, generation representation, replay reader, service auth implementation, KMS and trace mechanism; fixed semantics remain authoritative |
-| `OPEN-EVT-019` | C3 | realtime transport numerics before production |
-| `OPEN-EVT-020` | C5 | resume/cursor capability deferred with realtime slice |
+| `OPEN-EVT-001..005` | C2 | transport, serialization, catalog, version syntax and physical topology mechanisms |
+| `OPEN-EVT-006..007` | C3 | partition/retry numeric profiles before production |
+| `OPEN-EVT-008..015` | C2 | ack/lease, quarantine, bounds mechanism, equivalence store, outbox, producer-generation representation, replay/history and historical-reader mechanisms |
+| `OPEN-EVT-016` | C2 | broker/service credential adaptation remains C2; IR-D-002 supplies the canonical internal workload-authentication baseline and vendor credentials remain derived |
+| `OPEN-EVT-017..018` | C2 | message KMS/historical-verifier and trace propagation mechanisms |
+| `OPEN-EVT-019` | C3 | realtime transport/buffer/session numerics before production |
+| `OPEN-EVT-020` | C5 | realtime resume/cursor profile deferred with realtime slice |
 | `OPEN-EVT-021` | C4 | outbound webhook Product scope |
 | `OPEN-EVT-022` | C2 | webhook signature/auth mechanism after Product applicability exists |
-| `OPEN-EVT-023` | C4 | Product-specific destination change/cancel/reissue policy blocks webhook implementation until Product enablement |
-| `OPEN-EVT-024..025` | C2 | egress and recovery-generation/reconciliation mechanisms |
-| `OPEN-EVT-026..028` | C3 | retention/residency/deprecation production decisions |
+| `OPEN-EVT-023` | C4 | Product-specific destination-generation cancel/fence/quarantine/reissue behavior before webhook implementation |
+| `OPEN-EVT-024..025` | C2 | webhook egress and recovery-generation/reconciliation mechanisms |
+| `OPEN-EVT-026..028` | C3 | retention/replay/quarantine, residency and deprecation production horizons |
 
-## Phase 11 overlay
+## Phase 11 overlay — exact source rows `OPEN-REL-001..030`
 
-Phase 11 already assigned roadmap classes. This gate preserves them and records downstream closure:
+Phase 11 already assigned a primary roadmap class. This gate preserves those classes and explicitly splits source rows whose own closure text gives different gates to mechanism vs numeric/Product subdecisions.
 
-| ID | Source class | Readiness disposition |
+| ID/subdecision | Class | Readiness disposition |
 |---|---|---|
-| `OPEN-REL-013` | C1 | SATISFIED SEMANTICALLY by accepted Phase 13 generation/fence contracts; concrete storage/propagation mechanism is closed by proposed IR-D-003/`OPEN-PRT-039` closure below when this gate is accepted |
+| `OPEN-REL-001` | C2 | Control Plane continuity mechanism/lease distribution/cached-authority implementation |
+| `OPEN-REL-002` | C3 | staleness/lease horizons and availability topology before production |
+| `OPEN-REL-003.A` | C2 | database HA/election/fencing mechanism selection |
+| `OPEN-REL-003.B` | C3 | replica counts and production HA/topology numerics |
+| `OPEN-REL-004` | C3 | region topology/failover geography/capacity before production |
+| `OPEN-REL-005..006` | C3 | deadline/retry numeric profiles before production |
+| `OPEN-REL-007` | C2 | circuit algorithm only for profiles whose accepted circuit selector is applicable |
+| `OPEN-REL-008.A` | C2 | bulkhead/pool/adaptive-control mechanism |
+| `OPEN-REL-008.B` | C3 | concurrency/reservation numeric sizes before production |
+| `OPEN-REL-009` | C3 | backlog size/age/storage thresholds before production |
+| `OPEN-REL-010.A` | C2 | scheduling/fairness mechanism and non-Product differentiation implementation |
+| `OPEN-REL-010.B` | C4 | premium/differentiated Product tiers, if any, require Product authority before differentiated behavior |
+| `OPEN-REL-011` | C3 | provider-specific timeout/retry/concurrency/reconciliation numerics/capability evidence before provider production eligibility |
+| `OPEN-REL-012.A` | C2 | broker/outbox/drain product and mechanism selection |
+| `OPEN-REL-012.B` | C3 | partition/retention/lag production numerics |
+| `OPEN-REL-013` | C1 | semantic requirement satisfied by accepted Phase 13; concrete mechanism closes through proposed IR-D-003/`OPEN-PRT-039` closure on this gate |
+| `OPEN-REL-014..015` | C2 | reconciliation tooling and cache/replay implementation mechanisms |
+| `OPEN-REL-016.A` | C2 | secret/KMS/bootstrap/rotation/historical-verifier mechanism |
+| `OPEN-REL-016.B` | C3 | lease/rotation-overlap numeric horizons before production |
+| `OPEN-REL-017` | C3 | realtime session/buffer/reconnect production numerics |
+| `OPEN-REL-018` | C4 | outbound webhook capability/families Product-gated |
+| `OPEN-REL-019.A` | C2 | object/artifact store/capability/streaming mechanism |
+| `OPEN-REL-019.B` | C3 | availability/production sizing objectives where numeric |
+| `OPEN-REL-020` | C3 | telemetry buffer/loss/checkpoint/retention/cardinality/cost production envelopes; customer durable mechanism owned separately by `OPEN-REL-030` |
+| `OPEN-REL-021` | C2 | fault/chaos tooling and safe execution environment |
+| `OPEN-REL-022..023` | C3 | capacity/availability/recovery objectives and rearchitecture numerics before production |
+| `OPEN-REL-024` | C2 | specialized/privileged runtime isolation mapping/extraction mechanism |
+| `OPEN-REL-025` | C3 | idempotency/inbox/outbox/equivalence/recovery evidence retention horizons before production |
 | `OPEN-REL-026` | C1 | SATISFIED by accepted Phase 12 signal/health/SLI/alert semantics |
-| `OPEN-REL-027` ownership-semantic portion | C1 | SATISFIED by accepted Phase 15 exact ownership/runbook/escalation catalog; staffing remains C3 |
-| `OPEN-REL-018` | C4 | webhook Product-gated |
-| all Phase 11 C2 rows | C2 | mechanism/spike choices remain subordinate to accepted reliability profile |
-| all Phase 11 C3 rows | C3 | production numerics/evidence remain production blockers, not implementation-readiness claims |
+| `OPEN-REL-027.A` | C1 | SATISFIED by accepted Phase 15 logical operational ownership/runbook/escalation semantics |
+| `OPEN-REL-027.B` | C3 | physical staffing/on-call coverage before production |
+| `OPEN-REL-028` | C2 | deployment/rollout/recovery mechanism satisfied semantically by Phase 14; concrete product remains replaceable C2 |
+| `OPEN-REL-029.A` | C2 | configuration store/distribution/schema/rollout mechanism |
+| `OPEN-REL-029.B` | C3 | last-known-good/convergence numeric horizons before production |
+| `OPEN-REL-030` | C2 | customer-monitoring durable acceptance/projection mechanism; specifically blocks `impl.customer-telemetry@1` until selected and conformed |
 
-`OPEN-REL-030` is C2 but specifically blocks implementation of `impl.customer-telemetry@1` until the durable acceptance/projection mechanism is selected and conformed.
+No Phase 11 source row is implicitly covered by “all C2/C3 rows”; every ID is enumerated here.
 
-## Phase 12 overlay
+## Phase 12 overlay — `OPEN-OBS-001..037`
 
 | IDs | Class |
 |---|---|
@@ -82,16 +113,20 @@ Phase 11 already assigned roadmap classes. This gate preserves them and records 
 
 `OPEN-OBS-037` remains upstream Product authority. Runtime/config/catalog presence cannot close it.
 
-## Phase 13 overlay
+## Phase 13 overlay — `OPEN-PRT-001..040`
 
-| IDs | Class | Notes |
+| IDs/subdecision | Class | Readiness disposition |
 |---|---|---|
-| `OPEN-PRT-008`, `OPEN-PRT-011` | C1 | PROPOSED SATISFIED by IR-D-002 plus `docs/13-platform-runtime/implementation-readiness-closures.md`; closes only if this gate is accepted |
-| `OPEN-PRT-039` | C1 | PROPOSED SATISFIED by IR-D-003 plus the Phase 13 readiness closure record; closes only if this gate is accepted |
-| `OPEN-PRT-001`, `OPEN-PRT-003..007`, `OPEN-PRT-009..020`, `OPEN-PRT-027..028`, `OPEN-PRT-030..038`, `OPEN-PRT-040` | C2 | replaceable runtime/platform mechanisms under fixed profiles |
+| `OPEN-PRT-008.A` | C1 | protocol/trust-shape PROPOSED SATISFIED by IR-D-002 and Phase 13 closure record; closes only if this gate is accepted |
+| `OPEN-PRT-008.B` | C2 | concrete workload-identity issuer/attestation backend remains OPEN and replaceable |
+| `OPEN-PRT-011` | C1 | service-authentication protocol PROPOSED SATISFIED by IR-D-002; closes only if this gate is accepted |
+| `OPEN-PRT-039` | C1 | concrete fence storage/propagation PROPOSED SATISFIED by IR-D-003; closes only if this gate is accepted |
+| `OPEN-PRT-001`, `OPEN-PRT-003..007`, `OPEN-PRT-009..010`, `OPEN-PRT-012..020`, `OPEN-PRT-027..028`, `OPEN-PRT-030..038`, `OPEN-PRT-040` | C2 | replaceable runtime/platform mechanisms under fixed profiles |
 | `OPEN-PRT-002`, `OPEN-PRT-021..026`, `OPEN-PRT-029` | C3 | physical topology/count/sizing/scaling/freshness numerics before production |
 
-## Phase 14 overlay
+The C2 range intentionally excludes `OPEN-PRT-011`; no source decision has two active readiness classes after the explicit `OPEN-PRT-008` split.
+
+## Phase 14 overlay — `OPEN-RLS-001..039`
 
 | IDs | Class |
 |---|---|
@@ -100,7 +135,7 @@ Phase 11 already assigned roadmap classes. This gate preserves them and records 
 
 No Phase 14 tool choice may weaken source trust, one-artifact promotion, release-target fencing, config-equivalence, runtime artifact verification or rollback/forward-recovery semantics.
 
-## Phase 15 overlay
+## Phase 15 overlay — `OPEN-OPS-001..040`
 
 | IDs | Class |
 |---|---|
@@ -111,24 +146,42 @@ Phase 15 logical ownership, runbook semantics, dual-control applicability select
 
 ## C1 closure gate
 
-The only source C1 decisions not already satisfied by accepted downstream phases were:
+The source C1 decisions not already satisfied by accepted downstream phases reduce to these exact subdecisions:
 
 ```text
 OPEN-API-001
-OPEN-PRT-008
+OPEN-PRT-008.A
 OPEN-PRT-011
 OPEN-PRT-039
 ```
 
-This gate proposes explicit closures for all four through IR-D-001/002/003 and the owning Phase 09/13 closure records. Therefore:
+This gate proposes explicit closures through IR-D-001/002/003 and the owning Phase 09/13 closure records.
 
 ```text
 before this gate is accepted -> C1 closure status = PROPOSED / implementation remains blocked
 after this exact gate is accepted -> remaining C1 count = 0
 ```
 
-Any material change to those profiles reopens the owning C1 decision through compatibility governance.
+`OPEN-PRT-008.B` remains C2 and is **not** represented as closed by the C1 result.
+
+Any material change to a C1 profile reopens the owning C1 subdecision through compatibility governance.
+
+## Completeness / uniqueness invariant
+
+For each source registry range:
+
+```text
+Phase 09  OPEN-API-001..022
+Phase 10  OPEN-EVT-001..028
+Phase 11  OPEN-REL-001..030
+Phase 12  OPEN-OBS-001..037
+Phase 13  OPEN-PRT-001..040
+Phase 14  OPEN-RLS-001..039
+Phase 15  OPEN-OPS-001..040
+```
+
+every source ID has exactly one active readiness disposition, except where the source decision is explicitly split into separately named subdecisions whose union covers the whole source question.
 
 ## Closure evidence rule
 
-A C1 closure must update this register and the owning source authority where necessary. A C2 selection must produce a bounded decision/spike record and conformance evidence before becoming canonical. A C3 remains a production blocker. C4/C5 capabilities stay absent from implementation unless their governing authority deliberately changes their class/state.
+A C1 closure updates this register and the owning source authority where necessary. A C2 selection produces a bounded decision/spike record and conformance evidence before becoming canonical. A C3 remains a production blocker. C4/C5 capabilities stay absent from implementation unless their governing authority deliberately changes their class/state.

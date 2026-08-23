@@ -143,12 +143,12 @@ Each recovery profile requires owner + quarantine + R + F + continuity inventory
 
 | Recovery profile | Accepted upstream joins | Mandatory admission emphasis | Runbook profile | Required Phase 15 vectors |
 |---|---|---|---|---|
-| `recovery.control-plane@1` | `rel.control-plane-placement@1`, `health.control-plane@1`, Phase 13 placement/cell lifecycle, Phase 14 release-target/current-policy state | current placement/config/cell/release/security authority; stale writer/executor fencing; `(R,F]` | `runbook.recovery@1` | `OPRV-009..015`, `OPRV-019`, `OPRV-022`, `OPRV-035`, `OPRV-051`, `OPRV-052`, `OPRV-056` |
-| `recovery.cell@1` | `rel.cell-transactional-store@1`, `health.cell@1`, Phase 13 runtime/config/network/workload generations, Phase 14 artifact/config verification | current cell lifecycle/runtime/config/placement/release state; durable work continuity; stale worker/writer fencing | `runbook.recovery@1` | `OPRV-009..015`, `OPRV-020`, `OPRV-022`, `OPRV-024`, `OPRV-036..038`, `OPRV-052`, `OPRV-056` |
-| `recovery.tenant@1` | `rel.control-plane-placement@1`, `rel.security-session-authority@1`, relevant cell/data reliability profiles, current tenant placement/auth/governance | canonical tenant identity, current placement/auth/governance, tenant-scoped durable/effect continuity | `runbook.recovery@1`, `runbook.relocation@1` where relocation applies | `OPRV-011..014`, `OPRV-019`, `OPRV-021`, `OPRV-023`, `OPRV-042`, `OPRV-052`, `OPRV-056` |
-| `recovery.telemetry@1` | `health.observability-pipeline@1`, `health.customer-telemetry@1`, `sli.observability.integrity@1`, `sli.customer-telemetry.acceptance@1`, `obs.recovery.reconciliation@1` | operational-observability blindness separated from durably accepted customer-observation continuity; no false healthy silence/projection regression | `runbook.recovery@1` | `OPRV-009..014`, `OPRV-034`, `OPRV-048`, `OPRV-052`, `OPRV-053`, `OPRV-056` |
-| `recovery.artifact@1` | `health.artifact@1`, `obs.artifact.lifecycle@1`, Phase 09 artifact authority, Phase 14 artifact/release lifecycle | immutable integrity plus current lifecycle/delivery/disclosure/release authority; retired/consumed generations stay retired | `runbook.recovery@1`, `runbook.release-forward-recovery@1` as applicable | `OPRV-009..015`, `OPRV-032`, `OPRV-036..038`, `OPRV-052`, `OPRV-054`, `OPRV-056` |
-| `recovery.crypto-authority@1` | `rel.secret-key-authority@1`, `health.security-authority@1`, `health.message-equivalence@1` where historical proof applies, Phase 14 release verifier continuity | current key/verifier/secret authority plus narrow historical-proof usability; revocation/erasure/currentness cannot regress | `runbook.crypto-secret-recovery@1` | `OPRV-012..018`, `OPRV-045`, `OPRV-051`, `OPRV-052`, `OPRV-056` |
+| `recovery.control-plane@1` | `rel.control-plane-placement@1`, `health.control-plane@1`, Phase 13 placement/cell lifecycle, Phase 14 release-target/current-policy state | current placement/config/cell/release/security authority; stale writer/executor fencing; `(R,F]` | `runbook.recovery@1` | `OPRV-009..015`, `OPRV-019`, `OPRV-022`, `OPRV-035`, `OPRV-051`, `OPRV-052`, `OPRV-056`, `OPRV-059` |
+| `recovery.cell@1` | `rel.cell-transactional-store@1`, `health.cell@1`, Phase 13 runtime/config/network/workload generations, Phase 14 artifact/config verification | current cell lifecycle/runtime/config/placement/release state; durable work continuity; stale worker/writer fencing | `runbook.recovery@1` | `OPRV-009..015`, `OPRV-020`, `OPRV-022`, `OPRV-024`, `OPRV-036..038`, `OPRV-052`, `OPRV-056`, `OPRV-059` |
+| `recovery.tenant@1` | `rel.control-plane-placement@1`, `rel.security-session-authority@1`, relevant cell/data reliability profiles, current tenant placement/auth/governance | canonical tenant identity, current placement/auth/governance, tenant-scoped durable/effect continuity | `runbook.recovery@1`, `runbook.relocation@1` where relocation applies | `OPRV-011..014`, `OPRV-019`, `OPRV-021`, `OPRV-023`, `OPRV-042`, `OPRV-052`, `OPRV-056`, `OPRV-059` |
+| `recovery.telemetry@1` | `health.observability-pipeline@1`, `health.customer-telemetry@1`, `sli.observability.integrity@1`, `sli.customer-telemetry.acceptance@1`, `obs.recovery.reconciliation@1` | operational-observability blindness separated from durably accepted customer-observation continuity; no false healthy silence/projection regression | `runbook.recovery@1` | `OPRV-009..014`, `OPRV-034`, `OPRV-048`, `OPRV-052`, `OPRV-053`, `OPRV-056`, `OPRV-059` |
+| `recovery.artifact@1` | `health.artifact@1`, `obs.artifact.lifecycle@1`, Phase 09 artifact authority, Phase 14 artifact/release lifecycle | immutable integrity plus current lifecycle/delivery/disclosure/release authority; retired/consumed generations stay retired | `runbook.recovery@1`, `runbook.release-forward-recovery@1` as applicable | `OPRV-009..015`, `OPRV-032`, `OPRV-036..038`, `OPRV-052`, `OPRV-054`, `OPRV-056`, `OPRV-059` |
+| `recovery.crypto-authority@1` | `rel.secret-key-authority@1`, `health.security-authority@1`, `health.message-equivalence@1` where historical proof applies, Phase 14 release verifier continuity | current key/verifier/secret authority plus narrow historical-proof usability; revocation/erasure/currentness cannot regress | `runbook.crypto-secret-recovery@1` | `OPRV-012..018`, `OPRV-045`, `OPRV-051`, `OPRV-052`, `OPRV-056`, `OPRV-059` |
 
 A future implementation SHALL use exact accepted profile IDs where a normalized upstream catalog provides them. Tool/vendor object names are not valid substitutes.
 
@@ -156,9 +156,11 @@ A future implementation SHALL use exact accepted profile IDs where a normalized 
 
 ```text
 runbook_execution_id
-runbook_profile/version
+runbook_profile_id@version
+canonical_profile_definition_reference
 incident/change/recovery relationship
 executor principal
+required_role_bindings
 current authorization evidence
 scope
 stable underlying effect-operation IDs/fences
@@ -167,6 +169,8 @@ step/outcome state
 pause/abort/reconciliation state
 permanent evidence refs
 ```
+
+The `canonical_profile_definition_reference` resolves to the materialized profile in `04-runbook-and-break-glass-governance.md`. Missing/unknown/local aliases fail conformance; a local workflow cannot keep the canonical ID while weakening roles, preconditions, effect boundary or prohibited substitutions.
 
 ## Break-glass schema
 
@@ -228,6 +232,8 @@ runbook.maintenance-decommission@1
 runbook.incident-closure@1
 ```
 
+Every profile above has one canonical Phase 15 definition in `04-runbook-and-break-glass-governance.md`, including owner, roles, authority/precondition inputs, allowed boundary, forbidden substitutions and required vectors. An implementation mapping may add tool-specific steps but cannot alter those fields without an accepted compatibility-classified profile/version change. `OPRV-059` falsifies profile-ID authority laundering.
+
 ## Operational joins
 
 | Operation | Required upstream authority/evidence | Forbidden substitution |
@@ -245,8 +251,8 @@ runbook.incident-closure@1
 
 ## Cross-cutting validation
 
-`OPRV-001..058` are canonical Phase 15 adversarial vectors. Implementations map every applicable vector to owner, expected result and evidence or an evidence-backed `NO_APPLICABLE_CASE` for a genuinely conditional subcase.
+`OPRV-001..059` are canonical Phase 15 adversarial vectors. Implementations map every applicable vector to owner, expected result and evidence or an evidence-backed `NO_APPLICABLE_CASE` for a genuinely conditional subcase.
 
 ## OPEN discipline
 
-Concrete products, topology and numerics resolve only through `OPEN-OPS-*` closure evidence. Tool defaults never become manifest or Product authority silently.
+Concrete products, topology and numerics resolve only through `OPEN-OPS-*` closure evidence. Tool defaults never become manifest, runbook or Product authority silently.

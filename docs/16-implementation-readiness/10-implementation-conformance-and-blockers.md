@@ -22,7 +22,8 @@ Implementation authorization SHALL NOT be issued while any applicable condition 
 14. deterministic assurance is absent on exact implementation HEAD;
 15. an implementation PR changes normative architecture to fit code without an owning governance change;
 16. a privileged human operation can treat valid login/session/role as sufficient when current Security policy requires stronger MFA/step-up/re-authentication assurance;
-17. machine client authentication accepts replayed `private_key_jwt` assertions or a retired client-key generation.
+17. machine client authentication accepts replayed `private_key_jwt` assertions or a retired client-key generation;
+18. replay-sensitive machine authentication uses replica-local/check-then-insert state, issues while replay authority cannot prove unused-state, or treats replay-state loss/restore as proof that an assertion is unused.
 
 ## Slice-specific blockers
 
@@ -35,10 +36,11 @@ Blocked unless IR-D-001/002 are accepted and the implementation preserves:
 - current authorization/tenant membership independent from token/session validity;
 - policy-driven MFA/step-up/re-authentication currentness for privileged operations using trusted authentication-assurance evidence;
 - asymmetric machine authentication with unique-`jti` replay rejection and current client-key generation;
+- one logical cross-replica machine-assertion replay authority with atomic single-winner admission, fail-closed outage/partition behavior and restore continuity;
 - internal workload/service mTLS identity kept separate from tenant/domain authorization;
 - Phase 09 CSRF/Origin contracts.
 
-`IRV-008..012`, `IRV-031` and `IRV-032` are mandatory identity-slice falsification anchors.
+`IRV-008..012` and `IRV-031..033` are mandatory identity-slice falsification anchors.
 
 ### `impl.control-plane@1` / `impl.cell-data-runtime@1`
 

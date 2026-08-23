@@ -8,7 +8,7 @@
 |---|---|
 | Roadmap Phase 15 | ownership, incident command, runbooks, break-glass, DR/recovery, operational evidence |
 | Phase 11 | failure/degradation, ambiguity, quarantine, stable operation identity, `(R,F]` |
-| Phase 12 | health/alerts/SLI/diagnostics, operational-observability vs customer-monitoring distinction, recovery signals |
+| Phase 12 | health/alerts/SLI/diagnostics, Product applicability selectors, operational-observability vs customer-monitoring distinction, recovery signals |
 | Phase 13 | runtime/cell/environment identity, generations/fences, placement, secret refs, relocation |
 | Phase 14 | release operation/target state, rollback/forward recovery, artifact/config verification, drift/decommission |
 | Security | authorization, tenant isolation, revocation, break-glass, audit, erasure/legal hold, crypto continuity |
@@ -23,13 +23,37 @@ For each accepted Phase 11 reliability profile:
 ```text
 exact reliability_profile_id@version
  -> Phase 11 criticality/failure/automatic behavior
- -> Phase 12 same-key health/SLI/alert join
+ -> Phase 12 same-key health/SLI/alert/applicability join
  -> Phase 15 logical operational owner + incident/runbook/escalation row
  -> applicable Phase 15 recovery-scope joins
  -> concrete delegated/on-call assignee/currentness at runtime
 ```
 
 The physical assignee may change; the logical same-key record may not disappear or drift behind upstream semantic changes. A new/changed Phase 11 or Phase 12 key invalidates the joined Phase 15 record until compatibility review updates it.
+
+## Product-applicability trace
+
+For every Product-gated operational profile or branch:
+
+```text
+accepted Product authority
+ -> exact Phase 12 applicability selector and OPEN/NO_APPLICABLE_CASE owner
+ -> Phase 15 preparedness/ownership row
+ -> runbook/recovery evidence only within that selector
+ -> runtime implementation/configuration/deployment as subordinate evidence
+```
+
+The direction is one-way. Operational catalog presence cannot flow authority back upstream.
+
+For the accepted webhook/artifact selectors, Phase 15 preserves:
+
+```text
+product_state_unproven -> upstream OPEN remains OPEN
+product_not_enabled / product_not_exposed_delivery -> no Product-facing enablement
+product_enabled / product_exposed_delivery -> only accepted upstream authority establishes applicability
+```
+
+A not-enabled/not-exposed Product-facing branch may still retain diagnostic, security, recovery and operational ownership obligations where the accepted reliability/observability profile requires them. `OPRV-058` falsifies Product-applicability laundering.
 
 ## End-to-end incident trace
 
@@ -155,7 +179,8 @@ quarantine/backlog identity
 
 Evidence identifies enough provenance to distinguish:
 
-- exact Phase 11 reliability key + Phase 12 observability join + Phase 15 logical owner/runbook mapping;
+- exact Phase 11 reliability key + Phase 12 observability/applicability join + Phase 15 logical owner/runbook mapping;
+- accepted Product-applicability evidence/selector for every gated branch without treating operations state as its authority;
 - physical ownership/delegation/currentness;
 - incident identity/classification/command lifecycle and residual disposition;
 - communication responsibility/disposition;
@@ -173,7 +198,7 @@ Evidence identifies enough provenance to distinguish:
 - relocation/maintenance/decommission operation identities;
 - capacity/admission evidence;
 - unresolved ambiguity/residual obligations;
-- applicable `OPRV-001..057` vectors and OPEN dispositions;
+- applicable `OPRV-001..058` vectors and OPEN dispositions;
 - timestamps/order/correlation.
 
 Evidence is minimized/classified and never stores secret material, unrestricted customer payloads or artifact access capabilities merely for convenience.
@@ -187,6 +212,7 @@ Operations design measures recovery/backfill/replay concurrency, backup/restore 
 After Phase 15 acceptance, the separate Implementation Readiness Gate must prove implementation does not need to invent:
 
 - normalized Phase 11/12/15 service ownership/escalation semantics;
+- Product-applicability preservation from accepted Product/Phase 12 selectors through operational catalog/runbook/recovery implementation;
 - incident classification/command/closure/residual-obligation authority;
 - runbook and break-glass authority boundaries, including dual-control applicability handling;
 - recovery scope/state/R/F/quarantine/full-vs-partial admission semantics;

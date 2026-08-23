@@ -18,6 +18,7 @@ provider/destination concurrency
 realtime connections/fanout
 broker backlog age/volume
 retry/redrive/replay amplification
+machine-auth assertion replay-state cardinality/retention/validation work
 message-equivalence comparison/KMS work
 transactional DB connections/CPU/IO/storage
 customer telemetry ingest/projection/backlog
@@ -48,6 +49,7 @@ The slice SHALL contain:
 - instrumentation points for all relevant dimensions;
 - explicit overload/backpressure/shedding behavior from Phase 11;
 - tenant/workload/provider/destination bulkhead hooks;
+- bounded replay-state retention/cardinality and cross-replica admission work for replay-sensitive authentication/capability paths;
 - cost attribution dimensions that avoid unsafe cardinality;
 - tests proving no unbounded amplification path.
 
@@ -62,6 +64,7 @@ Capacity tests SHALL include worst-case skew rather than uniform averages:
 - one heavy tenant;
 - one failing provider/destination;
 - duplicate/replay storm;
+- concurrent duplicate `private_key_jwt` assertions across token-boundary replicas and replay-state recovery/reconnect surge;
 - poison/quarantine accumulation;
 - retry storm after dependency recovery;
 - high-cardinality diagnostic input;
@@ -72,7 +75,7 @@ Capacity tests SHALL include worst-case skew rather than uniform averages:
 
 ## Cost safety
 
-A mechanism may be technically correct but readiness-ineligible if attacker/user-controlled input can create unbounded cost without attribution/admission. Cost controls remain subordinate to correctness; cost pressure cannot justify skipping audit, idempotency, recovery or security checks.
+A mechanism may be technically correct but readiness-ineligible if attacker/user-controlled input can create unbounded cost without attribution/admission. Cost controls remain subordinate to correctness; cost pressure cannot justify skipping audit, idempotency, replay protection, recovery or security checks.
 
 ## OPEN interaction
 

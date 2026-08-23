@@ -15,10 +15,10 @@ Formatting, contact presentation or evidence-view changes that preserve authorit
 Incident, paging, backup, DR, KMS, runbook or automation product replacement preserving exact logical profiles, authority, evidence and failure semantics.
 
 ### OPS-COMP-C — semantic breaking
-Changes to incident lifecycle/closure/residual disposition, recovery state/R/F/resumption mode, operational-owner mapping, Product-applicability binding, runbook authority, redrive/replay eligibility, relocation/decommission semantics, evidence disposition or ownership boundaries.
+Changes to incident lifecycle/closure/residual disposition, recovery state/R/F/resumption mode, operational-owner mapping, Product-applicability binding, canonical runbook role/precondition/effect semantics, redrive/replay eligibility, relocation/decommission semantics, evidence disposition or ownership boundaries.
 
 ### OPS-COMP-D — security/recovery sensitive
-Changes that broaden break-glass, weaken separation/dual control or its applicability proof, make stale authority current, weaken partial-admission independence/isolation, weaken tenant isolation, expose secrets/data, allow missing restored state as permission, regress revocation/erasure/legal hold/audit/crypto/customer-telemetry/artifact-authority decisions, bypass ambiguity reconciliation, clear a residual reconciliation block on incident closure, convert Product applicability uncertainty/disablement into operational enablement, or allow AI/tool output into protected authority decisions.
+Changes that broaden break-glass, weaken separation/dual control or its applicability proof, make stale authority current, weaken partial-admission independence/isolation, weaken tenant isolation, expose secrets/data, allow missing restored state as permission, regress revocation/erasure/legal hold/audit/crypto/customer-telemetry/artifact-authority decisions, bypass ambiguity reconciliation, clear a residual reconciliation block on incident closure, convert Product applicability uncertainty/disablement into operational enablement, retain a canonical runbook ID while weakening protected authority boundaries, or allow AI/tool output into protected authority decisions.
 
 ## Normalized operations catalog compatibility
 
@@ -56,7 +56,20 @@ Changing classification may be breaking when it alters mandatory authority, comm
 
 ## Runbook compatibility
 
-A runbook version is semantic when steps/preconditions/authority/effect identity/abort/recovery behavior changes. Old paused executions cannot silently resume under a materially different runbook without revalidation/migration of execution state.
+The materialized canonical runbook definitions in `04-runbook-and-break-glass-governance.md` are versioned semantic contracts. The following changes are compatibility-relevant even when a tool/workflow file still carries the same profile name:
+
+- required role or separation-of-duty binding;
+- current-authority/precondition input;
+- allowed procedure/effect boundary;
+- prohibited substitution/fallback;
+- underlying stable effect identity/fence handling;
+- pause/abort/reconciliation behavior;
+- evidence obligations;
+- applicability/Product/recovery selector handling.
+
+A material change SHALL use an explicitly reviewed successor/version or an accepted compatibility migration. Reusing `runbook.*@1` while weakening one of these fields is breaking. Old paused executions cannot silently resume under a materially changed definition; they revalidate/migrate against the accepted profile. `OPRV-059` applies.
+
+Tool/vendor replacement remains OPS-COMP-B only when the exact canonical runbook semantics survive unchanged.
 
 ## Break-glass compatibility
 
@@ -86,7 +99,7 @@ Phase 14 operation identity, target-state fencing, config evidence and rollback/
 
 ## Evidence compatibility
 
-Changing evidence identity, retention, auditability or correlation can be security/recovery breaking even if procedure steps are unchanged. Evidence changes must preserve exact recovery scope/subscope, R/F, resumption mode/partial profile, dual-control policy/applicability, Product applicability evidence where gated, and residual operation identity where applicable.
+Changing evidence identity, retention, auditability or correlation can be security/recovery breaking even if procedure steps are unchanged. Evidence changes must preserve exact recovery scope/subscope, R/F, resumption mode/partial profile, dual-control policy/applicability, Product applicability evidence where gated, exact runbook profile/version and residual operation identity where applicable.
 
 ## OPEN transitions
 

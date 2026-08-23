@@ -10,7 +10,9 @@ Every implementation slice must be falsifiable against accepted semantics. Compi
 
 | Assurance class | Minimum implementation evidence | Canonical upstream owner |
 |---|---|---|
-| authority/tenant | current auth, tenant derivation, stale authority rejection, cross-tenant negative tests | Product/Security/Phase 09/13 |
+| human/browser authentication | OIDC `state`/PKCE/`nonce` transaction binding, issuer/audience/client checks, BFF credential confinement, session fixation/replay resistance, MFA/step-up/re-auth assurance currentness | IR-D-001 / Security / Phase 09 |
+| machine authentication | asymmetric attributable client auth, unique-`jti` assertion replay rejection, current client-key generation, token audience/currentness | IR-D-001 / Security / Phase 09 |
+| authority/tenant | current auth, tenant derivation, stale authority rejection, cross-tenant negative tests; authentication/session/service identity never substitutes for tenant permission | Product/Security/Phase 09/13 |
 | HTTP canonicalization | parser/proxy equivalence, framing/path/query/header ambiguity rejection | Phase 09 |
 | API idempotency | create-or-observe races, mismatch/in-progress, crash/recovery ambiguity | Phase 09/11 |
 | callback/provider | exact authenticated representation, replay race, ack durability, post-effect ambiguity | Phase 09/11/15 |
@@ -19,14 +21,14 @@ Every implementation slice must be falsifiable against accepted semantics. Compi
 | realtime | single-use admission, Origin/current auth, revocation, relocation, resync/gap | Phase 09/10/11 |
 | reliability | dependency loss, timeout, retries, circuits where applicable, backpressure, noisy-neighbor | Phase 11 |
 | observability | trace reconstruction, redaction, cardinality, telemetry loss, health/quarantine semantics | Phase 12 |
-| workload identity | issuer/bundle rotation, cross-environment rejection, mTLS identity != tenant auth | IR-D-002/Security |
-| runtime fencing | stale epoch, concurrent acquisition, restart/replacement, restore with higher surviving epoch | IR-D-003/Phase 11/13 |
+| workload identity | attested identity issuance, issuer/bundle rotation, cross-environment rejection, canonical identity parsing, mTLS identity != tenant auth | IR-D-002/Security |
+| runtime fencing | stale epoch, wrong-scope/forged epoch, concurrent acquisition, restart/replacement, restore with higher surviving epoch, no wrap/reset/reuse | IR-D-003/Phase 11/13 |
 | state ports | co-location authority separation, failure/recovery semantics, privilege boundaries | Phase 13 |
 | parser/automation isolation | secret/network/state denial, escape/resource bounds, output classification | Phase 09/13 |
 | release chain | untrusted source isolation, provenance, immutable artifact, config equivalence, runtime artifact proof | Phase 14 |
 | deployment ambiguity | concurrent deploy fencing, timeout/lost response, same operation observe/reconcile | Phase 14 |
 | schema/migration | expand/deploy/migrate/switch/observe/contract, mixed version, backfill resume/load | Data/Phase 14 |
-| recovery | backup integrity, R/F, `(R,F]`, stale writer, partial admission, newer deny/erasure/crypto continuity | Phase 11–15 |
+| recovery | backup integrity, R/F, `(R,F]`, stale writer, partial admission, newer deny/erasure/crypto/auth-assurance continuity | Phase 11–15 |
 | operations | incident lifecycle, runbook authority limits, break-glass selectors, residual reconciliation | Phase 15 |
 | capacity/cost | tenant skew, amplification, backlog, recovery/rollout double load, cost bounds | Phases 11–15 |
 | supply-chain | pinned/reproducible inputs, least privilege, secret denial, verifier continuity | Phase 14 |

@@ -24,7 +24,7 @@ A class is about the unresolved decision, not about the importance of the fixed 
 
 | IDs | Class | Readiness disposition |
 |---|---|---|
-| `OPEN-API-001` | C1 | BLOCKER for `impl.identity-bff@1`; concrete human/machine authentication/token profile must be accepted before protected identity implementation |
+| `OPEN-API-001` | C1 | PROPOSED SATISFIED by IR-D-001 plus `docs/09-api-contracts/implementation-readiness-closures.md`; becomes closed only if this gate is accepted |
 | `OPEN-API-002` | C2 | cookie/CSRF/origin implementation profile chosen under Phase 09 fixed security semantics |
 | `OPEN-API-003` | C5 | deferred with `impl.realtime@1`; cannot appear until that slice is separately activated |
 | `OPEN-API-004` | C3 | numeric request/page/bulk limits require benchmark/abuse evidence before production |
@@ -63,7 +63,7 @@ Phase 11 already assigned roadmap classes. This gate preserves them and records 
 
 | ID | Source class | Readiness disposition |
 |---|---|---|
-| `OPEN-REL-013` | C1 | SATISFIED SEMANTICALLY by accepted Phase 13 generation/fence contracts; concrete storage/propagation mechanism remains `OPEN-PRT-039` and is treated below |
+| `OPEN-REL-013` | C1 | SATISFIED SEMANTICALLY by accepted Phase 13 generation/fence contracts; concrete storage/propagation mechanism is closed by proposed IR-D-003/`OPEN-PRT-039` closure below when this gate is accepted |
 | `OPEN-REL-026` | C1 | SATISFIED by accepted Phase 12 signal/health/SLI/alert semantics |
 | `OPEN-REL-027` ownership-semantic portion | C1 | SATISFIED by accepted Phase 15 exact ownership/runbook/escalation catalog; staffing remains C3 |
 | `OPEN-REL-018` | C4 | webhook Product-gated |
@@ -86,8 +86,8 @@ Phase 11 already assigned roadmap classes. This gate preserves them and records 
 
 | IDs | Class | Notes |
 |---|---|---|
-| `OPEN-PRT-008`, `OPEN-PRT-011` | C1 | workload/service authentication protocol/issuer details are trust-boundary decisions required before protected internal service implementation |
-| `OPEN-PRT-039` | C1 | concrete runtime generation/fence storage/propagation is required before authoritative failover/replacement paths are implemented |
+| `OPEN-PRT-008`, `OPEN-PRT-011` | C1 | PROPOSED SATISFIED by IR-D-002 plus `docs/13-platform-runtime/implementation-readiness-closures.md`; closes only if this gate is accepted |
+| `OPEN-PRT-039` | C1 | PROPOSED SATISFIED by IR-D-003 plus the Phase 13 readiness closure record; closes only if this gate is accepted |
 | `OPEN-PRT-001`, `OPEN-PRT-003..007`, `OPEN-PRT-009..020`, `OPEN-PRT-027..028`, `OPEN-PRT-030..038`, `OPEN-PRT-040` | C2 | replaceable runtime/platform mechanisms under fixed profiles |
 | `OPEN-PRT-002`, `OPEN-PRT-021..026`, `OPEN-PRT-029` | C3 | physical topology/count/sizing/scaling/freshness numerics before production |
 
@@ -109,9 +109,9 @@ No Phase 14 tool choice may weaken source trust, one-artifact promotion, release
 
 Phase 15 logical ownership, runbook semantics, dual-control applicability selector, recovery admission and residual-obligation semantics are already fixed and are not OPEN implementation discretion.
 
-## Current C1 readiness blockers
+## C1 closure gate
 
-At this gate baseline, exactly these unresolved class-1 implementation decisions remain:
+The only source C1 decisions not already satisfied by accepted downstream phases were:
 
 ```text
 OPEN-API-001
@@ -120,7 +120,14 @@ OPEN-PRT-011
 OPEN-PRT-039
 ```
 
-The gate SHALL NOT become `READY_TO_IMPLEMENT` until these are closed through accepted decision records or their target implementation slices are removed from the authorized initial implementation scope by accepted Product/architecture authority.
+This gate proposes explicit closures for all four through IR-D-001/002/003 and the owning Phase 09/13 closure records. Therefore:
+
+```text
+before this gate is accepted -> C1 closure status = PROPOSED / implementation remains blocked
+after this exact gate is accepted -> remaining C1 count = 0
+```
+
+Any material change to those profiles reopens the owning C1 decision through compatibility governance.
 
 ## Closure evidence rule
 

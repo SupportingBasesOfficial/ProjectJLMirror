@@ -11,7 +11,7 @@ Every implementation slice must be falsifiable against accepted semantics. Compi
 | Assurance class | Minimum implementation evidence | Canonical upstream owner |
 |---|---|---|
 | human/browser authentication | OIDC `state`/PKCE/`nonce` transaction binding, issuer/audience/client checks, BFF credential confinement, session fixation/replay resistance, MFA/step-up/re-auth assurance currentness | IR-D-001 / Security / Phase 09 |
-| machine authentication | asymmetric attributable client auth, unique-`jti` assertion replay rejection, current client-key generation, token audience/currentness | IR-D-001 / Security / Phase 09 |
+| machine authentication | asymmetric attributable client auth, unique-`jti` assertion replay rejection, atomic single-winner replay admission across token-boundary replicas, fail-closed replay-authority outage/partition, replay-state recovery continuity, current client-key generation, token audience/currentness | IR-D-001 / Security / Phase 09 |
 | authority/tenant | current auth, tenant derivation, stale authority rejection, cross-tenant negative tests; authentication/session/service identity never substitutes for tenant permission | Product/Security/Phase 09/13 |
 | HTTP canonicalization | parser/proxy equivalence, framing/path/query/header ambiguity rejection | Phase 09 |
 | API idempotency | create-or-observe races, mismatch/in-progress, crash/recovery ambiguity | Phase 09/11 |
@@ -28,9 +28,9 @@ Every implementation slice must be falsifiable against accepted semantics. Compi
 | release chain | untrusted source isolation, provenance, immutable artifact, config equivalence, runtime artifact proof | Phase 14 |
 | deployment ambiguity | concurrent deploy fencing, timeout/lost response, same operation observe/reconcile | Phase 14 |
 | schema/migration | expand/deploy/migrate/switch/observe/contract, mixed version, backfill resume/load | Data/Phase 14 |
-| recovery | backup integrity, R/F, `(R,F]`, stale writer, partial admission, newer deny/erasure/crypto/auth-assurance continuity | Phase 11–15 |
+| recovery | backup integrity, R/F, `(R,F]`, stale writer, partial admission, newer deny/erasure/crypto/auth-assurance/replay-continuity state | Phase 11–15 |
 | operations | incident lifecycle, runbook authority limits, break-glass selectors, residual reconciliation | Phase 15 |
-| capacity/cost | tenant skew, amplification, backlog, recovery/rollout double load, cost bounds | Phases 11–15 |
+| capacity/cost | tenant skew, amplification, replay-state cardinality/work, backlog, recovery/rollout double load, cost bounds | Phases 11–15 / IR-D-001 |
 | supply-chain | pinned/reproducible inputs, least privilege, secret denial, verifier continuity | Phase 14 |
 
 ## Evidence levels

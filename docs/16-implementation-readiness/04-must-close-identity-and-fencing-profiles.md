@@ -23,7 +23,8 @@ OIDC Authorization Code Flow
 Requirements:
 
 - the browser never receives platform refresh tokens or long-lived platform access credentials;
-- authorization-code callback validates issuer, audience/client, exact redirect binding, `state`, PKCE verifier and OIDC `nonce` where applicable;
+- every browser authorization transaction uses an unpredictable `state`, PKCE S256 verifier/challenge and an unpredictable OIDC `nonce` bound to that exact initiating BFF session/transaction;
+- authorization-code callback validates issuer, audience/client, exact redirect binding, `state`, PKCE verifier and exact returned ID-token `nonce` before the login result is accepted;
 - authorization response/code is accepted only for the initiating BFF session/transaction and cannot be replayed across browser sessions;
 - tokens received from the identity authority remain server-side at the BFF/security boundary;
 - the browser receives only an opaque, high-entropy session handle in a `Secure`, `HttpOnly`, host-bound cookie profile;
@@ -33,6 +34,20 @@ Requirements:
 - ambient cookie possession does not replace CSRF/Origin controls from Phase 09;
 - token validation rejects wrong issuer, audience, authorized-party/client binding or expired/not-yet-valid token state according to the accepted token profile;
 - raw authorization codes/tokens/session handles are excluded from ordinary logs/telemetry.
+
+### MFA / authentication-strength currentness
+
+`SEC-ID-002` remains mandatory. Privileged or policy-sensitive human operations declare a required authentication-assurance policy in addition to ordinary permission/scope.
+
+The BFF/security boundary SHALL retain trusted authentication-context evidence from the identity authority, such as accepted `acr`/`amr` claims or a reviewed equivalent, and SHALL evaluate it against the current Security policy before admitting an operation that requires MFA, step-up or recent re-authentication.
+
+Rules:
+
+- successful OIDC authentication does not imply that the current session satisfies every privileged-operation assurance requirement;
+- a required MFA/step-up/re-authentication level that is absent, stale, untrusted or cannot be proven causes the protected operation to fail closed or begin a fresh policy-authorized step-up flow;
+- the exact allowed MFA factors and the mapping from privileged operations/risk policy to required assurance are Security policy/configuration, not caller/UI/IdP defaults;
+- a client-provided flag, UI state, role name, `amr` string without accepted issuer/profile semantics or elapsed session existence cannot manufacture authentication strength;
+- after step-up, current authorization/tenant/permission checks are still required independently.
 
 The exact IdP product, BFF session-store product and Phase 09 CSRF implementation mechanism remain C2 choices under their existing fixed semantics.
 
@@ -50,7 +65,8 @@ Requirements:
 
 - each machine principal has attributable client identity and independently revocable credential generation;
 - client private keys remain in accepted secret/key authority, never application payload/config/logs;
-- `private_key_jwt` assertions are short-lived, audience-bound to the token endpoint, uniquely replay-resistant within their accepted validity window and signed by the current registered key generation;
+- each `private_key_jwt` assertion carries a cryptographically strong unique `jti`, short validity interval, issuer/client binding and exact token-endpoint audience and is signed by the current registered key generation;
+- the authorization server/token boundary rejects reuse of the same accepted assertion `jti` during its replay-safety interval and rejects wrong-audience, stale/retired-key, expired or not-yet-valid assertions;
 - access tokens are short-lived, issuer/audience/client/permission constrained and rejected when the relevant principal/credential generation is retired;
 - tenant/resource authority is derived by the platform authorization model, not from arbitrary client-supplied tenant claims;
 - token validity alone never proves current authorization or placement;
@@ -202,7 +218,9 @@ PostgreSQL is the initial concrete implementation because accepted architecture 
 The following are semantic/security breaking and require reviewed migration:
 
 - changing browser auth flow so long-lived platform credentials become JS-readable;
+- weakening MFA/step-up/re-authentication assurance checks or treating ordinary login as sufficient for every privileged operation;
 - changing machine authentication to shared non-attributable bearer secrets;
+- dropping `private_key_jwt` assertion replay rejection/current-key checks;
 - allowing workload network presence to substitute for mTLS identity;
 - changing workload identity so environment/trust domain can broaden production authority;
 - allowing caller-selected workload URI strings to become issuance authority;
@@ -217,8 +235,10 @@ Before an implementation slice claims conformance, tests SHALL cover:
 
 - OIDC state/nonce/PKCE mix-up and token audience/issuer/client rejection;
 - authorization-code/session replay across browser sessions;
+- privileged operation with missing/stale/insufficient MFA/step-up assurance;
+- post-step-up operation with revoked permission or tenant access;
 - browser inability to read long-lived platform credentials;
-- `private_key_jwt` replay/wrong-audience/retired-key rejection;
+- `private_key_jwt` duplicate-`jti` replay, wrong-audience, expired/not-yet-valid and retired-key rejection;
 - machine credential revocation/rotation;
 - cross-environment workload identity rejection;
 - caller-requested workload identity different from attested runtime identity;

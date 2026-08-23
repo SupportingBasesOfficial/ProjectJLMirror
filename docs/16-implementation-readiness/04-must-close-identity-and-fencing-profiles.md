@@ -67,6 +67,10 @@ Requirements:
 - client private keys remain in accepted secret/key authority, never application payload/config/logs;
 - each `private_key_jwt` assertion carries a cryptographically strong unique `jti`, short validity interval, issuer/client binding and exact token-endpoint audience and is signed by the current registered key generation;
 - the authorization server/token boundary rejects reuse of the same accepted assertion `jti` during its replay-safety interval and rejects wrong-audience, stale/retired-key, expired or not-yet-valid assertions;
+- replay admission is one logical Security authority across every token-boundary replica that can accept the same client assertion: create-or-observe/claim of `{client_principal, jti}` is atomic single-winner for the replay-safety interval, and replica-local check-then-insert is prohibited;
+- if replay authority is unavailable, partitioned, restored without provable continuity or otherwise cannot prove the assertion `jti` unused for the accepted replay-safety interval, client assertion admission fails closed and no access token is issued;
+- replay-state loss/restore does not convert a previously accepted assertion into unused state; the implementation retains/reconciles the replay record through the safety interval or advances a trusted replay generation/epoch that invalidates outstanding assertions from the lost continuity boundary;
+- replay-state/cardinality/work is bounded per client principal and validity window; attacker-controlled `jti` values cannot select tenant, permission, cheaper budget or broader authority;
 - access tokens are short-lived, issuer/audience/client/permission constrained and rejected when the relevant principal/credential generation is retired;
 - tenant/resource authority is derived by the platform authorization model, not from arbitrary client-supplied tenant claims;
 - token validity alone never proves current authorization or placement;
@@ -221,6 +225,7 @@ The following are semantic/security breaking and require reviewed migration:
 - weakening MFA/step-up/re-authentication assurance checks or treating ordinary login as sufficient for every privileged operation;
 - changing machine authentication to shared non-attributable bearer secrets;
 - dropping `private_key_jwt` assertion replay rejection/current-key checks;
+- replacing shared atomic machine-assertion replay authority with replica-local/check-then-insert state, fail-open replay admission or restore semantics that make missing replay state mean unused;
 - allowing workload network presence to substitute for mTLS identity;
 - changing workload identity so environment/trust domain can broaden production authority;
 - allowing caller-selected workload URI strings to become issuance authority;
@@ -239,6 +244,9 @@ Before an implementation slice claims conformance, tests SHALL cover:
 - post-step-up operation with revoked permission or tenant access;
 - browser inability to read long-lived platform credentials;
 - `private_key_jwt` duplicate-`jti` replay, wrong-audience, expired/not-yet-valid and retired-key rejection;
+- concurrent presentation of the same otherwise valid machine assertion to different token-boundary replicas yields at most one accepted client authentication/token issuance;
+- unavailable/partitioned machine-assertion replay authority fails closed rather than issuing from unproven-unused state;
+- replay-state restore/loss cannot resurrect a previously consumed still-relevant machine assertion;
 - machine credential revocation/rotation;
 - cross-environment workload identity rejection;
 - caller-requested workload identity different from attested runtime identity;

@@ -104,9 +104,13 @@ Inject: the user has a valid current OIDC/BFF session and ordinary permission, b
 Required: operation fails closed or begins a fresh policy-authorized step-up; ordinary successful login/role presence cannot satisfy the stronger assurance requirement.
 
 ### IRV-032 — `private_key_jwt` assertion replay
-Inject: the same otherwise valid machine-client assertion with identical `jti` is presented again within its assertion validity/replay-safety interval, or an assertion signed by a retired client-key generation is presented.
-Required: token boundary rejects the replay/retired-key assertion; no access token is issued from the duplicate/stale client authentication.
+Inject: the same otherwise valid machine-client assertion with identical `jti` is presented again within its assertion validity/replay-safety interval, including concurrent presentation to different token-boundary replicas, or an assertion signed by a retired client-key generation is presented.
+Required: token boundary admits at most one client authentication/token issuance for the same `{client_principal,jti}` and rejects replay/retired-key assertions; replica-local check-then-insert is insufficient.
+
+### IRV-033 — machine assertion replay-authority continuity failure
+Inject: replay-state authority is partitioned/unavailable, or restored/reinitialized without proof that previously accepted still-relevant assertion IDs remain consumed/invalidated.
+Required: client assertion admission fails closed while unused-state/continuity cannot be proven; restore/loss cannot resurrect a consumed assertion, and bounded retained state or a trusted advanced replay generation invalidates the uncertain interval before admission resumes.
 
 ## Acceptance rule
 
-The gate cannot reach `READY_FOR_MERGE` while an applicable `IRV-001..032` vector lacks an expected result/evidence path or while the final panoramic audit identifies an unmodeled class that implementation could decide silently.
+The gate cannot reach `READY_FOR_MERGE` while an applicable `IRV-001..033` vector lacks an expected result/evidence path or while the final panoramic audit identifies an unmodeled class that implementation could decide silently.

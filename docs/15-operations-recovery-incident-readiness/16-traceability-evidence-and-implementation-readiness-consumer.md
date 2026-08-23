@@ -55,6 +55,26 @@ product_enabled / product_exposed_delivery -> only accepted upstream authority e
 
 A not-enabled/not-exposed Product-facing branch may still retain diagnostic, security, recovery and operational ownership obligations where the accepted reliability/observability profile requires them. `OPRV-058` falsifies Product-applicability laundering.
 
+## Canonical runbook execution trace
+
+Every operational procedure that claims a canonical Phase 15 runbook identity traces through the materialized profile definition:
+
+```text
+runbook_profile_id@version
+ -> canonical profile definition in 04-runbook-and-break-glass-governance.md
+ -> logical owner profile
+ -> exact required role bindings / separation constraints
+ -> current authorization + authoritative precondition evidence
+ -> exact scope and allowed procedure/effect boundary
+ -> stable underlying operation IDs/fences where effectful
+ -> prohibited substitutions/fallbacks enforced
+ -> execution step/outcome evidence
+ -> pause/abort/reconciliation state
+ -> compatibility/version check before resume
+```
+
+A local workflow/YAML/tool may implement the steps but cannot supply missing authority or retain a canonical profile ID after materially changing the contract. Unknown/local aliases do not satisfy a canonical reference. A paused execution revalidates the current accepted profile/version and upstream authority before effectful continuation. `OPRV-059` falsifies runbook-profile authority laundering.
+
 ## End-to-end incident trace
 
 ```text
@@ -184,7 +204,7 @@ Evidence identifies enough provenance to distinguish:
 - physical ownership/delegation/currentness;
 - incident identity/classification/command lifecycle and residual disposition;
 - communication responsibility/disposition;
-- runbook profile/version and execution ID;
+- exact canonical runbook profile/version, canonical definition reference, required role bindings, current precondition/authority evidence, stable underlying effect identity/fence and execution compatibility state;
 - break-glass policy, dual-control applicability/evidence, request/approval/executor/scope/expiry/revocation/review;
 - recovery profile/subscope/operation/scope/backup/target;
 - `R`, `F` or explicit unproven-F state;
@@ -198,14 +218,14 @@ Evidence identifies enough provenance to distinguish:
 - relocation/maintenance/decommission operation identities;
 - capacity/admission evidence;
 - unresolved ambiguity/residual obligations;
-- applicable `OPRV-001..058` vectors and OPEN dispositions;
+- applicable `OPRV-001..059` vectors and OPEN dispositions;
 - timestamps/order/correlation.
 
 Evidence is minimized/classified and never stores secret material, unrestricted customer payloads or artifact access capabilities merely for convenience.
 
 ## Capacity/performance/cost evidence
 
-Operations design measures recovery/backfill/replay concurrency, backup/restore throughput, telemetry reconciliation/projection workload, artifact integrity/lifecycle reconciliation, partial-admission verification work, cell/control-plane pressure, incident surge, crypto-verification workload, observability load, temporary runtime duplication, evidence growth and vendor egress/cost. Exact targets remain OPEN.
+Operations design measures recovery/backfill/replay concurrency, backup/restore throughput, telemetry reconciliation/projection workload, artifact integrity/lifecycle reconciliation, partial-admission verification work, runbook orchestration/execution surge, cell/control-plane pressure, incident surge, crypto-verification workload, observability load, temporary runtime duplication, evidence growth and vendor egress/cost. Exact targets remain OPEN.
 
 ## Implementation Readiness consumer
 
@@ -213,8 +233,9 @@ After Phase 15 acceptance, the separate Implementation Readiness Gate must prove
 
 - normalized Phase 11/12/15 service ownership/escalation semantics;
 - Product-applicability preservation from accepted Product/Phase 12 selectors through operational catalog/runbook/recovery implementation;
+- the 10 canonical runbook profiles' logical owners, required role/separation constraints, authoritative preconditions, effect boundaries, prohibited substitutions, stable effect identity/fencing and compatibility/version-resume semantics;
 - incident classification/command/closure/residual-obligation authority;
-- runbook and break-glass authority boundaries, including dual-control applicability handling;
+- break-glass authority boundaries, including dual-control applicability handling;
 - recovery scope/state/R/F/quarantine/full-vs-partial admission semantics;
 - operational-observability vs customer-monitoring recovery semantics;
 - artifact bytes/integrity vs lifecycle/delivery/disclosure/release recovery authority;

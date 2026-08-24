@@ -13,19 +13,19 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA platform
     REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 
 -- These canonical identifier checks deliberately mirror the portable authority-core
--- grammar. The separate trim checks are retained as explicit defense-in-depth and
--- as stable evidence for the original IR-D-003 validator.
+-- ASCII grammar. COLLATE "C" keeps regex ranges independent from database locale.
+-- The separate trim checks remain defense-in-depth and stable baseline evidence.
 CREATE TABLE IF NOT EXISTS platform.authority_fences (
     fence_scope_id text PRIMARY KEY
         CHECK (btrim(fence_scope_id) <> '')
-        CHECK (fence_scope_id ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
+        CHECK (fence_scope_id COLLATE "C" ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
     current_fence_epoch bigint NOT NULL CHECK (current_fence_epoch > 0),
     current_generation_id text NOT NULL
         CHECK (btrim(current_generation_id) <> '')
-        CHECK (current_generation_id ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
+        CHECK (current_generation_id COLLATE "C" ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
     authority_state text NOT NULL
         CHECK (btrim(authority_state) <> '')
-        CHECK (authority_state ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
+        CHECK (authority_state COLLATE "C" ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
     updated_at timestamptz NOT NULL DEFAULT statement_timestamp()
 );
 
@@ -106,9 +106,9 @@ AS $$
        AND btrim(p_expected_predecessor_generation_id) <> ''
        AND btrim(p_successor_generation_id) <> ''
        AND btrim(p_successor_state) <> ''
-       AND p_expected_predecessor_generation_id ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'
-       AND p_successor_generation_id ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'
-       AND p_successor_state ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'
+       AND p_expected_predecessor_generation_id COLLATE "C" ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'
+       AND p_successor_generation_id COLLATE "C" ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'
+       AND p_successor_state COLLATE "C" ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'
     RETURNING
         authority_fences.fence_scope_id,
         authority_fences.current_fence_epoch,

@@ -1,0 +1,296 @@
+from pathlib import Path
+import subprocess
+from tempfile import TemporaryDirectory
+import unittest
+
+from tools.contracts.core import (
+    CompositeRequirement,
+    ContractProjectionError,
+    build_profile_catalog,
+    compare_object_schemas,
+    extract_manifest_requirements,
+    extract_versioned_ids,
+    git_blob_sha,
+    validate_authority_base_bindings,
+)
+
+
+def _git(root: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    return completed.stdout.strip()
+
+
+def _committed_source_repo(root: Path, content: str = "`runtime.api@1`\n") -> tuple[str, str]:
+    source = root / "docs" / "manifest.md"
+    source.parent.mkdir(parents=True)
+    source.write_text(content, encoding="utf-8")
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "test@example.invalid")
+    _git(root, "config", "user.name", "JLMIRROR Test")
+    _git(root, "add", "docs/manifest.md")
+    _git(root, "commit", "-q", "-m", "accepted authority")
+    base = _git(root, "rev-parse", "HEAD")
+    blob = _git(root, "rev-parse", f"{base}:docs/manifest.md")
+    return base, blob
+
+
+def _registry_for(base: str, blob: str) -> dict:
+    manifest = {
+        "path": "docs/manifest.md",
+        "git_blob_sha": blob,
+        "heading": "Semantic manifest",
+        "composite_requirements": [],
+    }
+    return {
+        "accepted_authority_base": base,
+        "profile_sources": [
+            {"path": "docs/manifest.md", "git_blob_sha": blob}
+        ],
+        "http_manifest_source": dict(manifest),
+        "event_manifest_source": dict(manifest),
+    }
+
+
+class ContractProjectionTests(unittest.TestCase):
+    def test_extract_versioned_ids_is_unique_and_sorted(self):
+        text = "`runtime.api@1` runtime.api@1 `worker.async-consumer@1`"
+        self.assertEqual(
+            extract_versioned_ids(text),
+            ("runtime.api@1", "worker.async-consumer@1"),
+        )
+
+    def test_git_blob_sha_matches_git_object_encoding(self):
+        self.assertEqual(
+            git_blob_sha(b"test\n"),
+            "9daeafb9864cf43055ae93beb0afd6c7d144bfa4",
+        )
+
+    def test_normative_source_blob_mismatch_fails_closed(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "docs" / "manifest.md"
+            source.parent.mkdir(parents=True)
+            source.write_text("`runtime.api@1`\n", encoding="utf-8")
+            registry = {
+                "accepted_authority_base": "a" * 40,
+                "profile_sources": [
+                    {"path": "docs/manifest.md", "git_blob_sha": "0" * 40}
+                ],
+            }
+            with self.assertRaises(ContractProjectionError):
+                build_profile_catalog(root, registry)
+
+    def test_accepted_authority_base_resolves_declared_blob(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            base, blob = _committed_source_repo(root)
+            validate_authority_base_bindings(root, _registry_for(base, blob))
+
+    def test_working_tree_repin_cannot_launder_old_authority_base(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            base, _ = _committed_source_repo(root, "`runtime.api@1`\n")
+            source = root / "docs" / "manifest.md"
+            source.write_text("`runtime.worker@1`\n", encoding="utf-8")
+            forged_working_blob = git_blob_sha(source.read_bytes())
+            with self.assertRaisesRegex(
+                ContractProjectionError, "accepted authority binding mismatch"
+            ):
+                validate_authority_base_bindings(
+                    root, _registry_for(base, forged_working_blob)
+                )
+
+    def test_canonical_normative_source_path_is_accepted(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "docs" / "nested" / "manifest.md"
+            source.parent.mkdir(parents=True)
+            source.write_text("`runtime.api@1`\n", encoding="utf-8")
+            registry = {
+                "accepted_authority_base": "a" * 40,
+                "profile_sources": [
+                    {
+                        "path": "docs/nested/manifest.md",
+                        "git_blob_sha": git_blob_sha(source.read_bytes()),
+                    }
+                ],
+            }
+            catalog = build_profile_catalog(root, registry)
+            self.assertEqual(catalog["records"][0]["id"], "runtime.api@1")
+
+    def test_noncanonical_normative_source_paths_fail_closed(self):
+        bad_paths = (
+            "docs/../README.md",
+            "docs/./manifest.md",
+            "docs//manifest.md",
+            "docs\\manifest.md",
+        )
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "README.md").write_text("`runtime.api@1`\n", encoding="utf-8")
+            docs = root / "docs"
+            docs.mkdir()
+            (docs / "manifest.md").write_text("`runtime.api@1`\n", encoding="utf-8")
+            for bad_path in bad_paths:
+                with self.subTest(path=bad_path):
+                    registry = {
+                        "accepted_authority_base": "a" * 40,
+                        "profile_sources": [
+                            {"path": bad_path, "git_blob_sha": "0" * 40}
+                        ],
+                    }
+                    with self.assertRaises(ContractProjectionError):
+                        build_profile_catalog(root, registry)
+
+    def test_manifest_composite_is_explicitly_registered(self):
+        text = """# X
+
+## Semantic manifest
+
+```text
+contract_name
+allowed_consumer_contracts or discovery policy
+data_classification
+```
+
+## Next
+"""
+        composite = CompositeRequirement(
+            "allowed_consumer_contracts or discovery policy",
+            ("allowed_consumer_contracts", "discovery_policy"),
+        )
+        req = extract_manifest_requirements(
+            text, "Semantic manifest", (composite,)
+        )
+        self.assertEqual(req.fields, ("contract_name", "data_classification"))
+        self.assertEqual(req.composite_requirements, (composite,))
+
+    def test_unregistered_non_machine_requirement_fails_closed(self):
+        text = """## Semantic manifest
+```text
+contract_name
+unexpected prose requirement
+```
+"""
+        with self.assertRaises(ContractProjectionError):
+            extract_manifest_requirements(text, "Semantic manifest")
+
+    def test_registered_composite_missing_from_source_fails_closed(self):
+        text = """## Semantic manifest
+```text
+contract_name
+```
+"""
+        composite = CompositeRequirement("a or b", ("a", "b"))
+        with self.assertRaises(ContractProjectionError):
+            extract_manifest_requirements(text, "Semantic manifest", (composite,))
+
+    def test_missing_heading_fails_closed(self):
+        with self.assertRaises(ContractProjectionError):
+            extract_manifest_requirements("# no", "Endpoint contract manifest")
+
+    def test_structural_change_detects_removed_new_required_and_relaxation(self):
+        previous = {
+            "properties": {"a": {"type": "string"}, "b": {}},
+            "required": ["a", "b"],
+        }
+        candidate = {
+            "properties": {"a": {"type": "integer"}, "c": {}},
+            "required": ["a", "c"],
+        }
+        report = compare_object_schemas(previous, candidate)
+        self.assertEqual(
+            report["classification"], "structural_change_requires_review"
+        )
+        self.assertEqual(report["removed_properties"], ["b"])
+        self.assertEqual(report["added_required_properties"], ["c"])
+        self.assertEqual(report["relaxed_required_properties"], ["b"])
+        self.assertEqual(report["changed_property_definitions"], ["a"])
+
+    def test_optional_addition_is_only_an_additive_candidate(self):
+        previous = {"properties": {"a": {}}, "required": ["a"], "allOf": []}
+        candidate = {
+            "properties": {"a": {}, "b": {}},
+            "required": ["a"],
+            "allOf": [],
+        }
+        report = compare_object_schemas(previous, candidate)
+        self.assertEqual(
+            report["classification"], "structurally_additive_candidate"
+        )
+        self.assertIn(
+            "cannot approve compatibility",
+            report["semantic_compatibility_authority"],
+        )
+
+    def test_object_envelope_change_requires_review(self):
+        previous = {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {"a": {}},
+            "required": ["a"],
+            "allOf": [],
+        }
+        candidate = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"a": {}},
+            "required": ["a"],
+            "allOf": [],
+        }
+        report = compare_object_schemas(previous, candidate)
+        self.assertEqual(
+            report["classification"], "structural_change_requires_review"
+        )
+        self.assertTrue(report["object_envelope_changed"])
+
+    def test_composite_change_requires_review(self):
+        previous = {"properties": {"a": {}}, "required": [], "allOf": []}
+        candidate = {
+            "properties": {"a": {}},
+            "required": [],
+            "allOf": [{"anyOf": [{"required": ["a"]}]}],
+        }
+        report = compare_object_schemas(previous, candidate)
+        self.assertEqual(
+            report["classification"], "structural_change_requires_review"
+        )
+        self.assertTrue(report["composite_requirements_changed"])
+
+    def test_unmodeled_top_level_schema_constraints_force_review(self):
+        cases = (
+            ("$defs", {"Thing": {"type": "string"}}, {"Thing": {"type": "integer"}}),
+            ("minProperties", 1, 2),
+            ("oneOf", [{"required": ["a"]}], [{"required": ["b"]}]),
+        )
+        for keyword, before, after in cases:
+            with self.subTest(keyword=keyword):
+                previous = {
+                    "properties": {"a": {}, "b": {}},
+                    "required": [],
+                    keyword: before,
+                }
+                candidate = {
+                    "properties": {"a": {}, "b": {}},
+                    "required": [],
+                    keyword: after,
+                }
+                report = compare_object_schemas(previous, candidate)
+                self.assertEqual(
+                    report["classification"], "structural_change_requires_review"
+                )
+                self.assertTrue(report["other_schema_constraints_changed"])
+                self.assertIn(
+                    "other_schema_constraints_changed", report["review_reasons"]
+                )
+
+
+if __name__ == "__main__":
+    unittest.main()

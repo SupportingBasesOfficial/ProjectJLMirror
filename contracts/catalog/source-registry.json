@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "catalog_id": "jlmirror.contract-source-registry@1",
+  "accepted_authority_base": "ebd06f14b9367391c68d127b764489a3f2d8340c",
+  "profile_sources": [
+    {"path": "docs/11-reliability-resilience/08-reliability-semantic-manifest.md", "git_blob_sha": "2a599b618d0eb8d494af088f11feb00f9576ff57"},
+    {"path": "docs/12-observability-sre/10-observability-semantic-manifest.md", "git_blob_sha": "80054d9a15fb82ba26a91c34f98b10964ab3c83d"},
+    {"path": "docs/13-platform-runtime/09-runtime-semantic-manifest.md", "git_blob_sha": "a0b2aaa950bab2a71f54f8df37a855b6ed34ad8b"},
+    {"path": "docs/14-deployment-release-supply-chain/11-release-semantic-manifest.md", "git_blob_sha": "5bb4f7e50ab7eaa7d9162cd9e2f633a10c4d17ff"},
+    {"path": "docs/15-operations-recovery-incident-readiness/11-operations-semantic-manifest.md", "git_blob_sha": "ed8ab1e370f8dff95ab3bfdf36b90694a8489c0b"},
+    {"path": "docs/16-implementation-readiness/15-implementation-slice-readiness-manifest.md", "git_blob_sha": "fc810728322d928ce9a5f71243101a390384189a"}
+  ],
+  "http_manifest_source": {
+    "path": "docs/09-api-contracts/contract-governance-openapi-and-testing.md",
+    "git_blob_sha": "44084ded51a1005b80e221f0e7200374baff66f0",
+    "heading": "Endpoint contract manifest",
+    "composite_requirements": []
+  },
+  "event_manifest_source": {
+    "path": "docs/10-event-contracts/schema-evolution-compatibility-and-governance.md",
+    "git_blob_sha": "7d086f9bcfc40f434795e408f1e350560816fc69",
+    "heading": "Semantic manifest",
+    "composite_requirements": [
+      {
+        "source_text": "allowed_consumer_contracts or discovery policy",
+        "alternatives": ["allowed_consumer_contracts", "discovery_policy"]
+      }
+    ]
+  }
+}

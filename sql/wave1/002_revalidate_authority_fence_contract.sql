@@ -2,9 +2,10 @@
 --
 -- 001 may be applied into an environment where the logical schema already exists.
 -- This migration makes reuse fail closed: an existing authority_fences table must
--- satisfy the canonical structural, identifier and positive-epoch contract before
--- Wave 1 can consider it eligible for authority use. Invalid historical shape/rows
--- fail; they are not normalized, deleted, or silently accepted here.
+-- satisfy the canonical structural, durability, identifier and positive-epoch
+-- contract before Wave 1 can consider it eligible for authority use. Invalid
+-- historical shape/rows or hidden mutation behavior fail; they are not normalized,
+-- deleted, or silently accepted here.
 
 -- A table name is not conformance. Verify the structural properties that make
 -- compare-and-advance single-winner and preserve the accepted BIGINT fence domain.
@@ -14,6 +15,14 @@ DECLARE
 BEGIN
     IF v_table IS NULL THEN
         RAISE EXCEPTION 'platform.authority_fences is absent; apply 001 before revalidation';
+    END IF;
+
+    IF (
+        SELECT relpersistence
+          FROM pg_class
+         WHERE oid = v_table
+    ) IS DISTINCT FROM 'p' THEN
+        RAISE EXCEPTION 'authority_fences must be a permanent logged PostgreSQL relation';
     END IF;
 
     IF (
@@ -71,6 +80,24 @@ BEGIN
         RAISE EXCEPTION 'authority_fences.updated_at must be timestamptz';
     END IF;
 
+    IF EXISTS (
+        SELECT 1
+          FROM pg_attribute
+         WHERE attrelid = v_table
+           AND attname = ANY (ARRAY[
+               'fence_scope_id',
+               'current_fence_epoch',
+               'current_generation_id',
+               'authority_state',
+               'updated_at'
+           ])
+           AND attnum > 0
+           AND NOT attisdropped
+           AND (attgenerated <> '' OR attidentity <> '')
+    ) THEN
+        RAISE EXCEPTION 'authority_fences canonical columns cannot be generated or identity columns';
+    END IF;
+
     IF NOT EXISTS (
         SELECT 1
           FROM pg_constraint c
@@ -85,6 +112,28 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'authority_fences must have a single-column primary key on fence_scope_id';
     END IF;
+
+    -- User-defined triggers/rules are hidden mutation semantics. They could alter
+    -- scope/epoch/generation/state after the compare predicate or perform an
+    -- unreviewed side effect while the SQL function still appears to have won.
+    -- Internal PostgreSQL constraint triggers are allowed; any user trigger/rule
+    -- requires an explicit reviewed migration instead of being inherited silently.
+    IF EXISTS (
+        SELECT 1
+          FROM pg_trigger t
+         WHERE t.tgrelid = v_table
+           AND NOT t.tgisinternal
+    ) THEN
+        RAISE EXCEPTION 'authority_fences has unexpected non-internal trigger behavior';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_rewrite r
+         WHERE r.ev_class = v_table
+    ) THEN
+        RAISE EXCEPTION 'authority_fences has unexpected rewrite rule behavior';
+    END IF;
 END
 $$;
 
@@ -92,7 +141,8 @@ ALTER TABLE platform.authority_fences
     ALTER COLUMN fence_scope_id SET NOT NULL,
     ALTER COLUMN current_fence_epoch SET NOT NULL,
     ALTER COLUMN current_generation_id SET NOT NULL,
-    ALTER COLUMN authority_state SET NOT NULL;
+    ALTER COLUMN authority_state SET NOT NULL,
+    ALTER COLUMN updated_at SET NOT NULL;
 
 ALTER TABLE platform.authority_fences
     ADD CONSTRAINT wave1_fence_scope_id_canonical

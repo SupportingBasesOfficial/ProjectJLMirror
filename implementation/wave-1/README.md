@@ -20,13 +20,14 @@ It does not create Product/domain endpoints.
 - canonical SPIFFE-compatible workload identity parsing and current mTLS evidence admission;
 - service identity remains separate from tenant/business authorization;
 - Control-Plane placement evidence -> cell-local trusted `TenantContext` construction;
-- owning current authorization re-check after TenantContext construction;
-- cross-tenant privileged platform operations require the exact Control Plane runtime boundary rather than the ordinary application runtime;
+- owning authorization is re-evaluated at final protected-operation admission after placement, auth-strength and principal-currentness checks;
+- cross-tenant privileged platform operations require trusted current executing-runtime evidence for the exact accepted Control Plane profile; passing a `CONTROL_PLANE` binding value alone is insufficient;
 - exact runtime environment/profile bindings for Web BFF, API auth boundary and Control Plane;
 - configuration generation plus explicit public/secret-reference key classification; unclassified snapshots are not runtime-admissible;
 - secret-reference locators/values are excluded from evidence views;
 - IR-D-003 positive PostgreSQL `BIGINT` fence record and atomic predecessor compare/advance;
 - fence table/functions have no PUBLIC authority by default;
+- fence privilege revalidation rejects non-owner ACLs and direct/transitive role-membership paths that could assume/inherit the migration-owner role before C2 role mapping;
 - portable fenced-effect admission resolves the owning current fence authority before exact scope+epoch+generation comparison; a supplied typed record is not currentness proof;
 - co-resident PostgreSQL protected mutations still require the fence predicate and effect in the same transaction; forged-higher/stale epochs do not authorize effects.
 
@@ -62,12 +63,15 @@ SESSION HANDLE PRESENT != SESSION AUTHORITY CURRENT
 NONCANONICAL/UNBOUNDED BROWSER SESSION HANDLE != SESSION AUTHORITY
 SERVICE IDENTITY != TENANT AUTHORIZATION
 ROUTED REQUEST != TRUSTED TENANT CONTEXT
+CALLER-SELECTED RUNTIME BINDING != EXECUTING RUNTIME AUTHORITY
 CROSS-TENANT PLATFORM AUTHORITY != APPLICATION RUNTIME AUTHORITY
+EARLIER AUTHORIZATION GRANT != FINAL CURRENT AUTHORIZATION
 ENVIRONMENT LABEL != AUTHORITY
 NETWORK PRESENCE != TRUST
 UNCLASSIFIED CONFIG != RUNTIME-ADMISSIBLE CONFIG
 TYPED FENCE RECORD != CURRENT EFFECT AUTHORITY
 FENCE CLAIM > CURRENT != AUTHORITY
+OWNER OBJECT ACL CLEAN != OWNER ROLE UNASSUMABLE
 FENCE TOKEN != AMBIGUOUS EFFECT ABSENCE
 SECRET REFERENCE != SECRET VALUE
 WAVE 1 AUTHORIZED != WAVE 2 AUTHORIZED

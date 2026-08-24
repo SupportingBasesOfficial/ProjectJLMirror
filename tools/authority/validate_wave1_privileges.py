@@ -23,6 +23,18 @@ TABLE_OWNER_GUARD = """SELECT c.relowner
           FROM pg_class c
          WHERE c.oid = v_table
     ) IS DISTINCT FROM current_user::regrole::oid"""
+ROLE_MEMBERSHIP_GUARD = """WITH RECURSIVE owner_role_members(member_oid) AS (
+            SELECT m.member
+              FROM pg_auth_members m
+             WHERE m.roleid = current_user::regrole::oid
+            UNION
+            SELECT m.member
+              FROM pg_auth_members m
+              JOIN owner_role_members r
+                ON m.roleid = r.member_oid
+        )
+        SELECT 1
+          FROM owner_role_members"""
 
 REQUIRED_EXECUTABLE_FRAGMENTS = (
     "to_regnamespace('platform')",
@@ -31,6 +43,7 @@ REQUIRED_EXECUTABLE_FRAGMENTS = (
     "to_regprocedure(\n        'platform.advance_authority_fence(text,bigint,text,text,text)'\n    )",
     SCHEMA_OWNER_GUARD,
     TABLE_OWNER_GUARD,
+    ROLE_MEMBERSHIP_GUARD,
     "aclexplode(\n              COALESCE(c.relacl, acldefault('r', c.relowner))\n          )",
     "acl.grantee <> c.relowner",
     "aclexplode(\n              COALESCE(n.nspacl, acldefault('n', n.nspowner))\n          )",
@@ -87,7 +100,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}")
         return 1
-    print("RESULT: PASS — fence ownership/ACL reuse fails closed before C2 role mapping")
+    print("RESULT: PASS — fence ownership, role-membership and ACL reuse fail closed before C2 role mapping")
     print("NOTE: PASS is conformance evidence only; it grants no runtime/database privilege.")
     return 0
 

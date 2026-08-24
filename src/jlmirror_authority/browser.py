@@ -202,27 +202,32 @@ def complete_browser_auth(
         expected_client_id=transaction.expected_client_id,
         expected_redirect_uri=transaction.expected_redirect_uri,
     )
-    if verified.issuer != transaction.expected_issuer or verified.client_id != transaction.expected_client_id:
-        raise AdmissionDenied("OIDC issuer/client binding mismatch")
-    if not hmac.compare_digest(transaction.nonce_digest, _digest(verified.nonce)):
-        raise AdmissionDenied("OIDC nonce mismatch")
-    if not (_utc(verified.authenticated_at) <= now < _utc(verified.token_expires_at)):
-        raise AdmissionDenied("OIDC identity evidence is not current")
+    if not isinstance(verified, VerifiedOidcIdentity):
+        raise AdmissionDenied("OIDC verifier returned malformed trusted evidence")
+    try:
+        if verified.issuer != transaction.expected_issuer or verified.client_id != transaction.expected_client_id:
+            raise AdmissionDenied("OIDC issuer/client binding mismatch")
+        if not hmac.compare_digest(transaction.nonce_digest, _digest(verified.nonce)):
+            raise AdmissionDenied("OIDC nonce mismatch")
+        if not (_utc(verified.authenticated_at) <= now < _utc(verified.token_expires_at)):
+            raise AdmissionDenied("OIDC identity evidence is not current")
 
-    principal = Principal(
-        principal_id=verified.principal_id,
-        kind=PrincipalKind.HUMAN_BROWSER_SESSION,
-        credential_generation=f"session:{transaction.transaction_id}",
-    )
-    strength = AuthenticationStrengthEvidence(
-        issuer=verified.issuer,
-        acr=verified.acr,
-        amr=verified.amr,
-        authenticated_at=verified.authenticated_at,
-        evidence_expires_at=verified.token_expires_at,
-        policy_version=verified.policy_version,
-        principal_id=verified.principal_id,
-    )
+        principal = Principal(
+            principal_id=verified.principal_id,
+            kind=PrincipalKind.HUMAN_BROWSER_SESSION,
+            credential_generation=f"session:{transaction.transaction_id}",
+        )
+        strength = AuthenticationStrengthEvidence(
+            issuer=verified.issuer,
+            acr=verified.acr,
+            amr=verified.amr,
+            authenticated_at=verified.authenticated_at,
+            evidence_expires_at=verified.token_expires_at,
+            policy_version=verified.policy_version,
+            principal_id=verified.principal_id,
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise AdmissionDenied("OIDC verifier evidence is not canonical") from exc
     return principal, strength
 
 
@@ -241,7 +246,13 @@ def require_authentication_strength(
         PrincipalKind.PLATFORM_ADMIN_PRINCIPAL,
     }:
         raise AdmissionDenied("authentication-strength evidence cannot authorize a non-human principal")
-    if evidence is None or not evidence.is_current(now):
+    if evidence is None or not isinstance(evidence, AuthenticationStrengthEvidence):
+        raise AdmissionDenied("current authentication-strength evidence cannot be proven")
+    try:
+        current = evidence.is_current(now)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise AdmissionDenied("authentication-strength evidence is malformed") from exc
+    if not current:
         raise AdmissionDenied("current authentication-strength evidence cannot be proven")
     if evidence.principal_id != principal.principal_id:
         raise AdmissionDenied("authentication-strength evidence belongs to another principal")

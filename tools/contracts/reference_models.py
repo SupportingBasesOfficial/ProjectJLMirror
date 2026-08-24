@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from threading import Lock
 
 
 class IdempotencyDecision(str, Enum):
@@ -27,23 +28,26 @@ class IdempotencyRecord:
 @dataclass
 class IdempotencyReference:
     records: dict[tuple[str, str], IdempotencyRecord] = field(default_factory=dict)
+    _lock: Lock = field(default_factory=Lock, repr=False, compare=False)
 
     def begin(self, scope: str, key: str, fingerprint: str) -> IdempotencyDecision:
         identity = (scope, key)
-        existing = self.records.get(identity)
-        if existing is None:
-            self.records[identity] = IdempotencyRecord(fingerprint=fingerprint)
-            return IdempotencyDecision.EXECUTE
-        if existing.fingerprint != fingerprint:
-            return IdempotencyDecision.CONFLICT
-        if existing.completed:
-            return IdempotencyDecision.REPLAY_COMPLETED
-        return IdempotencyDecision.OBSERVE_IN_PROGRESS
+        with self._lock:
+            existing = self.records.get(identity)
+            if existing is None:
+                self.records[identity] = IdempotencyRecord(fingerprint=fingerprint)
+                return IdempotencyDecision.EXECUTE
+            if existing.fingerprint != fingerprint:
+                return IdempotencyDecision.CONFLICT
+            if existing.completed:
+                return IdempotencyDecision.REPLAY_COMPLETED
+            return IdempotencyDecision.OBSERVE_IN_PROGRESS
 
     def complete(self, scope: str, key: str, outcome: str) -> None:
-        record = self.records[(scope, key)]
-        record.completed = True
-        record.outcome = outcome
+        with self._lock:
+            record = self.records[(scope, key)]
+            record.completed = True
+            record.outcome = outcome
 
 
 def tenant_effect_allowed(
@@ -67,24 +71,28 @@ def ambiguous_external_effect_disposition(
 @dataclass
 class FenceReference:
     current_epoch: int = 1
+    _lock: Lock = field(default_factory=Lock, repr=False, compare=False)
 
     def acquire_successor(self, expected_epoch: int) -> int:
-        if expected_epoch != self.current_epoch:
-            raise ValueError("stale predecessor")
-        if self.current_epoch >= (2**63 - 1):
-            raise OverflowError("fence epoch exhausted; fail closed")
-        self.current_epoch += 1
-        return self.current_epoch
+        with self._lock:
+            if expected_epoch != self.current_epoch:
+                raise ValueError("stale predecessor")
+            if self.current_epoch >= (2**63 - 1):
+                raise OverflowError("fence epoch exhausted; fail closed")
+            self.current_epoch += 1
+            return self.current_epoch
 
     def effect_allowed(self, epoch: int) -> bool:
-        return epoch == self.current_epoch
+        with self._lock:
+            return epoch == self.current_epoch
 
     def restore(self, restored_epoch: int) -> str:
-        if restored_epoch < self.current_epoch:
-            return "quarantine_and_fence_forward"
-        if restored_epoch > self.current_epoch:
-            self.current_epoch = restored_epoch
-        return "continuity_proven"
+        with self._lock:
+            if restored_epoch < self.current_epoch:
+                return "quarantine_and_fence_forward"
+            if restored_epoch > self.current_epoch:
+                self.current_epoch = restored_epoch
+            return "continuity_proven"
 
 
 @dataclass

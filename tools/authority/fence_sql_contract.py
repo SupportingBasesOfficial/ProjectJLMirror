@@ -15,13 +15,7 @@ def _predicate(name: str) -> str:
 
 
 def _executable_sql(text: str) -> str:
-    """Remove SQL comments so comments cannot launder required executable invariants.
-
-    The Wave 1 SQL uses ordinary quoted strings/identifiers and dollar-quoted
-    function bodies. Dollar-quoted bodies intentionally remain visible because
-    their SQL is exactly what this validator must inspect. Line/block comments
-    inside those bodies are still comments and are removed.
-    """
+    """Remove SQL comments so comments cannot launder required executable invariants."""
 
     out: list[str] = []
     i = 0
@@ -82,8 +76,6 @@ def _executable_sql(text: str) -> str:
         i += 1
 
     if block_depth or in_single or in_double:
-        # Malformed SQL must not gain a validator pass through a truncated parser
-        # view. Return a sentinel that cannot satisfy the canonical fragments.
         return ""
     return "".join(out)
 
@@ -126,7 +118,7 @@ def validate_fence_sql_text(text: str) -> list[str]:
 
 
 def validate_fence_revalidation_sql_text(text: str) -> list[str]:
-    """Require existing persisted fence state to prove the same canonical contract."""
+    """Require existing persisted fence state to prove the exact canonical contract."""
 
     if not isinstance(text, str):
         return ["IR-D-003 fence revalidation migration must be text"]
@@ -139,8 +131,20 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
     findings: list[str] = []
     required = (
         "to_regclass('platform.authority_fences')",
-        "SELECT relpersistence",
-        "IS DISTINCT FROM 'p'",
+        "SELECT ROW(relkind, relpersistence, relispartition, relrowsecurity, relforcerowsecurity)",
+        "IS DISTINCT FROM ROW('r'::\"char\", 'p'::\"char\", false, false, false)",
+        "FROM pg_inherits",
+        "inhrelid = v_table",
+        "inhparent = v_table",
+        "FROM pg_policy",
+        "polrelid = v_table",
+        "SELECT array_agg(attname::text ORDER BY attnum)",
+        "'fence_scope_id'",
+        "'current_fence_epoch'",
+        "'current_generation_id'",
+        "'authority_state'",
+        "'updated_at'",
+        "IS DISTINCT FROM ARRAY[",
         "attname = 'fence_scope_id'",
         "IS DISTINCT FROM 'text'::regtype",
         "attname = 'current_fence_epoch'",
@@ -150,6 +154,10 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
         "attname = 'updated_at'",
         "IS DISTINCT FROM 'timestamptz'::regtype",
         "attgenerated <> '' OR attidentity <> ''",
+        "FROM pg_attrdef d",
+        "a.attname <> 'updated_at'",
+        "pg_get_expr(d.adbin, d.adrelid)",
+        "IS DISTINCT FROM 'statement_timestamp()'",
         "c.contype = 'p'",
         "c.conkey = ARRAY[a.attnum]::smallint[]",
         "ALTER TABLE platform.authority_fences",

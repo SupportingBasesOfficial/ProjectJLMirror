@@ -33,8 +33,6 @@ def validate_fence_sql_text(text: str) -> list[str]:
         if fragment not in text:
             findings.append(f"IR-D-003 SQL canonical/effect-authority invariant missing: {fragment}")
 
-    # A prose mention of the regex is not sufficient. Each authoritative persisted
-    # identifier and each effectful successor input needs an executable C-collated predicate.
     executable_uses = text.count(
         f"{CANONICAL_REGEX_OPERATOR} '{CANONICAL_IDENTIFIER_REGEX}'"
     )
@@ -43,4 +41,43 @@ def validate_fence_sql_text(text: str) -> list[str]:
             "IR-D-003 SQL canonical identifier grammar is not C-collated/enforced at every required storage/effect boundary"
         )
 
+    return findings
+
+
+def validate_fence_revalidation_sql_text(text: str) -> list[str]:
+    """Require existing persisted fence state to prove the same canonical contract."""
+
+    if not isinstance(text, str):
+        return ["IR-D-003 fence revalidation migration must be text"]
+
+    findings: list[str] = []
+    required = (
+        "ALTER TABLE platform.authority_fences",
+        "ALTER COLUMN fence_scope_id SET NOT NULL",
+        "ALTER COLUMN current_fence_epoch SET NOT NULL",
+        "ALTER COLUMN current_generation_id SET NOT NULL",
+        "ALTER COLUMN authority_state SET NOT NULL",
+        "ADD CONSTRAINT wave1_fence_scope_id_canonical",
+        _predicate("fence_scope_id"),
+        "ADD CONSTRAINT wave1_fence_epoch_positive",
+        "CHECK (current_fence_epoch > 0) NOT VALID",
+        "ADD CONSTRAINT wave1_fence_generation_canonical",
+        _predicate("current_generation_id"),
+        "ADD CONSTRAINT wave1_fence_state_canonical",
+        _predicate("authority_state"),
+        "VALIDATE CONSTRAINT wave1_fence_scope_id_canonical",
+        "VALIDATE CONSTRAINT wave1_fence_epoch_positive",
+        "VALIDATE CONSTRAINT wave1_fence_generation_canonical",
+        "VALIDATE CONSTRAINT wave1_fence_state_canonical",
+    )
+    for fragment in required:
+        if fragment not in text:
+            findings.append(
+                f"IR-D-003 persisted fence revalidation invariant missing: {fragment}"
+            )
+
+    if "UPDATE platform.authority_fences" in text or "DELETE FROM platform.authority_fences" in text:
+        findings.append(
+            "IR-D-003 revalidation migration must not normalize/delete historical authority rows to make validation pass"
+        )
     return findings

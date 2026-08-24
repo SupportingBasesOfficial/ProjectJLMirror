@@ -27,6 +27,7 @@ from jlmirror_authority.workload import (  # noqa: E402
 
 NOW = datetime(2026, 8, 24, 11, 15, tzinfo=timezone.utc)
 BROWSER_TRANSACTION_LIFETIME = timedelta(minutes=5)
+WORKLOAD_MAX_CERTIFICATE_LIFETIME = timedelta(minutes=10)
 
 
 class TxStore:
@@ -154,6 +155,7 @@ class AdapterBoundaryTests(unittest.TestCase):
                 allowed_runtime_profiles="runtime.api@1",  # type: ignore[arg-type]
                 current_trust_bundle_generation="tb-g1",
                 current_workload_credential_generation="wc-g1",
+                current_max_certificate_lifetime=WORKLOAD_MAX_CERTIFICATE_LIFETIME,
                 now=NOW,
             )
 
@@ -175,6 +177,7 @@ class AdapterBoundaryTests(unittest.TestCase):
                 allowed_runtime_profiles=frozenset({"runtime.api@1"}),
                 current_trust_bundle_generation="",
                 current_workload_credential_generation="wc-g1",
+                current_max_certificate_lifetime=WORKLOAD_MAX_CERTIFICATE_LIFETIME,
                 now=NOW,
             )
 

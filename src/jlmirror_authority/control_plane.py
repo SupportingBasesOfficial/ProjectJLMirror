@@ -8,13 +8,16 @@ from typing import Protocol
 from .browser import AuthenticationStrengthPolicyPort, require_authentication_strength
 from .model import (
     AdmissionDenied,
+    AuditClass,
     AuthenticationStrengthEvidence,
     AuthorizationDeclaration,
     EnvironmentClass,
     Principal,
+    PrincipalKind,
     ScopeClass,
     StepUpClass,
     TenantContext,
+    TenantRequirement,
 )
 
 
@@ -123,12 +126,8 @@ def construct_tenant_context(
         raise AdmissionDenied("destination runtime generation is stale")
     if evidence.environment_class is not required_environment:
         raise AdmissionDenied("runtime environment class is not eligible for this workload")
-    if evidence.runtime_lifecycle is not RuntimeLifecycle.ACTIVE:
-        raise AdmissionDenied("runtime lifecycle does not allow normal protected serving")
-    if not (evidence.placement_current and evidence.operation_eligible and evidence.cell_admission_current):
-        raise AdmissionDenied("placement/admission currentness cannot be proven")
-    if evidence.fence_epoch <= 0:
-        raise AdmissionDenied("placement fence epoch is invalid")
+    if not _placement_is_admissible(evidence):
+        raise AdmissionDenied("placement/runtime/cell admission currentness cannot be proven")
 
     return TenantContext(
         tenant_id=tenant_id,
@@ -155,8 +154,18 @@ def authorize_protected_operation(
 ) -> AuthorizationDecision:
     if not principal.active:
         raise AdmissionDenied("principal/credential is retired")
-    if declaration.tenant_required and context is None:
+
+    requirement = declaration.tenant_requirement
+    if requirement is TenantRequirement.REQUIRED and context is None:
         raise AdmissionDenied("protected operation requires trusted TenantContext")
+    if requirement is TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED:
+        if context is not None:
+            raise AdmissionDenied("cross-tenant privileged platform operation cannot reuse ordinary TenantContext")
+        if principal.kind is not PrincipalKind.PLATFORM_ADMIN_PRINCIPAL:
+            raise AdmissionDenied("cross-tenant privileged operation requires platform principal")
+        if declaration.audit_class not in {AuditClass.PRIVILEGED, AuditClass.SECURITY_CRITICAL}:
+            raise AdmissionDenied("cross-tenant privileged operation lacks privileged audit class")
+
     if context is not None:
         # A C2 adapter boolean may narrow/deny, but cannot launder stale evidence
         # into current authority. Current placement is re-resolved and joined here.
@@ -167,6 +176,7 @@ def authorize_protected_operation(
             raise AdmissionDenied("TenantContext no longer matches exact current placement authority")
     if declaration.scope in {ScopeClass.TENANT, ScopeClass.RESOURCE} and context is None:
         raise AdmissionDenied("tenant/resource scope requires current TenantContext")
+
     if declaration.step_up is not StepUpClass.NONE:
         if not declaration.authentication_strength_policy_id or strength_policy is None:
             raise AdmissionDenied("required authentication-strength authority is unavailable")

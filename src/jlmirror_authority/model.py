@@ -27,6 +27,11 @@ class ScopeClass(str, Enum):
     PLATFORM = "platform"
     TENANT = "tenant"
     RESOURCE = "resource"
+
+
+class TenantRequirement(str, Enum):
+    NONE = "none"
+    REQUIRED = "required"
     EXPLICIT_CROSS_TENANT_PRIVILEGED = "explicit_cross_tenant_privileged"
 
 
@@ -110,6 +115,7 @@ class AuthorizationDeclaration:
     audit_class: AuditClass
     resource_scope: str | None = None
     authentication_strength_policy_id: str | None = None
+    tenant_requirement: TenantRequirement | None = None
 
     def __post_init__(self) -> None:
         if not _ACTION_RE.fullmatch(self.action):
@@ -122,8 +128,25 @@ class AuthorizationDeclaration:
             raise ValueError("non-none step-up requires an explicit Security policy identifier")
         if self.step_up is StepUpClass.NONE and self.authentication_strength_policy_id is not None:
             raise ValueError("step_up=none cannot carry an authentication-strength policy")
-        if self.scope in {ScopeClass.TENANT, ScopeClass.RESOURCE} and not self.tenant_required:
-            raise ValueError("tenant/resource scope requires tenant context")
+
+        if self.tenant_requirement is None:
+            canonical_requirement = (
+                TenantRequirement.REQUIRED if self.tenant_required else TenantRequirement.NONE
+            )
+            object.__setattr__(self, "tenant_requirement", canonical_requirement)
+        else:
+            canonical_requirement = self.tenant_requirement
+            expected_legacy_flag = canonical_requirement is TenantRequirement.REQUIRED
+            if self.tenant_required != expected_legacy_flag:
+                raise ValueError("tenant_required compatibility flag contradicts tenant_requirement")
+
+        if self.scope in {ScopeClass.TENANT, ScopeClass.RESOURCE} and canonical_requirement is not TenantRequirement.REQUIRED:
+            raise ValueError("tenant/resource scope requires tenant_requirement=required")
+        if canonical_requirement is TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED:
+            if self.scope is not ScopeClass.PLATFORM:
+                raise ValueError("cross-tenant privileged operations are distinct platform operations")
+            if self.audit_class not in {AuditClass.PRIVILEGED, AuditClass.SECURITY_CRITICAL}:
+                raise ValueError("cross-tenant privileged operations require privileged/security-critical audit")
 
 
 @dataclass(frozen=True)

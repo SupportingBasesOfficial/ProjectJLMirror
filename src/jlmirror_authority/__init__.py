@@ -18,6 +18,7 @@ from .model import (
     SecretReference,
     StepUpClass,
     TenantContext,
+    TenantRequirement,
 )
 from .session import (
     BrowserSessionHandle,
@@ -44,6 +45,7 @@ __all__ = [
     "SecretReference",
     "StepUpClass",
     "TenantContext",
+    "TenantRequirement",
     "issue_browser_session",
     "require_classified_configuration",
     "resolve_browser_session",

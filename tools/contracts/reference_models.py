@@ -86,10 +86,14 @@ class FenceReference:
         with self._lock:
             return epoch == self.current_epoch
 
-    def restore(self, restored_epoch: int) -> str:
+    def restore(
+        self, restored_epoch: int, *, surviving_currentness_proven: bool = False
+    ) -> str:
         with self._lock:
             if restored_epoch < self.current_epoch:
                 return "quarantine_and_fence_forward"
+            if not surviving_currentness_proven:
+                return "quarantine_and_reconcile"
             if restored_epoch > self.current_epoch:
                 self.current_epoch = restored_epoch
             return "continuity_proven"

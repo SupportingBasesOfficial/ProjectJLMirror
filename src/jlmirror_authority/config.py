@@ -4,12 +4,13 @@ from dataclasses import dataclass
 import math
 import re
 from types import MappingProxyType
-from typing import Mapping, TypeAlias
+from typing import Mapping, Protocol, TypeAlias
 
-from .model import AdmissionDenied, SecretReference
+from .model import AdmissionDenied, EnvironmentClass, SecretReference
 
 JsonScalar: TypeAlias = str | int | float | bool | None
 _SECRETREF_RE = re.compile(r"^secretref\.[a-z0-9-]+(?:\.[a-z0-9-]+)*@[1-9][0-9]*$")
+_RUNTIME_PROFILE_RE = re.compile(r"^runtime\.[a-z0-9-]+(?:\.[a-z0-9-]+)*@[1-9][0-9]*$")
 
 
 def _explicit_name(value: object, field: str) -> str:
@@ -33,7 +34,12 @@ def _json_scalar(value: object, field: str) -> JsonScalar:
 
 @dataclass(frozen=True)
 class ConfigurationSchema:
-    """Security-owned classification of configuration keys, not vendor config syntax."""
+    """Structural key classification supplied by the Security/configuration boundary.
+
+    Presence of this object proves only that a snapshot is structurally classified.
+    It does not prove the classification is current, trusted for a runtime/environment,
+    or owned by the accepted configuration authority.
+    """
 
     public_keys: frozenset[str]
     secret_reference_classes: Mapping[str, frozenset[str]]
@@ -132,14 +138,14 @@ class ConfigurationSnapshot:
         object.__setattr__(self, "secret_references", MappingProxyType(secret_references))
 
     @property
-    def classification_proven(self) -> bool:
+    def classification_schema_present(self) -> bool:
         return self.schema is not None
 
     def evidence_view(self) -> dict[str, object]:
-        """Structural evidence; explicitly states whether key classification is proven."""
+        """Structural evidence only; never claims current classification authority."""
         return {
             "configuration_generation": self.configuration_generation,
-            "classification_proven": self.classification_proven,
+            "classification_schema_present": self.classification_schema_present,
             "public_keys": sorted(self.public_values),
             "secret_reference_classes": {
                 key: reference.reference_class
@@ -152,11 +158,58 @@ class ConfigurationSnapshot:
         }
 
 
-def require_classified_configuration(snapshot: ConfigurationSnapshot) -> ConfigurationSnapshot:
-    """Protected runtime consumers must never admit unclassified configuration."""
+class ConfigurationAuthorityPort(Protocol):
+    def admit_current(
+        self,
+        *,
+        snapshot: ConfigurationSnapshot,
+        runtime_profile_id: str,
+        environment_class: EnvironmentClass,
+        expected_configuration_generation: str,
+    ) -> bool:
+        """Confirm current Security/config authority for this exact runtime/environment snapshot."""
+
+
+def require_classified_configuration(
+    snapshot: ConfigurationSnapshot,
+    *,
+    authority: ConfigurationAuthorityPort | None = None,
+    runtime_profile_id: str | None = None,
+    environment_class: EnvironmentClass | None = None,
+    expected_configuration_generation: str | None = None,
+) -> ConfigurationSnapshot:
+    """Admit configuration only with structural classification plus current owning authority."""
 
     if not isinstance(snapshot, ConfigurationSnapshot):
         raise AdmissionDenied("runtime configuration evidence is malformed")
-    if not snapshot.classification_proven:
-        raise AdmissionDenied("configuration key classification is unproven")
+    if not snapshot.classification_schema_present:
+        raise AdmissionDenied("configuration key classification schema is absent")
+    if (
+        not isinstance(runtime_profile_id, str)
+        or not _RUNTIME_PROFILE_RE.fullmatch(runtime_profile_id)
+    ):
+        raise AdmissionDenied("runtime profile for configuration admission is unavailable or non-canonical")
+    if not isinstance(environment_class, EnvironmentClass):
+        raise AdmissionDenied("environment class for configuration admission is unavailable or non-canonical")
+    try:
+        expected_generation = _explicit_name(
+            expected_configuration_generation, "expected_configuration_generation"
+        )
+    except ValueError as exc:
+        raise AdmissionDenied("current configuration generation authority is unavailable") from exc
+    if snapshot.configuration_generation != expected_generation:
+        raise AdmissionDenied("configuration snapshot generation is stale or unexpected")
+    if authority is None:
+        raise AdmissionDenied("current configuration classification authority is unavailable")
+    try:
+        admitted = authority.admit_current(
+            snapshot=snapshot,
+            runtime_profile_id=runtime_profile_id,
+            environment_class=environment_class,
+            expected_configuration_generation=expected_generation,
+        )
+    except Exception as exc:
+        raise AdmissionDenied("current configuration classification authority failed closed") from exc
+    if admitted is not True:
+        raise AdmissionDenied("configuration classification/currentness is not proven by owning authority")
     return snapshot

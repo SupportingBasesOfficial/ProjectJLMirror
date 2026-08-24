@@ -12,11 +12,17 @@ REVOKE CREATE ON SCHEMA platform FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES IN SCHEMA platform
     REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 
+-- These identifier checks deliberately mirror the portable authority-core grammar:
+-- first character alphanumeric; remaining characters limited to [A-Za-z0-9._:@/-];
+-- maximum 256 characters; no whitespace/control/alternate textual form.
 CREATE TABLE IF NOT EXISTS platform.authority_fences (
-    fence_scope_id text PRIMARY KEY CHECK (btrim(fence_scope_id) <> ''),
+    fence_scope_id text PRIMARY KEY
+        CHECK (fence_scope_id ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
     current_fence_epoch bigint NOT NULL CHECK (current_fence_epoch > 0),
-    current_generation_id text NOT NULL CHECK (btrim(current_generation_id) <> ''),
-    authority_state text NOT NULL CHECK (btrim(authority_state) <> ''),
+    current_generation_id text NOT NULL
+        CHECK (current_generation_id ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
+    authority_state text NOT NULL
+        CHECK (authority_state ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
     updated_at timestamptz NOT NULL DEFAULT statement_timestamp()
 );
 
@@ -66,7 +72,9 @@ REVOKE ALL ON FUNCTION platform.initialize_authority_fence(text, text, text) FRO
 
 -- Successor acquisition is compare-and-advance. Exactly one concurrent caller
 -- can win for one exact expected predecessor (scope + epoch + generation).
--- BIGINT exhaustion fails closed.
+-- BIGINT exhaustion fails closed. Canonical row CHECK constraints apply to the
+-- successor generation/state in the same statement; malformed identifiers cannot
+-- become persisted authority merely because a caller reached this function.
 CREATE OR REPLACE FUNCTION platform.advance_authority_fence(
     p_fence_scope_id text,
     p_expected_predecessor_epoch bigint,
@@ -92,9 +100,9 @@ AS $$
        AND authority_fences.current_fence_epoch = p_expected_predecessor_epoch
        AND authority_fences.current_generation_id = p_expected_predecessor_generation_id
        AND authority_fences.current_fence_epoch < 9223372036854775807
-       AND btrim(p_expected_predecessor_generation_id) <> ''
-       AND btrim(p_successor_generation_id) <> ''
-       AND btrim(p_successor_state) <> ''
+       AND p_expected_predecessor_generation_id ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'
+       AND p_successor_generation_id ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'
+       AND p_successor_state ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'
     RETURNING
         authority_fences.fence_scope_id,
         authority_fences.current_fence_epoch,

@@ -59,6 +59,19 @@ def placement(**overrides):
     return PlacementEvidence(**values)
 
 
+class PrincipalAuthority:
+    def __init__(self, result=True):
+        self.result = result
+
+    def is_current(self, **kwargs):
+        if isinstance(self.result, BaseException):
+            raise self.result
+        return self.result
+
+
+GOOD_PRINCIPAL_AUTHORITY = PrincipalAuthority(True)
+
+
 class PlacementAuthority:
     def __init__(self, evidence, gate=True):
         self.evidence = evidence
@@ -81,6 +94,26 @@ class TypeLaunderingTests(unittest.TestCase):
         for value in ("false", "true", 0, 1):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 Principal("user-1", PrincipalKind.HUMAN_BROWSER_SESSION, "cg-1", active=value)
+
+    def test_principal_currentness_port_requires_literal_true(self):
+        evidence = placement()
+        placement_authority = PlacementAuthority(evidence)
+        principal = Principal("user-1", PrincipalKind.HUMAN_BROWSER_SESSION, "cg-1")
+        for value in (False, "true", 1, object(), RuntimeError("authority unavailable")):
+            with self.subTest(value=value), self.assertRaises(AdmissionDenied):
+                construct_tenant_context(
+                    principal=principal,
+                    principal_authority=PrincipalAuthority(value),
+                    placement_authority=placement_authority,
+                    tenant_id=evidence.tenant_id,
+                    destination_cell_id=evidence.cell_id,
+                    destination_runtime_generation=evidence.runtime_generation,
+                    destination_configuration_generation=evidence.configuration_generation,
+                    destination_workload_credential_generation=evidence.workload_credential_generation,
+                    destination_network_policy_generation=evidence.network_policy_generation,
+                    required_environment=evidence.environment_class,
+                    now=NOW,
+                )
 
     def test_placement_currentness_fields_must_be_literal_booleans(self):
         for field in ("placement_current", "operation_eligible", "cell_admission_current"):
@@ -151,6 +184,7 @@ class TypeLaunderingTests(unittest.TestCase):
         principal = Principal("user-1", PrincipalKind.HUMAN_BROWSER_SESSION, "cg-1")
         context = construct_tenant_context(
             principal=principal,
+            principal_authority=GOOD_PRINCIPAL_AUTHORITY,
             placement_authority=authority,
             tenant_id=evidence.tenant_id,
             destination_cell_id=evidence.cell_id,
@@ -173,6 +207,7 @@ class TypeLaunderingTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(AdmissionDenied):
                 authorize_protected_operation(
                     principal=principal,
+                    principal_authority=GOOD_PRINCIPAL_AUTHORITY,
                     declaration=declaration,
                     placement_authority=authority,
                     authorization_authority=GoodAuthz(),
@@ -186,6 +221,7 @@ class TypeLaunderingTests(unittest.TestCase):
         principal = Principal("user-1", PrincipalKind.HUMAN_BROWSER_SESSION, "cg-1")
         context = construct_tenant_context(
             principal=principal,
+            principal_authority=GOOD_PRINCIPAL_AUTHORITY,
             placement_authority=authority,
             tenant_id=evidence.tenant_id,
             destination_cell_id=evidence.cell_id,
@@ -211,6 +247,7 @@ class TypeLaunderingTests(unittest.TestCase):
         with self.assertRaises(AdmissionDenied):
             authorize_protected_operation(
                 principal=principal,
+                principal_authority=GOOD_PRINCIPAL_AUTHORITY,
                 declaration=declaration,
                 placement_authority=authority,
                 authorization_authority=BadAuthz(),

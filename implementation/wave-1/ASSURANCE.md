@@ -14,6 +14,7 @@ Required exact-HEAD evidence before merge readiness:
 - browser session capability input is bounded and canonical before session-authority lookup;
 - browser auth transaction currentness is fail-closed for both not-yet-current and expired transactions;
 - explicit cross-tenant privileged platform operations cannot be admitted through the ordinary application runtime boundary and require the accepted Control Plane runtime binding;
+- privileged/policy-sensitive human admission revalidates the exact principal-bound authentication-strength evidence against the current Security policy after the owning authorization decision and immediately before final admission; an earlier MFA/step-up pass is not durable authority;
 - owning authorization cannot be returned as admitted when the exact TenantContext/placement/runtime/fence currentness changes during authorization evaluation; the placement/currentness boundary is revalidated after the owning decision and before protected-operation admission;
 - fenced effect admission resolves current state from the owning fence authority; a typed/supplied fence record is not currentness proof, and co-resident PostgreSQL effects retain the same-transaction predicate requirement;
 - persisted fence authority state is revalidated against canonical identifier/positive-epoch constraints rather than accepted by object presence;

@@ -4,27 +4,56 @@
   "title": "JLMIRROR contract source registry",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "catalog_id", "profile_sources", "http_manifest_source", "event_manifest_source"],
+  "required": ["schema_version", "catalog_id", "accepted_authority_base", "profile_sources", "http_manifest_source", "event_manifest_source"],
   "properties": {
     "schema_version": {"const": 1},
     "catalog_id": {"const": "jlmirror.contract-source-registry@1"},
+    "accepted_authority_base": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "profile_sources": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": {"type": "string", "pattern": "^docs/.+\\.md$"}
+      "items": {"$ref": "#/$defs/pinned_source"}
     },
     "http_manifest_source": {"$ref": "#/$defs/manifest_source"},
     "event_manifest_source": {"$ref": "#/$defs/manifest_source"}
   },
   "$defs": {
+    "pinned_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "git_blob_sha"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^docs/.+\\.md$"},
+        "git_blob_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
     "manifest_source": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "heading"],
+      "required": ["path", "git_blob_sha", "heading", "composite_requirements"],
       "properties": {
         "path": {"type": "string", "pattern": "^docs/.+\\.md$"},
-        "heading": {"type": "string", "minLength": 1}
+        "git_blob_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "heading": {"type": "string", "minLength": 1},
+        "composite_requirements": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/composite_requirement"}
+        }
+      }
+    },
+    "composite_requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_text", "alternatives"],
+      "properties": {
+        "source_text": {"type": "string", "minLength": 1},
+        "alternatives": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}
+        }
       }
     }
   }

@@ -251,6 +251,31 @@ def construct_tenant_context(
     if not isinstance(required_environment, EnvironmentClass):
         raise AdmissionDenied("destination runtime environment authority is not canonical")
 
+    # Logical routing/currentness inputs are caller/request-adjacent data at this
+    # boundary. Canonicalize and bound them before any C2 placement adapter sees
+    # them; an adapter must never become the parser/normalizer that decides which
+    # tenant or runtime-generation authority a malformed identifier refers to.
+    try:
+        tenant_id = _identifier(tenant_id, "tenant_id")
+        destination_cell_id = _identifier(destination_cell_id, "destination_cell_id")
+        destination_runtime_generation = _identifier(
+            destination_runtime_generation, "destination_runtime_generation"
+        )
+        destination_configuration_generation = _identifier(
+            destination_configuration_generation, "destination_configuration_generation"
+        )
+        destination_workload_credential_generation = _identifier(
+            destination_workload_credential_generation,
+            "destination_workload_credential_generation",
+        )
+        destination_network_policy_generation = _identifier(
+            destination_network_policy_generation, "destination_network_policy_generation"
+        )
+    except ValueError as exc:
+        raise AdmissionDenied(
+            "tenant/destination authority lookup input is not canonical"
+        ) from exc
+
     evidence = placement_authority.resolve_current(tenant_id)
     if not isinstance(evidence, PlacementEvidence):
         raise AdmissionDenied("trusted tenant placement cannot be established")

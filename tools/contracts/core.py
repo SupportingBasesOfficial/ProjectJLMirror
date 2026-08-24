@@ -223,6 +223,13 @@ def validate_registry_schema_contract(root: Path) -> list[str]:
     ):
         findings.append("source registry schema profile_sources contract drift")
 
+    expected_manifest_ref = {"$ref": "#/$defs/manifest_source"}
+    for field in ("http_manifest_source", "event_manifest_source"):
+        if props.get(field) != expected_manifest_ref:
+            findings.append(
+                f"source registry schema {field} must reference #/$defs/manifest_source"
+            )
+
     defs = schema.get("$defs", {})
     expected_path_schema = {"type": "string", "pattern": DOC_MD_PATH_PATTERN}
     pinned = defs.get("pinned_source", {})
@@ -552,11 +559,29 @@ def compare_object_schemas(
 
     prev_props = set(prev_prop_defs)
     next_props = set(next_prop_defs)
-    prev_required = set(previous.get("required", []))
-    next_required = set(candidate.get("required", []))
+    prev_required_raw = previous.get("required", [])
+    next_required_raw = candidate.get("required", [])
+    if (
+        not isinstance(prev_required_raw, list)
+        or not isinstance(next_required_raw, list)
+        or any(not isinstance(name, str) for name in prev_required_raw)
+        or any(not isinstance(name, str) for name in next_required_raw)
+        or len(prev_required_raw) != len(set(prev_required_raw))
+        or len(next_required_raw) != len(set(next_required_raw))
+    ):
+        return {
+            "classification": "structural_change_requires_review",
+            "review_reasons": ["required_shape_changed"],
+            "semantic_compatibility_authority": (
+                "Phase 09/10 reviewed contracts own semantic compatibility; "
+                "this structural report cannot approve compatibility"
+            ),
+        }
+    prev_required = set(prev_required_raw)
+    next_required = set(next_required_raw)
 
     removed = sorted(prev_props - next_props)
-    added_required = sorted((next_required - prev_required) & next_props)
+    added_required = sorted(next_required - prev_required)
     added_optional = sorted((next_props - prev_props) - next_required)
     relaxed_required = sorted(prev_required - next_required)
     changed_properties = sorted(

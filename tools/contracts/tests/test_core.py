@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -10,7 +11,51 @@ from tools.contracts.core import (
     extract_manifest_requirements,
     extract_versioned_ids,
     git_blob_sha,
+    validate_authority_base_bindings,
 )
+
+
+def _git(root: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    return completed.stdout.strip()
+
+
+def _committed_source_repo(root: Path, content: str = "`runtime.api@1`\n") -> tuple[str, str]:
+    source = root / "docs" / "manifest.md"
+    source.parent.mkdir(parents=True)
+    source.write_text(content, encoding="utf-8")
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "test@example.invalid")
+    _git(root, "config", "user.name", "JLMIRROR Test")
+    _git(root, "add", "docs/manifest.md")
+    _git(root, "commit", "-q", "-m", "accepted authority")
+    base = _git(root, "rev-parse", "HEAD")
+    blob = _git(root, "rev-parse", f"{base}:docs/manifest.md")
+    return base, blob
+
+
+def _registry_for(base: str, blob: str) -> dict:
+    manifest = {
+        "path": "docs/manifest.md",
+        "git_blob_sha": blob,
+        "heading": "Semantic manifest",
+        "composite_requirements": [],
+    }
+    return {
+        "accepted_authority_base": base,
+        "profile_sources": [
+            {"path": "docs/manifest.md", "git_blob_sha": blob}
+        ],
+        "http_manifest_source": dict(manifest),
+        "event_manifest_source": dict(manifest),
+    }
 
 
 class ContractProjectionTests(unittest.TestCase):
@@ -41,6 +86,26 @@ class ContractProjectionTests(unittest.TestCase):
             }
             with self.assertRaises(ContractProjectionError):
                 build_profile_catalog(root, registry)
+
+    def test_accepted_authority_base_resolves_declared_blob(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            base, blob = _committed_source_repo(root)
+            validate_authority_base_bindings(root, _registry_for(base, blob))
+
+    def test_working_tree_repin_cannot_launder_old_authority_base(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            base, _ = _committed_source_repo(root, "`runtime.api@1`\n")
+            source = root / "docs" / "manifest.md"
+            source.write_text("`runtime.worker@1`\n", encoding="utf-8")
+            forged_working_blob = git_blob_sha(source.read_bytes())
+            with self.assertRaisesRegex(
+                ContractProjectionError, "accepted authority binding mismatch"
+            ):
+                validate_authority_base_bindings(
+                    root, _registry_for(base, forged_working_blob)
+                )
 
     def test_canonical_normative_source_path_is_accepted(self):
         with TemporaryDirectory() as temp:
@@ -198,6 +263,33 @@ contract_name
             report["classification"], "structural_change_requires_review"
         )
         self.assertTrue(report["composite_requirements_changed"])
+
+    def test_unmodeled_top_level_schema_constraints_force_review(self):
+        cases = (
+            ("$defs", {"Thing": {"type": "string"}}, {"Thing": {"type": "integer"}}),
+            ("minProperties", 1, 2),
+            ("oneOf", [{"required": ["a"]}], [{"required": ["b"]}]),
+        )
+        for keyword, before, after in cases:
+            with self.subTest(keyword=keyword):
+                previous = {
+                    "properties": {"a": {}, "b": {}},
+                    "required": [],
+                    keyword: before,
+                }
+                candidate = {
+                    "properties": {"a": {}, "b": {}},
+                    "required": [],
+                    keyword: after,
+                }
+                report = compare_object_schemas(previous, candidate)
+                self.assertEqual(
+                    report["classification"], "structural_change_requires_review"
+                )
+                self.assertTrue(report["other_schema_constraints_changed"])
+                self.assertIn(
+                    "other_schema_constraints_changed", report["review_reasons"]
+                )
 
 
 if __name__ == "__main__":

@@ -2,9 +2,91 @@
 --
 -- 001 may be applied into an environment where the logical schema already exists.
 -- This migration makes reuse fail closed: an existing authority_fences table must
--- satisfy the canonical identifier and positive-epoch contract before Wave 1 can
--- consider it eligible for authority use. Invalid historical rows make validation
+-- satisfy the canonical structural, identifier and positive-epoch contract before
+-- Wave 1 can consider it eligible for authority use. Invalid historical shape/rows
 -- fail; they are not normalized, deleted, or silently accepted here.
+
+-- A table name is not conformance. Verify the structural properties that make
+-- compare-and-advance single-winner and preserve the accepted BIGINT fence domain.
+DO $$
+DECLARE
+    v_table regclass := to_regclass('platform.authority_fences');
+BEGIN
+    IF v_table IS NULL THEN
+        RAISE EXCEPTION 'platform.authority_fences is absent; apply 001 before revalidation';
+    END IF;
+
+    IF (
+        SELECT atttypid
+          FROM pg_attribute
+         WHERE attrelid = v_table
+           AND attname = 'fence_scope_id'
+           AND attnum > 0
+           AND NOT attisdropped
+    ) IS DISTINCT FROM 'text'::regtype THEN
+        RAISE EXCEPTION 'authority_fences.fence_scope_id must be text';
+    END IF;
+
+    IF (
+        SELECT atttypid
+          FROM pg_attribute
+         WHERE attrelid = v_table
+           AND attname = 'current_fence_epoch'
+           AND attnum > 0
+           AND NOT attisdropped
+    ) IS DISTINCT FROM 'int8'::regtype THEN
+        RAISE EXCEPTION 'authority_fences.current_fence_epoch must be bigint';
+    END IF;
+
+    IF (
+        SELECT atttypid
+          FROM pg_attribute
+         WHERE attrelid = v_table
+           AND attname = 'current_generation_id'
+           AND attnum > 0
+           AND NOT attisdropped
+    ) IS DISTINCT FROM 'text'::regtype THEN
+        RAISE EXCEPTION 'authority_fences.current_generation_id must be text';
+    END IF;
+
+    IF (
+        SELECT atttypid
+          FROM pg_attribute
+         WHERE attrelid = v_table
+           AND attname = 'authority_state'
+           AND attnum > 0
+           AND NOT attisdropped
+    ) IS DISTINCT FROM 'text'::regtype THEN
+        RAISE EXCEPTION 'authority_fences.authority_state must be text';
+    END IF;
+
+    IF (
+        SELECT atttypid
+          FROM pg_attribute
+         WHERE attrelid = v_table
+           AND attname = 'updated_at'
+           AND attnum > 0
+           AND NOT attisdropped
+    ) IS DISTINCT FROM 'timestamptz'::regtype THEN
+        RAISE EXCEPTION 'authority_fences.updated_at must be timestamptz';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+          FROM pg_constraint c
+          JOIN pg_attribute a
+            ON a.attrelid = c.conrelid
+           AND a.attname = 'fence_scope_id'
+           AND a.attnum > 0
+           AND NOT a.attisdropped
+         WHERE c.conrelid = v_table
+           AND c.contype = 'p'
+           AND c.conkey = ARRAY[a.attnum]::smallint[]
+    ) THEN
+        RAISE EXCEPTION 'authority_fences must have a single-column primary key on fence_scope_id';
+    END IF;
+END
+$$;
 
 ALTER TABLE platform.authority_fences
     ALTER COLUMN fence_scope_id SET NOT NULL,

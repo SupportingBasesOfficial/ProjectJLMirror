@@ -18,6 +18,7 @@ if str(SRC) not in sys.path:
 from jlmirror_authority.runtime_profiles import WAVE1_RUNTIME_BINDINGS  # noqa: E402
 from tools.authority.fence_sql_contract import (  # noqa: E402
     EFFECT_ELIGIBLE_PREDECESSOR_PREDICATE,
+    validate_fence_revalidation_sql_text,
     validate_fence_sql_text,
 )
 from tools.contracts.core import build_bundle  # noqa: E402
@@ -250,8 +251,19 @@ def _runtime_catalog_findings() -> list[str]:
 
 
 def _fence_sql_findings() -> list[str]:
-    path = ROOT / "sql" / "wave1" / "001_platform_authority_fence.sql"
-    text = path.read_text(encoding="utf-8")
+    primary = ROOT / "sql" / "wave1" / "001_platform_authority_fence.sql"
+    revalidation = ROOT / "sql" / "wave1" / "002_revalidate_authority_fence_contract.sql"
+    findings: list[str] = []
+    try:
+        text = primary.read_text(encoding="utf-8")
+    except OSError as exc:
+        return [f"IR-D-003 primary fence SQL contract unreadable: {exc}"]
+    try:
+        revalidation_text = revalidation.read_text(encoding="utf-8")
+    except OSError as exc:
+        findings.append(f"IR-D-003 persisted fence revalidation migration unreadable: {exc}")
+        revalidation_text = ""
+
     default_revoke = (
         "ALTER DEFAULT PRIVILEGES IN SCHEMA platform\n"
         "    REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;"
@@ -275,12 +287,14 @@ def _fence_sql_findings() -> list[str]:
         "REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text, text) FROM PUBLIC;",
         "same PostgreSQL transaction",
     )
-    findings = [
+    findings.extend(
         f"IR-D-003 SQL contract missing required invariant: {fragment}"
         for fragment in required_fragments
         if fragment not in text
-    ]
+    )
     findings.extend(validate_fence_sql_text(text))
+    if revalidation_text:
+        findings.extend(validate_fence_revalidation_sql_text(revalidation_text))
     if default_revoke in text and first_function in text and text.index(default_revoke) > text.index(first_function):
         findings.append(
             "IR-D-003 SQL default PUBLIC function EXECUTE revocation must precede authority function creation"

@@ -1,8 +1,11 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 
 from tools.contracts.core import (
     CompositeRequirement,
     ContractProjectionError,
+    build_profile_catalog,
     compare_object_schemas,
     extract_manifest_requirements,
     extract_versioned_ids,
@@ -23,6 +26,21 @@ class ContractProjectionTests(unittest.TestCase):
             git_blob_sha(b"test\n"),
             "9daeafb9864cf43055ae93beb0afd6c7d144bfa4",
         )
+
+    def test_normative_source_blob_mismatch_fails_closed(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "docs" / "manifest.md"
+            source.parent.mkdir(parents=True)
+            source.write_text("`runtime.api@1`\n", encoding="utf-8")
+            registry = {
+                "accepted_authority_base": "a" * 40,
+                "profile_sources": [
+                    {"path": "docs/manifest.md", "git_blob_sha": "0" * 40}
+                ],
+            }
+            with self.assertRaises(ContractProjectionError):
+                build_profile_catalog(root, registry)
 
     def test_manifest_composite_is_explicitly_registered(self):
         text = """# X

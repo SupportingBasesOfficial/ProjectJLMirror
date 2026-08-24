@@ -44,10 +44,11 @@ class FenceAuthorityPort(Protocol):
         *,
         fence_scope_id: str,
         expected_predecessor_epoch: int,
+        expected_predecessor_generation_id: str,
         successor_generation_id: str,
         successor_state: str,
     ) -> FenceRecord | None:
-        """Atomically compare predecessor + increment epoch; None means no winner."""
+        """Atomically compare exact predecessor + increment epoch; None means no winner."""
 
 
 def admit_fenced_effect(*, token: FenceToken, current: FenceRecord) -> None:
@@ -68,14 +69,28 @@ def acquire_next_fence(
     expected_predecessor_epoch: int,
     successor_generation_id: str,
     successor_state: str = "active",
+    expected_predecessor_generation_id: str | None = None,
 ) -> FenceRecord:
     if expected_predecessor_epoch <= 0:
         raise AdmissionDenied("expected predecessor epoch must be positive")
     if expected_predecessor_epoch >= MAX_SIGNED_BIGINT:
         raise AdmissionDenied("fence epoch exhausted; governed migration required")
+
+    observed = authority.current(fence_scope_id)
+    if observed is None or observed.current_fence_epoch != expected_predecessor_epoch:
+        raise AdmissionDenied("expected fence predecessor is not current")
+    predecessor_generation = (
+        expected_predecessor_generation_id
+        if expected_predecessor_generation_id is not None
+        else observed.current_generation_id
+    )
+    if not predecessor_generation or observed.current_generation_id != predecessor_generation:
+        raise AdmissionDenied("expected fence predecessor generation is not current")
+
     winner = authority.acquire_successor(
         fence_scope_id=fence_scope_id,
         expected_predecessor_epoch=expected_predecessor_epoch,
+        expected_predecessor_generation_id=predecessor_generation,
         successor_generation_id=successor_generation_id,
         successor_state=successor_state,
     )

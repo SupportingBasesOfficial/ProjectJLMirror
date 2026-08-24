@@ -6,7 +6,12 @@ import hashlib
 import secrets
 from typing import Protocol
 
-from .model import AdmissionDenied, AuthenticationStrengthEvidence, Principal
+from .model import (
+    AdmissionDenied,
+    AuthenticationStrengthEvidence,
+    Principal,
+    PrincipalKind,
+)
 
 
 def _utc(value: datetime) -> datetime:
@@ -52,6 +57,13 @@ class BrowserSessionRecord:
             raise ValueError("session handle digest must be lowercase SHA-256 hex")
         if not self.session_generation:
             raise ValueError("session_generation is required")
+        if self.principal.kind not in {
+            PrincipalKind.HUMAN_BROWSER_SESSION,
+            PrincipalKind.PLATFORM_ADMIN_PRINCIPAL,
+        }:
+            raise ValueError("browser sessions require a human browser/admin principal")
+        if self.principal.credential_generation != self.session_generation:
+            raise ValueError("session principal generation must equal session generation")
         created = _utc(self.created_at)
         expires = _utc(self.expires_at)
         if expires <= created:
@@ -100,10 +112,22 @@ def _new_record(
     now = _utc(now)
     if lifetime <= timedelta(0):
         raise ValueError("session lifetime must be positive")
+    if principal.kind not in {
+        PrincipalKind.HUMAN_BROWSER_SESSION,
+        PrincipalKind.PLATFORM_ADMIN_PRINCIPAL,
+    }:
+        raise AdmissionDenied("non-human principal cannot be converted into a browser session")
+    session_generation = secrets.token_urlsafe(24)
+    session_principal = Principal(
+        principal_id=principal.principal_id,
+        kind=principal.kind,
+        credential_generation=session_generation,
+        active=principal.active,
+    )
     return BrowserSessionRecord(
         handle_digest=handle.digest,
-        principal=principal,
-        session_generation=secrets.token_urlsafe(24),
+        principal=session_principal,
+        session_generation=session_generation,
         created_at=now,
         expires_at=now + lifetime,
         authentication_strength=authentication_strength,

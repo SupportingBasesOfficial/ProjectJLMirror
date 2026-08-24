@@ -96,6 +96,9 @@ class BrowserSessionHardeningTests(unittest.TestCase):
         self.assertGreaterEqual(len(handle.value), 43)
         self.assertNotIn(handle.value, repr(handle))
         self.assertEqual(len(handle.digest), 64)
+        record = resolve_browser_session(authority=self.authority, handle=handle, now=NOW)
+        self.assertEqual(record.principal.credential_generation, record.session_generation)
+        self.assertNotEqual(record.session_generation, "identity-g7")
 
     def test_unknown_and_expired_handles_fail_closed(self):
         with self.assertRaises(AdmissionDenied):
@@ -115,28 +118,28 @@ class BrowserSessionHardeningTests(unittest.TestCase):
                 authority=self.authority, handle=handle, now=NOW + timedelta(seconds=2)
             )
 
-    def test_rotation_atomically_retires_predecessor(self):
+    def test_rotation_atomically_retires_predecessor_and_changes_generation(self):
         old = issue_browser_session(
             authority=self.authority,
             principal=self.principal,
             now=NOW,
             lifetime=timedelta(minutes=30),
         )
+        old_record = resolve_browser_session(authority=self.authority, handle=old, now=NOW)
         new = rotate_browser_session(
             authority=self.authority,
             predecessor=old,
             now=NOW + timedelta(seconds=1),
             lifetime=timedelta(minutes=30),
         )
-        self.assertNotEqual(old.value, new.value)
         with self.assertRaises(AdmissionDenied):
             resolve_browser_session(authority=self.authority, handle=old, now=NOW + timedelta(seconds=2))
-        self.assertEqual(
-            resolve_browser_session(
-                authority=self.authority, handle=new, now=NOW + timedelta(seconds=2)
-            ).principal.principal_id,
-            "user-1",
+        new_record = resolve_browser_session(
+            authority=self.authority, handle=new, now=NOW + timedelta(seconds=2)
         )
+        self.assertNotEqual(old.value, new.value)
+        self.assertNotEqual(old_record.session_generation, new_record.session_generation)
+        self.assertEqual(new_record.principal.credential_generation, new_record.session_generation)
 
     def test_retirement_invalidates_cookie_even_if_handle_remains(self):
         handle = issue_browser_session(
@@ -148,6 +151,15 @@ class BrowserSessionHardeningTests(unittest.TestCase):
         retire_browser_session(authority=self.authority, handle=handle, now=NOW)
         with self.assertRaises(AdmissionDenied):
             resolve_browser_session(authority=self.authority, handle=handle, now=NOW)
+
+    def test_machine_principal_cannot_become_browser_session(self):
+        with self.assertRaises(AdmissionDenied):
+            issue_browser_session(
+                authority=self.authority,
+                principal=Principal("machine-1", PrincipalKind.MACHINE_API_PRINCIPAL, "key-g1"),
+                now=NOW,
+                lifetime=timedelta(minutes=30),
+            )
 
 
 class ConfigurationClassificationTests(unittest.TestCase):
@@ -177,20 +189,13 @@ class ConfigurationClassificationTests(unittest.TestCase):
     def test_secret_classified_key_cannot_be_raw_public_value(self):
         with self.assertRaises(ValueError):
             ConfigurationSnapshot(
-                "cfg-g4",
-                {"session_signing_key": "raw-secret"},
-                {},
-                schema=self.schema,
+                "cfg-g4", {"session_signing_key": "raw-secret"}, {}, schema=self.schema
             )
 
     def test_unknown_key_and_wrong_secret_reference_class_are_rejected(self):
         with self.assertRaises(ValueError):
             ConfigurationSnapshot("cfg-g4", {"vendor_default": "x"}, {}, schema=self.schema)
-        wrong = SecretReference(
-            "vault://prod/api/state",
-            "secretref.state-port@1",
-            "secret-g9",
-        )
+        wrong = SecretReference("vault://prod/api/state", "secretref.state-port@1", "secret-g9")
         with self.assertRaises(ValueError):
             ConfigurationSnapshot(
                 "cfg-g4", {}, {"session_signing_key": wrong}, schema=self.schema
@@ -247,7 +252,8 @@ class SqlPrivilegeHardeningTests(unittest.TestCase):
         required = (
             "REVOKE ALL ON TABLE platform.authority_fences FROM PUBLIC;",
             "REVOKE ALL ON FUNCTION platform.initialize_authority_fence(text, text, text) FROM PUBLIC;",
-            "REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text) FROM PUBLIC;",
+            "REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text, text) FROM PUBLIC;",
+            "current_generation_id = p_expected_predecessor_generation_id",
             "CHECK (btrim(fence_scope_id) <> '')",
             "CHECK (btrim(current_generation_id) <> '')",
             "CHECK (btrim(authority_state) <> '')",

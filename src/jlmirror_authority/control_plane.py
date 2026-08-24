@@ -58,7 +58,7 @@ class PlacementAuthorityPort(Protocol):
         """Resolve trusted current placement from the owning authority."""
 
     def context_is_current(self, context: TenantContext) -> bool:
-        """Re-establish current placement/admission for a previously built context."""
+        """Optional narrowing/deny signal; never sufficient proof by itself."""
 
 
 class CurrentAuthorizationPort(Protocol):
@@ -76,6 +76,29 @@ def _utc(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("time must be timezone-aware")
     return value.astimezone(timezone.utc)
+
+
+def _placement_is_admissible(evidence: PlacementEvidence) -> bool:
+    return (
+        evidence.runtime_lifecycle is RuntimeLifecycle.ACTIVE
+        and evidence.placement_current
+        and evidence.operation_eligible
+        and evidence.cell_admission_current
+        and evidence.fence_epoch > 0
+    )
+
+
+def _placement_matches_context(evidence: PlacementEvidence, context: TenantContext) -> bool:
+    return (
+        _placement_is_admissible(evidence)
+        and evidence.tenant_id == context.tenant_id
+        and evidence.cell_id == context.cell_id
+        and evidence.placement_version == context.placement_version
+        and evidence.runtime_generation == context.runtime_generation
+        and evidence.environment_class is context.environment_class
+        and evidence.fence_scope_id == context.fence_scope_id
+        and evidence.fence_epoch == context.fence_epoch
+    )
 
 
 def construct_tenant_context(
@@ -134,8 +157,14 @@ def authorize_protected_operation(
         raise AdmissionDenied("principal/credential is retired")
     if declaration.tenant_required and context is None:
         raise AdmissionDenied("protected operation requires trusted TenantContext")
-    if context is not None and not placement_authority.context_is_current(context):
-        raise AdmissionDenied("TenantContext placement/currentness is stale")
+    if context is not None:
+        # A C2 adapter boolean may narrow/deny, but cannot launder stale evidence
+        # into current authority. Current placement is re-resolved and joined here.
+        if not placement_authority.context_is_current(context):
+            raise AdmissionDenied("TenantContext placement/currentness narrowing gate denied")
+        current_placement = placement_authority.resolve_current(context.tenant_id)
+        if current_placement is None or not _placement_matches_context(current_placement, context):
+            raise AdmissionDenied("TenantContext no longer matches exact current placement authority")
     if declaration.scope in {ScopeClass.TENANT, ScopeClass.RESOURCE} and context is None:
         raise AdmissionDenied("tenant/resource scope requires current TenantContext")
     if declaration.step_up is not StepUpClass.NONE:

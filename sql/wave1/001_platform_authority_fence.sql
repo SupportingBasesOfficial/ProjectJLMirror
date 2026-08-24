@@ -58,10 +58,12 @@ $$;
 REVOKE ALL ON FUNCTION platform.initialize_authority_fence(text, text, text) FROM PUBLIC;
 
 -- Successor acquisition is compare-and-advance. Exactly one concurrent caller
--- can win for one expected predecessor epoch. BIGINT exhaustion fails closed.
+-- can win for one exact expected predecessor (scope + epoch + generation).
+-- BIGINT exhaustion fails closed.
 CREATE OR REPLACE FUNCTION platform.advance_authority_fence(
     p_fence_scope_id text,
     p_expected_predecessor_epoch bigint,
+    p_expected_predecessor_generation_id text,
     p_successor_generation_id text,
     p_successor_state text
 )
@@ -81,7 +83,9 @@ AS $$
            updated_at = statement_timestamp()
      WHERE authority_fences.fence_scope_id = p_fence_scope_id
        AND authority_fences.current_fence_epoch = p_expected_predecessor_epoch
+       AND authority_fences.current_generation_id = p_expected_predecessor_generation_id
        AND authority_fences.current_fence_epoch < 9223372036854775807
+       AND btrim(p_expected_predecessor_generation_id) <> ''
        AND btrim(p_successor_generation_id) <> ''
        AND btrim(p_successor_state) <> ''
     RETURNING
@@ -91,7 +95,7 @@ AS $$
         authority_fences.authority_state;
 $$;
 
-REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text, text) FROM PUBLIC;
 
 -- Co-resident protected mutations MUST bind the scope, epoch and generation in
 -- the same PostgreSQL transaction as the protected effect. A separate prior

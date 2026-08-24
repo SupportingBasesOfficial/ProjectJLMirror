@@ -78,11 +78,12 @@ def _fence_sql_findings() -> list[str]:
         "ON CONFLICT (fence_scope_id) DO NOTHING",
         "current_fence_epoch = current_fence_epoch + 1",
         "current_fence_epoch = p_expected_predecessor_epoch",
+        "current_generation_id = p_expected_predecessor_generation_id",
         "current_fence_epoch < 9223372036854775807",
         "SECURITY INVOKER",
         "REVOKE ALL ON TABLE platform.authority_fences FROM PUBLIC;",
         "REVOKE ALL ON FUNCTION platform.initialize_authority_fence(text, text, text) FROM PUBLIC;",
-        "REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text) FROM PUBLIC;",
+        "REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text, text) FROM PUBLIC;",
         "same PostgreSQL transaction as the protected effect",
     )
     return [

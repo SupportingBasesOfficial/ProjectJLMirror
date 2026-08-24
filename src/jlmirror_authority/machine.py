@@ -7,6 +7,8 @@ from typing import Protocol
 
 from .model import AdmissionDenied, Principal, PrincipalKind
 
+MAX_MACHINE_JTI_BYTES = 512
+
 
 class ReplayClaim(str, Enum):
     CLAIMED = "claimed"
@@ -76,17 +78,23 @@ def authenticate_machine_assertion(
         raise AdmissionDenied("machine assertion key generation is not current")
     if verified.replay_generation != current_replay_generation:
         raise AdmissionDenied("machine replay generation is not current")
-    if not (_utc(verified.not_before) <= now < _utc(verified.expires_at)):
+    not_before = _utc(verified.not_before)
+    expires_at = _utc(verified.expires_at)
+    if expires_at <= not_before:
+        raise AdmissionDenied("machine assertion validity interval is malformed")
+    if not (not_before <= now < expires_at):
         raise AdmissionDenied("machine assertion outside accepted validity interval")
     if _utc(verified.issued_at) > now:
         raise AdmissionDenied("machine assertion issued in the future")
-    if not verified.jti:
-        raise AdmissionDenied("machine assertion jti is required")
+    if not verified.jti or len(verified.jti.encode("utf-8")) > MAX_MACHINE_JTI_BYTES:
+        raise AdmissionDenied("machine assertion jti is missing or exceeds the bounded replay identity envelope")
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in verified.jti):
+        raise AdmissionDenied("machine assertion jti contains control characters")
 
     claim = replay_authority.claim_once(
         client_principal=verified.client_principal,
         jti=verified.jti,
-        valid_until=_utc(verified.expires_at),
+        valid_until=expires_at,
         replay_generation=verified.replay_generation,
     )
     if claim is not ReplayClaim.CLAIMED:

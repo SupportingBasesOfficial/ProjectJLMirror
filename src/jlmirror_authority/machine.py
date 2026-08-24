@@ -54,6 +54,17 @@ def _utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def _binding(value: object, field: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or value != value.strip()
+        or any(ord(char) < 0x20 or ord(char) == 0x7F for char in value)
+    ):
+        raise AdmissionDenied(f"{field} is malformed or unavailable")
+    return value
+
+
 def authenticate_machine_assertion(
     *,
     verifier: MachineAssertionVerificationPort,
@@ -68,27 +79,43 @@ def authenticate_machine_assertion(
 ) -> Principal:
     """Authenticate one replay-bounded machine assertion under current Security policy."""
 
-    now = _utc(now)
+    try:
+        now = _utc(now)
+    except ValueError as exc:
+        raise AdmissionDenied("current machine authentication time authority is malformed") from exc
+    _binding(compact_assertion, "compact_assertion")
+    expected_principal = _binding(expected_client_principal, "expected_client_principal")
+    expected_aud = _binding(expected_audience, "expected_audience")
+    current_key = _binding(current_key_generation, "current_key_generation")
+    current_replay = _binding(current_replay_generation, "current_replay_generation")
     if not isinstance(current_max_assertion_lifetime, timedelta) or current_max_assertion_lifetime <= timedelta(0):
         raise AdmissionDenied("current machine assertion lifetime policy is unavailable or invalid")
+
     verified = verifier.verify(
         compact_assertion=compact_assertion,
-        expected_client_principal=expected_client_principal,
+        expected_client_principal=expected_principal,
     )
     if not isinstance(verified, VerifiedMachineAssertion):
         raise AdmissionDenied("machine assertion verifier returned malformed trusted evidence")
-    if verified.client_principal != expected_client_principal:
+    verified_principal = _binding(verified.client_principal, "verified client principal")
+    verified_audience = _binding(verified.audience, "verified audience")
+    verified_key = _binding(verified.key_generation, "verified key generation")
+    verified_replay = _binding(verified.replay_generation, "verified replay generation")
+    if verified_principal != expected_principal:
         raise AdmissionDenied("machine principal binding mismatch")
-    if verified.audience != expected_audience:
+    if verified_audience != expected_aud:
         raise AdmissionDenied("machine assertion audience mismatch")
-    if verified.key_generation != current_key_generation:
+    if verified_key != current_key:
         raise AdmissionDenied("machine assertion key generation is not current")
-    if verified.replay_generation != current_replay_generation:
+    if verified_replay != current_replay:
         raise AdmissionDenied("machine replay generation is not current")
 
-    issued_at = _utc(verified.issued_at)
-    not_before = _utc(verified.not_before)
-    expires_at = _utc(verified.expires_at)
+    try:
+        issued_at = _utc(verified.issued_at)
+        not_before = _utc(verified.not_before)
+        expires_at = _utc(verified.expires_at)
+    except ValueError as exc:
+        raise AdmissionDenied("machine assertion time evidence is malformed") from exc
     if expires_at <= not_before or expires_at <= issued_at:
         raise AdmissionDenied("machine assertion validity interval is malformed")
     if expires_at - issued_at > current_max_assertion_lifetime:
@@ -102,17 +129,24 @@ def authenticate_machine_assertion(
     if any(ord(char) < 0x20 or ord(char) == 0x7F for char in verified.jti):
         raise AdmissionDenied("machine assertion jti contains control characters")
 
+    # Construct the attributable principal before consuming replay state. A malformed
+    # trusted adapter result must not burn a valid jti and become an attacker-visible DoS primitive.
+    try:
+        principal = Principal(
+            principal_id=verified_principal,
+            kind=PrincipalKind.MACHINE_API_PRINCIPAL,
+            credential_generation=verified_key,
+        )
+    except ValueError as exc:
+        raise AdmissionDenied("machine principal evidence is not canonical") from exc
+
     claim = replay_authority.claim_once(
-        client_principal=verified.client_principal,
+        client_principal=verified_principal,
         jti=verified.jti,
         valid_until=expires_at,
-        replay_generation=verified.replay_generation,
+        replay_generation=verified_replay,
     )
     if claim is not ReplayClaim.CLAIMED:
         raise AdmissionDenied("machine assertion replay admission denied")
 
-    return Principal(
-        principal_id=verified.client_principal,
-        kind=PrincipalKind.MACHINE_API_PRINCIPAL,
-        credential_generation=verified.key_generation,
-    )
+    return principal

@@ -719,9 +719,12 @@ class ControlPlaneTests(unittest.TestCase):
 
 
 class FencingTests(unittest.TestCase):
-    def test_effect_requires_exact_scope_epoch_and_generation(self):
-        current = FenceRecord("tenant:acme", 7, "gen-7", "active")
-        admit_fenced_effect(token=FenceToken("tenant:acme", 7, "gen-7"), current=current)
+    def test_effect_requires_current_authority_and_exact_scope_epoch_generation(self):
+        authority = FenceAuthority()
+        admit_fenced_effect(
+            token=FenceToken("tenant:acme", 7, "gen-7"),
+            authority=authority,
+        )
         for token in (
             FenceToken("tenant:acme", 6, "gen-7"),
             FenceToken("tenant:acme", 8, "gen-7"),
@@ -729,7 +732,12 @@ class FencingTests(unittest.TestCase):
             FenceToken("tenant:acme", 7, "gen-other"),
         ):
             with self.subTest(token=token), self.assertRaises(AdmissionDenied):
-                admit_fenced_effect(token=token, current=current)
+                admit_fenced_effect(token=token, authority=authority)
+
+        stale = FenceToken("tenant:acme", 7, "gen-7")
+        authority.record = FenceRecord("tenant:acme", 8, "gen-8", "active")
+        with self.assertRaises(AdmissionDenied):
+            admit_fenced_effect(token=stale, authority=authority)
 
     def test_concurrent_successor_acquisition_has_one_predecessor_winner(self):
         authority = FenceAuthority()

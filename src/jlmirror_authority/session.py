@@ -108,6 +108,13 @@ def _new_handle() -> BrowserSessionHandle:
     return BrowserSessionHandle(secrets.token_urlsafe(48))
 
 
+def _new_session_generation() -> str:
+    # token_urlsafe may begin with '-' or '_', which are valid capability characters
+    # but not valid first characters for canonical authority identifiers. Prefix the
+    # random token rather than weakening the identifier grammar.
+    return f"session-{secrets.token_urlsafe(24)}"
+
+
 def _new_record(
     *,
     handle: BrowserSessionHandle,
@@ -129,7 +136,7 @@ def _new_record(
             raise AdmissionDenied("session authentication-strength evidence is malformed")
         if authentication_strength.principal_id != principal.principal_id:
             raise AdmissionDenied("session authentication-strength evidence belongs to another principal")
-    session_generation = secrets.token_urlsafe(24)
+    session_generation = _new_session_generation()
     session_principal = Principal(
         principal_id=principal.principal_id,
         kind=principal.kind,

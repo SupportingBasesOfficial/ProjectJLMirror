@@ -1,0 +1,48 @@
+{
+  "wave_id": "wave-1.identity-authority-skeleton@1",
+  "authority_base": "main@5b56ad94566b48b72a993ee8f5cf7e983127ab21",
+  "implementation_slices": [
+    "impl.identity-bff@1",
+    "impl.control-plane@1",
+    "impl.platform-runtime@1"
+  ],
+  "scope": "authority_skeleton_only",
+  "product_feature_activation": "none",
+  "runtime_profiles": [
+    "runtime.web-bff@1",
+    "runtime.api@1",
+    "runtime.control-plane@1"
+  ],
+  "principal_profiles": [
+    "principal.web-bff@1",
+    "principal.application-serving@1",
+    "principal.control-plane@1"
+  ],
+  "closed_protocol_profiles": [
+    "IR-D-001",
+    "IR-D-002",
+    "IR-D-003"
+  ],
+  "residual_c2_choices_not_selected": [
+    "identity_provider",
+    "session_store",
+    "csrf_mechanism",
+    "workload_identity_issuer_attestation_backend",
+    "service_mesh",
+    "secret_manager_kms",
+    "configuration_distribution",
+    "orchestrator_scheduler",
+    "ingress_load_balancer",
+    "physical_environment_mapping"
+  ],
+  "forbidden_authority_substitutions": [
+    "session_valid_for_current_authorization",
+    "workload_identity_for_tenant_authority",
+    "network_presence_for_trust",
+    "environment_label_for_authorization",
+    "caller_tenant_id_for_tenant_context",
+    "fence_token_for_effect_absence",
+    "secret_reference_for_secret_value"
+  ],
+  "next_wave_authorized": false
+}

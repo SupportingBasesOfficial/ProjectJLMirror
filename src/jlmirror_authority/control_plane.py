@@ -269,6 +269,7 @@ def authorize_protected_operation(
             policy=strength_policy,
             policy_id=declaration.authentication_strength_policy_id,
             evidence=strength_evidence,
+            principal=principal,
             now=_utc(now),
         )
 

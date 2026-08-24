@@ -170,13 +170,7 @@ class RuntimeExecutionEvidence:
 
 class CurrentPrincipalAuthorityPort(Protocol):
     def is_current(self, *, principal: Principal, now: datetime) -> bool:
-        """Prove current session/credential/workload-principal authority.
-
-        A typed Principal or earlier authentication success is not currentness
-        evidence. Implementations bind this port to the owning session, credential,
-        workload-identity or platform-principal authority and return literal True
-        only for the exact principal + credential generation at `now`.
-        """
+        """Prove current session/credential/workload-principal authority."""
 
 
 class PlacementAuthorityPort(Protocol):
@@ -215,8 +209,6 @@ def _require_current_principal(
     principal_authority: CurrentPrincipalAuthorityPort,
     now: datetime,
 ) -> None:
-    """Fail closed unless the owning credential/session authority says exact current."""
-
     if not isinstance(principal, Principal) or principal.active is not True:
         raise AdmissionDenied("current authenticated principal cannot be established")
     if principal_authority is None or not hasattr(principal_authority, "is_current"):
@@ -290,8 +282,6 @@ def _require_current_runtime_execution(
     runtime_authority: CurrentRuntimeAuthorityPort | None,
     now: datetime,
 ) -> RuntimeExecutionEvidence:
-    """Prove actual current execution matches an accepted runtime binding."""
-
     _require_wave1_runtime_binding(runtime_binding)
     if runtime_authority is None or not hasattr(runtime_authority, "resolve_current_execution"):
         raise AdmissionDenied("trusted current executing-runtime authority is unavailable")
@@ -396,8 +386,6 @@ def construct_tenant_context(
     operation_id: str | None = None,
     runtime_binding: RuntimeBinding = API_AUTH_BOUNDARY,
 ) -> TenantContext:
-    """Construct TenantContext only after current authentication + trusted runtime authority."""
-
     _require_current_principal(
         principal=principal,
         principal_authority=principal_authority,
@@ -424,9 +412,7 @@ def construct_tenant_context(
             destination_network_policy_generation, "destination_network_policy_generation"
         )
     except ValueError as exc:
-        raise AdmissionDenied(
-            "tenant/destination authority lookup input is not canonical"
-        ) from exc
+        raise AdmissionDenied("tenant/destination authority lookup input is not canonical") from exc
 
     evidence = placement_authority.resolve_current(tenant_id)
     if not isinstance(evidence, PlacementEvidence):
@@ -591,11 +577,16 @@ def authorize_protected_operation(
         now=now,
     )
 
-    # The earlier owning-authorization result is only a snapshot. Re-evaluate it
-    # last, after every other currentness check, so a membership/permission revoke
-    # during placement/assurance/principal validation cannot survive admission.
-    # The returned decision is still not durable protected-effect authority; an
-    # effect boundary must consume the applicable current/atomic authority model.
+    # Cross-tenant operations have no TenantContext placement recheck, so the
+    # actual executing Control Plane runtime must also be proven current again
+    # immediately before the final owning-authorization evaluation.
+    if requirement is TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED:
+        _require_current_runtime_execution(
+            runtime_binding=CONTROL_PLANE,
+            runtime_authority=runtime_authority,
+            now=now,
+        )
+
     return _evaluate_current_authorization(
         authorization_authority=authorization_authority,
         principal=principal,

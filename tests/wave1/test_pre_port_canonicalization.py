@@ -21,6 +21,11 @@ from jlmirror_authority.model import (  # noqa: E402
 NOW = datetime(2026, 8, 24, 14, 30, tzinfo=timezone.utc)
 
 
+class PrincipalAuthority:
+    def is_current(self, **kwargs):
+        return True
+
+
 class ExplodingPlacementAuthority:
     def __init__(self) -> None:
         self.called = False
@@ -39,6 +44,7 @@ class PrePortCanonicalizationTests(unittest.TestCase):
             principal=Principal(
                 "user-1", PrincipalKind.HUMAN_BROWSER_SESSION, "session-g1"
             ),
+            principal_authority=PrincipalAuthority(),
             placement_authority=authority,
             tenant_id="tenant-acme",
             destination_cell_id="cell-a",

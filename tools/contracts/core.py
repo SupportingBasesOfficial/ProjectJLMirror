@@ -616,8 +616,7 @@ def compare_object_schemas(
     restrictive_added_optional = sorted(
         name
         for name in added_optional
-        if previous.get("additionalProperties", True) is not False
-        and canonical_json(next_prop_defs[name]) != canonical_json({})
+        if canonical_json(next_prop_defs[name]) != canonical_json({})
     )
 
     composite_changed = canonical_json(previous.get("allOf", [])) != canonical_json(

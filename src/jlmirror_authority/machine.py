@@ -3,11 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+import re
 from typing import Protocol
 
 from .model import AdmissionDenied, Principal, PrincipalKind
 
 MAX_MACHINE_JTI_BYTES = 512
+_AUTHORITY_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$")
 
 
 class ReplayClaim(str, Enum):
@@ -65,6 +67,12 @@ def _binding(value: object, field: str) -> str:
     return value
 
 
+def _authority_identifier(value: object, field: str) -> str:
+    if not isinstance(value, str) or not _AUTHORITY_ID_RE.fullmatch(value):
+        raise AdmissionDenied(f"{field} is not a canonical authority identifier")
+    return value
+
+
 def authenticate_machine_assertion(
     *,
     verifier: MachineAssertionVerificationPort,
@@ -84,10 +92,14 @@ def authenticate_machine_assertion(
     except ValueError as exc:
         raise AdmissionDenied("current machine authentication time authority is malformed") from exc
     _binding(compact_assertion, "compact_assertion")
-    expected_principal = _binding(expected_client_principal, "expected_client_principal")
+    expected_principal = _authority_identifier(
+        expected_client_principal, "expected_client_principal"
+    )
     expected_aud = _binding(expected_audience, "expected_audience")
-    current_key = _binding(current_key_generation, "current_key_generation")
-    current_replay = _binding(current_replay_generation, "current_replay_generation")
+    current_key = _authority_identifier(current_key_generation, "current_key_generation")
+    current_replay = _authority_identifier(
+        current_replay_generation, "current_replay_generation"
+    )
     if not isinstance(current_max_assertion_lifetime, timedelta) or current_max_assertion_lifetime <= timedelta(0):
         raise AdmissionDenied("current machine assertion lifetime policy is unavailable or invalid")
 
@@ -97,10 +109,14 @@ def authenticate_machine_assertion(
     )
     if not isinstance(verified, VerifiedMachineAssertion):
         raise AdmissionDenied("machine assertion verifier returned malformed trusted evidence")
-    verified_principal = _binding(verified.client_principal, "verified client principal")
+    verified_principal = _authority_identifier(
+        verified.client_principal, "verified client principal"
+    )
     verified_audience = _binding(verified.audience, "verified audience")
-    verified_key = _binding(verified.key_generation, "verified key generation")
-    verified_replay = _binding(verified.replay_generation, "verified replay generation")
+    verified_key = _authority_identifier(verified.key_generation, "verified key generation")
+    verified_replay = _authority_identifier(
+        verified.replay_generation, "verified replay generation"
+    )
     if verified_principal != expected_principal:
         raise AdmissionDenied("machine principal binding mismatch")
     if verified_audience != expected_aud:
@@ -129,8 +145,6 @@ def authenticate_machine_assertion(
     if any(ord(char) < 0x20 or ord(char) == 0x7F for char in verified.jti):
         raise AdmissionDenied("machine assertion jti contains control characters")
 
-    # Construct the attributable principal before consuming replay state. A malformed
-    # trusted adapter result must not burn a valid jti and become an attacker-visible DoS primitive.
     try:
         principal = Principal(
             principal_id=verified_principal,

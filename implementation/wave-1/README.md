@@ -14,19 +14,21 @@ It does not create Product/domain endpoints.
 ## Implemented boundaries
 
 - one-shot browser OIDC transaction binding with state, nonce and PKCE S256;
-- opaque high-entropy browser session handle with server-side session authority, expiry, retirement and atomic rotation;
+- opaque high-entropy browser session handle with bounded canonical URL-safe input, server-side session authority, expiry, retirement and atomic rotation;
 - trusted OIDC adapter boundary and current auth-strength evidence hook;
 - machine assertion current-key/current-replay-generation checks plus atomic replay-authority port;
 - canonical SPIFFE-compatible workload identity parsing and current mTLS evidence admission;
 - service identity remains separate from tenant/business authorization;
 - Control-Plane placement evidence -> cell-local trusted `TenantContext` construction;
 - owning current authorization re-check after TenantContext construction;
+- cross-tenant privileged platform operations require the exact Control Plane runtime boundary rather than the ordinary application runtime;
 - exact runtime environment/profile bindings for Web BFF, API auth boundary and Control Plane;
 - configuration generation plus explicit public/secret-reference key classification; unclassified snapshots are not runtime-admissible;
 - secret-reference locators/values are excluded from evidence views;
 - IR-D-003 positive PostgreSQL `BIGINT` fence record and atomic predecessor compare/advance;
 - fence table/functions have no PUBLIC authority by default;
-- exact scope+epoch+generation effect admission; forged-higher epochs do not authorize effects.
+- portable fenced-effect admission resolves the owning current fence authority before exact scope+epoch+generation comparison; a supplied typed record is not currentness proof;
+- co-resident PostgreSQL protected mutations still require the fence predicate and effect in the same transaction; forged-higher/stale epochs do not authorize effects.
 
 ## Explicitly NOT selected in this wave
 
@@ -57,11 +59,14 @@ VALID CREDENTIAL != CURRENT AUTHORIZATION
 LOGIN SUCCESS != PRIVILEGED ASSURANCE
 SESSION COOKIE/HANDLE != CURRENT AUTHORIZATION
 SESSION HANDLE PRESENT != SESSION AUTHORITY CURRENT
+NONCANONICAL/UNBOUNDED BROWSER SESSION HANDLE != SESSION AUTHORITY
 SERVICE IDENTITY != TENANT AUTHORIZATION
 ROUTED REQUEST != TRUSTED TENANT CONTEXT
+CROSS-TENANT PLATFORM AUTHORITY != APPLICATION RUNTIME AUTHORITY
 ENVIRONMENT LABEL != AUTHORITY
 NETWORK PRESENCE != TRUST
 UNCLASSIFIED CONFIG != RUNTIME-ADMISSIBLE CONFIG
+TYPED FENCE RECORD != CURRENT EFFECT AUTHORITY
 FENCE CLAIM > CURRENT != AUTHORITY
 FENCE TOKEN != AMBIGUOUS EFFECT ABSENCE
 SECRET REFERENCE != SECRET VALUE

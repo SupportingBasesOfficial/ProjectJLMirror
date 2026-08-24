@@ -46,3 +46,11 @@ jobs:
       - name: Validate repository
         shell: bash
         run: python3 tools/assurance/validate_repository.py .
+
+      - name: Falsify contract tooling reference models
+        shell: bash
+        run: python3 -m unittest discover -s tools/contracts/tests -p 'test_*.py'
+
+      - name: Validate contract tooling projections
+        shell: bash
+        run: python3 tools/contracts/validate_contracts.py .

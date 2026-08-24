@@ -49,6 +49,24 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
         findings = validate_text(mutated)
         self.assertTrue(any("acl.grantee <> p.proowner" in finding for finding in findings))
 
+    def test_transitive_owner_role_membership_guard_cannot_be_removed(self):
+        mutated = self.text.replace(
+            "WITH RECURSIVE owner_role_members(member_oid) AS (",
+            "WITH owner_role_members(member_oid) AS (",
+            1,
+        )
+        findings = validate_text(mutated)
+        self.assertTrue(any("owner_role_members" in finding for finding in findings))
+
+    def test_role_membership_guard_must_start_from_current_owner_role(self):
+        mutated = self.text.replace(
+            "WHERE m.roleid = current_user::regrole::oid",
+            "WHERE m.member = current_user::regrole::oid",
+            1,
+        )
+        findings = validate_text(mutated)
+        self.assertTrue(any("pg_auth_members" in finding or "owner_role_members" in finding for finding in findings))
+
     def test_comment_cannot_launder_removed_acl_guard(self):
         mutated = self.text.replace(
             "acl.grantee <> c.relowner",
@@ -57,6 +75,15 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
         ) + "\n-- acl.grantee <> c.relowner\n"
         findings = validate_text(mutated)
         self.assertTrue(any("acl.grantee <> c.relowner" in finding for finding in findings))
+
+    def test_comment_cannot_launder_removed_membership_guard(self):
+        mutated = self.text.replace(
+            "WITH RECURSIVE owner_role_members(member_oid) AS (",
+            "WITH owner_role_members(member_oid) AS (",
+            1,
+        ) + "\n-- WITH RECURSIVE owner_role_members(member_oid) AS (\n"
+        findings = validate_text(mutated)
+        self.assertTrue(any("owner_role_members" in finding for finding in findings))
 
     def test_validator_rejects_role_mapping_grants(self):
         mutated = self.text + "\nGRANT UPDATE ON platform.authority_fences TO serving_role;\n"

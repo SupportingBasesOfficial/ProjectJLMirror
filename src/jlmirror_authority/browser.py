@@ -5,10 +5,15 @@ from datetime import datetime, timedelta, timezone
 import base64
 import hashlib
 import hmac
+import re
 import secrets
 from typing import Protocol
 
 from .model import AdmissionDenied, AuthenticationStrengthEvidence, Principal, PrincipalKind
+
+_TRANSACTION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{32}$")
+_SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
+_PKCE_VERIFIER_RE = re.compile(r"^[A-Za-z0-9._~-]{43,128}$")
 
 
 def _utc(value: datetime) -> datetime:
@@ -27,8 +32,19 @@ def _b64url_sha256(value: str) -> str:
 
 
 def _trusted_binding(value: str, field: str) -> str:
-    if not isinstance(value, str) or not value or value != value.strip() or any(ord(c) < 0x20 for c in value):
+    if (
+        not isinstance(value, str)
+        or not value
+        or value != value.strip()
+        or any(ord(c) < 0x20 or ord(c) == 0x7F for c in value)
+    ):
         raise ValueError(f"{field} must be an explicit trusted binding")
+    return value
+
+
+def _transaction_id(value: object) -> str:
+    if not isinstance(value, str) or not _TRANSACTION_ID_RE.fullmatch(value):
+        raise AdmissionDenied("authorization transaction id is not a canonical BFF transaction identifier")
     return value
 
 
@@ -46,12 +62,13 @@ class BrowserAuthTransaction:
     expires_at: datetime
 
     def __post_init__(self) -> None:
-        for field in ("transaction_id", "initiating_session_digest", "state_digest", "nonce_digest"):
-            value = getattr(self, field)
-            if not isinstance(value, str) or not value:
-                raise ValueError(f"{field} is required")
-        if not isinstance(self.pkce_verifier, str) or not 43 <= len(self.pkce_verifier) <= 128:
-            raise ValueError("PKCE verifier outside RFC 7636 length envelope")
+        if not _TRANSACTION_ID_RE.fullmatch(self.transaction_id):
+            raise ValueError("transaction_id must match the BFF-generated opaque identifier profile")
+        for field in ("initiating_session_digest", "state_digest", "nonce_digest"):
+            if not _SHA256_HEX_RE.fullmatch(getattr(self, field)):
+                raise ValueError(f"{field} must be an exact SHA-256 digest")
+        if not isinstance(self.pkce_verifier, str) or not _PKCE_VERIFIER_RE.fullmatch(self.pkce_verifier):
+            raise ValueError("PKCE verifier outside RFC 7636 unreserved/length envelope")
         _trusted_binding(self.expected_issuer, "expected_issuer")
         _trusted_binding(self.expected_client_id, "expected_client_id")
         _trusted_binding(self.expected_redirect_uri, "expected_redirect_uri")
@@ -137,22 +154,21 @@ def begin_browser_auth(
     expected_client_id: str,
     expected_redirect_uri: str,
     now: datetime,
-    lifetime: timedelta = timedelta(minutes=5),
+    lifetime: timedelta,
 ) -> BrowserAuthInitiation:
     now = _utc(now)
-    if not isinstance(session_binding, str) or not session_binding:
-        raise ValueError("session_binding is required")
+    _trusted_binding(session_binding, "session_binding")
     _trusted_binding(expected_issuer, "expected_issuer")
     _trusted_binding(expected_client_id, "expected_client_id")
     _trusted_binding(expected_redirect_uri, "expected_redirect_uri")
     if not isinstance(lifetime, timedelta) or lifetime <= timedelta(0):
-        raise ValueError("lifetime must be a positive timedelta")
+        raise ValueError("lifetime must be an explicit positive timedelta policy input")
 
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(48)
-    if not 43 <= len(verifier) <= 128:
-        raise RuntimeError("generated PKCE verifier outside RFC 7636 length envelope")
+    if not _PKCE_VERIFIER_RE.fullmatch(verifier):
+        raise RuntimeError("generated PKCE verifier outside RFC 7636 unreserved/length envelope")
 
     transaction = BrowserAuthTransaction(
         transaction_id=secrets.token_urlsafe(24),
@@ -185,6 +201,16 @@ def complete_browser_auth(
     now: datetime,
 ) -> tuple[Principal, AuthenticationStrengthEvidence]:
     now = _utc(now)
+    transaction_id = _transaction_id(transaction_id)
+    try:
+        initiating_session_binding = _trusted_binding(
+            initiating_session_binding, "initiating_session_binding"
+        )
+        returned_state = _trusted_binding(returned_state, "returned_state")
+        authorization_code = _trusted_binding(authorization_code, "authorization_code")
+    except ValueError as exc:
+        raise AdmissionDenied("browser authorization response binding is malformed") from exc
+
     transaction = transaction_authority.consume(transaction_id)
     if not isinstance(transaction, BrowserAuthTransaction):
         raise AdmissionDenied("authorization transaction absent, malformed or already consumed")

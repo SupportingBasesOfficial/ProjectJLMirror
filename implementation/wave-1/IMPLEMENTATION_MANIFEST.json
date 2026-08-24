@@ -40,6 +40,8 @@
     "privileged_human_without_current_authentication_strength",
     "authentication_strength_for_other_principal",
     "malformed_adapter_evidence_for_authority",
+    "not_yet_current_browser_transaction_for_authentication",
+    "noncanonical_authority_input_before_c2_adapter",
     "workload_identity_for_tenant_authority",
     "network_presence_for_trust",
     "environment_label_for_authorization",
@@ -47,8 +49,10 @@
     "untyped_config_for_classified_config",
     "self_asserted_configuration_schema_for_current_authority",
     "non_active_fence_state_for_effect_authority",
+    "unvalidated_persisted_fence_state_for_current_authority",
     "fence_token_for_effect_absence",
-    "secret_reference_for_secret_value"
+    "secret_reference_for_secret_value",
+    "out_of_scope_git_delta_for_wave1_authority"
   ],
   "next_wave_authorized": false
 }

@@ -109,9 +109,17 @@ class AuthenticationStrengthEvidence:
     evidence_expires_at: datetime
     policy_version: str
     principal_id: str | None = None
+    principal_credential_generation: str | None = None
 
     def __post_init__(self) -> None:
         _optional_identifier(self.principal_id, "principal_id")
+        _optional_identifier(
+            self.principal_credential_generation, "principal_credential_generation"
+        )
+        if (self.principal_id is None) is not (self.principal_credential_generation is None):
+            raise ValueError(
+                "authentication-strength principal id and credential generation must be bound together"
+            )
         _identifier(self.issuer, "issuer")
         if self.acr is not None:
             _identifier(self.acr, "acr")

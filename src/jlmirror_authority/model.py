@@ -67,6 +67,14 @@ def _identifier(value: str, field: str) -> str:
     return value
 
 
+def _versioned_identifier(value: str, field: str, prefix: str | None = None) -> str:
+    if not isinstance(value, str) or not _VERSIONED_ID_RE.fullmatch(value):
+        raise ValueError(f"invalid {field}")
+    if prefix is not None and not value.startswith(prefix):
+        raise ValueError(f"{field} must use {prefix} profile namespace")
+    return value
+
+
 def _optional_identifier(value: str | None, field: str) -> str | None:
     if value is not None:
         _identifier(value, field)
@@ -198,7 +206,12 @@ class AuthorizationDeclaration:
 
 @dataclass(frozen=True)
 class TenantContext:
-    """Trusted logical tenant context; never constructed from physical caller routing hints."""
+    """Trusted logical tenant context plus internal runtime-admission bindings.
+
+    `isolation_class` remains the accepted tenant isolation class (for example
+    pooled/dedicated). `runtime_isolation_class` is the separate Phase 13 runtime
+    isolation profile. Neither may substitute for the other.
+    """
 
     tenant_id: str
     principal_id: str
@@ -207,6 +220,8 @@ class TenantContext:
     cell_id: str
     placement_version: str
     runtime_generation: str
+    runtime_profile_id: str
+    runtime_isolation_class: str
     configuration_generation: str
     workload_credential_generation: str
     network_policy_generation: str
@@ -237,6 +252,12 @@ class TenantContext:
             ("fence_scope_id", self.fence_scope_id),
         ):
             _identifier(value, field)
+        _versioned_identifier(self.runtime_profile_id, "runtime_profile_id", "runtime.")
+        _versioned_identifier(
+            self.runtime_isolation_class,
+            "runtime_isolation_class",
+            "isolation.",
+        )
         if not isinstance(self.principal_kind, PrincipalKind):
             raise ValueError("principal_kind must be canonical")
         if not isinstance(self.environment_class, EnvironmentClass):

@@ -14,6 +14,7 @@ It does not create Product/domain endpoints.
 ## Implemented boundaries
 
 - one-shot browser OIDC transaction binding with state, nonce and PKCE S256;
+- opaque high-entropy browser session handle with server-side session authority, expiry, retirement and atomic rotation;
 - trusted OIDC adapter boundary and current auth-strength evidence hook;
 - machine assertion current-key/current-replay-generation checks plus atomic replay-authority port;
 - canonical SPIFFE-compatible workload identity parsing and current mTLS evidence admission;
@@ -21,8 +22,10 @@ It does not create Product/domain endpoints.
 - Control-Plane placement evidence -> cell-local trusted `TenantContext` construction;
 - owning current authorization re-check after TenantContext construction;
 - exact runtime environment/profile bindings for Web BFF, API auth boundary and Control Plane;
-- config generation separated from secret-reference classes/values;
+- configuration generation plus explicit public/secret-reference key classification; unclassified snapshots are not runtime-admissible;
+- secret-reference locators/values are excluded from evidence views;
 - IR-D-003 positive PostgreSQL `BIGINT` fence record and atomic predecessor compare/advance;
+- fence table/functions have no PUBLIC authority by default;
 - exact scope+epoch+generation effect admission; forged-higher epochs do not authorize effects.
 
 ## Explicitly NOT selected in this wave
@@ -32,7 +35,7 @@ The following remain C2 unless separately accepted through evidence:
 - IdP product;
 - BFF web framework / HTTP server;
 - BFF session-store product;
-- concrete CSRF mechanism;
+- concrete cookie/CSRF mechanism;
 - workload-identity issuer/attestation backend (`OPEN-PRT-008.B`);
 - service mesh or no-mesh deployment decision;
 - secret-manager/KMS product;
@@ -47,10 +50,13 @@ Python standard-library code in `src/jlmirror_authority/` is an implementation o
 ```text
 VALID CREDENTIAL != CURRENT AUTHORIZATION
 LOGIN SUCCESS != PRIVILEGED ASSURANCE
+SESSION COOKIE/HANDLE != CURRENT AUTHORIZATION
+SESSION HANDLE PRESENT != SESSION AUTHORITY CURRENT
 SERVICE IDENTITY != TENANT AUTHORIZATION
 ROUTED REQUEST != TRUSTED TENANT CONTEXT
 ENVIRONMENT LABEL != AUTHORITY
 NETWORK PRESENCE != TRUST
+UNCLASSIFIED CONFIG != RUNTIME-ADMISSIBLE CONFIG
 FENCE CLAIM > CURRENT != AUTHORITY
 FENCE TOKEN != AMBIGUOUS EFFECT ABSENCE
 SECRET REFERENCE != SECRET VALUE

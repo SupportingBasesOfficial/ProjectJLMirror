@@ -118,8 +118,10 @@ class AuthorizationDeclaration:
             _identifier(self.resource_scope, "resource_scope")
         if self.authentication_strength_policy_id is not None:
             _identifier(self.authentication_strength_policy_id, "authentication_strength_policy_id")
-        if self.step_up is StepUpClass.REQUIRED and not self.authentication_strength_policy_id:
-            raise ValueError("required step-up needs an explicit Security policy identifier")
+        if self.step_up is not StepUpClass.NONE and not self.authentication_strength_policy_id:
+            raise ValueError("non-none step-up requires an explicit Security policy identifier")
+        if self.step_up is StepUpClass.NONE and self.authentication_strength_policy_id is not None:
+            raise ValueError("step_up=none cannot carry an authentication-strength policy")
         if self.scope in {ScopeClass.TENANT, ScopeClass.RESOURCE} and not self.tenant_required:
             raise ValueError("tenant/resource scope requires tenant context")
 

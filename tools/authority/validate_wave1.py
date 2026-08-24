@@ -36,7 +36,9 @@ def _third_party_import_findings() -> list[str]:
                 continue
             for name in names:
                 if name and name not in stdlib and name != "jlmirror_authority":
-                    findings.append(f"third-party/runtime dependency is not accepted in Wave 1 core: {path}:{name}")
+                    findings.append(
+                        f"third-party/runtime dependency is not accepted in Wave 1 core: {path}:{name}"
+                    )
     return findings
 
 
@@ -59,7 +61,10 @@ def _runtime_catalog_findings() -> list[str]:
             }
         )
     missing = sorted(required - catalog_ids)
-    return [f"Wave 1 runtime binding references unknown canonical profile: {value}" for value in missing]
+    return [
+        f"Wave 1 runtime binding references unknown canonical profile: {value}"
+        for value in missing
+    ]
 
 
 def _fence_sql_findings() -> list[str]:
@@ -67,14 +72,55 @@ def _fence_sql_findings() -> list[str]:
     text = path.read_text(encoding="utf-8")
     required_fragments = (
         "current_fence_epoch bigint NOT NULL CHECK (current_fence_epoch > 0)",
+        "CHECK (btrim(fence_scope_id) <> '')",
+        "CHECK (btrim(current_generation_id) <> '')",
+        "CHECK (btrim(authority_state) <> '')",
         "ON CONFLICT (fence_scope_id) DO NOTHING",
         "current_fence_epoch = current_fence_epoch + 1",
         "current_fence_epoch = p_expected_predecessor_epoch",
         "current_fence_epoch < 9223372036854775807",
         "SECURITY INVOKER",
+        "REVOKE ALL ON TABLE platform.authority_fences FROM PUBLIC;",
+        "REVOKE ALL ON FUNCTION platform.initialize_authority_fence(text, text, text) FROM PUBLIC;",
+        "REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text) FROM PUBLIC;",
         "same PostgreSQL transaction as the protected effect",
     )
-    return [f"IR-D-003 SQL contract missing required invariant: {fragment}" for fragment in required_fragments if fragment not in text]
+    return [
+        f"IR-D-003 SQL contract missing required invariant: {fragment}"
+        for fragment in required_fragments
+        if fragment not in text
+    ]
+
+
+def _required_boundary_source_findings() -> list[str]:
+    required_files = {
+        "browser.py",
+        "session.py",
+        "machine.py",
+        "workload.py",
+        "control_plane.py",
+        "fencing.py",
+        "config.py",
+        "runtime_profiles.py",
+    }
+    present = {path.name for path in (SRC / "jlmirror_authority").glob("*.py")}
+    return [
+        f"Wave 1 required authority boundary source missing: {name}"
+        for name in sorted(required_files - present)
+    ]
+
+
+def _no_product_route_findings() -> list[str]:
+    findings: list[str] = []
+    forbidden = ("@app.route", "@router.", "FastAPI(", "Flask(", "express(", "listen(")
+    for path in sorted((SRC / "jlmirror_authority").glob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        for token in forbidden:
+            if token in text:
+                findings.append(
+                    f"Wave 1 portable authority core must not register Product/HTTP routes: {path}:{token}"
+                )
+    return findings
 
 
 def validate() -> list[str]:
@@ -82,6 +128,8 @@ def validate() -> list[str]:
     findings.extend(_third_party_import_findings())
     findings.extend(_runtime_catalog_findings())
     findings.extend(_fence_sql_findings())
+    findings.extend(_required_boundary_source_findings())
+    findings.extend(_no_product_route_findings())
     return findings
 
 
@@ -94,7 +142,10 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}")
         return 1
-    print("RESULT: PASS — Wave 1 authority skeleton preserves accepted profile/currentness/fence boundaries")
+    print(
+        "RESULT: PASS — Wave 1 authority skeleton preserves accepted "
+        "profile/session/currentness/fence boundaries"
+    )
     print("NOTE: PASS is conformance evidence only; C2 adapters remain non-canonical until accepted.")
     return 0
 

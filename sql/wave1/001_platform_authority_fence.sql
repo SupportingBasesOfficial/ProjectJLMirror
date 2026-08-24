@@ -1,17 +1,19 @@
 -- Wave 1 concrete IR-D-003 fence storage/advance contract.
 -- Executed only by the accepted migration/admin authority; serving principals do
--- not gain DDL authority from this file.
+-- not gain DDL or function-execution authority merely because this file exists.
 
 CREATE SCHEMA IF NOT EXISTS platform;
 REVOKE CREATE ON SCHEMA platform FROM PUBLIC;
 
 CREATE TABLE IF NOT EXISTS platform.authority_fences (
-    fence_scope_id text PRIMARY KEY,
+    fence_scope_id text PRIMARY KEY CHECK (btrim(fence_scope_id) <> ''),
     current_fence_epoch bigint NOT NULL CHECK (current_fence_epoch > 0),
-    current_generation_id text NOT NULL,
-    authority_state text NOT NULL,
+    current_generation_id text NOT NULL CHECK (btrim(current_generation_id) <> ''),
+    authority_state text NOT NULL CHECK (btrim(authority_state) <> ''),
     updated_at timestamptz NOT NULL DEFAULT statement_timestamp()
 );
+
+REVOKE ALL ON TABLE platform.authority_fences FROM PUBLIC;
 
 COMMENT ON TABLE platform.authority_fences IS
 'IR-D-003 scope-local monotonic fencing authority. Wall clock and process identity are evidence only.';
@@ -53,6 +55,8 @@ AS $$
         authority_fences.authority_state;
 $$;
 
+REVOKE ALL ON FUNCTION platform.initialize_authority_fence(text, text, text) FROM PUBLIC;
+
 -- Successor acquisition is compare-and-advance. Exactly one concurrent caller
 -- can win for one expected predecessor epoch. BIGINT exhaustion fails closed.
 CREATE OR REPLACE FUNCTION platform.advance_authority_fence(
@@ -78,6 +82,8 @@ AS $$
      WHERE authority_fences.fence_scope_id = p_fence_scope_id
        AND authority_fences.current_fence_epoch = p_expected_predecessor_epoch
        AND authority_fences.current_fence_epoch < 9223372036854775807
+       AND btrim(p_successor_generation_id) <> ''
+       AND btrim(p_successor_state) <> ''
     RETURNING
         authority_fences.fence_scope_id,
         authority_fences.current_fence_epoch,
@@ -85,7 +91,14 @@ AS $$
         authority_fences.authority_state;
 $$;
 
+REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text) FROM PUBLIC;
+
 -- Co-resident protected mutations MUST bind the scope, epoch and generation in
 -- the same PostgreSQL transaction as the protected effect. A separate prior
 -- SELECT/check is not sufficient authority and is intentionally not provided as
 -- a convenience function here.
+--
+-- GRANTs are deliberately absent: an implementation must explicitly bind the
+-- least-privilege migration/control principal to these objects in a separately
+-- reviewed C2 runtime/database mapping. PUBLIC or serving-role execution is not
+-- a safe default.

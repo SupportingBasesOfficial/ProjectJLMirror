@@ -46,12 +46,19 @@ def _utc(value: datetime) -> datetime:
 def parse_workload_identity(value: str) -> WorkloadIdentity:
     if not isinstance(value, str) or "%" in value or "\\" in value:
         raise AdmissionDenied("workload identity is not canonically encoded")
-    parsed = urlsplit(value)
+    try:
+        parsed = urlsplit(value)
+        username = parsed.username
+        password = parsed.password
+        port = parsed.port
+        hostname = parsed.hostname
+    except ValueError as exc:
+        raise AdmissionDenied("malformed SPIFFE authority is denied") from exc
     if parsed.scheme != "spiffe" or not parsed.netloc or parsed.query or parsed.fragment:
         raise AdmissionDenied("invalid SPIFFE workload identity")
-    if parsed.username is not None or parsed.password is not None or parsed.port is not None:
+    if username is not None or password is not None or port is not None:
         raise AdmissionDenied("SPIFFE authority cannot contain userinfo or port")
-    trust_domain = parsed.hostname or ""
+    trust_domain = hostname or ""
     if trust_domain != parsed.netloc or not _TRUST_DOMAIN_RE.fullmatch(trust_domain) or ".." in trust_domain:
         raise AdmissionDenied("invalid or non-canonical SPIFFE trust domain")
 

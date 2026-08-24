@@ -102,6 +102,7 @@ class Principal:
 
 @dataclass(frozen=True)
 class AuthenticationStrengthEvidence:
+    principal_id: str
     issuer: str
     acr: str | None
     amr: FrozenSet[str]
@@ -110,6 +111,7 @@ class AuthenticationStrengthEvidence:
     policy_version: str
 
     def __post_init__(self) -> None:
+        _identifier(self.principal_id, "principal_id")
         _identifier(self.issuer, "issuer")
         if self.acr is not None:
             _identifier(self.acr, "acr")

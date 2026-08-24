@@ -21,7 +21,10 @@ from tools.authority.fence_sql_contract import (  # noqa: E402
     validate_fence_revalidation_sql_text,
     validate_fence_sql_text,
 )
-from tools.authority.wave1_scope import validate_wave1_scope  # noqa: E402
+from tools.authority.wave1_scope import (  # noqa: E402
+    AUTHORITY_BASE_SHA,
+    validate_wave1_scope,
+)
 from tools.contracts.core import build_bundle  # noqa: E402
 
 PROFILE = "jlmirror-wave1-authority/v1"
@@ -58,6 +61,8 @@ EXPECTED_FORBIDDEN_SUBSTITUTIONS = [
     "privileged_human_without_current_authentication_strength",
     "authentication_strength_for_other_principal",
     "malformed_adapter_evidence_for_authority",
+    "not_yet_current_browser_transaction_for_authentication",
+    "noncanonical_authority_input_before_c2_adapter",
     "workload_identity_for_tenant_authority",
     "network_presence_for_trust",
     "environment_label_for_authorization",
@@ -65,8 +70,10 @@ EXPECTED_FORBIDDEN_SUBSTITUTIONS = [
     "untyped_config_for_classified_config",
     "self_asserted_configuration_schema_for_current_authority",
     "non_active_fence_state_for_effect_authority",
+    "unvalidated_persisted_fence_state_for_current_authority",
     "fence_token_for_effect_absence",
     "secret_reference_for_secret_value",
+    "out_of_scope_git_delta_for_wave1_authority",
 ]
 EXPECTED_MANIFEST = {
     "wave_id": "wave-1.identity-authority-skeleton@1",
@@ -134,6 +141,13 @@ EXPECTED_RUNTIME_BINDINGS = {
         ],
     },
 }
+
+
+def _authority_base_findings() -> list[str]:
+    expected = f"main@{AUTHORITY_BASE_SHA}"
+    return [] if AUTHORITY_BASE == expected else [
+        f"Wave 1 validator authority-base drift: manifest={AUTHORITY_BASE} scope_guard={expected}"
+    ]
 
 
 def _third_party_import_findings() -> list[str]:
@@ -359,6 +373,7 @@ def _implementation_manifest_findings() -> list[str]:
 
 def validate() -> list[str]:
     findings: list[str] = []
+    findings.extend(_authority_base_findings())
     findings.extend(validate_wave1_scope(ROOT))
     findings.extend(_third_party_import_findings())
     findings.extend(_runtime_semantic_binding_findings())

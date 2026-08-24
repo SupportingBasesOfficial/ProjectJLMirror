@@ -67,6 +67,12 @@ def _identifier(value: str, field: str) -> str:
     return value
 
 
+def _optional_identifier(value: str | None, field: str) -> str | None:
+    if value is not None:
+        _identifier(value, field)
+    return value
+
+
 def _strict_bool(value: object, field: str) -> bool:
     if type(value) is not bool:
         raise ValueError(f"{field} must be a boolean")
@@ -182,28 +188,68 @@ class AuthorizationDeclaration:
 
 @dataclass(frozen=True)
 class TenantContext:
+    """Trusted logical tenant context; never constructed from physical caller routing hints."""
+
     tenant_id: str
+    principal_id: str
+    principal_kind: PrincipalKind
+    principal_credential_generation: str
     cell_id: str
     placement_version: str
     runtime_generation: str
+    configuration_generation: str
+    workload_credential_generation: str
+    network_policy_generation: str
     environment_class: EnvironmentClass
+    isolation_class: str
     fence_scope_id: str
     fence_epoch: int
     constructed_at: datetime
+    membership_id: str | None = None
+    authorization_context: str | None = None
+    request_id: str | None = None
+    correlation_id: str | None = None
+    causation_id: str | None = None
+    operation_id: str | None = None
 
     def __post_init__(self) -> None:
         for field, value in (
             ("tenant_id", self.tenant_id),
+            ("principal_id", self.principal_id),
+            ("principal_credential_generation", self.principal_credential_generation),
             ("cell_id", self.cell_id),
             ("placement_version", self.placement_version),
             ("runtime_generation", self.runtime_generation),
+            ("configuration_generation", self.configuration_generation),
+            ("workload_credential_generation", self.workload_credential_generation),
+            ("network_policy_generation", self.network_policy_generation),
+            ("isolation_class", self.isolation_class),
             ("fence_scope_id", self.fence_scope_id),
         ):
             _identifier(value, field)
+        if not isinstance(self.principal_kind, PrincipalKind):
+            raise ValueError("principal_kind must be canonical")
         if not isinstance(self.environment_class, EnvironmentClass):
             raise ValueError("environment_class must be canonical")
         _strict_positive_int(self.fence_epoch, "fence_epoch")
         _aware(self.constructed_at, "constructed_at")
+        for field in (
+            "membership_id",
+            "authorization_context",
+            "request_id",
+            "correlation_id",
+            "causation_id",
+            "operation_id",
+        ):
+            _optional_identifier(getattr(self, field), field)
+
+    def matches_principal(self, principal: Principal) -> bool:
+        return (
+            principal.active is True
+            and self.principal_id == principal.principal_id
+            and self.principal_kind is principal.kind
+            and self.principal_credential_generation == principal.credential_generation
+        )
 
 
 @dataclass(frozen=True)

@@ -69,6 +69,7 @@ OIDC_CLIENT = "bff"
 OIDC_REDIRECT = "https://app.example/callback"
 MACHINE_MAX_LIFETIME = timedelta(minutes=5)
 BROWSER_TRANSACTION_LIFETIME = timedelta(minutes=5)
+WORKLOAD_MAX_CERTIFICATE_LIFETIME = timedelta(minutes=10)
 
 
 def human_principal(identifier: str = "user-1", generation: str = "session-g1") -> Principal:
@@ -527,6 +528,7 @@ class WorkloadTests(unittest.TestCase):
                 allowed_runtime_profiles=frozenset({"runtime.api@1"}),
                 current_trust_bundle_generation="tb-4",
                 current_workload_credential_generation="wc-9",
+                current_max_certificate_lifetime=WORKLOAD_MAX_CERTIFICATE_LIFETIME,
                 now=NOW,
             )
         with self.assertRaises(AdmissionDenied):
@@ -537,6 +539,7 @@ class WorkloadTests(unittest.TestCase):
                 allowed_runtime_profiles=frozenset({"runtime.api@1"}),
                 current_trust_bundle_generation="tb-5",
                 current_workload_credential_generation="wc-9",
+                current_max_certificate_lifetime=WORKLOAD_MAX_CERTIFICATE_LIFETIME,
                 now=NOW,
             )
 
@@ -548,6 +551,7 @@ class WorkloadTests(unittest.TestCase):
             allowed_runtime_profiles=frozenset({"runtime.api@1"}),
             current_trust_bundle_generation="tb-4",
             current_workload_credential_generation="wc-9",
+            current_max_certificate_lifetime=WORKLOAD_MAX_CERTIFICATE_LIFETIME,
             now=NOW,
         )
         self.assertEqual(principal.kind, PrincipalKind.INTERNAL_SERVICE_PRINCIPAL)

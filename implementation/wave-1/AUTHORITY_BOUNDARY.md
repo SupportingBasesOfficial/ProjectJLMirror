@@ -11,11 +11,13 @@ Wave 1 implements only the identity and authority skeleton authorized by the acc
 ## Included authority primitives
 
 - browser session/authentication transaction primitives;
+- bounded canonical URL-safe browser session capability parsing before session-store lookup;
 - principal-bound authentication-strength evidence and privileged step-up predicates;
 - machine principal assertion/replay authority ports;
 - typed workload identity parsing and service-authentication boundary;
 - trusted `TenantContext` construction inputs;
 - current authorization and placement admission predicates;
+- explicit cross-tenant privileged platform authorization only through the accepted Control Plane runtime boundary;
 - runtime/configuration/workload credential/network-policy generation separation;
 - classified finite-scalar configuration plus typed secret-reference boundaries;
 - monotonic PostgreSQL fence contract and stale-actor rejection;
@@ -25,7 +27,11 @@ Wave 1 implements only the identity and authority skeleton authorized by the acc
 
 Trusted C2 adapters provide evidence only. Malformed, unbound or non-canonical adapter output fails closed before it can create session, replay, tenant, workload or protected-effect authority. Caller/request-adjacent tenant, destination and authority-generation identifiers are canonicalized before C2 placement/configuration/machine verification ports are invoked.
 
+The browser session cookie is an opaque capability, not an arbitrary string namespace. Wave 1 accepts only the bounded URL-safe capability grammar before digest/store lookup; Unicode, control characters, whitespace, non-URL-safe encodings and oversized handles cannot make the session store the parser or resource-amplification boundary. The raw capability remains repr/log-redacted.
+
 Browser authorization transaction authority is time-bounded on both sides: a consumed transaction is usable only while `created_at <= now < expires_at`. Clock rollback/not-yet-current state cannot reach the IdP adapter as an authentication attempt.
+
+Cross-tenant privileged operations remain distinct platform operations. A valid platform-admin principal, permission and authentication-strength result cannot route such an operation through the ordinary `runtime.api@1` application boundary; the accepted `runtime.control-plane@1` / `ingress.privileged-platform@1` boundary is required independently.
 
 Fence scope/epoch/generation equality is necessary but not sufficient for a protected effect. The ordinary Wave 1 effect path requires the current fence authority state to be exactly `active`. `quarantined`, `retired` or any other syntactically valid state cannot admit a protected effect and cannot use the ordinary successor compare-and-advance path to resurrect effect eligibility. Recovery/state-transition authority remains separately governed by the accepted Phase 13/15 lifecycle and recovery predicates.
 
@@ -61,6 +67,7 @@ The following remain C2 implementation choices and are not made canonical by cod
 ```text
 AUTHENTICATED != AUTHORIZED
 SESSION VALID != CURRENT AUTHORITY
+NONCANONICAL/UNBOUNDED BROWSER SESSION HANDLE != SESSION AUTHORITY
 MFA PRESENT != REQUIRED ASSURANCE CURRENT
 AUTHENTICATION STRENGTH EVIDENCE != TRANSFERABLE PRINCIPAL AUTHORITY
 MALFORMED ADAPTER OUTPUT != TRUSTED AUTHORITY
@@ -69,6 +76,7 @@ NOT-YET-CURRENT AUTH TRANSACTION != AUTHENTICATION AUTHORITY
 WORKLOAD IDENTITY != TENANT AUTHORITY
 NETWORK PRESENCE != TRUST
 TENANT ID INPUT != TENANT CONTEXT
+CROSS-TENANT PLATFORM AUTHORITY != APPLICATION RUNTIME AUTHORITY
 PLACEMENT CACHE HIT != GLOBAL AUTHORITY
 ENVIRONMENT LABEL != AUTHORIZATION
 UNCLASSIFIED/UNTYPED CONFIG != RUNTIME-ADMISSIBLE CONFIG

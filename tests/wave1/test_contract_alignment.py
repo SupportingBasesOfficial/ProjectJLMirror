@@ -25,6 +25,10 @@ from jlmirror_authority.model import (  # noqa: E402
     StepUpClass,
     TenantRequirement,
 )
+from jlmirror_authority.runtime_profiles import (  # noqa: E402
+    API_AUTH_BOUNDARY,
+    CONTROL_PLANE,
+)
 
 NOW = datetime(2026, 8, 24, 4, 0, tzinfo=timezone.utc)
 
@@ -134,6 +138,7 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 authorization_authority=Authz(),
                 context=None,
                 now=NOW,
+                runtime_binding=CONTROL_PLANE,
             )
 
     def test_cross_tenant_requires_platform_principal(self):
@@ -158,9 +163,10 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 now=NOW,
                 strength_policy=StrengthPolicy(),
                 strength_evidence=None,
+                runtime_binding=CONTROL_PLANE,
             )
 
-    def test_cross_tenant_platform_principal_requires_and_consumes_current_strength(self):
+    def test_cross_tenant_platform_principal_requires_control_plane_and_current_strength(self):
         declaration = AuthorizationDeclaration(
             action="platform.tenants.suspend",
             scope=ScopeClass.PLATFORM,
@@ -183,6 +189,19 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 now=NOW,
                 strength_policy=StrengthPolicy(),
                 strength_evidence=None,
+                runtime_binding=CONTROL_PLANE,
+            )
+        with self.assertRaises(AdmissionDenied):
+            authorize_protected_operation(
+                principal=principal,
+                declaration=declaration,
+                placement_authority=UnusedPlacementAuthority(),
+                authorization_authority=Authz(),
+                context=None,
+                now=NOW,
+                strength_policy=StrengthPolicy(),
+                strength_evidence=admin_strength(),
+                runtime_binding=API_AUTH_BOUNDARY,
             )
         decision = authorize_protected_operation(
             principal=principal,
@@ -193,6 +212,7 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
             now=NOW,
             strength_policy=StrengthPolicy(),
             strength_evidence=admin_strength(),
+            runtime_binding=CONTROL_PLANE,
         )
         self.assertTrue(decision.granted)
 

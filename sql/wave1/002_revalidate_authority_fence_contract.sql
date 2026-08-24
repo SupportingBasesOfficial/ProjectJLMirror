@@ -7,8 +7,8 @@
 -- historical shape/rows or hidden mutation behavior fail; they are not normalized,
 -- deleted, or silently accepted here.
 
--- A table name is not conformance. Verify the structural properties that make
--- compare-and-advance single-winner and preserve the accepted BIGINT fence domain.
+-- A table name is not conformance. Verify the exact ordinary-table shape that makes
+-- compare-and-advance single-winner and preserves the accepted BIGINT fence domain.
 DO $$
 DECLARE
     v_table regclass := to_regclass('platform.authority_fences');
@@ -18,11 +18,44 @@ BEGIN
     END IF;
 
     IF (
-        SELECT relpersistence
+        SELECT ROW(relkind, relpersistence, relispartition, relrowsecurity, relforcerowsecurity)
           FROM pg_class
          WHERE oid = v_table
-    ) IS DISTINCT FROM 'p' THEN
-        RAISE EXCEPTION 'authority_fences must be a permanent logged PostgreSQL relation';
+    ) IS DISTINCT FROM ROW('r'::"char", 'p'::"char", false, false, false) THEN
+        RAISE EXCEPTION 'authority_fences must be an ordinary permanent logged table without partition/RLS semantics';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_inherits
+         WHERE inhrelid = v_table
+            OR inhparent = v_table
+    ) THEN
+        RAISE EXCEPTION 'authority_fences cannot inherit from or parent another relation';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_policy
+         WHERE polrelid = v_table
+    ) THEN
+        RAISE EXCEPTION 'authority_fences cannot carry row-security policies';
+    END IF;
+
+    IF (
+        SELECT array_agg(attname::text ORDER BY attnum)
+          FROM pg_attribute
+         WHERE attrelid = v_table
+           AND attnum > 0
+           AND NOT attisdropped
+    ) IS DISTINCT FROM ARRAY[
+        'fence_scope_id',
+        'current_fence_epoch',
+        'current_generation_id',
+        'authority_state',
+        'updated_at'
+    ]::text[] THEN
+        RAISE EXCEPTION 'authority_fences must expose exactly the canonical Wave 1 column set and order';
     END IF;
 
     IF (
@@ -84,18 +117,35 @@ BEGIN
         SELECT 1
           FROM pg_attribute
          WHERE attrelid = v_table
-           AND attname = ANY (ARRAY[
-               'fence_scope_id',
-               'current_fence_epoch',
-               'current_generation_id',
-               'authority_state',
-               'updated_at'
-           ])
            AND attnum > 0
            AND NOT attisdropped
            AND (attgenerated <> '' OR attidentity <> '')
     ) THEN
-        RAISE EXCEPTION 'authority_fences canonical columns cannot be generated or identity columns';
+        RAISE EXCEPTION 'authority_fences columns cannot be generated or identity columns';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_attrdef d
+          JOIN pg_attribute a
+            ON a.attrelid = d.adrelid
+           AND a.attnum = d.adnum
+         WHERE d.adrelid = v_table
+           AND a.attname <> 'updated_at'
+    ) THEN
+        RAISE EXCEPTION 'authority_fences authority columns cannot inherit unreviewed defaults';
+    END IF;
+
+    IF (
+        SELECT pg_get_expr(d.adbin, d.adrelid)
+          FROM pg_attrdef d
+          JOIN pg_attribute a
+            ON a.attrelid = d.adrelid
+           AND a.attnum = d.adnum
+         WHERE d.adrelid = v_table
+           AND a.attname = 'updated_at'
+    ) IS DISTINCT FROM 'statement_timestamp()' THEN
+        RAISE EXCEPTION 'authority_fences.updated_at must retain the canonical statement_timestamp() evidence default';
     END IF;
 
     IF NOT EXISTS (

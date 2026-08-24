@@ -24,6 +24,10 @@ from .runtime_profiles import API_AUTH_BOUNDARY, RuntimeBinding, WAVE1_RUNTIME_B
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$")
 _PROFILE_ID_RE = re.compile(r"^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)+@[1-9][0-9]*$")
+_HUMAN_PRINCIPAL_KINDS = frozenset(
+    {PrincipalKind.HUMAN_BROWSER_SESSION, PrincipalKind.PLATFORM_ADMIN_PRINCIPAL}
+)
+_PRIVILEGED_AUDIT_CLASSES = frozenset({AuditClass.PRIVILEGED, AuditClass.SECURITY_CRITICAL})
 
 
 class RuntimeLifecycle(str, Enum):
@@ -208,6 +212,19 @@ def _require_wave1_runtime_binding(runtime_binding: RuntimeBinding) -> None:
         raise AdmissionDenied("runtime binding is not an exact accepted Wave 1 profile")
 
 
+def _require_privileged_human_assurance_declaration(
+    principal: Principal, declaration: AuthorizationDeclaration
+) -> None:
+    if (
+        principal.kind in _HUMAN_PRINCIPAL_KINDS
+        and declaration.audit_class in _PRIVILEGED_AUDIT_CLASSES
+        and declaration.step_up is StepUpClass.NONE
+    ):
+        raise AdmissionDenied(
+            "privileged human operation requires explicit current authentication-strength policy"
+        )
+
+
 def construct_tenant_context(
     *,
     principal: Principal,
@@ -302,6 +319,7 @@ def authorize_protected_operation(
     if not isinstance(declaration, AuthorizationDeclaration):
         raise AdmissionDenied("authorization declaration is malformed or unreviewed")
     _require_wave1_runtime_binding(runtime_binding)
+    _require_privileged_human_assurance_declaration(principal, declaration)
 
     requirement = declaration.tenant_requirement
     if requirement is TenantRequirement.REQUIRED and context is None:

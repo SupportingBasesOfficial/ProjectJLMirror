@@ -215,13 +215,13 @@ def complete_browser_auth(
         credential_generation=f"session:{transaction.transaction_id}",
     )
     strength = AuthenticationStrengthEvidence(
-        principal_id=verified.principal_id,
         issuer=verified.issuer,
         acr=verified.acr,
         amr=verified.amr,
         authenticated_at=verified.authenticated_at,
         evidence_expires_at=verified.token_expires_at,
         policy_version=verified.policy_version,
+        principal_id=verified.principal_id,
     )
     return principal, strength
 
@@ -231,8 +231,8 @@ def require_authentication_strength(
     policy: AuthenticationStrengthPolicyPort,
     policy_id: str,
     evidence: AuthenticationStrengthEvidence | None,
-    principal: Principal,
     now: datetime,
+    principal: Principal | None = None,
 ) -> None:
     if not isinstance(principal, Principal) or principal.active is not True:
         raise AdmissionDenied("current principal for authentication-strength evaluation is unavailable")

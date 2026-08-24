@@ -74,11 +74,49 @@ class FenceRevalidationMigrationTests(unittest.TestCase):
         findings = validate_fence_revalidation_sql_text(weakened)
         self.assertTrue(any("timestamptz" in f for f in findings))
 
-    def test_revalidation_requires_permanent_logged_relation(self):
+    def test_revalidation_requires_ordinary_permanent_non_rls_table(self):
         text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace("IS DISTINCT FROM 'p'", "IS DISTINCT FROM 'u'", 1)
+        for old, new, expected in (
+            ("'r'::\"char\"", "'p'::\"char\"", "ROW('r'"),
+            ("'p'::\"char\"", "'u'::\"char\"", "'p'::\"char\""),
+            ("false, false, false", "true, false, false", "false, false, false"),
+        ):
+            with self.subTest(old=old):
+                weakened = text.replace(old, new, 1)
+                findings = validate_fence_revalidation_sql_text(weakened)
+                self.assertTrue(any(expected in f for f in findings))
+
+    def test_revalidation_rejects_inheritance_and_row_security_policy_surfaces(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        for old, new, expected in (
+            ("FROM pg_inherits", "FROM pg_class -- FROM pg_inherits", "pg_inherits"),
+            ("FROM pg_policy", "FROM pg_class -- FROM pg_policy", "pg_policy"),
+        ):
+            with self.subTest(old=old):
+                weakened = text.replace(old, new, 1)
+                findings = validate_fence_revalidation_sql_text(weakened)
+                self.assertTrue(any(expected in f for f in findings))
+
+    def test_revalidation_requires_exact_canonical_column_set(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace(
+            "SELECT array_agg(attname::text ORDER BY attnum)",
+            "SELECT ARRAY['fence_scope_id']::text[] -- SELECT array_agg(attname::text ORDER BY attnum)",
+            1,
+        )
         findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("DISTINCT FROM 'p'" in f for f in findings))
+        self.assertTrue(any("array_agg(attname" in f for f in findings))
+
+    def test_revalidation_requires_canonical_default_surface(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        for old, new, expected in (
+            ("a.attname <> 'updated_at'", "false -- a.attname <> 'updated_at'", "a.attname <> 'updated_at'"),
+            ("IS DISTINCT FROM 'statement_timestamp()'", "IS DISTINCT FROM 'clock_timestamp()'", "statement_timestamp"),
+        ):
+            with self.subTest(old=old):
+                weakened = text.replace(old, new, 1)
+                findings = validate_fence_revalidation_sql_text(weakened)
+                self.assertTrue(any(expected in f for f in findings))
 
     def test_revalidation_requires_updated_at_not_null(self):
         text = SQL_PATH.read_text(encoding="utf-8")

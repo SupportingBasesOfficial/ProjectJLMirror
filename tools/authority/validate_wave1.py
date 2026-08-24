@@ -71,6 +71,7 @@ EXPECTED_FORBIDDEN_SUBSTITUTIONS = [
     "cross_tenant_platform_authority_through_application_runtime",
     "untyped_config_for_classified_config",
     "self_asserted_configuration_schema_for_current_authority",
+    "typed_fence_record_for_current_effect_authority",
     "non_active_fence_state_for_effect_authority",
     "unvalidated_persisted_fence_state_for_current_authority",
     "fence_token_for_effect_absence",

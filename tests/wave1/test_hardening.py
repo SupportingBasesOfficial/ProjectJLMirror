@@ -21,6 +21,7 @@ from jlmirror_authority.model import (  # noqa: E402
     AdmissionDenied,
     AuditClass,
     AuthorizationDeclaration,
+    EnvironmentClass,
     Principal,
     PrincipalKind,
     ScopeClass,
@@ -77,6 +78,14 @@ class InMemorySessionAuthority:
                 return False
             self.records[handle_digest] = replace(current, retired=True)
             return True
+
+
+class ConfigurationAuthority:
+    def __init__(self, result=True):
+        self.result = result
+
+    def admit_current(self, **kwargs):
+        return self.result
 
 
 class BrowserSessionHardeningTests(unittest.TestCase):
@@ -175,16 +184,28 @@ class ConfigurationClassificationTests(unittest.TestCase):
             "secretref.web-session@1",
             "secret-g3",
         )
+        self.authority = ConfigurationAuthority(True)
 
-    def test_classified_snapshot_is_admissible(self):
+    def admit(self, snapshot, *, authority=None):
+        return require_classified_configuration(
+            snapshot,
+            authority=authority or self.authority,
+            runtime_profile_id="runtime.web-bff@1",
+            environment_class=EnvironmentClass.PRODUCTION,
+            expected_configuration_generation="cfg-g4",
+        )
+
+    def test_classified_snapshot_requires_current_external_authority(self):
         snapshot = ConfigurationSnapshot(
             "cfg-g4",
             {"feature_enabled": True, "issuer_url": "https://id.example"},
             {"session_signing_key": self.reference},
             schema=self.schema,
         )
-        self.assertTrue(snapshot.classification_proven)
-        self.assertIs(require_classified_configuration(snapshot), snapshot)
+        self.assertTrue(snapshot.classification_schema_present)
+        self.assertIs(self.admit(snapshot), snapshot)
+        with self.assertRaises(AdmissionDenied):
+            self.admit(snapshot, authority=ConfigurationAuthority(False))
 
     def test_secret_classified_key_cannot_be_raw_public_value(self):
         with self.assertRaises(ValueError):
@@ -203,15 +224,18 @@ class ConfigurationClassificationTests(unittest.TestCase):
 
     def test_unclassified_snapshot_cannot_be_admitted_as_runtime_configuration(self):
         snapshot = ConfigurationSnapshot("cfg-g4", {"feature_enabled": True}, {})
-        self.assertFalse(snapshot.classification_proven)
+        self.assertFalse(snapshot.classification_schema_present)
         with self.assertRaises(AdmissionDenied):
-            require_classified_configuration(snapshot)
+            self.admit(snapshot)
 
-    def test_evidence_never_contains_secret_reference_locator(self):
+    def test_evidence_never_contains_secret_reference_locator_or_claims_current_authority(self):
         snapshot = ConfigurationSnapshot(
             "cfg-g4", {}, {"session_signing_key": self.reference}, schema=self.schema
         )
-        self.assertNotIn("vault://prod/bff/session", repr(snapshot.evidence_view()))
+        evidence = snapshot.evidence_view()
+        self.assertNotIn("vault://prod/bff/session", repr(evidence))
+        self.assertNotIn("classification_proven", evidence)
+        self.assertTrue(evidence["classification_schema_present"])
 
 
 class BoundaryHardeningTests(unittest.TestCase):
@@ -254,6 +278,7 @@ class SqlPrivilegeHardeningTests(unittest.TestCase):
             "REVOKE ALL ON FUNCTION platform.initialize_authority_fence(text, text, text) FROM PUBLIC;",
             "REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text, text) FROM PUBLIC;",
             "current_generation_id = p_expected_predecessor_generation_id",
+            "authority_fences.authority_state = 'active'",
             "CHECK (btrim(fence_scope_id) <> '')",
             "CHECK (btrim(current_generation_id) <> '')",
             "CHECK (btrim(authority_state) <> '')",

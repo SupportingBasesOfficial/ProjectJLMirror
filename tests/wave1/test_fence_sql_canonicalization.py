@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
 
 from tools.authority.fence_sql_contract import (  # noqa: E402
     CANONICAL_IDENTIFIER_REGEX,
+    CANONICAL_REGEX_OPERATOR,
     validate_fence_sql_text,
 )
 
@@ -24,7 +25,7 @@ class FenceSqlCanonicalizationTests(unittest.TestCase):
     def test_trim_only_storage_constraint_is_not_sufficient(self):
         text = SQL_PATH.read_text(encoding="utf-8")
         weakened = text.replace(
-            f"        CHECK (fence_scope_id ~ '{CANONICAL_IDENTIFIER_REGEX}')\n",
+            f"        CHECK (fence_scope_id {CANONICAL_REGEX_OPERATOR} '{CANONICAL_IDENTIFIER_REGEX}')\n",
             "",
             1,
         )
@@ -34,12 +35,18 @@ class FenceSqlCanonicalizationTests(unittest.TestCase):
     def test_successor_input_cannot_drop_canonical_generation_check(self):
         text = SQL_PATH.read_text(encoding="utf-8")
         weakened = text.replace(
-            f"       AND p_successor_generation_id ~ '{CANONICAL_IDENTIFIER_REGEX}'\n",
+            f"       AND p_successor_generation_id {CANONICAL_REGEX_OPERATOR} '{CANONICAL_IDENTIFIER_REGEX}'\n",
             "",
             1,
         )
         findings = validate_fence_sql_text(weakened)
         self.assertTrue(any("p_successor_generation_id" in finding for finding in findings))
+
+    def test_locale_dependent_regex_is_not_sufficient(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace(' COLLATE "C"', "")
+        findings = validate_fence_sql_text(weakened)
+        self.assertTrue(findings)
 
     def test_sql_grammar_rejects_whitespace_and_control_form_by_construction(self):
         self.assertNotIn("\\s", CANONICAL_IDENTIFIER_REGEX)

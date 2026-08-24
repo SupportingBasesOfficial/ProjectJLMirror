@@ -137,6 +137,37 @@ class AuthorizationDecision:
         _identifier(self.policy_revision, "policy_revision")
 
 
+@dataclass(frozen=True)
+class RuntimeExecutionEvidence:
+    """Trusted evidence for the runtime that is actually executing this admission.
+
+    A caller-selected RuntimeBinding is an expected contract only. It does not
+    establish where the code is executing. This record is accepted only when it
+    is returned by the owning current-runtime authority port.
+    """
+
+    runtime_profile_id: str
+    principal_class: str
+    isolation_class: str
+    ingress_profile: str
+    runtime_generation: str
+    environment_class: EnvironmentClass
+    runtime_lifecycle: RuntimeLifecycle
+    current: bool
+
+    def __post_init__(self) -> None:
+        _profile_id(self.runtime_profile_id, "runtime_profile_id", "runtime.")
+        _profile_id(self.principal_class, "principal_class", "principal.")
+        _profile_id(self.isolation_class, "isolation_class", "isolation.")
+        _profile_id(self.ingress_profile, "ingress_profile", "ingress.")
+        _identifier(self.runtime_generation, "runtime_generation")
+        if not isinstance(self.environment_class, EnvironmentClass):
+            raise ValueError("environment_class must be canonical")
+        if not isinstance(self.runtime_lifecycle, RuntimeLifecycle):
+            raise ValueError("runtime_lifecycle must be canonical")
+        _strict_bool(self.current, "current")
+
+
 class CurrentPrincipalAuthorityPort(Protocol):
     def is_current(self, *, principal: Principal, now: datetime) -> bool:
         """Prove current session/credential/workload-principal authority.
@@ -165,6 +196,11 @@ class CurrentAuthorizationPort(Protocol):
         declaration: AuthorizationDeclaration,
     ) -> AuthorizationDecision:
         """Evaluate owning membership/permission/resource policy at current authority."""
+
+
+class CurrentRuntimeAuthorityPort(Protocol):
+    def resolve_current_execution(self, *, now: datetime) -> RuntimeExecutionEvidence | None:
+        """Return trusted evidence for the runtime actually executing admission."""
 
 
 def _utc(value: datetime) -> datetime:
@@ -248,6 +284,41 @@ def _require_wave1_runtime_binding(runtime_binding: RuntimeBinding) -> None:
         raise AdmissionDenied("runtime binding is not an exact accepted Wave 1 profile")
 
 
+def _require_current_runtime_execution(
+    *,
+    runtime_binding: RuntimeBinding,
+    runtime_authority: CurrentRuntimeAuthorityPort | None,
+    now: datetime,
+) -> RuntimeExecutionEvidence:
+    """Prove actual current execution matches an accepted runtime binding."""
+
+    _require_wave1_runtime_binding(runtime_binding)
+    if runtime_authority is None or not hasattr(runtime_authority, "resolve_current_execution"):
+        raise AdmissionDenied("trusted current executing-runtime authority is unavailable")
+    try:
+        evidence = runtime_authority.resolve_current_execution(now=_utc(now))
+    except Exception as exc:
+        raise AdmissionDenied("current executing-runtime authority failed closed") from exc
+    if not isinstance(evidence, RuntimeExecutionEvidence):
+        raise AdmissionDenied("executing-runtime authority returned malformed evidence")
+    if evidence.current is not True or evidence.runtime_lifecycle is not RuntimeLifecycle.ACTIVE:
+        raise AdmissionDenied("executing runtime is not current and active")
+    if (
+        evidence.runtime_profile_id != runtime_binding.runtime_profile_id
+        or evidence.principal_class != runtime_binding.principal_class
+        or evidence.isolation_class != runtime_binding.isolation_class
+        or evidence.ingress_profile != runtime_binding.ingress_profile
+    ):
+        raise AdmissionDenied("executing runtime does not match the required authority boundary")
+    try:
+        runtime_binding.admit_environment(evidence.environment_class)
+    except AdmissionDenied:
+        raise
+    except Exception as exc:
+        raise AdmissionDenied("executing runtime environment authority failed closed") from exc
+    return evidence
+
+
 def _require_privileged_human_assurance_declaration(
     principal: Principal, declaration: AuthorizationDeclaration
 ) -> None:
@@ -280,6 +351,30 @@ def _require_declared_authentication_strength(
         principal=principal,
         now=_utc(now),
     )
+
+
+def _evaluate_current_authorization(
+    *,
+    authorization_authority: CurrentAuthorizationPort,
+    principal: Principal,
+    context: TenantContext | None,
+    declaration: AuthorizationDeclaration,
++) -> AuthorizationDecision:
+    try:
+        decision = authorization_authority.evaluate(
+            principal=principal,
+            context=context,
+            declaration=declaration,
+        )
+    except Exception as exc:
+        raise AdmissionDenied("owning authorization authority failed closed") from exc
+    if not isinstance(decision, AuthorizationDecision):
+        raise AdmissionDenied("owning authorization returned malformed authority evidence")
+    if decision.current is not True:
+        raise AdmissionDenied("owning authorization evidence is not current")
+    if decision.granted is not True:
+        raise AdmissionDenied("owning authorization denied the operation")
+    return decision
 
 
 def construct_tenant_context(
@@ -404,6 +499,7 @@ def authorize_protected_operation(
     strength_policy: AuthenticationStrengthPolicyPort | None = None,
     strength_evidence: AuthenticationStrengthEvidence | None = None,
     runtime_binding: RuntimeBinding = API_AUTH_BOUNDARY,
+    runtime_authority: CurrentRuntimeAuthorityPort | None = None,
 ) -> AuthorizationDecision:
     _require_current_principal(
         principal=principal,
@@ -423,6 +519,11 @@ def authorize_protected_operation(
             raise AdmissionDenied(
                 "cross-tenant privileged platform authority requires the accepted Control Plane runtime boundary"
             )
+        _require_current_runtime_execution(
+            runtime_binding=CONTROL_PLANE,
+            runtime_authority=runtime_authority,
+            now=now,
+        )
         if context is not None:
             raise AdmissionDenied("cross-tenant privileged platform operation cannot reuse ordinary TenantContext")
         if principal.kind is not PrincipalKind.PLATFORM_ADMIN_PRINCIPAL:
@@ -462,17 +563,12 @@ def authorize_protected_operation(
         principal_authority=principal_authority,
         now=now,
     )
-    decision = authorization_authority.evaluate(
+    _evaluate_current_authorization(
+        authorization_authority=authorization_authority,
         principal=principal,
         context=context,
         declaration=declaration,
     )
-    if not isinstance(decision, AuthorizationDecision):
-        raise AdmissionDenied("owning authorization returned malformed authority evidence")
-    if decision.current is not True:
-        raise AdmissionDenied("owning authorization evidence is not current")
-    if decision.granted is not True:
-        raise AdmissionDenied("owning authorization denied the operation")
 
     # Placement/currentness can change while the owning authorization authority
     # evaluates policy (for example during tenant relocation). A decision computed
@@ -490,8 +586,7 @@ def authorize_protected_operation(
 
     # Security-owned authentication-strength policy can harden while the owning
     # authorization decision is being evaluated. Revalidate the same principal-
-    # bound assurance immediately before final admission; an earlier MFA/step-up
-    # result is not durable authority.
+    # bound assurance immediately before final protected-operation admission.
     _require_declared_authentication_strength(
         principal=principal,
         declaration=declaration,
@@ -507,4 +602,15 @@ def authorize_protected_operation(
         principal_authority=principal_authority,
         now=now,
     )
-    return decision
+
+    # The earlier owning-authorization result is only a snapshot. Re-evaluate it
+    # last, after every other currentness check, so a membership/permission revoke
+    # during placement/assurance/principal validation cannot survive admission.
+    # The returned decision is still not durable protected-effect authority; an
+    # effect boundary must consume the applicable current/atomic authority model.
+    return _evaluate_current_authorization(
+        authorization_authority=authorization_authority,
+        principal=principal,
+        context=context,
+        declaration=declaration,
+    )

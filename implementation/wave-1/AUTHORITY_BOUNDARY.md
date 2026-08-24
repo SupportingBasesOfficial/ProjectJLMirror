@@ -23,6 +23,8 @@ Wave 1 implements only the identity and authority skeleton authorized by the acc
 
 Trusted C2 adapters provide evidence only. Malformed, unbound or non-canonical adapter output fails closed before it can create session, replay, tenant, workload or protected-effect authority.
 
+Fence scope/epoch/generation equality is necessary but not sufficient for a protected effect. The ordinary Wave 1 effect path requires the current fence authority state to be exactly `active`. `quarantined`, `retired` or any other syntactically valid state cannot admit a protected effect and cannot use the ordinary successor compare-and-advance path to resurrect effect eligibility. Recovery/state-transition authority remains separately governed by the accepted Phase 13/15 lifecycle and recovery predicates.
+
 ## Explicitly not selected here
 
 The following remain C2 implementation choices and are not made canonical by code presence:
@@ -62,6 +64,8 @@ TENANT ID INPUT != TENANT CONTEXT
 PLACEMENT CACHE HIT != GLOBAL AUTHORITY
 ENVIRONMENT LABEL != AUTHORIZATION
 UNCLASSIFIED/UNTYPED CONFIG != RUNTIME-ADMISSIBLE CONFIG
+FENCE SCOPE/EPOCH/GENERATION MATCH != EFFECT AUTHORITY WITHOUT ACTIVE STATE
+NON-ACTIVE FENCE STATE != ORDINARY SUCCESSOR AUTHORITY
 FENCE TOKEN != AMBIGUOUS EFFECT ABSENCE
 SECRET REFERENCE != SECRET VALUE
 WAVE 1 AUTHORIZED != WAVE 2 AUTHORIZED

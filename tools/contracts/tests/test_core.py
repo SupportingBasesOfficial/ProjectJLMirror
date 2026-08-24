@@ -105,6 +105,27 @@ contract_name
             report["semantic_compatibility_authority"],
         )
 
+    def test_object_envelope_change_requires_review(self):
+        previous = {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {"a": {}},
+            "required": ["a"],
+            "allOf": [],
+        }
+        candidate = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"a": {}},
+            "required": ["a"],
+            "allOf": [],
+        }
+        report = compare_object_schemas(previous, candidate)
+        self.assertEqual(
+            report["classification"], "structural_change_requires_review"
+        )
+        self.assertTrue(report["object_envelope_changed"])
+
     def test_composite_change_requires_review(self):
         previous = {"properties": {"a": {}}, "required": [], "allOf": []}
         candidate = {

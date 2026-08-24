@@ -72,6 +72,59 @@ EXPECTED_MANIFEST = {
     "forbidden_authority_substitutions": EXPECTED_FORBIDDEN_SUBSTITUTIONS,
     "next_wave_authorized": False,
 }
+EXPECTED_RUNTIME_BINDINGS = {
+    "runtime.web-bff@1": {
+        "principal_class": "principal.web-bff@1",
+        "lifecycle_class": "lifecycle.serving-replica@1",
+        "isolation_class": "isolation.confidential-web@1",
+        "ingress_profile": "ingress.public-browser@1",
+        "egress_profiles": ["egress.platform-bounded@1"],
+        "secret_reference_classes": [
+            "secretref.service-communication@1",
+            "secretref.web-session@1",
+        ],
+        "resource_profile": "resource.web@1",
+        "allowed_environment_classes": [
+            "environment.development@1",
+            "environment.production@1",
+            "environment.validation@1",
+        ],
+    },
+    "runtime.api@1": {
+        "principal_class": "principal.application-serving@1",
+        "lifecycle_class": "lifecycle.serving-replica@1",
+        "isolation_class": "isolation.application-serving@1",
+        "ingress_profile": "ingress.authenticated-api@1",
+        "egress_profiles": ["egress.platform-bounded@1"],
+        "secret_reference_classes": [
+            "secretref.service-communication@1",
+            "secretref.state-port@1",
+        ],
+        "resource_profile": "resource.api@1",
+        "allowed_environment_classes": [
+            "environment.development@1",
+            "environment.production@1",
+            "environment.validation@1",
+        ],
+    },
+    "runtime.control-plane@1": {
+        "principal_class": "principal.control-plane@1",
+        "lifecycle_class": "lifecycle.control-plane-serving@1",
+        "isolation_class": "isolation.control-plane@1",
+        "ingress_profile": "ingress.privileged-platform@1",
+        "egress_profiles": ["egress.platform-bounded@1"],
+        "secret_reference_classes": [
+            "secretref.service-communication@1",
+            "secretref.state-port@1",
+        ],
+        "resource_profile": "resource.control-plane@1",
+        "allowed_environment_classes": [
+            "environment.development@1",
+            "environment.production@1",
+            "environment.validation@1",
+        ],
+    },
+}
 
 
 def _third_party_import_findings() -> list[str]:
@@ -93,6 +146,74 @@ def _third_party_import_findings() -> list[str]:
                     findings.append(
                         f"third-party/runtime dependency is not accepted in Wave 1 core: {path}:{name}"
                     )
+    return findings
+
+
+def _normalize_runtime_binding(binding: object) -> dict[str, object] | None:
+    required_attributes = (
+        "runtime_profile_id",
+        "principal_class",
+        "lifecycle_class",
+        "isolation_class",
+        "ingress_profile",
+        "egress_profiles",
+        "secret_reference_classes",
+        "resource_profile",
+        "allowed_environment_classes",
+    )
+    if any(not hasattr(binding, name) for name in required_attributes):
+        return None
+    try:
+        environments = sorted(environment.value for environment in binding.allowed_environment_classes)
+        return {
+            "runtime_profile_id": binding.runtime_profile_id,
+            "principal_class": binding.principal_class,
+            "lifecycle_class": binding.lifecycle_class,
+            "isolation_class": binding.isolation_class,
+            "ingress_profile": binding.ingress_profile,
+            "egress_profiles": sorted(binding.egress_profiles),
+            "secret_reference_classes": sorted(binding.secret_reference_classes),
+            "resource_profile": binding.resource_profile,
+            "allowed_environment_classes": environments,
+        }
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _runtime_semantic_binding_findings(bindings=None) -> list[str]:
+    bindings = WAVE1_RUNTIME_BINDINGS if bindings is None else bindings
+    if isinstance(bindings, (str, bytes)):
+        return ["Wave 1 runtime semantic bindings must be an exact collection"]
+    try:
+        values = list(bindings)
+    except TypeError:
+        return ["Wave 1 runtime semantic bindings are malformed"]
+
+    normalized_by_id: dict[str, dict[str, object]] = {}
+    findings: list[str] = []
+    for binding in values:
+        normalized = _normalize_runtime_binding(binding)
+        if normalized is None:
+            findings.append("Wave 1 runtime semantic binding is malformed")
+            continue
+        runtime_id = normalized.pop("runtime_profile_id")
+        if not isinstance(runtime_id, str):
+            findings.append("Wave 1 runtime semantic binding has non-string runtime id")
+            continue
+        if runtime_id in normalized_by_id:
+            findings.append(f"Wave 1 runtime semantic binding is duplicated: {runtime_id}")
+            continue
+        normalized_by_id[runtime_id] = normalized
+
+    expected_ids = set(EXPECTED_RUNTIME_BINDINGS)
+    actual_ids = set(normalized_by_id)
+    for runtime_id in sorted(expected_ids - actual_ids):
+        findings.append(f"Wave 1 runtime semantic binding missing: {runtime_id}")
+    for runtime_id in sorted(actual_ids - expected_ids):
+        findings.append(f"Wave 1 runtime semantic binding is outside authorized set: {runtime_id}")
+    for runtime_id in sorted(expected_ids & actual_ids):
+        if normalized_by_id[runtime_id] != EXPECTED_RUNTIME_BINDINGS[runtime_id]:
+            findings.append(f"Wave 1 runtime semantic join drift: {runtime_id}")
     return findings
 
 
@@ -215,6 +336,7 @@ def _implementation_manifest_findings() -> list[str]:
 def validate() -> list[str]:
     findings: list[str] = []
     findings.extend(_third_party_import_findings())
+    findings.extend(_runtime_semantic_binding_findings())
     findings.extend(_runtime_catalog_findings())
     findings.extend(_fence_sql_findings())
     findings.extend(_required_boundary_source_findings())

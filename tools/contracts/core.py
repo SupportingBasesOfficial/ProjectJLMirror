@@ -188,6 +188,8 @@ def validate_registry_schema_contract(root: Path) -> list[str]:
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         return [f"cannot load source registry schema: {exc}"]
+    if not isinstance(schema, dict):
+        return ["source registry schema root must be an object"]
 
     expected_required = {
         "schema_version",
@@ -197,14 +199,21 @@ def validate_registry_schema_contract(root: Path) -> list[str]:
         "http_manifest_source",
         "event_manifest_source",
     }
+    if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
+        findings.append("source registry schema dialect drift")
     if schema.get("$id") != "urn:jlmirror:contracts:source-registry:v1":
         findings.append("source registry schema $id drift")
+    if schema.get("type") != "object":
+        findings.append("source registry schema root type must be object")
     if set(schema.get("required", [])) != expected_required:
         findings.append("source registry schema required-key set drift")
     if schema.get("additionalProperties") is not False:
         findings.append("source registry schema must reject unknown top-level properties")
 
     props = schema.get("properties", {})
+    if not isinstance(props, dict):
+        findings.append("source registry schema properties must be an object")
+        props = {}
     if props.get("schema_version", {}).get("const") != 1:
         findings.append("source registry schema version const drift")
     if props.get("catalog_id", {}).get("const") != "jlmirror.contract-source-registry@1":
@@ -217,7 +226,9 @@ def validate_registry_schema_contract(root: Path) -> list[str]:
 
     profile_sources = props.get("profile_sources", {})
     if (
-        profile_sources.get("minItems") != 1
+        not isinstance(profile_sources, dict)
+        or profile_sources.get("type") != "array"
+        or profile_sources.get("minItems") != 1
         or profile_sources.get("uniqueItems") is not True
         or profile_sources.get("items") != {"$ref": "#/$defs/pinned_source"}
     ):
@@ -231,10 +242,15 @@ def validate_registry_schema_contract(root: Path) -> list[str]:
             )
 
     defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        findings.append("source registry schema $defs must be an object")
+        defs = {}
     expected_path_schema = {"type": "string", "pattern": DOC_MD_PATH_PATTERN}
     pinned = defs.get("pinned_source", {})
     if (
-        pinned.get("additionalProperties") is not False
+        not isinstance(pinned, dict)
+        or pinned.get("type") != "object"
+        or pinned.get("additionalProperties") is not False
         or set(pinned.get("required", [])) != {"path", "git_blob_sha"}
         or pinned.get("properties", {}).get("path") != expected_path_schema
         or pinned.get("properties", {}).get("git_blob_sha")
@@ -244,7 +260,9 @@ def validate_registry_schema_contract(root: Path) -> list[str]:
 
     manifest = defs.get("manifest_source", {})
     if (
-        manifest.get("additionalProperties") is not False
+        not isinstance(manifest, dict)
+        or manifest.get("type") != "object"
+        or manifest.get("additionalProperties") is not False
         or set(manifest.get("required", []))
         != {"path", "git_blob_sha", "heading", "composite_requirements"}
         or manifest.get("properties", {}).get("path") != expected_path_schema
@@ -258,12 +276,16 @@ def validate_registry_schema_contract(root: Path) -> list[str]:
         findings.append("source registry schema manifest_source contract drift")
 
     composite = defs.get("composite_requirement", {})
-    alternatives = composite.get("properties", {}).get("alternatives", {})
+    composite_properties = composite.get("properties", {}) if isinstance(composite, dict) else {}
+    alternatives = composite_properties.get("alternatives", {})
     if (
-        composite.get("additionalProperties") is not False
+        not isinstance(composite, dict)
+        or composite.get("type") != "object"
+        or composite.get("additionalProperties") is not False
         or set(composite.get("required", [])) != {"source_text", "alternatives"}
-        or composite.get("properties", {}).get("source_text")
+        or composite_properties.get("source_text")
         != {"type": "string", "minLength": 1}
+        or not isinstance(alternatives, dict)
         or alternatives.get("type") != "array"
         or alternatives.get("minItems") != 2
         or alternatives.get("uniqueItems") is not True
@@ -589,6 +611,12 @@ def compare_object_schemas(
         for name in (prev_props & next_props)
         if canonical_json(prev_prop_defs[name]) != canonical_json(next_prop_defs[name])
     )
+    restrictive_added_optional = sorted(
+        name
+        for name in added_optional
+        if previous.get("additionalProperties", True) is not False
+        and canonical_json(next_prop_defs[name]) != canonical_json({})
+    )
 
     composite_changed = canonical_json(previous.get("allOf", [])) != canonical_json(
         candidate.get("allOf", [])
@@ -618,6 +646,8 @@ def compare_object_schemas(
         review_reasons.append("required_properties_relaxed")
     if changed_properties:
         review_reasons.append("property_definitions_changed")
+    if restrictive_added_optional:
+        review_reasons.append("restrictive_optional_property_definitions_added")
     if composite_changed:
         review_reasons.append("composite_requirements_changed")
     if object_envelope_changed:
@@ -638,6 +668,7 @@ def compare_object_schemas(
         "removed_properties": removed,
         "added_required_properties": added_required,
         "added_optional_properties": added_optional,
+        "restrictive_added_optional_properties": restrictive_added_optional,
         "relaxed_required_properties": relaxed_required,
         "changed_property_definitions": changed_properties,
         "composite_requirements_changed": composite_changed,

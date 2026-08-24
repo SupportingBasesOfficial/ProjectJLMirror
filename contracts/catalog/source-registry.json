@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "catalog_id": "jlmirror.contract-source-registry@1",
+  "profile_sources": [
+    "docs/11-reliability-resilience/08-reliability-semantic-manifest.md",
+    "docs/12-observability-sre/10-observability-semantic-manifest.md",
+    "docs/13-platform-runtime/09-runtime-semantic-manifest.md",
+    "docs/14-deployment-release-supply-chain/11-release-semantic-manifest.md",
+    "docs/15-operations-recovery-incident-readiness/11-operations-semantic-manifest.md",
+    "docs/16-implementation-readiness/15-implementation-slice-readiness-manifest.md"
+  ],
+  "http_manifest_source": {
+    "path": "docs/09-api-contracts/contract-governance-openapi-and-testing.md",
+    "heading": "Endpoint contract manifest"
+  },
+  "event_manifest_source": {
+    "path": "docs/10-event-contracts/schema-evolution-compatibility-and-governance.md",
+    "heading": "Semantic manifest"
+  }
+}

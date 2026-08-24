@@ -15,16 +15,22 @@ from tools.authority.fence_sql_contract import _executable_sql  # noqa: E402
 PROFILE = "jlmirror-wave1-fence-privileges/v1"
 SQL_PATH = ROOT / "sql" / "wave1" / "003_revalidate_authority_fence_privileges.sql"
 
+SCHEMA_OWNER_GUARD = """SELECT n.nspowner
+          FROM pg_namespace n
+         WHERE n.oid = v_schema
+    ) IS DISTINCT FROM current_user::regrole::oid"""
+TABLE_OWNER_GUARD = """SELECT c.relowner
+          FROM pg_class c
+         WHERE c.oid = v_table
+    ) IS DISTINCT FROM current_user::regrole::oid"""
+
 REQUIRED_EXECUTABLE_FRAGMENTS = (
     "to_regnamespace('platform')",
     "to_regclass('platform.authority_fences')",
     "to_regprocedure(\n        'platform.initialize_authority_fence(text,text,text)'\n    )",
     "to_regprocedure(\n        'platform.advance_authority_fence(text,bigint,text,text,text)'\n    )",
-    "current_user::regrole::oid",
-    "FROM pg_namespace n",
-    "n.nspowner",
-    "FROM pg_class c",
-    "c.relowner",
+    SCHEMA_OWNER_GUARD,
+    TABLE_OWNER_GUARD,
     "aclexplode(\n              COALESCE(c.relacl, acldefault('r', c.relowner))\n          )",
     "acl.grantee <> c.relowner",
     "aclexplode(\n              COALESCE(n.nspacl, acldefault('n', n.nspowner))\n          )",

@@ -12,8 +12,8 @@ from .model import AdmissionDenied, AuthenticationStrengthEvidence, Principal, P
 
 
 def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("time must be timezone-aware")
+    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("time must be a timezone-aware datetime")
     return value.astimezone(timezone.utc)
 
 
@@ -26,22 +26,64 @@ def _b64url_sha256(value: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
-@dataclass(frozen=True)
+def _trusted_binding(value: str, field: str) -> str:
+    if not isinstance(value, str) or not value or value != value.strip() or any(ord(c) < 0x20 for c in value):
+        raise ValueError(f"{field} must be an explicit trusted binding")
+    return value
+
+
+@dataclass(frozen=True, repr=False)
 class BrowserAuthTransaction:
     transaction_id: str
     initiating_session_digest: str
     state_digest: str
-    nonce: str
+    nonce_digest: str
     pkce_verifier: str
+    expected_issuer: str
+    expected_client_id: str
+    expected_redirect_uri: str
     created_at: datetime
     expires_at: datetime
 
+    def __post_init__(self) -> None:
+        for field in ("transaction_id", "initiating_session_digest", "state_digest", "nonce_digest"):
+            value = getattr(self, field)
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"{field} is required")
+        if not isinstance(self.pkce_verifier, str) or not 43 <= len(self.pkce_verifier) <= 128:
+            raise ValueError("PKCE verifier outside RFC 7636 length envelope")
+        _trusted_binding(self.expected_issuer, "expected_issuer")
+        _trusted_binding(self.expected_client_id, "expected_client_id")
+        _trusted_binding(self.expected_redirect_uri, "expected_redirect_uri")
+        created = _utc(self.created_at)
+        expires = _utc(self.expires_at)
+        if expires <= created:
+            raise ValueError("authorization transaction expiry must follow creation")
 
-@dataclass(frozen=True)
+    def __repr__(self) -> str:
+        return (
+            "BrowserAuthTransaction("
+            f"transaction_id={self.transaction_id!r}, initiating_session_digest=<redacted>, "
+            "state_digest=<redacted>, nonce_digest=<redacted>, pkce_verifier=<redacted>, "
+            f"expected_issuer={self.expected_issuer!r}, expected_client_id={self.expected_client_id!r}, "
+            f"expected_redirect_uri={self.expected_redirect_uri!r}, created_at={self.created_at!r}, "
+            f"expires_at={self.expires_at!r})"
+        )
+
+
+@dataclass(frozen=True, repr=False)
 class BrowserAuthInitiation:
     transaction: BrowserAuthTransaction
     state: str
+    nonce: str
     pkce_challenge: str
+
+    def __repr__(self) -> str:
+        return (
+            "BrowserAuthInitiation("
+            f"transaction_id={self.transaction.transaction_id!r}, "
+            "state=<redacted>, nonce=<redacted>, pkce_challenge=<redacted>)"
+        )
 
 
 @dataclass(frozen=True)
@@ -85,17 +127,26 @@ class AuthenticationStrengthPolicyPort(Protocol):
         evidence: AuthenticationStrengthEvidence,
         now: datetime,
     ) -> bool:
-        """Evaluate current Security-owned assurance policy."""
+        """Evaluate current Security-owned assurance policy; only literal True admits."""
 
 
 def begin_browser_auth(
-    *, session_binding: str, now: datetime, lifetime: timedelta = timedelta(minutes=5)
+    *,
+    session_binding: str,
+    expected_issuer: str,
+    expected_client_id: str,
+    expected_redirect_uri: str,
+    now: datetime,
+    lifetime: timedelta = timedelta(minutes=5),
 ) -> BrowserAuthInitiation:
     now = _utc(now)
-    if not session_binding:
+    if not isinstance(session_binding, str) or not session_binding:
         raise ValueError("session_binding is required")
-    if lifetime <= timedelta(0):
-        raise ValueError("lifetime must be positive")
+    _trusted_binding(expected_issuer, "expected_issuer")
+    _trusted_binding(expected_client_id, "expected_client_id")
+    _trusted_binding(expected_redirect_uri, "expected_redirect_uri")
+    if not isinstance(lifetime, timedelta) or lifetime <= timedelta(0):
+        raise ValueError("lifetime must be a positive timedelta")
 
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
@@ -107,14 +158,18 @@ def begin_browser_auth(
         transaction_id=secrets.token_urlsafe(24),
         initiating_session_digest=_digest(session_binding),
         state_digest=_digest(state),
-        nonce=nonce,
+        nonce_digest=_digest(nonce),
         pkce_verifier=verifier,
+        expected_issuer=expected_issuer,
+        expected_client_id=expected_client_id,
+        expected_redirect_uri=expected_redirect_uri,
         created_at=now,
         expires_at=now + lifetime,
     )
     return BrowserAuthInitiation(
         transaction=transaction,
         state=state,
+        nonce=nonce,
         pkce_challenge=_b64url_sha256(verifier),
     )
 
@@ -127,9 +182,6 @@ def complete_browser_auth(
     initiating_session_binding: str,
     returned_state: str,
     authorization_code: str,
-    expected_issuer: str,
-    expected_client_id: str,
-    expected_redirect_uri: str,
     now: datetime,
 ) -> tuple[Principal, AuthenticationStrengthEvidence]:
     now = _utc(now)
@@ -146,13 +198,13 @@ def complete_browser_auth(
     verified = oidc_port.exchange_and_verify(
         authorization_code=authorization_code,
         pkce_verifier=transaction.pkce_verifier,
-        expected_issuer=expected_issuer,
-        expected_client_id=expected_client_id,
-        expected_redirect_uri=expected_redirect_uri,
+        expected_issuer=transaction.expected_issuer,
+        expected_client_id=transaction.expected_client_id,
+        expected_redirect_uri=transaction.expected_redirect_uri,
     )
-    if verified.issuer != expected_issuer or verified.client_id != expected_client_id:
+    if verified.issuer != transaction.expected_issuer or verified.client_id != transaction.expected_client_id:
         raise AdmissionDenied("OIDC issuer/client binding mismatch")
-    if not hmac.compare_digest(verified.nonce, transaction.nonce):
+    if not hmac.compare_digest(transaction.nonce_digest, _digest(verified.nonce)):
         raise AdmissionDenied("OIDC nonce mismatch")
     if not (_utc(verified.authenticated_at) <= now < _utc(verified.token_expires_at)):
         raise AdmissionDenied("OIDC identity evidence is not current")
@@ -182,5 +234,5 @@ def require_authentication_strength(
 ) -> None:
     if evidence is None or not evidence.is_current(now):
         raise AdmissionDenied("current authentication-strength evidence cannot be proven")
-    if not policy.permits(policy_id=policy_id, evidence=evidence, now=_utc(now)):
+    if policy.permits(policy_id=policy_id, evidence=evidence, now=_utc(now)) is not True:
         raise AdmissionDenied("current authentication-strength policy is not satisfied")

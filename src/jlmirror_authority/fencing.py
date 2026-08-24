@@ -51,7 +51,7 @@ class FenceToken:
 
 class FenceAuthorityPort(Protocol):
     def current(self, fence_scope_id: str) -> FenceRecord | None:
-        """Return current owning fence state."""
+        """Return the current owning fence state, never a caller/cache-selected snapshot."""
 
     def acquire_successor(
         self,
@@ -70,11 +70,22 @@ def _require_effect_eligible_authority_state(state: object) -> None:
         raise AdmissionDenied("fence authority state is not effect-eligible")
 
 
-def admit_fenced_effect(*, token: FenceToken, current: FenceRecord) -> None:
-    """Reject non-active, stale, wrong-scope, wrong-generation and forged-higher fence claims."""
+def admit_fenced_effect(*, token: FenceToken, authority: FenceAuthorityPort) -> None:
+    """Require token equality against the current owning fence authority.
 
-    if not isinstance(token, FenceToken) or not isinstance(current, FenceRecord):
-        raise AdmissionDenied("fence evidence is malformed")
+    This is a portable currentness predicate. For a protected mutation whose
+    authoritative fence state is co-resident with the effect in PostgreSQL, the
+    accepted IR-D-003 contract is stronger: the current scope/epoch/generation/
+    state predicate and the protected mutation must execute in the same database
+    transaction. A successful preflight check is never a substitute for that
+    atomic effect-boundary predicate.
+    """
+
+    if not isinstance(token, FenceToken):
+        raise AdmissionDenied("fence token is malformed")
+    current = authority.current(token.fence_scope_id)
+    if not isinstance(current, FenceRecord):
+        raise AdmissionDenied("current owning fence authority is absent or malformed")
     _require_effect_eligible_authority_state(current.authority_state)
     if token.fence_scope_id != current.fence_scope_id:
         raise AdmissionDenied("fence scope mismatch")

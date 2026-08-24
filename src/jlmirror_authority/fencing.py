@@ -7,6 +7,7 @@ from typing import Protocol
 from .model import AdmissionDenied
 
 MAX_SIGNED_BIGINT = 9_223_372_036_854_775_807
+EFFECT_ELIGIBLE_FENCE_AUTHORITY_STATE = "active"
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$")
 
 
@@ -61,14 +62,20 @@ class FenceAuthorityPort(Protocol):
         successor_generation_id: str,
         successor_state: str,
     ) -> FenceRecord | None:
-        """Atomically compare exact predecessor + increment epoch; None means no winner."""
+        """Atomically compare exact active predecessor + increment epoch; None means no winner."""
+
+
+def _require_effect_eligible_authority_state(state: object) -> None:
+    if state != EFFECT_ELIGIBLE_FENCE_AUTHORITY_STATE:
+        raise AdmissionDenied("fence authority state is not effect-eligible")
 
 
 def admit_fenced_effect(*, token: FenceToken, current: FenceRecord) -> None:
-    """Reject stale, wrong-scope, wrong-generation and forged-higher fence claims."""
+    """Reject non-active, stale, wrong-scope, wrong-generation and forged-higher fence claims."""
 
     if not isinstance(token, FenceToken) or not isinstance(current, FenceRecord):
         raise AdmissionDenied("fence evidence is malformed")
+    _require_effect_eligible_authority_state(current.authority_state)
     if token.fence_scope_id != current.fence_scope_id:
         raise AdmissionDenied("fence scope mismatch")
     if token.fence_epoch != current.current_fence_epoch:
@@ -83,7 +90,7 @@ def acquire_next_fence(
     fence_scope_id: str,
     expected_predecessor_epoch: int,
     successor_generation_id: str,
-    successor_state: str = "active",
+    successor_state: str = EFFECT_ELIGIBLE_FENCE_AUTHORITY_STATE,
     expected_predecessor_generation_id: str | None = None,
 ) -> FenceRecord:
     try:
@@ -102,6 +109,7 @@ def acquire_next_fence(
         raise AdmissionDenied("expected fence predecessor is absent or malformed")
     if observed.fence_scope_id != fence_scope_id:
         raise AdmissionDenied("fence authority returned predecessor from another scope")
+    _require_effect_eligible_authority_state(observed.authority_state)
     if observed.current_fence_epoch != expected_predecessor_epoch:
         raise AdmissionDenied("expected fence predecessor is not current")
     predecessor_generation = (

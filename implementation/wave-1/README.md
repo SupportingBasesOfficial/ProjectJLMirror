@@ -41,9 +41,14 @@ The following remain C2 unless separately accepted through evidence:
 - secret-manager/KMS product;
 - configuration-distribution product;
 - orchestrator/container/serverless mechanism;
+- ingress/load-balancer product;
 - physical environment/cell topology.
 
 Python standard-library code in `src/jlmirror_authority/` is an implementation of the portable authority core and does not make Python, a hosting model or any vendor a normative architecture authority. Future implementations may replace it only while passing the same accepted semantic/adversarial contracts.
+
+## Machine-readable scope
+
+`IMPLEMENTATION_MANIFEST.json` binds the exact Wave 1 slice set, accepted authority base, Product activation state, C1 protocol profiles and the residual C2 decisions that remain deliberately unselected. The observer-only Wave 1 validator fails closed if that manifest drifts.
 
 ## Authority laws
 
@@ -62,3 +67,5 @@ FENCE TOKEN != AMBIGUOUS EFFECT ABSENCE
 SECRET REFERENCE != SECRET VALUE
 WAVE 1 AUTHORIZED != WAVE 2 AUTHORIZED
 ```
+
+Passing tests are implementation-conformance evidence only. They do not select residual C2 products, authorize Wave 2, imply production readiness or authorize merge.

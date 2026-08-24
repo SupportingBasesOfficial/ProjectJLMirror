@@ -24,21 +24,23 @@ class FenceSqlCanonicalizationTests(unittest.TestCase):
 
     def test_trim_only_storage_constraint_is_not_sufficient(self):
         text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace(
-            f"        CHECK (fence_scope_id {CANONICAL_REGEX_OPERATOR} '{CANONICAL_IDENTIFIER_REGEX}')\n",
-            "",
-            1,
+        predicate = (
+            f"        CHECK (fence_scope_id {CANONICAL_REGEX_OPERATOR} "
+            f"'{CANONICAL_IDENTIFIER_REGEX}'),\n"
         )
+        self.assertIn(predicate, text)
+        weakened = text.replace(predicate, "", 1)
         findings = validate_fence_sql_text(weakened)
         self.assertTrue(any("fence_scope_id" in finding for finding in findings))
 
     def test_successor_input_cannot_drop_canonical_generation_check(self):
         text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace(
-            f"       AND p_successor_generation_id {CANONICAL_REGEX_OPERATOR} '{CANONICAL_IDENTIFIER_REGEX}'\n",
-            "",
-            1,
+        predicate = (
+            f"       AND p_successor_generation_id {CANONICAL_REGEX_OPERATOR} "
+            f"'{CANONICAL_IDENTIFIER_REGEX}'\n"
         )
+        self.assertIn(predicate, text)
+        weakened = text.replace(predicate, "", 1)
         findings = validate_fence_sql_text(weakened)
         self.assertTrue(any("p_successor_generation_id" in finding for finding in findings))
 

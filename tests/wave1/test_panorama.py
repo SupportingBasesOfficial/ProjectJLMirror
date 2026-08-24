@@ -50,6 +50,8 @@ def placement(**overrides):
         cell_id="cell-a",
         placement_version="pv-9",
         runtime_generation="runtime-g12",
+        runtime_profile_id="runtime.api@1",
+        runtime_isolation_class="isolation.application-serving@1",
         configuration_generation="cfg-g4",
         workload_credential_generation="wc-g9",
         network_policy_generation="np-g6",
@@ -164,6 +166,8 @@ class PanoramicAuthorityTests(unittest.TestCase):
     def test_boolean_currentness_cannot_launder_changed_fence_or_generation(self):
         for field, value in (
             ("fence_epoch", 8),
+            ("runtime_profile_id", "runtime.control-plane@1"),
+            ("runtime_isolation_class", "isolation.control-plane@1"),
             ("configuration_generation", "cfg-g5"),
             ("workload_credential_generation", "wc-g10"),
             ("network_policy_generation", "np-g7"),

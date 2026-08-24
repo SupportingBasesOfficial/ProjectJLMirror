@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import re
 from urllib.parse import urlsplit
 
@@ -120,7 +120,7 @@ def parse_workload_identity(value: str) -> WorkloadIdentity:
     if not _RUNTIME_PROFILE_RE.fullmatch(runtime_profile_id):
         raise AdmissionDenied("workload identity runtime profile is not canonical")
     try:
-        return WorkloadIdentity(
+        identity = WorkloadIdentity(
             trust_domain=trust_domain,
             environment_class=environment,
             runtime_profile_id=runtime_profile_id,
@@ -128,6 +128,9 @@ def parse_workload_identity(value: str) -> WorkloadIdentity:
         )
     except ValueError as exc:
         raise AdmissionDenied("workload identity contains non-canonical bindings") from exc
+    if identity.spiffe_id != value:
+        raise AdmissionDenied("workload identity has alternate textual representation")
+    return identity
 
 
 def admit_workload_peer(
@@ -138,6 +141,7 @@ def admit_workload_peer(
     allowed_runtime_profiles: frozenset[str],
     current_trust_bundle_generation: str,
     current_workload_credential_generation: str,
+    current_max_certificate_lifetime: timedelta,
     now: datetime,
 ) -> Principal:
     now = _utc(now)
@@ -166,10 +170,13 @@ def admit_workload_peer(
         for profile in allowed_profiles
     ):
         raise AdmissionDenied("allowed runtime profiles contain non-canonical entries")
+    if (
+        not isinstance(current_max_certificate_lifetime, timedelta)
+        or current_max_certificate_lifetime <= timedelta(0)
+    ):
+        raise AdmissionDenied("current short-lived workload certificate policy is unavailable")
 
     identity = parse_workload_identity(peer.spiffe_id)
-    if identity.spiffe_id != peer.spiffe_id:
-        raise AdmissionDenied("workload identity has alternate textual representation")
     if identity.trust_domain != expected_domain:
         raise AdmissionDenied("workload trust domain mismatch")
     if identity.environment_class is not expected_environment:
@@ -180,8 +187,12 @@ def admit_workload_peer(
         raise AdmissionDenied("workload trust-bundle generation is stale")
     if peer.workload_credential_generation != current_credential:
         raise AdmissionDenied("workload credential generation is stale")
-    if not (_utc(peer.certificate_not_before) <= now < _utc(peer.certificate_not_after)):
+    not_before = _utc(peer.certificate_not_before)
+    not_after = _utc(peer.certificate_not_after)
+    if not (not_before <= now < not_after):
         raise AdmissionDenied("workload certificate is not current")
+    if not_after - not_before > current_max_certificate_lifetime:
+        raise AdmissionDenied("workload certificate exceeds current short-lived credential policy")
 
     return Principal(
         principal_id=identity.spiffe_id,

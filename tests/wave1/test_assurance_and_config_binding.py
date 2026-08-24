@@ -20,6 +20,7 @@ from jlmirror_authority.config import (  # noqa: E402
 from jlmirror_authority.model import (  # noqa: E402
     AdmissionDenied,
     AuthenticationStrengthEvidence,
+    EnvironmentClass,
     Principal,
     PrincipalKind,
     SecretReference,
@@ -32,6 +33,16 @@ NOW = datetime(2026, 8, 24, 11, 0, tzinfo=timezone.utc)
 class AlwaysPermitStrengthPolicy:
     def permits(self, **kwargs):
         return True
+
+
+class ConfigurationAuthority:
+    def __init__(self, result=True):
+        self.result = result
+        self.last_kwargs = None
+
+    def admit_current(self, **kwargs):
+        self.last_kwargs = kwargs
+        return self.result
 
 
 def strength_for(
@@ -154,6 +165,16 @@ class ConfigurationTypeBoundaryTests(unittest.TestCase):
             },
         )
 
+    def admit(self, snapshot, *, authority=None, generation="cfg-g1"):
+        authority = authority or ConfigurationAuthority(True)
+        return require_classified_configuration(
+            snapshot,
+            authority=authority,
+            runtime_profile_id="runtime.web-bff@1",
+            environment_class=EnvironmentClass.PRODUCTION,
+            expected_configuration_generation=generation,
+        )
+
     def test_generation_must_be_an_explicit_string(self):
         for value in (1, True, object(), "", " cfg-g1 "):
             with self.subTest(value=value), self.assertRaises(ValueError):
@@ -189,7 +210,29 @@ class ConfigurationTypeBoundaryTests(unittest.TestCase):
         with self.assertRaises(AdmissionDenied):
             require_classified_configuration({"configuration_generation": "cfg-g1"})  # type: ignore[arg-type]
 
-    def test_valid_classified_snapshot_still_passes(self):
+    def test_schema_presence_cannot_self_assert_current_classification_authority(self):
+        snapshot = ConfigurationSnapshot(
+            "cfg-g1",
+            {"issuer_url": "https://id.example"},
+            {},
+            schema=self.schema,
+        )
+        self.assertTrue(snapshot.classification_schema_present)
+        with self.assertRaises(AdmissionDenied):
+            require_classified_configuration(snapshot)
+        with self.assertRaises(AdmissionDenied):
+            self.admit(snapshot, authority=ConfigurationAuthority(False))
+
+    def test_wrong_generation_fails_before_authority_admission(self):
+        snapshot = ConfigurationSnapshot(
+            "cfg-old", {"issuer_url": "https://id.example"}, {}, schema=self.schema
+        )
+        authority = ConfigurationAuthority(True)
+        with self.assertRaises(AdmissionDenied):
+            self.admit(snapshot, authority=authority, generation="cfg-current")
+        self.assertIsNone(authority.last_kwargs)
+
+    def test_valid_current_classified_snapshot_passes_with_runtime_environment_binding(self):
         snapshot = ConfigurationSnapshot(
             "cfg-g1",
             {
@@ -206,7 +249,11 @@ class ConfigurationTypeBoundaryTests(unittest.TestCase):
             },
             schema=self.schema,
         )
-        self.assertIs(require_classified_configuration(snapshot), snapshot)
+        authority = ConfigurationAuthority(True)
+        self.assertIs(self.admit(snapshot, authority=authority), snapshot)
+        self.assertEqual(authority.last_kwargs["runtime_profile_id"], "runtime.web-bff@1")
+        self.assertIs(authority.last_kwargs["environment_class"], EnvironmentClass.PRODUCTION)
+        self.assertEqual(authority.last_kwargs["expected_configuration_generation"], "cfg-g1")
 
 
 if __name__ == "__main__":

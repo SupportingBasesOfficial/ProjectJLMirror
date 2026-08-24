@@ -20,7 +20,12 @@ from .model import (
     TenantContext,
     TenantRequirement,
 )
-from .runtime_profiles import API_AUTH_BOUNDARY, RuntimeBinding, WAVE1_RUNTIME_BINDINGS
+from .runtime_profiles import (
+    API_AUTH_BOUNDARY,
+    CONTROL_PLANE,
+    RuntimeBinding,
+    WAVE1_RUNTIME_BINDINGS,
+)
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$")
 _PROFILE_ID_RE = re.compile(r"^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)+@[1-9][0-9]*$")
@@ -350,6 +355,10 @@ def authorize_protected_operation(
     if requirement is TenantRequirement.REQUIRED and context is None:
         raise AdmissionDenied("protected operation requires trusted TenantContext")
     if requirement is TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED:
+        if runtime_binding != CONTROL_PLANE:
+            raise AdmissionDenied(
+                "cross-tenant privileged platform authority requires the accepted Control Plane runtime boundary"
+            )
         if context is not None:
             raise AdmissionDenied("cross-tenant privileged platform operation cannot reuse ordinary TenantContext")
         if principal.kind is not PrincipalKind.PLATFORM_ADMIN_PRINCIPAL:

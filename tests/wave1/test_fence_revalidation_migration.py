@@ -36,9 +36,43 @@ class FenceRevalidationMigrationTests(unittest.TestCase):
 
     def test_revalidation_preserves_positive_epoch_contract(self):
         text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace("CHECK (current_fence_epoch > 0) NOT VALID", "CHECK (current_fence_epoch >= 0) NOT VALID")
+        weakened = text.replace(
+            "CHECK (current_fence_epoch > 0) NOT VALID",
+            "CHECK (current_fence_epoch >= 0) NOT VALID",
+            1,
+        )
         findings = validate_fence_revalidation_sql_text(weakened)
         self.assertTrue(any("current_fence_epoch > 0" in f for f in findings))
+
+    def test_revalidation_requires_bigint_epoch_storage(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace(
+            "IS DISTINCT FROM 'int8'::regtype",
+            "IS DISTINCT FROM 'int4'::regtype",
+            1,
+        )
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("int8" in f for f in findings))
+
+    def test_revalidation_requires_single_column_scope_primary_key(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace(
+            "c.conkey = ARRAY[a.attnum]::smallint[]",
+            "c.conkey IS NOT NULL",
+            1,
+        )
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("c.conkey = ARRAY[a.attnum]" in f for f in findings))
+
+    def test_revalidation_requires_expected_column_types(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace(
+            "IS DISTINCT FROM 'timestamptz'::regtype",
+            "IS DISTINCT FROM 'timestamp'::regtype",
+            1,
+        )
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("timestamptz" in f for f in findings))
 
 
 if __name__ == "__main__":

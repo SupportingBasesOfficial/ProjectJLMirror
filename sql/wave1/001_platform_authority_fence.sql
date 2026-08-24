@@ -12,16 +12,19 @@ REVOKE CREATE ON SCHEMA platform FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES IN SCHEMA platform
     REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 
--- These identifier checks deliberately mirror the portable authority-core grammar:
--- first character alphanumeric; remaining characters limited to [A-Za-z0-9._:@/-];
--- maximum 256 characters; no whitespace/control/alternate textual form.
+-- These canonical identifier checks deliberately mirror the portable authority-core
+-- grammar. The separate trim checks are retained as explicit defense-in-depth and
+-- as stable evidence for the original IR-D-003 validator.
 CREATE TABLE IF NOT EXISTS platform.authority_fences (
     fence_scope_id text PRIMARY KEY
+        CHECK (btrim(fence_scope_id) <> '')
         CHECK (fence_scope_id ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
     current_fence_epoch bigint NOT NULL CHECK (current_fence_epoch > 0),
     current_generation_id text NOT NULL
+        CHECK (btrim(current_generation_id) <> '')
         CHECK (current_generation_id ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
     authority_state text NOT NULL
+        CHECK (btrim(authority_state) <> '')
         CHECK (authority_state ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
     updated_at timestamptz NOT NULL DEFAULT statement_timestamp()
 );
@@ -100,6 +103,9 @@ AS $$
        AND authority_fences.current_fence_epoch = p_expected_predecessor_epoch
        AND authority_fences.current_generation_id = p_expected_predecessor_generation_id
        AND authority_fences.current_fence_epoch < 9223372036854775807
+       AND btrim(p_expected_predecessor_generation_id) <> ''
+       AND btrim(p_successor_generation_id) <> ''
+       AND btrim(p_successor_state) <> ''
        AND p_expected_predecessor_generation_id ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'
        AND p_successor_generation_id ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'
        AND p_successor_state ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'

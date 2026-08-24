@@ -225,6 +225,8 @@ def placement(**overrides):
         cell_id="cell-a",
         placement_version="pv-9",
         runtime_generation="runtime-g12",
+        runtime_profile_id="runtime.api@1",
+        runtime_isolation_class="isolation.application-serving@1",
         configuration_generation="cfg-g4",
         workload_credential_generation="wc-g9",
         network_policy_generation="np-g6",
@@ -558,6 +560,9 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertTrue(context.matches_principal(principal))
         self.assertEqual(context.placement_version, "pv-9")
         self.assertEqual(context.runtime_generation, "runtime-g12")
+        self.assertEqual(context.runtime_profile_id, "runtime.api@1")
+        self.assertEqual(context.runtime_isolation_class, "isolation.application-serving@1")
+        self.assertEqual(context.isolation_class, "pooled")
         self.assertEqual(context.configuration_generation, "cfg-g4")
         self.assertEqual(context.workload_credential_generation, "wc-g9")
         self.assertEqual(context.network_policy_generation, "np-g6")
@@ -645,6 +650,8 @@ class ControlPlaneTests(unittest.TestCase):
         for field, value in (
             ("placement_version", "pv-10"),
             ("runtime_generation", "runtime-g13"),
+            ("runtime_profile_id", "runtime.control-plane@1"),
+            ("runtime_isolation_class", "isolation.control-plane@1"),
             ("configuration_generation", "cfg-g5"),
             ("workload_credential_generation", "wc-g10"),
             ("network_policy_generation", "np-g7"),

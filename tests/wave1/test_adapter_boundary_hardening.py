@@ -26,6 +26,7 @@ from jlmirror_authority.workload import (  # noqa: E402
 )
 
 NOW = datetime(2026, 8, 24, 11, 15, tzinfo=timezone.utc)
+BROWSER_TRANSACTION_LIFETIME = timedelta(minutes=5)
 
 
 class TxStore:
@@ -70,6 +71,7 @@ class AdapterBoundaryTests(unittest.TestCase):
             expected_client_id="bff",
             expected_redirect_uri="https://app.example/callback",
             now=NOW,
+            lifetime=BROWSER_TRANSACTION_LIFETIME,
         )
         with self.assertRaises(AdmissionDenied):
             complete_browser_auth(

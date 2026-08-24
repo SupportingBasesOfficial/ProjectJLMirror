@@ -13,6 +13,7 @@ from hashlib import sha1, sha256
 import json
 from pathlib import Path, PurePosixPath
 import re
+import subprocess
 from typing import Any
 
 VERSIONED_ID_RE = re.compile(
@@ -266,6 +267,84 @@ def validate_registry_schema_contract(root: Path) -> list[str]:
     return findings
 
 
+def _run_git(root: Path, *args: str) -> bytes:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except OSError as exc:
+        raise ContractProjectionError(f"cannot execute git: {exc}") from exc
+    if completed.returncode != 0:
+        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise ContractProjectionError(
+            f"git {' '.join(args)} failed while proving accepted authority base: {stderr or completed.returncode}"
+        )
+    return completed.stdout
+
+
+def _registered_sources(registry: dict[str, Any]) -> tuple[dict[str, Any], ...]:
+    by_path: dict[str, dict[str, Any]] = {}
+    sources = [
+        *registry["profile_sources"],
+        registry["http_manifest_source"],
+        registry["event_manifest_source"],
+    ]
+    for source in sources:
+        existing = by_path.get(source["path"])
+        if existing is not None and existing["git_blob_sha"] != source["git_blob_sha"]:
+            raise ContractProjectionError(
+                f"registered path has conflicting blob pins: {source['path']}"
+            )
+        by_path[source["path"]] = source
+    return tuple(by_path[path] for path in sorted(by_path))
+
+
+def validate_authority_base_bindings(root: Path, registry: dict[str, Any]) -> None:
+    """Prove each declared source blob is the blob at path in accepted_authority_base."""
+
+    repository_root = root.resolve()
+    base = registry["accepted_authority_base"]
+    _run_git(repository_root, "cat-file", "-e", f"{base}^{{commit}}")
+
+    for source in _registered_sources(registry):
+        relative = _validate_docs_markdown_path(source["path"], "registered source")
+        output = _run_git(repository_root, "ls-tree", "-z", base, "--", relative)
+        records = [record for record in output.split(b"\0") if record]
+        if len(records) != 1:
+            raise ContractProjectionError(
+                f"accepted authority base does not resolve exactly one source path: {base}:{relative}"
+            )
+        metadata, separator, encoded_path = records[0].partition(b"\t")
+        if not separator:
+            raise ContractProjectionError(
+                f"cannot parse accepted authority tree record for {base}:{relative}"
+            )
+        try:
+            mode, object_type, object_sha = metadata.decode("ascii").split()
+            resolved_path = encoded_path.decode("utf-8")
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise ContractProjectionError(
+                f"cannot decode accepted authority tree record for {base}:{relative}"
+            ) from exc
+        if object_type != "blob" or mode not in {"100644", "100755"}:
+            raise ContractProjectionError(
+                f"accepted authority path is not a regular blob: {base}:{relative}"
+            )
+        if resolved_path != relative:
+            raise ContractProjectionError(
+                f"accepted authority path mismatch: expected {relative}, got {resolved_path}"
+            )
+        if object_sha != source["git_blob_sha"]:
+            raise ContractProjectionError(
+                f"accepted authority binding mismatch: {base}:{relative} resolves to {object_sha}, "
+                f"registry declares {source['git_blob_sha']}"
+            )
+
+
 def _read_pinned_source(root: Path, source: dict[str, Any]) -> str:
     relative = _validate_docs_markdown_path(source["path"], "registered source")
     repository_root = root.resolve()
@@ -433,6 +512,7 @@ def build_manifest_projection(
 
 def build_bundle(root: Path) -> dict[str, Any]:
     registry = load_registry(root)
+    validate_authority_base_bindings(root, registry)
     profile_catalog = build_profile_catalog(root, registry)
     http_schema = build_manifest_projection(
         root, registry["http_manifest_source"], "http-endpoint-manifest:v1"
@@ -445,6 +525,7 @@ def build_bundle(root: Path) -> dict[str, Any]:
         "bundle_id": "jlmirror.contract-projection-bundle@1",
         "accepted_authority_base": registry["accepted_authority_base"],
         "authority": "projection_only_reviewed_markdown_remains_normative",
+        "authority_binding": "accepted_base_path_blob_verified",
         "source_registry_sha256": sha256(registry_bytes).hexdigest(),
         "profile_catalog": profile_catalog,
         "http_endpoint_manifest_schema": http_schema,
@@ -455,10 +536,20 @@ def build_bundle(root: Path) -> dict[str, Any]:
 def compare_object_schemas(
     previous: dict[str, Any], candidate: dict[str, Any]
 ) -> dict[str, Any]:
-    """Report structural change without claiming semantic compatibility."""
+    """Conservatively report structural change without approving compatibility."""
 
     prev_prop_defs = previous.get("properties", {})
     next_prop_defs = candidate.get("properties", {})
+    if not isinstance(prev_prop_defs, dict) or not isinstance(next_prop_defs, dict):
+        return {
+            "classification": "structural_change_requires_review",
+            "review_reasons": ["properties_shape_changed"],
+            "semantic_compatibility_authority": (
+                "Phase 09/10 reviewed contracts own semantic compatibility; "
+                "this structural report cannot approve compatibility"
+            ),
+        }
+
     prev_props = set(prev_prop_defs)
     next_props = set(next_prop_defs)
     prev_required = set(previous.get("required", []))
@@ -473,12 +564,24 @@ def compare_object_schemas(
         for name in (prev_props & next_props)
         if canonical_json(prev_prop_defs[name]) != canonical_json(next_prop_defs[name])
     )
+
     composite_changed = canonical_json(previous.get("allOf", [])) != canonical_json(
         candidate.get("allOf", [])
     )
     object_envelope_changed = any(
         canonical_json(previous.get(keyword)) != canonical_json(candidate.get(keyword))
         for keyword in ("type", "additionalProperties")
+    )
+
+    separately_handled = {"properties", "required", "allOf", "type", "additionalProperties"}
+    previous_other = {
+        key: value for key, value in previous.items() if key not in separately_handled
+    }
+    candidate_other = {
+        key: value for key, value in candidate.items() if key not in separately_handled
+    }
+    other_schema_constraints_changed = canonical_json(previous_other) != canonical_json(
+        candidate_other
     )
 
     review_reasons: list[str] = []
@@ -494,6 +597,8 @@ def compare_object_schemas(
         review_reasons.append("composite_requirements_changed")
     if object_envelope_changed:
         review_reasons.append("object_envelope_changed")
+    if other_schema_constraints_changed:
+        review_reasons.append("other_schema_constraints_changed")
 
     if review_reasons:
         classification = "structural_change_requires_review"
@@ -512,6 +617,7 @@ def compare_object_schemas(
         "changed_property_definitions": changed_properties,
         "composite_requirements_changed": composite_changed,
         "object_envelope_changed": object_envelope_changed,
+        "other_schema_constraints_changed": other_schema_constraints_changed,
         "semantic_compatibility_authority": (
             "Phase 09/10 reviewed contracts own semantic compatibility; "
             "this structural report cannot approve compatibility"

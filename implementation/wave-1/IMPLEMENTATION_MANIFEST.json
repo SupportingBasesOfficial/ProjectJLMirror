@@ -37,10 +37,13 @@
   ],
   "forbidden_authority_substitutions": [
     "session_valid_for_current_authorization",
+    "authentication_strength_for_other_principal",
+    "malformed_adapter_evidence_for_authority",
     "workload_identity_for_tenant_authority",
     "network_presence_for_trust",
     "environment_label_for_authorization",
     "caller_tenant_id_for_tenant_context",
+    "untyped_config_for_classified_config",
     "fence_token_for_effect_absence",
     "secret_reference_for_secret_value"
   ],

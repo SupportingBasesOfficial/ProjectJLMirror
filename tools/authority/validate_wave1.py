@@ -53,6 +53,7 @@ EXPECTED_C2 = [
 ]
 EXPECTED_FORBIDDEN_SUBSTITUTIONS = [
     "session_valid_for_current_authorization",
+    "privileged_human_without_current_authentication_strength",
     "authentication_strength_for_other_principal",
     "malformed_adapter_evidence_for_authority",
     "workload_identity_for_tenant_authority",

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 import hashlib
+import re
 import secrets
 from typing import Protocol
 
@@ -12,6 +13,8 @@ from .model import (
     Principal,
     PrincipalKind,
 )
+
+_SESSION_HANDLE_RE = re.compile(r"^[A-Za-z0-9_-]{43,128}$")
 
 
 def _utc(value: datetime) -> datetime:
@@ -31,8 +34,10 @@ class BrowserSessionHandle:
     value: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.value, str) or len(self.value) < 43:
-            raise ValueError("browser session handle must be high-entropy and opaque")
+        if not isinstance(self.value, str) or not _SESSION_HANDLE_RE.fullmatch(self.value):
+            raise ValueError(
+                "browser session handle must use the bounded URL-safe opaque capability profile"
+            )
 
     @property
     def digest(self) -> str:

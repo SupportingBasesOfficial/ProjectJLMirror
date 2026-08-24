@@ -137,6 +137,17 @@ class AuthorizationDecision:
         _identifier(self.policy_revision, "policy_revision")
 
 
+class CurrentPrincipalAuthorityPort(Protocol):
+    def is_current(self, *, principal: Principal, now: datetime) -> bool:
+        """Prove current session/credential/workload-principal authority.
+
+        A typed Principal or earlier authentication success is not currentness
+        evidence. Implementations bind this port to the owning session, credential,
+        workload-identity or platform-principal authority and return literal True
+        only for the exact principal + credential generation at `now`.
+        """
+
+
 class PlacementAuthorityPort(Protocol):
     def resolve_current(self, tenant_id: str) -> PlacementEvidence | None:
         """Resolve trusted current placement from the owning authority."""
@@ -160,6 +171,26 @@ def _utc(value: datetime) -> datetime:
     if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("time must be a timezone-aware datetime")
     return value.astimezone(timezone.utc)
+
+
+def _require_current_principal(
+    *,
+    principal: Principal,
+    principal_authority: CurrentPrincipalAuthorityPort,
+    now: datetime,
+) -> None:
+    """Fail closed unless the owning credential/session authority says exact current."""
+
+    if not isinstance(principal, Principal) or principal.active is not True:
+        raise AdmissionDenied("current authenticated principal cannot be established")
+    if principal_authority is None or not hasattr(principal_authority, "is_current"):
+        raise AdmissionDenied("current principal/credential authority is unavailable")
+    try:
+        current = principal_authority.is_current(principal=principal, now=_utc(now))
+    except Exception as exc:
+        raise AdmissionDenied("current principal/credential authority failed closed") from exc
+    if current is not True:
+        raise AdmissionDenied("principal/session/credential generation is not current")
 
 
 def _placement_is_admissible(evidence: PlacementEvidence) -> bool:
@@ -233,6 +264,7 @@ def _require_privileged_human_assurance_declaration(
 def construct_tenant_context(
     *,
     principal: Principal,
+    principal_authority: CurrentPrincipalAuthorityPort,
     placement_authority: PlacementAuthorityPort,
     tenant_id: str,
     destination_cell_id: str,
@@ -248,18 +280,17 @@ def construct_tenant_context(
     operation_id: str | None = None,
     runtime_binding: RuntimeBinding = API_AUTH_BOUNDARY,
 ) -> TenantContext:
-    """Construct TenantContext only from authenticated principal + trusted current runtime authority."""
+    """Construct TenantContext only after current authentication + trusted runtime authority."""
 
-    if not isinstance(principal, Principal) or principal.active is not True:
-        raise AdmissionDenied("current authenticated principal cannot be established")
+    _require_current_principal(
+        principal=principal,
+        principal_authority=principal_authority,
+        now=now,
+    )
     _require_wave1_runtime_binding(runtime_binding)
     if not isinstance(required_environment, EnvironmentClass):
         raise AdmissionDenied("destination runtime environment authority is not canonical")
 
-    # Logical routing/currentness inputs are caller/request-adjacent data at this
-    # boundary. Canonicalize and bound them before any C2 placement adapter sees
-    # them; an adapter must never become the parser/normalizer that decides which
-    # tenant or runtime-generation authority a malformed identifier refers to.
     try:
         tenant_id = _identifier(tenant_id, "tenant_id")
         destination_cell_id = _identifier(destination_cell_id, "destination_cell_id")
@@ -304,6 +335,14 @@ def construct_tenant_context(
     if not _placement_is_admissible(evidence):
         raise AdmissionDenied("placement/runtime/cell admission currentness cannot be proven")
 
+    # Recheck after placement lookup so a session/credential revoked during routing
+    # cannot be converted into a newly trusted TenantContext.
+    _require_current_principal(
+        principal=principal,
+        principal_authority=principal_authority,
+        now=now,
+    )
+
     try:
         return TenantContext(
             tenant_id=tenant_id,
@@ -335,6 +374,7 @@ def construct_tenant_context(
 def authorize_protected_operation(
     *,
     principal: Principal,
+    principal_authority: CurrentPrincipalAuthorityPort,
     declaration: AuthorizationDeclaration,
     placement_authority: PlacementAuthorityPort,
     authorization_authority: CurrentAuthorizationPort,
@@ -344,8 +384,11 @@ def authorize_protected_operation(
     strength_evidence: AuthenticationStrengthEvidence | None = None,
     runtime_binding: RuntimeBinding = API_AUTH_BOUNDARY,
 ) -> AuthorizationDecision:
-    if not isinstance(principal, Principal) or principal.active is not True:
-        raise AdmissionDenied("principal/credential is retired or malformed")
+    _require_current_principal(
+        principal=principal,
+        principal_authority=principal_authority,
+        now=now,
+    )
     if not isinstance(declaration, AuthorizationDeclaration):
         raise AdmissionDenied("authorization declaration is malformed or unreviewed")
     _require_wave1_runtime_binding(runtime_binding)
@@ -394,6 +437,13 @@ def authorize_protected_operation(
             now=_utc(now),
         )
 
+    # Recheck current credential/session after placement and step-up evaluation,
+    # immediately before the owning authorization decision.
+    _require_current_principal(
+        principal=principal,
+        principal_authority=principal_authority,
+        now=now,
+    )
     decision = authorization_authority.evaluate(
         principal=principal,
         context=context,
@@ -405,4 +455,12 @@ def authorize_protected_operation(
         raise AdmissionDenied("owning authorization evidence is not current")
     if decision.granted is not True:
         raise AdmissionDenied("owning authorization denied the operation")
+
+    # A credential/session revoked while authorization was being evaluated cannot
+    # be converted into a successful protected-operation admission.
+    _require_current_principal(
+        principal=principal,
+        principal_authority=principal_authority,
+        now=now,
+    )
     return decision

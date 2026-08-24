@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deterministic contract projections for JLMIRROR Wave 0.
 
-Reviewed Markdown remains normative. This module only projects exact, pinned,
+Reviewed Markdown remains normative. This module projects exact, pinned,
 bounded pieces of that authority into machine-readable structures for
 implementation conformance. Generated output never becomes normative authority.
 """
@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha1, sha256
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 from typing import Any
 
@@ -22,6 +22,9 @@ SNAKE_FIELD_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
 HEADING_RE_TEMPLATE = r"^#{1,6}\s+%s\s*$"
 FENCED_TEXT_RE = re.compile(r"```(?:text)?\s*\n(.*?)\n```", re.DOTALL)
+DOC_MD_PATH_PATTERN = (
+    r"^docs/(?:(?!\.{1,2}(?:/|$))[^/\\]+/)*(?!\.{1,2}$)[^/\\]+\.md$"
+)
 
 
 class ContractProjectionError(ValueError):
@@ -49,13 +52,34 @@ def git_blob_sha(data: bytes) -> str:
     return sha1(payload).hexdigest()
 
 
+def _validate_docs_markdown_path(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ContractProjectionError(f"{label} path must be a non-empty string")
+    if "\\" in value:
+        raise ContractProjectionError(f"{label} path must use canonical POSIX separators")
+
+    pure = PurePosixPath(value)
+    parts = pure.parts
+    if (
+        pure.is_absolute()
+        or value != pure.as_posix()
+        or len(parts) < 2
+        or parts[0] != "docs"
+        or any(part in {"", ".", ".."} for part in parts)
+        or not value.endswith(".md")
+    ):
+        raise ContractProjectionError(
+            f"{label} path must be a canonical Markdown path contained by docs/: {value!r}"
+        )
+    return value
+
+
 def _validate_pinned_source_shape(item: Any, label: str) -> None:
     if not isinstance(item, dict) or set(item) != {"path", "git_blob_sha"}:
         raise ContractProjectionError(
             f"{label} must contain exactly path + git_blob_sha"
         )
-    if not isinstance(item["path"], str) or not item["path"].startswith("docs/"):
-        raise ContractProjectionError(f"{label} path must be a docs/ Markdown path")
+    _validate_docs_markdown_path(item["path"], label)
     if not isinstance(item["git_blob_sha"], str) or not HEX40_RE.fullmatch(
         item["git_blob_sha"]
     ):
@@ -73,9 +97,11 @@ def _validate_manifest_source_shape(item: Any, label: str) -> None:
     )
     if not isinstance(item["heading"], str) or not item["heading"]:
         raise ContractProjectionError(f"{label} heading cannot be blank")
+
     composites = item["composite_requirements"]
     if not isinstance(composites, list):
         raise ContractProjectionError(f"{label} composite_requirements must be a list")
+
     seen_source_text: set[str] = set()
     for index, composite in enumerate(composites):
         if not isinstance(composite, dict) or set(composite) != {
@@ -174,19 +200,20 @@ def validate_registry_schema_contract(root: Path) -> list[str]:
         findings.append("source registry schema $id drift")
     if set(schema.get("required", [])) != expected_required:
         findings.append("source registry schema required-key set drift")
+    if schema.get("additionalProperties") is not False:
+        findings.append("source registry schema must reject unknown top-level properties")
+
     props = schema.get("properties", {})
     if props.get("schema_version", {}).get("const") != 1:
         findings.append("source registry schema version const drift")
     if props.get("catalog_id", {}).get("const") != "jlmirror.contract-source-registry@1":
         findings.append("source registry schema catalog_id const drift")
-    if schema.get("additionalProperties") is not False:
-        findings.append("source registry schema must reject unknown top-level properties")
-
     if props.get("accepted_authority_base") != {
         "type": "string",
         "pattern": "^[0-9a-f]{40}$",
     }:
         findings.append("source registry schema accepted_authority_base contract drift")
+
     profile_sources = props.get("profile_sources", {})
     if (
         profile_sources.get("minItems") != 1
@@ -196,12 +223,12 @@ def validate_registry_schema_contract(root: Path) -> list[str]:
         findings.append("source registry schema profile_sources contract drift")
 
     defs = schema.get("$defs", {})
+    expected_path_schema = {"type": "string", "pattern": DOC_MD_PATH_PATTERN}
     pinned = defs.get("pinned_source", {})
     if (
         pinned.get("additionalProperties") is not False
         or set(pinned.get("required", [])) != {"path", "git_blob_sha"}
-        or pinned.get("properties", {}).get("path")
-        != {"type": "string", "pattern": "^docs/.+\\.md$"}
+        or pinned.get("properties", {}).get("path") != expected_path_schema
         or pinned.get("properties", {}).get("git_blob_sha")
         != {"type": "string", "pattern": "^[0-9a-f]{40}$"}
     ):
@@ -212,8 +239,7 @@ def validate_registry_schema_contract(root: Path) -> list[str]:
         manifest.get("additionalProperties") is not False
         or set(manifest.get("required", []))
         != {"path", "git_blob_sha", "heading", "composite_requirements"}
-        or manifest.get("properties", {}).get("path")
-        != {"type": "string", "pattern": "^docs/.+\\.md$"}
+        or manifest.get("properties", {}).get("path") != expected_path_schema
         or manifest.get("properties", {}).get("git_blob_sha")
         != {"type": "string", "pattern": "^[0-9a-f]{40}$"}
         or manifest.get("properties", {}).get("heading")
@@ -241,16 +267,19 @@ def validate_registry_schema_contract(root: Path) -> list[str]:
 
 
 def _read_pinned_source(root: Path, source: dict[str, Any]) -> str:
-    relative = source["path"]
-    path = (root / relative).resolve()
+    relative = _validate_docs_markdown_path(source["path"], "registered source")
+    repository_root = root.resolve()
+    docs_root = (repository_root / "docs").resolve()
+    path = (repository_root / relative).resolve()
     try:
-        path.relative_to(root.resolve())
+        path.relative_to(docs_root)
     except ValueError as exc:
         raise ContractProjectionError(
-            f"source escapes repository root: {relative}"
+            f"registered source escapes canonical docs/ boundary: {relative}"
         ) from exc
     if not path.is_file():
         raise ContractProjectionError(f"registered source missing: {relative}")
+
     data = path.read_bytes()
     actual_blob = git_blob_sha(data)
     if actual_blob != source["git_blob_sha"]:
@@ -269,9 +298,7 @@ def extract_manifest_requirements(
     heading: str,
     composite_specs: tuple[CompositeRequirement, ...] = (),
 ) -> ManifestRequirements:
-    heading_re = re.compile(
-        HEADING_RE_TEMPLATE % re.escape(heading), re.MULTILINE
-    )
+    heading_re = re.compile(HEADING_RE_TEMPLATE % re.escape(heading), re.MULTILINE)
     match = heading_re.search(text)
     if not match:
         raise ContractProjectionError(f"heading not found: {heading}")
@@ -289,7 +316,6 @@ def extract_manifest_requirements(
     fields: list[str] = []
     composites: list[CompositeRequirement] = []
     seen_composites: set[str] = set()
-
     for raw in fence.group(1).splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -315,13 +341,9 @@ def extract_manifest_requirements(
             f"registered composite requirement(s) not present under {heading}: {missing_composites}"
         )
     if not fields:
-        raise ContractProjectionError(
-            f"no machine field names found under heading: {heading}"
-        )
+        raise ContractProjectionError(f"no machine field names found under heading: {heading}")
     if len(fields) != len(set(fields)):
-        raise ContractProjectionError(
-            f"duplicate manifest field under heading: {heading}"
-        )
+        raise ContractProjectionError(f"duplicate manifest field under heading: {heading}")
     return ManifestRequirements(tuple(fields), tuple(composites))
 
 

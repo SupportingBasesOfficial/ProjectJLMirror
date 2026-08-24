@@ -44,6 +44,14 @@ def principal():
     return Principal("user-1", PrincipalKind.HUMAN_BROWSER_SESSION, "session-g1")
 
 
+class PrincipalAuthority:
+    def is_current(self, **kwargs):
+        return True
+
+
+PRINCIPAL_AUTHORITY = PrincipalAuthority()
+
+
 def placement(**overrides):
     values = dict(
         tenant_id="tenant-acme",
@@ -141,6 +149,7 @@ def construct(authority):
     evidence = authority.evidence
     return construct_tenant_context(
         principal=principal(),
+        principal_authority=PRINCIPAL_AUTHORITY,
         placement_authority=authority,
         tenant_id=evidence.tenant_id,
         destination_cell_id=evidence.cell_id,
@@ -178,6 +187,7 @@ class PanoramicAuthorityTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(AdmissionDenied):
                 authorize_protected_operation(
                     principal=principal(),
+                    principal_authority=PRINCIPAL_AUTHORITY,
                     declaration=self.declaration(),
                     placement_authority=authority,
                     authorization_authority=Authz(),
@@ -193,6 +203,7 @@ class PanoramicAuthorityTests(unittest.TestCase):
             with self.subTest(gate=gate), self.assertRaises(AdmissionDenied):
                 authorize_protected_operation(
                     principal=principal(),
+                    principal_authority=PRINCIPAL_AUTHORITY,
                     declaration=self.declaration(),
                     placement_authority=authority,
                     authorization_authority=Authz(),

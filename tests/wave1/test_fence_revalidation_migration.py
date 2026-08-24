@@ -74,6 +74,58 @@ class FenceRevalidationMigrationTests(unittest.TestCase):
         findings = validate_fence_revalidation_sql_text(weakened)
         self.assertTrue(any("timestamptz" in f for f in findings))
 
+    def test_revalidation_requires_permanent_logged_relation(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace("IS DISTINCT FROM 'p'", "IS DISTINCT FROM 'u'", 1)
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("DISTINCT FROM 'p'" in f for f in findings))
+
+    def test_revalidation_requires_updated_at_not_null(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace("    ALTER COLUMN updated_at SET NOT NULL;", ";", 1)
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("updated_at SET NOT NULL" in f for f in findings))
+
+    def test_revalidation_rejects_generated_or_identity_authority_columns(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace(
+            "AND (attgenerated <> '' OR attidentity <> '')",
+            "AND false",
+            1,
+        )
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("attgenerated" in f for f in findings))
+
+    def test_revalidation_requires_non_internal_trigger_guard(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace(
+            "AND NOT t.tgisinternal",
+            "AND t.tgisinternal\n           -- AND NOT t.tgisinternal",
+            1,
+        )
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("trigger behavior" in f for f in findings))
+
+    def test_revalidation_requires_rewrite_rule_guard(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace(
+            "WHERE r.ev_class = v_table",
+            "WHERE false\n           -- WHERE r.ev_class = v_table",
+            1,
+        )
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("rewrite-rule behavior" in f for f in findings))
+
+    def test_executable_invariant_cannot_be_laundered_by_comment(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace(
+            "ALTER COLUMN updated_at SET NOT NULL",
+            "ALTER COLUMN updated_at DROP NOT NULL\n    -- ALTER COLUMN updated_at SET NOT NULL",
+            1,
+        )
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("updated_at SET NOT NULL" in f for f in findings))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 import hashlib
 import secrets
@@ -71,6 +71,13 @@ class BrowserSessionRecord:
                 raise ValueError("authentication_strength must be typed trusted evidence")
             if self.authentication_strength.principal_id != self.principal.principal_id:
                 raise ValueError("authentication-strength evidence must belong to the session principal")
+            if (
+                self.authentication_strength.principal_credential_generation
+                != self.session_generation
+            ):
+                raise ValueError(
+                    "authentication-strength evidence must belong to the exact session generation"
+                )
         created = _utc(self.created_at)
         expires = _utc(self.expires_at)
         if expires <= created:
@@ -136,6 +143,14 @@ def _new_record(
             raise AdmissionDenied("session authentication-strength evidence is malformed")
         if authentication_strength.principal_id != principal.principal_id:
             raise AdmissionDenied("session authentication-strength evidence belongs to another principal")
+        if (
+            authentication_strength.principal_credential_generation
+            != principal.credential_generation
+        ):
+            raise AdmissionDenied(
+                "session authentication-strength evidence belongs to another credential/session generation"
+            )
+
     session_generation = _new_session_generation()
     session_principal = Principal(
         principal_id=principal.principal_id,
@@ -143,13 +158,21 @@ def _new_record(
         credential_generation=session_generation,
         active=principal.active,
     )
+    rebound_strength = (
+        replace(
+            authentication_strength,
+            principal_credential_generation=session_generation,
+        )
+        if authentication_strength is not None
+        else None
+    )
     return BrowserSessionRecord(
         handle_digest=handle.digest,
         principal=session_principal,
         session_generation=session_generation,
         created_at=now,
         expires_at=now + lifetime,
-        authentication_strength=authentication_strength,
+        authentication_strength=rebound_strength,
     )
 
 

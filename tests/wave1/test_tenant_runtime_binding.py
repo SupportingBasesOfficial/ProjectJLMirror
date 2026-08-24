@@ -27,6 +27,11 @@ from jlmirror_authority.runtime_profiles import API_AUTH_BOUNDARY  # noqa: E402
 NOW = datetime(2026, 8, 24, 11, 45, tzinfo=timezone.utc)
 
 
+class PrincipalAuthority:
+    def is_current(self, **kwargs):
+        return True
+
+
 class PlacementAuthority:
     def __init__(self, evidence):
         self.evidence = evidence
@@ -67,6 +72,7 @@ def construct(evidence, **overrides):
         principal=Principal(
             "user-1", PrincipalKind.HUMAN_BROWSER_SESSION, "session-g1"
         ),
+        principal_authority=PrincipalAuthority(),
         placement_authority=PlacementAuthority(evidence),
         tenant_id=evidence.tenant_id,
         destination_cell_id=evidence.cell_id,

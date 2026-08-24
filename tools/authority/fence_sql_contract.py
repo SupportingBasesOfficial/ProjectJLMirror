@@ -5,6 +5,7 @@ from __future__ import annotations
 
 CANONICAL_IDENTIFIER_REGEX = "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$"
 CANONICAL_REGEX_OPERATOR = 'COLLATE "C" ~'
+EFFECT_ELIGIBLE_PREDECESSOR_PREDICATE = "authority_fences.authority_state = 'active'"
 
 
 def _predicate(name: str) -> str:
@@ -26,10 +27,11 @@ def validate_fence_sql_text(text: str) -> list[str]:
         _predicate("p_expected_predecessor_generation_id"),
         _predicate("p_successor_generation_id"),
         _predicate("p_successor_state"),
+        EFFECT_ELIGIBLE_PREDECESSOR_PREDICATE,
     )
     for fragment in required:
         if fragment not in text:
-            findings.append(f"IR-D-003 SQL canonical identifier invariant missing: {fragment}")
+            findings.append(f"IR-D-003 SQL canonical/effect-authority invariant missing: {fragment}")
 
     # A prose mention of the regex is not sufficient. Each authoritative persisted
     # identifier and each effectful successor input needs an executable C-collated predicate.

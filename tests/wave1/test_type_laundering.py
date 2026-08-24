@@ -41,6 +41,8 @@ def placement(**overrides):
         cell_id="cell-a",
         placement_version="pv-1",
         runtime_generation="runtime-g1",
+        runtime_profile_id="runtime.api@1",
+        runtime_isolation_class="isolation.application-serving@1",
         configuration_generation="cfg-g1",
         workload_credential_generation="wc-g1",
         network_policy_generation="np-g1",
@@ -86,6 +88,16 @@ class TypeLaunderingTests(unittest.TestCase):
                 with self.subTest(field=field, value=value), self.assertRaises(ValueError):
                     placement(**{field: value})
 
+    def test_placement_runtime_profile_fields_must_be_canonical_versioned_ids(self):
+        for field, value in (
+            ("runtime_profile_id", "runtime api"),
+            ("runtime_profile_id", "isolation.application-serving@1"),
+            ("runtime_isolation_class", "runtime.api@1"),
+            ("runtime_isolation_class", "isolation application"),
+        ):
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                placement(**{field: value})
+
     def test_authorization_decision_must_be_literal_booleans(self):
         for field in ("granted", "current"):
             for value in ("false", "true", 0, 1):
@@ -111,6 +123,8 @@ class TypeLaunderingTests(unittest.TestCase):
             cell_id="cell-a",
             placement_version="pv-1",
             runtime_generation="runtime-g1",
+            runtime_profile_id="runtime.api@1",
+            runtime_isolation_class="isolation.application-serving@1",
             configuration_generation="cfg-g1",
             workload_credential_generation="wc-g1",
             network_policy_generation="np-g1",
@@ -126,6 +140,10 @@ class TypeLaunderingTests(unittest.TestCase):
             TenantContext(**{**base, "principal_kind": "human_browser_session"})
         with self.assertRaises(ValueError):
             TenantContext(**{**base, "environment_class": "environment.production@1"})
+        with self.assertRaises(ValueError):
+            TenantContext(**{**base, "runtime_profile_id": "runtime api"})
+        with self.assertRaises(ValueError):
+            TenantContext(**{**base, "runtime_isolation_class": "runtime.api@1"})
 
     def test_truthy_currentness_port_result_is_not_authority(self):
         evidence = placement()

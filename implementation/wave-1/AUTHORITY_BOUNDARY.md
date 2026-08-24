@@ -17,7 +17,7 @@ Wave 1 implements only the identity and authority skeleton authorized by the acc
 - typed workload identity parsing and service-authentication boundary;
 - trusted `TenantContext` construction inputs;
 - current authorization and placement admission predicates;
-- explicit cross-tenant privileged platform authorization only through the accepted Control Plane runtime boundary;
+- explicit cross-tenant privileged platform authorization only through trusted current executing-runtime evidence for the accepted Control Plane boundary;
 - runtime/configuration/workload credential/network-policy generation separation;
 - classified finite-scalar configuration plus typed secret-reference boundaries;
 - monotonic PostgreSQL fence contract and stale-actor rejection;
@@ -34,11 +34,13 @@ Browser authorization transaction authority is time-bounded on both sides: a con
 
 Privileged or policy-sensitive human admission does not freeze Security authority when MFA/step-up first passes. The same principal-bound authentication-strength evidence is evaluated against the current Security policy before the owning authorization decision and re-evaluated after that decision, immediately before final protected-operation admission. Policy hardening, stale assurance or loss of proof during the decision window fails closed; an earlier step-up result is not durable authority.
 
-Cross-tenant privileged operations remain distinct platform operations. A valid platform-admin principal, permission and authentication-strength result cannot route such an operation through the ordinary `runtime.api@1` application boundary; the accepted `runtime.control-plane@1` / `ingress.privileged-platform@1` boundary is required independently.
+Cross-tenant privileged operations remain distinct platform operations. A valid platform-admin principal, permission, authentication-strength result or caller-selected `RuntimeBinding` cannot route such an operation through the ordinary `runtime.api@1` application boundary. The actual executing runtime is resolved through a trusted current-runtime authority and must prove the exact accepted `runtime.control-plane@1` + `principal.control-plane@1` + `isolation.control-plane@1` + `ingress.privileged-platform@1` binding, active lifecycle, currentness and an allowed environment. A typed `CONTROL_PLANE` constant is an expected contract, not execution authority.
+
+Owning membership/permission/resource authorization is also not durable merely because an earlier `AuthorizationDecision` said `current=True`. Wave 1 evaluates owning authorization before the post-authorization placement/assurance/principal checks and evaluates it again as the final admission check. If currentness or permission is revoked in that window, admission fails closed. The final decision remains an admission result, not durable effect authority; effectful paths still consume the applicable current/fenced/atomic authority at their effect boundary.
 
 Fence scope/epoch/generation equality is necessary but not sufficient for a protected effect. A typed `FenceRecord` supplied by a caller is not currentness evidence. The portable Wave 1 predicate resolves the current record from the owning fence authority and requires its state to be exactly `active` before comparing scope, epoch and generation. For co-resident PostgreSQL effects, even that preflight result is insufficient: the current fence predicate and protected mutation must execute in the same database transaction. `quarantined`, `retired` or any other syntactically valid state cannot admit a protected effect and cannot use the ordinary successor compare-and-advance path to resurrect effect eligibility. Recovery/state-transition authority remains separately governed by the accepted Phase 13/15 lifecycle and recovery predicates.
 
-An already-present `platform.authority_fences` object is not automatically conforming. The follow-on revalidation migration applies the canonical identifier/positive-epoch contract to persisted rows and validates historical state without rewriting or deleting authority data merely to make validation pass.
+An already-present `platform.authority_fences` object is not automatically conforming. The follow-on revalidation migration applies the canonical identifier/positive-epoch contract to persisted rows and validates historical state without rewriting or deleting authority data merely to make validation pass. Direct ACL cleanliness is not enough: before C2 role mapping, the migration-owner role must also have no direct or transitive `pg_auth_members` path by which another role can assume or inherit owner authority. This conservative check does not claim to remove PostgreSQL cluster-superuser power; it closes owner-role membership laundering inside the modeled role boundary.
 
 ## Explicitly not selected here
 
@@ -49,7 +51,7 @@ The following remain C2 implementation choices and are not made canonical by cod
 - CSRF mechanism/product beyond fixed Phase 09 semantics;
 - workload-identity issuer/attestation backend;
 - service mesh;
-- secret manager/KMS product;
+- secret manager/KMS;
 - configuration-distribution product;
 - orchestrator/scheduler;
 - ingress/load-balancer product;
@@ -80,7 +82,9 @@ NOT-YET-CURRENT AUTH TRANSACTION != AUTHENTICATION AUTHORITY
 WORKLOAD IDENTITY != TENANT AUTHORITY
 NETWORK PRESENCE != TRUST
 TENANT ID INPUT != TENANT CONTEXT
+CALLER-SELECTED RUNTIME BINDING != EXECUTING RUNTIME AUTHORITY
 CROSS-TENANT PLATFORM AUTHORITY != APPLICATION RUNTIME AUTHORITY
+EARLIER AUTHORIZATION GRANT != FINAL CURRENT AUTHORIZATION
 PLACEMENT CACHE HIT != GLOBAL AUTHORITY
 ENVIRONMENT LABEL != AUTHORIZATION
 UNCLASSIFIED/UNTYPED CONFIG != RUNTIME-ADMISSIBLE CONFIG
@@ -88,6 +92,7 @@ TYPED FENCE RECORD != CURRENT EFFECT AUTHORITY
 FENCE SCOPE/EPOCH/GENERATION MATCH != EFFECT AUTHORITY WITHOUT ACTIVE STATE
 NON-ACTIVE FENCE STATE != ORDINARY SUCCESSOR AUTHORITY
 PREEXISTING FENCE TABLE != PERSISTED AUTHORITY CONFORMANCE
+OWNER OBJECT ACL CLEAN != OWNER ROLE UNASSUMABLE
 FENCE TOKEN != AMBIGUOUS EFFECT ABSENCE
 SECRET REFERENCE != SECRET VALUE
 IMPLEMENTATION MANIFEST != AUTHORIZED GIT DELTA BY ITSELF

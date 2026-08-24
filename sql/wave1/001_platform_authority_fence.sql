@@ -74,7 +74,10 @@ $$;
 REVOKE ALL ON FUNCTION platform.initialize_authority_fence(text, text, text) FROM PUBLIC;
 
 -- Successor acquisition is compare-and-advance. Exactly one concurrent caller
--- can win for one exact expected predecessor (scope + epoch + generation).
+-- can win for one exact expected active predecessor (scope + epoch + generation).
+-- A quarantined/retired/unknown predecessor cannot be advanced through this
+-- ordinary effect-authority path; recovery/state-transition flows require their
+-- separately governed authority and cannot resurrect effect eligibility here.
 -- BIGINT exhaustion fails closed. Canonical row CHECK constraints apply to the
 -- successor generation/state in the same statement; malformed identifiers cannot
 -- become persisted authority merely because a caller reached this function.
@@ -102,6 +105,7 @@ AS $$
      WHERE authority_fences.fence_scope_id = p_fence_scope_id
        AND authority_fences.current_fence_epoch = p_expected_predecessor_epoch
        AND authority_fences.current_generation_id = p_expected_predecessor_generation_id
+       AND authority_fences.authority_state = 'active'
        AND authority_fences.current_fence_epoch < 9223372036854775807
        AND btrim(p_expected_predecessor_generation_id) <> ''
        AND btrim(p_successor_generation_id) <> ''
@@ -118,10 +122,10 @@ $$;
 
 REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text, text) FROM PUBLIC;
 
--- Co-resident protected mutations MUST bind the scope, epoch and generation in
--- the same PostgreSQL transaction as the protected effect. A separate prior
--- SELECT/check is not sufficient authority and is intentionally not provided as
--- a convenience function here.
+-- Co-resident protected mutations MUST bind an effect-eligible current authority
+-- state plus the scope, epoch and generation in the same PostgreSQL transaction
+-- as the protected effect. A separate prior SELECT/check is not sufficient
+-- authority and is intentionally not provided as a convenience function here.
 --
 -- GRANTs are deliberately absent: an implementation must explicitly bind the
 -- least-privilege migration/control principal to these objects in a separately

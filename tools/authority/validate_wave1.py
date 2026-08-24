@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 import sys
 
@@ -18,6 +19,24 @@ from jlmirror_authority.runtime_profiles import WAVE1_RUNTIME_BINDINGS  # noqa: 
 from tools.contracts.core import build_bundle  # noqa: E402
 
 PROFILE = "jlmirror-wave1-authority/v1"
+AUTHORITY_BASE = "main@5b56ad94566b48b72a993ee8f5cf7e983127ab21"
+EXPECTED_SLICES = {
+    "impl.identity-bff@1",
+    "impl.control-plane@1",
+    "impl.platform-runtime@1",
+}
+EXPECTED_C2 = {
+    "identity_provider",
+    "session_store",
+    "csrf_mechanism",
+    "workload_identity_issuer_attestation_backend",
+    "service_mesh",
+    "secret_manager_kms",
+    "configuration_distribution",
+    "orchestrator_scheduler",
+    "ingress_load_balancer",
+    "physical_environment_mapping",
+}
 
 
 def _third_party_import_findings() -> list[str]:
@@ -124,6 +143,31 @@ def _no_product_route_findings() -> list[str]:
     return findings
 
 
+def _implementation_manifest_findings() -> list[str]:
+    path = ROOT / "implementation" / "wave-1" / "IMPLEMENTATION_MANIFEST.json"
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"Wave 1 implementation manifest unreadable: {exc}"]
+
+    findings: list[str] = []
+    if manifest.get("authority_base") != AUTHORITY_BASE:
+        findings.append("Wave 1 implementation manifest authority_base drift")
+    if set(manifest.get("implementation_slices", [])) != EXPECTED_SLICES:
+        findings.append("Wave 1 implementation manifest slice set drift")
+    if manifest.get("scope") != "authority_skeleton_only":
+        findings.append("Wave 1 implementation manifest scope drift")
+    if manifest.get("product_feature_activation") != "none":
+        findings.append("Wave 1 must not activate Product features")
+    if manifest.get("next_wave_authorized") is not False:
+        findings.append("Wave 1 manifest must not authorize the next wave")
+    if set(manifest.get("residual_c2_choices_not_selected", [])) != EXPECTED_C2:
+        findings.append("Wave 1 residual C2 non-selection set drift")
+    if manifest.get("closed_protocol_profiles") != ["IR-D-001", "IR-D-002", "IR-D-003"]:
+        findings.append("Wave 1 closed protocol profile set drift")
+    return findings
+
+
 def validate() -> list[str]:
     findings: list[str] = []
     findings.extend(_third_party_import_findings())
@@ -131,6 +175,7 @@ def validate() -> list[str]:
     findings.extend(_fence_sql_findings())
     findings.extend(_required_boundary_source_findings())
     findings.extend(_no_product_route_findings())
+    findings.extend(_implementation_manifest_findings())
     return findings
 
 

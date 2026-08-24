@@ -44,6 +44,7 @@
     "environment_label_for_authorization",
     "caller_tenant_id_for_tenant_context",
     "untyped_config_for_classified_config",
+    "self_asserted_configuration_schema_for_current_authority",
     "non_active_fence_state_for_effect_authority",
     "fence_token_for_effect_absence",
     "secret_reference_for_secret_value"

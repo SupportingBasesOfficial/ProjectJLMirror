@@ -34,7 +34,12 @@ class AlwaysPermitStrengthPolicy:
         return True
 
 
-def strength_for(principal_id: str | None) -> AuthenticationStrengthEvidence:
+def strength_for(
+    principal_id: str | None,
+    credential_generation: str | None = None,
+) -> AuthenticationStrengthEvidence:
+    if principal_id is not None and credential_generation is None:
+        credential_generation = "identity-g1"
     return AuthenticationStrengthEvidence(
         issuer="id.example",
         acr="loa2",
@@ -43,11 +48,21 @@ def strength_for(principal_id: str | None) -> AuthenticationStrengthEvidence:
         evidence_expires_at=NOW + timedelta(minutes=5),
         policy_version="security-policy-v7",
         principal_id=principal_id,
+        principal_credential_generation=credential_generation,
     )
 
 
 class SessionAuthority:
     def create(self, record):
+        return True
+
+
+class CapturingSessionAuthority:
+    def __init__(self):
+        self.record = None
+
+    def create(self, record):
+        self.record = record
         return True
 
 
@@ -57,7 +72,7 @@ class AuthenticationStrengthBindingTests(unittest.TestCase):
             require_authentication_strength(
                 policy=AlwaysPermitStrengthPolicy(),
                 policy_id="privileged-v1",
-                evidence=strength_for("user-a"),
+                evidence=strength_for("user-a", "session-g2"),
                 principal=Principal(
                     "user-b", PrincipalKind.HUMAN_BROWSER_SESSION, "session-g2"
                 ),
@@ -76,6 +91,18 @@ class AuthenticationStrengthBindingTests(unittest.TestCase):
                 now=NOW,
             )
 
+    def test_same_principal_other_session_strength_evidence_fails(self):
+        with self.assertRaises(AdmissionDenied):
+            require_authentication_strength(
+                policy=AlwaysPermitStrengthPolicy(),
+                policy_id="privileged-v1",
+                evidence=strength_for("user-a", "session-old"),
+                principal=Principal(
+                    "user-a", PrincipalKind.HUMAN_BROWSER_SESSION, "session-current"
+                ),
+                now=NOW,
+            )
+
     def test_strength_evidence_cannot_be_attached_to_another_users_session(self):
         with self.assertRaises(AdmissionDenied):
             issue_browser_session(
@@ -85,8 +112,37 @@ class AuthenticationStrengthBindingTests(unittest.TestCase):
                 ),
                 now=NOW,
                 lifetime=timedelta(minutes=30),
-                authentication_strength=strength_for("user-a"),
+                authentication_strength=strength_for("user-a", "identity-g1"),
             )
+
+    def test_strength_evidence_from_other_generation_cannot_be_attached_to_same_user(self):
+        with self.assertRaises(AdmissionDenied):
+            issue_browser_session(
+                authority=SessionAuthority(),
+                principal=Principal(
+                    "user-a", PrincipalKind.HUMAN_BROWSER_SESSION, "identity-current"
+                ),
+                now=NOW,
+                lifetime=timedelta(minutes=30),
+                authentication_strength=strength_for("user-a", "identity-old"),
+            )
+
+    def test_session_authority_rebinds_matching_assurance_to_new_session_generation(self):
+        authority = CapturingSessionAuthority()
+        source = Principal("user-a", PrincipalKind.HUMAN_BROWSER_SESSION, "identity-current")
+        issue_browser_session(
+            authority=authority,
+            principal=source,
+            now=NOW,
+            lifetime=timedelta(minutes=30),
+            authentication_strength=strength_for("user-a", "identity-current"),
+        )
+        self.assertIsNotNone(authority.record)
+        self.assertEqual(authority.record.authentication_strength.principal_id, "user-a")
+        self.assertEqual(
+            authority.record.authentication_strength.principal_credential_generation,
+            authority.record.session_generation,
+        )
 
 
 class ConfigurationTypeBoundaryTests(unittest.TestCase):

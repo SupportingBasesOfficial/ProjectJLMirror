@@ -157,6 +157,17 @@ class ReplayAuthority:
             return ReplayClaim.CLAIMED
 
 
+class PrincipalAuthority:
+    def __init__(self, result=True):
+        self.result = result
+
+    def is_current(self, **kwargs):
+        return self.result
+
+
+PRINCIPAL_AUTHORITY = PrincipalAuthority()
+
+
 class PlacementAuthority:
     def __init__(self, evidence):
         self.evidence = evidence
@@ -256,6 +267,7 @@ def construct_context(
     evidence = authority.evidence
     values = dict(
         principal=principal,
+        principal_authority=PRINCIPAL_AUTHORITY,
         placement_authority=authority,
         tenant_id=evidence.tenant_id,
         destination_cell_id=evidence.cell_id,
@@ -614,6 +626,7 @@ class ControlPlaneTests(unittest.TestCase):
             with self.assertRaises(AdmissionDenied):
                 authorize_protected_operation(
                     principal=human_principal(),
+                    principal_authority=PRINCIPAL_AUTHORITY,
                     declaration=declaration,
                     placement_authority=placement_authority,
                     authorization_authority=authz,
@@ -638,6 +651,7 @@ class ControlPlaneTests(unittest.TestCase):
             with self.subTest(principal=principal), self.assertRaises(AdmissionDenied):
                 authorize_protected_operation(
                     principal=principal,
+                    principal_authority=PRINCIPAL_AUTHORITY,
                     declaration=declaration,
                     placement_authority=placement_authority,
                     authorization_authority=AuthzAuthority(),
@@ -669,6 +683,7 @@ class ControlPlaneTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(AdmissionDenied):
                 authorize_protected_operation(
                     principal=human_principal(),
+                    principal_authority=PRINCIPAL_AUTHORITY,
                     declaration=declaration,
                     placement_authority=authority,
                     authorization_authority=AuthzAuthority(),
@@ -690,6 +705,7 @@ class ControlPlaneTests(unittest.TestCase):
         with self.assertRaises(AdmissionDenied):
             authorize_protected_operation(
                 principal=human_principal(),
+                principal_authority=PRINCIPAL_AUTHORITY,
                 declaration=declaration,
                 placement_authority=authority,
                 authorization_authority=AuthzAuthority(),
@@ -712,6 +728,7 @@ class ControlPlaneTests(unittest.TestCase):
         with self.assertRaises(AdmissionDenied):
             authorize_protected_operation(
                 principal=principal,
+                principal_authority=PRINCIPAL_AUTHORITY,
                 declaration=declaration,
                 placement_authority=placement_authority,
                 authorization_authority=AuthzAuthority(granted=True),

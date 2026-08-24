@@ -33,6 +33,14 @@ from jlmirror_authority.runtime_profiles import (  # noqa: E402
 NOW = datetime(2026, 8, 24, 4, 0, tzinfo=timezone.utc)
 
 
+class PrincipalAuthority:
+    def is_current(self, **kwargs):
+        return True
+
+
+PRINCIPAL_AUTHORITY = PrincipalAuthority()
+
+
 class UnusedPlacementAuthority:
     def resolve_current(self, tenant_id):
         raise AssertionError("cross-tenant platform operation must not resolve ordinary TenantContext")
@@ -133,6 +141,7 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 principal=Principal(
                     "platform-admin-1", PrincipalKind.PLATFORM_ADMIN_PRINCIPAL, "session-g7"
                 ),
+                principal_authority=PRINCIPAL_AUTHORITY,
                 declaration=declaration,
                 placement_authority=UnusedPlacementAuthority(),
                 authorization_authority=Authz(),
@@ -156,6 +165,7 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 principal=Principal(
                     "user-1", PrincipalKind.HUMAN_BROWSER_SESSION, "session-g1"
                 ),
+                principal_authority=PRINCIPAL_AUTHORITY,
                 declaration=declaration,
                 placement_authority=UnusedPlacementAuthority(),
                 authorization_authority=Authz(),
@@ -182,6 +192,7 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
         with self.assertRaises(AdmissionDenied):
             authorize_protected_operation(
                 principal=principal,
+                principal_authority=PRINCIPAL_AUTHORITY,
                 declaration=declaration,
                 placement_authority=UnusedPlacementAuthority(),
                 authorization_authority=Authz(),
@@ -194,6 +205,7 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
         with self.assertRaises(AdmissionDenied):
             authorize_protected_operation(
                 principal=principal,
+                principal_authority=PRINCIPAL_AUTHORITY,
                 declaration=declaration,
                 placement_authority=UnusedPlacementAuthority(),
                 authorization_authority=Authz(),
@@ -205,6 +217,7 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
             )
         decision = authorize_protected_operation(
             principal=principal,
+            principal_authority=PRINCIPAL_AUTHORITY,
             declaration=declaration,
             placement_authority=UnusedPlacementAuthority(),
             authorization_authority=Authz(),

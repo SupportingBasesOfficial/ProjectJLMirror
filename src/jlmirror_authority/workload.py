@@ -10,6 +10,7 @@ from .model import AdmissionDenied, EnvironmentClass, Principal, PrincipalKind
 _TRUST_DOMAIN_RE = re.compile(r"^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$")
 _SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")
 _RUNTIME_PROFILE_RE = re.compile(r"^runtime\.[a-z0-9-]+(?:\.[a-z0-9-]+)*@[1-9][0-9]*$")
+_AUTHORITY_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$")
 
 
 def _explicit(value: object, field: str) -> str:
@@ -20,6 +21,12 @@ def _explicit(value: object, field: str) -> str:
         or any(ord(char) < 0x20 or ord(char) == 0x7F for char in value)
     ):
         raise ValueError(f"{field} must be an explicit canonical string")
+    return value
+
+
+def _authority_identifier(value: object, field: str) -> str:
+    if not isinstance(value, str) or not _AUTHORITY_ID_RE.fullmatch(value):
+        raise ValueError(f"{field} must be a canonical authority identifier")
     return value
 
 
@@ -77,8 +84,10 @@ class VerifiedWorkloadPeer:
         not_after = _utc(self.certificate_not_after)
         if not_after <= not_before:
             raise ValueError("workload certificate validity interval is malformed")
-        _explicit(self.trust_bundle_generation, "trust_bundle_generation")
-        _explicit(self.workload_credential_generation, "workload_credential_generation")
+        _authority_identifier(self.trust_bundle_generation, "trust_bundle_generation")
+        _authority_identifier(
+            self.workload_credential_generation, "workload_credential_generation"
+        )
 
 
 def parse_workload_identity(value: str) -> WorkloadIdentity:
@@ -136,10 +145,10 @@ def admit_workload_peer(
         raise AdmissionDenied("workload verifier returned malformed trusted evidence")
     try:
         expected_domain = _trust_domain(expected_trust_domain, "expected_trust_domain")
-        current_bundle = _explicit(
+        current_bundle = _authority_identifier(
             current_trust_bundle_generation, "current_trust_bundle_generation"
         )
-        current_credential = _explicit(
+        current_credential = _authority_identifier(
             current_workload_credential_generation, "current_workload_credential_generation"
         )
     except ValueError as exc:
@@ -174,8 +183,6 @@ def admit_workload_peer(
     if not (_utc(peer.certificate_not_before) <= now < _utc(peer.certificate_not_after)):
         raise AdmissionDenied("workload certificate is not current")
 
-    # Deliberately returns only a service principal. Tenant/business authority must
-    # be re-established separately by the owning application boundary.
     return Principal(
         principal_id=identity.spiffe_id,
         kind=PrincipalKind.INTERNAL_SERVICE_PRINCIPAL,

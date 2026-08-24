@@ -2,8 +2,9 @@
 --
 -- Reusing an existing schema/table/function name is not privilege conformance.
 -- This migration runs before any separately reviewed C2 runtime/database grants.
--- It proves that the migration authority owns the fence objects and that no
--- other role inherits direct table/function authority from an older deployment.
+-- It proves that the migration authority owns the fence objects, that no other
+-- role retains direct object authority, and that no transitive role-membership
+-- path can assume/inherit the migration-owner authority before C2 role mapping.
 -- It does not choose role names or grant serving/runtime authority.
 
 DO $$
@@ -38,6 +39,28 @@ BEGIN
          WHERE c.oid = v_table
     ) IS DISTINCT FROM current_user::regrole::oid THEN
         RAISE EXCEPTION 'authority_fences is not owned by the current migration authority';
+    END IF;
+
+    -- Direct ACL cleanliness is insufficient if another role can assume or inherit
+    -- the owner role. Reject every direct or transitive membership path into the
+    -- current migration-owner role before any separately reviewed C2 role mapping.
+    -- This is deliberately conservative and does not attempt to treat membership
+    -- options as permission to weaken the owner boundary.
+    IF EXISTS (
+        WITH RECURSIVE owner_role_members(member_oid) AS (
+            SELECT m.member
+              FROM pg_auth_members m
+             WHERE m.roleid = current_user::regrole::oid
+            UNION
+            SELECT m.member
+              FROM pg_auth_members m
+              JOIN owner_role_members r
+                ON m.roleid = r.member_oid
+        )
+        SELECT 1
+          FROM owner_role_members
+    ) THEN
+        RAISE EXCEPTION 'current migration authority owner role is reachable through role membership';
     END IF;
 
     IF EXISTS (

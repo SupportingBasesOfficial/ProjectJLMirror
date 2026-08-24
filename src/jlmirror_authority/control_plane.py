@@ -23,6 +23,7 @@ from .model import (
 from .runtime_profiles import API_AUTH_BOUNDARY, RuntimeBinding, WAVE1_RUNTIME_BINDINGS
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$")
+_PROFILE_ID_RE = re.compile(r"^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)+@[1-9][0-9]*$")
 
 
 class RuntimeLifecycle(str, Enum):
@@ -42,6 +43,12 @@ def _identifier(value: object, field: str) -> str:
     return value
 
 
+def _profile_id(value: object, field: str, prefix: str) -> str:
+    if not isinstance(value, str) or not _PROFILE_ID_RE.fullmatch(value) or not value.startswith(prefix):
+        raise ValueError(f"{field} must be a canonical {prefix} profile id")
+    return value
+
+
 def _strict_bool(value: object, field: str) -> bool:
     if type(value) is not bool:
         raise ValueError(f"{field} must be a boolean")
@@ -56,12 +63,18 @@ def _strict_positive_int(value: object, field: str) -> int:
 
 @dataclass(frozen=True)
 class PlacementEvidence:
-    """Trusted Control-Plane/cell-admission evidence, never caller input."""
+    """Trusted Control-Plane/cell-admission evidence, never caller input.
+
+    `isolation_class` is the tenant placement/isolation class. The distinct
+    `runtime_isolation_class` is the Phase 13 process/runtime profile binding.
+    """
 
     tenant_id: str
     cell_id: str
     placement_version: str
     runtime_generation: str
+    runtime_profile_id: str
+    runtime_isolation_class: str
     configuration_generation: str
     workload_credential_generation: str
     network_policy_generation: str
@@ -87,6 +100,12 @@ class PlacementEvidence:
             "fence_scope_id",
         ):
             _identifier(getattr(self, field), field)
+        _profile_id(self.runtime_profile_id, "runtime_profile_id", "runtime.")
+        _profile_id(
+            self.runtime_isolation_class,
+            "runtime_isolation_class",
+            "isolation.",
+        )
         if not isinstance(self.environment_class, EnvironmentClass):
             raise ValueError("environment_class must be canonical")
         if not isinstance(self.runtime_lifecycle, RuntimeLifecycle):
@@ -145,6 +164,26 @@ def _placement_is_admissible(evidence: PlacementEvidence) -> bool:
     )
 
 
+def _placement_matches_runtime_binding(
+    evidence: PlacementEvidence, runtime_binding: RuntimeBinding
+) -> bool:
+    return (
+        evidence.runtime_profile_id == runtime_binding.runtime_profile_id
+        and evidence.runtime_isolation_class == runtime_binding.isolation_class
+        and evidence.environment_class in runtime_binding.allowed_environment_classes
+    )
+
+
+def _context_matches_runtime_binding(
+    context: TenantContext, runtime_binding: RuntimeBinding
+) -> bool:
+    return (
+        context.runtime_profile_id == runtime_binding.runtime_profile_id
+        and context.runtime_isolation_class == runtime_binding.isolation_class
+        and context.environment_class in runtime_binding.allowed_environment_classes
+    )
+
+
 def _placement_matches_context(evidence: PlacementEvidence, context: TenantContext) -> bool:
     return (
         _placement_is_admissible(evidence)
@@ -152,6 +191,8 @@ def _placement_matches_context(evidence: PlacementEvidence, context: TenantConte
         and evidence.cell_id == context.cell_id
         and evidence.placement_version == context.placement_version
         and evidence.runtime_generation == context.runtime_generation
+        and evidence.runtime_profile_id == context.runtime_profile_id
+        and evidence.runtime_isolation_class == context.runtime_isolation_class
         and evidence.configuration_generation == context.configuration_generation
         and evidence.workload_credential_generation == context.workload_credential_generation
         and evidence.network_policy_generation == context.network_policy_generation
@@ -160,6 +201,11 @@ def _placement_matches_context(evidence: PlacementEvidence, context: TenantConte
         and evidence.fence_scope_id == context.fence_scope_id
         and evidence.fence_epoch == context.fence_epoch
     )
+
+
+def _require_wave1_runtime_binding(runtime_binding: RuntimeBinding) -> None:
+    if not isinstance(runtime_binding, RuntimeBinding) or runtime_binding not in WAVE1_RUNTIME_BINDINGS:
+        raise AdmissionDenied("runtime binding is not an exact accepted Wave 1 profile")
 
 
 def construct_tenant_context(
@@ -184,8 +230,7 @@ def construct_tenant_context(
 
     if not isinstance(principal, Principal) or principal.active is not True:
         raise AdmissionDenied("current authenticated principal cannot be established")
-    if not isinstance(runtime_binding, RuntimeBinding) or runtime_binding not in WAVE1_RUNTIME_BINDINGS:
-        raise AdmissionDenied("TenantContext runtime binding is not an accepted Wave 1 profile")
+    _require_wave1_runtime_binding(runtime_binding)
     if not isinstance(required_environment, EnvironmentClass):
         raise AdmissionDenied("destination runtime environment authority is not canonical")
 
@@ -207,6 +252,8 @@ def construct_tenant_context(
     if evidence.environment_class is not required_environment:
         raise AdmissionDenied("runtime environment class does not match destination authority")
     runtime_binding.admit_environment(evidence.environment_class)
+    if not _placement_matches_runtime_binding(evidence, runtime_binding):
+        raise AdmissionDenied("placement runtime profile/isolation does not match this authority boundary")
     if not _placement_is_admissible(evidence):
         raise AdmissionDenied("placement/runtime/cell admission currentness cannot be proven")
 
@@ -219,6 +266,8 @@ def construct_tenant_context(
             cell_id=evidence.cell_id,
             placement_version=evidence.placement_version,
             runtime_generation=evidence.runtime_generation,
+            runtime_profile_id=evidence.runtime_profile_id,
+            runtime_isolation_class=evidence.runtime_isolation_class,
             configuration_generation=evidence.configuration_generation,
             workload_credential_generation=evidence.workload_credential_generation,
             network_policy_generation=evidence.network_policy_generation,
@@ -246,11 +295,13 @@ def authorize_protected_operation(
     now: datetime,
     strength_policy: AuthenticationStrengthPolicyPort | None = None,
     strength_evidence: AuthenticationStrengthEvidence | None = None,
+    runtime_binding: RuntimeBinding = API_AUTH_BOUNDARY,
 ) -> AuthorizationDecision:
     if not isinstance(principal, Principal) or principal.active is not True:
         raise AdmissionDenied("principal/credential is retired or malformed")
     if not isinstance(declaration, AuthorizationDeclaration):
         raise AdmissionDenied("authorization declaration is malformed or unreviewed")
+    _require_wave1_runtime_binding(runtime_binding)
 
     requirement = declaration.tenant_requirement
     if requirement is TenantRequirement.REQUIRED and context is None:
@@ -266,6 +317,8 @@ def authorize_protected_operation(
     if context is not None:
         if not isinstance(context, TenantContext) or not context.matches_principal(principal):
             raise AdmissionDenied("TenantContext principal binding does not match current principal")
+        if not _context_matches_runtime_binding(context, runtime_binding):
+            raise AdmissionDenied("TenantContext runtime profile/isolation does not match this authority boundary")
         if placement_authority.context_is_current(context) is not True:
             raise AdmissionDenied("TenantContext placement/currentness narrowing gate denied")
         current_placement = placement_authority.resolve_current(context.tenant_id)
@@ -273,6 +326,8 @@ def authorize_protected_operation(
             current_placement, context
         ):
             raise AdmissionDenied("TenantContext no longer matches exact current runtime/placement authority")
+        if not _placement_matches_runtime_binding(current_placement, runtime_binding):
+            raise AdmissionDenied("current placement no longer matches this runtime authority boundary")
     if declaration.scope in {ScopeClass.TENANT, ScopeClass.RESOURCE} and context is None:
         raise AdmissionDenied("tenant/resource scope requires current TenantContext")
 

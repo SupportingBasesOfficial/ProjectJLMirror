@@ -261,6 +261,27 @@ def _require_privileged_human_assurance_declaration(
         )
 
 
+def _require_declared_authentication_strength(
+    *,
+    principal: Principal,
+    declaration: AuthorizationDeclaration,
+    strength_policy: AuthenticationStrengthPolicyPort | None,
+    strength_evidence: AuthenticationStrengthEvidence | None,
+    now: datetime,
+) -> None:
+    if declaration.step_up is StepUpClass.NONE:
+        return
+    if not declaration.authentication_strength_policy_id or strength_policy is None:
+        raise AdmissionDenied("required authentication-strength authority is unavailable")
+    require_authentication_strength(
+        policy=strength_policy,
+        policy_id=declaration.authentication_strength_policy_id,
+        evidence=strength_evidence,
+        principal=principal,
+        now=_utc(now),
+    )
+
+
 def construct_tenant_context(
     *,
     principal: Principal,
@@ -426,16 +447,13 @@ def authorize_protected_operation(
     if declaration.scope in {ScopeClass.TENANT, ScopeClass.RESOURCE} and context is None:
         raise AdmissionDenied("tenant/resource scope requires current TenantContext")
 
-    if declaration.step_up is not StepUpClass.NONE:
-        if not declaration.authentication_strength_policy_id or strength_policy is None:
-            raise AdmissionDenied("required authentication-strength authority is unavailable")
-        require_authentication_strength(
-            policy=strength_policy,
-            policy_id=declaration.authentication_strength_policy_id,
-            evidence=strength_evidence,
-            principal=principal,
-            now=_utc(now),
-        )
+    _require_declared_authentication_strength(
+        principal=principal,
+        declaration=declaration,
+        strength_policy=strength_policy,
+        strength_evidence=strength_evidence,
+        now=now,
+    )
 
     # Recheck current credential/session after placement and step-up evaluation,
     # immediately before the owning authorization decision.
@@ -469,6 +487,18 @@ def authorize_protected_operation(
             raise AdmissionDenied("placement/runtime authority changed during authorization")
         if not _placement_matches_runtime_binding(final_placement, runtime_binding):
             raise AdmissionDenied("current placement no longer matches this runtime authority boundary")
+
+    # Security-owned authentication-strength policy can harden while the owning
+    # authorization decision is being evaluated. Revalidate the same principal-
+    # bound assurance immediately before final admission; an earlier MFA/step-up
+    # result is not durable authority.
+    _require_declared_authentication_strength(
+        principal=principal,
+        declaration=declaration,
+        strength_policy=strength_policy,
+        strength_evidence=strength_evidence,
+        now=now,
+    )
 
     # A credential/session revoked while authorization was being evaluated cannot
     # be converted into a successful protected-operation admission.

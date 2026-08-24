@@ -15,8 +15,8 @@ from .model import (
 
 
 def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("time must be timezone-aware")
+    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("time must be a timezone-aware datetime")
     return value.astimezone(timezone.utc)
 
 
@@ -55,8 +55,10 @@ class BrowserSessionRecord:
     def __post_init__(self) -> None:
         if len(self.handle_digest) != 64 or any(c not in "0123456789abcdef" for c in self.handle_digest):
             raise ValueError("session handle digest must be lowercase SHA-256 hex")
-        if not self.session_generation:
+        if not isinstance(self.session_generation, str) or not self.session_generation:
             raise ValueError("session_generation is required")
+        if type(self.retired) is not bool:
+            raise ValueError("retired must be a boolean")
         if self.principal.kind not in {
             PrincipalKind.HUMAN_BROWSER_SESSION,
             PrincipalKind.PLATFORM_ADMIN_PRINCIPAL,
@@ -71,15 +73,15 @@ class BrowserSessionRecord:
 
     def is_current(self, now: datetime) -> bool:
         return (
-            not self.retired
-            and self.principal.active
+            self.retired is False
+            and self.principal.active is True
             and _utc(self.created_at) <= _utc(now) < _utc(self.expires_at)
         )
 
 
 class SessionAuthorityPort(Protocol):
     def create(self, record: BrowserSessionRecord) -> bool:
-        """Atomically create one session record; False means collision/conflict."""
+        """Atomically create one session record; only literal True means success."""
 
     def resolve(self, handle_digest: str) -> BrowserSessionRecord | None:
         """Resolve server-side authority by opaque-handle digest."""
@@ -91,10 +93,10 @@ class SessionAuthorityPort(Protocol):
         expected_predecessor_generation: str,
         successor: BrowserSessionRecord,
     ) -> bool:
-        """Atomically retire predecessor and create successor, or fail closed."""
+        """Atomically retire predecessor and create successor; only literal True wins."""
 
     def retire(self, *, handle_digest: str, expected_generation: str) -> bool:
-        """Atomically retire/revoke the expected current session generation."""
+        """Atomically retire/revoke expected current generation; only literal True wins."""
 
 
 def _new_handle() -> BrowserSessionHandle:
@@ -110,8 +112,8 @@ def _new_record(
     authentication_strength: AuthenticationStrengthEvidence | None,
 ) -> BrowserSessionRecord:
     now = _utc(now)
-    if lifetime <= timedelta(0):
-        raise ValueError("session lifetime must be positive")
+    if not isinstance(lifetime, timedelta) or lifetime <= timedelta(0):
+        raise ValueError("session lifetime must be a positive timedelta")
     if principal.kind not in {
         PrincipalKind.HUMAN_BROWSER_SESSION,
         PrincipalKind.PLATFORM_ADMIN_PRINCIPAL,
@@ -153,7 +155,7 @@ def issue_browser_session(
             lifetime=lifetime,
             authentication_strength=authentication_strength,
         )
-        if authority.create(record):
+        if authority.create(record) is True:
             return handle
     raise AdmissionDenied("cannot establish unique server-side browser session authority")
 
@@ -162,8 +164,8 @@ def resolve_browser_session(
     *, authority: SessionAuthorityPort, handle: BrowserSessionHandle, now: datetime
 ) -> BrowserSessionRecord:
     record = authority.resolve(handle.digest)
-    if record is None or record.handle_digest != handle.digest:
-        raise AdmissionDenied("browser session is absent or unknown")
+    if not isinstance(record, BrowserSessionRecord) or record.handle_digest != handle.digest:
+        raise AdmissionDenied("browser session is absent, unknown or malformed")
     if not record.is_current(now):
         raise AdmissionDenied("browser session is expired, retired or not current")
     return record
@@ -190,11 +192,11 @@ def rotate_browser_session(
             else current.authentication_strength
         ),
     )
-    if not authority.rotate(
+    if authority.rotate(
         predecessor_handle_digest=predecessor.digest,
         expected_predecessor_generation=current.session_generation,
         successor=successor,
-    ):
+    ) is not True:
         raise AdmissionDenied("browser session rotation lost current-authority race")
     return successor_handle
 
@@ -203,8 +205,8 @@ def retire_browser_session(
     *, authority: SessionAuthorityPort, handle: BrowserSessionHandle, now: datetime
 ) -> None:
     current = resolve_browser_session(authority=authority, handle=handle, now=now)
-    if not authority.retire(
+    if authority.retire(
         handle_digest=handle.digest,
         expected_generation=current.session_generation,
-    ):
+    ) is not True:
         raise AdmissionDenied("browser session retirement lost current-authority race")

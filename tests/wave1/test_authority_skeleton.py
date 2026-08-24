@@ -68,6 +68,7 @@ OIDC_ISSUER = "https://id.example"
 OIDC_CLIENT = "bff"
 OIDC_REDIRECT = "https://app.example/callback"
 MACHINE_MAX_LIFETIME = timedelta(minutes=5)
+BROWSER_TRANSACTION_LIFETIME = timedelta(minutes=5)
 
 
 def human_principal(identifier: str = "user-1", generation: str = "session-g1") -> Principal:
@@ -81,6 +82,7 @@ def begin_auth(session_binding: str = "browser-session-A"):
         expected_client_id=OIDC_CLIENT,
         expected_redirect_uri=OIDC_REDIRECT,
         now=NOW,
+        lifetime=BROWSER_TRANSACTION_LIFETIME,
     )
 
 

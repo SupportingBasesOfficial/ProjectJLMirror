@@ -186,8 +186,10 @@ def complete_browser_auth(
 ) -> tuple[Principal, AuthenticationStrengthEvidence]:
     now = _utc(now)
     transaction = transaction_authority.consume(transaction_id)
-    if transaction is None:
-        raise AdmissionDenied("authorization transaction absent, expired or already consumed")
+    if not isinstance(transaction, BrowserAuthTransaction):
+        raise AdmissionDenied("authorization transaction absent, malformed or already consumed")
+    if transaction.transaction_id != transaction_id:
+        raise AdmissionDenied("authorization transaction authority returned the wrong transaction")
     if now >= _utc(transaction.expires_at):
         raise AdmissionDenied("authorization transaction expired")
     if not hmac.compare_digest(transaction.initiating_session_digest, _digest(initiating_session_binding)):
@@ -225,6 +227,7 @@ def complete_browser_auth(
             evidence_expires_at=verified.token_expires_at,
             policy_version=verified.policy_version,
             principal_id=verified.principal_id,
+            principal_credential_generation=principal.credential_generation,
         )
     except (AttributeError, TypeError, ValueError) as exc:
         raise AdmissionDenied("OIDC verifier evidence is not canonical") from exc
@@ -256,5 +259,7 @@ def require_authentication_strength(
         raise AdmissionDenied("current authentication-strength evidence cannot be proven")
     if evidence.principal_id != principal.principal_id:
         raise AdmissionDenied("authentication-strength evidence belongs to another principal")
+    if evidence.principal_credential_generation != principal.credential_generation:
+        raise AdmissionDenied("authentication-strength evidence belongs to another credential/session generation")
     if policy.permits(policy_id=policy_id, evidence=evidence, now=_utc(now)) is not True:
         raise AdmissionDenied("current authentication-strength policy is not satisfied")

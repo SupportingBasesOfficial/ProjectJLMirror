@@ -14,6 +14,7 @@ from jlmirror_authority.browser import begin_browser_auth, complete_browser_auth
 from jlmirror_authority.model import AdmissionDenied  # noqa: E402
 
 NOW = datetime(2026, 8, 24, 15, 0, tzinfo=timezone.utc)
+BROWSER_TRANSACTION_LIFETIME = timedelta(minutes=5)
 
 
 class OneShotTransactionAuthority:
@@ -45,7 +46,7 @@ class BrowserTransactionCurrentnessTests(unittest.TestCase):
             expected_client_id="bff",
             expected_redirect_uri="https://app.example/callback",
             now=NOW,
-            lifetime=timedelta(minutes=5),
+            lifetime=BROWSER_TRANSACTION_LIFETIME,
         )
         oidc = ExplodingOidcPort()
         with self.assertRaises(AdmissionDenied):
@@ -67,6 +68,7 @@ class BrowserTransactionCurrentnessTests(unittest.TestCase):
             expected_client_id="bff",
             expected_redirect_uri="https://app.example/callback",
             now=NOW,
+            lifetime=BROWSER_TRANSACTION_LIFETIME,
         )
 
         class TypedPort:

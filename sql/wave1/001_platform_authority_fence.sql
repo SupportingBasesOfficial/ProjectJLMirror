@@ -5,6 +5,13 @@
 CREATE SCHEMA IF NOT EXISTS platform;
 REVOKE CREATE ON SCHEMA platform FROM PUBLIC;
 
+-- PostgreSQL grants EXECUTE on newly created functions to PUBLIC by default.
+-- Remove that default for functions created by this migration role in this schema
+-- BEFORE any authority function is created. Explicit per-function REVOKEs below
+-- remain defense in depth and cover reruns/existing objects.
+ALTER DEFAULT PRIVILEGES IN SCHEMA platform
+    REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+
 CREATE TABLE IF NOT EXISTS platform.authority_fences (
     fence_scope_id text PRIMARY KEY CHECK (btrim(fence_scope_id) <> ''),
     current_fence_epoch bigint NOT NULL CHECK (current_fence_epoch > 0),

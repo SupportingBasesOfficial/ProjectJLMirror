@@ -32,6 +32,8 @@ The browser session cookie is an opaque capability, not an arbitrary string name
 
 Browser authorization transaction authority is time-bounded on both sides: a consumed transaction is usable only while `created_at <= now < expires_at`. Clock rollback/not-yet-current state cannot reach the IdP adapter as an authentication attempt.
 
+Privileged or policy-sensitive human admission does not freeze Security authority when MFA/step-up first passes. The same principal-bound authentication-strength evidence is evaluated against the current Security policy before the owning authorization decision and re-evaluated after that decision, immediately before final protected-operation admission. Policy hardening, stale assurance or loss of proof during the decision window fails closed; an earlier step-up result is not durable authority.
+
 Cross-tenant privileged operations remain distinct platform operations. A valid platform-admin principal, permission and authentication-strength result cannot route such an operation through the ordinary `runtime.api@1` application boundary; the accepted `runtime.control-plane@1` / `ingress.privileged-platform@1` boundary is required independently.
 
 Fence scope/epoch/generation equality is necessary but not sufficient for a protected effect. A typed `FenceRecord` supplied by a caller is not currentness evidence. The portable Wave 1 predicate resolves the current record from the owning fence authority and requires its state to be exactly `active` before comparing scope, epoch and generation. For co-resident PostgreSQL effects, even that preflight result is insufficient: the current fence predicate and protected mutation must execute in the same database transaction. `quarantined`, `retired` or any other syntactically valid state cannot admit a protected effect and cannot use the ordinary successor compare-and-advance path to resurrect effect eligibility. Recovery/state-transition authority remains separately governed by the accepted Phase 13/15 lifecycle and recovery predicates.
@@ -70,6 +72,7 @@ AUTHENTICATED != AUTHORIZED
 SESSION VALID != CURRENT AUTHORITY
 NONCANONICAL/UNBOUNDED BROWSER SESSION HANDLE != SESSION AUTHORITY
 MFA PRESENT != REQUIRED ASSURANCE CURRENT
+EARLIER STEP-UP PASS != FINAL CURRENT ASSURANCE
 AUTHENTICATION STRENGTH EVIDENCE != TRANSFERABLE PRINCIPAL AUTHORITY
 MALFORMED ADAPTER OUTPUT != TRUSTED AUTHORITY
 NONCANONICAL LOOKUP/GENERATION INPUT != C2 ADAPTER AUTHORITY

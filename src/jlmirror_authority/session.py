@@ -66,6 +66,11 @@ class BrowserSessionRecord:
             raise ValueError("browser sessions require a human browser/admin principal")
         if self.principal.credential_generation != self.session_generation:
             raise ValueError("session principal generation must equal session generation")
+        if self.authentication_strength is not None:
+            if not isinstance(self.authentication_strength, AuthenticationStrengthEvidence):
+                raise ValueError("authentication_strength must be typed trusted evidence")
+            if self.authentication_strength.principal_id != self.principal.principal_id:
+                raise ValueError("authentication-strength evidence must belong to the session principal")
         created = _utc(self.created_at)
         expires = _utc(self.expires_at)
         if expires <= created:
@@ -119,6 +124,11 @@ def _new_record(
         PrincipalKind.PLATFORM_ADMIN_PRINCIPAL,
     }:
         raise AdmissionDenied("non-human principal cannot be converted into a browser session")
+    if authentication_strength is not None:
+        if not isinstance(authentication_strength, AuthenticationStrengthEvidence):
+            raise AdmissionDenied("session authentication-strength evidence is malformed")
+        if authentication_strength.principal_id != principal.principal_id:
+            raise AdmissionDenied("session authentication-strength evidence belongs to another principal")
     session_generation = secrets.token_urlsafe(24)
     session_principal = Principal(
         principal_id=principal.principal_id,

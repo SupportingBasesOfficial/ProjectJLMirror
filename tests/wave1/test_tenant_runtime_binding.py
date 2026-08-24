@@ -38,12 +38,14 @@ class PlacementAuthority:
         return True
 
 
-def placement(environment: EnvironmentClass) -> PlacementEvidence:
-    return PlacementEvidence(
+def placement(environment: EnvironmentClass, **overrides) -> PlacementEvidence:
+    values = dict(
         tenant_id="tenant-acme",
         cell_id="cell-a",
         placement_version="pv-1",
         runtime_generation="runtime-g1",
+        runtime_profile_id="runtime.api@1",
+        runtime_isolation_class="isolation.application-serving@1",
         configuration_generation="cfg-g1",
         workload_credential_generation="wc-g1",
         network_policy_generation="np-g1",
@@ -56,6 +58,8 @@ def placement(environment: EnvironmentClass) -> PlacementEvidence:
         fence_scope_id="tenant:acme",
         fence_epoch=1,
     )
+    values.update(overrides)
+    return PlacementEvidence(**values)
 
 
 def construct(evidence, **overrides):
@@ -103,11 +107,37 @@ class TenantRuntimeBindingTests(unittest.TestCase):
         with self.assertRaises(AdmissionDenied):
             construct(evidence, runtime_binding=altered)
 
+    def test_current_placement_runtime_profile_must_match_exact_boundary(self):
+        evidence = placement(
+            EnvironmentClass.PRODUCTION,
+            runtime_profile_id="runtime.control-plane@1",
+            runtime_isolation_class="isolation.control-plane@1",
+        )
+        with self.assertRaises(AdmissionDenied):
+            construct(evidence, runtime_binding=API_AUTH_BOUNDARY)
+
+    def test_current_placement_runtime_isolation_must_match_exact_boundary(self):
+        evidence = placement(
+            EnvironmentClass.PRODUCTION,
+            runtime_isolation_class="isolation.control-plane@1",
+        )
+        with self.assertRaises(AdmissionDenied):
+            construct(evidence, runtime_binding=API_AUTH_BOUNDARY)
+
+    def test_tenant_isolation_remains_distinct_from_runtime_isolation(self):
+        evidence = placement(EnvironmentClass.PRODUCTION, isolation_class="pooled")
+        context = construct(evidence, runtime_binding=API_AUTH_BOUNDARY)
+        self.assertEqual(context.isolation_class, "pooled")
+        self.assertEqual(context.runtime_isolation_class, "isolation.application-serving@1")
+        self.assertNotEqual(context.isolation_class, context.runtime_isolation_class)
+
     def test_exact_api_runtime_binding_accepts_current_production_placement(self):
         evidence = placement(EnvironmentClass.PRODUCTION)
         context = construct(evidence, runtime_binding=API_AUTH_BOUNDARY)
         self.assertEqual(context.environment_class, EnvironmentClass.PRODUCTION)
         self.assertEqual(context.runtime_generation, "runtime-g1")
+        self.assertEqual(context.runtime_profile_id, "runtime.api@1")
+        self.assertEqual(context.runtime_isolation_class, "isolation.application-serving@1")
 
 
 if __name__ == "__main__":

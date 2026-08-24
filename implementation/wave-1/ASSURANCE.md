@@ -14,6 +14,7 @@ Required exact-HEAD evidence before merge readiness:
 - browser session capability input is bounded and canonical before session-authority lookup;
 - browser auth transaction currentness is fail-closed for both not-yet-current and expired transactions;
 - explicit cross-tenant privileged platform operations cannot be admitted through the ordinary application runtime boundary and require the accepted Control Plane runtime binding;
+- fenced effect admission resolves current state from the owning fence authority; a typed/supplied fence record is not currentness proof, and co-resident PostgreSQL effects retain the same-transaction predicate requirement;
 - persisted fence authority state is revalidated against canonical identifier/positive-epoch constraints rather than accepted by object presence;
 - no residual C2 product is silently promoted to architecture authority;
 - no Product/domain endpoint family is introduced beyond accepted authority;

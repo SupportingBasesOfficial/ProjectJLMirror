@@ -106,6 +106,24 @@ class ReferenceModelTests(unittest.TestCase):
         self.assertEqual(fence.restore(4), "quarantine_and_fence_forward")
         self.assertEqual(fence.current_epoch, 9)
 
+    def test_restore_needs_surviving_currentness_proof_even_at_same_epoch(self):
+        fence = FenceReference(current_epoch=9)
+        self.assertEqual(fence.restore(9), "quarantine_and_reconcile")
+        self.assertEqual(
+            fence.restore(9, surviving_currentness_proven=True),
+            "continuity_proven",
+        )
+
+    def test_restore_can_advance_only_with_currentness_proof(self):
+        fence = FenceReference(current_epoch=9)
+        self.assertEqual(fence.restore(10), "quarantine_and_reconcile")
+        self.assertEqual(fence.current_epoch, 9)
+        self.assertEqual(
+            fence.restore(10, surviving_currentness_proven=True),
+            "continuity_proven",
+        )
+        self.assertEqual(fence.current_epoch, 10)
+
     def test_recovery_requires_RF_reconciliation_and_current_authority(self):
         gate = RecoveryReference(
             restore_marker=10, fence_marker=14, unresolved_sequences={11, 14}

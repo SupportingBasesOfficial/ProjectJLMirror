@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
 import unittest
@@ -17,6 +17,7 @@ from jlmirror_authority.control_plane import (  # noqa: E402
 from jlmirror_authority.model import (  # noqa: E402
     AdmissionDenied,
     AuditClass,
+    AuthenticationStrengthEvidence,
     AuthorizationDeclaration,
     Principal,
     PrincipalKind,
@@ -41,14 +42,32 @@ class Authz:
         return AuthorizationDecision(granted=True, current=True, policy_revision="platform-authz-r4")
 
 
+class StrengthPolicy:
+    def permits(self, **kwargs):
+        return kwargs["policy_id"] == "platform-privileged-v1"
+
+
+def admin_strength() -> AuthenticationStrengthEvidence:
+    return AuthenticationStrengthEvidence(
+        issuer="id.example",
+        acr="loa2",
+        amr=frozenset({"pwd", "otp"}),
+        authenticated_at=NOW - timedelta(minutes=1),
+        evidence_expires_at=NOW + timedelta(minutes=5),
+        policy_version="security-policy-r7",
+        principal_id="platform-admin-1",
+        principal_credential_generation="session-g7",
+    )
+
+
 class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
     def test_legacy_tenant_required_normalizes_to_canonical_requirement(self):
         declaration = AuthorizationDeclaration(
-            action="organization.memberships.manage",
+            action="organization.memberships.read",
             scope=ScopeClass.TENANT,
             tenant_required=True,
             step_up=StepUpClass.NONE,
-            audit_class=AuditClass.PRIVILEGED,
+            audit_class=AuditClass.NORMAL,
         )
         self.assertEqual(declaration.tenant_requirement, TenantRequirement.REQUIRED)
 
@@ -69,7 +88,8 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 scope=ScopeClass.TENANT,
                 tenant_required=False,
                 tenant_requirement=TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED,
-                step_up=StepUpClass.NONE,
+                step_up=StepUpClass.REQUIRED,
+                authentication_strength_policy_id="platform-privileged-v1",
                 audit_class=AuditClass.PRIVILEGED,
             )
         with self.assertRaises(ValueError):
@@ -78,7 +98,8 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 scope=ScopeClass.PLATFORM,
                 tenant_required=False,
                 tenant_requirement=TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED,
-                step_up=StepUpClass.NONE,
+                step_up=StepUpClass.REQUIRED,
+                authentication_strength_policy_id="platform-privileged-v1",
                 audit_class=AuditClass.NORMAL,
             )
 
@@ -89,8 +110,30 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 scope=ScopeClass.PLATFORM,
                 tenant_required=True,
                 tenant_requirement=TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED,
-                step_up=StepUpClass.NONE,
+                step_up=StepUpClass.REQUIRED,
+                authentication_strength_policy_id="platform-privileged-v1",
                 audit_class=AuditClass.PRIVILEGED,
+            )
+
+    def test_privileged_human_operation_cannot_declare_step_up_none(self):
+        declaration = AuthorizationDeclaration(
+            action="platform.tenants.suspend",
+            scope=ScopeClass.PLATFORM,
+            tenant_required=False,
+            tenant_requirement=TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED,
+            step_up=StepUpClass.NONE,
+            audit_class=AuditClass.PRIVILEGED,
+        )
+        with self.assertRaises(AdmissionDenied):
+            authorize_protected_operation(
+                principal=Principal(
+                    "platform-admin-1", PrincipalKind.PLATFORM_ADMIN_PRINCIPAL, "session-g7"
+                ),
+                declaration=declaration,
+                placement_authority=UnusedPlacementAuthority(),
+                authorization_authority=Authz(),
+                context=None,
+                now=NOW,
             )
 
     def test_cross_tenant_requires_platform_principal(self):
@@ -99,7 +142,8 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
             scope=ScopeClass.PLATFORM,
             tenant_required=False,
             tenant_requirement=TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED,
-            step_up=StepUpClass.NONE,
+            step_up=StepUpClass.REQUIRED,
+            authentication_strength_policy_id="platform-privileged-v1",
             audit_class=AuditClass.PRIVILEGED,
         )
         with self.assertRaises(AdmissionDenied):
@@ -112,26 +156,43 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 authorization_authority=Authz(),
                 context=None,
                 now=NOW,
+                strength_policy=StrengthPolicy(),
+                strength_evidence=None,
             )
 
-    def test_cross_tenant_platform_principal_does_not_reuse_ordinary_tenant_context(self):
+    def test_cross_tenant_platform_principal_requires_and_consumes_current_strength(self):
         declaration = AuthorizationDeclaration(
             action="platform.tenants.suspend",
             scope=ScopeClass.PLATFORM,
             tenant_required=False,
             tenant_requirement=TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED,
-            step_up=StepUpClass.NONE,
+            step_up=StepUpClass.REQUIRED,
+            authentication_strength_policy_id="platform-privileged-v1",
             audit_class=AuditClass.PRIVILEGED,
         )
+        principal = Principal(
+            "platform-admin-1", PrincipalKind.PLATFORM_ADMIN_PRINCIPAL, "session-g7"
+        )
+        with self.assertRaises(AdmissionDenied):
+            authorize_protected_operation(
+                principal=principal,
+                declaration=declaration,
+                placement_authority=UnusedPlacementAuthority(),
+                authorization_authority=Authz(),
+                context=None,
+                now=NOW,
+                strength_policy=StrengthPolicy(),
+                strength_evidence=None,
+            )
         decision = authorize_protected_operation(
-            principal=Principal(
-                "platform-admin-1", PrincipalKind.PLATFORM_ADMIN_PRINCIPAL, "session-g7"
-            ),
+            principal=principal,
             declaration=declaration,
             placement_authority=UnusedPlacementAuthority(),
             authorization_authority=Authz(),
             context=None,
             now=NOW,
+            strength_policy=StrengthPolicy(),
+            strength_evidence=admin_strength(),
         )
         self.assertTrue(decision.granted)
 

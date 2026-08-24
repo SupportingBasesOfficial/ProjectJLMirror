@@ -602,9 +602,11 @@ def compare_object_schemas(
     prev_required = set(prev_required_raw)
     next_required = set(next_required_raw)
 
+    added_property_names = next_props - prev_props
     removed = sorted(prev_props - next_props)
     added_required = sorted(next_required - prev_required)
-    added_optional = sorted((next_props - prev_props) - next_required)
+    added_previously_required = sorted(added_property_names & prev_required)
+    added_optional = sorted(added_property_names - next_required)
     relaxed_required = sorted(prev_required - next_required)
     changed_properties = sorted(
         name
@@ -642,6 +644,8 @@ def compare_object_schemas(
         review_reasons.append("properties_removed")
     if added_required:
         review_reasons.append("required_properties_added")
+    if added_previously_required:
+        review_reasons.append("definitions_added_for_previously_required_properties")
     if relaxed_required:
         review_reasons.append("required_properties_relaxed")
     if changed_properties:
@@ -667,6 +671,7 @@ def compare_object_schemas(
         "review_reasons": review_reasons,
         "removed_properties": removed,
         "added_required_properties": added_required,
+        "added_previously_required_properties": added_previously_required,
         "added_optional_properties": added_optional,
         "restrictive_added_optional_properties": restrictive_added_optional,
         "relaxed_required_properties": relaxed_required,

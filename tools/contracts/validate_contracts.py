@@ -14,6 +14,7 @@ from tools.contracts.core import (  # noqa: E402
     ContractProjectionError,
     build_bundle,
     canonical_json,
+    validate_registry_schema_contract,
 )
 
 PROFILE = "jlmirror-contract-tooling/v1"
@@ -21,11 +22,12 @@ PROFILE = "jlmirror-contract-tooling/v1"
 
 def validate(root: Path) -> list[str]:
     findings: list[str] = []
+    findings.extend(validate_registry_schema_contract(root))
     try:
         first = build_bundle(root)
         second = build_bundle(root)
     except ContractProjectionError as exc:
-        return [str(exc)]
+        return findings + [str(exc)]
 
     if canonical_json(first) != canonical_json(second):
         findings.append("generated contract bundle is not deterministic")
@@ -48,7 +50,8 @@ def validate(root: Path) -> list[str]:
             f"required anchor IDs missing from generated catalog: {missing}"
         )
 
-    http_required = set(first["http_endpoint_manifest_schema"]["required"])
+    http_schema = first["http_endpoint_manifest_schema"]
+    http_required = set(http_schema["required"])
     for field in (
         "owner_domain",
         "tenant_scope",
@@ -60,7 +63,8 @@ def validate(root: Path) -> list[str]:
                 f"HTTP endpoint manifest projection missing required field: {field}"
             )
 
-    event_required = set(first["event_contract_manifest_schema"]["required"])
+    event_schema = first["event_contract_manifest_schema"]
+    event_required = set(event_schema["required"])
     for field in (
         "contract_name",
         "contract_version",
@@ -73,8 +77,33 @@ def validate(root: Path) -> list[str]:
                 f"event manifest projection missing required field: {field}"
             )
 
+    event_composites = event_schema.get("x-jlmirror-composite-requirements", [])
+    expected_event_composite = {
+        "source_text": "allowed_consumer_contracts or discovery policy",
+        "alternatives": ["allowed_consumer_contracts", "discovery_policy"],
+    }
+    if expected_event_composite not in event_composites:
+        findings.append(
+            "event manifest projection missing explicit consumer-contract/discovery composite"
+        )
+    if not any(
+        clause.get("anyOf")
+        == [
+            {"required": ["allowed_consumer_contracts"]},
+            {"required": ["discovery_policy"]},
+        ]
+        for clause in event_schema.get("allOf", [])
+    ):
+        findings.append(
+            "event manifest schema does not machine-enforce consumer contracts OR discovery policy"
+        )
+
     if first["authority"] != "projection_only_reviewed_markdown_remains_normative":
         findings.append("generated bundle authority boundary is missing")
+    if first["profile_catalog"].get("accepted_authority_base") != first.get(
+        "accepted_authority_base"
+    ):
+        findings.append("profile catalog authority base does not match bundle authority base")
 
     return findings
 
@@ -90,7 +119,7 @@ def main() -> int:
         print(f"RESULT: FAIL — {len(findings)} finding(s)")
         return 1
     print(
-        "RESULT: PASS — contract projections and anchor invariants are deterministic"
+        "RESULT: PASS — pinned contract projections and anchor invariants are deterministic"
     )
     print(
         "NOTE: PASS is conformance evidence only; reviewed contracts remain normative."

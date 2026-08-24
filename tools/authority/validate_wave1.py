@@ -21,6 +21,7 @@ from tools.authority.fence_sql_contract import (  # noqa: E402
     validate_fence_revalidation_sql_text,
     validate_fence_sql_text,
 )
+from tools.authority.wave1_scope import validate_wave1_scope  # noqa: E402
 from tools.contracts.core import build_bundle  # noqa: E402
 
 PROFILE = "jlmirror-wave1-authority/v1"
@@ -358,6 +359,7 @@ def _implementation_manifest_findings() -> list[str]:
 
 def validate() -> list[str]:
     findings: list[str] = []
+    findings.extend(validate_wave1_scope(ROOT))
     findings.extend(_third_party_import_findings())
     findings.extend(_runtime_semantic_binding_findings())
     findings.extend(_runtime_catalog_findings())
@@ -379,7 +381,7 @@ def main() -> int:
         return 1
     print(
         "RESULT: PASS — Wave 1 authority skeleton preserves accepted "
-        "profile/session/currentness/fence boundaries"
+        "scope/profile/session/currentness/fence boundaries"
     )
     print("NOTE: PASS is conformance evidence only; C2 adapters remain non-canonical until accepted.")
     return 0

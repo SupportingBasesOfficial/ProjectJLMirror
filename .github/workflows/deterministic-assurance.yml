@@ -54,3 +54,11 @@ jobs:
       - name: Validate contract tooling projections
         shell: bash
         run: python3 tools/contracts/validate_contracts.py .
+
+      - name: Falsify Wave 1 identity and authority skeleton
+        shell: bash
+        run: PYTHONPATH=src python3 -m unittest discover -s tests/wave1 -p 'test_*.py'
+
+      - name: Validate Wave 1 authority boundaries
+        shell: bash
+        run: PYTHONPATH=src python3 tools/authority/validate_wave1.py

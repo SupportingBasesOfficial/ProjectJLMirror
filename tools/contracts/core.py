@@ -181,6 +181,62 @@ def validate_registry_schema_contract(root: Path) -> list[str]:
         findings.append("source registry schema catalog_id const drift")
     if schema.get("additionalProperties") is not False:
         findings.append("source registry schema must reject unknown top-level properties")
+
+    if props.get("accepted_authority_base") != {
+        "type": "string",
+        "pattern": "^[0-9a-f]{40}$",
+    }:
+        findings.append("source registry schema accepted_authority_base contract drift")
+    profile_sources = props.get("profile_sources", {})
+    if (
+        profile_sources.get("minItems") != 1
+        or profile_sources.get("uniqueItems") is not True
+        or profile_sources.get("items") != {"$ref": "#/$defs/pinned_source"}
+    ):
+        findings.append("source registry schema profile_sources contract drift")
+
+    defs = schema.get("$defs", {})
+    pinned = defs.get("pinned_source", {})
+    if (
+        pinned.get("additionalProperties") is not False
+        or set(pinned.get("required", [])) != {"path", "git_blob_sha"}
+        or pinned.get("properties", {}).get("path")
+        != {"type": "string", "pattern": "^docs/.+\\.md$"}
+        or pinned.get("properties", {}).get("git_blob_sha")
+        != {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+    ):
+        findings.append("source registry schema pinned_source contract drift")
+
+    manifest = defs.get("manifest_source", {})
+    if (
+        manifest.get("additionalProperties") is not False
+        or set(manifest.get("required", []))
+        != {"path", "git_blob_sha", "heading", "composite_requirements"}
+        or manifest.get("properties", {}).get("path")
+        != {"type": "string", "pattern": "^docs/.+\\.md$"}
+        or manifest.get("properties", {}).get("git_blob_sha")
+        != {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+        or manifest.get("properties", {}).get("heading")
+        != {"type": "string", "minLength": 1}
+        or manifest.get("properties", {}).get("composite_requirements")
+        != {"type": "array", "items": {"$ref": "#/$defs/composite_requirement"}}
+    ):
+        findings.append("source registry schema manifest_source contract drift")
+
+    composite = defs.get("composite_requirement", {})
+    alternatives = composite.get("properties", {}).get("alternatives", {})
+    if (
+        composite.get("additionalProperties") is not False
+        or set(composite.get("required", [])) != {"source_text", "alternatives"}
+        or composite.get("properties", {}).get("source_text")
+        != {"type": "string", "minLength": 1}
+        or alternatives.get("type") != "array"
+        or alternatives.get("minItems") != 2
+        or alternatives.get("uniqueItems") is not True
+        or alternatives.get("items")
+        != {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}
+    ):
+        findings.append("source registry schema composite_requirement contract drift")
     return findings
 
 
@@ -398,6 +454,10 @@ def compare_object_schemas(
     composite_changed = canonical_json(previous.get("allOf", [])) != canonical_json(
         candidate.get("allOf", [])
     )
+    object_envelope_changed = any(
+        canonical_json(previous.get(keyword)) != canonical_json(candidate.get(keyword))
+        for keyword in ("type", "additionalProperties")
+    )
 
     review_reasons: list[str] = []
     if removed:
@@ -410,6 +470,8 @@ def compare_object_schemas(
         review_reasons.append("property_definitions_changed")
     if composite_changed:
         review_reasons.append("composite_requirements_changed")
+    if object_envelope_changed:
+        review_reasons.append("object_envelope_changed")
 
     if review_reasons:
         classification = "structural_change_requires_review"
@@ -427,6 +489,7 @@ def compare_object_schemas(
         "relaxed_required_properties": relaxed_required,
         "changed_property_definitions": changed_properties,
         "composite_requirements_changed": composite_changed,
+        "object_envelope_changed": object_envelope_changed,
         "semantic_compatibility_authority": (
             "Phase 09/10 reviewed contracts own semantic compatibility; "
             "this structural report cannot approve compatibility"

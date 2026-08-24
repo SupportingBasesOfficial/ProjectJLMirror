@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 from .model import AdmissionDenied, EnvironmentClass
+
+_PROFILE_ID_RE = re.compile(r"^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)+@[1-9][0-9]*$")
+
+
+def _profile_id(value: object, field: str) -> str:
+    if not isinstance(value, str) or not _PROFILE_ID_RE.fullmatch(value):
+        raise ValueError(f"{field} must be a canonical versioned profile id")
+    return value
 
 
 @dataclass(frozen=True)
@@ -17,7 +26,49 @@ class RuntimeBinding:
     resource_profile: str
     allowed_environment_classes: frozenset[EnvironmentClass]
 
+    def __post_init__(self) -> None:
+        for field in (
+            "runtime_profile_id",
+            "principal_class",
+            "lifecycle_class",
+            "isolation_class",
+            "ingress_profile",
+            "resource_profile",
+        ):
+            _profile_id(getattr(self, field), field)
+
+        for field in ("egress_profiles", "secret_reference_classes"):
+            value = getattr(self, field)
+            if isinstance(value, (str, bytes)):
+                raise ValueError(f"{field} must be an exact profile set")
+            try:
+                normalized = frozenset(value)
+            except TypeError as exc:
+                raise ValueError(f"{field} must be an exact profile set") from exc
+            if not normalized or any(
+                not isinstance(profile, str) or not _PROFILE_ID_RE.fullmatch(profile)
+                for profile in normalized
+            ):
+                raise ValueError(f"{field} contains a non-canonical profile")
+            object.__setattr__(self, field, normalized)
+
+        environments = self.allowed_environment_classes
+        if isinstance(environments, (str, bytes)):
+            raise ValueError("allowed_environment_classes must be an exact environment set")
+        try:
+            normalized_environments = frozenset(environments)
+        except TypeError as exc:
+            raise ValueError("allowed_environment_classes must be an exact environment set") from exc
+        if not normalized_environments or any(
+            not isinstance(environment, EnvironmentClass)
+            for environment in normalized_environments
+        ):
+            raise ValueError("allowed_environment_classes contains a non-canonical environment")
+        object.__setattr__(self, "allowed_environment_classes", normalized_environments)
+
     def admit_environment(self, environment: EnvironmentClass) -> None:
+        if not isinstance(environment, EnvironmentClass):
+            raise AdmissionDenied("runtime environment authority is not canonical")
         if environment not in self.allowed_environment_classes:
             raise AdmissionDenied(
                 f"{self.runtime_profile_id} is not allowed in {environment.value}"

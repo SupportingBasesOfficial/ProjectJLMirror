@@ -456,6 +456,20 @@ def authorize_protected_operation(
     if decision.granted is not True:
         raise AdmissionDenied("owning authorization denied the operation")
 
+    # Placement/currentness can change while the owning authorization authority
+    # evaluates policy (for example during tenant relocation). A decision computed
+    # over a context that became stale must never be returned as admitted.
+    if context is not None:
+        if placement_authority.context_is_current(context) is not True:
+            raise AdmissionDenied("TenantContext became stale during authorization")
+        final_placement = placement_authority.resolve_current(context.tenant_id)
+        if not isinstance(final_placement, PlacementEvidence) or not _placement_matches_context(
+            final_placement, context
+        ):
+            raise AdmissionDenied("placement/runtime authority changed during authorization")
+        if not _placement_matches_runtime_binding(final_placement, runtime_binding):
+            raise AdmissionDenied("current placement no longer matches this runtime authority boundary")
+
     # A credential/session revoked while authorization was being evaluated cannot
     # be converted into a successful protected-operation admission.
     _require_current_principal(

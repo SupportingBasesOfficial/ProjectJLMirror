@@ -20,12 +20,22 @@ from tools.contracts.core import build_bundle  # noqa: E402
 
 PROFILE = "jlmirror-wave1-authority/v1"
 AUTHORITY_BASE = "main@5b56ad94566b48b72a993ee8f5cf7e983127ab21"
-EXPECTED_SLICES = {
+EXPECTED_SLICES = [
     "impl.identity-bff@1",
     "impl.control-plane@1",
     "impl.platform-runtime@1",
-}
-EXPECTED_C2 = {
+]
+EXPECTED_RUNTIME_PROFILES = [
+    "runtime.web-bff@1",
+    "runtime.api@1",
+    "runtime.control-plane@1",
+]
+EXPECTED_PRINCIPAL_PROFILES = [
+    "principal.web-bff@1",
+    "principal.application-serving@1",
+    "principal.control-plane@1",
+]
+EXPECTED_C2 = [
     "identity_provider",
     "session_store",
     "csrf_mechanism",
@@ -36,6 +46,31 @@ EXPECTED_C2 = {
     "orchestrator_scheduler",
     "ingress_load_balancer",
     "physical_environment_mapping",
+]
+EXPECTED_FORBIDDEN_SUBSTITUTIONS = [
+    "session_valid_for_current_authorization",
+    "authentication_strength_for_other_principal",
+    "malformed_adapter_evidence_for_authority",
+    "workload_identity_for_tenant_authority",
+    "network_presence_for_trust",
+    "environment_label_for_authorization",
+    "caller_tenant_id_for_tenant_context",
+    "untyped_config_for_classified_config",
+    "fence_token_for_effect_absence",
+    "secret_reference_for_secret_value",
+]
+EXPECTED_MANIFEST = {
+    "wave_id": "wave-1.identity-authority-skeleton@1",
+    "authority_base": AUTHORITY_BASE,
+    "implementation_slices": EXPECTED_SLICES,
+    "scope": "authority_skeleton_only",
+    "product_feature_activation": "none",
+    "runtime_profiles": EXPECTED_RUNTIME_PROFILES,
+    "principal_profiles": EXPECTED_PRINCIPAL_PROFILES,
+    "closed_protocol_profiles": ["IR-D-001", "IR-D-002", "IR-D-003"],
+    "residual_c2_choices_not_selected": EXPECTED_C2,
+    "forbidden_authority_substitutions": EXPECTED_FORBIDDEN_SUBSTITUTIONS,
+    "next_wave_authorized": False,
 }
 
 
@@ -161,21 +196,19 @@ def _implementation_manifest_findings() -> list[str]:
     except (OSError, json.JSONDecodeError) as exc:
         return [f"Wave 1 implementation manifest unreadable: {exc}"]
 
+    if not isinstance(manifest, dict):
+        return ["Wave 1 implementation manifest must be a JSON object"]
+
     findings: list[str] = []
-    if manifest.get("authority_base") != AUTHORITY_BASE:
-        findings.append("Wave 1 implementation manifest authority_base drift")
-    if set(manifest.get("implementation_slices", [])) != EXPECTED_SLICES:
-        findings.append("Wave 1 implementation manifest slice set drift")
-    if manifest.get("scope") != "authority_skeleton_only":
-        findings.append("Wave 1 implementation manifest scope drift")
-    if manifest.get("product_feature_activation") != "none":
-        findings.append("Wave 1 must not activate Product features")
-    if manifest.get("next_wave_authorized") is not False:
-        findings.append("Wave 1 manifest must not authorize the next wave")
-    if set(manifest.get("residual_c2_choices_not_selected", [])) != EXPECTED_C2:
-        findings.append("Wave 1 residual C2 non-selection set drift")
-    if manifest.get("closed_protocol_profiles") != ["IR-D-001", "IR-D-002", "IR-D-003"]:
-        findings.append("Wave 1 closed protocol profile set drift")
+    actual_keys = set(manifest)
+    expected_keys = set(EXPECTED_MANIFEST)
+    for key in sorted(expected_keys - actual_keys):
+        findings.append(f"Wave 1 implementation manifest missing canonical field: {key}")
+    for key in sorted(actual_keys - expected_keys):
+        findings.append(f"Wave 1 implementation manifest contains unmodeled field: {key}")
+    for key, expected in EXPECTED_MANIFEST.items():
+        if key in manifest and manifest[key] != expected:
+            findings.append(f"Wave 1 implementation manifest field drift: {key}")
     return findings
 
 

@@ -16,6 +16,10 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from jlmirror_authority.runtime_profiles import WAVE1_RUNTIME_BINDINGS  # noqa: E402
+from tools.authority.fence_sql_contract import (  # noqa: E402
+    EFFECT_ELIGIBLE_PREDECESSOR_PREDICATE,
+    validate_fence_sql_text,
+)
 from tools.contracts.core import build_bundle  # noqa: E402
 
 PROFILE = "jlmirror-wave1-authority/v1"
@@ -56,6 +60,7 @@ EXPECTED_FORBIDDEN_SUBSTITUTIONS = [
     "environment_label_for_authorization",
     "caller_tenant_id_for_tenant_context",
     "untyped_config_for_classified_config",
+    "non_active_fence_state_for_effect_authority",
     "fence_token_for_effect_absence",
     "secret_reference_for_secret_value",
 ]
@@ -259,19 +264,21 @@ def _fence_sql_findings() -> list[str]:
         "current_fence_epoch = current_fence_epoch + 1",
         "current_fence_epoch = p_expected_predecessor_epoch",
         "current_generation_id = p_expected_predecessor_generation_id",
+        EFFECT_ELIGIBLE_PREDECESSOR_PREDICATE,
         "current_fence_epoch < 9223372036854775807",
         "SECURITY INVOKER",
         default_revoke,
         "REVOKE ALL ON TABLE platform.authority_fences FROM PUBLIC;",
         "REVOKE ALL ON FUNCTION platform.initialize_authority_fence(text, text, text) FROM PUBLIC;",
         "REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text, text) FROM PUBLIC;",
-        "same PostgreSQL transaction as the protected effect",
+        "same PostgreSQL transaction",
     )
     findings = [
         f"IR-D-003 SQL contract missing required invariant: {fragment}"
         for fragment in required_fragments
         if fragment not in text
     ]
+    findings.extend(validate_fence_sql_text(text))
     if default_revoke in text and first_function in text and text.index(default_revoke) > text.index(first_function):
         findings.append(
             "IR-D-003 SQL default PUBLIC function EXECUTE revocation must precede authority function creation"

@@ -17,6 +17,7 @@ Required exact-HEAD evidence before merge readiness:
 - owning authorization cannot be returned as admitted when the exact TenantContext/placement/runtime/fence currentness changes during authorization evaluation; the placement/currentness boundary is revalidated after the owning decision and before protected-operation admission;
 - fenced effect admission resolves current state from the owning fence authority; a typed/supplied fence record is not currentness proof, and co-resident PostgreSQL effects retain the same-transaction predicate requirement;
 - persisted fence authority state is revalidated against canonical identifier/positive-epoch constraints rather than accepted by object presence;
+- reused PostgreSQL fence objects fail closed unless the migration authority owns the schema/table/functions and no effective non-owner schema/table/function ACL survives before separately reviewed C2 role mapping;
 - no residual C2 product is silently promoted to architecture authority;
 - no Product/domain endpoint family is introduced beyond accepted authority;
 - review findings are resolved only after later exact-HEAD evidence;

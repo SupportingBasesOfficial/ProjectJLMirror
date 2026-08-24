@@ -359,7 +359,7 @@ def _evaluate_current_authorization(
     principal: Principal,
     context: TenantContext | None,
     declaration: AuthorizationDeclaration,
-+) -> AuthorizationDecision:
+) -> AuthorizationDecision:
     try:
         decision = authorization_authority.evaluate(
             principal=principal,
@@ -451,8 +451,6 @@ def construct_tenant_context(
     if not _placement_is_admissible(evidence):
         raise AdmissionDenied("placement/runtime/cell admission currentness cannot be proven")
 
-    # Recheck after placement lookup so a session/credential revoked during routing
-    # cannot be converted into a newly trusted TenantContext.
     _require_current_principal(
         principal=principal,
         principal_authority=principal_authority,
@@ -556,8 +554,6 @@ def authorize_protected_operation(
         now=now,
     )
 
-    # Recheck current credential/session after placement and step-up evaluation,
-    # immediately before the owning authorization decision.
     _require_current_principal(
         principal=principal,
         principal_authority=principal_authority,
@@ -570,9 +566,6 @@ def authorize_protected_operation(
         declaration=declaration,
     )
 
-    # Placement/currentness can change while the owning authorization authority
-    # evaluates policy (for example during tenant relocation). A decision computed
-    # over a context that became stale must never be returned as admitted.
     if context is not None:
         if placement_authority.context_is_current(context) is not True:
             raise AdmissionDenied("TenantContext became stale during authorization")
@@ -584,9 +577,6 @@ def authorize_protected_operation(
         if not _placement_matches_runtime_binding(final_placement, runtime_binding):
             raise AdmissionDenied("current placement no longer matches this runtime authority boundary")
 
-    # Security-owned authentication-strength policy can harden while the owning
-    # authorization decision is being evaluated. Revalidate the same principal-
-    # bound assurance immediately before final protected-operation admission.
     _require_declared_authentication_strength(
         principal=principal,
         declaration=declaration,
@@ -595,8 +585,6 @@ def authorize_protected_operation(
         now=now,
     )
 
-    # A credential/session revoked while authorization was being evaluated cannot
-    # be converted into a successful protected-operation admission.
     _require_current_principal(
         principal=principal,
         principal_authority=principal_authority,

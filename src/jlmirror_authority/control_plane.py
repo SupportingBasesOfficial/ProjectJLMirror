@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
+import re
 from typing import Protocol
 
 from .browser import AuthenticationStrengthPolicyPort, require_authentication_strength
@@ -19,6 +20,9 @@ from .model import (
     TenantContext,
     TenantRequirement,
 )
+from .runtime_profiles import API_AUTH_BOUNDARY, RuntimeBinding, WAVE1_RUNTIME_BINDINGS
+
+_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$")
 
 
 class RuntimeLifecycle(str, Enum):
@@ -33,8 +37,8 @@ class RuntimeLifecycle(str, Enum):
 
 
 def _identifier(value: object, field: str) -> str:
-    if not isinstance(value, str) or not value or value != value.strip():
-        raise ValueError(f"{field} must be an explicit identifier")
+    if not isinstance(value, str) or not _ID_RE.fullmatch(value):
+        raise ValueError(f"{field} must be an explicit canonical identifier")
     return value
 
 
@@ -174,11 +178,17 @@ def construct_tenant_context(
     correlation_id: str | None = None,
     causation_id: str | None = None,
     operation_id: str | None = None,
+    runtime_binding: RuntimeBinding = API_AUTH_BOUNDARY,
 ) -> TenantContext:
     """Construct TenantContext only from authenticated principal + trusted current runtime authority."""
 
     if not isinstance(principal, Principal) or principal.active is not True:
         raise AdmissionDenied("current authenticated principal cannot be established")
+    if not isinstance(runtime_binding, RuntimeBinding) or runtime_binding not in WAVE1_RUNTIME_BINDINGS:
+        raise AdmissionDenied("TenantContext runtime binding is not an accepted Wave 1 profile")
+    if not isinstance(required_environment, EnvironmentClass):
+        raise AdmissionDenied("destination runtime environment authority is not canonical")
+
     evidence = placement_authority.resolve_current(tenant_id)
     if not isinstance(evidence, PlacementEvidence):
         raise AdmissionDenied("trusted tenant placement cannot be established")
@@ -195,31 +205,35 @@ def construct_tenant_context(
     if evidence.network_policy_generation != destination_network_policy_generation:
         raise AdmissionDenied("destination network-policy generation is stale")
     if evidence.environment_class is not required_environment:
-        raise AdmissionDenied("runtime environment class is not eligible for this workload")
+        raise AdmissionDenied("runtime environment class does not match destination authority")
+    runtime_binding.admit_environment(evidence.environment_class)
     if not _placement_is_admissible(evidence):
         raise AdmissionDenied("placement/runtime/cell admission currentness cannot be proven")
 
-    return TenantContext(
-        tenant_id=tenant_id,
-        principal_id=principal.principal_id,
-        principal_kind=principal.kind,
-        principal_credential_generation=principal.credential_generation,
-        cell_id=evidence.cell_id,
-        placement_version=evidence.placement_version,
-        runtime_generation=evidence.runtime_generation,
-        configuration_generation=evidence.configuration_generation,
-        workload_credential_generation=evidence.workload_credential_generation,
-        network_policy_generation=evidence.network_policy_generation,
-        environment_class=evidence.environment_class,
-        isolation_class=evidence.isolation_class,
-        fence_scope_id=evidence.fence_scope_id,
-        fence_epoch=evidence.fence_epoch,
-        constructed_at=_utc(now),
-        request_id=request_id,
-        correlation_id=correlation_id,
-        causation_id=causation_id,
-        operation_id=operation_id,
-    )
+    try:
+        return TenantContext(
+            tenant_id=tenant_id,
+            principal_id=principal.principal_id,
+            principal_kind=principal.kind,
+            principal_credential_generation=principal.credential_generation,
+            cell_id=evidence.cell_id,
+            placement_version=evidence.placement_version,
+            runtime_generation=evidence.runtime_generation,
+            configuration_generation=evidence.configuration_generation,
+            workload_credential_generation=evidence.workload_credential_generation,
+            network_policy_generation=evidence.network_policy_generation,
+            environment_class=evidence.environment_class,
+            isolation_class=evidence.isolation_class,
+            fence_scope_id=evidence.fence_scope_id,
+            fence_epoch=evidence.fence_epoch,
+            constructed_at=_utc(now),
+            request_id=request_id,
+            correlation_id=correlation_id,
+            causation_id=causation_id,
+            operation_id=operation_id,
+        )
+    except (TypeError, ValueError) as exc:
+        raise AdmissionDenied("trusted TenantContext evidence is not canonical") from exc
 
 
 def authorize_protected_operation(
@@ -235,6 +249,8 @@ def authorize_protected_operation(
 ) -> AuthorizationDecision:
     if not isinstance(principal, Principal) or principal.active is not True:
         raise AdmissionDenied("principal/credential is retired or malformed")
+    if not isinstance(declaration, AuthorizationDeclaration):
+        raise AdmissionDenied("authorization declaration is malformed or unreviewed")
 
     requirement = declaration.tenant_requirement
     if requirement is TenantRequirement.REQUIRED and context is None:
@@ -250,8 +266,6 @@ def authorize_protected_operation(
     if context is not None:
         if not isinstance(context, TenantContext) or not context.matches_principal(principal):
             raise AdmissionDenied("TenantContext principal binding does not match current principal")
-        # A C2 adapter boolean may narrow/deny, but cannot launder stale evidence
-        # into current authority. Only literal True can pass this narrowing gate.
         if placement_authority.context_is_current(context) is not True:
             raise AdmissionDenied("TenantContext placement/currentness narrowing gate denied")
         current_placement = placement_authority.resolve_current(context.tenant_id)

@@ -11,7 +11,9 @@ Required exact-HEAD evidence before merge readiness:
 - the exact Git delta from `main@5b56ad94566b48b72a993ee8f5cf7e983127ab21` remains inside the closed Wave 1 path allowlist;
 - PR scope remains only identity/control-plane/minimal-runtime authority skeleton;
 - caller/request-adjacent authority identifiers fail before C2 adapter invocation when non-canonical;
+- browser session capability input is bounded and canonical before session-authority lookup;
 - browser auth transaction currentness is fail-closed for both not-yet-current and expired transactions;
+- explicit cross-tenant privileged platform operations cannot be admitted through the ordinary application runtime boundary and require the accepted Control Plane runtime binding;
 - persisted fence authority state is revalidated against canonical identifier/positive-epoch constraints rather than accepted by object presence;
 - no residual C2 product is silently promoted to architecture authority;
 - no Product/domain endpoint family is introduced beyond accepted authority;

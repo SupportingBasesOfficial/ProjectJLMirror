@@ -32,6 +32,24 @@ class RuntimeLifecycle(str, Enum):
     FAILED = "failed"
 
 
+def _identifier(value: object, field: str) -> str:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise ValueError(f"{field} must be an explicit identifier")
+    return value
+
+
+def _strict_bool(value: object, field: str) -> bool:
+    if type(value) is not bool:
+        raise ValueError(f"{field} must be a boolean")
+    return value
+
+
+def _strict_positive_int(value: object, field: str) -> int:
+    if type(value) is not int or value <= 0:
+        raise ValueError(f"{field} must be a positive integer")
+    return value
+
+
 @dataclass(frozen=True)
 class PlacementEvidence:
     """Trusted Control-Plane/cell-admission evidence, never caller input."""
@@ -40,13 +58,39 @@ class PlacementEvidence:
     cell_id: str
     placement_version: str
     runtime_generation: str
+    configuration_generation: str
+    workload_credential_generation: str
+    network_policy_generation: str
     environment_class: EnvironmentClass
+    isolation_class: str
     runtime_lifecycle: RuntimeLifecycle
     placement_current: bool
     operation_eligible: bool
     cell_admission_current: bool
     fence_scope_id: str
     fence_epoch: int
+
+    def __post_init__(self) -> None:
+        for field in (
+            "tenant_id",
+            "cell_id",
+            "placement_version",
+            "runtime_generation",
+            "configuration_generation",
+            "workload_credential_generation",
+            "network_policy_generation",
+            "isolation_class",
+            "fence_scope_id",
+        ):
+            _identifier(getattr(self, field), field)
+        if not isinstance(self.environment_class, EnvironmentClass):
+            raise ValueError("environment_class must be canonical")
+        if not isinstance(self.runtime_lifecycle, RuntimeLifecycle):
+            raise ValueError("runtime_lifecycle must be canonical")
+        _strict_bool(self.placement_current, "placement_current")
+        _strict_bool(self.operation_eligible, "operation_eligible")
+        _strict_bool(self.cell_admission_current, "cell_admission_current")
+        _strict_positive_int(self.fence_epoch, "fence_epoch")
 
 
 @dataclass(frozen=True)
@@ -55,13 +99,18 @@ class AuthorizationDecision:
     current: bool
     policy_revision: str
 
+    def __post_init__(self) -> None:
+        _strict_bool(self.granted, "granted")
+        _strict_bool(self.current, "current")
+        _identifier(self.policy_revision, "policy_revision")
+
 
 class PlacementAuthorityPort(Protocol):
     def resolve_current(self, tenant_id: str) -> PlacementEvidence | None:
         """Resolve trusted current placement from the owning authority."""
 
     def context_is_current(self, context: TenantContext) -> bool:
-        """Optional narrowing/deny signal; never sufficient proof by itself."""
+        """Optional narrowing/deny signal; only literal True can pass."""
 
 
 class CurrentAuthorizationPort(Protocol):
@@ -76,17 +125,18 @@ class CurrentAuthorizationPort(Protocol):
 
 
 def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("time must be timezone-aware")
+    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("time must be a timezone-aware datetime")
     return value.astimezone(timezone.utc)
 
 
 def _placement_is_admissible(evidence: PlacementEvidence) -> bool:
     return (
         evidence.runtime_lifecycle is RuntimeLifecycle.ACTIVE
-        and evidence.placement_current
-        and evidence.operation_eligible
-        and evidence.cell_admission_current
+        and evidence.placement_current is True
+        and evidence.operation_eligible is True
+        and evidence.cell_admission_current is True
+        and type(evidence.fence_epoch) is int
         and evidence.fence_epoch > 0
     )
 
@@ -98,7 +148,11 @@ def _placement_matches_context(evidence: PlacementEvidence, context: TenantConte
         and evidence.cell_id == context.cell_id
         and evidence.placement_version == context.placement_version
         and evidence.runtime_generation == context.runtime_generation
+        and evidence.configuration_generation == context.configuration_generation
+        and evidence.workload_credential_generation == context.workload_credential_generation
+        and evidence.network_policy_generation == context.network_policy_generation
         and evidence.environment_class is context.environment_class
+        and evidence.isolation_class == context.isolation_class
         and evidence.fence_scope_id == context.fence_scope_id
         and evidence.fence_epoch == context.fence_epoch
     )
@@ -106,17 +160,27 @@ def _placement_matches_context(evidence: PlacementEvidence, context: TenantConte
 
 def construct_tenant_context(
     *,
+    principal: Principal,
     placement_authority: PlacementAuthorityPort,
     tenant_id: str,
     destination_cell_id: str,
     destination_runtime_generation: str,
+    destination_configuration_generation: str,
+    destination_workload_credential_generation: str,
+    destination_network_policy_generation: str,
     required_environment: EnvironmentClass,
     now: datetime,
+    request_id: str | None = None,
+    correlation_id: str | None = None,
+    causation_id: str | None = None,
+    operation_id: str | None = None,
 ) -> TenantContext:
-    """Construct TenantContext only from trusted placement/admission evidence."""
+    """Construct TenantContext only from authenticated principal + trusted current runtime authority."""
 
+    if not isinstance(principal, Principal) or principal.active is not True:
+        raise AdmissionDenied("current authenticated principal cannot be established")
     evidence = placement_authority.resolve_current(tenant_id)
-    if evidence is None:
+    if not isinstance(evidence, PlacementEvidence):
         raise AdmissionDenied("trusted tenant placement cannot be established")
     if evidence.tenant_id != tenant_id:
         raise AdmissionDenied("placement authority returned mismatched tenant")
@@ -124,6 +188,12 @@ def construct_tenant_context(
         raise AdmissionDenied("request reached a non-authoritative cell")
     if evidence.runtime_generation != destination_runtime_generation:
         raise AdmissionDenied("destination runtime generation is stale")
+    if evidence.configuration_generation != destination_configuration_generation:
+        raise AdmissionDenied("destination configuration generation is stale")
+    if evidence.workload_credential_generation != destination_workload_credential_generation:
+        raise AdmissionDenied("destination workload credential generation is stale")
+    if evidence.network_policy_generation != destination_network_policy_generation:
+        raise AdmissionDenied("destination network-policy generation is stale")
     if evidence.environment_class is not required_environment:
         raise AdmissionDenied("runtime environment class is not eligible for this workload")
     if not _placement_is_admissible(evidence):
@@ -131,13 +201,24 @@ def construct_tenant_context(
 
     return TenantContext(
         tenant_id=tenant_id,
+        principal_id=principal.principal_id,
+        principal_kind=principal.kind,
+        principal_credential_generation=principal.credential_generation,
         cell_id=evidence.cell_id,
         placement_version=evidence.placement_version,
         runtime_generation=evidence.runtime_generation,
+        configuration_generation=evidence.configuration_generation,
+        workload_credential_generation=evidence.workload_credential_generation,
+        network_policy_generation=evidence.network_policy_generation,
         environment_class=evidence.environment_class,
+        isolation_class=evidence.isolation_class,
         fence_scope_id=evidence.fence_scope_id,
         fence_epoch=evidence.fence_epoch,
         constructed_at=_utc(now),
+        request_id=request_id,
+        correlation_id=correlation_id,
+        causation_id=causation_id,
+        operation_id=operation_id,
     )
 
 
@@ -152,8 +233,8 @@ def authorize_protected_operation(
     strength_policy: AuthenticationStrengthPolicyPort | None = None,
     strength_evidence: AuthenticationStrengthEvidence | None = None,
 ) -> AuthorizationDecision:
-    if not principal.active:
-        raise AdmissionDenied("principal/credential is retired")
+    if not isinstance(principal, Principal) or principal.active is not True:
+        raise AdmissionDenied("principal/credential is retired or malformed")
 
     requirement = declaration.tenant_requirement
     if requirement is TenantRequirement.REQUIRED and context is None:
@@ -167,13 +248,17 @@ def authorize_protected_operation(
             raise AdmissionDenied("cross-tenant privileged operation lacks privileged audit class")
 
     if context is not None:
+        if not isinstance(context, TenantContext) or not context.matches_principal(principal):
+            raise AdmissionDenied("TenantContext principal binding does not match current principal")
         # A C2 adapter boolean may narrow/deny, but cannot launder stale evidence
-        # into current authority. Current placement is re-resolved and joined here.
-        if not placement_authority.context_is_current(context):
+        # into current authority. Only literal True can pass this narrowing gate.
+        if placement_authority.context_is_current(context) is not True:
             raise AdmissionDenied("TenantContext placement/currentness narrowing gate denied")
         current_placement = placement_authority.resolve_current(context.tenant_id)
-        if current_placement is None or not _placement_matches_context(current_placement, context):
-            raise AdmissionDenied("TenantContext no longer matches exact current placement authority")
+        if not isinstance(current_placement, PlacementEvidence) or not _placement_matches_context(
+            current_placement, context
+        ):
+            raise AdmissionDenied("TenantContext no longer matches exact current runtime/placement authority")
     if declaration.scope in {ScopeClass.TENANT, ScopeClass.RESOURCE} and context is None:
         raise AdmissionDenied("tenant/resource scope requires current TenantContext")
 
@@ -192,8 +277,10 @@ def authorize_protected_operation(
         context=context,
         declaration=declaration,
     )
-    if not decision.current:
+    if not isinstance(decision, AuthorizationDecision):
+        raise AdmissionDenied("owning authorization returned malformed authority evidence")
+    if decision.current is not True:
         raise AdmissionDenied("owning authorization evidence is not current")
-    if not decision.granted:
+    if decision.granted is not True:
         raise AdmissionDenied("owning authorization denied the operation")
     return decision

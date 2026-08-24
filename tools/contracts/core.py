@@ -181,6 +181,88 @@ def load_registry(root: Path) -> dict[str, Any]:
     return data
 
 
+def _expected_registry_schema_contract() -> dict[str, Any]:
+    """Return the complete published registry schema shape accepted by Wave 0."""
+
+    path_schema = {"type": "string", "pattern": DOC_MD_PATH_PATTERN}
+    blob_schema = {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:jlmirror:contracts:source-registry:v1",
+        "title": "JLMIRROR contract source registry",
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "schema_version",
+            "catalog_id",
+            "accepted_authority_base",
+            "profile_sources",
+            "http_manifest_source",
+            "event_manifest_source",
+        ],
+        "properties": {
+            "schema_version": {"const": 1},
+            "catalog_id": {"const": "jlmirror.contract-source-registry@1"},
+            "accepted_authority_base": blob_schema,
+            "profile_sources": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": True,
+                "items": {"$ref": "#/$defs/pinned_source"},
+            },
+            "http_manifest_source": {"$ref": "#/$defs/manifest_source"},
+            "event_manifest_source": {"$ref": "#/$defs/manifest_source"},
+        },
+        "$defs": {
+            "pinned_source": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["path", "git_blob_sha"],
+                "properties": {
+                    "path": path_schema,
+                    "git_blob_sha": blob_schema,
+                },
+            },
+            "manifest_source": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "path",
+                    "git_blob_sha",
+                    "heading",
+                    "composite_requirements",
+                ],
+                "properties": {
+                    "path": path_schema,
+                    "git_blob_sha": blob_schema,
+                    "heading": {"type": "string", "minLength": 1},
+                    "composite_requirements": {
+                        "type": "array",
+                        "items": {"$ref": "#/$defs/composite_requirement"},
+                    },
+                },
+            },
+            "composite_requirement": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["source_text", "alternatives"],
+                "properties": {
+                    "source_text": {"type": "string", "minLength": 1},
+                    "alternatives": {
+                        "type": "array",
+                        "minItems": 2,
+                        "uniqueItems": True,
+                        "items": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_]*$",
+                        },
+                    },
+                },
+            },
+        },
+    }
+
+
 def validate_registry_schema_contract(root: Path) -> list[str]:
     findings: list[str] = []
     schema_path = root / "contracts" / "catalog" / "source-registry.schema.json"
@@ -293,6 +375,11 @@ def validate_registry_schema_contract(root: Path) -> list[str]:
         != {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}
     ):
         findings.append("source registry schema composite_requirement contract drift")
+
+    if canonical_json(schema) != canonical_json(_expected_registry_schema_contract()):
+        findings.append(
+            "source registry schema contains unmodeled constraint or complete-shape drift"
+        )
     return findings
 
 

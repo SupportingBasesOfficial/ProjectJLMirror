@@ -215,6 +215,7 @@ def complete_browser_auth(
         credential_generation=f"session:{transaction.transaction_id}",
     )
     strength = AuthenticationStrengthEvidence(
+        principal_id=verified.principal_id,
         issuer=verified.issuer,
         acr=verified.acr,
         amr=verified.amr,
@@ -230,9 +231,19 @@ def require_authentication_strength(
     policy: AuthenticationStrengthPolicyPort,
     policy_id: str,
     evidence: AuthenticationStrengthEvidence | None,
+    principal: Principal,
     now: datetime,
 ) -> None:
+    if not isinstance(principal, Principal) or principal.active is not True:
+        raise AdmissionDenied("current principal for authentication-strength evaluation is unavailable")
+    if principal.kind not in {
+        PrincipalKind.HUMAN_BROWSER_SESSION,
+        PrincipalKind.PLATFORM_ADMIN_PRINCIPAL,
+    }:
+        raise AdmissionDenied("authentication-strength evidence cannot authorize a non-human principal")
     if evidence is None or not evidence.is_current(now):
         raise AdmissionDenied("current authentication-strength evidence cannot be proven")
+    if evidence.principal_id != principal.principal_id:
+        raise AdmissionDenied("authentication-strength evidence belongs to another principal")
     if policy.permits(policy_id=policy_id, evidence=evidence, now=_utc(now)) is not True:
         raise AdmissionDenied("current authentication-strength policy is not satisfied")

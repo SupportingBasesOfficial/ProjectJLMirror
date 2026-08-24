@@ -218,19 +218,47 @@ def rotate_browser_session(
     now: datetime,
     lifetime: timedelta,
     authentication_strength: AuthenticationStrengthEvidence | None = None,
+    reauthenticated_principal: Principal | None = None,
 ) -> BrowserSessionHandle:
+    """Atomically replace a session, optionally after same-subject reauthentication/step-up."""
+
     current = resolve_browser_session(authority=authority, handle=predecessor, now=now)
+    source_principal = current.principal
+    source_strength = (
+        authentication_strength
+        if authentication_strength is not None
+        else current.authentication_strength
+    )
+
+    if reauthenticated_principal is not None:
+        if not isinstance(reauthenticated_principal, Principal) or reauthenticated_principal.active is not True:
+            raise AdmissionDenied("reauthenticated principal is malformed or retired")
+        if (
+            reauthenticated_principal.principal_id != current.principal.principal_id
+            or reauthenticated_principal.kind is not current.principal.kind
+        ):
+            raise AdmissionDenied("reauthentication cannot replace the session with another principal")
+        source_principal = reauthenticated_principal
+        # A new authentication boundary must not inherit old assurance implicitly.
+        source_strength = authentication_strength
+        if source_strength is not None:
+            if source_strength.principal_id != source_principal.principal_id:
+                raise AdmissionDenied("fresh authentication-strength evidence belongs to another principal")
+            if (
+                source_strength.principal_credential_generation
+                != source_principal.credential_generation
+            ):
+                raise AdmissionDenied(
+                    "fresh authentication-strength evidence is not bound to the reauthenticated credential generation"
+                )
+
     successor_handle = _new_handle()
     successor = _new_record(
         handle=successor_handle,
-        principal=current.principal,
+        principal=source_principal,
         now=now,
         lifetime=lifetime,
-        authentication_strength=(
-            authentication_strength
-            if authentication_strength is not None
-            else current.authentication_strength
-        ),
+        authentication_strength=source_strength,
     )
     if authority.rotate(
         predecessor_handle_digest=predecessor.digest,

@@ -56,14 +56,26 @@ class EnvironmentClass(str, Enum):
 
 
 def _aware(value: datetime, field: str) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError(f"{field} must be timezone-aware")
+    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError(f"{field} must be a timezone-aware datetime")
     return value.astimezone(timezone.utc)
 
 
 def _identifier(value: str, field: str) -> str:
     if not isinstance(value, str) or not _ID_RE.fullmatch(value):
         raise ValueError(f"invalid {field}")
+    return value
+
+
+def _strict_bool(value: object, field: str) -> bool:
+    if type(value) is not bool:
+        raise ValueError(f"{field} must be a boolean")
+    return value
+
+
+def _strict_positive_int(value: object, field: str) -> int:
+    if type(value) is not int or value <= 0:
+        raise ValueError(f"{field} must be a positive integer")
     return value
 
 
@@ -76,7 +88,10 @@ class Principal:
 
     def __post_init__(self) -> None:
         _identifier(self.principal_id, "principal_id")
+        if not isinstance(self.kind, PrincipalKind):
+            raise ValueError("kind must be a canonical PrincipalKind")
         _identifier(self.credential_generation, "credential_generation")
+        _strict_bool(self.active, "active")
 
 
 @dataclass(frozen=True)
@@ -92,8 +107,15 @@ class AuthenticationStrengthEvidence:
         _identifier(self.issuer, "issuer")
         if self.acr is not None:
             _identifier(self.acr, "acr")
-        if any(not _ID_RE.fullmatch(item) for item in self.amr):
+        if isinstance(self.amr, (str, bytes)):
+            raise ValueError("amr must be a collection of canonical entries")
+        try:
+            amr = frozenset(self.amr)
+        except TypeError as exc:
+            raise ValueError("amr must be an immutable-compatible collection") from exc
+        if any(not isinstance(item, str) or not _ID_RE.fullmatch(item) for item in amr):
             raise ValueError("invalid amr entry")
+        object.__setattr__(self, "amr", amr)
         authenticated = _aware(self.authenticated_at, "authenticated_at")
         expires = _aware(self.evidence_expires_at, "evidence_expires_at")
         if expires <= authenticated:
@@ -120,6 +142,13 @@ class AuthorizationDeclaration:
     def __post_init__(self) -> None:
         if not _ACTION_RE.fullmatch(self.action):
             raise ValueError("action must use canonical <domain>.<resource>.<verb> form")
+        if not isinstance(self.scope, ScopeClass):
+            raise ValueError("scope must be a canonical ScopeClass")
+        if not isinstance(self.step_up, StepUpClass):
+            raise ValueError("step_up must be a canonical StepUpClass")
+        if not isinstance(self.audit_class, AuditClass):
+            raise ValueError("audit_class must be a canonical AuditClass")
+        _strict_bool(self.tenant_required, "tenant_required")
         if self.resource_scope is not None:
             _identifier(self.resource_scope, "resource_scope")
         if self.authentication_strength_policy_id is not None:
@@ -135,9 +164,11 @@ class AuthorizationDeclaration:
             )
             object.__setattr__(self, "tenant_requirement", canonical_requirement)
         else:
+            if not isinstance(self.tenant_requirement, TenantRequirement):
+                raise ValueError("tenant_requirement must be a canonical TenantRequirement")
             canonical_requirement = self.tenant_requirement
             expected_legacy_flag = canonical_requirement is TenantRequirement.REQUIRED
-            if self.tenant_required != expected_legacy_flag:
+            if self.tenant_required is not expected_legacy_flag:
                 raise ValueError("tenant_required compatibility flag contradicts tenant_requirement")
 
         if self.scope in {ScopeClass.TENANT, ScopeClass.RESOURCE} and canonical_requirement is not TenantRequirement.REQUIRED:
@@ -169,8 +200,9 @@ class TenantContext:
             ("fence_scope_id", self.fence_scope_id),
         ):
             _identifier(value, field)
-        if not isinstance(self.fence_epoch, int) or self.fence_epoch <= 0:
-            raise ValueError("fence_epoch must be a positive integer")
+        if not isinstance(self.environment_class, EnvironmentClass):
+            raise ValueError("environment_class must be canonical")
+        _strict_positive_int(self.fence_epoch, "fence_epoch")
         _aware(self.constructed_at, "constructed_at")
 
 

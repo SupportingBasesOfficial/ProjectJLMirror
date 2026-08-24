@@ -38,21 +38,26 @@ class RecordingFenceAuthority:
 
 
 class FenceAuthorityStateTests(unittest.TestCase):
-    def test_active_exact_fence_is_effect_eligible(self):
-        current = FenceRecord("tenant:acme", 7, "gen-7", EFFECT_ELIGIBLE_FENCE_AUTHORITY_STATE)
+    def test_active_exact_fence_is_effect_eligible_only_through_current_authority(self):
+        authority = RecordingFenceAuthority(EFFECT_ELIGIBLE_FENCE_AUTHORITY_STATE)
         admit_fenced_effect(
             token=FenceToken("tenant:acme", 7, "gen-7"),
-            current=current,
+            authority=authority,
         )
 
     def test_non_active_exact_fence_is_not_effect_authority(self):
         token = FenceToken("tenant:acme", 7, "gen-7")
         for state in ("quarantined", "retired", "unknown-canonical-state"):
+            authority = RecordingFenceAuthority(state)
             with self.subTest(state=state), self.assertRaises(AdmissionDenied):
-                admit_fenced_effect(
-                    token=token,
-                    current=FenceRecord("tenant:acme", 7, "gen-7", state),
-                )
+                admit_fenced_effect(token=token, authority=authority)
+
+    def test_stale_token_is_denied_after_current_authority_advances(self):
+        authority = RecordingFenceAuthority(EFFECT_ELIGIBLE_FENCE_AUTHORITY_STATE)
+        stale = FenceToken("tenant:acme", 7, "gen-7")
+        authority.record = FenceRecord("tenant:acme", 8, "gen-8", "active")
+        with self.assertRaises(AdmissionDenied):
+            admit_fenced_effect(token=stale, authority=authority)
 
     def test_non_active_predecessor_cannot_spawn_ordinary_successor(self):
         for state in ("quarantined", "retired", "unknown-canonical-state"):

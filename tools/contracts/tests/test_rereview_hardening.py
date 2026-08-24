@@ -40,6 +40,27 @@ class ReReviewHardeningTests(unittest.TestCase):
         self.assertEqual(report["added_required_properties"], ["b"])
         self.assertIn("required_properties_added", report["review_reasons"])
 
+    def test_definition_added_for_previously_required_name_forces_review(self):
+        previous = {
+            "type": "object",
+            "properties": {"a": {}},
+            "required": ["a", "b"],
+            "additionalProperties": True,
+        }
+        candidate = {
+            "type": "object",
+            "properties": {"a": {}, "b": {"type": "string"}},
+            "required": ["a", "b"],
+            "additionalProperties": True,
+        }
+        report = compare_object_schemas(previous, candidate)
+        self.assertEqual(report["classification"], "structural_change_requires_review")
+        self.assertEqual(report["added_previously_required_properties"], ["b"])
+        self.assertIn(
+            "definitions_added_for_previously_required_properties",
+            report["review_reasons"],
+        )
+
     def test_invalid_required_shape_fails_to_review(self):
         previous = {"properties": {"a": {}}, "required": ["a"]}
         candidate = {"properties": {"a": {}}, "required": ["a", "a"]}

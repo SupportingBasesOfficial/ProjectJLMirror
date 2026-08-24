@@ -52,6 +52,19 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
 
     findings: list[str] = []
     required = (
+        "to_regclass('platform.authority_fences')",
+        "authority_fences is absent; apply 001 before revalidation",
+        "attname = 'fence_scope_id'",
+        "IS DISTINCT FROM 'text'::regtype",
+        "attname = 'current_fence_epoch'",
+        "IS DISTINCT FROM 'int8'::regtype",
+        "attname = 'current_generation_id'",
+        "attname = 'authority_state'",
+        "attname = 'updated_at'",
+        "IS DISTINCT FROM 'timestamptz'::regtype",
+        "c.contype = 'p'",
+        "c.conkey = ARRAY[a.attnum]::smallint[]",
+        "single-column primary key on fence_scope_id",
         "ALTER TABLE platform.authority_fences",
         "ALTER COLUMN fence_scope_id SET NOT NULL",
         "ALTER COLUMN current_fence_epoch SET NOT NULL",

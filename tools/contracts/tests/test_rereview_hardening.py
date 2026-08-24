@@ -131,6 +131,28 @@ class ReReviewHardeningTests(unittest.TestCase):
             "restrictive_optional_property_definitions_added", report["review_reasons"]
         )
 
+    def test_pattern_property_interaction_forces_review_in_closed_envelope(self):
+        previous = {
+            "type": "object",
+            "properties": {"a": {}},
+            "patternProperties": {"^b$": {"type": "string"}},
+            "required": ["a"],
+            "additionalProperties": False,
+        }
+        candidate = {
+            "type": "object",
+            "properties": {"a": {}, "b": {"type": "string", "minLength": 3}},
+            "patternProperties": {"^b$": {"type": "string"}},
+            "required": ["a"],
+            "additionalProperties": False,
+        }
+        report = compare_object_schemas(previous, candidate)
+        self.assertEqual(report["classification"], "structural_change_requires_review")
+        self.assertEqual(report["restrictive_added_optional_properties"], ["b"])
+        self.assertIn(
+            "restrictive_optional_property_definitions_added", report["review_reasons"]
+        )
+
     def test_unconstrained_optional_property_can_remain_additive_candidate(self):
         previous = {
             "type": "object",

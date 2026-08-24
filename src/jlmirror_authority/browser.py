@@ -190,8 +190,8 @@ def complete_browser_auth(
         raise AdmissionDenied("authorization transaction absent, malformed or already consumed")
     if transaction.transaction_id != transaction_id:
         raise AdmissionDenied("authorization transaction authority returned the wrong transaction")
-    if now >= _utc(transaction.expires_at):
-        raise AdmissionDenied("authorization transaction expired")
+    if not (_utc(transaction.created_at) <= now < _utc(transaction.expires_at)):
+        raise AdmissionDenied("authorization transaction is not current")
     if not hmac.compare_digest(transaction.initiating_session_digest, _digest(initiating_session_binding)):
         raise AdmissionDenied("authorization transaction belongs to another browser session")
     if not hmac.compare_digest(transaction.state_digest, _digest(returned_state)):

@@ -42,6 +42,48 @@ class ContractProjectionTests(unittest.TestCase):
             with self.assertRaises(ContractProjectionError):
                 build_profile_catalog(root, registry)
 
+    def test_canonical_normative_source_path_is_accepted(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "docs" / "nested" / "manifest.md"
+            source.parent.mkdir(parents=True)
+            source.write_text("`runtime.api@1`\n", encoding="utf-8")
+            registry = {
+                "accepted_authority_base": "a" * 40,
+                "profile_sources": [
+                    {
+                        "path": "docs/nested/manifest.md",
+                        "git_blob_sha": git_blob_sha(source.read_bytes()),
+                    }
+                ],
+            }
+            catalog = build_profile_catalog(root, registry)
+            self.assertEqual(catalog["records"][0]["id"], "runtime.api@1")
+
+    def test_noncanonical_normative_source_paths_fail_closed(self):
+        bad_paths = (
+            "docs/../README.md",
+            "docs/./manifest.md",
+            "docs//manifest.md",
+            "docs\\manifest.md",
+        )
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "README.md").write_text("`runtime.api@1`\n", encoding="utf-8")
+            docs = root / "docs"
+            docs.mkdir()
+            (docs / "manifest.md").write_text("`runtime.api@1`\n", encoding="utf-8")
+            for bad_path in bad_paths:
+                with self.subTest(path=bad_path):
+                    registry = {
+                        "accepted_authority_base": "a" * 40,
+                        "profile_sources": [
+                            {"path": bad_path, "git_blob_sha": "0" * 40}
+                        ],
+                    }
+                    with self.assertRaises(ContractProjectionError):
+                        build_profile_catalog(root, registry)
+
     def test_manifest_composite_is_explicitly_registered(self):
         text = """# X
 

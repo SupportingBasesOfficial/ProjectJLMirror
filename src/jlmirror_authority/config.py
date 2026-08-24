@@ -11,6 +11,7 @@ from .model import AdmissionDenied, EnvironmentClass, SecretReference
 JsonScalar: TypeAlias = str | int | float | bool | None
 _SECRETREF_RE = re.compile(r"^secretref\.[a-z0-9-]+(?:\.[a-z0-9-]+)*@[1-9][0-9]*$")
 _RUNTIME_PROFILE_RE = re.compile(r"^runtime\.[a-z0-9-]+(?:\.[a-z0-9-]+)*@[1-9][0-9]*$")
+_AUTHORITY_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$")
 
 
 def _explicit_name(value: object, field: str) -> str:
@@ -21,6 +22,12 @@ def _explicit_name(value: object, field: str) -> str:
         or any(ord(char) < 0x20 or ord(char) == 0x7F for char in value)
     ):
         raise ValueError(f"{field} must be an explicit canonical string")
+    return value
+
+
+def _authority_identifier(value: object, field: str) -> str:
+    if not isinstance(value, str) or not _AUTHORITY_ID_RE.fullmatch(value):
+        raise ValueError(f"{field} must be a canonical authority identifier")
     return value
 
 
@@ -91,7 +98,7 @@ class ConfigurationSnapshot:
     schema: ConfigurationSchema | None = None
 
     def __post_init__(self) -> None:
-        _explicit_name(self.configuration_generation, "configuration_generation")
+        _authority_identifier(self.configuration_generation, "configuration_generation")
         if not isinstance(self.public_values, Mapping):
             raise ValueError("public_values must be a mapping")
         if not isinstance(self.secret_references, Mapping):
@@ -192,7 +199,7 @@ def require_classified_configuration(
     if not isinstance(environment_class, EnvironmentClass):
         raise AdmissionDenied("environment class for configuration admission is unavailable or non-canonical")
     try:
-        expected_generation = _explicit_name(
+        expected_generation = _authority_identifier(
             expected_configuration_generation, "expected_configuration_generation"
         )
     except ValueError as exc:

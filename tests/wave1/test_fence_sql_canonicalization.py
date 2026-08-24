@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
 from tools.authority.fence_sql_contract import (  # noqa: E402
     CANONICAL_IDENTIFIER_REGEX,
     CANONICAL_REGEX_OPERATOR,
+    EFFECT_ELIGIBLE_PREDECESSOR_PREDICATE,
     validate_fence_sql_text,
 )
 
@@ -49,6 +50,15 @@ class FenceSqlCanonicalizationTests(unittest.TestCase):
         weakened = text.replace(' COLLATE "C"', "")
         findings = validate_fence_sql_text(weakened)
         self.assertTrue(findings)
+
+    def test_non_active_predecessor_cannot_use_ordinary_fence_advance(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        self.assertIn(EFFECT_ELIGIBLE_PREDECESSOR_PREDICATE, text)
+        weakened = text.replace(
+            f"       AND {EFFECT_ELIGIBLE_PREDECESSOR_PREDICATE}\n", "", 1
+        )
+        findings = validate_fence_sql_text(weakened)
+        self.assertTrue(any("authority_state" in finding for finding in findings))
 
     def test_sql_grammar_rejects_whitespace_and_control_form_by_construction(self):
         self.assertNotIn("\\s", CANONICAL_IDENTIFIER_REGEX)

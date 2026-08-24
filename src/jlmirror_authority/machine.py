@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Protocol
 
@@ -49,8 +49,8 @@ class MachineReplayAuthority(Protocol):
 
 
 def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("time must be timezone-aware")
+    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("time must be a timezone-aware datetime")
     return value.astimezone(timezone.utc)
 
 
@@ -63,13 +63,20 @@ def authenticate_machine_assertion(
     expected_audience: str,
     current_key_generation: str,
     current_replay_generation: str,
+    current_max_assertion_lifetime: timedelta,
     now: datetime,
 ) -> Principal:
+    """Authenticate one replay-bounded machine assertion under current Security policy."""
+
     now = _utc(now)
+    if not isinstance(current_max_assertion_lifetime, timedelta) or current_max_assertion_lifetime <= timedelta(0):
+        raise AdmissionDenied("current machine assertion lifetime policy is unavailable or invalid")
     verified = verifier.verify(
         compact_assertion=compact_assertion,
         expected_client_principal=expected_client_principal,
     )
+    if not isinstance(verified, VerifiedMachineAssertion):
+        raise AdmissionDenied("machine assertion verifier returned malformed trusted evidence")
     if verified.client_principal != expected_client_principal:
         raise AdmissionDenied("machine principal binding mismatch")
     if verified.audience != expected_audience:
@@ -78,15 +85,19 @@ def authenticate_machine_assertion(
         raise AdmissionDenied("machine assertion key generation is not current")
     if verified.replay_generation != current_replay_generation:
         raise AdmissionDenied("machine replay generation is not current")
+
+    issued_at = _utc(verified.issued_at)
     not_before = _utc(verified.not_before)
     expires_at = _utc(verified.expires_at)
-    if expires_at <= not_before:
+    if expires_at <= not_before or expires_at <= issued_at:
         raise AdmissionDenied("machine assertion validity interval is malformed")
+    if expires_at - issued_at > current_max_assertion_lifetime:
+        raise AdmissionDenied("machine assertion exceeds current short-lived Security policy")
     if not (not_before <= now < expires_at):
         raise AdmissionDenied("machine assertion outside accepted validity interval")
-    if _utc(verified.issued_at) > now:
+    if issued_at > now:
         raise AdmissionDenied("machine assertion issued in the future")
-    if not verified.jti or len(verified.jti.encode("utf-8")) > MAX_MACHINE_JTI_BYTES:
+    if not isinstance(verified.jti, str) or not verified.jti or len(verified.jti.encode("utf-8")) > MAX_MACHINE_JTI_BYTES:
         raise AdmissionDenied("machine assertion jti is missing or exceeds the bounded replay identity envelope")
     if any(ord(char) < 0x20 or ord(char) == 0x7F for char in verified.jti):
         raise AdmissionDenied("machine assertion jti contains control characters")
@@ -98,7 +109,7 @@ def authenticate_machine_assertion(
         replay_generation=verified.replay_generation,
     )
     if claim is not ReplayClaim.CLAIMED:
-        raise AdmissionDenied(f"machine assertion replay admission denied: {claim.value}")
+        raise AdmissionDenied("machine assertion replay admission denied")
 
     return Principal(
         principal_id=verified.client_principal,

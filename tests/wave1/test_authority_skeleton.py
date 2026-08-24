@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import base64
@@ -63,6 +64,24 @@ from jlmirror_authority.workload import (  # noqa: E402
 )
 
 NOW = datetime(2026, 8, 24, 3, 0, tzinfo=timezone.utc)
+OIDC_ISSUER = "https://id.example"
+OIDC_CLIENT = "bff"
+OIDC_REDIRECT = "https://app.example/callback"
+MACHINE_MAX_LIFETIME = timedelta(minutes=5)
+
+
+def human_principal(identifier: str = "user-1", generation: str = "session-g1") -> Principal:
+    return Principal(identifier, PrincipalKind.HUMAN_BROWSER_SESSION, generation)
+
+
+def begin_auth(session_binding: str = "browser-session-A"):
+    return begin_browser_auth(
+        session_binding=session_binding,
+        expected_issuer=OIDC_ISSUER,
+        expected_client_id=OIDC_CLIENT,
+        expected_redirect_uri=OIDC_REDIRECT,
+        now=NOW,
+    )
 
 
 class TxStore:
@@ -80,15 +99,15 @@ class TxStore:
 
 
 class OidcPort:
-    def __init__(self, *, nonce, issuer="https://id.example", client_id="bff", acr="loa2"):
+    def __init__(self, *, nonce, issuer=OIDC_ISSUER, client_id=OIDC_CLIENT, acr="loa2"):
         self.nonce = nonce
         self.issuer = issuer
         self.client_id = client_id
         self.acr = acr
-        self.last_verifier = None
+        self.last_kwargs = None
 
     def exchange_and_verify(self, **kwargs):
-        self.last_verifier = kwargs["pkce_verifier"]
+        self.last_kwargs = kwargs
         return VerifiedOidcIdentity(
             principal_id="user-1",
             issuer=self.issuer,
@@ -103,11 +122,11 @@ class OidcPort:
 
 
 class StrengthPolicy:
-    def __init__(self, allowed=True):
-        self.allowed = allowed
+    def __init__(self, result=True):
+        self.result = result
 
     def permits(self, **kwargs):
-        return self.allowed and kwargs["policy_id"] == "privileged-v1"
+        return self.result if kwargs["policy_id"] == "privileged-v1" else False
 
 
 class MachineVerifier:
@@ -138,13 +157,13 @@ class ReplayAuthority:
 class PlacementAuthority:
     def __init__(self, evidence):
         self.evidence = evidence
-        self.current = True
+        self.boolean_gate = True
 
     def resolve_current(self, tenant_id):
         return self.evidence if self.evidence.tenant_id == tenant_id else None
 
     def context_is_current(self, context):
-        return self.current and context.placement_version == self.evidence.placement_version
+        return self.boolean_gate
 
 
 class AuthzAuthority:
@@ -173,6 +192,7 @@ class FenceAuthority:
             if (
                 kwargs["fence_scope_id"] != self.record.fence_scope_id
                 or kwargs["expected_predecessor_epoch"] != self.record.current_fence_epoch
+                or kwargs["expected_predecessor_generation_id"] != self.record.current_generation_id
             ):
                 return None
             self.record = FenceRecord(
@@ -205,7 +225,11 @@ def placement(**overrides):
         cell_id="cell-a",
         placement_version="pv-9",
         runtime_generation="runtime-g12",
+        configuration_generation="cfg-g4",
+        workload_credential_generation="wc-g9",
+        network_policy_generation="np-g6",
         environment_class=EnvironmentClass.PRODUCTION,
+        isolation_class="pooled",
         runtime_lifecycle=RuntimeLifecycle.ACTIVE,
         placement_current=True,
         operation_eligible=True,
@@ -217,20 +241,58 @@ def placement(**overrides):
     return PlacementEvidence(**values)
 
 
+def construct_context(
+    authority: PlacementAuthority,
+    *,
+    principal: Principal | None = None,
+    **destination_overrides,
+):
+    principal = principal or human_principal()
+    evidence = authority.evidence
+    values = dict(
+        principal=principal,
+        placement_authority=authority,
+        tenant_id=evidence.tenant_id,
+        destination_cell_id=evidence.cell_id,
+        destination_runtime_generation=evidence.runtime_generation,
+        destination_configuration_generation=evidence.configuration_generation,
+        destination_workload_credential_generation=evidence.workload_credential_generation,
+        destination_network_policy_generation=evidence.network_policy_generation,
+        required_environment=evidence.environment_class,
+        now=NOW,
+        request_id="req-1",
+        correlation_id="corr-1",
+        operation_id="op-1",
+    )
+    values.update(destination_overrides)
+    return construct_tenant_context(**values)
+
+
 class BrowserTests(unittest.TestCase):
     def test_pkce_s256_and_entropy_envelope(self):
-        init = begin_browser_auth(session_binding="browser-session-A", now=NOW)
+        init = begin_auth()
         expected = base64.urlsafe_b64encode(
             hashlib.sha256(init.transaction.pkce_verifier.encode("ascii")).digest()
         ).rstrip(b"=").decode("ascii")
         self.assertEqual(init.pkce_challenge, expected)
         self.assertGreaterEqual(len(init.transaction.pkce_verifier), 43)
-        self.assertNotEqual(init.state, init.transaction.nonce)
+        self.assertNotEqual(init.state, init.nonce)
+
+    def test_transaction_pins_oidc_profile_and_redacts_transaction_secrets(self):
+        init = begin_auth()
+        transaction = init.transaction
+        self.assertEqual(transaction.expected_issuer, OIDC_ISSUER)
+        self.assertEqual(transaction.expected_client_id, OIDC_CLIENT)
+        self.assertEqual(transaction.expected_redirect_uri, OIDC_REDIRECT)
+        self.assertNotEqual(transaction.nonce_digest, init.nonce)
+        for secret in (transaction.pkce_verifier, init.state, init.nonce, init.pkce_challenge):
+            self.assertNotIn(secret, repr(transaction))
+            self.assertNotIn(secret, repr(init))
 
     def test_transaction_is_one_shot_even_after_bad_state(self):
-        init = begin_browser_auth(session_binding="browser-session-A", now=NOW)
+        init = begin_auth()
         store = TxStore(init.transaction)
-        port = OidcPort(nonce=init.transaction.nonce)
+        port = OidcPort(nonce=init.nonce)
         with self.assertRaises(AdmissionDenied):
             complete_browser_auth(
                 transaction_authority=store,
@@ -239,9 +301,6 @@ class BrowserTests(unittest.TestCase):
                 initiating_session_binding="browser-session-A",
                 returned_state="wrong",
                 authorization_code="code-1",
-                expected_issuer="https://id.example",
-                expected_client_id="bff",
-                expected_redirect_uri="https://app.example/callback",
                 now=NOW,
             )
         with self.assertRaises(AdmissionDenied):
@@ -252,30 +311,24 @@ class BrowserTests(unittest.TestCase):
                 initiating_session_binding="browser-session-A",
                 returned_state=init.state,
                 authorization_code="code-1",
-                expected_issuer="https://id.example",
-                expected_client_id="bff",
-                expected_redirect_uri="https://app.example/callback",
                 now=NOW,
             )
 
     def test_cross_session_replay_is_denied(self):
-        init = begin_browser_auth(session_binding="browser-session-A", now=NOW)
+        init = begin_auth()
         with self.assertRaises(AdmissionDenied):
             complete_browser_auth(
                 transaction_authority=TxStore(init.transaction),
-                oidc_port=OidcPort(nonce=init.transaction.nonce),
+                oidc_port=OidcPort(nonce=init.nonce),
                 transaction_id=init.transaction.transaction_id,
                 initiating_session_binding="browser-session-B",
                 returned_state=init.state,
                 authorization_code="code-1",
-                expected_issuer="https://id.example",
-                expected_client_id="bff",
-                expected_redirect_uri="https://app.example/callback",
                 now=NOW,
             )
 
     def test_nonce_mismatch_is_denied(self):
-        init = begin_browser_auth(session_binding="browser-session-A", now=NOW)
+        init = begin_auth()
         with self.assertRaises(AdmissionDenied):
             complete_browser_auth(
                 transaction_authority=TxStore(init.transaction),
@@ -284,15 +337,46 @@ class BrowserTests(unittest.TestCase):
                 initiating_session_binding="browser-session-A",
                 returned_state=init.state,
                 authorization_code="code-1",
-                expected_issuer="https://id.example",
-                expected_client_id="bff",
-                expected_redirect_uri="https://app.example/callback",
                 now=NOW,
             )
 
+    def test_wrong_verified_issuer_or_client_is_denied(self):
+        for port in (
+            OidcPort(nonce=begin_auth().nonce, issuer="https://evil.example"),
+            OidcPort(nonce=begin_auth().nonce, client_id="other-client"),
+        ):
+            init = begin_auth()
+            port.nonce = init.nonce
+            with self.subTest(port=port), self.assertRaises(AdmissionDenied):
+                complete_browser_auth(
+                    transaction_authority=TxStore(init.transaction),
+                    oidc_port=port,
+                    transaction_id=init.transaction.transaction_id,
+                    initiating_session_binding="browser-session-A",
+                    returned_state=init.state,
+                    authorization_code="code-1",
+                    now=NOW,
+                )
+
+    def test_callback_uses_initiation_bound_issuer_client_redirect(self):
+        init = begin_auth()
+        port = OidcPort(nonce=init.nonce)
+        complete_browser_auth(
+            transaction_authority=TxStore(init.transaction),
+            oidc_port=port,
+            transaction_id=init.transaction.transaction_id,
+            initiating_session_binding="browser-session-A",
+            returned_state=init.state,
+            authorization_code="code-1",
+            now=NOW,
+        )
+        self.assertEqual(port.last_kwargs["expected_issuer"], OIDC_ISSUER)
+        self.assertEqual(port.last_kwargs["expected_client_id"], OIDC_CLIENT)
+        self.assertEqual(port.last_kwargs["expected_redirect_uri"], OIDC_REDIRECT)
+
     def test_valid_callback_yields_human_principal_and_strength_evidence(self):
-        init = begin_browser_auth(session_binding="browser-session-A", now=NOW)
-        port = OidcPort(nonce=init.transaction.nonce)
+        init = begin_auth()
+        port = OidcPort(nonce=init.nonce)
         principal, strength = complete_browser_auth(
             transaction_authority=TxStore(init.transaction),
             oidc_port=port,
@@ -300,20 +384,13 @@ class BrowserTests(unittest.TestCase):
             initiating_session_binding="browser-session-A",
             returned_state=init.state,
             authorization_code="code-1",
-            expected_issuer="https://id.example",
-            expected_client_id="bff",
-            expected_redirect_uri="https://app.example/callback",
             now=NOW,
         )
         self.assertEqual(principal.kind, PrincipalKind.HUMAN_BROWSER_SESSION)
         self.assertTrue(strength.is_current(NOW))
-        self.assertEqual(port.last_verifier, init.transaction.pkce_verifier)
+        self.assertEqual(port.last_kwargs["pkce_verifier"], init.transaction.pkce_verifier)
 
-    def test_strength_missing_or_policy_denied_fails_closed(self):
-        with self.assertRaises(AdmissionDenied):
-            require_authentication_strength(
-                policy=StrengthPolicy(), policy_id="privileged-v1", evidence=None, now=NOW
-            )
+    def test_strength_missing_policy_denied_or_truthy_non_bool_fails_closed(self):
         evidence = AuthenticationStrengthEvidence(
             issuer="id.example",
             acr="loa2",
@@ -322,17 +399,22 @@ class BrowserTests(unittest.TestCase):
             evidence_expires_at=NOW + timedelta(minutes=1),
             policy_version="p7",
         )
-        with self.assertRaises(AdmissionDenied):
-            require_authentication_strength(
-                policy=StrengthPolicy(False),
-                policy_id="privileged-v1",
-                evidence=evidence,
-                now=NOW,
-            )
+        for policy, supplied in (
+            (StrengthPolicy(True), None),
+            (StrengthPolicy(False), evidence),
+            (StrengthPolicy("true"), evidence),
+        ):
+            with self.subTest(result=policy.result), self.assertRaises(AdmissionDenied):
+                require_authentication_strength(
+                    policy=policy,
+                    policy_id="privileged-v1",
+                    evidence=supplied,
+                    now=NOW,
+                )
 
 
 class MachineTests(unittest.TestCase):
-    def _authenticate(self, assertion=None, replay=None):
+    def _authenticate(self, assertion=None, replay=None, max_lifetime=MACHINE_MAX_LIFETIME):
         return authenticate_machine_assertion(
             verifier=MachineVerifier(assertion or machine_assertion()),
             replay_authority=replay or ReplayAuthority(),
@@ -341,6 +423,7 @@ class MachineTests(unittest.TestCase):
             expected_audience="https://api.example",
             current_key_generation="key-g7",
             current_replay_generation="replay-g4",
+            current_max_assertion_lifetime=max_lifetime,
             now=NOW,
         )
 
@@ -390,12 +473,33 @@ class MachineTests(unittest.TestCase):
         self.assertEqual(outcomes.count("accepted"), 1)
         self.assertEqual(outcomes.count("denied"), 31)
 
+    def test_long_lived_assertion_is_denied_by_current_security_policy(self):
+        assertion = machine_assertion(
+            issued_at=NOW - timedelta(seconds=1),
+            not_before=NOW - timedelta(seconds=1),
+            expires_at=NOW + timedelta(minutes=10),
+        )
+        with self.assertRaises(AdmissionDenied):
+            self._authenticate(assertion)
+
+    def test_missing_or_invalid_lifetime_policy_fails_closed(self):
+        for policy in (timedelta(0), timedelta(seconds=-1), None):
+            with self.subTest(policy=policy), self.assertRaises(AdmissionDenied):
+                self._authenticate(max_lifetime=policy)
+
 
 class WorkloadTests(unittest.TestCase):
-    def test_canonical_spiffe_identity_parses(self):
-        identity = parse_workload_identity(
-            "spiffe://jlmirror.example/environment.production@1/runtime.api@1/api-01"
+    def peer(self):
+        return VerifiedWorkloadPeer(
+            spiffe_id="spiffe://jlmirror.example/environment.production@1/runtime.api@1/api-01",
+            certificate_not_before=NOW - timedelta(minutes=1),
+            certificate_not_after=NOW + timedelta(minutes=5),
+            trust_bundle_generation="tb-4",
+            workload_credential_generation="wc-9",
         )
+
+    def test_canonical_spiffe_identity_parses(self):
+        identity = parse_workload_identity(self.peer().spiffe_id)
         self.assertEqual(identity.environment_class, EnvironmentClass.PRODUCTION)
         self.assertEqual(identity.runtime_profile_id, "runtime.api@1")
 
@@ -411,16 +515,9 @@ class WorkloadTests(unittest.TestCase):
                 parse_workload_identity(value)
 
     def test_workload_peer_rejects_cross_environment_and_stale_bundle(self):
-        peer = VerifiedWorkloadPeer(
-            spiffe_id="spiffe://jlmirror.example/environment.production@1/runtime.api@1/api-01",
-            certificate_not_before=NOW - timedelta(minutes=1),
-            certificate_not_after=NOW + timedelta(minutes=5),
-            trust_bundle_generation="tb-4",
-            workload_credential_generation="wc-9",
-        )
         with self.assertRaises(AdmissionDenied):
             admit_workload_peer(
-                peer=peer,
+                peer=self.peer(),
                 expected_trust_domain="jlmirror.example",
                 expected_environment=EnvironmentClass.VALIDATION,
                 allowed_runtime_profiles=frozenset({"runtime.api@1"}),
@@ -430,7 +527,7 @@ class WorkloadTests(unittest.TestCase):
             )
         with self.assertRaises(AdmissionDenied):
             admit_workload_peer(
-                peer=peer,
+                peer=self.peer(),
                 expected_trust_domain="jlmirror.example",
                 expected_environment=EnvironmentClass.PRODUCTION,
                 allowed_runtime_profiles=frozenset({"runtime.api@1"}),
@@ -440,15 +537,8 @@ class WorkloadTests(unittest.TestCase):
             )
 
     def test_workload_identity_returns_service_principal_not_tenant_principal(self):
-        peer = VerifiedWorkloadPeer(
-            spiffe_id="spiffe://jlmirror.example/environment.production@1/runtime.api@1/api-01",
-            certificate_not_before=NOW - timedelta(minutes=1),
-            certificate_not_after=NOW + timedelta(minutes=5),
-            trust_bundle_generation="tb-4",
-            workload_credential_generation="wc-9",
-        )
         principal = admit_workload_peer(
-            peer=peer,
+            peer=self.peer(),
             expected_trust_domain="jlmirror.example",
             expected_environment=EnvironmentClass.PRODUCTION,
             allowed_runtime_profiles=frozenset({"runtime.api@1"}),
@@ -461,58 +551,47 @@ class WorkloadTests(unittest.TestCase):
 
 
 class ControlPlaneTests(unittest.TestCase):
-    def test_constructs_context_only_for_current_active_authority(self):
+    def test_constructs_context_bound_to_principal_and_all_current_generations(self):
         authority = PlacementAuthority(placement())
-        context = construct_tenant_context(
-            placement_authority=authority,
-            tenant_id="tenant-acme",
-            destination_cell_id="cell-a",
-            destination_runtime_generation="runtime-g12",
-            required_environment=EnvironmentClass.PRODUCTION,
-            now=NOW,
-        )
+        principal = human_principal()
+        context = construct_context(authority, principal=principal)
+        self.assertTrue(context.matches_principal(principal))
         self.assertEqual(context.placement_version, "pv-9")
+        self.assertEqual(context.runtime_generation, "runtime-g12")
+        self.assertEqual(context.configuration_generation, "cfg-g4")
+        self.assertEqual(context.workload_credential_generation, "wc-g9")
+        self.assertEqual(context.network_policy_generation, "np-g6")
         self.assertEqual(context.fence_epoch, 7)
+        self.assertEqual(context.request_id, "req-1")
+        self.assertEqual(context.correlation_id, "corr-1")
+        self.assertEqual(context.operation_id, "op-1")
 
-    def test_wrong_cell_stale_generation_and_draining_are_denied(self):
-        cases = (
-            (placement(), dict(destination_cell_id="cell-b", destination_runtime_generation="runtime-g12")),
-            (placement(), dict(destination_cell_id="cell-a", destination_runtime_generation="runtime-old")),
-            (placement(runtime_lifecycle=RuntimeLifecycle.DRAINING), dict(destination_cell_id="cell-a", destination_runtime_generation="runtime-g12")),
-        )
-        for evidence, destination in cases:
-            with self.subTest(destination=destination), self.assertRaises(AdmissionDenied):
-                construct_tenant_context(
-                    placement_authority=PlacementAuthority(evidence),
-                    tenant_id="tenant-acme",
-                    required_environment=EnvironmentClass.PRODUCTION,
-                    now=NOW,
-                    **destination,
-                )
-
-    def test_missing_currentness_predicate_is_denied(self):
-        for field in ("placement_current", "operation_eligible", "cell_admission_current"):
+    def test_destination_currentness_mismatch_is_denied_for_every_runtime_dimension(self):
+        authority = PlacementAuthority(placement())
+        cases = {
+            "destination_cell_id": "cell-b",
+            "destination_runtime_generation": "runtime-old",
+            "destination_configuration_generation": "cfg-old",
+            "destination_workload_credential_generation": "wc-old",
+            "destination_network_policy_generation": "np-old",
+        }
+        for field, value in cases.items():
             with self.subTest(field=field), self.assertRaises(AdmissionDenied):
-                construct_tenant_context(
-                    placement_authority=PlacementAuthority(placement(**{field: False})),
-                    tenant_id="tenant-acme",
-                    destination_cell_id="cell-a",
-                    destination_runtime_generation="runtime-g12",
-                    required_environment=EnvironmentClass.PRODUCTION,
-                    now=NOW,
-                )
+                construct_context(authority, **{field: value})
+
+    def test_draining_and_missing_currentness_predicates_are_denied(self):
+        for evidence in (
+            placement(runtime_lifecycle=RuntimeLifecycle.DRAINING),
+            placement(placement_current=False),
+            placement(operation_eligible=False),
+            placement(cell_admission_current=False),
+        ):
+            with self.subTest(evidence=evidence), self.assertRaises(AdmissionDenied):
+                construct_context(PlacementAuthority(evidence))
 
     def test_current_owning_authorization_is_required_after_context(self):
         placement_authority = PlacementAuthority(placement())
-        context = construct_tenant_context(
-            placement_authority=placement_authority,
-            tenant_id="tenant-acme",
-            destination_cell_id="cell-a",
-            destination_runtime_generation="runtime-g12",
-            required_environment=EnvironmentClass.PRODUCTION,
-            now=NOW,
-        )
-        principal = Principal("user-1", PrincipalKind.HUMAN_BROWSER_SESSION, "session-g1")
+        context = construct_context(placement_authority)
         declaration = AuthorizationDeclaration(
             action="organization.memberships.manage",
             scope=ScopeClass.TENANT,
@@ -523,7 +602,7 @@ class ControlPlaneTests(unittest.TestCase):
         for authz in (AuthzAuthority(granted=False), AuthzAuthority(current=False)):
             with self.assertRaises(AdmissionDenied):
                 authorize_protected_operation(
-                    principal=principal,
+                    principal=human_principal(),
                     declaration=declaration,
                     placement_authority=placement_authority,
                     authorization_authority=authz,
@@ -531,16 +610,84 @@ class ControlPlaneTests(unittest.TestCase):
                     now=NOW,
                 )
 
+    def test_context_cannot_be_reused_by_different_principal_or_generation(self):
+        placement_authority = PlacementAuthority(placement())
+        context = construct_context(placement_authority, principal=human_principal("user-1", "session-g1"))
+        declaration = AuthorizationDeclaration(
+            action="organization.memberships.read",
+            scope=ScopeClass.TENANT,
+            tenant_required=True,
+            step_up=StepUpClass.NONE,
+            audit_class=AuditClass.NORMAL,
+        )
+        for principal in (
+            human_principal("user-2", "session-g1"),
+            human_principal("user-1", "session-g2"),
+        ):
+            with self.subTest(principal=principal), self.assertRaises(AdmissionDenied):
+                authorize_protected_operation(
+                    principal=principal,
+                    declaration=declaration,
+                    placement_authority=placement_authority,
+                    authorization_authority=AuthzAuthority(),
+                    context=context,
+                    now=NOW,
+                )
+
+    def test_context_revalidation_detects_each_generation_drift(self):
+        declaration = AuthorizationDeclaration(
+            action="organization.memberships.read",
+            scope=ScopeClass.TENANT,
+            tenant_required=True,
+            step_up=StepUpClass.NONE,
+            audit_class=AuditClass.NORMAL,
+        )
+        for field, value in (
+            ("placement_version", "pv-10"),
+            ("runtime_generation", "runtime-g13"),
+            ("configuration_generation", "cfg-g5"),
+            ("workload_credential_generation", "wc-g10"),
+            ("network_policy_generation", "np-g7"),
+            ("fence_epoch", 8),
+        ):
+            authority = PlacementAuthority(placement())
+            context = construct_context(authority)
+            authority.evidence = replace(authority.evidence, **{field: value})
+            with self.subTest(field=field), self.assertRaises(AdmissionDenied):
+                authorize_protected_operation(
+                    principal=human_principal(),
+                    declaration=declaration,
+                    placement_authority=authority,
+                    authorization_authority=AuthzAuthority(),
+                    context=context,
+                    now=NOW,
+                )
+
+    def test_truthy_non_boolean_currentness_port_is_denied(self):
+        authority = PlacementAuthority(placement())
+        context = construct_context(authority)
+        authority.boolean_gate = "true"
+        declaration = AuthorizationDeclaration(
+            action="organization.memberships.read",
+            scope=ScopeClass.TENANT,
+            tenant_required=True,
+            step_up=StepUpClass.NONE,
+            audit_class=AuditClass.NORMAL,
+        )
+        with self.assertRaises(AdmissionDenied):
+            authorize_protected_operation(
+                principal=human_principal(),
+                declaration=declaration,
+                placement_authority=authority,
+                authorization_authority=AuthzAuthority(),
+                context=context,
+                now=NOW,
+            )
+
     def test_privileged_step_up_is_independent_of_permission(self):
         placement_authority = PlacementAuthority(placement())
-        context = construct_tenant_context(
-            placement_authority=placement_authority,
-            tenant_id="tenant-acme",
-            destination_cell_id="cell-a",
-            destination_runtime_generation="runtime-g12",
-            required_environment=EnvironmentClass.PRODUCTION,
-            now=NOW,
-        )
+        principal = Principal("admin-1", PrincipalKind.PLATFORM_ADMIN_PRINCIPAL, "cg-1")
+        context = construct_context(placement_authority, principal=principal)
         declaration = AuthorizationDeclaration(
             action="platform.tenants.suspend",
             scope=ScopeClass.TENANT,
@@ -551,7 +698,7 @@ class ControlPlaneTests(unittest.TestCase):
         )
         with self.assertRaises(AdmissionDenied):
             authorize_protected_operation(
-                principal=Principal("admin-1", PrincipalKind.PLATFORM_ADMIN_PRINCIPAL, "cg-1"),
+                principal=principal,
                 declaration=declaration,
                 placement_authority=placement_authority,
                 authorization_authority=AuthzAuthority(granted=True),

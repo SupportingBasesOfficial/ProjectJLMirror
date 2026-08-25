@@ -27,7 +27,7 @@ class FenceBootstrapSafetyTests(unittest.TestCase):
     def assert_contract_fails(self, text: str) -> None:
         self.assertTrue(validate_fence_sql_text(text))
 
-    def test_real_bootstrap_is_fresh_only_and_catalog_bound(self):
+    def test_real_bootstrap_requires_complete_fresh_authority_object_set(self):
         self.assertEqual(validate_bootstrap_safety_text(self.text()), [])
         self.assertEqual(validate_fence_sql_text(self.text()), [])
 
@@ -50,10 +50,35 @@ class FenceBootstrapSafetyTests(unittest.TestCase):
 
     def test_existing_table_must_return_before_persistent_bootstrap_mutation(self):
         text = self.text()
-        self.assert_safety_fails(text.replace("IF v_existing_table IS NOT NULL THEN\n        RETURN;", "IF false THEN\n        RETURN;", 1), "fresh-only")
+        self.assert_safety_fails(text.replace("IF v_existing_table IS NOT NULL THEN\n        RETURN;", "IF false THEN\n        RETURN;", 1), "existing authority_fences")
         moved = text.replace("IF v_existing_table IS NOT NULL THEN\n        RETURN;\n    END IF;\n\n", "", 1)
         moved = moved.replace("END\n$wave1_bootstrap$;", "IF v_existing_table IS NOT NULL THEN\n        RETURN;\n    END IF;\nEND\n$wave1_bootstrap$;", 1)
         self.assert_safety_fails(moved)
+
+    def test_partial_preexisting_namespace_or_functions_must_fail_closed(self):
+        text = self.text()
+        self.assert_safety_fails(
+            text.replace("v_existing_schema oid := pg_catalog.to_regnamespace('platform');", "v_existing_schema oid := NULL;", 1),
+            "complete-object",
+        )
+        self.assert_safety_fails(
+            text.replace("OR v_existing_initialize IS NOT NULL", "OR false", 1),
+            "schema/functions",
+        )
+        self.assert_safety_fails(
+            text.replace("OR v_existing_advance IS NOT NULL", "OR false", 1),
+            "schema/functions",
+        )
+        self.assert_safety_fails(
+            text.replace("RAISE EXCEPTION 'Wave 1 fence fresh bootstrap requires complete authority object absence';", "NULL;", 1),
+            "schema/functions",
+        )
+
+    def test_if_not_exists_cannot_launder_preexisting_namespace(self):
+        self.assert_safety_fails(
+            self.text().replace("EXECUTE 'CREATE SCHEMA platform'", "EXECUTE 'CREATE SCHEMA IF NOT EXISTS platform'", 1),
+            "IF NOT EXISTS",
+        )
 
     def test_catalog_bound_expression_primitives_are_required(self):
         text = self.text()

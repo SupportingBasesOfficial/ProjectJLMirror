@@ -183,6 +183,9 @@ def tenant_final_evidence(context, **overrides):
         isolation_class=context.isolation_class,
         fence_scope_id=context.fence_scope_id,
         fence_epoch=context.fence_epoch,
+        executing_runtime_authority_revision="runtime-authority-r9",
+        executing_runtime_profile_id="runtime.api@1",
+        executing_runtime_generation="runtime-api-g9",
     )
     values.update(overrides)
     return FinalAdmissionEvidence(**values)
@@ -278,6 +281,27 @@ class AtomicFinalAdmissionTests(unittest.TestCase):
                 self.authorization_authority.calls = 0
                 self.tenant_call(Finalizer(evidence))
 
+    def test_resource_declaration_requires_explicit_scope(self):
+        with self.assertRaises(ValueError):
+            AuthorizationDeclaration(
+                action="organization.memberships.read",
+                scope=ScopeClass.RESOURCE,
+                tenant_required=True,
+                step_up=StepUpClass.NONE,
+                audit_class=AuditClass.NORMAL,
+            )
+
+    def test_non_resource_declaration_rejects_resource_scope(self):
+        with self.assertRaises(ValueError):
+            AuthorizationDeclaration(
+                action="organization.memberships.read",
+                scope=ScopeClass.TENANT,
+                tenant_required=True,
+                step_up=StepUpClass.NONE,
+                audit_class=AuditClass.NORMAL,
+                resource_scope="resource:alpha",
+            )
+
     def test_same_action_different_resource_scope_cannot_reuse_final_evidence(self):
         evidence = tenant_final_evidence(self.context, resource_scope="resource:alpha")
         with self.assertRaises(AdmissionDenied):
@@ -303,6 +327,23 @@ class AtomicFinalAdmissionTests(unittest.TestCase):
             final_admission_authority=Finalizer(evidence),
         )
         self.assertTrue(decision.granted)
+
+    def test_tenant_final_admission_requires_executing_runtime_binding(self):
+        for field in (
+            "executing_runtime_authority_revision",
+            "executing_runtime_profile_id",
+            "executing_runtime_generation",
+        ):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                tenant_final_evidence(self.context, **{field: None})
+
+    def test_tenant_final_admission_rejects_wrong_executing_runtime_profile(self):
+        evidence = tenant_final_evidence(
+            self.context,
+            executing_runtime_profile_id="runtime.control-plane@1",
+        )
+        with self.assertRaises(AdmissionDenied):
+            self.tenant_call(Finalizer(evidence))
 
     def test_any_tenant_placement_generation_or_fence_drift_fails_closed(self):
         mutations = {

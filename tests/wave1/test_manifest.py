@@ -1,9 +1,16 @@
 import json
 from pathlib import Path
+import sys
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.authority.validate_wave1 import EXPECTED_FORBIDDEN_SUBSTITUTIONS
+
+
 MANIFEST = ROOT / "implementation" / "wave-1" / "IMPLEMENTATION_MANIFEST.json"
 
 
@@ -47,6 +54,13 @@ class Wave1ImplementationManifestTests(unittest.TestCase):
     def test_ir_d_profiles_are_the_only_closed_protocol_profiles(self):
         manifest = self.load_manifest()
         self.assertEqual(manifest["closed_protocol_profiles"], ["IR-D-001", "IR-D-002", "IR-D-003"])
+
+    def test_forbidden_authority_substitutions_match_validator_contract_exactly(self):
+        manifest = self.load_manifest()
+        self.assertEqual(
+            manifest["forbidden_authority_substitutions"],
+            EXPECTED_FORBIDDEN_SUBSTITUTIONS,
+        )
 
 
 if __name__ == "__main__":

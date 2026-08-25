@@ -12,6 +12,12 @@ from tools.authority.validate_wave1 import EXPECTED_FORBIDDEN_SUBSTITUTIONS
 
 
 MANIFEST = ROOT / "implementation" / "wave-1" / "IMPLEMENTATION_MANIFEST.json"
+REQUIRED_PANORAMIC_SUBSTITUTIONS = {
+    "destination_runtime_generation_for_executing_runtime_authority",
+    "final_admission_without_current_executing_runtime_authority",
+    "resource_scope_absence_for_resource_authority",
+    "resource_scope_on_non_resource_authority",
+}
 
 
 class Wave1ImplementationManifestTests(unittest.TestCase):
@@ -60,6 +66,14 @@ class Wave1ImplementationManifestTests(unittest.TestCase):
         self.assertEqual(
             manifest["forbidden_authority_substitutions"],
             EXPECTED_FORBIDDEN_SUBSTITUTIONS,
+        )
+
+    def test_latest_panorama_substitutions_are_independently_required(self):
+        manifest = self.load_manifest()
+        actual = set(manifest["forbidden_authority_substitutions"])
+        self.assertTrue(
+            REQUIRED_PANORAMIC_SUBSTITUTIONS <= actual,
+            REQUIRED_PANORAMIC_SUBSTITUTIONS - actual,
         )
 
 

@@ -15,6 +15,18 @@ from tools.authority.validate_fence_revalidation_safety import (  # noqa: E402
 
 BOOTSTRAP = ROOT / "sql" / "wave1" / "001_platform_authority_fence.sql"
 REUSE = ROOT / "sql" / "wave1" / "002_revalidate_authority_fence_contract.sql"
+BOUNDARY = ROOT / "implementation" / "wave-1" / "FENCE_DEFAULT_ACL_AUTHORITY_BOUNDARY.md"
+
+REQUIRED_LAWS = {
+    "PUBLIC REVOKED != NONOWNER DEFAULT ACL ABSENT",
+    "DEFAULT ACL PREFLIGHT != MATERIALIZED OBJECT ACL PROOF",
+    "MATERIALIZED OBJECT ACL CLEAN != DEFAULT ACL SAFE FOR FUTURE CREATE",
+    "MISSING REUSE ROUTINE != SAFE CREATE OR REPLACE",
+    "PREEXISTING ROUTINE ACL CLEAN != POSTCANONICAL ROUTINE ACL CLEAN",
+    "PRE-CREATE DEFAULT ACL CHECK != POST-CREATE ACL ASSERTION",
+    "REUSE REPAIR != REUSE ADMISSION",
+    "WAVE 1 HARDENING != WAVE 2 AUTHORIZATION",
+}
 
 
 class FenceDefaultAclAuthorityTests(unittest.TestCase):
@@ -29,6 +41,11 @@ class FenceDefaultAclAuthorityTests(unittest.TestCase):
 
     def assert_reuse_fails(self, text: str) -> None:
         self.assertTrue(validate_revalidation_safety_text(text))
+
+    def test_boundary_materializes_default_acl_authority_laws(self):
+        text = BOUNDARY.read_text(encoding="utf-8")
+        missing = {law for law in REQUIRED_LAWS if law not in text}
+        self.assertFalse(missing, missing)
 
     def test_real_migrations_close_default_acl_creation_authority(self):
         self.assertEqual(validate_bootstrap_safety_text(self.bootstrap()), [])
@@ -64,8 +81,13 @@ class FenceDefaultAclAuthorityTests(unittest.TestCase):
                 1,
             )
         )
-        moved = text.replace("DO $wave1_bootstrap_privilege_assert$", "DO $wave1_bootstrap_privilege_note$", 1)
-        self.assert_bootstrap_fails(moved)
+        self.assert_bootstrap_fails(
+            text.replace(
+                "fresh fence authority routine materialized non-owner privileges",
+                "fresh fence authority routine privileges checked later",
+                1,
+            )
+        )
 
     def test_reuse_must_reject_incomplete_canonical_routine_set(self):
         text = self.reuse()
@@ -91,6 +113,13 @@ class FenceDefaultAclAuthorityTests(unittest.TestCase):
             text.replace(
                 "Wave 1 reuse canonical routine materialized non-owner privileges before commit",
                 "Wave 1 reuse canonical routine privileges checked later",
+                1,
+            )
+        )
+        self.assert_reuse_fails(
+            text.replace(
+                "p.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog']::text[]",
+                "false",
                 1,
             )
         )

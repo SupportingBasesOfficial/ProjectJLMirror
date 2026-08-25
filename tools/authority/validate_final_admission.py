@@ -25,6 +25,7 @@ EXPECTED_MANIFEST = {
     "decision_mode": "atomic_or_revision_bound_logical_snapshot",
     "resource_scope_mode": "required_for_resource_forbidden_otherwise",
     "declaration_scope_binding_mode": "exact_scope_and_tenant_requirement",
+    "cross_tenant_target_binding_mode": "required_exact_explicit_tenant_set_or_selection_criteria_for_cross_tenant_forbidden_otherwise",
     "tenant_resource_executing_runtime_profile": "runtime.api@1",
     "required_common_bindings": [
         "admission_revision",
@@ -36,6 +37,7 @@ EXPECTED_MANIFEST = {
         "scope",
         "tenant_requirement",
         "resource_scope",
+        "cross_tenant_target",
         "authentication_strength_policy_id",
         "executing_runtime_authority_revision",
         "executing_runtime_profile_id",
@@ -60,6 +62,7 @@ EXPECTED_MANIFEST = {
     "required_privileged_human_bindings_when_applicable": [
         "authentication_strength_policy_revision"
     ],
+    "required_cross_tenant_bindings_when_applicable": ["cross_tenant_target"],
     "cross_tenant_executing_runtime_profile": "runtime.control-plane@1",
     "finalizer_forbidden_inputs": ["caller_supplied_now"],
     "fallback_to_serial_checks": False,
@@ -73,6 +76,7 @@ REQUIRED_EVIDENCE_FIELDS = {
     *EXPECTED_MANIFEST["required_common_bindings"],
     *EXPECTED_MANIFEST["required_tenant_bindings_when_applicable"],
     *EXPECTED_MANIFEST["required_privileged_human_bindings_when_applicable"],
+    *EXPECTED_MANIFEST["required_cross_tenant_bindings_when_applicable"],
 }
 
 EXPECTED_FINALIZER_ARGUMENTS = [
@@ -82,6 +86,7 @@ EXPECTED_FINALIZER_ARGUMENTS = [
     "declaration",
     "expected_runtime_binding",
     "authentication_strength_evidence",
+    "cross_tenant_target",
 ]
 
 REQUIRED_DOC_LAWS = (
@@ -89,6 +94,7 @@ REQUIRED_DOC_LAWS = (
     "CALLER-SUPPLIED NOW != FINAL CURRENTNESS CLOCK",
     "RESOURCE SCOPE ABSENCE != RESOURCE AUTHORITY",
     "ACTION MATCH != DECLARATION-SCOPE MATCH",
+    "CROSS-TENANT ACTION MATCH != TARGET-SET AUTHORITY",
     "TENANT/RESOURCE ADMISSION != NON-API RUNTIME AUTHORITY",
     "AUTHENTICATION-STRENGTH REVISION != POLICY-ID BINDING",
     "DESTINATION RUNTIME GENERATION != EXECUTING RUNTIME AUTHORITY",
@@ -107,6 +113,9 @@ REQUIRED_TEST_NAMES = (
     "test_tenant_final_admission_requires_executing_runtime_binding",
     "test_tenant_final_admission_rejects_wrong_executing_runtime_profile",
     "test_any_tenant_placement_generation_or_fence_drift_fails_closed",
+    "test_cross_tenant_requires_exact_target_binding",
+    "test_same_cross_tenant_action_cannot_reuse_final_evidence_for_other_target",
+    "test_non_cross_tenant_operation_rejects_cross_tenant_target_binding",
     "test_cross_tenant_strength_revision_drift_fails_closed",
     "test_cross_tenant_strength_policy_id_drift_fails_closed_even_same_revision",
     "test_cross_tenant_runtime_generation_or_profile_drift_fails_closed",
@@ -169,6 +178,21 @@ def validate_source_contract_text(text: str, model_text: str | None = None) -> l
         return [f"authority source is not parseable: {exc}"]
 
     findings: list[str] = []
+    target_binding = _named_class(tree, "CrossTenantTargetBinding")
+    if target_binding is None:
+        findings.append("CrossTenantTargetBinding class is missing")
+    else:
+        target_text = ast.unparse(target_binding)
+        for token in (
+            "target_tenant_ids",
+            "selection_criteria_id",
+            "len(set(target_ids))",
+            "tuple(sorted(target_ids))",
+            "requires exactly one of explicit tenant ids or selection criteria",
+        ):
+            if token not in target_text:
+                findings.append(f"CrossTenantTargetBinding canonical target contract missing: {token}")
+
     evidence = _named_class(tree, "FinalAdmissionEvidence")
     if evidence is None:
         findings.append("FinalAdmissionEvidence class is missing")
@@ -187,6 +211,8 @@ def validate_source_contract_text(text: str, model_text: str | None = None) -> l
         for token in (
             "scope must be a canonical ScopeClass",
             "tenant_requirement must be a canonical TenantRequirement",
+            "cross_tenant_target",
+            "CrossTenantTargetBinding",
             "authentication_strength_policy_id",
             "executing_runtime_authority_revision",
             "executing_runtime_profile_id",
@@ -258,6 +284,8 @@ def validate_source_contract_text(text: str, model_text: str | None = None) -> l
             "declaration.tenant_requirement",
             "evidence.resource_scope",
             "declaration.resource_scope",
+            "evidence.cross_tenant_target",
+            "cross_tenant_target",
             "evidence.authentication_strength_policy_id",
             "declaration.authentication_strength_policy_id",
             "executing_runtime_authority_revision",
@@ -275,6 +303,8 @@ def validate_source_contract_text(text: str, model_text: str | None = None) -> l
         args = _function_arg_names(authorize)
         if "final_admission_authority" not in args:
             findings.append("authorize_protected_operation lacks final_admission_authority boundary")
+        if "cross_tenant_target" not in args:
+            findings.append("authorize_protected_operation lacks cross_tenant_target boundary")
         final_calls = [
             node
             for node in ast.walk(authorize)
@@ -303,9 +333,11 @@ def validate_source_contract_text(text: str, model_text: str | None = None) -> l
             "ScopeClass.RESOURCE",
             "runtime_binding != API_AUTH_BOUNDARY",
             "tenant/resource protected operations require the accepted API runtime boundary",
+            "cross-tenant privileged operation requires exact canonical target binding",
+            "cross-tenant target binding is forbidden for non-cross-tenant operation",
         ):
             if token not in authorize_text:
-                findings.append(f"tenant/resource API-runtime admission boundary missing: {token}")
+                findings.append(f"protected-operation admission boundary missing: {token}")
 
     return findings
 
@@ -327,6 +359,7 @@ def _docs_findings() -> list[str]:
         "caller/request `now`",
         "executing-runtime authority",
         "resource scope",
+        "cross-tenant target",
         "scope",
         "tenant_requirement",
         "authentication_strength_policy_id",
@@ -384,7 +417,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}")
         return 1
-    print("RESULT: PASS — final admission binds declaration, resource and current executing-runtime authority")
+    print("RESULT: PASS — final admission binds declaration, resource, cross-tenant target and current executing-runtime authority")
     print("NOTE: PASS is conformance evidence only; final-admission mechanism remains a replaceable C2 choice.")
     return 0
 

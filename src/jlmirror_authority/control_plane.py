@@ -276,19 +276,18 @@ class FinalAdmissionEvidence:
             self.executing_runtime_profile_id,
             self.executing_runtime_generation,
         )
-        if any(value is not None for value in runtime_values):
-            if any(value is None for value in runtime_values):
-                raise ValueError("executing-runtime final-admission bindings must be complete")
-            _identifier(
-                self.executing_runtime_authority_revision,
-                "executing_runtime_authority_revision",
-            )
-            _profile_id(
-                self.executing_runtime_profile_id,
-                "executing_runtime_profile_id",
-                "runtime.",
-            )
-            _identifier(self.executing_runtime_generation, "executing_runtime_generation")
+        if any(value is None for value in runtime_values):
+            raise ValueError("every final admission must bind current executing-runtime authority")
+        _identifier(
+            self.executing_runtime_authority_revision,
+            "executing_runtime_authority_revision",
+        )
+        _profile_id(
+            self.executing_runtime_profile_id,
+            "executing_runtime_profile_id",
+            "runtime.",
+        )
+        _identifier(self.executing_runtime_generation, "executing_runtime_generation")
 
 
 class CurrentPrincipalAuthorityPort(Protocol):
@@ -578,17 +577,21 @@ def _finalize_current_admission(
         ):
             raise AdmissionDenied("final admission authentication-strength revision changed")
 
-    if declaration.tenant_requirement is TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED:
-        if latest_runtime_evidence is None:
-            raise AdmissionDenied("final cross-tenant admission lacks runtime narrowing evidence")
-        if (
-            evidence.executing_runtime_authority_revision is None
-            or evidence.executing_runtime_profile_id != CONTROL_PLANE.runtime_profile_id
-            or evidence.executing_runtime_generation != latest_runtime_evidence.runtime_generation
-        ):
-            raise AdmissionDenied("final cross-tenant admission runtime authority changed")
-    elif evidence.executing_runtime_profile_id is not None:
-        raise AdmissionDenied("final admission carries unexpected executing-runtime authority")
+    if (
+        evidence.executing_runtime_authority_revision is None
+        or evidence.executing_runtime_profile_id != runtime_binding.runtime_profile_id
+        or evidence.executing_runtime_generation is None
+    ):
+        raise AdmissionDenied("final admission lacks exact current executing-runtime authority")
+    if latest_runtime_evidence is not None and (
+        evidence.executing_runtime_profile_id != latest_runtime_evidence.runtime_profile_id
+        or evidence.executing_runtime_generation != latest_runtime_evidence.runtime_generation
+    ):
+        raise AdmissionDenied("final admission executing-runtime authority changed")
+    if declaration.tenant_requirement is TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED and (
+        evidence.executing_runtime_profile_id != CONTROL_PLANE.runtime_profile_id
+    ):
+        raise AdmissionDenied("final cross-tenant admission is not bound to Control Plane runtime")
 
     return AuthorizationDecision(
         granted=True,

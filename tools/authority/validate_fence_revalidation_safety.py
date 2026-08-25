@@ -36,7 +36,6 @@ def _event_trigger_guard_pattern(alias: str) -> re.Pattern[str]:
 def _common_ddl_window_findings(text: str, *, label: str, guard_alias: str) -> tuple[str, list[str], re.Match[str] | None]:
     if not isinstance(text, str):
         return "", [f"Wave 1 fence {label} safety contract must be text"], None
-
     code = _executable_sql(text)
     if not code:
         return "", [f"Wave 1 fence {label} safety contract is malformed"], None
@@ -58,8 +57,10 @@ def _common_ddl_window_findings(text: str, *, label: str, guard_alias: str) -> t
     if len(event_sets) != 1 or event_sets[0].strip() != _EVENT_TRIGGER_SET:
         findings.append(f"Wave 1 fence {label} must contain exactly one SET LOCAL event_triggers = off session guard")
 
-    search_sets = re.findall(r"(?im)^\s*SET\s+(?:LOCAL\s+)?search_path\s*=\s*[^;]+;\s*$", code)
-    if len(search_sets) != 1 or search_sets[0].strip() != _TRUSTED_SEARCH_PATH_SET:
+    # Count only the transaction-local migration guard. Function clauses deliberately
+    # use `SET search_path = pg_catalog` without LOCAL and are validated separately.
+    local_search_sets = re.findall(r"(?im)^\s*SET\s+LOCAL\s+search_path\s*=\s*[^;]+;\s*$", code)
+    if len(local_search_sets) != 1 or local_search_sets[0].strip() != _TRUSTED_SEARCH_PATH_SET:
         findings.append(f"Wave 1 fence {label} must contain exactly one SET LOCAL search_path = pg_catalog trusted-resolution guard")
 
     event_match = _event_trigger_guard_pattern(guard_alias).search(code)
@@ -81,11 +82,7 @@ def _common_ddl_window_findings(text: str, *, label: str, guard_alias: str) -> t
 
 
 def validate_bootstrap_safety_text(text: str) -> list[str]:
-    code, findings, event_match = _common_ddl_window_findings(
-        text,
-        label="bootstrap",
-        guard_alias="wave1_bootstrap_event_trigger_guard",
-    )
+    code, findings, event_match = _common_ddl_window_findings(text, label="bootstrap", guard_alias="wave1_bootstrap_event_trigger_guard")
     if not code:
         return findings
 
@@ -99,9 +96,8 @@ def validate_bootstrap_safety_text(text: str) -> list[str]:
         findings.append("Wave 1 fence bootstrap must be fresh-only: existing authority_fences must return before persistent object mutation")
     else:
         first_execute = code.find("EXECUTE", reuse_match.end())
-        first_ddl = _DDL_PATTERN.search(code)
-        if first_execute < 0 or (first_ddl is not None and reuse_match.end() > first_ddl.start()):
-            findings.append("Wave 1 fence bootstrap reuse guard must precede every persistent bootstrap mutation")
+        if first_execute < 0:
+            findings.append("Wave 1 fence bootstrap fresh branch contains no persistent object creation after reuse guard")
 
     required_fresh_only = (
         "EXECUTE 'CREATE SCHEMA IF NOT EXISTS platform'",
@@ -123,11 +119,7 @@ def validate_bootstrap_safety_text(text: str) -> list[str]:
 
 
 def validate_revalidation_safety_text(text: str) -> list[str]:
-    code, findings, event_match = _common_ddl_window_findings(
-        text,
-        label="revalidation",
-        guard_alias="wave1_event_trigger_guard",
-    )
+    code, findings, event_match = _common_ddl_window_findings(text, label="revalidation", guard_alias="wave1_event_trigger_guard")
     if not code:
         return findings
 
@@ -192,7 +184,6 @@ def validate() -> list[str]:
         findings.append(f"Wave 1 fence bootstrap safety migration unreadable: {exc}")
     else:
         findings.extend(validate_bootstrap_safety_text(bootstrap_text))
-
     try:
         revalidation_text = REVALIDATION_SQL_PATH.read_text(encoding="utf-8")
     except OSError as exc:

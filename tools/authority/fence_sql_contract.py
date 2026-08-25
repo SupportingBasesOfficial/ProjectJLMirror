@@ -169,10 +169,6 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
         "c.conkey OPERATOR(pg_catalog.=) ARRAY[a.attnum]::smallint[]",
         "NOT c.condeferrable",
         "NOT c.condeferred",
-        "i.indimmediate",
-        "i.indisvalid",
-        "i.indisready",
-        "i.indislive",
         "i.indnkeyatts OPERATOR(pg_catalog.=) 1",
         "i.indnatts OPERATOR(pg_catalog.=) 1",
         "i.indexprs IS NULL",
@@ -229,6 +225,10 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
     for fragment in required:
         if fragment not in code:
             findings.append(f"IR-D-003 persisted fence revalidation invariant missing: {fragment}")
+
+    for field in ("indisprimary", "indisunique", "indimmediate", "indisvalid", "indisready", "indislive"):
+        if re.search(rf"(?m)^\s+AND\s+i\.{re.escape(field)}\s*$", code) is None:
+            findings.append(f"IR-D-003 persisted fence primary-key index must require exact positive i.{field}")
 
     constraint_set_guard = re.compile(
         r"SELECT\s+pg_catalog\.array_agg\(conname::text\s+ORDER\s+BY\s+conname\).*?"

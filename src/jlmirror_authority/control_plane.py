@@ -191,6 +191,7 @@ class FinalAdmissionEvidence:
     principal_id: str
     principal_credential_generation: str
     action: str
+    resource_scope: str | None = None
     tenant_id: str | None = None
     cell_id: str | None = None
     placement_authority_revision: str | None = None
@@ -222,6 +223,7 @@ class FinalAdmissionEvidence:
             "action",
         ):
             _identifier(getattr(self, field), field)
+        _optional_identifier(self.resource_scope, "resource_scope")
         _optional_identifier(
             self.authentication_strength_policy_revision,
             "authentication_strength_policy_revision",
@@ -531,8 +533,11 @@ def _finalize_current_admission(
         evidence.principal_id != principal.principal_id
         or evidence.principal_credential_generation != principal.credential_generation
         or evidence.action != declaration.action
+        or evidence.resource_scope != declaration.resource_scope
     ):
-        raise AdmissionDenied("final admission evidence is bound to another principal or action")
+        raise AdmissionDenied(
+            "final admission evidence is bound to another principal, action, or resource scope"
+        )
 
     if context is None:
         if evidence.tenant_id is not None:

@@ -224,6 +224,7 @@ class FinalAdmissionEvidence:
     authorization_policy_revision: str
     principal_authority_revision: str
     principal_id: str
+    principal_kind: PrincipalKind
     principal_credential_generation: str
     action: str
     scope: ScopeClass
@@ -262,6 +263,8 @@ class FinalAdmissionEvidence:
             "action",
         ):
             _identifier(getattr(self, field), field)
+        if not isinstance(self.principal_kind, PrincipalKind):
+            raise ValueError("principal_kind must be a canonical PrincipalKind")
         if not isinstance(self.scope, ScopeClass):
             raise ValueError("scope must be a canonical ScopeClass")
         if not isinstance(self.tenant_requirement, TenantRequirement):
@@ -584,6 +587,7 @@ def _finalize_current_admission(
         raise AdmissionDenied("final admission authority did not grant current admission")
     if (
         evidence.principal_id != principal.principal_id
+        or evidence.principal_kind is not principal.kind
         or evidence.principal_credential_generation != principal.credential_generation
         or evidence.action != declaration.action
         or evidence.scope is not declaration.scope
@@ -594,7 +598,7 @@ def _finalize_current_admission(
         != declaration.authentication_strength_policy_id
     ):
         raise AdmissionDenied(
-            "final admission evidence is bound to another principal, action, declaration scope, resource, cross-tenant target, or authentication-strength policy"
+            "final admission evidence is bound to another principal identity/kind, action, declaration scope, resource, cross-tenant target, or authentication-strength policy"
         )
 
     if context is None:

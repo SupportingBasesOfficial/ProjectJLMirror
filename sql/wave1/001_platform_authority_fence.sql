@@ -14,8 +14,9 @@
 --
 -- Fresh object creation treats default ACLs and privilege reachability as authority
 -- input. Non-owner/PUBLIC defaults, owner-role reachability, predefined all-data
--- reachability, or migration-owner SECURITY DEFINER authority fail closed before the
--- first persistent CREATE. Resulting object ACLs are re-read before COMMIT.
+-- reachability, or SECURITY DEFINER authority owned by the migration/all-data roots
+-- fail closed before the first persistent CREATE. Resulting object ACLs are re-read
+-- before COMMIT.
 
 BEGIN;
 
@@ -114,15 +115,20 @@ BEGIN
         RAISE EXCEPTION 'Wave 1 fresh bootstrap rejects non-owner predefined all-data authority before fence creation';
     END IF;
 
-    -- A migration-owner SECURITY DEFINER routine anywhere in the database is residual
-    -- owner authority independent of schema placement/current ACL assumptions.
+    -- SECURITY DEFINER executes with its owner authority. The recursive membership
+    -- proof above does not emit pg_read_all_data/pg_write_all_data as their own members,
+    -- so the predefined root roles themselves must be included explicitly.
     IF EXISTS (
         SELECT 1
           FROM pg_catalog.pg_proc p
-         WHERE p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid
+         WHERE p.proowner IN (
+                   current_user::pg_catalog.regrole::oid,
+                   pg_catalog.to_regrole('pg_read_all_data')::oid,
+                   pg_catalog.to_regrole('pg_write_all_data')::oid
+               )
            AND p.prosecdef
     ) THEN
-        RAISE EXCEPTION 'Wave 1 fresh bootstrap rejects migration-owner SECURITY DEFINER authority before fence creation';
+        RAISE EXCEPTION 'Wave 1 fresh bootstrap rejects fence-authoritative SECURITY DEFINER routine before fence creation';
     END IF;
 
     EXECUTE 'CREATE SCHEMA platform';

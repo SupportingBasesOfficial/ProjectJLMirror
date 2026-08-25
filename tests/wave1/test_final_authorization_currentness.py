@@ -12,6 +12,7 @@ if str(SRC) not in sys.path:
 
 from jlmirror_authority.control_plane import (  # noqa: E402
     AuthorizationDecision,
+    FinalAdmissionEvidence,
     PlacementEvidence,
     RuntimeLifecycle,
     authorize_protected_operation,
@@ -71,6 +72,41 @@ class AdvancingAuthorizationAuthority:
     def evaluate(self, **kwargs):
         self.calls += 1
         return AuthorizationDecision(True, True, f"authz-r{self.calls}")
+
+
+class TenantFinalAdmissionAuthority:
+    def __init__(self, context):
+        self.context = context
+        self.calls = 0
+
+    def finalize_current_admission(self, *, principal, context, declaration, **kwargs):
+        self.calls += 1
+        if context != self.context:
+            raise AssertionError("test finalizer received unexpected TenantContext")
+        return FinalAdmissionEvidence(
+            granted=True,
+            current=True,
+            admission_revision="admission-r3",
+            authorization_policy_revision="authz-final-r3",
+            principal_authority_revision="principal-r3",
+            principal_id=principal.principal_id,
+            principal_credential_generation=principal.credential_generation,
+            action=declaration.action,
+            tenant_id=context.tenant_id,
+            cell_id=context.cell_id,
+            placement_authority_revision="placement-r3",
+            placement_version=context.placement_version,
+            runtime_generation=context.runtime_generation,
+            runtime_profile_id=context.runtime_profile_id,
+            runtime_isolation_class=context.runtime_isolation_class,
+            configuration_generation=context.configuration_generation,
+            workload_credential_generation=context.workload_credential_generation,
+            network_policy_generation=context.network_policy_generation,
+            environment_class=context.environment_class,
+            isolation_class=context.isolation_class,
+            fence_scope_id=context.fence_scope_id,
+            fence_epoch=context.fence_epoch,
+        )
 
 
 def placement():
@@ -155,8 +191,9 @@ class FinalAuthorizationCurrentnessTests(unittest.TestCase):
             )
         self.assertEqual(authority.calls, 2)
 
-    def test_final_current_authorization_revision_is_returned(self):
+    def test_revision_bound_final_admission_authorization_revision_is_returned(self):
         authority = AdvancingAuthorizationAuthority()
+        finalizer = TenantFinalAdmissionAuthority(self.context)
         decision = authorize_protected_operation(
             principal=self.principal,
             principal_authority=self.principal_authority,
@@ -165,9 +202,11 @@ class FinalAuthorizationCurrentnessTests(unittest.TestCase):
             authorization_authority=authority,
             context=self.context,
             now=NOW,
+            final_admission_authority=finalizer,
         )
         self.assertEqual(authority.calls, 2)
-        self.assertEqual(decision.policy_revision, "authz-r2")
+        self.assertEqual(finalizer.calls, 1)
+        self.assertEqual(decision.policy_revision, "authz-final-r3")
 
 
 if __name__ == "__main__":

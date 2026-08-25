@@ -16,78 +16,28 @@ PROFILE = "jlmirror-wave1-fence-privileges/v1"
 SQL_PATH = ROOT / "sql" / "wave1" / "003_revalidate_authority_fence_privileges.sql"
 BOUNDARY_PATH = ROOT / "implementation" / "wave-1" / "FENCE_PRIVILEGE_BOUNDARY.md"
 
-SCHEMA_OWNER_GUARD = """SELECT n.nspowner
-          FROM pg_namespace n
-         WHERE n.oid = v_schema
-    ) IS DISTINCT FROM current_user::regrole::oid"""
-TABLE_OWNER_GUARD = """SELECT c.relowner
-          FROM pg_class c
-         WHERE c.oid = v_table
-    ) IS DISTINCT FROM current_user::regrole::oid"""
-ROLE_MEMBERSHIP_GUARD = """WITH RECURSIVE owner_role_members(member_oid) AS (
-            SELECT m.member
-              FROM pg_auth_members m
-             WHERE m.roleid = current_user::regrole::oid
-            UNION
-            SELECT m.member
-              FROM pg_auth_members m
-              JOIN owner_role_members r
-                ON m.roleid = r.member_oid
-        )
-        SELECT 1
-          FROM owner_role_members"""
-ALL_DATA_ROLE_GUARD = """WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (
-            SELECT m.roleid, m.member
-              FROM pg_auth_members m
-             WHERE m.roleid IN (
-                to_regrole('pg_read_all_data')::oid,
-                to_regrole('pg_write_all_data')::oid
-             )
-            UNION
-            SELECT r.role_oid, m.member
-              FROM pg_auth_members m
-              JOIN all_data_role_members r
-                ON m.roleid = r.member_oid
-        )
-        SELECT 1
-          FROM all_data_role_members
-         WHERE member_oid <> current_user::regrole::oid"""
-COLUMN_ACL_GUARD = """FROM pg_attribute a
-          CROSS JOIN LATERAL aclexplode(a.attacl) AS acl
-         WHERE a.attrelid = v_table
-           AND a.attnum > 0
-           AND NOT a.attisdropped
-           AND a.attacl IS NOT NULL
-           AND acl.grantee <> current_user::regrole::oid"""
-RESIDUAL_SECURITY_DEFINER_GUARD = """FROM pg_proc p
-         WHERE p.proowner = current_user::regrole::oid
-           AND p.prosecdef"""
-
 REQUIRED_EXECUTABLE_FRAGMENTS = (
-    "to_regnamespace('platform')",
-    "to_regclass('platform.authority_fences')",
-    "to_regprocedure(\n        'platform.initialize_authority_fence(text,text,text)'\n    )",
-    "to_regprocedure(\n        'platform.advance_authority_fence(text,bigint,text,text,text)'\n    )",
-    SCHEMA_OWNER_GUARD,
-    TABLE_OWNER_GUARD,
-    ROLE_MEMBERSHIP_GUARD,
-    ALL_DATA_ROLE_GUARD,
-    "to_regrole('pg_read_all_data')::oid",
-    "to_regrole('pg_write_all_data')::oid",
+    "BEGIN;",
+    "SET LOCAL search_path = pg_catalog;",
+    "pg_catalog.to_regnamespace('platform')",
+    "pg_catalog.to_regclass('platform.authority_fences')",
+    "pg_catalog.to_regprocedure(\n        'platform.initialize_authority_fence(text,text,text)'\n    )",
+    "pg_catalog.to_regprocedure(\n        'platform.advance_authority_fence(text,bigint,text,text,text)'\n    )",
+    "FROM pg_catalog.pg_namespace n",
+    "FROM pg_catalog.pg_class c",
+    "FROM pg_catalog.pg_auth_members m",
+    "pg_catalog.to_regrole('pg_read_all_data')::oid",
+    "pg_catalog.to_regrole('pg_write_all_data')::oid",
     "RAISE EXCEPTION 'non-owner role can reach PostgreSQL predefined all-data authority'",
-    "aclexplode(\n              COALESCE(c.relacl, acldefault('r', c.relowner))\n          )",
-    "acl.grantee <> c.relowner",
-    COLUMN_ACL_GUARD,
+    "FROM pg_catalog.pg_attribute a",
+    "pg_catalog.aclexplode(a.attacl)",
     "RAISE EXCEPTION 'authority_fences has inherited non-owner column privileges'",
-    "aclexplode(\n              COALESCE(n.nspacl, acldefault('n', n.nspowner))\n          )",
-    "acl.grantee <> n.nspowner",
-    RESIDUAL_SECURITY_DEFINER_GUARD,
+    "FROM pg_catalog.pg_proc p",
+    "p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid",
     "RAISE EXCEPTION 'database contains migration-owner SECURITY DEFINER routine'",
-    "FROM pg_proc p",
-    "p.proowner <> current_user::regrole::oid",
-    "aclexplode(\n              COALESCE(p.proacl, acldefault('f', p.proowner))\n          )",
-    "acl.grantee <> p.proowner",
-    "p.prosecdef",
+    "p.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog']::text[]",
+    "RAISE EXCEPTION 'fence authority functions must retain exact pg_catalog-only search_path'",
+    "COMMIT;",
 )
 
 REQUIRED_BOUNDARY_TOKENS = (
@@ -130,6 +80,8 @@ def validate_text(text: object) -> list[str]:
         for fragment in REQUIRED_EXECUTABLE_FRAGMENTS
         if fragment not in code
     ]
+    if code.count("SET LOCAL search_path = pg_catalog;") != 1:
+        findings.append("Wave 1 fence privilege migration must pin exactly one transaction-local pg_catalog search_path")
     upper_code = code.upper()
     findings.extend(
         f"Wave 1 fence privilege contract must not mutate C2 role mapping: {fragment.strip()}"
@@ -175,7 +127,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}")
         return 1
-    print("RESULT: PASS — fence ownership, role reachability, predefined all-data roles, object/column ACLs and all migration-owner SECURITY DEFINER authority fail closed before C2 role mapping")
+    print("RESULT: PASS — fence ownership/reachability/ACL/definer checks and exact pg_catalog-only function resolution fail closed before C2 role mapping")
     print("NOTE: PASS is conformance evidence only; it grants no runtime/database privilege.")
     return 0
 

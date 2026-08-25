@@ -124,14 +124,32 @@ def validate_bootstrap_safety_text(text: str) -> list[str]:
         if token not in code:
             findings.append(f"Wave 1 fence bootstrap default-ACL preflight invariant missing: {token}")
 
+    fresh_reachability_required = (
+        "WITH RECURSIVE owner_role_members(member_oid) AS (",
+        "Wave 1 fresh bootstrap rejects migration-owner role reachability before authority object creation",
+        "WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (",
+        "pg_catalog.to_regrole('pg_read_all_data')::oid",
+        "pg_catalog.to_regrole('pg_write_all_data')::oid",
+        "Wave 1 fresh bootstrap rejects non-owner predefined all-data authority before fence creation",
+        "p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid",
+        "AND p.prosecdef",
+        "Wave 1 fresh bootstrap rejects migration-owner SECURITY DEFINER authority before fence creation",
+    )
+    for token in fresh_reachability_required:
+        if token not in code:
+            findings.append(f"Wave 1 fence bootstrap privilege-reachability preflight invariant missing: {token}")
+
     first_execute = code.find("EXECUTE")
     default_acl_pos = code.find("FROM pg_catalog.pg_default_acl d")
+    owner_reachability_pos = code.find("WITH RECURSIVE owner_role_members(member_oid) AS (")
+    all_data_pos = code.find("WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (")
+    definer_pos = code.find("Wave 1 fresh bootstrap rejects migration-owner SECURITY DEFINER authority before fence creation")
     if first_execute < 0:
         findings.append("Wave 1 fence bootstrap fresh branch contains no persistent object creation")
     elif table_match is not None and partial_match is not None and not (
-        table_match.end() < partial_match.end() < default_acl_pos < first_execute
+        table_match.end() < partial_match.end() < default_acl_pos < owner_reachability_pos < all_data_pos < definer_pos < first_execute
     ):
-        findings.append("Wave 1 fence freshness and default-ACL preflight must execute before persistent bootstrap mutation")
+        findings.append("Wave 1 fence freshness/default-ACL/owner/all-data/definer preflights must execute before persistent bootstrap mutation")
 
     required_fresh_only = (
         "EXECUTE 'CREATE SCHEMA platform'",
@@ -307,7 +325,7 @@ def main() -> int:
             print(f"FINDING: {finding}")
         print(f"RESULT: FAIL — {len(findings)} finding(s)")
         return 1
-    print("RESULT: PASS — fresh bootstrap binds default ACL preflight + materialized ACL proof; reused authority requires a complete routine set and binds privilege+structure+canonical mutation+post-ACL assertion in one locked transaction")
+    print("RESULT: PASS — fresh bootstrap binds default ACL + privilege-reachability preflight + materialized ACL proof; reused authority requires a complete routine set and binds privilege+structure+canonical mutation+post-ACL assertion in one locked transaction")
     return 0
 
 

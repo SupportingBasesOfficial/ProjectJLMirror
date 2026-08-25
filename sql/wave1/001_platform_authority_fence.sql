@@ -13,17 +13,18 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA platform
     REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 
 -- These canonical identifier checks deliberately mirror the portable authority-core
--- ASCII grammar. COLLATE "C" keeps regex ranges independent from database locale.
--- The separate trim checks remain defense-in-depth and stable baseline evidence.
+-- ASCII grammar. Identity/equality-bearing text columns use deterministic C collation
+-- so primary-key/conflict/equality semantics cannot alias canonical identifiers under
+-- a database-default case-insensitive or otherwise nondeterministic collation.
 CREATE TABLE IF NOT EXISTS platform.authority_fences (
-    fence_scope_id text PRIMARY KEY
+    fence_scope_id text COLLATE "C" PRIMARY KEY
         CHECK (btrim(fence_scope_id) <> '')
         CHECK (fence_scope_id COLLATE "C" ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
     current_fence_epoch bigint NOT NULL CHECK (current_fence_epoch > 0),
-    current_generation_id text NOT NULL
+    current_generation_id text COLLATE "C" NOT NULL
         CHECK (btrim(current_generation_id) <> '')
         CHECK (current_generation_id COLLATE "C" ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
-    authority_state text NOT NULL
+    authority_state text COLLATE "C" NOT NULL
         CHECK (btrim(authority_state) <> '')
         CHECK (authority_state COLLATE "C" ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
     updated_at timestamptz NOT NULL DEFAULT statement_timestamp()
@@ -102,10 +103,10 @@ AS $$
            current_generation_id = p_successor_generation_id,
            authority_state = p_successor_state,
            updated_at = statement_timestamp()
-     WHERE authority_fences.fence_scope_id = p_fence_scope_id
+     WHERE authority_fences.fence_scope_id COLLATE "C" = p_fence_scope_id COLLATE "C"
        AND authority_fences.current_fence_epoch = p_expected_predecessor_epoch
-       AND authority_fences.current_generation_id = p_expected_predecessor_generation_id
-       AND authority_fences.authority_state = 'active'
+       AND authority_fences.current_generation_id COLLATE "C" = p_expected_predecessor_generation_id COLLATE "C"
+       AND authority_fences.authority_state COLLATE "C" = 'active' COLLATE "C"
        AND authority_fences.current_fence_epoch < 9223372036854775807
        AND btrim(p_expected_predecessor_generation_id) <> ''
        AND btrim(p_successor_generation_id) <> ''

@@ -26,8 +26,8 @@ class FenceSqlCanonicalizationTests(unittest.TestCase):
     def test_trim_only_storage_constraint_is_not_sufficient(self):
         text = SQL_PATH.read_text(encoding="utf-8")
         predicate = (
-            f"        CHECK (fence_scope_id {CANONICAL_REGEX_OPERATOR} "
-            f"'{CANONICAL_IDENTIFIER_REGEX}'),\n"
+            f"            AND fence_scope_id {CANONICAL_REGEX_OPERATOR} "
+            f"'{CANONICAL_IDENTIFIER_REGEX}'\n"
         )
         self.assertIn(predicate, text)
         weakened = text.replace(predicate, "", 1)

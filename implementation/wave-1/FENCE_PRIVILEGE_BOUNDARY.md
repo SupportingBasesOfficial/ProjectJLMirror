@@ -73,7 +73,7 @@ The observer-only validators and Wave 1 tests must fail when any of the followin
 - `a.attacl` as the ACL source;
 - the non-owner grantee predicate;
 - the explicit exception for residual non-owner column privileges;
-+- recursive `pg_auth_members` traversal for the migration-owner role;
+- recursive `pg_auth_members` traversal for the migration-owner role;
 - recursive `pg_auth_members` traversal for both `pg_read_all_data` and `pg_write_all_data`;
 - either predefined all-data role from the starting role set;
 - the non-owner predicate on predefined-role reachability;

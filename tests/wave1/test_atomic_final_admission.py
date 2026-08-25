@@ -131,6 +131,17 @@ def tenant_declaration():
     )
 
 
+def resource_declaration(resource_scope: str):
+    return AuthorizationDeclaration(
+        action="organization.memberships.read",
+        scope=ScopeClass.RESOURCE,
+        tenant_required=True,
+        step_up=StepUpClass.NONE,
+        audit_class=AuditClass.NORMAL,
+        resource_scope=resource_scope,
+    )
+
+
 def construct_context(authority):
     evidence = authority.evidence
     return construct_tenant_context(
@@ -266,6 +277,32 @@ class AtomicFinalAdmissionTests(unittest.TestCase):
             with self.subTest(evidence=evidence), self.assertRaises(AdmissionDenied):
                 self.authorization_authority.calls = 0
                 self.tenant_call(Finalizer(evidence))
+
+    def test_same_action_different_resource_scope_cannot_reuse_final_evidence(self):
+        evidence = tenant_final_evidence(self.context, resource_scope="resource:alpha")
+        with self.assertRaises(AdmissionDenied):
+            authorize_protected_operation(
+                principal=self.principal,
+                principal_authority=self.principal_authority,
+                declaration=resource_declaration("resource:beta"),
+                placement_authority=self.placement_authority,
+                authorization_authority=self.authorization_authority,
+                context=self.context,
+                now=NOW,
+                final_admission_authority=Finalizer(evidence),
+            )
+
+        decision = authorize_protected_operation(
+            principal=self.principal,
+            principal_authority=self.principal_authority,
+            declaration=resource_declaration("resource:alpha"),
+            placement_authority=self.placement_authority,
+            authorization_authority=self.authorization_authority,
+            context=self.context,
+            now=NOW,
+            final_admission_authority=Finalizer(evidence),
+        )
+        self.assertTrue(decision.granted)
 
     def test_any_tenant_placement_generation_or_fence_drift_fails_closed(self):
         mutations = {

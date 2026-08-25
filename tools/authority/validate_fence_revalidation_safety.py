@@ -57,8 +57,6 @@ def _common_ddl_window_findings(text: str, *, label: str, guard_alias: str) -> t
     if len(event_sets) != 1 or event_sets[0].strip() != _EVENT_TRIGGER_SET:
         findings.append(f"Wave 1 fence {label} must contain exactly one SET LOCAL event_triggers = off session guard")
 
-    # Count only the transaction-local migration guard. Function clauses deliberately
-    # use `SET search_path = pg_catalog` without LOCAL and are validated separately.
     local_search_sets = re.findall(r"(?im)^\s*SET\s+LOCAL\s+search_path\s*=\s*[^;]+;\s*$", code)
     if len(local_search_sets) != 1 or local_search_sets[0].strip() != _TRUSTED_SEARCH_PATH_SET:
         findings.append(f"Wave 1 fence {label} must contain exactly one SET LOCAL search_path = pg_catalog trusted-resolution guard")
@@ -86,21 +84,41 @@ def validate_bootstrap_safety_text(text: str) -> list[str]:
     if not code:
         return findings
 
-    reuse_guard = re.compile(
-        r"v_existing_table\s+pg_catalog\.regclass\s*:=\s*pg_catalog\.to_regclass\s*\(\s*'platform\.authority_fences'\s*\)\s*;.*?"
+    required_objects = (
+        "v_existing_schema oid := pg_catalog.to_regnamespace('platform')",
+        "v_existing_table pg_catalog.regclass := pg_catalog.to_regclass('platform.authority_fences')",
+        "platform.initialize_authority_fence(text,text,text)",
+        "platform.advance_authority_fence(text,bigint,text,text,text)",
+    )
+    for token in required_objects:
+        if token not in code:
+            findings.append(f"Wave 1 fence bootstrap complete-object freshness invariant missing: {token}")
+
+    table_reuse_guard = re.compile(
         r"IF\s+v_existing_table\s+IS\s+NOT\s+NULL\s+THEN\s+RETURN\s*;\s+END\s+IF\s*;",
         re.IGNORECASE | re.DOTALL,
     )
-    reuse_match = reuse_guard.search(code)
-    if reuse_match is None:
-        findings.append("Wave 1 fence bootstrap must be fresh-only: existing authority_fences must return before persistent object mutation")
-    else:
-        first_execute = code.find("EXECUTE", reuse_match.end())
-        if first_execute < 0:
-            findings.append("Wave 1 fence bootstrap fresh branch contains no persistent object creation after reuse guard")
+    table_match = table_reuse_guard.search(code)
+    if table_match is None:
+        findings.append("Wave 1 fence bootstrap must return on an existing authority_fences relation before persistent object mutation")
+
+    partial_guard = re.compile(
+        r"IF\s+v_existing_schema\s+IS\s+NOT\s+NULL\s+OR\s+v_existing_initialize\s+IS\s+NOT\s+NULL\s+OR\s+v_existing_advance\s+IS\s+NOT\s+NULL\s+THEN\s+"
+        r"RAISE\s+EXCEPTION\s+'Wave 1 fence fresh bootstrap requires complete authority object absence'\s*;\s+END\s+IF\s*;",
+        re.IGNORECASE | re.DOTALL,
+    )
+    partial_match = partial_guard.search(code)
+    if partial_match is None:
+        findings.append("Wave 1 fence bootstrap must fail closed when schema/functions pre-exist without the authority table")
+
+    first_execute = code.find("EXECUTE")
+    if first_execute < 0:
+        findings.append("Wave 1 fence bootstrap fresh branch contains no persistent object creation")
+    elif table_match is not None and partial_match is not None and not (table_match.end() < partial_match.end() < first_execute):
+        findings.append("Wave 1 fence complete freshness/reuse guards must execute before persistent bootstrap mutation")
 
     required_fresh_only = (
-        "EXECUTE 'CREATE SCHEMA IF NOT EXISTS platform'",
+        "EXECUTE 'CREATE SCHEMA platform'",
         "EXECUTE 'REVOKE CREATE ON SCHEMA platform FROM PUBLIC'",
         "SET search_path = pg_catalog",
         "OPERATOR(pg_catalog.~)",
@@ -110,6 +128,8 @@ def validate_bootstrap_safety_text(text: str) -> list[str]:
     for token in required_fresh_only:
         if token not in code:
             findings.append(f"Wave 1 fence bootstrap trusted/fresh-only invariant missing: {token}")
+    if "CREATE SCHEMA IF NOT EXISTS platform" in code:
+        findings.append("Wave 1 fence bootstrap must not use IF NOT EXISTS to launder a pre-existing authority namespace")
 
     guard_pos = code.find("END AS wave1_bootstrap_event_trigger_guard;")
     do_pos = code.find("DO $wave1_bootstrap$")
@@ -125,19 +145,38 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
 
     normalized = " ".join(code.split())
     lock = "LOCK TABLE platform.authority_fences IN ACCESS EXCLUSIVE MODE;"
+    privilege_marker = "DO $wave1_reuse_privilege_preflight$"
+    structural_marker = "DO $wave1_revalidate$"
+    mutation_marker = "ALTER TABLE platform.authority_fences"
+
+    for token in (
+        privilege_marker,
+        "WITH RECURSIVE owner_role_members(member_oid) AS (",
+        "WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (",
+        "pg_catalog.to_regrole('pg_read_all_data')::oid",
+        "pg_catalog.to_regrole('pg_write_all_data')::oid",
+        "pg_catalog.aclexplode(a.attacl) AS acl",
+        "p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid",
+        "AND p.prosecdef",
+    ):
+        if token not in code:
+            findings.append(f"Wave 1 fence reuse privilege preflight invariant missing: {token}")
+
     if lock not in code:
-        findings.append("Wave 1 fence revalidation must hold ACCESS EXCLUSIVE lock across validation and canonicalization")
+        findings.append("Wave 1 fence revalidation must hold ACCESS EXCLUSIVE lock across privilege+structural validation and canonicalization")
     else:
         begin_pos = code.find("BEGIN;")
         event_set_pos = code.find(_EVENT_TRIGGER_SET)
         search_set_pos = code.find(_TRUSTED_SEARCH_PATH_SET)
         lock_pos = code.find(lock)
-        do_pos = code.find("DO $wave1_revalidate$")
+        privilege_pos = code.find(privilege_marker)
+        structural_pos = code.find(structural_marker)
+        mutation_pos = code.find(mutation_marker)
         commit_pos = code.rfind("COMMIT;")
-        if not (0 <= begin_pos < event_set_pos < search_set_pos < lock_pos < do_pos < commit_pos):
-            findings.append("Wave 1 event-trigger/search-path/lock/validation/mutation ordering is not transactionally closed")
-        if event_match is not None and not (search_set_pos < event_match.start() < lock_pos < do_pos):
-            findings.append("Wave 1 event-trigger catalog preflight must execute before fence lock/validation and DDL")
+        if not (0 <= begin_pos < event_set_pos < search_set_pos < lock_pos < privilege_pos < structural_pos < mutation_pos < commit_pos):
+            findings.append("Wave 1 event-trigger/search-path/lock/privilege/structural/mutation ordering is not transactionally closed")
+        if event_match is not None and not (search_set_pos < event_match.start() < lock_pos):
+            findings.append("Wave 1 event-trigger catalog preflight must execute before fence lock/privilege/structural validation and DDL")
 
     required = (
         "pg_catalog.pg_depend",
@@ -148,6 +187,10 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
         "SET search_path = pg_catalog",
         "OPERATOR(pg_catalog.~)",
         "pg_catalog.btrim",
+        "FROM pg_catalog.pg_opclass opc",
+        "opc.opcname OPERATOR(pg_catalog.=) 'text_ops'",
+        "i.indcollation[0] OPERATOR(pg_catalog.=) 'pg_catalog.\"C\"'::pg_catalog.regcollation::oid",
+        "i.indclass[0] OPERATOR(pg_catalog.=) v_text_btree_opclass",
         "CREATE OR REPLACE FUNCTION platform.initialize_authority_fence",
         "CREATE OR REPLACE FUNCTION platform.advance_authority_fence",
     )
@@ -166,12 +209,14 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
     drop_token = "DROP CONSTRAINT wave1_fence_scope_id_canonical"
     validate_token = "VALIDATE CONSTRAINT wave1_fence_state_canonical"
     if drop_token in normalized and validate_token in normalized:
+        privilege_pos = normalized.find(privilege_marker)
+        structural_pos = normalized.find(structural_marker)
         drop_pos = normalized.find(drop_token)
         validate_pos = normalized.find(validate_token)
         function_pos = normalized.find("CREATE OR REPLACE FUNCTION platform.initialize_authority_fence")
         commit_pos = normalized.rfind("COMMIT;")
-        if not (drop_pos < validate_pos < function_pos < commit_pos):
-            findings.append("Wave 1 fence reuse validation/canonicalization must finish before function replacement and transaction commit")
+        if not (privilege_pos < structural_pos < drop_pos < validate_pos < function_pos < commit_pos):
+            findings.append("Wave 1 fence reuse privilege+structural validation/canonicalization must finish in one transaction before function replacement and commit")
 
     return findings
 
@@ -201,7 +246,7 @@ def main() -> int:
             print(f"FINDING: {finding}")
         print(f"RESULT: FAIL — {len(findings)} finding(s)")
         return 1
-    print("RESULT: PASS — bootstrap is fresh-only on reuse; both migrations pin pg_catalog resolution and close event-trigger DDL windows; revalidation validates reused authority before canonical mutation")
+    print("RESULT: PASS — fresh bootstrap requires complete object absence; reused authority binds privilege+structure+canonical mutation in one locked transaction with canonical PK semantics")
     return 0
 
 

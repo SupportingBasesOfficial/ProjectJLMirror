@@ -12,6 +12,7 @@ if str(SRC) not in sys.path:
 
 from jlmirror_authority.control_plane import (  # noqa: E402
     AuthorizationDecision,
+    FinalAdmissionEvidence,
     RuntimeExecutionEvidence,
     RuntimeLifecycle,
     authorize_protected_operation,
@@ -89,6 +90,36 @@ class RuntimeAuthority:
 
     def resolve_current_execution(self, **kwargs):
         return self.evidence
+
+
+class CrossTenantFinalAdmissionAuthority:
+    def finalize_current_admission(
+        self,
+        *,
+        principal,
+        context,
+        declaration,
+        expected_runtime_binding,
+        authentication_strength_evidence,
+    ):
+        if context is not None:
+            raise AssertionError("cross-tenant final admission must not receive TenantContext")
+        if expected_runtime_binding != CONTROL_PLANE:
+            raise AssertionError("cross-tenant final admission must bind Control Plane")
+        return FinalAdmissionEvidence(
+            granted=True,
+            current=True,
+            admission_revision="admission-r5",
+            authorization_policy_revision="platform-authz-final-r5",
+            principal_authority_revision="principal-r5",
+            principal_id=principal.principal_id,
+            principal_credential_generation=principal.credential_generation,
+            action=declaration.action,
+            authentication_strength_policy_revision=authentication_strength_evidence.policy_version,
+            executing_runtime_authority_revision="runtime-authority-r5",
+            executing_runtime_profile_id="runtime.control-plane@1",
+            executing_runtime_generation="runtime-control-g7",
+        )
 
 
 def admin_strength() -> AuthenticationStrengthEvidence:
@@ -251,7 +282,6 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 runtime_binding=API_AUTH_BOUNDARY,
             )
 
-        # Merely passing the CONTROL_PLANE binding is not executing-runtime proof.
         with self.assertRaises(AdmissionDenied):
             authorize_protected_operation(
                 principal=principal,
@@ -266,8 +296,6 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 runtime_binding=CONTROL_PLANE,
             )
 
-        # Trusted runtime evidence for the ordinary API boundary cannot be laundered
-        # by a caller-selected CONTROL_PLANE binding.
         with self.assertRaises(AdmissionDenied):
             authorize_protected_operation(
                 principal=principal,
@@ -283,6 +311,7 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 runtime_authority=RuntimeAuthority(control_plane=False),
             )
 
+        strength = admin_strength()
         decision = authorize_protected_operation(
             principal=principal,
             principal_authority=PRINCIPAL_AUTHORITY,
@@ -292,11 +321,13 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
             context=None,
             now=NOW,
             strength_policy=StrengthPolicy(),
-            strength_evidence=admin_strength(),
+            strength_evidence=strength,
             runtime_binding=CONTROL_PLANE,
             runtime_authority=RuntimeAuthority(),
+            final_admission_authority=CrossTenantFinalAdmissionAuthority(),
         )
         self.assertTrue(decision.granted)
+        self.assertEqual(decision.policy_revision, "platform-authz-final-r5")
 
 
 if __name__ == "__main__":

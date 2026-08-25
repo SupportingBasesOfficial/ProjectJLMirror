@@ -71,6 +71,33 @@ class FenceDefaultAclAuthorityTests(unittest.TestCase):
             )
         )
 
+    def test_bootstrap_fresh_privilege_reachability_is_preflighted(self):
+        text = self.bootstrap()
+        self.assert_bootstrap_fails(
+            text.replace(
+                "WITH RECURSIVE owner_role_members(member_oid) AS (",
+                "WITH RECURSIVE owner_role_notes(member_oid) AS (",
+                1,
+            )
+        )
+        self.assert_bootstrap_fails(
+            text.replace("pg_catalog.to_regrole('pg_write_all_data')::oid", "pg_catalog.to_regrole('pg_monitor')::oid", 1)
+        )
+        self.assert_bootstrap_fails(
+            text.replace(
+                "Wave 1 fresh bootstrap rejects non-owner predefined all-data authority before fence creation",
+                "Wave 1 fresh bootstrap all-data authority checked later",
+                1,
+            )
+        )
+        self.assert_bootstrap_fails(
+            text.replace(
+                "Wave 1 fresh bootstrap rejects migration-owner SECURITY DEFINER authority before fence creation",
+                "Wave 1 fresh bootstrap SECURITY DEFINER authority checked later",
+                1,
+            )
+        )
+
     def test_bootstrap_requires_materialized_acl_assertion_before_commit(self):
         text = self.bootstrap()
         self.assert_bootstrap_fails(text.replace("DO $wave1_bootstrap_privilege_assert$", "DO $wave1_bootstrap_privilege_note$", 1))

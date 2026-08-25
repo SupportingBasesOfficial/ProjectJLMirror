@@ -107,6 +107,42 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
         findings = validate_text(mutated)
         self.assertTrue(any("pg_auth_members" in finding or "owner_role_members" in finding for finding in findings))
 
+    def test_predefined_all_data_guard_cannot_be_removed(self):
+        mutated = self.text.replace(
+            "WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (",
+            "WITH all_data_role_members(role_oid, member_oid) AS (",
+            1,
+        )
+        findings = validate_text(mutated)
+        self.assertTrue(any("all_data_role_members" in finding for finding in findings))
+
+    def test_predefined_read_all_data_role_cannot_be_omitted(self):
+        mutated = self.text.replace(
+            "to_regrole('pg_read_all_data')::oid,",
+            "to_regrole('pg_write_all_data')::oid,",
+            1,
+        )
+        findings = validate_text(mutated)
+        self.assertTrue(any("pg_read_all_data" in finding for finding in findings))
+
+    def test_predefined_write_all_data_role_cannot_be_omitted(self):
+        mutated = self.text.replace(
+            "to_regrole('pg_write_all_data')::oid\n             )",
+            "to_regrole('pg_read_all_data')::oid\n             )",
+            1,
+        )
+        findings = validate_text(mutated)
+        self.assertTrue(any("pg_write_all_data" in finding for finding in findings))
+
+    def test_predefined_role_reachability_must_reject_non_owner_members(self):
+        mutated = self.text.replace(
+            "WHERE member_oid <> current_user::regrole::oid",
+            "WHERE member_oid = current_user::regrole::oid",
+            1,
+        )
+        findings = validate_text(mutated)
+        self.assertTrue(any("all_data_role_members" in finding for finding in findings))
+
     def test_comment_cannot_launder_removed_acl_guard(self):
         mutated = self.text.replace(
             "acl.grantee <> c.relowner",
@@ -134,6 +170,15 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
         findings = validate_text(mutated)
         self.assertTrue(any("owner_role_members" in finding for finding in findings))
 
+    def test_comment_cannot_launder_removed_all_data_guard(self):
+        mutated = self.text.replace(
+            "WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (",
+            "WITH all_data_role_members(role_oid, member_oid) AS (",
+            1,
+        ) + "\n-- WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (\n"
+        findings = validate_text(mutated)
+        self.assertTrue(any("all_data_role_members" in finding for finding in findings))
+
     def test_boundary_cannot_conflate_table_and_column_acl(self):
         mutated = self.boundary.replace(
             "TABLE ACL CLEAN != COLUMN ACL CLEAN",
@@ -147,6 +192,15 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
         mutated = self.boundary.replace("pg_attribute.attacl", "pg_class.relacl")
         findings = validate_boundary_text(mutated)
         self.assertTrue(any("pg_attribute.attacl" in finding for finding in findings))
+
+    def test_boundary_must_distinguish_acl_from_predefined_role_authority(self):
+        mutated = self.boundary.replace(
+            "OBJECT ACL CLEAN != PREDEFINED ALL-DATA ROLE ABSENT",
+            "OBJECT ACL CLEAN == PREDEFINED ALL-DATA ROLE ABSENT",
+            1,
+        )
+        findings = validate_boundary_text(mutated)
+        self.assertTrue(any("PREDEFINED ALL-DATA" in finding for finding in findings))
 
     def test_validator_rejects_role_mapping_grants(self):
         mutated = self.text + "\nGRANT UPDATE ON platform.authority_fences TO serving_role;\n"

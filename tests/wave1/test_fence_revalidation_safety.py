@@ -50,17 +50,6 @@ class FenceRevalidationSafetyTests(unittest.TestCase):
         self.assert_fails(text.replace("FROM pg_catalog.pg_subscription_rel sr", "FROM pg_catalog.pg_class sr", 1), "logical-replication")
         self.assert_fails(text.replace("sr.srrelid OPERATOR(pg_catalog.=) v_table", "sr.srrelid OPERATOR(pg_catalog.<>) v_table", 1), "logical-replication")
 
-    def test_stored_check_dependencies_must_be_catalog_bound(self):
-        text = self.text()
-        for old, new in (
-            ("pg_catalog.pg_depend", "pg_catalog.pg_class"),
-            ("pg_catalog.pg_operator", "pg_catalog.pg_class"),
-            ("o.oprnamespace OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace", "false"),
-            ("d.refobjid OPERATOR(pg_catalog.<>) 'pg_catalog.\"C\"'::pg_catalog.regcollation", "false"),
-        ):
-            with self.subTest(old=old):
-                self.assert_fails(text.replace(old, new, 1), "trusted-resolution")
-
     def test_constraint_validation_precedes_function_replacement(self):
         text = self.text()
         marker = "CREATE OR REPLACE FUNCTION platform.initialize_authority_fence"

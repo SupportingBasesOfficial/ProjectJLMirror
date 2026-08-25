@@ -1,0 +1,46 @@
+{
+  "contract_id": "wave-1.final-admission-authority@1",
+  "scope": "protected_operation_admission_only",
+  "serial_currentness_is_final_authority": false,
+  "caller_supplied_time_is_final_currentness": false,
+  "authority_owned_currentness_required": true,
+  "decision_mode": "atomic_or_revision_bound_logical_snapshot",
+  "required_common_bindings": [
+    "admission_revision",
+    "authorization_policy_revision",
+    "principal_authority_revision",
+    "principal_id",
+    "principal_credential_generation",
+    "action"
+  ],
+  "required_tenant_bindings_when_applicable": [
+    "tenant_id",
+    "cell_id",
+    "placement_authority_revision",
+    "placement_version",
+    "runtime_generation",
+    "runtime_profile_id",
+    "runtime_isolation_class",
+    "configuration_generation",
+    "workload_credential_generation",
+    "network_policy_generation",
+    "environment_class",
+    "isolation_class",
+    "fence_scope_id",
+    "fence_epoch"
+  ],
+  "required_privileged_human_bindings_when_applicable": [
+    "authentication_strength_policy_revision"
+  ],
+  "required_cross_tenant_bindings_when_applicable": [
+    "executing_runtime_authority_revision",
+    "executing_runtime_profile_id",
+    "executing_runtime_generation"
+  ],
+  "finalizer_forbidden_inputs": [
+    "caller_supplied_now"
+  ],
+  "fallback_to_serial_checks": false,
+  "final_snapshot_is_durable_effect_authority": false,
+  "residual_mechanism_class": "C2_replaceable_implementation_choice"
+}

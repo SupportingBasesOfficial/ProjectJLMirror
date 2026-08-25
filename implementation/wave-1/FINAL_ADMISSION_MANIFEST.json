@@ -7,6 +7,7 @@
   "decision_mode": "atomic_or_revision_bound_logical_snapshot",
   "resource_scope_mode": "required_for_resource_forbidden_otherwise",
   "declaration_scope_binding_mode": "exact_scope_and_tenant_requirement",
+  "cross_tenant_target_binding_mode": "required_exact_explicit_tenant_set_or_selection_criteria_for_cross_tenant_forbidden_otherwise",
   "tenant_resource_executing_runtime_profile": "runtime.api@1",
   "required_common_bindings": [
     "admission_revision",
@@ -18,6 +19,7 @@
     "scope",
     "tenant_requirement",
     "resource_scope",
+    "cross_tenant_target",
     "authentication_strength_policy_id",
     "executing_runtime_authority_revision",
     "executing_runtime_profile_id",
@@ -41,6 +43,9 @@
   ],
   "required_privileged_human_bindings_when_applicable": [
     "authentication_strength_policy_revision"
+  ],
+  "required_cross_tenant_bindings_when_applicable": [
+    "cross_tenant_target"
   ],
   "cross_tenant_executing_runtime_profile": "runtime.control-plane@1",
   "finalizer_forbidden_inputs": [

@@ -81,15 +81,36 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
                 self.assertIn(old, self.text)
                 self.assert_fails(self.text.replace(old, new, 1))
 
-    def test_database_wide_migration_owner_security_definer_guard_is_required(self):
-        old = "p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid\n           AND p.prosecdef"
-        weakened = self.text.replace(
-            old,
-            "p.proowner OPERATOR(pg_catalog.<>) current_user::pg_catalog.regrole::oid\n           AND p.prosecdef",
-            1,
+    def test_database_wide_fence_authoritative_security_definer_guard_is_required(self):
+        owner_set = (
+            "p.proowner IN (\n"
+            "                   current_user::pg_catalog.regrole::oid,\n"
+            "                   pg_catalog.to_regrole('pg_read_all_data')::oid,\n"
+            "                   pg_catalog.to_regrole('pg_write_all_data')::oid\n"
+            "               )\n"
+            "           AND p.prosecdef"
         )
-        self.assertIn(old, self.text)
-        self.assert_fails(weakened)
+        self.assertIn(owner_set, self.text)
+        self.assert_fails(
+            self.text.replace(
+                owner_set,
+                "p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid\n           AND p.prosecdef",
+                1,
+            )
+        )
+        self.assert_fails(
+            self.text.replace("pg_catalog.to_regrole('pg_read_all_data')::oid,", "pg_catalog.to_regrole('pg_monitor')::oid,", 1)
+        )
+        self.assert_fails(
+            self.text.replace("pg_catalog.to_regrole('pg_write_all_data')::oid\n               )", "pg_catalog.to_regrole('pg_monitor')::oid\n               )", 1)
+        )
+        self.assert_fails(
+            self.text.replace(
+                "database contains fence-authoritative SECURITY DEFINER routine owned by migration or predefined all-data authority",
+                "database contains migration-owner SECURITY DEFINER routine",
+                1,
+            )
+        )
 
     def test_canonical_functions_must_retain_exact_catalog_search_path(self):
         weakened = self.text.replace(
@@ -106,6 +127,7 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
         for law in (
             "TABLE ACL CLEAN != COLUMN ACL CLEAN",
             "OBJECT ACL CLEAN != PREDEFINED ALL-DATA ROLE ABSENT",
+            "ALL-DATA MEMBERSHIP CLEAN != ALL-DATA-OWNED DEFINER AUTHORITY ABSENT",
             "EXPECTED FUNCTION ACL CLEAN != RESIDUAL DEFINER AUTHORITY ABSENT",
             "SCHEMA LOCATION != DEFINER AUTHORITY BOUNDARY",
             "LOCAL FENCE RULE CLEAN != EXTERNAL REWRITE REACHABILITY ABSENT",

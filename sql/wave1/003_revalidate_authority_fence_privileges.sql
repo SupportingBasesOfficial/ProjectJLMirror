@@ -4,8 +4,10 @@
 -- This migration runs before any separately reviewed C2 runtime/database grants.
 -- It proves that the migration authority owns the fence objects, that no other
 -- role retains direct object or column authority, that no transitive role-membership
--- path can assume/inherit the migration-owner authority, and that no non-owner role
--- can reach PostgreSQL predefined all-data authority before C2 role mapping.
+-- path can assume/inherit the migration-owner authority, that no non-owner role
+-- can reach PostgreSQL predefined all-data authority, and that no residual
+-- SECURITY DEFINER routine survives in the platform authority namespace before
+-- C2 role mapping.
 -- It does not choose role names or grant serving/runtime authority.
 
 DO $$
@@ -135,6 +137,21 @@ BEGIN
            AND acl.grantee <> n.nspowner
     ) THEN
         RAISE EXCEPTION 'platform schema has inherited non-owner privileges';
+    END IF;
+
+    -- The platform namespace is an authority namespace at this stage. An
+    -- unexpected historical SECURITY DEFINER routine owned by the migration role
+    -- can execute with owner privileges even when table/column ACLs are clean and
+    -- later C2 mapping grants only schema usage/EXECUTE. Fail closed on every
+    -- residual definer routine; the canonical Wave 1 fence routines are required
+    -- to remain SECURITY INVOKER below.
+    IF EXISTS (
+        SELECT 1
+          FROM pg_proc p
+         WHERE p.pronamespace = v_schema
+           AND p.prosecdef
+    ) THEN
+        RAISE EXCEPTION 'platform authority namespace contains residual SECURITY DEFINER routine';
     END IF;
 
     -- CREATE OR REPLACE does not make an unexpected historical owner safe. The

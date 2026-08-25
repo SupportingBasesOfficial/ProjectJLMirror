@@ -3,10 +3,11 @@
 -- 001 may be applied into an environment where the logical schema already exists.
 -- This migration makes reuse fail closed: an existing authority_fences table must
 -- satisfy the canonical structural, durability, identifier, deterministic-collation,
--- conflict-arbiter, constraint/index, referential-action, rewrite-reachability-free
--- and replication-writer-free contract before Wave 1 can consider it eligible for
--- authority use. Invalid historical shape/rows or hidden mutation/write-constraining
--- behavior fail; rows are not normalized, deleted, or silently accepted here.
+-- conflict-arbiter, constraint/index, referential-action, rewrite-reachability-free,
+-- replication-writer-free and DDL-event-trigger-free contract before Wave 1 can
+-- consider it eligible for authority use. Invalid historical shape/rows or hidden
+-- mutation/write-constraining behavior fail; rows are not normalized, deleted, or
+-- silently accepted here.
 --
 -- This file is deliberately self-transactional. Constraint replacement is not safe
 -- under statement-by-statement autocommit because a failed later validation could
@@ -16,6 +17,26 @@
 -- one closed database mutation window.
 
 BEGIN;
+
+-- Event triggers are database-wide DDL hooks and are not represented by pg_trigger,
+-- table/column ACLs, rewrite dependencies, SECURITY DEFINER scans or subscription
+-- mappings. A currently enabled event trigger can run in the migration session when
+-- the ALTER TABLE statements below execute and can therefore mutate fence rows or
+-- attach new metadata after the structural checks. Wave 1 fails closed before any
+-- event-trigger-capable fence DDL whenever any event trigger is not disabled. Future
+-- coexistence with event triggers requires a separately reviewed migration design.
+--
+-- This SELECT intentionally fails by division-by-zero when an enabled/always/replica
+-- event trigger exists. SELECT itself is not DDL, so the proof executes before the
+-- DDL hook surface it is proving absent.
+SELECT 1 / CASE
+    WHEN EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_event_trigger et
+         WHERE et.evtenabled <> 'D'
+    ) THEN 0
+    ELSE 1
+END AS wave1_event_trigger_guard;
 
 LOCK TABLE platform.authority_fences IN ACCESS EXCLUSIVE MODE;
 

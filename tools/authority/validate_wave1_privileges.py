@@ -60,13 +60,8 @@ COLUMN_ACL_GUARD = """FROM pg_attribute a
            AND a.attacl IS NOT NULL
            AND acl.grantee <> current_user::regrole::oid"""
 RESIDUAL_SECURITY_DEFINER_GUARD = """FROM pg_proc p
-          CROSS JOIN LATERAL aclexplode(
-              COALESCE(p.proacl, acldefault('f', p.proowner))
-          ) AS acl
          WHERE p.proowner = current_user::regrole::oid
-           AND p.prosecdef
-           AND acl.privilege_type = 'EXECUTE'
-           AND acl.grantee <> p.proowner"""
+           AND p.prosecdef"""
 
 REQUIRED_EXECUTABLE_FRAGMENTS = (
     "to_regnamespace('platform')",
@@ -87,7 +82,7 @@ REQUIRED_EXECUTABLE_FRAGMENTS = (
     "aclexplode(\n              COALESCE(n.nspacl, acldefault('n', n.nspowner))\n          )",
     "acl.grantee <> n.nspowner",
     RESIDUAL_SECURITY_DEFINER_GUARD,
-    "RAISE EXCEPTION 'database contains callable migration-owner SECURITY DEFINER routine'",
+    "RAISE EXCEPTION 'database contains migration-owner SECURITY DEFINER routine'",
     "FROM pg_proc p",
     "p.proowner <> current_user::regrole::oid",
     "aclexplode(\n              COALESCE(p.proacl, acldefault('f', p.proowner))\n          )",
@@ -180,7 +175,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}")
         return 1
-    print("RESULT: PASS — fence ownership, role reachability, predefined all-data roles, object/column ACLs and cross-schema callable SECURITY DEFINER authority fail closed before C2 role mapping")
+    print("RESULT: PASS — fence ownership, role reachability, predefined all-data roles, object/column ACLs and all migration-owner SECURITY DEFINER authority fail closed before C2 role mapping")
     print("NOTE: PASS is conformance evidence only; it grants no runtime/database privilege.")
     return 0
 

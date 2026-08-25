@@ -52,10 +52,22 @@ def _identifier(value: object, field: str) -> str:
     return value
 
 
+def _optional_identifier(value: object, field: str) -> str | None:
+    if value is None:
+        return None
+    return _identifier(value, field)
+
+
 def _profile_id(value: object, field: str, prefix: str) -> str:
     if not isinstance(value, str) or not _PROFILE_ID_RE.fullmatch(value) or not value.startswith(prefix):
         raise ValueError(f"{field} must be a canonical {prefix} profile id")
     return value
+
+
+def _optional_profile_id(value: object, field: str, prefix: str) -> str | None:
+    if value is None:
+        return None
+    return _profile_id(value, field, prefix)
 
 
 def _strict_bool(value: object, field: str) -> bool:
@@ -70,13 +82,15 @@ def _strict_positive_int(value: object, field: str) -> int:
     return value
 
 
+def _utc(value: datetime) -> datetime:
+    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("time must be a timezone-aware datetime")
+    return value.astimezone(timezone.utc)
+
+
 @dataclass(frozen=True)
 class PlacementEvidence:
-    """Trusted Control-Plane/cell-admission evidence, never caller input.
-
-    `isolation_class` is the tenant placement/isolation class. The distinct
-    `runtime_isolation_class` is the Phase 13 process/runtime profile binding.
-    """
+    """Trusted Control-Plane/cell-admission evidence, never caller input."""
 
     tenant_id: str
     cell_id: str
@@ -110,11 +124,7 @@ class PlacementEvidence:
         ):
             _identifier(getattr(self, field), field)
         _profile_id(self.runtime_profile_id, "runtime_profile_id", "runtime.")
-        _profile_id(
-            self.runtime_isolation_class,
-            "runtime_isolation_class",
-            "isolation.",
-        )
+        _profile_id(self.runtime_isolation_class, "runtime_isolation_class", "isolation.")
         if not isinstance(self.environment_class, EnvironmentClass):
             raise ValueError("environment_class must be canonical")
         if not isinstance(self.runtime_lifecycle, RuntimeLifecycle):
@@ -139,12 +149,7 @@ class AuthorizationDecision:
 
 @dataclass(frozen=True)
 class RuntimeExecutionEvidence:
-    """Trusted evidence for the runtime that is actually executing this admission.
-
-    A caller-selected RuntimeBinding is an expected contract only. It does not
-    establish where the code is executing. This record is accepted only when it
-    is returned by the owning current-runtime authority port.
-    """
+    """Trusted evidence for the runtime actually executing this admission."""
 
     runtime_profile_id: str
     principal_class: str
@@ -168,9 +173,125 @@ class RuntimeExecutionEvidence:
         _strict_bool(self.current, "current")
 
 
+@dataclass(frozen=True)
+class FinalAdmissionEvidence:
+    """One revision-bound final admission snapshot from trusted current authorities.
+
+    The implementation behind FinalAdmissionAuthorityPort owns its current clock
+    and SHALL re-establish all applicable authority dimensions as one atomic or
+    revision-bound logical decision. Earlier serial checks are only narrowing
+    evidence and cannot manufacture this record.
+    """
+
+    granted: bool
+    current: bool
+    admission_revision: str
+    authorization_policy_revision: str
+    principal_authority_revision: str
+    principal_id: str
+    principal_credential_generation: str
+    action: str
+    tenant_id: str | None = None
+    cell_id: str | None = None
+    placement_authority_revision: str | None = None
+    placement_version: str | None = None
+    runtime_generation: str | None = None
+    runtime_profile_id: str | None = None
+    runtime_isolation_class: str | None = None
+    configuration_generation: str | None = None
+    workload_credential_generation: str | None = None
+    network_policy_generation: str | None = None
+    environment_class: EnvironmentClass | None = None
+    isolation_class: str | None = None
+    fence_scope_id: str | None = None
+    fence_epoch: int | None = None
+    authentication_strength_policy_revision: str | None = None
+    executing_runtime_authority_revision: str | None = None
+    executing_runtime_profile_id: str | None = None
+    executing_runtime_generation: str | None = None
+
+    def __post_init__(self) -> None:
+        _strict_bool(self.granted, "granted")
+        _strict_bool(self.current, "current")
+        for field in (
+            "admission_revision",
+            "authorization_policy_revision",
+            "principal_authority_revision",
+            "principal_id",
+            "principal_credential_generation",
+            "action",
+        ):
+            _identifier(getattr(self, field), field)
+        _optional_identifier(
+            self.authentication_strength_policy_revision,
+            "authentication_strength_policy_revision",
+        )
+
+        tenant_values = (
+            self.tenant_id,
+            self.cell_id,
+            self.placement_authority_revision,
+            self.placement_version,
+            self.runtime_generation,
+            self.runtime_profile_id,
+            self.runtime_isolation_class,
+            self.configuration_generation,
+            self.workload_credential_generation,
+            self.network_policy_generation,
+            self.environment_class,
+            self.isolation_class,
+            self.fence_scope_id,
+            self.fence_epoch,
+        )
+        if any(value is not None for value in tenant_values):
+            if any(value is None for value in tenant_values):
+                raise ValueError("tenant final-admission authority bindings must be complete")
+            for field in (
+                "tenant_id",
+                "cell_id",
+                "placement_authority_revision",
+                "placement_version",
+                "runtime_generation",
+                "configuration_generation",
+                "workload_credential_generation",
+                "network_policy_generation",
+                "isolation_class",
+                "fence_scope_id",
+            ):
+                _identifier(getattr(self, field), field)
+            _profile_id(self.runtime_profile_id, "runtime_profile_id", "runtime.")
+            _profile_id(
+                self.runtime_isolation_class,
+                "runtime_isolation_class",
+                "isolation.",
+            )
+            if not isinstance(self.environment_class, EnvironmentClass):
+                raise ValueError("environment_class must be canonical")
+            _strict_positive_int(self.fence_epoch, "fence_epoch")
+
+        runtime_values = (
+            self.executing_runtime_authority_revision,
+            self.executing_runtime_profile_id,
+            self.executing_runtime_generation,
+        )
+        if any(value is not None for value in runtime_values):
+            if any(value is None for value in runtime_values):
+                raise ValueError("executing-runtime final-admission bindings must be complete")
+            _identifier(
+                self.executing_runtime_authority_revision,
+                "executing_runtime_authority_revision",
+            )
+            _profile_id(
+                self.executing_runtime_profile_id,
+                "executing_runtime_profile_id",
+                "runtime.",
+            )
+            _identifier(self.executing_runtime_generation, "executing_runtime_generation")
+
+
 class CurrentPrincipalAuthorityPort(Protocol):
     def is_current(self, *, principal: Principal, now: datetime) -> bool:
-        """Prove current session/credential/workload-principal authority."""
+        """Narrowing current session/credential/workload-principal check."""
 
 
 class PlacementAuthorityPort(Protocol):
@@ -178,7 +299,7 @@ class PlacementAuthorityPort(Protocol):
         """Resolve trusted current placement from the owning authority."""
 
     def context_is_current(self, context: TenantContext) -> bool:
-        """Optional narrowing/deny signal; only literal True can pass."""
+        """Narrowing/deny signal; only literal True can pass."""
 
 
 class CurrentAuthorizationPort(Protocol):
@@ -189,18 +310,29 @@ class CurrentAuthorizationPort(Protocol):
         context: TenantContext | None,
         declaration: AuthorizationDeclaration,
     ) -> AuthorizationDecision:
-        """Evaluate owning membership/permission/resource policy at current authority."""
+        """Narrowing owning membership/permission/resource-policy check."""
 
 
 class CurrentRuntimeAuthorityPort(Protocol):
     def resolve_current_execution(self, *, now: datetime) -> RuntimeExecutionEvidence | None:
-        """Return trusted evidence for the runtime actually executing admission."""
+        """Narrowing evidence for the runtime actually executing admission."""
 
 
-def _utc(value: datetime) -> datetime:
-    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("time must be a timezone-aware datetime")
-    return value.astimezone(timezone.utc)
+class FinalAdmissionAuthorityPort(Protocol):
+    def finalize_current_admission(
+        self,
+        *,
+        principal: Principal,
+        context: TenantContext | None,
+        declaration: AuthorizationDeclaration,
+        expected_runtime_binding: RuntimeBinding,
+        authentication_strength_evidence: AuthenticationStrengthEvidence | None,
+    ) -> FinalAdmissionEvidence:
+        """Atomically/revision-bind all applicable current authorities.
+
+        This boundary owns its trusted current clock/currentness reads. It MUST
+        NOT use caller-supplied request time or earlier booleans as final proof.
+        """
 
 
 def _require_current_principal(
@@ -367,6 +499,99 @@ def _evaluate_current_authorization(
     return decision
 
 
+def _finalize_current_admission(
+    *,
+    final_admission_authority: FinalAdmissionAuthorityPort | None,
+    principal: Principal,
+    context: TenantContext | None,
+    declaration: AuthorizationDeclaration,
+    runtime_binding: RuntimeBinding,
+    strength_evidence: AuthenticationStrengthEvidence | None,
+    latest_runtime_evidence: RuntimeExecutionEvidence | None,
+) -> AuthorizationDecision:
+    if final_admission_authority is None or not hasattr(
+        final_admission_authority, "finalize_current_admission"
+    ):
+        raise AdmissionDenied("revision-bound final admission authority is unavailable")
+    try:
+        evidence = final_admission_authority.finalize_current_admission(
+            principal=principal,
+            context=context,
+            declaration=declaration,
+            expected_runtime_binding=runtime_binding,
+            authentication_strength_evidence=strength_evidence,
+        )
+    except Exception as exc:
+        raise AdmissionDenied("revision-bound final admission authority failed closed") from exc
+    if not isinstance(evidence, FinalAdmissionEvidence):
+        raise AdmissionDenied("final admission authority returned malformed evidence")
+    if evidence.current is not True or evidence.granted is not True:
+        raise AdmissionDenied("final admission authority did not grant current admission")
+    if (
+        evidence.principal_id != principal.principal_id
+        or evidence.principal_credential_generation != principal.credential_generation
+        or evidence.action != declaration.action
+    ):
+        raise AdmissionDenied("final admission evidence is bound to another principal or action")
+
+    if context is None:
+        if evidence.tenant_id is not None:
+            raise AdmissionDenied("tenantless final admission cannot carry tenant authority")
+    else:
+        expected = (
+            (evidence.tenant_id, context.tenant_id),
+            (evidence.cell_id, context.cell_id),
+            (evidence.placement_version, context.placement_version),
+            (evidence.runtime_generation, context.runtime_generation),
+            (evidence.runtime_profile_id, context.runtime_profile_id),
+            (evidence.runtime_isolation_class, context.runtime_isolation_class),
+            (evidence.configuration_generation, context.configuration_generation),
+            (
+                evidence.workload_credential_generation,
+                context.workload_credential_generation,
+            ),
+            (evidence.network_policy_generation, context.network_policy_generation),
+            (evidence.environment_class, context.environment_class),
+            (evidence.isolation_class, context.isolation_class),
+            (evidence.fence_scope_id, context.fence_scope_id),
+            (evidence.fence_epoch, context.fence_epoch),
+        )
+        if any(actual != wanted for actual, wanted in expected):
+            raise AdmissionDenied("final admission no longer matches exact TenantContext authority")
+        if evidence.placement_authority_revision is None:
+            raise AdmissionDenied("final admission lacks placement/currentness revision")
+
+    if declaration.step_up is StepUpClass.NONE:
+        if evidence.authentication_strength_policy_revision is not None:
+            raise AdmissionDenied("final admission carries unexpected authentication-strength authority")
+    else:
+        if not isinstance(strength_evidence, AuthenticationStrengthEvidence):
+            raise AdmissionDenied("final admission lacks principal-bound authentication-strength evidence")
+        if (
+            evidence.authentication_strength_policy_revision
+            != strength_evidence.policy_version
+        ):
+            raise AdmissionDenied("final admission authentication-strength revision changed")
+
+    if declaration.tenant_requirement is TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED:
+        if latest_runtime_evidence is None:
+            raise AdmissionDenied("final cross-tenant admission lacks runtime narrowing evidence")
+        if (
+            evidence.executing_runtime_authority_revision is None
+            or evidence.executing_runtime_profile_id != CONTROL_PLANE.runtime_profile_id
+            or evidence.executing_runtime_generation != latest_runtime_evidence.runtime_generation
+        ):
+            raise AdmissionDenied("final cross-tenant admission runtime authority changed")
+    elif evidence.executing_runtime_profile_id is not None:
+        raise AdmissionDenied("final admission carries unexpected executing-runtime authority")
+
+    return AuthorizationDecision(
+        granted=True,
+        current=True,
+        policy_revision=evidence.authorization_policy_revision,
+    )
+
+
 def construct_tenant_context(
     *,
     principal: Principal,
@@ -484,7 +709,10 @@ def authorize_protected_operation(
     strength_evidence: AuthenticationStrengthEvidence | None = None,
     runtime_binding: RuntimeBinding = API_AUTH_BOUNDARY,
     runtime_authority: CurrentRuntimeAuthorityPort | None = None,
+    final_admission_authority: FinalAdmissionAuthorityPort | None = None,
 ) -> AuthorizationDecision:
+    """Narrow serially, then require one combined final current-admission proof."""
+
     _require_current_principal(
         principal=principal,
         principal_authority=principal_authority,
@@ -496,6 +724,7 @@ def authorize_protected_operation(
     _require_privileged_human_assurance_declaration(principal, declaration)
 
     requirement = declaration.tenant_requirement
+    latest_runtime_evidence: RuntimeExecutionEvidence | None = None
     if requirement is TenantRequirement.REQUIRED and context is None:
         raise AdmissionDenied("protected operation requires trusted TenantContext")
     if requirement is TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED:
@@ -503,7 +732,7 @@ def authorize_protected_operation(
             raise AdmissionDenied(
                 "cross-tenant privileged platform authority requires the accepted Control Plane runtime boundary"
             )
-        _require_current_runtime_execution(
+        latest_runtime_evidence = _require_current_runtime_execution(
             runtime_binding=CONTROL_PLANE,
             runtime_authority=runtime_authority,
             now=now,
@@ -539,7 +768,6 @@ def authorize_protected_operation(
         strength_evidence=strength_evidence,
         now=now,
     )
-
     _require_current_principal(
         principal=principal,
         principal_authority=principal_authority,
@@ -570,26 +798,34 @@ def authorize_protected_operation(
         strength_evidence=strength_evidence,
         now=now,
     )
-
     _require_current_principal(
         principal=principal,
         principal_authority=principal_authority,
         now=now,
     )
 
-    # Cross-tenant operations have no TenantContext placement recheck, so the
-    # actual executing Control Plane runtime must also be proven current again
-    # immediately before the final owning-authorization evaluation.
     if requirement is TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED:
-        _require_current_runtime_execution(
+        latest_runtime_evidence = _require_current_runtime_execution(
             runtime_binding=CONTROL_PLANE,
             runtime_authority=runtime_authority,
             now=now,
         )
 
-    return _evaluate_current_authorization(
+    # Historical/serial authorization remains a narrowing gate only. Its result
+    # is deliberately not returned as final protected-operation authority.
+    _evaluate_current_authorization(
         authorization_authority=authorization_authority,
         principal=principal,
         context=context,
         declaration=declaration,
+    )
+
+    return _finalize_current_admission(
+        final_admission_authority=final_admission_authority,
+        principal=principal,
+        context=context,
+        declaration=declaration,
+        runtime_binding=runtime_binding,
+        strength_evidence=strength_evidence,
+        latest_runtime_evidence=latest_runtime_evidence,
     )

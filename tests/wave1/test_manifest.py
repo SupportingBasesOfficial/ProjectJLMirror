@@ -13,17 +13,21 @@ from tools.authority.validate_wave1 import EXPECTED_FORBIDDEN_SUBSTITUTIONS
 
 MANIFEST = ROOT / "implementation" / "wave-1" / "IMPLEMENTATION_MANIFEST.json"
 REQUIRED_PANORAMIC_SUBSTITUTIONS = {
+    "principal_id_generation_match_for_principal_kind_authority",
     "destination_runtime_generation_for_executing_runtime_authority",
+    "runtime_profile_generation_match_for_executing_environment_authority",
     "final_admission_without_current_executing_runtime_authority",
     "final_admission_scope_class_for_other_declaration_scope",
     "final_admission_tenant_requirement_for_other_declaration",
     "non_api_runtime_for_tenant_resource_admission",
     "authentication_strength_revision_for_different_policy_id",
     "nondeterministic_collation_for_fence_scope_authority",
+    "required_fence_shape_for_absence_of_extra_write_constraints",
     "resource_scope_absence_for_resource_authority",
     "resource_scope_on_non_resource_authority",
     "table_acl_clean_for_column_acl_clean",
     "object_acl_clean_for_predefined_all_data_role_absent",
+    "expected_function_acl_clean_for_residual_definer_authority_absent",
     "table_shape_match_for_referential_action_free",
     "primary_key_present_for_immediate_valid_ready_conflict_arbiter",
     "cross_tenant_action_match_for_target_set_authority",

@@ -3,10 +3,21 @@
 -- 001 may be applied into an environment where the logical schema already exists.
 -- This migration makes reuse fail closed: an existing authority_fences table must
 -- satisfy the canonical structural, durability, identifier, deterministic-collation,
--- conflict-arbiter, constraint/index, referential-action and rewrite-reachability-free
--- contract before Wave 1 can consider it eligible for authority use. Invalid
--- historical shape/rows or hidden mutation/write-constraining behavior fail; rows
--- are not normalized, deleted, or silently accepted here.
+-- conflict-arbiter, constraint/index, referential-action, rewrite-reachability-free
+-- and replication-writer-free contract before Wave 1 can consider it eligible for
+-- authority use. Invalid historical shape/rows or hidden mutation/write-constraining
+-- behavior fail; rows are not normalized, deleted, or silently accepted here.
+--
+-- This file is deliberately self-transactional. Constraint replacement is not safe
+-- under statement-by-statement autocommit because a failed later validation could
+-- otherwise leave canonical checks absent or only partially replaced. The ACCESS
+-- EXCLUSIVE lock is acquired before structural validation and retained through the
+-- final COMMIT so validation, replacement and validation of the replacements share
+-- one closed database mutation window.
+
+BEGIN;
+
+LOCK TABLE platform.authority_fences IN ACCESS EXCLUSIVE MODE;
 
 -- A table name is not conformance. Verify the exact ordinary-table shape that makes
 -- compare-and-advance single-winner and preserves the accepted BIGINT fence domain.
@@ -308,6 +319,19 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'external rewrite dependency can reach authority_fences';
     END IF;
+
+    -- Logical-replication apply is an independent writer surface. It does not need
+    -- an ordinary table/column ACL grant and is not represented by the local trigger,
+    -- rewrite or SECURITY DEFINER scans above. Any subscription relation mapping for
+    -- this table therefore makes the fence authority ineligible for Wave 1 reuse;
+    -- future replication of authority state requires a separately reviewed design.
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_subscription_rel sr
+         WHERE sr.srrelid = v_table
+    ) THEN
+        RAISE EXCEPTION 'logical replication subscription can write authority_fences';
+    END IF;
 END
 $$;
 
@@ -358,3 +382,5 @@ ALTER TABLE platform.authority_fences
 -- Do not grant anything here. The separately reviewed C2 runtime/database mapping
 -- remains responsible for least-privilege ownership/GRANTs after this contract is
 -- proven. A successful validation is schema/data conformance evidence only.
+
+COMMIT;

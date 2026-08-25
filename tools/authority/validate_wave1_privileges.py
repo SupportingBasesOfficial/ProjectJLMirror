@@ -35,6 +35,13 @@ ROLE_MEMBERSHIP_GUARD = """WITH RECURSIVE owner_role_members(member_oid) AS (
         )
         SELECT 1
           FROM owner_role_members"""
+COLUMN_ACL_GUARD = """FROM pg_attribute a
+          CROSS JOIN LATERAL aclexplode(a.attacl) AS acl
+         WHERE a.attrelid = v_table
+           AND a.attnum > 0
+           AND NOT a.attisdropped
+           AND a.attacl IS NOT NULL
+           AND acl.grantee <> current_user::regrole::oid"""
 
 REQUIRED_EXECUTABLE_FRAGMENTS = (
     "to_regnamespace('platform')",
@@ -46,6 +53,8 @@ REQUIRED_EXECUTABLE_FRAGMENTS = (
     ROLE_MEMBERSHIP_GUARD,
     "aclexplode(\n              COALESCE(c.relacl, acldefault('r', c.relowner))\n          )",
     "acl.grantee <> c.relowner",
+    COLUMN_ACL_GUARD,
+    "RAISE EXCEPTION 'authority_fences has inherited non-owner column privileges'",
     "aclexplode(\n              COALESCE(n.nspacl, acldefault('n', n.nspowner))\n          )",
     "acl.grantee <> n.nspowner",
     "FROM pg_proc p",
@@ -100,7 +109,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}")
         return 1
-    print("RESULT: PASS — fence ownership, role-membership and ACL reuse fail closed before C2 role mapping")
+    print("RESULT: PASS — fence ownership, role-membership, object ACL and column ACL reuse fail closed before C2 role mapping")
     print("NOTE: PASS is conformance evidence only; it grants no runtime/database privilege.")
     return 0
 

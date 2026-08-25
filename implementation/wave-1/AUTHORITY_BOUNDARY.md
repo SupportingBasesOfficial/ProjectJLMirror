@@ -39,9 +39,10 @@ Cross-tenant privileged operations remain distinct platform operations. A valid 
 
 Owning membership/permission/resource authorization is not durable merely because an `AuthorizationDecision` said `current=True`. Wave 1 may evaluate principal, placement/runtime/fence, authentication-strength and owning authorization serially as fail-fast narrowing gates, but no ordering of those checks can create final authority: whichever serial check is last would otherwise reopen a TOCTOU window for the preceding authorities.
 
-Final protected-operation admission therefore requires one `FinalAdmissionAuthorityPort` result whose implementation performs one atomic or revision-bound logical current-authority decision using authority-owned currentness/time. The returned `FinalAdmissionEvidence` binds at minimum the final admission revision, owning authorization policy revision, principal authority revision, exact principal/session or credential generation, action, and every applicable authority dimension:
+Final protected-operation admission therefore requires one `FinalAdmissionAuthorityPort` result whose implementation performs one atomic or revision-bound logical current-authority decision using authority-owned currentness/time. The returned `FinalAdmissionEvidence` binds at minimum the final admission revision, owning authorization policy revision, principal authority revision, exact principal/session or credential generation, exact action, exact `resource_scope` (including explicit absence), and every applicable authority dimension:
 
 - for tenant-scoped work: tenant/cell placement revision, placement/runtime/configuration/workload-credential/network-policy generations, environment/isolation binding, fence scope and fence epoch;
+- for resource-scoped work: the exact canonical resource scope consumed by the owning authorization decision; evidence for one resource cannot be reused for another resource even when the action is identical;
 - for privileged/policy-sensitive humans: current authentication-strength/Security policy revision;
 - for cross-tenant privileged work: current executing Control Plane runtime authority revision, exact runtime profile and runtime generation.
 
@@ -97,6 +98,7 @@ CROSS-TENANT PLATFORM AUTHORITY != APPLICATION RUNTIME AUTHORITY
 EARLIER AUTHORIZATION GRANT != FINAL CURRENT AUTHORIZATION
 SERIAL CURRENTNESS CHECKS != FINAL ADMISSION AUTHORITY
 CALLER-SUPPLIED NOW != FINAL CURRENTNESS CLOCK
+ACTION MATCH != RESOURCE-SCOPE MATCH
 FINAL ADMISSION SNAPSHOT != DURABLE EFFECT AUTHORITY
 PLACEMENT CACHE HIT != GLOBAL AUTHORITY
 ENVIRONMENT LABEL != AUTHORIZATION

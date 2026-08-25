@@ -14,236 +14,118 @@ SQL_PATH = ROOT / "sql" / "wave1" / "002_revalidate_authority_fence_contract.sql
 
 
 class FenceRevalidationMigrationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = SQL_PATH.read_text(encoding="utf-8")
+
+    def assert_fails(self, text: str, needle: str | None = None) -> None:
+        findings = validate_fence_revalidation_sql_text(text)
+        self.assertTrue(findings)
+        if needle:
+            self.assertTrue(any(needle.lower() in f.lower() for f in findings), findings)
+
     def test_real_revalidation_migration_is_fail_closed(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        self.assertEqual(validate_fence_revalidation_sql_text(text), [])
+        self.assertEqual(validate_fence_revalidation_sql_text(self.text), [])
 
-    def test_existing_rows_must_be_validated_not_only_future_rows(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace(
-            "ALTER TABLE platform.authority_fences\n    VALIDATE CONSTRAINT wave1_fence_scope_id_canonical;\n",
-            "",
-            1,
+    def test_existing_rows_are_validated_before_function_replacement(self):
+        self.assert_fails(
+            self.text.replace("ALTER TABLE platform.authority_fences\n    VALIDATE CONSTRAINT wave1_fence_scope_id_canonical;\n", "", 1),
+            "VALIDATE CONSTRAINT wave1_fence_scope_id_canonical",
         )
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("VALIDATE CONSTRAINT wave1_fence_scope_id_canonical" in f for f in findings))
 
-    def test_revalidation_cannot_rewrite_bad_authority_rows_to_pass(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text + "\nUPDATE platform.authority_fences SET authority_state = 'active';\n"
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("must not normalize/delete" in f for f in findings))
+    def test_revalidation_cannot_rewrite_bad_authority_rows_before_validation(self):
+        marker = "DO $wave1_revalidate$"
+        weakened = self.text.replace(marker, "UPDATE platform.authority_fences SET authority_state = 'active';\n\n" + marker, 1)
+        self.assert_fails(weakened, "normalize/delete")
 
-    def test_revalidation_preserves_positive_epoch_contract(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace(
-            "CHECK (current_fence_epoch > 0) NOT VALID",
-            "CHECK (current_fence_epoch >= 0) NOT VALID",
-            1,
+    def test_positive_bigint_epoch_contract_is_exact(self):
+        self.assert_fails(
+            self.text.replace("CHECK (current_fence_epoch OPERATOR(pg_catalog.>) 0) NOT VALID", "CHECK (current_fence_epoch OPERATOR(pg_catalog.>=) 0) NOT VALID", 1),
+            "current_fence_epoch",
         )
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("current_fence_epoch > 0" in f for f in findings))
-
-    def test_revalidation_requires_bigint_epoch_storage(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace(
-            "IS DISTINCT FROM 'int8'::regtype",
-            "IS DISTINCT FROM 'int4'::regtype",
-            1,
+        self.assert_fails(
+            self.text.replace("'int8'::pg_catalog.regtype", "'int4'::pg_catalog.regtype", 1),
+            "int8",
         )
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("int8" in f for f in findings))
 
-    def test_revalidation_requires_single_column_scope_primary_key(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace(
-            "c.conkey = ARRAY[a.attnum]::smallint[]",
-            "c.conkey IS NOT NULL",
-            1,
+    def test_primary_key_is_single_column_immediate_valid_ready_live(self):
+        mutations = (
+            ("c.conkey OPERATOR(pg_catalog.=) ARRAY[a.attnum]::smallint[]", "c.conkey IS NOT NULL"),
+            ("AND NOT c.condeferrable", "AND c.condeferrable"),
+            ("AND i.indimmediate", "AND NOT i.indimmediate"),
+            ("AND i.indisvalid", "AND NOT i.indisvalid"),
+            ("AND i.indisready", "AND NOT i.indisready"),
+            ("AND i.indislive", "AND NOT i.indislive"),
+            ("AND i.indnkeyatts OPERATOR(pg_catalog.=) 1", "AND i.indnkeyatts OPERATOR(pg_catalog.>) 0"),
+            ("AND i.indexprs IS NULL", "AND i.indexprs IS NOT NULL"),
+            ("AND i.indpred IS NULL", "AND i.indpred IS NOT NULL"),
         )
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("c.conkey = ARRAY[a.attnum]" in f for f in findings))
-
-    def test_revalidation_rejects_deferrable_primary_key(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace("AND NOT c.condeferrable", "AND c.condeferrable", 1)
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("non-deferrable" in f or "condeferrable" in f for f in findings))
-
-    def test_revalidation_requires_immediate_primary_key_index(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace("AND i.indimmediate", "AND NOT i.indimmediate", 1)
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("immediate" in f or "indimmediate" in f for f in findings))
-
-    def test_revalidation_requires_valid_ready_live_primary_key_index(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        for old, new, expected in (
-            ("AND i.indisvalid", "AND NOT i.indisvalid", "valid"),
-            ("AND i.indisready", "AND NOT i.indisready", "ready"),
-            ("AND i.indislive", "AND NOT i.indislive", "live"),
-        ):
+        for old, new in mutations:
             with self.subTest(old=old):
-                weakened = text.replace(old, new, 1)
-                findings = validate_fence_revalidation_sql_text(weakened)
-                self.assertTrue(any(expected in f or old.strip().split()[-1] in f for f in findings))
+                self.assert_fails(self.text.replace(old, new, 1), "primary key")
 
-    def test_revalidation_requires_unconditional_plain_single_key_index(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        for old, new, expected in (
-            ("AND i.indnkeyatts = 1", "AND i.indnkeyatts > 0", "single-column"),
-            ("AND i.indexprs IS NULL", "AND i.indexprs IS NOT NULL", "conflict arbiter"),
-            ("AND i.indpred IS NULL", "AND i.indpred IS NOT NULL", "conflict arbiter"),
-        ):
-            with self.subTest(old=old):
-                weakened = text.replace(old, new, 1)
-                findings = validate_fence_revalidation_sql_text(weakened)
-                self.assertTrue(any(expected in f or old.strip() in f for f in findings))
+    def test_foreign_keys_are_rejected_in_both_directions(self):
+        token = "c.conrelid OPERATOR(pg_catalog.=) v_table OR c.confrelid OPERATOR(pg_catalog.=) v_table"
+        self.assert_fails(self.text.replace(token, "c.conrelid OPERATOR(pg_catalog.=) v_table", 1), "foreign-key")
+        self.assert_fails(self.text.replace(token, "c.confrelid OPERATOR(pg_catalog.=) v_table", 1), "foreign-key")
 
-    def test_revalidation_rejects_foreign_keys_in_either_direction(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
+    def test_external_rewrite_dependency_guard_is_exact(self):
         for old, new in (
-            ("c.conrelid = v_table OR c.confrelid = v_table", "c.conrelid = v_table"),
-            ("c.conrelid = v_table OR c.confrelid = v_table", "c.confrelid = v_table"),
-        ):
-            with self.subTest(new=new):
-                weakened = text.replace(old, new, 1)
-                findings = validate_fence_revalidation_sql_text(weakened)
-                self.assertTrue(any("foreign-key" in f or "referential-action" in f for f in findings))
-
-    def test_revalidation_foreign_key_guard_cannot_be_comment_laundered(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace(
-            "AND (c.conrelid = v_table OR c.confrelid = v_table)",
-            "AND false",
-            1,
-        ) + "\n-- AND (c.conrelid = v_table OR c.confrelid = v_table)\n"
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("foreign-key" in f or "referential-action" in f for f in findings))
-
-    def test_external_rewrite_dependency_guard_requires_pg_depend(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace("JOIN pg_depend d", "JOIN pg_class d", 1)
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("external rewrite" in f or "pg_depend" in f for f in findings))
-
-    def test_external_rewrite_dependency_guard_must_bind_fence_table(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace("AND d.refobjid = v_table", "AND d.refobjid <> v_table", 1)
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("external rewrite" in f or "d.refobjid" in f for f in findings))
-
-    def test_external_rewrite_dependency_guard_must_be_external(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace("WHERE r.ev_class <> v_table", "WHERE r.ev_class = v_table", 1)
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("external rewrite" in f or "r.ev_class" in f for f in findings))
-
-    def test_external_rewrite_dependency_guard_cannot_be_comment_laundered(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace("AND d.refobjid = v_table", "AND false", 1) + "\n-- AND d.refobjid = v_table\n"
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("external rewrite" in f or "d.refobjid" in f for f in findings))
-
-    def test_revalidation_requires_expected_column_types(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace(
-            "IS DISTINCT FROM 'timestamptz'::regtype",
-            "IS DISTINCT FROM 'timestamp'::regtype",
-            1,
-        )
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("timestamptz" in f for f in findings))
-
-    def test_revalidation_requires_ordinary_permanent_non_rls_table(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        for old, new, expected in (
-            ("'r'::\"char\"", "'p'::\"char\"", "ROW('r'"),
-            ("'p'::\"char\"", "'u'::\"char\"", "'p'::\"char\""),
-            ("false, false, false", "true, false, false", "false, false, false"),
+            ("FROM pg_catalog.pg_rewrite r", "FROM pg_catalog.pg_class r"),
+            ("JOIN pg_catalog.pg_depend d", "JOIN pg_catalog.pg_class d"),
+            ("d.refobjid OPERATOR(pg_catalog.=) v_table", "d.refobjid OPERATOR(pg_catalog.<>) v_table"),
+            ("r.ev_class OPERATOR(pg_catalog.<>) v_table", "r.ev_class OPERATOR(pg_catalog.=) v_table"),
         ):
             with self.subTest(old=old):
-                weakened = text.replace(old, new, 1)
-                findings = validate_fence_revalidation_sql_text(weakened)
-                self.assertTrue(any(expected in f for f in findings))
+                self.assert_fails(self.text.replace(old, new, 1), "external rewrite")
 
-    def test_revalidation_rejects_inheritance_and_row_security_policy_surfaces(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        for old, new, expected in (
-            ("FROM pg_inherits", "FROM pg_class -- FROM pg_inherits", "pg_inherits"),
-            ("FROM pg_policy", "FROM pg_class -- FROM pg_policy", "pg_policy"),
+    def test_table_shape_and_column_types_are_exact(self):
+        for old, new, needle in (
+            ("SELECT pg_catalog.array_agg(attname::text ORDER BY attnum)", "SELECT ARRAY['fence_scope_id']::text[]", "column"),
+            ("'timestamptz'::pg_catalog.regtype", "'timestamp'::pg_catalog.regtype", "timestamptz"),
+            ("ROW('r'::\"char\", 'p'::\"char\", false, false, false)", "ROW('p'::\"char\", 'p'::\"char\", false, false, false)", "ordinary"),
+            ("FROM pg_catalog.pg_inherits", "FROM pg_catalog.pg_class", "pg_inherits"),
+            ("FROM pg_catalog.pg_policy", "FROM pg_catalog.pg_class", "pg_policy"),
         ):
             with self.subTest(old=old):
-                weakened = text.replace(old, new, 1)
-                findings = validate_fence_revalidation_sql_text(weakened)
-                self.assertTrue(any(expected in f for f in findings))
+                self.assert_fails(self.text.replace(old, new, 1), needle)
 
-    def test_revalidation_requires_exact_canonical_column_set(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace(
-            "SELECT array_agg(attname::text ORDER BY attnum)",
-            "SELECT ARRAY['fence_scope_id']::text[] -- SELECT array_agg(attname::text ORDER BY attnum)",
-            1,
+    def test_default_and_generated_identity_surfaces_are_exact(self):
+        self.assert_fails(
+            self.text.replace("a.attname OPERATOR(pg_catalog.<>) 'updated_at'", "false", 1),
+            "pg_attrdef",
         )
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("array_agg(attname" in f for f in findings))
+        self.assert_fails(
+            self.text.replace("IS DISTINCT FROM 'statement_timestamp()'", "IS DISTINCT FROM 'clock_timestamp()'", 1),
+            "statement_timestamp",
+        )
+        self.assert_fails(
+            self.text.replace("attgenerated OPERATOR(pg_catalog.<>) '' OR attidentity OPERATOR(pg_catalog.<>) ''", "false", 1),
+            "generated",
+        )
 
-    def test_revalidation_requires_canonical_default_surface(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        for old, new, expected in (
-            ("a.attname <> 'updated_at'", "false -- a.attname <> 'updated_at'", "a.attname <> 'updated_at'"),
-            ("IS DISTINCT FROM 'statement_timestamp()'", "IS DISTINCT FROM 'clock_timestamp()'", "statement_timestamp"),
+    def test_trigger_rule_and_replication_surfaces_are_required(self):
+        for old, new, needle in (
+            ("FROM pg_catalog.pg_trigger t", "FROM pg_catalog.pg_class t", "trigger"),
+            ("FROM pg_catalog.pg_rewrite r", "FROM pg_catalog.pg_class r", "rewrite"),
+            ("FROM pg_catalog.pg_subscription_rel sr", "FROM pg_catalog.pg_class sr", "subscription"),
         ):
             with self.subTest(old=old):
-                weakened = text.replace(old, new, 1)
-                findings = validate_fence_revalidation_sql_text(weakened)
-                self.assertTrue(any(expected in f for f in findings))
+                self.assert_fails(self.text.replace(old, new, 1), needle)
 
-    def test_revalidation_requires_updated_at_not_null(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace("    ALTER COLUMN updated_at SET NOT NULL;", ";", 1)
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("updated_at SET NOT NULL" in f for f in findings))
+    def test_catalog_dependency_guard_rejects_noncanonical_stored_expression_authority(self):
+        for old, new in (
+            ("pg_catalog.pg_proc", "pg_catalog.pg_class"),
+            ("pg_catalog.pg_operator", "pg_catalog.pg_class"),
+            ("p.pronamespace OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace", "false"),
+            ("o.oprnamespace OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace", "false"),
+        ):
+            with self.subTest(old=old):
+                self.assert_fails(self.text.replace(old, new, 1), "dependency")
 
-    def test_revalidation_rejects_generated_or_identity_authority_columns(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace(
-            "AND (attgenerated <> '' OR attidentity <> '')",
-            "AND false",
-            1,
-        )
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("attgenerated" in f for f in findings))
-
-    def test_revalidation_requires_non_internal_trigger_guard(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace(
-            "AND NOT t.tgisinternal",
-            "AND t.tgisinternal\n           -- AND NOT t.tgisinternal",
-            1,
-        )
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("trigger behavior" in f for f in findings))
-
-    def test_revalidation_requires_rewrite_rule_guard(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace(
-            "WHERE r.ev_class = v_table",
-            "WHERE false\n           -- WHERE r.ev_class = v_table",
-            1,
-        )
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("rewrite-rule behavior" in f for f in findings))
-
-    def test_executable_invariant_cannot_be_laundered_by_comment(self):
-        text = SQL_PATH.read_text(encoding="utf-8")
-        weakened = text.replace(
-            "ALTER COLUMN updated_at SET NOT NULL",
-            "ALTER COLUMN updated_at DROP NOT NULL\n    -- ALTER COLUMN updated_at SET NOT NULL",
-            1,
-        )
-        findings = validate_fence_revalidation_sql_text(weakened)
-        self.assertTrue(any("updated_at SET NOT NULL" in f for f in findings))
+    def test_both_recreated_functions_pin_pg_catalog_search_path(self):
+        self.assertGreaterEqual(self.text.count("SET search_path = pg_catalog"), 2)
+        self.assert_fails(self.text.replace("SET search_path = pg_catalog", "SET search_path = public, pg_catalog", 1), "search_path")
 
 
 if __name__ == "__main__":

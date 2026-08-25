@@ -43,9 +43,8 @@ REQUIRED_EXECUTABLE_FRAGMENTS = (
     "RAISE EXCEPTION 'authority_fences has inherited non-owner column privileges'",
     "pg_catalog.aclexplode(\n              pg_catalog.COALESCE(n.nspacl, pg_catalog.acldefault('n', n.nspowner))\n          ) AS acl",
     "acl.grantee OPERATOR(pg_catalog.<>) n.nspowner",
-    "FROM pg_catalog.pg_proc p",
-    "p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid\n           AND p.prosecdef",
-    "RAISE EXCEPTION 'database contains migration-owner SECURITY DEFINER routine'",
+    "p.proowner IN (\n                   current_user::pg_catalog.regrole::oid,\n                   pg_catalog.to_regrole('pg_read_all_data')::oid,\n                   pg_catalog.to_regrole('pg_write_all_data')::oid\n               )\n           AND p.prosecdef",
+    "RAISE EXCEPTION 'database contains fence-authoritative SECURITY DEFINER routine owned by migration or predefined all-data authority'",
     "p.oid IN (v_initialize::oid, v_advance::oid)",
     "acl.grantee OPERATOR(pg_catalog.<>) p.proowner",
     "p.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog']::text[]",
@@ -57,6 +56,7 @@ REQUIRED_BOUNDARY_TOKENS = (
     "TABLE ACL CLEAN != COLUMN ACL CLEAN",
     "OBJECT ACL CLEAN != PREDEFINED ALL-DATA ROLE ABSENT",
     "EXPECTED FUNCTION ACL CLEAN != RESIDUAL DEFINER AUTHORITY ABSENT",
+    "ALL-DATA MEMBERSHIP CLEAN != ALL-DATA-OWNED DEFINER AUTHORITY ABSENT",
     "SCHEMA LOCATION != DEFINER AUTHORITY BOUNDARY",
     "LOCAL FENCE RULE CLEAN != EXTERNAL REWRITE REACHABILITY ABSENT",
     "pg_class.relacl",
@@ -64,6 +64,7 @@ REQUIRED_BOUNDARY_TOKENS = (
     "pg_read_all_data",
     "pg_write_all_data",
     "pg_auth_members",
+    "pg_proc.proowner",
     "pg_proc.prosecdef",
     "pg_rewrite",
     "pg_depend",
@@ -131,7 +132,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}")
         return 1
-    print("RESULT: PASS — fence ownership/reachability/ACL/definer checks and exact pg_catalog-only function resolution fail closed before C2 role mapping")
+    print("RESULT: PASS — fence ownership/reachability/ACL/definer checks, including predefined all-data-root definers, and exact pg_catalog-only function resolution fail closed before C2 role mapping")
     print("NOTE: PASS is conformance evidence only; it grants no runtime/database privilege.")
     return 0
 

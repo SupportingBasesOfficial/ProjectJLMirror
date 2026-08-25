@@ -33,7 +33,8 @@ Required exact-HEAD evidence before merge readiness:
 - fenced effect admission resolves current state from the owning fence authority; a typed/supplied fence record is not currentness proof, and co-resident PostgreSQL effects retain the same-transaction predicate requirement;
 - canonical fence scope/generation/state identifiers use deterministic PostgreSQL `COLLATE "C"` storage/comparison semantics so database-default collation cannot alias distinct canonical authority identifiers;
 - persisted fence authority state is revalidated against canonical identifier/positive-epoch constraints and exact `pg_catalog."C"` collation for authority-bearing text columns rather than accepted by object presence;
-- reused PostgreSQL fence objects fail closed unless the migration authority owns the schema/table/functions, no effective non-owner schema/table/function ACL survives, and no direct or transitive `pg_auth_members` path can assume/inherit the migration-owner role before separately reviewed C2 role mapping;
+- reused PostgreSQL fence objects fail closed unless the migration authority owns the schema/table/functions, no effective non-owner schema/table/**column**/function ACL survives, and no direct or transitive `pg_auth_members` path can assume/inherit the migration-owner role before separately reviewed C2 role mapping;
+- table-level `pg_class.relacl` cleanliness never substitutes for column-level `pg_attribute.attacl` cleanliness: every live user column of `platform.authority_fences` must have no non-owner/PUBLIC column privilege before C2 role mapping;
 - no residual C2 product is silently promoted to architecture authority;
 - no Product/domain endpoint family is introduced beyond accepted authority;
 - review findings are resolved only after later exact-HEAD evidence;
@@ -57,6 +58,8 @@ Mandatory falsification includes:
 - cross-tenant final executing-runtime profile or generation drift -> deny;
 - removal of deterministic `C` collation from fence storage/equality -> validator finding;
 - reused fence table with non-`C` authority text collation -> revalidation failure;
+- reused fence table with any non-owner/PUBLIC column-level `attacl` entry -> revalidation failure;
+- removing, misdirecting or comment-laundering the `pg_attribute.attacl` guard -> validator finding;
 - valid final evidence returns the final owning authorization policy revision, not an earlier serial authorization revision;
 - no caller-supplied `now` reaches the final-admission port.
 

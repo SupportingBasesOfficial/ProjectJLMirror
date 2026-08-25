@@ -12,22 +12,36 @@ REVOKE CREATE ON SCHEMA platform FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES IN SCHEMA platform
     REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 
--- These canonical identifier checks deliberately mirror the portable authority-core
--- ASCII grammar. Identity/equality-bearing text columns use deterministic C collation
--- so primary-key/conflict/equality semantics cannot alias canonical identifiers under
--- a database-default case-insensitive or otherwise nondeterministic collation.
+-- Canonical identifier/equality-bearing columns use deterministic C collation.
+-- The constraint set is deliberately named and finite so migration 002 can prove
+-- there is no extra CHECK/UNIQUE/EXCLUDE/index metadata capable of changing valid
+-- canonical writes on a reused authority table.
 CREATE TABLE IF NOT EXISTS platform.authority_fences (
-    fence_scope_id text COLLATE "C" PRIMARY KEY
-        CHECK (btrim(fence_scope_id) <> '')
-        CHECK (fence_scope_id COLLATE "C" ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
-    current_fence_epoch bigint NOT NULL CHECK (current_fence_epoch > 0),
-    current_generation_id text COLLATE "C" NOT NULL
-        CHECK (btrim(current_generation_id) <> '')
-        CHECK (current_generation_id COLLATE "C" ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
-    authority_state text COLLATE "C" NOT NULL
-        CHECK (btrim(authority_state) <> '')
-        CHECK (authority_state COLLATE "C" ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'),
-    updated_at timestamptz NOT NULL DEFAULT statement_timestamp()
+    fence_scope_id text COLLATE "C" NOT NULL,
+    current_fence_epoch bigint NOT NULL,
+    current_generation_id text COLLATE "C" NOT NULL,
+    authority_state text COLLATE "C" NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT statement_timestamp(),
+
+    CONSTRAINT wave1_authority_fences_pkey
+        PRIMARY KEY (fence_scope_id),
+    CONSTRAINT wave1_fence_scope_id_canonical
+        CHECK (
+            btrim(fence_scope_id) <> ''
+            AND fence_scope_id COLLATE "C" ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'
+        ),
+    CONSTRAINT wave1_fence_epoch_positive
+        CHECK (current_fence_epoch > 0),
+    CONSTRAINT wave1_fence_generation_canonical
+        CHECK (
+            btrim(current_generation_id) <> ''
+            AND current_generation_id COLLATE "C" ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'
+        ),
+    CONSTRAINT wave1_fence_state_canonical
+        CHECK (
+            btrim(authority_state) <> ''
+            AND authority_state COLLATE "C" ~ '^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$'
+        )
 );
 
 REVOKE ALL ON TABLE platform.authority_fences FROM PUBLIC;

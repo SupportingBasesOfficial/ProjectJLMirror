@@ -280,9 +280,12 @@ class SqlPrivilegeHardeningTests(unittest.TestCase):
             'authority_fences.fence_scope_id COLLATE "C" = p_fence_scope_id COLLATE "C"',
             'authority_fences.current_generation_id COLLATE "C" = p_expected_predecessor_generation_id COLLATE "C"',
             'authority_fences.authority_state COLLATE "C" = \'active\' COLLATE "C"',
-            "CHECK (btrim(fence_scope_id) <> '')",
-            "CHECK (btrim(current_generation_id) <> '')",
-            "CHECK (btrim(authority_state) <> '')",
+            "CONSTRAINT wave1_fence_scope_id_canonical",
+            "btrim(fence_scope_id) <> ''",
+            "CONSTRAINT wave1_fence_generation_canonical",
+            "btrim(current_generation_id) <> ''",
+            "CONSTRAINT wave1_fence_state_canonical",
+            "btrim(authority_state) <> ''",
         )
         for fragment in required:
             with self.subTest(fragment=fragment):

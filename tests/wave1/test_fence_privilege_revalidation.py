@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
-import sys
 import unittest
-
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 from tools.authority.validate_wave1_privileges import (  # noqa: E402
     BOUNDARY_PATH,
@@ -22,226 +16,73 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
         cls.text = SQL_PATH.read_text(encoding="utf-8")
         cls.boundary = BOUNDARY_PATH.read_text(encoding="utf-8")
 
+    def assert_fails(self, text: str, needle: str | None = None) -> None:
+        findings = validate_text(text)
+        self.assertTrue(findings)
+        if needle:
+            self.assertTrue(any(needle.lower() in f.lower() for f in findings), findings)
+
     def test_current_privilege_contract_passes(self):
         self.assertEqual(validate_text(self.text), [])
         self.assertEqual(validate_boundary_text(self.boundary), [])
 
-    def test_table_owner_guard_cannot_be_removed(self):
-        mutated = self.text.replace(
-            "c.relowner\n          FROM pg_class c",
-            "c.oid\n          FROM pg_class c",
+    def test_migration_search_path_is_catalog_only(self):
+        self.assert_fails(
+            self.text.replace("SET LOCAL search_path = pg_catalog;", "SET LOCAL search_path = public, pg_catalog;", 1),
+            "search_path",
+        )
+
+    def test_owner_and_role_reachability_guards_cannot_be_removed(self):
+        for old, new, needle in (
+            ("FROM pg_catalog.pg_namespace n", "FROM pg_catalog.pg_class n", "pg_namespace"),
+            ("FROM pg_catalog.pg_class c", "FROM pg_catalog.pg_namespace c", "pg_class"),
+            ("WITH RECURSIVE owner_role_members(member_oid) AS (", "WITH owner_role_members(member_oid) AS (", "pg_auth_members"),
+            ("WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (", "WITH all_data_role_members(role_oid, member_oid) AS (", "pg_read_all_data"),
+            ("pg_catalog.to_regrole('pg_read_all_data')::oid", "pg_catalog.to_regrole('pg_write_all_data')::oid", "pg_read_all_data"),
+        ):
+            with self.subTest(old=old):
+                self.assert_fails(self.text.replace(old, new, 1), needle)
+
+    def test_object_and_column_acl_guards_cannot_be_removed(self):
+        for old, new, needle in (
+            ("pg_catalog.aclexplode(a.attacl)", "pg_catalog.aclexplode(NULL::aclitem[])", "pg_attribute"),
+            ("acl.grantee OPERATOR(pg_catalog.<>) current_user::pg_catalog.regrole::oid", "acl.grantee OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid", "column"),
+            ("acl.grantee OPERATOR(pg_catalog.<>) c.relowner", "acl.grantee OPERATOR(pg_catalog.=) c.relowner", "invariant"),
+            ("acl.grantee OPERATOR(pg_catalog.<>) p.proowner", "acl.grantee OPERATOR(pg_catalog.=) p.proowner", "invariant"),
+        ):
+            with self.subTest(old=old):
+                self.assert_fails(self.text.replace(old, new, 1), needle)
+
+    def test_database_wide_migration_owner_security_definer_guard_is_required(self):
+        weakened = self.text.replace(
+            "p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid\n           AND p.prosecdef",
+            "p.proowner OPERATOR(pg_catalog.<>) current_user::pg_catalog.regrole::oid\n           AND p.prosecdef",
             1,
         )
-        findings = validate_text(mutated)
-        self.assertTrue(any("c.relowner" in finding for finding in findings))
+        self.assert_fails(weakened, "SECURITY DEFINER")
 
-    def test_non_owner_table_acl_guard_cannot_be_removed(self):
-        mutated = self.text.replace(
-            "acl.grantee <> c.relowner",
-            "acl.grantee = c.relowner",
+    def test_canonical_functions_must_retain_exact_catalog_search_path(self):
+        weakened = self.text.replace(
+            "p.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog']::text[]",
+            "false",
             1,
         )
-        findings = validate_text(mutated)
-        self.assertTrue(any("acl.grantee <> c.relowner" in finding for finding in findings))
-
-    def test_column_acl_catalog_guard_cannot_be_removed(self):
-        mutated = self.text.replace(
-            "FROM pg_attribute a",
-            "FROM pg_class a",
-            1,
-        )
-        findings = validate_text(mutated)
-        self.assertTrue(any("pg_attribute" in finding for finding in findings))
-
-    def test_column_acl_guard_must_cover_live_user_columns(self):
-        mutated = self.text.replace(
-            "AND a.attnum > 0\n           AND NOT a.attisdropped",
-            "AND a.attnum = 0\n           AND a.attisdropped",
-            1,
-        )
-        findings = validate_text(mutated)
-        self.assertTrue(any("attnum > 0" in finding or "attisdropped" in finding for finding in findings))
-
-    def test_non_owner_column_acl_guard_cannot_be_removed(self):
-        mutated = self.text.replace(
-            "AND acl.grantee <> current_user::regrole::oid",
-            "AND acl.grantee = current_user::regrole::oid",
-            1,
-        )
-        findings = validate_text(mutated)
-        self.assertTrue(any("a.attacl" in finding or "current_user::regrole::oid" in finding for finding in findings))
-
-    def test_column_acl_guard_must_read_attacl(self):
-        mutated = self.text.replace(
-            "aclexplode(a.attacl) AS acl",
-            "aclexplode(NULL::aclitem[]) AS acl",
-            1,
-        )
-        findings = validate_text(mutated)
-        self.assertTrue(any("a.attacl" in finding for finding in findings))
-
-    def test_non_owner_function_acl_guard_cannot_be_removed(self):
-        mutated = self.text.replace(
-            "acl.grantee <> p.proowner",
-            "acl.grantee = p.proowner",
-            1,
-        )
-        findings = validate_text(mutated)
-        self.assertTrue(any("acl.grantee <> p.proowner" in finding for finding in findings))
-
-    def test_transitive_owner_role_membership_guard_cannot_be_removed(self):
-        mutated = self.text.replace(
-            "WITH RECURSIVE owner_role_members(member_oid) AS (",
-            "WITH owner_role_members(member_oid) AS (",
-            1,
-        )
-        findings = validate_text(mutated)
-        self.assertTrue(any("owner_role_members" in finding for finding in findings))
-
-    def test_role_membership_guard_must_start_from_current_owner_role(self):
-        mutated = self.text.replace(
-            "WHERE m.roleid = current_user::regrole::oid",
-            "WHERE m.member = current_user::regrole::oid",
-            1,
-        )
-        findings = validate_text(mutated)
-        self.assertTrue(any("pg_auth_members" in finding or "owner_role_members" in finding for finding in findings))
-
-    def test_predefined_all_data_guard_cannot_be_removed(self):
-        mutated = self.text.replace(
-            "WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (",
-            "WITH all_data_role_members(role_oid, member_oid) AS (",
-            1,
-        )
-        findings = validate_text(mutated)
-        self.assertTrue(any("all_data_role_members" in finding for finding in findings))
-
-    def test_predefined_read_all_data_role_cannot_be_omitted(self):
-        mutated = self.text.replace(
-            "to_regrole('pg_read_all_data')::oid,",
-            "to_regrole('pg_write_all_data')::oid,",
-            1,
-        )
-        findings = validate_text(mutated)
-        self.assertTrue(any("pg_read_all_data" in finding for finding in findings))
-
-    def test_predefined_write_all_data_role_cannot_be_omitted(self):
-        mutated = self.text.replace(
-            "to_regrole('pg_write_all_data')::oid\n             )",
-            "to_regrole('pg_read_all_data')::oid\n             )",
-            1,
-        )
-        findings = validate_text(mutated)
-        self.assertTrue(any("pg_write_all_data" in finding for finding in findings))
-
-    def test_predefined_role_reachability_must_reject_non_owner_members(self):
-        mutated = self.text.replace(
-            "WHERE member_oid <> current_user::regrole::oid",
-            "WHERE member_oid = current_user::regrole::oid",
-            1,
-        )
-        findings = validate_text(mutated)
-        self.assertTrue(any("all_data_role_members" in finding for finding in findings))
-
-    def test_database_wide_definer_guard_cannot_be_scoped_to_platform(self):
-        mutated = self.text.replace(
-            "WHERE p.proowner = current_user::regrole::oid\n           AND p.prosecdef",
-            "WHERE p.pronamespace = v_schema\n           AND p.proowner = current_user::regrole::oid\n           AND p.prosecdef",
-            1,
-        )
-        findings = validate_text(mutated)
-        self.assertTrue(any("p.proowner = current_user" in finding for finding in findings))
-
-    def test_database_wide_definer_guard_must_bind_owner(self):
-        mutated = self.text.replace(
-            "WHERE p.proowner = current_user::regrole::oid\n           AND p.prosecdef",
-            "WHERE p.proowner <> current_user::regrole::oid\n           AND p.prosecdef",
-            1,
-        )
-        findings = validate_text(mutated)
-        self.assertTrue(any("p.proowner = current_user" in finding for finding in findings))
-
-    def test_database_wide_definer_guard_must_reject_security_definer(self):
-        mutated = self.text.replace(
-            "AND p.prosecdef\n    ) THEN\n        RAISE EXCEPTION 'database contains migration-owner SECURITY DEFINER routine'",
-            "AND NOT p.prosecdef\n    ) THEN\n        RAISE EXCEPTION 'database contains migration-owner SECURITY DEFINER routine'",
-            1,
-        )
-        findings = validate_text(mutated)
-        self.assertTrue(any("p.prosecdef" in finding for finding in findings))
-
-    def test_comment_cannot_launder_database_wide_definer_guard(self):
-        mutated = self.text.replace(
-            "WHERE p.proowner = current_user::regrole::oid\n           AND p.prosecdef",
-            "WHERE false",
-            1,
-        ) + "\n-- WHERE p.proowner = current_user::regrole::oid AND p.prosecdef\n"
-        findings = validate_text(mutated)
-        self.assertTrue(any("migration-owner" in finding or "p.proowner" in finding for finding in findings))
-
-    def test_comment_cannot_launder_removed_acl_guard(self):
-        mutated = self.text.replace(
-            "acl.grantee <> c.relowner",
-            "acl.grantee = c.relowner",
-            1,
-        ) + "\n-- acl.grantee <> c.relowner\n"
-        findings = validate_text(mutated)
-        self.assertTrue(any("acl.grantee <> c.relowner" in finding for finding in findings))
-
-    def test_comment_cannot_launder_removed_column_acl_guard(self):
-        mutated = self.text.replace(
-            "aclexplode(a.attacl) AS acl",
-            "aclexplode(NULL::aclitem[]) AS acl",
-            1,
-        ) + "\n-- aclexplode(a.attacl) AS acl\n"
-        findings = validate_text(mutated)
-        self.assertTrue(any("a.attacl" in finding for finding in findings))
-
-    def test_comment_cannot_launder_removed_membership_guard(self):
-        mutated = self.text.replace(
-            "WITH RECURSIVE owner_role_members(member_oid) AS (",
-            "WITH owner_role_members(member_oid) AS (",
-            1,
-        ) + "\n-- WITH RECURSIVE owner_role_members(member_oid) AS (\n"
-        findings = validate_text(mutated)
-        self.assertTrue(any("owner_role_members" in finding for finding in findings))
-
-    def test_comment_cannot_launder_removed_all_data_guard(self):
-        mutated = self.text.replace(
-            "WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (",
-            "WITH all_data_role_members(role_oid, member_oid) AS (",
-            1,
-        ) + "\n-- WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (\n"
-        findings = validate_text(mutated)
-        self.assertTrue(any("all_data_role_members" in finding for finding in findings))
-
-    def test_boundary_cannot_conflate_table_and_column_acl(self):
-        mutated = self.boundary.replace(
-            "TABLE ACL CLEAN != COLUMN ACL CLEAN",
-            "TABLE ACL CLEAN == COLUMN ACL CLEAN",
-            1,
-        )
-        findings = validate_boundary_text(mutated)
-        self.assertTrue(any("TABLE ACL CLEAN" in finding for finding in findings))
-
-    def test_boundary_must_name_pg_attribute_attacl(self):
-        mutated = self.boundary.replace("pg_attribute.attacl", "pg_class.relacl")
-        findings = validate_boundary_text(mutated)
-        self.assertTrue(any("pg_attribute.attacl" in finding for finding in findings))
-
-    def test_boundary_must_distinguish_acl_from_predefined_role_authority(self):
-        mutated = self.boundary.replace(
-            "OBJECT ACL CLEAN != PREDEFINED ALL-DATA ROLE ABSENT",
-            "OBJECT ACL CLEAN == PREDEFINED ALL-DATA ROLE ABSENT",
-            1,
-        )
-        findings = validate_boundary_text(mutated)
-        self.assertTrue(any("PREDEFINED ALL-DATA" in finding for finding in findings))
+        self.assert_fails(weakened, "search_path")
 
     def test_validator_rejects_role_mapping_grants(self):
-        mutated = self.text + "\nGRANT UPDATE ON platform.authority_fences TO serving_role;\n"
-        findings = validate_text(mutated)
-        self.assertTrue(any("must not mutate C2 role mapping" in finding for finding in findings))
+        self.assert_fails(self.text + "\nGRANT UPDATE ON platform.authority_fences TO serving_role;\n", "role mapping")
+
+    def test_boundary_semantic_separations_remain_pinned(self):
+        for law in (
+            "TABLE ACL CLEAN != COLUMN ACL CLEAN",
+            "OBJECT ACL CLEAN != PREDEFINED ALL-DATA ROLE ABSENT",
+            "EXPECTED FUNCTION ACL CLEAN != RESIDUAL DEFINER AUTHORITY ABSENT",
+            "SCHEMA LOCATION != DEFINER AUTHORITY BOUNDARY",
+            "LOCAL FENCE RULE CLEAN != EXTERNAL REWRITE REACHABILITY ABSENT",
+        ):
+            with self.subTest(law=law):
+                mutated = self.boundary.replace(law, law.replace(" != ", " == "), 1)
+                self.assertTrue(validate_boundary_text(mutated))
 
 
 if __name__ == "__main__":

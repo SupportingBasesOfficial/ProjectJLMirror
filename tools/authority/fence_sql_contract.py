@@ -169,6 +169,23 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
         "IS DISTINCT FROM 'statement_timestamp()'",
         "c.contype = 'p'",
         "c.conkey = ARRAY[a.attnum]::smallint[]",
+        "JOIN pg_index i",
+        "i.indexrelid = c.conindid",
+        "NOT c.condeferrable",
+        "NOT c.condeferred",
+        "c.convalidated",
+        "i.indisprimary",
+        "i.indisunique",
+        "i.indimmediate",
+        "i.indisvalid",
+        "i.indisready",
+        "i.indislive",
+        "i.indnkeyatts = 1",
+        "i.indnatts = 1",
+        "i.indexprs IS NULL",
+        "i.indpred IS NULL",
+        "c.contype = 'f'",
+        "c.conrelid = v_table OR c.confrelid = v_table",
         "ALTER TABLE platform.authority_fences",
         "ALTER COLUMN fence_scope_id SET NOT NULL",
         "ALTER COLUMN current_fence_epoch SET NOT NULL",
@@ -193,6 +210,31 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
             findings.append(
                 f"IR-D-003 persisted fence revalidation invariant missing: {fragment}"
             )
+
+    pk_guard = re.compile(
+        r"IF\s+NOT\s+EXISTS\s*\(.*?FROM\s+pg_constraint\s+c.*?JOIN\s+pg_index\s+i.*?"
+        r"c\.contype\s*=\s*'p'.*?NOT\s+c\.condeferrable.*?NOT\s+c\.condeferred.*?"
+        r"c\.convalidated.*?i\.indisprimary.*?i\.indisunique.*?i\.indimmediate.*?"
+        r"i\.indisvalid.*?i\.indisready.*?i\.indislive.*?i\.indnkeyatts\s*=\s*1.*?"
+        r"i\.indnatts\s*=\s*1.*?i\.indexprs\s+IS\s+NULL.*?i\.indpred\s+IS\s+NULL.*?"
+        r"\)\s*THEN",
+        re.IGNORECASE | re.DOTALL,
+    )
+    if pk_guard.search(code) is None:
+        findings.append(
+            "IR-D-003 persisted fence primary key must be a non-deferrable immediate valid ready live single-column conflict arbiter"
+        )
+
+    fk_guard = re.compile(
+        r"IF\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+pg_constraint\s+c\s+"
+        r"WHERE\s+c\.contype\s*=\s*'f'\s+AND\s*\(\s*c\.conrelid\s*=\s*v_table\s+OR\s+"
+        r"c\.confrelid\s*=\s*v_table\s*\)\s*\)\s*THEN",
+        re.IGNORECASE | re.DOTALL,
+    )
+    if fk_guard.search(code) is None:
+        findings.append(
+            "IR-D-003 persisted fence revalidation must reject foreign-key referential-action surfaces in both directions"
+        )
 
     trigger_guard = re.compile(
         r"IF\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+pg_trigger\s+t\s+"

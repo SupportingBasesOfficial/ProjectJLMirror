@@ -25,7 +25,9 @@ class FenceRevalidationMigrationTests(unittest.TestCase):
         self.assertEqual(validate_fence_revalidation_sql_text(self.text), [])
 
     def test_existing_rows_are_validated_before_function_replacement(self):
-        self.assert_fails(self.text.replace("ALTER TABLE platform.authority_fences\n    VALIDATE CONSTRAINT wave1_fence_scope_id_canonical;\n", "", 1))
+        token = "ALTER TABLE platform.authority_fences VALIDATE CONSTRAINT wave1_fence_scope_id_canonical;"
+        self.assertIn(token, self.text)
+        self.assert_fails(self.text.replace(token, "", 1))
 
     def test_revalidation_cannot_rewrite_bad_authority_rows_before_validation(self):
         marker = "DO $wave1_revalidate$"

@@ -6,10 +6,11 @@
 -- before the first event-trigger-capable DDL. It also fixes the migration search_path
 -- to pg_catalog so writable schemas cannot shadow catalog functions/operators.
 --
--- CRITICAL reuse rule: this bootstrap mutates authority objects only when the fence
--- table is absent. If platform.authority_fences already exists, migration 001 performs
--- no persistent object mutation; migration 002 owns reuse validation and may mutate
--- only after that existing object passes its fail-closed contract under one transaction.
+-- CRITICAL reuse rule: this bootstrap mutates authority objects only when the complete
+-- canonical authority object set is absent. If platform.authority_fences already exists,
+-- migration 001 performs no persistent object mutation and migration 002 owns reuse.
+-- If the table is absent but the platform namespace or either canonical fence routine
+-- already exists, bootstrap fails closed rather than mutating a partial/reused namespace.
 
 BEGIN;
 
@@ -28,15 +29,31 @@ END AS wave1_bootstrap_event_trigger_guard;
 
 DO $wave1_bootstrap$
 DECLARE
+    v_existing_schema oid := pg_catalog.to_regnamespace('platform');
     v_existing_table pg_catalog.regclass := pg_catalog.to_regclass('platform.authority_fences');
+    v_existing_initialize pg_catalog.regprocedure := pg_catalog.to_regprocedure(
+        'platform.initialize_authority_fence(text,text,text)'
+    );
+    v_existing_advance pg_catalog.regprocedure := pg_catalog.to_regprocedure(
+        'platform.advance_authority_fence(text,bigint,text,text,text)'
+    );
 BEGIN
-    -- Reuse is deliberately non-mutating here. Migration 002 must validate the
-    -- existing object before any canonicalization/replacement is attempted.
+    -- A complete reused fence relation is deliberately non-mutating here.
+    -- Migration 002 must validate the existing object before any canonicalization.
     IF v_existing_table IS NOT NULL THEN
         RETURN;
     END IF;
 
-    EXECUTE 'CREATE SCHEMA IF NOT EXISTS platform';
+    -- Fresh bootstrap means fresh authority namespace, not merely missing table.
+    -- Partial/pre-existing canonical objects require governed cleanup/reuse handling;
+    -- this script never replaces or narrows them before their authority is validated.
+    IF v_existing_schema IS NOT NULL
+       OR v_existing_initialize IS NOT NULL
+       OR v_existing_advance IS NOT NULL THEN
+        RAISE EXCEPTION 'Wave 1 fence fresh bootstrap requires complete authority object absence';
+    END IF;
+
+    EXECUTE 'CREATE SCHEMA platform';
     EXECUTE 'REVOKE CREATE ON SCHEMA platform FROM PUBLIC';
     EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA platform REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC';
 

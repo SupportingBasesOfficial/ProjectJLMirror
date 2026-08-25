@@ -7,7 +7,9 @@ import re
 
 CANONICAL_IDENTIFIER_REGEX = "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$"
 CANONICAL_REGEX_OPERATOR = 'COLLATE "C" ~'
-EFFECT_ELIGIBLE_PREDECESSOR_PREDICATE = "authority_fences.authority_state = 'active'"
+CANONICAL_TEXT_COLLATION_DECL = 'text COLLATE "C"'
+CANONICAL_REVALIDATION_COLLATION = "attcollation IS DISTINCT FROM 'pg_catalog.\"C\"'::regcollation"
+EFFECT_ELIGIBLE_PREDECESSOR_PREDICATE = "authority_fences.authority_state COLLATE \"C\" = 'active' COLLATE \"C\""
 
 
 def _predicate(name: str) -> str:
@@ -91,12 +93,17 @@ def validate_fence_sql_text(text: str) -> list[str]:
         return findings
 
     required = (
+        'fence_scope_id text COLLATE "C" PRIMARY KEY',
+        'current_generation_id text COLLATE "C" NOT NULL',
+        'authority_state text COLLATE "C" NOT NULL',
         "CHECK (btrim(fence_scope_id) <> '')",
         f"CHECK ({_predicate('fence_scope_id')})",
         "CHECK (btrim(current_generation_id) <> '')",
         f"CHECK ({_predicate('current_generation_id')})",
         "CHECK (btrim(authority_state) <> '')",
         f"CHECK ({_predicate('authority_state')})",
+        'authority_fences.fence_scope_id COLLATE "C" = p_fence_scope_id COLLATE "C"',
+        'authority_fences.current_generation_id COLLATE "C" = p_expected_predecessor_generation_id COLLATE "C"',
         _predicate("p_expected_predecessor_generation_id"),
         _predicate("p_successor_generation_id"),
         _predicate("p_successor_state"),
@@ -151,6 +158,8 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
         "IS DISTINCT FROM 'int8'::regtype",
         "attname = 'current_generation_id'",
         "attname = 'authority_state'",
+        "attname IN ('fence_scope_id', 'current_generation_id', 'authority_state')",
+        CANONICAL_REVALIDATION_COLLATION,
         "attname = 'updated_at'",
         "IS DISTINCT FROM 'timestamptz'::regtype",
         "attgenerated <> '' OR attidentity <> ''",

@@ -1,6 +1,27 @@
 -- Wave 1 concrete IR-D-003 fence storage/advance contract.
 -- Executed only by the accepted migration/admin authority; serving principals do
 -- not gain DDL or function-execution authority merely because this file exists.
+--
+-- Bootstrap is self-transactional and closes database-wide event-trigger execution
+-- before the first event-trigger-capable DDL. A clean catalog preflight alone is not
+-- sufficient because a concurrent privileged actor could otherwise create/enable a
+-- trigger after the check. If this migration authority cannot disable event-trigger
+-- execution transaction-locally, bootstrap fails closed before creating/modifying
+-- the fence authority substrate.
+
+BEGIN;
+
+SET LOCAL event_triggers = off;
+
+SELECT 1 / CASE
+    WHEN current_setting('event_triggers') IS DISTINCT FROM 'off' THEN 0
+    WHEN EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_event_trigger et
+         WHERE et.evtenabled <> 'D'
+    ) THEN 0
+    ELSE 1
+END AS wave1_bootstrap_event_trigger_guard;
 
 CREATE SCHEMA IF NOT EXISTS platform;
 REVOKE CREATE ON SCHEMA platform FROM PUBLIC;
@@ -146,3 +167,5 @@ REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text
 -- least-privilege migration/control principal to these objects in a separately
 -- reviewed C2 runtime/database mapping. PUBLIC or serving-role execution is not
 -- a safe default.
+
+COMMIT;

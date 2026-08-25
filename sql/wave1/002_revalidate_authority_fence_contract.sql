@@ -5,6 +5,10 @@
 -- lock, privilege/reachability preflight, structural/hidden-writer preflight, canonical
 -- mutation, and commit. A failed reuse admission therefore cannot durably mutate the
 -- authority namespace before privilege or structural conformance is proven.
+--
+-- Reuse is admitted only for a complete canonical object set. A missing canonical
+-- routine is not silently created by CREATE OR REPLACE under unknown/default ACL
+-- state; incomplete reuse fails closed and requires governed repair/bootstrap.
 
 BEGIN;
 
@@ -37,8 +41,8 @@ DECLARE
         'platform.advance_authority_fence(text,bigint,text,text,text)'
     );
 BEGIN
-    IF v_schema IS NULL OR v_table IS NULL THEN
-        RAISE EXCEPTION 'Wave 1 reused fence privilege objects are incomplete';
+    IF v_schema IS NULL OR v_table IS NULL OR v_initialize IS NULL OR v_advance IS NULL THEN
+        RAISE EXCEPTION 'Wave 1 reuse requires the complete canonical fence authority object set before mutation';
     END IF;
 
     IF (
@@ -587,6 +591,49 @@ AS $wave1_function$
 $wave1_function$;
 
 REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text, text) FROM PUBLIC;
+
+-- Re-read the canonical routine ACLs before commit. CREATE OR REPLACE is permitted
+-- only because reuse admission proved both routines pre-existed and were ACL-clean;
+-- this assertion prevents any mutation path from expanding that authority silently.
+DO $wave1_postcanonical_privilege_assert$
+DECLARE
+    v_initialize pg_catalog.regprocedure := pg_catalog.to_regprocedure(
+        'platform.initialize_authority_fence(text,text,text)'
+    );
+    v_advance pg_catalog.regprocedure := pg_catalog.to_regprocedure(
+        'platform.advance_authority_fence(text,bigint,text,text,text)'
+    );
+BEGIN
+    IF v_initialize IS NULL OR v_advance IS NULL THEN
+        RAISE EXCEPTION 'Wave 1 reuse canonical routine set became incomplete before commit';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_proc p
+          CROSS JOIN LATERAL pg_catalog.aclexplode(
+              pg_catalog.COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))
+          ) AS acl
+         WHERE p.oid IN (v_initialize::oid, v_advance::oid)
+           AND acl.grantee OPERATOR(pg_catalog.<>) p.proowner
+    ) THEN
+        RAISE EXCEPTION 'Wave 1 reuse canonical routine materialized non-owner privileges before commit';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_proc p
+         WHERE p.oid IN (v_initialize::oid, v_advance::oid)
+           AND (
+               p.proowner OPERATOR(pg_catalog.<>) current_user::pg_catalog.regrole::oid
+               OR p.prosecdef
+               OR p.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog']::text[]
+           )
+    ) THEN
+        RAISE EXCEPTION 'Wave 1 reuse canonical routine authority drifted before commit';
+    END IF;
+END
+$wave1_postcanonical_privilege_assert$;
 
 -- No positive GRANT follows this validation. The separately reviewed C2 runtime/
 -- database mapping remains responsible for least-privilege capability assignment.

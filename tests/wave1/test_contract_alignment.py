@@ -121,6 +121,7 @@ class CrossTenantFinalAdmissionAuthority:
             authorization_policy_revision="platform-authz-final-r5",
             principal_authority_revision="principal-r5",
             principal_id=principal.principal_id,
+            principal_kind=principal.kind,
             principal_credential_generation=principal.credential_generation,
             action=declaration.action,
             scope=declaration.scope,
@@ -132,6 +133,7 @@ class CrossTenantFinalAdmissionAuthority:
             executing_runtime_authority_revision="runtime-authority-r5",
             executing_runtime_profile_id="runtime.control-plane@1",
             executing_runtime_generation="runtime-control-g7",
+            executing_runtime_environment_class=EnvironmentClass.PRODUCTION,
         )
 
 

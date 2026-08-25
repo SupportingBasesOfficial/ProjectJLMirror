@@ -4,32 +4,36 @@
 -- This migration makes reuse fail closed: an existing authority_fences table must
 -- satisfy the canonical structural, durability, identifier, deterministic-collation,
 -- conflict-arbiter, constraint/index, referential-action, rewrite-reachability-free,
--- replication-writer-free and DDL-event-trigger-free contract before Wave 1 can
--- consider it eligible for authority use. Invalid historical shape/rows or hidden
+-- replication-writer-free and event-trigger-execution-safe contract before Wave 1
+-- can consider it eligible for authority use. Invalid historical shape/rows or hidden
 -- mutation/write-constraining behavior fail; rows are not normalized, deleted, or
 -- silently accepted here.
 --
 -- This file is deliberately self-transactional. Constraint replacement is not safe
 -- under statement-by-statement autocommit because a failed later validation could
--- otherwise leave canonical checks absent or only partially replaced. The ACCESS
--- EXCLUSIVE lock is acquired before structural validation and retained through the
--- final COMMIT so validation, replacement and validation of the replacements share
--- one closed database mutation window.
+-- otherwise leave canonical checks absent or only partially replaced. The session
+-- disables event-trigger execution for this transaction before any event-trigger-
+-- capable DDL, and ACCESS EXCLUSIVE is acquired before structural validation and
+-- retained through final COMMIT so validation/replacement share one closed mutation
+-- window.
 
 BEGIN;
 
+-- A catalog preflight by itself has a TOCTOU window: a superuser could create or
+-- enable an event trigger after the SELECT and before a later ALTER TABLE. PostgreSQL
+-- provides the session-local event_triggers switch specifically to disable all event
+-- trigger execution. Requiring SET LOCAL here closes the execution window for this
+-- transaction; if the migration authority lacks permission to set it, migration fails
+-- closed instead of executing fence DDL under unbounded database-wide hooks.
+SET LOCAL event_triggers = off;
+
 -- Event triggers are database-wide DDL hooks and are not represented by pg_trigger,
 -- table/column ACLs, rewrite dependencies, SECURITY DEFINER scans or subscription
--- mappings. A currently enabled event trigger can run in the migration session when
--- the ALTER TABLE statements below execute and can therefore mutate fence rows or
--- attach new metadata after the structural checks. Wave 1 fails closed before any
--- event-trigger-capable fence DDL whenever any event trigger is not disabled. Future
--- coexistence with event triggers requires a separately reviewed migration design.
---
--- This SELECT intentionally fails by division-by-zero when an enabled/always/replica
--- event trigger exists. SELECT itself is not DDL, so the proof executes before the
--- DDL hook surface it is proving absent.
+-- mappings. The catalog check remains a conformance preflight: a database that already
+-- has an enabled event trigger is not silently normalized or treated as clean merely
+-- because this migration session has disabled trigger execution.
 SELECT 1 / CASE
+    WHEN current_setting('event_triggers') IS DISTINCT FROM 'off' THEN 0
     WHEN EXISTS (
         SELECT 1
           FROM pg_catalog.pg_event_trigger et
@@ -136,10 +140,6 @@ BEGIN
         RAISE EXCEPTION 'authority_fences.authority_state must be text';
     END IF;
 
-    -- Canonical authority identifiers participate in PK/conflict/equality semantics.
-    -- They must not inherit a database-default case-insensitive/nondeterministic
-    -- collation that could alias distinct canonical IDs. Reuse fails closed rather
-    -- than rewriting an existing table under a different comparison domain.
     IF EXISTS (
         SELECT 1
           FROM pg_attribute
@@ -198,11 +198,6 @@ BEGIN
         RAISE EXCEPTION 'authority_fences.updated_at must retain the canonical statement_timestamp() evidence default';
     END IF;
 
-    -- The authority table has an exact finite constraint vocabulary. Extra UNIQUE,
-    -- EXCLUDE or CHECK metadata can make an otherwise canonical initialize/advance
-    -- fail (or create hidden authority semantics), so object reuse rejects anything
-    -- outside the canonical PK + four canonical CHECK constraints. The CHECK bodies
-    -- are recreated below under these names, after unknown metadata has failed closed.
     IF (
         SELECT array_agg(conname::text ORDER BY conname)
           FROM pg_constraint
@@ -232,10 +227,6 @@ BEGIN
         RAISE EXCEPTION 'authority_fences canonical CHECK constraints must be validated CHECK constraints';
     END IF;
 
-    -- initialize_authority_fence uses ON CONFLICT (fence_scope_id). Merely finding
-    -- a contype='p' row is not enough: a DEFERRABLE/not-ready/invalid primary key
-    -- cannot serve as the immediate conflict arbiter that the canonical function
-    -- requires. Reuse therefore proves both the constraint and its backing index.
     SELECT c.conindid
       INTO v_pk_index
       FROM pg_constraint c
@@ -268,11 +259,6 @@ BEGIN
         RAISE EXCEPTION 'authority_fences primary key must be the canonical single-column immediate valid ready conflict arbiter on fence_scope_id';
     END IF;
 
-    -- Even a non-constraint index can alter write behavior through expression or
-    -- predicate evaluation, while unique/exclusion indexes can reject canonical
-    -- writes. Wave 1 therefore admits exactly the PK backing index and no additional
-    -- index metadata on the authority table; later indexes require reviewed schema
-    -- evolution rather than reuse-time inference.
     IF EXISTS (
         SELECT 1
           FROM pg_index i
@@ -282,13 +268,6 @@ BEGIN
         RAISE EXCEPTION 'authority_fences contains noncanonical index metadata';
     END IF;
 
-    -- Foreign-key referential actions are hidden mutation/blocking semantics. An
-    -- outgoing FK can let a principal with authority only on the referenced parent
-    -- update/delete fence rows through internal cascade triggers; an incoming FK can
-    -- likewise attach unreviewed referential side effects to fence mutation. The
-    -- canonical Wave 1 fence authority is therefore deliberately FK-free in both
-    -- directions. Any future relationship requires a reviewed migration/authority
-    -- design rather than silent reuse.
     IF EXISTS (
         SELECT 1
           FROM pg_constraint c
@@ -298,12 +277,6 @@ BEGIN
         RAISE EXCEPTION 'authority_fences cannot participate in foreign-key referential actions';
     END IF;
 
-    -- User-defined triggers/rules are hidden mutation semantics. They could alter
-    -- scope/epoch/generation/state after the compare predicate or perform an
-    -- unreviewed side effect while the SQL function still appears to have won.
-    -- Internal PostgreSQL constraint triggers are allowed only after the explicit
-    -- foreign-key guard above proves none belong to FK semantics for this table;
-    -- any user trigger/rule requires reviewed migration rather than silent reuse.
     IF EXISTS (
         SELECT 1
           FROM pg_trigger t
@@ -321,13 +294,6 @@ BEGIN
         RAISE EXCEPTION 'authority_fences has unexpected rewrite rule behavior';
     END IF;
 
-    -- A clean rule surface on the fence table itself does not prove absence of
-    -- owner-privileged views/rules elsewhere. PostgreSQL stores view/rule query
-    -- dependencies through pg_rewrite -> pg_depend. Any external rewrite object
-    -- that directly depends on the fence relation can later expose or mutate it
-    -- using relation-owner authority even if the fence ACL remains clean. Reject
-    -- every such dependency regardless of schema or current view ACL; later C2
-    -- grants must not reactivate historical authority through an old view/rule.
     IF EXISTS (
         SELECT 1
           FROM pg_rewrite r
@@ -341,11 +307,6 @@ BEGIN
         RAISE EXCEPTION 'external rewrite dependency can reach authority_fences';
     END IF;
 
-    -- Logical-replication apply is an independent writer surface. It does not need
-    -- an ordinary table/column ACL grant and is not represented by the local trigger,
-    -- rewrite or SECURITY DEFINER scans above. Any subscription relation mapping for
-    -- this table therefore makes the fence authority ineligible for Wave 1 reuse;
-    -- future replication of authority state requires a separately reviewed design.
     IF EXISTS (
         SELECT 1
           FROM pg_catalog.pg_subscription_rel sr
@@ -363,9 +324,6 @@ ALTER TABLE platform.authority_fences
     ALTER COLUMN authority_state SET NOT NULL,
     ALTER COLUMN updated_at SET NOT NULL;
 
--- Recreate only the already-proven canonical CHECK names. This replaces their
--- bodies with the exact reviewed expressions while preserving rows. Unknown
--- constraints/indexes were rejected above rather than silently dropped.
 ALTER TABLE platform.authority_fences
     DROP CONSTRAINT wave1_fence_scope_id_canonical,
     DROP CONSTRAINT wave1_fence_epoch_positive,

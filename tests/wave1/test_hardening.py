@@ -270,22 +270,22 @@ class BoundaryHardeningTests(unittest.TestCase):
 
 class SqlPrivilegeHardeningTests(unittest.TestCase):
     def test_fence_sql_revokes_public_table_and_function_authority(self):
-        text = (ROOT / "sql" / "wave1" / "001_platform_authority_fence.sql").read_text(
-            encoding="utf-8"
-        )
+        text = (ROOT / "sql" / "wave1" / "001_platform_authority_fence.sql").read_text(encoding="utf-8")
         required = (
-            "REVOKE ALL ON TABLE platform.authority_fences FROM PUBLIC;",
-            "REVOKE ALL ON FUNCTION platform.initialize_authority_fence(text, text, text) FROM PUBLIC;",
-            "REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text, text) FROM PUBLIC;",
-            'authority_fences.fence_scope_id COLLATE "C" = p_fence_scope_id COLLATE "C"',
-            'authority_fences.current_generation_id COLLATE "C" = p_expected_predecessor_generation_id COLLATE "C"',
-            'authority_fences.authority_state COLLATE "C" = \'active\' COLLATE "C"',
+            "EXECUTE 'REVOKE ALL ON TABLE platform.authority_fences FROM PUBLIC'",
+            "EXECUTE 'REVOKE ALL ON FUNCTION platform.initialize_authority_fence(text, text, text) FROM PUBLIC'",
+            "EXECUTE 'REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text, text) FROM PUBLIC'",
+            'authority_fences.fence_scope_id COLLATE "C" OPERATOR(pg_catalog.=) p_fence_scope_id COLLATE "C"',
+            'authority_fences.current_generation_id COLLATE "C" OPERATOR(pg_catalog.=) p_expected_predecessor_generation_id COLLATE "C"',
+            'authority_fences.authority_state COLLATE "C" OPERATOR(pg_catalog.=) \'active\' COLLATE "C"',
             "CONSTRAINT wave1_fence_scope_id_canonical",
-            "btrim(fence_scope_id) <> ''",
+            "pg_catalog.btrim(fence_scope_id) OPERATOR(pg_catalog.<>) ''",
             "CONSTRAINT wave1_fence_generation_canonical",
-            "btrim(current_generation_id) <> ''",
+            "pg_catalog.btrim(current_generation_id) OPERATOR(pg_catalog.<>) ''",
             "CONSTRAINT wave1_fence_state_canonical",
-            "btrim(authority_state) <> ''",
+            "pg_catalog.btrim(authority_state) OPERATOR(pg_catalog.<>) ''",
+            "SET LOCAL search_path = pg_catalog;",
+            "SET search_path = pg_catalog",
         )
         for fragment in required:
             with self.subTest(fragment=fragment):

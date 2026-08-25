@@ -43,7 +43,8 @@ Required exact-HEAD evidence before merge readiness:
 - schema placement never narrows migration-owner definer authority: no `p.pronamespace = v_schema` boundary can substitute for database-wide owner-definer absence;
 - local trigger/rule cleanliness on `platform.authority_fences` never proves external rewrite/view reachability is absent: pre-C2 revalidation joins `pg_rewrite` to `pg_depend` and rejects every external rewrite object whose relation dependency directly references the fence table;
 - local ACL/trigger/rewrite/definer cleanliness never proves logical-replication writer absence: structural revalidation rejects any `pg_catalog.pg_subscription_rel` mapping whose `srrelid` is the fence table;
-- canonical CHECK replacement in migration 002 is one explicit PostgreSQL transaction, with `ACCESS EXCLUSIVE` acquired before revalidation and retained through replacement validation and final `COMMIT`; statement-autocommit execution cannot durably expose a dropped/partially replaced constraint set;
+- row/table trigger, ACL, rewrite, definer and replication cleanliness never proves database-wide DDL event-trigger absence: migration 002 rejects any `pg_catalog.pg_event_trigger` row with `evtenabled <> 'D'` before the first event-trigger-capable fence DDL statement;
+- canonical CHECK replacement in migration 002 is one explicit PostgreSQL transaction, with event-trigger preflight before fence DDL and `ACCESS EXCLUSIVE` acquired before structural revalidation and retained through replacement validation and final `COMMIT`; statement-autocommit execution cannot durably expose a dropped/partially replaced constraint set;
 - no residual C2 product is silently promoted to architecture authority;
 - no Product/domain endpoint family is introduced beyond accepted authority;
 - review findings are resolved only after later exact-HEAD evidence;
@@ -81,6 +82,8 @@ Mandatory falsification includes:
 - removing, misdirecting or comment-laundering the `pg_rewrite -> pg_depend -> v_table` external dependency guard -> validator finding;
 - a logical-replication subscriber mapping with `pg_subscription_rel.srrelid = platform.authority_fences` -> revalidation failure;
 - removing, redirecting or comment-laundering the `pg_subscription_rel -> v_table` writer guard -> validator finding;
+- any PostgreSQL event trigger with `pg_event_trigger.evtenabled <> 'D'` -> migration 002 failure before fence DDL;
+- removing or redirecting the `pg_catalog.pg_event_trigger` catalog guard, inverting `evtenabled <> 'D'`, moving the guard after fence DDL or satisfying it only through comments -> validator finding;
 - removing the leading `BEGIN`, final `COMMIT`, or `ACCESS EXCLUSIVE` table lock from migration 002 -> validator finding;
 - moving the fence lock after structural validation or introducing an early/intermediate `COMMIT` before canonical constraint validation -> validator finding;
 - valid final evidence returns the final owning authorization policy revision, not an earlier serial authorization revision;

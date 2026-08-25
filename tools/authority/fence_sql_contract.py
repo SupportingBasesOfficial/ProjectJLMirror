@@ -171,19 +171,19 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
         "c.conkey = ARRAY[a.attnum]::smallint[]",
         "JOIN pg_index i",
         "i.indexrelid = c.conindid",
-        "NOT c.condeferrable",
-        "NOT c.condeferred",
-        "c.convalidated",
-        "i.indisprimary",
-        "i.indisunique",
-        "i.indimmediate",
-        "i.indisvalid",
-        "i.indisready",
-        "i.indislive",
-        "i.indnkeyatts = 1",
-        "i.indnatts = 1",
-        "i.indexprs IS NULL",
-        "i.indpred IS NULL",
+        "AND NOT c.condeferrable",
+        "AND NOT c.condeferred",
+        "AND c.convalidated",
+        "AND i.indisprimary",
+        "AND i.indisunique",
+        "AND i.indimmediate",
+        "AND i.indisvalid",
+        "AND i.indisready",
+        "AND i.indislive",
+        "AND i.indnkeyatts = 1",
+        "AND i.indnatts = 1",
+        "AND i.indexprs IS NULL",
+        "AND i.indpred IS NULL",
         "c.contype = 'f'",
         "c.conrelid = v_table OR c.confrelid = v_table",
         "ALTER TABLE platform.authority_fences",
@@ -213,11 +213,11 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
 
     pk_guard = re.compile(
         r"IF\s+NOT\s+EXISTS\s*\(.*?FROM\s+pg_constraint\s+c.*?JOIN\s+pg_index\s+i.*?"
-        r"c\.contype\s*=\s*'p'.*?NOT\s+c\.condeferrable.*?NOT\s+c\.condeferred.*?"
-        r"c\.convalidated.*?i\.indisprimary.*?i\.indisunique.*?i\.indimmediate.*?"
-        r"i\.indisvalid.*?i\.indisready.*?i\.indislive.*?i\.indnkeyatts\s*=\s*1.*?"
-        r"i\.indnatts\s*=\s*1.*?i\.indexprs\s+IS\s+NULL.*?i\.indpred\s+IS\s+NULL.*?"
-        r"\)\s*THEN",
+        r"c\.contype\s*=\s*'p'.*?AND\s+NOT\s+c\.condeferrable.*?AND\s+NOT\s+c\.condeferred.*?"
+        r"AND\s+c\.convalidated.*?AND\s+i\.indisprimary.*?AND\s+i\.indisunique.*?"
+        r"AND\s+i\.indimmediate.*?AND\s+i\.indisvalid.*?AND\s+i\.indisready.*?"
+        r"AND\s+i\.indislive.*?AND\s+i\.indnkeyatts\s*=\s*1.*?AND\s+i\.indnatts\s*=\s*1.*?"
+        r"AND\s+i\.indexprs\s+IS\s+NULL.*?AND\s+i\.indpred\s+IS\s+NULL.*?\)\s*THEN",
         re.IGNORECASE | re.DOTALL,
     )
     if pk_guard.search(code) is None:

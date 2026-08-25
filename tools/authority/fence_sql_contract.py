@@ -124,11 +124,14 @@ def validate_fence_sql_text(text: str) -> list[str]:
         if fragment not in code:
             findings.append(f"IR-D-003 SQL canonical/effect-authority invariant missing: {fragment}")
 
-    if code.count(CANONICAL_FUNCTION_SEARCH_PATH) < 2:
-        findings.append("IR-D-003 both canonical fence routines must pin pg_catalog-only function search_path")
-    executable_uses = code.count(f"{CANONICAL_REGEX_OPERATOR} '{CANONICAL_IDENTIFIER_REGEX}'")
-    if executable_uses < 6:
+    if code.count(CANONICAL_FUNCTION_SEARCH_PATH) != 2:
+        findings.append("IR-D-003 exactly both canonical fence routines must pin pg_catalog-only function search_path")
+    if code.count("pg_catalog.btrim(") < 6:
+        findings.append("IR-D-003 every stored/effect identifier emptiness check must bind pg_catalog.btrim")
+    if code.count(f"{CANONICAL_REGEX_OPERATOR} '{CANONICAL_IDENTIFIER_REGEX}'") < 6:
         findings.append("IR-D-003 SQL canonical identifier grammar is not C-collated/catalog-bound at every required storage/effect boundary")
+    if code.count("pg_catalog.statement_timestamp()") < 2:
+        findings.append("IR-D-003 evidence timestamps must use catalog-bound statement_timestamp at default and advance paths")
     for name in CANONICAL_FENCE_CONSTRAINT_NAMES:
         if code.count(name) < 1:
             findings.append(f"IR-D-003 SQL canonical fence constraint name missing: {name}")
@@ -149,28 +152,52 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
         TRUSTED_MIGRATION_SEARCH_PATH,
         "v_pk_index oid",
         "pg_catalog.to_regclass('platform.authority_fences')",
-        "FROM pg_catalog.pg_class",
+        "SELECT ROW(relkind, relpersistence, relispartition, relrowsecurity, relforcerowsecurity)",
+        "ROW('r'::\"char\", 'p'::\"char\", false, false, false)",
         "FROM pg_catalog.pg_inherits",
         "FROM pg_catalog.pg_policy",
-        "FROM pg_catalog.pg_attribute",
+        "SELECT pg_catalog.array_agg(attname::text ORDER BY attnum)",
+        "'int8'::pg_catalog.regtype",
+        "'timestamptz'::pg_catalog.regtype",
         "FROM pg_catalog.pg_attrdef d",
+        "a.attname OPERATOR(pg_catalog.<>) 'updated_at'",
+        "attgenerated OPERATOR(pg_catalog.<>) '' OR attidentity OPERATOR(pg_catalog.<>) ''",
         "pg_catalog.pg_get_expr(d.adbin, d.adrelid)",
         "IS DISTINCT FROM 'statement_timestamp()'",
-        "FROM pg_catalog.pg_constraint",
-        "FROM pg_catalog.pg_index i",
         CANONICAL_REVALIDATION_COLLATION,
         "authority_fences contains noncanonical or missing write constraints",
+        "c.conkey OPERATOR(pg_catalog.=) ARRAY[a.attnum]::smallint[]",
+        "NOT c.condeferrable",
+        "NOT c.condeferred",
+        "i.indimmediate",
+        "i.indisvalid",
+        "i.indisready",
+        "i.indislive",
+        "i.indnkeyatts OPERATOR(pg_catalog.=) 1",
+        "i.indnatts OPERATOR(pg_catalog.=) 1",
+        "i.indexprs IS NULL",
+        "i.indpred IS NULL",
         "authority_fences contains noncanonical index metadata",
+        "c.conrelid OPERATOR(pg_catalog.=) v_table OR c.confrelid OPERATOR(pg_catalog.=) v_table",
         "authority_fences cannot participate in foreign-key referential actions",
+        "FROM pg_catalog.pg_trigger t",
+        "NOT t.tgisinternal",
+        "FROM pg_catalog.pg_rewrite r",
+        "r.ev_class OPERATOR(pg_catalog.=) v_table",
+        "JOIN pg_catalog.pg_depend d",
+        "d.refobjid OPERATOR(pg_catalog.=) v_table",
+        "r.ev_class OPERATOR(pg_catalog.<>) v_table",
         "external rewrite dependency can reach authority_fences",
         "pg_catalog.pg_subscription_rel",
         "logical replication subscription can write authority_fences",
-        "pg_catalog.pg_depend",
-        "pg_catalog.pg_proc",
-        "pg_catalog.pg_operator",
-        "pg_catalog.pg_collation",
+        "FROM pg_catalog.pg_constraint c\n          JOIN pg_catalog.pg_depend d",
+        "LEFT JOIN pg_catalog.pg_proc p",
+        "LEFT JOIN pg_catalog.pg_operator o",
+        "'pg_catalog.pg_collation'::pg_catalog.regclass",
+        "p.pronamespace OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace",
+        "o.oprnamespace OPERATOR(pg_catalog.<>) 'pg_catalog'::pg_catalog.regnamespace",
+        "d.refobjid OPERATOR(pg_catalog.<>) 'pg_catalog.\"C\"'::pg_catalog.regcollation",
         "CHECK expression depends on noncanonical function/operator/collation authority",
-        "ALTER TABLE platform.authority_fences",
         "ALTER COLUMN fence_scope_id SET NOT NULL",
         "ALTER COLUMN current_fence_epoch SET NOT NULL",
         "ALTER COLUMN current_generation_id SET NOT NULL",
@@ -216,8 +243,8 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
 
     dependency_guard = re.compile(
         r"FROM\s+pg_catalog\.pg_constraint\s+c\s+JOIN\s+pg_catalog\.pg_depend\s+d.*?"
-        r"pg_catalog\.pg_proc.*?pg_catalog\.pg_operator.*?pg_catalog\.pg_collation.*?"
-        r"noncanonical function/operator/collation authority",
+        r"LEFT\s+JOIN\s+pg_catalog\.pg_proc\s+p.*?LEFT\s+JOIN\s+pg_catalog\.pg_operator\s+o.*?"
+        r"pg_catalog\.pg_collation.*?noncanonical function/operator/collation authority",
         re.IGNORECASE | re.DOTALL,
     )
     if dependency_guard.search(code) is None:
@@ -235,8 +262,8 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
     if pk_guard.search(code) is None:
         findings.append("IR-D-003 persisted fence primary key must be the canonical immediate valid ready conflict arbiter")
 
-    if code.count(CANONICAL_FUNCTION_SEARCH_PATH) < 2:
-        findings.append("IR-D-003 revalidation must canonicalize both fence routines with pg_catalog-only search_path")
+    if code.count(CANONICAL_FUNCTION_SEARCH_PATH) != 2:
+        findings.append("IR-D-003 revalidation must canonicalize exactly both fence routines with pg_catalog-only search_path")
 
     function_marker = "CREATE OR REPLACE FUNCTION platform.initialize_authority_fence"
     pre_function = code.split(function_marker, 1)[0]

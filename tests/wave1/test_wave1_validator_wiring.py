@@ -45,11 +45,9 @@ class Wave1ValidatorWiringTests(unittest.TestCase):
             text = (
                 ROOT / "sql" / "wave1" / "002_revalidate_authority_fence_contract.sql"
             ).read_text(encoding="utf-8")
-            text = text.replace(
-                "ALTER TABLE platform.authority_fences\n    VALIDATE CONSTRAINT wave1_fence_epoch_positive;\n",
-                "",
-                1,
-            )
+            token = "ALTER TABLE platform.authority_fences VALIDATE CONSTRAINT wave1_fence_epoch_positive;"
+            self.assertIn(token, text)
+            text = text.replace(token, "", 1)
             (target / "002_revalidate_authority_fence_contract.sql").write_text(
                 text, encoding="utf-8"
             )

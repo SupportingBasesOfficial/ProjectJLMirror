@@ -13,6 +13,7 @@ if str(SRC) not in sys.path:
 
 from jlmirror_authority.control_plane import (  # noqa: E402
     AuthorizationDecision,
+    CrossTenantTargetBinding,
     FinalAdmissionEvidence,
     PlacementEvidence,
     RuntimeExecutionEvidence,
@@ -172,6 +173,7 @@ def tenant_final_evidence(context, **overrides):
         scope=ScopeClass.TENANT,
         tenant_requirement=TenantRequirement.REQUIRED,
         resource_scope=None,
+        cross_tenant_target=None,
         authentication_strength_policy_id=None,
         tenant_id=context.tenant_id,
         cell_id=context.cell_id,
@@ -220,6 +222,10 @@ def cross_declaration():
     )
 
 
+def cross_target(*tenant_ids: str) -> CrossTenantTargetBinding:
+    return CrossTenantTargetBinding(target_tenant_ids=tenant_ids or ("tenant-acme",))
+
+
 def cross_final_evidence(**overrides):
     values = dict(
         granted=True,
@@ -233,6 +239,7 @@ def cross_final_evidence(**overrides):
         scope=ScopeClass.PLATFORM,
         tenant_requirement=TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED,
         resource_scope=None,
+        cross_tenant_target=cross_target(),
         authentication_strength_policy_id="platform-privileged-v1",
         authentication_strength_policy_revision="security-policy-r7",
         executing_runtime_authority_revision="runtime-authority-r10",
@@ -261,6 +268,29 @@ class AtomicFinalAdmissionTests(unittest.TestCase):
             context=self.context,
             now=NOW,
             final_admission_authority=finalizer,
+        )
+
+    def cross_call(self, *, evidence=None, target=None):
+        admin = Principal(
+            "platform-admin-1", PrincipalKind.PLATFORM_ADMIN_PRINCIPAL, "session-g7"
+        )
+        target = cross_target() if target is None else target
+        return authorize_protected_operation(
+            principal=admin,
+            principal_authority=PrincipalAuthority(),
+            declaration=cross_declaration(),
+            placement_authority=PlacementAuthority(placement()),
+            authorization_authority=AuthorizationAuthority(),
+            context=None,
+            now=NOW,
+            strength_policy=StrengthPolicy(),
+            strength_evidence=admin_strength(),
+            runtime_binding=CONTROL_PLANE,
+            runtime_authority=RuntimeAuthority(),
+            final_admission_authority=Finalizer(
+                cross_final_evidence() if evidence is None else evidence
+            ),
+            cross_tenant_target=target,
         )
 
     def test_serial_green_without_final_admission_authority_fails_closed(self):
@@ -418,7 +448,7 @@ class AtomicFinalAdmissionTests(unittest.TestCase):
         self.assertEqual(decision.policy_revision, "authz-final-r9")
         self.assertNotIn("now", finalizer.kwargs)
 
-    def test_cross_tenant_strength_revision_drift_fails_closed(self):
+    def test_cross_tenant_requires_exact_target_binding(self):
         admin = Principal(
             "platform-admin-1", PrincipalKind.PLATFORM_ADMIN_PRINCIPAL, "session-g7"
         )
@@ -435,67 +465,59 @@ class AtomicFinalAdmissionTests(unittest.TestCase):
                 strength_evidence=admin_strength(),
                 runtime_binding=CONTROL_PLANE,
                 runtime_authority=RuntimeAuthority(),
-                final_admission_authority=Finalizer(
-                    cross_final_evidence(
-                        authentication_strength_policy_revision="security-policy-r8"
-                    )
-                ),
+                final_admission_authority=Finalizer(cross_final_evidence()),
+            )
+
+    def test_same_cross_tenant_action_cannot_reuse_final_evidence_for_other_target(self):
+        evidence = cross_final_evidence(cross_tenant_target=cross_target("tenant-a"))
+        with self.assertRaises(AdmissionDenied):
+            self.cross_call(evidence=evidence, target=cross_target("tenant-b"))
+
+    def test_non_cross_tenant_operation_rejects_cross_tenant_target_binding(self):
+        with self.assertRaises(AdmissionDenied):
+            authorize_protected_operation(
+                principal=self.principal,
+                principal_authority=self.principal_authority,
+                declaration=tenant_declaration(),
+                placement_authority=self.placement_authority,
+                authorization_authority=self.authorization_authority,
+                context=self.context,
+                now=NOW,
+                final_admission_authority=Finalizer(tenant_final_evidence(self.context)),
+                cross_tenant_target=cross_target(),
+            )
+
+    def test_cross_tenant_strength_revision_drift_fails_closed(self):
+        with self.assertRaises(AdmissionDenied):
+            self.cross_call(
+                evidence=cross_final_evidence(
+                    authentication_strength_policy_revision="security-policy-r8"
+                )
             )
 
     def test_cross_tenant_strength_policy_id_drift_fails_closed_even_same_revision(self):
-        admin = Principal(
-            "platform-admin-1", PrincipalKind.PLATFORM_ADMIN_PRINCIPAL, "session-g7"
-        )
         with self.assertRaises(AdmissionDenied):
-            authorize_protected_operation(
-                principal=admin,
-                principal_authority=PrincipalAuthority(),
-                declaration=cross_declaration(),
-                placement_authority=PlacementAuthority(placement()),
-                authorization_authority=AuthorizationAuthority(),
-                context=None,
-                now=NOW,
-                strength_policy=StrengthPolicy(),
-                strength_evidence=admin_strength(),
-                runtime_binding=CONTROL_PLANE,
-                runtime_authority=RuntimeAuthority(),
-                final_admission_authority=Finalizer(
-                    cross_final_evidence(
-                        authentication_strength_policy_id="platform-privileged-v2",
-                        authentication_strength_policy_revision="security-policy-r7",
-                    )
-                ),
+            self.cross_call(
+                evidence=cross_final_evidence(
+                    authentication_strength_policy_id="platform-privileged-v2",
+                    authentication_strength_policy_revision="security-policy-r7",
+                )
             )
 
     def test_cross_tenant_runtime_generation_or_profile_drift_fails_closed(self):
-        admin = Principal(
-            "platform-admin-1", PrincipalKind.PLATFORM_ADMIN_PRINCIPAL, "session-g7"
-        )
         for evidence in (
             cross_final_evidence(executing_runtime_generation="runtime-control-g8"),
             cross_final_evidence(executing_runtime_profile_id="runtime.api@1"),
         ):
             with self.subTest(evidence=evidence), self.assertRaises(AdmissionDenied):
-                authorize_protected_operation(
-                    principal=admin,
-                    principal_authority=PrincipalAuthority(),
-                    declaration=cross_declaration(),
-                    placement_authority=PlacementAuthority(placement()),
-                    authorization_authority=AuthorizationAuthority(),
-                    context=None,
-                    now=NOW,
-                    strength_policy=StrengthPolicy(),
-                    strength_evidence=admin_strength(),
-                    runtime_binding=CONTROL_PLANE,
-                    runtime_authority=RuntimeAuthority(),
-                    final_admission_authority=Finalizer(evidence),
-                )
+                self.cross_call(evidence=evidence)
 
     def test_cross_tenant_valid_final_snapshot_uses_no_caller_time(self):
         admin = Principal(
             "platform-admin-1", PrincipalKind.PLATFORM_ADMIN_PRINCIPAL, "session-g7"
         )
-        finalizer = Finalizer(cross_final_evidence())
+        target = cross_target()
+        finalizer = Finalizer(cross_final_evidence(cross_tenant_target=target))
         decision = authorize_protected_operation(
             principal=admin,
             principal_authority=PrincipalAuthority(),
@@ -509,9 +531,26 @@ class AtomicFinalAdmissionTests(unittest.TestCase):
             runtime_binding=CONTROL_PLANE,
             runtime_authority=RuntimeAuthority(),
             final_admission_authority=finalizer,
+            cross_tenant_target=target,
         )
         self.assertEqual(decision.policy_revision, "platform-authz-r10")
         self.assertNotIn("now", finalizer.kwargs)
+        self.assertEqual(finalizer.kwargs["cross_tenant_target"], target)
+
+    def test_cross_tenant_target_binding_is_canonical_and_single_mode(self):
+        self.assertEqual(
+            CrossTenantTargetBinding(target_tenant_ids=("tenant-b", "tenant-a")).target_tenant_ids,
+            ("tenant-a", "tenant-b"),
+        )
+        with self.assertRaises(ValueError):
+            CrossTenantTargetBinding(target_tenant_ids=("tenant-a", "tenant-a"))
+        with self.assertRaises(ValueError):
+            CrossTenantTargetBinding()
+        with self.assertRaises(ValueError):
+            CrossTenantTargetBinding(
+                target_tenant_ids=("tenant-a",),
+                selection_criteria_id="selection-active",
+            )
 
 
 if __name__ == "__main__":

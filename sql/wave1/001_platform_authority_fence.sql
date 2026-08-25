@@ -11,6 +11,11 @@
 -- migration 001 performs no persistent object mutation and migration 002 owns reuse.
 -- If the table is absent but the platform namespace or either canonical fence routine
 -- already exists, bootstrap fails closed rather than mutating a partial/reused namespace.
+--
+-- Fresh object creation also treats migration-owner default ACLs as authority input.
+-- Custom non-owner/PUBLIC default grants for schema/relation/function creation fail
+-- closed before the first persistent CREATE, and the resulting concrete ACLs are
+-- re-read before COMMIT. PUBLIC revocation alone is never treated as complete proof.
 
 BEGIN;
 
@@ -51,6 +56,21 @@ BEGIN
        OR v_existing_initialize IS NOT NULL
        OR v_existing_advance IS NOT NULL THEN
         RAISE EXCEPTION 'Wave 1 fence fresh bootstrap requires complete authority object absence';
+    END IF;
+
+    -- pg_default_acl is creation-time authority. A named-role or PUBLIC grant can be
+    -- inherited before later object-level PUBLIC revocation executes, so fresh
+    -- bootstrap refuses custom non-owner defaults for every object class it creates.
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_default_acl d
+          CROSS JOIN LATERAL pg_catalog.aclexplode(d.defaclacl) AS acl
+         WHERE d.defaclrole OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid
+           AND d.defaclnamespace OPERATOR(pg_catalog.=) 0
+           AND d.defaclobjtype IN ('n', 'r', 'f')
+           AND acl.grantee OPERATOR(pg_catalog.<>) d.defaclrole
+    ) THEN
+        RAISE EXCEPTION 'Wave 1 fence fresh bootstrap rejects non-owner default ACL grants for authority object creation';
     END IF;
 
     EXECUTE 'CREATE SCHEMA platform';
@@ -181,6 +201,74 @@ BEGIN
     EXECUTE 'REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text, text) FROM PUBLIC';
 END
 $wave1_bootstrap$;
+
+-- Re-read the materialized object ACLs before commit. This is deliberately separate
+-- from pg_default_acl preflight: configuration intent is not proof of resulting ACLs.
+DO $wave1_bootstrap_privilege_assert$
+DECLARE
+    v_schema oid := pg_catalog.to_regnamespace('platform');
+    v_table pg_catalog.regclass := pg_catalog.to_regclass('platform.authority_fences');
+    v_initialize pg_catalog.regprocedure := pg_catalog.to_regprocedure(
+        'platform.initialize_authority_fence(text,text,text)'
+    );
+    v_advance pg_catalog.regprocedure := pg_catalog.to_regprocedure(
+        'platform.advance_authority_fence(text,bigint,text,text,text)'
+    );
+BEGIN
+    IF v_schema IS NULL OR v_table IS NULL OR v_initialize IS NULL OR v_advance IS NULL THEN
+        RAISE EXCEPTION 'Wave 1 fresh bootstrap did not materialize the complete canonical authority object set';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_namespace n
+          CROSS JOIN LATERAL pg_catalog.aclexplode(
+              pg_catalog.COALESCE(n.nspacl, pg_catalog.acldefault('n', n.nspowner))
+          ) AS acl
+         WHERE n.oid OPERATOR(pg_catalog.=) v_schema
+           AND acl.grantee OPERATOR(pg_catalog.<>) n.nspowner
+    ) THEN
+        RAISE EXCEPTION 'fresh platform schema materialized non-owner privileges';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_class c
+          CROSS JOIN LATERAL pg_catalog.aclexplode(
+              pg_catalog.COALESCE(c.relacl, pg_catalog.acldefault('r', c.relowner))
+          ) AS acl
+         WHERE c.oid OPERATOR(pg_catalog.=) v_table
+           AND acl.grantee OPERATOR(pg_catalog.<>) c.relowner
+    ) THEN
+        RAISE EXCEPTION 'fresh authority_fences materialized non-owner table privileges';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_attribute a
+          CROSS JOIN LATERAL pg_catalog.aclexplode(a.attacl) AS acl
+         WHERE a.attrelid OPERATOR(pg_catalog.=) v_table
+           AND a.attnum OPERATOR(pg_catalog.>) 0
+           AND NOT a.attisdropped
+           AND a.attacl IS NOT NULL
+           AND acl.grantee OPERATOR(pg_catalog.<>) current_user::pg_catalog.regrole::oid
+    ) THEN
+        RAISE EXCEPTION 'fresh authority_fences materialized non-owner column privileges';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_proc p
+          CROSS JOIN LATERAL pg_catalog.aclexplode(
+              pg_catalog.COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))
+          ) AS acl
+         WHERE p.oid IN (v_initialize::oid, v_advance::oid)
+           AND acl.grantee OPERATOR(pg_catalog.<>) p.proowner
+    ) THEN
+        RAISE EXCEPTION 'fresh fence authority routine materialized non-owner privileges';
+    END IF;
+END
+$wave1_bootstrap_privilege_assert$;
 
 -- Co-resident protected mutations MUST bind an effect-eligible current authority
 -- state plus the scope, epoch and generation in the same PostgreSQL transaction

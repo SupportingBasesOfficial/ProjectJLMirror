@@ -2,10 +2,10 @@
 --
 -- 001 may be applied into an environment where the logical schema already exists.
 -- This migration makes reuse fail closed: an existing authority_fences table must
--- satisfy the canonical structural, durability, identifier, deterministic-collation
--- and positive-epoch contract before Wave 1 can consider it eligible for authority use.
--- Invalid historical shape/rows or hidden mutation behavior fail; they are not
--- normalized, deleted, or silently accepted here.
+-- satisfy the canonical structural, durability, identifier, deterministic-collation,
+-- conflict-arbiter and referential-action-free contract before Wave 1 can consider it
+-- eligible for authority use. Invalid historical shape/rows or hidden mutation
+-- behavior fail; they are not normalized, deleted, or silently accepted here.
 
 -- A table name is not conformance. Verify the exact ordinary-table shape that makes
 -- compare-and-advance single-winner and preserves the accepted BIGINT fence domain.
@@ -164,6 +164,10 @@ BEGIN
         RAISE EXCEPTION 'authority_fences.updated_at must retain the canonical statement_timestamp() evidence default';
     END IF;
 
+    -- initialize_authority_fence uses ON CONFLICT (fence_scope_id). Merely finding
+    -- a contype='p' row is not enough: a DEFERRABLE/not-ready/invalid primary key
+    -- cannot serve as the immediate conflict arbiter that the canonical function
+    -- requires. Reuse therefore proves both the constraint and its backing index.
     IF NOT EXISTS (
         SELECT 1
           FROM pg_constraint c
@@ -172,18 +176,50 @@ BEGIN
            AND a.attname = 'fence_scope_id'
            AND a.attnum > 0
            AND NOT a.attisdropped
+          JOIN pg_index i
+            ON i.indexrelid = c.conindid
          WHERE c.conrelid = v_table
            AND c.contype = 'p'
            AND c.conkey = ARRAY[a.attnum]::smallint[]
+           AND NOT c.condeferrable
+           AND NOT c.condeferred
+           AND c.convalidated
+           AND i.indisprimary
+           AND i.indisunique
+           AND i.indimmediate
+           AND i.indisvalid
+           AND i.indisready
+           AND i.indislive
+           AND i.indnkeyatts = 1
+           AND i.indnatts = 1
+           AND i.indexprs IS NULL
+           AND i.indpred IS NULL
     ) THEN
-        RAISE EXCEPTION 'authority_fences must have a single-column primary key on fence_scope_id';
+        RAISE EXCEPTION 'authority_fences primary key must be a single-column immediate valid ready conflict arbiter on fence_scope_id';
+    END IF;
+
+    -- Foreign-key referential actions are hidden mutation/blocking semantics. An
+    -- outgoing FK can let a principal with authority only on the referenced parent
+    -- update/delete fence rows through internal cascade triggers; an incoming FK can
+    -- likewise attach unreviewed referential side effects to fence mutation. The
+    -- canonical Wave 1 fence authority is therefore deliberately FK-free in both
+    -- directions. Any future relationship requires a reviewed migration/authority
+    -- design rather than silent reuse.
+    IF EXISTS (
+        SELECT 1
+          FROM pg_constraint c
+         WHERE c.contype = 'f'
+           AND (c.conrelid = v_table OR c.confrelid = v_table)
+    ) THEN
+        RAISE EXCEPTION 'authority_fences cannot participate in foreign-key referential actions';
     END IF;
 
     -- User-defined triggers/rules are hidden mutation semantics. They could alter
     -- scope/epoch/generation/state after the compare predicate or perform an
     -- unreviewed side effect while the SQL function still appears to have won.
-    -- Internal PostgreSQL constraint triggers are allowed; any user trigger/rule
-    -- requires an explicit reviewed migration instead of being inherited silently.
+    -- Internal PostgreSQL constraint triggers are allowed only after the explicit
+    -- foreign-key guard above proves none belong to FK semantics for this table;
+    -- any user trigger/rule requires reviewed migration rather than silent reuse.
     IF EXISTS (
         SELECT 1
           FROM pg_trigger t

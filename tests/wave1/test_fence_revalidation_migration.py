@@ -64,6 +64,63 @@ class FenceRevalidationMigrationTests(unittest.TestCase):
         findings = validate_fence_revalidation_sql_text(weakened)
         self.assertTrue(any("c.conkey = ARRAY[a.attnum]" in f for f in findings))
 
+    def test_revalidation_rejects_deferrable_primary_key(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace("AND NOT c.condeferrable", "AND c.condeferrable", 1)
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("non-deferrable" in f or "condeferrable" in f for f in findings))
+
+    def test_revalidation_requires_immediate_primary_key_index(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace("AND i.indimmediate", "AND NOT i.indimmediate", 1)
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("immediate" in f or "indimmediate" in f for f in findings))
+
+    def test_revalidation_requires_valid_ready_live_primary_key_index(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        for old, new, expected in (
+            ("AND i.indisvalid", "AND NOT i.indisvalid", "valid"),
+            ("AND i.indisready", "AND NOT i.indisready", "ready"),
+            ("AND i.indislive", "AND NOT i.indislive", "live"),
+        ):
+            with self.subTest(old=old):
+                weakened = text.replace(old, new, 1)
+                findings = validate_fence_revalidation_sql_text(weakened)
+                self.assertTrue(any(expected in f or old.strip().split()[-1] in f for f in findings))
+
+    def test_revalidation_requires_unconditional_plain_single_key_index(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        for old, new, expected in (
+            ("AND i.indnkeyatts = 1", "AND i.indnkeyatts > 0", "single-column"),
+            ("AND i.indexprs IS NULL", "AND i.indexprs IS NOT NULL", "conflict arbiter"),
+            ("AND i.indpred IS NULL", "AND i.indpred IS NOT NULL", "conflict arbiter"),
+        ):
+            with self.subTest(old=old):
+                weakened = text.replace(old, new, 1)
+                findings = validate_fence_revalidation_sql_text(weakened)
+                self.assertTrue(any(expected in f or old.strip() in f for f in findings))
+
+    def test_revalidation_rejects_foreign_keys_in_either_direction(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        for old, new in (
+            ("c.conrelid = v_table OR c.confrelid = v_table", "c.conrelid = v_table"),
+            ("c.conrelid = v_table OR c.confrelid = v_table", "c.confrelid = v_table"),
+        ):
+            with self.subTest(new=new):
+                weakened = text.replace(old, new, 1)
+                findings = validate_fence_revalidation_sql_text(weakened)
+                self.assertTrue(any("foreign-key" in f or "referential-action" in f for f in findings))
+
+    def test_revalidation_foreign_key_guard_cannot_be_comment_laundered(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace(
+            "AND (c.conrelid = v_table OR c.confrelid = v_table)",
+            "AND false",
+            1,
+        ) + "\n-- AND (c.conrelid = v_table OR c.confrelid = v_table)\n"
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("foreign-key" in f or "referential-action" in f for f in findings))
+
     def test_revalidation_requires_expected_column_types(self):
         text = SQL_PATH.read_text(encoding="utf-8")
         weakened = text.replace(

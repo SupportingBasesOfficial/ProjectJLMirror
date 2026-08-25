@@ -24,17 +24,32 @@ REQUIRED_EXECUTABLE_FRAGMENTS = (
     "pg_catalog.to_regprocedure(\n        'platform.initialize_authority_fence(text,text,text)'\n    )",
     "pg_catalog.to_regprocedure(\n        'platform.advance_authority_fence(text,bigint,text,text,text)'\n    )",
     "FROM pg_catalog.pg_namespace n",
+    "n.nspowner",
     "FROM pg_catalog.pg_class c",
+    "c.relowner",
+    "WITH RECURSIVE owner_role_members(member_oid) AS (",
     "FROM pg_catalog.pg_auth_members m",
+    "m.roleid OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid",
+    "WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (",
     "pg_catalog.to_regrole('pg_read_all_data')::oid",
     "pg_catalog.to_regrole('pg_write_all_data')::oid",
+    "member_oid OPERATOR(pg_catalog.<>) current_user::pg_catalog.regrole::oid",
     "RAISE EXCEPTION 'non-owner role can reach PostgreSQL predefined all-data authority'",
+    "pg_catalog.aclexplode(\n              pg_catalog.COALESCE(c.relacl, pg_catalog.acldefault('r', c.relowner))\n          ) AS acl",
+    "acl.grantee OPERATOR(pg_catalog.<>) c.relowner",
     "FROM pg_catalog.pg_attribute a",
-    "pg_catalog.aclexplode(a.attacl)",
+    "pg_catalog.aclexplode(a.attacl) AS acl",
+    "a.attnum OPERATOR(pg_catalog.>) 0",
+    "NOT a.attisdropped",
+    "acl.grantee OPERATOR(pg_catalog.<>) current_user::pg_catalog.regrole::oid",
     "RAISE EXCEPTION 'authority_fences has inherited non-owner column privileges'",
+    "pg_catalog.aclexplode(\n              pg_catalog.COALESCE(n.nspacl, pg_catalog.acldefault('n', n.nspowner))\n          ) AS acl",
+    "acl.grantee OPERATOR(pg_catalog.<>) n.nspowner",
     "FROM pg_catalog.pg_proc p",
-    "p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid",
+    "p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid\n           AND p.prosecdef",
     "RAISE EXCEPTION 'database contains migration-owner SECURITY DEFINER routine'",
+    "p.oid IN (v_initialize::oid, v_advance::oid)",
+    "acl.grantee OPERATOR(pg_catalog.<>) p.proowner",
     "p.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog']::text[]",
     "RAISE EXCEPTION 'fence authority functions must retain exact pg_catalog-only search_path'",
     "COMMIT;",
@@ -61,11 +76,7 @@ REQUIRED_BOUNDARY_TOKENS = (
     "PRIVILEGE REVALIDATION PASS != RUNTIME DATABASE AUTHORITY",
 )
 
-FORBIDDEN_EXECUTABLE_FRAGMENTS = (
-    "GRANT ",
-    "ALTER OWNER",
-    "SET ROLE",
-)
+FORBIDDEN_EXECUTABLE_FRAGMENTS = ("GRANT ", "ALTER OWNER", "SET ROLE")
 
 
 def validate_text(text: object) -> list[str]:
@@ -74,7 +85,6 @@ def validate_text(text: object) -> list[str]:
     code = _executable_sql(text)
     if not code:
         return ["Wave 1 fence privilege contract is malformed or cannot be parsed conservatively"]
-
     findings = [
         f"Wave 1 fence privilege invariant missing: {fragment}"
         for fragment in REQUIRED_EXECUTABLE_FRAGMENTS
@@ -94,11 +104,7 @@ def validate_text(text: object) -> list[str]:
 def validate_boundary_text(text: object) -> list[str]:
     if not isinstance(text, str):
         return ["Wave 1 fence privilege boundary must be text"]
-    return [
-        f"Wave 1 fence privilege boundary missing: {token}"
-        for token in REQUIRED_BOUNDARY_TOKENS
-        if token not in text
-    ]
+    return [f"Wave 1 fence privilege boundary missing: {token}" for token in REQUIRED_BOUNDARY_TOKENS if token not in text]
 
 
 def validate() -> list[str]:

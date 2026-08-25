@@ -111,11 +111,27 @@ def validate_bootstrap_safety_text(text: str) -> list[str]:
     if partial_match is None:
         findings.append("Wave 1 fence bootstrap must fail closed when schema/functions pre-exist without the authority table")
 
+    default_acl_required = (
+        "FROM pg_catalog.pg_default_acl d",
+        "pg_catalog.aclexplode(d.defaclacl) AS acl",
+        "d.defaclrole OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid",
+        "d.defaclnamespace OPERATOR(pg_catalog.=) 0",
+        "d.defaclobjtype IN ('n', 'r', 'f')",
+        "acl.grantee OPERATOR(pg_catalog.<>) d.defaclrole",
+        "Wave 1 fence fresh bootstrap rejects non-owner default ACL grants for authority object creation",
+    )
+    for token in default_acl_required:
+        if token not in code:
+            findings.append(f"Wave 1 fence bootstrap default-ACL preflight invariant missing: {token}")
+
     first_execute = code.find("EXECUTE")
+    default_acl_pos = code.find("FROM pg_catalog.pg_default_acl d")
     if first_execute < 0:
         findings.append("Wave 1 fence bootstrap fresh branch contains no persistent object creation")
-    elif table_match is not None and partial_match is not None and not (table_match.end() < partial_match.end() < first_execute):
-        findings.append("Wave 1 fence complete freshness/reuse guards must execute before persistent bootstrap mutation")
+    elif table_match is not None and partial_match is not None and not (
+        table_match.end() < partial_match.end() < default_acl_pos < first_execute
+    ):
+        findings.append("Wave 1 fence freshness and default-ACL preflight must execute before persistent bootstrap mutation")
 
     required_fresh_only = (
         "EXECUTE 'CREATE SCHEMA platform'",
@@ -130,6 +146,22 @@ def validate_bootstrap_safety_text(text: str) -> list[str]:
             findings.append(f"Wave 1 fence bootstrap trusted/fresh-only invariant missing: {token}")
     if "CREATE SCHEMA IF NOT EXISTS platform" in code:
         findings.append("Wave 1 fence bootstrap must not use IF NOT EXISTS to launder a pre-existing authority namespace")
+
+    post_assert_marker = "DO $wave1_bootstrap_privilege_assert$"
+    post_assert_pos = code.find(post_assert_marker)
+    post_assert_required = (
+        post_assert_marker,
+        "pg_catalog.COALESCE(n.nspacl, pg_catalog.acldefault('n', n.nspowner))",
+        "pg_catalog.COALESCE(c.relacl, pg_catalog.acldefault('r', c.relowner))",
+        "pg_catalog.aclexplode(a.attacl) AS acl",
+        "pg_catalog.COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))",
+        "fresh fence authority routine materialized non-owner privileges",
+    )
+    for token in post_assert_required:
+        if token not in code:
+            findings.append(f"Wave 1 fence bootstrap materialized-ACL assertion invariant missing: {token}")
+    if post_assert_pos < 0 or not (first_execute < post_assert_pos < code.rfind("COMMIT;")):
+        findings.append("Wave 1 fence bootstrap must assert materialized schema/table/column/function ACLs before commit")
 
     guard_pos = code.find("END AS wave1_bootstrap_event_trigger_guard;")
     do_pos = code.find("DO $wave1_bootstrap$")
@@ -160,6 +192,8 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
         privilege_block = code[privilege_start:privilege_end]
 
     privilege_required = (
+        "IF v_schema IS NULL OR v_table IS NULL OR v_initialize IS NULL OR v_advance IS NULL THEN",
+        "Wave 1 reuse requires the complete canonical fence authority object set before mutation",
         "WITH RECURSIVE owner_role_members(member_oid) AS (",
         "WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (",
         "pg_catalog.to_regrole('pg_read_all_data')::oid",
@@ -217,6 +251,18 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
     if replication_guard.search(code) is None:
         findings.append("Wave 1 fence revalidation must reject logical-replication subscription mappings that can write authority_fences")
 
+    post_assert_marker = "DO $wave1_postcanonical_privilege_assert$"
+    post_assert_pos = code.find(post_assert_marker)
+    post_assert_required = (
+        post_assert_marker,
+        "Wave 1 reuse canonical routine set became incomplete before commit",
+        "Wave 1 reuse canonical routine materialized non-owner privileges before commit",
+        "Wave 1 reuse canonical routine authority drifted before commit",
+    )
+    for token in post_assert_required:
+        if token not in code:
+            findings.append(f"Wave 1 fence reuse post-canonical privilege assertion missing: {token}")
+
     drop_token = "DROP CONSTRAINT wave1_fence_scope_id_canonical"
     validate_token = "VALIDATE CONSTRAINT wave1_fence_state_canonical"
     if drop_token in normalized and validate_token in normalized:
@@ -225,9 +271,12 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
         drop_pos = normalized.find(drop_token)
         validate_pos = normalized.find(validate_token)
         function_pos = normalized.find("CREATE OR REPLACE FUNCTION platform.initialize_authority_fence")
+        post_assert_normalized = normalized.find(post_assert_marker)
         commit_pos = normalized.rfind("COMMIT;")
-        if not (privilege_pos < structural_pos < drop_pos < validate_pos < function_pos < commit_pos):
-            findings.append("Wave 1 fence reuse privilege+structural validation/canonicalization must finish in one transaction before function replacement and commit")
+        if not (privilege_pos < structural_pos < drop_pos < validate_pos < function_pos < post_assert_normalized < commit_pos):
+            findings.append("Wave 1 fence reuse privilege+structural validation/canonicalization/post-ACL assertion must finish in one transaction before commit")
+    if post_assert_pos < 0 or post_assert_pos > code.rfind("COMMIT;"):
+        findings.append("Wave 1 fence reuse must reassert canonical routine ACL/current-authority state before commit")
 
     return findings
 
@@ -257,7 +306,7 @@ def main() -> int:
             print(f"FINDING: {finding}")
         print(f"RESULT: FAIL — {len(findings)} finding(s)")
         return 1
-    print("RESULT: PASS — fresh bootstrap requires complete object absence; reused authority binds privilege+structure+canonical mutation in one locked transaction with canonical PK semantics")
+    print("RESULT: PASS — fresh bootstrap binds default ACL preflight + materialized ACL proof; reused authority requires a complete routine set and binds privilege+structure+canonical mutation+post-ACL assertion in one locked transaction")
     return 0
 
 

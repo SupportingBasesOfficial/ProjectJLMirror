@@ -10,6 +10,13 @@ CANONICAL_REGEX_OPERATOR = 'COLLATE "C" ~'
 CANONICAL_TEXT_COLLATION_DECL = 'text COLLATE "C"'
 CANONICAL_REVALIDATION_COLLATION = "attcollation IS DISTINCT FROM 'pg_catalog.\"C\"'::regcollation"
 EFFECT_ELIGIBLE_PREDECESSOR_PREDICATE = "authority_fences.authority_state COLLATE \"C\" = 'active' COLLATE \"C\""
+CANONICAL_FENCE_CONSTRAINT_NAMES = (
+    "wave1_authority_fences_pkey",
+    "wave1_fence_epoch_positive",
+    "wave1_fence_generation_canonical",
+    "wave1_fence_scope_id_canonical",
+    "wave1_fence_state_canonical",
+)
 
 
 def _predicate(name: str) -> str:
@@ -93,15 +100,21 @@ def validate_fence_sql_text(text: str) -> list[str]:
         return findings
 
     required = (
-        'fence_scope_id text COLLATE "C" PRIMARY KEY',
+        'fence_scope_id text COLLATE "C" NOT NULL',
         'current_generation_id text COLLATE "C" NOT NULL',
         'authority_state text COLLATE "C" NOT NULL',
-        "CHECK (btrim(fence_scope_id) <> '')",
-        f"CHECK ({_predicate('fence_scope_id')})",
-        "CHECK (btrim(current_generation_id) <> '')",
-        f"CHECK ({_predicate('current_generation_id')})",
-        "CHECK (btrim(authority_state) <> '')",
-        f"CHECK ({_predicate('authority_state')})",
+        "CONSTRAINT wave1_authority_fences_pkey",
+        "PRIMARY KEY (fence_scope_id)",
+        "CONSTRAINT wave1_fence_scope_id_canonical",
+        "CONSTRAINT wave1_fence_epoch_positive",
+        "CONSTRAINT wave1_fence_generation_canonical",
+        "CONSTRAINT wave1_fence_state_canonical",
+        "btrim(fence_scope_id) <> ''",
+        _predicate("fence_scope_id"),
+        "btrim(current_generation_id) <> ''",
+        _predicate("current_generation_id"),
+        "btrim(authority_state) <> ''",
+        _predicate("authority_state"),
         'authority_fences.fence_scope_id COLLATE "C" = p_fence_scope_id COLLATE "C"',
         'authority_fences.current_generation_id COLLATE "C" = p_expected_predecessor_generation_id COLLATE "C"',
         _predicate("p_expected_predecessor_generation_id"),
@@ -121,6 +134,10 @@ def validate_fence_sql_text(text: str) -> list[str]:
             "IR-D-003 SQL canonical identifier grammar is not C-collated/enforced at every required storage/effect boundary"
         )
 
+    for name in CANONICAL_FENCE_CONSTRAINT_NAMES:
+        if code.count(name) < 1:
+            findings.append(f"IR-D-003 SQL canonical fence constraint name missing: {name}")
+
     return findings
 
 
@@ -137,6 +154,7 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
 
     findings: list[str] = []
     required = (
+        "v_pk_index oid",
         "to_regclass('platform.authority_fences')",
         "SELECT ROW(relkind, relpersistence, relispartition, relrowsecurity, relforcerowsecurity)",
         "IS DISTINCT FROM ROW('r'::\"char\", 'p'::\"char\", false, false, false)",
@@ -167,8 +185,13 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
         "a.attname <> 'updated_at'",
         "pg_get_expr(d.adbin, d.adrelid)",
         "IS DISTINCT FROM 'statement_timestamp()'",
+        "SELECT array_agg(conname::text ORDER BY conname)",
+        "authority_fences contains noncanonical or missing write constraints",
+        "c.conname = 'wave1_authority_fences_pkey'",
         "c.contype = 'p'",
         "c.conkey = ARRAY[a.attnum]::smallint[]",
+        "SELECT c.conindid",
+        "INTO v_pk_index",
         "JOIN pg_index i",
         "i.indexrelid = c.conindid",
         "AND NOT c.condeferrable",
@@ -184,6 +207,8 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
         "AND i.indnatts = 1",
         "AND i.indexprs IS NULL",
         "AND i.indpred IS NULL",
+        "i.indexrelid <> v_pk_index",
+        "authority_fences contains noncanonical index metadata",
         "c.contype = 'f'",
         "c.conrelid = v_table OR c.confrelid = v_table",
         "ALTER TABLE platform.authority_fences",
@@ -192,6 +217,10 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
         "ALTER COLUMN current_generation_id SET NOT NULL",
         "ALTER COLUMN authority_state SET NOT NULL",
         "ALTER COLUMN updated_at SET NOT NULL",
+        "DROP CONSTRAINT wave1_fence_scope_id_canonical",
+        "DROP CONSTRAINT wave1_fence_epoch_positive",
+        "DROP CONSTRAINT wave1_fence_generation_canonical",
+        "DROP CONSTRAINT wave1_fence_state_canonical",
         "ADD CONSTRAINT wave1_fence_scope_id_canonical",
         _predicate("fence_scope_id"),
         "ADD CONSTRAINT wave1_fence_epoch_positive",
@@ -205,24 +234,52 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
         "VALIDATE CONSTRAINT wave1_fence_generation_canonical",
         "VALIDATE CONSTRAINT wave1_fence_state_canonical",
     )
+    for name in CANONICAL_FENCE_CONSTRAINT_NAMES:
+        if name not in code:
+            findings.append(f"IR-D-003 persisted fence canonical constraint missing: {name}")
     for fragment in required:
         if fragment not in code:
             findings.append(
                 f"IR-D-003 persisted fence revalidation invariant missing: {fragment}"
             )
 
+    constraint_set_guard = re.compile(
+        r"SELECT\s+array_agg\(conname::text\s+ORDER\s+BY\s+conname\).*?"
+        r"FROM\s+pg_constraint.*?WHERE\s+conrelid\s*=\s*v_table.*?"
+        r"IS\s+DISTINCT\s+FROM\s+ARRAY\s*\[.*?"
+        r"wave1_authority_fences_pkey.*?wave1_fence_epoch_positive.*?"
+        r"wave1_fence_generation_canonical.*?wave1_fence_scope_id_canonical.*?"
+        r"wave1_fence_state_canonical.*?\]::text\[\]",
+        re.IGNORECASE | re.DOTALL,
+    )
+    if constraint_set_guard.search(code) is None:
+        findings.append(
+            "IR-D-003 persisted fence revalidation must prove the exact finite constraint set"
+        )
+
     pk_guard = re.compile(
-        r"IF\s+NOT\s+EXISTS\s*\(.*?FROM\s+pg_constraint\s+c.*?JOIN\s+pg_index\s+i.*?"
+        r"SELECT\s+c\.conindid\s+INTO\s+v_pk_index.*?FROM\s+pg_constraint\s+c.*?"
+        r"JOIN\s+pg_index\s+i.*?c\.conname\s*=\s*'wave1_authority_fences_pkey'.*?"
         r"c\.contype\s*=\s*'p'.*?AND\s+NOT\s+c\.condeferrable.*?AND\s+NOT\s+c\.condeferred.*?"
         r"AND\s+c\.convalidated.*?AND\s+i\.indisprimary.*?AND\s+i\.indisunique.*?"
         r"AND\s+i\.indimmediate.*?AND\s+i\.indisvalid.*?AND\s+i\.indisready.*?"
         r"AND\s+i\.indislive.*?AND\s+i\.indnkeyatts\s*=\s*1.*?AND\s+i\.indnatts\s*=\s*1.*?"
-        r"AND\s+i\.indexprs\s+IS\s+NULL.*?AND\s+i\.indpred\s+IS\s+NULL.*?\)\s*THEN",
+        r"AND\s+i\.indexprs\s+IS\s+NULL.*?AND\s+i\.indpred\s+IS\s+NULL",
         re.IGNORECASE | re.DOTALL,
     )
     if pk_guard.search(code) is None:
         findings.append(
-            "IR-D-003 persisted fence primary key must be a non-deferrable immediate valid ready live single-column conflict arbiter"
+            "IR-D-003 persisted fence primary key must be the canonical non-deferrable immediate valid ready live single-column conflict arbiter"
+        )
+
+    extra_index_guard = re.compile(
+        r"IF\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+pg_index\s+i\s+"
+        r"WHERE\s+i\.indrelid\s*=\s*v_table\s+AND\s+i\.indexrelid\s*<>\s*v_pk_index\s*\)\s*THEN",
+        re.IGNORECASE | re.DOTALL,
+    )
+    if extra_index_guard.search(code) is None:
+        findings.append(
+            "IR-D-003 persisted fence revalidation must reject all noncanonical extra index metadata"
         )
 
     fk_guard = re.compile(

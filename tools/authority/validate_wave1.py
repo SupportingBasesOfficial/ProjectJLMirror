@@ -17,7 +17,6 @@ if str(SRC) not in sys.path:
 
 from jlmirror_authority.runtime_profiles import WAVE1_RUNTIME_BINDINGS  # noqa: E402
 from tools.authority.fence_sql_contract import (  # noqa: E402
-    EFFECT_ELIGIBLE_PREDECESSOR_PREDICATE,
     validate_fence_revalidation_sql_text,
     validate_fence_sql_text,
 )
@@ -61,6 +60,7 @@ EXPECTED_FORBIDDEN_SUBSTITUTIONS = [
     "privileged_human_without_current_authentication_strength",
     "authentication_strength_for_other_principal",
     "authentication_strength_revision_for_different_policy_id",
+    "principal_id_generation_match_for_principal_kind_authority",
     "malformed_adapter_evidence_for_authority",
     "not_yet_current_browser_transaction_for_authentication",
     "noncanonical_browser_session_handle_for_session_authority",
@@ -71,6 +71,7 @@ EXPECTED_FORBIDDEN_SUBSTITUTIONS = [
     "caller_tenant_id_for_tenant_context",
     "caller_selected_runtime_binding_for_executing_runtime_authority",
     "destination_runtime_generation_for_executing_runtime_authority",
+    "runtime_profile_generation_match_for_executing_environment_authority",
     "final_admission_without_current_executing_runtime_authority",
     "final_admission_scope_class_for_other_declaration_scope",
     "final_admission_tenant_requirement_for_other_declaration",
@@ -87,9 +88,11 @@ EXPECTED_FORBIDDEN_SUBSTITUTIONS = [
     "non_active_fence_state_for_effect_authority",
     "unvalidated_persisted_fence_state_for_current_authority",
     "nondeterministic_collation_for_fence_scope_authority",
+    "required_fence_shape_for_absence_of_extra_write_constraints",
     "object_acl_clean_for_owner_role_unassumable",
     "object_acl_clean_for_predefined_all_data_role_absent",
     "table_acl_clean_for_column_acl_clean",
+    "expected_function_acl_clean_for_residual_definer_authority_absent",
     "table_shape_match_for_referential_action_free",
     "primary_key_present_for_immediate_valid_ready_conflict_arbiter",
     "fence_token_for_effect_absence",
@@ -300,41 +303,15 @@ def _fence_sql_findings() -> list[str]:
         findings.append(f"IR-D-003 persisted fence revalidation migration unreadable: {exc}")
         revalidation_text = ""
 
+    findings.extend(validate_fence_sql_text(text))
+    if revalidation_text:
+        findings.extend(validate_fence_revalidation_sql_text(revalidation_text))
+
     default_revoke = (
         "ALTER DEFAULT PRIVILEGES IN SCHEMA platform\n"
         "    REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;"
     )
     first_function = "CREATE OR REPLACE FUNCTION platform.initialize_authority_fence("
-    required_fragments = (
-        'fence_scope_id text COLLATE "C" PRIMARY KEY',
-        'current_generation_id text COLLATE "C" NOT NULL',
-        'authority_state text COLLATE "C" NOT NULL',
-        "current_fence_epoch bigint NOT NULL CHECK (current_fence_epoch > 0)",
-        "CHECK (btrim(fence_scope_id) <> '')",
-        "CHECK (btrim(current_generation_id) <> '')",
-        "CHECK (btrim(authority_state) <> '')",
-        "ON CONFLICT (fence_scope_id) DO NOTHING",
-        "current_fence_epoch = current_fence_epoch + 1",
-        "current_fence_epoch = p_expected_predecessor_epoch",
-        'authority_fences.fence_scope_id COLLATE "C" = p_fence_scope_id COLLATE "C"',
-        'authority_fences.current_generation_id COLLATE "C" = p_expected_predecessor_generation_id COLLATE "C"',
-        EFFECT_ELIGIBLE_PREDECESSOR_PREDICATE,
-        "current_fence_epoch < 9223372036854775807",
-        "SECURITY INVOKER",
-        default_revoke,
-        "REVOKE ALL ON TABLE platform.authority_fences FROM PUBLIC;",
-        "REVOKE ALL ON FUNCTION platform.initialize_authority_fence(text, text, text) FROM PUBLIC;",
-        "REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text, text) FROM PUBLIC;",
-        "same PostgreSQL transaction",
-    )
-    findings.extend(
-        f"IR-D-003 SQL contract missing required invariant: {fragment}"
-        for fragment in required_fragments
-        if fragment not in text
-    )
-    findings.extend(validate_fence_sql_text(text))
-    if revalidation_text:
-        findings.extend(validate_fence_revalidation_sql_text(revalidation_text))
     if default_revoke in text and first_function in text and text.index(default_revoke) > text.index(first_function):
         findings.append(
             "IR-D-003 SQL default PUBLIC function EXECUTE revocation must precede authority function creation"

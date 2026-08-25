@@ -14,6 +14,7 @@ from tools.authority.fence_sql_contract import _executable_sql  # noqa: E402
 
 PROFILE = "jlmirror-wave1-fence-privileges/v1"
 SQL_PATH = ROOT / "sql" / "wave1" / "003_revalidate_authority_fence_privileges.sql"
+BOUNDARY_PATH = ROOT / "implementation" / "wave-1" / "FENCE_PRIVILEGE_BOUNDARY.md"
 
 SCHEMA_OWNER_GUARD = """SELECT n.nspowner
           FROM pg_namespace n
@@ -64,6 +65,17 @@ REQUIRED_EXECUTABLE_FRAGMENTS = (
     "p.prosecdef",
 )
 
+REQUIRED_BOUNDARY_TOKENS = (
+    "TABLE ACL CLEAN != COLUMN ACL CLEAN",
+    "pg_class.relacl",
+    "pg_attribute.attacl",
+    "attnum > 0",
+    "NOT attisdropped",
+    "PUBLIC (`oid 0`)",
+    "SCHEMA/TABLE/COLUMN/FUNCTION ACL CLEAN != FUTURE C2 ROLE MAPPING",
+    "PRIVILEGE REVALIDATION PASS != RUNTIME DATABASE AUTHORITY",
+)
+
 FORBIDDEN_EXECUTABLE_FRAGMENTS = (
     "GRANT ",
     "ALTER OWNER",
@@ -92,12 +104,31 @@ def validate_text(text: object) -> list[str]:
     return findings
 
 
+def validate_boundary_text(text: object) -> list[str]:
+    if not isinstance(text, str):
+        return ["Wave 1 fence privilege boundary must be text"]
+    return [
+        f"Wave 1 fence privilege boundary missing: {token}"
+        for token in REQUIRED_BOUNDARY_TOKENS
+        if token not in text
+    ]
+
+
 def validate() -> list[str]:
+    findings: list[str] = []
     try:
         text = SQL_PATH.read_text(encoding="utf-8")
     except OSError as exc:
-        return [f"Wave 1 fence privilege contract unreadable: {exc}"]
-    return validate_text(text)
+        findings.append(f"Wave 1 fence privilege contract unreadable: {exc}")
+    else:
+        findings.extend(validate_text(text))
+    try:
+        boundary = BOUNDARY_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        findings.append(f"Wave 1 fence privilege boundary unreadable: {exc}")
+    else:
+        findings.extend(validate_boundary_text(boundary))
+    return findings
 
 
 def main() -> int:

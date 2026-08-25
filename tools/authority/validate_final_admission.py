@@ -145,7 +145,12 @@ def _call_name(call: ast.Call) -> str | None:
     return None
 
 
-def validate_source_contract_text(text: str, model_text: str) -> list[str]:
+def validate_source_contract_text(text: str, model_text: str | None = None) -> list[str]:
+    if model_text is None:
+        try:
+            model_text = MODEL_PATH.read_text(encoding="utf-8")
+        except OSError as exc:
+            return [f"authority model source unreadable: {exc}"]
     try:
         tree = ast.parse(text)
         model_tree = ast.parse(model_text)

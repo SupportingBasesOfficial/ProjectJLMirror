@@ -17,6 +17,7 @@ Wave 1 implements only the identity and authority skeleton authorized by the acc
 - typed workload identity parsing and service-authentication boundary;
 - trusted `TenantContext` construction inputs;
 - current authorization and placement admission predicates;
+- revision-bound/atomic logical final-admission authority for protected operations;
 - explicit cross-tenant privileged platform authorization only through trusted current executing-runtime evidence for the accepted Control Plane boundary;
 - runtime/configuration/workload credential/network-policy generation separation;
 - classified finite-scalar configuration plus typed secret-reference boundaries;
@@ -32,11 +33,19 @@ The browser session cookie is an opaque capability, not an arbitrary string name
 
 Browser authorization transaction authority is time-bounded on both sides: a consumed transaction is usable only while `created_at <= now < expires_at`. Clock rollback/not-yet-current state cannot reach the IdP adapter as an authentication attempt.
 
-Privileged or policy-sensitive human admission does not freeze Security authority when MFA/step-up first passes. The same principal-bound authentication-strength evidence is evaluated against the current Security policy before the owning authorization decision and re-evaluated after that decision, immediately before final protected-operation admission. Policy hardening, stale assurance or loss of proof during the decision window fails closed; an earlier step-up result is not durable authority.
+Privileged or policy-sensitive human admission does not freeze Security authority when MFA/step-up first passes. Serial Security checks may reject early, but they are narrowing evidence only. Final protected-operation admission requires the revision-bound final-admission authority to re-establish the applicable authentication-strength policy/evidence with current Security authority. Policy hardening, stale assurance or loss of proof during the decision window fails closed; an earlier step-up result is not durable authority.
 
-Cross-tenant privileged operations remain distinct platform operations. A valid platform-admin principal, permission, authentication-strength result or caller-selected `RuntimeBinding` cannot route such an operation through the ordinary `runtime.api@1` application boundary. The actual executing runtime is resolved through a trusted current-runtime authority and must prove the exact accepted `runtime.control-plane@1` + `principal.control-plane@1` + `isolation.control-plane@1` + `ingress.privileged-platform@1` binding, active lifecycle, currentness and an allowed environment. A typed `CONTROL_PLANE` constant is an expected contract, not execution authority.
+Cross-tenant privileged operations remain distinct platform operations. A valid platform-admin principal, permission, authentication-strength result or caller-selected `RuntimeBinding` cannot route such an operation through the ordinary `runtime.api@1` application boundary. Serial runtime checks resolve trusted current executing-runtime evidence and may reject early, but they are not the final grant. The final-admission authority must re-establish and revision-bind the exact accepted `runtime.control-plane@1` executing runtime using authority-owned currentness/time. A typed `CONTROL_PLANE` constant and caller-supplied `now` are expected/narrowing inputs only, never final execution authority.
 
-Owning membership/permission/resource authorization is also not durable merely because an earlier `AuthorizationDecision` said `current=True`. Wave 1 evaluates owning authorization before the post-authorization placement/assurance/principal checks and evaluates it again as the final admission check. If currentness or permission is revoked in that window, admission fails closed. The final decision remains an admission result, not durable effect authority; effectful paths still consume the applicable current/fenced/atomic authority at their effect boundary.
+Owning membership/permission/resource authorization is not durable merely because an `AuthorizationDecision` said `current=True`. Wave 1 may evaluate principal, placement/runtime/fence, authentication-strength and owning authorization serially as fail-fast narrowing gates, but no ordering of those checks can create final authority: whichever serial check is last would otherwise reopen a TOCTOU window for the preceding authorities.
+
+Final protected-operation admission therefore requires one `FinalAdmissionAuthorityPort` result whose implementation performs one atomic or revision-bound logical current-authority decision using authority-owned currentness/time. The returned `FinalAdmissionEvidence` binds at minimum the final admission revision, owning authorization policy revision, principal authority revision, exact principal/session or credential generation, action, and every applicable authority dimension:
+
+- for tenant-scoped work: tenant/cell placement revision, placement/runtime/configuration/workload-credential/network-policy generations, environment/isolation binding, fence scope and fence epoch;
+- for privileged/policy-sensitive humans: current authentication-strength/Security policy revision;
+- for cross-tenant privileged work: current executing Control Plane runtime authority revision, exact runtime profile and runtime generation.
+
+Missing, malformed, non-current, denied or mismatched final evidence fails closed. The finalizer receives no caller-supplied `now`; a request timestamp cannot keep an expired runtime/session/policy current during a slow decision. Earlier serial checks remain useful for narrowing and diagnostics, but **serial currentness checks are not final admission authority**. The final decision remains an admission result, not durable effect authority; effectful paths still consume the applicable current/fenced/atomic authority at their effect boundary.
 
 Fence scope/epoch/generation equality is necessary but not sufficient for a protected effect. A typed `FenceRecord` supplied by a caller is not currentness evidence. The portable Wave 1 predicate resolves the current record from the owning fence authority and requires its state to be exactly `active` before comparing scope, epoch and generation. For co-resident PostgreSQL effects, even that preflight result is insufficient: the current fence predicate and protected mutation must execute in the same database transaction. `quarantined`, `retired` or any other syntactically valid state cannot admit a protected effect and cannot use the ordinary successor compare-and-advance path to resurrect effect eligibility. Recovery/state-transition authority remains separately governed by the accepted Phase 13/15 lifecycle and recovery predicates.
 
@@ -55,7 +64,8 @@ The following remain C2 implementation choices and are not made canonical by cod
 - configuration-distribution product;
 - orchestrator/scheduler;
 - ingress/load-balancer product;
-- physical environment/topology mapping.
+- physical environment/topology mapping;
+- concrete final-admission coordination/store mechanism, provided it conforms to the fixed revision-bound/atomic authority contract.
 
 ## Explicitly absent
 
@@ -85,6 +95,9 @@ TENANT ID INPUT != TENANT CONTEXT
 CALLER-SELECTED RUNTIME BINDING != EXECUTING RUNTIME AUTHORITY
 CROSS-TENANT PLATFORM AUTHORITY != APPLICATION RUNTIME AUTHORITY
 EARLIER AUTHORIZATION GRANT != FINAL CURRENT AUTHORIZATION
+SERIAL CURRENTNESS CHECKS != FINAL ADMISSION AUTHORITY
+CALLER-SUPPLIED NOW != FINAL CURRENTNESS CLOCK
+FINAL ADMISSION SNAPSHOT != DURABLE EFFECT AUTHORITY
 PLACEMENT CACHE HIT != GLOBAL AUTHORITY
 ENVIRONMENT LABEL != AUTHORIZATION
 UNCLASSIFIED/UNTYPED CONFIG != RUNTIME-ADMISSIBLE CONFIG

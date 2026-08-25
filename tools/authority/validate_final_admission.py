@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE_PATH = ROOT / "src" / "jlmirror_authority" / "control_plane.py"
+MODEL_PATH = ROOT / "src" / "jlmirror_authority" / "model.py"
 MANIFEST_PATH = ROOT / "implementation" / "wave-1" / "FINAL_ADMISSION_MANIFEST.json"
 BOUNDARY_PATH = ROOT / "implementation" / "wave-1" / "AUTHORITY_BOUNDARY.md"
 ASSURANCE_PATH = ROOT / "implementation" / "wave-1" / "ASSURANCE.md"
@@ -22,6 +23,7 @@ EXPECTED_MANIFEST = {
     "caller_supplied_time_is_final_currentness": False,
     "authority_owned_currentness_required": True,
     "decision_mode": "atomic_or_revision_bound_logical_snapshot",
+    "resource_scope_mode": "required_for_resource_forbidden_otherwise",
     "required_common_bindings": [
         "admission_revision",
         "authorization_policy_revision",
@@ -30,6 +32,9 @@ EXPECTED_MANIFEST = {
         "principal_credential_generation",
         "action",
         "resource_scope",
+        "executing_runtime_authority_revision",
+        "executing_runtime_profile_id",
+        "executing_runtime_generation",
     ],
     "required_tenant_bindings_when_applicable": [
         "tenant_id",
@@ -50,11 +55,7 @@ EXPECTED_MANIFEST = {
     "required_privileged_human_bindings_when_applicable": [
         "authentication_strength_policy_revision"
     ],
-    "required_cross_tenant_bindings_when_applicable": [
-        "executing_runtime_authority_revision",
-        "executing_runtime_profile_id",
-        "executing_runtime_generation",
-    ],
+    "cross_tenant_executing_runtime_profile": "runtime.control-plane@1",
     "finalizer_forbidden_inputs": ["caller_supplied_now"],
     "fallback_to_serial_checks": False,
     "final_snapshot_is_durable_effect_authority": False,
@@ -67,7 +68,6 @@ REQUIRED_EVIDENCE_FIELDS = {
     *EXPECTED_MANIFEST["required_common_bindings"],
     *EXPECTED_MANIFEST["required_tenant_bindings_when_applicable"],
     *EXPECTED_MANIFEST["required_privileged_human_bindings_when_applicable"],
-    *EXPECTED_MANIFEST["required_cross_tenant_bindings_when_applicable"],
 }
 
 EXPECTED_FINALIZER_ARGUMENTS = [
@@ -82,6 +82,8 @@ EXPECTED_FINALIZER_ARGUMENTS = [
 REQUIRED_DOC_LAWS = (
     "SERIAL CURRENTNESS CHECKS != FINAL ADMISSION AUTHORITY",
     "CALLER-SUPPLIED NOW != FINAL CURRENTNESS CLOCK",
+    "RESOURCE SCOPE ABSENCE != RESOURCE AUTHORITY",
+    "DESTINATION RUNTIME GENERATION != EXECUTING RUNTIME AUTHORITY",
     "FINAL ADMISSION SNAPSHOT != DURABLE EFFECT AUTHORITY",
 )
 
@@ -89,7 +91,11 @@ REQUIRED_TEST_NAMES = (
     "test_serial_green_without_final_admission_authority_fails_closed",
     "test_malformed_or_noncurrent_final_admission_fails_closed",
     "test_final_principal_or_action_binding_mismatch_fails_closed",
+    "test_resource_declaration_requires_explicit_scope",
+    "test_non_resource_declaration_rejects_resource_scope",
     "test_same_action_different_resource_scope_cannot_reuse_final_evidence",
+    "test_tenant_final_admission_requires_executing_runtime_binding",
+    "test_tenant_final_admission_rejects_wrong_executing_runtime_profile",
     "test_any_tenant_placement_generation_or_fence_drift_fails_closed",
     "test_cross_tenant_strength_revision_drift_fails_closed",
     "test_cross_tenant_runtime_generation_or_profile_drift_fails_closed",
@@ -139,11 +145,12 @@ def _call_name(call: ast.Call) -> str | None:
     return None
 
 
-def validate_source_contract_text(text: str) -> list[str]:
+def validate_source_contract_text(text: str, model_text: str) -> list[str]:
     try:
         tree = ast.parse(text)
+        model_tree = ast.parse(model_text)
     except SyntaxError as exc:
-        return [f"control-plane source is not parseable: {exc}"]
+        return [f"authority source is not parseable: {exc}"]
 
     findings: list[str] = []
     evidence = _named_class(tree, "FinalAdmissionEvidence")
@@ -160,6 +167,28 @@ def validate_source_contract_text(text: str) -> list[str]:
             findings.append(
                 "FinalAdmissionEvidence missing required authority bindings: " + ", ".join(missing)
             )
+        evidence_text = ast.unparse(evidence)
+        for token in (
+            "executing_runtime_authority_revision",
+            "executing_runtime_profile_id",
+            "executing_runtime_generation",
+            "every final admission must bind current executing-runtime authority",
+        ):
+            if token not in evidence_text:
+                findings.append(f"FinalAdmissionEvidence does not fail closed on runtime binding: {token}")
+
+    declaration = _named_class(model_tree, "AuthorizationDeclaration")
+    if declaration is None:
+        findings.append("AuthorizationDeclaration class is missing")
+    else:
+        declaration_text = ast.unparse(declaration)
+        for token in (
+            "ScopeClass.RESOURCE",
+            "resource_scope is None",
+            "resource_scope is valid only for scope=resource",
+        ):
+            if token not in declaration_text:
+                findings.append(f"AuthorizationDeclaration resource-scope contract missing: {token}")
 
     port = _named_class(tree, "FinalAdmissionAuthorityPort")
     port_method = None
@@ -209,6 +238,15 @@ def validate_source_contract_text(text: str) -> list[str]:
         ]
         if len(resource_scope_refs) < 2:
             findings.append("final-admission helper does not bind exact resource_scope")
+        helper_text = ast.unparse(helper)
+        for token in (
+            "executing_runtime_authority_revision",
+            "executing_runtime_profile_id",
+            "executing_runtime_generation",
+            "runtime_binding.runtime_profile_id",
+        ):
+            if token not in helper_text:
+                findings.append(f"final-admission helper does not bind executing runtime: {token}")
 
     authorize = _named_function(tree, "authorize_protected_operation")
     if authorize is None:
@@ -258,6 +296,8 @@ def _docs_findings() -> list[str]:
         "FinalAdmissionEvidence",
         "serial currentness checks",
         "caller/request `now`",
+        "executing-runtime authority",
+        "resource scope",
     ):
         if token not in assurance:
             findings.append(f"assurance boundary missing final-admission invariant: {token}")
@@ -292,10 +332,11 @@ def validate() -> list[str]:
         findings.extend(_manifest_findings(manifest))
     try:
         source = SOURCE_PATH.read_text(encoding="utf-8")
+        model_source = MODEL_PATH.read_text(encoding="utf-8")
     except OSError as exc:
-        findings.append(f"control-plane source unreadable: {exc}")
+        findings.append(f"authority source unreadable: {exc}")
     else:
-        findings.extend(validate_source_contract_text(source))
+        findings.extend(validate_source_contract_text(source, model_source))
     findings.extend(_docs_findings())
     findings.extend(_test_findings())
     return findings
@@ -310,7 +351,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}")
         return 1
-    print("RESULT: PASS — serial checks cannot substitute for revision-bound final admission authority")
+    print("RESULT: PASS — final admission binds resource and current executing-runtime authority")
     print("NOTE: PASS is conformance evidence only; final-admission mechanism remains a replaceable C2 choice.")
     return 0
 

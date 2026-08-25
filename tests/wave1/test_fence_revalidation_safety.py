@@ -57,6 +57,58 @@ class FenceRevalidationSafetyTests(unittest.TestCase):
         findings = validate_revalidation_safety_text(weakened)
         self.assertTrue(any("ordering" in finding for finding in findings))
 
+    def test_missing_set_local_event_triggers_off_fails_closed(self):
+        weakened = self.text().replace("SET LOCAL event_triggers = off;\n", "", 1)
+        findings = validate_revalidation_safety_text(weakened)
+        self.assertTrue(any("SET LOCAL event_triggers" in finding for finding in findings))
+
+    def test_non_local_event_trigger_disable_fails_closed(self):
+        weakened = self.text().replace(
+            "SET LOCAL event_triggers = off;",
+            "SET event_triggers = off;",
+            1,
+        )
+        findings = validate_revalidation_safety_text(weakened)
+        self.assertTrue(any("SET LOCAL event_triggers" in finding for finding in findings))
+
+    def test_event_trigger_reenable_fails_closed(self):
+        weakened = self.text().replace(
+            "LOCK TABLE platform.authority_fences IN ACCESS EXCLUSIVE MODE;",
+            "SET LOCAL event_triggers = on;\n\nLOCK TABLE platform.authority_fences IN ACCESS EXCLUSIVE MODE;",
+            1,
+        )
+        findings = validate_revalidation_safety_text(weakened)
+        self.assertTrue(any("exactly one SET LOCAL event_triggers" in finding for finding in findings))
+
+    def test_event_trigger_disable_must_precede_preflight(self):
+        text = self.text()
+        token = "SET LOCAL event_triggers = off;\n\n"
+        weakened = text.replace(token, "", 1).replace(
+            "LOCK TABLE platform.authority_fences IN ACCESS EXCLUSIVE MODE;",
+            token + "LOCK TABLE platform.authority_fences IN ACCESS EXCLUSIVE MODE;",
+            1,
+        )
+        findings = validate_revalidation_safety_text(weakened)
+        self.assertTrue(any("session guard" in finding or "ordering" in finding for finding in findings))
+
+    def test_event_trigger_disable_cannot_be_comment_laundered(self):
+        weakened = self.text().replace(
+            "SET LOCAL event_triggers = off;",
+            "-- SET LOCAL event_triggers = off;",
+            1,
+        )
+        findings = validate_revalidation_safety_text(weakened)
+        self.assertTrue(any("SET LOCAL event_triggers" in finding for finding in findings))
+
+    def test_event_trigger_guard_requires_current_setting_proof(self):
+        weakened = self.text().replace(
+            "WHEN current_setting('event_triggers') IS DISTINCT FROM 'off' THEN 0\n    ",
+            "",
+            1,
+        )
+        findings = validate_revalidation_safety_text(weakened)
+        self.assertTrue(any("locally disabled" in finding for finding in findings))
+
     def test_event_trigger_guard_requires_pg_event_trigger_catalog(self):
         weakened = self.text().replace(
             "FROM pg_catalog.pg_event_trigger et",
@@ -77,7 +129,17 @@ class FenceRevalidationSafetyTests(unittest.TestCase):
 
     def test_event_trigger_guard_must_precede_fence_ddl(self):
         text = self.text()
-        marker = "SELECT 1 / CASE\n    WHEN EXISTS (\n        SELECT 1\n          FROM pg_catalog.pg_event_trigger et\n         WHERE et.evtenabled <> 'D'\n    ) THEN 0\n    ELSE 1\nEND AS wave1_event_trigger_guard;\n\n"
+        marker = (
+            "SELECT 1 / CASE\n"
+            "    WHEN current_setting('event_triggers') IS DISTINCT FROM 'off' THEN 0\n"
+            "    WHEN EXISTS (\n"
+            "        SELECT 1\n"
+            "          FROM pg_catalog.pg_event_trigger et\n"
+            "         WHERE et.evtenabled <> 'D'\n"
+            "    ) THEN 0\n"
+            "    ELSE 1\n"
+            "END AS wave1_event_trigger_guard;\n\n"
+        )
         weakened = text.replace(marker, "", 1).replace(
             "ALTER TABLE platform.authority_fences\n    ALTER COLUMN fence_scope_id SET NOT NULL,",
             marker + "ALTER TABLE platform.authority_fences\n    ALTER COLUMN fence_scope_id SET NOT NULL,",

@@ -29,6 +29,7 @@ EXPECTED_MANIFEST = {
         "principal_id",
         "principal_credential_generation",
         "action",
+        "resource_scope",
     ],
     "required_tenant_bindings_when_applicable": [
         "tenant_id",
@@ -88,6 +89,7 @@ REQUIRED_TEST_NAMES = (
     "test_serial_green_without_final_admission_authority_fails_closed",
     "test_malformed_or_noncurrent_final_admission_fails_closed",
     "test_final_principal_or_action_binding_mismatch_fails_closed",
+    "test_same_action_different_resource_scope_cannot_reuse_final_evidence",
     "test_any_tenant_placement_generation_or_fence_drift_fails_closed",
     "test_cross_tenant_strength_revision_drift_fails_closed",
     "test_cross_tenant_runtime_generation_or_profile_drift_fails_closed",
@@ -200,6 +202,13 @@ def validate_source_contract_text(text: str) -> list[str]:
             for node in ast.walk(helper)
         ):
             findings.append("final-admission helper does not enforce FinalAdmissionEvidence type")
+        resource_scope_refs = [
+            node
+            for node in ast.walk(helper)
+            if isinstance(node, ast.Attribute) and node.attr == "resource_scope"
+        ]
+        if len(resource_scope_refs) < 2:
+            findings.append("final-admission helper does not bind exact resource_scope")
 
     authorize = _named_function(tree, "authorize_protected_operation")
     if authorize is None:

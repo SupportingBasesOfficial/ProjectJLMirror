@@ -36,6 +36,22 @@ ROLE_MEMBERSHIP_GUARD = """WITH RECURSIVE owner_role_members(member_oid) AS (
         )
         SELECT 1
           FROM owner_role_members"""
+ALL_DATA_ROLE_GUARD = """WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (
+            SELECT m.roleid, m.member
+              FROM pg_auth_members m
+             WHERE m.roleid IN (
+                to_regrole('pg_read_all_data')::oid,
+                to_regrole('pg_write_all_data')::oid
+             )
+            UNION
+            SELECT r.role_oid, m.member
+              FROM pg_auth_members m
+              JOIN all_data_role_members r
+                ON m.roleid = r.member_oid
+        )
+        SELECT 1
+          FROM all_data_role_members
+         WHERE member_oid <> current_user::regrole::oid"""
 COLUMN_ACL_GUARD = """FROM pg_attribute a
           CROSS JOIN LATERAL aclexplode(a.attacl) AS acl
          WHERE a.attrelid = v_table
@@ -52,6 +68,10 @@ REQUIRED_EXECUTABLE_FRAGMENTS = (
     SCHEMA_OWNER_GUARD,
     TABLE_OWNER_GUARD,
     ROLE_MEMBERSHIP_GUARD,
+    ALL_DATA_ROLE_GUARD,
+    "to_regrole('pg_read_all_data')::oid",
+    "to_regrole('pg_write_all_data')::oid",
+    "RAISE EXCEPTION 'non-owner role can reach PostgreSQL predefined all-data authority'",
     "aclexplode(\n              COALESCE(c.relacl, acldefault('r', c.relowner))\n          )",
     "acl.grantee <> c.relowner",
     COLUMN_ACL_GUARD,
@@ -67,8 +87,12 @@ REQUIRED_EXECUTABLE_FRAGMENTS = (
 
 REQUIRED_BOUNDARY_TOKENS = (
     "TABLE ACL CLEAN != COLUMN ACL CLEAN",
+    "OBJECT ACL CLEAN != PREDEFINED ALL-DATA ROLE ABSENT",
     "pg_class.relacl",
     "pg_attribute.attacl",
+    "pg_read_all_data",
+    "pg_write_all_data",
+    "pg_auth_members",
     "attnum > 0",
     "NOT attisdropped",
     "PUBLIC (`oid 0`)",
@@ -140,7 +164,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}")
         return 1
-    print("RESULT: PASS — fence ownership, role-membership, object ACL and column ACL reuse fail closed before C2 role mapping")
+    print("RESULT: PASS — fence ownership, role reachability, predefined all-data roles, object ACL and column ACL reuse fail closed before C2 role mapping")
     print("NOTE: PASS is conformance evidence only; it grants no runtime/database privilege.")
     return 0
 

@@ -174,6 +174,41 @@ class RuntimeExecutionEvidence:
 
 
 @dataclass(frozen=True)
+class CrossTenantTargetBinding:
+    """Canonical target authority input for a cross-tenant privileged operation.
+
+    Exactly one mode is used: an explicit non-empty tenant-id set or an accepted
+    selection-criteria identifier. This object is request/operation input, not
+    authority by itself; the final admission authority must authorize and echo the
+    exact canonical binding in its revision-bound evidence.
+    """
+
+    target_tenant_ids: tuple[str, ...] = ()
+    selection_criteria_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.target_tenant_ids, (str, bytes)):
+            raise ValueError("cross-tenant target ids must be an explicit collection")
+        try:
+            target_ids = tuple(self.target_tenant_ids)
+        except TypeError as exc:
+            raise ValueError("cross-tenant target ids must be an explicit collection") from exc
+        for tenant_id in target_ids:
+            _identifier(tenant_id, "cross_tenant_target_tenant_id")
+        if len(set(target_ids)) != len(target_ids):
+            raise ValueError("cross-tenant target ids cannot contain duplicates")
+        target_ids = tuple(sorted(target_ids))
+        object.__setattr__(self, "target_tenant_ids", target_ids)
+        _optional_identifier(self.selection_criteria_id, "cross_tenant_selection_criteria_id")
+        explicit_mode = bool(target_ids)
+        selection_mode = self.selection_criteria_id is not None
+        if explicit_mode is selection_mode:
+            raise ValueError(
+                "cross-tenant target binding requires exactly one of explicit tenant ids or selection criteria"
+            )
+
+
+@dataclass(frozen=True)
 class FinalAdmissionEvidence:
     """One revision-bound final admission snapshot from trusted current authorities.
 
@@ -194,6 +229,7 @@ class FinalAdmissionEvidence:
     scope: ScopeClass
     tenant_requirement: TenantRequirement
     resource_scope: str | None = None
+    cross_tenant_target: CrossTenantTargetBinding | None = None
     authentication_strength_policy_id: str | None = None
     tenant_id: str | None = None
     cell_id: str | None = None
@@ -231,6 +267,10 @@ class FinalAdmissionEvidence:
         if not isinstance(self.tenant_requirement, TenantRequirement):
             raise ValueError("tenant_requirement must be a canonical TenantRequirement")
         _optional_identifier(self.resource_scope, "resource_scope")
+        if self.cross_tenant_target is not None and not isinstance(
+            self.cross_tenant_target, CrossTenantTargetBinding
+        ):
+            raise ValueError("cross_tenant_target must be a canonical CrossTenantTargetBinding")
         _optional_identifier(
             self.authentication_strength_policy_id,
             "authentication_strength_policy_id",
@@ -339,6 +379,7 @@ class FinalAdmissionAuthorityPort(Protocol):
         declaration: AuthorizationDeclaration,
         expected_runtime_binding: RuntimeBinding,
         authentication_strength_evidence: AuthenticationStrengthEvidence | None,
+        cross_tenant_target: CrossTenantTargetBinding | None,
     ) -> FinalAdmissionEvidence:
         """Atomically/revision-bind all applicable current authorities.
 
@@ -520,6 +561,7 @@ def _finalize_current_admission(
     runtime_binding: RuntimeBinding,
     strength_evidence: AuthenticationStrengthEvidence | None,
     latest_runtime_evidence: RuntimeExecutionEvidence | None,
+    cross_tenant_target: CrossTenantTargetBinding | None,
 ) -> AuthorizationDecision:
     if final_admission_authority is None or not hasattr(
         final_admission_authority, "finalize_current_admission"
@@ -532,6 +574,7 @@ def _finalize_current_admission(
             declaration=declaration,
             expected_runtime_binding=runtime_binding,
             authentication_strength_evidence=strength_evidence,
+            cross_tenant_target=cross_tenant_target,
         )
     except Exception as exc:
         raise AdmissionDenied("revision-bound final admission authority failed closed") from exc
@@ -546,11 +589,12 @@ def _finalize_current_admission(
         or evidence.scope is not declaration.scope
         or evidence.tenant_requirement is not declaration.tenant_requirement
         or evidence.resource_scope != declaration.resource_scope
+        or evidence.cross_tenant_target != cross_tenant_target
         or evidence.authentication_strength_policy_id
         != declaration.authentication_strength_policy_id
     ):
         raise AdmissionDenied(
-            "final admission evidence is bound to another principal, action, declaration scope, resource, or authentication-strength policy"
+            "final admission evidence is bound to another principal, action, declaration scope, resource, cross-tenant target, or authentication-strength policy"
         )
 
     if context is None:
@@ -733,6 +777,7 @@ def authorize_protected_operation(
     runtime_binding: RuntimeBinding = API_AUTH_BOUNDARY,
     runtime_authority: CurrentRuntimeAuthorityPort | None = None,
     final_admission_authority: FinalAdmissionAuthorityPort | None = None,
+    cross_tenant_target: CrossTenantTargetBinding | None = None,
 ) -> AuthorizationDecision:
     """Narrow serially, then require one combined final current-admission proof."""
 
@@ -748,6 +793,12 @@ def authorize_protected_operation(
 
     requirement = declaration.tenant_requirement
     latest_runtime_evidence: RuntimeExecutionEvidence | None = None
+    if requirement is TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED:
+        if not isinstance(cross_tenant_target, CrossTenantTargetBinding):
+            raise AdmissionDenied("cross-tenant privileged operation requires exact canonical target binding")
+    elif cross_tenant_target is not None:
+        raise AdmissionDenied("cross-tenant target binding is forbidden for non-cross-tenant operation")
+
     if declaration.scope in {ScopeClass.TENANT, ScopeClass.RESOURCE} and runtime_binding != API_AUTH_BOUNDARY:
         raise AdmissionDenied("tenant/resource protected operations require the accepted API runtime boundary")
     if requirement is TenantRequirement.REQUIRED and context is None:
@@ -853,4 +904,5 @@ def authorize_protected_operation(
         runtime_binding=runtime_binding,
         strength_evidence=strength_evidence,
         latest_runtime_evidence=latest_runtime_evidence,
+        cross_tenant_target=cross_tenant_target,
     )

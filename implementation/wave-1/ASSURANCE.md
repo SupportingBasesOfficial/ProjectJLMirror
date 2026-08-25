@@ -20,10 +20,12 @@ Required exact-HEAD evidence before merge readiness:
 - final protected-operation admission fails closed unless a `FinalAdmissionAuthorityPort` returns a well-formed `FinalAdmissionEvidence` whose implementation re-establishes every applicable current authority as one atomic or revision-bound logical decision;
 - the final-admission boundary uses authority-owned currentness/time and receives no caller/request `now` parameter;
 - final tenant admission binds exact current tenant/cell placement revision plus placement/runtime/configuration/workload-credential/network-policy generations, environment/isolation, fence scope and fence epoch;
-- final resource-scoped admission binds the exact canonical `resource_scope`; a final snapshot for one resource cannot admit another resource merely because the action is identical;
+- every protected final admission also binds current executing-runtime authority revision, exact expected runtime profile and executing runtime generation; TenantContext destination `runtime_generation` cannot substitute for execution currentness;
+- final resource-scoped admission requires a non-null canonical `resource_scope`; a final snapshot for one resource cannot admit another resource merely because the action is identical;
+- non-resource declarations reject `resource_scope` rather than carrying dormant/misleading resource authority;
 - final privileged-human admission binds the current authentication-strength/Security policy revision;
 - final cross-tenant privileged admission binds the current executing Control Plane runtime authority revision, exact `runtime.control-plane@1` profile and exact runtime generation;
-- final admission always binds principal authority revision, principal/session-or-credential generation, exact action, exact resource scope (including absence), final admission revision and owning authorization policy revision;
+- final admission always binds principal authority revision, principal/session-or-credential generation, exact action, resource-scope semantics, final admission revision, owning authorization policy revision and executing-runtime authority;
 - any mismatch, omission, malformed evidence, denied/current=false state or final-admission authority failure is a closed denial; there is no fallback to serial checks;
 - an admitted final snapshot remains an admission result only and cannot replace effect-boundary fencing/currentness/atomicity;
 - fenced effect admission resolves current state from the owning fence authority; a typed/supplied fence record is not currentness proof, and co-resident PostgreSQL effects retain the same-transaction predicate requirement;
@@ -39,7 +41,11 @@ Mandatory falsification includes:
 - all serial checks green but no final-admission authority -> deny;
 - malformed, unavailable, denied or non-current final-admission authority -> deny;
 - principal/action/session-generation drift in final evidence -> deny;
+- `ScopeClass.RESOURCE` without `resource_scope` -> reject before authorization;
+- non-resource declaration carrying `resource_scope` -> reject;
 - same action with different resource scope cannot reuse final evidence;
+- tenant final evidence missing any executing-runtime binding -> reject;
+- tenant final evidence bound to the wrong executing runtime profile -> deny;
 - tenant/cell/placement/runtime/configuration/workload-credential/network-policy/fence drift -> deny;
 - final Security/authentication-strength revision drift -> deny;
 - cross-tenant final executing-runtime profile or generation drift -> deny;

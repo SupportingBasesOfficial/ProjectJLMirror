@@ -9,10 +9,12 @@ ASSURANCE = ROOT / "implementation" / "wave-1" / "ASSURANCE.md"
 PRIVILEGE_BOUNDARY = ROOT / "implementation" / "wave-1" / "FENCE_PRIVILEGE_BOUNDARY.md"
 SQL = ROOT / "sql" / "wave1" / "002_revalidate_authority_fence_contract.sql"
 
-LAW = "ROW/TABLE HOOKS CLEAN != DATABASE DDL EVENT-TRIGGER ABSENCE"
+LAW = "EVENT-TRIGGER CATALOG PREFLIGHT != CLOSED EVENT-TRIGGER EXECUTION WINDOW"
 CATALOG = "pg_catalog.pg_event_trigger"
 DOC_PREDICATE = "evtenabled <> 'D'"
 SQL_PREDICATE = "et.evtenabled <> 'D'"
+SESSION_GUARD = "SET LOCAL event_triggers = off"
+CURRENT_SETTING = "current_setting('event_triggers')"
 
 
 class EventTriggerBoundaryPropagationTests(unittest.TestCase):
@@ -21,15 +23,21 @@ class EventTriggerBoundaryPropagationTests(unittest.TestCase):
         self.assertIn(LAW, text)
         self.assertIn(CATALOG, text)
         self.assertIn(DOC_PREDICATE, text)
+        self.assertIn(SESSION_GUARD, text)
+        self.assertIn(CURRENT_SETTING, text)
 
-    def test_assurance_requires_database_event_trigger_absence(self):
+    def test_assurance_requires_closed_event_trigger_execution_window(self):
         text = ASSURANCE.read_text(encoding="utf-8")
         self.assertIn(CATALOG, text)
         self.assertIn(DOC_PREDICATE, text)
-        self.assertIn("before the first event-trigger-capable fence DDL", text)
+        self.assertIn(SESSION_GUARD, text)
+        self.assertIn(CURRENT_SETTING, text)
+        self.assertIn("before fence DDL", text)
 
-    def test_executable_migration_carries_exact_catalog_and_predicate(self):
+    def test_executable_migration_carries_exact_session_catalog_and_predicate_guards(self):
         text = SQL.read_text(encoding="utf-8")
+        self.assertIn(SESSION_GUARD + ";", text)
+        self.assertIn(CURRENT_SETTING, text)
         self.assertIn(CATALOG, text)
         self.assertIn(SQL_PREDICATE, text)
         self.assertIn("wave1_event_trigger_guard", text)

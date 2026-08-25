@@ -146,11 +146,20 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
     normalized = " ".join(code.split())
     lock = "LOCK TABLE platform.authority_fences IN ACCESS EXCLUSIVE MODE;"
     privilege_marker = "DO $wave1_reuse_privilege_preflight$"
+    privilege_end_marker = "$wave1_reuse_privilege_preflight$;"
     structural_marker = "DO $wave1_revalidate$"
     mutation_marker = "ALTER TABLE platform.authority_fences"
 
-    for token in (
-        privilege_marker,
+    privilege_start = code.find(privilege_marker)
+    privilege_end = code.find(privilege_end_marker, privilege_start + len(privilege_marker)) if privilege_start >= 0 else -1
+    if privilege_start < 0 or privilege_end < 0:
+        privilege_block = ""
+        findings.append("Wave 1 fence reuse privilege preflight block is missing or malformed")
+    else:
+        privilege_end += len(privilege_end_marker)
+        privilege_block = code[privilege_start:privilege_end]
+
+    privilege_required = (
         "WITH RECURSIVE owner_role_members(member_oid) AS (",
         "WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (",
         "pg_catalog.to_regrole('pg_read_all_data')::oid",
@@ -158,9 +167,12 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
         "pg_catalog.aclexplode(a.attacl) AS acl",
         "p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid",
         "AND p.prosecdef",
-    ):
-        if token not in code:
-            findings.append(f"Wave 1 fence reuse privilege preflight invariant missing: {token}")
+        "pg_catalog.aclexplode(\n              pg_catalog.COALESCE(c.relacl, pg_catalog.acldefault('r', c.relowner))\n          ) AS acl",
+        "pg_catalog.aclexplode(\n              pg_catalog.COALESCE(n.nspacl, pg_catalog.acldefault('n', n.nspowner))\n          ) AS acl",
+    )
+    for token in privilege_required:
+        if token not in privilege_block:
+            findings.append(f"Wave 1 fence reuse privilege preflight invariant missing from privilege block: {token}")
 
     if lock not in code:
         findings.append("Wave 1 fence revalidation must hold ACCESS EXCLUSIVE lock across privilege+structural validation and canonicalization")
@@ -169,11 +181,10 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
         event_set_pos = code.find(_EVENT_TRIGGER_SET)
         search_set_pos = code.find(_TRUSTED_SEARCH_PATH_SET)
         lock_pos = code.find(lock)
-        privilege_pos = code.find(privilege_marker)
         structural_pos = code.find(structural_marker)
         mutation_pos = code.find(mutation_marker)
         commit_pos = code.rfind("COMMIT;")
-        if not (0 <= begin_pos < event_set_pos < search_set_pos < lock_pos < privilege_pos < structural_pos < mutation_pos < commit_pos):
+        if not (0 <= begin_pos < event_set_pos < search_set_pos < lock_pos < privilege_start < structural_pos < mutation_pos < commit_pos):
             findings.append("Wave 1 event-trigger/search-path/lock/privilege/structural/mutation ordering is not transactionally closed")
         if event_match is not None and not (search_set_pos < event_match.start() < lock_pos):
             findings.append("Wave 1 event-trigger catalog preflight must execute before fence lock/privilege/structural validation and DDL")
@@ -209,8 +220,8 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
     drop_token = "DROP CONSTRAINT wave1_fence_scope_id_canonical"
     validate_token = "VALIDATE CONSTRAINT wave1_fence_state_canonical"
     if drop_token in normalized and validate_token in normalized:
-        privilege_pos = normalized.find(privilege_marker)
         structural_pos = normalized.find(structural_marker)
+        privilege_pos = normalized.find(privilege_marker)
         drop_pos = normalized.find(drop_token)
         validate_pos = normalized.find(validate_token)
         function_pos = normalized.find("CREATE OR REPLACE FUNCTION platform.initialize_authority_fence")

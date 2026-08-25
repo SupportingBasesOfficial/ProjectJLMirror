@@ -9,6 +9,7 @@
   "declaration_scope_binding_mode": "exact_scope_and_tenant_requirement",
   "cross_tenant_target_binding_mode": "required_exact_explicit_tenant_set_or_selection_criteria_for_cross_tenant_forbidden_otherwise",
   "tenant_resource_executing_runtime_profile": "runtime.api@1",
+  "executing_runtime_environment_binding_mode": "exact_current_environment_class",
   "required_common_bindings": [
     "admission_revision",
     "authorization_policy_revision",
@@ -24,7 +25,8 @@
     "authentication_strength_policy_id",
     "executing_runtime_authority_revision",
     "executing_runtime_profile_id",
-    "executing_runtime_generation"
+    "executing_runtime_generation",
+    "executing_runtime_environment_class"
   ],
   "required_tenant_bindings_when_applicable": [
     "tenant_id",

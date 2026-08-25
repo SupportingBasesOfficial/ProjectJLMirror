@@ -3,10 +3,10 @@
 -- 001 may be applied into an environment where the logical schema already exists.
 -- This migration makes reuse fail closed: an existing authority_fences table must
 -- satisfy the canonical structural, durability, identifier, deterministic-collation,
--- conflict-arbiter, constraint/index and referential-action-free contract before
--- Wave 1 can consider it eligible for authority use. Invalid historical shape/rows
--- or hidden mutation/write-constraining behavior fail; rows are not normalized,
--- deleted, or silently accepted here.
+-- conflict-arbiter, constraint/index, referential-action and rewrite-reachability-free
+-- contract before Wave 1 can consider it eligible for authority use. Invalid
+-- historical shape/rows or hidden mutation/write-constraining behavior fail; rows
+-- are not normalized, deleted, or silently accepted here.
 
 -- A table name is not conformance. Verify the exact ordinary-table shape that makes
 -- compare-and-advance single-winner and preserves the accepted BIGINT fence domain.
@@ -287,6 +287,26 @@ BEGIN
          WHERE r.ev_class = v_table
     ) THEN
         RAISE EXCEPTION 'authority_fences has unexpected rewrite rule behavior';
+    END IF;
+
+    -- A clean rule surface on the fence table itself does not prove absence of
+    -- owner-privileged views/rules elsewhere. PostgreSQL stores view/rule query
+    -- dependencies through pg_rewrite -> pg_depend. Any external rewrite object
+    -- that directly depends on the fence relation can later expose or mutate it
+    -- using relation-owner authority even if the fence ACL remains clean. Reject
+    -- every such dependency regardless of schema or current view ACL; later C2
+    -- grants must not reactivate historical authority through an old view/rule.
+    IF EXISTS (
+        SELECT 1
+          FROM pg_rewrite r
+          JOIN pg_depend d
+            ON d.classid = 'pg_rewrite'::regclass
+           AND d.objid = r.oid
+           AND d.refclassid = 'pg_class'::regclass
+           AND d.refobjid = v_table
+         WHERE r.ev_class <> v_table
+    ) THEN
+        RAISE EXCEPTION 'external rewrite dependency can reach authority_fences';
     END IF;
 END
 $$;

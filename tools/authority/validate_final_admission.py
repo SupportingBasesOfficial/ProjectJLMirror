@@ -32,6 +32,7 @@ EXPECTED_MANIFEST = {
         "authorization_policy_revision",
         "principal_authority_revision",
         "principal_id",
+        "principal_kind",
         "principal_credential_generation",
         "action",
         "scope",
@@ -92,6 +93,7 @@ EXPECTED_FINALIZER_ARGUMENTS = [
 REQUIRED_DOC_LAWS = (
     "SERIAL CURRENTNESS CHECKS != FINAL ADMISSION AUTHORITY",
     "CALLER-SUPPLIED NOW != FINAL CURRENTNESS CLOCK",
+    "PRINCIPAL ID/GENERATION MATCH != PRINCIPAL-KIND AUTHORITY",
     "RESOURCE SCOPE ABSENCE != RESOURCE AUTHORITY",
     "ACTION MATCH != DECLARATION-SCOPE MATCH",
     "CROSS-TENANT ACTION MATCH != TARGET-SET AUTHORITY",
@@ -105,6 +107,7 @@ REQUIRED_TEST_NAMES = (
     "test_serial_green_without_final_admission_authority_fails_closed",
     "test_malformed_or_noncurrent_final_admission_fails_closed",
     "test_final_principal_or_action_binding_mismatch_fails_closed",
+    "test_final_principal_kind_binding_mismatch_fails_closed",
     "test_final_declaration_scope_or_tenant_requirement_mismatch_fails_closed",
     "test_resource_declaration_requires_explicit_scope",
     "test_non_resource_declaration_rejects_resource_scope",
@@ -209,6 +212,9 @@ def validate_source_contract_text(text: str, model_text: str | None = None) -> l
             )
         evidence_text = ast.unparse(evidence)
         for token in (
+            "principal_kind",
+            "PrincipalKind",
+            "principal_kind must be a canonical PrincipalKind",
             "scope must be a canonical ScopeClass",
             "tenant_requirement must be a canonical TenantRequirement",
             "cross_tenant_target",
@@ -278,6 +284,8 @@ def validate_source_contract_text(text: str, model_text: str | None = None) -> l
             findings.append("final-admission helper does not enforce FinalAdmissionEvidence type")
         helper_text = ast.unparse(helper)
         for token in (
+            "evidence.principal_kind",
+            "principal.kind",
             "evidence.scope",
             "declaration.scope",
             "evidence.tenant_requirement",
@@ -357,6 +365,7 @@ def _docs_findings() -> list[str]:
         "FinalAdmissionEvidence",
         "serial currentness checks",
         "caller/request `now`",
+        "principal kind",
         "executing-runtime authority",
         "resource scope",
         "cross-tenant target",
@@ -417,7 +426,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}")
         return 1
-    print("RESULT: PASS — final admission binds declaration, resource, cross-tenant target and current executing-runtime authority")
+    print("RESULT: PASS — final admission binds principal kind, declaration, resource, cross-tenant target and current executing-runtime authority")
     print("NOTE: PASS is conformance evidence only; final-admission mechanism remains a replaceable C2 choice.")
     return 0
 

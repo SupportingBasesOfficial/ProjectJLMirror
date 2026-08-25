@@ -11,7 +11,8 @@
     "principal_authority_revision",
     "principal_id",
     "principal_credential_generation",
-    "action"
+    "action",
+    "resource_scope"
   ],
   "required_tenant_bindings_when_applicable": [
     "tenant_id",

@@ -22,9 +22,13 @@ class FenceCollationTests(unittest.TestCase):
         text = SQL_001.read_text(encoding="utf-8")
         self.assertEqual(validate_fence_sql_text(text), [])
 
-        weakened = text.replace('fence_scope_id text COLLATE "C" PRIMARY KEY', 'fence_scope_id text PRIMARY KEY', 1)
+        weakened = text.replace(
+            'fence_scope_id text COLLATE "C" NOT NULL',
+            'fence_scope_id text NOT NULL',
+            1,
+        )
         findings = validate_fence_sql_text(weakened)
-        self.assertTrue(any('fence_scope_id text COLLATE "C" PRIMARY KEY' in item for item in findings))
+        self.assertTrue(any('fence_scope_id text COLLATE "C" NOT NULL' in item for item in findings))
 
         weakened = text.replace(
             'authority_fences.fence_scope_id COLLATE "C" = p_fence_scope_id COLLATE "C"',

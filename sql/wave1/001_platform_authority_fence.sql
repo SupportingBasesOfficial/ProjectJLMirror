@@ -12,10 +12,10 @@
 -- If the table is absent but the platform namespace or either canonical fence routine
 -- already exists, bootstrap fails closed rather than mutating a partial/reused namespace.
 --
--- Fresh object creation also treats migration-owner default ACLs as authority input.
--- Custom non-owner/PUBLIC default grants for schema/relation/function creation fail
--- closed before the first persistent CREATE, and the resulting concrete ACLs are
--- re-read before COMMIT. PUBLIC revocation alone is never treated as complete proof.
+-- Fresh object creation treats default ACLs and privilege reachability as authority
+-- input. Non-owner/PUBLIC defaults, owner-role reachability, predefined all-data
+-- reachability, or migration-owner SECURITY DEFINER authority fail closed before the
+-- first persistent CREATE. Resulting object ACLs are re-read before COMMIT.
 
 BEGIN;
 
@@ -71,6 +71,58 @@ BEGIN
            AND acl.grantee OPERATOR(pg_catalog.<>) d.defaclrole
     ) THEN
         RAISE EXCEPTION 'Wave 1 fence fresh bootstrap rejects non-owner default ACL grants for authority object creation';
+    END IF;
+
+    -- Object ACL cleanliness would still be insufficient if another login/member can
+    -- assume the migration-owner role and therefore owner-bypass every object ACL.
+    IF EXISTS (
+        WITH RECURSIVE owner_role_members(member_oid) AS (
+            SELECT m.member
+              FROM pg_catalog.pg_auth_members m
+             WHERE m.roleid OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid
+            UNION
+            SELECT m.member
+              FROM pg_catalog.pg_auth_members m
+              JOIN owner_role_members r
+                ON m.roleid OPERATOR(pg_catalog.=) r.member_oid
+        )
+        SELECT 1 FROM owner_role_members
+    ) THEN
+        RAISE EXCEPTION 'Wave 1 fresh bootstrap rejects migration-owner role reachability before authority object creation';
+    END IF;
+
+    -- PostgreSQL predefined all-data roles can bypass ordinary per-table ACL intent.
+    -- No non-owner principal may already reach them when the fence table is created.
+    IF EXISTS (
+        WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (
+            SELECT m.roleid, m.member
+              FROM pg_catalog.pg_auth_members m
+             WHERE m.roleid IN (
+                pg_catalog.to_regrole('pg_read_all_data')::oid,
+                pg_catalog.to_regrole('pg_write_all_data')::oid
+             )
+            UNION
+            SELECT r.role_oid, m.member
+              FROM pg_catalog.pg_auth_members m
+              JOIN all_data_role_members r
+                ON m.roleid OPERATOR(pg_catalog.=) r.member_oid
+        )
+        SELECT 1
+          FROM all_data_role_members
+         WHERE member_oid OPERATOR(pg_catalog.<>) current_user::pg_catalog.regrole::oid
+    ) THEN
+        RAISE EXCEPTION 'Wave 1 fresh bootstrap rejects non-owner predefined all-data authority before fence creation';
+    END IF;
+
+    -- A migration-owner SECURITY DEFINER routine anywhere in the database is residual
+    -- owner authority independent of schema placement/current ACL assumptions.
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_proc p
+         WHERE p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid
+           AND p.prosecdef
+    ) THEN
+        RAISE EXCEPTION 'Wave 1 fresh bootstrap rejects migration-owner SECURITY DEFINER authority before fence creation';
     END IF;
 
     EXECUTE 'CREATE SCHEMA platform';

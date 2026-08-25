@@ -150,7 +150,24 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
 
     required = (
         TRUSTED_MIGRATION_SEARCH_PATH,
+        "DO $wave1_reuse_privilege_preflight$",
+        "pg_catalog.to_regnamespace('platform')",
+        "WITH RECURSIVE owner_role_members(member_oid) AS (",
+        "WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (",
+        "pg_catalog.to_regrole('pg_read_all_data')::oid",
+        "pg_catalog.to_regrole('pg_write_all_data')::oid",
+        "pg_catalog.aclexplode(a.attacl) AS acl",
+        "p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid",
+        "AND p.prosecdef",
         "v_pk_index oid",
+        "v_btree_am oid",
+        "v_text_btree_opclass oid",
+        "FROM pg_catalog.pg_am am",
+        "FROM pg_catalog.pg_opclass opc",
+        "opc.opcnamespace OPERATOR(pg_catalog.=) 'pg_catalog'::pg_catalog.regnamespace",
+        "opc.opcname OPERATOR(pg_catalog.=) 'text_ops'",
+        "opc.opcintype OPERATOR(pg_catalog.=) 'text'::pg_catalog.regtype",
+        "opc.opcdefault",
         "pg_catalog.to_regclass('platform.authority_fences')",
         "SELECT ROW(relkind, relpersistence, relispartition, relrowsecurity, relforcerowsecurity)",
         "ROW('r'::\"char\", 'p'::\"char\", false, false, false)",
@@ -173,6 +190,10 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
         "i.indnatts OPERATOR(pg_catalog.=) 1",
         "i.indexprs IS NULL",
         "i.indpred IS NULL",
+        "JOIN pg_catalog.pg_class index_class",
+        "index_class.relam OPERATOR(pg_catalog.=) v_btree_am",
+        "i.indcollation[0] OPERATOR(pg_catalog.=) 'pg_catalog.\"C\"'::pg_catalog.regcollation::oid",
+        "i.indclass[0] OPERATOR(pg_catalog.=) v_text_btree_opclass",
         "authority_fences contains noncanonical index metadata",
         "c.conrelid OPERATOR(pg_catalog.=) v_table OR c.confrelid OPERATOR(pg_catalog.=) v_table",
         "authority_fences cannot participate in foreign-key referential actions",
@@ -186,7 +207,6 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
         "external rewrite dependency can reach authority_fences",
         "pg_catalog.pg_subscription_rel",
         "logical replication subscription can write authority_fences",
-        "FROM pg_catalog.pg_constraint c\n          JOIN pg_catalog.pg_depend d",
         "LEFT JOIN pg_catalog.pg_proc p",
         "LEFT JOIN pg_catalog.pg_operator o",
         "'pg_catalog.pg_collation'::pg_catalog.regclass",
@@ -252,15 +272,17 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
 
     pk_guard = re.compile(
         r"SELECT\s+c\.conindid\s+INTO\s+v_pk_index.*?FROM\s+pg_catalog\.pg_constraint\s+c.*?"
-        r"JOIN\s+pg_catalog\.pg_index\s+i.*?c\.conname.*?wave1_authority_fences_pkey.*?"
-        r"NOT\s+c\.condeferrable.*?NOT\s+c\.condeferred.*?c\.convalidated.*?"
-        r"i\.indisprimary.*?i\.indisunique.*?i\.indimmediate.*?i\.indisvalid.*?"
-        r"i\.indisready.*?i\.indislive.*?i\.indnkeyatts.*?1.*?i\.indnatts.*?1.*?"
-        r"i\.indexprs\s+IS\s+NULL.*?i\.indpred\s+IS\s+NULL",
+        r"JOIN\s+pg_catalog\.pg_index\s+i.*?JOIN\s+pg_catalog\.pg_class\s+index_class.*?"
+        r"c\.conname.*?wave1_authority_fences_pkey.*?NOT\s+c\.condeferrable.*?"
+        r"NOT\s+c\.condeferred.*?c\.convalidated.*?i\.indisprimary.*?i\.indisunique.*?"
+        r"i\.indimmediate.*?i\.indisvalid.*?i\.indisready.*?i\.indislive.*?"
+        r"i\.indnkeyatts.*?1.*?i\.indnatts.*?1.*?i\.indexprs\s+IS\s+NULL.*?"
+        r"i\.indpred\s+IS\s+NULL.*?index_class\.relam.*?v_btree_am.*?"
+        r"i\.indcollation\[0\].*?pg_catalog.*?C.*?i\.indclass\[0\].*?v_text_btree_opclass",
         re.IGNORECASE | re.DOTALL,
     )
     if pk_guard.search(code) is None:
-        findings.append("IR-D-003 persisted fence primary key must be the canonical immediate valid ready conflict arbiter")
+        findings.append("IR-D-003 persisted fence primary key must bind canonical C collation and pg_catalog btree text_ops conflict semantics")
 
     if code.count(CANONICAL_FUNCTION_SEARCH_PATH) != 2:
         findings.append("IR-D-003 revalidation must canonicalize exactly both fence routines with pg_catalog-only search_path")
@@ -270,11 +292,15 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
     if "UPDATE platform.authority_fences" in pre_function or "DELETE FROM platform.authority_fences" in pre_function:
         findings.append("IR-D-003 reuse validation must not normalize/delete historical authority rows to make validation pass")
 
+    privilege_pos = normalized.find("DO $wave1_reuse_privilege_preflight$")
+    structural_pos = normalized.find("DO $wave1_revalidate$")
+    mutation_pos = normalized.find("ALTER TABLE platform.authority_fences")
     drop_pos = normalized.find("DROP CONSTRAINT wave1_fence_scope_id_canonical")
     validate_pos = normalized.find("VALIDATE CONSTRAINT wave1_fence_state_canonical")
     function_pos = normalized.find(function_marker)
     commit_pos = normalized.rfind("COMMIT;")
-    if min(drop_pos, validate_pos, function_pos, commit_pos) >= 0 and not (drop_pos < validate_pos < function_pos < commit_pos):
-        findings.append("IR-D-003 reuse validation/canonicalization ordering must complete before function replacement and commit")
+    if min(privilege_pos, structural_pos, mutation_pos, drop_pos, validate_pos, function_pos, commit_pos) >= 0:
+        if not (privilege_pos < structural_pos < mutation_pos <= drop_pos < validate_pos < function_pos < commit_pos):
+            findings.append("IR-D-003 reuse privilege+structural admission must complete before any canonical mutation and commit")
 
     return findings

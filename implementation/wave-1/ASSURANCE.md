@@ -43,8 +43,9 @@ Required exact-HEAD evidence before merge readiness:
 - schema placement never narrows migration-owner definer authority: no `p.pronamespace = v_schema` boundary can substitute for database-wide owner-definer absence;
 - local trigger/rule cleanliness on `platform.authority_fences` never proves external rewrite/view reachability is absent: pre-C2 revalidation joins `pg_rewrite` to `pg_depend` and rejects every external rewrite object whose relation dependency directly references the fence table;
 - local ACL/trigger/rewrite/definer cleanliness never proves logical-replication writer absence: structural revalidation rejects any `pg_catalog.pg_subscription_rel` mapping whose `srrelid` is the fence table;
-- event-trigger catalog cleanliness alone never proves a closed DDL execution window: migration 002 executes exactly one `SET LOCAL event_triggers = off`, proves `current_setting('event_triggers') = 'off'`, and only then rejects any already-present `pg_catalog.pg_event_trigger` row with `evtenabled <> 'D'` before fence DDL;
-- concurrent event-trigger creation/enabling after the catalog preflight cannot execute inside migration 002 while its transaction-local `event_triggers=off` remains effective; this does not claim permanent database-wide event-trigger absence after the transaction;
+- event-trigger catalog cleanliness alone never proves a closed DDL execution window: **both migration 001 and migration 002** execute exactly one `SET LOCAL event_triggers = off`, prove `current_setting('event_triggers') = 'off'`, and only then reject any already-present `pg_catalog.pg_event_trigger` row with `evtenabled <> 'D'` before fence DDL;
+- migration 001 closes that event-trigger execution window before its first `CREATE SCHEMA` and keeps all bootstrap schema/table/function/default-privilege DDL inside one explicit transaction through final `COMMIT`;
+- concurrent event-trigger creation/enabling after either catalog preflight cannot execute inside that migration while its transaction-local `event_triggers=off` remains effective; this does not claim permanent database-wide event-trigger absence after commit;
 - canonical CHECK replacement in migration 002 is one explicit PostgreSQL transaction, with event-trigger execution disabled/preflighted before fence DDL and `ACCESS EXCLUSIVE` acquired before structural revalidation and retained through replacement validation and final `COMMIT`; statement-autocommit execution cannot durably expose a dropped/partially replaced constraint set;
 - no residual C2 product is silently promoted to architecture authority;
 - no Product/domain endpoint family is introduced beyond accepted authority;
@@ -83,10 +84,11 @@ Mandatory falsification includes:
 - removing, misdirecting or comment-laundering the `pg_rewrite -> pg_depend -> v_table` external dependency guard -> validator finding;
 - a logical-replication subscriber mapping with `pg_subscription_rel.srrelid = platform.authority_fences` -> revalidation failure;
 - removing, redirecting or comment-laundering the `pg_subscription_rel -> v_table` writer guard -> validator finding;
-- removing `SET LOCAL event_triggers = off`, replacing it with session-persistent `SET`, adding a later re-enable, moving it after the preflight/DDL, or satisfying it only through comments -> validator finding;
-- removing the `current_setting('event_triggers') = 'off'` proof, redirecting `pg_catalog.pg_event_trigger`, inverting `evtenabled <> 'D'`, moving catalog preflight after fence DDL or comment-laundering the guard -> validator finding;
-- removing the leading `BEGIN`, final `COMMIT`, or `ACCESS EXCLUSIVE` table lock from migration 002 -> validator finding;
-- moving the fence lock after structural validation or introducing an early/intermediate `COMMIT` before canonical constraint validation -> validator finding;
+- removing `SET LOCAL event_triggers = off` from either migration 001 or 002, replacing it with session-persistent `SET`, adding a later re-enable, moving it after the preflight/DDL, or satisfying it only through comments -> validator finding;
+- removing `current_setting('event_triggers') = 'off'` proof from either migration, redirecting `pg_catalog.pg_event_trigger`, inverting `evtenabled <> 'D'`, moving catalog preflight after fence DDL or comment-laundering the guard -> validator finding;
+- removing the leading `BEGIN` or final `COMMIT` from either migration 001 or migration 002 -> validator finding;
+- moving migration 001 event-trigger guard after its first DDL or introducing an early/intermediate commit that splits bootstrap DDL from its guarded transaction -> validator finding;
+- removing `ACCESS EXCLUSIVE` from migration 002, moving its lock after structural validation, or introducing an early/intermediate `COMMIT` before canonical constraint validation -> validator finding;
 - valid final evidence returns the final owning authorization policy revision, not an earlier serial authorization revision;
 - no caller-supplied `now` reaches the final-admission port.
 

@@ -19,7 +19,7 @@ class FenceRevalidationSafetyTests(unittest.TestCase):
     def text(self) -> str:
         return SQL_PATH.read_text(encoding="utf-8")
 
-    def test_real_migration_is_atomic_and_replication_safe(self):
+    def test_real_migration_is_atomic_replication_and_event_trigger_safe(self):
         self.assertEqual(validate_revalidation_safety_text(self.text()), [])
 
     def test_missing_begin_fails_closed(self):
@@ -56,6 +56,44 @@ class FenceRevalidationSafetyTests(unittest.TestCase):
         weakened = text.replace(lock, "", 1).replace("END\n$$;", "END\n$$;\n\n" + lock, 1)
         findings = validate_revalidation_safety_text(weakened)
         self.assertTrue(any("ordering" in finding for finding in findings))
+
+    def test_event_trigger_guard_requires_pg_event_trigger_catalog(self):
+        weakened = self.text().replace(
+            "FROM pg_catalog.pg_event_trigger et",
+            "FROM pg_catalog.pg_trigger et",
+            1,
+        )
+        findings = validate_revalidation_safety_text(weakened)
+        self.assertTrue(any("event trigger" in finding.lower() for finding in findings))
+
+    def test_event_trigger_guard_must_reject_every_non_disabled_trigger(self):
+        weakened = self.text().replace(
+            "WHERE et.evtenabled <> 'D'",
+            "WHERE et.evtenabled = 'D'",
+            1,
+        )
+        findings = validate_revalidation_safety_text(weakened)
+        self.assertTrue(any("event trigger" in finding.lower() for finding in findings))
+
+    def test_event_trigger_guard_must_precede_fence_ddl(self):
+        text = self.text()
+        marker = "SELECT 1 / CASE\n    WHEN EXISTS (\n        SELECT 1\n          FROM pg_catalog.pg_event_trigger et\n         WHERE et.evtenabled <> 'D'\n    ) THEN 0\n    ELSE 1\nEND AS wave1_event_trigger_guard;\n\n"
+        weakened = text.replace(marker, "", 1).replace(
+            "ALTER TABLE platform.authority_fences\n    ALTER COLUMN fence_scope_id SET NOT NULL,",
+            marker + "ALTER TABLE platform.authority_fences\n    ALTER COLUMN fence_scope_id SET NOT NULL,",
+            1,
+        )
+        findings = validate_revalidation_safety_text(weakened)
+        self.assertTrue(any("event-trigger" in finding.lower() or "event trigger" in finding.lower() for finding in findings))
+
+    def test_event_trigger_guard_cannot_be_comment_laundered(self):
+        weakened = self.text().replace(
+            "FROM pg_catalog.pg_event_trigger et",
+            "FROM pg_catalog.pg_trigger et\n         -- FROM pg_catalog.pg_event_trigger et",
+            1,
+        )
+        findings = validate_revalidation_safety_text(weakened)
+        self.assertTrue(any("event trigger" in finding.lower() for finding in findings))
 
     def test_logical_replication_guard_requires_pg_subscription_rel(self):
         weakened = self.text().replace(

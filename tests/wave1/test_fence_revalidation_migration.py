@@ -121,6 +121,30 @@ class FenceRevalidationMigrationTests(unittest.TestCase):
         findings = validate_fence_revalidation_sql_text(weakened)
         self.assertTrue(any("foreign-key" in f or "referential-action" in f for f in findings))
 
+    def test_external_rewrite_dependency_guard_requires_pg_depend(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace("JOIN pg_depend d", "JOIN pg_class d", 1)
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("external rewrite" in f or "pg_depend" in f for f in findings))
+
+    def test_external_rewrite_dependency_guard_must_bind_fence_table(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace("AND d.refobjid = v_table", "AND d.refobjid <> v_table", 1)
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("external rewrite" in f or "d.refobjid" in f for f in findings))
+
+    def test_external_rewrite_dependency_guard_must_be_external(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace("WHERE r.ev_class <> v_table", "WHERE r.ev_class = v_table", 1)
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("external rewrite" in f or "r.ev_class" in f for f in findings))
+
+    def test_external_rewrite_dependency_guard_cannot_be_comment_laundered(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace("AND d.refobjid = v_table", "AND false", 1) + "\n-- AND d.refobjid = v_table\n"
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("external rewrite" in f or "d.refobjid" in f for f in findings))
+
     def test_revalidation_requires_expected_column_types(self):
         text = SQL_PATH.read_text(encoding="utf-8")
         weakened = text.replace(

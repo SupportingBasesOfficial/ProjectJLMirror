@@ -250,6 +250,7 @@ class FinalAdmissionEvidence:
     executing_runtime_authority_revision: str | None = None
     executing_runtime_profile_id: str | None = None
     executing_runtime_generation: str | None = None
+    executing_runtime_environment_class: EnvironmentClass | None = None
 
     def __post_init__(self) -> None:
         _strict_bool(self.granted, "granted")
@@ -329,6 +330,7 @@ class FinalAdmissionEvidence:
             self.executing_runtime_authority_revision,
             self.executing_runtime_profile_id,
             self.executing_runtime_generation,
+            self.executing_runtime_environment_class,
         )
         if any(value is None for value in runtime_values):
             raise ValueError("every final admission must bind current executing-runtime authority")
@@ -342,6 +344,8 @@ class FinalAdmissionEvidence:
             "runtime.",
         )
         _identifier(self.executing_runtime_generation, "executing_runtime_generation")
+        if not isinstance(self.executing_runtime_environment_class, EnvironmentClass):
+            raise ValueError("executing_runtime_environment_class must be canonical")
 
 
 class CurrentPrincipalAuthorityPort(Protocol):
@@ -644,11 +648,19 @@ def _finalize_current_admission(
         evidence.executing_runtime_authority_revision is None
         or evidence.executing_runtime_profile_id != runtime_binding.runtime_profile_id
         or evidence.executing_runtime_generation is None
+        or evidence.executing_runtime_environment_class is None
     ):
         raise AdmissionDenied("final admission lacks exact current executing-runtime authority")
+    try:
+        runtime_binding.admit_environment(evidence.executing_runtime_environment_class)
+    except AdmissionDenied:
+        raise
+    except Exception as exc:
+        raise AdmissionDenied("final admission executing-runtime environment is not admissible") from exc
     if latest_runtime_evidence is not None and (
         evidence.executing_runtime_profile_id != latest_runtime_evidence.runtime_profile_id
         or evidence.executing_runtime_generation != latest_runtime_evidence.runtime_generation
+        or evidence.executing_runtime_environment_class is not latest_runtime_evidence.environment_class
     ):
         raise AdmissionDenied("final admission executing-runtime authority changed")
     if declaration.tenant_requirement is TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED and (

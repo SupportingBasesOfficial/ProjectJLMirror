@@ -39,6 +39,33 @@ class FenceCollationTests(unittest.TestCase):
         weakened = text.replace(token, "false", 1)
         self.assertTrue(any("dependency" in item or "collation" in item for item in validate_fence_revalidation_sql_text(weakened)))
 
+    def test_reused_primary_key_must_prove_index_c_collation(self):
+        text = SQL_002.read_text(encoding="utf-8")
+        token = "i.indcollation[0] OPERATOR(pg_catalog.=) 'pg_catalog.\"C\"'::pg_catalog.regcollation::oid"
+        weakened = text.replace(token, "i.indcollation[0] OPERATOR(pg_catalog.<>) 0", 1)
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("primary key" in item.lower() or "collation" in item.lower() for item in findings), findings)
+
+    def test_reused_primary_key_must_prove_catalog_text_btree_opclass(self):
+        text = SQL_002.read_text(encoding="utf-8")
+        weakened = text.replace(
+            "i.indclass[0] OPERATOR(pg_catalog.=) v_text_btree_opclass",
+            "i.indclass[0] OPERATOR(pg_catalog.<>) v_text_btree_opclass",
+            1,
+        )
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("primary key" in item.lower() or "opclass" in item.lower() for item in findings), findings)
+
+    def test_reused_primary_key_must_be_catalog_btree(self):
+        text = SQL_002.read_text(encoding="utf-8")
+        weakened = text.replace(
+            "index_class.relam OPERATOR(pg_catalog.=) v_btree_am",
+            "index_class.relam OPERATOR(pg_catalog.<>) v_btree_am",
+            1,
+        )
+        findings = validate_fence_revalidation_sql_text(weakened)
+        self.assertTrue(any("primary key" in item.lower() for item in findings), findings)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

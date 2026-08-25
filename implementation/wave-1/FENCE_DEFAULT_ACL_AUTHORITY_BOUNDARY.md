@@ -20,6 +20,25 @@ MATERIALIZED OBJECT ACL CLEAN != DEFAULT ACL SAFE FOR FUTURE CREATE
 CREATE SUCCEEDED != AUTHORITY ADMISSIBLE
 ```
 
+## Fresh bootstrap privilege reachability
+
+Fresh-object ACL checks also cannot prove that the migration owner is unreachable through role membership or that PostgreSQL's predefined all-data roles cannot immediately reach the newly created table. Likewise, a migration-owner `SECURITY DEFINER` routine anywhere in the database is residual owner authority independent of the new object's direct ACL.
+
+Before the first persistent `CREATE`, migration 001 therefore also rejects:
+
+- any direct or transitive `pg_auth_members` path into the current migration-owner role;
+- any non-owner principal that can reach `pg_read_all_data` or `pg_write_all_data` through direct or transitive membership;
+- any database-wide routine owned by the migration authority with `prosecdef=true`.
+
+This mirrors the reuse privilege model **before** bootstrap can commit the first authority object, rather than relying on migration 002/003 to detect exposure later.
+
+```text
+OBJECT ACL CLEAN != OWNER ROLE UNASSUMABLE
+OBJECT ACL CLEAN != PREDEFINED ALL-DATA AUTHORITY ABSENT
+SCHEMA LOCATION != DEFINER AUTHORITY BOUNDARY
+POST-BOOTSTRAP REJECTION != FAIL-CLOSED BOOTSTRAP
+```
+
 ## Reuse requires a complete canonical routine set
 
 Migration 002 is reuse admission, not repair/bootstrap. If the reused schema/table exists but either canonical fence routine is absent, the object set is incomplete and reuse fails closed before structural mutation.
@@ -45,6 +64,9 @@ pg_catalog.aclexplode
 pg_default_acl.defaclrole
 pg_default_acl.defaclnamespace
 pg_default_acl.defaclobjtype
+pg_catalog.pg_auth_members
+pg_catalog.to_regrole('pg_read_all_data')
+pg_catalog.to_regrole('pg_write_all_data')
 pg_namespace.nspacl
 pg_class.relacl
 pg_attribute.attacl
@@ -63,6 +85,9 @@ Observer-only assurance SHALL fail when any of these conditions is introduced:
 - fresh bootstrap stops inspecting the migration owner's applicable global `pg_default_acl` rows before first persistent object creation;
 - schema/relation/function object-type coverage is narrowed so one created authority class can inherit an unchecked custom grant;
 - the default-ACL owner binding or non-owner grantee predicate is removed/inverted;
+- fresh bootstrap permits direct/transitive membership into the migration-owner role before authority object creation;
+- fresh bootstrap permits a non-owner principal to reach `pg_read_all_data` or `pg_write_all_data` before authority object creation;
+- fresh bootstrap permits any migration-owner `SECURITY DEFINER` routine to survive before the new fence objects are created;
 - fresh bootstrap omits its materialized schema/table/column/function ACL assertion before commit;
 - PUBLIC revocation is represented as proof that named-role default grants are absent;
 - reuse accepts a missing initialize or advance routine and allows canonicalization to create it;

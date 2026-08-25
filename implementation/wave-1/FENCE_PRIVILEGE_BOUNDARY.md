@@ -16,10 +16,11 @@ A reused `platform.authority_fences` boundary is admissible for Wave 1 only when
 8. no `SECURITY DEFINER` routine owned by the current migration authority survives **anywhere in the database**, regardless of schema or current EXECUTE ACL;
 9. no external `pg_rewrite` object/view/rule has a `pg_depend` relation dependency on `platform.authority_fences`;
 10. no `pg_subscription_rel` mapping targets `platform.authority_fences`; logical-replication apply is an independent writer surface and is not implied absent by clean local ACL/rewrite/trigger state;
-11. no PostgreSQL event trigger remains enabled in the database before migration 002 executes event-trigger-capable fence DDL; a database-wide DDL hook is not implied absent by clean row-trigger/rewrite/ACL/definer/replication state;
-12. the two canonical Wave 1 fence functions remain `SECURITY INVOKER`;
-13. migration `002_revalidate_authority_fence_contract.sql` executes event-trigger preflight, validation and canonical CHECK replacement inside one explicit transaction while holding `ACCESS EXCLUSIVE` on the authority table until the final commit;
-14. this revalidation performs no `GRANT`, `ALTER OWNER` or `SET ROLE` and therefore cannot silently select the residual C2 role mapping.
+11. migration 002 executes with transaction-local `event_triggers = off` before any event-trigger-capable fence DDL, and the setting is proved effective before DDL;
+12. the same migration rejects any already-present `pg_event_trigger` row with `evtenabled <> 'D'`; the catalog preflight is cleanliness evidence, while the transaction-local disable closes concurrent event-trigger execution TOCTOU;
+13. the two canonical Wave 1 fence functions remain `SECURITY INVOKER`;
+14. migration `002_revalidate_authority_fence_contract.sql` executes event-trigger disable/preflight, validation and canonical CHECK replacement inside one explicit transaction while holding `ACCESS EXCLUSIVE` on the authority table until the final commit;
+15. this revalidation performs no `GRANT`, `ALTER OWNER` or `SET ROLE` and therefore cannot silently select the residual C2 role mapping.
 
 `pg_class.relacl` and `pg_attribute.attacl` are distinct privilege surfaces. A clean table ACL is not evidence that historical `SELECT(column)` / `UPDATE(column)` grants are absent. Column ACL inspection covers every `attnum > 0`, non-dropped column and rejects every grantee other than the already-proven table/migration owner; PUBLIC (`oid 0`) is therefore rejected as well.
 
@@ -31,9 +32,11 @@ Local fence rewrite cleanliness is likewise incomplete evidence. A view or rewri
 
 Logical replication is a separate authority path again. A subscriber apply worker can write a mapped relation without appearing as an ordinary application ACL, trigger, view or definer routine. The structural revalidation therefore rejects **every** `pg_catalog.pg_subscription_rel` row whose `srrelid` is the fence table, regardless of current subscription state or intended operator use. Replicating fence authority later is a reviewed authority/recovery design, not a reuse-time default.
 
-Database event triggers are a separate DDL authority path. An enabled `ddl_command_start`, `ddl_command_end`, `sql_drop`, `table_rewrite` or other event-trigger hook can execute inside the migration session when the revalidation performs `ALTER TABLE`, including after earlier catalog checks have passed. Row-level `pg_trigger`, object ACL, rewrite, definer and subscription scans do not prove that this database-wide DDL hook is absent. Migration 002 therefore performs an executable `pg_catalog.pg_event_trigger` preflight **before** event-trigger-capable fence DDL and fails closed if any event trigger has `evtenabled <> 'D'`. Wave 1 does not attempt tag inference or allowlist-by-convenience: coexistence with enabled event triggers is a separately reviewed migration/C2 decision.
+Database event triggers are a separate DDL authority path. Row-level `pg_trigger`, object ACL, rewrite, definer and subscription scans do not prove that a database-wide DDL hook cannot execute. A catalog preflight alone is also insufficient because another privileged session could create or enable an event trigger after the check and before later `ALTER TABLE` statements. Migration 002 therefore starts an explicit transaction, executes exactly one `SET LOCAL event_triggers = off`, proves `current_setting('event_triggers') = 'off'`, then performs the `pg_catalog.pg_event_trigger` cleanliness preflight before fence DDL. If the migration authority cannot set the parameter, execution fails closed. A concurrent trigger definition cannot fire in this migration transaction while the local setting remains off. Wave 1 does not grant the privilege to change this parameter; how the migration principal receives narrowly governed execution authority remains an implementation/operations concern subordinate to the accepted privilege model.
 
-Constraint revalidation is also an authority mutation, not merely a lint step. Dropping canonical checks under per-statement autocommit could make a failed migration leave the table durably weaker. Migration 002 therefore starts one explicit transaction, performs the event-trigger preflight, obtains `LOCK TABLE platform.authority_fences IN ACCESS EXCLUSIVE MODE`, performs structural checks and CHECK replacement/validation while that lock is retained, and commits only after all canonical constraints validate. PostgreSQL transactional DDL then makes any error abort the complete replacement instead of committing a partially weakened fence table.
+The catalog preflight and the session execution guard have different meanings. The preflight rejects a database that already contains enabled event triggers rather than silently normalizing it. `SET LOCAL event_triggers = off` closes the execution window for this migration even if a privileged concurrent actor changes event-trigger catalog state after the preflight. Neither claim means the database will permanently contain no event triggers after the transaction; any later fence DDL must re-establish its own event-trigger execution boundary.
+
+Constraint revalidation is also an authority mutation, not merely a lint step. Dropping canonical checks under per-statement autocommit could make a failed migration leave the table durably weaker. Migration 002 therefore starts one explicit transaction, closes event-trigger execution, performs the catalog preflight, obtains `LOCK TABLE platform.authority_fences IN ACCESS EXCLUSIVE MODE`, performs structural checks and CHECK replacement/validation while that lock is retained, and commits only after all canonical constraints validate. PostgreSQL transactional DDL then makes any error abort the complete replacement instead of committing a partially weakened fence table.
 
 This proof intentionally does not claim to remove PostgreSQL superuser or cluster-admin authority. Such infrastructure authority remains outside this modeled application-role boundary and must be governed by the selected C2/operations implementation. It also does not grant the migration owner runtime serving authority merely because that owner is excluded from the non-owner predefined-role check.
 
@@ -47,6 +50,8 @@ SCHEMA LOCATION != DEFINER AUTHORITY BOUNDARY
 LOCAL FENCE RULE CLEAN != EXTERNAL REWRITE REACHABILITY ABSENT
 LOCAL DATABASE AUTHORITY SURFACES CLEAN != LOGICAL REPLICATION WRITER ABSENT
 ROW/TABLE HOOKS CLEAN != DATABASE DDL EVENT-TRIGGER ABSENCE
+EVENT-TRIGGER CATALOG PREFLIGHT != CLOSED EVENT-TRIGGER EXECUTION WINDOW
+SESSION-LOCAL EVENT-TRIGGER DISABLE != PERMANENT DATABASE EVENT-TRIGGER ABSENCE
 VALIDATED CONSTRAINT SHAPE != ATOMIC CONSTRAINT REPLACEMENT
 TRANSACTIONAL DDL WITHOUT HELD TABLE LOCK != CLOSED REVALIDATION WINDOW
 OBJECT OWNER == CURRENT MIGRATION AUTHORITY != OWNER ROLE UNASSUMABLE
@@ -79,14 +84,17 @@ The observer-only validators and Wave 1 tests must fail when any of the followin
 - `pg_catalog.pg_subscription_rel` as the logical-replication subscriber mapping catalog;
 - exact mapping predicate `sr.srrelid = v_table`;
 - the explicit fail-closed exception for logical-replication writer reachability;
+- exactly one executable `SET LOCAL event_triggers = off` before event-trigger-capable fence DDL;
+- `current_setting('event_triggers')` proving the session-local disable remains effective at preflight;
 - `pg_catalog.pg_event_trigger` as the database-wide DDL-hook catalog;
-- exact fail-closed predicate `et.evtenabled <> 'D'`;
-- the event-trigger guard occurring before the fence lock/validation and before the first fence `ALTER TABLE`;
-- any attempt to satisfy the event-trigger guard only through comments;
+- exact fail-closed catalog predicate `et.evtenabled <> 'D'`;
+- ordering `BEGIN -> SET LOCAL event_triggers=off -> catalog preflight -> fence lock/validation -> fence DDL -> COMMIT`;
+- any later `SET ... event_triggers` that can re-enable execution inside the transaction;
+- any attempt to satisfy the event-trigger controls only through comments;
 - the single leading `BEGIN;` and final `COMMIT;` transaction boundary;
 - `LOCK TABLE platform.authority_fences IN ACCESS EXCLUSIVE MODE` occurring before structural revalidation;
 - any early/intermediate commit that can separate constraint drop from replacement validation.
 
 Comment text cannot satisfy these executable invariants because privilege/revalidation validation runs on comment-stripped SQL.
 
-Any later C2 role mapping is a separate reviewed decision and may grant only the exact least-privilege capability accepted for the chosen runtime/database mechanism. It cannot rely on historical residual ACLs, predefined-role membership, residual definer routines, external rewrite/view reachability, logical-replication mappings, enabled database event triggers or non-atomic migration execution as an implementation shortcut.
+Any later C2 role mapping is a separate reviewed decision and may grant only the exact least-privilege capability accepted for the chosen runtime/database mechanism. It cannot rely on historical residual ACLs, predefined-role membership, residual definer routines, external rewrite/view reachability, logical-replication mappings, database event-trigger execution or non-atomic migration execution as an implementation shortcut.

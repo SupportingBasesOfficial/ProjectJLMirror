@@ -22,6 +22,7 @@ REQUIRED_PANORAMIC_SUBSTITUTIONS = {
     "nondeterministic_collation_for_fence_scope_authority",
     "resource_scope_absence_for_resource_authority",
     "resource_scope_on_non_resource_authority",
+    "table_acl_clean_for_column_acl_clean",
 }
 
 

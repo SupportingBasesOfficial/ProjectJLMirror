@@ -168,6 +168,7 @@ def tenant_final_evidence(context, **overrides):
         authorization_policy_revision="authz-final-r9",
         principal_authority_revision="principal-r9",
         principal_id=context.principal_id,
+        principal_kind=PrincipalKind.HUMAN_BROWSER_SESSION,
         principal_credential_generation=context.principal_credential_generation,
         action="organization.memberships.read",
         scope=ScopeClass.TENANT,
@@ -234,6 +235,7 @@ def cross_final_evidence(**overrides):
         authorization_policy_revision="platform-authz-r10",
         principal_authority_revision="principal-r10",
         principal_id="platform-admin-1",
+        principal_kind=PrincipalKind.PLATFORM_ADMIN_PRINCIPAL,
         principal_credential_generation="session-g7",
         action="platform.tenants.suspend",
         scope=ScopeClass.PLATFORM,
@@ -318,6 +320,14 @@ class AtomicFinalAdmissionTests(unittest.TestCase):
             with self.subTest(evidence=evidence), self.assertRaises(AdmissionDenied):
                 self.authorization_authority.calls = 0
                 self.tenant_call(Finalizer(evidence))
+
+    def test_final_principal_kind_binding_mismatch_fails_closed(self):
+        evidence = tenant_final_evidence(
+            self.context,
+            principal_kind=PrincipalKind.MACHINE_API_PRINCIPAL,
+        )
+        with self.assertRaises(AdmissionDenied):
+            self.tenant_call(Finalizer(evidence))
 
     def test_final_declaration_scope_or_tenant_requirement_mismatch_fails_closed(self):
         for evidence in (

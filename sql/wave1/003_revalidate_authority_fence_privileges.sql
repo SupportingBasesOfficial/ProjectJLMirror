@@ -7,16 +7,20 @@
 -- path can assume/inherit the migration-owner authority, that no non-owner role
 -- can reach PostgreSQL predefined all-data authority, and that no migration-owner
 -- SECURITY DEFINER routine survives anywhere in the database before C2 role mapping.
--- It does not choose role names or grant serving/runtime authority.
+-- The migration search_path is fixed to pg_catalog and both canonical fence routines
+-- must themselves carry the exact pg_catalog-only function search_path.
 
-DO $$
+BEGIN;
+SET LOCAL search_path = pg_catalog;
+
+DO $wave1_privilege_revalidation$
 DECLARE
-    v_schema oid := to_regnamespace('platform');
-    v_table regclass := to_regclass('platform.authority_fences');
-    v_initialize regprocedure := to_regprocedure(
+    v_schema oid := pg_catalog.to_regnamespace('platform');
+    v_table pg_catalog.regclass := pg_catalog.to_regclass('platform.authority_fences');
+    v_initialize pg_catalog.regprocedure := pg_catalog.to_regprocedure(
         'platform.initialize_authority_fence(text,text,text)'
     );
-    v_advance regprocedure := to_regprocedure(
+    v_advance pg_catalog.regprocedure := pg_catalog.to_regprocedure(
         'platform.advance_authority_fence(text,bigint,text,text,text)'
     );
 BEGIN
@@ -26,30 +30,30 @@ BEGIN
 
     IF (
         SELECT n.nspowner
-          FROM pg_namespace n
-         WHERE n.oid = v_schema
-    ) IS DISTINCT FROM current_user::regrole::oid THEN
+          FROM pg_catalog.pg_namespace n
+         WHERE n.oid OPERATOR(pg_catalog.=) v_schema
+    ) IS DISTINCT FROM current_user::pg_catalog.regrole::oid THEN
         RAISE EXCEPTION 'platform schema is not owned by the current migration authority';
     END IF;
 
     IF (
         SELECT c.relowner
-          FROM pg_class c
-         WHERE c.oid = v_table
-    ) IS DISTINCT FROM current_user::regrole::oid THEN
+          FROM pg_catalog.pg_class c
+         WHERE c.oid OPERATOR(pg_catalog.=) v_table
+    ) IS DISTINCT FROM current_user::pg_catalog.regrole::oid THEN
         RAISE EXCEPTION 'authority_fences is not owned by the current migration authority';
     END IF;
 
     IF EXISTS (
         WITH RECURSIVE owner_role_members(member_oid) AS (
             SELECT m.member
-              FROM pg_auth_members m
-             WHERE m.roleid = current_user::regrole::oid
+              FROM pg_catalog.pg_auth_members m
+             WHERE m.roleid OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid
             UNION
             SELECT m.member
-              FROM pg_auth_members m
+              FROM pg_catalog.pg_auth_members m
               JOIN owner_role_members r
-                ON m.roleid = r.member_oid
+                ON m.roleid OPERATOR(pg_catalog.=) r.member_oid
         )
         SELECT 1
           FROM owner_role_members
@@ -60,72 +64,68 @@ BEGIN
     IF EXISTS (
         WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (
             SELECT m.roleid, m.member
-              FROM pg_auth_members m
+              FROM pg_catalog.pg_auth_members m
              WHERE m.roleid IN (
-                to_regrole('pg_read_all_data')::oid,
-                to_regrole('pg_write_all_data')::oid
+                pg_catalog.to_regrole('pg_read_all_data')::oid,
+                pg_catalog.to_regrole('pg_write_all_data')::oid
              )
             UNION
             SELECT r.role_oid, m.member
-              FROM pg_auth_members m
+              FROM pg_catalog.pg_auth_members m
               JOIN all_data_role_members r
-                ON m.roleid = r.member_oid
+                ON m.roleid OPERATOR(pg_catalog.=) r.member_oid
         )
         SELECT 1
           FROM all_data_role_members
-         WHERE member_oid <> current_user::regrole::oid
+         WHERE member_oid OPERATOR(pg_catalog.<>) current_user::pg_catalog.regrole::oid
     ) THEN
         RAISE EXCEPTION 'non-owner role can reach PostgreSQL predefined all-data authority';
     END IF;
 
     IF EXISTS (
         SELECT 1
-          FROM pg_class c
-          CROSS JOIN LATERAL aclexplode(
-              COALESCE(c.relacl, acldefault('r', c.relowner))
+          FROM pg_catalog.pg_class c
+          CROSS JOIN LATERAL pg_catalog.aclexplode(
+              pg_catalog.COALESCE(c.relacl, pg_catalog.acldefault('r', c.relowner))
           ) AS acl
-         WHERE c.oid = v_table
-           AND acl.grantee <> c.relowner
+         WHERE c.oid OPERATOR(pg_catalog.=) v_table
+           AND acl.grantee OPERATOR(pg_catalog.<>) c.relowner
     ) THEN
         RAISE EXCEPTION 'authority_fences has inherited non-owner table privileges';
     END IF;
 
     IF EXISTS (
         SELECT 1
-          FROM pg_attribute a
-          CROSS JOIN LATERAL aclexplode(a.attacl) AS acl
-         WHERE a.attrelid = v_table
-           AND a.attnum > 0
+          FROM pg_catalog.pg_attribute a
+          CROSS JOIN LATERAL pg_catalog.aclexplode(a.attacl) AS acl
+         WHERE a.attrelid OPERATOR(pg_catalog.=) v_table
+           AND a.attnum OPERATOR(pg_catalog.>) 0
            AND NOT a.attisdropped
            AND a.attacl IS NOT NULL
-           AND acl.grantee <> current_user::regrole::oid
+           AND acl.grantee OPERATOR(pg_catalog.<>) current_user::pg_catalog.regrole::oid
     ) THEN
         RAISE EXCEPTION 'authority_fences has inherited non-owner column privileges';
     END IF;
 
     IF EXISTS (
         SELECT 1
-          FROM pg_namespace n
-          CROSS JOIN LATERAL aclexplode(
-              COALESCE(n.nspacl, acldefault('n', n.nspowner))
+          FROM pg_catalog.pg_namespace n
+          CROSS JOIN LATERAL pg_catalog.aclexplode(
+              pg_catalog.COALESCE(n.nspacl, pg_catalog.acldefault('n', n.nspowner))
           ) AS acl
-         WHERE n.oid = v_schema
-           AND acl.grantee <> n.nspowner
+         WHERE n.oid OPERATOR(pg_catalog.=) v_schema
+           AND acl.grantee OPERATOR(pg_catalog.<>) n.nspowner
     ) THEN
         RAISE EXCEPTION 'platform schema has inherited non-owner privileges';
     END IF;
 
     -- Schema placement, current EXECUTE ACLs and static routine-body inspection are
-    -- not sufficient authority boundaries. A migration-owner SECURITY DEFINER can
-    -- be reached indirectly (for example through a trigger) or become reachable
-    -- after a later grant while still carrying owner-level authority. The pre-C2
-    -- boundary therefore rejects every SECURITY DEFINER routine owned by the current
-    -- migration authority anywhere in this database. Any future definer is an
-    -- explicit reviewed C2/privileged-authority decision, never historical residue.
+    -- not sufficient authority boundaries. Reject every migration-owner SECURITY
+    -- DEFINER routine anywhere in the database before C2 role mapping.
     IF EXISTS (
         SELECT 1
-          FROM pg_proc p
-         WHERE p.proowner = current_user::regrole::oid
+          FROM pg_catalog.pg_proc p
+         WHERE p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid
            AND p.prosecdef
     ) THEN
         RAISE EXCEPTION 'database contains migration-owner SECURITY DEFINER routine';
@@ -133,36 +133,47 @@ BEGIN
 
     IF EXISTS (
         SELECT 1
-          FROM pg_proc p
+          FROM pg_catalog.pg_proc p
          WHERE p.oid IN (v_initialize::oid, v_advance::oid)
-           AND p.proowner <> current_user::regrole::oid
+           AND p.proowner OPERATOR(pg_catalog.<>) current_user::pg_catalog.regrole::oid
     ) THEN
         RAISE EXCEPTION 'fence authority function is not owned by the current migration authority';
     END IF;
 
     IF EXISTS (
         SELECT 1
-          FROM pg_proc p
-          CROSS JOIN LATERAL aclexplode(
-              COALESCE(p.proacl, acldefault('f', p.proowner))
+          FROM pg_catalog.pg_proc p
+          CROSS JOIN LATERAL pg_catalog.aclexplode(
+              pg_catalog.COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))
           ) AS acl
          WHERE p.oid IN (v_initialize::oid, v_advance::oid)
-           AND acl.grantee <> p.proowner
+           AND acl.grantee OPERATOR(pg_catalog.<>) p.proowner
     ) THEN
         RAISE EXCEPTION 'fence authority function has inherited non-owner privileges';
     END IF;
 
     IF EXISTS (
         SELECT 1
-          FROM pg_proc p
+          FROM pg_catalog.pg_proc p
          WHERE p.oid IN (v_initialize::oid, v_advance::oid)
            AND p.prosecdef
     ) THEN
         RAISE EXCEPTION 'fence authority function must remain SECURITY INVOKER';
     END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_proc p
+         WHERE p.oid IN (v_initialize::oid, v_advance::oid)
+           AND p.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog']::text[]
+    ) THEN
+        RAISE EXCEPTION 'fence authority functions must retain exact pg_catalog-only search_path';
+    END IF;
 END
-$$;
+$wave1_privilege_revalidation$;
 
 -- No GRANT follows this validation. A later reviewed C2 role mapping must grant
 -- only the exact least-privilege capability required by the selected runtime and
 -- must not grant direct serving-role mutation of platform.authority_fences.
+
+COMMIT;

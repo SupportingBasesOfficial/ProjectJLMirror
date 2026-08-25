@@ -12,6 +12,7 @@ if str(SRC) not in sys.path:
 
 from jlmirror_authority.control_plane import (  # noqa: E402
     AuthorizationDecision,
+    CrossTenantTargetBinding,
     RuntimeExecutionEvidence,
     RuntimeLifecycle,
     authorize_protected_operation,
@@ -116,6 +117,9 @@ class PostAuthorizationRuntimeCurrentnessTests(unittest.TestCase):
                 strength_evidence=strength(),
                 runtime_binding=CONTROL_PLANE,
                 runtime_authority=runtime,
+                cross_tenant_target=CrossTenantTargetBinding(
+                    target_tenant_ids=("tenant-acme",)
+                ),
             )
         self.assertEqual(runtime.calls, 2)
 

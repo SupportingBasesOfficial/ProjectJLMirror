@@ -32,7 +32,7 @@ from jlmirror_authority.model import (  # noqa: E402
     StepUpClass,
     TenantRequirement,
 )
-from jlmirror_authority.runtime_profiles import CONTROL_PLANE  # noqa: E402
+from jlmirror_authority.runtime_profiles import CONTROL_PLANE, WEB_BFF  # noqa: E402
 
 NOW = datetime(2026, 8, 25, 0, 35, tzinfo=timezone.utc)
 
@@ -169,6 +169,10 @@ def tenant_final_evidence(context, **overrides):
         principal_id=context.principal_id,
         principal_credential_generation=context.principal_credential_generation,
         action="organization.memberships.read",
+        scope=ScopeClass.TENANT,
+        tenant_requirement=TenantRequirement.REQUIRED,
+        resource_scope=None,
+        authentication_strength_policy_id=None,
         tenant_id=context.tenant_id,
         cell_id=context.cell_id,
         placement_authority_revision="placement-r9",
@@ -226,6 +230,10 @@ def cross_final_evidence(**overrides):
         principal_id="platform-admin-1",
         principal_credential_generation="session-g7",
         action="platform.tenants.suspend",
+        scope=ScopeClass.PLATFORM,
+        tenant_requirement=TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED,
+        resource_scope=None,
+        authentication_strength_policy_id="platform-privileged-v1",
         authentication_strength_policy_revision="security-policy-r7",
         executing_runtime_authority_revision="runtime-authority-r10",
         executing_runtime_profile_id="runtime.control-plane@1",
@@ -281,6 +289,18 @@ class AtomicFinalAdmissionTests(unittest.TestCase):
                 self.authorization_authority.calls = 0
                 self.tenant_call(Finalizer(evidence))
 
+    def test_final_declaration_scope_or_tenant_requirement_mismatch_fails_closed(self):
+        for evidence in (
+            tenant_final_evidence(self.context, scope=ScopeClass.RESOURCE),
+            tenant_final_evidence(
+                self.context,
+                tenant_requirement=TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED,
+            ),
+        ):
+            with self.subTest(evidence=evidence), self.assertRaises(AdmissionDenied):
+                self.authorization_authority.calls = 0
+                self.tenant_call(Finalizer(evidence))
+
     def test_resource_declaration_requires_explicit_scope(self):
         with self.assertRaises(ValueError):
             AuthorizationDeclaration(
@@ -303,7 +323,11 @@ class AtomicFinalAdmissionTests(unittest.TestCase):
             )
 
     def test_same_action_different_resource_scope_cannot_reuse_final_evidence(self):
-        evidence = tenant_final_evidence(self.context, resource_scope="resource:alpha")
+        evidence = tenant_final_evidence(
+            self.context,
+            scope=ScopeClass.RESOURCE,
+            resource_scope="resource:alpha",
+        )
         with self.assertRaises(AdmissionDenied):
             authorize_protected_operation(
                 principal=self.principal,
@@ -327,6 +351,25 @@ class AtomicFinalAdmissionTests(unittest.TestCase):
             final_admission_authority=Finalizer(evidence),
         )
         self.assertTrue(decision.granted)
+
+    def test_tenant_or_resource_admission_rejects_non_api_runtime_binding(self):
+        for declaration in (tenant_declaration(), resource_declaration("resource:alpha")):
+            for runtime_binding in (WEB_BFF, CONTROL_PLANE):
+                with self.subTest(
+                    scope=declaration.scope,
+                    runtime=runtime_binding.runtime_profile_id,
+                ), self.assertRaises(AdmissionDenied):
+                    authorize_protected_operation(
+                        principal=self.principal,
+                        principal_authority=self.principal_authority,
+                        declaration=declaration,
+                        placement_authority=self.placement_authority,
+                        authorization_authority=self.authorization_authority,
+                        context=self.context,
+                        now=NOW,
+                        runtime_binding=runtime_binding,
+                        final_admission_authority=Finalizer(tenant_final_evidence(self.context)),
+                    )
 
     def test_tenant_final_admission_requires_executing_runtime_binding(self):
         for field in (
@@ -395,6 +438,31 @@ class AtomicFinalAdmissionTests(unittest.TestCase):
                 final_admission_authority=Finalizer(
                     cross_final_evidence(
                         authentication_strength_policy_revision="security-policy-r8"
+                    )
+                ),
+            )
+
+    def test_cross_tenant_strength_policy_id_drift_fails_closed_even_same_revision(self):
+        admin = Principal(
+            "platform-admin-1", PrincipalKind.PLATFORM_ADMIN_PRINCIPAL, "session-g7"
+        )
+        with self.assertRaises(AdmissionDenied):
+            authorize_protected_operation(
+                principal=admin,
+                principal_authority=PrincipalAuthority(),
+                declaration=cross_declaration(),
+                placement_authority=PlacementAuthority(placement()),
+                authorization_authority=AuthorizationAuthority(),
+                context=None,
+                now=NOW,
+                strength_policy=StrengthPolicy(),
+                strength_evidence=admin_strength(),
+                runtime_binding=CONTROL_PLANE,
+                runtime_authority=RuntimeAuthority(),
+                final_admission_authority=Finalizer(
+                    cross_final_evidence(
+                        authentication_strength_policy_id="platform-privileged-v2",
+                        authentication_strength_policy_revision="security-policy-r7",
                     )
                 ),
             )

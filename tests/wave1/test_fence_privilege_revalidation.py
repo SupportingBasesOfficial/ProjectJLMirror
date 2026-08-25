@@ -33,33 +33,63 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
         )
 
     def test_owner_and_role_reachability_guards_cannot_be_removed(self):
-        for old, new, needle in (
-            ("FROM pg_catalog.pg_namespace n", "FROM pg_catalog.pg_class n", "pg_namespace"),
-            ("FROM pg_catalog.pg_class c", "FROM pg_catalog.pg_namespace c", "pg_class"),
-            ("WITH RECURSIVE owner_role_members(member_oid) AS (", "WITH owner_role_members(member_oid) AS (", "pg_auth_members"),
-            ("WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (", "WITH all_data_role_members(role_oid, member_oid) AS (", "pg_read_all_data"),
-            ("pg_catalog.to_regrole('pg_read_all_data')::oid", "pg_catalog.to_regrole('pg_write_all_data')::oid", "pg_read_all_data"),
-        ):
+        mutations = (
+            (
+                "SELECT n.nspowner\n          FROM pg_catalog.pg_namespace n",
+                "SELECT n.nspowner\n          FROM pg_catalog.pg_class n",
+            ),
+            (
+                "SELECT c.relowner\n          FROM pg_catalog.pg_class c",
+                "SELECT c.relowner\n          FROM pg_catalog.pg_namespace c",
+            ),
+            (
+                "WITH RECURSIVE owner_role_members(member_oid) AS (",
+                "WITH owner_role_members(member_oid) AS (",
+            ),
+            (
+                "WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (",
+                "WITH all_data_role_members(role_oid, member_oid) AS (",
+            ),
+            (
+                "pg_catalog.to_regrole('pg_read_all_data')::oid",
+                "pg_catalog.to_regrole('pg_write_all_data')::oid",
+            ),
+        )
+        for old, new in mutations:
             with self.subTest(old=old):
-                self.assert_fails(self.text.replace(old, new, 1), needle)
+                self.assertIn(old, self.text)
+                self.assert_fails(self.text.replace(old, new, 1))
 
     def test_object_and_column_acl_guards_cannot_be_removed(self):
-        for old, new, needle in (
-            ("pg_catalog.aclexplode(a.attacl)", "pg_catalog.aclexplode(NULL::aclitem[])", "pg_attribute"),
-            ("acl.grantee OPERATOR(pg_catalog.<>) current_user::pg_catalog.regrole::oid", "acl.grantee OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid", "column"),
-            ("acl.grantee OPERATOR(pg_catalog.<>) c.relowner", "acl.grantee OPERATOR(pg_catalog.=) c.relowner", "invariant"),
-            ("acl.grantee OPERATOR(pg_catalog.<>) p.proowner", "acl.grantee OPERATOR(pg_catalog.=) p.proowner", "invariant"),
-        ):
+        mutations = (
+            ("pg_catalog.aclexplode(a.attacl)", "pg_catalog.aclexplode(NULL::aclitem[])"),
+            (
+                "acl.grantee OPERATOR(pg_catalog.<>) current_user::pg_catalog.regrole::oid",
+                "acl.grantee OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid",
+            ),
+            (
+                "acl.grantee OPERATOR(pg_catalog.<>) c.relowner",
+                "acl.grantee OPERATOR(pg_catalog.=) c.relowner",
+            ),
+            (
+                "acl.grantee OPERATOR(pg_catalog.<>) p.proowner",
+                "acl.grantee OPERATOR(pg_catalog.=) p.proowner",
+            ),
+        )
+        for old, new in mutations:
             with self.subTest(old=old):
-                self.assert_fails(self.text.replace(old, new, 1), needle)
+                self.assertIn(old, self.text)
+                self.assert_fails(self.text.replace(old, new, 1))
 
     def test_database_wide_migration_owner_security_definer_guard_is_required(self):
+        old = "p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid\n           AND p.prosecdef"
         weakened = self.text.replace(
-            "p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid\n           AND p.prosecdef",
+            old,
             "p.proowner OPERATOR(pg_catalog.<>) current_user::pg_catalog.regrole::oid\n           AND p.prosecdef",
             1,
         )
-        self.assert_fails(weakened, "SECURITY DEFINER")
+        self.assertIn(old, self.text)
+        self.assert_fails(weakened)
 
     def test_canonical_functions_must_retain_exact_catalog_search_path(self):
         weakened = self.text.replace(

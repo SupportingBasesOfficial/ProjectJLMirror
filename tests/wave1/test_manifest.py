@@ -15,6 +15,11 @@ MANIFEST = ROOT / "implementation" / "wave-1" / "IMPLEMENTATION_MANIFEST.json"
 REQUIRED_PANORAMIC_SUBSTITUTIONS = {
     "destination_runtime_generation_for_executing_runtime_authority",
     "final_admission_without_current_executing_runtime_authority",
+    "final_admission_scope_class_for_other_declaration_scope",
+    "final_admission_tenant_requirement_for_other_declaration",
+    "non_api_runtime_for_tenant_resource_admission",
+    "authentication_strength_revision_for_different_policy_id",
+    "nondeterministic_collation_for_fence_scope_authority",
     "resource_scope_absence_for_resource_authority",
     "resource_scope_on_non_resource_authority",
 }

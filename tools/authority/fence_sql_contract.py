@@ -211,6 +211,13 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
         "authority_fences contains noncanonical index metadata",
         "c.contype = 'f'",
         "c.conrelid = v_table OR c.confrelid = v_table",
+        "JOIN pg_depend d",
+        "d.classid = 'pg_rewrite'::regclass",
+        "d.objid = r.oid",
+        "d.refclassid = 'pg_class'::regclass",
+        "d.refobjid = v_table",
+        "r.ev_class <> v_table",
+        "external rewrite dependency can reach authority_fences",
         "ALTER TABLE platform.authority_fences",
         "ALTER COLUMN fence_scope_id SET NOT NULL",
         "ALTER COLUMN current_fence_epoch SET NOT NULL",
@@ -311,6 +318,18 @@ def validate_fence_revalidation_sql_text(text: str) -> list[str]:
     if rule_guard.search(code) is None:
         findings.append(
             "IR-D-003 persisted fence revalidation must reject rewrite-rule behavior"
+        )
+
+    external_rewrite_dependency_guard = re.compile(
+        r"IF\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+pg_rewrite\s+r\s+"
+        r"JOIN\s+pg_depend\s+d\s+ON\s+d\.classid\s*=\s*'pg_rewrite'::regclass\s+"
+        r"AND\s+d\.objid\s*=\s*r\.oid\s+AND\s+d\.refclassid\s*=\s*'pg_class'::regclass\s+"
+        r"AND\s+d\.refobjid\s*=\s*v_table\s+WHERE\s+r\.ev_class\s*<>\s*v_table\s*\)\s*THEN",
+        re.IGNORECASE | re.DOTALL,
+    )
+    if external_rewrite_dependency_guard.search(code) is None:
+        findings.append(
+            "IR-D-003 persisted fence revalidation must reject external rewrite/view dependency reachability"
         )
 
     if "UPDATE platform.authority_fences" in normalized or "DELETE FROM platform.authority_fences" in normalized:

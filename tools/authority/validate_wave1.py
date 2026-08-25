@@ -87,6 +87,7 @@ EXPECTED_FORBIDDEN_SUBSTITUTIONS = [
     "unvalidated_persisted_fence_state_for_current_authority",
     "nondeterministic_collation_for_fence_scope_authority",
     "object_acl_clean_for_owner_role_unassumable",
+    "table_acl_clean_for_column_acl_clean",
     "fence_token_for_effect_absence",
     "secret_reference_for_secret_value",
     "out_of_scope_git_delta_for_wave1_authority",

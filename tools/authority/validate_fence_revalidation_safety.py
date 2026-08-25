@@ -45,6 +45,18 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
             "Wave 1 fence revalidation canonical script must not contain an intermediate ROLLBACK boundary"
         )
 
+    event_trigger_guard = re.compile(
+        r"SELECT\s+1\s*/\s*CASE\s+WHEN\s+EXISTS\s*\(\s*SELECT\s+1\s+"
+        r"FROM\s+pg_catalog\.pg_event_trigger\s+et\s+WHERE\s+et\.evtenabled\s*<>\s*'D'\s*\)\s+"
+        r"THEN\s+0\s+ELSE\s+1\s+END\s+AS\s+wave1_event_trigger_guard\s*;",
+        re.IGNORECASE | re.DOTALL,
+    )
+    event_match = event_trigger_guard.search(code)
+    if event_match is None:
+        findings.append(
+            "Wave 1 fence revalidation must fail closed when any PostgreSQL event trigger is not disabled"
+        )
+
     lock = "LOCK TABLE platform.authority_fences IN ACCESS EXCLUSIVE MODE;"
     if lock not in code:
         findings.append(
@@ -59,6 +71,16 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
             findings.append(
                 "Wave 1 fence revalidation lock/validation/mutation ordering is not transactionally closed"
             )
+        if event_match is not None and not (begin_pos < event_match.start() < lock_pos < do_pos):
+            findings.append(
+                "Wave 1 event-trigger guard must execute before fence lock/validation and before event-trigger-capable DDL"
+            )
+
+    first_alter = code.find("ALTER TABLE platform.authority_fences")
+    if event_match is not None and first_alter >= 0 and event_match.start() > first_alter:
+        findings.append(
+            "Wave 1 event-trigger guard must execute before the first fence ALTER TABLE statement"
+        )
 
     replication_guard = re.compile(
         r"IF\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+pg_catalog\.pg_subscription_rel\s+sr\s+"
@@ -105,7 +127,9 @@ def main() -> int:
             print(f"FINDING: {finding}")
         print(f"RESULT: FAIL — {len(findings)} finding(s)")
         return 1
-    print("RESULT: PASS — atomic constraint replacement and logical-replication writer exclusion are enforced")
+    print(
+        "RESULT: PASS — event-trigger exclusion, atomic constraint replacement and logical-replication writer exclusion are enforced"
+    )
     return 0
 
 

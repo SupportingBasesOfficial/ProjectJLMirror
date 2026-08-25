@@ -39,7 +39,9 @@ Required exact-HEAD evidence before merge readiness:
 - reused fence storage has an exact finite metadata contract: the named canonical PK, four named canonical CHECK constraints, exactly the PK backing index and no additional constraint/index metadata capable of rejecting or altering canonical writes;
 - reused PostgreSQL fence objects fail closed unless the migration authority owns the schema/table/functions, no effective non-owner schema/table/**column**/function ACL survives, and no direct or transitive `pg_auth_members` path can assume/inherit the migration-owner role before separately reviewed C2 role mapping;
 - table-level `pg_class.relacl` cleanliness never substitutes for column-level `pg_attribute.attacl` cleanliness: every live user column of `platform.authority_fences` must have no non-owner/PUBLIC column privilege before C2 role mapping;
-- expected fence-function ACL cleanliness never substitutes for absence of residual definer authority: pre-C2 revalidation inspects `pg_proc.prosecdef` across the entire `platform` authority namespace and rejects every residual `SECURITY DEFINER` routine;
+- expected fence-function ACL cleanliness never substitutes for absence of residual definer authority: pre-C2 revalidation rejects every `pg_proc` row with `p.proowner = current_user::regrole::oid` and `p.prosecdef` across the **entire database**, regardless of schema or current EXECUTE ACL;
+- schema placement never narrows migration-owner definer authority: no `p.pronamespace = v_schema` boundary can substitute for database-wide owner-definer absence;
+- local trigger/rule cleanliness on `platform.authority_fences` never proves external rewrite/view reachability is absent: pre-C2 revalidation joins `pg_rewrite` to `pg_depend` and rejects every external rewrite object whose relation dependency directly references the fence table;
 - no residual C2 product is silently promoted to architecture authority;
 - no Product/domain endpoint family is introduced beyond accepted authority;
 - review findings are resolved only after later exact-HEAD evidence;
@@ -71,8 +73,10 @@ Mandatory falsification includes:
 - removing or misdirecting the exact finite fence constraint-set guard or extra-index guard -> validator finding;
 - reused fence table with any non-owner/PUBLIC column-level `attacl` entry -> revalidation failure;
 - removing, misdirecting or comment-laundering the `pg_attribute.attacl` guard -> validator finding;
-- any residual `SECURITY DEFINER` routine in the `platform` namespace -> revalidation failure;
-- removing or misdirecting the `pg_proc` namespace/`prosecdef` residual-definer guard -> validator finding;
+- any migration-owner `SECURITY DEFINER` routine anywhere in the database -> revalidation failure, even outside `platform` or without a current non-owner EXECUTE ACL;
+- narrowing the owner-definer scan by schema, ACL or routine-body inference -> validator finding;
+- an external view/rule/rewrite object with a `pg_depend` relation edge to `platform.authority_fences` -> revalidation failure;
+- removing, misdirecting or comment-laundering the `pg_rewrite -> pg_depend -> v_table` external dependency guard -> validator finding;
 - valid final evidence returns the final owning authorization policy revision, not an earlier serial authorization revision;
 - no caller-supplied `now` reaches the final-admission port.
 

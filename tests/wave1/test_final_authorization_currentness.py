@@ -106,6 +106,9 @@ class TenantFinalAdmissionAuthority:
             isolation_class=context.isolation_class,
             fence_scope_id=context.fence_scope_id,
             fence_epoch=context.fence_epoch,
+            executing_runtime_authority_revision="runtime-authority-r3",
+            executing_runtime_profile_id="runtime.api@1",
+            executing_runtime_generation="runtime-api-g3",
         )
 
 

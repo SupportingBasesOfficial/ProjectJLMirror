@@ -3,9 +3,10 @@
 -- Reusing an existing schema/table/function name is not privilege conformance.
 -- This migration runs before any separately reviewed C2 runtime/database grants.
 -- It proves that the migration authority owns the fence objects, that no other
--- role retains direct object or column authority, and that no transitive
--- role-membership path can assume/inherit the migration-owner authority before
--- C2 role mapping. It does not choose role names or grant serving/runtime authority.
+-- role retains direct object or column authority, that no transitive role-membership
+-- path can assume/inherit the migration-owner authority, and that no non-owner role
+-- can reach PostgreSQL predefined all-data authority before C2 role mapping.
+-- It does not choose role names or grant serving/runtime authority.
 
 DO $$
 DECLARE
@@ -61,6 +62,34 @@ BEGIN
           FROM owner_role_members
     ) THEN
         RAISE EXCEPTION 'current migration authority owner role is reachable through role membership';
+    END IF;
+
+    -- PostgreSQL predefined pg_read_all_data / pg_write_all_data privileges are
+    -- effective without relacl/attacl/nspacl entries. A clean object ACL therefore
+    -- does not prove that no other role can read or mutate fence authority. Reject
+    -- every direct or transitive membership path into either predefined all-data
+    -- role before C2 role mapping. The current migration owner itself is excluded
+    -- because it already owns this authority boundary; any other reachable member
+    -- makes the pre-C2 privilege proof fail closed.
+    IF EXISTS (
+        WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (
+            SELECT m.roleid, m.member
+              FROM pg_auth_members m
+             WHERE m.roleid IN (
+                to_regrole('pg_read_all_data')::oid,
+                to_regrole('pg_write_all_data')::oid
+             )
+            UNION
+            SELECT r.role_oid, m.member
+              FROM pg_auth_members m
+              JOIN all_data_role_members r
+                ON m.roleid = r.member_oid
+        )
+        SELECT 1
+          FROM all_data_role_members
+         WHERE member_oid <> current_user::regrole::oid
+    ) THEN
+        RAISE EXCEPTION 'non-owner role can reach PostgreSQL predefined all-data authority';
     END IF;
 
     IF EXISTS (

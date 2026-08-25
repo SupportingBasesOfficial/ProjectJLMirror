@@ -63,6 +63,10 @@ jobs:
         shell: bash
         run: PYTHONPATH=src python3 tools/authority/validate_wave1.py
 
+      - name: Validate Wave 1 final admission authority
+        shell: bash
+        run: PYTHONPATH=src python3 tools/authority/validate_final_admission.py
+
       - name: Validate Wave 1 storage access conformance
         shell: bash
         run: PYTHONPATH=src python3 tools/authority/validate_wave1_privileges.py

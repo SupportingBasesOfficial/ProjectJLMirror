@@ -45,16 +45,27 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
             "Wave 1 fence revalidation canonical script must not contain an intermediate ROLLBACK boundary"
         )
 
+    event_trigger_set_matches = re.findall(
+        r"(?im)^\s*SET\s+(?:LOCAL\s+)?event_triggers\s*=\s*[^;]+;\s*$",
+        code,
+    )
+    set_local_token = "SET LOCAL event_triggers = off;"
+    if len(event_trigger_set_matches) != 1 or event_trigger_set_matches[0].strip() != set_local_token:
+        findings.append(
+            "Wave 1 fence revalidation must contain exactly one SET LOCAL event_triggers = off session guard"
+        )
+
     event_trigger_guard = re.compile(
-        r"SELECT\s+1\s*/\s*CASE\s+WHEN\s+EXISTS\s*\(\s*SELECT\s+1\s+"
-        r"FROM\s+pg_catalog\.pg_event_trigger\s+et\s+WHERE\s+et\.evtenabled\s*<>\s*'D'\s*\)\s+"
-        r"THEN\s+0\s+ELSE\s+1\s+END\s+AS\s+wave1_event_trigger_guard\s*;",
+        r"SELECT\s+1\s*/\s*CASE\s+"
+        r"WHEN\s+current_setting\s*\(\s*'event_triggers'\s*\)\s+IS\s+DISTINCT\s+FROM\s+'off'\s+THEN\s+0\s+"
+        r"WHEN\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+pg_catalog\.pg_event_trigger\s+et\s+"
+        r"WHERE\s+et\.evtenabled\s*<>\s*'D'\s*\)\s+THEN\s+0\s+ELSE\s+1\s+END\s+AS\s+wave1_event_trigger_guard\s*;",
         re.IGNORECASE | re.DOTALL,
     )
     event_match = event_trigger_guard.search(code)
     if event_match is None:
         findings.append(
-            "Wave 1 fence revalidation must fail closed when any PostgreSQL event trigger is not disabled"
+            "Wave 1 fence revalidation must prove event_triggers is locally disabled and reject pre-existing non-disabled PostgreSQL event triggers"
         )
 
     lock = "LOCK TABLE platform.authority_fences IN ACCESS EXCLUSIVE MODE;"
@@ -64,23 +75,30 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
         )
     else:
         begin_pos = code.find("BEGIN;")
+        set_pos = code.find(set_local_token)
         lock_pos = code.find(lock)
         do_pos = code.find("DO $$")
         commit_pos = code.rfind("COMMIT;")
-        if not (0 <= begin_pos < lock_pos < do_pos < commit_pos):
+        if not (0 <= begin_pos < set_pos < lock_pos < do_pos < commit_pos):
             findings.append(
-                "Wave 1 fence revalidation lock/validation/mutation ordering is not transactionally closed"
+                "Wave 1 event-trigger disable/lock/validation/mutation ordering is not transactionally closed"
             )
-        if event_match is not None and not (begin_pos < event_match.start() < lock_pos < do_pos):
+        if event_match is not None and not (begin_pos < set_pos < event_match.start() < lock_pos < do_pos):
             findings.append(
-                "Wave 1 event-trigger guard must execute before fence lock/validation and before event-trigger-capable DDL"
+                "Wave 1 event-trigger session guard and catalog preflight must execute before fence lock/validation and DDL"
             )
 
     first_alter = code.find("ALTER TABLE platform.authority_fences")
-    if event_match is not None and first_alter >= 0 and event_match.start() > first_alter:
-        findings.append(
-            "Wave 1 event-trigger guard must execute before the first fence ALTER TABLE statement"
-        )
+    if first_alter >= 0:
+        set_pos = code.find(set_local_token)
+        if set_pos < 0 or set_pos > first_alter:
+            findings.append(
+                "Wave 1 SET LOCAL event_triggers = off guard must execute before the first fence ALTER TABLE statement"
+            )
+        if event_match is not None and event_match.start() > first_alter:
+            findings.append(
+                "Wave 1 event-trigger catalog preflight must execute before the first fence ALTER TABLE statement"
+            )
 
     replication_guard = re.compile(
         r"IF\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+pg_catalog\.pg_subscription_rel\s+sr\s+"
@@ -96,7 +114,6 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
             "Wave 1 fence revalidation must expose an explicit fail-closed logical-replication exception"
         )
 
-    # Constraint replacement is safe only inside the single explicit transaction.
     drop_token = "DROP CONSTRAINT wave1_fence_scope_id_canonical"
     validate_token = "VALIDATE CONSTRAINT wave1_fence_state_canonical"
     if drop_token in normalized and validate_token in normalized:
@@ -128,7 +145,7 @@ def main() -> int:
         print(f"RESULT: FAIL — {len(findings)} finding(s)")
         return 1
     print(
-        "RESULT: PASS — event-trigger exclusion, atomic constraint replacement and logical-replication writer exclusion are enforced"
+        "RESULT: PASS — session-local event-trigger execution closure, catalog preflight, atomic constraint replacement and logical-replication writer exclusion are enforced"
     )
     return 0
 

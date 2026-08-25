@@ -59,6 +59,9 @@ COLUMN_ACL_GUARD = """FROM pg_attribute a
            AND NOT a.attisdropped
            AND a.attacl IS NOT NULL
            AND acl.grantee <> current_user::regrole::oid"""
+RESIDUAL_SECURITY_DEFINER_GUARD = """FROM pg_proc p
+         WHERE p.pronamespace = v_schema
+           AND p.prosecdef"""
 
 REQUIRED_EXECUTABLE_FRAGMENTS = (
     "to_regnamespace('platform')",
@@ -78,6 +81,8 @@ REQUIRED_EXECUTABLE_FRAGMENTS = (
     "RAISE EXCEPTION 'authority_fences has inherited non-owner column privileges'",
     "aclexplode(\n              COALESCE(n.nspacl, acldefault('n', n.nspowner))\n          )",
     "acl.grantee <> n.nspowner",
+    RESIDUAL_SECURITY_DEFINER_GUARD,
+    "RAISE EXCEPTION 'platform authority namespace contains residual SECURITY DEFINER routine'",
     "FROM pg_proc p",
     "p.proowner <> current_user::regrole::oid",
     "aclexplode(\n              COALESCE(p.proacl, acldefault('f', p.proowner))\n          )",
@@ -88,11 +93,13 @@ REQUIRED_EXECUTABLE_FRAGMENTS = (
 REQUIRED_BOUNDARY_TOKENS = (
     "TABLE ACL CLEAN != COLUMN ACL CLEAN",
     "OBJECT ACL CLEAN != PREDEFINED ALL-DATA ROLE ABSENT",
+    "EXPECTED FUNCTION ACL CLEAN != RESIDUAL DEFINER AUTHORITY ABSENT",
     "pg_class.relacl",
     "pg_attribute.attacl",
     "pg_read_all_data",
     "pg_write_all_data",
     "pg_auth_members",
+    "pg_proc.prosecdef",
     "attnum > 0",
     "NOT attisdropped",
     "PUBLIC (`oid 0`)",
@@ -164,7 +171,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}")
         return 1
-    print("RESULT: PASS — fence ownership, role reachability, predefined all-data roles, object ACL and column ACL reuse fail closed before C2 role mapping")
+    print("RESULT: PASS — fence ownership, role reachability, predefined all-data roles, object/column ACLs and residual SECURITY DEFINER authority fail closed before C2 role mapping")
     print("NOTE: PASS is conformance evidence only; it grants no runtime/database privilege.")
     return 0
 

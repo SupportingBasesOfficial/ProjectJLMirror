@@ -293,16 +293,14 @@ class TypeLaunderingTests(unittest.TestCase):
 
 class SqlDefaultPrivilegeTests(unittest.TestCase):
     def test_default_public_function_execute_is_revoked_before_first_function_creation(self):
-        text = (ROOT / "sql" / "wave1" / "001_platform_authority_fence.sql").read_text(
-            encoding="utf-8"
-        )
-        revoke = (
-            "ALTER DEFAULT PRIVILEGES IN SCHEMA platform\n"
-            "    REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;"
-        )
+        text = (ROOT / "sql" / "wave1" / "001_platform_authority_fence.sql").read_text(encoding="utf-8")
+        revoke = "EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA platform REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC'"
         create = "CREATE OR REPLACE FUNCTION platform.initialize_authority_fence("
+        reuse_guard = "IF v_existing_table IS NOT NULL THEN\n        RETURN;"
+        self.assertIn(reuse_guard, text)
         self.assertIn(revoke, text)
         self.assertIn(create, text)
+        self.assertLess(text.index(reuse_guard), text.index(revoke))
         self.assertLess(text.index(revoke), text.index(create))
 
 

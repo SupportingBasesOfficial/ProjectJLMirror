@@ -28,6 +28,8 @@ REQUIRED_PANORAMIC_SUBSTITUTIONS = {
     "table_acl_clean_for_column_acl_clean",
     "object_acl_clean_for_predefined_all_data_role_absent",
     "expected_function_acl_clean_for_residual_definer_authority_absent",
+    "platform_schema_boundary_for_callable_owner_definer_absence",
+    "local_fence_rules_clean_for_external_rewrite_dependency_absent",
     "table_shape_match_for_referential_action_free",
     "primary_key_present_for_immediate_valid_ready_conflict_arbiter",
     "cross_tenant_action_match_for_target_set_authority",

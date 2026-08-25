@@ -26,6 +26,7 @@ Required exact-HEAD evidence before merge readiness:
 - final resource-scoped admission requires a non-null canonical `resource_scope`; a final snapshot for one resource cannot admit another resource merely because the action is identical;
 - non-resource declarations reject `resource_scope` rather than carrying dormant/misleading resource authority;
 - final privileged-human admission binds both the exact `authentication_strength_policy_id` declared for the operation and the current authentication-strength/Security policy revision; equal revision labels do not make different policy IDs interchangeable;
+- final cross-tenant privileged admission binds the exact canonical `cross-tenant target` (explicit tenant set or governed selection criteria) in both final request and evidence; the same action cannot reuse a grant for a different target set;
 - final cross-tenant privileged admission binds the current executing Control Plane runtime authority revision, exact `runtime.control-plane@1` profile and exact runtime generation;
 - final admission always binds principal authority revision, principal/session-or-credential generation, exact action, exact declaration scope/tenant requirement, resource-scope semantics, authentication-strength policy identity where applicable, final admission revision, owning authorization policy revision and executing-runtime authority;
 - any mismatch, omission, malformed evidence, denied/current=false state or final-admission authority failure is a closed denial; there is no fallback to serial checks;
@@ -55,6 +56,8 @@ Mandatory falsification includes:
 - tenant/cell/placement/runtime/configuration/workload-credential/network-policy/fence drift -> deny;
 - final Security/authentication-strength revision drift -> deny;
 - same authentication-strength revision under a different policy ID -> deny;
+- same cross-tenant action with a different canonical cross-tenant target cannot reuse final evidence -> deny;
+- non-cross-tenant operation carrying a cross-tenant target binding -> deny;
 - cross-tenant final executing-runtime profile or generation drift -> deny;
 - removal of deterministic `C` collation from fence storage/equality -> validator finding;
 - reused fence table with non-`C` authority text collation -> revalidation failure;

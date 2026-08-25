@@ -3,9 +3,9 @@
 -- Reusing an existing schema/table/function name is not privilege conformance.
 -- This migration runs before any separately reviewed C2 runtime/database grants.
 -- It proves that the migration authority owns the fence objects, that no other
--- role retains direct object authority, and that no transitive role-membership
--- path can assume/inherit the migration-owner authority before C2 role mapping.
--- It does not choose role names or grant serving/runtime authority.
+-- role retains direct object or column authority, and that no transitive
+-- role-membership path can assume/inherit the migration-owner authority before
+-- C2 role mapping. It does not choose role names or grant serving/runtime authority.
 
 DO $$
 DECLARE
@@ -73,6 +73,24 @@ BEGIN
            AND acl.grantee <> c.relowner
     ) THEN
         RAISE EXCEPTION 'authority_fences has inherited non-owner table privileges';
+    END IF;
+
+    -- PostgreSQL stores column-level GRANTs separately in pg_attribute.attacl.
+    -- A clean table relacl therefore does not prove that no historical role can
+    -- SELECT/UPDATE individual fence columns after later schema usage is granted.
+    -- Before C2 role mapping, reject every non-owner column ACL entry, including
+    -- PUBLIC (grantee oid 0), on every live user column of the authority table.
+    IF EXISTS (
+        SELECT 1
+          FROM pg_attribute a
+          CROSS JOIN LATERAL aclexplode(a.attacl) AS acl
+         WHERE a.attrelid = v_table
+           AND a.attnum > 0
+           AND NOT a.attisdropped
+           AND a.attacl IS NOT NULL
+           AND acl.grantee <> current_user::regrole::oid
+    ) THEN
+        RAISE EXCEPTION 'authority_fences has inherited non-owner column privileges';
     END IF;
 
     -- A pre-existing schema grant can let another role create/replace objects in

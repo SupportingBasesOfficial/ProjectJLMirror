@@ -144,7 +144,7 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
         self.assertTrue(any("TABLE ACL CLEAN" in finding for finding in findings))
 
     def test_boundary_must_name_pg_attribute_attacl(self):
-        mutated = self.boundary.replace("pg_attribute.attacl", "pg_class.relacl", 1)
+        mutated = self.boundary.replace("pg_attribute.attacl", "pg_class.relacl")
         findings = validate_boundary_text(mutated)
         self.assertTrue(any("pg_attribute.attacl" in finding for finding in findings))
 

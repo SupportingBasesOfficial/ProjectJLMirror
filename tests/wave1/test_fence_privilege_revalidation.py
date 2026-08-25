@@ -143,6 +143,42 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
         findings = validate_text(mutated)
         self.assertTrue(any("all_data_role_members" in finding for finding in findings))
 
+    def test_database_wide_definer_guard_cannot_be_scoped_to_platform(self):
+        mutated = self.text.replace(
+            "WHERE p.proowner = current_user::regrole::oid\n           AND p.prosecdef",
+            "WHERE p.pronamespace = v_schema\n           AND p.proowner = current_user::regrole::oid\n           AND p.prosecdef",
+            1,
+        )
+        findings = validate_text(mutated)
+        self.assertTrue(any("p.proowner = current_user" in finding for finding in findings))
+
+    def test_database_wide_definer_guard_must_bind_owner(self):
+        mutated = self.text.replace(
+            "WHERE p.proowner = current_user::regrole::oid\n           AND p.prosecdef",
+            "WHERE p.proowner <> current_user::regrole::oid\n           AND p.prosecdef",
+            1,
+        )
+        findings = validate_text(mutated)
+        self.assertTrue(any("p.proowner = current_user" in finding for finding in findings))
+
+    def test_database_wide_definer_guard_must_reject_security_definer(self):
+        mutated = self.text.replace(
+            "AND p.prosecdef\n    ) THEN\n        RAISE EXCEPTION 'database contains migration-owner SECURITY DEFINER routine'",
+            "AND NOT p.prosecdef\n    ) THEN\n        RAISE EXCEPTION 'database contains migration-owner SECURITY DEFINER routine'",
+            1,
+        )
+        findings = validate_text(mutated)
+        self.assertTrue(any("p.prosecdef" in finding for finding in findings))
+
+    def test_comment_cannot_launder_database_wide_definer_guard(self):
+        mutated = self.text.replace(
+            "WHERE p.proowner = current_user::regrole::oid\n           AND p.prosecdef",
+            "WHERE false",
+            1,
+        ) + "\n-- WHERE p.proowner = current_user::regrole::oid AND p.prosecdef\n"
+        findings = validate_text(mutated)
+        self.assertTrue(any("migration-owner" in finding or "p.proowner" in finding for finding in findings))
+
     def test_comment_cannot_launder_removed_acl_guard(self):
         mutated = self.text.replace(
             "acl.grantee <> c.relowner",

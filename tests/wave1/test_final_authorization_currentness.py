@@ -90,6 +90,7 @@ class TenantFinalAdmissionAuthority:
             authorization_policy_revision="authz-final-r3",
             principal_authority_revision="principal-r3",
             principal_id=principal.principal_id,
+            principal_kind=principal.kind,
             principal_credential_generation=principal.credential_generation,
             action=declaration.action,
             scope=declaration.scope,
@@ -113,6 +114,7 @@ class TenantFinalAdmissionAuthority:
             executing_runtime_authority_revision="runtime-authority-r3",
             executing_runtime_profile_id="runtime.api@1",
             executing_runtime_generation="runtime-api-g3",
+            executing_runtime_environment_class=EnvironmentClass.PRODUCTION,
         )
 
 

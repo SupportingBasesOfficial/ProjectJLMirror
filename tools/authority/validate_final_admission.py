@@ -27,6 +27,7 @@ EXPECTED_MANIFEST = {
     "declaration_scope_binding_mode": "exact_scope_and_tenant_requirement",
     "cross_tenant_target_binding_mode": "required_exact_explicit_tenant_set_or_selection_criteria_for_cross_tenant_forbidden_otherwise",
     "tenant_resource_executing_runtime_profile": "runtime.api@1",
+    "executing_runtime_environment_binding_mode": "exact_current_environment_class",
     "required_common_bindings": [
         "admission_revision",
         "authorization_policy_revision",
@@ -43,6 +44,7 @@ EXPECTED_MANIFEST = {
         "executing_runtime_authority_revision",
         "executing_runtime_profile_id",
         "executing_runtime_generation",
+        "executing_runtime_environment_class",
     ],
     "required_tenant_bindings_when_applicable": [
         "tenant_id",
@@ -100,6 +102,7 @@ REQUIRED_DOC_LAWS = (
     "TENANT/RESOURCE ADMISSION != NON-API RUNTIME AUTHORITY",
     "AUTHENTICATION-STRENGTH REVISION != POLICY-ID BINDING",
     "DESTINATION RUNTIME GENERATION != EXECUTING RUNTIME AUTHORITY",
+    "RUNTIME PROFILE+GENERATION MATCH != EXECUTING ENVIRONMENT AUTHORITY",
     "FINAL ADMISSION SNAPSHOT != DURABLE EFFECT AUTHORITY",
 )
 
@@ -122,6 +125,7 @@ REQUIRED_TEST_NAMES = (
     "test_cross_tenant_strength_revision_drift_fails_closed",
     "test_cross_tenant_strength_policy_id_drift_fails_closed_even_same_revision",
     "test_cross_tenant_runtime_generation_or_profile_drift_fails_closed",
+    "test_cross_tenant_runtime_environment_drift_fails_closed",
     "test_cross_tenant_valid_final_snapshot_uses_no_caller_time",
 )
 
@@ -223,6 +227,8 @@ def validate_source_contract_text(text: str, model_text: str | None = None) -> l
             "executing_runtime_authority_revision",
             "executing_runtime_profile_id",
             "executing_runtime_generation",
+            "executing_runtime_environment_class",
+            "executing_runtime_environment_class must be canonical",
             "every final admission must bind current executing-runtime authority",
         ):
             if token not in evidence_text:
@@ -299,6 +305,9 @@ def validate_source_contract_text(text: str, model_text: str | None = None) -> l
             "executing_runtime_authority_revision",
             "executing_runtime_profile_id",
             "executing_runtime_generation",
+            "executing_runtime_environment_class",
+            "latest_runtime_evidence.environment_class",
+            "runtime_binding.admit_environment",
             "runtime_binding.runtime_profile_id",
         ):
             if token not in helper_text:
@@ -367,6 +376,7 @@ def _docs_findings() -> list[str]:
         "caller/request `now`",
         "principal kind",
         "executing-runtime authority",
+        "executing environment",
         "resource scope",
         "cross-tenant target",
         "scope",
@@ -426,7 +436,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}")
         return 1
-    print("RESULT: PASS — final admission binds principal kind, declaration, resource, cross-tenant target and current executing-runtime authority")
+    print("RESULT: PASS — final admission binds principal kind, declaration, resource, cross-tenant target and exact current executing-runtime profile/generation/environment authority")
     print("NOTE: PASS is conformance evidence only; final-admission mechanism remains a replaceable C2 choice.")
     return 0
 

@@ -67,13 +67,30 @@ A reused `platform.authority_fences` boundary is admissible for Wave 1 only when
 19. migration 003 revalidates ownership/role/ACL/definer/function-config boundaries with migration-local `search_path=pg_catalog` before any later C2 role mapping;
 20. migrations 001–003 perform no positive `GRANT`, `ALTER OWNER` or `SET ROLE` that could silently select the residual C2 role mapping.
 
+### Catalog anchors used by assurance
+
+The implementation proof deliberately names the concrete PostgreSQL catalogs/fields rather than relying only on prose aliases:
+
+```text
+pg_catalog.pg_event_trigger
+pg_proc.prosecdef
+pg_attribute.attacl
+attnum > 0
+NOT attisdropped
+pg_rewrite
+pg_depend
+pg_subscription_rel
+```
+
+Those names are evidence anchors, not independent authority. Redirecting one to a different catalog/field invalidates the corresponding proof.
+
 ## Privilege surfaces are independent
 
-`pg_class.relacl` and `pg_attribute.attacl` are distinct privilege surfaces. A clean table ACL is not evidence that historical `SELECT(column)` / `UPDATE(column)` grants are absent. Column ACL inspection covers every `attnum > 0`, non-dropped column and rejects every grantee other than the already-proven migration/table owner; PUBLIC (`oid 0`) is rejected as well.
+`pg_class.relacl` and `pg_attribute.attacl` are distinct privilege surfaces. A clean table ACL is not evidence that historical `SELECT(column)` / `UPDATE(column)` grants are absent. Column ACL inspection covers every `attnum > 0`, `NOT attisdropped` column and rejects every grantee other than the already-proven migration/table owner; PUBLIC (`oid 0`) is rejected as well.
 
 Object ACLs do not enumerate authority inherited through PostgreSQL predefined all-data roles. `pg_read_all_data` can disclose authority state and `pg_write_all_data` can mutate it without a corresponding relation/column/schema ACL. Before C2 role mapping, revalidation therefore walks `pg_auth_members` transitively from both predefined roles and fails closed if any non-owner role can reach either authority surface.
 
-Function ACL cleanliness does not prove absence of definer authority. Schema placement is not a security boundary for `SECURITY DEFINER`, and current EXECUTE ACLs are not sufficient evidence. The pre-C2 proof rejects every `pg_proc` row with migration-owner `proowner` and `prosecdef` anywhere in the database. Any future definer routine is a separate reviewed privileged/C2 decision.
+Function ACL cleanliness does not prove absence of definer authority. Schema placement is not a security boundary for `SECURITY DEFINER`, and current EXECUTE ACLs are not sufficient evidence. The pre-C2 proof rejects every `pg_proc` row with migration-owner `proowner` and `pg_proc.prosecdef` semantics anywhere in the database. Any future definer routine is a separate reviewed privileged/C2 decision.
 
 Local fence rewrite cleanliness is incomplete evidence: another view/rule may depend on the table. Revalidation joins `pg_rewrite` to `pg_depend` and rejects any external rewrite relation dependency on the fence table. Logical replication is a separate authority path again, so any `pg_subscription_rel.srrelid` mapping to the fence relation is rejected.
 
@@ -81,7 +98,7 @@ This model intentionally does not claim to eliminate PostgreSQL superuser/cluste
 
 ## Event-trigger and transaction boundary
 
-Database event triggers are database-wide DDL authority. A catalog preflight alone has TOCTOU exposure, so migrations 001 and 002 start explicit transactions, execute exactly one `SET LOCAL event_triggers = off`, prove `current_setting('event_triggers') = 'off'`, and reject any already-present `pg_event_trigger` row with `evtenabled <> 'D'` before fence DDL.
+Database event triggers are database-wide DDL authority. A catalog preflight alone has TOCTOU exposure, so migrations 001 and 002 start explicit transactions, execute exactly one `SET LOCAL event_triggers = off`, prove `current_setting('event_triggers') = 'off'`, and reject any already-present `pg_catalog.pg_event_trigger` row with `evtenabled <> 'D'` before fence DDL.
 
 The catalog preflight and session execution guard have different meanings: preflight rejects already-enabled hooks; transaction-local disable closes execution for the current migration even if a concurrent privileged actor changes catalog state later. Neither means event triggers are permanently absent after commit.
 
@@ -120,7 +137,7 @@ Observer-only validators/tests fail when any of these properties is removed, red
 - existing `authority_fences` no longer returns from migration 001 before persistent bootstrap mutation;
 - migration 001 fresh branch loses its explicit transaction, event-trigger guard, `pg_catalog` search path or catalog-bound expression primitives;
 - migration 002 mutates/deletes authority rows before reuse proof, moves its `ACCESS EXCLUSIVE` lock after validation, or splits validation/canonicalization across commits;
-- migration 001 or 002 loses transaction-local `event_triggers=off`, effective-setting proof, `pg_event_trigger` catalog proof or exact enabled-state predicate;
+- migration 001 or 002 loses transaction-local `event_triggers=off`, effective-setting proof, `pg_catalog.pg_event_trigger` catalog proof or exact enabled-state predicate;
 - any migration uses a writable schema in the trusted migration `search_path`;
 - either canonical fence function loses exact `search_path=pg_catalog` configuration;
 - canonical stored/effect identifier validation loses `pg_catalog.btrim`, exact `C` collation or catalog-bound regex/equality operators;

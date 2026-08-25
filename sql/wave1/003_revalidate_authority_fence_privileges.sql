@@ -5,8 +5,9 @@
 -- It proves that the migration authority owns the fence objects, that no other
 -- role retains direct object or column authority, that no transitive role-membership
 -- path can assume/inherit the migration-owner authority, that no non-owner role
--- can reach PostgreSQL predefined all-data authority, and that no migration-owner
--- SECURITY DEFINER routine survives anywhere in the database before C2 role mapping.
+-- can reach PostgreSQL predefined all-data authority, and that no SECURITY DEFINER
+-- routine owned by the migration authority or either predefined all-data root role
+-- survives anywhere in the database before C2 role mapping.
 -- The migration search_path is fixed to pg_catalog and both canonical fence routines
 -- must themselves carry the exact pg_catalog-only function search_path.
 
@@ -120,15 +121,21 @@ BEGIN
     END IF;
 
     -- Schema placement, current EXECUTE ACLs and static routine-body inspection are
-    -- not sufficient authority boundaries. Reject every migration-owner SECURITY
-    -- DEFINER routine anywhere in the database before C2 role mapping.
+    -- not sufficient authority boundaries. Reject SECURITY DEFINER routines whose
+    -- owner itself carries fence-wide authority: the migration owner or either
+    -- predefined all-data root role. The root roles are included explicitly because
+    -- pg_auth_members closure does not emit a role as its own member.
     IF EXISTS (
         SELECT 1
           FROM pg_catalog.pg_proc p
-         WHERE p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid
+         WHERE p.proowner IN (
+                   current_user::pg_catalog.regrole::oid,
+                   pg_catalog.to_regrole('pg_read_all_data')::oid,
+                   pg_catalog.to_regrole('pg_write_all_data')::oid
+               )
            AND p.prosecdef
     ) THEN
-        RAISE EXCEPTION 'database contains migration-owner SECURITY DEFINER routine';
+        RAISE EXCEPTION 'database contains fence-authoritative SECURITY DEFINER routine owned by migration or predefined all-data authority';
     END IF;
 
     IF EXISTS (

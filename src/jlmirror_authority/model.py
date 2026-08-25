@@ -175,6 +175,10 @@ class AuthorizationDeclaration:
         _strict_bool(self.tenant_required, "tenant_required")
         if self.resource_scope is not None:
             _identifier(self.resource_scope, "resource_scope")
+        if self.scope is ScopeClass.RESOURCE and self.resource_scope is None:
+            raise ValueError("resource scope requires an explicit canonical resource_scope")
+        if self.scope is not ScopeClass.RESOURCE and self.resource_scope is not None:
+            raise ValueError("resource_scope is valid only for scope=resource")
         if self.authentication_strength_policy_id is not None:
             _identifier(self.authentication_strength_policy_id, "authentication_strength_policy_id")
         if self.step_up is not StepUpClass.NONE and not self.authentication_strength_policy_id:

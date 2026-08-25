@@ -5,9 +5,8 @@
 -- It proves that the migration authority owns the fence objects, that no other
 -- role retains direct object or column authority, that no transitive role-membership
 -- path can assume/inherit the migration-owner authority, that no non-owner role
--- can reach PostgreSQL predefined all-data authority, and that no callable
--- migration-owner SECURITY DEFINER routine survives anywhere in the database
--- before C2 role mapping.
+-- can reach PostgreSQL predefined all-data authority, and that no migration-owner
+-- SECURITY DEFINER routine survives anywhere in the database before C2 role mapping.
 -- It does not choose role names or grant serving/runtime authority.
 
 DO $$
@@ -25,9 +24,6 @@ BEGIN
         RAISE EXCEPTION 'Wave 1 fence privilege objects are incomplete; apply 001/002 first';
     END IF;
 
-    -- The separately governed migration/admin principal applying this contract
-    -- must own every authority object. An old owner could otherwise ALTER or
-    -- replace the fence boundary after validation.
     IF (
         SELECT n.nspowner
           FROM pg_namespace n
@@ -44,11 +40,6 @@ BEGIN
         RAISE EXCEPTION 'authority_fences is not owned by the current migration authority';
     END IF;
 
-    -- Direct ACL cleanliness is insufficient if another role can assume or inherit
-    -- the owner role. Reject every direct or transitive membership path into the
-    -- current migration-owner role before any separately reviewed C2 role mapping.
-    -- This is deliberately conservative and does not attempt to treat membership
-    -- options as permission to weaken the owner boundary.
     IF EXISTS (
         WITH RECURSIVE owner_role_members(member_oid) AS (
             SELECT m.member
@@ -66,13 +57,6 @@ BEGIN
         RAISE EXCEPTION 'current migration authority owner role is reachable through role membership';
     END IF;
 
-    -- PostgreSQL predefined pg_read_all_data / pg_write_all_data privileges are
-    -- effective without relacl/attacl/nspacl entries. A clean object ACL therefore
-    -- does not prove that no other role can read or mutate fence authority. Reject
-    -- every direct or transitive membership path into either predefined all-data
-    -- role before C2 role mapping. The current migration owner itself is excluded
-    -- because it already owns this authority boundary; any other reachable member
-    -- makes the pre-C2 privilege proof fail closed.
     IF EXISTS (
         WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (
             SELECT m.roleid, m.member
@@ -106,11 +90,6 @@ BEGIN
         RAISE EXCEPTION 'authority_fences has inherited non-owner table privileges';
     END IF;
 
-    -- PostgreSQL stores column-level GRANTs separately in pg_attribute.attacl.
-    -- A clean table relacl therefore does not prove that no historical role can
-    -- SELECT/UPDATE individual fence columns after later schema usage is granted.
-    -- Before C2 role mapping, reject every non-owner column ACL entry, including
-    -- PUBLIC (grantee oid 0), on every live user column of the authority table.
     IF EXISTS (
         SELECT 1
           FROM pg_attribute a
@@ -124,9 +103,6 @@ BEGIN
         RAISE EXCEPTION 'authority_fences has inherited non-owner column privileges';
     END IF;
 
-    -- A pre-existing schema grant can let another role create/replace objects in
-    -- the authority namespace. Before C2 role mapping, only the schema owner may
-    -- retain effective schema privileges.
     IF EXISTS (
         SELECT 1
           FROM pg_namespace n
@@ -139,31 +115,22 @@ BEGIN
         RAISE EXCEPTION 'platform schema has inherited non-owner privileges';
     END IF;
 
-    -- Schema placement is not an authority boundary for SECURITY DEFINER code.
-    -- A historical routine owned by the migration authority can live in another
-    -- schema, use a qualified/dynamic reference to platform.authority_fences and
-    -- still execute with owner privileges. Fail closed on every owner-definer
-    -- routine anywhere in the database that is executable by PUBLIC or another
-    -- role. This deliberately does not try to infer routine-body reachability:
-    -- callable owner-definer authority is itself residual authority that requires
-    -- an explicit reviewed decision before C2 role mapping.
+    -- Schema placement, current EXECUTE ACLs and static routine-body inspection are
+    -- not sufficient authority boundaries. A migration-owner SECURITY DEFINER can
+    -- be reached indirectly (for example through a trigger) or become reachable
+    -- after a later grant while still carrying owner-level authority. The pre-C2
+    -- boundary therefore rejects every SECURITY DEFINER routine owned by the current
+    -- migration authority anywhere in this database. Any future definer is an
+    -- explicit reviewed C2/privileged-authority decision, never historical residue.
     IF EXISTS (
         SELECT 1
           FROM pg_proc p
-          CROSS JOIN LATERAL aclexplode(
-              COALESCE(p.proacl, acldefault('f', p.proowner))
-          ) AS acl
          WHERE p.proowner = current_user::regrole::oid
            AND p.prosecdef
-           AND acl.privilege_type = 'EXECUTE'
-           AND acl.grantee <> p.proowner
     ) THEN
-        RAISE EXCEPTION 'database contains callable migration-owner SECURITY DEFINER routine';
+        RAISE EXCEPTION 'database contains migration-owner SECURITY DEFINER routine';
     END IF;
 
-    -- CREATE OR REPLACE does not make an unexpected historical owner safe. The
-    -- current migration authority must own both functions and there may be no
-    -- residual EXECUTE/other ACL entry for a non-owner role.
     IF EXISTS (
         SELECT 1
           FROM pg_proc p

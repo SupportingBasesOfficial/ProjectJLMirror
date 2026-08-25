@@ -24,6 +24,8 @@ EXPECTED_MANIFEST = {
     "authority_owned_currentness_required": True,
     "decision_mode": "atomic_or_revision_bound_logical_snapshot",
     "resource_scope_mode": "required_for_resource_forbidden_otherwise",
+    "declaration_scope_binding_mode": "exact_scope_and_tenant_requirement",
+    "tenant_resource_executing_runtime_profile": "runtime.api@1",
     "required_common_bindings": [
         "admission_revision",
         "authorization_policy_revision",
@@ -31,7 +33,10 @@ EXPECTED_MANIFEST = {
         "principal_id",
         "principal_credential_generation",
         "action",
+        "scope",
+        "tenant_requirement",
         "resource_scope",
+        "authentication_strength_policy_id",
         "executing_runtime_authority_revision",
         "executing_runtime_profile_id",
         "executing_runtime_generation",
@@ -83,6 +88,9 @@ REQUIRED_DOC_LAWS = (
     "SERIAL CURRENTNESS CHECKS != FINAL ADMISSION AUTHORITY",
     "CALLER-SUPPLIED NOW != FINAL CURRENTNESS CLOCK",
     "RESOURCE SCOPE ABSENCE != RESOURCE AUTHORITY",
+    "ACTION MATCH != DECLARATION-SCOPE MATCH",
+    "TENANT/RESOURCE ADMISSION != NON-API RUNTIME AUTHORITY",
+    "AUTHENTICATION-STRENGTH REVISION != POLICY-ID BINDING",
     "DESTINATION RUNTIME GENERATION != EXECUTING RUNTIME AUTHORITY",
     "FINAL ADMISSION SNAPSHOT != DURABLE EFFECT AUTHORITY",
 )
@@ -91,13 +99,16 @@ REQUIRED_TEST_NAMES = (
     "test_serial_green_without_final_admission_authority_fails_closed",
     "test_malformed_or_noncurrent_final_admission_fails_closed",
     "test_final_principal_or_action_binding_mismatch_fails_closed",
+    "test_final_declaration_scope_or_tenant_requirement_mismatch_fails_closed",
     "test_resource_declaration_requires_explicit_scope",
     "test_non_resource_declaration_rejects_resource_scope",
     "test_same_action_different_resource_scope_cannot_reuse_final_evidence",
+    "test_tenant_or_resource_admission_rejects_non_api_runtime_binding",
     "test_tenant_final_admission_requires_executing_runtime_binding",
     "test_tenant_final_admission_rejects_wrong_executing_runtime_profile",
     "test_any_tenant_placement_generation_or_fence_drift_fails_closed",
     "test_cross_tenant_strength_revision_drift_fails_closed",
+    "test_cross_tenant_strength_policy_id_drift_fails_closed_even_same_revision",
     "test_cross_tenant_runtime_generation_or_profile_drift_fails_closed",
     "test_cross_tenant_valid_final_snapshot_uses_no_caller_time",
 )
@@ -174,13 +185,16 @@ def validate_source_contract_text(text: str, model_text: str | None = None) -> l
             )
         evidence_text = ast.unparse(evidence)
         for token in (
+            "scope must be a canonical ScopeClass",
+            "tenant_requirement must be a canonical TenantRequirement",
+            "authentication_strength_policy_id",
             "executing_runtime_authority_revision",
             "executing_runtime_profile_id",
             "executing_runtime_generation",
             "every final admission must bind current executing-runtime authority",
         ):
             if token not in evidence_text:
-                findings.append(f"FinalAdmissionEvidence does not fail closed on runtime binding: {token}")
+                findings.append(f"FinalAdmissionEvidence does not fail closed on required binding: {token}")
 
     declaration = _named_class(model_tree, "AuthorizationDeclaration")
     if declaration is None:
@@ -236,22 +250,23 @@ def validate_source_contract_text(text: str, model_text: str | None = None) -> l
             for node in ast.walk(helper)
         ):
             findings.append("final-admission helper does not enforce FinalAdmissionEvidence type")
-        resource_scope_refs = [
-            node
-            for node in ast.walk(helper)
-            if isinstance(node, ast.Attribute) and node.attr == "resource_scope"
-        ]
-        if len(resource_scope_refs) < 2:
-            findings.append("final-admission helper does not bind exact resource_scope")
         helper_text = ast.unparse(helper)
         for token in (
+            "evidence.scope",
+            "declaration.scope",
+            "evidence.tenant_requirement",
+            "declaration.tenant_requirement",
+            "evidence.resource_scope",
+            "declaration.resource_scope",
+            "evidence.authentication_strength_policy_id",
+            "declaration.authentication_strength_policy_id",
             "executing_runtime_authority_revision",
             "executing_runtime_profile_id",
             "executing_runtime_generation",
             "runtime_binding.runtime_profile_id",
         ):
             if token not in helper_text:
-                findings.append(f"final-admission helper does not bind executing runtime: {token}")
+                findings.append(f"final-admission helper does not bind exact authority dimension: {token}")
 
     authorize = _named_function(tree, "authorize_protected_operation")
     if authorize is None:
@@ -282,6 +297,15 @@ def validate_source_contract_text(text: str, model_text: str | None = None) -> l
             value = authorize.body[-1].value
             if not isinstance(value, ast.Call) or _call_name(value) != "_finalize_current_admission":
                 findings.append("authorize_protected_operation final return bypasses final admission helper")
+        authorize_text = ast.unparse(authorize)
+        for token in (
+            "ScopeClass.TENANT",
+            "ScopeClass.RESOURCE",
+            "runtime_binding != API_AUTH_BOUNDARY",
+            "tenant/resource protected operations require the accepted API runtime boundary",
+        ):
+            if token not in authorize_text:
+                findings.append(f"tenant/resource API-runtime admission boundary missing: {token}")
 
     return findings
 
@@ -303,6 +327,10 @@ def _docs_findings() -> list[str]:
         "caller/request `now`",
         "executing-runtime authority",
         "resource scope",
+        "scope",
+        "tenant_requirement",
+        "authentication_strength_policy_id",
+        "runtime.api@1",
     ):
         if token not in assurance:
             findings.append(f"assurance boundary missing final-admission invariant: {token}")
@@ -356,7 +384,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}")
         return 1
-    print("RESULT: PASS — final admission binds resource and current executing-runtime authority")
+    print("RESULT: PASS — final admission binds declaration, resource and current executing-runtime authority")
     print("NOTE: PASS is conformance evidence only; final-admission mechanism remains a replaceable C2 choice.")
     return 0
 

@@ -12,6 +12,7 @@ if str(SRC) not in sys.path:
 
 from jlmirror_authority.control_plane import (  # noqa: E402
     AuthorizationDecision,
+    CrossTenantTargetBinding,
     FinalAdmissionEvidence,
     RuntimeExecutionEvidence,
     RuntimeLifecycle,
@@ -92,6 +93,10 @@ class RuntimeAuthority:
         return self.evidence
 
 
+def cross_target() -> CrossTenantTargetBinding:
+    return CrossTenantTargetBinding(target_tenant_ids=("tenant-acme",))
+
+
 class CrossTenantFinalAdmissionAuthority:
     def finalize_current_admission(
         self,
@@ -101,11 +106,14 @@ class CrossTenantFinalAdmissionAuthority:
         declaration,
         expected_runtime_binding,
         authentication_strength_evidence,
+        cross_tenant_target,
     ):
         if context is not None:
             raise AssertionError("cross-tenant final admission must not receive TenantContext")
         if expected_runtime_binding != CONTROL_PLANE:
             raise AssertionError("cross-tenant final admission must bind Control Plane")
+        if not isinstance(cross_tenant_target, CrossTenantTargetBinding):
+            raise AssertionError("cross-tenant final admission must receive exact target binding")
         return FinalAdmissionEvidence(
             granted=True,
             current=True,
@@ -118,6 +126,7 @@ class CrossTenantFinalAdmissionAuthority:
             scope=declaration.scope,
             tenant_requirement=declaration.tenant_requirement,
             resource_scope=declaration.resource_scope,
+            cross_tenant_target=cross_tenant_target,
             authentication_strength_policy_id=declaration.authentication_strength_policy_id,
             authentication_strength_policy_revision=authentication_strength_evidence.policy_version,
             executing_runtime_authority_revision="runtime-authority-r5",
@@ -216,6 +225,7 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 now=NOW,
                 runtime_binding=CONTROL_PLANE,
                 runtime_authority=RuntimeAuthority(),
+                cross_tenant_target=cross_target(),
             )
 
     def test_cross_tenant_requires_platform_principal(self):
@@ -243,6 +253,7 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 strength_evidence=None,
                 runtime_binding=CONTROL_PLANE,
                 runtime_authority=RuntimeAuthority(),
+                cross_tenant_target=cross_target(),
             )
 
     def test_cross_tenant_platform_principal_requires_control_plane_and_current_strength(self):
@@ -258,6 +269,8 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
         principal = Principal(
             "platform-admin-1", PrincipalKind.PLATFORM_ADMIN_PRINCIPAL, "session-g7"
         )
+        target = cross_target()
+
         with self.assertRaises(AdmissionDenied):
             authorize_protected_operation(
                 principal=principal,
@@ -271,6 +284,7 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 strength_evidence=None,
                 runtime_binding=CONTROL_PLANE,
                 runtime_authority=RuntimeAuthority(),
+                cross_tenant_target=target,
             )
         with self.assertRaises(AdmissionDenied):
             authorize_protected_operation(
@@ -284,6 +298,7 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 strength_policy=StrengthPolicy(),
                 strength_evidence=admin_strength(),
                 runtime_binding=API_AUTH_BOUNDARY,
+                cross_tenant_target=target,
             )
 
         with self.assertRaises(AdmissionDenied):
@@ -298,6 +313,7 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 strength_policy=StrengthPolicy(),
                 strength_evidence=admin_strength(),
                 runtime_binding=CONTROL_PLANE,
+                cross_tenant_target=target,
             )
 
         with self.assertRaises(AdmissionDenied):
@@ -313,6 +329,7 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
                 strength_evidence=admin_strength(),
                 runtime_binding=CONTROL_PLANE,
                 runtime_authority=RuntimeAuthority(control_plane=False),
+                cross_tenant_target=target,
             )
 
         strength = admin_strength()
@@ -329,6 +346,7 @@ class AuthorizationDeclarationAlignmentTests(unittest.TestCase):
             runtime_binding=CONTROL_PLANE,
             runtime_authority=RuntimeAuthority(),
             final_admission_authority=CrossTenantFinalAdmissionAuthority(),
+            cross_tenant_target=target,
         )
         self.assertTrue(decision.granted)
         self.assertEqual(decision.policy_revision, "platform-authz-final-r5")

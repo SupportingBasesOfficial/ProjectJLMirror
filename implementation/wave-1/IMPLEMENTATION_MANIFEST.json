@@ -55,6 +55,7 @@
     "final_admission_tenant_requirement_for_other_declaration",
     "non_api_runtime_for_tenant_resource_admission",
     "cross_tenant_platform_authority_through_application_runtime",
+    "cross_tenant_action_for_target_set_authority",
     "earlier_executing_runtime_currentness_for_final_cross_tenant_admission",
     "earlier_authorization_grant_for_final_current_authorization",
     "resource_scope_absence_for_resource_authority",
@@ -66,7 +67,10 @@
     "unvalidated_persisted_fence_state_for_current_authority",
     "nondeterministic_collation_for_fence_scope_authority",
     "object_acl_clean_for_owner_role_unassumable",
+    "object_acl_clean_for_predefined_all_data_role_absence",
     "table_acl_clean_for_column_acl_clean",
+    "table_shape_match_for_referential_action_free_fence_authority",
+    "primary_key_present_for_immediate_valid_ready_conflict_arbiter",
     "fence_token_for_effect_absence",
     "secret_reference_for_secret_value",
     "out_of_scope_git_delta_for_wave1_authority"

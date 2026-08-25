@@ -3,15 +3,17 @@
 -- 001 may be applied into an environment where the logical schema already exists.
 -- This migration makes reuse fail closed: an existing authority_fences table must
 -- satisfy the canonical structural, durability, identifier, deterministic-collation,
--- conflict-arbiter and referential-action-free contract before Wave 1 can consider it
--- eligible for authority use. Invalid historical shape/rows or hidden mutation
--- behavior fail; they are not normalized, deleted, or silently accepted here.
+-- conflict-arbiter, constraint/index and referential-action-free contract before
+-- Wave 1 can consider it eligible for authority use. Invalid historical shape/rows
+-- or hidden mutation/write-constraining behavior fail; rows are not normalized,
+-- deleted, or silently accepted here.
 
 -- A table name is not conformance. Verify the exact ordinary-table shape that makes
 -- compare-and-advance single-winner and preserves the accepted BIGINT fence domain.
 DO $$
 DECLARE
     v_table regclass := to_regclass('platform.authority_fences');
+    v_pk_index oid;
 BEGIN
     IF v_table IS NULL THEN
         RAISE EXCEPTION 'platform.authority_fences is absent; apply 001 before revalidation';
@@ -164,38 +166,88 @@ BEGIN
         RAISE EXCEPTION 'authority_fences.updated_at must retain the canonical statement_timestamp() evidence default';
     END IF;
 
+    -- The authority table has an exact finite constraint vocabulary. Extra UNIQUE,
+    -- EXCLUDE or CHECK metadata can make an otherwise canonical initialize/advance
+    -- fail (or create hidden authority semantics), so object reuse rejects anything
+    -- outside the canonical PK + four canonical CHECK constraints. The CHECK bodies
+    -- are recreated below under these names, after unknown metadata has failed closed.
+    IF (
+        SELECT array_agg(conname::text ORDER BY conname)
+          FROM pg_constraint
+         WHERE conrelid = v_table
+    ) IS DISTINCT FROM ARRAY[
+        'wave1_authority_fences_pkey',
+        'wave1_fence_epoch_positive',
+        'wave1_fence_generation_canonical',
+        'wave1_fence_scope_id_canonical',
+        'wave1_fence_state_canonical'
+    ]::text[] THEN
+        RAISE EXCEPTION 'authority_fences contains noncanonical or missing write constraints';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_constraint
+         WHERE conrelid = v_table
+           AND conname IN (
+               'wave1_fence_epoch_positive',
+               'wave1_fence_generation_canonical',
+               'wave1_fence_scope_id_canonical',
+               'wave1_fence_state_canonical'
+           )
+           AND (contype <> 'c' OR NOT convalidated)
+    ) THEN
+        RAISE EXCEPTION 'authority_fences canonical CHECK constraints must be validated CHECK constraints';
+    END IF;
+
     -- initialize_authority_fence uses ON CONFLICT (fence_scope_id). Merely finding
     -- a contype='p' row is not enough: a DEFERRABLE/not-ready/invalid primary key
     -- cannot serve as the immediate conflict arbiter that the canonical function
     -- requires. Reuse therefore proves both the constraint and its backing index.
-    IF NOT EXISTS (
+    SELECT c.conindid
+      INTO v_pk_index
+      FROM pg_constraint c
+      JOIN pg_attribute a
+        ON a.attrelid = c.conrelid
+       AND a.attname = 'fence_scope_id'
+       AND a.attnum > 0
+       AND NOT a.attisdropped
+      JOIN pg_index i
+        ON i.indexrelid = c.conindid
+     WHERE c.conrelid = v_table
+       AND c.conname = 'wave1_authority_fences_pkey'
+       AND c.contype = 'p'
+       AND c.conkey = ARRAY[a.attnum]::smallint[]
+       AND NOT c.condeferrable
+       AND NOT c.condeferred
+       AND c.convalidated
+       AND i.indisprimary
+       AND i.indisunique
+       AND i.indimmediate
+       AND i.indisvalid
+       AND i.indisready
+       AND i.indislive
+       AND i.indnkeyatts = 1
+       AND i.indnatts = 1
+       AND i.indexprs IS NULL
+       AND i.indpred IS NULL;
+
+    IF v_pk_index IS NULL THEN
+        RAISE EXCEPTION 'authority_fences primary key must be the canonical single-column immediate valid ready conflict arbiter on fence_scope_id';
+    END IF;
+
+    -- Even a non-constraint index can alter write behavior through expression or
+    -- predicate evaluation, while unique/exclusion indexes can reject canonical
+    -- writes. Wave 1 therefore admits exactly the PK backing index and no additional
+    -- index metadata on the authority table; later indexes require reviewed schema
+    -- evolution rather than reuse-time inference.
+    IF EXISTS (
         SELECT 1
-          FROM pg_constraint c
-          JOIN pg_attribute a
-            ON a.attrelid = c.conrelid
-           AND a.attname = 'fence_scope_id'
-           AND a.attnum > 0
-           AND NOT a.attisdropped
-          JOIN pg_index i
-            ON i.indexrelid = c.conindid
-         WHERE c.conrelid = v_table
-           AND c.contype = 'p'
-           AND c.conkey = ARRAY[a.attnum]::smallint[]
-           AND NOT c.condeferrable
-           AND NOT c.condeferred
-           AND c.convalidated
-           AND i.indisprimary
-           AND i.indisunique
-           AND i.indimmediate
-           AND i.indisvalid
-           AND i.indisready
-           AND i.indislive
-           AND i.indnkeyatts = 1
-           AND i.indnatts = 1
-           AND i.indexprs IS NULL
-           AND i.indpred IS NULL
+          FROM pg_index i
+         WHERE i.indrelid = v_table
+           AND i.indexrelid <> v_pk_index
     ) THEN
-        RAISE EXCEPTION 'authority_fences primary key must be a single-column immediate valid ready conflict arbiter on fence_scope_id';
+        RAISE EXCEPTION 'authority_fences contains noncanonical index metadata';
     END IF;
 
     -- Foreign-key referential actions are hidden mutation/blocking semantics. An
@@ -245,6 +297,15 @@ ALTER TABLE platform.authority_fences
     ALTER COLUMN current_generation_id SET NOT NULL,
     ALTER COLUMN authority_state SET NOT NULL,
     ALTER COLUMN updated_at SET NOT NULL;
+
+-- Recreate only the already-proven canonical CHECK names. This replaces their
+-- bodies with the exact reviewed expressions while preserving rows. Unknown
+-- constraints/indexes were rejected above rather than silently dropped.
+ALTER TABLE platform.authority_fences
+    DROP CONSTRAINT wave1_fence_scope_id_canonical,
+    DROP CONSTRAINT wave1_fence_epoch_positive,
+    DROP CONSTRAINT wave1_fence_generation_canonical,
+    DROP CONSTRAINT wave1_fence_state_canonical;
 
 ALTER TABLE platform.authority_fences
     ADD CONSTRAINT wave1_fence_scope_id_canonical

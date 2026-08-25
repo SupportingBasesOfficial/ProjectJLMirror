@@ -2,10 +2,10 @@
 --
 -- 001 may be applied into an environment where the logical schema already exists.
 -- This migration makes reuse fail closed: an existing authority_fences table must
--- satisfy the canonical structural, durability, identifier and positive-epoch
--- contract before Wave 1 can consider it eligible for authority use. Invalid
--- historical shape/rows or hidden mutation behavior fail; they are not normalized,
--- deleted, or silently accepted here.
+-- satisfy the canonical structural, durability, identifier, deterministic-collation
+-- and positive-epoch contract before Wave 1 can consider it eligible for authority use.
+-- Invalid historical shape/rows or hidden mutation behavior fail; they are not
+-- normalized, deleted, or silently accepted here.
 
 -- A table name is not conformance. Verify the exact ordinary-table shape that makes
 -- compare-and-advance single-winner and preserves the accepted BIGINT fence domain.
@@ -100,6 +100,22 @@ BEGIN
            AND NOT attisdropped
     ) IS DISTINCT FROM 'text'::regtype THEN
         RAISE EXCEPTION 'authority_fences.authority_state must be text';
+    END IF;
+
+    -- Canonical authority identifiers participate in PK/conflict/equality semantics.
+    -- They must not inherit a database-default case-insensitive/nondeterministic
+    -- collation that could alias distinct canonical IDs. Reuse fails closed rather
+    -- than rewriting an existing table under a different comparison domain.
+    IF EXISTS (
+        SELECT 1
+          FROM pg_attribute
+         WHERE attrelid = v_table
+           AND attnum > 0
+           AND NOT attisdropped
+           AND attname IN ('fence_scope_id', 'current_generation_id', 'authority_state')
+           AND attcollation IS DISTINCT FROM 'pg_catalog."C"'::regcollation
+    ) THEN
+        RAISE EXCEPTION 'authority_fences canonical text authority columns must use pg_catalog.C collation';
     END IF;
 
     IF (

@@ -201,6 +201,7 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
         "pg_catalog.aclexplode(a.attacl) AS acl",
         "p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid",
         "AND p.prosecdef",
+        "p.proconfig IS DISTINCT FROM ARRAY['search_path=pg_catalog']::text[]",
         "pg_catalog.aclexplode(\n              pg_catalog.COALESCE(c.relacl, pg_catalog.acldefault('r', c.relowner))\n          ) AS acl",
         "pg_catalog.aclexplode(\n              pg_catalog.COALESCE(n.nspacl, pg_catalog.acldefault('n', n.nspowner))\n          ) AS acl",
     )
@@ -274,7 +275,7 @@ def validate_revalidation_safety_text(text: str) -> list[str]:
         post_assert_normalized = normalized.find(post_assert_marker)
         commit_pos = normalized.rfind("COMMIT;")
         if not (privilege_pos < structural_pos < drop_pos < validate_pos < function_pos < post_assert_normalized < commit_pos):
-            findings.append("Wave 1 fence reuse privilege+structural validation/canonicalization/post-ACL assertion must finish in one transaction before commit")
+            findings.append("Wave 1 fence reuse privilege+structural validation/canonicalization must finish in one transaction before function replacement and post-ACL assertion/commit")
     if post_assert_pos < 0 or post_assert_pos > code.rfind("COMMIT;"):
         findings.append("Wave 1 fence reuse must reassert canonical routine ACL/current-authority state before commit")
 

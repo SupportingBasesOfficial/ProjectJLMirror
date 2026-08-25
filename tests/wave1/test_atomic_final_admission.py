@@ -193,6 +193,7 @@ def tenant_final_evidence(context, **overrides):
         executing_runtime_authority_revision="runtime-authority-r9",
         executing_runtime_profile_id="runtime.api@1",
         executing_runtime_generation="runtime-api-g9",
+        executing_runtime_environment_class=EnvironmentClass.PRODUCTION,
     )
     values.update(overrides)
     return FinalAdmissionEvidence(**values)
@@ -247,6 +248,7 @@ def cross_final_evidence(**overrides):
         executing_runtime_authority_revision="runtime-authority-r10",
         executing_runtime_profile_id="runtime.control-plane@1",
         executing_runtime_generation="runtime-control-g7",
+        executing_runtime_environment_class=EnvironmentClass.PRODUCTION,
     )
     values.update(overrides)
     return FinalAdmissionEvidence(**values)
@@ -416,6 +418,7 @@ class AtomicFinalAdmissionTests(unittest.TestCase):
             "executing_runtime_authority_revision",
             "executing_runtime_profile_id",
             "executing_runtime_generation",
+            "executing_runtime_environment_class",
         ):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 tenant_final_evidence(self.context, **{field: None})
@@ -521,6 +524,14 @@ class AtomicFinalAdmissionTests(unittest.TestCase):
         ):
             with self.subTest(evidence=evidence), self.assertRaises(AdmissionDenied):
                 self.cross_call(evidence=evidence)
+
+    def test_cross_tenant_runtime_environment_drift_fails_closed(self):
+        with self.assertRaises(AdmissionDenied):
+            self.cross_call(
+                evidence=cross_final_evidence(
+                    executing_runtime_environment_class=EnvironmentClass.VALIDATION
+                )
+            )
 
     def test_cross_tenant_valid_final_snapshot_uses_no_caller_time(self):
         admin = Principal(

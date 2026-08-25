@@ -9,7 +9,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.authority.validate_wave1_privileges import (  # noqa: E402
+    BOUNDARY_PATH,
     SQL_PATH,
+    validate_boundary_text,
     validate_text,
 )
 
@@ -18,9 +20,11 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.text = SQL_PATH.read_text(encoding="utf-8")
+        cls.boundary = BOUNDARY_PATH.read_text(encoding="utf-8")
 
     def test_current_privilege_contract_passes(self):
         self.assertEqual(validate_text(self.text), [])
+        self.assertEqual(validate_boundary_text(self.boundary), [])
 
     def test_table_owner_guard_cannot_be_removed(self):
         mutated = self.text.replace(
@@ -67,7 +71,7 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
         findings = validate_text(mutated)
         self.assertTrue(any("a.attacl" in finding or "current_user::regrole::oid" in finding for finding in findings))
 
-    def test_column_acl_guard_must_read_attacl_not_table_acl(self):
+    def test_column_acl_guard_must_read_attacl(self):
         mutated = self.text.replace(
             "aclexplode(a.attacl) AS acl",
             "aclexplode(NULL::aclitem[]) AS acl",
@@ -129,6 +133,20 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
         ) + "\n-- WITH RECURSIVE owner_role_members(member_oid) AS (\n"
         findings = validate_text(mutated)
         self.assertTrue(any("owner_role_members" in finding for finding in findings))
+
+    def test_boundary_cannot_conflate_table_and_column_acl(self):
+        mutated = self.boundary.replace(
+            "TABLE ACL CLEAN != COLUMN ACL CLEAN",
+            "TABLE ACL CLEAN == COLUMN ACL CLEAN",
+            1,
+        )
+        findings = validate_boundary_text(mutated)
+        self.assertTrue(any("TABLE ACL CLEAN" in finding for finding in findings))
+
+    def test_boundary_must_name_pg_attribute_attacl(self):
+        mutated = self.boundary.replace("pg_attribute.attacl", "pg_class.relacl", 1)
+        findings = validate_boundary_text(mutated)
+        self.assertTrue(any("pg_attribute.attacl" in finding for finding in findings))
 
     def test_validator_rejects_role_mapping_grants(self):
         mutated = self.text + "\nGRANT UPDATE ON platform.authority_fences TO serving_role;\n"

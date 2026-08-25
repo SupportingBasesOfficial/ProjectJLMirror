@@ -191,7 +191,10 @@ class FinalAdmissionEvidence:
     principal_id: str
     principal_credential_generation: str
     action: str
+    scope: ScopeClass
+    tenant_requirement: TenantRequirement
     resource_scope: str | None = None
+    authentication_strength_policy_id: str | None = None
     tenant_id: str | None = None
     cell_id: str | None = None
     placement_authority_revision: str | None = None
@@ -223,7 +226,15 @@ class FinalAdmissionEvidence:
             "action",
         ):
             _identifier(getattr(self, field), field)
+        if not isinstance(self.scope, ScopeClass):
+            raise ValueError("scope must be a canonical ScopeClass")
+        if not isinstance(self.tenant_requirement, TenantRequirement):
+            raise ValueError("tenant_requirement must be a canonical TenantRequirement")
         _optional_identifier(self.resource_scope, "resource_scope")
+        _optional_identifier(
+            self.authentication_strength_policy_id,
+            "authentication_strength_policy_id",
+        )
         _optional_identifier(
             self.authentication_strength_policy_revision,
             "authentication_strength_policy_revision",
@@ -532,10 +543,14 @@ def _finalize_current_admission(
         evidence.principal_id != principal.principal_id
         or evidence.principal_credential_generation != principal.credential_generation
         or evidence.action != declaration.action
+        or evidence.scope is not declaration.scope
+        or evidence.tenant_requirement is not declaration.tenant_requirement
         or evidence.resource_scope != declaration.resource_scope
+        or evidence.authentication_strength_policy_id
+        != declaration.authentication_strength_policy_id
     ):
         raise AdmissionDenied(
-            "final admission evidence is bound to another principal, action, or resource scope"
+            "final admission evidence is bound to another principal, action, declaration scope, resource, or authentication-strength policy"
         )
 
     if context is None:
@@ -733,6 +748,8 @@ def authorize_protected_operation(
 
     requirement = declaration.tenant_requirement
     latest_runtime_evidence: RuntimeExecutionEvidence | None = None
+    if declaration.scope in {ScopeClass.TENANT, ScopeClass.RESOURCE} and runtime_binding != API_AUTH_BOUNDARY:
+        raise AdmissionDenied("tenant/resource protected operations require the accepted API runtime boundary")
     if requirement is TenantRequirement.REQUIRED and context is None:
         raise AdmissionDenied("protected operation requires trusted TenantContext")
     if requirement is TenantRequirement.EXPLICIT_CROSS_TENANT_PRIVILEGED:

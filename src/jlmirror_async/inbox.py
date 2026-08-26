@@ -14,6 +14,7 @@ from .execution import (
 )
 from .model import (
     ComparisonEvidence,
+    CrossAuthorityOperationSnapshot,
     EffectResultLink,
     EquivalenceRelation,
     InboxState,
@@ -37,20 +38,8 @@ class InboxAdmission(str, Enum):
 
 
 class CrossAuthorityReconciliationPort(Protocol):
-    def state(self, operation_id: str) -> OperationState:
-        """Return durable current operation state."""
-
-    def outcome(self, operation_id: str) -> EffectResultLink | None:
-        """Return durable outcome identity when completed."""
-
-    def reconciliation_resolution(
-        self,
-        operation_id: str,
-    ) -> ReconciliationResolution | None:
-        """Return last durable reconciliation disposition."""
-
-    def reconciliation_revision(self, operation_id: str) -> str | None:
-        """Return stable reconciliation evidence revision."""
+    def snapshot(self, operation_id: str) -> CrossAuthorityOperationSnapshot:
+        """Return one coherent durable observation for the stable operation."""
 
 
 @dataclass(frozen=True)
@@ -244,7 +233,7 @@ class InMemoryInboxLedger:
         operation_authority: CrossAuthorityReconciliationPort,
         observed_at: datetime,
     ) -> None:
-        """Complete a processing receipt only from the bound operation's durable outcome."""
+        """Complete a processing receipt only from one coherent operation snapshot."""
 
         if not isinstance(result_link, EffectResultLink):
             raise ValueError("cross-authority completion requires durable result link")
@@ -256,15 +245,16 @@ class InMemoryInboxLedger:
                     "cross-authority completion requires stable bound operation identity"
                 )
             try:
-                state = operation_authority.state(receipt.operation_id)
-                outcome = operation_authority.outcome(receipt.operation_id)
-                resolution = operation_authority.reconciliation_resolution(receipt.operation_id)
-                revision = operation_authority.reconciliation_revision(receipt.operation_id)
+                snapshot = operation_authority.snapshot(receipt.operation_id)
             except Exception as exc:
                 raise ReconciliationBlocked("operation outcome authority failed closed") from exc
-            if state is not OperationState.COMPLETED or outcome != result_link:
+            if not isinstance(snapshot, CrossAuthorityOperationSnapshot):
+                raise ReconciliationBlocked("operation authority did not return canonical atomic snapshot")
+            if snapshot.operation_id != receipt.operation_id:
+                raise ReconciliationBlocked("operation authority snapshot is bound to wrong operation")
+            if snapshot.state is not OperationState.COMPLETED or snapshot.outcome != result_link:
                 raise ReconciliationBlocked("bound operation has not durably completed with exact outcome")
-            if resolution is not None or revision is not None:
+            if snapshot.reconciliation_resolution is not None or snapshot.reconciliation_revision is not None:
                 raise ReconciliationBlocked(
                     "reconciled operation completion must use reconciliation completion path"
                 )
@@ -329,7 +319,7 @@ class InMemoryInboxLedger:
         identity: ScopedMessageIdentity,
         operation_authority: CrossAuthorityReconciliationPort,
     ) -> None:
-        """Re-admit only after the bound operation durably proves effect absence."""
+        """Re-admit only after one atomic snapshot durably proves effect absence."""
 
         with self._lock:
             receipt = self._require(identity)
@@ -338,21 +328,22 @@ class InMemoryInboxLedger:
             if receipt.operation_id is None:
                 raise ReconciliationBlocked("receipt has no stable cross-authority operation identity")
             try:
-                state = operation_authority.state(receipt.operation_id)
-                resolution = operation_authority.reconciliation_resolution(receipt.operation_id)
-                revision = operation_authority.reconciliation_revision(receipt.operation_id)
+                snapshot = operation_authority.snapshot(receipt.operation_id)
             except Exception as exc:
                 raise ReconciliationBlocked("operation reconciliation authority failed closed") from exc
+            if not isinstance(snapshot, CrossAuthorityOperationSnapshot):
+                raise ReconciliationBlocked("operation authority did not return canonical atomic snapshot")
             if (
-                state is not OperationState.PREPARED
-                or resolution is not ReconciliationResolution.EFFECT_PROVEN_ABSENT
-                or not isinstance(revision, str)
+                snapshot.operation_id != receipt.operation_id
+                or snapshot.state is not OperationState.PREPARED
+                or snapshot.reconciliation_resolution is not ReconciliationResolution.EFFECT_PROVEN_ABSENT
+                or not isinstance(snapshot.reconciliation_revision, str)
             ):
                 raise ReconciliationBlocked("effect absence has not been durably reconciled")
-            identifier(revision, "reconciliation_revision")
+            identifier(snapshot.reconciliation_revision, "reconciliation_revision")
             receipt.state = InboxState.ADMITTED
             receipt.terminal_reason = None
-            receipt.reconciliation_revision = revision
+            receipt.reconciliation_revision = snapshot.reconciliation_revision
 
     def reconcile_completed(
         self,
@@ -374,21 +365,21 @@ class InMemoryInboxLedger:
             if operation_authority is None:
                 raise ReconciliationBlocked("reconciliation completion requires operation authority")
             try:
-                state = operation_authority.state(receipt.operation_id)
-                outcome = operation_authority.outcome(receipt.operation_id)
-                resolution = operation_authority.reconciliation_resolution(receipt.operation_id)
-                revision = operation_authority.reconciliation_revision(receipt.operation_id)
+                snapshot = operation_authority.snapshot(receipt.operation_id)
             except Exception as exc:
                 raise ReconciliationBlocked("operation reconciliation authority failed closed") from exc
+            if not isinstance(snapshot, CrossAuthorityOperationSnapshot):
+                raise ReconciliationBlocked("operation authority did not return canonical atomic snapshot")
             if (
-                state is not OperationState.COMPLETED
-                or outcome != result_link
-                or resolution is not ReconciliationResolution.EFFECT_CONFIRMED
-                or not isinstance(revision, str)
+                snapshot.operation_id != receipt.operation_id
+                or snapshot.state is not OperationState.COMPLETED
+                or snapshot.outcome != result_link
+                or snapshot.reconciliation_resolution is not ReconciliationResolution.EFFECT_CONFIRMED
+                or not isinstance(snapshot.reconciliation_revision, str)
             ):
                 raise ReconciliationBlocked("confirmed effect/result has not been durably reconciled")
-            identifier(revision, "reconciliation_revision")
-            receipt.reconciliation_revision = revision
+            identifier(snapshot.reconciliation_revision, "reconciliation_revision")
+            receipt.reconciliation_revision = snapshot.reconciliation_revision
             receipt.state = InboxState.COMPLETED
             receipt.result_link = result_link
             receipt.terminal_reason = None

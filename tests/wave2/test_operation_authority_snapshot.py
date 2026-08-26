@@ -118,7 +118,7 @@ class OperationAuthoritySnapshotTests(unittest.TestCase):
                 reconciliation_revision="rev-1",
             )
 
-    def test_direct_completion_consumes_one_snapshot_and_no_split_reads(self) -> None:
+    def test_direct_completion_consumes_scoped_snapshots_and_no_split_reads(self) -> None:
         identity = ScopedMessageIdentity(
             consumer_contract="monitoring.observation.consume",
             message_identity_scope="producer-scope-a",
@@ -141,9 +141,19 @@ class OperationAuthoritySnapshotTests(unittest.TestCase):
             execution_authority=CurrentExecutionAuthority(),
             claim_expires_at=LEASE_END,
         )
+        binding_authority = SnapshotOnlyAuthority(
+            CrossAuthorityOperationSnapshot(
+                operation_id="op-1",
+                state=OperationState.PREPARED,
+                attempt_generation=0,
+                owner_contract=identity.consumer_contract,
+                tenant_id=identity.tenant_id,
+            )
+        )
         ledger.bind_cross_authority_operation(
             claim,
             "op-1",
+            operation_authority=binding_authority,
             observed_at=NOW + timedelta(seconds=1),
         )
         result = EffectResultLink("result-1", "provider_outcome")
@@ -152,6 +162,8 @@ class OperationAuthoritySnapshotTests(unittest.TestCase):
                 operation_id="op-1",
                 state=OperationState.COMPLETED,
                 attempt_generation=1,
+                owner_contract=identity.consumer_contract,
+                tenant_id=identity.tenant_id,
                 outcome=result,
             )
         )
@@ -163,6 +175,7 @@ class OperationAuthoritySnapshotTests(unittest.TestCase):
             observed_at=NOW + timedelta(seconds=2),
         )
 
+        self.assertEqual(binding_authority.calls, 1)
         self.assertEqual(authority.calls, 1)
         self.assertEqual(ledger.state(identity), InboxState.COMPLETED)
 

@@ -6,6 +6,7 @@ import re
 from .model import ALLOWED_ENVIRONMENT_CLASSES, ArtifactIdentity, RELEASE_PRINCIPALS, ReleaseError, SourceTrustClass, ValidationScope
 
 _EVIDENCE_REFERENCE_RE = re.compile(r"^evidence:[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,190}$")
+_GIT_SOURCE_STATE_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
 
 
 def require_immutable_evidence_reference(name: str, value: str) -> None:
@@ -15,10 +16,43 @@ def require_immutable_evidence_reference(name: str, value: str) -> None:
 
 
 @dataclass(frozen=True)
-class BuildProvenanceEvidence:
+class AcceptedSourceEvidence:
     source_state_id: str
     source_trust_class: SourceTrustClass
-    accepted_change_authority_proven: bool
+    source_change_authority_profile_and_version: str
+    source_change_evidence_reference: str
+    review_assurance_profile_and_version: str
+    review_assurance_evidence_reference: str
+
+    def validate(self) -> None:
+        if self.source_trust_class is not SourceTrustClass.ACCEPTED_REVIEW_STATE:
+            raise ReleaseError("trusted build requires accepted exact source trust state")
+        if not isinstance(self.source_state_id, str) or not _GIT_SOURCE_STATE_RE.fullmatch(self.source_state_id):
+            raise ReleaseError("accepted source state must be an exact immutable Git object id")
+        if not self.source_change_authority_profile_and_version:
+            raise ReleaseError("accepted source requires source/change authority profile/version")
+        if not self.review_assurance_profile_and_version:
+            raise ReleaseError("accepted source requires review/assurance authority profile/version")
+        require_immutable_evidence_reference(
+            "source_change_evidence_reference", self.source_change_evidence_reference
+        )
+        require_immutable_evidence_reference(
+            "review_assurance_evidence_reference", self.review_assurance_evidence_reference
+        )
+        if self.source_change_evidence_reference == self.review_assurance_evidence_reference:
+            raise ReleaseError("source/change and review/assurance evidence identities must remain distinct")
+
+
+def require_trusted_build_source(source: AcceptedSourceEvidence) -> None:
+    """Establish trusted build source only from exact accepted source/change + review evidence."""
+    if not isinstance(source, AcceptedSourceEvidence):
+        raise ReleaseError("trusted build source requires canonical AcceptedSourceEvidence")
+    source.validate()
+
+
+@dataclass(frozen=True)
+class BuildProvenanceEvidence:
+    accepted_source: AcceptedSourceEvidence
     release_policy_profile_and_version: str
     release_policy_current: bool
     builder_principal_class: str
@@ -35,12 +69,17 @@ class BuildProvenanceEvidence:
     artifact_attestation_profile: str
     artifact_retired: bool = False
 
+    @property
+    def source_state_id(self) -> str:
+        return self.accepted_source.source_state_id
+
+    @property
+    def source_trust_class(self) -> SourceTrustClass:
+        return self.accepted_source.source_trust_class
+
 
 def validate_build_provenance(evidence: BuildProvenanceEvidence) -> None:
-    if evidence.source_trust_class is not SourceTrustClass.ACCEPTED_REVIEW_STATE:
-        raise ReleaseError("trusted build requires accepted exact source trust state")
-    if not evidence.source_state_id or not evidence.accepted_change_authority_proven:
-        raise ReleaseError("accepted source requires exact state and change-authority evidence")
+    require_trusted_build_source(evidence.accepted_source)
     if not evidence.release_policy_profile_and_version or not evidence.release_policy_current:
         raise ReleaseError("trusted release policy profile/currentness is required")
     if evidence.builder_principal_class != "principal.release-build@1":

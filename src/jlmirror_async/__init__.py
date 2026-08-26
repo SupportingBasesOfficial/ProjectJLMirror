@@ -10,7 +10,12 @@ from .execution import (
     CurrentAsyncExecutionAuthorityPort,
     require_current_execution,
 )
-from .inbox import InboxAdmission, InboxExecutorClaim, InMemoryInboxLedger
+from .inbox import (
+    CrossAuthorityReconciliationPort,
+    InboxAdmission,
+    InboxExecutorClaim,
+    InMemoryInboxLedger,
+)
 from .model import (
     AsyncCorrectnessError,
     BrokerPublicationReceipt,
@@ -39,6 +44,7 @@ __all__ = [
     "AsyncExecutionRequest",
     "BrokerPublicationReceipt",
     "ComparisonEvidence",
+    "CrossAuthorityReconciliationPort",
     "CurrentAsyncExecutionAuthorityPort",
     "EffectResultLink",
     "EquivalenceRelation",

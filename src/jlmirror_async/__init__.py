@@ -36,7 +36,11 @@ from .model import (
     ScopedMessageIdentity,
 )
 from .outbox import InMemoryOutboxLedger, OutboxClaim, tenant_message_from_context
-from .reconciliation import InMemoryCrossAuthorityOperationLedger, OperationAttempt
+from .reconciliation import (
+    InMemoryCrossAuthorityOperationLedger,
+    OperationAttempt,
+    ReconciliationEvidence,
+)
 
 __all__ = [
     "AsyncCorrectnessError",
@@ -65,6 +69,7 @@ __all__ = [
     "OutboxClaim",
     "OutboxDispatchState",
     "ReconciliationBlocked",
+    "ReconciliationEvidence",
     "ReconciliationResolution",
     "ScopedMessageIdentity",
     "require_current_execution",

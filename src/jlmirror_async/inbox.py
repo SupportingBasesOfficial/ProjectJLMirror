@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from threading import RLock
+from typing import Protocol
 
 from .execution import (
     AsyncExecutionAdmission,
@@ -18,7 +19,9 @@ from .model import (
     InboxState,
     IntegrityConflict,
     InvalidTransition,
+    OperationState,
     ReconciliationBlocked,
+    ReconciliationResolution,
     ScopedMessageIdentity,
     aware,
     identifier,
@@ -31,6 +34,23 @@ class InboxAdmission(str, Enum):
     OBSERVE_IN_PROGRESS = "observe_in_progress"
     RECONCILIATION_BLOCKED = "reconciliation_blocked"
     INTEGRITY_CONFLICT = "integrity_conflict"
+
+
+class CrossAuthorityReconciliationPort(Protocol):
+    def state(self, operation_id: str) -> OperationState:
+        """Return durable current operation state."""
+
+    def outcome(self, operation_id: str) -> EffectResultLink | None:
+        """Return durable outcome identity when completed."""
+
+    def reconciliation_resolution(
+        self,
+        operation_id: str,
+    ) -> ReconciliationResolution | None:
+        """Return last durable reconciliation disposition."""
+
+    def reconciliation_revision(self, operation_id: str) -> str | None:
+        """Return stable reconciliation evidence revision."""
 
 
 @dataclass(frozen=True)
@@ -54,6 +74,7 @@ class _Receipt:
     result_link: EffectResultLink | None = None
     operation_id: str | None = None
     terminal_reason: str | None = None
+    reconciliation_revision: str | None = None
 
 
 class InMemoryInboxLedger:
@@ -87,10 +108,6 @@ class InMemoryInboxLedger:
                 )
                 return InboxAdmission.NEW
 
-            # The canonical durable key remains the accepted Phase 10 triple. Any
-            # supplemental trusted binding represented by the concrete identity
-            # (currently tenant_id) must nevertheless agree. A collision cannot be
-            # laundered into a benign duplicate merely because the key matches.
             if receipt.identity != identity:
                 receipt.state = InboxState.QUARANTINED
                 receipt.executor_id = None
@@ -181,8 +198,6 @@ class InMemoryInboxLedger:
         *,
         observed_at: datetime,
     ) -> bool:
-        """Fence a lost executor into reconciliation, never automatic retry."""
-
         now = aware(observed_at, "observed_at")
         with self._lock:
             receipt = self._require(identity)
@@ -195,6 +210,7 @@ class InMemoryInboxLedger:
             receipt.claim_expires_at = None
             receipt.execution_admission = None
             receipt.terminal_reason = "processing_lease_expired_effect_absence_unproven"
+            receipt.reconciliation_revision = None
             return True
 
     def complete_local_effect(
@@ -226,6 +242,8 @@ class InMemoryInboxLedger:
         now = aware(observed_at, "observed_at")
         with self._lock:
             receipt = self._require_current_claim(claim, now)
+            if receipt.operation_id is not None and receipt.operation_id != operation_id:
+                raise InvalidTransition("inbox receipt cannot be rebound to another operation_id")
             receipt.operation_id = operation_id
 
     def require_reconciliation(
@@ -244,6 +262,7 @@ class InMemoryInboxLedger:
             receipt.claim_expires_at = None
             receipt.execution_admission = None
             receipt.terminal_reason = reason
+            receipt.reconciliation_revision = None
 
     def fail_terminal(
         self,
@@ -262,10 +281,42 @@ class InMemoryInboxLedger:
             receipt.execution_admission = None
             receipt.terminal_reason = reason
 
+    def reconcile_retry_eligible(
+        self,
+        identity: ScopedMessageIdentity,
+        operation_authority: CrossAuthorityReconciliationPort,
+    ) -> None:
+        """Re-admit only after the bound operation durably proves effect absence."""
+
+        with self._lock:
+            receipt = self._require(identity)
+            if receipt.state is not InboxState.RECONCILIATION_REQUIRED:
+                raise InvalidTransition("only reconciliation-blocked receipt can become retry eligible")
+            if receipt.operation_id is None:
+                raise ReconciliationBlocked("receipt has no stable cross-authority operation identity")
+            try:
+                state = operation_authority.state(receipt.operation_id)
+                resolution = operation_authority.reconciliation_resolution(receipt.operation_id)
+                revision = operation_authority.reconciliation_revision(receipt.operation_id)
+            except Exception as exc:
+                raise ReconciliationBlocked("operation reconciliation authority failed closed") from exc
+            if (
+                state is not OperationState.PREPARED
+                or resolution is not ReconciliationResolution.EFFECT_PROVEN_ABSENT
+                or not isinstance(revision, str)
+            ):
+                raise ReconciliationBlocked("effect absence has not been durably reconciled")
+            identifier(revision, "reconciliation_revision")
+            receipt.state = InboxState.ADMITTED
+            receipt.terminal_reason = None
+            receipt.reconciliation_revision = revision
+
     def reconcile_completed(
         self,
         identity: ScopedMessageIdentity,
         result_link: EffectResultLink,
+        *,
+        operation_authority: CrossAuthorityReconciliationPort | None = None,
     ) -> None:
         if not isinstance(result_link, EffectResultLink):
             raise ValueError("reconciliation completion requires durable result link")
@@ -273,6 +324,25 @@ class InMemoryInboxLedger:
             receipt = self._require(identity)
             if receipt.state is not InboxState.RECONCILIATION_REQUIRED:
                 raise InvalidTransition("only reconciliation-blocked receipt can be reconciled")
+            if receipt.operation_id is not None:
+                if operation_authority is None:
+                    raise ReconciliationBlocked("cross-authority completion requires operation authority")
+                try:
+                    state = operation_authority.state(receipt.operation_id)
+                    outcome = operation_authority.outcome(receipt.operation_id)
+                    resolution = operation_authority.reconciliation_resolution(receipt.operation_id)
+                    revision = operation_authority.reconciliation_revision(receipt.operation_id)
+                except Exception as exc:
+                    raise ReconciliationBlocked("operation reconciliation authority failed closed") from exc
+                if (
+                    state is not OperationState.COMPLETED
+                    or outcome != result_link
+                    or resolution is not ReconciliationResolution.EFFECT_CONFIRMED
+                    or not isinstance(revision, str)
+                ):
+                    raise ReconciliationBlocked("confirmed effect/result has not been durably reconciled")
+                identifier(revision, "reconciliation_revision")
+                receipt.reconciliation_revision = revision
             receipt.state = InboxState.COMPLETED
             receipt.result_link = result_link
             receipt.terminal_reason = None
@@ -319,6 +389,7 @@ class InMemoryInboxLedger:
                 receipt.claim_expires_at = None
                 receipt.execution_admission = None
                 receipt.terminal_reason = "processing_lease_expired_effect_absence_unproven"
+                receipt.reconciliation_revision = None
         if (
             receipt.state is not InboxState.PROCESSING
             or receipt.executor_id != claim.executor_id

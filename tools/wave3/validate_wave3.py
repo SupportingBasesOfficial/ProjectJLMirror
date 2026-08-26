@@ -11,6 +11,8 @@ REGISTRY = ROOT / "implementation/wave-3/source-registry.json"
 EXPECTED_BASE = "b1f5fb83d2aa53e981007dddd0b751e22db40eee"
 EXPECTED_SLICES = ["impl.observability@1", "impl.release-supply-chain@1"]
 EXPECTED_SOURCES = {
+    "docs/12-observability-sre/04-health-readiness-degradation-contract.md": "018380d5c78a4f0e7fe0baf796339528510572cb",
+    "docs/12-observability-sre/07-telemetry-security-cardinality-and-retention.md": "9b65e40a09fead4c2720074f00635a5a5c7174e4",
     "docs/12-observability-sre/10-observability-semantic-manifest.md": "80054d9a15fb82ba26a91c34f98b10964ab3c83d",
     "docs/13-platform-runtime/09-runtime-semantic-manifest.md": "a0b2aaa950bab2a71f54f8df37a855b6ed34ad8b",
     "docs/14-deployment-release-supply-chain/11-release-semantic-manifest.md": "5bb4f7e50ab7eaa7d9162cd9e2f633a10c4d17ff",
@@ -34,7 +36,9 @@ REQUIRED_FILES = (
     "tests/wave3/test_observability.py",
     "tests/wave3/test_observability_catalog.py",
     "tests/wave3/test_observability_pipeline.py",
+    "tests/wave3/test_observability_cardinality_registry.py",
     "tests/wave3/test_release.py",
+    "tests/wave3/test_release_policy_lineage.py",
     "tests/wave3/test_release_provenance_compatibility.py",
     "tests/wave3/test_runtime_profile_reliability.py",
     "tests/wave3/test_runtime_verifier_authority.py",
@@ -44,6 +48,7 @@ REQUIRED_FILES = (
 )
 REQUIRED_OBSERVABILITY_LAWS = {
     "SEMANTIC CLASS != UNBOUNDED TENANT/RESOURCE IDENTIFIER",
+    "HEALTH REASON CLASS != UNBOUNDED RUNTIME TOKEN",
     "OUTCOME TOKEN != ACCEPTED OUTCOME TAXONOMY",
     "NO_APPLICABLE_CASE != FREE-TEXT ASSERTION",
     "PRODUCT SELECTOR VALUE != PRODUCT AUTHORITY EVIDENCE",
@@ -59,12 +64,14 @@ REQUIRED_RELEASE_LAWS = {
     "PHASE 11 RELIABILITY JOIN != OPTIONAL HEALTH EVIDENCE",
     "PHASE 13 RUNTIME PROFILE != RELEASE-POLICY-DISCRETIONARY RELIABILITY MINIMUM",
     "RUNTIME.WORKER@1 != UNSPECIALIZED RELEASE TARGET",
+    "RUNTIME VERIFICATION POLICY CURRENTNESS != DIFFERENT PRE-EFFECT GATE POLICY LINEAGE",
     "RUNTIME VERIFICATION EVIDENCE != REPLAYABLE ACROSS DEPLOYMENT SCOPE OR TARGET VERSION",
     "HEALTH GATE EVIDENCE != REPLAYABLE ACROSS RELEASE TARGET STATE VERSION",
     "RUNTIME VERIFIER AUTHORITY != NON-VERIFY RELEASE PRINCIPAL",
     "RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD",
 }
 REQUIRED_FORBIDDEN_SUBSTITUTIONS = {
+    "arbitrary_health_reason_class_for_bounded_health_dimension",
     "free_text_reason_for_observability_no_applicable_case",
     "stale_or_wrong_scope_evidence_for_observability_no_applicable_case",
     "raw_product_selector_string_or_boolean_for_product_authority",
@@ -88,6 +95,7 @@ REQUIRED_FORBIDDEN_SUBSTITUTIONS = {
     "phase11_reliability_join_without_implied_phase12_health_gate",
     "phase13_runtime_profile_with_omitted_mandatory_reliability_binding",
     "runtime_worker_without_exact_phase13_specialization",
+    "rotated_runtime_release_policy_evidence_for_stale_pre_effect_gate_set",
     "runtime_verification_evidence_replayed_across_operation_target_or_target_version",
     "health_gate_evidence_replayed_across_deployment_scope",
     "health_gate_evidence_replayed_across_release_target_state_version",
@@ -100,6 +108,9 @@ REQUIRED_CODE_TOKENS = {
         "ALLOWED_SIGNAL_CLASSIFICATIONS",
         "ALLOWED_TENANT_SCOPE_CLASSES",
         "CANONICAL_OUTCOME_CLASSES",
+        "CANONICAL_HEALTH_REASON_CLASSES",
+        "REVIEWED_HEALTH_REASON_CLASSES",
+        "health reason_class is not in the reviewed finite Phase 12/Wave 3 registry",
         "operation_class must be a bounded namespaced semantic class",
         "metric operation_class must equal the record's stable operation_class",
     ),
@@ -177,6 +188,7 @@ REQUIRED_CODE_TOKENS = {
         "runtime_admission_evidence_reference",
         "configuration_currentness_evidence_reference",
         "release_policy_evidence_reference",
+        "runtime verification release-policy evidence differs from the pre-effect requirements policy lineage",
         "verifier_authority_evidence_reference",
         "policy_evidence_reference",
         "worker specialization set differs from approved release intent",
@@ -285,6 +297,7 @@ def validate() -> None:
     required_workflow_fragments = (
         "PYTHONPATH=src python3 -m unittest discover -s tests/wave3 -p 'test_*.py'",
         "PYTHONPATH=src python3 tools/wave3/validate_wave3.py",
+        "PYTHONPATH=src python3 tools/wave3/validate_runtime_requirement_authority.py",
         "PYTHONPATH=src python3 tools/wave3/validate_runtime_profile_reliability.py",
         "persist-credentials: false",
         "allow-unsafe-pr-checkout: false",

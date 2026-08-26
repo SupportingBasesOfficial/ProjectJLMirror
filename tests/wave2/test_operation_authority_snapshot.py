@@ -93,7 +93,29 @@ class OperationAuthoritySnapshotTests(unittest.TestCase):
                 attempt_generation=1,
                 reconciliation_resolution=ReconciliationResolution.EFFECT_CONFIRMED,
                 reconciliation_revision="rev-1",
+                reconciliation_attempt_generation=1,
                 outcome=EffectResultLink("result-1", "provider_outcome"),
+            )
+
+    def test_snapshot_rejects_reconciliation_evidence_from_another_attempt(self) -> None:
+        with self.assertRaises(ValueError):
+            CrossAuthorityOperationSnapshot(
+                operation_id="op-1",
+                state=OperationState.PREPARED,
+                attempt_generation=2,
+                reconciliation_resolution=ReconciliationResolution.EFFECT_PROVEN_ABSENT,
+                reconciliation_revision="rev-attempt-1",
+                reconciliation_attempt_generation=1,
+            )
+
+    def test_snapshot_requires_generation_with_reconciliation_revision(self) -> None:
+        with self.assertRaises(ValueError):
+            CrossAuthorityOperationSnapshot(
+                operation_id="op-1",
+                state=OperationState.PREPARED,
+                attempt_generation=1,
+                reconciliation_resolution=ReconciliationResolution.EFFECT_PROVEN_ABSENT,
+                reconciliation_revision="rev-1",
             )
 
     def test_direct_completion_consumes_one_snapshot_and_no_split_reads(self) -> None:

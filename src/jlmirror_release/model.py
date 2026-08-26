@@ -55,6 +55,16 @@ CANONICAL_RUNTIME_PROFILES = frozenset({
     "runtime.control-plane@1", "runtime.automation@1", "runtime.untrusted-parser@1",
     "runtime.migration-admin@1", "runtime.recovery@1", "runtime.edge-optional@1",
 })
+CANONICAL_WORKER_SPECIALIZATIONS = frozenset({
+    "worker.outbox-publication@1",
+    "worker.async-consumer@1",
+    "worker.provider-integration@1",
+    "worker.webhook-delivery@1",
+    "worker.reporting-export@1",
+    "worker.customer-telemetry@1",
+    "worker.artifact-lifecycle@1",
+    "worker.reconciliation@1",
+})
 
 
 @dataclass(frozen=True)
@@ -105,6 +115,7 @@ class DeploymentIntent:
     schema_state: str
     api_compatibility_family: str
     event_compatibility_set: tuple[str, ...]
+    worker_specialization_set: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.deployment_operation_id or not self.target_id or not self.promotion_id:
@@ -123,6 +134,20 @@ class DeploymentIntent:
                 "runtime_profile_set contains unknown Phase 13 runtime profiles: "
                 + ",".join(sorted(unknown_runtime_profiles))
             )
+        has_worker_runtime = "runtime.worker@1" in self.runtime_profile_set
+        if has_worker_runtime:
+            if not self.worker_specialization_set:
+                raise ReleaseError("runtime.worker@1 deployment requires exact Phase 13 worker specialization binding")
+            if len(set(self.worker_specialization_set)) != len(self.worker_specialization_set):
+                raise ReleaseError("worker_specialization_set cannot contain duplicate specializations")
+            unknown_worker_specializations = set(self.worker_specialization_set) - CANONICAL_WORKER_SPECIALIZATIONS
+            if unknown_worker_specializations:
+                raise ReleaseError(
+                    "worker_specialization_set contains unknown Phase 13 worker specializations: "
+                    + ",".join(sorted(unknown_worker_specializations))
+                )
+        elif self.worker_specialization_set:
+            raise ReleaseError("worker specializations cannot be declared without runtime.worker@1")
         if not self.release_policy_profile_and_version or not self.rollout_scope:
             raise ReleaseError("release policy and rollout scope are required")
         if not self.schema_state or not self.api_compatibility_family or not self.event_compatibility_set:

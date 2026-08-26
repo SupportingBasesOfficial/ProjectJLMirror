@@ -228,11 +228,7 @@ class MessageBoundaryTests(unittest.TestCase):
 
 class OutboxTests(unittest.TestCase):
     def claim(self, ledger: InMemoryOutboxLedger, owner: str, *, start: datetime = NOW):
-        return ledger.claim_next(
-            owner,
-            observed_at=start,
-            claim_expires_at=start + timedelta(seconds=30),
-        )
+        return ledger.claim_next(owner, observed_at=start, claim_expires_at=start + timedelta(seconds=30))
 
     def test_identity_reuse_with_changed_meaning_fails(self) -> None:
         ledger = InMemoryOutboxLedger()
@@ -366,10 +362,7 @@ class InboxTests(unittest.TestCase):
         conflicting = self.identity("shared-source", tenant_id="tenant-b")
         self.assertEqual(original.key, conflicting.key)
         self.assertEqual(ledger.admit(original, evidence()), InboxAdmission.NEW)
-        self.assertEqual(
-            ledger.admit(conflicting, evidence()),
-            InboxAdmission.INTEGRITY_CONFLICT,
-        )
+        self.assertEqual(ledger.admit(conflicting, evidence()), InboxAdmission.INTEGRITY_CONFLICT)
         self.assertEqual(ledger.state(original), InboxState.QUARANTINED)
 
     def test_unknown_historical_comparison_authority_blocks(self) -> None:
@@ -396,9 +389,7 @@ class InboxTests(unittest.TestCase):
         identity = self.identity()
         ledger.admit(identity, evidence())
         first = self.claim(ledger, identity, "worker-a")
-        self.assertTrue(
-            ledger.expire_processing_claim(identity, observed_at=LEASE_END + timedelta(seconds=1))
-        )
+        self.assertTrue(ledger.expire_processing_claim(identity, observed_at=LEASE_END + timedelta(seconds=1)))
         self.assertEqual(ledger.state(identity), InboxState.RECONCILIATION_REQUIRED)
         with self.assertRaises(ReconciliationBlocked):
             self.claim(ledger, identity, "worker-b")
@@ -410,10 +401,7 @@ class InboxTests(unittest.TestCase):
             )
 
     def test_missing_or_stale_current_execution_authority_fails_closed(self) -> None:
-        for authority in (
-            CurrentExecutionAuthority(current=False),
-            CurrentExecutionAuthority(fail=True),
-        ):
+        for authority in (CurrentExecutionAuthority(current=False), CurrentExecutionAuthority(fail=True)):
             ledger = InMemoryInboxLedger()
             identity = self.identity()
             ledger.admit(identity, evidence())
@@ -431,6 +419,33 @@ class InboxTests(unittest.TestCase):
         self.assertEqual(claim.execution_admission.request.tenant_id, "tenant-a")
         self.assertEqual(claim.execution_admission.tenant_context, tenant_context())
 
+    def test_cross_authority_retry_requires_bound_effect_absence_evidence(self) -> None:
+        inbox = InMemoryInboxLedger()
+        operations = InMemoryCrossAuthorityOperationLedger()
+        identity = self.identity()
+        inbox.admit(identity, evidence())
+        claim = self.claim(inbox, identity, "worker-a")
+        operations.prepare("op-inbox", identity.consumer_contract, tenant_id="tenant-a")
+        inbox.bind_cross_authority_operation(claim, "op-inbox", observed_at=NOW + timedelta(seconds=1))
+        attempt = operations.begin_attempt(
+            "op-inbox",
+            "worker-a",
+            execution_authority=CurrentExecutionAuthority(),
+            attempt_expires_at=LEASE_END,
+        )
+        operations.mark_ambiguous(attempt, "lost", observed_at=NOW + timedelta(seconds=2))
+        inbox.require_reconciliation(claim, "external_outcome_ambiguous", observed_at=NOW + timedelta(seconds=3))
+        with self.assertRaises(ReconciliationBlocked):
+            inbox.reconcile_retry_eligible(identity, operations)
+        operations.reconcile(
+            "op-inbox",
+            ReconciliationResolution.EFFECT_PROVEN_ABSENT,
+            reconciliation_revision="reconcile-absent-1",
+        )
+        inbox.reconcile_retry_eligible(identity, operations)
+        retry_claim = self.claim(inbox, identity, "worker-b")
+        self.assertEqual(retry_claim.execution_generation, 2)
+
 
 class CrossAuthorityOperationTests(unittest.TestCase):
     def begin(self, ledger, operation_id, worker, authority=None):
@@ -445,16 +460,20 @@ class CrossAuthorityOperationTests(unittest.TestCase):
         ledger = InMemoryCrossAuthorityOperationLedger()
         ledger.prepare("op-1", "integrations.provider-effect", tenant_id="tenant-a")
         attempt = self.begin(ledger, "op-1", "worker-a")
-        ledger.mark_ambiguous(
-            attempt,
-            "timeout_after_request_write",
-            observed_at=NOW + timedelta(seconds=1),
-        )
+        ledger.mark_ambiguous(attempt, "timeout_after_request_write", observed_at=NOW + timedelta(seconds=1))
         with self.assertRaises(ReconciliationBlocked):
             self.begin(ledger, "op-1", "worker-b")
-        ledger.reconcile("op-1", ReconciliationResolution.STILL_UNKNOWN)
+        ledger.reconcile(
+            "op-1",
+            ReconciliationResolution.STILL_UNKNOWN,
+            reconciliation_revision="reconcile-unknown-1",
+        )
         self.assertEqual(ledger.state("op-1"), OperationState.RECONCILIATION_REQUIRED)
-        ledger.reconcile("op-1", ReconciliationResolution.EFFECT_PROVEN_ABSENT)
+        ledger.reconcile(
+            "op-1",
+            ReconciliationResolution.EFFECT_PROVEN_ABSENT,
+            reconciliation_revision="reconcile-absent-1",
+        )
         retry = self.begin(ledger, "op-1", "worker-b")
         self.assertEqual(retry.operation_id, "op-1")
         self.assertEqual(retry.attempt_generation, 2)
@@ -463,19 +482,17 @@ class CrossAuthorityOperationTests(unittest.TestCase):
         ledger = InMemoryCrossAuthorityOperationLedger()
         ledger.prepare("op-2", "integrations.provider-effect", tenant_id="tenant-a")
         attempt = self.begin(ledger, "op-2", "worker-a")
-        ledger.mark_ambiguous(
-            attempt,
-            "connection_lost",
-            observed_at=NOW + timedelta(seconds=1),
-        )
+        ledger.mark_ambiguous(attempt, "connection_lost", observed_at=NOW + timedelta(seconds=1))
         outcome = EffectResultLink("provider-result-9", "provider_outcome")
         ledger.reconcile(
             "op-2",
             ReconciliationResolution.EFFECT_CONFIRMED,
+            reconciliation_revision="reconcile-confirmed-1",
             confirmed_outcome=outcome,
         )
         self.assertEqual(ledger.state("op-2"), OperationState.COMPLETED)
         self.assertEqual(ledger.outcome("op-2"), outcome)
+        self.assertEqual(ledger.reconciliation_revision("op-2"), "reconcile-confirmed-1")
         with self.assertRaises(InvalidTransition):
             self.begin(ledger, "op-2", "worker-c")
 
@@ -483,9 +500,7 @@ class CrossAuthorityOperationTests(unittest.TestCase):
         ledger = InMemoryCrossAuthorityOperationLedger()
         ledger.prepare("op-lease", "integrations.provider-effect", tenant_id="tenant-a")
         attempt = self.begin(ledger, "op-lease", "worker-a")
-        self.assertTrue(
-            ledger.expire_attempt("op-lease", observed_at=LEASE_END + timedelta(seconds=1))
-        )
+        self.assertTrue(ledger.expire_attempt("op-lease", observed_at=LEASE_END + timedelta(seconds=1)))
         self.assertEqual(ledger.state("op-lease"), OperationState.RECONCILIATION_REQUIRED)
         with self.assertRaises(ReconciliationBlocked):
             self.begin(ledger, "op-lease", "worker-b")
@@ -502,13 +517,14 @@ class CrossAuthorityOperationTests(unittest.TestCase):
         authority = CurrentExecutionAuthority()
         first = self.begin(ledger, "op-current", "worker-a", authority=authority)
         ledger.mark_ambiguous(first, "lost", observed_at=NOW + timedelta(seconds=1))
-        ledger.reconcile("op-current", ReconciliationResolution.EFFECT_PROVEN_ABSENT)
+        ledger.reconcile(
+            "op-current",
+            ReconciliationResolution.EFFECT_PROVEN_ABSENT,
+            reconciliation_revision="reconcile-absent-current",
+        )
         second = self.begin(ledger, "op-current", "worker-b", authority=authority)
         self.assertEqual(len(authority.requests), 2)
-        self.assertNotEqual(
-            first.execution_admission.admission_revision,
-            second.execution_admission.admission_revision,
-        )
+        self.assertNotEqual(first.execution_admission.admission_revision, second.execution_admission.admission_revision)
 
 
 if __name__ == "__main__":

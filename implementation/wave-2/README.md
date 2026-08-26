@@ -33,7 +33,8 @@ It does **not** create Product/domain endpoints, incident/customer workflow beha
 - Critical Wave 2 correctness tables are created fail-closed without `IF NOT EXISTS`; a preexisting same-name object requires reviewed shape/authority revalidation rather than silent reuse.
 - Every committed outbox message creates its dispatch bookkeeping row in the same transaction through a `SECURITY INVOKER` trigger; a committed message cannot be stranded merely because a second insert was forgotten.
 - SQL transition guards prevent ordinary direct UPDATE from rebinding inbox/operation scope, stealing same-state claims, resurrecting terminal state, resetting published/quarantined dispatch, or converting reconciliation uncertainty directly into retry authority.
-- Quarantine/redrive is exposed only through a **current privileged authority hook**. A redrive request is bound to the exact message scope, tenant, quarantine generation, reason class, operation identity, correlation context and accepted reliability profile.
+- Quarantine/redrive is exposed only through a **current privileged authority hook**. A redrive request is bound to the exact message scope, tenant, requested quarantine generation, reason class, operation identity, correlation context and accepted reliability profile.
+- The request is only the scope to verify; it is **not proof that the subject is currently quarantined**. The trusted redrive authority must independently re-resolve durable current quarantine state and return a non-empty `quarantine_state_revision` before eligibility can be accepted.
 - Redrive admission requires current privileged authorization, owning-contract compatibility/eligibility, effect-safety evidence, capacity admission, audit responsibility and current tenant placement where applicable. Queue age, operator desire, broker DLQ state and time in quarantine are not authority.
 - Wave 2 does not implement the Phase 15 `ops.redrive-operation@1` store/workflow; it exposes the correctness boundary that future operations tooling must satisfy.
 
@@ -75,6 +76,7 @@ PREEXISTING TABLE NAME != CORRECTNESS SCHEMA CONFORMANCE
 OUTBOX CLAIM RECOVERY -> SAME LOGICAL MESSAGE IDENTITY
 INBOX/EXTERNAL ATTEMPT LEASE LOSS -> RECONCILIATION, NOT BLIND RETRY
 QUARANTINE != REDRIVE ELIGIBILITY
+REDRIVE REQUEST != QUARANTINE STATE AUTHORITY
 QUEUE AGE / OPERATOR DESIRE / VENDOR DLQ STATE != REDRIVE AUTHORITY
 RELIABILITY PROFILE != TRANSPORT PRODUCT SELECTION
 WAVE 2 AUTHORIZED != WAVE 3 AUTHORIZED

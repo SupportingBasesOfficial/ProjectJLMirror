@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from threading import RLock
 
@@ -44,7 +44,14 @@ class _MutableReleaseTargetState:
 class DeploymentRecord:
     intent: DeploymentIntent
     state: PromotionState
+    promotion_evidence_reference: str
+    configuration_validation_evidence_reference: str
+    rollout_compatibility_evidence_reference: str
     resulting_release_target_state_version_or_pending: int | None = None
+    durable_target_evidence_reference: str | None = None
+    observed_artifact_identity: str | None = None
+    observed_configuration_generation: str | None = None
+    runtime_verification_evidence_reference: str | None = None
 
 
 @dataclass(frozen=True)
@@ -71,19 +78,37 @@ def require_deployment_admission(intent: DeploymentIntent, evidence: DeploymentA
         raise ReleaseError("deployment intent is bound to a different promotion")
     if promotion.artifact_identity != intent.artifact.canonical:
         raise ReleaseError("deployment artifact differs from promoted artifact")
+    if promotion.target_id != intent.target_id:
+        raise ReleaseError("promotion target differs from deployment target")
+    if promotion.target_environment_class != intent.target_environment_class:
+        raise ReleaseError("deployment target environment differs from promotion evidence")
+    if promotion.validation_scope is not intent.validation_scope:
+        raise ReleaseError("promotion validation scope differs from deployment intent")
+    if promotion.rollout_scope_id != intent.rollout_scope:
+        raise ReleaseError("promotion rollout scope differs from deployment intent")
+    if tuple(promotion.runtime_profile_set) != tuple(intent.runtime_profile_set):
+        raise ReleaseError("promotion runtime profile set differs from deployment intent")
     if (promotion.target_configuration_identity != intent.configuration.identity or
         promotion.target_configuration_generation != intent.configuration.generation or
         promotion.target_configuration_semantic_profile != intent.configuration.semantic_profile):
         raise ReleaseError("deployment target configuration differs from promotion evidence")
-    if promotion.target_environment_class != intent.target_environment_class:
-        raise ReleaseError("deployment target environment differs from promotion evidence")
     if promotion.release_policy_profile_and_version != intent.release_policy_profile_and_version:
         raise ReleaseError("deployment release policy differs from promotion policy")
+    if promotion.schema_state != intent.schema_state:
+        raise ReleaseError("promotion schema compatibility state differs from deployment intent")
+    if promotion.api_compatibility_family != intent.api_compatibility_family:
+        raise ReleaseError("promotion API compatibility family differs from deployment intent")
+    if tuple(promotion.event_compatibility_set) != tuple(intent.event_compatibility_set):
+        raise ReleaseError("promotion event compatibility set differs from deployment intent")
 
     config = evidence.configuration_validation
     if config.target_configuration != intent.configuration:
         raise ReleaseError("configuration validation evidence is bound to another target configuration")
+    if config.validation_scope is not intent.validation_scope:
+        raise ReleaseError("configuration validation evidence is bound to another validation scope")
     require_validation_for_target(config)
+    if promotion.configuration_validation_evidence_reference != config.evidence_reference:
+        raise ReleaseError("promotion and deployment use different configuration validation evidence")
 
     rollout = evidence.rollout_compatibility
     if rollout.release_scope_id != intent.rollout_scope:
@@ -91,6 +116,17 @@ def require_deployment_admission(intent: DeploymentIntent, evidence: DeploymentA
     if rollout.validation_scope is not intent.validation_scope:
         raise ReleaseError("rollout validation scope differs from deployment intent")
     require_rollout_compatibility(rollout)
+    if promotion.rollout_compatibility_evidence_reference != rollout.evidence_reference:
+        raise ReleaseError("promotion and deployment use different rollout compatibility evidence")
+
+    cell = rollout.cell_compatibility
+    if cell.applicable:
+        if (promotion.cell_compatibility_metadata_identity != cell.metadata_identity or
+            promotion.cell_compatibility_metadata_generation != cell.metadata_generation):
+            raise ReleaseError("promotion and deployment use different cell compatibility metadata")
+    elif (promotion.cell_compatibility_metadata_identity is not None or
+          promotion.cell_compatibility_metadata_generation is not None):
+        raise ReleaseError("promotion cannot bind cell compatibility metadata when rollout marks it non-applicable")
 
     if evidence.deployment_principal_class != "principal.release-deploy@1":
         raise ReleaseError("effectful deployment requires bounded release deploy principal")
@@ -131,7 +167,13 @@ class DeploymentAuthority:
                 raise ReleaseError("stale expected release target state version")
             if self._target.unresolved_operation_id is not None:
                 raise ReleaseError("unresolved prior operation blocks a new effectful deployment")
-            record = DeploymentRecord(intent=intent, state=PromotionState.DEPLOYING)
+            record = DeploymentRecord(
+                intent=intent,
+                state=PromotionState.DEPLOYING,
+                promotion_evidence_reference=admission.promotion.promotion_evidence_reference,
+                configuration_validation_evidence_reference=admission.configuration_validation.evidence_reference,
+                rollout_compatibility_evidence_reference=admission.rollout_compatibility.evidence_reference,
+            )
             self._records[intent.deployment_operation_id] = record
             self._target.unresolved_operation_id = intent.deployment_operation_id
             return record
@@ -147,11 +189,13 @@ class DeploymentAuthority:
                     return record
                 raise ReleaseError("terminal deployment outcome cannot be reinterpreted")
             if record.state is PromotionState.RUNTIME_VERIFICATION:
-                if observation is DeploymentObservation.EFFECT_CONFIRMED and observed_artifact_identity == record.intent.artifact.canonical and observed_configuration_generation == record.intent.configuration.generation:
+                if (observation is DeploymentObservation.EFFECT_CONFIRMED and
+                    observed_artifact_identity == record.intent.artifact.canonical and
+                    observed_configuration_generation == record.intent.configuration.generation):
                     return record
                 raise ReleaseError("effect already confirmed; only runtime verification may advance")
             if observation in {DeploymentObservation.AMBIGUOUS, DeploymentObservation.NOT_OBSERVED}:
-                updated = DeploymentRecord(record.intent, PromotionState.RECONCILIATION_REQUIRED, record.resulting_release_target_state_version_or_pending)
+                updated = replace(record, state=PromotionState.RECONCILIATION_REQUIRED)
                 self._records[operation_id] = updated
                 return updated
 
@@ -163,7 +207,11 @@ class DeploymentAuthority:
 
             if observation is DeploymentObservation.EFFECT_ABSENT_PROVEN:
                 self._clear_pending(operation_id)
-                updated = DeploymentRecord(record.intent, PromotionState.ABORTED)
+                updated = replace(
+                    record,
+                    state=PromotionState.ABORTED,
+                    durable_target_evidence_reference=durable_target_evidence_reference,
+                )
                 self._records[operation_id] = updated
                 return updated
             if observed_artifact_identity != record.intent.artifact.canonical:
@@ -175,7 +223,14 @@ class DeploymentAuthority:
             self._target.release_target_state_version = next_version
             self._target.pending_artifact_identity = observed_artifact_identity
             self._target.pending_configuration_generation = observed_configuration_generation
-            updated = DeploymentRecord(record.intent, PromotionState.RUNTIME_VERIFICATION, next_version)
+            updated = replace(
+                record,
+                state=PromotionState.RUNTIME_VERIFICATION,
+                resulting_release_target_state_version_or_pending=next_version,
+                durable_target_evidence_reference=durable_target_evidence_reference,
+                observed_artifact_identity=observed_artifact_identity,
+                observed_configuration_generation=observed_configuration_generation,
+            )
             self._records[operation_id] = updated
             return updated
 
@@ -199,7 +254,11 @@ class DeploymentAuthority:
             self._target.current_artifact_identity = self._target.pending_artifact_identity
             self._target.current_configuration_generation = self._target.pending_configuration_generation
             self._clear_pending(operation_id)
-            updated = DeploymentRecord(record.intent, PromotionState.COMPLETED, record.resulting_release_target_state_version_or_pending)
+            updated = replace(
+                record,
+                state=PromotionState.COMPLETED,
+                runtime_verification_evidence_reference=evidence.evidence_reference,
+            )
             self._records[operation_id] = updated
             return updated
 

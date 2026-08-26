@@ -5,8 +5,37 @@
 -- prove that the operation belongs to the inbox receipt's tenant or owner contract.
 -- Every operation-bound inbox row therefore validates the complete immutable
 -- authority tuple before INSERT/UPDATE can become durable.
+--
+-- This migration also refuses to publish the guard over already-inconsistent rows:
+-- migration-time locks stop concurrent DML while a complete preflight proves that
+-- every preexisting operation-bound receipt already has the same tenant/owner scope.
 
 BEGIN;
+
+-- Block concurrent inbox binding/state DML and operation-scope mutation while the
+-- one-time preflight is evaluated and the permanent trigger is installed.
+LOCK TABLE system.async_consumer_inbox IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE system.async_cross_authority_operation IN SHARE MODE;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+          FROM system.async_consumer_inbox AS inbox
+          LEFT JOIN system.async_cross_authority_operation AS operation
+            ON operation.operation_id = inbox.operation_id
+         WHERE inbox.operation_id IS NOT NULL
+           AND (
+               operation.operation_id IS NULL
+               OR operation.tenant_id IS DISTINCT FROM inbox.tenant_id
+               OR operation.owner_contract IS DISTINCT FROM inbox.consumer_contract
+           )
+    ) THEN
+        RAISE EXCEPTION
+            'Wave 2 operation-scope hardening refused: preexisting inbox binding lacks exact tenant/owner authority scope';
+    END IF;
+END;
+$$;
 
 CREATE FUNCTION system.wave2_guard_inbox_operation_scope()
 RETURNS trigger

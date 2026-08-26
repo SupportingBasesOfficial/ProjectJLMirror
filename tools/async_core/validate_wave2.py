@@ -47,6 +47,7 @@ EXPECTED_FORBIDDEN = [
     "expired_inbox_or_external_effect_claim_for_automatic_retry_eligibility",
     "reconciliation_state_without_durable_resolution_revision_for_retry_or_completion",
     "caller_supplied_result_link_for_reconciliation_completion_without_operation_evidence",
+    "operation_bound_receipt_completed_through_local_effect_path",
     "reconciliation_revision_reuse_for_different_evidence",
     "preseeded_reconciliation_revision_before_ambiguity",
     "mutable_or_deletable_reconciliation_evidence",
@@ -82,6 +83,7 @@ EXPECTED_MANIFEST = {
     "fixed_inbox_identity": "(consumer_contract,message_identity_scope,message_id)",
     "fixed_execution_admission": "revision_bound_current_authority_before_each_protected_effect_attempt",
     "fixed_lease_loss_semantics": "lease_expiry_never_proves_effect_absence",
+    "fixed_cross_authority_direct_completion_authority": "operation_bound_receipt_requires_exact_direct_completed_operation_outcome",
     "fixed_reconciliation_evidence": "append_only_operation_scoped_revision_plus_canonical_resolution_required_for_retry_or_confirmed_completion",
     "fixed_reconciliation_completion_authority": "stable_operation_plus_append_only_effect_confirmed_revision_required_after_reconciliation_block",
     "durable_schema_reuse_policy": "preexisting_wave2_correctness_object_requires_reviewed_revalidation_not_if_not_exists_acceptance",
@@ -204,6 +206,10 @@ def _execution_boundary_findings() -> list[str]:
         (inbox, "require_current_execution(execution_authority, request)"),
         (inbox, "processing_lease_expired_effect_absence_unproven"),
         (inbox, "same_scoped_identity_conflicting_trusted_binding"),
+        (inbox, "operation-bound receipt requires cross-authority outcome authority"),
+        (inbox, "def complete_cross_authority_effect("),
+        (inbox, "bound operation has not durably completed with exact outcome"),
+        (inbox, "reconciled operation completion must use reconciliation completion path"),
         (inbox, "def reconcile_retry_eligible("),
         (inbox, "ReconciliationResolution.EFFECT_PROVEN_ABSENT"),
         (inbox, "reconciliation completion requires stable operation identity and durable evidence authority"),
@@ -229,12 +235,18 @@ def _reconciliation_authority_boundary_findings() -> list[str]:
         ROOT / "tests/wave2/test_reconciliation_completion_authority.py"
     ).read_text(encoding="utf-8")
     required_boundary = (
-        "CALLER-SUPPLIED RESULT LINK != RECONCILIATION COMPLETION AUTHORITY",
-        "UNBOUND RECONCILIATION_REQUIRED -> COMPLETED = PROHIBITED",
+        "CALLER-SUPPLIED RESULT LINK != EFFECT COMPLETION AUTHORITY",
+        "OPERATION-BOUND RECEIPT != LOCAL EFFECT PATH",
+        "OPERATION-BOUND PROCESSING -> LOCAL COMPLETION = PROHIBITED",
+        "RECONCILED OPERATION -> DIRECT PROCESSING COMPLETION = PROHIBITED",
         "append-only reconciliation evidence records `effect_confirmed`",
         "exactly matches the result linked by the inbox receipt",
     )
     required_tests = (
+        "test_operation_bound_receipt_cannot_use_local_completion",
+        "test_direct_cross_authority_completion_requires_exact_durable_outcome",
+        "test_direct_cross_authority_completion_rejects_mismatched_outcome",
+        "test_reconciled_operation_cannot_use_direct_processing_completion_path",
         "test_caller_result_link_cannot_complete_unbound_reconciliation",
         "test_bound_operation_without_operation_authority_remains_blocked",
         "test_append_only_confirmed_operation_evidence_allows_exact_completion",
@@ -255,10 +267,13 @@ def _reconciliation_authority_boundary_findings() -> list[str]:
 
 def _sql_findings() -> list[str]:
     initial = (ROOT / "sql/wave2/001_async_correctness.sql").read_text(encoding="utf-8")
-    hardening = (
+    reconciliation = (
         ROOT / "sql/wave2/002_reconciliation_evidence_and_transition_hardening.sql"
     ).read_text(encoding="utf-8")
-    text = initial + "\n" + hardening
+    completion = (
+        ROOT / "sql/wave2/003_cross_authority_completion_hardening.sql"
+    ).read_text(encoding="utf-8")
+    text = initial + "\n" + reconciliation + "\n" + completion
     lowered = text.lower()
     required = (
         "create table system.async_outbox_message",
@@ -285,6 +300,7 @@ def _sql_findings() -> list[str]:
         "effect_proven_absent",
         "effect_confirmed",
         "wave 2 reconciliation exit requires bound operation + evidence revision",
+        "operation-bound wave 2 inbox completion requires exact direct durable operation outcome",
         "execution_admission_revision text null",
         "execution_authorization_revision text null",
         "execution_principal_credential_generation text null",

@@ -84,8 +84,11 @@ class FenceDefaultAclAuthorityTests(unittest.TestCase):
                 1,
             )
         )
+        # The all-data roots are deliberately referenced by more than one independent
+        # guard. Remove every occurrence so the falsification tests the property rather
+        # than whichever textual occurrence happens to appear first.
         self.assert_bootstrap_fails(
-            text.replace("pg_catalog.to_regrole('pg_write_all_data')::oid", "pg_catalog.to_regrole('pg_monitor')::oid", 1)
+            text.replace("pg_catalog.to_regrole('pg_write_all_data')::oid", "pg_catalog.to_regrole('pg_monitor')::oid")
         )
         self.assert_bootstrap_fails(
             text.replace(

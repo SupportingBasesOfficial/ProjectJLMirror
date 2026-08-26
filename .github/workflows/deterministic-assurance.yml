@@ -94,3 +94,7 @@ jobs:
       - name: Validate Wave 2 correctness boundaries
         shell: bash
         run: PYTHONPATH=src python3 tools/async_core/validate_wave2.py
+
+      - name: Validate Wave 2 reconciliation attempt binding
+        shell: bash
+        run: PYTHONPATH=src python3 tools/async_core/validate_reconciliation_attempt_binding.py

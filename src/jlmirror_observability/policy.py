@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .catalog import ReliabilityObservabilityJoin, join_for
 from .model import CORE_ALERT_PROFILES, CORE_HEALTH_PROFILES, CORE_SLI_PROFILES, ObservationError
 
 
@@ -26,6 +27,10 @@ class ObservabilityBinding:
             raise ObservationError("direct SLI NO_APPLICABLE_CASE requires an explicit semantic reason")
         if self.direct_sli_applicable and self.no_applicable_case_reason is not None:
             raise ObservationError("applicable direct SLI cannot also claim NO_APPLICABLE_CASE")
+
+
+def binding_for_reliability_profile(reliability_profile_id: str) -> ReliabilityObservabilityJoin:
+    return join_for(reliability_profile_id)
 
 
 def require_product_applicability(*, product_state_proven: bool, enabled: bool) -> bool:

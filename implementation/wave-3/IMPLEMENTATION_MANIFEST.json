@@ -15,6 +15,7 @@
     "CUSTOMER MONITORING TELEMETRY != PLATFORM OBSERVABILITY",
     "UNTRUSTED FIELD NAME != TELEMETRY SCHEMA AUTHORITY",
     "SEMANTIC CLASS != UNBOUNDED TENANT/RESOURCE IDENTIFIER",
+    "HEALTH REASON CLASS != UNBOUNDED RUNTIME TOKEN",
     "OUTCOME TOKEN != ACCEPTED OUTCOME TAXONOMY",
     "NO_APPLICABLE_CASE != FREE-TEXT ASSERTION",
     "PRODUCT SELECTOR VALUE != PRODUCT AUTHORITY EVIDENCE"
@@ -69,6 +70,7 @@
     "missing_telemetry_for_success",
     "untrusted_or_dynamic_field_name_for_metric_or_index_schema",
     "raw_tenant_or_resource_identifier_for_semantic_class",
+    "arbitrary_health_reason_class_for_bounded_health_dimension",
     "unreviewed_outcome_token_for_phase12_outcome_class",
     "request_or_message_id_as_unbounded_metric_label",
     "raw_url_or_query_as_metric_dimension",

@@ -41,6 +41,28 @@ class ObservabilityTests(unittest.TestCase):
         with self.assertRaises(ObservationError):
             SignalRecord("obs.request.outcome@1", SignalFamily.METRIC, "api.read", "internal", "bounded", metric_dimensions={"outcome_class": "arbitrary value with spaces " * 30})
 
+    def test_outcome_class_is_exact_phase12_taxonomy_not_arbitrary_token(self):
+        with self.assertRaises(ObservationError):
+            SignalRecord("obs.request.outcome@1", SignalFamily.METRIC, "api.read", "internal", "bounded", metric_dimensions={"outcome_class": "tenant-12345"})
+
+    def test_metric_operation_class_cannot_disagree_with_record_class(self):
+        with self.assertRaises(ObservationError):
+            SignalRecord("obs.request.outcome@1", SignalFamily.METRIC, "api.read", "internal", "bounded", metric_dimensions={"operation_class": "api.write"})
+
+    def test_operation_class_requires_stable_namespaced_semantic_shape(self):
+        for value in ("tenant-12345", "550e8400-e29b-41d4-a716-446655440000", "single"):
+            with self.subTest(value=value), self.assertRaises(ObservationError):
+                SignalRecord("obs.request.outcome@1", SignalFamily.LOG, value, "internal", "bounded")
+
+    def test_tenant_scope_class_cannot_be_raw_tenant_identifier(self):
+        for value in ("tenant-12345", "550e8400-e29b-41d4-a716-446655440000", "customer-acme"):
+            with self.subTest(value=value), self.assertRaises(ObservationError):
+                SignalRecord("obs.request.outcome@1", SignalFamily.LOG, "api.read", "internal", value)
+
+    def test_classification_is_reviewed_bounded_mapping(self):
+        with self.assertRaises(ObservationError):
+            SignalRecord("obs.request.outcome@1", SignalFamily.LOG, "api.read", "tenant-12345", "bounded")
+
     def test_unknown_signal_profile_fails_closed(self):
         with self.assertRaises(ObservationError):
             SignalRecord("obs.local-made-up@1", SignalFamily.EVENT, "x", "internal", "none")

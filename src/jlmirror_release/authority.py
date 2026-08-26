@@ -7,7 +7,10 @@ from threading import RLock
 from .compatibility import RolloutCompatibilityEvidence, require_rollout_compatibility
 from .configuration import ConfigurationValidationEvidence, require_validation_for_target
 from .model import DeploymentIntent, PromotionState, ReleaseError, SourceTrustClass
-from .provenance import BuildProvenanceEvidence, PromotionEvidence, require_promotion_authority
+from .provenance import (
+    BuildProvenanceEvidence, PromotionEvidence, require_immutable_evidence_reference,
+    require_promotion_authority,
+)
 from .verification import RuntimeVerificationEvidence, verify_runtime
 
 
@@ -200,8 +203,9 @@ class DeploymentAuthority:
                 return updated
 
             resolving_reconciliation = record.state is PromotionState.RECONCILIATION_REQUIRED
-            if not durable_target_evidence_reference:
+            if durable_target_evidence_reference is None:
                 raise ReleaseError("confirmed/absent deployment outcome requires durable target evidence")
+            require_immutable_evidence_reference("durable_target_evidence_reference", durable_target_evidence_reference)
             if resolving_reconciliation and not reconciliation_authority_current:
                 raise ReleaseError("reconciliation-required deployment cannot be resolved without current reconciliation authority")
 

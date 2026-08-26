@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .model import ReleaseError, ValidationScope
+from .provenance import require_immutable_evidence_reference
 
 
 @dataclass(frozen=True)
@@ -14,8 +15,9 @@ class NoApplicableCaseEvidence:
     current: bool
 
     def validate_for(self, expected_scope: str) -> None:
-        if not all((self.reason, self.authority_profile, self.evidence_reference, self.scope_binding)):
+        if not all((self.reason, self.authority_profile, self.scope_binding)):
             raise ReleaseError("NO_APPLICABLE_CASE requires reason, authority, evidence and exact scope")
+        require_immutable_evidence_reference("no_applicable_case.evidence_reference", self.evidence_reference)
         if not self.current:
             raise ReleaseError("NO_APPLICABLE_CASE evidence is not current")
         if self.scope_binding != expected_scope:
@@ -63,7 +65,8 @@ class RolloutCompatibilityEvidence:
 
 
 def require_rollout_compatibility(evidence: RolloutCompatibilityEvidence) -> None:
-    if not evidence.evidence_reference or not evidence.evidence_current:
+    require_immutable_evidence_reference("rollout_compatibility.evidence_reference", evidence.evidence_reference)
+    if not evidence.evidence_current:
         raise ReleaseError("rollout compatibility requires a current durable evidence reference")
     if not evidence.release_scope_id:
         raise ReleaseError("rollout compatibility requires an exact release scope")

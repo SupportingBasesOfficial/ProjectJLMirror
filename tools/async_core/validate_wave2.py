@@ -37,6 +37,8 @@ EXPECTED_FORBIDDEN = [
     "message_id_without_trusted_identity_scope_for_duplicate_safety",
     "same_scoped_id_without_equivalence_proof_for_benign_duplicate",
     "same_canonical_inbox_key_with_conflicting_trusted_tenant_binding_for_benign_duplicate",
+    "canonical_inbox_lookup_key_for_exact_trusted_receipt_identity",
+    "operation_id_without_exact_tenant_and_owner_scope_for_receipt_binding_or_completion",
     "missing_equivalence_evidence_for_duplicate_success",
     "payload_tenant_for_trusted_tenant_scope",
     "queue_or_topic_name_for_consumer_contract_identity",
@@ -85,12 +87,14 @@ EXPECTED_MANIFEST = {
     ],
     "fixed_delivery_semantics": "at_least_once",
     "fixed_inbox_identity": "(consumer_contract,message_identity_scope,message_id)",
+    "fixed_inbox_trusted_binding": "canonical_lookup_key_plus_exact_stored_trusted_identity_before_any_effect_authority",
     "fixed_execution_admission": "revision_bound_current_authority_before_each_protected_effect_attempt",
     "fixed_lease_loss_semantics": "lease_expiry_never_proves_effect_absence",
     "fixed_operation_authority_observation": "single_atomic_snapshot_per_retry_or_completion_decision",
-    "fixed_cross_authority_direct_completion_authority": "operation_bound_receipt_requires_exact_direct_completed_operation_outcome",
+    "fixed_cross_authority_scope_binding": "operation_id_plus_exact_tenant_id_plus_owner_contract",
+    "fixed_cross_authority_direct_completion_authority": "operation_bound_receipt_requires_exact_scoped_direct_completed_operation_outcome",
     "fixed_reconciliation_evidence": "append_only_operation_scoped_revision_plus_canonical_resolution_required_for_retry_or_confirmed_completion",
-    "fixed_reconciliation_completion_authority": "stable_operation_plus_append_only_effect_confirmed_revision_required_after_reconciliation_block",
+    "fixed_reconciliation_completion_authority": "stable_scoped_operation_plus_append_only_effect_confirmed_revision_required_after_reconciliation_block",
     "fixed_reconciliation_generation_handoff": "append_only_history_retained_but_prior_resolution_pointer_consumed_before_successor_attempt",
     "durable_schema_reuse_policy": "preexisting_wave2_correctness_object_requires_reviewed_revalidation_not_if_not_exists_acceptance",
     "residual_c2_choices_not_selected": EXPECTED_C2,
@@ -224,11 +228,19 @@ def _execution_boundary_findings() -> list[str]:
         (execution, "runtime.api@1"),
         (execution, "runtime.worker@1"),
         (model, "class CrossAuthorityOperationSnapshot"),
+        (model, "owner_contract: str | None = None"),
+        (model, "tenant_id: str | None = None"),
         (model, "reconciliation_attempt_generation"),
         (inbox, "def snapshot(self, operation_id: str) -> CrossAuthorityOperationSnapshot"),
-        (inbox, "operation_authority.snapshot(receipt.operation_id)"),
+        (inbox, "def _require_operation_scope("),
+        (inbox, "operation_authority.snapshot(operation_id)"),
+        (inbox, "canonical inbox lookup key does not match stored trusted receipt identity"),
+        (inbox, "operation owner contract does not match inbox authority scope"),
+        (inbox, "operation tenant does not match inbox authority scope"),
         (inbox, "operation authority did not return canonical atomic snapshot"),
         (reconciliation, "def snapshot(self, operation_id: str) -> CrossAuthorityOperationSnapshot"),
+        (reconciliation, "owner_contract=operation.owner_contract"),
+        (reconciliation, "tenant_id=operation.tenant_id"),
         (reconciliation, "reconciliation_attempt_generation=evidence.attempt_generation"),
         (inbox, "require_current_execution(execution_authority, request)"),
         (inbox, "processing_lease_expired_effect_absence_unproven"),
@@ -327,18 +339,20 @@ def _reconciliation_authority_boundary_findings() -> list[str]:
     snapshot_test = (
         ROOT / "tests/wave2/test_operation_authority_snapshot.py"
     ).read_text(encoding="utf-8")
+    scope_test = (
+        ROOT / "tests/wave2/test_inbox_operation_scope_binding.py"
+    ).read_text(encoding="utf-8")
     required_boundary = (
         "CALLER-SUPPLIED RESULT LINK != EFFECT COMPLETION AUTHORITY",
+        "CANONICAL INBOX LOOKUP KEY != COMPLETE TRUSTED RECEIPT IDENTITY",
+        "OPERATION ID != OPERATION AUTHORITY SCOPE",
         "OPERATION-BOUND RECEIPT != LOCAL EFFECT PATH",
         "RECONCILIATION HISTORY != CURRENT ATTEMPT RESOLUTION",
         "PRIOR ATTEMPT ABSENCE PROOF != SUCCESSOR ATTEMPT OUTCOME",
         "PRIOR ATTEMPT RECONCILIATION EVIDENCE != LATER ATTEMPT RETRY AUTHORITY",
         "RECONCILIATION REVISION != ATTEMPT-GENERATION-AGNOSTIC CAPABILITY",
         "SPLIT OPERATION READS != ATOMIC AUTHORITY SNAPSHOT",
-        "OPERATION-BOUND PROCESSING -> LOCAL COMPLETION = PROHIBITED",
-        "RECONCILED OPERATION -> DIRECT PROCESSING COMPLETION = PROHIBITED",
-        "PRIOR RECONCILIATION POINTER -> SUCCESSOR CURRENT ATTEMPT = PROHIBITED",
-        "SPLIT STATE/OUTCOME/RESOLUTION/REVISION READS -> AUTHORITY DECISION = PROHIBITED",
+        "CROSS-TENANT/CROSS-OWNER OPERATION BINDING -> RECEIPT AUTHORITY = PROHIBITED",
         "append-only reconciliation evidence records `effect_confirmed`",
         "exactly matches the result linked by the inbox receipt",
     )
@@ -356,7 +370,15 @@ def _reconciliation_authority_boundary_findings() -> list[str]:
         "test_snapshot_rejects_impossible_mixed_authority_tuple",
         "test_snapshot_rejects_reconciliation_evidence_from_another_attempt",
         "test_snapshot_requires_generation_with_reconciliation_revision",
-        "test_direct_completion_consumes_one_snapshot_and_no_split_reads",
+        "test_direct_completion_consumes_scoped_snapshots_and_no_split_reads",
+    )
+    required_scope_tests = (
+        "test_same_lookup_key_with_different_tenant_cannot_claim_before_authority_call",
+        "test_bind_rejects_operation_from_another_tenant",
+        "test_bind_rejects_operation_from_another_owner_contract",
+        "test_valid_exact_scope_binding_is_retained",
+        "test_completion_rechecks_scope_in_atomic_snapshot",
+        "test_sql_guard_checks_scope_on_insert_and_update",
     )
     findings = [
         f"Wave 2 reconciliation authority boundary missing: {anchor}"
@@ -375,21 +397,24 @@ def _reconciliation_authority_boundary_findings() -> list[str]:
         for anchor in required_snapshot_tests
         if anchor not in snapshot_test
     )
+    findings.extend(
+        f"Wave 2 inbox/operation scope falsification missing: {anchor}"
+        for anchor in required_scope_tests
+        if anchor not in scope_test
+    )
     return findings
 
 
 def _sql_findings() -> list[str]:
-    initial = (ROOT / "sql/wave2/001_async_correctness.sql").read_text(encoding="utf-8")
-    reconciliation = (
-        ROOT / "sql/wave2/002_reconciliation_evidence_and_transition_hardening.sql"
-    ).read_text(encoding="utf-8")
-    completion = (
-        ROOT / "sql/wave2/003_cross_authority_completion_hardening.sql"
-    ).read_text(encoding="utf-8")
-    handoff = (
-        ROOT / "sql/wave2/004_reconciliation_generation_handoff.sql"
-    ).read_text(encoding="utf-8")
-    text = initial + "\n" + reconciliation + "\n" + completion + "\n" + handoff
+    paths = [
+        ROOT / "sql/wave2/001_async_correctness.sql",
+        ROOT / "sql/wave2/002_reconciliation_evidence_and_transition_hardening.sql",
+        ROOT / "sql/wave2/003_cross_authority_completion_hardening.sql",
+        ROOT / "sql/wave2/004_reconciliation_generation_handoff.sql",
+        ROOT / "sql/wave2/005_reconciliation_attempt_generation_binding.sql",
+        ROOT / "sql/wave2/006_operation_scope_binding_hardening.sql",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
     lowered = text.lower()
     required = (
         "create table system.async_outbox_message",
@@ -428,6 +453,10 @@ def _sql_findings() -> list[str]:
         "execution_placement_version text null",
         "execution_fence_scope_id text null",
         "execution_fence_epoch bigint null",
+        "before insert or update on system.async_consumer_inbox",
+        "op_tenant_id is distinct from new.tenant_id",
+        "op_owner_contract is distinct from new.consumer_contract",
+        "wave2_inbox_operation_scope_guard",
         "security invoker",
         "no grant statements are intentionally present",
     )

@@ -6,6 +6,23 @@ from .model import ReleaseError, ValidationScope
 
 
 @dataclass(frozen=True)
+class NoApplicableCaseEvidence:
+    reason: str
+    authority_profile: str
+    evidence_reference: str
+    scope_binding: str
+    current: bool
+
+    def validate_for(self, expected_scope: str) -> None:
+        if not all((self.reason, self.authority_profile, self.evidence_reference, self.scope_binding)):
+            raise ReleaseError("NO_APPLICABLE_CASE requires reason, authority, evidence and exact scope")
+        if not self.current:
+            raise ReleaseError("NO_APPLICABLE_CASE evidence is not current")
+        if self.scope_binding != expected_scope:
+            raise ReleaseError("NO_APPLICABLE_CASE evidence is bound to a different release scope")
+
+
+@dataclass(frozen=True)
 class MixedVersionMatrix:
     runtime_compatible: bool
     schema_compatible: bool
@@ -29,37 +46,49 @@ class CellCompatibilityEvidence:
     metadata_generation: str | None = None
     metadata_current: bool = False
     combination_admitted: bool = False
-    no_applicable_case_reason: str | None = None
+    no_applicable_case: NoApplicableCaseEvidence | None = None
 
 
 @dataclass(frozen=True)
 class RolloutCompatibilityEvidence:
+    release_scope_id: str
     mixed_version: MixedVersionMatrix
     validation_scope: ValidationScope
     cell_affecting_release: bool
     reference_cell_evidence_current: bool
-    reference_cell_no_applicable_case_reason: str | None
+    reference_cell_no_applicable_case: NoApplicableCaseEvidence | None
     cell_compatibility: CellCompatibilityEvidence
 
 
 def require_rollout_compatibility(evidence: RolloutCompatibilityEvidence) -> None:
+    if not evidence.release_scope_id:
+        raise ReleaseError("rollout compatibility requires an exact release scope")
     if not evidence.mixed_version.all_supported:
         raise ReleaseError("mixed-version coexistence is not proven compatible")
     if evidence.cell_affecting_release:
         if evidence.validation_scope is not ValidationScope.REFERENCE_CELL:
-            if not evidence.reference_cell_no_applicable_case_reason:
+            if evidence.reference_cell_no_applicable_case is None:
                 raise ReleaseError("cell/runtime/schema-affecting release requires reference-cell evidence or evidence-backed NO_APPLICABLE_CASE")
+            evidence.reference_cell_no_applicable_case.validate_for(evidence.release_scope_id)
         elif not evidence.reference_cell_evidence_current:
             raise ReleaseError("reference-cell validation evidence is not current")
         cell = evidence.cell_compatibility
         if not cell.applicable:
             raise ReleaseError("cell-affecting release requires current cell compatibility metadata")
+        if cell.no_applicable_case is not None:
+            raise ReleaseError("applicable cell compatibility cannot also claim NO_APPLICABLE_CASE")
         if not all((cell.metadata_identity, cell.metadata_generation, cell.metadata_current, cell.combination_admitted)):
             raise ReleaseError("cell compatibility metadata is missing, stale or incompatible")
     else:
+        if evidence.reference_cell_no_applicable_case is not None:
+            evidence.reference_cell_no_applicable_case.validate_for(evidence.release_scope_id)
         cell = evidence.cell_compatibility
         if cell.applicable:
+            if cell.no_applicable_case is not None:
+                raise ReleaseError("applicable cell compatibility cannot also claim NO_APPLICABLE_CASE")
             if not all((cell.metadata_identity, cell.metadata_generation, cell.metadata_current, cell.combination_admitted)):
                 raise ReleaseError("applicable cell compatibility evidence is incomplete")
-        elif not cell.no_applicable_case_reason:
-            raise ReleaseError("non-applicable cell compatibility requires explicit evidence-backed reason")
+        else:
+            if cell.no_applicable_case is None:
+                raise ReleaseError("non-applicable cell compatibility requires evidence-backed NO_APPLICABLE_CASE")
+            cell.no_applicable_case.validate_for(evidence.release_scope_id)

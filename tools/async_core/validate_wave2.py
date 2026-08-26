@@ -78,6 +78,8 @@ EXPECTED_MANIFEST = {
     "runtime_profiles": ["runtime.api@1", "runtime.worker@1"],
     "required_reliability_profiles": [
         "rel.cell-transactional-store@1",
+        "rel.outbox-publication@1",
+        "rel.broker-job-transport@1",
         "rel.consumer-inbox-effect@1",
         "rel.replay-consume-state@1",
     ],
@@ -145,6 +147,8 @@ def _source_authority_findings() -> list[str]:
         "inbox": ROOT / "docs/10-event-contracts/consumer-inbox-idempotency-and-effects.md",
         "security": ROOT / "docs/10-event-contracts/security-tenant-context-and-data-classification.md",
         "reliability": ROOT / "docs/11-reliability-resilience/08-reliability-semantic-manifest.md",
+        "reliability_profiles": ROOT / "docs/11-reliability-resilience/07-capability-resilience-profiles.md",
+        "operations": ROOT / "docs/15-operations-recovery-incident-readiness/09-async-replay-quarantine-realtime-webhook-operations.md",
         "sequencing": ROOT / "docs/16-implementation-readiness/11-initial-implementation-sequencing.md",
         "slices": ROOT / "docs/16-implementation-readiness/15-implementation-slice-readiness-manifest.md",
     }
@@ -158,6 +162,8 @@ def _source_authority_findings() -> list[str]:
         ("publication", "retrying the same logical `message_id` is preferred"),
         ("delivery", "worker lease expiry is not effect absence proof"),
         ("delivery", "lease timeout while original executor may still be active"),
+        ("delivery", "Re-drive is an explicit governed action"),
+        ("delivery", "current authorization for privileged remediation is checked"),
         ("inbox", "(consumer_contract, message_identity_scope, message_id)"),
         ("inbox", "A read-then-insert race is prohibited"),
         ("inbox", "reconciliation_required"),
@@ -166,10 +172,19 @@ def _source_authority_findings() -> list[str]:
         ("security", "Human/session/membership authorization from message creation time does not persist automatically"),
         ("reliability", "`rel.consumer-inbox-effect@1`"),
         ("reliability", "`rel.replay-consume-state@1`"),
+        ("reliability_profiles", "`rel.cell-transactional-store`"),
+        ("reliability_profiles", "`rel.outbox-publication`"),
+        ("reliability_profiles", "`rel.broker-job-transport`"),
+        ("reliability_profiles", "`rel.consumer-inbox-effect`"),
+        ("reliability_profiles", "`rel.replay-consume-state`"),
+        ("operations", "`ops.redrive-operation@1`"),
+        ("operations", "Redrive requires current privileged authority and owning-contract eligibility"),
         ("sequencing", "## Wave 2 — Transactional cell and async correctness substrate"),
         ("sequencing", "`impl.cell-data-runtime@1`"),
         ("sequencing", "`impl.async-core@1`"),
+        ("sequencing", "quarantine/redrive authority hooks"),
         ("slices", "`rel.cell-transactional-store@1`"),
+        ("slices", "outbox/broker/inbox/replay reliability profiles"),
     )
     return [
         f"accepted Wave 2 authority anchor missing: {owner}:{anchor}"
@@ -209,10 +224,12 @@ def _execution_boundary_findings() -> list[str]:
         (execution, "runtime.api@1"),
         (execution, "runtime.worker@1"),
         (model, "class CrossAuthorityOperationSnapshot"),
+        (model, "reconciliation_attempt_generation"),
         (inbox, "def snapshot(self, operation_id: str) -> CrossAuthorityOperationSnapshot"),
         (inbox, "operation_authority.snapshot(receipt.operation_id)"),
         (inbox, "operation authority did not return canonical atomic snapshot"),
         (reconciliation, "def snapshot(self, operation_id: str) -> CrossAuthorityOperationSnapshot"),
+        (reconciliation, "reconciliation_attempt_generation=evidence.attempt_generation"),
         (inbox, "require_current_execution(execution_authority, request)"),
         (inbox, "processing_lease_expired_effect_absence_unproven"),
         (inbox, "same_scoped_identity_conflicting_trusted_binding"),
@@ -253,6 +270,50 @@ def _execution_boundary_findings() -> list[str]:
     return findings
 
 
+def _redrive_boundary_findings() -> list[str]:
+    quarantine = (ROOT / "src/jlmirror_async/quarantine.py").read_text(encoding="utf-8")
+    tests = (ROOT / "tests/wave2/test_quarantine_redrive_authority.py").read_text(encoding="utf-8")
+    readme = (ROOT / "implementation/wave-2/README.md").read_text(encoding="utf-8")
+    required = (
+        "class CurrentRedriveAuthorityPort",
+        "def require_current_redrive(",
+        "class QuarantineSubject",
+        "quarantine_generation",
+        "rel.outbox-publication@1",
+        "rel.consumer-inbox-effect@1",
+        "rel.replay-consume-state@1",
+        "current privileged redrive authority is unavailable",
+        "owning contract does not currently admit redrive",
+        "tenant-scoped redrive admission requires current placement evidence",
+        "capacity_admission_revision",
+        "effect_safety_revision",
+        "audit_revision",
+    )
+    findings = [
+        f"Wave 2 quarantine/redrive authority hook missing: {anchor}"
+        for anchor in required
+        if anchor not in quarantine
+    ]
+    for anchor in (
+        "test_redrive_requires_current_privileged_authority",
+        "test_redrive_requires_owning_contract_eligibility",
+        "test_redrive_admission_is_exact_quarantine_generation_bound",
+        "test_quarantine_source_cannot_select_wrong_reliability_profile",
+        "test_tenant_redrive_admission_requires_current_placement_evidence",
+    ):
+        if anchor not in tests:
+            findings.append(f"Wave 2 quarantine/redrive falsification missing: {anchor}")
+    for anchor in (
+        "QUARANTINE != REDRIVE ELIGIBILITY",
+        "QUEUE AGE / OPERATOR DESIRE / VENDOR DLQ STATE != REDRIVE AUTHORITY",
+        "RELIABILITY PROFILE != TRANSPORT PRODUCT SELECTION",
+        "CurrentRedriveAuthorityPort",
+    ):
+        if anchor not in readme:
+            findings.append(f"Wave 2 quarantine/redrive propagation missing: {anchor}")
+    return findings
+
+
 def _reconciliation_authority_boundary_findings() -> list[str]:
     boundary = (
         ROOT / "implementation/wave-2/RECONCILIATION_AUTHORITY_BOUNDARY.md"
@@ -271,6 +332,8 @@ def _reconciliation_authority_boundary_findings() -> list[str]:
         "OPERATION-BOUND RECEIPT != LOCAL EFFECT PATH",
         "RECONCILIATION HISTORY != CURRENT ATTEMPT RESOLUTION",
         "PRIOR ATTEMPT ABSENCE PROOF != SUCCESSOR ATTEMPT OUTCOME",
+        "PRIOR ATTEMPT RECONCILIATION EVIDENCE != LATER ATTEMPT RETRY AUTHORITY",
+        "RECONCILIATION REVISION != ATTEMPT-GENERATION-AGNOSTIC CAPABILITY",
         "SPLIT OPERATION READS != ATOMIC AUTHORITY SNAPSHOT",
         "OPERATION-BOUND PROCESSING -> LOCAL COMPLETION = PROHIBITED",
         "RECONCILED OPERATION -> DIRECT PROCESSING COMPLETION = PROHIBITED",
@@ -291,6 +354,8 @@ def _reconciliation_authority_boundary_findings() -> list[str]:
     )
     required_snapshot_tests = (
         "test_snapshot_rejects_impossible_mixed_authority_tuple",
+        "test_snapshot_rejects_reconciliation_evidence_from_another_attempt",
+        "test_snapshot_requires_generation_with_reconciliation_revision",
         "test_direct_completion_consumes_one_snapshot_and_no_split_reads",
     )
     findings = [
@@ -446,6 +511,7 @@ def _workflow_findings() -> list[str]:
     required = (
         "python3 -m unittest discover -s tests/wave2 -p 'test_*.py'",
         "python3 tools/async_core/validate_wave2.py",
+        "python3 tools/async_core/validate_reconciliation_attempt_binding.py",
         "persist-credentials: false",
         "permissions:\n  contents: read",
     )
@@ -460,6 +526,7 @@ def validate() -> list[str]:
         _source_authority_findings,
         _stdlib_boundary_findings,
         _execution_boundary_findings,
+        _redrive_boundary_findings,
         _reconciliation_authority_boundary_findings,
         _sql_findings,
         _wave1_compatibility_maintenance_findings,

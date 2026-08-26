@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from threading import RLock
 
+from .execution import (
+    AsyncExecutionAdmission,
+    AsyncExecutionRequest,
+    CurrentAsyncExecutionAuthorityPort,
+    require_current_execution,
+)
 from .model import (
     EffectResultLink,
     InvalidTransition,
     OperationState,
     ReconciliationBlocked,
     ReconciliationResolution,
+    aware,
     identifier,
 )
 
@@ -18,6 +26,8 @@ class OperationAttempt:
     operation_id: str
     attempt_generation: int
     executor_id: str
+    attempt_expires_at: datetime
+    execution_admission: AsyncExecutionAdmission
 
 
 @dataclass
@@ -28,6 +38,8 @@ class _Operation:
     state: OperationState = OperationState.PREPARED
     attempt_generation: int = 0
     executor_id: str | None = None
+    attempt_expires_at: datetime | None = None
+    execution_admission: AsyncExecutionAdmission | None = None
     outcome: EffectResultLink | None = None
     ambiguity_reason: str | None = None
 
@@ -35,8 +47,10 @@ class _Operation:
 class InMemoryCrossAuthorityOperationLedger:
     """Reference model for stable-operation ambiguity and reconciliation.
 
-    A timeout/lost response cannot be interpreted as effect absence. Another
-    attempt becomes eligible only after an accepted reconciliation proves absence.
+    A timeout/lost response or executor-lease expiry cannot be interpreted as
+    effect absence. Another attempt becomes eligible only after an accepted
+    reconciliation proves absence. Every new attempt also requires a fresh,
+    revision-bound current execution admission for its exact operation scope.
     """
 
     def __init__(self) -> None:
@@ -66,7 +80,15 @@ class InMemoryCrossAuthorityOperationLedger:
                 owner_contract=owner_contract,
             )
 
-    def begin_attempt(self, operation_id: str, executor_id: str) -> OperationAttempt:
+    def begin_attempt(
+        self,
+        operation_id: str,
+        executor_id: str,
+        *,
+        execution_authority: CurrentAsyncExecutionAuthorityPort,
+        attempt_expires_at: datetime,
+        runtime_profile_id: str = "runtime.worker@1",
+    ) -> OperationAttempt:
         identifier(executor_id, "executor_id")
         with self._lock:
             operation = self._require(operation_id)
@@ -74,39 +96,104 @@ class InMemoryCrossAuthorityOperationLedger:
                 raise ReconciliationBlocked("ambiguous operation must reconcile before another attempt")
             if operation.state is not OperationState.PREPARED:
                 raise InvalidTransition("operation is not eligible for a new effect attempt")
+
+            request = AsyncExecutionRequest(
+                authority_contract=operation.owner_contract,
+                runtime_profile_id=runtime_profile_id,
+                tenant_id=operation.tenant_id,
+                operation_id=operation.operation_id,
+            )
+            try:
+                admission = require_current_execution(execution_authority, request)
+            except ValueError as exc:
+                raise ReconciliationBlocked(
+                    "current placement/authorization/runtime authority cannot be established"
+                ) from exc
+            expires = aware(attempt_expires_at, "attempt_expires_at")
+            admitted_at = aware(admission.observed_at, "execution_admission.observed_at")
+            if expires <= admitted_at:
+                raise ValueError("attempt_expires_at must be later than current execution admission")
+
             operation.state = OperationState.ATTEMPTING
             operation.attempt_generation += 1
             operation.executor_id = executor_id
+            operation.attempt_expires_at = expires
+            operation.execution_admission = admission
             return OperationAttempt(
                 operation_id=operation_id,
                 attempt_generation=operation.attempt_generation,
                 executor_id=executor_id,
+                attempt_expires_at=expires,
+                execution_admission=admission,
             )
 
-    def complete(self, attempt: OperationAttempt, outcome: EffectResultLink) -> None:
+    def expire_attempt(self, operation_id: str, *, observed_at: datetime) -> bool:
+        """Turn a lost/expired attempt into durable ambiguity, never safe retry."""
+
+        now = aware(observed_at, "observed_at")
+        with self._lock:
+            operation = self._require(operation_id)
+            if operation.state is not OperationState.ATTEMPTING:
+                return False
+            if operation.attempt_expires_at is None or operation.attempt_expires_at > now:
+                return False
+            operation.state = OperationState.RECONCILIATION_REQUIRED
+            operation.executor_id = None
+            operation.attempt_expires_at = None
+            operation.execution_admission = None
+            operation.ambiguity_reason = "attempt_lease_expired_effect_absence_unproven"
+            return True
+
+    def complete(
+        self,
+        attempt: OperationAttempt,
+        outcome: EffectResultLink,
+        *,
+        observed_at: datetime,
+    ) -> None:
         if not isinstance(outcome, EffectResultLink):
             raise ValueError("cross-authority completion requires durable result identity")
+        now = aware(observed_at, "observed_at")
         with self._lock:
-            operation = self._require_current_attempt(attempt)
+            operation = self._require_current_attempt(attempt, now)
             operation.state = OperationState.COMPLETED
             operation.outcome = outcome
             operation.executor_id = None
+            operation.attempt_expires_at = None
             operation.ambiguity_reason = None
 
-    def mark_ambiguous(self, attempt: OperationAttempt, reason: str) -> None:
+    def mark_ambiguous(
+        self,
+        attempt: OperationAttempt,
+        reason: str,
+        *,
+        observed_at: datetime,
+    ) -> None:
         identifier(reason, "reason")
+        now = aware(observed_at, "observed_at")
         with self._lock:
-            operation = self._require_current_attempt(attempt)
+            operation = self._require_current_attempt(attempt, now)
             operation.state = OperationState.RECONCILIATION_REQUIRED
             operation.executor_id = None
+            operation.attempt_expires_at = None
+            operation.execution_admission = None
             operation.ambiguity_reason = reason
 
-    def fail_terminal(self, attempt: OperationAttempt, reason: str) -> None:
+    def fail_terminal(
+        self,
+        attempt: OperationAttempt,
+        reason: str,
+        *,
+        observed_at: datetime,
+    ) -> None:
         identifier(reason, "reason")
+        now = aware(observed_at, "observed_at")
         with self._lock:
-            operation = self._require_current_attempt(attempt)
+            operation = self._require_current_attempt(attempt, now)
             operation.state = OperationState.FAILED_TERMINAL
             operation.executor_id = None
+            operation.attempt_expires_at = None
+            operation.execution_admission = None
             operation.ambiguity_reason = reason
 
     def reconcile(
@@ -146,6 +233,10 @@ class InMemoryCrossAuthorityOperationLedger:
         with self._lock:
             return self._require(operation_id).outcome
 
+    def execution_admission(self, operation_id: str) -> AsyncExecutionAdmission | None:
+        with self._lock:
+            return self._require(operation_id).execution_admission
+
     def _require(self, operation_id: str) -> _Operation:
         identifier(operation_id, "operation_id")
         operation = self._operations.get(operation_id)
@@ -153,14 +244,27 @@ class InMemoryCrossAuthorityOperationLedger:
             raise InvalidTransition("unknown operation_id")
         return operation
 
-    def _require_current_attempt(self, attempt: OperationAttempt) -> _Operation:
+    def _require_current_attempt(
+        self,
+        attempt: OperationAttempt,
+        observed_at: datetime,
+    ) -> _Operation:
         if not isinstance(attempt, OperationAttempt):
             raise InvalidTransition("current OperationAttempt is required")
         operation = self._require(attempt.operation_id)
+        if operation.state is OperationState.ATTEMPTING and operation.attempt_expires_at is not None:
+            if operation.attempt_expires_at <= observed_at:
+                operation.state = OperationState.RECONCILIATION_REQUIRED
+                operation.executor_id = None
+                operation.attempt_expires_at = None
+                operation.execution_admission = None
+                operation.ambiguity_reason = "attempt_lease_expired_effect_absence_unproven"
         if (
             operation.state is not OperationState.ATTEMPTING
             or operation.executor_id != attempt.executor_id
             or operation.attempt_generation != attempt.attempt_generation
+            or operation.attempt_expires_at != attempt.attempt_expires_at
+            or operation.execution_admission != attempt.execution_admission
         ):
-            raise InvalidTransition("stale/non-owner operation attempt cannot mutate state")
+            raise InvalidTransition("stale/non-owner/expired operation attempt cannot mutate state")
         return operation

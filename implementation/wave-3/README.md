@@ -36,6 +36,7 @@ RECONCILIATION BOOLEAN != RECONCILIATION AUTHORITY
 RECOVERY CLASSIFICATION BOOLEAN SET != SCOPED DURABLE EVIDENCE
 REQUIRED HEALTH SET != RUNTIME EVIDENCE DISCRETION
 PHASE 11 RELIABILITY JOIN != OPTIONAL HEALTH EVIDENCE
+PHASE 13 RUNTIME PROFILE != RELEASE-POLICY-DISCRETIONARY RELIABILITY MINIMUM
 RUNTIME VERIFICATION EVIDENCE != REPLAYABLE ACROSS DEPLOYMENT SCOPE OR TARGET VERSION
 HEALTH GATE EVIDENCE != REPLAYABLE ACROSS RELEASE TARGET STATE VERSION
 RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD
@@ -72,6 +73,7 @@ No backend, collector, trace transport, dashboard, pager, sampling numeric, SLO 
 - promotion principal authority and promotion release-policy currentness require their own immutable evidence lineage;
 - exact target configuration identity/generation/semantic profile;
 - promotion records bind durable promotion/approval evidence plus exact target, validation scope, rollout scope, runtime profile set, schema/API/event compatibility state and validation/compatibility evidence identities;
+- runtime profile IDs are restricted to the exact canonical Phase 13 set and duplicates/unknown profiles fail closed;
 - deployment admission rejects recombination of a promotion with different configuration-validation, rollout-compatibility or cell-compatibility evidence;
 - deployment admission requires the exact five current-authority gate classes (`deployment_principal`, `release_policy`, `release_target_authority`, `reliability`, `security_recovery`), each carrying an owning authority profile/version, immutable evidence identity, exact deployment scope, expected target-state version and currentness;
 - missing, duplicate, stale, wrong-scope, wrong-version or mutable-reference admission evidence fails closed;
@@ -85,6 +87,7 @@ No backend, collector, trace transport, dashboard, pager, sampling numeric, SLO 
 - effect confirmation/absence resolution requires durable target evidence and the deployment record retains both target evidence and reconciliation-authority lineage where applicable;
 - runtime verification independently requires durable evidence for runtime admission, configuration currentness, release-policy currentness, verifier authority and owning health-admission policy; vendor/controller green is ignored as authority;
 - the exact reliability/health gate requirements come from a dedicated current `release.runtime-verification-requirements@1` evidence record bound to the same deployment scope, post-effect release-target state version and current release-policy evidence lineage; the runtime evidence cannot choose or shrink that set;
+- each Phase 13 runtime profile contributes its fixed non-conditional minimum Phase 11 reliability bindings before the release-policy authority may add deployment-specific conditional gates; `runtime.api@1`, for example, cannot omit transactional/session/cache/configuration reliability;
 - every declared Phase 11 reliability profile contributes its accepted Phase 12 health bindings, and the requirements record cannot omit those implied health profiles;
 - runtime health evidence must match the exact required gate set: missing, duplicate or unexpected gates fail closed;
 - runtime verification evidence, requirements evidence and every individual health gate are bound to the exact `{target_id, deployment_operation_id}` scope and post-effect `release_target_state_version`, preventing cross-operation/target/version replay;

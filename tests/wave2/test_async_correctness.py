@@ -426,7 +426,12 @@ class InboxTests(unittest.TestCase):
         inbox.admit(identity, evidence())
         claim = self.claim(inbox, identity, "worker-a")
         operations.prepare("op-inbox", identity.consumer_contract, tenant_id="tenant-a")
-        inbox.bind_cross_authority_operation(claim, "op-inbox", observed_at=NOW + timedelta(seconds=1))
+        inbox.bind_cross_authority_operation(
+            claim,
+            "op-inbox",
+            operation_authority=operations,
+            observed_at=NOW + timedelta(seconds=1),
+        )
         attempt = operations.begin_attempt(
             "op-inbox",
             "worker-a",

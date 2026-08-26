@@ -13,11 +13,13 @@ class HealthGateEvidence:
     assessment: HealthAssessment
     evidence_reference: str
     owning_policy_profile_and_version: str
+    policy_evidence_reference: str
     policy_current: bool
     admission_eligible: bool
 
     def __post_init__(self) -> None:
         require_immutable_evidence_reference("health_gate.evidence_reference", self.evidence_reference)
+        require_immutable_evidence_reference("health_gate.policy_evidence_reference", self.policy_evidence_reference)
         if not self.owning_policy_profile_and_version:
             raise ReleaseError("health gate requires evidence and owning policy identity")
 
@@ -29,9 +31,14 @@ class RuntimeVerificationEvidence:
     observed_artifact_identity: str | None
     observed_configuration_generation: str | None
     runtime_profile_set: tuple[str, ...]
+    runtime_admission_evidence_reference: str
     runtime_admission_current: bool
+    configuration_currentness_evidence_reference: str
     configuration_current: bool
+    release_policy_evidence_reference: str
     release_policy_current: bool
+    verifier_authority_profile_and_version: str
+    verifier_authority_evidence_reference: str
     verifier_authority_current: bool
     required_health_profile_ids: tuple[str, ...]
     health_gates: tuple[HealthGateEvidence, ...]
@@ -50,12 +57,22 @@ def verify_runtime(intent: DeploymentIntent, evidence: RuntimeVerificationEviden
         raise ReleaseError("observed target configuration generation is not current intent")
     if tuple(evidence.runtime_profile_set) != tuple(intent.runtime_profile_set):
         raise ReleaseError("runtime profile set differs from approved release intent")
+
+    for name, value in (
+        ("runtime_admission_evidence_reference", evidence.runtime_admission_evidence_reference),
+        ("configuration_currentness_evidence_reference", evidence.configuration_currentness_evidence_reference),
+        ("release_policy_evidence_reference", evidence.release_policy_evidence_reference),
+        ("verifier_authority_evidence_reference", evidence.verifier_authority_evidence_reference),
+    ):
+        require_immutable_evidence_reference(name, value)
     if not evidence.runtime_admission_current:
         raise ReleaseError("deployment success cannot substitute for current runtime admission")
     if not evidence.configuration_current:
         raise ReleaseError("target configuration currentness is not proven")
-    if not evidence.release_policy_current or not evidence.verifier_authority_current:
-        raise ReleaseError("release policy/verifier currentness is not proven")
+    if not evidence.release_policy_current:
+        raise ReleaseError("release policy currentness is not proven")
+    if not evidence.verifier_authority_profile_and_version or not evidence.verifier_authority_current:
+        raise ReleaseError("runtime verifier authority/currentness is not proven")
 
     gates = {}
     for gate in evidence.health_gates:

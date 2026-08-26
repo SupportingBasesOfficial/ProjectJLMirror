@@ -3,7 +3,7 @@ import unittest
 
 from jlmirror_observability import HealthAssessment, HealthState
 from jlmirror_release import (
-    ArtifactIdentity, BuildProvenanceEvidence, CellCompatibilityEvidence,
+    AcceptedSourceEvidence, ArtifactIdentity, BuildProvenanceEvidence, CellCompatibilityEvidence,
     ConfigurationValidationEvidence, CurrentAuthorityEvidence, DeploymentAdmissionEvidence,
     DeploymentAuthority, DeploymentIntent, DeploymentObservation, HealthGateEvidence,
     MixedVersionMatrix, NoApplicableCaseEvidence, PromotionEvidence, PromotionState,
@@ -14,6 +14,7 @@ from jlmirror_release import (
 
 DIGEST_A = "a" * 64
 DIGEST_B = "b" * 64
+SOURCE_STATE_ID = "1" * 40
 ADMISSION_GATE_IDS = (
     "deployment_principal", "release_policy", "release_target_authority",
     "reliability", "security_recovery",
@@ -35,10 +36,21 @@ def intent(op="op-1", expected=4, digest=DIGEST_A, config_generation="cfg-7"):
     )
 
 
+def accepted_source(trust_class=SourceTrustClass.ACCEPTED_REVIEW_STATE):
+    return AcceptedSourceEvidence(
+        source_state_id=SOURCE_STATE_ID,
+        source_trust_class=trust_class,
+        source_change_authority_profile_and_version="source.change-authority@1",
+        source_change_evidence_reference="evidence:source-change-1",
+        review_assurance_profile_and_version="review.assurance@1",
+        review_assurance_evidence_reference="evidence:review-assurance-1",
+    )
+
+
 def provenance(digest=DIGEST_A):
     return BuildProvenanceEvidence(
-        source_state_id="accepted-source-sha", source_trust_class=SourceTrustClass.ACCEPTED_REVIEW_STATE,
-        accepted_change_authority_proven=True, release_policy_profile_and_version="release-policy@1",
+        accepted_source=accepted_source(),
+        release_policy_profile_and_version="release-policy@1",
         release_policy_current=True, builder_principal_class="principal.release-build@1",
         builder_authorized_current=True, declared_input_set_id="inputs-1",
         declared_inputs_integrity_proven=True, build_record_id="build-1",
@@ -171,7 +183,7 @@ def runtime_evidence(digest=DIGEST_A, config_generation="cfg-7", admission_curre
 class ReleaseTests(unittest.TestCase):
     def test_untrusted_source_cannot_enter_trusted_build(self):
         with self.assertRaises(ReleaseError):
-            require_trusted_build_source(SourceTrustClass.UNTRUSTED_CANDIDATE, exact_source_state_proven=True, accepted_change_authority_proven=True)
+            require_trusted_build_source(accepted_source(SourceTrustClass.UNTRUSTED_CANDIDATE))
 
     def test_deployment_cannot_start_from_intent_or_promotion_id_alone(self):
         authority = DeploymentAuthority(ReleaseTargetState("validation-cell-a", 4))

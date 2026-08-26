@@ -98,3 +98,7 @@ jobs:
       - name: Validate Wave 2 reconciliation attempt binding
         shell: bash
         run: PYTHONPATH=src python3 tools/async_core/validate_reconciliation_attempt_binding.py
+
+      - name: Validate Wave 2 quarantine redrive authority
+        shell: bash
+        run: PYTHONPATH=src python3 tools/async_core/validate_redrive_authority.py

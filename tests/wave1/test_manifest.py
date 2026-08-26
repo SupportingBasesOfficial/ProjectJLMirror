@@ -75,8 +75,16 @@ class Wave1ImplementationManifestTests(unittest.TestCase):
             "orchestrator_scheduler",
             "ingress_load_balancer",
             "physical_environment_mapping",
+            "database_admin_role_and_operational_mapping",
         }
         self.assertEqual(set(manifest["residual_c2_choices_not_selected"]), expected)
+
+    def test_database_admin_boundary_cannot_disappear_from_residual_c2_inventory(self):
+        manifest = self.load_manifest()
+        self.assertIn(
+            "database_admin_role_and_operational_mapping",
+            manifest["residual_c2_choices_not_selected"],
+        )
 
     def test_ir_d_profiles_are_the_only_closed_protocol_profiles(self):
         manifest = self.load_manifest()

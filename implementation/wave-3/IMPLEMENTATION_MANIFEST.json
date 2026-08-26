@@ -12,15 +12,18 @@
     "MISSING TELEMETRY != SUCCESS",
     "HEALTH != AUTHORIZATION",
     "CORRELATION != TRUST",
-    "CUSTOMER MONITORING TELEMETRY != PLATFORM OBSERVABILITY"
+    "CUSTOMER MONITORING TELEMETRY != PLATFORM OBSERVABILITY",
+    "UNTRUSTED FIELD NAME != TELEMETRY SCHEMA AUTHORITY"
   ],
   "canonical_release_laws": [
     "UNTRUSTED SOURCE != TRUSTED RELEASE INPUT",
     "BUILD SUCCESS != ARTIFACT TRUST",
     "ARTIFACT EXISTS != PROMOTION AUTHORITY",
     "PROMOTED ARTIFACT != DEPLOYMENT AUTHORITY",
+    "NO_APPLICABLE_CASE != FREE-TEXT ASSERTION",
     "SAME IMMUTABLE ARTIFACT != SAME ENVIRONMENT CONFIGURATION",
     "DEPLOYMENT SUCCESS != RUNTIME ADMISSION",
+    "HEALTH GREEN != RELEASE ADMISSION AUTHORITY",
     "TIMEOUT/LOST RESPONSE != RELEASE EFFECT ABSENCE",
     "RELEASE TARGET STATE != PLACEMENT/RUNTIME AUTHORITY",
     "ONE RELEASE ARTIFACT -> MANY ENVIRONMENT PROMOTIONS"
@@ -41,16 +44,21 @@
   "forbidden_substitutions": [
     "telemetry_green_for_business_or_security_authority",
     "missing_telemetry_for_success",
+    "untrusted_or_dynamic_field_name_for_metric_or_index_schema",
     "request_or_message_id_as_unbounded_metric_label",
     "raw_url_or_query_as_metric_dimension",
     "secret_or_token_material_in_ordinary_telemetry",
     "branch_or_pr_event_for_accepted_source_trust",
     "successful_build_for_trusted_artifact",
     "mutable_tag_for_artifact_identity",
+    "promotion_id_or_registry_presence_for_deployment_authority",
+    "free_text_reason_for_no_applicable_case",
     "same_artifact_for_target_configuration_equivalence",
     "deployment_controller_green_for_runtime_verification",
+    "complete_health_signal_without_owning_policy_admission",
     "timeout_or_lost_response_for_effect_absence",
     "new_deployment_operation_id_for_unresolved_prior_operation",
+    "externally_mutable_release_target_state_for_fencing",
     "release_target_state_version_for_runtime_generation_or_placement_version"
   ],
   "next_wave_authorized": false

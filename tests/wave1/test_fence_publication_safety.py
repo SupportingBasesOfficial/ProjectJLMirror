@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 from tools.authority.validate_fence_publication_safety import (  # noqa: E402
     BOUNDARY_PATH,
     BOOTSTRAP_PATH,
+    C2_DATABASE_ADMIN_CHOICE,
     MANIFEST_PATH,
     REUSE_PATH,
     validate_bootstrap_publication_text,
@@ -67,6 +68,7 @@ class FencePublicationSafetyTests(unittest.TestCase):
             INDEPENDENT_REQUIRED_FORBIDDEN_SUBSTITUTIONS,
         )
         c2 = self.manifest["c2_database_admin_boundary"]
+        self.assertEqual(c2["choice_id"], C2_DATABASE_ADMIN_CHOICE)
         self.assertIs(c2["concurrent_superuser_or_equivalent_admin_exclusion_selected"], False)
         self.assertIs(c2["catalog_preflight_claims_permanent_admin_absence"], False)
         self.assertIs(c2["requires_separate_reviewed_role_and_operational_mapping"], True)
@@ -82,6 +84,10 @@ class FencePublicationSafetyTests(unittest.TestCase):
                 mutated = json.loads(json.dumps(self.manifest))
                 mutated["c2_database_admin_boundary"][field] = True
                 self.assertTrue(validate_manifest_object(mutated))
+
+        mutated = json.loads(json.dumps(self.manifest))
+        mutated["c2_database_admin_boundary"]["choice_id"] = "different_admin_mapping"
+        self.assertTrue(validate_manifest_object(mutated))
 
     def test_manifest_cannot_drop_reuse_guard_or_forbidden_substitution(self):
         mutated = json.loads(json.dumps(self.manifest))
@@ -106,11 +112,11 @@ class FencePublicationSafetyTests(unittest.TestCase):
     def test_fresh_all_tables_publication_guard_is_catalog_bound_and_pre_create(self):
         self.assert_bootstrap_fails(
             self.bootstrap.replace("FROM pg_catalog.pg_publication p", "FROM pg_catalog.pg_class p", 1),
-            "pg_publication",
+            "parsed FOR ALL TABLES",
         )
         self.assert_bootstrap_fails(
             self.bootstrap.replace("WHERE p.puballtables", "WHERE NOT p.puballtables", 1),
-            "puballtables",
+            "parsed FOR ALL TABLES",
         )
         guard_start = self.bootstrap.index("IF EXISTS (\n        SELECT 1\n          FROM pg_catalog.pg_publication p")
         guard_end = self.bootstrap.index("    END IF;", guard_start) + len("    END IF;\n")
@@ -123,37 +129,53 @@ class FencePublicationSafetyTests(unittest.TestCase):
     def test_fresh_publication_comment_laundering_is_rejected(self):
         weakened = self.bootstrap.replace("FROM pg_catalog.pg_publication p", "FROM pg_catalog.pg_class p", 1)
         weakened += "\n-- FROM pg_catalog.pg_publication p\n-- WHERE p.puballtables\n"
-        self.assert_bootstrap_fails(weakened, "pg_publication")
+        self.assert_bootstrap_fails(weakened, "parsed FOR ALL TABLES")
+
+    def test_fresh_publication_string_literal_laundering_is_rejected(self):
+        weakened = self.bootstrap.replace("WHERE p.puballtables", "WHERE false", 1)
+        anchor = "    EXECUTE 'CREATE SCHEMA platform';"
+        weakened = weakened.replace(
+            anchor,
+            "    PERFORM 'WHERE p.puballtables';\n" + anchor,
+            1,
+        )
+        self.assert_bootstrap_fails(weakened, "parsed FOR ALL TABLES")
 
     def test_reuse_inbound_subscription_guard_remains_exact(self):
         self.assert_reuse_fails(
             self.reuse.replace("FROM pg_catalog.pg_subscription_rel sr", "FROM pg_catalog.pg_class sr", 1),
-            "pg_subscription_rel",
+            "inbound subscription",
         )
         self.assert_reuse_fails(
             self.reuse.replace("sr.srrelid OPERATOR(pg_catalog.=) v_table", "sr.srrelid OPERATOR(pg_catalog.<>) v_table", 1),
-            "srrelid",
+            "inbound subscription",
         )
 
     def test_reuse_explicit_publication_guard_is_exact(self):
         self.assert_reuse_fails(
             self.reuse.replace("FROM pg_catalog.pg_publication_rel pr", "FROM pg_catalog.pg_class pr", 1),
-            "pg_publication_rel",
+            "explicit publication",
         )
         self.assert_reuse_fails(
             self.reuse.replace("pr.prrelid OPERATOR(pg_catalog.=) v_table", "pr.prrelid OPERATOR(pg_catalog.<>) v_table", 1),
-            "prrelid",
+            "explicit publication",
         )
 
     def test_reuse_all_tables_publication_guard_is_exact(self):
         self.assert_reuse_fails(
             self.reuse.replace("FROM pg_catalog.pg_publication p", "FROM pg_catalog.pg_class p", 1),
-            "pg_publication",
+            "FOR ALL TABLES",
         )
         self.assert_reuse_fails(
             self.reuse.replace("WHERE p.puballtables", "WHERE NOT p.puballtables", 1),
-            "puballtables",
+            "FOR ALL TABLES",
         )
+
+    def test_reuse_publication_string_literal_laundering_is_rejected(self):
+        weakened = self.reuse.replace("WHERE p.puballtables", "WHERE false", 1)
+        marker = "    -- PostgreSQL 15+ can publish every current/future table in a schema."
+        weakened = weakened.replace(marker, "    PERFORM 'WHERE p.puballtables';\n\n" + marker, 1)
+        self.assert_reuse_fails(weakened, "FOR ALL TABLES")
 
     def test_reuse_schema_publication_guard_is_version_tolerant_and_target_bound(self):
         self.assert_reuse_fails(
@@ -162,7 +184,7 @@ class FencePublicationSafetyTests(unittest.TestCase):
                 "true",
                 1,
             ),
-            "pg_publication_namespace",
+            "version-tolerant",
         )
         self.assert_reuse_fails(
             self.reuse.replace(
@@ -170,7 +192,7 @@ class FencePublicationSafetyTests(unittest.TestCase):
                 "FROM pg_catalog.pg_namespace pn",
                 1,
             ),
-            "pg_publication_namespace",
+            "dynamic predicate",
         )
         self.assert_reuse_fails(
             self.reuse.replace(
@@ -178,9 +200,23 @@ class FencePublicationSafetyTests(unittest.TestCase):
                 "pn.pnnspid OPERATOR(pg_catalog.<>) $1",
                 1,
             ),
-            "pnnspid",
+            "dynamic predicate",
         )
-        self.assert_reuse_fails(self.reuse.replace("USING v_schema", "USING 0", 1), "USING v_schema")
+        self.assert_reuse_fails(self.reuse.replace("USING v_schema", "USING 0", 1), "EXECUTE/INTO/USING")
+
+    def test_reuse_schema_dynamic_query_cannot_be_laundered_by_dead_literal(self):
+        weakened = self.reuse.replace(
+            "'WHERE pn.pnnspid OPERATOR(pg_catalog.=) $1)'",
+            "'WHERE false)'",
+            1,
+        )
+        marker = "        EXECUTE\n"
+        weakened = weakened.replace(
+            marker,
+            "        PERFORM 'WHERE pn.pnnspid OPERATOR(pg_catalog.=) $1';\n" + marker,
+            1,
+        )
+        self.assert_reuse_fails(weakened, "dynamic predicate")
 
     def test_reuse_publication_guards_cannot_move_after_mutation(self):
         start = self.reuse.index("    -- Inbound logical replication is an external writer authority.")
@@ -202,7 +238,7 @@ class FencePublicationSafetyTests(unittest.TestCase):
     def test_reuse_publication_comment_laundering_is_rejected(self):
         weakened = self.reuse.replace("FROM pg_catalog.pg_publication_rel pr", "FROM pg_catalog.pg_class pr", 1)
         weakened += "\n-- FROM pg_catalog.pg_publication_rel pr\n-- pr.prrelid OPERATOR(pg_catalog.=) v_table\n"
-        self.assert_reuse_fails(weakened, "pg_publication_rel")
+        self.assert_reuse_fails(weakened, "explicit publication")
 
     def test_boundary_laws_cannot_be_laundered_by_duplicates(self):
         laws = (

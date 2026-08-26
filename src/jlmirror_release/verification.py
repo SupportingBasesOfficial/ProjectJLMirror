@@ -11,7 +11,12 @@ from jlmirror_observability import (
     RELIABILITY_OBSERVABILITY_JOINS,
 )
 
-from .model import CANONICAL_RUNTIME_PROFILES, DeploymentIntent, ReleaseError
+from .model import (
+    CANONICAL_RUNTIME_PROFILES,
+    CANONICAL_WORKER_SPECIALIZATIONS,
+    DeploymentIntent,
+    ReleaseError,
+)
 from .provenance import require_immutable_evidence_reference
 
 RUNTIME_REQUIREMENTS_AUTHORITY_PROFILE = "release.runtime-verification-requirements@1"
@@ -28,7 +33,7 @@ RUNTIME_PROFILE_MINIMUM_RELIABILITY_BINDINGS: Mapping[str, frozenset[str]] = Map
         "rel.performance-cache@1",
         "rel.configuration-authority@1",
     }),
-    "runtime.worker@1": frozenset(),  # exact worker-specialization bindings are additional pre-effect requirements
+    "runtime.worker@1": frozenset(),
     "runtime.realtime@1": frozenset({
         "rel.realtime-fanout@1",
         "rel.security-session-authority@1",
@@ -55,16 +60,35 @@ RUNTIME_PROFILE_MINIMUM_RELIABILITY_BINDINGS: Mapping[str, frozenset[str]] = Map
     "runtime.edge-optional@1": frozenset(),
 })
 
+# Phase 13 also fixes exact reliability bindings for concrete worker specializations.
+# Entries described as "exact affected/additional profile when applicable" stay additive
+# release-policy requirements rather than being guessed here. Reconciliation therefore has
+# no universal fixed profile beyond the exact affected profile(s) that the pre-effect
+# requirements authority must record for the concrete operation.
+WORKER_SPECIALIZATION_MINIMUM_RELIABILITY_BINDINGS: Mapping[str, frozenset[str]] = MappingProxyType({
+    "worker.outbox-publication@1": frozenset({"rel.outbox-publication@1", "rel.broker-job-transport@1"}),
+    "worker.async-consumer@1": frozenset({"rel.consumer-inbox-effect@1", "rel.broker-job-transport@1"}),
+    "worker.provider-integration@1": frozenset({"rel.external-provider@1"}),
+    "worker.webhook-delivery@1": frozenset({"rel.webhook-delivery@1"}),
+    "worker.reporting-export@1": frozenset({"rel.reporting-derived@1"}),
+    "worker.customer-telemetry@1": frozenset({"rel.customer-telemetry-acceptance@1"}),
+    "worker.artifact-lifecycle@1": frozenset({"rel.artifact-storage@1"}),
+    "worker.reconciliation@1": frozenset(),
+})
+
 if frozenset(RUNTIME_PROFILE_MINIMUM_RELIABILITY_BINDINGS) != CANONICAL_RUNTIME_PROFILES:
     raise RuntimeError("Phase 13 runtime reliability binding table does not cover the canonical runtime profile set")
+if frozenset(WORKER_SPECIALIZATION_MINIMUM_RELIABILITY_BINDINGS) != CANONICAL_WORKER_SPECIALIZATIONS:
+    raise RuntimeError("Phase 13 worker reliability binding table does not cover the canonical specialization set")
 
 
 def runtime_verification_scope_for(intent: DeploymentIntent) -> str:
     return f"deployment:{intent.target_id}:{intent.deployment_operation_id}"
 
 
-def minimum_reliability_for_runtime_profiles(runtime_profile_set: tuple[str, ...]) -> frozenset[str]:
-    """Return the fixed minimum Phase 13 reliability bindings for an exact runtime set."""
+def minimum_reliability_for_intent(intent: DeploymentIntent) -> frozenset[str]:
+    """Return fixed Phase 13 runtime + worker reliability minimums for an exact deployment intent."""
+    runtime_profile_set = intent.runtime_profile_set
     if not runtime_profile_set:
         raise ReleaseError("runtime profile set cannot be empty when deriving release reliability gates")
     if len(set(runtime_profile_set)) != len(runtime_profile_set):
@@ -77,6 +101,12 @@ def minimum_reliability_for_runtime_profiles(runtime_profile_set: tuple[str, ...
     required: set[str] = set()
     for runtime_profile_id in runtime_profile_set:
         required.update(RUNTIME_PROFILE_MINIMUM_RELIABILITY_BINDINGS[runtime_profile_id])
+
+    if "runtime.worker@1" in runtime_profile_set:
+        if not intent.worker_specialization_set:
+            raise ReleaseError("runtime.worker@1 release requirements need exact worker specialization binding")
+        for worker_specialization_id in intent.worker_specialization_set:
+            required.update(WORKER_SPECIALIZATION_MINIMUM_RELIABILITY_BINDINGS[worker_specialization_id])
     return frozenset(required)
 
 
@@ -134,7 +164,7 @@ class RuntimeVerificationRequirements:
                 + ",".join(sorted(unknown_reliability))
             )
 
-        mandatory_reliability = minimum_reliability_for_runtime_profiles(intent.runtime_profile_set)
+        mandatory_reliability = minimum_reliability_for_intent(intent)
         missing_mandatory_reliability = mandatory_reliability - set(reliability_ids)
         if missing_mandatory_reliability:
             raise ReleaseError(
@@ -209,6 +239,7 @@ class RuntimeVerificationEvidence:
     verifier_authority_current: bool
     health_gates: tuple[HealthGateEvidence, ...]
     vendor_controller_green: bool = False
+    worker_specialization_set: tuple[str, ...] = ()
 
 
 def verify_runtime(
@@ -234,6 +265,8 @@ def verify_runtime(
         raise ReleaseError("observed target configuration generation is not current intent")
     if tuple(evidence.runtime_profile_set) != tuple(intent.runtime_profile_set):
         raise ReleaseError("runtime profile set differs from approved release intent")
+    if tuple(evidence.worker_specialization_set) != tuple(intent.worker_specialization_set):
+        raise ReleaseError("worker specialization set differs from approved release intent")
 
     for name, value in (
         ("runtime_admission_evidence_reference", evidence.runtime_admission_evidence_reference),

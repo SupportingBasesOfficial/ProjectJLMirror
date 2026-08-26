@@ -12,6 +12,7 @@ EXPECTED_BASE = "b1f5fb83d2aa53e981007dddd0b751e22db40eee"
 EXPECTED_SLICES = ["impl.observability@1", "impl.release-supply-chain@1"]
 EXPECTED_SOURCES = {
     "docs/12-observability-sre/10-observability-semantic-manifest.md": "80054d9a15fb82ba26a91c34f98b10964ab3c83d",
+    "docs/13-platform-runtime/09-runtime-semantic-manifest.md": "a0b2aaa950bab2a71f54f8df37a855b6ed34ad8b",
     "docs/14-deployment-release-supply-chain/11-release-semantic-manifest.md": "5bb4f7e50ab7eaa7d9162cd9e2f633a10c4d17ff",
     "docs/16-implementation-readiness/11-initial-implementation-sequencing.md": "74b70ab33047f92ae841732f2c7ebab243ca3347",
     "docs/16-implementation-readiness/15-implementation-slice-readiness-manifest.md": "fc810728322d928ce9a5f71243101a390384189a",
@@ -35,6 +36,7 @@ REQUIRED_FILES = (
     "tests/wave3/test_observability_pipeline.py",
     "tests/wave3/test_release.py",
     "tests/wave3/test_release_provenance_compatibility.py",
+    "tests/wave3/test_runtime_profile_reliability.py",
     "implementation/wave-3/README.md",
     "implementation/wave-3/IMPLEMENTATION_MANIFEST.json",
     "implementation/wave-3/source-registry.json",
@@ -54,6 +56,7 @@ REQUIRED_RELEASE_LAWS = {
     "RECOVERY CLASSIFICATION BOOLEAN SET != SCOPED DURABLE EVIDENCE",
     "REQUIRED HEALTH SET != RUNTIME EVIDENCE DISCRETION",
     "PHASE 11 RELIABILITY JOIN != OPTIONAL HEALTH EVIDENCE",
+    "PHASE 13 RUNTIME PROFILE != RELEASE-POLICY-DISCRETIONARY RELIABILITY MINIMUM",
     "RUNTIME VERIFICATION EVIDENCE != REPLAYABLE ACROSS DEPLOYMENT SCOPE OR TARGET VERSION",
     "HEALTH GATE EVIDENCE != REPLAYABLE ACROSS RELEASE TARGET STATE VERSION",
     "RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD",
@@ -80,6 +83,7 @@ REQUIRED_FORBIDDEN_SUBSTITUTIONS = {
     "runtime_requirements_without_current_release_policy_lineage",
     "runtime_requirements_replayed_across_operation_target_or_target_version",
     "phase11_reliability_join_without_implied_phase12_health_gate",
+    "phase13_runtime_profile_with_omitted_mandatory_reliability_binding",
     "runtime_verification_evidence_replayed_across_operation_target_or_target_version",
     "health_gate_evidence_replayed_across_deployment_scope",
     "health_gate_evidence_replayed_across_release_target_state_version",
@@ -109,6 +113,10 @@ REQUIRED_CODE_TOKENS = {
         "OPEN-OBS-037",
         "evidence.validate_for(expected_scope, expected_selector_id=self.product_selector)",
     ),
+    "src/jlmirror_release/model.py": (
+        "CANONICAL_RUNTIME_PROFILES",
+        "runtime_profile_set contains unknown Phase 13 runtime profiles",
+    ),
     "src/jlmirror_release/provenance.py": (
         "source_trust_policy_profile_and_version",
         "source_trust_policy_evidence_reference",
@@ -125,6 +133,7 @@ REQUIRED_CODE_TOKENS = {
         "schema_state",
         "api_compatibility_family",
         "event_compatibility_set",
+        "promotion references unknown Phase 13 runtime profiles",
     ),
     "src/jlmirror_release/authority.py": (
         "class CurrentAuthorityEvidence",
@@ -140,10 +149,13 @@ REQUIRED_CODE_TOKENS = {
     ),
     "src/jlmirror_release/verification.py": (
         "class RuntimeVerificationRequirements",
+        "RUNTIME_PROFILE_MINIMUM_RELIABILITY_BINDINGS",
+        "minimum_reliability_for_runtime_profiles",
         "required_reliability_profile_ids",
         "required_health_profile_ids",
         "EXPECTED_RELIABILITY_PROFILE_IDS",
         "RELIABILITY_OBSERVABILITY_JOINS",
+        "runtime verification requirements omit mandatory Phase 13 reliability bindings",
         "runtime verification health gate set omits Phase 11 -> Phase 12 required joins",
         "runtime verification requirements are bound to a different release-target state version",
         "health gate evidence is bound to a different release-target state version",
@@ -260,6 +272,7 @@ def validate() -> None:
     required_workflow_fragments = (
         "PYTHONPATH=src python3 -m unittest discover -s tests/wave3 -p 'test_*.py'",
         "PYTHONPATH=src python3 tools/wave3/validate_wave3.py",
+        "PYTHONPATH=src python3 tools/wave3/validate_runtime_profile_reliability.py",
         "persist-credentials: false",
         "allow-unsafe-pr-checkout: false",
     )

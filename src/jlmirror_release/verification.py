@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from jlmirror_observability import HealthAssessment, HealthState
 
 from .model import DeploymentIntent, ReleaseError
+from .provenance import require_immutable_evidence_reference
 
 
 @dataclass(frozen=True)
@@ -16,7 +17,8 @@ class HealthGateEvidence:
     admission_eligible: bool
 
     def __post_init__(self) -> None:
-        if not self.evidence_reference or not self.owning_policy_profile_and_version:
+        require_immutable_evidence_reference("health_gate.evidence_reference", self.evidence_reference)
+        if not self.owning_policy_profile_and_version:
             raise ReleaseError("health gate requires evidence and owning policy identity")
 
 
@@ -37,7 +39,8 @@ class RuntimeVerificationEvidence:
 
 
 def verify_runtime(intent: DeploymentIntent, evidence: RuntimeVerificationEvidence) -> None:
-    if not evidence.evidence_reference or not evidence.evidence_current:
+    require_immutable_evidence_reference("runtime_verification.evidence_reference", evidence.evidence_reference)
+    if not evidence.evidence_current:
         raise ReleaseError("runtime verification requires current durable evidence")
     if evidence.observed_artifact_identity is None:
         raise ReleaseError("running immutable artifact identity must be independently observed")

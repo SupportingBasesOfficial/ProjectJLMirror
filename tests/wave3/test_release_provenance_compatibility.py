@@ -116,6 +116,26 @@ def rollout(scope, *, matrix=None, validation_scope=ValidationScope.GENERAL,
     )
 
 
+def recovery_evidence(**changes):
+    values = dict(
+        evidence_reference="evidence:recovery-classification-1",
+        authority_profile_and_version="release.recovery-classification@1",
+        scope_binding="scope-a",
+        current=True,
+        effect_outcome_ambiguous=False,
+        irreversible_without_governed_migration=False,
+        previous_runtime_can_interpret_current_state=True,
+        rollback_configuration_evidence_current=True,
+        cell_compatibility_allows_previous=True,
+        release_policy_and_verifier_current=True,
+        release_target_state_allows_rollback=True,
+        security_governance_reliability_current=True,
+        required_evidence_preserved=True,
+    )
+    values.update(changes)
+    return RecoveryClassificationEvidence(**values)
+
+
 class ProvenanceCompatibilityTests(unittest.TestCase):
     def test_provenance_accepts_current_bounded_chain(self):
         validate_build_provenance(provenance())
@@ -240,15 +260,29 @@ class ProvenanceCompatibilityTests(unittest.TestCase):
             require_rollout_compatibility(evidence)
 
     def test_ambiguous_effect_classifies_reconciliation_first(self):
-        result = classify_change_outcome(RecoveryClassificationEvidence(True, False, True, True, True, True, True, True, True))
+        result = classify_change_outcome(
+            recovery_evidence(effect_outcome_ambiguous=True), expected_scope="scope-a"
+        )
         self.assertEqual(result, OutcomeClass.RECONCILIATION_REQUIRED)
 
+    def test_recovery_classification_requires_current_scoped_durable_evidence(self):
+        for evidence, expected_scope in (
+            (recovery_evidence(evidence_reference="latest"), "scope-a"),
+            (recovery_evidence(current=False), "scope-a"),
+            (recovery_evidence(scope_binding="scope-b"), "scope-a"),
+            (recovery_evidence(authority_profile_and_version=""), "scope-a"),
+        ):
+            with self.subTest(evidence=evidence), self.assertRaises(ReleaseError):
+                classify_change_outcome(evidence, expected_scope=expected_scope)
+
     def test_any_currentness_regression_forces_forward_recovery(self):
-        result = classify_change_outcome(RecoveryClassificationEvidence(False, False, True, True, True, False, True, True, True))
+        result = classify_change_outcome(
+            recovery_evidence(release_policy_and_verifier_current=False), expected_scope="scope-a"
+        )
         self.assertEqual(result, OutcomeClass.FORWARD_RECOVERY_REQUIRED)
 
     def test_rollback_requires_all_current_eligibility_inputs(self):
-        result = classify_change_outcome(RecoveryClassificationEvidence(False, False, True, True, True, True, True, True, True))
+        result = classify_change_outcome(recovery_evidence(), expected_scope="scope-a")
         self.assertEqual(result, OutcomeClass.ROLLBACK_ELIGIBLE)
 
 

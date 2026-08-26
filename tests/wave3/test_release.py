@@ -256,7 +256,7 @@ def runtime_evidence(digest=DIGEST_A, config_generation="cfg-7", admission_curre
         configuration_currentness_evidence_reference="evidence:configuration-currentness-1",
         configuration_current=True,
         release_policy_profile_and_version="release-policy@1",
-        release_policy_evidence_reference="evidence:runtime-release-policy-1",
+        release_policy_evidence_reference="evidence:admission-release_policy",
         release_policy_current=True,
         verifier_authority_profile_and_version="principal.release-verify@1",
         verifier_authority_evidence_reference="evidence:runtime-verifier-authority-1",

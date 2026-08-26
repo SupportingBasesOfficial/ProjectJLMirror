@@ -8,7 +8,6 @@ from .authority import (
     DeploymentRecord,
     ReleaseTargetState,
     require_deployment_admission,
-    require_trusted_build_source,
 )
 from .compatibility import (
     CellCompatibilityEvidence,
@@ -22,12 +21,19 @@ from .model import (
     ArtifactIdentity, DeploymentIntent, OutcomeClass, PromotionState, ReleaseError,
     SourceTrustClass, TargetConfiguration, ValidationScope,
 )
-from .provenance import BuildProvenanceEvidence, PromotionEvidence, require_promotion_authority, validate_build_provenance
+from .provenance import (
+    AcceptedSourceEvidence,
+    BuildProvenanceEvidence,
+    PromotionEvidence,
+    require_promotion_authority,
+    require_trusted_build_source,
+    validate_build_provenance,
+)
 from .recovery import RecoveryClassificationEvidence, classify_change_outcome
 from .verification import HealthGateEvidence, RuntimeVerificationEvidence, verify_runtime
 
 __all__ = [
-    "ArtifactIdentity", "BuildProvenanceEvidence", "CellCompatibilityEvidence",
+    "AcceptedSourceEvidence", "ArtifactIdentity", "BuildProvenanceEvidence", "CellCompatibilityEvidence",
     "ConfigurationValidationEvidence", "CurrentAuthorityEvidence", "DeploymentAdmissionEvidence",
     "DeploymentAuthority", "DeploymentIntent", "DeploymentObservation", "DeploymentRecord",
     "HealthGateEvidence", "MixedVersionMatrix", "NoApplicableCaseEvidence", "OutcomeClass",

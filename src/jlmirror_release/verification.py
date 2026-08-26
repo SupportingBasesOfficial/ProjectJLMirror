@@ -10,17 +10,20 @@ from .model import DeploymentIntent, ReleaseError
 @dataclass(frozen=True)
 class HealthGateEvidence:
     assessment: HealthAssessment
+    evidence_reference: str
     owning_policy_profile_and_version: str
     policy_current: bool
     admission_eligible: bool
 
     def __post_init__(self) -> None:
-        if not self.owning_policy_profile_and_version:
-            raise ReleaseError("health gate requires owning policy identity")
+        if not self.evidence_reference or not self.owning_policy_profile_and_version:
+            raise ReleaseError("health gate requires evidence and owning policy identity")
 
 
 @dataclass(frozen=True)
 class RuntimeVerificationEvidence:
+    evidence_reference: str
+    evidence_current: bool
     observed_artifact_identity: str | None
     observed_configuration_generation: str | None
     runtime_profile_set: tuple[str, ...]
@@ -34,6 +37,8 @@ class RuntimeVerificationEvidence:
 
 
 def verify_runtime(intent: DeploymentIntent, evidence: RuntimeVerificationEvidence) -> None:
+    if not evidence.evidence_reference or not evidence.evidence_current:
+        raise ReleaseError("runtime verification requires current durable evidence")
     if evidence.observed_artifact_identity is None:
         raise ReleaseError("running immutable artifact identity must be independently observed")
     if evidence.observed_artifact_identity != intent.artifact.canonical:

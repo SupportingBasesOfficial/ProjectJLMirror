@@ -50,6 +50,11 @@ ALLOWED_ENVIRONMENT_CLASSES = frozenset({
     "environment.development@1", "environment.validation@1",
     "environment.production@1", "environment.recovery@1",
 })
+CANONICAL_RUNTIME_PROFILES = frozenset({
+    "runtime.web-bff@1", "runtime.api@1", "runtime.worker@1", "runtime.realtime@1",
+    "runtime.control-plane@1", "runtime.automation@1", "runtime.untrusted-parser@1",
+    "runtime.migration-admin@1", "runtime.recovery@1", "runtime.edge-optional@1",
+})
 
 
 @dataclass(frozen=True)
@@ -110,6 +115,14 @@ class DeploymentIntent:
             raise ReleaseError("unknown logical target environment class")
         if not self.runtime_profile_set:
             raise ReleaseError("runtime_profile_set cannot be empty")
+        if len(set(self.runtime_profile_set)) != len(self.runtime_profile_set):
+            raise ReleaseError("runtime_profile_set cannot contain duplicate runtime profiles")
+        unknown_runtime_profiles = set(self.runtime_profile_set) - CANONICAL_RUNTIME_PROFILES
+        if unknown_runtime_profiles:
+            raise ReleaseError(
+                "runtime_profile_set contains unknown Phase 13 runtime profiles: "
+                + ",".join(sorted(unknown_runtime_profiles))
+            )
         if not self.release_policy_profile_and_version or not self.rollout_scope:
             raise ReleaseError("release policy and rollout scope are required")
         if not self.schema_state or not self.api_compatibility_family or not self.event_compatibility_set:

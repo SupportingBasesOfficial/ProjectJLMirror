@@ -15,6 +15,8 @@ TELEMETRY != BUSINESS/SECURITY/RECOVERY AUTHORITY
 HEALTH != AUTHORIZATION
 MISSING TELEMETRY != SUCCESS
 CORRELATION != TRUST
+SEMANTIC CLASS != UNBOUNDED TENANT/RESOURCE IDENTIFIER
+OUTCOME TOKEN != ACCEPTED OUTCOME TAXONOMY
 ```
 
 Release records may control release-specific progression, but:
@@ -35,11 +37,16 @@ TIMEOUT/LOST RESPONSE != RELEASE EFFECT ABSENCE
 
 - exact Phase 12 core signal/health/SLI/alert profile IDs;
 - bounded metric-dimension guardrails that keep request/message/operation IDs and raw URL/query material out of metric labels;
+- Wave 3 classification and tenant-scope classes are finite reviewed implementation mappings rather than arbitrary runtime strings;
+- operation classes require a bounded namespaced semantic shape, and metric `operation_class` cannot disagree with the enclosing signal record;
+- `outcome_class` and duplicate/equivalence comparison outcomes are checked against accepted Phase 12 taxonomies;
 - ordinary-telemetry secret-bearing field rejection;
 - missing/incomplete health evidence represented as `unknown`, never false-green;
 - explicit `NO_APPLICABLE_CASE` reason requirement;
 - Product applicability unknown fails closed rather than becoming disabled/enabled;
 - health objects expose no authority-grant path.
+
+Extending the finite implementation mappings is a reviewed compatibility change. Untrusted tenant/resource/provider input cannot manufacture a new semantic class merely by matching a token regex.
 
 No backend, collector, trace transport, dashboard, pager, sampling numeric, SLO numeric, retention numeric, or cardinality numeric is selected here.
 

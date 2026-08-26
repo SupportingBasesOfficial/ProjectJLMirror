@@ -184,6 +184,7 @@ class InMemoryInboxLedger:
             receipt.execution_generation += 1
             receipt.claim_expires_at = expires
             receipt.execution_admission = admission
+            receipt.reconciliation_revision = None
             return InboxExecutorClaim(
                 identity=identity,
                 executor_id=executor_id,

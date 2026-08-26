@@ -78,3 +78,7 @@ jobs:
       - name: Validate Wave 1 fence logical replication authority
         shell: bash
         run: PYTHONPATH=src python3 tools/authority/validate_fence_publication_safety.py
+
+      - name: Validate Wave 1 publication guard control-flow structure
+        shell: bash
+        run: PYTHONPATH=src python3 tools/authority/validate_publication_guard_structure.py

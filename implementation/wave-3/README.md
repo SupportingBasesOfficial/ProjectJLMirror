@@ -8,6 +8,8 @@ This implementation establishes vendor-neutral executable conformance primitives
 
 The Python modules are portable reference/conformance code in the same implementation substrate established by Waves 1 and 2. They do not become normative authority over the accepted documents pinned in `source-registry.json`.
 
+The Wave 3 authority bundle pins not only the Phase 12 semantic manifest but also the owning Phase 12 health/readiness contract and telemetry security/cardinality contract used by the executable health/cardinality guards. A local implementation mapping cannot silently replace those accepted owners.
+
 Observability records may describe system state, but:
 
 ```text
@@ -16,6 +18,7 @@ HEALTH != AUTHORIZATION
 MISSING TELEMETRY != SUCCESS
 CORRELATION != TRUST
 SEMANTIC CLASS != UNBOUNDED TENANT/RESOURCE IDENTIFIER
+HEALTH REASON CLASS != UNBOUNDED RUNTIME TOKEN
 OUTCOME TOKEN != ACCEPTED OUTCOME TAXONOMY
 NO_APPLICABLE_CASE != FREE-TEXT ASSERTION
 PRODUCT SELECTOR VALUE != PRODUCT AUTHORITY EVIDENCE
@@ -54,6 +57,8 @@ TIMEOUT/LOST RESPONSE != RELEASE EFFECT ABSENCE
 - Wave 3 classification and tenant-scope classes are finite reviewed implementation mappings rather than arbitrary runtime strings;
 - operation classes require a bounded namespaced semantic shape, and metric `operation_class` cannot disagree with the enclosing signal record;
 - `outcome_class` and duplicate/equivalence comparison outcomes are checked against accepted Phase 12 taxonomies;
+- health readiness reason classes are finite/reviewed against the accepted Phase 12 health contract; arbitrary caller/tenant/provider strings cannot become reason classes merely because they look token-safe;
+- `telemetry_missing` is the bounded Wave 3 mapping for Phase 12's missing-data=`unknown` condition and is not caller-defined taxonomy or a Product-specific reason class;
 - ordinary-telemetry secret-bearing field rejection;
 - missing/incomplete health evidence represented as `unknown`, never false-green;
 - generic direct-SLI `NO_APPLICABLE_CASE` requires reason + owning authority profile + immutable `evidence:*` identity + exact scope binding + currentness;

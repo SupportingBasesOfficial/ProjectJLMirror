@@ -12,6 +12,8 @@ from jlmirror_observability import (
 from .model import DeploymentIntent, ReleaseError
 from .provenance import require_immutable_evidence_reference
 
+RUNTIME_REQUIREMENTS_AUTHORITY_PROFILE = "release.runtime-verification-requirements@1"
+
 
 def runtime_verification_scope_for(intent: DeploymentIntent) -> str:
     return f"deployment:{intent.target_id}:{intent.deployment_operation_id}"
@@ -19,7 +21,7 @@ def runtime_verification_scope_for(intent: DeploymentIntent) -> str:
 
 @dataclass(frozen=True)
 class RuntimeVerificationRequirements:
-    """Current release-policy authority for the exact runtime-verification gate set."""
+    """Current release-policy-governed authority for the exact runtime-verification gate set."""
 
     authority_profile_and_version: str
     evidence_reference: str
@@ -38,8 +40,8 @@ class RuntimeVerificationRequirements:
         expected_release_target_state_version: int,
         expected_release_policy_evidence_reference: str,
     ) -> tuple[str, ...]:
-        if self.authority_profile_and_version != intent.release_policy_profile_and_version:
-            raise ReleaseError("runtime verification requirements must be owned by the current release-policy profile")
+        if self.authority_profile_and_version != RUNTIME_REQUIREMENTS_AUTHORITY_PROFILE:
+            raise ReleaseError("runtime verification requirements use an unknown authority profile")
         require_immutable_evidence_reference("runtime_requirements.evidence_reference", self.evidence_reference)
         require_immutable_evidence_reference(
             "runtime_requirements.release_policy_evidence_reference",

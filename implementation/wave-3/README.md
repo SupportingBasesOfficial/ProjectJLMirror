@@ -30,6 +30,8 @@ ARTIFACT EXISTS != PROMOTION AUTHORITY
 PROMOTION EVIDENCE != INTERCHANGEABLE DEPLOYMENT EVIDENCE
 BOOLEAN CURRENT != EVIDENCE LINEAGE
 EVIDENCE REFERENCE != MUTABLE ALIAS/URL
+ADMISSION BOOLEAN != SCOPED CURRENT-AUTHORITY PROOF
+RECONCILIATION BOOLEAN != RECONCILIATION AUTHORITY
 RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD
 DEPLOYMENT SUCCESS != RUNTIME ADMISSION
 RELEASE TARGET STATE != PLACEMENT/RUNTIME AUTHORITY
@@ -62,12 +64,16 @@ No backend, collector, trace transport, dashboard, pager, sampling numeric, SLO 
 - promotion records bind durable promotion/approval evidence plus exact target, validation scope, rollout scope, runtime profile set, schema/API/event compatibility state and validation/compatibility evidence identities;
 - durable release evidence references use explicit immutable `evidence:*` record identities; mutable aliases/URLs are rejected by the reference model;
 - deployment admission rejects recombination of a promotion with different configuration-validation, rollout-compatibility or cell-compatibility evidence;
+- deployment admission requires the exact five current-authority gate classes (`deployment_principal`, `release_policy`, `release_target_authority`, `reliability`, `security_recovery`), each carrying an owning authority profile/version, immutable evidence identity, exact deployment scope, expected target-state version and currentness;
+- missing, duplicate, stale, wrong-scope, wrong-version or mutable-reference admission evidence fails closed;
+- the durable deployment record retains all admission-gate evidence references so a later terminal record cannot lose the authority lineage that allowed the operation to start;
 - configuration validation and rollout compatibility require current durable evidence references even when the target configuration happens to equal the validation configuration;
 - stable `deployment_operation_id` create-or-observe semantics;
 - `expected_release_target_state_version` stale-executor fencing;
 - unresolved prior effectful operation blocks a fresh operation identity;
 - missing/ambiguous effect observation moves to `reconciliation_required`;
-- effect confirmation/absence resolution requires durable target evidence and the deployment record retains that evidence lineage;
+- resolving `reconciliation_required` requires a separate current reconciliation-authority evidence record bound to the same deployment scope and current target-state version; a boolean is insufficient;
+- effect confirmation/absence resolution requires durable target evidence and the deployment record retains both target evidence and reconciliation-authority lineage where applicable;
 - runtime verification independently requires current durable verification evidence, current runtime admission and Phase 12 health evidence; vendor/controller green is ignored as authority;
 - completed deployment records retain runtime-verification evidence identity;
 - validation evidence for a different target configuration requires explicit semantic equivalence or target-specific validation;

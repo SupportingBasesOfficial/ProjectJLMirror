@@ -91,7 +91,36 @@ class PublicationGuardStructureTests(unittest.TestCase):
         marker = "    -- Inbound logical replication is an external writer authority."
         mutated = self.reuse.replace(marker, "    RETURN;\n\n" + marker, 1)
         findings = validate_reuse_structure(mutated)
-        self.assertIn("reuse publication preflight contains top-level RETURN bypass", findings)
+        self.assertIn("reuse publication preflight contains executable RETURN early-exit bypass", findings)
+
+    def test_reuse_nested_return_bypass_is_rejected(self):
+        marker = "    -- Inbound logical replication is an external writer authority."
+        mutated = self.reuse.replace(
+            marker,
+            "    IF true THEN\n        RETURN;\n    END IF;\n\n" + marker,
+            1,
+        )
+        findings = validate_reuse_structure(mutated)
+        self.assertIn("reuse publication preflight contains executable RETURN early-exit bypass", findings)
+
+    def test_reuse_labeled_exit_bypass_is_rejected(self):
+        marker = "    -- Inbound logical replication is an external writer authority."
+        mutated = self.reuse.replace(
+            marker,
+            "    <<skip_publication>>\n    BEGIN\n        EXIT skip_publication;\n    END;\n\n" + marker,
+            1,
+        )
+        findings = validate_reuse_structure(mutated)
+        self.assertIn("reuse publication preflight contains executable EXIT early-exit bypass", findings)
+
+    def test_return_and_exit_words_in_dead_literals_are_not_executable(self):
+        marker = "    -- Inbound logical replication is an external writer authority."
+        dead = (
+            "    PERFORM 'IF true THEN RETURN; END IF;';\n"
+            "    PERFORM $dead_exit$EXIT skip_publication;$dead_exit$;\n\n"
+        )
+        mutated = self.reuse.replace(marker, dead + marker, 1)
+        self.assertEqual(validate_reuse_structure(mutated), [])
 
 
 if __name__ == "__main__":

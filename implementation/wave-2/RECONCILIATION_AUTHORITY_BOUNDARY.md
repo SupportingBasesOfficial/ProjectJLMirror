@@ -6,10 +6,12 @@
 
 ## Purpose
 
-This boundary prevents an inbox receipt from becoming `completed` through a result object that is not backed by the authority that owns the protected effect, prevents reconciliation evidence from one attempt from becoming current authority for its successor, and prevents TOCTOU assembly of an operation decision from mutually inconsistent reads.
+This boundary prevents an inbox receipt from becoming `completed` through a result object that is not backed by the authority that owns the protected effect, prevents reconciliation evidence from one attempt from becoming current authority for its successor, prevents TOCTOU assembly of an operation decision from mutually inconsistent reads, and prevents a technical inbox/operation identifier from laundering tenant or owner authority.
 
 ```text
 CALLER-SUPPLIED RESULT LINK != EFFECT COMPLETION AUTHORITY
+CANONICAL INBOX LOOKUP KEY != COMPLETE TRUSTED RECEIPT IDENTITY
+OPERATION ID != OPERATION AUTHORITY SCOPE
 OPERATION-BOUND RECEIPT != LOCAL EFFECT PATH
 RECONCILIATION_REQUIRED != CALLER-ASSERTED COMPLETED
 LOCAL ATOMIC COMPLETION != CROSS-AUTHORITY COMPLETION
@@ -20,6 +22,32 @@ PRIOR ATTEMPT RECONCILIATION EVIDENCE != LATER ATTEMPT RETRY AUTHORITY
 RECONCILIATION REVISION != ATTEMPT-GENERATION-AGNOSTIC CAPABILITY
 SPLIT OPERATION READS != ATOMIC AUTHORITY SNAPSHOT
 ```
+
+## Trusted receipt identity
+
+`(consumer_contract, message_identity_scope, message_id)` is the canonical inbox lookup key, but a lookup-key hit does not authorize use of a receipt under a different supplemental trusted binding.
+
+Every authority-bearing lookup compares the supplied `ScopedMessageIdentity` to the exact stored identity before current execution admission, claim mutation, completion or reconciliation can proceed. In particular, a caller cannot reuse the same three-part key with another `tenant_id` and cause current execution authority to be requested for that different tenant.
+
+```text
+SAME LOOKUP KEY + DIFFERENT TRUSTED TENANT != SAME RECEIPT AUTHORITY
+```
+
+## Immutable operation authority scope
+
+A stable cross-authority operation is identified and authorized by the tuple:
+
+```text
+operation_id
++ tenant_id            # nullable only for genuinely global operation scope
++ owner_contract
+```
+
+The `operation_id` is stable identity, not a capability token. When an inbox receipt is bound to an operation, the operation authority must prove that its exact immutable tenant and owner contract match the receipt's stored trusted `tenant_id` and `consumer_contract`.
+
+The same check is repeated when the operation snapshot is later consumed for direct completion, retry eligibility or reconciled completion. This prevents an adapter, stale pointer or malicious caller from changing only the operation object behind a previously stored ID.
+
+PostgreSQL enforces the same invariant on every operation-bound inbox `INSERT` and `UPDATE`. The foreign key to `operation_id` proves existence only; a separate `SECURITY INVOKER` trigger validates exact tenant/owner scope before the row can become durable.
 
 ## Local co-resident effect
 
@@ -39,12 +67,14 @@ If the current local claim expires, crashes after an uncertain effect boundary, 
 
 ## Atomic operation authority observation
 
-Any inbox decision that depends on a cross-authority operation consumes **one coherent operation snapshot** for the stable `operation_id`.
+Any inbox decision that depends on a cross-authority operation consumes **one coherent operation snapshot** for the stable scoped operation.
 
 The snapshot binds together at least:
 
 ```text
 operation_id
+tenant_id
+owner_contract
 state
 attempt_generation
 outcome
@@ -52,40 +82,44 @@ reconciliation_resolution
 reconciliation_revision
 ```
 
-A consumer SHALL NOT decide retry/completion by independently reading state, outcome, resolution and revision and then assembling those values locally. Separate reads can cross a concurrent state transition and produce a tuple that never existed as durable authority.
+A consumer SHALL NOT decide retry/completion by independently reading scope, state, outcome, resolution and revision and then assembling those values locally. Separate reads can cross a concurrent state transition and produce a tuple that never existed as durable authority.
 
-The canonical snapshot type rejects internally impossible combinations such as `prepared + effect_confirmed + outcome`. The in-memory operation ledger creates the snapshot under one lock. The PostgreSQL transition guards obtain corresponding operation/evidence fields in locked queries/joins.
+The canonical snapshot type rejects internally impossible state/reconciliation combinations, and inbox consumption fails closed if the snapshot's tenant/owner scope differs from the stored receipt. The in-memory operation ledger creates the snapshot under one lock. The PostgreSQL transition/scope guards obtain corresponding operation/evidence fields in locked queries/joins.
 
 ## Direct cross-authority completion
 
-Once a current processing receipt is bound to `operation_id`, the completion authority moves to that stable operation boundary for that effect.
+Once a current processing receipt is bound to a scoped `operation_id`, the completion authority moves to that stable operation boundary for that effect.
 
 A direct, non-ambiguous cross-authority completion requires:
 
 1. the current inbox claim is still valid;
-2. the receipt remains bound to the same stable `operation_id`;
-3. one atomic operation snapshot is durably `completed`;
-4. the current attempt has no reconciliation revision/resolution;
-5. the snapshot outcome exactly matches the result linked by the inbox receipt.
+2. the supplied claim identity exactly equals the stored trusted receipt identity;
+3. the receipt remains bound to the same stable `operation_id`;
+4. the operation snapshot has the exact receipt `tenant_id + consumer_contract` authority scope;
+5. one atomic operation snapshot is durably `completed`;
+6. the current attempt has no reconciliation revision/resolution;
+7. the snapshot outcome exactly matches the result linked by the inbox receipt.
 
 `complete_cross_authority_effect()` models this path. `complete_local_effect()` SHALL reject an operation-bound receipt.
 
-The PostgreSQL trigger enforces the same distinction for `processing -> completed`: a row with `operation_id` can complete only when the bound operation is directly `completed` with the exact same durable result and no reconciliation state attached to the current attempt.
+The PostgreSQL guards enforce the same distinction for `processing -> completed`: an operation-bound row must preserve exact tenant/owner scope in addition to satisfying the direct completed-operation outcome rules.
 
 ## Reconciliation exit
 
 A receipt in `reconciliation_required` may become `completed` only when all of the following are established in one coherent authority observation:
 
-1. the receipt is bound to a stable `operation_id`;
-2. the operation authority is durably `completed`;
-3. append-only reconciliation evidence records `effect_confirmed`;
-4. the reconciliation revision is stable and valid;
-5. that evidence is bound to the operation's exact current `attempt_generation`;
-6. the confirmed durable outcome exactly matches the result linked by the inbox receipt.
+1. the supplied receipt identity exactly matches the stored trusted identity;
+2. the receipt is bound to a stable `operation_id`;
+3. operation tenant/owner scope exactly matches the receipt tenant/consumer contract;
+4. the operation authority is durably `completed`;
+5. append-only reconciliation evidence records `effect_confirmed`;
+6. the reconciliation revision is stable and valid;
+7. that evidence is bound to the operation's exact current `attempt_generation`;
+8. the confirmed durable outcome exactly matches the result linked by the inbox receipt.
 
-The durable PostgreSQL contract enforces the same rule through `system.async_cross_authority_operation`, `system.async_cross_authority_reconciliation`, and the guarded `system.async_consumer_inbox` transition.
+The durable PostgreSQL contract enforces the same rule through `system.async_cross_authority_operation`, `system.async_cross_authority_reconciliation`, the guarded `system.async_consumer_inbox` transition, and the operation-scope guard added after migrations 001..005.
 
-Absence of an `operation_id`, unavailable operation authority, missing reconciliation revision, attempt-generation mismatch, `still_unknown`, `effect_proven_absent`, or a mismatching outcome leaves completion fail-closed.
+Absence of an `operation_id`, unavailable/incomplete operation authority, tenant/owner mismatch, missing reconciliation revision, attempt-generation mismatch, `still_unknown`, `effect_proven_absent`, or a mismatching outcome leaves completion fail-closed.
 
 A reconciled operation cannot be laundered back through the ordinary `processing -> completed` path. It must use the `reconciliation_required -> completed` transition bound to the append-only reconciliation revision for the exact ambiguous attempt.
 
@@ -129,7 +163,7 @@ Before a new operation attempt becomes `attempting`:
 - `attempt_generation` advances exactly once;
 - fresh current execution admission is required.
 
-Likewise, when a reconciliation-re-admitted inbox receipt is claimed for the successor attempt, the prior receipt reconciliation pointer is consumed before `processing` begins. The bound `operation_id` remains stable.
+Likewise, when a reconciliation-re-admitted inbox receipt is claimed for the successor attempt, the prior receipt reconciliation pointer is consumed before `processing` begins. The bound operation tuple remains stable.
 
 This permits a later direct success to be represented as direct success for the new attempt while preserving proof of why the earlier attempt was allowed to retry.
 
@@ -141,29 +175,35 @@ Until then:
 
 ```text
 UNBOUND RECONCILIATION_REQUIRED -> COMPLETED = PROHIBITED
+CROSS-TENANT/CROSS-OWNER OPERATION BINDING -> RECEIPT AUTHORITY = PROHIBITED
 OPERATION-BOUND PROCESSING -> LOCAL COMPLETION = PROHIBITED
 RECONCILED OPERATION -> DIRECT PROCESSING COMPLETION = PROHIBITED
 PRIOR RECONCILIATION POINTER -> SUCCESSOR CURRENT ATTEMPT = PROHIBITED
 PRIOR ATTEMPT RECONCILIATION EVIDENCE -> LATER AMBIGUOUS ATTEMPT = PROHIBITED
-SPLIT STATE/OUTCOME/RESOLUTION/REVISION READS -> AUTHORITY DECISION = PROHIBITED
+SPLIT SCOPE/STATE/OUTCOME/RESOLUTION/REVISION READS -> AUTHORITY DECISION = PROHIBITED
 ```
 
 ## Required falsification
 
 Tests SHALL prove:
 
+- a second identity with the same canonical inbox key but another trusted tenant cannot claim the stored receipt and does not reach current execution authority;
+- binding an operation from another tenant fails and leaves the receipt unbound;
+- binding an operation owned by another contract fails and leaves the receipt unbound;
+- a valid operation binding requires exact `operation_id + tenant_id + owner_contract` scope;
+- direct/reconciled completion rechecks the operation scope rather than trusting the previously stored ID;
+- the SQL guard applies the same scope check on both INSERT and UPDATE without `SECURITY DEFINER` or runtime grants;
 - an operation-bound processing receipt cannot use the local completion path;
 - direct cross-authority completion requires a durable `completed` operation with the exact matching outcome;
 - a mismatching direct operation outcome remains processing/blocked;
 - an operation completed through reconciliation cannot use the direct processing-completion path;
 - an unbound reconciliation-blocked receipt cannot be completed by caller-supplied `EffectResultLink`;
-- binding an operation without supplying current reconciliation authority is still insufficient;
-- exact append-only `effect_confirmed` operation evidence permits reconciliation completion only for the matching result identity;
+- exact append-only `effect_confirmed` operation evidence permits reconciliation completion only for the matching result identity and exact scope;
 - a mismatching reconciled result remains reconciliation-blocked;
 - `effect_proven_absent` evidence survives as append-only history while its mutable pointer is cleared before the successor attempt;
 - historical reconciliation evidence records the exact attempt generation it resolved;
 - after attempt 2 becomes ambiguous, a revision/evidence record from attempt 1 cannot make attempt 2 retry-eligible;
 - a successor attempt can complete directly after a proven-absent predecessor without inheriting the predecessor resolution;
 - impossible mixed operation snapshots are rejected;
-- inbox cross-authority decisions consume one snapshot and never fall back to split state/outcome/reconciliation reads;
-- SQL and Python reference semantics remain aligned on attempt-generation binding and all other boundaries above.
+- inbox cross-authority decisions consume one scoped snapshot and never fall back to split scope/state/outcome/reconciliation reads;
+- SQL and Python reference semantics remain aligned on scope, attempt-generation binding and all other boundaries above.

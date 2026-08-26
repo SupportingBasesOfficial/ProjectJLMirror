@@ -114,3 +114,7 @@ jobs:
       - name: Validate Wave 3 pre-effect runtime requirement authority
         shell: bash
         run: PYTHONPATH=src python3 tools/wave3/validate_runtime_requirement_authority.py
+
+      - name: Validate Wave 3 runtime profile reliability authority
+        shell: bash
+        run: PYTHONPATH=src python3 tools/wave3/validate_runtime_profile_reliability.py

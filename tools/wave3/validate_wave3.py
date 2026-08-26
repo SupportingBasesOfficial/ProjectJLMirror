@@ -57,6 +57,7 @@ REQUIRED_RELEASE_LAWS = {
     "REQUIRED HEALTH SET != RUNTIME EVIDENCE DISCRETION",
     "PHASE 11 RELIABILITY JOIN != OPTIONAL HEALTH EVIDENCE",
     "PHASE 13 RUNTIME PROFILE != RELEASE-POLICY-DISCRETIONARY RELIABILITY MINIMUM",
+    "RUNTIME.WORKER@1 != UNSPECIALIZED RELEASE TARGET",
     "RUNTIME VERIFICATION EVIDENCE != REPLAYABLE ACROSS DEPLOYMENT SCOPE OR TARGET VERSION",
     "HEALTH GATE EVIDENCE != REPLAYABLE ACROSS RELEASE TARGET STATE VERSION",
     "RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD",
@@ -84,6 +85,7 @@ REQUIRED_FORBIDDEN_SUBSTITUTIONS = {
     "runtime_requirements_replayed_across_operation_target_or_target_version",
     "phase11_reliability_join_without_implied_phase12_health_gate",
     "phase13_runtime_profile_with_omitted_mandatory_reliability_binding",
+    "runtime_worker_without_exact_phase13_specialization",
     "runtime_verification_evidence_replayed_across_operation_target_or_target_version",
     "health_gate_evidence_replayed_across_deployment_scope",
     "health_gate_evidence_replayed_across_release_target_state_version",
@@ -115,6 +117,9 @@ REQUIRED_CODE_TOKENS = {
     ),
     "src/jlmirror_release/model.py": (
         "CANONICAL_RUNTIME_PROFILES",
+        "CANONICAL_WORKER_SPECIALIZATIONS",
+        "worker_specialization_set",
+        "runtime.worker@1 deployment requires exact Phase 13 worker specialization binding",
         "runtime_profile_set contains unknown Phase 13 runtime profiles",
     ),
     "src/jlmirror_release/provenance.py": (
@@ -150,7 +155,8 @@ REQUIRED_CODE_TOKENS = {
     "src/jlmirror_release/verification.py": (
         "class RuntimeVerificationRequirements",
         "RUNTIME_PROFILE_MINIMUM_RELIABILITY_BINDINGS",
-        "minimum_reliability_for_runtime_profiles",
+        "WORKER_SPECIALIZATION_MINIMUM_RELIABILITY_BINDINGS",
+        "minimum_reliability_for_intent",
         "required_reliability_profile_ids",
         "required_health_profile_ids",
         "EXPECTED_RELIABILITY_PROFILE_IDS",
@@ -167,6 +173,7 @@ REQUIRED_CODE_TOKENS = {
         "release_policy_evidence_reference",
         "verifier_authority_evidence_reference",
         "policy_evidence_reference",
+        "worker specialization set differs from approved release intent",
         "health gate evidence is bound to a different deployment scope",
     ),
     "src/jlmirror_release/recovery.py": (

@@ -115,6 +115,7 @@ class ReconciliationCompletionAuthorityTests(unittest.TestCase):
         ledger.bind_cross_authority_operation(
             claim,
             "op-1",
+            operation_authority=operations,
             observed_at=NOW + timedelta(seconds=1),
         )
         return ledger, operations, claim

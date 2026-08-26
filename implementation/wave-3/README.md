@@ -33,6 +33,7 @@ CURRENT POLICY PROFILE != SOURCE-TRUST TRANSITION LINEAGE
 EVIDENCE REFERENCE != MUTABLE ALIAS/URL
 ADMISSION BOOLEAN != SCOPED CURRENT-AUTHORITY PROOF
 RECONCILIATION BOOLEAN != RECONCILIATION AUTHORITY
+RECOVERY CLASSIFICATION BOOLEAN SET != SCOPED DURABLE EVIDENCE
 RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD
 DEPLOYMENT SUCCESS != RUNTIME ADMISSION
 RELEASE TARGET STATE != PLACEMENT/RUNTIME AUTHORITY
@@ -80,6 +81,7 @@ No backend, collector, trace transport, dashboard, pager, sampling numeric, SLO 
 - effect confirmation/absence resolution requires durable target evidence and the deployment record retains both target evidence and reconciliation-authority lineage where applicable;
 - runtime verification independently requires durable evidence for runtime admission, configuration currentness, release-policy currentness, verifier authority and owning health-admission policy; vendor/controller green is ignored as authority;
 - completed deployment records retain runtime-verification evidence identity;
+- rollback/forward-recovery/reconciliation classification requires an immutable evidence record, owning authority profile, exact release-scope binding and currentness before its compatibility/security/reliability booleans are interpreted;
 - validation evidence for a different target configuration requires explicit semantic equivalence or target-specific validation;
 - production secret-value copying cannot be used as configuration equivalence proof.
 

@@ -2,9 +2,9 @@
 --
 -- Migration 001 is fresh-bootstrap-only. Reused authority admission is owned here.
 -- This migration is one transaction: event-trigger/search-path guards, ACCESS EXCLUSIVE
--- lock, privilege/reachability preflight, structural/hidden-writer preflight, canonical
--- mutation, and commit. A failed reuse admission therefore cannot durably mutate the
--- authority namespace before privilege or structural conformance is proven.
+-- lock, privilege/reachability preflight, structural/hidden-writer/disclosure preflight,
+-- canonical mutation, and commit. A failed reuse admission therefore cannot durably
+-- mutate the authority namespace before privilege or structural conformance is proven.
 --
 -- Reuse is admitted only for a complete canonical object set. A missing canonical
 -- routine is not silently created by CREATE OR REPLACE under unknown/default ACL
@@ -135,9 +135,17 @@ BEGIN
         RAISE EXCEPTION 'platform schema has inherited non-owner privileges';
     END IF;
 
-    -- The recursive membership closure does not emit pg_read_all_data or
-    -- pg_write_all_data as their own members. A SECURITY DEFINER owned directly by
-    -- either root therefore carries implicit fence authority even with clean ACLs.
+    -- Keep migration-owner definer authority independently falsifiable from the
+    -- predefined all-data-root authority checked immediately after it.
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_proc p
+         WHERE p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid
+           AND p.prosecdef
+    ) THEN
+        RAISE EXCEPTION 'database contains migration-owner SECURITY DEFINER routine';
+    END IF;
+
     IF EXISTS (
         SELECT 1
           FROM pg_catalog.pg_proc p
@@ -195,13 +203,15 @@ $wave1_reuse_privilege_preflight$;
 -- Existing persisted authority is structurally validated before any mutation.
 DO $wave1_revalidate$
 DECLARE
+    v_schema oid := pg_catalog.to_regnamespace('platform');
     v_table pg_catalog.regclass := pg_catalog.to_regclass('platform.authority_fences');
     v_pk_index oid;
     v_btree_am oid;
     v_text_btree_opclass oid;
+    v_schema_publication_exists boolean := false;
 BEGIN
-    IF v_table IS NULL THEN
-        RAISE EXCEPTION 'platform.authority_fences is absent; apply 001 before revalidation';
+    IF v_schema IS NULL OR v_table IS NULL THEN
+        RAISE EXCEPTION 'platform authority namespace/table is absent; apply 001 before revalidation';
     END IF;
 
     SELECT am.oid
@@ -473,11 +483,44 @@ BEGIN
         RAISE EXCEPTION 'external rewrite dependency can reach authority_fences';
     END IF;
 
+    -- Inbound logical replication is an external writer authority.
     IF EXISTS (
         SELECT 1 FROM pg_catalog.pg_subscription_rel sr
          WHERE sr.srrelid OPERATOR(pg_catalog.=) v_table
     ) THEN
         RAISE EXCEPTION 'logical replication subscription can write authority_fences';
+    END IF;
+
+    -- Explicit publication membership is outbound disclosure authority even when
+    -- table/column ACLs are clean.
+    IF EXISTS (
+        SELECT 1 FROM pg_catalog.pg_publication_rel pr
+         WHERE pr.prrelid OPERATOR(pg_catalog.=) v_table
+    ) THEN
+        RAISE EXCEPTION 'logical replication publication can disclose authority_fences explicitly';
+    END IF;
+
+    -- FOR ALL TABLES publications include existing and future persistent tables.
+    IF EXISTS (
+        SELECT 1 FROM pg_catalog.pg_publication p
+         WHERE p.puballtables
+    ) THEN
+        RAISE EXCEPTION 'FOR ALL TABLES publication can disclose authority_fences';
+    END IF;
+
+    -- PostgreSQL 15+ can publish every current/future table in a schema. Keep the SQL
+    -- portable to earlier supported PostgreSQL versions by looking up the catalog and
+    -- using dynamic SQL only when pg_publication_namespace exists.
+    IF pg_catalog.to_regclass('pg_catalog.pg_publication_namespace') IS NOT NULL THEN
+        EXECUTE
+            'SELECT EXISTS ('
+            'SELECT 1 FROM pg_catalog.pg_publication_namespace pn '
+            'WHERE pn.pnnspid OPERATOR(pg_catalog.=) $1)'
+            INTO v_schema_publication_exists
+            USING v_schema;
+        IF v_schema_publication_exists THEN
+            RAISE EXCEPTION 'schema publication can disclose platform.authority_fences';
+        END IF;
     END IF;
 END
 $wave1_revalidate$;
@@ -657,5 +700,9 @@ $wave1_postcanonical_privilege_assert$;
 
 -- No positive GRANT follows this validation. The separately reviewed C2 runtime/
 -- database mapping remains responsible for least-privilege capability assignment.
+-- Catalog checks above prove current publication/subscription state; they do not claim
+-- to revoke or outrank a concurrently operating PostgreSQL superuser. Excluding such
+-- concurrent administrative authority is part of the separately reviewed C2 database
+-- role/operational mapping, not an application-runtime authority granted by Wave 1.
 
 COMMIT;

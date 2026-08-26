@@ -324,25 +324,28 @@ class InMemoryInboxLedger:
             receipt = self._require(identity)
             if receipt.state is not InboxState.RECONCILIATION_REQUIRED:
                 raise InvalidTransition("only reconciliation-blocked receipt can be reconciled")
-            if receipt.operation_id is not None:
-                if operation_authority is None:
-                    raise ReconciliationBlocked("cross-authority completion requires operation authority")
-                try:
-                    state = operation_authority.state(receipt.operation_id)
-                    outcome = operation_authority.outcome(receipt.operation_id)
-                    resolution = operation_authority.reconciliation_resolution(receipt.operation_id)
-                    revision = operation_authority.reconciliation_revision(receipt.operation_id)
-                except Exception as exc:
-                    raise ReconciliationBlocked("operation reconciliation authority failed closed") from exc
-                if (
-                    state is not OperationState.COMPLETED
-                    or outcome != result_link
-                    or resolution is not ReconciliationResolution.EFFECT_CONFIRMED
-                    or not isinstance(revision, str)
-                ):
-                    raise ReconciliationBlocked("confirmed effect/result has not been durably reconciled")
-                identifier(revision, "reconciliation_revision")
-                receipt.reconciliation_revision = revision
+            if receipt.operation_id is None:
+                raise ReconciliationBlocked(
+                    "reconciliation completion requires stable operation identity and durable evidence authority"
+                )
+            if operation_authority is None:
+                raise ReconciliationBlocked("reconciliation completion requires operation authority")
+            try:
+                state = operation_authority.state(receipt.operation_id)
+                outcome = operation_authority.outcome(receipt.operation_id)
+                resolution = operation_authority.reconciliation_resolution(receipt.operation_id)
+                revision = operation_authority.reconciliation_revision(receipt.operation_id)
+            except Exception as exc:
+                raise ReconciliationBlocked("operation reconciliation authority failed closed") from exc
+            if (
+                state is not OperationState.COMPLETED
+                or outcome != result_link
+                or resolution is not ReconciliationResolution.EFFECT_CONFIRMED
+                or not isinstance(revision, str)
+            ):
+                raise ReconciliationBlocked("confirmed effect/result has not been durably reconciled")
+            identifier(revision, "reconciliation_revision")
+            receipt.reconciliation_revision = revision
             receipt.state = InboxState.COMPLETED
             receipt.result_link = result_link
             receipt.terminal_reason = None

@@ -16,15 +16,19 @@ It does **not** create Product/domain endpoints, incident/customer workflow beha
 - Ambiguous publication retries reuse the same logical message identity.
 - Duplicate-sensitive consumers use `(consumer_contract, message_identity_scope, message_id)` and an atomic create-or-observe inbox protocol.
 - A benign duplicate additionally requires proven immutable semantic equivalence under a retained comparison profile/evidence authority.
-- The canonical inbox key is not permission to ignore conflicting supplemental trusted scope: the same key with a different trusted tenant binding is integrity failure.
+- The canonical inbox key is a lookup key, not the whole trusted authority binding: every authority-bearing lookup revalidates the exact stored `ScopedMessageIdentity`, including tenant binding, before current execution authority is requested.
+- The same canonical inbox key with a different trusted tenant binding is integrity failure and cannot claim, complete, reconcile or otherwise act on the stored receipt.
 - Inbox identity, trusted tenant binding and retained equivalence evidence are immutable after admission.
 - Same scoped identity with conflicting content is integrity failure and enters quarantine/reconciliation; it is never first-wins/last-wins.
 - Unknown/lost comparison authority is reconciliation-blocked, not duplicate success and not new effect eligibility.
 - Co-resident inbox + protected effect complete atomically where they share one transaction authority.
-- Cross-authority effects use a stable immutable `operation_id` + owner/tenant scope; ambiguous outcome blocks blind retry until reconciliation proves completion or proves a new attempt eligible.
+- Cross-authority effects use a stable immutable `operation_id` **plus exact owner/tenant scope**; the ID alone is not binding, completion or reconciliation authority.
+- Every inbox-to-operation binding and every later operation snapshot consumption revalidates `operation_id + tenant_id + owner_contract` against the receipt's immutable trusted scope.
+- PostgreSQL applies the same rule to operation-bound inbox rows on both INSERT and UPDATE, so a foreign-key hit cannot prebind a receipt to another tenant/owner operation.
+- Ambiguous outcome blocks blind retry until reconciliation proves completion or proves a new attempt eligible.
 - Reconciliation evidence is append-only by `(operation_id, reconciliation_revision)` **and bound to the exact `attempt_generation` whose ambiguity it resolves**. Historical proof for attempt N cannot authorize a later ambiguous attempt N+1.
 - A reconciliation revision can be created only while that operation is reconciliation-blocked; it cannot be pre-seeded, rewritten or deleted to manufacture later retry authority.
-- Canonical cross-authority snapshots carry `attempt_generation` plus `reconciliation_attempt_generation`; a snapshot that tries to pair a later operation attempt with earlier reconciliation evidence is structurally invalid.
+- Canonical cross-authority snapshots carry immutable tenant/owner scope, `attempt_generation` plus `reconciliation_attempt_generation`; a snapshot that mismatches the receipt scope or pairs a later operation attempt with earlier reconciliation evidence is rejected.
 - Inbox processing-lease expiry and cross-authority attempt-lease expiry are uncertainty: they transition to reconciliation and never manufacture safe retry/effect absence.
 - Every new protected consumer effect/cross-authority attempt requires a revision-bound current execution admission for the exact consumer/operation, tenant scope and accepted API/worker runtime profile.
 - Tenant-scoped execution admission carries a trusted Wave 1 `TenantContext`; stale/missing principal generation, placement, runtime generation, environment or authorization evidence fails closed at the adapter boundary.
@@ -65,7 +69,10 @@ If implementation later requires a decision such as what a customer sees during 
 ```text
 LEASE EXPIRY != EFFECT ABSENCE
 CURRENT EXECUTION ADMISSION != MESSAGE PAYLOAD AUTHORITY
+CANONICAL INBOX LOOKUP KEY != COMPLETE TRUSTED RECEIPT IDENTITY
 SAME INBOX KEY != BENIGN DUPLICATE WHEN TRUSTED BINDING DIFFERS
+OPERATION ID != OPERATION AUTHORITY SCOPE
+OPERATION BINDING/COMPLETION/RECONCILIATION -> EXACT OPERATION ID + TENANT + OWNER
 RECONCILIATION_REQUIRED != RETRY ELIGIBLE
 RECONCILIATION REVISION STRING != EVIDENCE WITHOUT APPEND-ONLY RECORD
 RECONCILIATION REVISION != ATTEMPT-GENERATION-AGNOSTIC CAPABILITY

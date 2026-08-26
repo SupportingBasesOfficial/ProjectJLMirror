@@ -46,6 +46,8 @@ EXPECTED_FORBIDDEN = [
     "new_message_id_for_ambiguous_republication",
     "outbox_dispatch_state_for_domain_fact_authority",
     "mutable_delivery_metadata_for_immutable_message_meaning",
+    "dispatch_time_for_authoritative_event_occurrence",
+    "job_command_without_durable_operation_identity",
     "recovery_missing_state_for_never_happened",
     "stale_worker_generation_for_current_effect_authority",
     "product_or_incident_behavior_invented_by_wave2_substrate",
@@ -75,7 +77,14 @@ ALLOWED_DELTA_PREFIXES = (
     "tests/wave2/",
     "tools/async_core/",
 )
-ALLOWED_DELTA_EXACT = {".github/workflows/deterministic-assurance.yml"}
+ALLOWED_DELTA_EXACT = {
+    ".github/workflows/deterministic-assurance.yml",
+    # Narrow cross-wave assurance compatibility maintenance only. These files
+    # still enforce the original Wave 1 path set; they merely pin the default
+    # historical proof to the accepted Wave 1 squash instead of future HEAD.
+    "tools/authority/wave1_scope.py",
+    "tests/wave1/test_wave1_scope_guard.py",
+}
 
 
 def _manifest_findings() -> list[str]:
@@ -101,6 +110,7 @@ def _state_findings() -> list[str]:
 
 def _source_authority_findings() -> list[str]:
     owners = {
+        "envelope": ROOT / "docs/10-event-contracts/message-envelope-and-classes.md",
         "publication": ROOT / "docs/10-event-contracts/publication-outbox-and-producer-authority.md",
         "inbox": ROOT / "docs/10-event-contracts/consumer-inbox-idempotency-and-effects.md",
         "security": ROOT / "docs/10-event-contracts/security-tenant-context-and-data-classification.md",
@@ -109,6 +119,10 @@ def _source_authority_findings() -> list[str]:
     }
     text = {name: path.read_text(encoding="utf-8") for name, path in owners.items()}
     requirements = (
+        ("envelope", "Events use `occurred_at`"),
+        ("envelope", "Jobs use `created_at`"),
+        ("envelope", "A `job_command` means \"attempt this accepted work under this durable operation identity\""),
+        ("envelope", "operation_id"),
         ("publication", "same transaction as the mutation"),
         ("publication", "retrying the same logical `message_id` is preferred"),
         ("inbox", "(consumer_contract, message_identity_scope, message_id)"),
@@ -156,6 +170,9 @@ def _sql_findings() -> list[str]:
     required = (
         "create table if not exists system.async_outbox_message",
         "unique (producer_message_scope, message_id)",
+        "occurred_at timestamptz null",
+        "created_at timestamptz null",
+        "message_class <> 'job_command' or operation_id is not null",
         "create table if not exists system.async_outbox_dispatch",
         "create table if not exists system.async_consumer_inbox",
         "primary key (consumer_contract, message_identity_scope, message_id)",
@@ -164,10 +181,35 @@ def _sql_findings() -> list[str]:
         "no grant statements are intentionally present",
     )
     findings = [f"Wave 2 SQL missing contract anchor: {item}" for item in required if item not in lowered]
-    if " grant " in f" {lowered} " and "no grant statements" not in lowered:
+    executable_grants = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("--") and line.strip().upper().startswith("GRANT ")
+    ]
+    if executable_grants:
         findings.append("Wave 2 SQL must not silently select serving/admin privilege mapping")
     if "security definer" in lowered:
         findings.append("Wave 2 SQL must not introduce SECURITY DEFINER authority")
+    return findings
+
+
+def _wave1_compatibility_maintenance_findings() -> list[str]:
+    scope_text = (ROOT / "tools/authority/wave1_scope.py").read_text(encoding="utf-8")
+    test_text = (ROOT / "tests/wave1/test_wave1_scope_guard.py").read_text(encoding="utf-8")
+    required_scope = (
+        'AUTHORITY_BASE_SHA = "5b56ad94566b48b72a993ee8f5cf7e983127ab21"',
+        f'ACCEPTED_WAVE1_SHA = "{AUTHORITY_BASE_SHA}"',
+        'head: str = ACCEPTED_WAVE1_SHA',
+        '"implementation/wave-1/"',
+        '"src/jlmirror_authority/"',
+    )
+    findings = [
+        f"Wave 1 compatibility maintenance drift: missing {anchor}"
+        for anchor in required_scope
+        if anchor not in scope_text
+    ]
+    if "implementation/wave-2/README.md" not in test_text or "escapes authorized path set" not in test_text:
+        findings.append("Wave 1 compatibility maintenance must still falsify Wave 2 as hypothetical Wave 1 scope")
     return findings
 
 
@@ -221,6 +263,7 @@ def validate() -> list[str]:
         _source_authority_findings,
         _stdlib_boundary_findings,
         _sql_findings,
+        _wave1_compatibility_maintenance_findings,
         _git_scope_findings,
         _workflow_findings,
     ):

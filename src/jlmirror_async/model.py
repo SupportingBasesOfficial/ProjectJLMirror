@@ -155,9 +155,9 @@ class MessageSubject:
 class LogicalMessage:
     """Transport-independent logical message plus adapter-owned payload encoding.
 
-    `serialization_profile_id` makes the concrete C2 representation explicit; its
-    bytes are not treated as canonical business authority by this package.
-    Semantic duplicate comparison uses `comparison_evidence` instead.
+    Timestamp fields follow the accepted Phase 10 class semantics. Event/fact
+    classes use `occurred_at`; work/process classes use `created_at`. A job command
+    is additionally bound to its stable durable `operation_id`.
     """
 
     message_id: str
@@ -167,7 +167,6 @@ class LogicalMessage:
     contract_version: str
     producer: str
     scope: MessageScope
-    occurred_at: datetime
     correlation_id: str
     data_classification: str
     serialization_profile_id: str
@@ -177,6 +176,11 @@ class LogicalMessage:
     producer_generation: str | None = None
     causation_id: str | None = None
     subject: MessageSubject | None = None
+    occurred_at: datetime | None = None
+    created_at: datetime | None = None
+    operation_id: str | None = None
+    not_before: datetime | None = None
+    deadline: datetime | None = None
 
     def __post_init__(self) -> None:
         identifier(self.message_id, "message_id")
@@ -188,7 +192,6 @@ class LogicalMessage:
         identifier(self.producer, "producer")
         if not isinstance(self.scope, MessageScope):
             raise ValueError("scope must be a canonical MessageScope")
-        aware(self.occurred_at, "occurred_at")
         identifier(self.correlation_id, "correlation_id")
         identifier(self.data_classification, "data_classification")
         identifier(self.serialization_profile_id, "serialization_profile_id")
@@ -198,12 +201,52 @@ class LogicalMessage:
             raise ValueError("comparison_evidence must be explicit")
         optional_identifier(self.producer_generation, "producer_generation")
         optional_identifier(self.causation_id, "causation_id")
+        optional_identifier(self.operation_id, "operation_id")
         if self.subject is not None and not isinstance(self.subject, MessageSubject):
             raise ValueError("subject must be MessageSubject when present")
         if self.scope is MessageScope.TENANT:
             identifier(self.tenant_id or "", "tenant_id")
         elif self.tenant_id is not None:
             raise ValueError("explicit global message must not carry tenant_id")
+
+        fact_classes = {
+            MessageClass.DOMAIN_EVENT,
+            MessageClass.INTEGRATION_EVENT,
+            MessageClass.REALTIME_PROJECTION,
+        }
+        work_classes = {
+            MessageClass.JOB_COMMAND,
+            MessageClass.PROCESS_SIGNAL,
+            MessageClass.OUTBOUND_WEBHOOK_DELIVERY,
+        }
+        if self.message_class in fact_classes:
+            if self.occurred_at is None or self.created_at is not None:
+                raise ValueError("event/projection class requires occurred_at and forbids created_at")
+            aware(self.occurred_at, "occurred_at")
+        elif self.message_class in work_classes:
+            if self.created_at is None or self.occurred_at is not None:
+                raise ValueError("work/process class requires created_at and forbids occurred_at")
+            created = aware(self.created_at, "created_at")
+            if self.message_class is MessageClass.JOB_COMMAND and self.operation_id is None:
+                raise ValueError("job_command requires stable durable operation_id")
+            if self.message_class is not MessageClass.JOB_COMMAND and (
+                self.not_before is not None or self.deadline is not None
+            ):
+                raise ValueError("not_before/deadline are valid only for job_command")
+            if self.not_before is not None:
+                not_before = aware(self.not_before, "not_before")
+                if not_before < created:
+                    raise ValueError("not_before cannot precede job created_at")
+            else:
+                not_before = None
+            if self.deadline is not None:
+                deadline = aware(self.deadline, "deadline")
+                if deadline < created:
+                    raise ValueError("deadline cannot precede job created_at")
+                if not_before is not None and deadline < not_before:
+                    raise ValueError("deadline cannot precede not_before")
+        else:  # pragma: no cover - enum exhaustiveness guard
+            raise ValueError("unsupported message_class")
 
     @property
     def outbox_identity(self) -> tuple[str, str]:

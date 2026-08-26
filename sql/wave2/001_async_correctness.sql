@@ -31,7 +31,11 @@ CREATE TABLE IF NOT EXISTS system.async_outbox_message (
     tenant_id TEXT NULL,
     subject_type TEXT NULL,
     subject_id TEXT NULL,
-    occurred_at TIMESTAMPTZ NOT NULL,
+    occurred_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NULL,
+    operation_id TEXT NULL,
+    not_before TIMESTAMPTZ NULL,
+    deadline TIMESTAMPTZ NULL,
     correlation_id TEXT NOT NULL,
     causation_id TEXT NULL,
     data_classification TEXT NOT NULL,
@@ -48,11 +52,31 @@ CREATE TABLE IF NOT EXISTS system.async_outbox_message (
         (scope_class = 'tenant' AND tenant_id IS NOT NULL)
         OR (scope_class = 'global' AND tenant_id IS NULL)
     ),
-    CHECK ((subject_type IS NULL) = (subject_id IS NULL))
+    CHECK ((subject_type IS NULL) = (subject_id IS NULL)),
+    CHECK (
+        (
+            message_class IN ('domain_event', 'integration_event', 'realtime_projection')
+            AND occurred_at IS NOT NULL
+            AND created_at IS NULL
+        )
+        OR (
+            message_class IN ('job_command', 'process_signal', 'outbound_webhook_delivery')
+            AND created_at IS NOT NULL
+            AND occurred_at IS NULL
+        )
+    ),
+    CHECK (message_class <> 'job_command' OR operation_id IS NOT NULL),
+    CHECK (
+        message_class = 'job_command'
+        OR (not_before IS NULL AND deadline IS NULL)
+    ),
+    CHECK (not_before IS NULL OR not_before >= created_at),
+    CHECK (deadline IS NULL OR deadline >= created_at),
+    CHECK (deadline IS NULL OR not_before IS NULL OR deadline >= not_before)
 );
 
 COMMENT ON TABLE system.async_outbox_message IS
-'Immutable logical publication evidence. Normal runtime dispatch bookkeeping belongs in async_outbox_dispatch, not this table.';
+'Immutable logical publication evidence. Normal runtime dispatch bookkeeping belongs in async_outbox_dispatch, not this table. Event/fact classes retain occurred_at; work/process classes retain created_at. A job command carries stable operation_id.';
 
 CREATE OR REPLACE FUNCTION system.wave2_reject_outbox_immutable_update()
 RETURNS trigger

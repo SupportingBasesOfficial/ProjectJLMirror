@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Exact-base Git delta scope guard for the authorized Wave 1 implementation."""
+"""Historical exact-delta scope guard for the accepted Wave 1 implementation.
+
+The default proof is intentionally pinned to the accepted Wave 1 squash commit.
+Future authorized waves may add their own paths without retroactively becoming
+part of Wave 1. Synthetic `paths=` validation still evaluates the original Wave 1
+allow-list and therefore remains useful for falsifying scope expansion.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +13,7 @@ from pathlib import Path
 import subprocess
 
 AUTHORITY_BASE_SHA = "5b56ad94566b48b72a993ee8f5cf7e983127ab21"
+ACCEPTED_WAVE1_SHA = "ff932cec10e3b7dcc13b050bb09d4a7efd634598"
 ALLOWED_EXACT_PATHS = frozenset({".github/workflows/deterministic-assurance.yml"})
 ALLOWED_PREFIXES = (
     "implementation/wave-1/",
@@ -27,7 +34,7 @@ def _canonical_repo_path(value: str) -> str | None:
     return canonical if canonical == value else None
 
 
-def changed_paths(root: Path, *, head: str = "HEAD") -> list[str]:
+def changed_paths(root: Path, *, head: str = ACCEPTED_WAVE1_SHA) -> list[str]:
     result = subprocess.run(
         ["git", "diff", "--name-only", "--no-renames", f"{AUTHORITY_BASE_SHA}..{head}"],
         cwd=root,
@@ -38,11 +45,16 @@ def changed_paths(root: Path, *, head: str = "HEAD") -> list[str]:
     return [line for line in result.stdout.splitlines() if line]
 
 
-def validate_wave1_scope(root: Path, *, paths: list[str] | None = None) -> list[str]:
+def validate_wave1_scope(
+    root: Path,
+    *,
+    paths: list[str] | None = None,
+    head: str = ACCEPTED_WAVE1_SHA,
+) -> list[str]:
     try:
-        actual = changed_paths(root) if paths is None else list(paths)
+        actual = changed_paths(root, head=head) if paths is None else list(paths)
     except (OSError, subprocess.CalledProcessError) as exc:
-        return [f"Wave 1 exact-base Git delta cannot be established: {exc}"]
+        return [f"Wave 1 accepted exact-base Git delta cannot be established: {exc}"]
 
     findings: list[str] = []
     seen: set[str] = set()

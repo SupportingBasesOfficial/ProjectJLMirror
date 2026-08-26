@@ -62,7 +62,7 @@ def evidence(value: bytes = b"same", *, profile: str = "cmp.message-v1", verifie
     )
 
 
-def tenant_message(*, message_id: str = "msg-1", payload: bytes = b"payload", ev: ComparisonEvidence | None = None) -> LogicalMessage:
+def tenant_event(*, message_id: str = "msg-1", payload: bytes = b"payload", ev: ComparisonEvidence | None = None) -> LogicalMessage:
     return tenant_message_from_context(
         tenant_context(),
         message_id=message_id,
@@ -81,9 +81,30 @@ def tenant_message(*, message_id: str = "msg-1", payload: bytes = b"payload", ev
     )
 
 
+def tenant_job(*, operation_id: str = "op-job-1", message_id: str = "job-1") -> LogicalMessage:
+    return tenant_message_from_context(
+        tenant_context(),
+        message_id=message_id,
+        producer_message_scope="job-producer-scope-a",
+        message_class=MessageClass.JOB_COMMAND,
+        contract_name="platform.test.execute",
+        contract_version="v1",
+        producer="PlatformManagement",
+        created_at=NOW,
+        operation_id=operation_id,
+        not_before=NOW + timedelta(seconds=1),
+        deadline=NOW + timedelta(minutes=5),
+        correlation_id="corr-job-1",
+        data_classification="internal",
+        serialization_profile_id="serialization.adapter-v1",
+        encoded_payload=b"job-payload",
+        comparison_evidence=evidence(b"job-evidence"),
+    )
+
+
 class MessageBoundaryTests(unittest.TestCase):
     def test_tenant_scope_is_derived_from_trusted_context(self) -> None:
-        message = tenant_message()
+        message = tenant_event()
         self.assertEqual(message.tenant_id, "tenant-a")
         self.assertEqual(message.scope, MessageScope.TENANT)
 
@@ -107,7 +128,7 @@ class MessageBoundaryTests(unittest.TestCase):
             )
 
     def test_message_semantics_are_frozen(self) -> None:
-        message = tenant_message()
+        message = tenant_event()
         with self.assertRaises(FrozenInstanceError):
             message.message_id = "changed"  # type: ignore[misc]
 
@@ -117,17 +138,77 @@ class MessageBoundaryTests(unittest.TestCase):
             "unknown",
         )
 
+    def test_event_requires_occurred_at_and_forbids_created_at(self) -> None:
+        with self.assertRaises(ValueError):
+            tenant_message_from_context(
+                tenant_context(),
+                message_id="event-bad-time",
+                producer_message_scope="producer-scope-a",
+                message_class=MessageClass.INTEGRATION_EVENT,
+                contract_name="platform.test.changed",
+                contract_version="v1",
+                producer="PlatformManagement",
+                created_at=NOW,
+                correlation_id="corr-1",
+                data_classification="internal",
+                serialization_profile_id="serialization.adapter-v1",
+                encoded_payload=b"x",
+                comparison_evidence=evidence(),
+            )
+
+    def test_job_requires_created_at_and_stable_operation_id(self) -> None:
+        job = tenant_job()
+        self.assertEqual(job.created_at, NOW)
+        self.assertIsNone(job.occurred_at)
+        self.assertEqual(job.operation_id, "op-job-1")
+        with self.assertRaises(ValueError):
+            tenant_message_from_context(
+                tenant_context(),
+                message_id="job-missing-op",
+                producer_message_scope="job-producer-scope-a",
+                message_class=MessageClass.JOB_COMMAND,
+                contract_name="platform.test.execute",
+                contract_version="v1",
+                producer="PlatformManagement",
+                created_at=NOW,
+                correlation_id="corr-job-1",
+                data_classification="internal",
+                serialization_profile_id="serialization.adapter-v1",
+                encoded_payload=b"job-payload",
+                comparison_evidence=evidence(b"job-evidence"),
+            )
+
+    def test_job_time_window_cannot_precede_creation(self) -> None:
+        with self.assertRaises(ValueError):
+            tenant_message_from_context(
+                tenant_context(),
+                message_id="job-bad-window",
+                producer_message_scope="job-producer-scope-a",
+                message_class=MessageClass.JOB_COMMAND,
+                contract_name="platform.test.execute",
+                contract_version="v1",
+                producer="PlatformManagement",
+                created_at=NOW,
+                operation_id="op-job-bad-window",
+                not_before=NOW - timedelta(seconds=1),
+                correlation_id="corr-job-1",
+                data_classification="internal",
+                serialization_profile_id="serialization.adapter-v1",
+                encoded_payload=b"job-payload",
+                comparison_evidence=evidence(b"job-evidence"),
+            )
+
 
 class OutboxTests(unittest.TestCase):
     def test_identity_reuse_with_changed_meaning_fails(self) -> None:
         ledger = InMemoryOutboxLedger()
-        ledger.append_committed(tenant_message(ev=evidence(b"A")))
+        ledger.append_committed(tenant_event(ev=evidence(b"A")))
         with self.assertRaises(InvalidTransition):
-            ledger.append_committed(tenant_message(payload=b"different", ev=evidence(b"B")))
+            ledger.append_committed(tenant_event(payload=b"different", ev=evidence(b"B")))
 
     def test_concurrent_claim_has_one_current_owner(self) -> None:
         ledger = InMemoryOutboxLedger()
-        record_id = ledger.append_committed(tenant_message())
+        record_id = ledger.append_committed(tenant_event())
         with ThreadPoolExecutor(max_workers=32) as pool:
             claims = list(pool.map(lambda i: ledger.claim_next(f"dispatcher-{i}"), range(64)))
         winners = [claim for claim in claims if claim is not None]
@@ -136,7 +217,7 @@ class OutboxTests(unittest.TestCase):
 
     def test_ambiguous_publication_retries_same_logical_message(self) -> None:
         ledger = InMemoryOutboxLedger()
-        record_id = ledger.append_committed(tenant_message(message_id="msg-stable"))
+        record_id = ledger.append_committed(tenant_event(message_id="msg-stable"))
         first = ledger.claim_next("dispatcher-a")
         assert first is not None
         ledger.mark_publication_ambiguous(first)
@@ -148,7 +229,7 @@ class OutboxTests(unittest.TestCase):
 
     def test_stale_claim_cannot_ack_publication(self) -> None:
         ledger = InMemoryOutboxLedger()
-        ledger.append_committed(tenant_message())
+        ledger.append_committed(tenant_event())
         first = ledger.claim_next("dispatcher-a")
         assert first is not None
         ledger.mark_publication_ambiguous(first)

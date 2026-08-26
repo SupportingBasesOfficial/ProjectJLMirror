@@ -16,7 +16,6 @@ from .model import (
     MessageScope,
     MessageSubject,
     OutboxDispatchState,
-    aware,
     identifier,
 )
 
@@ -50,7 +49,6 @@ def tenant_message_from_context(
     contract_name: str,
     contract_version: str,
     producer: str,
-    occurred_at: datetime,
     correlation_id: str,
     data_classification: str,
     serialization_profile_id: str,
@@ -59,6 +57,11 @@ def tenant_message_from_context(
     producer_generation: str | None = None,
     causation_id: str | None = None,
     subject: MessageSubject | None = None,
+    occurred_at: datetime | None = None,
+    created_at: datetime | None = None,
+    operation_id: str | None = None,
+    not_before: datetime | None = None,
+    deadline: datetime | None = None,
 ) -> LogicalMessage:
     """Construct tenant publication only from the trusted Wave 1 TenantContext.
 
@@ -81,6 +84,10 @@ def tenant_message_from_context(
         tenant_id=context.tenant_id,
         subject=subject,
         occurred_at=occurred_at,
+        created_at=created_at,
+        operation_id=operation_id,
+        not_before=not_before,
+        deadline=deadline,
         correlation_id=correlation_id,
         causation_id=causation_id,
         data_classification=data_classification,

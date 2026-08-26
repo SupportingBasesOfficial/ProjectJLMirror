@@ -44,6 +44,8 @@
     "new_message_id_for_ambiguous_republication",
     "outbox_dispatch_state_for_domain_fact_authority",
     "mutable_delivery_metadata_for_immutable_message_meaning",
+    "dispatch_time_for_authoritative_event_occurrence",
+    "job_command_without_durable_operation_identity",
     "recovery_missing_state_for_never_happened",
     "stale_worker_generation_for_current_effect_authority",
     "product_or_incident_behavior_invented_by_wave2_substrate"

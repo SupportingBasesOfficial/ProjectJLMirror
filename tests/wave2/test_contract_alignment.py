@@ -23,6 +23,14 @@ class Wave2ContractAlignmentTests(unittest.TestCase):
             "message_equivalence_evidence_mechanism",
             manifest["residual_c2_choices_not_selected"],
         )
+        self.assertIn(
+            "dispatch_time_for_authoritative_event_occurrence",
+            manifest["forbidden_correctness_substitutions"],
+        )
+        self.assertIn(
+            "job_command_without_durable_operation_identity",
+            manifest["forbidden_correctness_substitutions"],
+        )
 
     def test_sql_keeps_immutable_message_separate_from_dispatch_state(self) -> None:
         sql = (ROOT / "sql/wave2/001_async_correctness.sql").read_text(encoding="utf-8").lower()
@@ -42,6 +50,14 @@ class Wave2ContractAlignmentTests(unittest.TestCase):
         self.assertIn("reconciliation_required", sql)
         self.assertIn("async_cross_authority_operation", sql)
 
+    def test_sql_materializes_message_class_time_semantics(self) -> None:
+        sql = (ROOT / "sql/wave2/001_async_correctness.sql").read_text(encoding="utf-8").lower()
+        self.assertIn("occurred_at timestamptz null", sql)
+        self.assertIn("created_at timestamptz null", sql)
+        self.assertIn("message_class in ('domain_event', 'integration_event', 'realtime_projection')", sql)
+        self.assertIn("message_class in ('job_command', 'process_signal', 'outbound_webhook_delivery')", sql)
+        self.assertIn("message_class <> 'job_command' or operation_id is not null", sql)
+
     def test_sql_does_not_select_runtime_acl_mapping(self) -> None:
         lines = (ROOT / "sql/wave2/001_async_correctness.sql").read_text(encoding="utf-8").splitlines()
         executable_grants = [
@@ -52,6 +68,7 @@ class Wave2ContractAlignmentTests(unittest.TestCase):
         self.assertEqual(executable_grants, [])
 
     def test_phase10_owners_still_supply_core_invariants(self) -> None:
+        envelope = (ROOT / "docs/10-event-contracts/message-envelope-and-classes.md").read_text(encoding="utf-8")
         publication = (
             ROOT / "docs/10-event-contracts/publication-outbox-and-producer-authority.md"
         ).read_text(encoding="utf-8")
@@ -61,6 +78,9 @@ class Wave2ContractAlignmentTests(unittest.TestCase):
         security = (
             ROOT / "docs/10-event-contracts/security-tenant-context-and-data-classification.md"
         ).read_text(encoding="utf-8")
+        self.assertIn("Events use `occurred_at`", envelope)
+        self.assertIn("Jobs use `created_at`", envelope)
+        self.assertIn("durable operation identity", envelope)
         self.assertIn("same transaction as the mutation", publication)
         self.assertIn("retrying the same logical `message_id` is preferred", publication)
         self.assertIn("(consumer_contract, message_identity_scope, message_id)", inbox)
@@ -70,6 +90,16 @@ class Wave2ContractAlignmentTests(unittest.TestCase):
             "Human/session/membership authorization from message creation time does not persist automatically",
             security,
         )
+
+    def test_wave1_scope_compatibility_does_not_legalize_wave2_as_wave1(self) -> None:
+        scope = (ROOT / "tools/authority/wave1_scope.py").read_text(encoding="utf-8")
+        test = (ROOT / "tests/wave1/test_wave1_scope_guard.py").read_text(encoding="utf-8")
+        self.assertIn(
+            'ACCEPTED_WAVE1_SHA = "ff932cec10e3b7dcc13b050bb09d4a7efd634598"',
+            scope,
+        )
+        self.assertIn("implementation/wave-2/README.md", test)
+        self.assertIn("escapes authorized path set", test)
 
     def test_wave2_readme_records_product_clarification_boundary(self) -> None:
         readme = (ROOT / "implementation/wave-2/README.md").read_text(encoding="utf-8")

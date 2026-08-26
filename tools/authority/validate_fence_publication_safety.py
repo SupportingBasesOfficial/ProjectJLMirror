@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
 
@@ -16,6 +17,7 @@ PROFILE = "jlmirror-wave1-fence-logical-replication/v1"
 BOOTSTRAP_PATH = ROOT / "sql" / "wave1" / "001_platform_authority_fence.sql"
 REUSE_PATH = ROOT / "sql" / "wave1" / "002_revalidate_authority_fence_contract.sql"
 BOUNDARY_PATH = ROOT / "implementation" / "wave-1" / "FENCE_LOGICAL_REPLICATION_BOUNDARY.md"
+MANIFEST_PATH = ROOT / "implementation" / "wave-1" / "FENCE_LOGICAL_REPLICATION_MANIFEST.json"
 
 REQUIRED_LAWS = (
     "ACL CLEAN != LOGICAL REPLICATION DISCLOSURE ABSENT",
@@ -25,6 +27,38 @@ REQUIRED_LAWS = (
     "WAVE 1 REPLICATION PREFLIGHT != C2 DATABASE ROLE MAPPING",
     "STATIC PREFLIGHT PASS != FUTURE ADMINISTRATIVE AUTHORITY ABSENCE",
 )
+
+EXPECTED_MANIFEST = {
+    "profile": PROFILE,
+    "authority_scope": "platform.authority_fences",
+    "fresh_bootstrap_required_guards": [
+        "for_all_tables_publication_absent_before_first_persistent_create"
+    ],
+    "reuse_required_guards": [
+        "inbound_subscription_mapping_absent",
+        "explicit_publication_relation_absent",
+        "for_all_tables_publication_absent",
+        "schema_publication_absent_when_catalog_supported",
+    ],
+    "reuse_execution_boundary": {
+        "single_transaction": True,
+        "access_exclusive_before_preflight": True,
+        "publication_preflight_before_canonical_mutation": True,
+    },
+    "forbidden_substitutions": [
+        "acl_clean_for_logical_replication_disclosure_absent",
+        "inbound_replication_writer_absent_for_outbound_publication_absent",
+        "publication_catalog_snapshot_clean_for_concurrent_superuser_authority_absent",
+        "table_lock_held_for_database_admin_authority_revoked",
+    ],
+    "c2_database_admin_boundary": {
+        "concurrent_superuser_or_equivalent_admin_exclusion_selected": False,
+        "catalog_preflight_claims_permanent_admin_absence": False,
+        "requires_separate_reviewed_role_and_operational_mapping": True,
+    },
+    "product_feature_activation": "none",
+    "wave_2_authorized": False,
+}
 
 
 def _code(text: object, label: str) -> tuple[str, list[str]]:
@@ -140,6 +174,14 @@ def validate_boundary_text(text: object) -> list[str]:
     ]
 
 
+def validate_manifest_object(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return ["Wave 1 fence logical-replication manifest must be a JSON object"]
+    return [] if value == EXPECTED_MANIFEST else [
+        "Wave 1 fence logical-replication manifest drifted from the exact accepted implementation boundary"
+    ]
+
+
 def validate() -> list[str]:
     findings: list[str] = []
     try:
@@ -160,6 +202,12 @@ def validate() -> list[str]:
         findings.append(f"Wave 1 logical-replication boundary unreadable: {exc}")
     else:
         findings.extend(validate_boundary_text(boundary))
+    try:
+        manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        findings.append(f"Wave 1 logical-replication manifest unreadable: {exc}")
+    else:
+        findings.extend(validate_manifest_object(manifest))
     return findings
 
 

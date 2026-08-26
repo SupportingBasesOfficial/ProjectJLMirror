@@ -3,7 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
-from .model import ALLOWED_ENVIRONMENT_CLASSES, ArtifactIdentity, RELEASE_PRINCIPALS, ReleaseError, SourceTrustClass, ValidationScope
+from .model import (
+    ALLOWED_ENVIRONMENT_CLASSES,
+    CANONICAL_RUNTIME_PROFILES,
+    ArtifactIdentity,
+    RELEASE_PRINCIPALS,
+    ReleaseError,
+    SourceTrustClass,
+    ValidationScope,
+)
 
 _EVIDENCE_REFERENCE_RE = re.compile(r"^evidence:[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,190}$")
 _GIT_SOURCE_STATE_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
@@ -110,8 +118,11 @@ def validate_build_provenance(evidence: BuildProvenanceEvidence) -> None:
     require_immutable_evidence_reference(
         "declared_inputs_integrity_evidence_reference", evidence.declared_inputs_integrity_evidence_reference
     )
-    required = (evidence.provenance_profile, evidence.provenance_verifier_profile_and_version,
-                evidence.artifact_attestation_profile)
+    required = (
+        evidence.provenance_profile,
+        evidence.provenance_verifier_profile_and_version,
+        evidence.artifact_attestation_profile,
+    )
     if not all(required):
         raise ReleaseError("provenance/verifier/attestation profiles are required")
     for name, value in (
@@ -185,13 +196,26 @@ def require_promotion_authority(promotion: PromotionEvidence, provenance: BuildP
         raise ReleaseError("promotion policy differs from provenanced build policy")
     if promotion.artifact_identity != provenance.artifact.canonical:
         raise ReleaseError("promotion artifact differs from provenanced immutable artifact")
-    if not all((promotion.target_id, promotion.rollout_scope_id,
-                promotion.target_configuration_identity, promotion.target_configuration_generation,
-                promotion.target_configuration_semantic_profile,
-                promotion.schema_state, promotion.api_compatibility_family)):
+    if not all((
+        promotion.target_id,
+        promotion.rollout_scope_id,
+        promotion.target_configuration_identity,
+        promotion.target_configuration_generation,
+        promotion.target_configuration_semantic_profile,
+        promotion.schema_state,
+        promotion.api_compatibility_family,
+    )):
         raise ReleaseError("promotion requires exact target, configuration, compatibility and evidence lineage")
     if not promotion.runtime_profile_set or not promotion.event_compatibility_set:
         raise ReleaseError("promotion requires runtime and event compatibility sets")
+    if len(set(promotion.runtime_profile_set)) != len(promotion.runtime_profile_set):
+        raise ReleaseError("promotion runtime profile set cannot contain duplicates")
+    unknown_runtime_profiles = set(promotion.runtime_profile_set) - CANONICAL_RUNTIME_PROFILES
+    if unknown_runtime_profiles:
+        raise ReleaseError(
+            "promotion references unknown Phase 13 runtime profiles: "
+            + ",".join(sorted(unknown_runtime_profiles))
+        )
     if promotion.target_environment_class not in ALLOWED_ENVIRONMENT_CLASSES:
         raise ReleaseError("promotion target environment class is not canonical")
     if not promotion.validation_evidence_current or not promotion.compatibility_evidence_current:

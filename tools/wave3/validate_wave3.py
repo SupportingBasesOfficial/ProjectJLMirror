@@ -42,11 +42,19 @@ REQUIRED_FILES = (
 REQUIRED_OBSERVABILITY_LAWS = {
     "SEMANTIC CLASS != UNBOUNDED TENANT/RESOURCE IDENTIFIER",
     "OUTCOME TOKEN != ACCEPTED OUTCOME TAXONOMY",
+    "NO_APPLICABLE_CASE != FREE-TEXT ASSERTION",
+    "PRODUCT SELECTOR VALUE != PRODUCT AUTHORITY EVIDENCE",
 }
 REQUIRED_RELEASE_LAWS = {
     "PROMOTION EVIDENCE != INTERCHANGEABLE DEPLOYMENT EVIDENCE",
     "BOOLEAN CURRENT != EVIDENCE LINEAGE",
     "RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD",
+}
+REQUIRED_FORBIDDEN_SUBSTITUTIONS = {
+    "free_text_reason_for_observability_no_applicable_case",
+    "stale_or_wrong_scope_evidence_for_observability_no_applicable_case",
+    "raw_product_selector_string_or_boolean_for_product_authority",
+    "deployment_or_catalog_presence_for_product_applicability",
 }
 REQUIRED_CODE_TOKENS = {
     "src/jlmirror_observability/model.py": (
@@ -55,6 +63,21 @@ REQUIRED_CODE_TOKENS = {
         "CANONICAL_OUTCOME_CLASSES",
         "operation_class must be a bounded namespaced semantic class",
         "metric operation_class must equal the record's stable operation_class",
+    ),
+    "src/jlmirror_observability/policy.py": (
+        "class NoApplicableCaseEvidence",
+        "class ProductApplicabilityEvidence",
+        "evidence_reference",
+        "scope_binding",
+        "current",
+        "expected_selector_id",
+        "direct SLI NO_APPLICABLE_CASE requires evidence-backed disposition",
+    ),
+    "src/jlmirror_observability/catalog.py": (
+        "resolve_product_applicability(self, evidence",
+        "if evidence is None",
+        "OPEN-OBS-037",
+        "evidence.validate_for(expected_scope, expected_selector_id=self.product_selector)",
     ),
     "src/jlmirror_release/provenance.py": (
         "promotion_evidence_reference",
@@ -123,9 +146,11 @@ def validate() -> None:
     if not manifest.get("canonical_observability_laws") or not manifest.get("canonical_release_laws"):
         fail("Wave 3 canonical law sets cannot be empty")
     if not REQUIRED_OBSERVABILITY_LAWS.issubset(set(manifest.get("canonical_observability_laws", []))):
-        fail("Wave 3 manifest is missing bounded observability class laws")
+        fail("Wave 3 manifest is missing bounded/scoped observability laws")
     if not REQUIRED_RELEASE_LAWS.issubset(set(manifest.get("canonical_release_laws", []))):
         fail("Wave 3 manifest is missing release evidence-lineage laws")
+    if not REQUIRED_FORBIDDEN_SUBSTITUTIONS.issubset(set(manifest.get("forbidden_substitutions", []))):
+        fail("Wave 3 manifest is missing applicability anti-laundering substitutions")
     if not manifest.get("residual_c2_choices_not_selected"):
         fail("Wave 3 must preserve explicit residual C2 choices")
 

@@ -1,61 +1,47 @@
 import unittest
 
 from jlmirror_observability import (
-    HealthAssessment,
-    HealthState,
-    ObservationError,
-    ObservabilityBinding,
-    SignalFamily,
-    SignalRecord,
-    missing_health,
-    require_product_applicability,
+    EvidencePlane, HealthAssessment, HealthState, ObservationError, ObservabilityBinding,
+    SignalFamily, SignalRecord, missing_health, require_product_applicability,
 )
 
 
 class ObservabilityTests(unittest.TestCase):
     def test_signal_record_accepts_bounded_dimensions(self):
         rec = SignalRecord(
-            profile_id="obs.request.outcome@1",
-            family=SignalFamily.METRIC,
-            operation_class="api.read",
-            classification="internal",
+            profile_id="obs.request.outcome@1", family=SignalFamily.METRIC,
+            operation_class="api.read", classification="internal",
             tenant_scope_class="tenant_scoped_bounded",
             metric_dimensions={"outcome_class": "success", "operation_class": "api.read"},
             diagnostic_fields={"request_id": "r-1"},
         )
         self.assertEqual(rec.metric_dimensions["outcome_class"], "success")
+        self.assertEqual(rec.evidence_plane, EvidencePlane.OPERATIONAL_OBSERVABILITY)
+        self.assertFalse(rec.grants_authority)
 
     def test_request_id_cannot_be_metric_dimension(self):
         with self.assertRaises(ObservationError):
-            SignalRecord(
-                profile_id="obs.request.outcome@1",
-                family=SignalFamily.METRIC,
-                operation_class="api.read",
-                classification="internal",
-                tenant_scope_class="tenant_scoped_bounded",
-                metric_dimensions={"request_id": "r-1"},
-            )
+            SignalRecord("obs.request.outcome@1", SignalFamily.METRIC, "api.read", "internal", "bounded", {"request_id": "r-1"})
 
     def test_secret_bearing_field_is_rejected(self):
         with self.assertRaises(ObservationError):
-            SignalRecord(
-                profile_id="obs.request.outcome@1",
-                family=SignalFamily.LOG,
-                operation_class="api.read",
-                classification="internal",
-                tenant_scope_class="tenant_scoped_bounded",
-                diagnostic_fields={"refresh_token": "never"},
-            )
+            SignalRecord("obs.request.outcome@1", SignalFamily.LOG, "api.read", "internal", "bounded", diagnostic_fields={"refresh_token": "never"})
 
     def test_unknown_signal_profile_fails_closed(self):
         with self.assertRaises(ObservationError):
-            SignalRecord(
-                profile_id="obs.local-made-up@1",
-                family=SignalFamily.EVENT,
-                operation_class="x",
-                classification="internal",
-                tenant_scope_class="none",
-            )
+            SignalRecord("obs.local-made-up@1", SignalFamily.EVENT, "x", "internal", "none")
+
+    def test_wrong_signal_family_fails_closed(self):
+        with self.assertRaises(ObservationError):
+            SignalRecord("obs.security.authority-freshness@1", SignalFamily.TRACE, "security.currentness", "protected", "bounded")
+
+    def test_customer_acceptance_plane_is_not_operational_observability(self):
+        rec = SignalRecord("obs.telemetry.acceptance@1", SignalFamily.EVENT, "monitoring.accept", "internal", "tenant_scoped_bounded")
+        self.assertEqual(rec.evidence_plane, EvidencePlane.CUSTOMER_MONITORING)
+
+    def test_audit_responsibility_plane_is_distinct(self):
+        rec = SignalRecord("obs.audit.responsibility-health@1", SignalFamily.HEALTH, "audit.responsibility", "protected", "bounded")
+        self.assertEqual(rec.evidence_plane, EvidencePlane.AUDIT_RESPONSIBILITY)
 
     def test_missing_health_is_unknown(self):
         health = missing_health("health.observability-pipeline@1")
@@ -65,30 +51,15 @@ class ObservabilityTests(unittest.TestCase):
 
     def test_incomplete_health_cannot_be_green(self):
         with self.assertRaises(ObservationError):
-            HealthAssessment(
-                profile_id="health.cell@1",
-                state=HealthState.HEALTHY,
-                reason_class="missing_dependency_data",
-                evidence_complete=False,
-            )
+            HealthAssessment("health.cell@1", HealthState.HEALTHY, "missing_dependency_data", False)
 
     def test_health_never_grants_authority(self):
-        health = HealthAssessment(
-            profile_id="health.cell@1",
-            state=HealthState.HEALTHY,
-            reason_class="evidence_complete",
-            evidence_complete=True,
-        )
+        health = HealthAssessment("health.cell@1", HealthState.HEALTHY, "evidence_complete", True)
         self.assertFalse(health.grants_authority)
 
     def test_no_applicable_case_requires_reason(self):
         with self.assertRaises(ObservationError):
-            ObservabilityBinding(
-                health_profile_id="health.security-authority@1",
-                sli_profile_ids=("sli.api.outcome@1",),
-                alert_profile_ids=("alert.security-trust@1",),
-                direct_sli_applicable=False,
-            )
+            ObservabilityBinding("health.security-authority@1", ("sli.api.outcome@1",), ("alert.security-trust@1",), False)
 
     def test_unknown_product_applicability_fails_closed(self):
         with self.assertRaises(ObservationError):

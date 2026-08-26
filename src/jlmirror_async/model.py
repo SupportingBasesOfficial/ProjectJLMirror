@@ -283,7 +283,11 @@ class EffectResultLink:
 
 @dataclass(frozen=True)
 class CrossAuthorityOperationSnapshot:
-    """One coherent authority observation for a stable cross-authority operation."""
+    """One coherent authority observation for a stable cross-authority operation.
+
+    Reconciliation authority is attempt-generation bound. A revision/resolution
+    without the exact generation it reconciled is incomplete authority evidence.
+    """
 
     operation_id: str
     state: OperationState
@@ -291,6 +295,7 @@ class CrossAuthorityOperationSnapshot:
     outcome: EffectResultLink | None = None
     reconciliation_resolution: ReconciliationResolution | None = None
     reconciliation_revision: str | None = None
+    reconciliation_attempt_generation: int | None = None
 
     def __post_init__(self) -> None:
         identifier(self.operation_id, "operation_id")
@@ -308,8 +313,27 @@ class CrossAuthorityOperationSnapshot:
         ):
             raise ValueError("reconciliation_resolution must be canonical")
         optional_identifier(self.reconciliation_revision, "reconciliation_revision")
-        if (self.reconciliation_resolution is None) != (self.reconciliation_revision is None):
-            raise ValueError("reconciliation resolution and revision must be present together")
+        if self.reconciliation_attempt_generation is not None:
+            if (
+                isinstance(self.reconciliation_attempt_generation, bool)
+                or not isinstance(self.reconciliation_attempt_generation, int)
+                or self.reconciliation_attempt_generation < 1
+            ):
+                raise ValueError("reconciliation_attempt_generation must be a positive integer")
+        reconciliation_fields_present = (
+            self.reconciliation_resolution is not None,
+            self.reconciliation_revision is not None,
+            self.reconciliation_attempt_generation is not None,
+        )
+        if len(set(reconciliation_fields_present)) != 1:
+            raise ValueError(
+                "reconciliation resolution, revision and attempt generation must be present together"
+            )
+        if (
+            self.reconciliation_attempt_generation is not None
+            and self.reconciliation_attempt_generation != self.attempt_generation
+        ):
+            raise ValueError("reconciliation evidence must bind the current operation attempt generation")
         if self.state is OperationState.COMPLETED and self.outcome is None:
             raise ValueError("completed operation snapshot requires durable outcome")
         if self.state is not OperationState.COMPLETED and self.outcome is not None:

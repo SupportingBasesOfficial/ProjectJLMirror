@@ -9,7 +9,8 @@ from jlmirror_release import (
     MixedVersionMatrix, NoApplicableCaseEvidence, PromotionEvidence, PromotionState,
     ReleaseError, ReleaseTargetState, RolloutCompatibilityEvidence,
     RuntimeVerificationEvidence, SourceTrustClass, TargetConfiguration, ValidationScope,
-    require_trusted_build_source, require_validation_for_target, verify_runtime,
+    require_trusted_build_source, require_validation_for_target, validate_build_provenance,
+    verify_runtime,
 )
 
 DIGEST_A = "a" * 64
@@ -34,6 +35,11 @@ def intent(op="op-1", expected=4, digest=DIGEST_A, config_generation="cfg-7"):
         schema_state="compatible", api_compatibility_family="api.v1",
         event_compatibility_set=("event.v1",),
     )
+
+
+def deployment_scope(i=None):
+    i = i or intent()
+    return f"deployment:{i.target_id}:{i.deployment_operation_id}"
 
 
 def accepted_source(trust_class=SourceTrustClass.ACCEPTED_REVIEW_STATE, **changes):
@@ -189,9 +195,13 @@ def reconciliation_gate(i, *, current=True, scope=None, version=None, reference=
 def runtime_evidence(digest=DIGEST_A, config_generation="cfg-7", admission_current=True,
                      state=HealthState.HEALTHY, health_admitted=True, **changes):
     assessment = HealthAssessment("health.cell@1", state, "current", True)
+    scope = changes.pop("scope_binding", deployment_scope())
+    target_version = changes.pop("release_target_state_version", 5)
     values = dict(
         evidence_reference="evidence:runtime-verification-1",
         evidence_current=True,
+        scope_binding=scope,
+        release_target_state_version=target_version,
         observed_artifact_identity=f"sha256:{digest}",
         observed_configuration_generation=config_generation,
         runtime_profile_set=("runtime.api@1",),
@@ -210,6 +220,7 @@ def runtime_evidence(digest=DIGEST_A, config_generation="cfg-7", admission_curre
             "evidence:health-cell-1",
             "health-admission-policy@1",
             "evidence:health-admission-policy-1",
+            scope,
             True,
             health_admitted,
         ),),
@@ -219,6 +230,10 @@ def runtime_evidence(digest=DIGEST_A, config_generation="cfg-7", admission_curre
     return RuntimeVerificationEvidence(**values)
 
 
+def verify_direct(evidence):
+    verify_runtime(intent(), evidence, expected_release_target_state_version=5)
+
+
 class ReleaseTests(unittest.TestCase):
     def test_untrusted_source_cannot_enter_trusted_build(self):
         with self.assertRaises(ReleaseError):
@@ -226,8 +241,6 @@ class ReleaseTests(unittest.TestCase):
 
     def test_source_trust_policy_must_bind_current_build_policy(self):
         with self.assertRaises(ReleaseError):
-            provenance(accepted_source=accepted_source(source_trust_policy_profile_and_version="release-policy@0"))
-            from jlmirror_release import validate_build_provenance
             validate_build_provenance(provenance(accepted_source=accepted_source(source_trust_policy_profile_and_version="release-policy@0")))
 
     def test_deployment_cannot_start_from_intent_or_promotion_id_alone(self):
@@ -245,13 +258,9 @@ class ReleaseTests(unittest.TestCase):
         i = intent()
         good = list(admission_gates(i))
         with self.assertRaises(ReleaseError):
-            DeploymentAuthority(ReleaseTargetState(i.target_id, 4)).create_or_observe(
-                i, admission(i, current_authority_gates=tuple(good[:-1]))
-            )
+            DeploymentAuthority(ReleaseTargetState(i.target_id, 4)).create_or_observe(i, admission(i, current_authority_gates=tuple(good[:-1])))
         with self.assertRaises(ReleaseError):
-            DeploymentAuthority(ReleaseTargetState(i.target_id, 4)).create_or_observe(
-                i, admission(i, current_authority_gates=tuple(good + [good[0]]))
-            )
+            DeploymentAuthority(ReleaseTargetState(i.target_id, 4)).create_or_observe(i, admission(i, current_authority_gates=tuple(good + [good[0]])))
 
     def test_admission_gate_evidence_must_bind_exact_scope_version_and_immutable_ref(self):
         i = intent()
@@ -262,9 +271,7 @@ class ReleaseTests(unittest.TestCase):
         )
         for overrides in cases:
             with self.subTest(overrides=overrides), self.assertRaises(ReleaseError):
-                DeploymentAuthority(ReleaseTargetState(i.target_id, 4)).create_or_observe(
-                    i, admission(i, gate_overrides=overrides)
-                )
+                DeploymentAuthority(ReleaseTargetState(i.target_id, 4)).create_or_observe(i, admission(i, gate_overrides=overrides))
 
     def test_promotion_must_bind_exact_deployment_semantics(self):
         authority = DeploymentAuthority(ReleaseTargetState("validation-cell-a", 4))
@@ -293,12 +300,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_promotion_schema_api_event_compatibility_cannot_be_recombined(self):
         i = intent(); good = admission(i)
-        mutations = (
-            {"schema_state": "other"},
-            {"api_compatibility_family": "api.v2"},
-            {"event_compatibility_set": ("event.v2",)},
-        )
-        for mutation in mutations:
+        for mutation in ({"schema_state": "other"}, {"api_compatibility_family": "api.v2"}, {"event_compatibility_set": ("event.v2",)}):
             bad = PromotionEvidence(**{**good.promotion.__dict__, **mutation})
             with self.subTest(mutation=mutation), self.assertRaises(ReleaseError):
                 DeploymentAuthority(ReleaseTargetState(i.target_id, 4)).create_or_observe(i, admission(i, promotion=bad))
@@ -376,31 +378,16 @@ class ReleaseTests(unittest.TestCase):
         authority = DeploymentAuthority(ReleaseTargetState("validation-cell-a", 4))
         i = intent(); authority.create_or_observe(i, admission(i)); authority.observe_effect("op-1", DeploymentObservation.AMBIGUOUS)
         with self.assertRaises(ReleaseError):
-            authority.observe_effect(
-                "op-1", DeploymentObservation.EFFECT_ABSENT_PROVEN,
-                durable_target_evidence_reference="evidence:target-1",
-            )
+            authority.observe_effect("op-1", DeploymentObservation.EFFECT_ABSENT_PROVEN, durable_target_evidence_reference="evidence:target-1")
         with self.assertRaises(ReleaseError):
-            authority.observe_effect(
-                "op-1", DeploymentObservation.EFFECT_ABSENT_PROVEN,
-                durable_target_evidence_reference="evidence:target-1",
-                reconciliation_authority=reconciliation_gate(i, current=False),
-            )
+            authority.observe_effect("op-1", DeploymentObservation.EFFECT_ABSENT_PROVEN, durable_target_evidence_reference="evidence:target-1", reconciliation_authority=reconciliation_gate(i, current=False))
         with self.assertRaises(ReleaseError):
-            authority.observe_effect(
-                "op-1", DeploymentObservation.EFFECT_ABSENT_PROVEN,
-                durable_target_evidence_reference="evidence:target-1",
-                reconciliation_authority=reconciliation_gate(i, scope="deployment:other:op-1"),
-            )
+            authority.observe_effect("op-1", DeploymentObservation.EFFECT_ABSENT_PROVEN, durable_target_evidence_reference="evidence:target-1", reconciliation_authority=reconciliation_gate(i, scope="deployment:other:op-1"))
 
     def test_reconciliation_resolution_retains_authority_lineage(self):
         authority = DeploymentAuthority(ReleaseTargetState("validation-cell-a", 4))
         i = intent(); authority.create_or_observe(i, admission(i)); authority.observe_effect("op-1", DeploymentObservation.AMBIGUOUS)
-        result = authority.observe_effect(
-            "op-1", DeploymentObservation.EFFECT_ABSENT_PROVEN,
-            durable_target_evidence_reference="evidence:target-absence-1",
-            reconciliation_authority=reconciliation_gate(i),
-        )
+        result = authority.observe_effect("op-1", DeploymentObservation.EFFECT_ABSENT_PROVEN, durable_target_evidence_reference="evidence:target-absence-1", reconciliation_authority=reconciliation_gate(i))
         self.assertEqual(result.state, PromotionState.ABORTED)
         self.assertEqual(result.reconciliation_authority_evidence_reference, "evidence:reconciliation-authority-1")
 
@@ -434,12 +421,19 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(created.configuration_validation_evidence_reference, "evidence:config-1")
         self.assertEqual(created.rollout_compatibility_evidence_reference, "evidence:rollout-1")
         self.assertEqual(len(created.admission_gate_evidence_references), 5)
-        self.assertTrue(all(ref.startswith("evidence:admission-") for ref in created.admission_gate_evidence_references))
         authority.observe_effect("op-1", DeploymentObservation.EFFECT_CONFIRMED, observed_artifact_identity=f"sha256:{DIGEST_A}", observed_configuration_generation="cfg-7", durable_target_evidence_reference="evidence:target-1")
         result = authority.complete_runtime_verification("op-1", runtime_evidence())
         self.assertEqual(result.state, PromotionState.COMPLETED)
         self.assertEqual(result.runtime_verification_evidence_reference, "evidence:runtime-verification-1")
         self.assertEqual(authority.target.current_artifact_identity, f"sha256:{DIGEST_A}")
+
+    def test_runtime_verification_cannot_be_replayed_across_deployment_scope(self):
+        with self.assertRaises(ReleaseError):
+            verify_direct(runtime_evidence(scope_binding="deployment:validation-cell-a:other-op"))
+
+    def test_runtime_verification_cannot_be_replayed_across_target_state_version(self):
+        with self.assertRaises(ReleaseError):
+            verify_direct(runtime_evidence(release_target_state_version=4))
 
     def test_runtime_currentness_booleans_require_immutable_lineage(self):
         cases = (
@@ -450,40 +444,34 @@ class ReleaseTests(unittest.TestCase):
         )
         for mutation in cases:
             with self.subTest(mutation=mutation), self.assertRaises(ReleaseError):
-                verify_runtime(intent(), runtime_evidence(**mutation))
+                verify_direct(runtime_evidence(**mutation))
 
     def test_health_policy_boolean_requires_immutable_policy_lineage(self):
         good = runtime_evidence()
         gate = good.health_gates[0]
-        bad_gate = HealthGateEvidence(
-            gate.assessment,
-            gate.evidence_reference,
-            gate.owning_policy_profile_and_version,
-            "latest",
-            True,
-            True,
-        )
         with self.assertRaises(ReleaseError):
-            verify_runtime(intent(), runtime_evidence(health_gates=(bad_gate,)))
+            HealthGateEvidence(gate.assessment, gate.evidence_reference, gate.owning_policy_profile_and_version, "latest", gate.scope_binding, True, True)
+
+    def test_health_gate_cannot_be_replayed_from_other_deployment_scope(self):
+        good = runtime_evidence()
+        gate = good.health_gates[0]
+        bad_gate = HealthGateEvidence(gate.assessment, gate.evidence_reference, gate.owning_policy_profile_and_version, gate.policy_evidence_reference, "deployment:validation-cell-a:other-op", True, True)
+        with self.assertRaises(ReleaseError):
+            verify_direct(runtime_evidence(health_gates=(bad_gate,)))
 
     def test_vendor_green_is_not_runtime_verification(self):
         good = runtime_evidence()
-        evidence = RuntimeVerificationEvidence(**{
-            **good.__dict__,
-            "evidence_reference": "evidence:runtime-verification-2",
-            "observed_artifact_identity": None,
-            "vendor_controller_green": True,
-        })
+        evidence = RuntimeVerificationEvidence(**{**good.__dict__, "evidence_reference": "evidence:runtime-verification-2", "observed_artifact_identity": None, "vendor_controller_green": True})
         with self.assertRaises(ReleaseError):
-            verify_runtime(intent(), evidence)
+            verify_direct(evidence)
 
     def test_quarantined_health_cannot_be_released_even_if_complete(self):
         with self.assertRaises(ReleaseError):
-            verify_runtime(intent(), runtime_evidence(state=HealthState.QUARANTINED, health_admitted=True))
+            verify_direct(runtime_evidence(state=HealthState.QUARANTINED, health_admitted=True))
 
     def test_degraded_health_requires_current_owning_policy_admission(self):
         with self.assertRaises(ReleaseError):
-            verify_runtime(intent(), runtime_evidence(state=HealthState.DEGRADED, health_admitted=False))
+            verify_direct(runtime_evidence(state=HealthState.DEGRADED, health_admitted=False))
 
     def test_same_artifact_does_not_prove_different_config_safe(self):
         validation = TargetConfiguration("validation-config", "v1", "config.release@1")

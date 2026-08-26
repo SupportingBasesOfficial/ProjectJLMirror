@@ -42,6 +42,8 @@ class _Operation:
     execution_admission: AsyncExecutionAdmission | None = None
     outcome: EffectResultLink | None = None
     ambiguity_reason: str | None = None
+    reconciliation_revision: str | None = None
+    reconciliation_resolution: ReconciliationResolution | None = None
 
 
 class InMemoryCrossAuthorityOperationLedger:
@@ -49,8 +51,9 @@ class InMemoryCrossAuthorityOperationLedger:
 
     A timeout/lost response or executor-lease expiry cannot be interpreted as
     effect absence. Another attempt becomes eligible only after an accepted
-    reconciliation proves absence. Every new attempt also requires a fresh,
-    revision-bound current execution admission for its exact operation scope.
+    reconciliation proves absence and leaves a durable revision/resolution link.
+    Every new attempt also requires a fresh, revision-bound current execution
+    admission for its exact operation scope.
     """
 
     def __init__(self) -> None:
@@ -142,6 +145,8 @@ class InMemoryCrossAuthorityOperationLedger:
             operation.attempt_expires_at = None
             operation.execution_admission = None
             operation.ambiguity_reason = "attempt_lease_expired_effect_absence_unproven"
+            operation.reconciliation_revision = None
+            operation.reconciliation_resolution = None
             return True
 
     def complete(
@@ -178,6 +183,8 @@ class InMemoryCrossAuthorityOperationLedger:
             operation.attempt_expires_at = None
             operation.execution_admission = None
             operation.ambiguity_reason = reason
+            operation.reconciliation_revision = None
+            operation.reconciliation_resolution = None
 
     def fail_terminal(
         self,
@@ -201,16 +208,22 @@ class InMemoryCrossAuthorityOperationLedger:
         operation_id: str,
         resolution: ReconciliationResolution,
         *,
+        reconciliation_revision: str,
         confirmed_outcome: EffectResultLink | None = None,
     ) -> OperationState:
         if not isinstance(resolution, ReconciliationResolution):
             raise ValueError("resolution must be canonical")
+        identifier(reconciliation_revision, "reconciliation_revision")
         with self._lock:
             operation = self._require(operation_id)
             if operation.state is not OperationState.RECONCILIATION_REQUIRED:
                 raise InvalidTransition("only ambiguous operation can be reconciled")
 
+            operation.reconciliation_revision = reconciliation_revision
+            operation.reconciliation_resolution = resolution
             if resolution is ReconciliationResolution.STILL_UNKNOWN:
+                if confirmed_outcome is not None:
+                    raise ValueError("still-unknown reconciliation cannot carry confirmed outcome")
                 return operation.state
             if resolution is ReconciliationResolution.EFFECT_CONFIRMED:
                 if not isinstance(confirmed_outcome, EffectResultLink):
@@ -222,6 +235,7 @@ class InMemoryCrossAuthorityOperationLedger:
             if confirmed_outcome is not None:
                 raise ValueError("proven-absent resolution cannot carry confirmed outcome")
             operation.state = OperationState.PREPARED
+            operation.outcome = None
             operation.ambiguity_reason = None
             return operation.state
 
@@ -236,6 +250,17 @@ class InMemoryCrossAuthorityOperationLedger:
     def execution_admission(self, operation_id: str) -> AsyncExecutionAdmission | None:
         with self._lock:
             return self._require(operation_id).execution_admission
+
+    def reconciliation_resolution(
+        self,
+        operation_id: str,
+    ) -> ReconciliationResolution | None:
+        with self._lock:
+            return self._require(operation_id).reconciliation_resolution
+
+    def reconciliation_revision(self, operation_id: str) -> str | None:
+        with self._lock:
+            return self._require(operation_id).reconciliation_revision
 
     def _require(self, operation_id: str) -> _Operation:
         identifier(operation_id, "operation_id")
@@ -259,6 +284,8 @@ class InMemoryCrossAuthorityOperationLedger:
                 operation.attempt_expires_at = None
                 operation.execution_admission = None
                 operation.ambiguity_reason = "attempt_lease_expired_effect_absence_unproven"
+                operation.reconciliation_revision = None
+                operation.reconciliation_resolution = None
         if (
             operation.state is not OperationState.ATTEMPTING
             or operation.executor_id != attempt.executor_id

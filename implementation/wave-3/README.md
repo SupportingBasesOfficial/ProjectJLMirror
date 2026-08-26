@@ -23,6 +23,9 @@ Release records may control release-specific progression, but:
 UNTRUSTED SOURCE != TRUSTED RELEASE INPUT
 BUILD SUCCESS != ARTIFACT TRUST
 ARTIFACT EXISTS != PROMOTION AUTHORITY
+PROMOTION EVIDENCE != INTERCHANGEABLE DEPLOYMENT EVIDENCE
+BOOLEAN CURRENT != EVIDENCE LINEAGE
+RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD
 DEPLOYMENT SUCCESS != RUNTIME ADMISSION
 RELEASE TARGET STATE != PLACEMENT/RUNTIME AUTHORITY
 TIMEOUT/LOST RESPONSE != RELEASE EFFECT ABSENCE
@@ -45,12 +48,16 @@ No backend, collector, trace transport, dashboard, pager, sampling numeric, SLO 
 - cryptographic immutable artifact identity distinct from mutable tags/locations;
 - accepted vs untrusted source trust classes;
 - exact target configuration identity/generation/semantic profile;
+- promotion records bind durable promotion/approval evidence plus exact target, validation scope, rollout scope, runtime profile set, schema/API/event compatibility state and validation/compatibility evidence identities;
+- deployment admission rejects recombination of a promotion with different configuration-validation, rollout-compatibility or cell-compatibility evidence;
+- configuration validation and rollout compatibility require current durable evidence references even when the target configuration happens to equal the validation configuration;
 - stable `deployment_operation_id` create-or-observe semantics;
 - `expected_release_target_state_version` stale-executor fencing;
 - unresolved prior effectful operation blocks a fresh operation identity;
 - missing/ambiguous effect observation moves to `reconciliation_required`;
-- effect confirmation requires exact observed artifact identity and configuration;
-- runtime verification independently requires current runtime admission and Phase 12 health evidence; vendor/controller green is ignored as authority;
+- effect confirmation/absence resolution requires durable target evidence and the deployment record retains that evidence lineage;
+- runtime verification independently requires current durable verification evidence, current runtime admission and Phase 12 health evidence; vendor/controller green is ignored as authority;
+- completed deployment records retain runtime-verification evidence identity;
 - validation evidence for a different target configuration requires explicit semantic equivalence or target-specific validation;
 - production secret-value copying cannot be used as configuration equivalence proof.
 

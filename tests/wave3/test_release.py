@@ -205,6 +205,12 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaises(ReleaseError):
             require_validation_for_target(ConfigurationValidationEvidence(i.configuration, i.configuration, i.validation_scope, "", False))
 
+    def test_mutable_or_url_like_evidence_alias_is_rejected(self):
+        i = intent()
+        for reference in ("latest", "https://evidence.example/current", "target-evidence-1"):
+            with self.subTest(reference=reference), self.assertRaises(ReleaseError):
+                require_validation_for_target(ConfigurationValidationEvidence(i.configuration, i.configuration, i.validation_scope, reference, True))
+
     def test_create_or_observe_same_semantics(self):
         authority = DeploymentAuthority(ReleaseTargetState("validation-cell-a", 4))
         i = intent()
@@ -255,7 +261,7 @@ class ReleaseTests(unittest.TestCase):
         authority = DeploymentAuthority(ReleaseTargetState("validation-cell-a", 4))
         i = intent(); authority.create_or_observe(i, admission(i)); authority.observe_effect("op-1", DeploymentObservation.AMBIGUOUS)
         with self.assertRaises(ReleaseError):
-            authority.observe_effect("op-1", DeploymentObservation.EFFECT_ABSENT_PROVEN, durable_target_evidence_reference="target-evidence-1", reconciliation_authority_current=False)
+            authority.observe_effect("op-1", DeploymentObservation.EFFECT_ABSENT_PROVEN, durable_target_evidence_reference="evidence:target-1", reconciliation_authority_current=False)
 
     def test_effect_confirmation_requires_durable_target_evidence(self):
         authority = DeploymentAuthority(ReleaseTargetState("validation-cell-a", 4))
@@ -266,9 +272,9 @@ class ReleaseTests(unittest.TestCase):
     def test_effect_confirmation_enters_runtime_verification_and_retains_evidence(self):
         authority = DeploymentAuthority(ReleaseTargetState("validation-cell-a", 4))
         i = intent(); authority.create_or_observe(i, admission(i))
-        result = authority.observe_effect("op-1", DeploymentObservation.EFFECT_CONFIRMED, observed_artifact_identity=f"sha256:{DIGEST_A}", observed_configuration_generation="cfg-7", durable_target_evidence_reference="target-evidence-1")
+        result = authority.observe_effect("op-1", DeploymentObservation.EFFECT_CONFIRMED, observed_artifact_identity=f"sha256:{DIGEST_A}", observed_configuration_generation="cfg-7", durable_target_evidence_reference="evidence:target-1")
         self.assertEqual(result.state, PromotionState.RUNTIME_VERIFICATION)
-        self.assertEqual(result.durable_target_evidence_reference, "target-evidence-1")
+        self.assertEqual(result.durable_target_evidence_reference, "evidence:target-1")
         self.assertEqual(result.observed_artifact_identity, f"sha256:{DIGEST_A}")
         self.assertEqual(authority.target.release_target_state_version, 5)
         self.assertIsNone(authority.target.current_artifact_identity)
@@ -276,9 +282,9 @@ class ReleaseTests(unittest.TestCase):
     def test_absence_resolution_retains_target_evidence(self):
         authority = DeploymentAuthority(ReleaseTargetState("validation-cell-a", 4))
         i = intent(); authority.create_or_observe(i, admission(i))
-        result = authority.observe_effect("op-1", DeploymentObservation.EFFECT_ABSENT_PROVEN, durable_target_evidence_reference="target-absence-1")
+        result = authority.observe_effect("op-1", DeploymentObservation.EFFECT_ABSENT_PROVEN, durable_target_evidence_reference="evidence:target-absence-1")
         self.assertEqual(result.state, PromotionState.ABORTED)
-        self.assertEqual(result.durable_target_evidence_reference, "target-absence-1")
+        self.assertEqual(result.durable_target_evidence_reference, "evidence:target-absence-1")
 
     def test_runtime_verification_completion_retains_lineage(self):
         authority = DeploymentAuthority(ReleaseTargetState("validation-cell-a", 4))
@@ -286,7 +292,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(created.promotion_evidence_reference, "evidence:promotion-1")
         self.assertEqual(created.configuration_validation_evidence_reference, "evidence:config-1")
         self.assertEqual(created.rollout_compatibility_evidence_reference, "evidence:rollout-1")
-        authority.observe_effect("op-1", DeploymentObservation.EFFECT_CONFIRMED, observed_artifact_identity=f"sha256:{DIGEST_A}", observed_configuration_generation="cfg-7", durable_target_evidence_reference="target-evidence-1")
+        authority.observe_effect("op-1", DeploymentObservation.EFFECT_CONFIRMED, observed_artifact_identity=f"sha256:{DIGEST_A}", observed_configuration_generation="cfg-7", durable_target_evidence_reference="evidence:target-1")
         result = authority.complete_runtime_verification("op-1", runtime_evidence())
         self.assertEqual(result.state, PromotionState.COMPLETED)
         self.assertEqual(result.runtime_verification_evidence_reference, "evidence:runtime-verification-1")

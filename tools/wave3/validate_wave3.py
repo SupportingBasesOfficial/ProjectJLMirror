@@ -39,12 +39,23 @@ REQUIRED_FILES = (
     "implementation/wave-3/IMPLEMENTATION_MANIFEST.json",
     "implementation/wave-3/source-registry.json",
 )
+REQUIRED_OBSERVABILITY_LAWS = {
+    "SEMANTIC CLASS != UNBOUNDED TENANT/RESOURCE IDENTIFIER",
+    "OUTCOME TOKEN != ACCEPTED OUTCOME TAXONOMY",
+}
 REQUIRED_RELEASE_LAWS = {
     "PROMOTION EVIDENCE != INTERCHANGEABLE DEPLOYMENT EVIDENCE",
     "BOOLEAN CURRENT != EVIDENCE LINEAGE",
     "RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD",
 }
-REQUIRED_LINEAGE_TOKENS = {
+REQUIRED_CODE_TOKENS = {
+    "src/jlmirror_observability/model.py": (
+        "ALLOWED_SIGNAL_CLASSIFICATIONS",
+        "ALLOWED_TENANT_SCOPE_CLASSES",
+        "CANONICAL_OUTCOME_CLASSES",
+        "operation_class must be a bounded namespaced semantic class",
+        "metric operation_class must equal the record's stable operation_class",
+    ),
     "src/jlmirror_release/provenance.py": (
         "promotion_evidence_reference",
         "configuration_validation_evidence_reference",
@@ -111,16 +122,18 @@ def validate() -> None:
         fail("Wave 4 cannot be authorized by Wave 3 implementation metadata")
     if not manifest.get("canonical_observability_laws") or not manifest.get("canonical_release_laws"):
         fail("Wave 3 canonical law sets cannot be empty")
+    if not REQUIRED_OBSERVABILITY_LAWS.issubset(set(manifest.get("canonical_observability_laws", []))):
+        fail("Wave 3 manifest is missing bounded observability class laws")
     if not REQUIRED_RELEASE_LAWS.issubset(set(manifest.get("canonical_release_laws", []))):
         fail("Wave 3 manifest is missing release evidence-lineage laws")
     if not manifest.get("residual_c2_choices_not_selected"):
         fail("Wave 3 must preserve explicit residual C2 choices")
 
-    for relative, tokens in REQUIRED_LINEAGE_TOKENS.items():
+    for relative, tokens in REQUIRED_CODE_TOKENS.items():
         text = (ROOT / relative).read_text(encoding="utf-8")
         for token in tokens:
             if token not in text:
-                fail(f"release evidence-lineage invariant missing from {relative}: {token}")
+                fail(f"Wave 3 invariant missing from {relative}: {token}")
 
     registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
     if set(registry) != {"accepted_authority_base", "sources"}:

@@ -51,6 +51,8 @@ class CellCompatibilityEvidence:
 
 @dataclass(frozen=True)
 class RolloutCompatibilityEvidence:
+    evidence_reference: str
+    evidence_current: bool
     release_scope_id: str
     mixed_version: MixedVersionMatrix
     validation_scope: ValidationScope
@@ -61,6 +63,8 @@ class RolloutCompatibilityEvidence:
 
 
 def require_rollout_compatibility(evidence: RolloutCompatibilityEvidence) -> None:
+    if not evidence.evidence_reference or not evidence.evidence_current:
+        raise ReleaseError("rollout compatibility requires a current durable evidence reference")
     if not evidence.release_scope_id:
         raise ReleaseError("rollout compatibility requires an exact release scope")
     if not evidence.mixed_version.all_supported:

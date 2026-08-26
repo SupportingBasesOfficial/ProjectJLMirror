@@ -36,11 +36,15 @@ EXPECTED_FORBIDDEN = [
     "read_then_insert_for_inbox_admission",
     "message_id_without_trusted_identity_scope_for_duplicate_safety",
     "same_scoped_id_without_equivalence_proof_for_benign_duplicate",
+    "same_canonical_inbox_key_with_conflicting_trusted_tenant_binding_for_benign_duplicate",
     "missing_equivalence_evidence_for_duplicate_success",
     "payload_tenant_for_trusted_tenant_scope",
     "queue_or_topic_name_for_consumer_contract_identity",
     "queue_or_topic_cell_name_for_current_tenant_placement",
     "request_time_human_authorization_for_delayed_execution_authority",
+    "stale_or_missing_current_execution_admission_for_effect_authority",
+    "lease_expiry_for_effect_absence",
+    "expired_inbox_or_external_effect_claim_for_automatic_retry_eligibility",
     "broker_redelivery_for_external_effect_retry_authority",
     "timeout_for_external_effect_absence",
     "new_message_id_for_ambiguous_republication",
@@ -48,6 +52,7 @@ EXPECTED_FORBIDDEN = [
     "mutable_delivery_metadata_for_immutable_message_meaning",
     "dispatch_time_for_authoritative_event_occurrence",
     "job_command_without_durable_operation_identity",
+    "preexisting_same_name_correctness_table_for_schema_conformance",
     "recovery_missing_state_for_never_happened",
     "stale_worker_generation_for_current_effect_authority",
     "product_or_incident_behavior_invented_by_wave2_substrate",
@@ -66,6 +71,9 @@ EXPECTED_MANIFEST = {
     ],
     "fixed_delivery_semantics": "at_least_once",
     "fixed_inbox_identity": "(consumer_contract,message_identity_scope,message_id)",
+    "fixed_execution_admission": "revision_bound_current_authority_before_each_protected_effect_attempt",
+    "fixed_lease_loss_semantics": "lease_expiry_never_proves_effect_absence",
+    "durable_schema_reuse_policy": "preexisting_wave2_correctness_object_requires_reviewed_revalidation_not_if_not_exists_acceptance",
     "residual_c2_choices_not_selected": EXPECTED_C2,
     "forbidden_correctness_substitutions": EXPECTED_FORBIDDEN,
     "next_wave_authorized": False,
@@ -79,12 +87,15 @@ ALLOWED_DELTA_PREFIXES = (
 )
 ALLOWED_DELTA_EXACT = {
     ".github/workflows/deterministic-assurance.yml",
-    # Narrow cross-wave assurance compatibility maintenance only. These files
-    # still enforce the original Wave 1 path set; they merely pin the default
-    # historical proof to the accepted Wave 1 squash instead of future HEAD.
     "tools/authority/wave1_scope.py",
     "tests/wave1/test_wave1_scope_guard.py",
 }
+CRITICAL_TABLES = (
+    "system.async_outbox_message",
+    "system.async_outbox_dispatch",
+    "system.async_consumer_inbox",
+    "system.async_cross_authority_operation",
+)
 
 
 def _manifest_findings() -> list[str]:
@@ -112,6 +123,7 @@ def _source_authority_findings() -> list[str]:
     owners = {
         "envelope": ROOT / "docs/10-event-contracts/message-envelope-and-classes.md",
         "publication": ROOT / "docs/10-event-contracts/publication-outbox-and-producer-authority.md",
+        "delivery": ROOT / "docs/10-event-contracts/delivery-ack-retry-and-quarantine.md",
         "inbox": ROOT / "docs/10-event-contracts/consumer-inbox-idempotency-and-effects.md",
         "security": ROOT / "docs/10-event-contracts/security-tenant-context-and-data-classification.md",
         "reliability": ROOT / "docs/11-reliability-resilience/08-reliability-semantic-manifest.md",
@@ -122,10 +134,12 @@ def _source_authority_findings() -> list[str]:
     requirements = (
         ("envelope", "Events use `occurred_at`"),
         ("envelope", "Jobs use `created_at`"),
-        ("envelope", "A `job_command` means \"attempt this accepted work under this durable operation identity\""),
         ("envelope", "operation_id"),
         ("publication", "same transaction as the mutation"),
+        ("publication", "claim/lease/locking semantics"),
         ("publication", "retrying the same logical `message_id` is preferred"),
+        ("delivery", "worker lease expiry is not effect absence proof"),
+        ("delivery", "lease timeout while original executor may still be active"),
         ("inbox", "(consumer_contract, message_identity_scope, message_id)"),
         ("inbox", "A read-then-insert race is prohibited"),
         ("inbox", "reconciliation_required"),
@@ -165,24 +179,56 @@ def _stdlib_boundary_findings() -> list[str]:
     return findings
 
 
+def _execution_boundary_findings() -> list[str]:
+    execution = (ROOT / "src/jlmirror_async/execution.py").read_text(encoding="utf-8")
+    inbox = (ROOT / "src/jlmirror_async/inbox.py").read_text(encoding="utf-8")
+    reconciliation = (ROOT / "src/jlmirror_async/reconciliation.py").read_text(encoding="utf-8")
+    required = (
+        (execution, "class CurrentAsyncExecutionAuthorityPort"),
+        (execution, "def require_current_execution("),
+        (execution, "runtime.api@1"),
+        (execution, "runtime.worker@1"),
+        (inbox, "require_current_execution(execution_authority, request)"),
+        (inbox, "processing_lease_expired_effect_absence_unproven"),
+        (inbox, "same_scoped_identity_conflicting_trusted_binding"),
+        (reconciliation, "require_current_execution(execution_authority, request)"),
+        (reconciliation, "attempt_lease_expired_effect_absence_unproven"),
+    )
+    return [f"Wave 2 current-execution boundary missing: {anchor}" for text, anchor in required if anchor not in text]
+
+
 def _sql_findings() -> list[str]:
     path = ROOT / "sql/wave2/001_async_correctness.sql"
     text = path.read_text(encoding="utf-8")
     lowered = text.lower()
     required = (
-        "create table if not exists system.async_outbox_message",
+        "create table system.async_outbox_message",
         "unique (producer_message_scope, message_id)",
-        "occurred_at timestamptz null",
-        "created_at timestamptz null",
-        "message_class <> 'job_command' or operation_id is not null",
-        "create table if not exists system.async_outbox_dispatch",
-        "create table if not exists system.async_consumer_inbox",
+        "create table system.async_outbox_dispatch",
+        "claim_expires_at timestamptz null",
+        "create function system.wave2_initialize_outbox_dispatch()",
+        "after insert on system.async_outbox_message",
+        "insert into system.async_outbox_dispatch(outbox_record_id)",
+        "create table system.async_consumer_inbox",
         "primary key (consumer_contract, message_identity_scope, message_id)",
-        "create table if not exists system.async_cross_authority_operation",
+        "create table system.async_cross_authority_operation",
+        "attempt_expires_at timestamptz null",
+        "execution_admission_revision text null",
+        "execution_authorization_revision text null",
+        "execution_principal_credential_generation text null",
+        "execution_runtime_profile_id text null",
+        "execution_runtime_generation text null",
+        "execution_environment_class text null",
+        "execution_placement_version text null",
+        "execution_fence_scope_id text null",
+        "execution_fence_epoch bigint null",
         "security invoker",
         "no grant statements are intentionally present",
     )
     findings = [f"Wave 2 SQL missing contract anchor: {item}" for item in required if item not in lowered]
+    for table in CRITICAL_TABLES:
+        if f"create table if not exists {table}" in lowered:
+            findings.append(f"Wave 2 SQL silently reuses critical correctness table: {table}")
     executable_grants = [
         line.strip()
         for line in text.splitlines()
@@ -264,6 +310,7 @@ def validate() -> list[str]:
         _state_findings,
         _source_authority_findings,
         _stdlib_boundary_findings,
+        _execution_boundary_findings,
         _sql_findings,
         _wave1_compatibility_maintenance_findings,
         _git_scope_findings,

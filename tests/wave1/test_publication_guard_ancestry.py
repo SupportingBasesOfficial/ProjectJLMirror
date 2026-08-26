@@ -85,6 +85,34 @@ class PublicationGuardAncestryTests(unittest.TestCase):
         findings = validate_bootstrap_ancestry(mutated)
         self.assertTrue(any("EXCEPTION handler" in finding for finding in findings), findings)
 
+    def test_reuse_nested_return_bypass_is_rejected_at_any_control_depth(self):
+        marker = "    -- Inbound logical replication is an external writer authority."
+        bypass = "    IF true THEN\n        RETURN;\n    END IF;\n\n"
+        mutated = self.reuse.replace(marker, bypass + marker, 1)
+        findings = validate_reuse_ancestry(mutated)
+        self.assertTrue(any("RETURN early-exit bypass" in finding for finding in findings), findings)
+
+    def test_reuse_labeled_block_exit_bypass_is_rejected(self):
+        marker = "    -- Inbound logical replication is an external writer authority."
+        bypass = (
+            "    <<skip_publication>>\n"
+            "    BEGIN\n"
+            "        EXIT skip_publication;\n"
+            "    END;\n\n"
+        )
+        mutated = self.reuse.replace(marker, bypass + marker, 1)
+        findings = validate_reuse_ancestry(mutated)
+        self.assertTrue(any("EXIT early-exit bypass" in finding for finding in findings), findings)
+
+    def test_early_exit_words_in_dead_literals_are_not_executable(self):
+        marker = "    -- Inbound logical replication is an external writer authority."
+        dead = (
+            "    PERFORM 'IF true THEN RETURN; END IF;';\n"
+            "    PERFORM $dead_exit$EXIT skip_publication;$dead_exit$;\n\n"
+        )
+        mutated = self.reuse.replace(marker, dead + marker, 1)
+        self.assertEqual(validate_reuse_ancestry(mutated), [])
+
     def test_exception_keyword_in_dead_literal_is_not_handler(self):
         marker = "    EXECUTE 'CREATE SCHEMA platform';"
         mutated = self.bootstrap.replace(
@@ -94,12 +122,13 @@ class PublicationGuardAncestryTests(unittest.TestCase):
         )
         self.assertEqual(validate_bootstrap_ancestry(mutated), [])
 
-    def test_manifest_cannot_launder_ancestry_or_exception_policy(self):
+    def test_manifest_cannot_launder_ancestry_exception_or_early_exit_policy(self):
         mutations = (
             ("fresh_preflight", "exception_handlers_allowed", True),
             ("reuse_preflight", "schema_query_and_result_are_exact_children", False),
             ("reuse_preflight", "exception_handlers_allowed", True),
             ("reuse_preflight", "top_level_return_allowed", True),
+            ("reuse_preflight", "executable_return_or_exit_allowed", True),
         )
         for section, field, value in mutations:
             with self.subTest(section=section, field=field):
@@ -111,6 +140,7 @@ class PublicationGuardAncestryTests(unittest.TestCase):
         for substitution in (
             "numeric_control_depth_for_block_ancestry",
             "raise_exception_presence_for_unsuppressed_failure",
+            "top_level_return_absence_for_reachable_early_exit_absence",
         ):
             with self.subTest(substitution=substitution):
                 mutated = json.loads(json.dumps(self.manifest))

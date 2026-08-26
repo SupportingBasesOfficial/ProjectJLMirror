@@ -15,7 +15,9 @@
     "CUSTOMER MONITORING TELEMETRY != PLATFORM OBSERVABILITY",
     "UNTRUSTED FIELD NAME != TELEMETRY SCHEMA AUTHORITY",
     "SEMANTIC CLASS != UNBOUNDED TENANT/RESOURCE IDENTIFIER",
-    "OUTCOME TOKEN != ACCEPTED OUTCOME TAXONOMY"
+    "OUTCOME TOKEN != ACCEPTED OUTCOME TAXONOMY",
+    "NO_APPLICABLE_CASE != FREE-TEXT ASSERTION",
+    "PRODUCT SELECTOR VALUE != PRODUCT AUTHORITY EVIDENCE"
   ],
   "canonical_release_laws": [
     "UNTRUSTED SOURCE != TRUSTED RELEASE INPUT",
@@ -56,6 +58,10 @@
     "request_or_message_id_as_unbounded_metric_label",
     "raw_url_or_query_as_metric_dimension",
     "secret_or_token_material_in_ordinary_telemetry",
+    "free_text_reason_for_observability_no_applicable_case",
+    "stale_or_wrong_scope_evidence_for_observability_no_applicable_case",
+    "raw_product_selector_string_or_boolean_for_product_authority",
+    "deployment_or_catalog_presence_for_product_applicability",
     "branch_or_pr_event_for_accepted_source_trust",
     "successful_build_for_trusted_artifact",
     "mutable_tag_for_artifact_identity",

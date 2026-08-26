@@ -8,18 +8,21 @@ ROOT = Path(__file__).resolve().parents[2]
 AUTHORITY = ROOT / "src/jlmirror_release/authority.py"
 VERIFICATION = ROOT / "src/jlmirror_release/verification.py"
 TESTS = ROOT / "tests/wave3/test_release.py"
+POLICY_TESTS = ROOT / "tests/wave3/test_release_policy_lineage.py"
 MANIFEST = ROOT / "implementation/wave-3/IMPLEMENTATION_MANIFEST.json"
 
 REQUIRED_LAWS = {
     "POST-EFFECT RUNTIME EVIDENCE != RUNTIME GATE-SET AUTHORITY",
     "SAME DEPLOYMENT OPERATION != REPINNABLE RUNTIME REQUIREMENTS",
     "RUNTIME REQUIREMENTS MUST PRECEDE EFFECTFUL DEPLOYMENT",
+    "RUNTIME VERIFICATION POLICY CURRENTNESS != DIFFERENT PRE-EFFECT GATE POLICY LINEAGE",
 }
 REQUIRED_FORBIDDEN = {
     "post_effect_runtime_requirements_repin",
     "same_operation_id_for_changed_runtime_requirements",
     "runtime_verification_evidence_embedded_requirements_authority",
     "runtime_requirements_not_persisted_before_effect",
+    "rotated_runtime_release_policy_evidence_for_stale_pre_effect_gate_set",
 }
 REQUIRED_TESTS = {
     "test_runtime_requirements_are_validated_before_effectful_admission",
@@ -30,6 +33,8 @@ REQUIRED_TESTS = {
     "test_runtime_requirements_cannot_be_replayed_across_scope_or_target_version",
     "test_health_gate_cannot_be_replayed_across_target_state_version",
     "test_runtime_health_gate_set_must_match_requirements_exactly",
+    "test_runtime_verification_cannot_rotate_release_policy_lineage_after_gate_set_authorized",
+    "test_effectful_deployment_cannot_complete_with_different_runtime_release_policy_lineage",
 }
 
 
@@ -82,6 +87,7 @@ def validate() -> None:
     authority_tree = parse(AUTHORITY)
     verification_tree = parse(VERIFICATION)
     tests_tree = parse(TESTS)
+    policy_tests_tree = parse(POLICY_TESTS)
 
     requirements_cls = class_node(verification_tree, "RuntimeVerificationRequirements")
     requirements_fields = dataclass_fields(requirements_cls)
@@ -165,13 +171,16 @@ def validate() -> None:
         "runtime health evidence must match the exact release-policy-required gate set",
         "health gate evidence is bound to a different release-target state version",
         "runtime verification is using a different release-policy profile",
+        "runtime verification release-policy evidence differs from the pre-effect requirements policy lineage",
+        "expected_release_policy_evidence_reference=evidence.release_policy_evidence_reference",
     ):
         if fragment not in verify_source:
             fail(f"runtime verification fail-closed invariant missing: {fragment}")
 
     test_names = {
         node.name
-        for node in ast.walk(tests_tree)
+        for tree in (tests_tree, policy_tests_tree)
+        for node in ast.walk(tree)
         if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
     }
     missing_tests = REQUIRED_TESTS - test_names
@@ -188,7 +197,7 @@ def validate() -> None:
 
     print(
         "WAVE3 RUNTIME REQUIREMENTS VALIDATION: PASS — runtime gate requirements are pre-effect, "
-        "release-policy-bound, durable and non-repinnable."
+        "release-policy-lineage-bound, durable and non-repinnable."
     )
 
 

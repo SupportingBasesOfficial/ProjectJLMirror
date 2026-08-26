@@ -17,6 +17,8 @@ _SOURCE_FIELDS = {
     "source_change_evidence_reference",
     "review_assurance_profile_and_version",
     "review_assurance_evidence_reference",
+    "source_trust_policy_profile_and_version",
+    "source_trust_policy_evidence_reference",
 }
 
 
@@ -28,6 +30,8 @@ def accepted_source(**changes):
         source_change_evidence_reference="evidence:source-change-1",
         review_assurance_profile_and_version="review.assurance@1",
         review_assurance_evidence_reference="evidence:review-assurance-1",
+        source_trust_policy_profile_and_version="release-policy@1",
+        source_trust_policy_evidence_reference="evidence:source-trust-policy-1",
     )
     values.update(changes)
     return AcceptedSourceEvidence(**values)
@@ -39,12 +43,24 @@ def provenance(**changes):
     values = dict(
         accepted_source=accepted_source(**source_changes),
         release_policy_profile_and_version="release-policy@1",
-        release_policy_current=True, builder_principal_class="principal.release-build@1",
-        builder_authorized_current=True, declared_input_set_id="inputs-1",
-        declared_inputs_integrity_proven=True, build_record_id="build-1", artifact=ARTIFACT,
-        provenance_profile="release.provenance@1", provenance_record_id="prov-1",
-        provenance_verifier_profile_and_version="verifier@1", provenance_verifier_current=True,
-        sbom_or_dependency_inventory_reference="sbom-1", artifact_attestation_profile="attestation@1",
+        release_policy_evidence_reference="evidence:build-release-policy-1",
+        release_policy_current=True,
+        builder_principal_class="principal.release-build@1",
+        builder_authority_evidence_reference="evidence:builder-authority-1",
+        builder_authorized_current=True,
+        declared_input_set_id="inputs-1",
+        declared_inputs_integrity_evidence_reference="evidence:input-integrity-1",
+        declared_inputs_integrity_proven=True,
+        build_record_id="evidence:build-1",
+        artifact=ARTIFACT,
+        provenance_profile="release.provenance@1",
+        provenance_record_id="evidence:provenance-1",
+        provenance_verifier_profile_and_version="verifier@1",
+        provenance_verifier_evidence_reference="evidence:provenance-verifier-1",
+        provenance_verifier_current=True,
+        sbom_or_dependency_inventory_reference="evidence:sbom-1",
+        artifact_attestation_profile="attestation@1",
+        artifact_lifecycle_evidence_reference="evidence:artifact-lifecycle-1",
         artifact_retired=False,
     )
     values.update(changes)
@@ -55,8 +71,12 @@ def promotion(**changes):
     values = dict(
         promotion_id="prom-1", promotion_evidence_reference="evidence:promotion-1",
         promotion_principal_class="principal.release-promote@1",
+        promotion_principal_authority_evidence_reference="evidence:promotion-principal-1",
+        promotion_principal_authorized_current=True,
         approval_current=True, approval_evidence_reference="evidence:approval-1",
-        release_policy_profile_and_version="release-policy@1", release_policy_current=True,
+        release_policy_profile_and_version="release-policy@1",
+        release_policy_evidence_reference="evidence:promotion-release-policy-1",
+        release_policy_current=True,
         artifact_identity=ARTIFACT.canonical, target_id="scope-a",
         target_environment_class="environment.validation@1", validation_scope=ValidationScope.GENERAL,
         rollout_scope_id="scope-a", runtime_profile_set=("runtime.api@1",),
@@ -108,6 +128,30 @@ class ProvenanceCompatibilityTests(unittest.TestCase):
         with self.assertRaises(ReleaseError):
             validate_build_provenance(provenance(source_trust_class=SourceTrustClass.UNTRUSTED_CANDIDATE))
 
+    def test_source_trust_policy_mismatch_cannot_be_laundered_by_current_build_policy(self):
+        with self.assertRaises(ReleaseError):
+            validate_build_provenance(provenance(source_trust_policy_profile_and_version="release-policy@0"))
+
+    def test_build_authority_booleans_without_immutable_lineage_fail(self):
+        for mutation in (
+            {"release_policy_evidence_reference": "latest"},
+            {"builder_authority_evidence_reference": ""},
+            {"declared_inputs_integrity_evidence_reference": "https://inputs/current"},
+            {"provenance_verifier_evidence_reference": "verifier-current"},
+            {"artifact_lifecycle_evidence_reference": "artifact-current"},
+        ):
+            with self.subTest(mutation=mutation), self.assertRaises(ReleaseError):
+                validate_build_provenance(provenance(**mutation))
+
+    def test_build_provenance_records_must_be_immutable_evidence_identities(self):
+        for mutation in (
+            {"build_record_id": "build-latest"},
+            {"provenance_record_id": "https://prov/current"},
+            {"sbom_or_dependency_inventory_reference": "sbom-latest"},
+        ):
+            with self.subTest(mutation=mutation), self.assertRaises(ReleaseError):
+                validate_build_provenance(provenance(**mutation))
+
     def test_wrong_builder_principal_fails(self):
         with self.assertRaises(ReleaseError):
             validate_build_provenance(provenance(builder_principal_class="principal.release-untrusted-validation@1"))
@@ -118,6 +162,15 @@ class ProvenanceCompatibilityTests(unittest.TestCase):
 
     def test_promotion_binds_exact_artifact_config_profile_environment_and_lineage(self):
         require_promotion_authority(promotion(), provenance())
+
+    def test_promotion_principal_and_policy_require_durable_current_lineage(self):
+        for mutation in (
+            {"promotion_principal_authority_evidence_reference": "latest"},
+            {"promotion_principal_authorized_current": False},
+            {"release_policy_evidence_reference": ""},
+        ):
+            with self.subTest(mutation=mutation), self.assertRaises(ReleaseError):
+                require_promotion_authority(promotion(**mutation), provenance())
 
     def test_registry_presence_or_wrong_artifact_cannot_promote(self):
         with self.assertRaises(ReleaseError):

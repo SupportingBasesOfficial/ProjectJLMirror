@@ -176,16 +176,38 @@ def admission_gates(i, overrides=None):
     return tuple(result)
 
 
+def runtime_requirements(i=None, *, target_version=None, release_policy_evidence_reference=None, **changes):
+    i = i or intent()
+    values = dict(
+        authority_profile_and_version="release.runtime-verification-requirements@1",
+        evidence_reference="evidence:runtime-requirements-1",
+        scope_binding=deployment_scope(i),
+        release_target_state_version=(i.expected_release_target_state_version + 1) if target_version is None else target_version,
+        release_policy_profile_and_version=i.release_policy_profile_and_version,
+        release_policy_evidence_reference=release_policy_evidence_reference or "evidence:admission-release_policy",
+        required_reliability_profile_ids=RUNTIME_RELIABILITY_REQUIREMENTS,
+        required_health_profile_ids=RUNTIME_HEALTH_REQUIREMENTS,
+        current=True,
+    )
+    values.update(changes)
+    return RuntimeVerificationRequirements(**values)
+
+
 def admission(i=None, *, gate_overrides=None, **changes):
     i = i or intent()
     p = provenance(i.artifact.digest)
+    gates = admission_gates(i, gate_overrides)
+    release_policy_gate = next(g for g in gates if g.gate_id == "release_policy")
     values = dict(
         provenance=p,
         promotion=promotion_for(i),
         configuration_validation=config_validation(i),
         rollout_compatibility=rollout(i.rollout_scope),
         deployment_principal_class="principal.release-deploy@1",
-        current_authority_gates=admission_gates(i, gate_overrides),
+        current_authority_gates=gates,
+        runtime_verification_requirements=runtime_requirements(
+            i, release_policy_evidence_reference=release_policy_gate.evidence_reference
+        ),
     )
     values.update(changes)
     return DeploymentAdmissionEvidence(**values)
@@ -202,27 +224,10 @@ def reconciliation_gate(i, *, current=True, scope=None, version=None, reference=
     )
 
 
-def runtime_requirements(scope, target_version, **changes):
-    values = dict(
-        authority_profile_and_version="release.runtime-verification-requirements@1",
-        evidence_reference="evidence:runtime-requirements-1",
-        scope_binding=scope,
-        release_target_state_version=target_version,
-        release_policy_profile_and_version="release-policy@1",
-        release_policy_evidence_reference="evidence:runtime-release-policy-1",
-        required_reliability_profile_ids=RUNTIME_RELIABILITY_REQUIREMENTS,
-        required_health_profile_ids=RUNTIME_HEALTH_REQUIREMENTS,
-        current=True,
-    )
-    values.update(changes)
-    return RuntimeVerificationRequirements(**values)
-
-
 def runtime_evidence(digest=DIGEST_A, config_generation="cfg-7", admission_current=True,
                      state=HealthState.HEALTHY, health_admitted=True, **changes):
     scope = changes.pop("scope_binding", deployment_scope())
     target_version = changes.pop("release_target_state_version", 5)
-    requirements = changes.pop("requirements", runtime_requirements(scope, target_version))
     gates = tuple(
         HealthGateEvidence(
             HealthAssessment(profile_id, state, "current", True),
@@ -248,12 +253,12 @@ def runtime_evidence(digest=DIGEST_A, config_generation="cfg-7", admission_curre
         runtime_admission_current=admission_current,
         configuration_currentness_evidence_reference="evidence:configuration-currentness-1",
         configuration_current=True,
+        release_policy_profile_and_version="release-policy@1",
         release_policy_evidence_reference="evidence:runtime-release-policy-1",
         release_policy_current=True,
         verifier_authority_profile_and_version="principal.release-verify@1",
         verifier_authority_evidence_reference="evidence:runtime-verifier-authority-1",
         verifier_authority_current=True,
-        requirements=requirements,
         health_gates=gates,
         vendor_controller_green=True,
     )
@@ -261,8 +266,11 @@ def runtime_evidence(digest=DIGEST_A, config_generation="cfg-7", admission_curre
     return RuntimeVerificationEvidence(**values)
 
 
-def verify_direct(evidence):
-    verify_runtime(intent(), evidence, expected_release_target_state_version=5)
+def verify_direct(evidence, requirements=None):
+    verify_runtime(
+        intent(), evidence, requirements or runtime_requirements(),
+        expected_release_target_state_version=5,
+    )
 
 
 class ReleaseTests(unittest.TestCase):
@@ -304,6 +312,30 @@ class ReleaseTests(unittest.TestCase):
             with self.subTest(overrides=overrides), self.assertRaises(ReleaseError):
                 DeploymentAuthority(ReleaseTargetState(i.target_id, 4)).create_or_observe(i, admission(i, gate_overrides=overrides))
 
+    def test_runtime_requirements_are_validated_before_effectful_admission(self):
+        i = intent()
+        bad = runtime_requirements(i, required_health_profile_ids=())
+        with self.assertRaises(ReleaseError):
+            DeploymentAuthority(ReleaseTargetState(i.target_id, 4)).create_or_observe(
+                i, admission(i, runtime_verification_requirements=bad)
+            )
+
+    def test_runtime_requirements_bind_admission_release_policy_evidence(self):
+        i = intent()
+        bad = runtime_requirements(i, release_policy_evidence_reference="evidence:other-policy")
+        with self.assertRaises(ReleaseError):
+            DeploymentAuthority(ReleaseTargetState(i.target_id, 4)).create_or_observe(
+                i, admission(i, runtime_verification_requirements=bad)
+            )
+
+    def test_runtime_requirements_target_post_effect_version(self):
+        i = intent()
+        bad = runtime_requirements(i, target_version=4)
+        with self.assertRaises(ReleaseError):
+            DeploymentAuthority(ReleaseTargetState(i.target_id, 4)).create_or_observe(
+                i, admission(i, runtime_verification_requirements=bad)
+            )
+
     def test_promotion_must_bind_exact_deployment_semantics(self):
         authority = DeploymentAuthority(ReleaseTargetState("validation-cell-a", 4))
         i = intent(); good = admission(i)
@@ -340,8 +372,7 @@ class ReleaseTests(unittest.TestCase):
         i = intent(); good = admission(i)
         bad = PromotionEvidence(**{**good.promotion.__dict__, "configuration_validation_evidence_reference": "evidence:other"})
         with self.assertRaises(ReleaseError):
-            authority = DeploymentAuthority(ReleaseTargetState(i.target_id, 4))
-            authority.create_or_observe(i, admission(i, promotion=bad))
+            DeploymentAuthority(ReleaseTargetState(i.target_id, 4)).create_or_observe(i, admission(i, promotion=bad))
 
     def test_promotion_must_bind_same_rollout_evidence_reference(self):
         i = intent(); good = admission(i)
@@ -364,6 +395,14 @@ class ReleaseTests(unittest.TestCase):
         authority = DeploymentAuthority(ReleaseTargetState("validation-cell-a", 4))
         i = intent()
         self.assertEqual(authority.create_or_observe(i, admission(i)), authority.create_or_observe(i, admission(i)))
+
+    def test_same_operation_cannot_repin_runtime_requirements(self):
+        authority = DeploymentAuthority(ReleaseTargetState("validation-cell-a", 4))
+        i = intent()
+        authority.create_or_observe(i, admission(i))
+        changed = runtime_requirements(i, evidence_reference="evidence:runtime-requirements-2")
+        with self.assertRaises(ReleaseError):
+            authority.create_or_observe(i, admission(i, runtime_verification_requirements=changed))
 
     def test_same_operation_conflicting_semantics_is_integrity_conflict(self):
         authority = DeploymentAuthority(ReleaseTargetState("validation-cell-a", 4))
@@ -431,7 +470,8 @@ class ReleaseTests(unittest.TestCase):
 
     def test_effect_confirmation_enters_runtime_verification_and_retains_evidence(self):
         authority = DeploymentAuthority(ReleaseTargetState("validation-cell-a", 4))
-        i = intent(); authority.create_or_observe(i, admission(i))
+        i = intent(); created = authority.create_or_observe(i, admission(i))
+        self.assertEqual(created.runtime_requirements_evidence_reference, "evidence:runtime-requirements-1")
         result = authority.observe_effect("op-1", DeploymentObservation.EFFECT_CONFIRMED, observed_artifact_identity=f"sha256:{DIGEST_A}", observed_configuration_generation="cfg-7", durable_target_evidence_reference="evidence:target-1")
         self.assertEqual(result.state, PromotionState.RUNTIME_VERIFICATION)
         self.assertEqual(result.durable_target_evidence_reference, "evidence:target-1")
@@ -452,6 +492,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(created.promotion_evidence_reference, "evidence:promotion-1")
         self.assertEqual(created.configuration_validation_evidence_reference, "evidence:config-1")
         self.assertEqual(created.rollout_compatibility_evidence_reference, "evidence:rollout-1")
+        self.assertEqual(created.runtime_requirements_evidence_reference, "evidence:runtime-requirements-1")
         self.assertEqual(len(created.admission_gate_evidence_references), 5)
         authority.observe_effect("op-1", DeploymentObservation.EFFECT_CONFIRMED, observed_artifact_identity=f"sha256:{DIGEST_A}", observed_configuration_generation="cfg-7", durable_target_evidence_reference="evidence:target-1")
         result = authority.complete_runtime_verification("op-1", runtime_evidence())
@@ -478,48 +519,37 @@ class ReleaseTests(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaises(ReleaseError):
                 verify_direct(runtime_evidence(**mutation))
 
-    def test_runtime_requirements_cannot_be_empty_or_duplicate(self):
-        good = runtime_evidence()
-        for mutation in (
+    def test_runtime_verification_release_policy_profile_must_remain_current_semantics(self):
+        with self.assertRaises(ReleaseError):
+            verify_direct(runtime_evidence(release_policy_profile_and_version="release-policy@0"))
+
+    def test_runtime_requirements_cannot_be_empty_duplicate_unknown_or_incomplete(self):
+        base = runtime_requirements()
+        cases = (
             {"required_reliability_profile_ids": ()},
             {"required_health_profile_ids": ()},
             {"required_reliability_profile_ids": ("rel.cell-transactional-store@1", "rel.cell-transactional-store@1")},
             {"required_health_profile_ids": ("health.cell@1", "health.cell@1")},
-        ):
-            bad = RuntimeVerificationRequirements(**{**good.requirements.__dict__, **mutation})
+            {"required_reliability_profile_ids": ("rel.unknown@1",)},
+            {"required_health_profile_ids": ("health.api-bff@1", "health.cell@1")},
+        )
+        for mutation in cases:
+            bad = RuntimeVerificationRequirements(**{**base.__dict__, **mutation})
             with self.subTest(mutation=mutation), self.assertRaises(ReleaseError):
-                verify_direct(runtime_evidence(requirements=bad))
-
-    def test_runtime_requirements_cannot_omit_implied_health_join(self):
-        good = runtime_evidence()
-        bad = RuntimeVerificationRequirements(**{
-            **good.requirements.__dict__,
-            "required_health_profile_ids": ("health.api-bff@1", "health.cell@1"),
-        })
-        with self.assertRaises(ReleaseError):
-            verify_direct(runtime_evidence(requirements=bad))
-
-    def test_runtime_requirements_must_bind_current_release_policy_lineage(self):
-        good = runtime_evidence()
-        for mutation in (
-            {"release_policy_profile_and_version": "release-policy@0"},
-            {"release_policy_evidence_reference": "evidence:other-policy"},
-            {"current": False},
-            {"evidence_reference": "latest"},
-        ):
-            bad = RuntimeVerificationRequirements(**{**good.requirements.__dict__, **mutation})
-            with self.subTest(mutation=mutation), self.assertRaises(ReleaseError):
-                verify_direct(runtime_evidence(requirements=bad))
+                verify_direct(runtime_evidence(), bad)
 
     def test_runtime_requirements_cannot_be_replayed_across_scope_or_target_version(self):
-        good = runtime_evidence()
+        base = runtime_requirements()
         for mutation in (
             {"scope_binding": "deployment:validation-cell-a:other-op"},
             {"release_target_state_version": 4},
+            {"authority_profile_and_version": "release.other@1"},
+            {"current": False},
+            {"evidence_reference": "latest"},
         ):
-            bad = RuntimeVerificationRequirements(**{**good.requirements.__dict__, **mutation})
+            bad = RuntimeVerificationRequirements(**{**base.__dict__, **mutation})
             with self.subTest(mutation=mutation), self.assertRaises(ReleaseError):
-                verify_direct(runtime_evidence(requirements=bad))
+                verify_direct(runtime_evidence(), bad)
 
     def test_health_policy_boolean_requires_immutable_policy_lineage(self):
         good = runtime_evidence()
@@ -551,10 +581,17 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaises(ReleaseError):
             verify_direct(runtime_evidence(health_gates=(bad_gate,) + good.health_gates[1:]))
 
-    def test_missing_one_required_health_gate_fails_closed(self):
+    def test_runtime_health_gate_set_must_match_requirements_exactly(self):
         good = runtime_evidence()
         with self.assertRaises(ReleaseError):
             verify_direct(runtime_evidence(health_gates=good.health_gates[:-1]))
+        extra = HealthGateEvidence(
+            HealthAssessment("health.async-worker@1", HealthState.HEALTHY, "current", True),
+            "evidence:health-extra-1", "health-admission-policy@1",
+            "evidence:health-admission-policy-1", deployment_scope(), 5, True, True,
+        )
+        with self.assertRaises(ReleaseError):
+            verify_direct(runtime_evidence(health_gates=good.health_gates + (extra,)))
 
     def test_vendor_green_is_not_runtime_verification(self):
         good = runtime_evidence()

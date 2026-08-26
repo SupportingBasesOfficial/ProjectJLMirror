@@ -1,7 +1,7 @@
 import unittest
 
 from jlmirror_release import (
-    ArtifactIdentity, BuildProvenanceEvidence, CellCompatibilityEvidence,
+    AcceptedSourceEvidence, ArtifactIdentity, BuildProvenanceEvidence, CellCompatibilityEvidence,
     MixedVersionMatrix, NoApplicableCaseEvidence, OutcomeClass, PromotionEvidence,
     RecoveryClassificationEvidence, ReleaseError, RolloutCompatibilityEvidence,
     SourceTrustClass, ValidationScope, classify_change_outcome,
@@ -9,12 +9,36 @@ from jlmirror_release import (
 )
 
 ARTIFACT = ArtifactIdentity("sha256", "c" * 64)
+SOURCE_STATE_ID = "2" * 40
+_SOURCE_FIELDS = {
+    "source_state_id",
+    "source_trust_class",
+    "source_change_authority_profile_and_version",
+    "source_change_evidence_reference",
+    "review_assurance_profile_and_version",
+    "review_assurance_evidence_reference",
+}
+
+
+def accepted_source(**changes):
+    values = dict(
+        source_state_id=SOURCE_STATE_ID,
+        source_trust_class=SourceTrustClass.ACCEPTED_REVIEW_STATE,
+        source_change_authority_profile_and_version="source.change-authority@1",
+        source_change_evidence_reference="evidence:source-change-1",
+        review_assurance_profile_and_version="review.assurance@1",
+        review_assurance_evidence_reference="evidence:review-assurance-1",
+    )
+    values.update(changes)
+    return AcceptedSourceEvidence(**values)
 
 
 def provenance(**changes):
+    changes = dict(changes)
+    source_changes = {name: changes.pop(name) for name in tuple(changes) if name in _SOURCE_FIELDS}
     values = dict(
-        source_state_id="source-sha", source_trust_class=SourceTrustClass.ACCEPTED_REVIEW_STATE,
-        accepted_change_authority_proven=True, release_policy_profile_and_version="release-policy@1",
+        accepted_source=accepted_source(**source_changes),
+        release_policy_profile_and_version="release-policy@1",
         release_policy_current=True, builder_principal_class="principal.release-build@1",
         builder_authorized_current=True, declared_input_set_id="inputs-1",
         declared_inputs_integrity_proven=True, build_record_id="build-1", artifact=ARTIFACT,

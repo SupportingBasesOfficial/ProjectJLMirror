@@ -232,7 +232,7 @@ def runtime_evidence(digest=DIGEST_A, config_generation="cfg-7", admission_curre
     target_version = changes.pop("release_target_state_version", 5)
     gates = tuple(
         HealthGateEvidence(
-            HealthAssessment(profile_id, state, "current", True),
+            HealthAssessment(profile_id, state, "healthy_or_eligible", True),
             f"evidence:{profile_id.replace('.', '-').replace('@', '-')}-1",
             "health-admission-policy@1",
             "evidence:health-admission-policy-1",
@@ -588,7 +588,7 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaises(ReleaseError):
             verify_direct(runtime_evidence(health_gates=good.health_gates[:-1]))
         extra = HealthGateEvidence(
-            HealthAssessment("health.async-worker@1", HealthState.HEALTHY, "current", True),
+            HealthAssessment("health.async-worker@1", HealthState.HEALTHY, "healthy_or_eligible", True),
             "evidence:health-extra-1", "health-admission-policy@1",
             "evidence:health-admission-policy-1", deployment_scope(), 5, True, True,
         )

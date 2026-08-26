@@ -37,6 +37,16 @@ from .model import (
     ScopedMessageIdentity,
 )
 from .outbox import InMemoryOutboxLedger, OutboxClaim, tenant_message_from_context
+from .quarantine import (
+    CurrentRedriveAuthorityPort,
+    QuarantineSource,
+    QuarantineSubject,
+    RedriveAdmission,
+    RedriveRequest,
+    inbox_redrive_request,
+    outbox_redrive_request,
+    require_current_redrive,
+)
 from .reconciliation import (
     InMemoryCrossAuthorityOperationLedger,
     OperationAttempt,
@@ -52,6 +62,7 @@ __all__ = [
     "CrossAuthorityOperationSnapshot",
     "CrossAuthorityReconciliationPort",
     "CurrentAsyncExecutionAuthorityPort",
+    "CurrentRedriveAuthorityPort",
     "EffectResultLink",
     "EquivalenceRelation",
     "InboxAdmission",
@@ -70,10 +81,17 @@ __all__ = [
     "OperationState",
     "OutboxClaim",
     "OutboxDispatchState",
+    "QuarantineSource",
+    "QuarantineSubject",
+    "RedriveAdmission",
+    "RedriveRequest",
     "ReconciliationBlocked",
     "ReconciliationEvidence",
     "ReconciliationResolution",
     "ScopedMessageIdentity",
+    "inbox_redrive_request",
+    "outbox_redrive_request",
     "require_current_execution",
+    "require_current_redrive",
     "tenant_message_from_context",
 ]

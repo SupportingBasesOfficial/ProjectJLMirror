@@ -37,6 +37,7 @@ REQUIRED_FILES = (
     "tests/wave3/test_release.py",
     "tests/wave3/test_release_provenance_compatibility.py",
     "tests/wave3/test_runtime_profile_reliability.py",
+    "tests/wave3/test_runtime_verifier_authority.py",
     "implementation/wave-3/README.md",
     "implementation/wave-3/IMPLEMENTATION_MANIFEST.json",
     "implementation/wave-3/source-registry.json",
@@ -60,6 +61,7 @@ REQUIRED_RELEASE_LAWS = {
     "RUNTIME.WORKER@1 != UNSPECIALIZED RELEASE TARGET",
     "RUNTIME VERIFICATION EVIDENCE != REPLAYABLE ACROSS DEPLOYMENT SCOPE OR TARGET VERSION",
     "HEALTH GATE EVIDENCE != REPLAYABLE ACROSS RELEASE TARGET STATE VERSION",
+    "RUNTIME VERIFIER AUTHORITY != NON-VERIFY RELEASE PRINCIPAL",
     "RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD",
 }
 REQUIRED_FORBIDDEN_SUBSTITUTIONS = {
@@ -89,6 +91,7 @@ REQUIRED_FORBIDDEN_SUBSTITUTIONS = {
     "runtime_verification_evidence_replayed_across_operation_target_or_target_version",
     "health_gate_evidence_replayed_across_deployment_scope",
     "health_gate_evidence_replayed_across_release_target_state_version",
+    "noncanonical_release_principal_for_runtime_verification",
     "boolean_current_for_runtime_admission_configuration_policy_or_verifier",
     "boolean_current_for_health_admission_policy",
 }
@@ -154,6 +157,9 @@ REQUIRED_CODE_TOKENS = {
     ),
     "src/jlmirror_release/verification.py": (
         "class RuntimeVerificationRequirements",
+        "RUNTIME_VERIFIER_PRINCIPAL",
+        "principal.release-verify@1",
+        "runtime verification requires the canonical release verifier principal",
         "RUNTIME_PROFILE_MINIMUM_RELIABILITY_BINDINGS",
         "WORKER_SPECIALIZATION_MINIMUM_RELIABILITY_BINDINGS",
         "minimum_reliability_for_intent",

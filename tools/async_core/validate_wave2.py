@@ -48,6 +48,7 @@ EXPECTED_FORBIDDEN = [
     "reconciliation_state_without_durable_resolution_revision_for_retry_or_completion",
     "caller_supplied_result_link_for_reconciliation_completion_without_operation_evidence",
     "operation_bound_receipt_completed_through_local_effect_path",
+    "split_state_outcome_reconciliation_reads_for_effect_authority",
     "prior_attempt_reconciliation_revision_as_successor_attempt_authority",
     "reconciliation_revision_reuse_for_different_evidence",
     "preseeded_reconciliation_revision_before_ambiguity",
@@ -84,6 +85,7 @@ EXPECTED_MANIFEST = {
     "fixed_inbox_identity": "(consumer_contract,message_identity_scope,message_id)",
     "fixed_execution_admission": "revision_bound_current_authority_before_each_protected_effect_attempt",
     "fixed_lease_loss_semantics": "lease_expiry_never_proves_effect_absence",
+    "fixed_operation_authority_observation": "single_atomic_snapshot_per_retry_or_completion_decision",
     "fixed_cross_authority_direct_completion_authority": "operation_bound_receipt_requires_exact_direct_completed_operation_outcome",
     "fixed_reconciliation_evidence": "append_only_operation_scoped_revision_plus_canonical_resolution_required_for_retry_or_confirmed_completion",
     "fixed_reconciliation_completion_authority": "stable_operation_plus_append_only_effect_confirmed_revision_required_after_reconciliation_block",
@@ -199,12 +201,18 @@ def _stdlib_boundary_findings() -> list[str]:
 def _execution_boundary_findings() -> list[str]:
     execution = (ROOT / "src/jlmirror_async/execution.py").read_text(encoding="utf-8")
     inbox = (ROOT / "src/jlmirror_async/inbox.py").read_text(encoding="utf-8")
+    model = (ROOT / "src/jlmirror_async/model.py").read_text(encoding="utf-8")
     reconciliation = (ROOT / "src/jlmirror_async/reconciliation.py").read_text(encoding="utf-8")
     required = (
         (execution, "class CurrentAsyncExecutionAuthorityPort"),
         (execution, "def require_current_execution("),
         (execution, "runtime.api@1"),
         (execution, "runtime.worker@1"),
+        (model, "class CrossAuthorityOperationSnapshot"),
+        (inbox, "def snapshot(self, operation_id: str) -> CrossAuthorityOperationSnapshot"),
+        (inbox, "operation_authority.snapshot(receipt.operation_id)"),
+        (inbox, "operation authority did not return canonical atomic snapshot"),
+        (reconciliation, "def snapshot(self, operation_id: str) -> CrossAuthorityOperationSnapshot"),
         (inbox, "require_current_execution(execution_authority, request)"),
         (inbox, "processing_lease_expired_effect_absence_unproven"),
         (inbox, "same_scoped_identity_conflicting_trusted_binding"),
@@ -226,11 +234,23 @@ def _execution_boundary_findings() -> list[str]:
         (reconciliation, "require_current_execution(execution_authority, request)"),
         (reconciliation, "attempt_lease_expired_effect_absence_unproven"),
     )
-    return [
+    findings = [
         f"Wave 2 current/reconciliation boundary missing: {anchor}"
         for text, anchor in required
         if anchor not in text
     ]
+    forbidden_split_reads = (
+        "operation_authority.state(",
+        "operation_authority.outcome(",
+        "operation_authority.reconciliation_resolution(",
+        "operation_authority.reconciliation_revision(",
+    )
+    findings.extend(
+        f"Wave 2 cross-authority decision still uses split operation read: {anchor}"
+        for anchor in forbidden_split_reads
+        if anchor in inbox
+    )
+    return findings
 
 
 def _reconciliation_authority_boundary_findings() -> list[str]:
@@ -243,14 +263,19 @@ def _reconciliation_authority_boundary_findings() -> list[str]:
     handoff_test = (
         ROOT / "tests/wave2/test_reconciliation_generation_handoff.py"
     ).read_text(encoding="utf-8")
+    snapshot_test = (
+        ROOT / "tests/wave2/test_operation_authority_snapshot.py"
+    ).read_text(encoding="utf-8")
     required_boundary = (
         "CALLER-SUPPLIED RESULT LINK != EFFECT COMPLETION AUTHORITY",
         "OPERATION-BOUND RECEIPT != LOCAL EFFECT PATH",
         "RECONCILIATION HISTORY != CURRENT ATTEMPT RESOLUTION",
         "PRIOR ATTEMPT ABSENCE PROOF != SUCCESSOR ATTEMPT OUTCOME",
+        "SPLIT OPERATION READS != ATOMIC AUTHORITY SNAPSHOT",
         "OPERATION-BOUND PROCESSING -> LOCAL COMPLETION = PROHIBITED",
         "RECONCILED OPERATION -> DIRECT PROCESSING COMPLETION = PROHIBITED",
         "PRIOR RECONCILIATION POINTER -> SUCCESSOR CURRENT ATTEMPT = PROHIBITED",
+        "SPLIT STATE/OUTCOME/RESOLUTION/REVISION READS -> AUTHORITY DECISION = PROHIBITED",
         "append-only reconciliation evidence records `effect_confirmed`",
         "exactly matches the result linked by the inbox receipt",
     )
@@ -264,6 +289,10 @@ def _reconciliation_authority_boundary_findings() -> list[str]:
         "test_append_only_confirmed_operation_evidence_allows_exact_completion",
         "test_confirmed_operation_with_mismatched_result_remains_blocked",
     )
+    required_snapshot_tests = (
+        "test_snapshot_rejects_impossible_mixed_authority_tuple",
+        "test_direct_completion_consumes_one_snapshot_and_no_split_reads",
+    )
     findings = [
         f"Wave 2 reconciliation authority boundary missing: {anchor}"
         for anchor in required_boundary
@@ -276,6 +305,11 @@ def _reconciliation_authority_boundary_findings() -> list[str]:
     )
     if "test_absence_evidence_remains_history_but_not_successor_attempt_state" not in handoff_test:
         findings.append("Wave 2 reconciliation generation handoff falsification missing")
+    findings.extend(
+        f"Wave 2 atomic operation snapshot falsification missing: {anchor}"
+        for anchor in required_snapshot_tests
+        if anchor not in snapshot_test
+    )
     return findings
 
 

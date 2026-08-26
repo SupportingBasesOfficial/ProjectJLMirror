@@ -138,7 +138,20 @@ PROFILE_ALLOWED_DIAGNOSTIC_FIELDS: Mapping[str, frozenset[str]] = MappingProxyTy
     "obs.artifact.lifecycle@1": frozenset({"artifact_id", "operation_id", "trace_id"}),
 })
 
+# Wave 3 intentionally keeps these implementation mapping classes finite. Extending them is a
+# reviewed compatibility change, not an untrusted runtime/input decision.
+ALLOWED_SIGNAL_CLASSIFICATIONS = frozenset({"internal", "protected"})
+ALLOWED_TENANT_SCOPE_CLASSES = frozenset({
+    "none", "bounded", "tenant_scoped_bounded", "cross_tenant_aggregate", "platform_bounded",
+})
+CANONICAL_OUTCOME_CLASSES = frozenset({
+    "success", "denied", "invalid", "not_found_or_concealed", "throttled", "unavailable",
+    "timed_out", "cancelled", "ambiguous_external_outcome", "reconciliation_required",
+    "quarantined", "recovery_blocked", "compromised_or_untrusted", "internal_failure",
+})
+
 _SAFE_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,95}$")
+_OPERATION_CLASS_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}(?:\.[a-z][a-z0-9_-]{0,31})+$")
 _DIAGNOSTIC_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_:@/-]{0,191}$")
 FORBIDDEN_VALUE_PREFIXES = ("bearer ", "basic ")
 FORBIDDEN_PAYLOAD_KEY_FRAGMENTS = (
@@ -154,6 +167,11 @@ def _frozen_map(value: Mapping[str, str]) -> Mapping[str, str]:
 def _validate_safe_token(name: str, value: str) -> None:
     if not isinstance(value, str) or not _SAFE_TOKEN_RE.fullmatch(value):
         raise ObservationError(f"metric dimension {name} must be a bounded semantic token")
+
+
+def _validate_operation_class(value: str) -> None:
+    if not isinstance(value, str) or not _OPERATION_CLASS_RE.fullmatch(value):
+        raise ObservationError("operation_class must be a bounded namespaced semantic class")
 
 
 def _validate_diagnostic_identifier(name: str, value: str) -> None:
@@ -195,8 +213,11 @@ class SignalRecord:
             raise ObservationError(f"unknown signal profile: {self.profile_id}")
         if self.family not in SIGNAL_ALLOWED_FAMILIES[self.profile_id]:
             raise ObservationError(f"signal family {self.family.value} is not allowed for {self.profile_id}")
-        for name, value in {"operation_class": self.operation_class, "classification": self.classification, "tenant_scope_class": self.tenant_scope_class}.items():
-            _validate_safe_token(name, value)
+        _validate_operation_class(self.operation_class)
+        if self.classification not in ALLOWED_SIGNAL_CLASSIFICATIONS:
+            raise ObservationError("signal classification is not in the reviewed bounded Wave 3 mapping")
+        if self.tenant_scope_class not in ALLOWED_TENANT_SCOPE_CLASSES:
+            raise ObservationError("tenant_scope_class is not in the reviewed bounded Wave 3 mapping")
 
         unknown_dimensions = set(self.metric_dimensions) - PROFILE_ALLOWED_METRIC_DIMENSIONS[self.profile_id]
         if unknown_dimensions:
@@ -205,6 +226,12 @@ class SignalRecord:
             if any(fragment in key.lower() for fragment in FORBIDDEN_PAYLOAD_KEY_FRAGMENTS):
                 raise ObservationError(f"secret-bearing metric field forbidden: {key}")
             _validate_safe_token(key, value)
+            if key == "outcome_class" and value not in CANONICAL_OUTCOME_CLASSES:
+                raise ObservationError("outcome_class is outside the accepted Phase 12 taxonomy")
+            if key == "comparison_outcome_class" and value not in {item.value for item in ComparisonOutcomeClass}:
+                raise ObservationError("comparison_outcome_class is outside the accepted Phase 12 taxonomy")
+            if key == "operation_class" and value != self.operation_class:
+                raise ObservationError("metric operation_class must equal the record's stable operation_class")
 
         unknown_diagnostics = set(self.diagnostic_fields) - PROFILE_ALLOWED_DIAGNOSTIC_FIELDS[self.profile_id]
         if unknown_diagnostics:

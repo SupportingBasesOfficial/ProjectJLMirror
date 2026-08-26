@@ -23,28 +23,38 @@ class AcceptedSourceEvidence:
     source_change_evidence_reference: str
     review_assurance_profile_and_version: str
     review_assurance_evidence_reference: str
+    source_trust_policy_profile_and_version: str
+    source_trust_policy_evidence_reference: str
 
     def validate(self) -> None:
         if self.source_trust_class is not SourceTrustClass.ACCEPTED_REVIEW_STATE:
             raise ReleaseError("trusted build requires accepted exact source trust state")
         if not isinstance(self.source_state_id, str) or not _GIT_SOURCE_STATE_RE.fullmatch(self.source_state_id):
             raise ReleaseError("accepted source state must be an exact immutable Git object id")
-        if not self.source_change_authority_profile_and_version:
-            raise ReleaseError("accepted source requires source/change authority profile/version")
-        if not self.review_assurance_profile_and_version:
-            raise ReleaseError("accepted source requires review/assurance authority profile/version")
-        require_immutable_evidence_reference(
-            "source_change_evidence_reference", self.source_change_evidence_reference
+        required_profiles = (
+            self.source_change_authority_profile_and_version,
+            self.review_assurance_profile_and_version,
+            self.source_trust_policy_profile_and_version,
         )
-        require_immutable_evidence_reference(
-            "review_assurance_evidence_reference", self.review_assurance_evidence_reference
-        )
-        if self.source_change_evidence_reference == self.review_assurance_evidence_reference:
-            raise ReleaseError("source/change and review/assurance evidence identities must remain distinct")
+        if not all(required_profiles):
+            raise ReleaseError("accepted source requires source/change, review/assurance and source-trust policy profiles")
+        for name, value in (
+            ("source_change_evidence_reference", self.source_change_evidence_reference),
+            ("review_assurance_evidence_reference", self.review_assurance_evidence_reference),
+            ("source_trust_policy_evidence_reference", self.source_trust_policy_evidence_reference),
+        ):
+            require_immutable_evidence_reference(name, value)
+        refs = {
+            self.source_change_evidence_reference,
+            self.review_assurance_evidence_reference,
+            self.source_trust_policy_evidence_reference,
+        }
+        if len(refs) != 3:
+            raise ReleaseError("source/change, review/assurance and source-trust-policy evidence identities must remain distinct")
 
 
 def require_trusted_build_source(source: AcceptedSourceEvidence) -> None:
-    """Establish trusted build source only from exact accepted source/change + review evidence."""
+    """Establish trusted build source only from exact accepted source/change + review + policy evidence."""
     if not isinstance(source, AcceptedSourceEvidence):
         raise ReleaseError("trusted build source requires canonical AcceptedSourceEvidence")
     source.validate()
@@ -54,19 +64,24 @@ def require_trusted_build_source(source: AcceptedSourceEvidence) -> None:
 class BuildProvenanceEvidence:
     accepted_source: AcceptedSourceEvidence
     release_policy_profile_and_version: str
+    release_policy_evidence_reference: str
     release_policy_current: bool
     builder_principal_class: str
+    builder_authority_evidence_reference: str
     builder_authorized_current: bool
     declared_input_set_id: str
+    declared_inputs_integrity_evidence_reference: str
     declared_inputs_integrity_proven: bool
     build_record_id: str
     artifact: ArtifactIdentity
     provenance_profile: str
     provenance_record_id: str
     provenance_verifier_profile_and_version: str
+    provenance_verifier_evidence_reference: str
     provenance_verifier_current: bool
     sbom_or_dependency_inventory_reference: str
     artifact_attestation_profile: str
+    artifact_lifecycle_evidence_reference: str
     artifact_retired: bool = False
 
     @property
@@ -82,17 +97,31 @@ def validate_build_provenance(evidence: BuildProvenanceEvidence) -> None:
     require_trusted_build_source(evidence.accepted_source)
     if not evidence.release_policy_profile_and_version or not evidence.release_policy_current:
         raise ReleaseError("trusted release policy profile/currentness is required")
+    require_immutable_evidence_reference("release_policy_evidence_reference", evidence.release_policy_evidence_reference)
+    if evidence.accepted_source.source_trust_policy_profile_and_version != evidence.release_policy_profile_and_version:
+        raise ReleaseError("accepted source trust transition is not bound to the current build release-policy profile")
     if evidence.builder_principal_class != "principal.release-build@1":
         raise ReleaseError("trusted build must use the bounded release build principal")
+    require_immutable_evidence_reference("builder_authority_evidence_reference", evidence.builder_authority_evidence_reference)
     if evidence.builder_principal_class not in RELEASE_PRINCIPALS or not evidence.builder_authorized_current:
         raise ReleaseError("builder principal authority is not current")
     if not evidence.declared_input_set_id or not evidence.declared_inputs_integrity_proven:
         raise ReleaseError("declared build inputs require integrity-bound evidence")
-    required = (evidence.build_record_id, evidence.provenance_profile, evidence.provenance_record_id,
-                evidence.provenance_verifier_profile_and_version,
-                evidence.sbom_or_dependency_inventory_reference, evidence.artifact_attestation_profile)
+    require_immutable_evidence_reference(
+        "declared_inputs_integrity_evidence_reference", evidence.declared_inputs_integrity_evidence_reference
+    )
+    required = (evidence.provenance_profile, evidence.provenance_verifier_profile_and_version,
+                evidence.artifact_attestation_profile)
     if not all(required):
-        raise ReleaseError("provenance/SBOM/attestation records are required")
+        raise ReleaseError("provenance/verifier/attestation profiles are required")
+    for name, value in (
+        ("build_record_id", evidence.build_record_id),
+        ("provenance_record_id", evidence.provenance_record_id),
+        ("provenance_verifier_evidence_reference", evidence.provenance_verifier_evidence_reference),
+        ("sbom_or_dependency_inventory_reference", evidence.sbom_or_dependency_inventory_reference),
+        ("artifact_lifecycle_evidence_reference", evidence.artifact_lifecycle_evidence_reference),
+    ):
+        require_immutable_evidence_reference(name, value)
     if not evidence.provenance_verifier_current:
         raise ReleaseError("retired/stale provenance verifier cannot establish trusted evidence")
     if evidence.artifact_retired:
@@ -104,9 +133,12 @@ class PromotionEvidence:
     promotion_id: str
     promotion_evidence_reference: str
     promotion_principal_class: str
+    promotion_principal_authority_evidence_reference: str
+    promotion_principal_authorized_current: bool
     approval_current: bool
     approval_evidence_reference: str
     release_policy_profile_and_version: str
+    release_policy_evidence_reference: str
     release_policy_current: bool
     artifact_identity: str
     target_id: str
@@ -135,12 +167,16 @@ def require_promotion_authority(promotion: PromotionEvidence, provenance: BuildP
         raise ReleaseError("promotion requires the bounded release promotion principal")
     for name, value in (
         ("promotion_evidence_reference", promotion.promotion_evidence_reference),
+        ("promotion_principal_authority_evidence_reference", promotion.promotion_principal_authority_evidence_reference),
         ("approval_evidence_reference", promotion.approval_evidence_reference),
+        ("release_policy_evidence_reference", promotion.release_policy_evidence_reference),
         ("configuration_validation_evidence_reference", promotion.configuration_validation_evidence_reference),
         ("rollout_compatibility_evidence_reference", promotion.rollout_compatibility_evidence_reference),
         ("required_evidence_set_reference", promotion.required_evidence_set_reference),
     ):
         require_immutable_evidence_reference(name, value)
+    if not promotion.promotion_principal_authorized_current:
+        raise ReleaseError("promotion principal authority is not current")
     if not promotion.promotion_id or not promotion.approval_current:
         raise ReleaseError("promotion approval and durable promotion evidence are required")
     if not promotion.release_policy_profile_and_version or not promotion.release_policy_current:

@@ -46,6 +46,7 @@ EXPECTED_FORBIDDEN = [
     "lease_expiry_for_effect_absence",
     "expired_inbox_or_external_effect_claim_for_automatic_retry_eligibility",
     "reconciliation_state_without_durable_resolution_revision_for_retry_or_completion",
+    "caller_supplied_result_link_for_reconciliation_completion_without_operation_evidence",
     "reconciliation_revision_reuse_for_different_evidence",
     "preseeded_reconciliation_revision_before_ambiguity",
     "mutable_or_deletable_reconciliation_evidence",
@@ -82,6 +83,7 @@ EXPECTED_MANIFEST = {
     "fixed_execution_admission": "revision_bound_current_authority_before_each_protected_effect_attempt",
     "fixed_lease_loss_semantics": "lease_expiry_never_proves_effect_absence",
     "fixed_reconciliation_evidence": "append_only_operation_scoped_revision_plus_canonical_resolution_required_for_retry_or_confirmed_completion",
+    "fixed_reconciliation_completion_authority": "stable_operation_plus_append_only_effect_confirmed_revision_required_after_reconciliation_block",
     "durable_schema_reuse_policy": "preexisting_wave2_correctness_object_requires_reviewed_revalidation_not_if_not_exists_acceptance",
     "residual_c2_choices_not_selected": EXPECTED_C2,
     "forbidden_correctness_substitutions": EXPECTED_FORBIDDEN,
@@ -204,13 +206,51 @@ def _execution_boundary_findings() -> list[str]:
         (inbox, "same_scoped_identity_conflicting_trusted_binding"),
         (inbox, "def reconcile_retry_eligible("),
         (inbox, "ReconciliationResolution.EFFECT_PROVEN_ABSENT"),
+        (inbox, "reconciliation completion requires stable operation identity and durable evidence authority"),
+        (inbox, "ReconciliationResolution.EFFECT_CONFIRMED"),
         (reconciliation, "class ReconciliationEvidence"),
         (reconciliation, "self._reconciliation_evidence"),
         (reconciliation, "reconciliation revision cannot be reused for different evidence"),
         (reconciliation, "require_current_execution(execution_authority, request)"),
         (reconciliation, "attempt_lease_expired_effect_absence_unproven"),
     )
-    return [f"Wave 2 current/reconciliation boundary missing: {anchor}" for text, anchor in required if anchor not in text]
+    return [
+        f"Wave 2 current/reconciliation boundary missing: {anchor}"
+        for text, anchor in required
+        if anchor not in text
+    ]
+
+
+def _reconciliation_authority_boundary_findings() -> list[str]:
+    boundary = (
+        ROOT / "implementation/wave-2/RECONCILIATION_AUTHORITY_BOUNDARY.md"
+    ).read_text(encoding="utf-8")
+    test = (
+        ROOT / "tests/wave2/test_reconciliation_completion_authority.py"
+    ).read_text(encoding="utf-8")
+    required_boundary = (
+        "CALLER-SUPPLIED RESULT LINK != RECONCILIATION COMPLETION AUTHORITY",
+        "UNBOUND RECONCILIATION_REQUIRED -> COMPLETED = PROHIBITED",
+        "append-only reconciliation evidence records `effect_confirmed`",
+        "exactly matches the result linked by the inbox receipt",
+    )
+    required_tests = (
+        "test_caller_result_link_cannot_complete_unbound_reconciliation",
+        "test_bound_operation_without_operation_authority_remains_blocked",
+        "test_append_only_confirmed_operation_evidence_allows_exact_completion",
+        "test_confirmed_operation_with_mismatched_result_remains_blocked",
+    )
+    findings = [
+        f"Wave 2 reconciliation authority boundary missing: {anchor}"
+        for anchor in required_boundary
+        if anchor not in boundary
+    ]
+    findings.extend(
+        f"Wave 2 reconciliation authority falsification missing: {anchor}"
+        for anchor in required_tests
+        if anchor not in test
+    )
+    return findings
 
 
 def _sql_findings() -> list[str]:
@@ -244,6 +284,7 @@ def _sql_findings() -> list[str]:
         "reconciliation_revision text null",
         "effect_proven_absent",
         "effect_confirmed",
+        "wave 2 reconciliation exit requires bound operation + evidence revision",
         "execution_admission_revision text null",
         "execution_authorization_revision text null",
         "execution_principal_credential_generation text null",
@@ -350,6 +391,7 @@ def validate() -> list[str]:
         _source_authority_findings,
         _stdlib_boundary_findings,
         _execution_boundary_findings,
+        _reconciliation_authority_boundary_findings,
         _sql_findings,
         _wave1_compatibility_maintenance_findings,
         _git_scope_findings,

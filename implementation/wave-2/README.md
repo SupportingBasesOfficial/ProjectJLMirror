@@ -22,7 +22,7 @@ It does **not** create Product/domain endpoints, incident/customer workflow beha
 - Unknown/lost comparison authority is reconciliation-blocked, not duplicate success and not new effect eligibility.
 - Co-resident inbox + protected effect complete atomically where they share one transaction authority.
 - Cross-authority effects use a stable immutable `operation_id` + owner/tenant scope; ambiguous outcome blocks blind retry until reconciliation proves completion or proves a new attempt eligible.
-- Reconciliation stores a stable `reconciliation_revision` plus canonical `still_unknown`, `effect_confirmed` or `effect_proven_absent` disposition. Retry/completion cannot be manufactured by state mutation without that evidence.
+- Reconciliation evidence is append-only by `(operation_id, reconciliation_revision)` and records canonical `still_unknown`, `effect_confirmed` or `effect_proven_absent`. A revision can be created only while that operation is reconciliation-blocked; it cannot be pre-seeded, rewritten or deleted to manufacture later retry authority.
 - Inbox processing-lease expiry and cross-authority attempt-lease expiry are uncertainty: they transition to reconciliation and never manufacture safe retry/effect absence.
 - Every new protected consumer effect/cross-authority attempt requires a revision-bound current execution admission for the exact consumer/operation, tenant scope and accepted API/worker runtime profile.
 - Tenant-scoped execution admission carries a trusted Wave 1 `TenantContext`; stale/missing principal generation, placement, runtime generation, environment or authorization evidence fails closed at the adapter boundary.
@@ -30,13 +30,13 @@ It does **not** create Product/domain endpoints, incident/customer workflow beha
 - Delayed work does not preserve old human authorization unless a separately accepted delegation/capability contract says so.
 - Critical Wave 2 correctness tables are created fail-closed without `IF NOT EXISTS`; a preexisting same-name object requires reviewed shape/authority revalidation rather than silent reuse.
 - Every committed outbox message creates its dispatch bookkeeping row in the same transaction through a `SECURITY INVOKER` trigger; a committed message cannot be stranded merely because a second insert was forgotten.
-- SQL transition guards prevent ordinary direct UPDATE from rebinding inbox/operation scope, resurrecting terminal state, resetting published/quarantined dispatch, or converting reconciliation uncertainty directly into retry authority.
+- SQL transition guards prevent ordinary direct UPDATE from rebinding inbox/operation scope, stealing same-state claims, resurrecting terminal state, resetting published/quarantined dispatch, or converting reconciliation uncertainty directly into retry authority.
 
 ## Replaceable C2 boundaries
 
 This wave deliberately does not select a broker, schema registry/serializer, cache/replay product, KMS/historical-verifier backend, database HA/pooler runtime mapping, exact claim/lease duration or reconciliation UI/tool.
 
-The Python package is a portable correctness/reference core using only the standard library. The SQL package is the PostgreSQL durable-record contract for the accepted transactional substrate; it is not a broker selection and it does not claim production topology. `CurrentAsyncExecutionAuthorityPort` is an adapter boundary over accepted current principal/placement/authorization/runtime/fence authorities; it is not a second authorization system. Concrete reconciliation tooling remains C2, but any selected tool must persist the fixed revision/resolution evidence before retry eligibility changes.
+The Python package is a portable correctness/reference core using only the standard library. The SQL package is the PostgreSQL durable-record contract for the accepted transactional substrate; it is not a broker selection and it does not claim production topology. `CurrentAsyncExecutionAuthorityPort` is an adapter boundary over accepted current principal/placement/authorization/runtime/fence authorities; it is not a second authorization system. Concrete reconciliation tooling remains C2, but any selected tool must append the fixed operation-scoped revision/resolution evidence before retry eligibility changes.
 
 ## Product/operations clarification boundary
 
@@ -49,7 +49,8 @@ LEASE EXPIRY != EFFECT ABSENCE
 CURRENT EXECUTION ADMISSION != MESSAGE PAYLOAD AUTHORITY
 SAME INBOX KEY != BENIGN DUPLICATE WHEN TRUSTED BINDING DIFFERS
 RECONCILIATION_REQUIRED != RETRY ELIGIBLE
-RECONCILIATION RESOLUTION WITHOUT DURABLE REVISION != AUTHORITY
+RECONCILIATION REVISION STRING != EVIDENCE WITHOUT APPEND-ONLY RECORD
+PRESEEDED/MUTATED RECONCILIATION EVIDENCE != AUTHORITY
 DIRECT STATE UPDATE != RECONCILIATION AUTHORITY
 PREEXISTING TABLE NAME != CORRECTNESS SCHEMA CONFORMANCE
 OUTBOX CLAIM RECOVERY -> SAME LOGICAL MESSAGE IDENTITY

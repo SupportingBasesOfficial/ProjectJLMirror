@@ -102,3 +102,11 @@ jobs:
       - name: Validate Wave 2 quarantine redrive authority
         shell: bash
         run: PYTHONPATH=src python3 tools/async_core/validate_redrive_authority.py
+
+      - name: Falsify Wave 3 observability and release chain
+        shell: bash
+        run: PYTHONPATH=src python3 -m unittest discover -s tests/wave3 -p 'test_*.py'
+
+      - name: Validate Wave 3 observability and release boundaries
+        shell: bash
+        run: PYTHONPATH=src python3 tools/wave3/validate_wave3.py

@@ -1,0 +1,57 @@
+{
+  "wave_id": "wave-3.observability-release-chain@1",
+  "authority_base": "main@b1f5fb83d2aa53e981007dddd0b751e22db40eee",
+  "implementation_slices": [
+    "impl.observability@1",
+    "impl.release-supply-chain@1"
+  ],
+  "scope": "platform_observability_and_release_chain_substrate_only",
+  "product_feature_activation": "none",
+  "canonical_observability_laws": [
+    "TELEMETRY != BUSINESS/SECURITY/RECOVERY AUTHORITY",
+    "MISSING TELEMETRY != SUCCESS",
+    "HEALTH != AUTHORIZATION",
+    "CORRELATION != TRUST",
+    "CUSTOMER MONITORING TELEMETRY != PLATFORM OBSERVABILITY"
+  ],
+  "canonical_release_laws": [
+    "UNTRUSTED SOURCE != TRUSTED RELEASE INPUT",
+    "BUILD SUCCESS != ARTIFACT TRUST",
+    "ARTIFACT EXISTS != PROMOTION AUTHORITY",
+    "PROMOTED ARTIFACT != DEPLOYMENT AUTHORITY",
+    "SAME IMMUTABLE ARTIFACT != SAME ENVIRONMENT CONFIGURATION",
+    "DEPLOYMENT SUCCESS != RUNTIME ADMISSION",
+    "TIMEOUT/LOST RESPONSE != RELEASE EFFECT ABSENCE",
+    "RELEASE TARGET STATE != PLACEMENT/RUNTIME AUTHORITY",
+    "ONE RELEASE ARTIFACT -> MANY ENVIRONMENT PROMOTIONS"
+  ],
+  "residual_c2_choices_not_selected": [
+    "observability_backend",
+    "collector_or_trace_transport",
+    "sampling_mechanism",
+    "dashboard_or_paging_product",
+    "ci_product_or_release_orchestrator",
+    "artifact_registry",
+    "signing_and_attestation_backend",
+    "sbom_generator",
+    "iac_or_deployment_product",
+    "release_target_coordination_store",
+    "physical_environment_mapping"
+  ],
+  "forbidden_substitutions": [
+    "telemetry_green_for_business_or_security_authority",
+    "missing_telemetry_for_success",
+    "request_or_message_id_as_unbounded_metric_label",
+    "raw_url_or_query_as_metric_dimension",
+    "secret_or_token_material_in_ordinary_telemetry",
+    "branch_or_pr_event_for_accepted_source_trust",
+    "successful_build_for_trusted_artifact",
+    "mutable_tag_for_artifact_identity",
+    "same_artifact_for_target_configuration_equivalence",
+    "deployment_controller_green_for_runtime_verification",
+    "timeout_or_lost_response_for_effect_absence",
+    "new_deployment_operation_id_for_unresolved_prior_operation",
+    "release_target_state_version_for_runtime_generation_or_placement_version"
+  ],
+  "next_wave_authorized": false
+}

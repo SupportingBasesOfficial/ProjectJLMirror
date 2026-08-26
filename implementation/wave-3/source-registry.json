@@ -1,0 +1,21 @@
+{
+  "accepted_authority_base": "b1f5fb83d2aa53e981007dddd0b751e22db40eee",
+  "sources": [
+    {
+      "path": "docs/12-observability-sre/10-observability-semantic-manifest.md",
+      "git_blob_sha": "80054d9a15fb82ba26a91c34f98b10964ab3c83d"
+    },
+    {
+      "path": "docs/14-deployment-release-supply-chain/11-release-semantic-manifest.md",
+      "git_blob_sha": "5bb4f7e50ab7eaa7d9162cd9e2f633a10c4d17ff"
+    },
+    {
+      "path": "docs/16-implementation-readiness/11-initial-implementation-sequencing.md",
+      "git_blob_sha": "74b70ab33047f92ae841732f2c7ebab243ca3347"
+    },
+    {
+      "path": "docs/16-implementation-readiness/15-implementation-slice-readiness-manifest.md",
+      "git_blob_sha": "fc810728322d928ce9a5f71243101a390384189a"
+    }
+  ]
+}

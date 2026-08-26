@@ -7,7 +7,7 @@ from jlmirror_observability import (
 
 
 class ObservabilityTests(unittest.TestCase):
-    def test_signal_record_accepts_bounded_dimensions(self):
+    def test_signal_record_accepts_profile_declared_bounded_dimensions(self):
         rec = SignalRecord(
             profile_id="obs.request.outcome@1", family=SignalFamily.METRIC,
             operation_class="api.read", classification="internal",
@@ -19,13 +19,27 @@ class ObservabilityTests(unittest.TestCase):
         self.assertEqual(rec.evidence_plane, EvidencePlane.OPERATIONAL_OBSERVABILITY)
         self.assertFalse(rec.grants_authority)
 
-    def test_request_id_cannot_be_metric_dimension(self):
-        with self.assertRaises(ObservationError):
-            SignalRecord("obs.request.outcome@1", SignalFamily.METRIC, "api.read", "internal", "bounded", {"request_id": "r-1"})
+    def test_request_id_alias_cannot_be_metric_dimension(self):
+        for key in ("request_id", "requestId", "req-id", "local_dynamic_label"):
+            with self.subTest(key=key):
+                with self.assertRaises(ObservationError):
+                    SignalRecord("obs.request.outcome@1", SignalFamily.METRIC, "api.read", "internal", "bounded", {key: "r-1"})
 
-    def test_secret_bearing_field_is_rejected(self):
+    def test_untrusted_dynamic_diagnostic_field_name_fails_closed(self):
+        with self.assertRaises(ObservationError):
+            SignalRecord("obs.request.outcome@1", SignalFamily.LOG, "api.read", "internal", "bounded", diagnostic_fields={"user_supplied_index_name": "value"})
+
+    def test_diagnostic_identifier_rejects_payload_shape(self):
+        with self.assertRaises(ObservationError):
+            SignalRecord("obs.request.outcome@1", SignalFamily.LOG, "api.read", "internal", "bounded", diagnostic_fields={"request_id": "Bearer secret-token"})
+
+    def test_secret_bearing_field_name_is_rejected(self):
         with self.assertRaises(ObservationError):
             SignalRecord("obs.request.outcome@1", SignalFamily.LOG, "api.read", "internal", "bounded", diagnostic_fields={"refresh_token": "never"})
+
+    def test_metric_value_must_be_bounded_semantic_token(self):
+        with self.assertRaises(ObservationError):
+            SignalRecord("obs.request.outcome@1", SignalFamily.METRIC, "api.read", "internal", "bounded", metric_dimensions={"outcome_class": "arbitrary value with spaces " * 30})
 
     def test_unknown_signal_profile_fails_closed(self):
         with self.assertRaises(ObservationError):

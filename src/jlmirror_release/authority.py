@@ -44,17 +44,57 @@ class _MutableReleaseTargetState:
 
 
 @dataclass(frozen=True)
+class CurrentAuthorityEvidence:
+    gate_id: str
+    authority_profile_and_version: str
+    evidence_reference: str
+    scope_binding: str
+    release_target_state_version: int
+    current: bool
+
+    @staticmethod
+    def scope_for(intent: DeploymentIntent) -> str:
+        return f"deployment:{intent.target_id}:{intent.deployment_operation_id}"
+
+    def validate_for(
+        self,
+        intent: DeploymentIntent,
+        expected_gate_id: str,
+        *,
+        expected_target_state_version: int | None = None,
+    ) -> None:
+        if self.gate_id != expected_gate_id:
+            raise ReleaseError(f"release authority evidence gate mismatch: expected {expected_gate_id}")
+        if not self.authority_profile_and_version:
+            raise ReleaseError(f"{expected_gate_id} requires an owning authority profile/version")
+        require_immutable_evidence_reference(f"{expected_gate_id}.evidence_reference", self.evidence_reference)
+        if self.scope_binding != self.scope_for(intent):
+            raise ReleaseError(f"{expected_gate_id} authority evidence is bound to a different deployment scope")
+        expected_version = (
+            intent.expected_release_target_state_version
+            if expected_target_state_version is None
+            else expected_target_state_version
+        )
+        if self.release_target_state_version != expected_version:
+            raise ReleaseError(f"{expected_gate_id} authority evidence is bound to a different target-state version")
+        if not self.current:
+            raise ReleaseError(f"{expected_gate_id} authority evidence is not current")
+
+
+@dataclass(frozen=True)
 class DeploymentRecord:
     intent: DeploymentIntent
     state: PromotionState
     promotion_evidence_reference: str
     configuration_validation_evidence_reference: str
     rollout_compatibility_evidence_reference: str
+    admission_gate_evidence_references: tuple[str, ...]
     resulting_release_target_state_version_or_pending: int | None = None
     durable_target_evidence_reference: str | None = None
     observed_artifact_identity: str | None = None
     observed_configuration_generation: str | None = None
     runtime_verification_evidence_reference: str | None = None
+    reconciliation_authority_evidence_reference: str | None = None
 
 
 @dataclass(frozen=True)
@@ -64,14 +104,35 @@ class DeploymentAdmissionEvidence:
     configuration_validation: ConfigurationValidationEvidence
     rollout_compatibility: RolloutCompatibilityEvidence
     deployment_principal_class: str
-    deployment_principal_authorized_current: bool
-    release_policy_current: bool
-    release_target_authority_current: bool
-    required_reliability_gates_current: bool
-    required_security_recovery_gates_current: bool
+    current_authority_gates: tuple[CurrentAuthorityEvidence, ...]
 
 
+_REQUIRED_ADMISSION_GATES = frozenset({
+    "deployment_principal",
+    "release_policy",
+    "release_target_authority",
+    "reliability",
+    "security_recovery",
+})
 _TERMINAL_STATES = frozenset({PromotionState.COMPLETED, PromotionState.REJECTED, PromotionState.ABORTED, PromotionState.SUPERSEDED})
+
+
+def _validated_admission_gate_map(
+    intent: DeploymentIntent,
+    evidence: DeploymentAdmissionEvidence,
+) -> dict[str, CurrentAuthorityEvidence]:
+    gates: dict[str, CurrentAuthorityEvidence] = {}
+    for gate in evidence.current_authority_gates:
+        if gate.gate_id in gates:
+            raise ReleaseError(f"duplicate deployment admission authority gate: {gate.gate_id}")
+        gates[gate.gate_id] = gate
+    if set(gates) != _REQUIRED_ADMISSION_GATES:
+        missing = sorted(_REQUIRED_ADMISSION_GATES - set(gates))
+        extra = sorted(set(gates) - _REQUIRED_ADMISSION_GATES)
+        raise ReleaseError(f"deployment admission authority gate set mismatch: missing={missing} extra={extra}")
+    for gate_id, gate in gates.items():
+        gate.validate_for(intent, gate_id)
+    return gates
 
 
 def require_deployment_admission(intent: DeploymentIntent, evidence: DeploymentAdmissionEvidence) -> None:
@@ -133,10 +194,7 @@ def require_deployment_admission(intent: DeploymentIntent, evidence: DeploymentA
 
     if evidence.deployment_principal_class != "principal.release-deploy@1":
         raise ReleaseError("effectful deployment requires bounded release deploy principal")
-    if not all((evidence.deployment_principal_authorized_current, evidence.release_policy_current,
-                evidence.release_target_authority_current, evidence.required_reliability_gates_current,
-                evidence.required_security_recovery_gates_current)):
-        raise ReleaseError("deployment admission current-authority gates are incomplete")
+    _validated_admission_gate_map(intent, evidence)
     if not evidence.provenance.release_policy_current:
         raise ReleaseError("build provenance policy is not current")
 
@@ -158,6 +216,7 @@ class DeploymentAuthority:
 
     def create_or_observe(self, intent: DeploymentIntent, admission: DeploymentAdmissionEvidence) -> DeploymentRecord:
         require_deployment_admission(intent, admission)
+        gate_map = _validated_admission_gate_map(intent, admission)
         with self._lock:
             existing = self._records.get(intent.deployment_operation_id)
             if existing is not None:
@@ -176,12 +235,22 @@ class DeploymentAuthority:
                 promotion_evidence_reference=admission.promotion.promotion_evidence_reference,
                 configuration_validation_evidence_reference=admission.configuration_validation.evidence_reference,
                 rollout_compatibility_evidence_reference=admission.rollout_compatibility.evidence_reference,
+                admission_gate_evidence_references=tuple(gate_map[key].evidence_reference for key in sorted(gate_map)),
             )
             self._records[intent.deployment_operation_id] = record
             self._target.unresolved_operation_id = intent.deployment_operation_id
             return record
 
-    def observe_effect(self, operation_id: str, observation: DeploymentObservation, *, observed_artifact_identity: str | None = None, observed_configuration_generation: str | None = None, durable_target_evidence_reference: str | None = None, reconciliation_authority_current: bool = False) -> DeploymentRecord:
+    def observe_effect(
+        self,
+        operation_id: str,
+        observation: DeploymentObservation,
+        *,
+        observed_artifact_identity: str | None = None,
+        observed_configuration_generation: str | None = None,
+        durable_target_evidence_reference: str | None = None,
+        reconciliation_authority: CurrentAuthorityEvidence | None = None,
+    ) -> DeploymentRecord:
         with self._lock:
             try:
                 record = self._records[operation_id]
@@ -206,8 +275,16 @@ class DeploymentAuthority:
             if durable_target_evidence_reference is None:
                 raise ReleaseError("confirmed/absent deployment outcome requires durable target evidence")
             require_immutable_evidence_reference("durable_target_evidence_reference", durable_target_evidence_reference)
-            if resolving_reconciliation and not reconciliation_authority_current:
-                raise ReleaseError("reconciliation-required deployment cannot be resolved without current reconciliation authority")
+            reconciliation_ref = record.reconciliation_authority_evidence_reference
+            if resolving_reconciliation:
+                if reconciliation_authority is None:
+                    raise ReleaseError("reconciliation-required deployment needs scoped current authority evidence")
+                reconciliation_authority.validate_for(
+                    record.intent,
+                    "reconciliation_authority",
+                    expected_target_state_version=self._target.release_target_state_version,
+                )
+                reconciliation_ref = reconciliation_authority.evidence_reference
 
             if observation is DeploymentObservation.EFFECT_ABSENT_PROVEN:
                 self._clear_pending(operation_id)
@@ -215,6 +292,7 @@ class DeploymentAuthority:
                     record,
                     state=PromotionState.ABORTED,
                     durable_target_evidence_reference=durable_target_evidence_reference,
+                    reconciliation_authority_evidence_reference=reconciliation_ref,
                 )
                 self._records[operation_id] = updated
                 return updated
@@ -234,6 +312,7 @@ class DeploymentAuthority:
                 durable_target_evidence_reference=durable_target_evidence_reference,
                 observed_artifact_identity=observed_artifact_identity,
                 observed_configuration_generation=observed_configuration_generation,
+                reconciliation_authority_evidence_reference=reconciliation_ref,
             )
             self._records[operation_id] = updated
             return updated

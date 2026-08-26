@@ -269,6 +269,16 @@ class InMemoryCrossAuthorityOperationLedger:
 
         with self._lock:
             operation = self._require(operation_id)
+            reconciliation_attempt_generation = None
+            if operation.reconciliation_revision is not None:
+                evidence = self._reconciliation_evidence.get(
+                    (operation.operation_id, operation.reconciliation_revision)
+                )
+                if evidence is None:
+                    raise InvalidTransition(
+                        "current reconciliation pointer lacks append-only evidence"
+                    )
+                reconciliation_attempt_generation = evidence.attempt_generation
             return CrossAuthorityOperationSnapshot(
                 operation_id=operation.operation_id,
                 state=operation.state,
@@ -276,6 +286,7 @@ class InMemoryCrossAuthorityOperationLedger:
                 outcome=operation.outcome,
                 reconciliation_resolution=operation.reconciliation_resolution,
                 reconciliation_revision=operation.reconciliation_revision,
+                reconciliation_attempt_generation=reconciliation_attempt_generation,
             )
 
     def state(self, operation_id: str) -> OperationState:

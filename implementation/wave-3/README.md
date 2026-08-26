@@ -27,6 +27,7 @@ BUILD SUCCESS != ARTIFACT TRUST
 ARTIFACT EXISTS != PROMOTION AUTHORITY
 PROMOTION EVIDENCE != INTERCHANGEABLE DEPLOYMENT EVIDENCE
 BOOLEAN CURRENT != EVIDENCE LINEAGE
+EVIDENCE REFERENCE != MUTABLE ALIAS/URL
 RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD
 DEPLOYMENT SUCCESS != RUNTIME ADMISSION
 RELEASE TARGET STATE != PLACEMENT/RUNTIME AUTHORITY
@@ -56,6 +57,7 @@ No backend, collector, trace transport, dashboard, pager, sampling numeric, SLO 
 - accepted vs untrusted source trust classes;
 - exact target configuration identity/generation/semantic profile;
 - promotion records bind durable promotion/approval evidence plus exact target, validation scope, rollout scope, runtime profile set, schema/API/event compatibility state and validation/compatibility evidence identities;
+- durable release evidence references use explicit immutable `evidence:*` record identities; mutable aliases/URLs are rejected by the reference model;
 - deployment admission rejects recombination of a promotion with different configuration-validation, rollout-compatibility or cell-compatibility evidence;
 - configuration validation and rollout compatibility require current durable evidence references even when the target configuration happens to equal the validation configuration;
 - stable `deployment_operation_id` create-or-observe semantics;

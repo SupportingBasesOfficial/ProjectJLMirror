@@ -183,6 +183,11 @@ class ProvenanceCompatibilityTests(unittest.TestCase):
     def test_promotion_binds_exact_artifact_config_profile_environment_and_lineage(self):
         require_promotion_authority(promotion(), provenance())
 
+    def test_promotion_rejects_unknown_or_duplicate_runtime_profiles(self):
+        for runtime_profiles in (("runtime.unknown@1",), ("runtime.api@1", "runtime.api@1")):
+            with self.subTest(runtime_profiles=runtime_profiles), self.assertRaises(ReleaseError):
+                require_promotion_authority(promotion(runtime_profile_set=runtime_profiles), provenance())
+
     def test_promotion_principal_and_policy_require_durable_current_lineage(self):
         for mutation in (
             {"promotion_principal_authority_evidence_reference": "latest"},

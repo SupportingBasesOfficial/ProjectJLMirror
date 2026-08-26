@@ -66,7 +66,7 @@ class ObservabilityTests(unittest.TestCase):
 
     def test_unknown_signal_profile_fails_closed(self):
         with self.assertRaises(ObservationError):
-            SignalRecord("obs.local-made-up@1", SignalFamily.EVENT, "x", "internal", "none")
+            SignalRecord("obs.local-made-up@1", SignalFamily.EVENT, "api.read", "internal", "none")
 
     def test_wrong_signal_family_fails_closed(self):
         with self.assertRaises(ObservationError):
@@ -83,16 +83,22 @@ class ObservabilityTests(unittest.TestCase):
     def test_missing_health_is_unknown(self):
         health = missing_health("health.observability-pipeline@1")
         self.assertEqual(health.state, HealthState.UNKNOWN)
+        self.assertEqual(health.reason_class, "telemetry_missing")
         self.assertFalse(health.evidence_complete)
         self.assertFalse(health.grants_authority)
 
     def test_incomplete_health_cannot_be_green(self):
         with self.assertRaises(ObservationError):
-            HealthAssessment("health.cell@1", HealthState.HEALTHY, "missing_dependency_data", False)
+            HealthAssessment("health.cell@1", HealthState.HEALTHY, "dependency_unavailable", False)
 
     def test_health_never_grants_authority(self):
-        health = HealthAssessment("health.cell@1", HealthState.HEALTHY, "evidence_complete", True)
+        health = HealthAssessment("health.cell@1", HealthState.HEALTHY, "healthy_or_eligible", True)
         self.assertFalse(health.grants_authority)
+
+    def test_health_reason_class_is_reviewed_finite_not_arbitrary_safe_token(self):
+        for reason in ("tenant-12345", "resource-550e8400", "local_reason_42"):
+            with self.subTest(reason=reason), self.assertRaisesRegex(ObservationError, "reviewed finite"):
+                HealthAssessment("health.cell@1", HealthState.DEGRADED, reason, True)
 
     def _nac(self, **changes):
         values = dict(

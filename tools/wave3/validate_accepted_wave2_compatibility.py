@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""Future-wave compatibility guard for the accepted Wave 2 substrate.
-
-Wave 2's original validator intentionally proves the implementation delta from its
-Wave 1 authority base. A later authorized wave must not make its own files part of
-that historical delta. This wrapper preserves the original semantic checks while
-separating two immutable facts:
-
-1. the accepted Wave 2 historical delta remains exactly scoped; and
-2. future HEADs do not mutate the accepted Wave 2 protected substrate.
-"""
+"""Future-wave compatibility guard for the accepted Wave 2 substrate."""
 
 from __future__ import annotations
 
@@ -28,15 +19,11 @@ from tools.async_core import validate_wave2 as wave2  # noqa: E402
 ACCEPTED_WAVE2_SHA = "b1f5fb83d2aa53e981007dddd0b751e22db40eee"
 PROFILE = "jlmirror-wave2-future-compatibility/v1"
 PROTECTED_WAVE2_PREFIXES = (
-    "implementation/wave-2/",
-    "src/jlmirror_async/",
-    "sql/wave2/",
-    "tests/wave2/",
-    "tools/async_core/",
+    "implementation/wave-2/", "src/jlmirror_async/", "sql/wave2/",
+    "tests/wave2/", "tools/async_core/",
 )
 PROTECTED_WAVE2_EXACT = frozenset({
-    "tools/authority/wave1_scope.py",
-    "tests/wave1/test_wave1_scope_guard.py",
+    "tools/authority/wave1_scope.py", "tests/wave1/test_wave1_scope_guard.py",
 })
 
 
@@ -90,6 +77,20 @@ def future_substrate_drift_findings(paths: list[str] | None = None) -> list[str]
     return findings
 
 
+def workflow_findings() -> list[str]:
+    text = (ROOT / ".github/workflows/deterministic-assurance.yml").read_text(encoding="utf-8")
+    required = (
+        "python3 -m unittest discover -s tests/wave2 -p 'test_*.py'",
+        "python3 tools/wave3/validate_accepted_wave2_compatibility.py",
+        "python3 tools/async_core/validate_reconciliation_attempt_binding.py",
+        "python3 tools/async_core/validate_redrive_authority.py",
+        "persist-credentials: false",
+        "allow-unsafe-pr-checkout: false",
+        "permissions:\n  contents: read",
+    )
+    return [f"future Wave 2 workflow wiring missing: {item}" for item in required if item not in text]
+
+
 def semantic_findings() -> list[str]:
     findings: list[str] = []
     checks = (
@@ -102,13 +103,13 @@ def semantic_findings() -> list[str]:
         wave2._reconciliation_authority_boundary_findings,
         wave2._sql_findings,
         wave2._wave1_compatibility_maintenance_findings,
-        wave2._workflow_findings,
     )
     for check in checks:
         try:
             findings.extend(check())
-        except Exception as exc:  # validator must fail closed on an unavailable check
+        except Exception as exc:
             findings.append(f"Wave 2 semantic compatibility check failed closed: {check.__name__}: {exc}")
+    findings.extend(workflow_findings())
     return findings
 
 

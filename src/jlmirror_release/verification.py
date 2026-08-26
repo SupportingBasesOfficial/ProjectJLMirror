@@ -21,7 +21,7 @@ def runtime_verification_scope_for(intent: DeploymentIntent) -> str:
 
 @dataclass(frozen=True)
 class RuntimeVerificationRequirements:
-    """Current release-policy-governed authority for the exact runtime-verification gate set."""
+    """Pre-effect release-policy-governed authority for the exact runtime-verification gate set."""
 
     authority_profile_and_version: str
     evidence_reference: str
@@ -38,7 +38,7 @@ class RuntimeVerificationRequirements:
         intent: DeploymentIntent,
         *,
         expected_release_target_state_version: int,
-        expected_release_policy_evidence_reference: str,
+        expected_release_policy_evidence_reference: str | None = None,
     ) -> tuple[str, ...]:
         if self.authority_profile_and_version != RUNTIME_REQUIREMENTS_AUTHORITY_PROFILE:
             raise ReleaseError("runtime verification requirements use an unknown authority profile")
@@ -53,8 +53,9 @@ class RuntimeVerificationRequirements:
             raise ReleaseError("runtime verification requirements are bound to a different release-target state version")
         if self.release_policy_profile_and_version != intent.release_policy_profile_and_version:
             raise ReleaseError("runtime verification requirements use a different release-policy profile")
-        if self.release_policy_evidence_reference != expected_release_policy_evidence_reference:
-            raise ReleaseError("runtime verification requirements are not bound to the current runtime release-policy evidence")
+        if (expected_release_policy_evidence_reference is not None and
+            self.release_policy_evidence_reference != expected_release_policy_evidence_reference):
+            raise ReleaseError("runtime verification requirements are not bound to the deployment-admission release-policy evidence")
         if not self.current:
             raise ReleaseError("runtime verification requirements authority is not current")
 
@@ -131,12 +132,12 @@ class RuntimeVerificationEvidence:
     runtime_admission_current: bool
     configuration_currentness_evidence_reference: str
     configuration_current: bool
+    release_policy_profile_and_version: str
     release_policy_evidence_reference: str
     release_policy_current: bool
     verifier_authority_profile_and_version: str
     verifier_authority_evidence_reference: str
     verifier_authority_current: bool
-    requirements: RuntimeVerificationRequirements
     health_gates: tuple[HealthGateEvidence, ...]
     vendor_controller_green: bool = False
 
@@ -144,6 +145,7 @@ class RuntimeVerificationEvidence:
 def verify_runtime(
     intent: DeploymentIntent,
     evidence: RuntimeVerificationEvidence,
+    requirements: RuntimeVerificationRequirements,
     *,
     expected_release_target_state_version: int,
 ) -> None:
@@ -175,15 +177,16 @@ def verify_runtime(
         raise ReleaseError("deployment success cannot substitute for current runtime admission")
     if not evidence.configuration_current:
         raise ReleaseError("target configuration currentness is not proven")
+    if evidence.release_policy_profile_and_version != intent.release_policy_profile_and_version:
+        raise ReleaseError("runtime verification is using a different release-policy profile")
     if not evidence.release_policy_current:
         raise ReleaseError("release policy currentness is not proven")
     if not evidence.verifier_authority_profile_and_version or not evidence.verifier_authority_current:
         raise ReleaseError("runtime verifier authority/currentness is not proven")
 
-    required_health_profile_ids = evidence.requirements.validate_for(
+    required_health_profile_ids = requirements.validate_for(
         intent,
         expected_release_target_state_version=expected_release_target_state_version,
-        expected_release_policy_evidence_reference=evidence.release_policy_evidence_reference,
     )
 
     gates: dict[str, HealthGateEvidence] = {}

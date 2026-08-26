@@ -74,3 +74,7 @@ jobs:
       - name: Validate Wave 1 fence revalidation safety
         shell: bash
         run: PYTHONPATH=src python3 tools/authority/validate_fence_revalidation_safety.py
+
+      - name: Validate Wave 1 fence logical replication authority
+        shell: bash
+        run: PYTHONPATH=src python3 tools/authority/validate_fence_publication_safety.py

@@ -62,11 +62,17 @@ class CurrentAuthorityEvidence:
         expected_gate_id: str,
         *,
         expected_target_state_version: int | None = None,
+        expected_authority_profile_and_version: str | None = None,
     ) -> None:
         if self.gate_id != expected_gate_id:
             raise ReleaseError(f"release authority evidence gate mismatch: expected {expected_gate_id}")
         if not self.authority_profile_and_version:
             raise ReleaseError(f"{expected_gate_id} requires an owning authority profile/version")
+        if (expected_authority_profile_and_version is not None and
+            self.authority_profile_and_version != expected_authority_profile_and_version):
+            raise ReleaseError(
+                f"{expected_gate_id} authority evidence uses a different owning profile/version"
+            )
         require_immutable_evidence_reference(f"{expected_gate_id}.evidence_reference", self.evidence_reference)
         if self.scope_binding != self.scope_for(intent):
             raise ReleaseError(f"{expected_gate_id} authority evidence is bound to a different deployment scope")
@@ -133,8 +139,17 @@ def _validated_admission_gate_map(
         missing = sorted(_REQUIRED_ADMISSION_GATES - set(gates))
         extra = sorted(set(gates) - _REQUIRED_ADMISSION_GATES)
         raise ReleaseError(f"deployment admission authority gate set mismatch: missing={missing} extra={extra}")
+
+    fixed_owner_profiles = {
+        "deployment_principal": "principal.release-deploy@1",
+        "release_policy": intent.release_policy_profile_and_version,
+    }
     for gate_id, gate in gates.items():
-        gate.validate_for(intent, gate_id)
+        gate.validate_for(
+            intent,
+            gate_id,
+            expected_authority_profile_and_version=fixed_owner_profiles.get(gate_id),
+        )
     return gates
 
 

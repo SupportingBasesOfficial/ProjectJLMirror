@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .model import ReleaseError, TargetConfiguration, ValidationScope
+from .provenance import require_immutable_evidence_reference
 
 
 @dataclass(frozen=True)
@@ -18,7 +19,8 @@ class ConfigurationValidationEvidence:
 
 
 def require_validation_for_target(evidence: ConfigurationValidationEvidence) -> None:
-    if not evidence.evidence_reference or not evidence.evidence_current:
+    require_immutable_evidence_reference("configuration_validation.evidence_reference", evidence.evidence_reference)
+    if not evidence.evidence_current:
         raise ReleaseError("configuration validation requires a current durable evidence reference")
     if evidence.copied_secret_values_used_as_equivalence:
         raise ReleaseError("production secret values cannot be copied to prove configuration equivalence")

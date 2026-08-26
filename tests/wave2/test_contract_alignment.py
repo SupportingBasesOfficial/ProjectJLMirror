@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class Wave2ContractAlignmentTests(unittest.TestCase):
-    def test_manifest_preserves_product_next_wave_and_execution_boundaries(self) -> None:
+    def test_manifest_preserves_product_next_wave_execution_and_reliability_boundaries(self) -> None:
         manifest = json.loads(
             (ROOT / "implementation/wave-2/IMPLEMENTATION_MANIFEST.json").read_text(encoding="utf-8")
         )
@@ -17,6 +17,16 @@ class Wave2ContractAlignmentTests(unittest.TestCase):
         self.assertEqual(
             manifest["implementation_slices"],
             ["impl.cell-data-runtime@1", "impl.async-core@1"],
+        )
+        self.assertEqual(
+            manifest["required_reliability_profiles"],
+            [
+                "rel.cell-transactional-store@1",
+                "rel.outbox-publication@1",
+                "rel.broker-job-transport@1",
+                "rel.consumer-inbox-effect@1",
+                "rel.replay-consume-state@1",
+            ],
         )
         self.assertEqual(
             manifest["fixed_execution_admission"],
@@ -40,6 +50,15 @@ class Wave2ContractAlignmentTests(unittest.TestCase):
             "same_canonical_inbox_key_with_conflicting_trusted_tenant_binding_for_benign_duplicate",
         ):
             self.assertIn(forbidden, manifest["forbidden_correctness_substitutions"])
+
+    def test_reliability_profiles_do_not_select_transport_product(self) -> None:
+        manifest = json.loads(
+            (ROOT / "implementation/wave-2/IMPLEMENTATION_MANIFEST.json").read_text(encoding="utf-8")
+        )
+        self.assertIn("rel.broker-job-transport@1", manifest["required_reliability_profiles"])
+        self.assertIn("broker_or_job_transport", manifest["residual_c2_choices_not_selected"])
+        readme = (ROOT / "implementation/wave-2/README.md").read_text(encoding="utf-8")
+        self.assertIn("RELIABILITY PROFILE != TRANSPORT PRODUCT SELECTION", readme)
 
     def test_sql_keeps_immutable_message_separate_from_dispatch_state(self) -> None:
         sql = (ROOT / "sql/wave2/001_async_correctness.sql").read_text(encoding="utf-8").lower()
@@ -137,6 +156,7 @@ class Wave2ContractAlignmentTests(unittest.TestCase):
         self.assertIn("claim/lease/locking semantics", publication)
         self.assertIn("lease timeout while original executor may still be active", delivery)
         self.assertIn("worker lease expiry is not effect absence proof", delivery)
+        self.assertIn("Re-drive is an explicit governed action", delivery)
         self.assertIn("(consumer_contract, message_identity_scope, message_id)", inbox)
         self.assertIn("A read-then-insert race is prohibited", inbox)
         self.assertIn("resolves current placement", security)
@@ -163,6 +183,8 @@ class Wave2ContractAlignmentTests(unittest.TestCase):
         self.assertIn("LEASE EXPIRY != EFFECT ABSENCE", readme)
         self.assertIn("PREEXISTING TABLE NAME != CORRECTNESS SCHEMA CONFORMANCE", readme)
         self.assertIn("CurrentAsyncExecutionAuthorityPort", readme)
+        self.assertIn("CurrentRedriveAuthorityPort", readme)
+        self.assertIn("QUARANTINE != REDRIVE ELIGIBILITY", readme)
 
 
 if __name__ == "__main__":

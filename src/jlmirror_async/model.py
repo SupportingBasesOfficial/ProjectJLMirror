@@ -287,11 +287,16 @@ class CrossAuthorityOperationSnapshot:
 
     Reconciliation authority is attempt-generation bound. A revision/resolution
     without the exact generation it reconciled is incomplete authority evidence.
+    Tenant/owner scope is part of the immutable operation authority tuple; an
+    operation_id by itself is never sufficient evidence for inbox completion or
+    retry eligibility.
     """
 
     operation_id: str
     state: OperationState
     attempt_generation: int
+    owner_contract: str | None = None
+    tenant_id: str | None = None
     outcome: EffectResultLink | None = None
     reconciliation_resolution: ReconciliationResolution | None = None
     reconciliation_revision: str | None = None
@@ -299,6 +304,9 @@ class CrossAuthorityOperationSnapshot:
 
     def __post_init__(self) -> None:
         identifier(self.operation_id, "operation_id")
+        if self.owner_contract is not None:
+            identifier(self.owner_contract, "owner_contract")
+        optional_identifier(self.tenant_id, "tenant_id")
         if not isinstance(self.state, OperationState):
             raise ValueError("state must be canonical OperationState")
         if isinstance(self.attempt_generation, bool) or not isinstance(self.attempt_generation, int):
@@ -347,6 +355,10 @@ class CrossAuthorityOperationSnapshot:
         elif self.reconciliation_resolution is ReconciliationResolution.STILL_UNKNOWN:
             if self.state is not OperationState.RECONCILIATION_REQUIRED or self.outcome is not None:
                 raise ValueError("still_unknown snapshot must remain reconciliation_required")
+
+    @property
+    def authority_scope(self) -> tuple[str | None, str | None]:
+        return (self.tenant_id, self.owner_contract)
 
 
 @dataclass(frozen=True)

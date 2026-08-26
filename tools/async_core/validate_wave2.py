@@ -46,9 +46,13 @@ EXPECTED_FORBIDDEN = [
     "lease_expiry_for_effect_absence",
     "expired_inbox_or_external_effect_claim_for_automatic_retry_eligibility",
     "reconciliation_state_without_durable_resolution_revision_for_retry_or_completion",
+    "reconciliation_revision_reuse_for_different_evidence",
+    "preseeded_reconciliation_revision_before_ambiguity",
+    "mutable_or_deletable_reconciliation_evidence",
     "direct_state_update_for_reconciliation_bypass",
     "mutable_inbox_identity_tenant_or_comparison_evidence",
     "mutable_cross_authority_operation_identity_or_owner_scope",
+    "same_state_claim_owner_generation_or_admission_rewrite",
     "broker_redelivery_for_external_effect_retry_authority",
     "timeout_for_external_effect_absence",
     "new_message_id_for_ambiguous_republication",
@@ -77,7 +81,7 @@ EXPECTED_MANIFEST = {
     "fixed_inbox_identity": "(consumer_contract,message_identity_scope,message_id)",
     "fixed_execution_admission": "revision_bound_current_authority_before_each_protected_effect_attempt",
     "fixed_lease_loss_semantics": "lease_expiry_never_proves_effect_absence",
-    "fixed_reconciliation_evidence": "retry_or_confirmed_completion_requires_stable_reconciliation_revision_and_canonical_resolution",
+    "fixed_reconciliation_evidence": "append_only_operation_scoped_revision_plus_canonical_resolution_required_for_retry_or_confirmed_completion",
     "durable_schema_reuse_policy": "preexisting_wave2_correctness_object_requires_reviewed_revalidation_not_if_not_exists_acceptance",
     "residual_c2_choices_not_selected": EXPECTED_C2,
     "forbidden_correctness_substitutions": EXPECTED_FORBIDDEN,
@@ -100,6 +104,7 @@ CRITICAL_TABLES = (
     "system.async_outbox_dispatch",
     "system.async_consumer_inbox",
     "system.async_cross_authority_operation",
+    "system.async_cross_authority_reconciliation",
 )
 
 
@@ -199,34 +204,44 @@ def _execution_boundary_findings() -> list[str]:
         (inbox, "same_scoped_identity_conflicting_trusted_binding"),
         (inbox, "def reconcile_retry_eligible("),
         (inbox, "ReconciliationResolution.EFFECT_PROVEN_ABSENT"),
+        (reconciliation, "class ReconciliationEvidence"),
+        (reconciliation, "self._reconciliation_evidence"),
+        (reconciliation, "reconciliation revision cannot be reused for different evidence"),
         (reconciliation, "require_current_execution(execution_authority, request)"),
         (reconciliation, "attempt_lease_expired_effect_absence_unproven"),
-        (reconciliation, "reconciliation_revision"),
     )
     return [f"Wave 2 current/reconciliation boundary missing: {anchor}" for text, anchor in required if anchor not in text]
 
 
 def _sql_findings() -> list[str]:
-    path = ROOT / "sql/wave2/001_async_correctness.sql"
-    text = path.read_text(encoding="utf-8")
+    initial = (ROOT / "sql/wave2/001_async_correctness.sql").read_text(encoding="utf-8")
+    hardening = (
+        ROOT / "sql/wave2/002_reconciliation_evidence_and_transition_hardening.sql"
+    ).read_text(encoding="utf-8")
+    text = initial + "\n" + hardening
     lowered = text.lower()
     required = (
         "create table system.async_outbox_message",
         "unique (producer_message_scope, message_id)",
         "create table system.async_outbox_dispatch",
         "claim_expires_at timestamptz null",
-        "create function system.wave2_guard_outbox_dispatch_update()",
         "create function system.wave2_initialize_outbox_dispatch()",
         "after insert on system.async_outbox_message",
         "insert into system.async_outbox_dispatch(outbox_record_id)",
         "create table system.async_consumer_inbox",
         "primary key (consumer_contract, message_identity_scope, message_id)",
-        "create function system.wave2_guard_consumer_inbox_update()",
         "create table system.async_cross_authority_operation",
-        "create function system.wave2_guard_cross_authority_operation_update()",
+        "create table system.async_cross_authority_reconciliation",
+        "primary key (operation_id, reconciliation_revision)",
+        "before insert on system.async_cross_authority_reconciliation",
+        "before update or delete on system.async_cross_authority_reconciliation",
+        "wave2_operation_reconciliation_revision_fk",
+        "wave2_inbox_reconciliation_revision_fk",
+        "create or replace function system.wave2_guard_outbox_dispatch_update()",
+        "create or replace function system.wave2_guard_cross_authority_operation_update()",
+        "create or replace function system.wave2_guard_consumer_inbox_update()",
         "attempt_expires_at timestamptz null",
         "reconciliation_revision text null",
-        "reconciliation_resolution text null",
         "effect_proven_absent",
         "effect_confirmed",
         "execution_admission_revision text null",
@@ -245,6 +260,14 @@ def _sql_findings() -> list[str]:
     for table in CRITICAL_TABLES:
         if f"create table if not exists {table}" in lowered:
             findings.append(f"Wave 2 SQL silently reuses critical correctness table: {table}")
+    if "currently reconciliation-blocked operation" not in lowered:
+        findings.append("reconciliation evidence pre-seeding guard is missing")
+    if "append-only" not in lowered:
+        findings.append("reconciliation evidence immutability guard is missing")
+    if "same-state wave 2 operation cannot rewrite claim/outcome/reconciliation evidence" not in lowered:
+        findings.append("same-state operation rewrite guard is missing")
+    if "same-state wave 2 inbox cannot rewrite claim/result/reconciliation evidence" not in lowered:
+        findings.append("same-state inbox rewrite guard is missing")
     executable_grants = [
         line.strip()
         for line in text.splitlines()

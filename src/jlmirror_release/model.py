@@ -41,14 +41,14 @@ class OutcomeClass(str, Enum):
 
 
 RELEASE_PRINCIPALS = frozenset({
-    "principal.release-untrusted-validation@1",
-    "principal.release-build@1",
-    "principal.release-publish@1",
-    "principal.release-promote@1",
-    "principal.release-deploy@1",
-    "principal.release-migrate@1",
-    "principal.release-verify@1",
-    "principal.release-emergency@1",
+    "principal.release-untrusted-validation@1", "principal.release-build@1",
+    "principal.release-publish@1", "principal.release-promote@1",
+    "principal.release-deploy@1", "principal.release-migrate@1",
+    "principal.release-verify@1", "principal.release-emergency@1",
+})
+ALLOWED_ENVIRONMENT_CLASSES = frozenset({
+    "environment.development@1", "environment.validation@1",
+    "environment.production@1", "environment.recovery@1",
 })
 
 
@@ -93,11 +93,24 @@ class DeploymentIntent:
     configuration: TargetConfiguration
     target_environment_class: str
     runtime_profile_set: tuple[str, ...]
+    promotion_id: str
+    release_policy_profile_and_version: str
+    validation_scope: ValidationScope
+    rollout_scope: str
+    schema_state: str
+    api_compatibility_family: str
+    event_compatibility_set: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        if not self.deployment_operation_id or not self.target_id:
-            raise ReleaseError("stable deployment operation and target identity are required")
+        if not self.deployment_operation_id or not self.target_id or not self.promotion_id:
+            raise ReleaseError("stable deployment operation, promotion and target identity are required")
         if self.expected_release_target_state_version < 0:
             raise ReleaseError("expected target state version cannot be negative")
+        if self.target_environment_class not in ALLOWED_ENVIRONMENT_CLASSES:
+            raise ReleaseError("unknown logical target environment class")
         if not self.runtime_profile_set:
             raise ReleaseError("runtime_profile_set cannot be empty")
+        if not self.release_policy_profile_and_version or not self.rollout_scope:
+            raise ReleaseError("release policy and rollout scope are required")
+        if not self.schema_state or not self.api_compatibility_family or not self.event_compatibility_set:
+            raise ReleaseError("schema/API/event compatibility state is required")

@@ -22,7 +22,9 @@ It does **not** create Product/domain endpoints, incident/customer workflow beha
 - Unknown/lost comparison authority is reconciliation-blocked, not duplicate success and not new effect eligibility.
 - Co-resident inbox + protected effect complete atomically where they share one transaction authority.
 - Cross-authority effects use a stable immutable `operation_id` + owner/tenant scope; ambiguous outcome blocks blind retry until reconciliation proves completion or proves a new attempt eligible.
-- Reconciliation evidence is append-only by `(operation_id, reconciliation_revision)` and records canonical `still_unknown`, `effect_confirmed` or `effect_proven_absent`. A revision can be created only while that operation is reconciliation-blocked; it cannot be pre-seeded, rewritten or deleted to manufacture later retry authority.
+- Reconciliation evidence is append-only by `(operation_id, reconciliation_revision)` **and bound to the exact `attempt_generation` whose ambiguity it resolves**. Historical proof for attempt N cannot authorize a later ambiguous attempt N+1.
+- A reconciliation revision can be created only while that operation is reconciliation-blocked; it cannot be pre-seeded, rewritten or deleted to manufacture later retry authority.
+- Canonical cross-authority snapshots carry `attempt_generation` plus `reconciliation_attempt_generation`; a snapshot that tries to pair a later operation attempt with earlier reconciliation evidence is structurally invalid.
 - Inbox processing-lease expiry and cross-authority attempt-lease expiry are uncertainty: they transition to reconciliation and never manufacture safe retry/effect absence.
 - Every new protected consumer effect/cross-authority attempt requires a revision-bound current execution admission for the exact consumer/operation, tenant scope and accepted API/worker runtime profile.
 - Tenant-scoped execution admission carries a trusted Wave 1 `TenantContext`; stale/missing principal generation, placement, runtime generation, environment or authorization evidence fails closed at the adapter boundary.
@@ -31,12 +33,27 @@ It does **not** create Product/domain endpoints, incident/customer workflow beha
 - Critical Wave 2 correctness tables are created fail-closed without `IF NOT EXISTS`; a preexisting same-name object requires reviewed shape/authority revalidation rather than silent reuse.
 - Every committed outbox message creates its dispatch bookkeeping row in the same transaction through a `SECURITY INVOKER` trigger; a committed message cannot be stranded merely because a second insert was forgotten.
 - SQL transition guards prevent ordinary direct UPDATE from rebinding inbox/operation scope, stealing same-state claims, resurrecting terminal state, resetting published/quarantined dispatch, or converting reconciliation uncertainty directly into retry authority.
+- Quarantine/redrive is exposed only through a **current privileged authority hook**. A redrive request is bound to the exact message scope, tenant, quarantine generation, reason class, operation identity, correlation context and accepted reliability profile.
+- Redrive admission requires current privileged authorization, owning-contract compatibility/eligibility, effect-safety evidence, capacity admission, audit responsibility and current tenant placement where applicable. Queue age, operator desire, broker DLQ state and time in quarantine are not authority.
+- Wave 2 does not implement the Phase 15 `ops.redrive-operation@1` store/workflow; it exposes the correctness boundary that future operations tooling must satisfy.
+
+## Reliability profile joins
+
+The implementation binds the logical reliability profiles required by the accepted slice/readiness baseline:
+
+- `rel.cell-transactional-store@1`
+- `rel.outbox-publication@1`
+- `rel.broker-job-transport@1`
+- `rel.consumer-inbox-effect@1`
+- `rel.replay-consume-state@1`
+
+These are **vendor-neutral correctness profiles**, not product selections. In particular, binding `rel.broker-job-transport@1` does not select a broker, queue, cloud service or topology.
 
 ## Replaceable C2 boundaries
 
 This wave deliberately does not select a broker, schema registry/serializer, cache/replay product, KMS/historical-verifier backend, database HA/pooler runtime mapping, exact claim/lease duration or reconciliation UI/tool.
 
-The Python package is a portable correctness/reference core using only the standard library. The SQL package is the PostgreSQL durable-record contract for the accepted transactional substrate; it is not a broker selection and it does not claim production topology. `CurrentAsyncExecutionAuthorityPort` is an adapter boundary over accepted current principal/placement/authorization/runtime/fence authorities; it is not a second authorization system. Concrete reconciliation tooling remains C2, but any selected tool must append the fixed operation-scoped revision/resolution evidence before retry eligibility changes.
+The Python package is a portable correctness/reference core using only the standard library. The SQL package is the PostgreSQL durable-record contract for the accepted transactional substrate; it is not a broker selection and it does not claim production topology. `CurrentAsyncExecutionAuthorityPort` is an adapter boundary over accepted current principal/placement/authorization/runtime/fence authorities; it is not a second authorization system. `CurrentRedriveAuthorityPort` is a privileged eligibility boundary for a future operations redrive workflow; it does not select or implement that workflow. Concrete reconciliation/redrive tooling remains C2/operations scope, but any selected tool must preserve the fixed operation-scoped evidence and exact current-authority semantics.
 
 ## Product/operations clarification boundary
 
@@ -50,11 +67,16 @@ CURRENT EXECUTION ADMISSION != MESSAGE PAYLOAD AUTHORITY
 SAME INBOX KEY != BENIGN DUPLICATE WHEN TRUSTED BINDING DIFFERS
 RECONCILIATION_REQUIRED != RETRY ELIGIBLE
 RECONCILIATION REVISION STRING != EVIDENCE WITHOUT APPEND-ONLY RECORD
+RECONCILIATION REVISION != ATTEMPT-GENERATION-AGNOSTIC CAPABILITY
+PRIOR ATTEMPT RECONCILIATION EVIDENCE != LATER ATTEMPT RETRY AUTHORITY
 PRESEEDED/MUTATED RECONCILIATION EVIDENCE != AUTHORITY
 DIRECT STATE UPDATE != RECONCILIATION AUTHORITY
 PREEXISTING TABLE NAME != CORRECTNESS SCHEMA CONFORMANCE
 OUTBOX CLAIM RECOVERY -> SAME LOGICAL MESSAGE IDENTITY
 INBOX/EXTERNAL ATTEMPT LEASE LOSS -> RECONCILIATION, NOT BLIND RETRY
+QUARANTINE != REDRIVE ELIGIBILITY
+QUEUE AGE / OPERATOR DESIRE / VENDOR DLQ STATE != REDRIVE AUTHORITY
+RELIABILITY PROFILE != TRANSPORT PRODUCT SELECTION
 WAVE 2 AUTHORIZED != WAVE 3 AUTHORIZED
 READY_FOR_MERGE != AUTHORIZED_TO_MERGE
 ```

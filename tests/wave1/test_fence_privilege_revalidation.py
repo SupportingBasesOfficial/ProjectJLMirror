@@ -37,28 +37,34 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
             (
                 "SELECT n.nspowner\n          FROM pg_catalog.pg_namespace n",
                 "SELECT n.nspowner\n          FROM pg_catalog.pg_class n",
+                False,
             ),
             (
                 "SELECT c.relowner\n          FROM pg_catalog.pg_class c",
                 "SELECT c.relowner\n          FROM pg_catalog.pg_namespace c",
+                False,
             ),
             (
                 "WITH RECURSIVE owner_role_members(member_oid) AS (",
                 "WITH owner_role_members(member_oid) AS (",
+                False,
             ),
             (
                 "WITH RECURSIVE all_data_role_members(role_oid, member_oid) AS (",
                 "WITH all_data_role_members(role_oid, member_oid) AS (",
+                False,
             ),
             (
                 "pg_catalog.to_regrole('pg_read_all_data')::oid",
-                "pg_catalog.to_regrole('pg_write_all_data')::oid",
+                "pg_catalog.to_regrole('pg_monitor')::oid",
+                True,
             ),
         )
-        for old, new in mutations:
+        for old, new, all_occurrences in mutations:
             with self.subTest(old=old):
                 self.assertIn(old, self.text)
-                self.assert_fails(self.text.replace(old, new, 1))
+                weakened = self.text.replace(old, new) if all_occurrences else self.text.replace(old, new, 1)
+                self.assert_fails(weakened)
 
     def test_object_and_column_acl_guards_cannot_be_removed(self):
         mutations = (
@@ -91,24 +97,25 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
             "           AND p.prosecdef"
         )
         self.assertIn(owner_set, self.text)
+        # The contract deliberately repeats this guard before and after canonicalization.
+        # Remove/replace every occurrence so a surviving redundant copy cannot make a
+        # weakened mutation look safe to a presence-based validator.
         self.assert_fails(
             self.text.replace(
                 owner_set,
                 "p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid\n           AND p.prosecdef",
-                1,
             )
         )
         self.assert_fails(
-            self.text.replace("pg_catalog.to_regrole('pg_read_all_data')::oid,", "pg_catalog.to_regrole('pg_monitor')::oid,", 1)
+            self.text.replace("pg_catalog.to_regrole('pg_read_all_data')::oid", "pg_catalog.to_regrole('pg_monitor')::oid")
         )
         self.assert_fails(
-            self.text.replace("pg_catalog.to_regrole('pg_write_all_data')::oid\n               )", "pg_catalog.to_regrole('pg_monitor')::oid\n               )", 1)
+            self.text.replace("pg_catalog.to_regrole('pg_write_all_data')::oid", "pg_catalog.to_regrole('pg_monitor')::oid")
         )
         self.assert_fails(
             self.text.replace(
                 "database contains fence-authoritative SECURITY DEFINER routine owned by migration or predefined all-data authority",
                 "database contains migration-owner SECURITY DEFINER routine",
-                1,
             )
         )
 
@@ -133,7 +140,8 @@ class FencePrivilegeRevalidationTests(unittest.TestCase):
             "LOCAL FENCE RULE CLEAN != EXTERNAL REWRITE REACHABILITY ABSENT",
         ):
             with self.subTest(law=law):
-                mutated = self.boundary.replace(law, law.replace(" != ", " == "), 1)
+                self.assertGreater(self.boundary.count(law), 0)
+                mutated = self.boundary.replace(law, law.replace(" != ", " == "))
                 self.assertTrue(validate_boundary_text(mutated))
 
 

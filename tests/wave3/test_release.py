@@ -24,10 +24,12 @@ RUNTIME_RELIABILITY_REQUIREMENTS = (
     "rel.cell-transactional-store@1",
     "rel.security-session-authority@1",
     "rel.performance-cache@1",
+    "rel.configuration-authority@1",
 )
 RUNTIME_HEALTH_REQUIREMENTS = (
     "health.api-bff@1",
     "health.cell@1",
+    "health.control-plane@1",
     "health.security-authority@1",
 )
 

@@ -20,6 +20,7 @@ from .model import (
 from .provenance import require_immutable_evidence_reference
 
 RUNTIME_REQUIREMENTS_AUTHORITY_PROFILE = "release.runtime-verification-requirements@1"
+RUNTIME_VERIFIER_PRINCIPAL = "principal.release-verify@1"
 
 # Phase 13 fixes these as the minimum non-conditional Phase 11 reliability bindings for
 # each concrete runtime profile. Conditional bindings (for example cache/secret/external
@@ -281,9 +282,13 @@ def verify_runtime(
         raise ReleaseError("target configuration currentness is not proven")
     if evidence.release_policy_profile_and_version != intent.release_policy_profile_and_version:
         raise ReleaseError("runtime verification is using a different release-policy profile")
+    if evidence.release_policy_evidence_reference != requirements.release_policy_evidence_reference:
+        raise ReleaseError("runtime verification release-policy evidence differs from pre-effect requirements authority")
     if not evidence.release_policy_current:
         raise ReleaseError("release policy currentness is not proven")
-    if not evidence.verifier_authority_profile_and_version or not evidence.verifier_authority_current:
+    if evidence.verifier_authority_profile_and_version != RUNTIME_VERIFIER_PRINCIPAL:
+        raise ReleaseError("runtime verification requires the canonical release verifier principal")
+    if not evidence.verifier_authority_current:
         raise ReleaseError("runtime verifier authority/currentness is not proven")
 
     required_health_profile_ids = requirements.validate_for(

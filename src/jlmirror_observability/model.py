@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
 from typing import Mapping, Optional
+import re
 
 
 class ObservationError(ValueError):
@@ -99,19 +100,67 @@ SIGNAL_EVIDENCE_PLANE: Mapping[str, EvidencePlane] = MappingProxyType({
     "obs.audit.responsibility-health@1": EvidencePlane.AUDIT_RESPONSIBILITY,
 })
 
-FORBIDDEN_METRIC_DIMENSIONS = frozenset({
-    "request_id", "operation_id", "message_id", "connection_id", "artifact_id",
-    "raw_url", "url", "query", "query_string", "token", "session_id", "secret",
-    "signature", "authorization",
+PROFILE_ALLOWED_METRIC_DIMENSIONS: Mapping[str, frozenset[str]] = MappingProxyType({
+    "obs.request.outcome@1": frozenset({"outcome_class", "operation_class"}),
+    "obs.operation.state@1": frozenset({"state_class", "operation_class"}),
+    "obs.async.progress@1": frozenset({"state_class", "workload_class", "saturation_class"}),
+    "obs.async.transport@1": frozenset({"state_class", "workload_class", "saturation_class"}),
+    "obs.provider.operation@1": frozenset({"outcome_class", "provider_class", "saturation_class"}),
+    "obs.realtime.lifecycle@1": frozenset({"state_class", "saturation_class"}),
+    "obs.webhook.delivery@1": frozenset({"outcome_class", "state_class", "saturation_class"}),
+    "obs.telemetry.acceptance@1": frozenset({"outcome_class", "state_class", "saturation_class"}),
+    "obs.observability.pipeline@1": frozenset({"state_class", "saturation_class"}),
+    "obs.recovery.reconciliation@1": frozenset({"state_class", "failure_class"}),
+    "obs.security.authority-freshness@1": frozenset({"state_class", "failure_class"}),
+    "obs.message-equivalence.admission@1": frozenset({"comparison_outcome_class", "reliability_failure_class", "reliability_degradation_mode"}),
+    "obs.message-equivalence.verifier@1": frozenset({"state_class", "saturation_class"}),
+    "obs.configuration.generation@1": frozenset({"state_class"}),
+    "obs.audit.responsibility-health@1": frozenset({"state_class"}),
+    "obs.artifact.lifecycle@1": frozenset({"state_class", "saturation_class"}),
 })
+
+PROFILE_ALLOWED_DIAGNOSTIC_FIELDS: Mapping[str, frozenset[str]] = MappingProxyType({
+    "obs.request.outcome@1": frozenset({"request_id", "trace_id"}),
+    "obs.operation.state@1": frozenset({"operation_id", "trace_id"}),
+    "obs.async.progress@1": frozenset({"operation_id", "message_id", "trace_id"}),
+    "obs.async.transport@1": frozenset({"message_id", "trace_id"}),
+    "obs.provider.operation@1": frozenset({"operation_id", "trace_id"}),
+    "obs.realtime.lifecycle@1": frozenset({"connection_id", "trace_id"}),
+    "obs.webhook.delivery@1": frozenset({"operation_id", "trace_id"}),
+    "obs.telemetry.acceptance@1": frozenset({"operation_id", "trace_id"}),
+    "obs.observability.pipeline@1": frozenset({"trace_id"}),
+    "obs.recovery.reconciliation@1": frozenset({"operation_id", "trace_id"}),
+    "obs.security.authority-freshness@1": frozenset({"trace_id", "authority_generation_ref"}),
+    "obs.message-equivalence.admission@1": frozenset({"message_id", "trace_id", "comparison_generation_ref"}),
+    "obs.message-equivalence.verifier@1": frozenset({"trace_id", "comparison_generation_ref"}),
+    "obs.configuration.generation@1": frozenset({"configuration_generation", "trace_id"}),
+    "obs.audit.responsibility-health@1": frozenset({"accountability_reference", "trace_id"}),
+    "obs.artifact.lifecycle@1": frozenset({"artifact_id", "operation_id", "trace_id"}),
+})
+
+_SAFE_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,95}$")
+_DIAGNOSTIC_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_:@/-]{0,191}$")
+FORBIDDEN_VALUE_PREFIXES = ("bearer ", "basic ")
 FORBIDDEN_PAYLOAD_KEY_FRAGMENTS = (
     "password", "private_key", "refresh_token", "access_token", "authorization_code",
-    "session_handle", "client_secret",
+    "session_handle", "client_secret", "cookie", "authorization",
 )
 
 
 def _frozen_map(value: Mapping[str, str]) -> Mapping[str, str]:
     return MappingProxyType(dict(value))
+
+
+def _validate_safe_token(name: str, value: str) -> None:
+    if not isinstance(value, str) or not _SAFE_TOKEN_RE.fullmatch(value):
+        raise ObservationError(f"metric dimension {name} must be a bounded semantic token")
+
+
+def _validate_diagnostic_identifier(name: str, value: str) -> None:
+    if not isinstance(value, str) or not _DIAGNOSTIC_ID_RE.fullmatch(value):
+        raise ObservationError(f"diagnostic field {name} must be an opaque bounded identifier")
+    if value.lower().startswith(FORBIDDEN_VALUE_PREFIXES):
+        raise ObservationError(f"credential-shaped value forbidden in ordinary telemetry: {name}")
 
 
 @dataclass(frozen=True)
@@ -122,10 +171,13 @@ class CorrelationContext:
     message_id: Optional[str] = None
 
     def as_diagnostic(self) -> Mapping[str, str]:
-        return MappingProxyType({k: v for k, v in {
+        result = {k: v for k, v in {
             "request_id": self.request_id, "operation_id": self.operation_id,
             "trace_id": self.trace_id, "message_id": self.message_id,
-        }.items() if v is not None})
+        }.items() if v is not None}
+        for key, value in result.items():
+            _validate_diagnostic_identifier(key, value)
+        return MappingProxyType(result)
 
 
 @dataclass(frozen=True)
@@ -143,15 +195,25 @@ class SignalRecord:
             raise ObservationError(f"unknown signal profile: {self.profile_id}")
         if self.family not in SIGNAL_ALLOWED_FAMILIES[self.profile_id]:
             raise ObservationError(f"signal family {self.family.value} is not allowed for {self.profile_id}")
-        if not self.operation_class or not self.classification or not self.tenant_scope_class:
-            raise ObservationError("operation_class, classification and tenant_scope_class are required")
-        bad = set(self.metric_dimensions) & FORBIDDEN_METRIC_DIMENSIONS
-        if bad:
-            raise ObservationError("unbounded/sensitive evidence cannot be a metric dimension: " + ",".join(sorted(bad)))
-        for key in list(self.metric_dimensions) + list(self.diagnostic_fields):
-            lower = key.lower()
-            if any(fragment in lower for fragment in FORBIDDEN_PAYLOAD_KEY_FRAGMENTS):
+        for name, value in {"operation_class": self.operation_class, "classification": self.classification, "tenant_scope_class": self.tenant_scope_class}.items():
+            _validate_safe_token(name, value)
+
+        unknown_dimensions = set(self.metric_dimensions) - PROFILE_ALLOWED_METRIC_DIMENSIONS[self.profile_id]
+        if unknown_dimensions:
+            raise ObservationError("metric dimension is not declared by profile: " + ",".join(sorted(unknown_dimensions)))
+        for key, value in self.metric_dimensions.items():
+            if any(fragment in key.lower() for fragment in FORBIDDEN_PAYLOAD_KEY_FRAGMENTS):
+                raise ObservationError(f"secret-bearing metric field forbidden: {key}")
+            _validate_safe_token(key, value)
+
+        unknown_diagnostics = set(self.diagnostic_fields) - PROFILE_ALLOWED_DIAGNOSTIC_FIELDS[self.profile_id]
+        if unknown_diagnostics:
+            raise ObservationError("diagnostic field is not declared by profile: " + ",".join(sorted(unknown_diagnostics)))
+        for key, value in self.diagnostic_fields.items():
+            if any(fragment in key.lower() for fragment in FORBIDDEN_PAYLOAD_KEY_FRAGMENTS):
                 raise ObservationError(f"secret-bearing field forbidden in ordinary telemetry: {key}")
+            _validate_diagnostic_identifier(key, value)
+
         object.__setattr__(self, "metric_dimensions", _frozen_map(self.metric_dimensions))
         object.__setattr__(self, "diagnostic_fields", _frozen_map(self.diagnostic_fields))
 
@@ -174,8 +236,7 @@ class HealthAssessment:
     def __post_init__(self) -> None:
         if self.profile_id not in CORE_HEALTH_PROFILES:
             raise ObservationError(f"unknown health profile: {self.profile_id}")
-        if not self.reason_class:
-            raise ObservationError("reason_class is required")
+        _validate_safe_token("reason_class", self.reason_class)
         if not self.evidence_complete and self.state is not HealthState.UNKNOWN:
             raise ObservationError("incomplete evidence must be represented as health=unknown")
 

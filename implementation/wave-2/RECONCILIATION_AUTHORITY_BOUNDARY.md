@@ -16,6 +16,8 @@ LOCAL ATOMIC COMPLETION != CROSS-AUTHORITY COMPLETION
 LOCAL ATOMIC COMPLETION != POST-AMBIGUITY RECONCILIATION
 RECONCILIATION HISTORY != CURRENT ATTEMPT RESOLUTION
 PRIOR ATTEMPT ABSENCE PROOF != SUCCESSOR ATTEMPT OUTCOME
+PRIOR ATTEMPT RECONCILIATION EVIDENCE != LATER ATTEMPT RETRY AUTHORITY
+RECONCILIATION REVISION != ATTEMPT-GENERATION-AGNOSTIC CAPABILITY
 SPLIT OPERATION READS != ATOMIC AUTHORITY SNAPSHOT
 ```
 
@@ -52,7 +54,7 @@ reconciliation_revision
 
 A consumer SHALL NOT decide retry/completion by independently reading state, outcome, resolution and revision and then assembling those values locally. Separate reads can cross a concurrent state transition and produce a tuple that never existed as durable authority.
 
-The canonical snapshot type rejects internally impossible combinations such as `prepared + effect_confirmed + outcome`. The in-memory operation ledger creates the snapshot under one lock. The PostgreSQL transition guards already obtain corresponding operation/evidence fields in one locked query/join.
+The canonical snapshot type rejects internally impossible combinations such as `prepared + effect_confirmed + outcome`. The in-memory operation ledger creates the snapshot under one lock. The PostgreSQL transition guards obtain corresponding operation/evidence fields in locked queries/joins.
 
 ## Direct cross-authority completion
 
@@ -78,13 +80,41 @@ A receipt in `reconciliation_required` may become `completed` only when all of t
 2. the operation authority is durably `completed`;
 3. append-only reconciliation evidence records `effect_confirmed`;
 4. the reconciliation revision is stable and valid;
-5. the confirmed durable outcome exactly matches the result linked by the inbox receipt.
+5. that evidence is bound to the operation's exact current `attempt_generation`;
+6. the confirmed durable outcome exactly matches the result linked by the inbox receipt.
 
 The durable PostgreSQL contract enforces the same rule through `system.async_cross_authority_operation`, `system.async_cross_authority_reconciliation`, and the guarded `system.async_consumer_inbox` transition.
 
-Absence of an `operation_id`, unavailable operation authority, missing reconciliation revision, `still_unknown`, `effect_proven_absent`, or a mismatching outcome leaves completion fail-closed.
+Absence of an `operation_id`, unavailable operation authority, missing reconciliation revision, attempt-generation mismatch, `still_unknown`, `effect_proven_absent`, or a mismatching outcome leaves completion fail-closed.
 
-A reconciled operation cannot be laundered back through the ordinary `processing -> completed` path. It must use the `reconciliation_required -> completed` transition bound to the append-only reconciliation revision.
+A reconciled operation cannot be laundered back through the ordinary `processing -> completed` path. It must use the `reconciliation_required -> completed` transition bound to the append-only reconciliation revision for the exact ambiguous attempt.
+
+## Attempt-bound reconciliation evidence
+
+Every append-only reconciliation row resolves one exact cross-authority effect attempt:
+
+```text
+operation_id
+attempt_generation
+reconciliation_revision
+resolution
+confirmed outcome when applicable
+```
+
+`attempt_generation` is authority context, not diagnostic metadata. The reconciler records evidence only while the operation is `reconciliation_required`, and the evidence generation must equal the operation's current ambiguous attempt generation at insertion time.
+
+A reconciliation revision remains globally stable within the operation. Reusing the same revision in another attempt would change its immutable meaning and fails closed. Creating a successor attempt clears only the mutable current-resolution pointer; it does not erase the historical row or allow that row to answer a later ambiguity.
+
+Therefore this sequence is prohibited:
+
+```text
+attempt 1 -> ambiguous
+attempt 1 -> effect_proven_absent revision R1
+attempt 2 -> ambiguous
+reuse R1 -> attempt 3 eligible
+```
+
+Attempt 2 requires new accepted reconciliation evidence bound to attempt generation 2. Missing new evidence remains `reconciliation_required`.
 
 ## Successor-attempt handoff
 
@@ -95,7 +125,7 @@ It is **not** the resolution of the successor attempt.
 Before a new operation attempt becomes `attempting`:
 
 - the previous reconciliation revision/resolution pointer is consumed from the mutable current-operation state;
-- the historical evidence row remains retained and addressable;
+- the historical evidence row remains retained and addressable with its original `attempt_generation`;
 - `attempt_generation` advances exactly once;
 - fresh current execution admission is required.
 
@@ -114,6 +144,7 @@ UNBOUND RECONCILIATION_REQUIRED -> COMPLETED = PROHIBITED
 OPERATION-BOUND PROCESSING -> LOCAL COMPLETION = PROHIBITED
 RECONCILED OPERATION -> DIRECT PROCESSING COMPLETION = PROHIBITED
 PRIOR RECONCILIATION POINTER -> SUCCESSOR CURRENT ATTEMPT = PROHIBITED
+PRIOR ATTEMPT RECONCILIATION EVIDENCE -> LATER AMBIGUOUS ATTEMPT = PROHIBITED
 SPLIT STATE/OUTCOME/RESOLUTION/REVISION READS -> AUTHORITY DECISION = PROHIBITED
 ```
 
@@ -130,7 +161,9 @@ Tests SHALL prove:
 - exact append-only `effect_confirmed` operation evidence permits reconciliation completion only for the matching result identity;
 - a mismatching reconciled result remains reconciliation-blocked;
 - `effect_proven_absent` evidence survives as append-only history while its mutable pointer is cleared before the successor attempt;
+- historical reconciliation evidence records the exact attempt generation it resolved;
+- after attempt 2 becomes ambiguous, a revision/evidence record from attempt 1 cannot make attempt 2 retry-eligible;
 - a successor attempt can complete directly after a proven-absent predecessor without inheriting the predecessor resolution;
 - impossible mixed operation snapshots are rejected;
 - inbox cross-authority decisions consume one snapshot and never fall back to split state/outcome/reconciliation reads;
-- SQL and Python reference semantics remain aligned on these boundaries.
+- SQL and Python reference semantics remain aligned on attempt-generation binding and all other boundaries above.

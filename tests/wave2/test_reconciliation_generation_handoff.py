@@ -93,6 +93,7 @@ class ReconciliationGenerationHandoffTests(unittest.TestCase):
         inbox.bind_cross_authority_operation(
             first_claim,
             "op-1",
+            operation_authority=operations,
             observed_at=NOW + timedelta(seconds=1),
         )
         first_attempt = operations.begin_attempt(

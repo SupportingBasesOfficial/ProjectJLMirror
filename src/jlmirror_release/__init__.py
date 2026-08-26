@@ -1,6 +1,7 @@
 """Wave 3 vendor-neutral release and deployment authority primitives."""
 
 from .authority import (
+    CurrentAuthorityEvidence,
     DeploymentAdmissionEvidence,
     DeploymentAuthority,
     DeploymentObservation,
@@ -27,12 +28,12 @@ from .verification import HealthGateEvidence, RuntimeVerificationEvidence, verif
 
 __all__ = [
     "ArtifactIdentity", "BuildProvenanceEvidence", "CellCompatibilityEvidence",
-    "ConfigurationValidationEvidence", "DeploymentAdmissionEvidence", "DeploymentAuthority",
-    "DeploymentIntent", "DeploymentObservation", "DeploymentRecord", "HealthGateEvidence",
-    "MixedVersionMatrix", "NoApplicableCaseEvidence", "OutcomeClass", "PromotionEvidence",
-    "PromotionState", "RecoveryClassificationEvidence", "ReleaseError", "ReleaseTargetState",
-    "RolloutCompatibilityEvidence", "RuntimeVerificationEvidence", "SourceTrustClass",
-    "TargetConfiguration", "ValidationScope", "classify_change_outcome",
+    "ConfigurationValidationEvidence", "CurrentAuthorityEvidence", "DeploymentAdmissionEvidence",
+    "DeploymentAuthority", "DeploymentIntent", "DeploymentObservation", "DeploymentRecord",
+    "HealthGateEvidence", "MixedVersionMatrix", "NoApplicableCaseEvidence", "OutcomeClass",
+    "PromotionEvidence", "PromotionState", "RecoveryClassificationEvidence", "ReleaseError",
+    "ReleaseTargetState", "RolloutCompatibilityEvidence", "RuntimeVerificationEvidence",
+    "SourceTrustClass", "TargetConfiguration", "ValidationScope", "classify_change_outcome",
     "require_deployment_admission", "require_promotion_authority", "require_rollout_compatibility",
     "require_trusted_build_source", "require_validation_for_target", "validate_build_provenance",
     "verify_runtime",

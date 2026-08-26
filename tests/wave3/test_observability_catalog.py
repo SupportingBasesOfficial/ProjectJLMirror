@@ -3,6 +3,7 @@ import unittest
 from jlmirror_observability import (
     EXPECTED_RELIABILITY_PROFILE_IDS,
     ObservationError,
+    ProductApplicabilityEvidence,
     RELIABILITY_OBSERVABILITY_JOINS,
     join_for,
 )
@@ -32,6 +33,19 @@ EXPECTED = {
 }
 
 
+def product_evidence(selector_id, scope, enabled, **changes):
+    values = dict(
+        selector_id=selector_id,
+        authority_profile="product.scope-authority@1",
+        evidence_reference="evidence:product-selector-1",
+        scope_binding=scope,
+        current=True,
+        enabled=enabled,
+    )
+    values.update(changes)
+    return ProductApplicabilityEvidence(**values)
+
+
 class ObservabilityCatalogTests(unittest.TestCase):
     def test_exact_reliability_profile_set_is_materialized(self):
         self.assertEqual(set(EXPECTED_RELIABILITY_PROFILE_IDS), EXPECTED)
@@ -47,33 +61,50 @@ class ObservabilityCatalogTests(unittest.TestCase):
         self.assertIsNotNone(row.direct_sli_no_applicable_case_reason)
         self.assertEqual(row.impact_sli_profile_ids, ("sli.api.outcome@1",))
 
-    def test_webhook_unknown_product_state_remains_open(self):
+    def test_webhook_unproven_product_state_remains_open(self):
         row = join_for("rel.webhook-delivery@1")
-        result = row.resolve_product_applicability("product_state_unproven")
+        result = row.resolve_product_applicability(None, expected_scope="rel.webhook-delivery@1")
         self.assertEqual(result.state, "open")
         self.assertEqual(result.open_decision_id, "OPEN-OBS-037")
 
-    def test_webhook_disabled_is_explicit_no_applicable_case(self):
+    def test_webhook_disabled_requires_current_scoped_authority_and_is_no_applicable_case(self):
         row = join_for("rel.webhook-delivery@1")
-        result = row.resolve_product_applicability("product_not_enabled")
+        evidence = product_evidence("webhook_product_state", "rel.webhook-delivery@1", False)
+        result = row.resolve_product_applicability(evidence, expected_scope="rel.webhook-delivery@1")
         self.assertEqual(result.state, "no_applicable_case")
         self.assertTrue(result.no_applicable_case_reason)
 
     def test_webhook_enabled_still_has_open_commitment_decision(self):
         row = join_for("rel.webhook-delivery@1")
-        result = row.resolve_product_applicability("product_enabled")
+        evidence = product_evidence("webhook_product_state", "rel.webhook-delivery@1", True)
+        result = row.resolve_product_applicability(evidence, expected_scope="rel.webhook-delivery@1")
         self.assertEqual(result.state, "open")
         self.assertEqual(result.open_decision_id, "OPEN-OBS-035")
 
     def test_artifact_exposed_delivery_selects_exact_sli(self):
         row = join_for("rel.artifact-storage@1")
-        result = row.resolve_product_applicability("product_exposed_delivery")
+        evidence = product_evidence("artifact_delivery_product_state", "rel.artifact-storage@1", True)
+        result = row.resolve_product_applicability(evidence, expected_scope="rel.artifact-storage@1")
         self.assertEqual(result.state, "applicable")
         self.assertEqual(result.sli_profile_ids, ("sli.artifact.delivery@1",))
 
-    def test_invalid_selector_value_fails_closed(self):
+    def test_stale_wrong_scope_or_wrong_selector_evidence_fails_closed(self):
+        row = join_for("rel.artifact-storage@1")
+        cases = (
+            product_evidence("artifact_delivery_product_state", "rel.artifact-storage@1", True, current=False),
+            product_evidence("artifact_delivery_product_state", "rel.other@1", True),
+            product_evidence("webhook_product_state", "rel.artifact-storage@1", True),
+        )
+        for evidence in cases:
+            with self.subTest(evidence=evidence), self.assertRaises(ObservationError):
+                row.resolve_product_applicability(evidence, expected_scope="rel.artifact-storage@1")
+
+    def test_non_product_gated_join_rejects_selector_resolution(self):
         with self.assertRaises(ObservationError):
-            join_for("rel.artifact-storage@1").resolve_product_applicability("disabled-ish")
+            join_for("rel.control-plane-placement@1").resolve_product_applicability(
+                product_evidence("webhook_product_state", "rel.control-plane-placement@1", False),
+                expected_scope="rel.control-plane-placement@1",
+            )
 
 
 if __name__ == "__main__":

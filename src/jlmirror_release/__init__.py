@@ -30,7 +30,12 @@ from .provenance import (
     validate_build_provenance,
 )
 from .recovery import RecoveryClassificationEvidence, classify_change_outcome
-from .verification import HealthGateEvidence, RuntimeVerificationEvidence, verify_runtime
+from .verification import (
+    HealthGateEvidence,
+    RuntimeVerificationEvidence,
+    RuntimeVerificationRequirements,
+    verify_runtime,
+)
 
 __all__ = [
     "AcceptedSourceEvidence", "ArtifactIdentity", "BuildProvenanceEvidence", "CellCompatibilityEvidence",
@@ -39,8 +44,8 @@ __all__ = [
     "HealthGateEvidence", "MixedVersionMatrix", "NoApplicableCaseEvidence", "OutcomeClass",
     "PromotionEvidence", "PromotionState", "RecoveryClassificationEvidence", "ReleaseError",
     "ReleaseTargetState", "RolloutCompatibilityEvidence", "RuntimeVerificationEvidence",
-    "SourceTrustClass", "TargetConfiguration", "ValidationScope", "classify_change_outcome",
-    "require_deployment_admission", "require_promotion_authority", "require_rollout_compatibility",
-    "require_trusted_build_source", "require_validation_for_target", "validate_build_provenance",
-    "verify_runtime",
+    "RuntimeVerificationRequirements", "SourceTrustClass", "TargetConfiguration", "ValidationScope",
+    "classify_change_outcome", "require_deployment_admission", "require_promotion_authority",
+    "require_rollout_compatibility", "require_trusted_build_source", "require_validation_for_target",
+    "validate_build_provenance", "verify_runtime",
 ]

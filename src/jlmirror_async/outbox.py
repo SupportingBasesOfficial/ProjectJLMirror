@@ -16,6 +16,7 @@ from .model import (
     MessageScope,
     MessageSubject,
     OutboxDispatchState,
+    aware,
     identifier,
 )
 
@@ -25,6 +26,7 @@ class OutboxClaim:
     record_id: int
     owner_id: str
     claim_generation: int
+    claim_expires_at: datetime
     message: LogicalMessage
 
 
@@ -35,6 +37,7 @@ class _OutboxEntry:
     state: OutboxDispatchState = OutboxDispatchState.PENDING
     claim_owner: str | None = None
     claim_generation: int = 0
+    claim_expires_at: datetime | None = None
     attempt_count: int = 0
     last_error_class: str | None = None
     publication_receipt: BrokerPublicationReceipt | None = None
@@ -103,6 +106,10 @@ class InMemoryOutboxLedger:
     This is a falsification oracle, not a production durability claim. Production
     code must bind domain mutation, audit intent and outbox append in one accepted
     PostgreSQL transaction and use a reviewed durable claim implementation.
+
+    Claim expiry recovers dispatcher liveness only. It never proves that a broker
+    publish did not happen. Reclaim therefore republishes the same immutable
+    logical message identity under the accepted at-least-once contract.
     """
 
     def __init__(self) -> None:
@@ -130,9 +137,20 @@ class InMemoryOutboxLedger:
             self._by_message[message.outbox_identity] = record_id
             return record_id
 
-    def claim_next(self, owner_id: str) -> OutboxClaim | None:
+    def claim_next(
+        self,
+        owner_id: str,
+        *,
+        observed_at: datetime,
+        claim_expires_at: datetime,
+    ) -> OutboxClaim | None:
         identifier(owner_id, "owner_id")
+        now = aware(observed_at, "observed_at")
+        expires = aware(claim_expires_at, "claim_expires_at")
+        if expires <= now:
+            raise ValueError("claim_expires_at must be later than observed_at")
         with self._lock:
+            self._expire_claims_locked(now)
             for record_id in sorted(self._by_id):
                 entry = self._by_id[record_id]
                 if entry.state is not OutboxDispatchState.PENDING:
@@ -140,11 +158,13 @@ class InMemoryOutboxLedger:
                 entry.state = OutboxDispatchState.CLAIMED
                 entry.claim_owner = owner_id
                 entry.claim_generation += 1
+                entry.claim_expires_at = expires
                 entry.attempt_count += 1
                 return OutboxClaim(
                     record_id=record_id,
                     owner_id=owner_id,
                     claim_generation=entry.claim_generation,
+                    claim_expires_at=expires,
                     message=entry.message,
                 )
             return None
@@ -153,43 +173,70 @@ class InMemoryOutboxLedger:
         self,
         claim: OutboxClaim,
         receipt: BrokerPublicationReceipt,
+        *,
+        observed_at: datetime,
     ) -> None:
         if not isinstance(receipt, BrokerPublicationReceipt):
             raise ValueError("broker publication receipt is required")
+        now = aware(observed_at, "observed_at")
         with self._lock:
-            entry = self._require_current_claim(claim)
+            entry = self._require_current_claim(claim, now)
             entry.state = OutboxDispatchState.PUBLISHED
             entry.publication_receipt = receipt
             entry.claim_owner = None
+            entry.claim_expires_at = None
             entry.last_error_class = None
 
-    def mark_publication_ambiguous(self, claim: OutboxClaim) -> None:
+    def mark_publication_ambiguous(
+        self,
+        claim: OutboxClaim,
+        *,
+        observed_at: datetime,
+    ) -> None:
         """Return the same logical message to pending after ambiguous publication.
 
         A subsequent dispatcher retries the *same* message identity. It must not
         fabricate another semantic event merely because acknowledgement was lost.
         """
 
+        now = aware(observed_at, "observed_at")
         with self._lock:
-            entry = self._require_current_claim(claim)
+            entry = self._require_current_claim(claim, now)
             entry.state = OutboxDispatchState.PENDING
             entry.claim_owner = None
+            entry.claim_expires_at = None
             entry.last_error_class = "publication_outcome_ambiguous"
 
-    def quarantine(self, claim: OutboxClaim, error_class: str) -> None:
+    def quarantine(
+        self,
+        claim: OutboxClaim,
+        error_class: str,
+        *,
+        observed_at: datetime,
+    ) -> None:
         identifier(error_class, "error_class")
+        now = aware(observed_at, "observed_at")
         with self._lock:
-            entry = self._require_current_claim(claim)
+            entry = self._require_current_claim(claim, now)
             entry.state = OutboxDispatchState.QUARANTINED
             entry.claim_owner = None
+            entry.claim_expires_at = None
             entry.last_error_class = error_class
 
-    def release_claim(self, claim: OutboxClaim, error_class: str) -> None:
+    def release_claim(
+        self,
+        claim: OutboxClaim,
+        error_class: str,
+        *,
+        observed_at: datetime,
+    ) -> None:
         identifier(error_class, "error_class")
+        now = aware(observed_at, "observed_at")
         with self._lock:
-            entry = self._require_current_claim(claim)
+            entry = self._require_current_claim(claim, now)
             entry.state = OutboxDispatchState.PENDING
             entry.claim_owner = None
+            entry.claim_expires_at = None
             entry.last_error_class = error_class
 
     def message(self, record_id: int) -> LogicalMessage:
@@ -204,17 +251,32 @@ class InMemoryOutboxLedger:
         with self._lock:
             return self._by_id[record_id].attempt_count
 
-    def pending_messages(self) -> Iterable[LogicalMessage]:
+    def pending_messages(self, *, observed_at: datetime | None = None) -> Iterable[LogicalMessage]:
         with self._lock:
+            if observed_at is not None:
+                self._expire_claims_locked(aware(observed_at, "observed_at"))
             return tuple(
                 entry.message
                 for entry in self._by_id.values()
                 if entry.state is OutboxDispatchState.PENDING
             )
 
-    def _require_current_claim(self, claim: OutboxClaim) -> _OutboxEntry:
+    def _expire_claims_locked(self, now: datetime) -> None:
+        for entry in self._by_id.values():
+            if (
+                entry.state is OutboxDispatchState.CLAIMED
+                and entry.claim_expires_at is not None
+                and entry.claim_expires_at <= now
+            ):
+                entry.state = OutboxDispatchState.PENDING
+                entry.claim_owner = None
+                entry.claim_expires_at = None
+                entry.last_error_class = "dispatcher_claim_expired_outcome_not_proven_absent"
+
+    def _require_current_claim(self, claim: OutboxClaim, now: datetime) -> _OutboxEntry:
         if not isinstance(claim, OutboxClaim):
             raise InvalidTransition("current OutboxClaim is required")
+        self._expire_claims_locked(now)
         entry = self._by_id.get(claim.record_id)
         if entry is None:
             raise InvalidTransition("unknown outbox record")
@@ -222,6 +284,7 @@ class InMemoryOutboxLedger:
             entry.state is not OutboxDispatchState.CLAIMED
             or entry.claim_owner != claim.owner_id
             or entry.claim_generation != claim.claim_generation
+            or entry.claim_expires_at != claim.claim_expires_at
         ):
-            raise InvalidTransition("stale/non-owner outbox claim cannot mutate dispatch state")
+            raise InvalidTransition("stale/non-owner/expired outbox claim cannot mutate dispatch state")
         return entry

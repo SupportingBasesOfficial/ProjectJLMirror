@@ -17,6 +17,8 @@ DOLLAR-QUOTED TEXT != EXECUTABLE PREFLIGHT
 NESTED DEAD GUARD != TOP-LEVEL PREFLIGHT
 CONTROL DEPTH MATCH != BLOCK ANCESTRY
 RAISE EXCEPTION PRESENT != FAIL-CLOSED IF HANDLER SWALLOWS IT
+TOP-LEVEL RETURN ABSENT != REACHABLE EARLY EXIT ABSENT
+NUMERIC CONTROL DEPTH != EARLY-EXIT SAFETY
 ```
 
 ## Fresh bootstrap
@@ -28,6 +30,8 @@ A `FOR ALL TABLES` publication is relevant even before `platform.authority_fence
 The required `IF EXISTS ... pg_publication ... puballtables` guard is a top-level executable statement in the `wave1_bootstrap` PL/pgSQL body. Merely preserving its tokens in a comment, ordinary string, inner dollar-quoted payload, zero-iteration loop or false conditional does not satisfy the boundary.
 
 The publication preflight contains no accepted PL/pgSQL `EXCEPTION` handler. A guard that raises and is then swallowed by `EXCEPTION WHEN ... THEN` is not fail-closed assurance, even when the predicate and `RAISE EXCEPTION` tokens are otherwise exact.
+
+Fresh bootstrap retains one deliberate early `RETURN` when the complete reused fence relation already exists; that path is the non-mutating handoff to migration 002 and is not reuse-publication admission. The stronger no-early-exit rule below therefore applies to the reused structural publication preflight, where canonical mutation follows outside its DO block.
 
 ## Reused authority admission
 
@@ -42,7 +46,7 @@ The three static reuse guards are top-level executable statements in the `wave1_
 
 The schema-publication lookup is version-tolerant: the migration checks for the catalog with `pg_catalog.to_regclass` before executing the catalog query. The catalog guard itself is top-level; the dynamic namespace query and its fail-closed result guard must be exact children of **that specific** catalog guard. Numeric nesting depth alone is insufficient because a later sibling `IF` can have the same depth. The ancestry validator therefore pins the complete catalog-guard/query/result block, reconstructs the dynamic query, and treats unrelated inner dollar-quoted SQL payloads as opaque data.
 
-A top-level `RETURN` in the reused structural preflight is prohibited because it could skip publication checks while canonical `ALTER TABLE` statements after the `DO` block still execute.
+The reused structural publication preflight permits **no executable `RETURN` or `EXIT` statement at any control depth or plain/labeled block ancestry**. A nested `IF true THEN RETURN; END IF;`, a labeled `BEGIN ... EXIT label; END`, or another reachable early exit can skip every later publication guard while canonical `ALTER` statements after the DO block still execute. Checking only for a depth-zero `RETURN` is therefore prohibited assurance. Ordinary/dollar-quoted text containing the words `RETURN` or `EXIT` is data, not executable bypass evidence.
 
 ## Administrative concurrency boundary
 
@@ -71,7 +75,9 @@ Assurance must reject at least:
 - reused schema publication with wrong catalog, wrong namespace target, missing `USING v_schema`, unconditional catalog access, or dynamic/result logic moved into a sibling guard that merely shares numeric depth;
 - schema dynamic query/result nested directly deeper than the one accepted version-tolerant catalog guard;
 - removal of the inbound subscription-writer guard;
-- a top-level reused-preflight `RETURN` bypass;
+- any executable reused-preflight `RETURN`, including `IF true THEN RETURN; END IF;` at nonzero control depth;
+- any executable reused-preflight `EXIT`, including exit from a labeled plain block before the required guards;
+- treating `RETURN`/`EXIT` text inside ordinary or dollar-quoted literals as executable control flow;
 - missing transaction/commit or reused-table `ACCESS EXCLUSIVE` boundary.
 
 These checks are conformance evidence only. They do not grant runtime/database authority and do not authorize Wave 2.

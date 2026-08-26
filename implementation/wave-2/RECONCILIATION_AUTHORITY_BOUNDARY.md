@@ -6,7 +6,7 @@
 
 ## Purpose
 
-This boundary prevents an inbox receipt from becoming `completed` through a result object that is not backed by the authority that owns the protected effect, and prevents reconciliation evidence from one attempt from becoming current authority for its successor.
+This boundary prevents an inbox receipt from becoming `completed` through a result object that is not backed by the authority that owns the protected effect, prevents reconciliation evidence from one attempt from becoming current authority for its successor, and prevents TOCTOU assembly of an operation decision from mutually inconsistent reads.
 
 ```text
 CALLER-SUPPLIED RESULT LINK != EFFECT COMPLETION AUTHORITY
@@ -16,6 +16,7 @@ LOCAL ATOMIC COMPLETION != CROSS-AUTHORITY COMPLETION
 LOCAL ATOMIC COMPLETION != POST-AMBIGUITY RECONCILIATION
 RECONCILIATION HISTORY != CURRENT ATTEMPT RESOLUTION
 PRIOR ATTEMPT ABSENCE PROOF != SUCCESSOR ATTEMPT OUTCOME
+SPLIT OPERATION READS != ATOMIC AUTHORITY SNAPSHOT
 ```
 
 ## Local co-resident effect
@@ -34,6 +35,25 @@ current receipt claim
 
 If the current local claim expires, crashes after an uncertain effect boundary, or otherwise loses deterministic completion proof, the receipt enters `reconciliation_required`. Generic Wave 2 code SHALL NOT recover that uncertainty by accepting an arbitrary caller-provided result object.
 
+## Atomic operation authority observation
+
+Any inbox decision that depends on a cross-authority operation consumes **one coherent operation snapshot** for the stable `operation_id`.
+
+The snapshot binds together at least:
+
+```text
+operation_id
+state
+attempt_generation
+outcome
+reconciliation_resolution
+reconciliation_revision
+```
+
+A consumer SHALL NOT decide retry/completion by independently reading state, outcome, resolution and revision and then assembling those values locally. Separate reads can cross a concurrent state transition and produce a tuple that never existed as durable authority.
+
+The canonical snapshot type rejects internally impossible combinations such as `prepared + effect_confirmed + outcome`. The in-memory operation ledger creates the snapshot under one lock. The PostgreSQL transition guards already obtain corresponding operation/evidence fields in one locked query/join.
+
 ## Direct cross-authority completion
 
 Once a current processing receipt is bound to `operation_id`, the completion authority moves to that stable operation boundary for that effect.
@@ -42,9 +62,9 @@ A direct, non-ambiguous cross-authority completion requires:
 
 1. the current inbox claim is still valid;
 2. the receipt remains bound to the same stable `operation_id`;
-3. the operation authority is durably `completed`;
+3. one atomic operation snapshot is durably `completed`;
 4. the current attempt has no reconciliation revision/resolution;
-5. the durable operation outcome exactly matches the result linked by the inbox receipt.
+5. the snapshot outcome exactly matches the result linked by the inbox receipt.
 
 `complete_cross_authority_effect()` models this path. `complete_local_effect()` SHALL reject an operation-bound receipt.
 
@@ -52,7 +72,7 @@ The PostgreSQL trigger enforces the same distinction for `processing -> complete
 
 ## Reconciliation exit
 
-A receipt in `reconciliation_required` may become `completed` only when all of the following are established:
+A receipt in `reconciliation_required` may become `completed` only when all of the following are established in one coherent authority observation:
 
 1. the receipt is bound to a stable `operation_id`;
 2. the operation authority is durably `completed`;
@@ -94,6 +114,7 @@ UNBOUND RECONCILIATION_REQUIRED -> COMPLETED = PROHIBITED
 OPERATION-BOUND PROCESSING -> LOCAL COMPLETION = PROHIBITED
 RECONCILED OPERATION -> DIRECT PROCESSING COMPLETION = PROHIBITED
 PRIOR RECONCILIATION POINTER -> SUCCESSOR CURRENT ATTEMPT = PROHIBITED
+SPLIT STATE/OUTCOME/RESOLUTION/REVISION READS -> AUTHORITY DECISION = PROHIBITED
 ```
 
 ## Required falsification
@@ -110,4 +131,6 @@ Tests SHALL prove:
 - a mismatching reconciled result remains reconciliation-blocked;
 - `effect_proven_absent` evidence survives as append-only history while its mutable pointer is cleared before the successor attempt;
 - a successor attempt can complete directly after a proven-absent predecessor without inheriting the predecessor resolution;
+- impossible mixed operation snapshots are rejected;
+- inbox cross-authority decisions consume one snapshot and never fall back to split state/outcome/reconciliation reads;
 - SQL and Python reference semantics remain aligned on these boundaries.

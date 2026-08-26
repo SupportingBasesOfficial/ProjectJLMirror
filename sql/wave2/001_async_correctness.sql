@@ -6,12 +6,17 @@
 -- the accepted transactional business/authority substrate. Owning use cases are
 -- responsible for committing domain mutation + required audit intent + outbox
 -- insert in ONE transaction. A dispatcher is never domain-fact authority.
+--
+-- Critical Wave 2 objects are intentionally CREATE-without-IF-NOT-EXISTS. A
+-- pre-existing same-name table/function/trigger is not evidence that its shape,
+-- constraints, ownership or transition semantics conform; reuse therefore fails
+-- closed and must be handled by a separately reviewed migration/revalidation.
 
 BEGIN;
 
 CREATE SCHEMA IF NOT EXISTS system;
 
-CREATE TABLE IF NOT EXISTS system.async_outbox_message (
+CREATE TABLE system.async_outbox_message (
     outbox_record_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     producer_message_scope TEXT NOT NULL,
     message_id TEXT NOT NULL,
@@ -78,7 +83,7 @@ CREATE TABLE IF NOT EXISTS system.async_outbox_message (
 COMMENT ON TABLE system.async_outbox_message IS
 'Immutable logical publication evidence. Normal runtime dispatch bookkeeping belongs in async_outbox_dispatch, not this table. Event/fact classes retain occurred_at; work/process classes retain created_at. A job command carries stable operation_id.';
 
-CREATE OR REPLACE FUNCTION system.wave2_reject_outbox_immutable_update()
+CREATE FUNCTION system.wave2_reject_outbox_immutable_update()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY INVOKER
@@ -89,13 +94,12 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS wave2_outbox_immutable_update_guard ON system.async_outbox_message;
 CREATE TRIGGER wave2_outbox_immutable_update_guard
 BEFORE UPDATE ON system.async_outbox_message
 FOR EACH ROW
 EXECUTE FUNCTION system.wave2_reject_outbox_immutable_update();
 
-CREATE TABLE IF NOT EXISTS system.async_outbox_dispatch (
+CREATE TABLE system.async_outbox_dispatch (
     outbox_record_id BIGINT PRIMARY KEY
         REFERENCES system.async_outbox_message(outbox_record_id) ON DELETE RESTRICT,
     state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN (
@@ -103,6 +107,7 @@ CREATE TABLE IF NOT EXISTS system.async_outbox_dispatch (
     )),
     claim_owner TEXT NULL,
     claim_generation BIGINT NOT NULL DEFAULT 0 CHECK (claim_generation >= 0),
+    claim_expires_at TIMESTAMPTZ NULL,
     attempt_count BIGINT NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
     next_attempt_at TIMESTAMPTZ NULL,
     last_error_class TEXT NULL,
@@ -110,8 +115,8 @@ CREATE TABLE IF NOT EXISTS system.async_outbox_dispatch (
     broker_receipt_ref TEXT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT transaction_timestamp(),
     CHECK (
-        (state = 'claimed' AND claim_owner IS NOT NULL)
-        OR (state <> 'claimed' AND claim_owner IS NULL)
+        (state = 'claimed' AND claim_owner IS NOT NULL AND claim_expires_at IS NOT NULL)
+        OR (state <> 'claimed' AND claim_owner IS NULL AND claim_expires_at IS NULL)
     ),
     CHECK (
         state <> 'published'
@@ -120,9 +125,27 @@ CREATE TABLE IF NOT EXISTS system.async_outbox_dispatch (
 );
 
 COMMENT ON TABLE system.async_outbox_dispatch IS
-'Mutable publication-attempt state. Claim exclusivity does not imply exactly-once delivery.';
+'Mutable publication-attempt state. Claim exclusivity does not imply exactly-once delivery. Claim expiry permits same-message redispatch only; it never proves broker-effect absence.';
 
-CREATE TABLE IF NOT EXISTS system.async_cross_authority_operation (
+CREATE FUNCTION system.wave2_initialize_outbox_dispatch()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, system
+AS $$
+BEGIN
+    INSERT INTO system.async_outbox_dispatch(outbox_record_id)
+    VALUES (NEW.outbox_record_id);
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER wave2_outbox_dispatch_initialize
+AFTER INSERT ON system.async_outbox_message
+FOR EACH ROW
+EXECUTE FUNCTION system.wave2_initialize_outbox_dispatch();
+
+CREATE TABLE system.async_cross_authority_operation (
     operation_id TEXT PRIMARY KEY,
     tenant_id TEXT NULL,
     owner_contract TEXT NOT NULL,
@@ -135,6 +158,17 @@ CREATE TABLE IF NOT EXISTS system.async_cross_authority_operation (
     )),
     attempt_generation BIGINT NOT NULL DEFAULT 0 CHECK (attempt_generation >= 0),
     executor_id TEXT NULL,
+    attempt_expires_at TIMESTAMPTZ NULL,
+    execution_admission_revision TEXT NULL,
+    execution_authorization_revision TEXT NULL,
+    execution_principal_id TEXT NULL,
+    execution_principal_credential_generation TEXT NULL,
+    execution_runtime_profile_id TEXT NULL,
+    execution_runtime_generation TEXT NULL,
+    execution_environment_class TEXT NULL,
+    execution_placement_version TEXT NULL,
+    execution_fence_scope_id TEXT NULL,
+    execution_fence_epoch BIGINT NULL CHECK (execution_fence_epoch IS NULL OR execution_fence_epoch > 0),
     outcome_result_id TEXT NULL,
     outcome_result_kind TEXT NULL,
     ambiguity_reason TEXT NULL,
@@ -142,8 +176,32 @@ CREATE TABLE IF NOT EXISTS system.async_cross_authority_operation (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT transaction_timestamp(),
     CHECK ((outcome_result_id IS NULL) = (outcome_result_kind IS NULL)),
     CHECK (
-        (state = 'attempting' AND executor_id IS NOT NULL)
-        OR (state <> 'attempting' AND executor_id IS NULL)
+        (
+            state = 'attempting'
+            AND executor_id IS NOT NULL
+            AND attempt_expires_at IS NOT NULL
+            AND execution_admission_revision IS NOT NULL
+            AND execution_authorization_revision IS NOT NULL
+            AND execution_principal_id IS NOT NULL
+            AND execution_principal_credential_generation IS NOT NULL
+            AND execution_runtime_profile_id IN ('runtime.api@1', 'runtime.worker@1')
+            AND execution_runtime_generation IS NOT NULL
+            AND execution_environment_class IS NOT NULL
+        )
+        OR (state <> 'attempting' AND executor_id IS NULL AND attempt_expires_at IS NULL)
+    ),
+    CHECK (
+        tenant_id IS NULL
+        OR state <> 'attempting'
+        OR (
+            execution_placement_version IS NOT NULL
+            AND execution_fence_scope_id IS NOT NULL
+            AND execution_fence_epoch IS NOT NULL
+        )
+    ),
+    CHECK (
+        tenant_id IS NOT NULL
+        OR execution_placement_version IS NULL
     ),
     CHECK (
         state <> 'completed'
@@ -156,9 +214,9 @@ CREATE TABLE IF NOT EXISTS system.async_cross_authority_operation (
 );
 
 COMMENT ON TABLE system.async_cross_authority_operation IS
-'Stable operation identity for effects that cannot commit atomically with inbox state. Ambiguous outcome blocks blind retry.';
+'Stable operation identity for effects that cannot commit atomically with inbox state. Ambiguous outcome or attempt-lease loss blocks blind retry. Attempting state carries revision-bound current execution evidence.';
 
-CREATE TABLE IF NOT EXISTS system.async_consumer_inbox (
+CREATE TABLE system.async_consumer_inbox (
     consumer_contract TEXT NOT NULL,
     message_identity_scope TEXT NOT NULL,
     message_id TEXT NOT NULL,
@@ -178,6 +236,17 @@ CREATE TABLE IF NOT EXISTS system.async_consumer_inbox (
     )),
     executor_id TEXT NULL,
     execution_generation BIGINT NOT NULL DEFAULT 0 CHECK (execution_generation >= 0),
+    claim_expires_at TIMESTAMPTZ NULL,
+    execution_admission_revision TEXT NULL,
+    execution_authorization_revision TEXT NULL,
+    execution_principal_id TEXT NULL,
+    execution_principal_credential_generation TEXT NULL,
+    execution_runtime_profile_id TEXT NULL,
+    execution_runtime_generation TEXT NULL,
+    execution_environment_class TEXT NULL,
+    execution_placement_version TEXT NULL,
+    execution_fence_scope_id TEXT NULL,
+    execution_fence_epoch BIGINT NULL CHECK (execution_fence_epoch IS NULL OR execution_fence_epoch > 0),
     effect_result_id TEXT NULL,
     effect_result_kind TEXT NULL,
     operation_id TEXT NULL
@@ -188,8 +257,32 @@ CREATE TABLE IF NOT EXISTS system.async_consumer_inbox (
     PRIMARY KEY (consumer_contract, message_identity_scope, message_id),
     CHECK ((effect_result_id IS NULL) = (effect_result_kind IS NULL)),
     CHECK (
-        (state = 'processing' AND executor_id IS NOT NULL)
-        OR (state <> 'processing' AND executor_id IS NULL)
+        (
+            state = 'processing'
+            AND executor_id IS NOT NULL
+            AND claim_expires_at IS NOT NULL
+            AND execution_admission_revision IS NOT NULL
+            AND execution_authorization_revision IS NOT NULL
+            AND execution_principal_id IS NOT NULL
+            AND execution_principal_credential_generation IS NOT NULL
+            AND execution_runtime_profile_id IN ('runtime.api@1', 'runtime.worker@1')
+            AND execution_runtime_generation IS NOT NULL
+            AND execution_environment_class IS NOT NULL
+        )
+        OR (state <> 'processing' AND executor_id IS NULL AND claim_expires_at IS NULL)
+    ),
+    CHECK (
+        tenant_id IS NULL
+        OR state <> 'processing'
+        OR (
+            execution_placement_version IS NOT NULL
+            AND execution_fence_scope_id IS NOT NULL
+            AND execution_fence_epoch IS NOT NULL
+        )
+    ),
+    CHECK (
+        tenant_id IS NOT NULL
+        OR execution_placement_version IS NULL
     ),
     CHECK (
         state <> 'completed'
@@ -202,7 +295,7 @@ CREATE TABLE IF NOT EXISTS system.async_consumer_inbox (
 );
 
 COMMENT ON TABLE system.async_consumer_inbox IS
-'Durable create-or-observe receipt keyed by (consumer_contract, message_identity_scope, message_id). Identity alone is insufficient for benign duplicate classification; retained comparison evidence is mandatory.';
+'Durable create-or-observe receipt keyed by (consumer_contract, message_identity_scope, message_id). Identity alone is insufficient for benign duplicate classification; retained comparison evidence is mandatory. Processing state requires current execution evidence and lease loss becomes reconciliation, never new-effect permission.';
 
 -- No GRANT statements are intentionally present. Concrete serving/worker/admin
 -- privileges remain a separately reviewed runtime/operational mapping and SHALL

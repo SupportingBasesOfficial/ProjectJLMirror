@@ -21,6 +21,7 @@
   "fixed_execution_admission": "revision_bound_current_authority_before_each_protected_effect_attempt",
   "fixed_lease_loss_semantics": "lease_expiry_never_proves_effect_absence",
   "fixed_reconciliation_evidence": "append_only_operation_scoped_revision_plus_canonical_resolution_required_for_retry_or_confirmed_completion",
+  "fixed_reconciliation_completion_authority": "stable_operation_plus_append_only_effect_confirmed_revision_required_after_reconciliation_block",
   "durable_schema_reuse_policy": "preexisting_wave2_correctness_object_requires_reviewed_revalidation_not_if_not_exists_acceptance",
   "residual_c2_choices_not_selected": [
     "broker_or_job_transport",
@@ -48,6 +49,7 @@
     "lease_expiry_for_effect_absence",
     "expired_inbox_or_external_effect_claim_for_automatic_retry_eligibility",
     "reconciliation_state_without_durable_resolution_revision_for_retry_or_completion",
+    "caller_supplied_result_link_for_reconciliation_completion_without_operation_evidence",
     "reconciliation_revision_reuse_for_different_evidence",
     "preseeded_reconciliation_revision_before_ambiguity",
     "mutable_or_deletable_reconciliation_evidence",

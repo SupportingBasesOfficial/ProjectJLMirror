@@ -11,7 +11,7 @@ from .provenance import (
     BuildProvenanceEvidence, PromotionEvidence, require_immutable_evidence_reference,
     require_promotion_authority,
 )
-from .verification import RuntimeVerificationEvidence, verify_runtime
+from .verification import RuntimeVerificationEvidence, RuntimeVerificationRequirements, verify_runtime
 
 
 class DeploymentObservation(str, Enum):
@@ -89,6 +89,8 @@ class DeploymentRecord:
     configuration_validation_evidence_reference: str
     rollout_compatibility_evidence_reference: str
     admission_gate_evidence_references: tuple[str, ...]
+    runtime_verification_requirements: RuntimeVerificationRequirements
+    runtime_requirements_evidence_reference: str
     resulting_release_target_state_version_or_pending: int | None = None
     durable_target_evidence_reference: str | None = None
     observed_artifact_identity: str | None = None
@@ -105,6 +107,7 @@ class DeploymentAdmissionEvidence:
     rollout_compatibility: RolloutCompatibilityEvidence
     deployment_principal_class: str
     current_authority_gates: tuple[CurrentAuthorityEvidence, ...]
+    runtime_verification_requirements: RuntimeVerificationRequirements
 
 
 _REQUIRED_ADMISSION_GATES = frozenset({
@@ -194,9 +197,15 @@ def require_deployment_admission(intent: DeploymentIntent, evidence: DeploymentA
 
     if evidence.deployment_principal_class != "principal.release-deploy@1":
         raise ReleaseError("effectful deployment requires bounded release deploy principal")
-    _validated_admission_gate_map(intent, evidence)
+    gate_map = _validated_admission_gate_map(intent, evidence)
     if not evidence.provenance.release_policy_current:
         raise ReleaseError("build provenance policy is not current")
+
+    evidence.runtime_verification_requirements.validate_for(
+        intent,
+        expected_release_target_state_version=intent.expected_release_target_state_version + 1,
+        expected_release_policy_evidence_reference=gate_map["release_policy"].evidence_reference,
+    )
 
 
 class DeploymentAuthority:
@@ -222,6 +231,8 @@ class DeploymentAuthority:
             if existing is not None:
                 if existing.intent != intent:
                     raise ReleaseError("same deployment_operation_id with conflicting immutable semantics")
+                if existing.runtime_verification_requirements != admission.runtime_verification_requirements:
+                    raise ReleaseError("same deployment operation cannot replace persisted runtime verification requirements")
                 return existing
             if intent.target_id != self._target.target_id:
                 raise ReleaseError("deployment target identity mismatch")
@@ -236,6 +247,8 @@ class DeploymentAuthority:
                 configuration_validation_evidence_reference=admission.configuration_validation.evidence_reference,
                 rollout_compatibility_evidence_reference=admission.rollout_compatibility.evidence_reference,
                 admission_gate_evidence_references=tuple(gate_map[key].evidence_reference for key in sorted(gate_map)),
+                runtime_verification_requirements=admission.runtime_verification_requirements,
+                runtime_requirements_evidence_reference=admission.runtime_verification_requirements.evidence_reference,
             )
             self._records[intent.deployment_operation_id] = record
             self._target.unresolved_operation_id = intent.deployment_operation_id
@@ -302,6 +315,8 @@ class DeploymentAuthority:
                 raise ReleaseError("runtime configuration generation does not match deployment intent")
 
             next_version = self._target.release_target_state_version + 1
+            if next_version != record.runtime_verification_requirements.release_target_state_version:
+                raise ReleaseError("confirmed deployment target version differs from pre-authorized runtime verification requirements")
             self._target.release_target_state_version = next_version
             self._target.pending_artifact_identity = observed_artifact_identity
             self._target.pending_configuration_generation = observed_configuration_generation
@@ -332,6 +347,7 @@ class DeploymentAuthority:
             verify_runtime(
                 record.intent,
                 evidence,
+                record.runtime_verification_requirements,
                 expected_release_target_state_version=self._target.release_target_state_version,
             )
             if self._target.pending_artifact_identity != record.intent.artifact.canonical:

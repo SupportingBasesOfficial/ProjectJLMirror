@@ -110,3 +110,7 @@ jobs:
       - name: Validate Wave 3 observability and release boundaries
         shell: bash
         run: PYTHONPATH=src python3 tools/wave3/validate_wave3.py
+
+      - name: Validate Wave 3 pre-effect runtime requirement authority
+        shell: bash
+        run: PYTHONPATH=src python3 tools/wave3/validate_runtime_requirement_authority.py

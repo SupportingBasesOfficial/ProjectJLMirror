@@ -12,11 +12,11 @@
 -- If the table is absent but the platform namespace or either canonical fence routine
 -- already exists, bootstrap fails closed rather than mutating a partial/reused namespace.
 --
--- Fresh object creation treats default ACLs and privilege reachability as authority
--- input. Non-owner/PUBLIC defaults, owner-role reachability, predefined all-data
--- reachability, or SECURITY DEFINER authority owned by the migration/all-data roots
--- fail closed before the first persistent CREATE. Resulting object ACLs are re-read
--- before COMMIT.
+-- Fresh object creation treats default ACLs, privilege reachability and logical
+-- replication disclosure as authority input. Non-owner/PUBLIC defaults, owner-role
+-- reachability, predefined all-data reachability, fence-authoritative SECURITY DEFINER
+-- routines, or an existing FOR ALL TABLES publication fail closed before the first
+-- persistent CREATE. Resulting object ACLs are re-read before COMMIT.
 
 BEGIN;
 
@@ -115,20 +115,40 @@ BEGIN
         RAISE EXCEPTION 'Wave 1 fresh bootstrap rejects non-owner predefined all-data authority before fence creation';
     END IF;
 
-    -- SECURITY DEFINER executes with its owner authority. The recursive membership
-    -- proof above does not emit pg_read_all_data/pg_write_all_data as their own members,
-    -- so the predefined root roles themselves must be included explicitly.
+    -- Keep the migration-owner definer proof explicit: this is an independently
+    -- falsifiable authority surface and remains a stable assurance anchor.
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_proc p
+         WHERE p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid
+           AND p.prosecdef
+    ) THEN
+        RAISE EXCEPTION 'Wave 1 fresh bootstrap rejects migration-owner SECURITY DEFINER authority before fence creation';
+    END IF;
+
+    -- The predefined all-data roots themselves can own SECURITY DEFINER routines even
+    -- when no ordinary login is a member. Such routines retain implicit fence authority.
     IF EXISTS (
         SELECT 1
           FROM pg_catalog.pg_proc p
          WHERE p.proowner IN (
-                   current_user::pg_catalog.regrole::oid,
                    pg_catalog.to_regrole('pg_read_all_data')::oid,
                    pg_catalog.to_regrole('pg_write_all_data')::oid
                )
            AND p.prosecdef
     ) THEN
-        RAISE EXCEPTION 'Wave 1 fresh bootstrap rejects fence-authoritative SECURITY DEFINER routine before fence creation';
+        RAISE EXCEPTION 'Wave 1 fresh bootstrap rejects predefined all-data-owned SECURITY DEFINER authority before fence creation';
+    END IF;
+
+    -- A FOR ALL TABLES publication is future-table disclosure authority. If one exists,
+    -- the new fence table becomes publication-eligible at commit even though object ACLs
+    -- are clean. Fresh bootstrap therefore rejects this state before the first CREATE.
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_publication p
+         WHERE p.puballtables
+    ) THEN
+        RAISE EXCEPTION 'Wave 1 fence fresh bootstrap rejects FOR ALL TABLES publication authority before fence creation';
     END IF;
 
     EXECUTE 'CREATE SCHEMA platform';

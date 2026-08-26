@@ -1,0 +1,60 @@
+{
+  "contract_id": "wave-1.final-admission-authority@1",
+  "scope": "protected_operation_admission_only",
+  "serial_currentness_is_final_authority": false,
+  "caller_supplied_time_is_final_currentness": false,
+  "authority_owned_currentness_required": true,
+  "decision_mode": "atomic_or_revision_bound_logical_snapshot",
+  "resource_scope_mode": "required_for_resource_forbidden_otherwise",
+  "declaration_scope_binding_mode": "exact_scope_and_tenant_requirement",
+  "cross_tenant_target_binding_mode": "required_exact_explicit_tenant_set_or_selection_criteria_for_cross_tenant_forbidden_otherwise",
+  "tenant_resource_executing_runtime_profile": "runtime.api@1",
+  "executing_runtime_environment_binding_mode": "exact_current_environment_class",
+  "required_common_bindings": [
+    "admission_revision",
+    "authorization_policy_revision",
+    "principal_authority_revision",
+    "principal_id",
+    "principal_kind",
+    "principal_credential_generation",
+    "action",
+    "scope",
+    "tenant_requirement",
+    "resource_scope",
+    "cross_tenant_target",
+    "authentication_strength_policy_id",
+    "executing_runtime_authority_revision",
+    "executing_runtime_profile_id",
+    "executing_runtime_generation",
+    "executing_runtime_environment_class"
+  ],
+  "required_tenant_bindings_when_applicable": [
+    "tenant_id",
+    "cell_id",
+    "placement_authority_revision",
+    "placement_version",
+    "runtime_generation",
+    "runtime_profile_id",
+    "runtime_isolation_class",
+    "configuration_generation",
+    "workload_credential_generation",
+    "network_policy_generation",
+    "environment_class",
+    "isolation_class",
+    "fence_scope_id",
+    "fence_epoch"
+  ],
+  "required_privileged_human_bindings_when_applicable": [
+    "authentication_strength_policy_revision"
+  ],
+  "required_cross_tenant_bindings_when_applicable": [
+    "cross_tenant_target"
+  ],
+  "cross_tenant_executing_runtime_profile": "runtime.control-plane@1",
+  "finalizer_forbidden_inputs": [
+    "caller_supplied_now"
+  ],
+  "fallback_to_serial_checks": false,
+  "final_snapshot_is_durable_effect_authority": false,
+  "residual_mechanism_class": "C2_replaceable_implementation_choice"
+}

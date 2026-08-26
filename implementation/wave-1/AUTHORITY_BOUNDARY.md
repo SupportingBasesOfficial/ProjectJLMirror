@@ -1,0 +1,144 @@
+# Wave 1 — Authority Boundary
+
+Wave 1 implements only the identity and authority skeleton authorized by the accepted Implementation Readiness sequencing.
+
+## Included slices
+
+- `impl.identity-bff@1`
+- `impl.control-plane@1`
+- minimal `impl.platform-runtime@1`
+
+## Included authority primitives
+
+- browser session/authentication transaction primitives;
+- bounded canonical URL-safe browser session capability parsing before session-store lookup;
+- principal-bound authentication-strength evidence and privileged step-up predicates;
+- machine principal assertion/replay authority ports;
+- typed workload identity parsing and service-authentication boundary;
+- trusted `TenantContext` construction inputs;
+- current authorization and placement admission predicates;
+- revision-bound/atomic logical final-admission authority for protected operations;
+- exact final principal identity binding including principal ID, principal kind and credential/session generation;
+- exact authorization declaration binding for final `scope`, `tenant_requirement`, resource scope and authentication-strength policy identity;
+- current executing-runtime authority binding for every protected final admission, including exact runtime profile, runtime generation and environment class, with exact `runtime.api@1` for tenant/resource work and exact Control Plane binding for cross-tenant privileged work;
+- runtime/configuration/workload credential/network-policy generation separation;
+- classified finite-scalar configuration plus typed secret-reference boundaries;
+- monotonic PostgreSQL fence contract and stale-actor rejection, with deterministic `C`-collated equality for canonical fence authority identifiers;
+- current fence authority resolution before portable fence-token admission, with same-transaction predicate+effect required where fence/effect are co-resident;
+- persisted fence-state revalidation before historical state can remain authority-eligible, including deterministic collation proof and an exact finite constraint/index vocabulary for the authority table;
+- exact-base Git delta scope guard that rejects Product/domain/Wave 2/normative-doc changes;
+- runtime profile bindings required by the three Wave 1 slices.
+
+Trusted C2 adapters provide evidence only. Malformed, unbound or non-canonical adapter output fails closed before it can create session, replay, tenant, workload or protected-effect authority. Caller/request-adjacent tenant, destination and authority-generation identifiers are canonicalized before C2 placement/configuration/machine verification ports are invoked.
+
+The browser session cookie is an opaque capability, not an arbitrary string namespace. Wave 1 accepts only the bounded URL-safe capability grammar before digest/store lookup; Unicode, control characters, whitespace, non-URL-safe encodings and oversized handles cannot make the session store the parser or resource-amplification boundary. The raw capability remains repr/log-redacted.
+
+Browser authorization transaction authority is time-bounded on both sides: a consumed transaction is usable only while `created_at <= now < expires_at`. Clock rollback/not-yet-current state cannot reach the IdP adapter as an authentication attempt.
+
+Privileged or policy-sensitive human admission does not freeze Security authority when MFA/step-up first passes. Serial Security checks may reject early, but they are narrowing evidence only. Final protected-operation admission requires the revision-bound final-admission authority to re-establish the applicable authentication-strength policy/evidence with current Security authority. Policy hardening, stale assurance or loss of proof during the decision window fails closed; an earlier step-up result is not durable authority.
+
+Authentication-strength policy identity and policy revision are separate bindings. A final snapshot for `authentication_strength_policy_id=A` cannot be replayed for policy `B` merely because both currently expose the same revision label. When step-up is applicable, final admission binds the exact declaration policy ID plus the trusted strength evidence policy revision; both must remain coherent with the declaration and current Security authority.
+
+Principal identity is likewise multi-dimensional. `principal_id` and credential/session generation do not identify the principal class by themselves. Human browser, machine API, internal service and platform-admin principals have different authorization semantics; final admission therefore binds the exact canonical `PrincipalKind` and rejects evidence produced for another kind even if textual ID and credential generation are identical.
+
+Cross-tenant privileged operations remain distinct platform operations. A valid platform-admin principal, permission, authentication-strength result or caller-selected `RuntimeBinding` cannot route such an operation through the ordinary `runtime.api@1` application boundary. Serial runtime checks resolve trusted current executing-runtime evidence and may reject early, but they are not the final grant. The final-admission authority must re-establish and revision-bind the exact accepted `runtime.control-plane@1` executing runtime using authority-owned currentness/time. A typed `CONTROL_PLANE` constant and caller-supplied `now` are expected/narrowing inputs only, never final execution authority.
+
+Tenant/resource admission has the same executing-runtime requirement, but a different exact runtime class. The `runtime_generation` carried by `TenantContext` is trusted destination placement/runtime authority; it is **not** proof of the process/runtime generation actually executing the authorization decision. Ordinary tenant/resource protected operations are admitted only through the accepted `runtime.api@1` authority boundary. `runtime.web-bff@1` remains the confidential browser/session boundary and `runtime.control-plane@1` remains privileged platform authority; neither can substitute for the API owning authorization boundary merely because a caller can supply a matching-looking `RuntimeBinding` or `TenantContext`.
+
+Every final protected-operation snapshot therefore also binds a current executing-runtime authority revision, exact executing runtime profile, exact executing runtime generation and exact canonical executing environment class. For ordinary tenant/resource API work that profile must equal `runtime.api@1`; for cross-tenant privileged work it must equal `runtime.control-plane@1`. The environment class must be admissible for the exact runtime profile and must match current executing-runtime evidence where the serial narrowing check is available; a profile/generation match cannot launder authority captured in validation, recovery or another environment into a different environment. The final-admission implementation, not caller input, placement context or environment label, owns resolution of current executing-runtime authority and currentness.
+
+Owning membership/permission/resource authorization is not durable merely because an `AuthorizationDecision` said `current=True`. Wave 1 may evaluate principal, placement/runtime/fence, authentication-strength and owning authorization serially as fail-fast narrowing gates, but no ordering of those checks can create final authority: whichever serial check is last would otherwise reopen a TOCTOU window for the preceding authorities.
+
+Final protected-operation admission therefore requires one `FinalAdmissionAuthorityPort` result whose implementation performs one atomic or revision-bound logical current-authority decision using authority-owned currentness/time. The returned `FinalAdmissionEvidence` binds at minimum the final admission revision, owning authorization policy revision, principal authority revision, exact principal ID, exact principal kind, exact session/credential generation, exact action, exact declaration `scope`, exact `tenant_requirement`, exact `resource_scope` semantics, exact cross-tenant target semantics where applicable, exact `authentication_strength_policy_id` semantics, exact executing-runtime authority revision/profile/generation/environment class, and every applicable authority dimension:
+
+- for tenant-scoped work: `scope=tenant`, `tenant_requirement=required`, tenant/cell placement revision, placement/runtime/configuration/workload-credential/network-policy generations, environment/isolation binding, fence scope and fence epoch;
+- for resource-scoped work: `scope=resource`, `tenant_requirement=required`, a non-null exact canonical resource scope consumed by the owning authorization decision; evidence for one resource cannot be reused for another resource even when the action is identical;
+- for platform/tenant scope: `resource_scope` is absent; attaching resource authority to a non-resource declaration is rejected rather than silently ignored;
+- for privileged/policy-sensitive humans: exact `authentication_strength_policy_id` plus current authentication-strength/Security policy revision;
+- for every protected operation: current executing runtime authority revision, exact expected runtime profile, exact executing runtime generation and exact canonical executing environment class;
+- for cross-tenant privileged work specifically: `scope=platform`, `tenant_requirement=explicit_cross_tenant_privileged`, exact canonical cross-tenant target binding, and the executing runtime profile is exactly `runtime.control-plane@1`.
+
+A matching principal ID/action/context is insufficient if principal kind or any declaration-class binding differs. Final evidence produced for one principal kind, scope class, tenant-requirement class, resource scope, target set or executing environment cannot be reused for another. Missing, malformed, non-current, denied or mismatched final evidence fails closed. `ScopeClass.RESOURCE` without a canonical `resource_scope` is invalid before authorization begins, so a resource operation can never degrade into action-only authority. The finalizer receives no caller-supplied `now`; a request timestamp cannot keep an expired runtime/session/policy current during a slow decision. Earlier serial checks remain useful for narrowing and diagnostics, but **serial currentness checks are not final admission authority**. The final decision remains an admission result, not durable effect authority; effectful paths still consume the applicable current/fenced/atomic authority at their effect boundary.
+
+Fence scope/epoch/generation equality is necessary but not sufficient for a protected effect. A typed `FenceRecord` supplied by a caller is not currentness evidence. The portable Wave 1 predicate resolves the current record from the owning fence authority and requires its state to be exactly `active` before comparing scope, epoch and generation. For co-resident PostgreSQL effects, even that preflight result is insufficient: the current fence predicate and protected mutation must execute in the same database transaction. `quarantined`, `retired` or any other syntactically valid state cannot admit a protected effect and cannot use the ordinary successor compare-and-advance path to resurrect effect eligibility. Recovery/state-transition authority remains separately governed by the accepted Phase 13/15 lifecycle and recovery predicates.
+
+Canonical fence identifiers are case-sensitive platform authority identifiers. PostgreSQL storage, primary-key/conflict behavior and equality predicates therefore use deterministic `COLLATE "C"` semantics for `fence_scope_id`, `current_generation_id` and `authority_state`. Database-default locale/case-insensitive/nondeterministic collation cannot decide whether two canonical authority IDs alias. Reuse of an existing fence table fails closed unless `pg_attribute.attcollation` proves the canonical authority-bearing text columns use `pg_catalog."C"`.
+
+An already-present `platform.authority_fences` object is not automatically conforming. The follow-on revalidation migration requires an exact finite metadata shape: the named primary key plus the four canonical CHECK constraints, exactly one backing PK index, no additional index metadata, no foreign-key relation in either direction, and no hidden user trigger/rewrite behavior. Extra `UNIQUE`, `CHECK`, exclusion, expression, partial or other index metadata is not treated as harmless because it can reject or alter canonical initialize/advance writes. Unknown metadata fails closed and requires reviewed schema evolution rather than reuse-time inference. Persisted rows are not deleted or rewritten merely to make validation pass.
+
+Direct ACL cleanliness is also not enough: before C2 role mapping, the migration-owner role must have no direct or transitive `pg_auth_members` path by which another role can assume or inherit owner authority, and non-owner roles cannot retain predefined all-data reachability or column-level fence privileges. Function ACL cleanliness also does not prove absence of owner-powered callable code: the entire `platform` authority namespace is checked for residual `SECURITY DEFINER` routines before C2 role mapping, while the canonical fence routines must remain `SECURITY INVOKER`. This conservative check does not claim to remove PostgreSQL cluster-superuser power; it closes modeled role/ACL/definer laundering inside the Wave 1 boundary.
+
+## Explicitly not selected here
+
+The following remain C2 implementation choices and are not made canonical by code presence:
+
+- identity provider product;
+- BFF/session-store product;
+- CSRF mechanism/product beyond fixed Phase 09 semantics;
+- workload-identity issuer/attestation backend;
+- service mesh;
+- secret manager/KMS;
+- configuration-distribution product;
+- orchestrator/scheduler;
+- ingress/load-balancer product;
+- physical environment/topology mapping;
+- concrete final-admission coordination/store mechanism, provided it conforms to the fixed revision-bound/atomic authority contract.
+
+## Explicitly absent
+
+- Product/domain endpoints not already accepted;
+- customer telemetry implementation;
+- provider adapters;
+- realtime implementation;
+- artifact delivery activation;
+- Wave 2 transactional business/domain implementation;
+- production topology/numerics.
+
+## Authority laws
+
+```text
+AUTHENTICATED != AUTHORIZED
+SESSION VALID != CURRENT AUTHORITY
+NONCANONICAL/UNBOUNDED BROWSER SESSION HANDLE != SESSION AUTHORITY
+MFA PRESENT != REQUIRED ASSURANCE CURRENT
+EARLIER STEP-UP PASS != FINAL CURRENT ASSURANCE
+AUTHENTICATION STRENGTH EVIDENCE != TRANSFERABLE PRINCIPAL AUTHORITY
+AUTHENTICATION-STRENGTH REVISION != POLICY-ID BINDING
+MALFORMED ADAPTER OUTPUT != TRUSTED AUTHORITY
+NONCANONICAL LOOKUP/GENERATION INPUT != C2 ADAPTER AUTHORITY
+NOT-YET-CURRENT AUTH TRANSACTION != AUTHENTICATION AUTHORITY
+WORKLOAD IDENTITY != TENANT AUTHORITY
+NETWORK PRESENCE != TRUST
+TENANT ID INPUT != TENANT CONTEXT
+CALLER-SELECTED RUNTIME BINDING != EXECUTING RUNTIME AUTHORITY
+DESTINATION RUNTIME GENERATION != EXECUTING RUNTIME AUTHORITY
+TENANT/RESOURCE ADMISSION != NON-API RUNTIME AUTHORITY
+CROSS-TENANT PLATFORM AUTHORITY != APPLICATION RUNTIME AUTHORITY
+EARLIER AUTHORIZATION GRANT != FINAL CURRENT AUTHORIZATION
+SERIAL CURRENTNESS CHECKS != FINAL ADMISSION AUTHORITY
+CALLER-SUPPLIED NOW != FINAL CURRENTNESS CLOCK
+PRINCIPAL ID/GENERATION MATCH != PRINCIPAL-KIND AUTHORITY
+ACTION MATCH != DECLARATION-SCOPE MATCH
+ACTION MATCH != RESOURCE-SCOPE MATCH
+CROSS-TENANT ACTION MATCH != TARGET-SET AUTHORITY
+RESOURCE SCOPE ABSENCE != RESOURCE AUTHORITY
+RUNTIME PROFILE+GENERATION MATCH != EXECUTING ENVIRONMENT AUTHORITY
+FINAL ADMISSION SNAPSHOT != DURABLE EFFECT AUTHORITY
+PLACEMENT CACHE HIT != GLOBAL AUTHORITY
+ENVIRONMENT LABEL != AUTHORIZATION
+UNCLASSIFIED/UNTYPED CONFIG != RUNTIME-ADMISSIBLE CONFIG
+TYPED FENCE RECORD != CURRENT EFFECT AUTHORITY
+FENCE SCOPE/EPOCH/GENERATION MATCH != EFFECT AUTHORITY WITHOUT ACTIVE STATE
+NON-ACTIVE FENCE STATE != ORDINARY SUCCESSOR AUTHORITY
+CANONICAL FENCE ID != DATABASE-DEFAULT COLLATION
+PREEXISTING FENCE TABLE != PERSISTED AUTHORITY CONFORMANCE
+REQUIRED FENCE SHAPE != ABSENCE OF EXTRA WRITE CONSTRAINTS
+OWNER OBJECT ACL CLEAN != OWNER ROLE UNASSUMABLE
+TABLE ACL CLEAN != COLUMN ACL CLEAN
+OBJECT ACL CLEAN != PREDEFINED ALL-DATA ROLE ABSENT
+EXPECTED FUNCTION ACL CLEAN != RESIDUAL DEFINER AUTHORITY ABSENT
+FENCE TOKEN != AMBIGUOUS EFFECT ABSENCE
+SECRET REFERENCE != SECRET VALUE
+IMPLEMENTATION MANIFEST != AUTHORIZED GIT DELTA BY ITSELF
+WAVE 1 AUTHORIZED != WAVE 2 AUTHORIZED
+```

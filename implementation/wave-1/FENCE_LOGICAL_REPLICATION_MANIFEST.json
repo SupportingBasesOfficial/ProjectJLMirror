@@ -1,0 +1,32 @@
+{
+  "profile": "jlmirror-wave1-fence-logical-replication/v1",
+  "authority_scope": "platform.authority_fences",
+  "fresh_bootstrap_required_guards": [
+    "for_all_tables_publication_absent_before_first_persistent_create"
+  ],
+  "reuse_required_guards": [
+    "inbound_subscription_mapping_absent",
+    "explicit_publication_relation_absent",
+    "for_all_tables_publication_absent",
+    "schema_publication_absent_when_catalog_supported"
+  ],
+  "reuse_execution_boundary": {
+    "single_transaction": true,
+    "access_exclusive_before_preflight": true,
+    "publication_preflight_before_canonical_mutation": true
+  },
+  "forbidden_substitutions": [
+    "acl_clean_for_logical_replication_disclosure_absent",
+    "inbound_replication_writer_absent_for_outbound_publication_absent",
+    "publication_catalog_snapshot_clean_for_concurrent_superuser_authority_absent",
+    "table_lock_held_for_database_admin_authority_revoked"
+  ],
+  "c2_database_admin_boundary": {
+    "choice_id": "database_admin_role_and_operational_mapping",
+    "concurrent_superuser_or_equivalent_admin_exclusion_selected": false,
+    "catalog_preflight_claims_permanent_admin_absence": false,
+    "requires_separate_reviewed_role_and_operational_mapping": true
+  },
+  "product_feature_activation": "none",
+  "wave_2_authorized": false
+}

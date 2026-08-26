@@ -1,0 +1,71 @@
+from __future__ import annotations
+
+from pathlib import Path
+import sys
+import unittest
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.authority.fence_sql_contract import (  # noqa: E402
+    CANONICAL_IDENTIFIER_REGEX,
+    CANONICAL_REGEX_OPERATOR,
+    EFFECT_ELIGIBLE_PREDECESSOR_PREDICATE,
+    validate_fence_sql_text,
+)
+
+SQL_PATH = ROOT / "sql" / "wave1" / "001_platform_authority_fence.sql"
+
+
+class FenceSqlCanonicalizationTests(unittest.TestCase):
+    def test_real_fence_sql_enforces_portable_identifier_grammar(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        self.assertEqual(validate_fence_sql_text(text), [])
+
+    def test_trim_only_storage_constraint_is_not_sufficient(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        predicate = (
+            f"            AND fence_scope_id {CANONICAL_REGEX_OPERATOR} "
+            f"'{CANONICAL_IDENTIFIER_REGEX}'\n"
+        )
+        self.assertIn(predicate, text)
+        weakened = text.replace(predicate, "", 1)
+        findings = validate_fence_sql_text(weakened)
+        self.assertTrue(any("fence_scope_id" in finding for finding in findings))
+
+    def test_successor_input_cannot_drop_canonical_generation_check(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        predicate = (
+            f"       AND p_successor_generation_id {CANONICAL_REGEX_OPERATOR} "
+            f"'{CANONICAL_IDENTIFIER_REGEX}'\n"
+        )
+        self.assertIn(predicate, text)
+        weakened = text.replace(predicate, "", 1)
+        findings = validate_fence_sql_text(weakened)
+        self.assertTrue(any("p_successor_generation_id" in finding for finding in findings))
+
+    def test_locale_dependent_regex_is_not_sufficient(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        weakened = text.replace(' COLLATE "C"', "")
+        findings = validate_fence_sql_text(weakened)
+        self.assertTrue(findings)
+
+    def test_non_active_predecessor_cannot_use_ordinary_fence_advance(self):
+        text = SQL_PATH.read_text(encoding="utf-8")
+        self.assertIn(EFFECT_ELIGIBLE_PREDECESSOR_PREDICATE, text)
+        weakened = text.replace(
+            f"       AND {EFFECT_ELIGIBLE_PREDECESSOR_PREDICATE}\n", "", 1
+        )
+        findings = validate_fence_sql_text(weakened)
+        self.assertTrue(any("authority_state" in finding for finding in findings))
+
+    def test_sql_grammar_rejects_whitespace_and_control_form_by_construction(self):
+        self.assertNotIn("\\s", CANONICAL_IDENTIFIER_REGEX)
+        self.assertNotIn(" ", CANONICAL_IDENTIFIER_REGEX)
+        self.assertEqual(CANONICAL_IDENTIFIER_REGEX[0], "^")
+        self.assertEqual(CANONICAL_IDENTIFIER_REGEX[-1], "$")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

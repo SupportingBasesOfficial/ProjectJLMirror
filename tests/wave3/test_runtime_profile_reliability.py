@@ -5,7 +5,7 @@ from jlmirror_release.model import ArtifactIdentity, DeploymentIntent, ReleaseEr
 from jlmirror_release.verification import RuntimeVerificationRequirements
 
 
-def intent(runtime_profiles=("runtime.api@1",)):
+def intent(runtime_profiles=("runtime.api@1",), worker_specializations=()):
     return DeploymentIntent(
         deployment_operation_id="op-runtime-profile",
         target_id="validation-cell-a",
@@ -21,6 +21,7 @@ def intent(runtime_profiles=("runtime.api@1",)):
         schema_state="compatible",
         api_compatibility_family="api.v1",
         event_compatibility_set=("event.v1",),
+        worker_specialization_set=tuple(worker_specializations),
     )
 
 
@@ -86,6 +87,44 @@ class RuntimeProfileReliabilityTests(unittest.TestCase):
     def test_duplicate_runtime_profile_is_rejected(self):
         with self.assertRaises(ReleaseError):
             intent(("runtime.api@1", "runtime.api@1"))
+
+    def test_worker_runtime_requires_exact_specialization(self):
+        with self.assertRaises(ReleaseError):
+            intent(("runtime.worker@1",))
+
+    def test_worker_specialization_without_worker_runtime_is_rejected(self):
+        with self.assertRaises(ReleaseError):
+            intent(("runtime.api@1",), ("worker.outbox-publication@1",))
+
+    def test_unknown_or_duplicate_worker_specialization_is_rejected(self):
+        for specializations in (
+            ("worker.unknown@1",),
+            ("worker.outbox-publication@1", "worker.outbox-publication@1"),
+        ):
+            with self.subTest(specializations=specializations), self.assertRaises(ReleaseError):
+                intent(("runtime.worker@1",), specializations)
+
+    def test_outbox_worker_cannot_omit_broker_transport_reliability(self):
+        i = intent(("runtime.worker@1",), ("worker.outbox-publication@1",))
+        with self.assertRaises(ReleaseError):
+            requirements(i, ("rel.outbox-publication@1",)).validate_for(
+                i, expected_release_target_state_version=1
+            )
+
+    def test_outbox_worker_complete_minimum_is_accepted(self):
+        i = intent(("runtime.worker@1",), ("worker.outbox-publication@1",))
+        requirements(i, ("rel.outbox-publication@1", "rel.broker-job-transport@1")).validate_for(
+            i, expected_release_target_state_version=1
+        )
+
+    def test_reconciliation_worker_uses_exact_pre_effect_affected_reliability(self):
+        i = intent(("runtime.worker@1",), ("worker.reconciliation@1",))
+        # The affected owner/profile is contextual, so Phase 13 does not define one universal
+        # reliability ID for reconciliation workers. The pre-effect requirements record remains
+        # the authority and must still contain a non-empty canonical reliability set.
+        requirements(i, ("rel.replay-consume-state@1",)).validate_for(
+            i, expected_release_target_state_version=1
+        )
 
 
 if __name__ == "__main__":

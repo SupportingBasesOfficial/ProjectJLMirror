@@ -43,10 +43,12 @@ EXPECTED_MANIFEST = {
         "schema_query_and_result_are_exact_children": True,
         "exception_handlers_allowed": False,
         "top_level_return_allowed": False,
+        "executable_return_or_exit_allowed": False,
     },
     "forbidden_substitutions": [
         "numeric_control_depth_for_block_ancestry",
         "raise_exception_presence_for_unsuppressed_failure",
+        "top_level_return_absence_for_reachable_early_exit_absence",
     ],
     "product_feature_activation": "none",
     "wave_2_authorized": False,
@@ -87,6 +89,28 @@ def _exception_handler_findings(tokens: list[Token], label: str) -> list[str]:
     return findings
 
 
+def _early_exit_findings(tokens: list[Token], label: str) -> list[str]:
+    """Reject executable preflight exits regardless of control depth or block labels.
+
+    Ordinary and dollar-quoted literals are emitted as non-word token types by
+    ``_body_tokens`` and therefore cannot satisfy this guard.  The reuse preflight
+    has no accepted RETURN/EXIT behavior: every publication guard must remain on the
+    execution path to the canonical mutation that follows the DO block.
+    """
+
+    findings: list[str] = []
+    for token in tokens:
+        if token == _word("RETURN"):
+            findings.append(
+                f"{label} contains executable RETURN early-exit bypass at an untrusted control depth"
+            )
+        elif token == _word("EXIT"):
+            findings.append(
+                f"{label} contains executable EXIT early-exit bypass, including labeled-block exit"
+            )
+    return findings
+
+
 def _parsed_do_tokens(text: object, tag: str, label: str) -> tuple[list[Token], list[str]]:
     if not isinstance(text, str):
         return [], [f"{label} must be text"]
@@ -119,6 +143,7 @@ def validate_reuse_ancestry(text: object) -> list[str]:
     if findings:
         return findings
     findings.extend(_exception_handler_findings(tokens, "Wave 1 reused publication preflight"))
+    findings.extend(_early_exit_findings(tokens, "Wave 1 reused publication preflight"))
 
     complete = _complete_schema_publication_guard()
     position = _find_sequence(tokens, complete)
@@ -177,7 +202,7 @@ def main() -> int:
             print(f"- {finding}")
         return 1
     print(
-        "RESULT: PASS — schema-publication query/result are bound to the exact catalog guard and publication preflights cannot suppress denial through PL/pgSQL exception handlers"
+        "RESULT: PASS — schema-publication query/result are bound to the exact catalog guard; publication preflights cannot suppress denial through exception handlers, and reused preflight execution cannot escape through RETURN/EXIT"
     )
     print("NOTE: PASS is static conformance evidence only; database/admin segregation remains C2.")
     return 0

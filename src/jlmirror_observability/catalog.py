@@ -54,39 +54,44 @@ class ReliabilityObservabilityJoin:
             if self.sli_profile_ids and self.direct_sli_no_applicable_case_reason:
                 raise ObservationError("direct SLI cannot be both applicable and NO_APPLICABLE_CASE")
 
-    def resolve_product_applicability(self, selector_value: str) -> ApplicabilityResolution:
+    def resolve_product_applicability(self, evidence, *, expected_scope: str) -> ApplicabilityResolution:
+        """Resolve Product-gated observability only from current exact-scope Product authority evidence.
+
+        Absence of Product evidence remains the upstream OPEN state. Stale, wrong-scope or wrong-selector
+        evidence fails closed rather than being laundered into disabled/enabled applicability.
+        """
+        if self.product_selector is None:
+            raise ObservationError(f"{self.reliability_profile_id} has no Product applicability selector")
+        if evidence is None:
+            return ApplicabilityResolution(
+                state="open",
+                alert_profile_ids=self.alert_profile_ids,
+                open_decision_id="OPEN-OBS-037",
+            )
+        from .policy import ProductApplicabilityEvidence
+        if not isinstance(evidence, ProductApplicabilityEvidence):
+            raise ObservationError("Product applicability requires the canonical evidence type")
+        evidence.validate_for(expected_scope, expected_selector_id=self.product_selector)
         if self.product_selector == "webhook_product_state":
-            if selector_value == "product_enabled":
+            if evidence.enabled:
                 return ApplicabilityResolution(state="open", open_decision_id="OPEN-OBS-035")
-            if selector_value == "product_not_enabled":
-                return ApplicabilityResolution(
-                    state="no_applicable_case",
-                    no_applicable_case_reason="outbound webhook Product capability is not enabled",
-                )
-            if selector_value == "product_state_unproven":
-                return ApplicabilityResolution(state="open", open_decision_id="OPEN-OBS-037")
-        elif self.product_selector == "artifact_delivery_product_state":
-            if selector_value == "product_exposed_delivery":
+            return ApplicabilityResolution(
+                state="no_applicable_case",
+                no_applicable_case_reason="outbound webhook Product capability is not enabled",
+            )
+        if self.product_selector == "artifact_delivery_product_state":
+            if evidence.enabled:
                 return ApplicabilityResolution(
                     state="applicable",
                     sli_profile_ids=("sli.artifact.delivery@1",),
                     alert_profile_ids=self.alert_profile_ids,
                 )
-            if selector_value == "product_not_exposed_delivery":
-                return ApplicabilityResolution(
-                    state="no_applicable_case",
-                    alert_profile_ids=self.alert_profile_ids,
-                    no_applicable_case_reason="Product-facing artifact delivery is not exposed",
-                )
-            if selector_value == "product_state_unproven":
-                return ApplicabilityResolution(
-                    state="open",
-                    alert_profile_ids=self.alert_profile_ids,
-                    open_decision_id="OPEN-OBS-037",
-                )
-        raise ObservationError(
-            f"invalid or unproven Product applicability selector for {self.reliability_profile_id}"
-        )
+            return ApplicabilityResolution(
+                state="no_applicable_case",
+                alert_profile_ids=self.alert_profile_ids,
+                no_applicable_case_reason="Product-facing artifact delivery is not exposed",
+            )
+        raise ObservationError(f"unsupported Product applicability selector: {self.product_selector}")
 
 
 def _join(rid, signals, health, slis, alerts, vectors, *, impact=(), na=None, selector=None):

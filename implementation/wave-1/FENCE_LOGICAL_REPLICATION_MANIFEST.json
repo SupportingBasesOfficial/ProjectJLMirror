@@ -22,6 +22,7 @@
     "table_lock_held_for_database_admin_authority_revoked"
   ],
   "c2_database_admin_boundary": {
+    "choice_id": "database_admin_role_and_operational_mapping",
     "concurrent_superuser_or_equivalent_admin_exclusion_selected": false,
     "catalog_preflight_claims_permanent_admin_absence": false,
     "requires_separate_reviewed_role_and_operational_mapping": true

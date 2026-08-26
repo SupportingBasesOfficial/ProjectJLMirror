@@ -33,7 +33,8 @@
     "configuration_distribution",
     "orchestrator_scheduler",
     "ingress_load_balancer",
-    "physical_environment_mapping"
+    "physical_environment_mapping",
+    "database_admin_role_and_operational_mapping"
   ],
   "forbidden_authority_substitutions": [
     "session_valid_for_current_authorization",

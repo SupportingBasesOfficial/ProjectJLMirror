@@ -54,6 +54,7 @@ EXPECTED_C2 = [
     "orchestrator_scheduler",
     "ingress_load_balancer",
     "physical_environment_mapping",
+    "database_admin_role_and_operational_mapping",
 ]
 EXPECTED_FORBIDDEN_SUBSTITUTIONS = [
     "session_valid_for_current_authorization",

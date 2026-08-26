@@ -135,13 +135,20 @@ BEGIN
         RAISE EXCEPTION 'platform schema has inherited non-owner privileges';
     END IF;
 
+    -- The recursive membership closure does not emit pg_read_all_data or
+    -- pg_write_all_data as their own members. A SECURITY DEFINER owned directly by
+    -- either root therefore carries implicit fence authority even with clean ACLs.
     IF EXISTS (
         SELECT 1
           FROM pg_catalog.pg_proc p
-         WHERE p.proowner OPERATOR(pg_catalog.=) current_user::pg_catalog.regrole::oid
+         WHERE p.proowner IN (
+                   current_user::pg_catalog.regrole::oid,
+                   pg_catalog.to_regrole('pg_read_all_data')::oid,
+                   pg_catalog.to_regrole('pg_write_all_data')::oid
+               )
            AND p.prosecdef
     ) THEN
-        RAISE EXCEPTION 'database contains migration-owner SECURITY DEFINER routine';
+        RAISE EXCEPTION 'database contains fence-authoritative SECURITY DEFINER routine owned by migration or predefined all-data authority';
     END IF;
 
     IF EXISTS (
@@ -592,9 +599,9 @@ $wave1_function$;
 
 REVOKE ALL ON FUNCTION platform.advance_authority_fence(text, bigint, text, text, text) FROM PUBLIC;
 
--- Re-read the canonical routine ACLs before commit. CREATE OR REPLACE is permitted
--- only because reuse admission proved both routines pre-existed and were ACL-clean;
--- this assertion prevents any mutation path from expanding that authority silently.
+-- Re-read canonical routine authority and database-wide definer authority before
+-- commit. CREATE OR REPLACE is permitted only because reuse admission proved both
+-- routines pre-existed and were ACL-clean; no all-data-root definer may survive.
 DO $wave1_postcanonical_privilege_assert$
 DECLARE
     v_initialize pg_catalog.regprocedure := pg_catalog.to_regprocedure(
@@ -631,6 +638,19 @@ BEGIN
            )
     ) THEN
         RAISE EXCEPTION 'Wave 1 reuse canonical routine authority drifted before commit';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_proc p
+         WHERE p.proowner IN (
+                   current_user::pg_catalog.regrole::oid,
+                   pg_catalog.to_regrole('pg_read_all_data')::oid,
+                   pg_catalog.to_regrole('pg_write_all_data')::oid
+               )
+           AND p.prosecdef
+    ) THEN
+        RAISE EXCEPTION 'Wave 1 reuse fence-authoritative SECURITY DEFINER routine survived before commit';
     END IF;
 END
 $wave1_postcanonical_privilege_assert$;

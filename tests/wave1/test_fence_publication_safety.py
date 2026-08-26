@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
 import unittest
@@ -11,11 +12,26 @@ if str(ROOT) not in sys.path:
 from tools.authority.validate_fence_publication_safety import (  # noqa: E402
     BOUNDARY_PATH,
     BOOTSTRAP_PATH,
+    MANIFEST_PATH,
     REUSE_PATH,
     validate_bootstrap_publication_text,
     validate_boundary_text,
+    validate_manifest_object,
     validate_reuse_publication_text,
 )
+
+INDEPENDENT_REQUIRED_REUSE_GUARDS = {
+    "inbound_subscription_mapping_absent",
+    "explicit_publication_relation_absent",
+    "for_all_tables_publication_absent",
+    "schema_publication_absent_when_catalog_supported",
+}
+INDEPENDENT_REQUIRED_FORBIDDEN_SUBSTITUTIONS = {
+    "acl_clean_for_logical_replication_disclosure_absent",
+    "inbound_replication_writer_absent_for_outbound_publication_absent",
+    "publication_catalog_snapshot_clean_for_concurrent_superuser_authority_absent",
+    "table_lock_held_for_database_admin_authority_revoked",
+}
 
 
 class FencePublicationSafetyTests(unittest.TestCase):
@@ -24,6 +40,7 @@ class FencePublicationSafetyTests(unittest.TestCase):
         cls.bootstrap = BOOTSTRAP_PATH.read_text(encoding="utf-8")
         cls.reuse = REUSE_PATH.read_text(encoding="utf-8")
         cls.boundary = BOUNDARY_PATH.read_text(encoding="utf-8")
+        cls.manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
     def assert_bootstrap_fails(self, text: str, needle: str | None = None) -> None:
         findings = validate_bootstrap_publication_text(text)
@@ -37,10 +54,54 @@ class FencePublicationSafetyTests(unittest.TestCase):
         if needle:
             self.assertTrue(any(needle.lower() in finding.lower() for finding in findings), findings)
 
-    def test_real_fence_migrations_close_static_replication_surfaces(self):
+    def test_real_fence_migrations_and_manifest_close_static_replication_surfaces(self):
         self.assertEqual(validate_bootstrap_publication_text(self.bootstrap), [])
         self.assertEqual(validate_reuse_publication_text(self.reuse), [])
         self.assertEqual(validate_boundary_text(self.boundary), [])
+        self.assertEqual(validate_manifest_object(self.manifest), [])
+
+    def test_manifest_independently_pins_reuse_guards_and_c2_boundary(self):
+        self.assertEqual(set(self.manifest["reuse_required_guards"]), INDEPENDENT_REQUIRED_REUSE_GUARDS)
+        self.assertEqual(
+            set(self.manifest["forbidden_substitutions"]),
+            INDEPENDENT_REQUIRED_FORBIDDEN_SUBSTITUTIONS,
+        )
+        c2 = self.manifest["c2_database_admin_boundary"]
+        self.assertIs(c2["concurrent_superuser_or_equivalent_admin_exclusion_selected"], False)
+        self.assertIs(c2["catalog_preflight_claims_permanent_admin_absence"], False)
+        self.assertIs(c2["requires_separate_reviewed_role_and_operational_mapping"], True)
+        self.assertEqual(self.manifest["product_feature_activation"], "none")
+        self.assertIs(self.manifest["wave_2_authorized"], False)
+
+    def test_manifest_cannot_launder_c2_admin_selection_or_permanent_absence(self):
+        for field in (
+            "concurrent_superuser_or_equivalent_admin_exclusion_selected",
+            "catalog_preflight_claims_permanent_admin_absence",
+        ):
+            with self.subTest(field=field):
+                mutated = json.loads(json.dumps(self.manifest))
+                mutated["c2_database_admin_boundary"][field] = True
+                self.assertTrue(validate_manifest_object(mutated))
+
+    def test_manifest_cannot_drop_reuse_guard_or_forbidden_substitution(self):
+        mutated = json.loads(json.dumps(self.manifest))
+        mutated["reuse_required_guards"].remove("schema_publication_absent_when_catalog_supported")
+        self.assertTrue(validate_manifest_object(mutated))
+
+        mutated = json.loads(json.dumps(self.manifest))
+        mutated["forbidden_substitutions"].remove(
+            "publication_catalog_snapshot_clean_for_concurrent_superuser_authority_absent"
+        )
+        self.assertTrue(validate_manifest_object(mutated))
+
+    def test_manifest_cannot_authorize_wave2_or_product_feature(self):
+        mutated = json.loads(json.dumps(self.manifest))
+        mutated["wave_2_authorized"] = True
+        self.assertTrue(validate_manifest_object(mutated))
+
+        mutated = json.loads(json.dumps(self.manifest))
+        mutated["product_feature_activation"] = "enabled"
+        self.assertTrue(validate_manifest_object(mutated))
 
     def test_fresh_all_tables_publication_guard_is_catalog_bound_and_pre_create(self):
         self.assert_bootstrap_fails(

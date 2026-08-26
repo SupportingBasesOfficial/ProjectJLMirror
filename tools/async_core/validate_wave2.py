@@ -114,6 +114,7 @@ def _source_authority_findings() -> list[str]:
         "publication": ROOT / "docs/10-event-contracts/publication-outbox-and-producer-authority.md",
         "inbox": ROOT / "docs/10-event-contracts/consumer-inbox-idempotency-and-effects.md",
         "security": ROOT / "docs/10-event-contracts/security-tenant-context-and-data-classification.md",
+        "reliability": ROOT / "docs/11-reliability-resilience/08-reliability-semantic-manifest.md",
         "sequencing": ROOT / "docs/16-implementation-readiness/11-initial-implementation-sequencing.md",
         "slices": ROOT / "docs/16-implementation-readiness/15-implementation-slice-readiness-manifest.md",
     }
@@ -130,10 +131,11 @@ def _source_authority_findings() -> list[str]:
         ("inbox", "reconciliation_required"),
         ("security", "resolves current placement"),
         ("security", "Human/session/membership authorization from message creation time does not persist automatically"),
+        ("reliability", "`rel.consumer-inbox-effect@1`"),
+        ("reliability", "`rel.replay-consume-state@1`"),
         ("sequencing", "## Wave 2 — Transactional cell and async correctness substrate"),
         ("sequencing", "`impl.cell-data-runtime@1`"),
         ("sequencing", "`impl.async-core@1`"),
-        ("slices", "`rel.consumer-inbox-effect@1`"),
         ("slices", "`rel.cell-transactional-store@1`"),
     )
     return [

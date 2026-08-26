@@ -4,6 +4,12 @@ The package is subordinate to accepted Data, Phase 10/11 and Wave 1 authority
 contracts. It selects no broker, schema registry, KMS, cache or Product behavior.
 """
 
+from .execution import (
+    AsyncExecutionAdmission,
+    AsyncExecutionRequest,
+    CurrentAsyncExecutionAuthorityPort,
+    require_current_execution,
+)
 from .inbox import InboxAdmission, InboxExecutorClaim, InMemoryInboxLedger
 from .model import (
     AsyncCorrectnessError,
@@ -29,8 +35,11 @@ from .reconciliation import InMemoryCrossAuthorityOperationLedger, OperationAtte
 
 __all__ = [
     "AsyncCorrectnessError",
+    "AsyncExecutionAdmission",
+    "AsyncExecutionRequest",
     "BrokerPublicationReceipt",
     "ComparisonEvidence",
+    "CurrentAsyncExecutionAuthorityPort",
     "EffectResultLink",
     "EquivalenceRelation",
     "InboxAdmission",
@@ -52,5 +61,6 @@ __all__ = [
     "ReconciliationBlocked",
     "ReconciliationResolution",
     "ScopedMessageIdentity",
+    "require_current_execution",
     "tenant_message_from_context",
 ]

@@ -51,6 +51,7 @@ REQUIRED_RELEASE_LAWS = {
     "CURRENT POLICY PROFILE != SOURCE-TRUST TRANSITION LINEAGE",
     "ADMISSION BOOLEAN != SCOPED CURRENT-AUTHORITY PROOF",
     "RECONCILIATION BOOLEAN != RECONCILIATION AUTHORITY",
+    "RECOVERY CLASSIFICATION BOOLEAN SET != SCOPED DURABLE EVIDENCE",
     "RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD",
 }
 REQUIRED_FORBIDDEN_SUBSTITUTIONS = {
@@ -70,6 +71,7 @@ REQUIRED_FORBIDDEN_SUBSTITUTIONS = {
     "unscoped_or_wrong_version_admission_evidence_for_current_authority",
     "boolean_current_for_reconciliation_authority",
     "unretained_admission_or_reconciliation_authority_evidence",
+    "unscoped_boolean_set_for_recovery_classification",
     "boolean_current_for_runtime_admission_configuration_policy_or_verifier",
     "boolean_current_for_health_admission_policy",
 }
@@ -130,6 +132,14 @@ REQUIRED_CODE_TOKENS = {
         "release_policy_evidence_reference",
         "verifier_authority_evidence_reference",
         "policy_evidence_reference",
+    ),
+    "src/jlmirror_release/recovery.py": (
+        "class RecoveryClassificationEvidence",
+        "evidence_reference",
+        "authority_profile_and_version",
+        "scope_binding",
+        "validate_for",
+        "expected_scope",
     ),
 }
 

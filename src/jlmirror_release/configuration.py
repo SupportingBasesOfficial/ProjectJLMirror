@@ -11,6 +11,8 @@ class ConfigurationValidationEvidence:
     target_configuration: TargetConfiguration
     semantic_equivalence_proven: bool
     target_specific_validation_proven: bool
+    evidence_reference: str | None = None
+    evidence_current: bool = False
     copied_secret_values_used_as_equivalence: bool = False
 
 
@@ -21,7 +23,6 @@ def require_validation_for_target(evidence: ConfigurationValidationEvidence) -> 
     if same:
         return
     if not (evidence.semantic_equivalence_proven or evidence.target_specific_validation_proven):
-        raise ReleaseError(
-            "different target configuration requires semantic equivalence evidence "
-            "or target-specific validation"
-        )
+        raise ReleaseError("different target configuration requires semantic equivalence evidence or target-specific validation")
+    if not evidence.evidence_reference or not evidence.evidence_current:
+        raise ReleaseError("configuration equivalence/target validation claim requires current evidence reference")

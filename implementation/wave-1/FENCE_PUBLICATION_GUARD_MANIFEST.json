@@ -10,11 +10,13 @@
     "schema_catalog_guard_control_depth": 0,
     "schema_query_and_result_are_exact_children": true,
     "exception_handlers_allowed": false,
-    "top_level_return_allowed": false
+    "top_level_return_allowed": false,
+    "executable_return_or_exit_allowed": false
   },
   "forbidden_substitutions": [
     "numeric_control_depth_for_block_ancestry",
-    "raise_exception_presence_for_unsuppressed_failure"
+    "raise_exception_presence_for_unsuppressed_failure",
+    "top_level_return_absence_for_reachable_early_exit_absence"
   ],
   "product_feature_activation": "none",
   "wave_2_authorized": false

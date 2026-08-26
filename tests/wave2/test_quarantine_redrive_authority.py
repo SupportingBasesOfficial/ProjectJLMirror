@@ -85,6 +85,7 @@ class RedriveAuthority:
         bound_request = self.override_request or request
         return RedriveAdmission(
             request=bound_request,
+            quarantine_state_revision="quarantine-state-12",
             authorizing_principal_id="ops-principal-1",
             privileged_authority_revision="priv-authz-7",
             compatibility_revision="compat-3",
@@ -186,6 +187,29 @@ class QuarantineRedriveAuthorityTests(unittest.TestCase):
         with self.assertRaises(ReconciliationBlocked):
             require_current_redrive(authority, current)
 
+    def test_redrive_admission_requires_durable_quarantine_state_revision(self) -> None:
+        request = outbox_redrive_request(
+            tenant_job(),
+            claim_generation=1,
+            quarantine_reason_class="poison_or_unknown",
+            redrive_operation_id="redrive-1",
+        )
+        with self.assertRaises(ValueError):
+            RedriveAdmission(
+                request=request,
+                quarantine_state_revision="",
+                authorizing_principal_id="ops-principal-1",
+                privileged_authority_revision="priv-authz-7",
+                compatibility_revision="compat-3",
+                effect_safety_revision="effect-safety-9",
+                capacity_admission_revision="capacity-4",
+                audit_revision="audit-8",
+                observed_at=NOW,
+                current=True,
+                eligible=True,
+                placement_version="placement-11",
+            )
+
     def test_tenant_redrive_admission_requires_current_placement_evidence(self) -> None:
         request = outbox_redrive_request(
             tenant_job(),
@@ -196,6 +220,7 @@ class QuarantineRedriveAuthorityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             RedriveAdmission(
                 request=request,
+                quarantine_state_revision="quarantine-state-12",
                 authorizing_principal_id="ops-principal-1",
                 privileged_authority_revision="priv-authz-7",
                 compatibility_revision="compat-3",
@@ -233,6 +258,7 @@ class QuarantineRedriveAuthorityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             RedriveAdmission(
                 request=request,
+                quarantine_state_revision="quarantine-state-global-1",
                 authorizing_principal_id="ops-principal-1",
                 privileged_authority_revision="priv-authz-7",
                 compatibility_revision="compat-3",

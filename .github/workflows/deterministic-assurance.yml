@@ -91,9 +91,9 @@ jobs:
         shell: bash
         run: PYTHONPATH=src python3 -m unittest discover -s tests/wave2 -p 'test_*.py'
 
-      - name: Validate Wave 2 correctness boundaries
+      - name: Validate accepted Wave 2 correctness across future waves
         shell: bash
-        run: PYTHONPATH=src python3 tools/async_core/validate_wave2.py
+        run: PYTHONPATH=src python3 tools/wave3/validate_accepted_wave2_compatibility.py
 
       - name: Validate Wave 2 reconciliation attempt binding
         shell: bash

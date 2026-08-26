@@ -38,6 +38,7 @@ REQUIRED HEALTH SET != RUNTIME EVIDENCE DISCRETION
 PHASE 11 RELIABILITY JOIN != OPTIONAL HEALTH EVIDENCE
 PHASE 13 RUNTIME PROFILE != RELEASE-POLICY-DISCRETIONARY RELIABILITY MINIMUM
 RUNTIME.WORKER@1 != UNSPECIALIZED RELEASE TARGET
+RUNTIME VERIFICATION POLICY CURRENTNESS != DIFFERENT PRE-EFFECT GATE POLICY LINEAGE
 RUNTIME VERIFICATION EVIDENCE != REPLAYABLE ACROSS DEPLOYMENT SCOPE OR TARGET VERSION
 HEALTH GATE EVIDENCE != REPLAYABLE ACROSS RELEASE TARGET STATE VERSION
 RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD
@@ -89,7 +90,9 @@ No backend, collector, trace transport, dashboard, pager, sampling numeric, SLO 
 - resolving `reconciliation_required` requires a separate current reconciliation-authority evidence record bound to the same deployment scope and current target-state version; a boolean is insufficient;
 - effect confirmation/absence resolution requires durable target evidence and the deployment record retains both target evidence and reconciliation-authority lineage where applicable;
 - runtime verification independently requires durable evidence for runtime admission, configuration currentness, release-policy currentness, verifier authority and owning health-admission policy; vendor/controller green is ignored as authority;
-- the exact reliability/health gate requirements come from a dedicated current `release.runtime-verification-requirements@1` evidence record bound to the same deployment scope, post-effect release-target state version and current release-policy evidence lineage; the runtime evidence cannot choose or shrink that set;
+- the exact reliability/health gate requirements come from a dedicated current `release.runtime-verification-requirements@1` evidence record bound to the same deployment scope, post-effect release-target state version and the release-policy evidence lineage that authorized the pre-effect gate set; runtime verification must present that same release-policy lineage and cannot launder the gate set through a later unrelated `current=True` policy record;
+- a legitimate release-policy change after effectful admission therefore blocks completion under the old requirements until governed re-authorization/reconciliation establishes a new eligible operation path; it is never inferred as equivalent from matching profile text alone;
+- Phase 12 health-admission policy evidence remains independently current and may rotate without repinning the pre-effect gate set, because it adjudicates the already-required health profiles rather than selecting the requirement set itself;
 - each Phase 13 runtime profile contributes its fixed non-conditional minimum Phase 11 reliability bindings before the release-policy authority may add deployment-specific conditional gates; `runtime.api@1`, for example, cannot omit transactional/session/cache/configuration reliability;
 - each concrete worker specialization contributes its fixed Phase 13 minimum reliability bindings; contextual `worker.reconciliation@1` affected-profile bindings remain explicit pre-effect requirements rather than being guessed globally;
 - every declared Phase 11 reliability profile contributes its accepted Phase 12 health bindings, and the requirements record cannot omit those implied health profiles;

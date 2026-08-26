@@ -36,29 +36,46 @@ def intent(op="op-1", expected=4, digest=DIGEST_A, config_generation="cfg-7"):
     )
 
 
-def accepted_source(trust_class=SourceTrustClass.ACCEPTED_REVIEW_STATE):
-    return AcceptedSourceEvidence(
+def accepted_source(trust_class=SourceTrustClass.ACCEPTED_REVIEW_STATE, **changes):
+    values = dict(
         source_state_id=SOURCE_STATE_ID,
         source_trust_class=trust_class,
         source_change_authority_profile_and_version="source.change-authority@1",
         source_change_evidence_reference="evidence:source-change-1",
         review_assurance_profile_and_version="review.assurance@1",
         review_assurance_evidence_reference="evidence:review-assurance-1",
+        source_trust_policy_profile_and_version="release-policy@1",
+        source_trust_policy_evidence_reference="evidence:source-trust-policy-1",
     )
+    values.update(changes)
+    return AcceptedSourceEvidence(**values)
 
 
-def provenance(digest=DIGEST_A):
-    return BuildProvenanceEvidence(
+def provenance(digest=DIGEST_A, **changes):
+    values = dict(
         accepted_source=accepted_source(),
         release_policy_profile_and_version="release-policy@1",
-        release_policy_current=True, builder_principal_class="principal.release-build@1",
-        builder_authorized_current=True, declared_input_set_id="inputs-1",
-        declared_inputs_integrity_proven=True, build_record_id="build-1",
-        artifact=ArtifactIdentity("sha256", digest), provenance_profile="release.provenance@1",
-        provenance_record_id="prov-1", provenance_verifier_profile_and_version="verifier@1",
-        provenance_verifier_current=True, sbom_or_dependency_inventory_reference="sbom-1",
+        release_policy_evidence_reference="evidence:build-release-policy-1",
+        release_policy_current=True,
+        builder_principal_class="principal.release-build@1",
+        builder_authority_evidence_reference="evidence:builder-authority-1",
+        builder_authorized_current=True,
+        declared_input_set_id="inputs-1",
+        declared_inputs_integrity_evidence_reference="evidence:input-integrity-1",
+        declared_inputs_integrity_proven=True,
+        build_record_id="evidence:build-1",
+        artifact=ArtifactIdentity("sha256", digest),
+        provenance_profile="release.provenance@1",
+        provenance_record_id="evidence:provenance-1",
+        provenance_verifier_profile_and_version="verifier@1",
+        provenance_verifier_evidence_reference="evidence:provenance-verifier-1",
+        provenance_verifier_current=True,
+        sbom_or_dependency_inventory_reference="evidence:sbom-1",
         artifact_attestation_profile="attestation@1",
+        artifact_lifecycle_evidence_reference="evidence:artifact-lifecycle-1",
     )
+    values.update(changes)
+    return BuildProvenanceEvidence(**values)
 
 
 def nac(scope="validation-cell-a"):
@@ -94,9 +111,12 @@ def promotion_for(i, *, config_ref="evidence:config-1", rollout_ref="evidence:ro
         promotion_id=i.promotion_id,
         promotion_evidence_reference="evidence:promotion-1",
         promotion_principal_class="principal.release-promote@1",
+        promotion_principal_authority_evidence_reference="evidence:promotion-principal-1",
+        promotion_principal_authorized_current=True,
         approval_current=True,
         approval_evidence_reference="evidence:approval-1",
         release_policy_profile_and_version=i.release_policy_profile_and_version,
+        release_policy_evidence_reference="evidence:promotion-release-policy-1",
         release_policy_current=True,
         artifact_identity=i.artifact.canonical,
         target_id=i.target_id,
@@ -167,23 +187,48 @@ def reconciliation_gate(i, *, current=True, scope=None, version=None, reference=
 
 
 def runtime_evidence(digest=DIGEST_A, config_generation="cfg-7", admission_current=True,
-                     state=HealthState.HEALTHY, health_admitted=True):
+                     state=HealthState.HEALTHY, health_admitted=True, **changes):
     assessment = HealthAssessment("health.cell@1", state, "current", True)
-    return RuntimeVerificationEvidence(
-        evidence_reference="evidence:runtime-verification-1", evidence_current=True,
-        observed_artifact_identity=f"sha256:{digest}", observed_configuration_generation=config_generation,
-        runtime_profile_set=("runtime.api@1",), runtime_admission_current=admission_current,
-        configuration_current=True, release_policy_current=True, verifier_authority_current=True,
+    values = dict(
+        evidence_reference="evidence:runtime-verification-1",
+        evidence_current=True,
+        observed_artifact_identity=f"sha256:{digest}",
+        observed_configuration_generation=config_generation,
+        runtime_profile_set=("runtime.api@1",),
+        runtime_admission_evidence_reference="evidence:runtime-admission-1",
+        runtime_admission_current=admission_current,
+        configuration_currentness_evidence_reference="evidence:configuration-currentness-1",
+        configuration_current=True,
+        release_policy_evidence_reference="evidence:runtime-release-policy-1",
+        release_policy_current=True,
+        verifier_authority_profile_and_version="principal.release-verify@1",
+        verifier_authority_evidence_reference="evidence:runtime-verifier-authority-1",
+        verifier_authority_current=True,
         required_health_profile_ids=("health.cell@1",),
-        health_gates=(HealthGateEvidence(assessment, "evidence:health-cell-1", "health-admission-policy@1", True, health_admitted),),
+        health_gates=(HealthGateEvidence(
+            assessment,
+            "evidence:health-cell-1",
+            "health-admission-policy@1",
+            "evidence:health-admission-policy-1",
+            True,
+            health_admitted,
+        ),),
         vendor_controller_green=True,
     )
+    values.update(changes)
+    return RuntimeVerificationEvidence(**values)
 
 
 class ReleaseTests(unittest.TestCase):
     def test_untrusted_source_cannot_enter_trusted_build(self):
         with self.assertRaises(ReleaseError):
             require_trusted_build_source(accepted_source(SourceTrustClass.UNTRUSTED_CANDIDATE))
+
+    def test_source_trust_policy_must_bind_current_build_policy(self):
+        with self.assertRaises(ReleaseError):
+            provenance(accepted_source=accepted_source(source_trust_policy_profile_and_version="release-policy@0"))
+            from jlmirror_release import validate_build_provenance
+            validate_build_provenance(provenance(accepted_source=accepted_source(source_trust_policy_profile_and_version="release-policy@0")))
 
     def test_deployment_cannot_start_from_intent_or_promotion_id_alone(self):
         authority = DeploymentAuthority(ReleaseTargetState("validation-cell-a", 4))
@@ -396,13 +441,39 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(result.runtime_verification_evidence_reference, "evidence:runtime-verification-1")
         self.assertEqual(authority.target.current_artifact_identity, f"sha256:{DIGEST_A}")
 
+    def test_runtime_currentness_booleans_require_immutable_lineage(self):
+        cases = (
+            {"runtime_admission_evidence_reference": "latest"},
+            {"configuration_currentness_evidence_reference": ""},
+            {"release_policy_evidence_reference": "https://policy/current"},
+            {"verifier_authority_evidence_reference": "verifier-current"},
+        )
+        for mutation in cases:
+            with self.subTest(mutation=mutation), self.assertRaises(ReleaseError):
+                verify_runtime(intent(), runtime_evidence(**mutation))
+
+    def test_health_policy_boolean_requires_immutable_policy_lineage(self):
+        good = runtime_evidence()
+        gate = good.health_gates[0]
+        bad_gate = HealthGateEvidence(
+            gate.assessment,
+            gate.evidence_reference,
+            gate.owning_policy_profile_and_version,
+            "latest",
+            True,
+            True,
+        )
+        with self.assertRaises(ReleaseError):
+            verify_runtime(intent(), runtime_evidence(health_gates=(bad_gate,)))
+
     def test_vendor_green_is_not_runtime_verification(self):
         good = runtime_evidence()
-        evidence = RuntimeVerificationEvidence(
-            "evidence:runtime-verification-2", True, None, good.observed_configuration_generation,
-            good.runtime_profile_set, True, True, True, True, good.required_health_profile_ids,
-            good.health_gates, True,
-        )
+        evidence = RuntimeVerificationEvidence(**{
+            **good.__dict__,
+            "evidence_reference": "evidence:runtime-verification-2",
+            "observed_artifact_identity": None,
+            "vendor_controller_green": True,
+        })
         with self.assertRaises(ReleaseError):
             verify_runtime(intent(), evidence)
 

@@ -52,6 +52,7 @@ REQUIRED_RELEASE_LAWS = {
     "ADMISSION BOOLEAN != SCOPED CURRENT-AUTHORITY PROOF",
     "RECONCILIATION BOOLEAN != RECONCILIATION AUTHORITY",
     "RECOVERY CLASSIFICATION BOOLEAN SET != SCOPED DURABLE EVIDENCE",
+    "RUNTIME VERIFICATION EVIDENCE != REPLAYABLE ACROSS DEPLOYMENT SCOPE OR TARGET VERSION",
     "RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD",
 }
 REQUIRED_FORBIDDEN_SUBSTITUTIONS = {
@@ -72,6 +73,8 @@ REQUIRED_FORBIDDEN_SUBSTITUTIONS = {
     "boolean_current_for_reconciliation_authority",
     "unretained_admission_or_reconciliation_authority_evidence",
     "unscoped_boolean_set_for_recovery_classification",
+    "runtime_verification_evidence_replayed_across_operation_target_or_target_version",
+    "health_gate_evidence_replayed_across_deployment_scope",
     "boolean_current_for_runtime_admission_configuration_policy_or_verifier",
     "boolean_current_for_health_admission_policy",
 }
@@ -123,15 +126,20 @@ REQUIRED_CODE_TOKENS = {
         "release_target_state_version",
         "durable_target_evidence_reference",
         "runtime_verification_evidence_reference",
+        "expected_release_target_state_version=self._target.release_target_state_version",
         "promotion and deployment use different configuration validation evidence",
         "promotion and deployment use different rollout compatibility evidence",
     ),
     "src/jlmirror_release/verification.py": (
+        "runtime_verification_scope_for",
+        "scope_binding",
+        "release_target_state_version",
         "runtime_admission_evidence_reference",
         "configuration_currentness_evidence_reference",
         "release_policy_evidence_reference",
         "verifier_authority_evidence_reference",
         "policy_evidence_reference",
+        "health gate evidence is bound to a different deployment scope",
     ),
     "src/jlmirror_release/recovery.py": (
         "class RecoveryClassificationEvidence",

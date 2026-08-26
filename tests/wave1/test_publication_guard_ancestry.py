@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
 import unittest
@@ -10,8 +11,10 @@ if str(ROOT) not in sys.path:
 
 from tools.authority.validate_publication_guard_ancestry import (  # noqa: E402
     BOOTSTRAP_PATH,
+    MANIFEST_PATH,
     REUSE_PATH,
     validate_bootstrap_ancestry,
+    validate_manifest_object,
     validate_reuse_ancestry,
 )
 
@@ -21,10 +24,12 @@ class PublicationGuardAncestryTests(unittest.TestCase):
     def setUpClass(cls):
         cls.bootstrap = BOOTSTRAP_PATH.read_text(encoding="utf-8")
         cls.reuse = REUSE_PATH.read_text(encoding="utf-8")
+        cls.manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
-    def test_real_migrations_bind_schema_query_to_catalog_guard_without_handlers(self):
+    def test_real_migrations_and_manifest_bind_exact_fail_closed_structure(self):
         self.assertEqual(validate_bootstrap_ancestry(self.bootstrap), [])
         self.assertEqual(validate_reuse_ancestry(self.reuse), [])
+        self.assertEqual(validate_manifest_object(self.manifest), [])
 
     def test_dynamic_schema_query_cannot_move_to_false_sibling_if(self):
         guard_start = self.reuse.index(
@@ -88,6 +93,38 @@ class PublicationGuardAncestryTests(unittest.TestCase):
             1,
         )
         self.assertEqual(validate_bootstrap_ancestry(mutated), [])
+
+    def test_manifest_cannot_launder_ancestry_or_exception_policy(self):
+        mutations = (
+            ("fresh_preflight", "exception_handlers_allowed", True),
+            ("reuse_preflight", "schema_query_and_result_are_exact_children", False),
+            ("reuse_preflight", "exception_handlers_allowed", True),
+            ("reuse_preflight", "top_level_return_allowed", True),
+        )
+        for section, field, value in mutations:
+            with self.subTest(section=section, field=field):
+                mutated = json.loads(json.dumps(self.manifest))
+                mutated[section][field] = value
+                self.assertTrue(validate_manifest_object(mutated))
+
+    def test_manifest_cannot_drop_forbidden_substitution(self):
+        for substitution in (
+            "numeric_control_depth_for_block_ancestry",
+            "raise_exception_presence_for_unsuppressed_failure",
+        ):
+            with self.subTest(substitution=substitution):
+                mutated = json.loads(json.dumps(self.manifest))
+                mutated["forbidden_substitutions"].remove(substitution)
+                self.assertTrue(validate_manifest_object(mutated))
+
+    def test_manifest_cannot_enable_product_or_wave2(self):
+        mutated = json.loads(json.dumps(self.manifest))
+        mutated["product_feature_activation"] = "enabled"
+        self.assertTrue(validate_manifest_object(mutated))
+
+        mutated = json.loads(json.dumps(self.manifest))
+        mutated["wave_2_authorized"] = True
+        self.assertTrue(validate_manifest_object(mutated))
 
 
 if __name__ == "__main__":

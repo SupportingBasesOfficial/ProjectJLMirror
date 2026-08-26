@@ -34,12 +34,17 @@ class OperationAttempt:
 @dataclass(frozen=True)
 class ReconciliationEvidence:
     operation_id: str
+    attempt_generation: int
     reconciliation_revision: str
     resolution: ReconciliationResolution
     confirmed_outcome: EffectResultLink | None = None
 
     def __post_init__(self) -> None:
         identifier(self.operation_id, "operation_id")
+        if isinstance(self.attempt_generation, bool) or not isinstance(self.attempt_generation, int):
+            raise ValueError("attempt_generation must be an integer")
+        if self.attempt_generation < 1:
+            raise ValueError("reconciliation evidence requires a positive attempt_generation")
         identifier(self.reconciliation_revision, "reconciliation_revision")
         if not isinstance(self.resolution, ReconciliationResolution):
             raise ValueError("resolution must be canonical")
@@ -69,16 +74,19 @@ class _Operation:
 class InMemoryCrossAuthorityOperationLedger:
     """Reference model for stable-operation ambiguity and reconciliation.
 
-    Reconciliation evidence is append-only by `(operation_id, revision)`. A
+    Reconciliation evidence is append-only by `(operation_id, revision)` and is
+    also bound to the exact `attempt_generation` whose ambiguity it resolves. A
     timeout/lost response or executor-lease expiry cannot be interpreted as effect
-    absence. Another attempt becomes eligible only after an immutable evidence
-    record proves absence. Every new attempt requires a fresh current execution
-    admission for its exact operation scope.
+    absence. Another attempt becomes eligible only after immutable evidence for the
+    current ambiguous attempt proves absence. Every new attempt requires a fresh
+    current execution admission for its exact operation scope.
 
     Append-only reconciliation history is distinct from the current attempt's
     resolution pointer. When `effect_proven_absent` re-opens an operation for a
     later attempt, the immutable historical evidence remains retained while the
     current pointer is consumed/cleared before the successor attempt begins.
+    Historical evidence from an earlier attempt can never authorize a later
+    ambiguous attempt.
     """
 
     def __init__(self) -> None:
@@ -222,16 +230,21 @@ class InMemoryCrossAuthorityOperationLedger:
         reconciliation_revision: str,
         confirmed_outcome: EffectResultLink | None = None,
     ) -> OperationState:
-        evidence = ReconciliationEvidence(
-            operation_id=operation_id,
-            reconciliation_revision=reconciliation_revision,
-            resolution=resolution,
-            confirmed_outcome=confirmed_outcome,
-        )
+        identifier(operation_id, "operation_id")
+        identifier(reconciliation_revision, "reconciliation_revision")
         with self._lock:
             operation = self._require(operation_id)
             if operation.state is not OperationState.RECONCILIATION_REQUIRED:
                 raise InvalidTransition("only ambiguous operation can be reconciled")
+            if operation.attempt_generation < 1:
+                raise InvalidTransition("reconciliation requires a concrete attempted effect generation")
+            evidence = ReconciliationEvidence(
+                operation_id=operation_id,
+                attempt_generation=operation.attempt_generation,
+                reconciliation_revision=reconciliation_revision,
+                resolution=resolution,
+                confirmed_outcome=confirmed_outcome,
+            )
             key = (operation_id, reconciliation_revision)
             existing = self._reconciliation_evidence.get(key)
             if existing is not None and existing != evidence:

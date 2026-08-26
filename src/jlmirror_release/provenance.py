@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 from .model import ALLOWED_ENVIRONMENT_CLASSES, ArtifactIdentity, RELEASE_PRINCIPALS, ReleaseError, SourceTrustClass, ValidationScope
+
+_EVIDENCE_REFERENCE_RE = re.compile(r"^evidence:[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,190}$")
+
+
+def require_immutable_evidence_reference(name: str, value: str) -> None:
+    """Wave 3 evidence references are immutable durable record identities, never mutable aliases/URLs."""
+    if not isinstance(value, str) or not _EVIDENCE_REFERENCE_RE.fullmatch(value):
+        raise ReleaseError(f"{name} must be an immutable durable evidence record identity")
 
 
 @dataclass(frozen=True)
@@ -85,8 +94,15 @@ def require_promotion_authority(promotion: PromotionEvidence, provenance: BuildP
     validate_build_provenance(provenance)
     if promotion.promotion_principal_class != "principal.release-promote@1":
         raise ReleaseError("promotion requires the bounded release promotion principal")
-    if not all((promotion.promotion_id, promotion.promotion_evidence_reference,
-                promotion.approval_evidence_reference)) or not promotion.approval_current:
+    for name, value in (
+        ("promotion_evidence_reference", promotion.promotion_evidence_reference),
+        ("approval_evidence_reference", promotion.approval_evidence_reference),
+        ("configuration_validation_evidence_reference", promotion.configuration_validation_evidence_reference),
+        ("rollout_compatibility_evidence_reference", promotion.rollout_compatibility_evidence_reference),
+        ("required_evidence_set_reference", promotion.required_evidence_set_reference),
+    ):
+        require_immutable_evidence_reference(name, value)
+    if not promotion.promotion_id or not promotion.approval_current:
         raise ReleaseError("promotion approval and durable promotion evidence are required")
     if not promotion.release_policy_profile_and_version or not promotion.release_policy_current:
         raise ReleaseError("promotion requires current exact release policy")
@@ -97,10 +113,7 @@ def require_promotion_authority(promotion: PromotionEvidence, provenance: BuildP
     if not all((promotion.target_id, promotion.rollout_scope_id,
                 promotion.target_configuration_identity, promotion.target_configuration_generation,
                 promotion.target_configuration_semantic_profile,
-                promotion.configuration_validation_evidence_reference,
-                promotion.rollout_compatibility_evidence_reference,
-                promotion.schema_state, promotion.api_compatibility_family,
-                promotion.required_evidence_set_reference)):
+                promotion.schema_state, promotion.api_compatibility_family)):
         raise ReleaseError("promotion requires exact target, configuration, compatibility and evidence lineage")
     if not promotion.runtime_profile_set or not promotion.event_compatibility_set:
         raise ReleaseError("promotion requires runtime and event compatibility sets")

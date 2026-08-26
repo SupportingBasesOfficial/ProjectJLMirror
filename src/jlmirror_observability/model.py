@@ -149,6 +149,32 @@ CANONICAL_OUTCOME_CLASSES = frozenset({
     "timed_out", "cancelled", "ambiguous_external_outcome", "reconciliation_required",
     "quarantined", "recovery_blocked", "compromised_or_untrusted", "internal_failure",
 })
+CANONICAL_FAILURE_CLASSES = frozenset({
+    "unavailable", "slow_or_timed_out", "throttled", "saturated", "partitioned", "stale",
+    "duplicate", "identity_conflict", "out_of_order_or_gap", "contract_permanent", "policy_denied",
+    "poison_or_unknown", "external_outcome_ambiguous", "recovery_continuity_blocked",
+    "compromised_or_untrusted", "governance_blocked",
+})
+CANONICAL_DEGRADATION_MODES = frozenset({
+    "fail_closed", "fail_fast", "stale_tolerant", "queued_or_deferred", "shed_or_reject",
+    "reconciliation_blocked", "resync_required", "capability_unavailable",
+})
+REVIEWED_OPERATION_CLASSES = frozenset({
+    "api.read", "monitoring.accept", "audit.responsibility", "security.currentness",
+    "message.equivalence",
+})
+# Dimensions with no accepted finite value registry remain unusable for metric emission until a
+# later reviewed implementation mapping adds bounded values. A known key is not permission to emit
+# arbitrary safe-looking tokens.
+REVIEWED_METRIC_DIMENSION_VALUES: Mapping[str, frozenset[str]] = MappingProxyType({
+    "failure_class": CANONICAL_FAILURE_CLASSES,
+    "reliability_failure_class": CANONICAL_FAILURE_CLASSES,
+    "reliability_degradation_mode": CANONICAL_DEGRADATION_MODES,
+    "state_class": frozenset(),
+    "workload_class": frozenset(),
+    "provider_class": frozenset(),
+    "saturation_class": frozenset(),
+})
 
 _SAFE_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,95}$")
 _OPERATION_CLASS_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}(?:\.[a-z][a-z0-9_-]{0,31})+$")
@@ -172,6 +198,27 @@ def _validate_safe_token(name: str, value: str) -> None:
 def _validate_operation_class(value: str) -> None:
     if not isinstance(value, str) or not _OPERATION_CLASS_RE.fullmatch(value):
         raise ObservationError("operation_class must be a bounded namespaced semantic class")
+    if value not in REVIEWED_OPERATION_CLASSES:
+        raise ObservationError("operation_class is not in the reviewed finite Wave 3 registry")
+
+
+def _validate_metric_dimension_value(name: str, value: str, *, operation_class: str) -> None:
+    _validate_safe_token(name, value)
+    if name == "operation_class":
+        if value != operation_class:
+            raise ObservationError("metric operation_class must equal the record's stable operation_class")
+        return
+    if name == "outcome_class":
+        if value not in CANONICAL_OUTCOME_CLASSES:
+            raise ObservationError("outcome_class is outside the accepted Phase 12 taxonomy")
+        return
+    if name == "comparison_outcome_class":
+        if value not in {item.value for item in ComparisonOutcomeClass}:
+            raise ObservationError("comparison_outcome_class is outside the accepted Phase 12 taxonomy")
+        return
+    allowed = REVIEWED_METRIC_DIMENSION_VALUES.get(name)
+    if allowed is None or value not in allowed:
+        raise ObservationError(f"metric dimension {name} value is not in a reviewed finite semantic registry")
 
 
 def _validate_diagnostic_identifier(name: str, value: str) -> None:
@@ -225,13 +272,7 @@ class SignalRecord:
         for key, value in self.metric_dimensions.items():
             if any(fragment in key.lower() for fragment in FORBIDDEN_PAYLOAD_KEY_FRAGMENTS):
                 raise ObservationError(f"secret-bearing metric field forbidden: {key}")
-            _validate_safe_token(key, value)
-            if key == "outcome_class" and value not in CANONICAL_OUTCOME_CLASSES:
-                raise ObservationError("outcome_class is outside the accepted Phase 12 taxonomy")
-            if key == "comparison_outcome_class" and value not in {item.value for item in ComparisonOutcomeClass}:
-                raise ObservationError("comparison_outcome_class is outside the accepted Phase 12 taxonomy")
-            if key == "operation_class" and value != self.operation_class:
-                raise ObservationError("metric operation_class must equal the record's stable operation_class")
+            _validate_metric_dimension_value(key, value, operation_class=self.operation_class)
 
         unknown_diagnostics = set(self.diagnostic_fields) - PROFILE_ALLOWED_DIAGNOSTIC_FIELDS[self.profile_id]
         if unknown_diagnostics:

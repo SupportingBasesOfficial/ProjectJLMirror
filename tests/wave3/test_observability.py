@@ -1,8 +1,9 @@
 import unittest
 
 from jlmirror_observability import (
-    EvidencePlane, HealthAssessment, HealthState, ObservationError, ObservabilityBinding,
-    SignalFamily, SignalRecord, missing_health, require_product_applicability,
+    EvidencePlane, HealthAssessment, HealthState, NoApplicableCaseEvidence, ObservationError,
+    ObservabilityBinding, ProductApplicabilityEvidence, SignalFamily, SignalRecord,
+    missing_health, require_product_applicability,
 )
 
 
@@ -93,16 +94,100 @@ class ObservabilityTests(unittest.TestCase):
         health = HealthAssessment("health.cell@1", HealthState.HEALTHY, "evidence_complete", True)
         self.assertFalse(health.grants_authority)
 
-    def test_no_applicable_case_requires_reason(self):
-        with self.assertRaises(ObservationError):
-            ObservabilityBinding("health.security-authority@1", ("sli.api.outcome@1",), ("alert.security-trust@1",), False)
+    def _nac(self, **changes):
+        values = dict(
+            reason="direct SLI would create an error-budget allowance for a hard correctness gate",
+            authority_profile="observability.applicability-policy@1",
+            evidence_reference="evidence:obs-nac-1",
+            scope_binding="rel.security-session-authority@1",
+            current=True,
+        )
+        values.update(changes)
+        return NoApplicableCaseEvidence(**values)
 
-    def test_unknown_product_applicability_fails_closed(self):
-        with self.assertRaises(ObservationError):
-            require_product_applicability(product_state_proven=False, enabled=False)
+    def _product(self, **changes):
+        values = dict(
+            selector_id="webhook_product_state",
+            authority_profile="product.scope-authority@1",
+            evidence_reference="evidence:product-applicability-1",
+            scope_binding="rel.webhook-delivery@1",
+            current=True,
+            enabled=False,
+        )
+        values.update(changes)
+        return ProductApplicabilityEvidence(**values)
 
-    def test_proven_disabled_product_stays_disabled(self):
-        self.assertFalse(require_product_applicability(product_state_proven=True, enabled=False))
+    def test_no_applicable_case_requires_evidence_not_reason_only(self):
+        with self.assertRaises(ObservationError):
+            ObservabilityBinding(
+                "health.security-authority@1", (), ("alert.security-trust@1",),
+                False, "rel.security-session-authority@1", None,
+            )
+
+    def test_no_applicable_case_rejects_stale_evidence(self):
+        with self.assertRaises(ObservationError):
+            ObservabilityBinding(
+                "health.security-authority@1", (), ("alert.security-trust@1",), False,
+                "rel.security-session-authority@1", self._nac(current=False),
+            )
+
+    def test_no_applicable_case_rejects_wrong_scope(self):
+        with self.assertRaises(ObservationError):
+            ObservabilityBinding(
+                "health.security-authority@1", (), ("alert.security-trust@1",), False,
+                "rel.security-session-authority@1", self._nac(scope_binding="rel.other@1"),
+            )
+
+    def test_no_applicable_case_rejects_mutable_or_url_evidence(self):
+        for reference in ("latest", "https://example.invalid/current", "obs-nac-1"):
+            with self.subTest(reference=reference), self.assertRaises(ObservationError):
+                ObservabilityBinding(
+                    "health.security-authority@1", (), ("alert.security-trust@1",), False,
+                    "rel.security-session-authority@1", self._nac(evidence_reference=reference),
+                )
+
+    def test_no_applicable_case_accepts_current_exact_scope_evidence(self):
+        binding = ObservabilityBinding(
+            "health.security-authority@1", (), ("alert.security-trust@1",), False,
+            "rel.security-session-authority@1", self._nac(),
+        )
+        self.assertFalse(binding.direct_sli_applicable)
+
+    def test_product_applicability_rejects_stale_or_wrong_scope(self):
+        with self.assertRaises(ObservationError):
+            require_product_applicability(
+                self._product(current=False), expected_scope="rel.webhook-delivery@1",
+                expected_selector_id="webhook_product_state",
+            )
+        with self.assertRaises(ObservationError):
+            require_product_applicability(
+                self._product(scope_binding="rel.other@1"), expected_scope="rel.webhook-delivery@1",
+                expected_selector_id="webhook_product_state",
+            )
+
+    def test_product_applicability_rejects_wrong_selector(self):
+        with self.assertRaises(ObservationError):
+            require_product_applicability(
+                self._product(selector_id="artifact_delivery_product_state"),
+                expected_scope="rel.webhook-delivery@1", expected_selector_id="webhook_product_state",
+            )
+
+    def test_product_applicability_rejects_mutable_evidence_reference(self):
+        with self.assertRaises(ObservationError):
+            require_product_applicability(
+                self._product(evidence_reference="latest"), expected_scope="rel.webhook-delivery@1",
+                expected_selector_id="webhook_product_state",
+            )
+
+    def test_proven_product_state_preserves_enabled_boolean_only_after_authority_proof(self):
+        self.assertFalse(require_product_applicability(
+            self._product(enabled=False), expected_scope="rel.webhook-delivery@1",
+            expected_selector_id="webhook_product_state",
+        ))
+        self.assertTrue(require_product_applicability(
+            self._product(enabled=True), expected_scope="rel.webhook-delivery@1",
+            expected_selector_id="webhook_product_state",
+        ))
 
 
 if __name__ == "__main__":

@@ -39,6 +39,29 @@ REQUIRED_FILES = (
     "implementation/wave-3/IMPLEMENTATION_MANIFEST.json",
     "implementation/wave-3/source-registry.json",
 )
+REQUIRED_RELEASE_LAWS = {
+    "PROMOTION EVIDENCE != INTERCHANGEABLE DEPLOYMENT EVIDENCE",
+    "BOOLEAN CURRENT != EVIDENCE LINEAGE",
+    "RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD",
+}
+REQUIRED_LINEAGE_TOKENS = {
+    "src/jlmirror_release/provenance.py": (
+        "promotion_evidence_reference",
+        "configuration_validation_evidence_reference",
+        "rollout_compatibility_evidence_reference",
+        "runtime_profile_set",
+        "schema_state",
+        "api_compatibility_family",
+        "event_compatibility_set",
+    ),
+    "src/jlmirror_release/authority.py": (
+        "durable_target_evidence_reference",
+        "runtime_verification_evidence_reference",
+        "promotion and deployment use different configuration validation evidence",
+        "promotion and deployment use different rollout compatibility evidence",
+    ),
+    "src/jlmirror_release/verification.py": ("evidence_reference", "evidence_current"),
+}
 
 
 def fail(message: str) -> None:
@@ -88,8 +111,16 @@ def validate() -> None:
         fail("Wave 4 cannot be authorized by Wave 3 implementation metadata")
     if not manifest.get("canonical_observability_laws") or not manifest.get("canonical_release_laws"):
         fail("Wave 3 canonical law sets cannot be empty")
+    if not REQUIRED_RELEASE_LAWS.issubset(set(manifest.get("canonical_release_laws", []))):
+        fail("Wave 3 manifest is missing release evidence-lineage laws")
     if not manifest.get("residual_c2_choices_not_selected"):
         fail("Wave 3 must preserve explicit residual C2 choices")
+
+    for relative, tokens in REQUIRED_LINEAGE_TOKENS.items():
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        for token in tokens:
+            if token not in text:
+                fail(f"release evidence-lineage invariant missing from {relative}: {token}")
 
     registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
     if set(registry) != {"accepted_authority_base", "sources"}:
@@ -128,7 +159,7 @@ def validate() -> None:
         if fragment not in workflow:
             fail(f"deterministic assurance workflow missing Wave 3/read-only invariant: {fragment}")
 
-    print("WAVE3 VALIDATION: PASS — observability/release substrate remains pinned, bounded and non-Product.")
+    print("WAVE3 VALIDATION: PASS — observability/release substrate remains pinned, bounded, evidence-lineage-safe and non-Product.")
 
 
 if __name__ == "__main__":

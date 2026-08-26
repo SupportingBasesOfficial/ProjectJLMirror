@@ -1,0 +1,52 @@
+{
+  "wave_id": "wave-2.cell-async-correctness@1",
+  "authority_base": "main@ff932cec10e3b7dcc13b050bb09d4a7efd634598",
+  "implementation_slices": [
+    "impl.cell-data-runtime@1",
+    "impl.async-core@1"
+  ],
+  "scope": "transactional_and_async_correctness_substrate_only",
+  "product_feature_activation": "none",
+  "runtime_profiles": [
+    "runtime.api@1",
+    "runtime.worker@1"
+  ],
+  "required_reliability_profiles": [
+    "rel.cell-transactional-store@1",
+    "rel.consumer-inbox-effect@1",
+    "rel.replay-consume-state@1"
+  ],
+  "fixed_delivery_semantics": "at_least_once",
+  "fixed_inbox_identity": "(consumer_contract,message_identity_scope,message_id)",
+  "residual_c2_choices_not_selected": [
+    "broker_or_job_transport",
+    "serialization_and_schema_registry_product",
+    "outbox_dispatch_claim_transport_adapter",
+    "cache_coordination_or_replay_product",
+    "message_equivalence_evidence_mechanism",
+    "message_equivalence_kms_or_historical_verifier_backend",
+    "database_ha_pooler_and_runtime_mapping",
+    "reconciliation_operator_tooling"
+  ],
+  "forbidden_correctness_substitutions": [
+    "broker_ack_for_consumer_effect_completion",
+    "dispatcher_claim_for_exactly_once_delivery",
+    "read_then_insert_for_inbox_admission",
+    "message_id_without_trusted_identity_scope_for_duplicate_safety",
+    "same_scoped_id_without_equivalence_proof_for_benign_duplicate",
+    "missing_equivalence_evidence_for_duplicate_success",
+    "payload_tenant_for_trusted_tenant_scope",
+    "queue_or_topic_name_for_consumer_contract_identity",
+    "queue_or_topic_cell_name_for_current_tenant_placement",
+    "request_time_human_authorization_for_delayed_execution_authority",
+    "broker_redelivery_for_external_effect_retry_authority",
+    "timeout_for_external_effect_absence",
+    "new_message_id_for_ambiguous_republication",
+    "outbox_dispatch_state_for_domain_fact_authority",
+    "mutable_delivery_metadata_for_immutable_message_meaning",
+    "recovery_missing_state_for_never_happened",
+    "stale_worker_generation_for_current_effect_authority",
+    "product_or_incident_behavior_invented_by_wave2_substrate"
+  ],
+  "next_wave_authorized": false
+}

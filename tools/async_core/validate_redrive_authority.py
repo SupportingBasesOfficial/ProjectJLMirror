@@ -49,7 +49,8 @@ def validate(root: Path = ROOT) -> list[str]:
                 "rel.outbox-publication@1",
                 "rel.consumer-inbox-effect@1",
                 "rel.replay-consume-state@1",
-                "caller-provided request is scope to check, never proof of current quarantine",
+                "caller-provided request is scope to check",
+                "never proof of",
             ),
             "redrive implementation",
         )

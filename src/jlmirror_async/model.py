@@ -282,6 +282,50 @@ class EffectResultLink:
 
 
 @dataclass(frozen=True)
+class CrossAuthorityOperationSnapshot:
+    """One coherent authority observation for a stable cross-authority operation."""
+
+    operation_id: str
+    state: OperationState
+    attempt_generation: int
+    outcome: EffectResultLink | None = None
+    reconciliation_resolution: ReconciliationResolution | None = None
+    reconciliation_revision: str | None = None
+
+    def __post_init__(self) -> None:
+        identifier(self.operation_id, "operation_id")
+        if not isinstance(self.state, OperationState):
+            raise ValueError("state must be canonical OperationState")
+        if isinstance(self.attempt_generation, bool) or not isinstance(self.attempt_generation, int):
+            raise ValueError("attempt_generation must be an integer")
+        if self.attempt_generation < 0:
+            raise ValueError("attempt_generation must be non-negative")
+        if self.outcome is not None and not isinstance(self.outcome, EffectResultLink):
+            raise ValueError("outcome must be EffectResultLink when present")
+        if self.reconciliation_resolution is not None and not isinstance(
+            self.reconciliation_resolution,
+            ReconciliationResolution,
+        ):
+            raise ValueError("reconciliation_resolution must be canonical")
+        optional_identifier(self.reconciliation_revision, "reconciliation_revision")
+        if (self.reconciliation_resolution is None) != (self.reconciliation_revision is None):
+            raise ValueError("reconciliation resolution and revision must be present together")
+        if self.state is OperationState.COMPLETED and self.outcome is None:
+            raise ValueError("completed operation snapshot requires durable outcome")
+        if self.state is not OperationState.COMPLETED and self.outcome is not None:
+            raise ValueError("non-completed operation snapshot cannot carry durable outcome")
+        if self.reconciliation_resolution is ReconciliationResolution.EFFECT_CONFIRMED:
+            if self.state is not OperationState.COMPLETED or self.outcome is None:
+                raise ValueError("effect_confirmed snapshot must be completed with outcome")
+        elif self.reconciliation_resolution is ReconciliationResolution.EFFECT_PROVEN_ABSENT:
+            if self.state is not OperationState.PREPARED or self.outcome is not None:
+                raise ValueError("effect_proven_absent snapshot must be prepared without outcome")
+        elif self.reconciliation_resolution is ReconciliationResolution.STILL_UNKNOWN:
+            if self.state is not OperationState.RECONCILIATION_REQUIRED or self.outcome is not None:
+                raise ValueError("still_unknown snapshot must remain reconciliation_required")
+
+
+@dataclass(frozen=True)
 class BrokerPublicationReceipt:
     receipt_id: str
     observed_at: datetime

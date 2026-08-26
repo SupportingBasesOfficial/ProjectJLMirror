@@ -48,6 +48,8 @@ REQUIRED_OBSERVABILITY_LAWS = {
 REQUIRED_RELEASE_LAWS = {
     "PROMOTION EVIDENCE != INTERCHANGEABLE DEPLOYMENT EVIDENCE",
     "BOOLEAN CURRENT != EVIDENCE LINEAGE",
+    "ADMISSION BOOLEAN != SCOPED CURRENT-AUTHORITY PROOF",
+    "RECONCILIATION BOOLEAN != RECONCILIATION AUTHORITY",
     "RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD",
 }
 REQUIRED_FORBIDDEN_SUBSTITUTIONS = {
@@ -55,6 +57,10 @@ REQUIRED_FORBIDDEN_SUBSTITUTIONS = {
     "stale_or_wrong_scope_evidence_for_observability_no_applicable_case",
     "raw_product_selector_string_or_boolean_for_product_authority",
     "deployment_or_catalog_presence_for_product_applicability",
+    "boolean_current_for_deployment_admission_authority",
+    "unscoped_or_wrong_version_admission_evidence_for_current_authority",
+    "boolean_current_for_reconciliation_authority",
+    "unretained_admission_or_reconciliation_authority_evidence",
 }
 REQUIRED_CODE_TOKENS = {
     "src/jlmirror_observability/model.py": (
@@ -89,6 +95,11 @@ REQUIRED_CODE_TOKENS = {
         "event_compatibility_set",
     ),
     "src/jlmirror_release/authority.py": (
+        "class CurrentAuthorityEvidence",
+        "_REQUIRED_ADMISSION_GATES",
+        "admission_gate_evidence_references",
+        "reconciliation_authority_evidence_reference",
+        "release_target_state_version",
         "durable_target_evidence_reference",
         "runtime_verification_evidence_reference",
         "promotion and deployment use different configuration validation evidence",
@@ -150,7 +161,7 @@ def validate() -> None:
     if not REQUIRED_RELEASE_LAWS.issubset(set(manifest.get("canonical_release_laws", []))):
         fail("Wave 3 manifest is missing release evidence-lineage laws")
     if not REQUIRED_FORBIDDEN_SUBSTITUTIONS.issubset(set(manifest.get("forbidden_substitutions", []))):
-        fail("Wave 3 manifest is missing applicability anti-laundering substitutions")
+        fail("Wave 3 manifest is missing applicability/current-authority anti-laundering substitutions")
     if not manifest.get("residual_c2_choices_not_selected"):
         fail("Wave 3 must preserve explicit residual C2 choices")
 

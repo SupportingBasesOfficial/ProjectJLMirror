@@ -240,6 +240,22 @@ def _dynamic_schema_query(tokens: list[Token]) -> tuple[int, str | None]:
     return -1, None
 
 
+def _reuse_early_exit_findings(tokens: list[Token]) -> list[str]:
+    """Reject every executable reuse-preflight RETURN/EXIT, at any nesting depth."""
+
+    findings: list[str] = []
+    for token in tokens:
+        if token == _word("RETURN"):
+            findings.append(
+                "reuse publication preflight contains executable RETURN early-exit bypass"
+            )
+        elif token == _word("EXIT"):
+            findings.append(
+                "reuse publication preflight contains executable EXIT early-exit bypass"
+            )
+    return findings
+
+
 def validate_bootstrap_structure(text: object) -> list[str]:
     if not isinstance(text, str):
         return ["Wave 1 bootstrap publication structure must be text"]
@@ -361,13 +377,10 @@ def validate_reuse_structure(text: object) -> list[str]:
     if dynamic_pos >= 0 and result_pos >= 0 and result_pos < dynamic_pos:
         findings.append("schema-publication result guard executes before its dynamic query")
 
-    # A top-level RETURN would skip the remainder of this preflight while canonical
-    # ALTER statements outside the DO block would still execute.
-    depths = _control_depth_before(tokens)
-    for index, token in enumerate(tokens):
-        if token == _word("RETURN") and depths[index] == 0:
-            findings.append("reuse publication preflight contains top-level RETURN bypass")
-            break
+    # The reuse DO block has no accepted successful early-exit semantics. Canonical
+    # mutation follows outside this block, so RETURN/EXIT at *any* nesting depth can
+    # skip required publication denial while allowing later ALTER statements to run.
+    findings.extend(_reuse_early_exit_findings(tokens))
     return findings
 
 
@@ -397,7 +410,7 @@ def main() -> int:
         for finding in findings:
             print(f"- {finding}")
         return 1
-    print("RESULT: PASS — publication guards are reachable at the required PL/pgSQL control depth and cannot be laundered through ordinary/dollar-quoted dead text")
+    print("RESULT: PASS — publication guards are reachable at the required PL/pgSQL control depth, cannot be laundered through ordinary/dollar-quoted dead text, and reused preflight cannot escape through executable RETURN/EXIT")
     print("NOTE: PASS is static conformance evidence only; C2 database/admin authority remains separately governed.")
     return 0
 

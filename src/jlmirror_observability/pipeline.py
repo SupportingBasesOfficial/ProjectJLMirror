@@ -24,26 +24,26 @@ class ObservabilityPipelineEvidence:
             return HealthAssessment(
                 "health.observability-pipeline@1",
                 HealthState.UNKNOWN,
-                "pipeline_evidence_incomplete",
+                "telemetry_missing",
                 False,
             )
         if self.self_observation_confidence_current is False:
             return HealthAssessment(
                 "health.observability-pipeline@1",
                 HealthState.UNKNOWN,
-                "self_observation_confidence_not_current",
+                "telemetry_missing",
                 False,
             )
         if not all((self.ingest_current, self.export_current, self.query_current)):
             return HealthAssessment(
                 "health.observability-pipeline@1",
                 HealthState.DEGRADED,
-                "pipeline_degradation_proven",
+                "dependency_unavailable",
                 True,
             )
         return HealthAssessment(
             "health.observability-pipeline@1",
             HealthState.HEALTHY,
-            "pipeline_evidence_complete",
+            "healthy_or_eligible",
             True,
         )

@@ -73,6 +73,11 @@ class InMemoryCrossAuthorityOperationLedger:
     absence. Another attempt becomes eligible only after an immutable evidence
     record proves absence. Every new attempt requires a fresh current execution
     admission for its exact operation scope.
+
+    Append-only reconciliation history is distinct from the current attempt's
+    resolution pointer. When `effect_proven_absent` re-opens an operation for a
+    later attempt, the immutable historical evidence remains retained while the
+    current pointer is consumed/cleared before the successor attempt begins.
     """
 
     def __init__(self) -> None:
@@ -109,6 +114,13 @@ class InMemoryCrossAuthorityOperationLedger:
                 raise ReconciliationBlocked("ambiguous operation must reconcile before another attempt")
             if operation.state is not OperationState.PREPARED:
                 raise InvalidTransition("operation is not eligible for a new effect attempt")
+            if operation.reconciliation_resolution not in {
+                None,
+                ReconciliationResolution.EFFECT_PROVEN_ABSENT,
+            }:
+                raise InvalidTransition(
+                    "prepared operation carries reconciliation state not eligible for a successor attempt"
+                )
             request = AsyncExecutionRequest(
                 authority_contract=operation.owner_contract,
                 runtime_profile_id=runtime_profile_id,
@@ -129,6 +141,8 @@ class InMemoryCrossAuthorityOperationLedger:
             operation.executor_id = executor_id
             operation.attempt_expires_at = expires
             operation.execution_admission = admission
+            operation.reconciliation_revision = None
+            operation.reconciliation_resolution = None
             return OperationAttempt(
                 operation_id,
                 operation.attempt_generation,

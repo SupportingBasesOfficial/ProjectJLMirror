@@ -15,6 +15,8 @@ WAVE 1 REPLICATION PREFLIGHT != C2 DATABASE ROLE MAPPING
 PREDICATE TOKEN PRESENCE != REACHABLE PREDICATE
 DOLLAR-QUOTED TEXT != EXECUTABLE PREFLIGHT
 NESTED DEAD GUARD != TOP-LEVEL PREFLIGHT
+CONTROL DEPTH MATCH != BLOCK ANCESTRY
+RAISE EXCEPTION PRESENT != FAIL-CLOSED IF HANDLER SWALLOWS IT
 ```
 
 ## Fresh bootstrap
@@ -25,6 +27,8 @@ A `FOR ALL TABLES` publication is relevant even before `platform.authority_fence
 
 The required `IF EXISTS ... pg_publication ... puballtables` guard is a top-level executable statement in the `wave1_bootstrap` PL/pgSQL body. Merely preserving its tokens in a comment, ordinary string, inner dollar-quoted payload, zero-iteration loop or false conditional does not satisfy the boundary.
 
+The publication preflight contains no accepted PL/pgSQL `EXCEPTION` handler. A guard that raises and is then swallowed by `EXCEPTION WHEN ... THEN` is not fail-closed assurance, even when the predicate and `RAISE EXCEPTION` tokens are otherwise exact.
+
 ## Reused authority admission
 
 Inside the same transaction and while the reused fence table is held `ACCESS EXCLUSIVE`, migration `002_revalidate_authority_fence_contract.sql` must reject current catalog state when any of these applies before canonical mutation:
@@ -34,9 +38,9 @@ Inside the same transaction and while the reused fence table is held `ACCESS EXC
 - any `pg_catalog.pg_publication` has `puballtables = true`;
 - where the catalog exists, `pg_catalog.pg_publication_namespace` publishes the canonical `platform` namespace.
 
-The three static reuse guards are top-level executable statements in the `wave1_revalidate` body. They cannot be nested behind an extra `IF`, `CASE`, `LOOP` or equivalent dead wrapper merely to preserve expected text.
+The three static reuse guards are top-level executable statements in the `wave1_revalidate` body. They cannot be nested behind an extra `IF`, `CASE`, `LOOP` or equivalent dead wrapper merely to preserve expected text, and their denial exceptions cannot be intercepted by a nested PL/pgSQL exception-handler block.
 
-The schema-publication lookup is version-tolerant: the migration checks for the catalog with `pg_catalog.to_regclass` before executing the catalog query. The catalog guard itself is top-level; the dynamic namespace query and its fail-closed result guard execute directly inside that one accepted version-tolerant guard. The assurance parser reconstructs the dynamic query and treats any unrelated inner dollar-quoted SQL payload as opaque data.
+The schema-publication lookup is version-tolerant: the migration checks for the catalog with `pg_catalog.to_regclass` before executing the catalog query. The catalog guard itself is top-level; the dynamic namespace query and its fail-closed result guard must be exact children of **that specific** catalog guard. Numeric nesting depth alone is insufficient because a later sibling `IF` can have the same depth. The ancestry validator therefore pins the complete catalog-guard/query/result block, reconstructs the dynamic query, and treats unrelated inner dollar-quoted SQL payloads as opaque data.
 
 A top-level `RETURN` in the reused structural preflight is prohibited because it could skip publication checks while canonical `ALTER TABLE` statements after the `DO` block still execute.
 
@@ -61,9 +65,11 @@ Assurance must reject at least:
 - fresh bootstrap with the `pg_publication` catalog guard removed, moved after first persistent create, or with `puballtables` inverted;
 - expected publication syntax retained only in comments, ordinary strings or inner dollar-quoted payloads while the real predicate is weakened;
 - any required static publication guard wrapped in a false conditional, zero-iteration loop or other additional control-flow layer instead of executing top-level;
+- any required fresh/reuse publication guard wrapped in a PL/pgSQL `BEGIN ... EXCEPTION ... END` block that can suppress its denial;
 - reused explicit publication membership with wrong catalog or wrong `prrelid` predicate;
 - reused all-tables publication with the predicate removed/inverted;
-- reused schema publication with wrong catalog, wrong namespace target, missing `USING v_schema`, unconditional catalog access, or dynamic/result logic moved outside/directly deeper than the one accepted version-tolerant guard;
+- reused schema publication with wrong catalog, wrong namespace target, missing `USING v_schema`, unconditional catalog access, or dynamic/result logic moved into a sibling guard that merely shares numeric depth;
+- schema dynamic query/result nested directly deeper than the one accepted version-tolerant catalog guard;
 - removal of the inbound subscription-writer guard;
 - a top-level reused-preflight `RETURN` bypass;
 - missing transaction/commit or reused-table `ACCESS EXCLUSIVE` boundary.

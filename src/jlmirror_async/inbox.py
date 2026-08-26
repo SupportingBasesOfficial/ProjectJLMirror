@@ -225,6 +225,48 @@ class InMemoryInboxLedger:
         now = aware(observed_at, "observed_at")
         with self._lock:
             receipt = self._require_current_claim(claim, now)
+            if receipt.operation_id is not None:
+                raise InvalidTransition(
+                    "operation-bound receipt requires cross-authority outcome authority"
+                )
+            receipt.state = InboxState.COMPLETED
+            receipt.result_link = result_link
+            receipt.executor_id = None
+            receipt.claim_expires_at = None
+            receipt.terminal_reason = None
+
+    def complete_cross_authority_effect(
+        self,
+        claim: InboxExecutorClaim,
+        result_link: EffectResultLink,
+        *,
+        operation_authority: CrossAuthorityReconciliationPort,
+        observed_at: datetime,
+    ) -> None:
+        """Complete a processing receipt only from the bound operation's durable outcome."""
+
+        if not isinstance(result_link, EffectResultLink):
+            raise ValueError("cross-authority completion requires durable result link")
+        now = aware(observed_at, "observed_at")
+        with self._lock:
+            receipt = self._require_current_claim(claim, now)
+            if receipt.operation_id is None:
+                raise ReconciliationBlocked(
+                    "cross-authority completion requires stable bound operation identity"
+                )
+            try:
+                state = operation_authority.state(receipt.operation_id)
+                outcome = operation_authority.outcome(receipt.operation_id)
+                resolution = operation_authority.reconciliation_resolution(receipt.operation_id)
+                revision = operation_authority.reconciliation_revision(receipt.operation_id)
+            except Exception as exc:
+                raise ReconciliationBlocked("operation outcome authority failed closed") from exc
+            if state is not OperationState.COMPLETED or outcome != result_link:
+                raise ReconciliationBlocked("bound operation has not durably completed with exact outcome")
+            if resolution is not None or revision is not None:
+                raise ReconciliationBlocked(
+                    "reconciled operation completion must use reconciliation completion path"
+                )
             receipt.state = InboxState.COMPLETED
             receipt.result_link = result_link
             receipt.executor_id = None

@@ -29,6 +29,7 @@ BUILD SUCCESS != ARTIFACT TRUST
 ARTIFACT EXISTS != PROMOTION AUTHORITY
 PROMOTION EVIDENCE != INTERCHANGEABLE DEPLOYMENT EVIDENCE
 BOOLEAN CURRENT != EVIDENCE LINEAGE
+CURRENT POLICY PROFILE != SOURCE-TRUST TRANSITION LINEAGE
 EVIDENCE REFERENCE != MUTABLE ALIAS/URL
 ADMISSION BOOLEAN != SCOPED CURRENT-AUTHORITY PROOF
 RECONCILIATION BOOLEAN != RECONCILIATION AUTHORITY
@@ -59,10 +60,13 @@ No backend, collector, trace transport, dashboard, pager, sampling numeric, SLO 
 ## Implemented release substrate
 
 - cryptographic immutable artifact identity distinct from mutable tags/locations;
-- accepted vs untrusted source trust classes;
+- accepted source evidence binds exact Git source state, accepted source/change provenance, review/assurance provenance, and the source-trust policy profile/evidence that established the transition;
+- the current build release-policy profile must match the policy profile bound to the accepted source-trust transition; a later `current=True` boolean cannot launder an older/different source-trust policy;
+- build release policy, builder authority, declared-input integrity, provenance verifier currentness and artifact lifecycle each require immutable durable evidence lineage in addition to status/currentness fields;
+- build, provenance and SBOM/dependency-inventory record identities are immutable `evidence:*` references rather than mutable aliases/URLs;
+- promotion principal authority and promotion release-policy currentness require their own immutable evidence lineage;
 - exact target configuration identity/generation/semantic profile;
 - promotion records bind durable promotion/approval evidence plus exact target, validation scope, rollout scope, runtime profile set, schema/API/event compatibility state and validation/compatibility evidence identities;
-- durable release evidence references use explicit immutable `evidence:*` record identities; mutable aliases/URLs are rejected by the reference model;
 - deployment admission rejects recombination of a promotion with different configuration-validation, rollout-compatibility or cell-compatibility evidence;
 - deployment admission requires the exact five current-authority gate classes (`deployment_principal`, `release_policy`, `release_target_authority`, `reliability`, `security_recovery`), each carrying an owning authority profile/version, immutable evidence identity, exact deployment scope, expected target-state version and currentness;
 - missing, duplicate, stale, wrong-scope, wrong-version or mutable-reference admission evidence fails closed;
@@ -74,7 +78,7 @@ No backend, collector, trace transport, dashboard, pager, sampling numeric, SLO 
 - missing/ambiguous effect observation moves to `reconciliation_required`;
 - resolving `reconciliation_required` requires a separate current reconciliation-authority evidence record bound to the same deployment scope and current target-state version; a boolean is insufficient;
 - effect confirmation/absence resolution requires durable target evidence and the deployment record retains both target evidence and reconciliation-authority lineage where applicable;
-- runtime verification independently requires current durable verification evidence, current runtime admission and Phase 12 health evidence; vendor/controller green is ignored as authority;
+- runtime verification independently requires durable evidence for runtime admission, configuration currentness, release-policy currentness, verifier authority and owning health-admission policy; vendor/controller green is ignored as authority;
 - completed deployment records retain runtime-verification evidence identity;
 - validation evidence for a different target configuration requires explicit semantic equivalence or target-specific validation;
 - production secret-value copying cannot be used as configuration equivalence proof.

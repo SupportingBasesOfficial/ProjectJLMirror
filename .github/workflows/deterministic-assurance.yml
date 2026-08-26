@@ -86,3 +86,19 @@ jobs:
       - name: Validate Wave 1 publication guard ancestry
         shell: bash
         run: PYTHONPATH=src python3 tools/authority/validate_publication_guard_ancestry.py
+
+      - name: Falsify Wave 2 transactional and async correctness
+        shell: bash
+        run: PYTHONPATH=src python3 -m unittest discover -s tests/wave2 -p 'test_*.py'
+
+      - name: Validate Wave 2 correctness boundaries
+        shell: bash
+        run: PYTHONPATH=src python3 tools/async_core/validate_wave2.py
+
+      - name: Validate Wave 2 reconciliation attempt binding
+        shell: bash
+        run: PYTHONPATH=src python3 tools/async_core/validate_reconciliation_attempt_binding.py
+
+      - name: Validate Wave 2 quarantine redrive authority
+        shell: bash
+        run: PYTHONPATH=src python3 tools/async_core/validate_redrive_authority.py

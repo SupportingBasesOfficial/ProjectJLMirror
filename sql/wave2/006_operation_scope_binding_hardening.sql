@@ -1,0 +1,87 @@
+-- Wave 2 inbox-to-operation immutable authority-scope binding hardening.
+-- Applies after migrations 001..005.
+--
+-- The technical operation_id foreign key proves object existence only. It does not
+-- prove that the operation belongs to the inbox receipt's tenant or owner contract.
+-- Every operation-bound inbox row therefore validates the complete immutable
+-- authority tuple before INSERT/UPDATE can become durable.
+--
+-- This migration also refuses to publish the guard over already-inconsistent rows:
+-- migration-time locks stop concurrent DML while a complete preflight proves that
+-- every preexisting operation-bound receipt already has the same tenant/owner scope.
+
+BEGIN;
+
+-- Block concurrent inbox binding/state DML and operation-scope mutation while the
+-- one-time preflight is evaluated and the permanent trigger is installed.
+LOCK TABLE system.async_consumer_inbox IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE system.async_cross_authority_operation IN SHARE MODE;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+          FROM system.async_consumer_inbox AS inbox
+          LEFT JOIN system.async_cross_authority_operation AS operation
+            ON operation.operation_id = inbox.operation_id
+         WHERE inbox.operation_id IS NOT NULL
+           AND (
+               operation.operation_id IS NULL
+               OR operation.tenant_id IS DISTINCT FROM inbox.tenant_id
+               OR operation.owner_contract IS DISTINCT FROM inbox.consumer_contract
+           )
+    ) THEN
+        RAISE EXCEPTION
+            'Wave 2 operation-scope hardening refused: preexisting inbox binding lacks exact tenant/owner authority scope';
+    END IF;
+END;
+$$;
+
+CREATE FUNCTION system.wave2_guard_inbox_operation_scope()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, system
+AS $$
+DECLARE
+    op_tenant_id TEXT;
+    op_owner_contract TEXT;
+BEGIN
+    IF NEW.operation_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT tenant_id, owner_contract
+      INTO op_tenant_id, op_owner_contract
+      FROM system.async_cross_authority_operation
+     WHERE operation_id = NEW.operation_id
+     FOR SHARE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Wave 2 inbox operation binding references unknown operation authority';
+    END IF;
+
+    IF op_tenant_id IS DISTINCT FROM NEW.tenant_id THEN
+        RAISE EXCEPTION 'Wave 2 inbox operation tenant does not match immutable receipt tenant authority';
+    END IF;
+
+    IF op_owner_contract IS DISTINCT FROM NEW.consumer_contract THEN
+        RAISE EXCEPTION 'Wave 2 inbox operation owner contract does not match immutable receipt consumer authority';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER wave2_inbox_operation_scope_guard
+BEFORE INSERT OR UPDATE ON system.async_consumer_inbox
+FOR EACH ROW EXECUTE FUNCTION system.wave2_guard_inbox_operation_scope();
+
+COMMENT ON FUNCTION system.wave2_guard_inbox_operation_scope() IS
+'Fails closed unless every operation-bound inbox row preserves exact operation_id + tenant_id + owner_contract authority scope. A foreign-key hit or operation_id alone is never completion/reconciliation authority.';
+
+-- No GRANT statements are intentionally present. The trigger applies regardless
+-- of the future least-privilege runtime mapping and does not select an operations,
+-- broker, reconciliation or database-role product.
+
+COMMIT;

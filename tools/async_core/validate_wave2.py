@@ -48,6 +48,7 @@ EXPECTED_FORBIDDEN = [
     "reconciliation_state_without_durable_resolution_revision_for_retry_or_completion",
     "caller_supplied_result_link_for_reconciliation_completion_without_operation_evidence",
     "operation_bound_receipt_completed_through_local_effect_path",
+    "prior_attempt_reconciliation_revision_as_successor_attempt_authority",
     "reconciliation_revision_reuse_for_different_evidence",
     "preseeded_reconciliation_revision_before_ambiguity",
     "mutable_or_deletable_reconciliation_evidence",
@@ -86,6 +87,7 @@ EXPECTED_MANIFEST = {
     "fixed_cross_authority_direct_completion_authority": "operation_bound_receipt_requires_exact_direct_completed_operation_outcome",
     "fixed_reconciliation_evidence": "append_only_operation_scoped_revision_plus_canonical_resolution_required_for_retry_or_confirmed_completion",
     "fixed_reconciliation_completion_authority": "stable_operation_plus_append_only_effect_confirmed_revision_required_after_reconciliation_block",
+    "fixed_reconciliation_generation_handoff": "append_only_history_retained_but_prior_resolution_pointer_consumed_before_successor_attempt",
     "durable_schema_reuse_policy": "preexisting_wave2_correctness_object_requires_reviewed_revalidation_not_if_not_exists_acceptance",
     "residual_c2_choices_not_selected": EXPECTED_C2,
     "forbidden_correctness_substitutions": EXPECTED_FORBIDDEN,
@@ -206,6 +208,7 @@ def _execution_boundary_findings() -> list[str]:
         (inbox, "require_current_execution(execution_authority, request)"),
         (inbox, "processing_lease_expired_effect_absence_unproven"),
         (inbox, "same_scoped_identity_conflicting_trusted_binding"),
+        (inbox, "receipt.reconciliation_revision = None"),
         (inbox, "operation-bound receipt requires cross-authority outcome authority"),
         (inbox, "def complete_cross_authority_effect("),
         (inbox, "bound operation has not durably completed with exact outcome"),
@@ -216,6 +219,9 @@ def _execution_boundary_findings() -> list[str]:
         (inbox, "ReconciliationResolution.EFFECT_CONFIRMED"),
         (reconciliation, "class ReconciliationEvidence"),
         (reconciliation, "self._reconciliation_evidence"),
+        (reconciliation, "prepared operation carries reconciliation state not eligible for a successor attempt"),
+        (reconciliation, "operation.reconciliation_revision = None"),
+        (reconciliation, "operation.reconciliation_resolution = None"),
         (reconciliation, "reconciliation revision cannot be reused for different evidence"),
         (reconciliation, "require_current_execution(execution_authority, request)"),
         (reconciliation, "attempt_lease_expired_effect_absence_unproven"),
@@ -231,18 +237,24 @@ def _reconciliation_authority_boundary_findings() -> list[str]:
     boundary = (
         ROOT / "implementation/wave-2/RECONCILIATION_AUTHORITY_BOUNDARY.md"
     ).read_text(encoding="utf-8")
-    test = (
+    completion_test = (
         ROOT / "tests/wave2/test_reconciliation_completion_authority.py"
+    ).read_text(encoding="utf-8")
+    handoff_test = (
+        ROOT / "tests/wave2/test_reconciliation_generation_handoff.py"
     ).read_text(encoding="utf-8")
     required_boundary = (
         "CALLER-SUPPLIED RESULT LINK != EFFECT COMPLETION AUTHORITY",
         "OPERATION-BOUND RECEIPT != LOCAL EFFECT PATH",
+        "RECONCILIATION HISTORY != CURRENT ATTEMPT RESOLUTION",
+        "PRIOR ATTEMPT ABSENCE PROOF != SUCCESSOR ATTEMPT OUTCOME",
         "OPERATION-BOUND PROCESSING -> LOCAL COMPLETION = PROHIBITED",
         "RECONCILED OPERATION -> DIRECT PROCESSING COMPLETION = PROHIBITED",
+        "PRIOR RECONCILIATION POINTER -> SUCCESSOR CURRENT ATTEMPT = PROHIBITED",
         "append-only reconciliation evidence records `effect_confirmed`",
         "exactly matches the result linked by the inbox receipt",
     )
-    required_tests = (
+    required_completion_tests = (
         "test_operation_bound_receipt_cannot_use_local_completion",
         "test_direct_cross_authority_completion_requires_exact_durable_outcome",
         "test_direct_cross_authority_completion_rejects_mismatched_outcome",
@@ -259,9 +271,11 @@ def _reconciliation_authority_boundary_findings() -> list[str]:
     ]
     findings.extend(
         f"Wave 2 reconciliation authority falsification missing: {anchor}"
-        for anchor in required_tests
-        if anchor not in test
+        for anchor in required_completion_tests
+        if anchor not in completion_test
     )
+    if "test_absence_evidence_remains_history_but_not_successor_attempt_state" not in handoff_test:
+        findings.append("Wave 2 reconciliation generation handoff falsification missing")
     return findings
 
 
@@ -273,7 +287,10 @@ def _sql_findings() -> list[str]:
     completion = (
         ROOT / "sql/wave2/003_cross_authority_completion_hardening.sql"
     ).read_text(encoding="utf-8")
-    text = initial + "\n" + reconciliation + "\n" + completion
+    handoff = (
+        ROOT / "sql/wave2/004_reconciliation_generation_handoff.sql"
+    ).read_text(encoding="utf-8")
+    text = initial + "\n" + reconciliation + "\n" + completion + "\n" + handoff
     lowered = text.lower()
     required = (
         "create table system.async_outbox_message",
@@ -301,6 +318,8 @@ def _sql_findings() -> list[str]:
         "effect_confirmed",
         "wave 2 reconciliation exit requires bound operation + evidence revision",
         "operation-bound wave 2 inbox completion requires exact direct durable operation outcome",
+        "successor wave 2 attempt must consume prior reconciliation pointer",
+        "successor wave 2 inbox claim must consume prior reconciliation pointer",
         "execution_admission_revision text null",
         "execution_authorization_revision text null",
         "execution_principal_credential_generation text null",

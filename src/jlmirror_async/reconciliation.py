@@ -11,6 +11,7 @@ from .execution import (
     require_current_execution,
 )
 from .model import (
+    CrossAuthorityOperationSnapshot,
     EffectResultLink,
     InvalidTransition,
     OperationState,
@@ -249,6 +250,20 @@ class InMemoryCrossAuthorityOperationLedger:
             operation.outcome = None
             operation.ambiguity_reason = None
             return operation.state
+
+    def snapshot(self, operation_id: str) -> CrossAuthorityOperationSnapshot:
+        """Return one coherent operation authority observation under one ledger lock."""
+
+        with self._lock:
+            operation = self._require(operation_id)
+            return CrossAuthorityOperationSnapshot(
+                operation_id=operation.operation_id,
+                state=operation.state,
+                attempt_generation=operation.attempt_generation,
+                outcome=operation.outcome,
+                reconciliation_resolution=operation.reconciliation_resolution,
+                reconciliation_revision=operation.reconciliation_revision,
+            )
 
     def state(self, operation_id: str) -> OperationState:
         with self._lock:

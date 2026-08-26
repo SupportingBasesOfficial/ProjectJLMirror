@@ -48,6 +48,7 @@ REQUIRED_OBSERVABILITY_LAWS = {
 REQUIRED_RELEASE_LAWS = {
     "PROMOTION EVIDENCE != INTERCHANGEABLE DEPLOYMENT EVIDENCE",
     "BOOLEAN CURRENT != EVIDENCE LINEAGE",
+    "CURRENT POLICY PROFILE != SOURCE-TRUST TRANSITION LINEAGE",
     "ADMISSION BOOLEAN != SCOPED CURRENT-AUTHORITY PROOF",
     "RECONCILIATION BOOLEAN != RECONCILIATION AUTHORITY",
     "RELEASE OUTCOME WITHOUT RETAINED EVIDENCE != DURABLE RELEASE RECORD",
@@ -57,10 +58,20 @@ REQUIRED_FORBIDDEN_SUBSTITUTIONS = {
     "stale_or_wrong_scope_evidence_for_observability_no_applicable_case",
     "raw_product_selector_string_or_boolean_for_product_authority",
     "deployment_or_catalog_presence_for_product_applicability",
+    "boolean_or_current_build_policy_for_source_trust_transition_lineage",
+    "boolean_current_for_build_release_policy",
+    "boolean_current_for_builder_authority",
+    "boolean_integrity_for_declared_inputs",
+    "boolean_current_for_provenance_verifier",
+    "boolean_artifact_lifecycle_for_promotion_eligibility",
+    "mutable_build_provenance_or_sbom_record_alias",
+    "boolean_current_for_promotion_principal_or_release_policy",
     "boolean_current_for_deployment_admission_authority",
     "unscoped_or_wrong_version_admission_evidence_for_current_authority",
     "boolean_current_for_reconciliation_authority",
     "unretained_admission_or_reconciliation_authority_evidence",
+    "boolean_current_for_runtime_admission_configuration_policy_or_verifier",
+    "boolean_current_for_health_admission_policy",
 }
 REQUIRED_CODE_TOKENS = {
     "src/jlmirror_observability/model.py": (
@@ -86,6 +97,14 @@ REQUIRED_CODE_TOKENS = {
         "evidence.validate_for(expected_scope, expected_selector_id=self.product_selector)",
     ),
     "src/jlmirror_release/provenance.py": (
+        "source_trust_policy_profile_and_version",
+        "source_trust_policy_evidence_reference",
+        "release_policy_evidence_reference",
+        "builder_authority_evidence_reference",
+        "declared_inputs_integrity_evidence_reference",
+        "provenance_verifier_evidence_reference",
+        "artifact_lifecycle_evidence_reference",
+        "promotion_principal_authority_evidence_reference",
         "promotion_evidence_reference",
         "configuration_validation_evidence_reference",
         "rollout_compatibility_evidence_reference",
@@ -105,7 +124,13 @@ REQUIRED_CODE_TOKENS = {
         "promotion and deployment use different configuration validation evidence",
         "promotion and deployment use different rollout compatibility evidence",
     ),
-    "src/jlmirror_release/verification.py": ("evidence_reference", "evidence_current"),
+    "src/jlmirror_release/verification.py": (
+        "runtime_admission_evidence_reference",
+        "configuration_currentness_evidence_reference",
+        "release_policy_evidence_reference",
+        "verifier_authority_evidence_reference",
+        "policy_evidence_reference",
+    ),
 }
 
 

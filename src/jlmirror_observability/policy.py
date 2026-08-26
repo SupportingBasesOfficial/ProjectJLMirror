@@ -35,20 +35,23 @@ class NoApplicableCaseEvidence:
 
 @dataclass(frozen=True)
 class ProductApplicabilityEvidence:
+    selector_id: str
     authority_profile: str
     evidence_reference: str
     scope_binding: str
     current: bool
     enabled: bool
 
-    def validate_for(self, expected_scope: str) -> None:
-        if not all((self.authority_profile, self.scope_binding, expected_scope)):
-            raise ObservationError("Product applicability requires authority, evidence and exact scope")
+    def validate_for(self, expected_scope: str, *, expected_selector_id: str | None = None) -> None:
+        if not all((self.selector_id, self.authority_profile, self.scope_binding, expected_scope)):
+            raise ObservationError("Product applicability requires selector, authority, evidence and exact scope")
         _require_evidence_reference("product_applicability.evidence_reference", self.evidence_reference)
         if not self.current:
             raise ObservationError("Product applicability evidence is not current")
         if self.scope_binding != expected_scope:
             raise ObservationError("Product applicability evidence is bound to a different scope")
+        if expected_selector_id is not None and self.selector_id != expected_selector_id:
+            raise ObservationError("Product applicability evidence is bound to a different selector")
 
 
 @dataclass(frozen=True)
@@ -83,7 +86,12 @@ def binding_for_reliability_profile(reliability_profile_id: str) -> ReliabilityO
     return join_for(reliability_profile_id)
 
 
-def require_product_applicability(evidence: ProductApplicabilityEvidence, *, expected_scope: str) -> bool:
+def require_product_applicability(
+    evidence: ProductApplicabilityEvidence,
+    *,
+    expected_scope: str,
+    expected_selector_id: str | None = None,
+) -> bool:
     """Fail closed: Product applicability requires current authority/evidence bound to exact scope."""
-    evidence.validate_for(expected_scope)
+    evidence.validate_for(expected_scope, expected_selector_id=expected_selector_id)
     return evidence.enabled

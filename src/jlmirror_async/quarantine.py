@@ -33,9 +33,10 @@ _RELIABILITY_PROFILE_BY_SOURCE = {
 class QuarantineSubject:
     """Stable, non-payload quarantine identity presented to redrive authority.
 
-    This is an authority hook, not an operational redrive record. Phase 15 owns
-    `ops.redrive-operation@1`; Wave 2 only supplies the exact correctness scope a
-    future operations implementation must authorize before any state transition.
+    This is a request scope, never proof that the subject is currently quarantined.
+    Phase 15 owns `ops.redrive-operation@1`; Wave 2 supplies the exact correctness
+    scope a future operations implementation must re-resolve and authorize before
+    any redrive state transition.
     """
 
     source: QuarantineSource
@@ -90,12 +91,14 @@ class RedriveAdmission:
 
     Concrete operator tooling, IAM, compatibility evaluation, placement resolution,
     comparison/KMS checks and capacity products remain replaceable C2/operations
-    choices. The trusted adapter must collapse those authorities into one exact
-    request-bound decision; this object is not a bearer capability for another
-    message, generation or quarantine reason.
+    choices. The trusted adapter must independently re-establish the durable current
+    quarantine state and collapse all required authorities into one exact
+    request-bound decision. This object is not a bearer capability for another
+    message, state generation or quarantine reason.
     """
 
     request: RedriveRequest
+    quarantine_state_revision: str
     authorizing_principal_id: str
     privileged_authority_revision: str
     compatibility_revision: str
@@ -112,6 +115,7 @@ class RedriveAdmission:
         if not isinstance(self.request, RedriveRequest):
             raise ValueError("redrive admission requires exact canonical request")
         for field in (
+            "quarantine_state_revision",
             "authorizing_principal_id",
             "privileged_authority_revision",
             "compatibility_revision",
@@ -135,11 +139,13 @@ class CurrentRedriveAuthorityPort(Protocol):
     def authorize_redrive(self, *, request: RedriveRequest) -> RedriveAdmission:
         """Return one current decision for the exact quarantined subject.
 
-        Implementations must establish current privileged authority, owning-contract
-        compatibility/eligibility, tenant placement where applicable, duplicate and
-        effect safety/reconciliation, capacity admission and audit responsibility.
-        Queue age, operator desire, broker DLQ state or time in quarantine are never
-        sufficient authority.
+        Implementations must independently re-resolve the current durable quarantine
+        record/state generation/reason, then establish current privileged authority,
+        owning-contract compatibility/eligibility, tenant placement where applicable,
+        duplicate/effect safety/reconciliation, capacity admission and audit
+        responsibility. The caller-provided request is scope to check, never proof of
+        current quarantine. Queue age, operator desire, broker DLQ state or time in
+        quarantine are never sufficient authority.
         """
 
 

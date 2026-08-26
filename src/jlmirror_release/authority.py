@@ -6,7 +6,7 @@ from threading import RLock
 
 from .compatibility import RolloutCompatibilityEvidence, require_rollout_compatibility
 from .configuration import ConfigurationValidationEvidence, require_validation_for_target
-from .model import DeploymentIntent, PromotionState, ReleaseError, SourceTrustClass
+from .model import DeploymentIntent, PromotionState, ReleaseError
 from .provenance import (
     BuildProvenanceEvidence, PromotionEvidence, require_immutable_evidence_reference,
     require_promotion_authority,
@@ -350,10 +350,3 @@ class DeploymentAuthority:
             self._target.unresolved_operation_id = None
         self._target.pending_artifact_identity = None
         self._target.pending_configuration_generation = None
-
-
-def require_trusted_build_source(source_trust_class: SourceTrustClass, *, exact_source_state_proven: bool, accepted_change_authority_proven: bool) -> None:
-    if source_trust_class is not SourceTrustClass.ACCEPTED_REVIEW_STATE:
-        raise ReleaseError("untrusted candidate source cannot enter trusted build authority")
-    if not exact_source_state_proven or not accepted_change_authority_proven:
-        raise ReleaseError("accepted source requires exact state and change-authority evidence")

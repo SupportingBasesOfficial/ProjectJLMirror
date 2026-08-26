@@ -279,6 +279,19 @@ class InMemoryCrossAuthorityOperationLedger:
                         "current reconciliation pointer lacks append-only evidence"
                     )
                 reconciliation_attempt_generation = evidence.attempt_generation
+                if reconciliation_attempt_generation != operation.attempt_generation:
+                    raise InvalidTransition(
+                        "current reconciliation evidence belongs to another operation attempt generation"
+                    )
+                return CrossAuthorityOperationSnapshot(
+                    operation_id=operation.operation_id,
+                    state=operation.state,
+                    attempt_generation=operation.attempt_generation,
+                    outcome=operation.outcome,
+                    reconciliation_resolution=operation.reconciliation_resolution,
+                    reconciliation_revision=operation.reconciliation_revision,
+                    reconciliation_attempt_generation=evidence.attempt_generation,
+                )
             return CrossAuthorityOperationSnapshot(
                 operation_id=operation.operation_id,
                 state=operation.state,

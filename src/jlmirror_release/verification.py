@@ -38,8 +38,8 @@ class RuntimeVerificationRequirements:
         expected_release_target_state_version: int,
         expected_release_policy_evidence_reference: str,
     ) -> tuple[str, ...]:
-        if not self.authority_profile_and_version:
-            raise ReleaseError("runtime verification requirements need an owning authority profile/version")
+        if self.authority_profile_and_version != intent.release_policy_profile_and_version:
+            raise ReleaseError("runtime verification requirements must be owned by the current release-policy profile")
         require_immutable_evidence_reference("runtime_requirements.evidence_reference", self.evidence_reference)
         require_immutable_evidence_reference(
             "runtime_requirements.release_policy_evidence_reference",
@@ -195,9 +195,17 @@ def verify_runtime(
             raise ReleaseError(f"health gate evidence is bound to a different release-target state version: {pid}")
         gates[pid] = gate
 
-    missing = set(required_health_profile_ids) - gates.keys()
-    if missing:
-        raise ReleaseError("required Phase 12 health evidence is missing: " + ",".join(sorted(missing)))
+    required_set = set(required_health_profile_ids)
+    actual_set = set(gates)
+    if actual_set != required_set:
+        missing = required_set - actual_set
+        extra = actual_set - required_set
+        details = []
+        if missing:
+            details.append("missing=" + ",".join(sorted(missing)))
+        if extra:
+            details.append("unexpected=" + ",".join(sorted(extra)))
+        raise ReleaseError("runtime health evidence must match the exact release-policy-required gate set: " + ";".join(details))
 
     for profile_id in required_health_profile_ids:
         gate = gates[profile_id]

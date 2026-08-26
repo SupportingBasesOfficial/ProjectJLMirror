@@ -159,6 +159,24 @@ CANONICAL_DEGRADATION_MODES = frozenset({
     "fail_closed", "fail_fast", "stale_tolerant", "queued_or_deferred", "shed_or_reject",
     "reconciliation_blocked", "resync_required", "capability_unavailable",
 })
+CANONICAL_HEALTH_REASON_CLASSES = frozenset({
+    "healthy_or_eligible",
+    "dependency_unavailable",
+    "dependency_slow_or_saturated",
+    "throttled_or_shed",
+    "configuration_unavailable_or_stale",
+    "current_authority_unprovable",
+    "compromised_or_untrusted",
+    "reconciliation_required",
+    "recovery_continuity_blocked",
+    "draining",
+    "startup_or_warmup",
+    "internal_failure",
+})
+# Phase 12 fixes the semantic reason classes above. `telemetry_missing` is the finite Wave 3
+# mapping for the same phase's missing-data=unknown condition; it is not caller-defined taxonomy.
+WAVE3_HEALTH_REASON_EXTENSIONS = frozenset({"telemetry_missing"})
+REVIEWED_HEALTH_REASON_CLASSES = CANONICAL_HEALTH_REASON_CLASSES | WAVE3_HEALTH_REASON_EXTENSIONS
 REVIEWED_OPERATION_CLASSES = frozenset({
     "api.read", "monitoring.accept", "audit.responsibility", "security.currentness",
     "message.equivalence",
@@ -304,7 +322,8 @@ class HealthAssessment:
     def __post_init__(self) -> None:
         if self.profile_id not in CORE_HEALTH_PROFILES:
             raise ObservationError(f"unknown health profile: {self.profile_id}")
-        _validate_safe_token("reason_class", self.reason_class)
+        if self.reason_class not in REVIEWED_HEALTH_REASON_CLASSES:
+            raise ObservationError("health reason_class is not in the reviewed finite Phase 12/Wave 3 registry")
         if not self.evidence_complete and self.state is not HealthState.UNKNOWN:
             raise ObservationError("incomplete evidence must be represented as health=unknown")
 

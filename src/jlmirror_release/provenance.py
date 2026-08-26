@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .model import ArtifactIdentity, RELEASE_PRINCIPALS, ReleaseError, SourceTrustClass
+from .model import ALLOWED_ENVIRONMENT_CLASSES, ArtifactIdentity, RELEASE_PRINCIPALS, ReleaseError, SourceTrustClass
 
 
 @dataclass(frozen=True)
@@ -40,11 +40,7 @@ def validate_build_provenance(evidence: BuildProvenanceEvidence) -> None:
         raise ReleaseError("builder principal authority is not current")
     if not evidence.declared_input_set_id or not evidence.declared_inputs_integrity_proven:
         raise ReleaseError("declared build inputs require integrity-bound evidence")
-    required = (
-        evidence.build_record_id, evidence.provenance_profile, evidence.provenance_record_id,
-        evidence.provenance_verifier_profile_and_version, evidence.sbom_or_dependency_inventory_reference,
-        evidence.artifact_attestation_profile,
-    )
+    required = (evidence.build_record_id, evidence.provenance_profile, evidence.provenance_record_id, evidence.provenance_verifier_profile_and_version, evidence.sbom_or_dependency_inventory_reference, evidence.artifact_attestation_profile)
     if not all(required):
         raise ReleaseError("provenance/SBOM/attestation records are required")
     if not evidence.provenance_verifier_current:
@@ -58,10 +54,12 @@ class PromotionEvidence:
     promotion_id: str
     promotion_principal_class: str
     approval_current: bool
+    release_policy_profile_and_version: str
     release_policy_current: bool
     artifact_identity: str
     target_configuration_identity: str
     target_configuration_generation: str
+    target_configuration_semantic_profile: str
     target_environment_class: str
     validation_evidence_current: bool
     compatibility_evidence_current: bool
@@ -71,13 +69,17 @@ def require_promotion_authority(promotion: PromotionEvidence, provenance: BuildP
     validate_build_provenance(provenance)
     if promotion.promotion_principal_class != "principal.release-promote@1":
         raise ReleaseError("promotion requires the bounded release promotion principal")
-    if not promotion.promotion_id or not promotion.approval_current or not promotion.release_policy_current:
-        raise ReleaseError("promotion approval/policy currentness is required")
+    if not promotion.promotion_id or not promotion.approval_current:
+        raise ReleaseError("promotion approval is required")
+    if not promotion.release_policy_profile_and_version or not promotion.release_policy_current:
+        raise ReleaseError("promotion requires current exact release policy")
+    if promotion.release_policy_profile_and_version != provenance.release_policy_profile_and_version:
+        raise ReleaseError("promotion policy differs from provenanced build policy")
     if promotion.artifact_identity != provenance.artifact.canonical:
         raise ReleaseError("promotion artifact differs from provenanced immutable artifact")
-    if not promotion.target_configuration_identity or not promotion.target_configuration_generation:
-        raise ReleaseError("promotion requires exact target configuration identity/generation")
-    if not promotion.target_environment_class:
-        raise ReleaseError("promotion target environment is required")
+    if not all((promotion.target_configuration_identity, promotion.target_configuration_generation, promotion.target_configuration_semantic_profile)):
+        raise ReleaseError("promotion requires exact target configuration identity/generation/profile")
+    if promotion.target_environment_class not in ALLOWED_ENVIRONMENT_CLASSES:
+        raise ReleaseError("promotion target environment class is not canonical")
     if not promotion.validation_evidence_current or not promotion.compatibility_evidence_current:
         raise ReleaseError("promotion requires current validation and compatibility evidence")

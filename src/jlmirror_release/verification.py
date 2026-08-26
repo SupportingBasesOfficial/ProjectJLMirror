@@ -282,6 +282,10 @@ def verify_runtime(
         raise ReleaseError("target configuration currentness is not proven")
     if evidence.release_policy_profile_and_version != intent.release_policy_profile_and_version:
         raise ReleaseError("runtime verification is using a different release-policy profile")
+    if evidence.release_policy_evidence_reference != requirements.release_policy_evidence_reference:
+        raise ReleaseError(
+            "runtime verification release-policy evidence differs from the pre-effect requirements policy lineage"
+        )
     if not evidence.release_policy_current:
         raise ReleaseError("release policy currentness is not proven")
     if evidence.verifier_authority_profile_and_version != RUNTIME_VERIFIER_PRINCIPAL:
@@ -292,6 +296,7 @@ def verify_runtime(
     required_health_profile_ids = requirements.validate_for(
         intent,
         expected_release_target_state_version=expected_release_target_state_version,
+        expected_release_policy_evidence_reference=evidence.release_policy_evidence_reference,
     )
 
     gates: dict[str, HealthGateEvidence] = {}

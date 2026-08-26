@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
 
@@ -28,6 +29,28 @@ from tools.authority.validate_publication_guard_structure import (  # noqa: E402
 )
 
 PROFILE = "jlmirror-wave1-publication-guard-ancestry/v1"
+MANIFEST_PATH = ROOT / "implementation" / "wave-1" / "FENCE_PUBLICATION_GUARD_MANIFEST.json"
+EXPECTED_MANIFEST = {
+    "profile": PROFILE,
+    "authority_scope": "platform.authority_fences",
+    "fresh_preflight": {
+        "required_static_guard_control_depth": 0,
+        "exception_handlers_allowed": False,
+    },
+    "reuse_preflight": {
+        "required_static_guard_control_depth": 0,
+        "schema_catalog_guard_control_depth": 0,
+        "schema_query_and_result_are_exact_children": True,
+        "exception_handlers_allowed": False,
+        "top_level_return_allowed": False,
+    },
+    "forbidden_substitutions": [
+        "numeric_control_depth_for_block_ancestry",
+        "raise_exception_presence_for_unsuppressed_failure",
+    ],
+    "product_feature_activation": "none",
+    "wave_2_authorized": False,
+}
 Token = tuple[str, str]
 
 
@@ -113,6 +136,14 @@ def validate_reuse_ancestry(text: object) -> list[str]:
     return findings
 
 
+def validate_manifest_object(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return ["Wave 1 publication ancestry manifest must be a JSON object"]
+    if value != EXPECTED_MANIFEST:
+        return ["Wave 1 publication ancestry manifest drifted from exact fail-closed boundary"]
+    return []
+
+
 def validate() -> list[str]:
     findings: list[str] = []
     try:
@@ -127,6 +158,12 @@ def validate() -> list[str]:
         findings.append(f"Wave 1 reuse SQL unreadable: {exc}")
     else:
         findings.extend(validate_reuse_ancestry(reuse))
+    try:
+        manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        findings.append(f"Wave 1 publication ancestry manifest unreadable: {exc}")
+    else:
+        findings.extend(validate_manifest_object(manifest))
     return findings
 
 

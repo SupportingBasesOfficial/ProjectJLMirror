@@ -8,9 +8,18 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from tools.authority.validate_fence_publication_safety import validate_reuse_publication_text  # noqa: E402
 from tools.authority.validate_fence_revalidation_safety import validate_revalidation_safety_text  # noqa: E402
 
 SQL_PATH = ROOT / "sql" / "wave1" / "002_revalidate_authority_fence_contract.sql"
+
+
+def validate_reuse_safety(text: str) -> list[str]:
+    """Compose legacy structural proof with the newer transaction/publication proof."""
+    return [
+        *validate_revalidation_safety_text(text),
+        *validate_reuse_publication_text(text),
+    ]
 
 
 class FenceRevalidationSafetyTests(unittest.TestCase):
@@ -18,18 +27,18 @@ class FenceRevalidationSafetyTests(unittest.TestCase):
         return SQL_PATH.read_text(encoding="utf-8")
 
     def assert_fails(self, text: str, needle: str | None = None) -> None:
-        findings = validate_revalidation_safety_text(text)
+        findings = validate_reuse_safety(text)
         self.assertTrue(findings)
         if needle:
             self.assertTrue(any(needle.lower() in f.lower() for f in findings), findings)
 
     def test_real_migration_is_atomic_privilege_structural_catalog_and_replication_safe(self):
-        self.assertEqual(validate_revalidation_safety_text(self.text()), [])
+        self.assertEqual(validate_reuse_safety(self.text()), [])
 
     def test_transaction_and_lock_boundaries_fail_closed(self):
         text = self.text()
         self.assert_fails(text.replace("BEGIN;\n", "", 1), "BEGIN")
-        self.assert_fails(text.replace("\nCOMMIT;\n", "\n", 1), "COMMIT")
+        self.assert_fails(text.replace("\nCOMMIT;", "", 1), "COMMIT")
         self.assert_fails(text.replace("LOCK TABLE platform.authority_fences IN ACCESS EXCLUSIVE MODE;\n", "", 1), "ACCESS EXCLUSIVE")
 
     def test_event_trigger_and_search_path_guards_must_precede_lock(self):

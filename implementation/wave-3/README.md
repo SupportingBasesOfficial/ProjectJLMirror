@@ -17,6 +17,8 @@ MISSING TELEMETRY != SUCCESS
 CORRELATION != TRUST
 SEMANTIC CLASS != UNBOUNDED TENANT/RESOURCE IDENTIFIER
 OUTCOME TOKEN != ACCEPTED OUTCOME TAXONOMY
+NO_APPLICABLE_CASE != FREE-TEXT ASSERTION
+PRODUCT SELECTOR VALUE != PRODUCT AUTHORITY EVIDENCE
 ```
 
 Release records may control release-specific progression, but:
@@ -43,8 +45,9 @@ TIMEOUT/LOST RESPONSE != RELEASE EFFECT ABSENCE
 - `outcome_class` and duplicate/equivalence comparison outcomes are checked against accepted Phase 12 taxonomies;
 - ordinary-telemetry secret-bearing field rejection;
 - missing/incomplete health evidence represented as `unknown`, never false-green;
-- explicit `NO_APPLICABLE_CASE` reason requirement;
-- Product applicability unknown fails closed rather than becoming disabled/enabled;
+- generic direct-SLI `NO_APPLICABLE_CASE` requires reason + owning authority profile + immutable `evidence:*` identity + exact scope binding + currentness;
+- Product applicability is resolved only from current exact-scope selector evidence; missing Product evidence remains upstream OPEN, while stale/wrong-scope/wrong-selector evidence fails closed;
+- Product disabled/enabled cannot be inferred from deployment, telemetry, catalog presence, a free-form string or a local boolean detached from current Product authority evidence;
 - health objects expose no authority-grant path.
 
 Extending the finite implementation mappings is a reviewed compatibility change. Untrusted tenant/resource/provider input cannot manufacture a new semantic class merely by matching a token regex.

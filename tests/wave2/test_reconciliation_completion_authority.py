@@ -12,6 +12,7 @@ from jlmirror_async import (
     InboxState,
     InMemoryCrossAuthorityOperationLedger,
     InMemoryInboxLedger,
+    InvalidTransition,
     ReconciliationBlocked,
     ReconciliationResolution,
     ScopedMessageIdentity,
@@ -100,16 +101,7 @@ class ReconciliationCompletionAuthorityTests(unittest.TestCase):
         )
         return ledger
 
-    def test_caller_result_link_cannot_complete_unbound_reconciliation(self) -> None:
-        ledger = self.blocked_local_receipt()
-
-        with self.assertRaises(ReconciliationBlocked):
-            ledger.reconcile_completed(self.identity, self.result)
-
-        self.assertEqual(ledger.state(self.identity), InboxState.RECONCILIATION_REQUIRED)
-        self.assertIsNone(ledger.result_link(self.identity))
-
-    def test_bound_operation_without_operation_authority_remains_blocked(self) -> None:
+    def operation_bound_receipt(self):
         ledger = InMemoryInboxLedger()
         operations = InMemoryCrossAuthorityOperationLedger()
         operations.prepare("op-1", self.identity.consumer_contract, tenant_id="tenant-a")
@@ -125,6 +117,110 @@ class ReconciliationCompletionAuthorityTests(unittest.TestCase):
             "op-1",
             observed_at=NOW + timedelta(seconds=1),
         )
+        return ledger, operations, claim
+
+    def test_operation_bound_receipt_cannot_use_local_completion(self) -> None:
+        ledger, _operations, claim = self.operation_bound_receipt()
+
+        with self.assertRaises(InvalidTransition):
+            ledger.complete_local_effect(
+                claim,
+                self.result,
+                observed_at=NOW + timedelta(seconds=2),
+            )
+
+        self.assertEqual(ledger.state(self.identity), InboxState.PROCESSING)
+        self.assertIsNone(ledger.result_link(self.identity))
+
+    def test_direct_cross_authority_completion_requires_exact_durable_outcome(self) -> None:
+        ledger, operations, claim = self.operation_bound_receipt()
+        attempt = operations.begin_attempt(
+            "op-1",
+            "effect-executor-a",
+            execution_authority=self.execution_authority,
+            attempt_expires_at=LEASE_END,
+        )
+        operations.complete(
+            attempt,
+            self.result,
+            observed_at=NOW + timedelta(seconds=2),
+        )
+
+        ledger.complete_cross_authority_effect(
+            claim,
+            self.result,
+            operation_authority=operations,
+            observed_at=NOW + timedelta(seconds=3),
+        )
+
+        self.assertEqual(ledger.state(self.identity), InboxState.COMPLETED)
+        self.assertEqual(ledger.result_link(self.identity), self.result)
+
+    def test_direct_cross_authority_completion_rejects_mismatched_outcome(self) -> None:
+        ledger, operations, claim = self.operation_bound_receipt()
+        attempt = operations.begin_attempt(
+            "op-1",
+            "effect-executor-a",
+            execution_authority=self.execution_authority,
+            attempt_expires_at=LEASE_END,
+        )
+        operations.complete(
+            attempt,
+            self.result,
+            observed_at=NOW + timedelta(seconds=2),
+        )
+
+        with self.assertRaises(ReconciliationBlocked):
+            ledger.complete_cross_authority_effect(
+                claim,
+                EffectResultLink("revision-8", "resource_revision"),
+                operation_authority=operations,
+                observed_at=NOW + timedelta(seconds=3),
+            )
+
+        self.assertEqual(ledger.state(self.identity), InboxState.PROCESSING)
+
+    def test_reconciled_operation_cannot_use_direct_processing_completion_path(self) -> None:
+        ledger, operations, claim = self.operation_bound_receipt()
+        attempt = operations.begin_attempt(
+            "op-1",
+            "effect-executor-a",
+            execution_authority=self.execution_authority,
+            attempt_expires_at=LEASE_END,
+        )
+        operations.mark_ambiguous(
+            attempt,
+            "provider_response_lost",
+            observed_at=NOW + timedelta(seconds=2),
+        )
+        operations.reconcile(
+            "op-1",
+            ReconciliationResolution.EFFECT_CONFIRMED,
+            reconciliation_revision="reconcile-1",
+            confirmed_outcome=self.result,
+        )
+
+        with self.assertRaises(ReconciliationBlocked):
+            ledger.complete_cross_authority_effect(
+                claim,
+                self.result,
+                operation_authority=operations,
+                observed_at=NOW + timedelta(seconds=3),
+            )
+
+        self.assertEqual(ledger.state(self.identity), InboxState.PROCESSING)
+
+    def test_caller_result_link_cannot_complete_unbound_reconciliation(self) -> None:
+        ledger = self.blocked_local_receipt()
+
+        with self.assertRaises(ReconciliationBlocked):
+            ledger.reconcile_completed(self.identity, self.result)
+
+        self.assertEqual(ledger.state(self.identity), InboxState.RECONCILIATION_REQUIRED)
+        self.assertIsNone(ledger.result_link(self.identity))
+
+    def test_bound_operation_without_operation_authority_remains_blocked(self) -> None:
+        ledger, _operations, claim = self.operation_bound_receipt()
         ledger.require_reconciliation(
             claim,
             "external_effect_outcome_uncertain",
@@ -137,23 +233,7 @@ class ReconciliationCompletionAuthorityTests(unittest.TestCase):
         self.assertEqual(ledger.state(self.identity), InboxState.RECONCILIATION_REQUIRED)
 
     def test_append_only_confirmed_operation_evidence_allows_exact_completion(self) -> None:
-        ledger = InMemoryInboxLedger()
-        operations = InMemoryCrossAuthorityOperationLedger()
-        operations.prepare("op-1", self.identity.consumer_contract, tenant_id="tenant-a")
-
-        ledger.admit(self.identity, evidence())
-        claim = ledger.claim_effect(
-            self.identity,
-            "worker-a",
-            execution_authority=self.execution_authority,
-            claim_expires_at=LEASE_END,
-        )
-        ledger.bind_cross_authority_operation(
-            claim,
-            "op-1",
-            observed_at=NOW + timedelta(seconds=1),
-        )
-
+        ledger, operations, claim = self.operation_bound_receipt()
         attempt = operations.begin_attempt(
             "op-1",
             "effect-executor-a",
@@ -187,22 +267,7 @@ class ReconciliationCompletionAuthorityTests(unittest.TestCase):
         self.assertEqual(ledger.result_link(self.identity), self.result)
 
     def test_confirmed_operation_with_mismatched_result_remains_blocked(self) -> None:
-        ledger = InMemoryInboxLedger()
-        operations = InMemoryCrossAuthorityOperationLedger()
-        operations.prepare("op-1", self.identity.consumer_contract, tenant_id="tenant-a")
-
-        ledger.admit(self.identity, evidence())
-        claim = ledger.claim_effect(
-            self.identity,
-            "worker-a",
-            execution_authority=self.execution_authority,
-            claim_expires_at=LEASE_END,
-        )
-        ledger.bind_cross_authority_operation(
-            claim,
-            "op-1",
-            observed_at=NOW + timedelta(seconds=1),
-        )
+        ledger, operations, claim = self.operation_bound_receipt()
         attempt = operations.begin_attempt(
             "op-1",
             "effect-executor-a",

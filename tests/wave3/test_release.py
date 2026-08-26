@@ -8,9 +8,9 @@ from jlmirror_release import (
     DeploymentAuthority, DeploymentIntent, DeploymentObservation, HealthGateEvidence,
     MixedVersionMatrix, NoApplicableCaseEvidence, PromotionEvidence, PromotionState,
     ReleaseError, ReleaseTargetState, RolloutCompatibilityEvidence,
-    RuntimeVerificationEvidence, SourceTrustClass, TargetConfiguration, ValidationScope,
-    require_trusted_build_source, require_validation_for_target, validate_build_provenance,
-    verify_runtime,
+    RuntimeVerificationEvidence, RuntimeVerificationRequirements, SourceTrustClass,
+    TargetConfiguration, ValidationScope, require_trusted_build_source,
+    require_validation_for_target, validate_build_provenance, verify_runtime,
 )
 
 DIGEST_A = "a" * 64
@@ -19,6 +19,16 @@ SOURCE_STATE_ID = "1" * 40
 ADMISSION_GATE_IDS = (
     "deployment_principal", "release_policy", "release_target_authority",
     "reliability", "security_recovery",
+)
+RUNTIME_RELIABILITY_REQUIREMENTS = (
+    "rel.cell-transactional-store@1",
+    "rel.security-session-authority@1",
+    "rel.performance-cache@1",
+)
+RUNTIME_HEALTH_REQUIREMENTS = (
+    "health.api-bff@1",
+    "health.cell@1",
+    "health.security-authority@1",
 )
 
 
@@ -192,11 +202,40 @@ def reconciliation_gate(i, *, current=True, scope=None, version=None, reference=
     )
 
 
+def runtime_requirements(scope, target_version, **changes):
+    values = dict(
+        authority_profile_and_version="release.runtime-verification-requirements@1",
+        evidence_reference="evidence:runtime-requirements-1",
+        scope_binding=scope,
+        release_target_state_version=target_version,
+        release_policy_profile_and_version="release-policy@1",
+        release_policy_evidence_reference="evidence:runtime-release-policy-1",
+        required_reliability_profile_ids=RUNTIME_RELIABILITY_REQUIREMENTS,
+        required_health_profile_ids=RUNTIME_HEALTH_REQUIREMENTS,
+        current=True,
+    )
+    values.update(changes)
+    return RuntimeVerificationRequirements(**values)
+
+
 def runtime_evidence(digest=DIGEST_A, config_generation="cfg-7", admission_current=True,
                      state=HealthState.HEALTHY, health_admitted=True, **changes):
-    assessment = HealthAssessment("health.cell@1", state, "current", True)
     scope = changes.pop("scope_binding", deployment_scope())
     target_version = changes.pop("release_target_state_version", 5)
+    requirements = changes.pop("requirements", runtime_requirements(scope, target_version))
+    gates = tuple(
+        HealthGateEvidence(
+            HealthAssessment(profile_id, state, "current", True),
+            f"evidence:{profile_id.replace('.', '-').replace('@', '-')}-1",
+            "health-admission-policy@1",
+            "evidence:health-admission-policy-1",
+            scope,
+            target_version,
+            True,
+            health_admitted,
+        )
+        for profile_id in RUNTIME_HEALTH_REQUIREMENTS
+    )
     values = dict(
         evidence_reference="evidence:runtime-verification-1",
         evidence_current=True,
@@ -214,16 +253,8 @@ def runtime_evidence(digest=DIGEST_A, config_generation="cfg-7", admission_curre
         verifier_authority_profile_and_version="principal.release-verify@1",
         verifier_authority_evidence_reference="evidence:runtime-verifier-authority-1",
         verifier_authority_current=True,
-        required_health_profile_ids=("health.cell@1",),
-        health_gates=(HealthGateEvidence(
-            assessment,
-            "evidence:health-cell-1",
-            "health-admission-policy@1",
-            "evidence:health-admission-policy-1",
-            scope,
-            True,
-            health_admitted,
-        ),),
+        requirements=requirements,
+        health_gates=gates,
         vendor_controller_green=True,
     )
     values.update(changes)
@@ -309,7 +340,8 @@ class ReleaseTests(unittest.TestCase):
         i = intent(); good = admission(i)
         bad = PromotionEvidence(**{**good.promotion.__dict__, "configuration_validation_evidence_reference": "evidence:other"})
         with self.assertRaises(ReleaseError):
-            DeploymentAuthority(ReleaseTargetState(i.target_id, 4)).create_or_observe(i, admission(i, promotion=bad))
+            authority = DeploymentAuthority(ReleaseTargetState(i.target_id, 4))
+            authority.create_or_observe(i, admission(i, promotion=bad))
 
     def test_promotion_must_bind_same_rollout_evidence_reference(self):
         i = intent(); good = admission(i)
@@ -446,22 +478,92 @@ class ReleaseTests(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaises(ReleaseError):
                 verify_direct(runtime_evidence(**mutation))
 
+    def test_runtime_requirements_cannot_be_empty_or_duplicate(self):
+        good = runtime_evidence()
+        for mutation in (
+            {"required_reliability_profile_ids": ()},
+            {"required_health_profile_ids": ()},
+            {"required_reliability_profile_ids": ("rel.cell-transactional-store@1", "rel.cell-transactional-store@1")},
+            {"required_health_profile_ids": ("health.cell@1", "health.cell@1")},
+        ):
+            bad = RuntimeVerificationRequirements(**{**good.requirements.__dict__, **mutation})
+            with self.subTest(mutation=mutation), self.assertRaises(ReleaseError):
+                verify_direct(runtime_evidence(requirements=bad))
+
+    def test_runtime_requirements_cannot_omit_implied_health_join(self):
+        good = runtime_evidence()
+        bad = RuntimeVerificationRequirements(**{
+            **good.requirements.__dict__,
+            "required_health_profile_ids": ("health.api-bff@1", "health.cell@1"),
+        })
+        with self.assertRaises(ReleaseError):
+            verify_direct(runtime_evidence(requirements=bad))
+
+    def test_runtime_requirements_must_bind_current_release_policy_lineage(self):
+        good = runtime_evidence()
+        for mutation in (
+            {"release_policy_profile_and_version": "release-policy@0"},
+            {"release_policy_evidence_reference": "evidence:other-policy"},
+            {"current": False},
+            {"evidence_reference": "latest"},
+        ):
+            bad = RuntimeVerificationRequirements(**{**good.requirements.__dict__, **mutation})
+            with self.subTest(mutation=mutation), self.assertRaises(ReleaseError):
+                verify_direct(runtime_evidence(requirements=bad))
+
+    def test_runtime_requirements_cannot_be_replayed_across_scope_or_target_version(self):
+        good = runtime_evidence()
+        for mutation in (
+            {"scope_binding": "deployment:validation-cell-a:other-op"},
+            {"release_target_state_version": 4},
+        ):
+            bad = RuntimeVerificationRequirements(**{**good.requirements.__dict__, **mutation})
+            with self.subTest(mutation=mutation), self.assertRaises(ReleaseError):
+                verify_direct(runtime_evidence(requirements=bad))
+
     def test_health_policy_boolean_requires_immutable_policy_lineage(self):
         good = runtime_evidence()
         gate = good.health_gates[0]
         with self.assertRaises(ReleaseError):
-            HealthGateEvidence(gate.assessment, gate.evidence_reference, gate.owning_policy_profile_and_version, "latest", gate.scope_binding, True, True)
+            HealthGateEvidence(
+                gate.assessment, gate.evidence_reference, gate.owning_policy_profile_and_version,
+                "latest", gate.scope_binding, gate.release_target_state_version, True, True,
+            )
 
     def test_health_gate_cannot_be_replayed_from_other_deployment_scope(self):
         good = runtime_evidence()
         gate = good.health_gates[0]
-        bad_gate = HealthGateEvidence(gate.assessment, gate.evidence_reference, gate.owning_policy_profile_and_version, gate.policy_evidence_reference, "deployment:validation-cell-a:other-op", True, True)
+        bad_gate = HealthGateEvidence(
+            gate.assessment, gate.evidence_reference, gate.owning_policy_profile_and_version,
+            gate.policy_evidence_reference, "deployment:validation-cell-a:other-op",
+            gate.release_target_state_version, True, True,
+        )
         with self.assertRaises(ReleaseError):
-            verify_direct(runtime_evidence(health_gates=(bad_gate,)))
+            verify_direct(runtime_evidence(health_gates=(bad_gate,) + good.health_gates[1:]))
+
+    def test_health_gate_cannot_be_replayed_across_target_state_version(self):
+        good = runtime_evidence()
+        gate = good.health_gates[0]
+        bad_gate = HealthGateEvidence(
+            gate.assessment, gate.evidence_reference, gate.owning_policy_profile_and_version,
+            gate.policy_evidence_reference, gate.scope_binding, 4, True, True,
+        )
+        with self.assertRaises(ReleaseError):
+            verify_direct(runtime_evidence(health_gates=(bad_gate,) + good.health_gates[1:]))
+
+    def test_missing_one_required_health_gate_fails_closed(self):
+        good = runtime_evidence()
+        with self.assertRaises(ReleaseError):
+            verify_direct(runtime_evidence(health_gates=good.health_gates[:-1]))
 
     def test_vendor_green_is_not_runtime_verification(self):
         good = runtime_evidence()
-        evidence = RuntimeVerificationEvidence(**{**good.__dict__, "evidence_reference": "evidence:runtime-verification-2", "observed_artifact_identity": None, "vendor_controller_green": True})
+        evidence = RuntimeVerificationEvidence(**{
+            **good.__dict__,
+            "evidence_reference": "evidence:runtime-verification-2",
+            "observed_artifact_identity": None,
+            "vendor_controller_green": True,
+        })
         with self.assertRaises(ReleaseError):
             verify_direct(evidence)
 

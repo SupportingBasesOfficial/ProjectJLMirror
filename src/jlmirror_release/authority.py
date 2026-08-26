@@ -329,7 +329,11 @@ class DeploymentAuthority:
                 raise ReleaseError("runtime verification can complete only after effect confirmation")
             if self._target.unresolved_operation_id != operation_id:
                 raise ReleaseError("deployment operation lost current target resolution ownership")
-            verify_runtime(record.intent, evidence)
+            verify_runtime(
+                record.intent,
+                evidence,
+                expected_release_target_state_version=self._target.release_target_state_version,
+            )
             if self._target.pending_artifact_identity != record.intent.artifact.canonical:
                 raise ReleaseError("pending target artifact differs from verified deployment intent")
             if self._target.pending_configuration_generation != record.intent.configuration.generation:

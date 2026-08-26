@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Mapping
 
 from jlmirror_observability import (
     EXPECTED_RELIABILITY_PROFILE_IDS,
@@ -9,14 +11,73 @@ from jlmirror_observability import (
     RELIABILITY_OBSERVABILITY_JOINS,
 )
 
-from .model import DeploymentIntent, ReleaseError
+from .model import CANONICAL_RUNTIME_PROFILES, DeploymentIntent, ReleaseError
 from .provenance import require_immutable_evidence_reference
 
 RUNTIME_REQUIREMENTS_AUTHORITY_PROFILE = "release.runtime-verification-requirements@1"
 
+# Phase 13 fixes these as the minimum non-conditional Phase 11 reliability bindings for
+# each concrete runtime profile. Conditional bindings (for example cache/secret/external
+# dependencies that are only present for a specific deployment) remain additional
+# pre-effect requirements selected by the current release-policy authority.
+RUNTIME_PROFILE_MINIMUM_RELIABILITY_BINDINGS: Mapping[str, frozenset[str]] = MappingProxyType({
+    "runtime.web-bff@1": frozenset({"rel.security-session-authority@1"}),
+    "runtime.api@1": frozenset({
+        "rel.cell-transactional-store@1",
+        "rel.security-session-authority@1",
+        "rel.performance-cache@1",
+        "rel.configuration-authority@1",
+    }),
+    "runtime.worker@1": frozenset(),  # exact worker-specialization bindings are additional pre-effect requirements
+    "runtime.realtime@1": frozenset({
+        "rel.realtime-fanout@1",
+        "rel.security-session-authority@1",
+        "rel.replay-consume-state@1",
+    }),
+    "runtime.control-plane@1": frozenset({
+        "rel.control-plane-placement@1",
+        "rel.placement-reference-cache@1",
+        "rel.configuration-authority@1",
+    }),
+    "runtime.automation@1": frozenset({"rel.privileged-operations@1"}),
+    "runtime.untrusted-parser@1": frozenset(),
+    "runtime.migration-admin@1": frozenset({
+        "rel.privileged-operations@1",
+        "rel.cell-transactional-store@1",
+        "rel.configuration-authority@1",
+    }),
+    "runtime.recovery@1": frozenset({
+        "rel.privileged-operations@1",
+        "rel.control-plane-placement@1",
+        "rel.replay-consume-state@1",
+        "rel.secret-key-authority@1",
+    }),
+    "runtime.edge-optional@1": frozenset(),
+})
+
+if frozenset(RUNTIME_PROFILE_MINIMUM_RELIABILITY_BINDINGS) != CANONICAL_RUNTIME_PROFILES:
+    raise RuntimeError("Phase 13 runtime reliability binding table does not cover the canonical runtime profile set")
+
 
 def runtime_verification_scope_for(intent: DeploymentIntent) -> str:
     return f"deployment:{intent.target_id}:{intent.deployment_operation_id}"
+
+
+def minimum_reliability_for_runtime_profiles(runtime_profile_set: tuple[str, ...]) -> frozenset[str]:
+    """Return the fixed minimum Phase 13 reliability bindings for an exact runtime set."""
+    if not runtime_profile_set:
+        raise ReleaseError("runtime profile set cannot be empty when deriving release reliability gates")
+    if len(set(runtime_profile_set)) != len(runtime_profile_set):
+        raise ReleaseError("runtime profile set cannot contain duplicate runtime profiles")
+    unknown = set(runtime_profile_set) - CANONICAL_RUNTIME_PROFILES
+    if unknown:
+        raise ReleaseError(
+            "runtime profile set contains unknown Phase 13 runtime profiles: " + ",".join(sorted(unknown))
+        )
+    required: set[str] = set()
+    for runtime_profile_id in runtime_profile_set:
+        required.update(RUNTIME_PROFILE_MINIMUM_RELIABILITY_BINDINGS[runtime_profile_id])
+    return frozenset(required)
 
 
 @dataclass(frozen=True)
@@ -71,6 +132,14 @@ class RuntimeVerificationRequirements:
             raise ReleaseError(
                 "runtime verification requirements reference unknown reliability profiles: "
                 + ",".join(sorted(unknown_reliability))
+            )
+
+        mandatory_reliability = minimum_reliability_for_runtime_profiles(intent.runtime_profile_set)
+        missing_mandatory_reliability = mandatory_reliability - set(reliability_ids)
+        if missing_mandatory_reliability:
+            raise ReleaseError(
+                "runtime verification requirements omit mandatory Phase 13 reliability bindings: "
+                + ",".join(sorted(missing_mandatory_reliability))
             )
 
         known_health = {

@@ -13,6 +13,8 @@
   ],
   "required_reliability_profiles": [
     "rel.cell-transactional-store@1",
+    "rel.outbox-publication@1",
+    "rel.broker-job-transport@1",
     "rel.consumer-inbox-effect@1",
     "rel.replay-consume-state@1"
   ],

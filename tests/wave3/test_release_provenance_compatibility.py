@@ -29,13 +29,20 @@ def provenance(**changes):
 
 def promotion(**changes):
     values = dict(
-        promotion_id="prom-1", promotion_principal_class="principal.release-promote@1",
-        approval_current=True, release_policy_profile_and_version="release-policy@1",
-        release_policy_current=True, artifact_identity=ARTIFACT.canonical,
+        promotion_id="prom-1", promotion_evidence_reference="evidence:promotion-1",
+        promotion_principal_class="principal.release-promote@1",
+        approval_current=True, approval_evidence_reference="evidence:approval-1",
+        release_policy_profile_and_version="release-policy@1", release_policy_current=True,
+        artifact_identity=ARTIFACT.canonical, target_id="scope-a",
+        target_environment_class="environment.validation@1", validation_scope=ValidationScope.GENERAL,
+        rollout_scope_id="scope-a", runtime_profile_set=("runtime.api@1",),
         target_configuration_identity="cfg", target_configuration_generation="g1",
         target_configuration_semantic_profile="config.release@1",
-        target_environment_class="environment.validation@1", validation_evidence_current=True,
-        compatibility_evidence_current=True,
+        configuration_validation_evidence_reference="evidence:config-1",
+        rollout_compatibility_evidence_reference="evidence:rollout-1",
+        schema_state="compatible", api_compatibility_family="api.v1",
+        event_compatibility_set=("event.v1",), required_evidence_set_reference="evidence:set-1",
+        validation_evidence_current=True, compatibility_evidence_current=True,
     )
     values.update(changes)
     return PromotionEvidence(**values)
@@ -51,6 +58,18 @@ def mixed(**changes):
 
 def nac(scope, current=True):
     return NoApplicableCaseEvidence("not applicable for exact scoped release", "release.compatibility-policy@1", "evidence:nac", scope, current)
+
+
+def rollout(scope, *, matrix=None, validation_scope=ValidationScope.GENERAL,
+            cell_affecting=False, reference_current=False, reference_nac=None,
+            cell=None, evidence_reference="evidence:rollout-1", evidence_current=True):
+    return RolloutCompatibilityEvidence(
+        evidence_reference=evidence_reference, evidence_current=evidence_current,
+        release_scope_id=scope, mixed_version=matrix or mixed(), validation_scope=validation_scope,
+        cell_affecting_release=cell_affecting, reference_cell_evidence_current=reference_current,
+        reference_cell_no_applicable_case=reference_nac,
+        cell_compatibility=cell or CellCompatibilityEvidence(False, no_applicable_case=nac(scope)),
+    )
 
 
 class ProvenanceCompatibilityTests(unittest.TestCase):
@@ -73,7 +92,7 @@ class ProvenanceCompatibilityTests(unittest.TestCase):
         with self.assertRaises(ReleaseError):
             validate_build_provenance(provenance(artifact_retired=True))
 
-    def test_promotion_binds_exact_artifact_config_profile_and_environment(self):
+    def test_promotion_binds_exact_artifact_config_profile_environment_and_lineage(self):
         require_promotion_authority(promotion(), provenance())
 
     def test_registry_presence_or_wrong_artifact_cannot_promote(self):
@@ -84,33 +103,62 @@ class ProvenanceCompatibilityTests(unittest.TestCase):
         with self.assertRaises(ReleaseError):
             require_promotion_authority(promotion(target_environment_class="staging"), provenance())
 
+    def test_promotion_requires_durable_validation_and_compatibility_lineage(self):
+        for mutation in (
+            {"promotion_evidence_reference": ""},
+            {"approval_evidence_reference": ""},
+            {"configuration_validation_evidence_reference": ""},
+            {"rollout_compatibility_evidence_reference": ""},
+            {"required_evidence_set_reference": ""},
+        ):
+            with self.subTest(mutation=mutation), self.assertRaises(ReleaseError):
+                require_promotion_authority(promotion(**mutation), provenance())
+
+    def test_partial_cell_metadata_binding_fails(self):
+        with self.assertRaises(ReleaseError):
+            require_promotion_authority(promotion(cell_compatibility_metadata_identity="cell-meta", cell_compatibility_metadata_generation=None), provenance())
+
     def test_mixed_version_failure_blocks_rollout(self):
         scope = "scope-a"
-        evidence = RolloutCompatibilityEvidence(scope, mixed(event_compatible=False), ValidationScope.GENERAL, False, False, nac(scope), CellCompatibilityEvidence(False, no_applicable_case=nac(scope)))
+        evidence = rollout(scope, matrix=mixed(event_compatible=False), reference_nac=nac(scope))
         with self.assertRaises(ReleaseError):
             require_rollout_compatibility(evidence)
 
+    def test_rollout_requires_current_durable_evidence_reference(self):
+        scope = "scope-a"
+        with self.assertRaises(ReleaseError):
+            require_rollout_compatibility(rollout(scope, evidence_reference="", evidence_current=False))
+
     def test_cell_affecting_release_requires_reference_cell_or_evidence_backed_nac(self):
         scope = "scope-a"
-        evidence = RolloutCompatibilityEvidence(scope, mixed(), ValidationScope.GENERAL, True, False, None, CellCompatibilityEvidence(True, "cell-compat", "g1", True, True))
+        evidence = rollout(
+            scope, cell_affecting=True,
+            cell=CellCompatibilityEvidence(True, "cell-compat", "g1", True, True),
+        )
         with self.assertRaises(ReleaseError):
             require_rollout_compatibility(evidence)
 
     def test_free_text_cannot_launder_reference_cell_no_applicable_case(self):
         scope = "scope-a"
-        evidence = RolloutCompatibilityEvidence(scope, mixed(), ValidationScope.GENERAL, True, False, nac(scope, current=False), CellCompatibilityEvidence(True, "cell-compat", "g1", True, True))
+        evidence = rollout(
+            scope, cell_affecting=True, reference_nac=nac(scope, current=False),
+            cell=CellCompatibilityEvidence(True, "cell-compat", "g1", True, True),
+        )
         with self.assertRaises(ReleaseError):
             require_rollout_compatibility(evidence)
 
     def test_nac_scope_mismatch_fails_closed(self):
         scope = "scope-a"
-        evidence = RolloutCompatibilityEvidence(scope, mixed(), ValidationScope.GENERAL, False, False, nac(scope), CellCompatibilityEvidence(False, no_applicable_case=nac("scope-b")))
+        evidence = rollout(scope, reference_nac=nac(scope), cell=CellCompatibilityEvidence(False, no_applicable_case=nac("scope-b")))
         with self.assertRaises(ReleaseError):
             require_rollout_compatibility(evidence)
 
     def test_cell_affecting_release_requires_current_cell_compatibility(self):
         scope = "scope-a"
-        evidence = RolloutCompatibilityEvidence(scope, mixed(), ValidationScope.REFERENCE_CELL, True, True, None, CellCompatibilityEvidence(True, "cell-compat", "g1", False, True))
+        evidence = rollout(
+            scope, validation_scope=ValidationScope.REFERENCE_CELL, cell_affecting=True,
+            reference_current=True, cell=CellCompatibilityEvidence(True, "cell-compat", "g1", False, True),
+        )
         with self.assertRaises(ReleaseError):
             require_rollout_compatibility(evidence)
 

@@ -2,7 +2,7 @@ import unittest
 
 from jlmirror_observability import RELIABILITY_OBSERVABILITY_JOINS
 from jlmirror_release.model import ArtifactIdentity, DeploymentIntent, ReleaseError, TargetConfiguration, ValidationScope
-from jlmirror_release.verification import RuntimeVerificationRequirements
+from jlmirror_release.verification import RuntimeVerificationEvidence, RuntimeVerificationRequirements, verify_runtime
 
 
 def intent(runtime_profiles=("runtime.api@1",), worker_specializations=()):
@@ -41,6 +41,30 @@ def requirements(i, reliability_ids):
         required_reliability_profile_ids=tuple(reliability_ids),
         required_health_profile_ids=health_ids,
         current=True,
+    )
+
+
+def runtime_evidence(i, worker_specializations):
+    return RuntimeVerificationEvidence(
+        evidence_reference="evidence:runtime-verification-worker-1",
+        evidence_current=True,
+        scope_binding=f"deployment:{i.target_id}:{i.deployment_operation_id}",
+        release_target_state_version=1,
+        observed_artifact_identity=i.artifact.canonical,
+        observed_configuration_generation=i.configuration.generation,
+        runtime_profile_set=i.runtime_profile_set,
+        runtime_admission_evidence_reference="evidence:runtime-admission-worker-1",
+        runtime_admission_current=True,
+        configuration_currentness_evidence_reference="evidence:configuration-currentness-worker-1",
+        configuration_current=True,
+        release_policy_profile_and_version=i.release_policy_profile_and_version,
+        release_policy_evidence_reference="evidence:runtime-release-policy-worker-1",
+        release_policy_current=True,
+        verifier_authority_profile_and_version="principal.release-verify@1",
+        verifier_authority_evidence_reference="evidence:runtime-verifier-worker-1",
+        verifier_authority_current=True,
+        health_gates=(),
+        worker_specialization_set=tuple(worker_specializations),
     )
 
 
@@ -125,6 +149,17 @@ class RuntimeProfileReliabilityTests(unittest.TestCase):
         requirements(i, ("rel.replay-consume-state@1",)).validate_for(
             i, expected_release_target_state_version=1
         )
+
+    def test_runtime_evidence_cannot_change_worker_specialization(self):
+        i = intent(("runtime.worker@1",), ("worker.outbox-publication@1",))
+        req = requirements(i, ("rel.outbox-publication@1", "rel.broker-job-transport@1"))
+        with self.assertRaisesRegex(ReleaseError, "worker specialization set differs"):
+            verify_runtime(
+                i,
+                runtime_evidence(i, ("worker.async-consumer@1",)),
+                req,
+                expected_release_target_state_version=1,
+            )
 
 
 if __name__ == "__main__":

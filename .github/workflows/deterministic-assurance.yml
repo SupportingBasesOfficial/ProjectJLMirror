@@ -82,3 +82,7 @@ jobs:
       - name: Validate Wave 1 publication guard control-flow structure
         shell: bash
         run: PYTHONPATH=src python3 tools/authority/validate_publication_guard_structure.py
+
+      - name: Validate Wave 1 publication guard ancestry
+        shell: bash
+        run: PYTHONPATH=src python3 tools/authority/validate_publication_guard_ancestry.py

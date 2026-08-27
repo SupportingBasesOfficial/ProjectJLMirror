@@ -107,6 +107,55 @@ class ContractProjectionTests(unittest.TestCase):
                     root, _registry_for(base, forged_working_blob)
                 )
 
+    def test_registered_source_drift_check_ignores_checkout_line_ending_translation(self):
+        # A real git checkout can legitimately materialize CRLF line endings for LF-committed
+        # text (for example core.autocrlf=true, which is a common Windows default) without any
+        # actual content change. The registered-source drift check must not depend on the local
+        # git config of whoever happens to run it; it must agree with what git itself would
+        # store, exactly like validate_authority_base_bindings already does via git ls-tree.
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "docs" / "manifest.md"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"`runtime.api@1`\n")
+            _git(root, "init", "-q")
+            _git(root, "config", "user.email", "test@example.invalid")
+            _git(root, "config", "user.name", "JLMIRROR Test")
+            _git(root, "config", "core.autocrlf", "true")
+            _git(root, "add", "docs/manifest.md")
+            _git(root, "commit", "-q", "-m", "accepted authority")
+            pinned_blob = _git(root, "rev-parse", "HEAD:docs/manifest.md")
+            # Simulate the working-tree state a core.autocrlf=true checkout produces for the
+            # exact same committed content, without touching the commit itself.
+            source.write_bytes(b"`runtime.api@1`\r\n")
+            registry = {
+                "accepted_authority_base": "a" * 40,
+                "profile_sources": [{"path": "docs/manifest.md", "git_blob_sha": pinned_blob}],
+            }
+            catalog = build_profile_catalog(root, registry)
+            self.assertEqual(catalog["records"][0]["id"], "runtime.api@1")
+
+    def test_registered_source_drift_check_still_fails_closed_on_real_content_change(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "docs" / "manifest.md"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"`runtime.api@1`\n")
+            _git(root, "init", "-q")
+            _git(root, "config", "user.email", "test@example.invalid")
+            _git(root, "config", "user.name", "JLMIRROR Test")
+            _git(root, "config", "core.autocrlf", "true")
+            _git(root, "add", "docs/manifest.md")
+            _git(root, "commit", "-q", "-m", "accepted authority")
+            pinned_blob = _git(root, "rev-parse", "HEAD:docs/manifest.md")
+            source.write_bytes(b"`runtime.worker@1`\n")
+            registry = {
+                "accepted_authority_base": "a" * 40,
+                "profile_sources": [{"path": "docs/manifest.md", "git_blob_sha": pinned_blob}],
+            }
+            with self.assertRaisesRegex(ContractProjectionError, "registered normative source drift"):
+                build_profile_catalog(root, registry)
+
     def test_canonical_normative_source_path_is_accepted(self):
         with TemporaryDirectory() as temp:
             root = Path(temp)

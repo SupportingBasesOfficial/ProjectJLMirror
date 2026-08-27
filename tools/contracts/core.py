@@ -397,7 +397,7 @@ def _run_git(root: Path, *args: str) -> bytes:
     if completed.returncode != 0:
         stderr = completed.stderr.decode("utf-8", errors="replace").strip()
         raise ContractProjectionError(
-            f"git {' '.join(args)} failed while proving accepted authority base: {stderr or completed.returncode}"
+            f"git {' '.join(args)} failed: {stderr or completed.returncode}"
         )
     return completed.stdout
 
@@ -476,7 +476,21 @@ def _read_pinned_source(root: Path, source: dict[str, Any]) -> str:
         raise ContractProjectionError(f"registered source missing: {relative}")
 
     data = path.read_bytes()
-    actual_blob = git_blob_sha(data)
+    # Registered sources are canonical docs/**/*.md text and the pinned git_blob_sha values
+    # are git's own LF-normalized text blob hashes. Hashing raw checkout bytes directly is
+    # checkout-environment-dependent: a Windows checkout with the common core.autocrlf=true
+    # default (and no repo-level .gitattributes forcing LF) legitimately materializes CRLF
+    # line endings on disk for the exact same committed content, which would make this
+    # drift check spuriously fail on some machines while silently passing on others -- a
+    # governance integrity check should not depend on a contributor's local git config. When
+    # the source tree is an actual git checkout, ask git itself for the blob hash it would
+    # store (git hash-object honors autocrlf/.gitattributes exactly, so this is authoritative
+    # rather than a CRLF-specific heuristic); otherwise (for example an isolated non-git
+    # fixture directory in tests) fall back to hashing the bytes exactly as read, unchanged.
+    if (repository_root / ".git").exists():
+        actual_blob = _run_git(repository_root, "hash-object", "--", relative).decode("ascii").strip()
+    else:
+        actual_blob = git_blob_sha(data)
     if actual_blob != source["git_blob_sha"]:
         raise ContractProjectionError(
             f"registered normative source drift: {relative}; expected blob "

@@ -45,12 +45,17 @@ BEGIN
   atomic create-or-observe on (observation_identity_scope, observation_id)   -- ADR-008 idempotency-claim pattern
   if newly accepted:
       persist canonical observation record
+      append outbox intent for Tier 2 historical projection                  -- UNCONDITIONAL: every accepted
+                                                                               -- observation reaches history,
+                                                                               -- whether or not it is "latest"
       conditional compare-and-set current-state projection by ordering token  -- telemetry-plane.md ordering contract
       if advanced:
           persist stable transition identity
-          append outbox intent for downstream signal/dispatch
+          append outbox intent for current-state-changed downstream signal   -- CONDITIONAL: only on advancement
 COMMIT
 ```
+
+The historical-projection dispatch is deliberately **not** nested under `if advanced`: Tier 2 is a record of every accepted observation, not only the ones that happen to be "latest" at processing time (a stale/out-of-order sample is still valid historical telemetry per `telemetry-plane.md`'s "Historical/event-time analytics may process late observations under their own explicit window/watermark semantics" rule) — only the current-state-changed *signal* is conditional on advancement, matching ADR-008's "State-transition signal atomicity" section exactly.
 
 This directly satisfies `telemetry-plane.md:86-90`'s second option ("a transactional persistence record plus outbox when PostgreSQL is the accepted ingestion authority") and ADR-008's "State-transition signal atomicity" section without requiring a new *pattern* — the schema shape and the atomicity argument's structure already exist and were already adversarially reviewed for the structurally identical Wave 2 cross-authority operation/reconciliation pattern this reuses. What still requires new evidence, specific to this tier's real-database behavior, is listed in full under "Evidence and validation required" below.
 
@@ -104,6 +109,7 @@ Per the register's closure evidence rule, this record alone does not make the de
 - `FV-TEL-002` conformance: crash injection around the Tier 1 atomic-accept/compare-and-set/outbox-intent transaction, against a real concurrent PostgreSQL backend rather than the in-memory reference-model ledgers Wave 2's own tests currently exercise (per `implementation/wave-2/KNOWN_DEFERRED_ITEMS.md:8-25`) — mirroring the exact fault-injection discipline ADR-008 §"Validation" already requires, but proving it newly against real concurrent connections rather than assuming Wave 2's existing tests already cover it;
 - backlog behavior: durable acceptance continuing to accept within bounded storage budget while a downstream TimescaleDB projection is temporarily unavailable, per `telemetry-plane.md`'s "Unavailability/backpressure" section;
 - replay: out-of-order and duplicate observation delivery proven not to regress current-state projections or duplicate historical rows, per `telemetry-plane.md`'s "Identity validation" testing requirement;
+- unconditional historical dispatch: an accepted observation that does **not** advance current state (stale/non-latest at acceptance time) still reaches Tier 2 historical storage — proving the historical-projection outbox intent is genuinely unconditional on advancement, not accidentally coupled to the current-state-changed signal;
 - relocation: tenant relocation continuity for both the Tier 1 acceptance record and Tier 2 hypertable data, per `telemetry-plane.md`'s "Tenant relocation" section and the accepted `(R,F]` recovery model;
 - a first capacity benchmark proving TimescaleDB compression/continuous-aggregate behavior meets the bounded time-range query requirement at a representative multi-tenant sample scale (informs, but does not block, the separately-open `OPEN-REL-020` production numerics).
 

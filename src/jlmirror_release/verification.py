@@ -26,6 +26,28 @@ RUNTIME_VERIFIER_PRINCIPAL = "principal.release-verify@1"
 # each concrete runtime profile. Conditional bindings (for example cache/secret/external
 # dependencies that are only present for a specific deployment) remain additional
 # pre-effect requirements selected by the current release-policy authority.
+#
+# OPEN (recorded 2026-08-26, deliberately not resolved by this wave -- requires an explicit
+# product/security decision, not a silent implementation default): four profiles below
+# (runtime.worker@1, runtime.untrusted-parser@1, runtime.edge-optional@1 and, in
+# WORKER_SPECIALIZATION_MINIMUM_RELIABILITY_BINDINGS below, worker.reconciliation@1) carry an
+# empty non-conditional floor. Combined with the fact that RuntimeVerificationRequirements
+# (submitted inside the same DeploymentAdmissionEvidence payload as everything else the deploy
+# submitter assembles) has no dedicated principal/authority-class field distinguishing it from
+# the deploy principal -- unlike its sibling evidence classes (PromotionEvidence,
+# BuildProvenanceEvidence, DeploymentAdmissionEvidence itself) -- a deployment declared with one
+# of these four profiles can have its entire required_reliability_profile_ids/
+# required_health_profile_ids set chosen by the same submitter that requests the deployment,
+# with no floor tying it to the deployment's actual risk surface. This is architecturally
+# consistent with the rest of this reference model (no evidence class here has real
+# cryptographic principal separation; require_immutable_evidence_reference is a format check,
+# not a resolution against an independently persisted record -- that is presumably delegated to
+# an out-of-scope trusted evidence store). Closing it for real requires either: (a) a genuinely
+# independent release-policy-authority evidence chain feeding required_health_profile_ids
+# (not merely another self-declared field in the same submitter payload), or (b) an explicit,
+# reviewed decision that the empty floor for these four profiles is intentional risk acceptance.
+# Do not fill in a non-empty floor here without that decision -- an invented minimum would be a
+# silent security-relevant judgment call, not a mechanical fix.
 RUNTIME_PROFILE_MINIMUM_RELIABILITY_BINDINGS: Mapping[str, frozenset[str]] = MappingProxyType({
     "runtime.web-bff@1": frozenset({"rel.security-session-authority@1"}),
     "runtime.api@1": frozenset({

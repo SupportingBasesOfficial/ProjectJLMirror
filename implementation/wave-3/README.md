@@ -110,6 +110,50 @@ No backend, collector, trace transport, dashboard, pager, sampling numeric, SLO 
 
 No CI vendor, registry, signing service, SBOM product, IaC/deploy product, release coordination backend, or physical environment mapping is selected here.
 
+## Known residual limitations (require explicit decision, not silent omission)
+
+Recorded 2026-08-26 from an adversarial audit of this HEAD. These are not implementation bugs
+in the mechanical sense (all falsification tests pass against the properties actually claimed
+above); they are gaps between what is enforced and what a first reading of the surrounding law
+might assume is enforced.
+
+- **`required_health_profile_ids` authorship independence is not closed for four runtime/worker
+  profiles.** `RuntimeVerificationRequirements` has no principal/authority-class field (unlike
+  `PromotionEvidence`, `BuildProvenanceEvidence`, `DeploymentAdmissionEvidence`), and
+  `runtime.worker@1`, `runtime.untrusted-parser@1`, `runtime.edge-optional@1` and
+  `worker.reconciliation@1` carry an empty non-conditional reliability floor
+  (`RUNTIME_PROFILE_MINIMUM_RELIABILITY_BINDINGS` / `WORKER_SPECIALIZATION_MINIMUM_RELIABILITY_BINDINGS`
+  in `verification.py`). A deployment declared with one of those profiles can have its entire
+  required reliability/health gate set chosen by the same submitter requesting the deployment.
+  See the `OPEN` comment at `verification.py` immediately above
+  `RUNTIME_PROFILE_MINIMUM_RELIABILITY_BINDINGS` for the full analysis. **Not resolved here** --
+  needs either a genuinely independent release-policy-authority evidence chain, or an explicit
+  reviewed decision that the empty floor is intentional risk acceptance for those four profiles.
+
+- **Telemetry health veto vs. `TELEMETRY != ... AUTHORITY` (Phase 12).** `verify_runtime`
+  (`verification.py`) treats `HealthState.UNAVAILABLE`/`QUARANTINED`/`DRAINING` as an
+  unconditional release block even when `health_admitted=True` (policy admission granted) --
+  see `test_release.py::test_quarantined_health_cannot_be_released_even_if_complete`. The
+  *positive* direction is correctly excluded from authority (`vendor_controller_green` is
+  ignored, never a grant); this is the *negative*/veto direction. Read narrowly, a pure veto
+  never grants permission, so it does not violate "telemetry SHALL NOT grant authorization" --
+  and it is the fail-closed, monotonically-safer reading consistent with this project's
+  "less evidence never implies more authority" principle. This wave keeps that behavior
+  deliberately. Confirming this reading against the accepted Phase 12 text is an explicit
+  decision for whoever owns `docs/12-observability-sre`, not something this implementation wave
+  should settle unilaterally by editing an accepted normative document.
+
+- **Out of scope for this wave, found during the same audit, tracked here so they are not lost:**
+  a documented-but-unimplemented "protected realtime" WebSocket capability-admission mechanism
+  (Wave 1, `docs/07-system-design/request-auth-and-authorization-lifecycle.md`); `MachineReplayAuthority.claim_once`
+  being a `Protocol` without a persisted atomic compare-and-swap equivalent to
+  `platform.advance_authority_fence` (Wave 1, `src/jlmirror_authority/machine.py`); and both
+  `system.async_consumer_inbox` atomicity against a real multi-connection Postgres (Wave 2,
+  `src/jlmirror_async/inbox.py` proves atomicity only via an in-process `RLock`) and
+  outbox+domain-mutation atomicity (Wave 2) having no domain/use-case call site yet to enforce
+  against. These are Wave 1/Wave 2 files already accepted on `main`; correcting them belongs in a
+  dedicated corrective PR against those waves, not a silent edit bundled into Wave 3.
+
 ## Scope guard
 
 This wave is platform substrate only. It does not create customer/domain endpoints, enable outbound webhook/realtime/artifact Product branches, claim production SLOs, or authorize Wave 4.

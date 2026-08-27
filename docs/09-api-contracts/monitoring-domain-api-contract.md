@@ -86,30 +86,50 @@ Timestamps use the accepted UTC Phase 09 time representation. Provider event tim
 
 Provider-native IDs/metadata are optional bounded protected external evidence and never replace canonical IDs.
 
-## Pagination — URL-safe non-sensitive cursor profile
+## Pagination — URL-safe non-sensitive anchor cursor
 
-Monitoring collection cursors use the accepted Phase 09 **`url_safe_non_sensitive_handle`** class.
+Monitoring collection cursors use the accepted Phase 09 **`url_safe_non_sensitive_handle`** class and are further constrained here to a non-sensitive **anchor cursor**. This contract deliberately does **not** activate the C5 protected-continuation mechanism in `OPEN-API-019`.
 
-This contract deliberately does **not** activate the C5 protected-continuation mechanism in `OPEN-API-019`.
+The exposed `cursor` is only an opaque anchor identity derived from an item already returned by the same collection contract. It SHALL NOT contain, encrypt, sign or indirectly reference hidden protected continuation payload such as tenant identity, confidential filters, provider secrets, physical topology, arbitrary database predicates or a reusable privileged query snapshot.
 
-Required cursor properties:
+Continuation requests resubmit the same canonical non-sensitive filters/window parameters explicitly. The server:
+
+1. re-establishes current authentication, tenant placement and authorization;
+2. resolves the supplied anchor **inside the current tenant/resource scope**;
+3. verifies that the anchor is eligible under the current endpoint's resubmitted filters/window;
+4. derives the deterministic sort position from the authoritative anchored row;
+5. returns only rows after that position according to the operation's declared ordering.
+
+Anchor classes for this initial contract are:
+
+```text
+monitoring-sources       -> monitoring_source_id anchor
+monitoring-resources     -> monitoring_resource_id anchor
+metric-definitions       -> metric_definition_id anchor
+health-projections       -> monitoring_resource_id anchor
+monitoring-sync-operations -> monitoring_sync_operation_id anchor; server derives created_at tie position
+problems                 -> problem_id anchor; server derives opened_at tie position
+metric-observations      -> observation_id anchor; server validates the same metric_definition_id/from/to window and derives observed_at tie position
+```
+
+Required properties:
 
 ```text
 opaque to client
-binds endpoint/API major + tenant logical scope + canonical filters + sort + deterministic last key
-contains/reveals no credential, protected search value, raw provider key, physical topology or confidential payload
+anchor itself is URL-safe/non-sensitive under the operation's response classification
+no protected cursor payload or dedicated protected cursor state is required
 possession grants no read/continuation authority
-current authorization re-evaluated on every page
-URL/history persistence acceptable under this non-sensitive-handle classification
-normal logs may record only according to Phase 12 safe URL/query policy
+current authorization and current filter/window validation occur on every page
+cross-tenant / wrong-filter / wrong-window anchors fail sparsely without existence leakage
+URL/history persistence is acceptable for the exposed anchor itself
 ```
 
-The implementation may use a server-side random handle or a self-contained opaque encoding only if the **exposed token itself** remains non-sensitive and cannot be used as bearer authority. If a future endpoint needs protected cursor payload/token semantics, that separately activates the owning `OPEN-API-019` Product/governance path; this Monitoring contract cannot silently reclassify it.
+A server implementation SHALL NOT replace this profile with an encrypted/signed protected payload or a server-side handle whose hidden state carries protected continuation/query data while still claiming that `OPEN-API-019` is deferred. Such a change activates the owning protected-cursor governance path.
 
 Collection shape:
 
 ```json
-{"items": [], "next_cursor": "opaque-or-null"}
+{"items": [], "next_cursor": "opaque-anchor-or-null"}
 ```
 
 All collections have deterministic stable ordering, finite default/max page size and explicit live/historical traversal semantics. Production page numerics remain evidence-driven; `OPEN` never means unlimited.
@@ -138,6 +158,7 @@ authentication.*
 authorization.*
 resource.not_found
 validation.*
+validation.cursor_invalid
 concurrency.precondition_required
 concurrency.revision_mismatch
 idempotency.*
@@ -174,7 +195,7 @@ For the Zabbix profile, submitted base URL configuration uses a canonical HTTPS 
 
 ```text
 scheme          https
-host            required; validated under outbound SSRF/egress policy
+host            required
 port            optional allowed profile
 path            allowed/bounded for reverse-proxy deployments
 userinfo        prohibited
@@ -183,7 +204,13 @@ fragment        prohibited
 embedded secret prohibited
 ```
 
-A syntactically accepted URL is revalidated against destination/DNS/redirect/egress policy at each provider use as required by the provider contract. URL validation never turns DNS/network location into tenant authority.
+Source-command admission performs only deterministic canonical URI/profile validation and static deny/allow checks that do not require external network resolution. For example, syntactically disallowed schemes/userinfo/query/fragment and statically prohibited literal destinations may be rejected before commit.
+
+**DNS resolution, connection attempts, redirect evaluation and any other network-dependent SSRF/egress validation SHALL NOT occur inside the ordinary source-configuration database transaction.** The local mutation commits configuration/audit/durable validation-or-sync responsibility without waiting on an external network authority.
+
+Before each provider use, the outbound connector independently revalidates the current destination under the accepted DNS/IP/protocol/redirect/egress policy and fails closed/degrades the source when that authority cannot be proven safely. A source may therefore be durably configured while its operational evidence remains unavailable/reconciliation-required until asynchronous validation/synchronization succeeds.
+
+URL/DNS/network location never becomes tenant, resource or authorization authority.
 
 ---
 
@@ -230,7 +257,7 @@ Rules:
 - initial accepted provider profile is `zabbix`; unknown/unaccepted profiles reject;
 - no raw API token/secret bytes in the Monitoring body;
 - unknown body members reject;
-- URL/profile/scope semantics validate before commit; provider network call is not held inside the local transaction;
+- deterministic URL/profile/scope syntax/static policy validates before commit; no DNS/provider/network call is held inside the local transaction;
 - create persists source + first source-instance generation + revision + audit + durable validation/sync responsibility when ingestion is activated.
 
 Idempotency scope:
@@ -239,7 +266,7 @@ Idempotency scope:
 tenant_id + monitoring.createSource + key
 ```
 
-Fingerprint covers canonical body. `201 Created` returns `MonitoringSourceDetail` + `Location`; repeated same key/fingerprint observes same logical source.
+Fingerprint covers canonical body. `201 Created` returns `MonitoringSourceDetail` + `Location`; repeated same key/fingerprint observes same logical source. The response means local source creation committed, not that the external provider is currently reachable/trusted; operational evidence reports asynchronous validation/sync outcome.
 
 ## `monitoring.getSource`
 
@@ -279,7 +306,7 @@ For Zabbix, base URL/provider-instance endpoint change here returns `409 monitor
 
 New-key executor validates `If-Match`; missing -> `428`, mismatch -> `412`. Idempotent replay follows the shared response-loss rule above.
 
-`200` returns updated source/new revision. Provider revalidation/sync occurs through durable async responsibility after local commit.
+`200` returns updated source/new revision. Provider revalidation/sync occurs through durable async responsibility after local commit; no DNS/provider network call is part of that write transaction.
 
 ## `monitoring.replaceSourceInstance`
 
@@ -293,21 +320,21 @@ cache            no_store
 consistency      committed generation change + accepted async sync responsibility
 ```
 
-Body contains successor provider configuration, credential binding and configured scope using the same canonical profiles as creation.
+Body contains successor provider configuration, credential binding and configured scope using the same canonical/static profiles as creation. Network-dependent destination/provider validation occurs asynchronously/outside the local mutation transaction.
 
 One logical command:
 
-1. validates current auth/revision;
+1. validates current auth/revision and deterministic configuration shape;
 2. fences prior provider-instance/poll writer authority;
 3. advances source-instance generation exactly once;
 4. installs successor config/revision;
 5. persists audit;
-6. creates one durable successor sync/reconciliation responsibility;
+6. creates one durable successor validation/sync/reconciliation responsibility;
 7. never merges old/new provider-native mappings merely because IDs/names match.
 
 `202 Accepted` returns `MonitoringSyncOperation` / common Operation specialization and updated-source link. Same idempotency key/fingerprint observes the same replacement.
 
-Failure/ambiguity of later provider validation does not silently roll back to the retired generation; evidence becomes unavailable/reconciliation-required until governed recovery.
+Failure/ambiguity of later DNS/provider validation does not silently roll back to the retired generation; evidence becomes unavailable/reconciliation-required until governed recovery.
 
 ---
 
@@ -420,7 +447,7 @@ Rules:
 
 - `from < to` and duration must satisfy finite accepted policy;
 - no missing-window fallback to “all history”;
-- cursor binds metric/window/sort and is the URL-safe non-sensitive handle class;
+- `cursor` is an observation-ID anchor only; the request resubmits `metric_definition_id/from/to`, and the server validates the anchor is an authorized observation inside that exact current window before deriving `(observed_at, observation_id)` continuation position;
 - every page reauthorizes current metric/resource scope;
 - provider event time is historical data, not current authority.
 
@@ -436,7 +463,7 @@ Rules:
     "gap_refs": ["opaque bounded reference"]
   },
   "items": ["MetricObservation"],
-  "next_cursor": "opaque-or-null"
+  "next_cursor": "opaque-observation-anchor-or-null"
 }
 ```
 
@@ -458,6 +485,8 @@ pagination    live/historical local projection; (opened_at DESC, problem_id ASC)
 ```
 
 Singleton filters: source ID, resource ID, `problem_state=active|resolved`, canonical severity, opened_from/to, cursor, limit.
+
+`cursor` is a `problem_id` anchor only; the server revalidates the current filters/tenant and derives the anchored `(opened_at, problem_id)` position.
 
 Missing provider row is never implicit resolution. Items expose canonical state/severity, resource/source, timestamps and evidence state. Zabbix acknowledgement/tags may appear only as bounded non-authoritative provider metadata where policy permits.
 
@@ -513,6 +542,8 @@ pagination    created_at DESC, operation_id ASC
 ```
 
 Filters: source ID, source generation, common operation state, trigger class, cursor, limit.
+
+`cursor` is a sync-operation-ID anchor only; the server validates it under current tenant/filter scope and derives `(created_at, operation_id)` continuation position.
 
 Returns safe progress/checkpoint/failure/degradation/correlation metadata without credentials or physical worker/queue/database topology.
 
@@ -664,6 +695,7 @@ After PITR/relocation:
 - current metric values may remain last-known but expose non-current evidence until reconciled;
 - historical completeness may downgrade;
 - source/resource/problem/health reads preserve evidence state;
+- cursor anchors are re-resolved under current tenant/filter/window state rather than relying on restored protected cursor authority;
 - idempotency/replacement outcomes reconcile through `(R,F]` before repeat execution.
 
 # Dashboard composition
@@ -672,14 +704,14 @@ No mutable `/monitoring-dashboards` aggregate is created. The initial Monitoring
 
 # Compatibility-sensitive changes
 
-Security/compatibility review is required for changes to tenant/action scope, source replacement, canonical identity/generation, current metric semantics, negative evidence, severity/health/evidence state, historical completeness, cursor classification/binding, idempotency/precondition replay, provider metadata authority or recovery fencing.
+Security/compatibility review is required for changes to tenant/action scope, source replacement, canonical identity/generation, current metric semantics, negative evidence, severity/health/evidence state, historical completeness, cursor classification/anchor rules, idempotency/precondition replay, provider metadata authority or recovery fencing.
 
 # Falsification matrix
 
 1. Known Tenant B IDs cannot disclose/mutate through any route under Tenant A.
 2. Same-key create replay creates one source; fingerprint mismatch conflicts.
 3. PATCH stale revision cannot overwrite current state; successful-response-loss same-key replay recovers prior result instead of false `412`.
-4. Zabbix base URL with userinfo/query/fragment/embedded credential rejects; ordinary PATCH cannot change base URL.
+4. Zabbix base URL with userinfo/query/fragment/embedded credential rejects; ordinary PATCH cannot change base URL; DNS/provider validation is never held inside the write transaction.
 5. Replace-instance concurrency/idempotency produces one successor generation/operation.
 6. New Zabbix generation never merges same-looking native IDs with old mappings.
 7. Provider outage/visibility loss never turns known state into 404/removed/retired/resolved.
@@ -688,12 +720,13 @@ Security/compatibility review is required for changes to tenant/action scope, so
 10. Provider clock rollback cannot freeze genuinely newer fenced current state.
 11. History requires metric/from/to and finite window; no all-history fallback.
 12. Every history page reauthorizes and non-completeness remains explicit.
-13. Cursor exposed value contains no protected payload/topology/credential and possession grants no authority; this slice does not activate protected-continuation C5 semantics.
-14. Zabbix severity maps only to canonical classes; acknowledgement/tags remain metadata.
-15. Last-known health/current metric with non-current evidence remains visibly non-current.
-16. Sync operation ID cannot grant authority or reveal topology.
-17. One tenant's history/sync/cardinality pressure is bounded and cannot starve unrelated tenants.
-18. Recovery invalidates stale placement/poll/idempotency assumptions rather than reopening authority.
+13. Cursor is only an authorized-row anchor, contains/references no protected continuation payload, is revalidated against current filters/window, and possession grants no authority; this slice does not activate protected-continuation C5 semantics.
+14. Cross-tenant/wrong-filter/wrong-window cursor anchors fail without existence leakage.
+15. Zabbix severity maps only to canonical classes; acknowledgement/tags remain metadata.
+16. Last-known health/current metric with non-current evidence remains visibly non-current.
+17. Sync operation ID cannot grant authority or reveal topology.
+18. One tenant's history/sync/cardinality pressure is bounded and cannot starve unrelated tenants.
+19. Recovery invalidates stale placement/poll/idempotency assumptions rather than reopening authority.
 
 # OPENs preserved
 
@@ -706,6 +739,6 @@ This contract closes endpoint/use-case semantics but does not close:
 - provider timeout/retry/page/history/reconciliation numerics;
 - production page/window/retention/capacity/SLO numerics.
 
-`OPEN-API-019` remains C5 and is **not activated** because Monitoring cursors are constrained to `url_safe_non_sensitive_handle` semantics. If a future Monitoring query requires a protected continuation token/payload, that is a new owning-governance decision, not an implementation shortcut.
+`OPEN-API-019` remains C5 and is **not activated** because this Monitoring profile uses only returned-row anchor cursors with no hidden protected continuation payload/state. If a future Monitoring query requires protected continuation token/payload semantics, that is a new owning-governance decision, not an implementation shortcut.
 
 No source `DELETE`, tenant manual sync/retry/resume, provider write-back, Alerting acknowledgement, ITSM mutation or dashboard mutation endpoint is authorized implicitly.

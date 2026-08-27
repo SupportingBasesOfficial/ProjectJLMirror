@@ -108,6 +108,29 @@ If a bounded request reaches its configured limit while additional same-second v
 
 Exact fast-overlap, background-sweep cadence, supported late-arrival/finalization horizon, outage/backfill widening and row/window/body limits remain evidence-driven OPEN numerics. The fixed property is stronger: neither a strict event-time cursor, page truncation, delayed provider insertion nor an overlap window aging forward may silently manufacture a false "fully synchronized" history state.
 
+### Snapshot completeness and negative evidence
+
+`host.get`, `item.get`, `trigger.get` and `problem.get` can be consumed as bounded/partitioned snapshots, but **omission is not authoritative absence unless the relevant coverage is proven complete**. This materializes the repository-wide `uncertainty != absence` rule at the provider boundary.
+
+Every snapshot-like endpoint execution is bound to the current fenced poll epoch/generation plus an endpoint/scope identity. The adapter records which partitions/pages/scopes completed and whether any request was truncated, failed, timed out, rejected or became stale. Positive observations may be accepted idempotently as bounded partitions arrive when their own contract permits it, but a negative transition such as:
+
+- monitoring resource removed/out of configured scope;
+- metric definition/trigger retired;
+- active problem resolved/closed because it no longer appears;
+- previously current provider object declared absent;
+
+SHALL NOT be inferred from a missing row in an incomplete, truncated, failed or stale snapshot.
+
+A negative transition becomes eligible only through one of these evidence classes:
+
+1. the adapter proves complete coverage of the exact provider scope under the current poll authority and the provider contract makes omission authoritative for that object class; or
+2. the adapter performs a bounded authenticated object-specific reconciliation using the stable provider identity plus the configured scope and receives evidence that the object is absent/closed/out-of-scope under the current authority; or
+3. another explicitly accepted provider primitive provides stronger closure/deletion/recovery evidence.
+
+For large mutable collections, complete coverage does not require one enormous transaction or response. The adapter may stage/mark `last_seen` by poll token and reconcile partitions incrementally, but **the durable snapshot-complete marker is itself authoritative evidence** and is written only after every required partition has completed under compatible current authority. Missing rows become negative candidates only after that marker exists; where the provider cannot guarantee a transactionally stable multi-page snapshot, candidates requiring destructive/resolve semantics are revalidated individually before the negative transition commits. A later page failure invalidates snapshot-complete eligibility for that run rather than converting unvisited objects into absence.
+
+Current-state transitions caused by negative evidence use the same poll epoch/generation and atomic transition/signal-intent rule as positive current-state advancement. Recovery/relocation cannot restore an old snapshot-complete marker as current authority without the same epoch/placement continuity proof required for polling generally.
+
 ### Outbound connector requirements (ADR-013)
 
 - connect/request/overall timeouts: bounded, per-tenant configurable, `OPEN` numeric value pending evidence;
@@ -168,12 +191,16 @@ In addition to every test already required by `provider-callback-and-ingress-con
 - a `history.get` boundary containing more same-second values than one configured page can prove complete does not advance the durable checkpoint or silently lose rows; it becomes a visible bounded degraded/reconciliation condition until completeness is established;
 - a history value that becomes query-visible later with an older `clock` (for example after buffered provider/proxy delivery) is discovered by the fast overlap or independent background reconciliation sweep and deduplicated canonically, rather than being lost behind a strict forward event-time cursor;
 - a provider/proxy outage that can exceed the ordinary overlap causes an immediate wider bounded reconciliation/backfill and remains covered by the independent sweep; it cannot preserve a false fully-synchronized watermark;
-- the accepted background reconciliation horizon/cadence is exercised against delayed insertion near its boundary and proves values cannot age out of provider retention before the required sweep, or the source enters explicit incomplete/degraded state instead of claiming completeness.
+- the accepted background reconciliation horizon/cadence is exercised against delayed insertion near its boundary and proves values cannot age out of provider retention before the required sweep, or the source enters explicit incomplete/degraded state instead of claiming completeness;
+- a truncated/failed `host.get` or `problem.get` partition cannot mark any unseen host absent or unseen active problem resolved;
+- a complete staged snapshot may nominate negative candidates, but destructive/resolve transitions are individually revalidated when the provider cannot prove transactionally stable cross-page snapshot semantics;
+- a stale snapshot-complete marker restored across PITR/relocation cannot authorize negative transitions under a retired poll epoch/placement.
 
 ## Open items
 
 - Exact polling interval per endpoint class and per accepted plan/tier: `OPEN`, pending capacity evidence (Phase 11 numeric-threshold discipline).
 - Exact `history.get` row/window/body bounds, fast-overlap, background-sweep cadence, supported late-arrival/finalization horizon and outage/backfill widening policy: `OPEN`, pending provider-retention/capacity evidence; silent checkpoint advancement or false completeness is never an accepted fallback.
+- Exact bounded partitioning/coverage strategy and object-specific revalidation thresholds for snapshot-like `host.get`/`item.get`/`trigger.get`/`problem.get`: `OPEN`, pending provider/capacity evidence; incomplete coverage never authorizes negative inference.
 - Exact webhook-hint coalesce/debounce window: `OPEN`, pending capacity evidence.
 - Exact webhook raw-body maximum size: `OPEN` — per `provider-callback-and-ingress-contracts.md:66`'s mandatory per-provider closure requirement, this MUST be fixed to a concrete evidenced value (or remain explicitly `OPEN`, never silently inherited from another provider's default) before implementation/release.
 - Secret storage mechanism for the Zabbix API token: depends on `secret_manager_kms` (Wave 1 residual C2), not yet selected.

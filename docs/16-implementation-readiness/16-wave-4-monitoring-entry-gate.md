@@ -32,6 +32,8 @@ Still missing at that base:
 
 The first three are **normative contract gaps**. The last is a distinct **C2 evidence gap**.
 
+`OPEN-API-016` remains the global incremental register item for endpoint-specific contracts across all domains. If this exact package is accepted, it closes the Monitoring-core endpoint subset only; it does not globally close `OPEN-API-016` for unrelated/future domains.
+
 ## Mandatory two-track progression
 
 ```text
@@ -99,15 +101,23 @@ Metric-definition reads include the efficient `current_state` projection require
 
 The API also fixes current auth/tenant routing, source mutation idempotency + `If-Match`, source replacement, canonical HTTPS endpoint input, errors/cache and finite history queries.
 
+Network-dependent DNS/provider/redirect/egress validation is explicitly outside source mutation database transactions. Source commands validate deterministic URI/profile/static policy, commit local authority plus durable validation/sync responsibility, and the outbound connector revalidates destination authority immediately before provider use.
+
 ### Cursor governance
 
-Monitoring collection continuation is deliberately constrained to Phase 09 `url_safe_non_sensitive_handle` semantics:
+Monitoring collection continuation is constrained to Phase 09 `url_safe_non_sensitive_handle` semantics and further narrowed to **returned-row anchor cursors**:
 
-- exposed cursor contains/reveals no protected payload/credential/provider secret/physical topology;
-- possession grants no continuation authority;
-- current authorization occurs on every page.
+- the exposed cursor is only a canonical item ID already eligible for the response class;
+- it embeds, encrypts, signs or indirectly references no hidden protected tenant/filter/query/provider/topology payload;
+- filters/window are resubmitted canonically on every continuation;
+- current tenant/resource authorization is re-established;
+- the server resolves the anchor under that current scope and derives the deterministic sort position from the authoritative row;
+- cross-tenant/wrong-filter/wrong-window anchors fail without existence leakage;
+- possession grants no continuation authority.
 
-Therefore this initial vertical **does not activate or reclassify `OPEN-API-019`**, which remains C5 for protected continuation-token semantics. A future need for protected cursor payload/token behavior returns to owning governance.
+Historical observation continuation uses `observation_id` only and revalidates the same metric/time window before deriving `(observed_at, observation_id)`. Problem and sync-operation cursors similarly use canonical row anchors and derive their timestamp tie-break positions server-side.
+
+Therefore this vertical does **not** activate or reclassify `OPEN-API-019`, which remains C5 for protected continuation-token/payload semantics. Replacing these anchors with encrypted/signed protected payloads or server-side protected continuation state would re-enter the owning C5 governance path.
 
 ### Zabbix normalization profile
 
@@ -144,6 +154,7 @@ Monitoring dashboards may compose current metric state, inventory, health, probl
 | Slice/capability | Contract state | Evidence/mechanism state | Result |
 |---|---|---|---|
 | Monitoring domain semantics | exact | n/a | contract-ready |
+| Monitoring-core endpoint subset (`OPEN-API-016`) | exact for this vertical | unrelated/future endpoints remain incremental | Monitoring subset contract-ready |
 | source management API | exact | credential binding/secret mechanism still C2 | contract-ready, mechanism selection where used |
 | Zabbix trust + normalization | exact | provider production numerics C3 | provider-contract-ready |
 | current metric projection semantics/API | exact | backing acceptance path still depends on telemetry conformance | contract-ready, implementation blocked with customer telemetry |
@@ -248,7 +259,7 @@ Exact-final-HEAD review must prove:
 1. every Monitoring concept has one owner/canonical identity;
 2. Zabbix generation boundary cannot merge reused native IDs;
 3. source ordinary edit cannot bypass explicit replacement;
-4. base URL input cannot embed credentials/query/fragment and remains SSRF/egress controlled;
+4. base URL cannot embed credentials/query/fragment; deterministic config validation is local while DNS/provider/redirect/egress work stays outside the DB mutation transaction and is revalidated before provider use;
 5. current metric state is explicitly separate from history;
 6. fenced poll progress does not manufacture semantic state changes;
 7. history acceptance is independent from current candidacy;
@@ -256,10 +267,11 @@ Exact-final-HEAD review must prove:
 9. severity/ack/tags/native IDs cannot become tenant/domain authority;
 10. history completeness is evidence-backed;
 11. Phase 09 current-auth/idempotency/precondition/cache/error/collection laws are preserved;
-12. cursor class remains URL-safe/non-sensitive and does not silently reclassify C5;
-13. `OPEN-REL-030` remains open and TimescaleDB remains non-canonical;
-14. no Waves 0–3 implementation substrate changes;
-15. exact final HEAD has P0/P1/P2=0 and no unresolved review thread.
+12. cursor is only a non-sensitive returned-row anchor, no hidden protected continuation payload/state exists, and C5 is not silently reclassified;
+13. Monitoring-core endpoint contracts satisfy their incremental `OPEN-API-016` responsibility without pretending unrelated endpoint families are closed;
+14. `OPEN-REL-030` remains open and TimescaleDB remains non-canonical;
+15. no Waves 0–3 implementation substrate changes;
+16. exact final HEAD has P0/P1/P2=0 and no unresolved review thread.
 
 A clean Track A gate still requires separate explicit user merge authorization.
 

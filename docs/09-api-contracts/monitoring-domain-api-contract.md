@@ -2,154 +2,136 @@
 
 **Status:** proposed baseline  
 **API major:** v1  
-**Owner domain:** Monitoring  
-**Companion domain contract:** `docs/03-domains/monitoring-domain-contract.md`  
-**Traceability:** `CAP-MONITORING`, `FR-MON-001..006`, `FR-OPS-001..003`, `AC-001`, `AC-003`, `AC-006`, `AC-012`, `docs/09-api-contracts/endpoint-contract-template.md`, `docs/09-api-contracts/domain-api-surface-map.md`, `docs/09-api-contracts/zabbix-monitoring-source-provider-contract.md`
+**Owner:** Monitoring  
+**Companion:** `docs/03-domains/monitoring-domain-contract.md`  
+**Traceability:** `CAP-MONITORING`, `FR-MON-001..006`, `FR-OPS-001..003`, `AC-001`, `AC-003`, `AC-006`, `AC-012`, Phase 09 endpoint/collection contracts, Zabbix provider/normalization profiles
 
 ## Purpose
 
-This document turns the Monitoring resource families previously reserved by `domain-api-surface-map.md` into exact Wave 4 endpoint/use-case contracts for the accepted Monitoring product scope.
+This document turns the Monitoring families reserved by `domain-api-surface-map.md` into exact endpoint/use-case contracts for the accepted core Monitoring product outcome. It uses the Phase 09 endpoint template by inheritance plus operation-specific declarations below.
 
-It is an equivalent structured representation of the Phase 09 endpoint template: shared HTTP/security/tenant/pagination/error rules are declared once, then each operation declares its method/path/action/request/consistency/idempotency/success semantics. An implementation may split these operations into generated machine schemas, but it SHALL NOT invent materially different behavior from this contract.
+It does not authorize implementation, close `OPEN-REL-030`, select physical storage/transport/security products, or create new Product capabilities.
 
-This contract does not authorize implementation, does not close `OPEN-REL-030`, and does not select physical storage/transport/security products.
+## Surface and callers
 
-## API surface and browser boundary
-
-All routes in this document are protected `machine-api` routes under:
+Protected machine API namespace:
 
 ```text
 /api/v1/tenants/{tenant_id}/...
 ```
 
-First-party browser traffic reaches these use cases through the accepted BFF boundary. Browser JavaScript does not receive long-lived API access/refresh credentials merely because these routes exist.
+First-party browser traffic reaches these use cases through the accepted BFF. Browser JS does not receive long-lived machine credentials.
 
-Accepted logical callers:
+Accepted logical caller classes:
 
 ```text
-human_browser_session through BFF
-machine_api_principal
-internal_service_principal under accepted workload identity
-scheduled/system_process only through internal application use cases, not by forging public credentials
+human browser principal through BFF
+machine API principal
+internal service principal under accepted workload identity
 ```
 
-Rejected as tenant authority:
+Provider payloads/tags/groups, callback URL possession and physical topology never become tenant authority.
+
+## Shared HTTP/canonicalization profile
+
+Every operation inherits `http-message-framing-and-canonicalization.md`, `endpoint-contract-template.md` and `collections-filtering-pagination-and-bulk.md`.
 
 ```text
-provider payload tenant_id
-provider tags/groups
-physical cell/database identifiers
-callback URL possession
-raw provider/native IDs alone
+method override              denied-by-default
+security-sensitive trailers cannot introduce/override authority
+request target/query         one canonical decode/multiplicity meaning
+duplicate singleton query    reject
+structured request body      canonical JSON
+duplicate/alias JSON members reject
+response headers             platform safe serialization profile
 ```
 
-## Shared HTTP message contract
+Ambiguous framing/target/query/header/entity semantics fail closed before protected logic or idempotency admission.
 
-Every operation inherits `http-message-framing-and-canonicalization.md` and `endpoint-contract-template.md` before authentication, placement, authorization, idempotency, cache or use-case execution.
+## Tenant/current authorization order
 
-Shared profile:
-
-```text
-HTTP message profile: platform canonical protected API
-Method override: denied-by-default
-Request trailers: cannot introduce/override auth, tenant, idempotency, conditional, CSRF/Origin or routing authority
-Request target: canonical path/query profile
-Query duplicate singleton values: reject
-Structured request entity: canonical JSON for request bodies
-Duplicate JSON members / canonical aliases: reject
-Trusted proxy metadata: platform accepted profile only
-Response headers: platform safe-response-header profile
-```
-
-Malformed/ambiguous framing, target/query interpretation, duplicate security-sensitive headers, structured-entity ambiguity or conflicting authority fails closed before protected logic.
-
-## Shared tenant routing and authorization
-
-For every route:
+Every route is tenant-scoped from the canonical path. Caller-supplied physical placement is prohibited.
 
 ```text
-Tenant requirement: required
-Tenant source: canonical {tenant_id} path segment
-Physical placement input from caller: prohibited
-Owning authorization authority: current cell/Organization & Access authority through accepted TenantContext
-```
-
-Processing order for protected tenant work:
-
-```text
-canonical HTTP/path/query admission
- -> authenticate logical principal
- -> resolve current trusted tenant placement
- -> cell admission / placement-generation validation
- -> construct trusted TenantContext
- -> validate request/resource identifiers
- -> current owning authorization decision
+canonical HTTP admission
+ -> authenticate principal
+ -> current trusted placement resolution/cell admission
+ -> trusted TenantContext
+ -> request/resource validation
+ -> current owning authorization
  -> Monitoring use case
 ```
 
-A request whose current membership/permission/tenant access or placement authority cannot be proven fails closed. Current authorization is re-established on every collection page/cursor continuation and every operation-resource read.
+Every page/continuation and operation read re-establishes current authorization/placement. Hiding UI controls or holding a prior continuation never grants authority.
 
-## Stable Monitoring policy actions
-
-The API asks authorization for stable actions; roles/custom roles remain Organization & Access ownership.
-
-| Action | Operations |
-|---|---|
-| `monitoring.source.read` | source list/detail |
-| `monitoring.source.manage` | source create/update/replace-instance |
-| `monitoring.resource.read` | resource list/detail |
-| `monitoring.metric.read` | metric-definition and observation/history reads |
-| `monitoring.problem.read` | problem list/detail |
-| `monitoring.health.read` | health list/detail |
-| `monitoring.sync.read` | sync-operation list/detail |
-
-Future resource/group refinement may narrow these actions without changing route identity. No action implies a permanently tenant-global role assignment.
-
-## Shared identifiers and representations
-
-Opaque IDs are serialized as non-empty case-sensitive strings under the repository's opaque-ID representation profile. They are never parsed by clients for physical topology/provider meaning.
-
-Timestamps are UTC RFC 3339 representations under the accepted Phase 09 time profile. Provider nanosecond precision is preserved where the canonical observation representation supports it; clients must not use timestamp lexical ordering as authority outside the documented collection sort.
-
-Protected provider-native/external references are returned only where the operation's authorization/profile permits them; they never replace canonical IDs.
-
-## Shared pagination and cursor rules
-
-Collection endpoints are bounded and cursor-based when multiple pages are possible.
+## Stable policy actions
 
 ```text
-Cursor meaning: server-issued continuation bound to tenant + operation + canonical filter/sort shape
-Client modification: not trusted
-Authorization on continuation: current authorization re-evaluated
-Physical topology in cursor: prohibited as caller-visible authority
-Default page size / maximum page size: finite implementation policy; production numeric remains OPEN where not yet evidenced
+monitoring.source.read
+monitoring.source.manage
+monitoring.resource.read
+monitoring.metric.read
+monitoring.problem.read
+monitoring.health.read
+monitoring.sync.read
 ```
 
-The first Monitoring implementation that requires protected cursors activates the concrete mechanism decision previously deferred by `OPEN-API-019`. Until a reviewed C2 mechanism is selected, cursor representation is not canonical implementation authority. Semantics above are fixed regardless of whether the chosen mechanism is integrity-protected opaque state or server-side continuation state.
+Roles/custom roles remain Organization & Access ownership; this contract does not hard-code role names.
 
-A cursor is never bearer authorization. Losing cursor state after restore does not broaden access; clients restart the query from canonical filters.
+## IDs, time and external references
 
-## Shared cache contract
+Canonical IDs are opaque non-empty strings. Clients cannot parse provider/cell/topology meaning from them.
+
+Timestamps use the accepted UTC Phase 09 time representation. Provider event time remains data, not authorization/current-ordering authority.
+
+Provider-native IDs/metadata are optional bounded protected external evidence and never replace canonical IDs.
+
+## Pagination — URL-safe non-sensitive cursor profile
+
+Monitoring collection cursors use the accepted Phase 09 **`url_safe_non_sensitive_handle`** class.
+
+This contract deliberately does **not** activate the C5 protected-continuation mechanism in `OPEN-API-019`.
+
+Required cursor properties:
+
+```text
+opaque to client
+binds endpoint/API major + tenant logical scope + canonical filters + sort + deterministic last key
+contains/reveals no credential, protected search value, raw provider key, physical topology or confidential payload
+possession grants no read/continuation authority
+current authorization re-evaluated on every page
+URL/history persistence acceptable under this non-sensitive-handle classification
+normal logs may record only according to Phase 12 safe URL/query policy
+```
+
+The implementation may use a server-side random handle or a self-contained opaque encoding only if the **exposed token itself** remains non-sensitive and cannot be used as bearer authority. If a future endpoint needs protected cursor payload/token semantics, that separately activates the owning `OPEN-API-019` Product/governance path; this Monitoring contract cannot silently reclassify it.
+
+Collection shape:
+
+```json
+{"items": [], "next_cursor": "opaque-or-null"}
+```
+
+All collections have deterministic stable ordering, finite default/max page size and explicit live/historical traversal semantics. Production page numerics remain evidence-driven; `OPEN` never means unlimited.
+
+## Cache
 
 Protected Monitoring data is never `public_shared`.
 
-Default read profile:
+Read default:
 
 ```text
-Class: private_revalidate
-Shared cache: prohibited
-Authorization re-evaluation: required
-Sensitive/protected variants: private/no-store as applicable
-TTL: OPEN evidence-driven policy
+private_revalidate
+shared cache prohibited
+current authorization before reuse/page
+TTL evidence-driven/OPEN where not fixed
 ```
 
-Monitoring-source configuration detail and all mutation responses use `no_store`. BFF/browser policy may choose `no_store` more broadly.
+Monitoring-source detail and mutation responses, and sync-operation detail, use `no_store`. BFF policy may be stricter.
 
-`Vary`, CDN keys or cursor possession never substitute for authorization.
+## Errors
 
-## Shared error contract
-
-Operations inherit the canonical problem representation and may emit these stable classes:
+Stable classes include:
 
 ```text
 authentication.*
@@ -170,69 +152,65 @@ monitoring.history_gap
 monitoring.reconciliation_required
 ```
 
-Errors do not expose provider credentials, provider raw exception text, cell/database topology, internal stack traces or cross-tenant existence.
+No raw provider exception/credential/internal topology is exposed. Provider omission/outage cannot turn a previously known resource into 404/removed/resolved by itself.
 
-A provider failure is not mapped to `404` for previously known canonical resources merely because the provider currently omits them.
+## Mutation idempotency + precondition ordering
 
-## Shared request limits
+Source mutations use current authorization, canonical request semantics, required `Idempotency-Key` and (for existing sources) `If-Match`.
 
-Every request/response/query is finite. Exact byte/page/time/query thresholds may remain C3/OPEN until evidence, but implementation cannot interpret `OPEN` as unlimited.
+Important response-loss rule:
 
-All collection queries use an accepted bounded complexity class. Historical observation queries additionally require a mandatory bounded time window and one canonical metric definition.
+- for a **new idempotency key**, the one logical executor validates the supplied current resource precondition before committing the mutation;
+- for an **existing same-key/same-fingerprint claim**, the server observes the recorded/in-progress logical operation before treating the now-advanced resource revision as a fresh conflicting request;
+- therefore retry after a successful-but-response-lost mutation can recover the original result rather than incorrectly returning `412` solely because that same mutation advanced the revision;
+- same key with a different canonical fingerprint returns `409 idempotency.key_reused`;
+- a different idempotency key is a new command and must satisfy the current `If-Match` revision.
+
+Current authentication/authorization is still re-evaluated on replay; idempotency never freezes permission.
+
+## Base URL/provider-endpoint safety
+
+For the Zabbix profile, submitted base URL configuration uses a canonical HTTPS URI profile:
+
+```text
+scheme          https
+host            required; validated under outbound SSRF/egress policy
+port            optional allowed profile
+path            allowed/bounded for reverse-proxy deployments
+userinfo        prohibited
+query           prohibited
+fragment        prohibited
+embedded secret prohibited
+```
+
+A syntactically accepted URL is revalidated against destination/DNS/redirect/egress policy at each provider use as required by the provider contract. URL validation never turns DNS/network location into tenant authority.
 
 ---
 
-# Operation catalog
+# Source operations
 
-## `monitoring.listSources` — List Monitoring Sources
-
-```text
-Method: GET
-Path: /api/v1/tenants/{tenant_id}/monitoring-sources
-Action: monitoring.source.read
-Consistency: committed_authoritative configuration + projected operational evidence
-Cache: no_store
-Default sort: (monitoring_source_id ASC)
-```
-
-Allowed filters:
+## `monitoring.listSources`
 
 ```text
-provider_profile        singleton
-operational_evidence_state singleton
-cursor                  singleton
-page_size               singleton bounded policy
+GET /api/v1/tenants/{tenant_id}/monitoring-sources
+action        monitoring.source.read
+consistency   committed configuration + projected operational evidence
+cache         no_store
+pagination    live traversal, sort monitoring_source_id ASC
 ```
 
-Response `200`:
+Filters: `provider_profile`, `operational_evidence_state`, `cursor`, `limit` — all singleton/canonically decoded.
 
-```json
-{
-  "items": ["MonitoringSourceSummary"],
-  "next_cursor": "opaque-or-null"
-}
-```
+`200` returns bounded `MonitoringSourceSummary[]` + `next_cursor`.
 
-`MonitoringSourceSummary` exposes canonical source ID, display name, provider profile, source-instance generation, configuration revision, operational evidence state and safe last-sync timestamps. It does not expose credential secret material.
-
-## `monitoring.createSource` — Create Monitoring Source
+## `monitoring.createSource`
 
 ```text
-Method: POST
-Path: /api/v1/tenants/{tenant_id}/monitoring-sources
-Action: monitoring.source.manage
-Content-Type: application/json
-Audit class: privileged
-Idempotency: required
-Cache: no_store
-Consistency: committed_authoritative configuration
-```
-
-Headers:
-
-```text
-Idempotency-Key: strict singleton, required
-X-Correlation-Id: accepted platform profile
+POST /api/v1/tenants/{tenant_id}/monitoring-sources
+action          monitoring.source.manage
+audit           privileged
+Idempotency-Key required strict singleton
+cache            no_store
 ```
 
 Canonical body:
@@ -241,263 +219,212 @@ Canonical body:
 {
   "provider_profile": "zabbix",
   "display_name": "bounded non-empty string",
-  "provider_configuration": {
-    "base_url": "provider-profile validated HTTPS URL"
-  },
+  "provider_configuration": {"base_url": "canonical HTTPS URL"},
   "credential_binding_ref": "opaque secret-binding reference",
-  "configured_provider_scope": {
-    "host_group_refs": ["bounded provider-scope reference"]
-  }
+  "configured_provider_scope": {"host_group_refs": ["bounded reference"]}
 }
 ```
 
 Rules:
 
-- `provider_profile` is a supported provider-profile registry key; initial accepted profile is `zabbix`; unknown/unaccepted profiles are rejected.
-- raw API token/credential bytes are **not** part of this Monitoring body. `credential_binding_ref` points to the accepted secret/credential-binding mechanism selected outside this domain contract.
-- provider configuration is validated syntactically/semantically and against outbound destination policy before it can be activated; DNS/egress policy is also revalidated at use time by the adapter.
-- unknown body fields are rejected.
-- source creation commits local configuration/audit/durable sync responsibility; it does not hold the local transaction open while calling Zabbix.
+- initial accepted provider profile is `zabbix`; unknown/unaccepted profiles reject;
+- no raw API token/secret bytes in the Monitoring body;
+- unknown body members reject;
+- URL/profile/scope semantics validate before commit; provider network call is not held inside the local transaction;
+- create persists source + first source-instance generation + revision + audit + durable validation/sync responsibility when ingestion is activated.
 
-Idempotency scope/fingerprint:
-
-```text
-scope = tenant_id + monitoring.createSource + Idempotency-Key
-fingerprint = canonical provider_profile + display_name + provider_configuration + credential_binding_ref + configured_provider_scope
-```
-
-Success `201 Created` returns `MonitoringSourceDetail` and a `Location` for the source. If an initial sync operation has already been durably created, its canonical reference is included as metadata; the source creation result is not undone if later provider validation/synchronization fails.
-
-Same-key/same-fingerprint replay returns the completed source result without creating a second logical source. Same-key/different-fingerprint returns `409 idempotency.key_reused`.
-
-## `monitoring.getSource` — Get Monitoring Source
+Idempotency scope:
 
 ```text
-Method: GET
-Path: /api/v1/tenants/{tenant_id}/monitoring-sources/{monitoring_source_id}
-Action: monitoring.source.read
-Consistency: committed_authoritative configuration + projected operational evidence
-Cache: no_store
+tenant_id + monitoring.createSource + key
 ```
 
-Response `200` `MonitoringSourceDetail` includes:
+Fingerprint covers canonical body. `201 Created` returns `MonitoringSourceDetail` + `Location`; repeated same key/fingerprint observes same logical source.
+
+## `monitoring.getSource`
 
 ```text
-monitoring_source_id
-display_name
-provider_profile
-source_instance_generation
-configuration_revision
-safe provider endpoint/configuration metadata
-configured_provider_scope
-credential_binding_ref metadata/reference only where policy permits; never secret bytes
-operational_evidence_state
-last_successful_sync_at
-last_attempt_at
-last_sync_operation_id
-created_at
-updated_at
+GET /api/v1/tenants/{tenant_id}/monitoring-sources/{monitoring_source_id}
+action       monitoring.source.read
+consistency  committed configuration + projected evidence
+cache        no_store
 ```
 
-Existence concealment follows current tenant/resource authorization policy; a known cross-tenant source ID never leaks another tenant's configuration.
+Returns canonical ID, display/profile, source-instance generation, revision, safe endpoint/scope metadata, optional credential-binding reference metadata under policy, evidence state and sync timestamps/references. Never returns credential secret bytes.
 
-## `monitoring.updateSource` — Ordinary Monitoring Source Edit
+## `monitoring.updateSource`
 
 ```text
-Method: PATCH
-Path: /api/v1/tenants/{tenant_id}/monitoring-sources/{monitoring_source_id}
-Action: monitoring.source.manage
-Audit class: privileged
-If-Match: required
-Idempotency-Key: required
-Cache: no_store
+PATCH /api/v1/tenants/{tenant_id}/monitoring-sources/{monitoring_source_id}
+action          monitoring.source.manage
+audit           privileged
+If-Match         required
+Idempotency-Key  required
+cache            no_store
 ```
 
-Allowed mutable fields:
+Allowed fields only:
 
 ```json
 {
-  "display_name": "optional bounded string",
-  "credential_binding_ref": "optional opaque reference",
-  "configured_provider_scope": "optional provider-profile object"
+  "display_name": "optional",
+  "credential_binding_ref": "optional",
+  "configured_provider_scope": "optional profile-specific object"
 }
 ```
 
-At least one allowed field is required. Unknown fields are rejected.
+At least one field required; unknown fields reject.
 
-For the Zabbix profile, `base_url`/provider-instance-defining endpoint changes are forbidden here. Attempting to change such a field returns `409 monitoring.source_instance_replacement_required` and creates no mutation/idempotency effect beyond the safe rejected-request evidence required by the platform.
+For Zabbix, base URL/provider-instance endpoint change here returns `409 monitoring.source_instance_replacement_required` without mutation. Credential rotation/scope edit remain same source-instance generation.
 
-`If-Match` compares the opaque source configuration revision. Missing -> `428`; mismatch -> `412`.
+New-key executor validates `If-Match`; missing -> `428`, mismatch -> `412`. Idempotent replay follows the shared response-loss rule above.
 
-Idempotency fingerprint includes canonical body + source ID + expected revision. Successful update returns `200 MonitoringSourceDetail` with a new configuration revision. Credential rotation and host-group scope edits do not automatically advance Zabbix source-instance generation.
+`200` returns updated source/new revision. Provider revalidation/sync occurs through durable async responsibility after local commit.
 
-No provider network call is held inside the configuration transaction. Any required revalidation/synchronization becomes durable async responsibility after commit.
-
-## `monitoring.replaceSourceInstance` — Replace Provider Instance
+## `monitoring.replaceSourceInstance`
 
 ```text
-Method: POST
-Path: /api/v1/tenants/{tenant_id}/monitoring-sources/{monitoring_source_id}:replace-instance
-Action: monitoring.source.manage
-Audit class: privileged
-If-Match: required
-Idempotency-Key: required
-Cache: no_store
-Consistency: committed authoritative generation change + accepted async synchronization
+POST /api/v1/tenants/{tenant_id}/monitoring-sources/{monitoring_source_id}:replace-instance
+action          monitoring.source.manage
+audit           privileged
+If-Match         required
+Idempotency-Key  required
+cache            no_store
+consistency      committed generation change + accepted async sync responsibility
 ```
 
-Canonical body:
+Body contains successor provider configuration, credential binding and configured scope using the same canonical profiles as creation.
+
+One logical command:
+
+1. validates current auth/revision;
+2. fences prior provider-instance/poll writer authority;
+3. advances source-instance generation exactly once;
+4. installs successor config/revision;
+5. persists audit;
+6. creates one durable successor sync/reconciliation responsibility;
+7. never merges old/new provider-native mappings merely because IDs/names match.
+
+`202 Accepted` returns `MonitoringSyncOperation` / common Operation specialization and updated-source link. Same idempotency key/fingerprint observes the same replacement.
+
+Failure/ambiguity of later provider validation does not silently roll back to the retired generation; evidence becomes unavailable/reconciliation-required until governed recovery.
+
+---
+
+# Resource/current-state operations
+
+## `monitoring.listResources`
+
+```text
+GET /api/v1/tenants/{tenant_id}/monitoring-resources
+action        monitoring.resource.read
+consistency   committed local projection + evidence freshness
+cache         private_revalidate
+pagination    live traversal, monitoring_resource_id ASC
+```
+
+Filters (singleton): source ID, `presence_state=present|removed`, resource kind, health class/evidence state, cursor, limit.
+
+Missing provider rows under stale/incomplete/visibility-degraded evidence do not disappear. `removed` means authoritative negative evidence already committed.
+
+## `monitoring.getResource`
+
+```text
+GET /api/v1/tenants/{tenant_id}/monitoring-resources/{monitoring_resource_id}
+action monitoring.resource.read
+cache  private_revalidate
+```
+
+Returns canonical identity/presence/source generation/last-observed evidence and bounded protected external references where authorized. Provider/cell identity never replaces resource identity.
+
+---
+
+# Metric definitions + current metric state
+
+## `monitoring.listMetricDefinitions`
+
+```text
+GET /api/v1/tenants/{tenant_id}/metric-definitions
+action        monitoring.metric.read
+consistency   committed definition + current-metric projection
+cache         private_revalidate
+pagination    live traversal, metric_definition_id ASC
+```
+
+Required singleton filter: `monitoring_resource_id`.
+
+Optional singleton: `definition_state=active|retired`, cursor, limit.
+
+Each item includes canonical definition fields **and its `current_state` projection**:
 
 ```json
 {
-  "provider_configuration": {
-    "base_url": "provider-profile validated HTTPS URL"
-  },
-  "credential_binding_ref": "opaque secret-binding reference",
-  "configured_provider_scope": {
-    "host_group_refs": ["bounded provider-scope reference"]
+  "metric_definition_id": "opaque",
+  "monitoring_resource_id": "opaque",
+  "name": "...",
+  "value_kind": "number|integer|boolean|string|text|log",
+  "unit": "nullable",
+  "definition_state": "active|retired",
+  "current_state": {
+    "current_observation_id": "opaque-or-null",
+    "observed_at": "timestamp-or-null",
+    "accepted_at": "timestamp-or-null",
+    "value_kind": "same canonical kind",
+    "value": "tag-compatible value or null",
+    "evidence_state": "current|stale|incomplete|reconciliation_required|unavailable",
+    "projection_revision": "opaque",
+    "last_changed_at": "timestamp-or-null"
   }
 }
 ```
 
-The command atomically:
+This is the efficient current-state surface required by `FR-MON-003`; clients do not need to query historical Tier 2 for “latest”. A last-known value with non-current evidence cannot be presented as freshly proven current state.
 
-1. validates current tenant/source authorization and source revision;
-2. fences prior provider-instance/poll writer authority;
-3. advances source-instance generation exactly once;
-4. installs successor configuration and configuration revision;
-5. persists required audit evidence;
-6. creates one durable successor synchronization/reconciliation responsibility.
+## `monitoring.getMetricDefinition`
 
-It does not infer cross-generation canonical resource equivalence from matching provider IDs.
+```text
+GET /api/v1/tenants/{tenant_id}/metric-definitions/{metric_definition_id}
+action monitoring.metric.read
+cache  private_revalidate
+```
 
-Response `202 Accepted` returns `MonitoringSyncOperation` (or the common Operation representation specialized with `operation_type=monitoring_source_instance_replacement`) and links the updated source. The operation URL is not bearer authority.
-
-Idempotency protects response loss/concurrent retry. Same key/fingerprint observes the same logical replacement; different fingerprint conflicts. A provider validation failure after the local generation command does not silently roll the source back to the retired generation; the operation/source exposes unavailable/reconciliation evidence and an explicit later governed recovery path.
+Returns `MetricDefinitionDetail` + the same `current_state` projection and bounded external references where authorized.
 
 ---
 
-# Inventory and current-state reads
+# Historical metric observations
 
-## `monitoring.listResources` — List Monitoring Resources
-
-```text
-Method: GET
-Path: /api/v1/tenants/{tenant_id}/monitoring-resources
-Action: monitoring.resource.read
-Consistency: committed local projection with explicit evidence freshness
-Cache: private_revalidate
-Default sort: (monitoring_resource_id ASC)
-```
-
-Allowed filters:
+## `monitoring.listMetricObservations`
 
 ```text
-monitoring_source_id   singleton
-presence_state         singleton present|removed
-resource_kind          singleton
-health_class           singleton (join/projection filter under bounded plan)
-evidence_state         singleton
-cursor                  singleton
-page_size               singleton bounded policy
+GET /api/v1/tenants/{tenant_id}/metric-observations
+action        monitoring.metric.read
+consistency   historical_window
+cache         private_revalidate
+pagination    historical window; sort (observed_at ASC, observation_id ASC)
 ```
 
-Response resources include canonical identity, source ID/generation, display name, resource kind, presence state, last-observed/confirmed timestamps and a safe health summary/reference where available.
-
-A stale/incomplete source does not cause missing resources to disappear from this collection. `presence_state=removed` means Monitoring already accepted authoritative negative evidence.
-
-## `monitoring.getResource` — Get Monitoring Resource
-
-```text
-Method: GET
-Path: /api/v1/tenants/{tenant_id}/monitoring-resources/{monitoring_resource_id}
-Action: monitoring.resource.read
-Consistency: committed local projection with evidence freshness
-Cache: private_revalidate
-```
-
-Response `200 MonitoringResourceDetail`. External provider references are bounded protected metadata and are included only when the action/profile permits them. Current placement/provider endpoint topology is never exposed as resource identity.
-
----
-
-# Metric-definition and historical-observation reads
-
-## `monitoring.listMetricDefinitions` — List Metric Definitions
-
-```text
-Method: GET
-Path: /api/v1/tenants/{tenant_id}/metric-definitions
-Action: monitoring.metric.read
-Consistency: committed local projection
-Cache: private_revalidate
-Default sort: (metric_definition_id ASC)
-```
-
-Required filter:
-
-```text
-monitoring_resource_id = strict singleton
-```
-
-Optional:
-
-```text
-definition_state = active|retired
-cursor
-page_size
-```
-
-Each item returns canonical definition ID, canonical resource/source identity, name, value kind, unit, definition state and safe bounded external-reference metadata when policy permits.
-
-## `monitoring.getMetricDefinition` — Get Metric Definition
-
-```text
-Method: GET
-Path: /api/v1/tenants/{tenant_id}/metric-definitions/{metric_definition_id}
-Action: monitoring.metric.read
-Consistency: committed local projection
-Cache: private_revalidate
-```
-
-Response `200 MetricDefinitionDetail` using the canonical value-kind vocabulary from the Monitoring domain contract.
-
-## `monitoring.listMetricObservations` — Query Bounded Metric History
-
-```text
-Method: GET
-Path: /api/v1/tenants/{tenant_id}/metric-observations
-Action: monitoring.metric.read
-Consistency: historical_window
-Cache: private_revalidate
-Default sort: (observed_at ASC, observation_id ASC)
-```
-
-Required singleton query fields:
+Required singleton query:
 
 ```text
 metric_definition_id
-from     inclusive UTC timestamp
-to       exclusive UTC timestamp
+from  inclusive UTC timestamp
+to    exclusive UTC timestamp
 ```
 
-Optional singleton fields:
+Optional singleton: cursor, limit.
 
-```text
-cursor
-page_size
-```
+Exactly one metric definition per request in this initial contract. Multi-series query is a future separately bounded complexity extension.
 
 Rules:
 
-- exactly one canonical metric definition is queried per request in this initial contract; a future bounded multi-series query is a separately reviewed complexity/capacity extension, not an unbounded repeated parameter default;
-- `from < to` and the requested duration must satisfy the accepted bounded historical-query policy;
-- confidential/restricted ad-hoc filters are not placed in query strings;
-- the endpoint never falls back to an unbounded “all history” query when `from`/`to` is absent;
-- every page re-establishes current tenant/resource authorization;
-- the cursor is bound to metric ID, time window, deterministic order and query profile;
-- provider event time is data, not authorization or current-state authority.
+- `from < to` and duration must satisfy finite accepted policy;
+- no missing-window fallback to “all history”;
+- cursor binds metric/window/sort and is the URL-safe non-sensitive handle class;
+- every page reauthorizes current metric/resource scope;
+- provider event time is historical data, not current authority.
 
-Response `200`:
+`200`:
 
 ```json
 {
@@ -506,170 +433,123 @@ Response `200`:
   "completeness": {
     "state": "complete|incomplete|gap_detected|reconciliation_required",
     "covered_through": "timestamp-or-null",
-    "gap_refs": ["opaque bounded ref"]
+    "gap_refs": ["opaque bounded reference"]
   },
   "items": ["MetricObservation"],
   "next_cursor": "opaque-or-null"
 }
 ```
 
-`complete` is allowed only under the accepted provider lateness/retention/reconciliation contract. If JLMIRROR cannot prove complete coverage, it returns the known observations with explicit non-complete state where policy permits, or `409 monitoring.history_incomplete` when the caller explicitly requires complete evidence through a future accepted query profile. It never silently fabricates continuity.
+`complete` requires accepted lateness/retention/reconciliation evidence, not merely successful query execution. Known/uncertain gaps remain explicit. The API never fabricates continuous history.
 
-Each `MetricObservation` contains canonical observation/metric/resource/source IDs, source-instance generation, observed/accepted time, `value_kind` and tagged canonical `value`. Provider-native history IDs remain bounded external evidence, not primary API identity.
-
----
-
-# Problem reads
-
-## `monitoring.listProblems` — List Problems
-
-```text
-Method: GET
-Path: /api/v1/tenants/{tenant_id}/problems
-Action: monitoring.problem.read
-Consistency: committed current/historical local projection with source evidence status
-Cache: private_revalidate
-Default sort: (opened_at DESC, problem_id ASC)
-```
-
-Allowed singleton filters:
-
-```text
-monitoring_source_id
-monitoring_resource_id
-problem_state = active|resolved
-severity_class = unknown|informational|warning|degraded|critical
-opened_from
-opened_to
-cursor
-page_size
-```
-
-A missing provider row does not make an active problem resolved. `resolved` means accepted resolution/negative evidence already passed the provider/domain contract.
-
-Response items expose canonical problem/resource/source IDs, state, canonical severity class, summary, open/resolve timestamps, last-confirmed time and evidence state. Provider acknowledgement/tags may appear only as bounded non-authoritative metadata when permitted and never as JLMIRROR Alerting/ITSM acknowledgement.
-
-## `monitoring.getProblem` — Get Problem
-
-```text
-Method: GET
-Path: /api/v1/tenants/{tenant_id}/problems/{problem_id}
-Action: monitoring.problem.read
-Consistency: committed local projection
-Cache: private_revalidate
-```
-
-Response `200 ProblemDetail`. The response may link related resource and health projection. It does not embed mutable Alerting or ITSM lifecycle state as Monitoring ownership.
+Observation fields: canonical observation/metric/resource/source IDs, source generation, observed/accepted times, canonical value kind/value. Immutable after acceptance.
 
 ---
 
-# Health reads
+# Problems
 
-## `monitoring.listHealthProjections` — List Resource Health
-
-```text
-Method: GET
-Path: /api/v1/tenants/{tenant_id}/health-projections
-Action: monitoring.health.read
-Consistency: current local projection + explicit evidence freshness
-Cache: private_revalidate
-Default sort: (monitoring_resource_id ASC)
-```
-
-Allowed singleton filters:
+## `monitoring.listProblems`
 
 ```text
-monitoring_source_id
-health_class = unknown|healthy|degraded|unhealthy
-evidence_state = current|stale|incomplete|reconciliation_required|unavailable
-cursor
-page_size
+GET /api/v1/tenants/{tenant_id}/problems
+action        monitoring.problem.read
+cache         private_revalidate
+pagination    live/historical local projection; (opened_at DESC, problem_id ASC)
 ```
 
-Response items include resource/source identity, canonical health class, evidence state, projection revision, last-change/evidence times and bounded problem/reason references.
+Singleton filters: source ID, resource ID, `problem_state=active|resolved`, canonical severity, opened_from/to, cursor, limit.
 
-A last-known `healthy` class with `evidence_state=stale` is not a claim of fresh health. Client presentation must preserve the evidence state.
+Missing provider row is never implicit resolution. Items expose canonical state/severity, resource/source, timestamps and evidence state. Zabbix acknowledgement/tags may appear only as bounded non-authoritative provider metadata where policy permits.
 
-## `monitoring.getHealthProjection` — Get Resource Health
+## `monitoring.getProblem`
 
 ```text
-Method: GET
-Path: /api/v1/tenants/{tenant_id}/health-projections/{monitoring_resource_id}
-Action: monitoring.health.read
-Consistency: current local projection + evidence freshness
-Cache: private_revalidate
+GET /api/v1/tenants/{tenant_id}/problems/{problem_id}
+action monitoring.problem.read
+cache  private_revalidate
 ```
 
-The resource ID is the projection identity for this initial contract. Response `200 HealthProjectionDetail` follows the domain health derivation rules and does not expose provider severity as the health enum.
+Returns `ProblemDetail`; may link resources/health. Monitoring does not own Alert/ITSM acknowledgement or incident state.
 
 ---
 
-# Synchronization operation reads
+# Health
 
-## `monitoring.listSyncOperations` — List Monitoring Synchronization Operations
+## `monitoring.listHealthProjections`
 
 ```text
-Method: GET
-Path: /api/v1/tenants/{tenant_id}/monitoring-sync-operations
-Action: monitoring.sync.read
-Consistency: committed_authoritative operation state
-Cache: no_store
-Default sort: (created_at DESC, monitoring_sync_operation_id ASC)
+GET /api/v1/tenants/{tenant_id}/health-projections
+action        monitoring.health.read
+cache         private_revalidate
+pagination    live projection; monitoring_resource_id ASC
 ```
 
-Allowed singleton filters:
+Filters: source ID, `health_class=unknown|healthy|degraded|unhealthy`, evidence state, cursor, limit.
+
+Items expose canonical health + evidence state + revision/times/bounded problem references. A last-known `healthy` with stale evidence is visibly stale.
+
+## `monitoring.getHealthProjection`
+
+```text
+GET /api/v1/tenants/{tenant_id}/health-projections/{monitoring_resource_id}
+action monitoring.health.read
+cache  private_revalidate
+```
+
+Resource ID is projection identity. Provider severity is not serialized as the health enum.
+
+---
+
+# Synchronization operations
+
+## `monitoring.listSyncOperations`
+
+```text
+GET /api/v1/tenants/{tenant_id}/monitoring-sync-operations
+action        monitoring.sync.read
+consistency   committed operation authority
+cache         no_store
+pagination    created_at DESC, operation_id ASC
+```
+
+Filters: source ID, source generation, common operation state, trigger class, cursor, limit.
+
+Returns safe progress/checkpoint/failure/degradation/correlation metadata without credentials or physical worker/queue/database topology.
+
+## `monitoring.getSyncOperation`
+
+```text
+GET /api/v1/tenants/{tenant_id}/monitoring-sync-operations/{monitoring_sync_operation_id}
+action monitoring.sync.read
+cache  no_store
+```
+
+Current authorization is re-established. Operation ID is never bearer authority.
+
+No tenant-facing manual `:sync/:retry/:resume` command is invented here. Schedule, webhook hint, configuration and recovery workflows own execution until Product explicitly authorizes a manual command contract.
+
+---
+
+# Canonical response types
+
+## Monitoring source
 
 ```text
 monitoring_source_id
+display_name
+provider_profile
 source_instance_generation
-operation_state (common operation vocabulary)
-trigger_class
-cursor
-page_size
+configuration_revision
+safe provider configuration/scope metadata
+credential_binding_ref metadata only where authorized
+evidence_state
+last_successful_sync_at
+last_attempt_at
+last_sync_operation_id
+created_at / updated_at
 ```
 
-Response exposes safe progress/checkpoint/failure/degradation/correlation metadata. It never returns provider credential secrets or physical worker/queue/database routing.
-
-## `monitoring.getSyncOperation` — Get Monitoring Synchronization Operation
-
-```text
-Method: GET
-Path: /api/v1/tenants/{tenant_id}/monitoring-sync-operations/{monitoring_sync_operation_id}
-Action: monitoring.sync.read
-Consistency: committed_authoritative operation state
-Cache: no_store
-```
-
-Each read re-establishes current authorization. The operation may expose links to the source and safe reconciliation/gap evidence.
-
-This contract deliberately does **not** add a tenant-facing `:retry`, `:resume` or manual `:sync` command without separate accepted Product authority. Scheduled sync, webhook-hint acceleration, configuration-triggered sync and recovery/reconciliation are owned by accepted internal/provider/operations workflows. Future manual product commands require explicit action/idempotency/abuse semantics rather than piggybacking on operation URL possession.
-
----
-
-# Resource schemas
-
-## `MonitoringSourceDetail`
-
-Logical JSON fields:
-
-```text
-monitoring_source_id: opaque string
-display_name: bounded string
-provider_profile: registry key
-source_instance_generation: non-negative integer/generation
-configuration_revision: opaque revision
-provider_configuration: safe profile-specific configuration metadata
-configured_provider_scope: safe bounded profile-specific scope
-credential_binding_ref: optional opaque reference metadata under policy, never secret bytes
-operational_evidence_state: current|stale|incomplete|reconciliation_required|unavailable
-last_successful_sync_at: timestamp|null
-last_attempt_at: timestamp|null
-last_sync_operation_id: opaque|null
-created_at: timestamp
-updated_at: timestamp
-```
-
-## `MonitoringResourceDetail`
+## Monitoring resource
 
 ```text
 monitoring_resource_id
@@ -677,30 +557,28 @@ monitoring_source_id
 source_instance_generation
 display_name
 resource_kind
-presence_state: present|removed
-external_references: bounded protected list
+presence_state present|removed
+bounded external_references
 last_observed_at
 last_confirmed_present_at
-created_at
-updated_at
+created_at / updated_at
 ```
 
-## `MetricDefinitionDetail`
+## Metric definition/current state
 
 ```text
 metric_definition_id
 monitoring_resource_id
 monitoring_source_id
 name
-value_kind: number|integer|boolean|string|text|log
-unit: bounded string|null
-definition_state: active|retired
-external_references: bounded protected list
-created_at
-updated_at
+value_kind
+unit
+definition_state active|retired
+bounded external_references
+current_state { current_observation_id, observed_at, accepted_at, value_kind, value, evidence_state, projection_revision, last_changed_at }
 ```
 
-## `MetricObservation`
+## Metric observation
 
 ```text
 observation_id
@@ -711,60 +589,40 @@ source_instance_generation
 observed_at
 accepted_at
 value_kind
-value (tag-compatible with value_kind)
+value
 ```
 
-Observation values are immutable once durably accepted. Output encoding/escaping never permits metric/log text to become executable browser content.
+Untrusted text/log values are data and cannot become active browser content.
 
-## `ProblemDetail`
+## Problem
 
 ```text
 problem_id
 monitoring_source_id
 source_instance_generation
-monitoring_resource_ids: bounded list
-summary: bounded untrusted-provider-derived text
-problem_state: active|resolved
-severity_class: unknown|informational|warning|degraded|critical
-opened_at
-resolved_at|null
-last_confirmed_at
-operational_evidence_state
-external_references: bounded protected list
-provider_metadata: bounded optional map/profile, non-authoritative
+monitoring_resource_ids (bounded)
+summary
+problem_state active|resolved
+severity_class unknown|informational|warning|degraded|critical
+opened_at / resolved_at / last_confirmed_at
+evidence_state
+bounded external_references/provider_metadata
 ```
 
-## `HealthProjectionDetail`
+## Health
 
 ```text
 monitoring_resource_id
 monitoring_source_id
 source_instance_generation
-health_class: unknown|healthy|degraded|unhealthy
-evidence_state: current|stale|incomplete|reconciliation_required|unavailable
+health_class unknown|healthy|degraded|unhealthy
+evidence_state current|stale|incomplete|reconciliation_required|unavailable
 projection_revision
-last_changed_at
-last_evidence_at
-problem_refs: bounded list
+last_changed_at / last_evidence_at
+bounded problem refs
 ```
 
-## `MonitoringSyncOperation`
-
-Uses the accepted common long-running-operation representation plus:
-
-```text
-monitoring_sync_operation_id
-monitoring_source_id
-source_instance_generation
-trigger_class
-last_safe_checkpoint/reference (safe opaque metadata)
-provider/dependency failure class (safe enum, no raw exception)
-correlation_id
-```
-
-## Historical completeness representation
-
-The historical query completeness state is a query/evidence result, not a fake observation:
+## Historical completeness
 
 ```text
 complete
@@ -773,117 +631,81 @@ gap_detected
 reconciliation_required
 ```
 
-`complete` means the accepted provider lateness/retention/reconciliation contract proves the requested interval under current authoritative evidence. `gap_detected` means a known interval cannot be proven/recovered. `incomplete` means coverage is not yet complete but may still converge. `reconciliation_required` means recovery/provider uncertainty blocks a completion claim.
+`complete` is evidence-backed; gap/incomplete is not hidden by pagination.
 
-# Transaction/effect/idempotency summary
+## Sync operation
 
-| Operation class | Local transaction | Idempotency | External provider call inside tx | Audit |
+Common operation representation + source/generation/trigger/checkpoint/safe dependency-failure/correlation metadata.
+
+# Transaction/effect summary
+
+| Class | Local authority | Idempotency/precondition | Provider call inside tx | Audit |
 |---|---|---|---|---|
-| source create | authoritative source + audit + durable sync obligation | required | prohibited | privileged |
-| ordinary source edit | source revision + audit + durable revalidation/sync obligation as required | required | prohibited | privileged |
-| replace instance | fence/generation/config/audit + one durable successor operation | required | prohibited | privileged |
-| reads | none beyond read transaction/snapshot | intrinsic read | no synchronous provider authority required | normal access telemetry |
+| source create | source + first generation + sync responsibility | required key | prohibited | privileged |
+| source edit | source revision + revalidation/sync responsibility | required key + If-Match | prohibited | privileged |
+| replace instance | fence/generation/config + successor operation | required key + If-Match | prohibited | privileged |
+| reads | local authoritative/projection reads | intrinsic | no interactive provider passthrough | access telemetry |
 
-Provider reads occur through the adapter asynchronously/currently according to synchronization responsibility. Public API reads serve accepted local authoritative/projection state and explicitly represent staleness/incompleteness; they do not turn an interactive API request into an unbounded provider passthrough.
+The API serves local accepted state/evidence; it is not an unbounded synchronous proxy to Zabbix.
 
-# Observability and SLI bindings
+# Observability
 
-Every operation propagates the accepted correlation context. Safe telemetry records at least:
+Every operation propagates correlation context. Safe telemetry captures route/operation, bounded attribution, auth outcome class, latency/status/error class, sync correlation and history window/cost class without raw credentials, unrestricted metric/log values, provider payloads/tags or raw external errors.
 
-```text
-operation_id / route profile
-tenant-safe attribution (never high-cardinality tenant label where forbidden by Phase 12 profile)
-authorization outcome class
-source/resource class when permitted
-latency/status/error class
-sync operation correlation for mutations that schedule work
-history query window/page/cost class without raw values
-```
+Monitoring operational evidence includes source sync age/evidence state, dependency state, backlog/reconciliation/gaps, historical projector lag, current-state transition failures and tenant fairness/saturation under Phase 11/12 profiles.
 
-Provider payloads, metric/log values, tags, API tokens and raw external exceptions are excluded from normal signal fields unless an explicit safe bounded diagnostic profile allows a redacted value.
+# Recovery / relocation
 
-Required Monitoring operational evidence includes source sync age/evidence state, provider dependency state, backlog/reconciliation/gap state, historical projector lag, current-state transition failures and per-tenant fairness/saturation signals under accepted Phase 12/11 profiles.
+After PITR/relocation:
 
-# Recovery / relocation behavior
+- source generation/revision reconciles before mutation;
+- retired placement/poll authority cannot mutate current state;
+- missing observation/history/checkpoint is uncertainty;
+- current metric values may remain last-known but expose non-current evidence until reconciled;
+- historical completeness may downgrade;
+- source/resource/problem/health reads preserve evidence state;
+- idempotency/replacement outcomes reconcile through `(R,F]` before repeat execution.
 
-API success and reads never bypass the accepted recovery quarantine/placement model.
+# Dashboard composition
 
-After PITR/restore/relocation:
+No mutable `/monitoring-dashboards` aggregate is created. The initial Monitoring dashboard composes resources, metric definitions/current state, health, problems, bounded history and sync evidence via BFF/read composition. Persistent presentation/cross-domain projections remain Reporting & Experience ownership.
 
-- source/config generations and optimistic revisions are reconciled before source mutations resume;
-- old placement/poll authority cannot mutate current state;
-- missing observation/history/checkpoint state is uncertainty, not proof of absence;
-- historical completeness may downgrade to reconciliation-required/incomplete/gap until continuity is proven;
-- source/resource/problem/health reads expose current evidence state rather than silently claiming freshness;
-- idempotency/replacement operation outcome survives/reconciles across `(R,F]` before the same logical effect can execute again.
+# Compatibility-sensitive changes
 
-# Dashboard composition contract
+Security/compatibility review is required for changes to tenant/action scope, source replacement, canonical identity/generation, current metric semantics, negative evidence, severity/health/evidence state, historical completeness, cursor classification/binding, idempotency/precondition replay, provider metadata authority or recovery fencing.
 
-The API intentionally provides no mutable `/monitoring-dashboards` aggregate in this initial domain contract.
+# Falsification matrix
 
-A Monitoring dashboard may compose:
+1. Known Tenant B IDs cannot disclose/mutate through any route under Tenant A.
+2. Same-key create replay creates one source; fingerprint mismatch conflicts.
+3. PATCH stale revision cannot overwrite current state; successful-response-loss same-key replay recovers prior result instead of false `412`.
+4. Zabbix base URL with userinfo/query/fragment/embedded credential rejects; ordinary PATCH cannot change base URL.
+5. Replace-instance concurrency/idempotency produces one successor generation/operation.
+6. New Zabbix generation never merges same-looking native IDs with old mappings.
+7. Provider outage/visibility loss never turns known state into 404/removed/retired/resolved.
+8. Current metric API returns transactional current projection and evidence state without querying historical latest per request.
+9. Same current observation under later poll causes no duplicate transition/current `last_changed_at` advancement.
+10. Provider clock rollback cannot freeze genuinely newer fenced current state.
+11. History requires metric/from/to and finite window; no all-history fallback.
+12. Every history page reauthorizes and non-completeness remains explicit.
+13. Cursor exposed value contains no protected payload/topology/credential and possession grants no authority; this slice does not activate protected-continuation C5 semantics.
+14. Zabbix severity maps only to canonical classes; acknowledgement/tags remain metadata.
+15. Last-known health/current metric with non-current evidence remains visibly non-current.
+16. Sync operation ID cannot grant authority or reveal topology.
+17. One tenant's history/sync/cardinality pressure is bounded and cannot starve unrelated tenants.
+18. Recovery invalidates stale placement/poll/idempotency assumptions rather than reopening authority.
 
-```text
-monitoring-resources
-health-projections
-problems
-metric-definitions
-metric-observations
-monitoring-sync-operations
-```
+# OPENs preserved
 
-through BFF/read composition. If performance/cross-domain needs later require persistent dashboard/NOC projections, those are accepted under Reporting & Experience and cannot gain mutation ownership over Monitoring state.
+This contract closes endpoint/use-case semantics but does not close:
 
-# Compatibility and versioning
+- `OPEN-REL-030` customer telemetry C2 conformance;
+- Tier 2 telemetry store selection;
+- secret-manager/KMS/credential-binding mechanism;
+- broker/outbox physical dispatch;
+- provider timeout/retry/page/history/reconciliation numerics;
+- production page/window/retention/capacity/SLO numerics.
 
-A change is compatibility/security-sensitive when it changes:
+`OPEN-API-019` remains C5 and is **not activated** because Monitoring cursors are constrained to `url_safe_non_sensitive_handle` semantics. If a future Monitoring query requires a protected continuation token/payload, that is a new owning-governance decision, not an implementation shortcut.
 
-- tenant/action/authorization scope;
-- source-instance replacement semantics;
-- canonical resource/metric/observation/problem identity;
-- negative-evidence/removal/resolution rules;
-- health/severity/evidence-state meaning;
-- historical completeness/gap meaning;
-- cursor binding/current-authorization behavior;
-- source mutation idempotency or optimistic-concurrency rules;
-- provider metadata authority status;
-- recovery/relocation fencing;
-- which domain owns dashboard/alert/incident state.
-
-Such a change cannot be shipped as an invisible implementation detail merely because JSON fields remain parseable.
-
-# Contract tests / falsification matrix
-
-The first implementation must prove at least:
-
-1. Cross-tenant known-ID requests fail without leaking Tenant B existence/data for every resource family.
-2. Source create retry with same idempotency key creates one source; fingerprint mismatch conflicts.
-3. Concurrent source PATCH uses `If-Match`; stale revision cannot overwrite current configuration.
-4. Zabbix base URL mutation through ordinary PATCH is rejected and cannot silently reuse source generation.
-5. Replace-instance retry creates one successor generation/operation; stale concurrent replacement loses.
-6. Raw provider/API credentials never appear in source responses/logs/traces/errors/events/audit snapshots.
-7. Provider outage does not turn known resources/problems into 404/removed/resolved state.
-8. Resource/metric/problem collections expose only accepted `removed`/`retired`/`resolved` states backed by domain negative evidence.
-9. Historical query without metric/from/to fails; oversized/unbounded window never falls back to all history.
-10. Every historical page reauthorizes current tenant/resource scope.
-11. Historical incomplete/gap/reconciliation state is explicit and cannot be hidden by pagination.
-12. Repeated same current observation under a later poll does not emit duplicate semantic transition.
-13. Provider clock rollback does not freeze genuinely newer fenced current state.
-14. Zabbix severity maps only to canonical severity; ack/tags remain non-authoritative metadata.
-15. Health `evidence_state` remains visible when last-known health is stale/incomplete/unavailable.
-16. Sync operation ID cannot be used as bearer authority and cannot leak worker/queue/cell topology.
-17. One tenant's high-cardinality/history/sync pressure is bounded and does not starve unrelated tenants.
-18. Recovery/relocation invalidates stale placement/poll/cursor/idempotency assumptions rather than reopening authority.
-
-# OPEN decisions and blockers preserved
-
-This API contract closes endpoint/use-case semantics for the accepted Monitoring core but preserves evidence/mechanism gates:
-
-- `OPEN-REL-030` must be selected/conformed before `impl.customer-telemetry@1` canonical ingestion/projection implementation;
-- concrete protected cursor mechanism must be selected/reviewed before paginated implementation depends on it;
-- credential binding/secret-manager/KMS mechanism remains C2;
-- provider timeout/retry/page/history/reconciliation numerics remain evidence-driven;
-- Tier 2 telemetry storage remains candidate/evidence-gated;
-- production page/window/retention/capacity/SLO numbers remain C3.
-
-No `DELETE`, tenant-facing manual `:sync/:retry/:resume`, provider write-back, alert acknowledgement, incident creation or dashboard mutation endpoint is implicitly authorized by this contract. Those behaviors require their own accepted Product/domain contracts.
+No source `DELETE`, tenant manual sync/retry/resume, provider write-back, Alerting acknowledgement, ITSM mutation or dashboard mutation endpoint is authorized implicitly.

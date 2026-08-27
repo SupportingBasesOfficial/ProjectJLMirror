@@ -86,6 +86,25 @@ Timestamps use accepted UTC Phase 09 representation. Provider event time remains
 
 Provider-native IDs/metadata are optional bounded protected external evidence and never replace canonical IDs.
 
+## Generation-state response semantics
+
+Every generation-scoped resource/metric/problem/health/current-state representation exposes:
+
+```text
+generation_state = active_generation | historical_generation
+```
+
+This value is derived by comparing the object's `source_instance_generation` with the source's currently authoritative `active_source_instance_generation`; it is not maintained by rewriting all child rows during cutover.
+
+Rules:
+
+- current operational collection endpoints default to `generation_state=active_generation`;
+- explicit historical inclusion requires `generation_state=historical_generation` or another documented historical filter on endpoints that support it;
+- direct lookup of a known historical-generation canonical ID may return retained evidence under current authorization, but the representation remains visibly historical;
+- `historical_generation` is not serialized as `removed`, `retired` or `resolved` and cannot participate in current health/current-value/current-problem/provider-work authority;
+- a prior-generation problem with `problem_state=active` remains historical unresolved evidence rather than a current problem;
+- after cutover, successor current coverage may be incomplete until successor sync establishes it; the API does not fill that gap with prior-generation state.
+
 ## Pagination — URL-safe non-sensitive anchor cursor
 
 Monitoring collection cursors use the accepted Phase 09 `url_safe_non_sensitive_handle` class and are further constrained to a non-sensitive **anchor cursor**. This contract deliberately does **not** activate the C5 protected-continuation mechanism in `OPEN-API-019`.
@@ -96,7 +115,7 @@ Continuation requests resubmit the same canonical non-sensitive filters/window p
 
 1. re-establishes current authentication, tenant placement and authorization;
 2. resolves supplied anchor inside current tenant/resource scope;
-3. verifies anchor eligibility under current endpoint filters/window;
+3. verifies anchor eligibility under current endpoint filters/window, including generation-state selection where applicable;
 4. derives deterministic sort position from authoritative anchored row;
 5. returns only rows after that position according to declared ordering.
 
@@ -121,7 +140,7 @@ anchor itself URL-safe/non-sensitive under response classification
 no protected cursor payload or dedicated protected cursor state
 possession grants no read/continuation authority
 current authorization and current filter/window validation on every page
-cross-tenant / wrong-filter / wrong-window anchors fail sparsely without existence leakage
+cross-tenant / wrong-filter / wrong-window / wrong-generation anchors fail sparsely without existence leakage
 ```
 
 A server implementation SHALL NOT replace this profile with an encrypted/signed protected payload or server-side hidden query state while still claiming `OPEN-API-019` is deferred.
@@ -151,7 +170,7 @@ Protected Monitoring data is never `public_shared`.
 | health projections | `private_revalidate` | bounded canonical status/IDs only |
 | sync operations | `no_store` | operational/provider diagnostic metadata |
 
-For `private_revalidate`, reuse requires server revalidation/current authorization under the accepted Phase 09 cache contract; it is not an authorization-bypassing freshness TTL. BFF policy may be stricter.
+For `private_revalidate`, reuse requires server revalidation/current authorization under the accepted Phase 09 cache contract; it is not an authorization-bypassing freshness TTL. Revalidation also recomputes/validates generation and scope currentness rather than replaying an old `active_generation`/`in_scope` classification blindly. BFF policy may be stricter.
 
 ## Errors
 
@@ -324,7 +343,7 @@ The local source transaction:
 4. creates one durable bounded scope-reconciliation responsibility;
 5. **does not synchronously rewrite every resource/metric row**.
 
-Per-object scope state is a derived projection carrying:
+Per-object scope state for the active generation is a derived projection carrying:
 
 ```text
 scope_state = in_scope | out_of_scope
@@ -332,11 +351,13 @@ scope_projection_revision
 scope_evidence_state = current | reconciliation_required
 ```
 
-An object may claim current `in_scope` only when its projection is proven against the source's current `scope_revision`, or an equivalent current deterministic scope evaluation proves it. A stale projection fails safe with `scope_evidence_state=reconciliation_required`; it cannot authorize provider work, fresh current-value/health semantics, or negative inference.
+An active-generation object may claim current `in_scope` only when its projection is proven against the source's current `scope_revision`, or an equivalent current deterministic scope evaluation proves it. A stale projection fails safe with `scope_evidence_state=reconciliation_required`; it cannot authorize provider work, fresh current-value/health semantics, or negative inference.
+
+Historical-generation objects retain their historical scope evidence and are not relabeled against the successor/current generation's scope revision.
 
 When reconciliation establishes exclusion:
 
-- affected resources/metric definitions project `out_of_scope`;
+- affected active-generation resources/metric definitions project `out_of_scope`;
 - identity/history remain;
 - exclusion alone cannot mark resource `removed`, metric `retired`, or problem `resolved`;
 - re-inclusion requires provider evidence to re-establish currentness.
@@ -401,7 +422,10 @@ One logical cutover:
 6. marks candidate activated and records prior-generation retirement/fence evidence;
 7. persists required audit/transition intent;
 8. creates exactly one durable successor synchronization/scope-reconciliation responsibility;
-9. never merges old/new provider-native mappings or deletes historical evidence.
+9. moves source operational evidence to at least `reconciliation_required` until successor current coverage is established;
+10. never merges old/new provider-native mappings or deletes historical evidence.
+
+The active-generation pointer change immediately makes all old generation-scoped objects `historical_generation` by derivation. The cutover SHALL NOT synchronously rewrite those rows.
 
 `202 Accepted` returns successor sync operation + updated source link.
 
@@ -419,13 +443,14 @@ action        monitoring.resource.read
 consistency   committed local projection + evidence freshness
 cache         private_revalidate
 pagination    monitoring_resource_id ASC
+default        generation_state=active_generation
 ```
 
-Filters: source ID, `scope_state=in_scope|out_of_scope`, `scope_evidence_state=current|reconciliation_required`, `presence_state=present|removed`, resource kind, health/evidence state, cursor, limit.
+Filters: source ID, `generation_state=active_generation|historical_generation`, scope state/evidence, `presence_state=present|removed`, resource kind, health/evidence state, cursor, limit.
 
 Summary responses exclude unrestricted provider metadata. Missing provider rows under stale/incomplete/visibility/scope-reconciliation uncertainty do not disappear. `removed` means authoritative negative evidence already committed.
 
-A returned `scope_state=in_scope` with `scope_evidence_state=current` means membership was proven under current source scope revision. `reconciliation_required` is explicit and cannot be interpreted as current monitoring coverage.
+A returned `scope_state=in_scope` with `scope_evidence_state=current` has current monitoring meaning only for `generation_state=active_generation`. Historical-generation rows are explicitly historical regardless of retained scope/presence evidence.
 
 ## `monitoring.getResource`
 
@@ -435,7 +460,7 @@ action monitoring.resource.read
 cache  no_store
 ```
 
-Returns canonical identity, scope state/evidence/revision, presence/source generation/last-observed evidence and bounded protected external references where authorized.
+Returns canonical identity, `generation_state`, scope state/evidence/revision, presence/source generation/last-observed evidence and bounded protected external references where authorized. A historical-generation direct lookup is permitted as retained evidence but cannot be represented as current inventory.
 
 ---
 
@@ -449,11 +474,12 @@ action        monitoring.metric.read
 consistency   committed definition metadata
 cache         private_revalidate
 pagination    metric_definition_id ASC
+default        generation_state=active_generation
 ```
 
 Required singleton filter: `monitoring_resource_id`.
 
-Optional: scope state/evidence, `definition_state=active|retired`, cursor, limit.
+Optional: generation state, scope state/evidence, `definition_state=active|retired`, cursor, limit.
 
 Each item contains metadata only:
 
@@ -461,6 +487,8 @@ Each item contains metadata only:
 {
   "metric_definition_id": "opaque",
   "monitoring_resource_id": "opaque",
+  "source_instance_generation": "opaque",
+  "generation_state": "active_generation|historical_generation",
   "name": "...",
   "value_kind": "number|integer|boolean|string|text|log",
   "unit": "nullable",
@@ -470,7 +498,7 @@ Each item contains metadata only:
 }
 ```
 
-Current metric values are deliberately **not embedded in every definition row**.
+Current metric values are deliberately **not embedded in every definition row**. Historical-generation definitions remain metadata/history anchors, not current metric definitions.
 
 ## `monitoring.getMetricDefinition`
 
@@ -480,7 +508,7 @@ action monitoring.metric.read
 cache  no_store
 ```
 
-Returns `MetricDefinitionDetail` plus bounded protected external references. It may link to current-state/history surfaces; it does not query history to synthesize latest value.
+Returns `MetricDefinitionDetail` plus `generation_state` and bounded protected external references. It may link to current-state/history surfaces; it does not query history to synthesize latest value.
 
 ---
 
@@ -494,11 +522,12 @@ action        monitoring.metric.read
 consistency   committed transactional current-state projection
 cache         no_store
 pagination    metric_definition_id ASC
+default        generation_state=active_generation
 ```
 
 Required singleton filter: `monitoring_resource_id`.
 
-Optional filters: `metric_definition_id`, evidence state, scope state/evidence, cursor, limit.
+Optional filters: `metric_definition_id`, `generation_state`, evidence state, scope state/evidence, cursor, limit.
 
 Each row:
 
@@ -508,6 +537,7 @@ Each row:
   "monitoring_resource_id": "opaque",
   "monitoring_source_id": "opaque",
   "source_instance_generation": "opaque",
+  "generation_state": "active_generation|historical_generation",
   "scope_state": "in_scope|out_of_scope",
   "scope_evidence_state": "current|reconciliation_required",
   "current_observation_id": "opaque-or-null",
@@ -523,7 +553,9 @@ Each row:
 
 This is the efficient current-state surface required by `FR-MON-003`; it never queries historical Tier 2 for latest.
 
-A metric with stale/unreconciled scope cannot be presented as currently monitored even if last value is retained. Response admission is bounded by row count and serialized byte budget. Every value kind has mandatory accepted serialized-value bound before implementation.
+Only active-generation rows may carry current operational meaning. If an explicitly requested historical-generation row is returned, its value is last-known retained evidence and SHALL NOT be presented as currently monitored; API/BFF representation treats its operational evidence as non-current even if the stored pre-cutover evidence had been current.
+
+An active-generation metric with stale/unreconciled scope cannot be presented as currently monitored. Response admission is bounded by row count and serialized byte budget. Every value kind has mandatory accepted serialized-value bound before implementation.
 
 ## `monitoring.getMetricCurrentState`
 
@@ -533,7 +565,7 @@ action monitoring.metric.read
 cache  no_store
 ```
 
-Returns one current-state projection if authorized. Resource/metric IDs do not bypass current tenant/resource authorization.
+Returns one last-known current-state projection if authorized, including derived `generation_state`. A historical-generation result is explicitly historical/non-current. Resource/metric IDs do not bypass current tenant/resource authorization.
 
 ---
 
@@ -559,7 +591,7 @@ to    exclusive UTC timestamp
 
 Optional: cursor, limit.
 
-Exactly one metric definition per request in this initial contract.
+Exactly one canonical metric definition per request. Because metric identity is generation-scoped, the requested definition fixes the historical source generation; cross-generation history is never silently unioned by matching provider item/name.
 
 Rules:
 
@@ -576,6 +608,8 @@ Rules:
 ```json
 {
   "metric_definition_id": "opaque",
+  "source_instance_generation": "opaque",
+  "generation_state": "active_generation|historical_generation",
   "window": {"from": "...", "to": "..."},
   "completeness": {
     "state": "complete|incomplete|gap_detected|reconciliation_required",
@@ -587,7 +621,7 @@ Rules:
 }
 ```
 
-`complete` requires accepted lateness/retention/reconciliation evidence. Configured out-of-scope or unreconciled scope intervals and known/uncertain provider gaps cannot be fabricated as continuous complete coverage.
+`complete` requires accepted lateness/retention/reconciliation evidence for that generation. Configured out-of-scope, generation-cutover or unreconciled intervals and known/uncertain provider gaps cannot be fabricated as continuous complete coverage.
 
 ---
 
@@ -600,11 +634,14 @@ GET /api/v1/tenants/{tenant_id}/problems
 action        monitoring.problem.read
 cache         no_store
 pagination    (opened_at DESC, problem_id ASC)
+default        generation_state=active_generation
 ```
 
-Filters: source ID, resource ID, problem state, canonical severity, opened_from/to, cursor, limit.
+Filters: source ID, resource ID, generation state, problem state, canonical severity, opened_from/to, cursor, limit.
 
-Missing provider row is never implicit resolution. Scope exclusion/stale scope membership is never implicit resolution. Items expose canonical state/severity, resource/source, timestamps and evidence state. Zabbix acknowledgement/tags may appear only as bounded non-authoritative provider metadata where policy permits.
+Missing provider row is never implicit resolution. Scope exclusion/stale scope membership and source-generation retirement are never implicit resolution. Items expose canonical state/severity, source generation, derived `generation_state`, resource/source, timestamps and evidence state. Zabbix acknowledgement/tags may appear only as bounded non-authoritative provider metadata where policy permits.
+
+A historical-generation problem with `problem_state=active` means “unresolved in retained evidence when that generation ceased to be active”; it is excluded from current operational problem/Alerting input by generation state.
 
 ## `monitoring.getProblem`
 
@@ -614,7 +651,7 @@ action monitoring.problem.read
 cache  no_store
 ```
 
-Returns `ProblemDetail`; may link resources/health. Monitoring does not own Alerting/ITSM acknowledgement or incident state.
+Returns `ProblemDetail` including derived `generation_state`; may link resources/health. Monitoring does not own Alerting/ITSM acknowledgement or incident state.
 
 ---
 
@@ -627,11 +664,12 @@ GET /api/v1/tenants/{tenant_id}/health-projections
 action        monitoring.health.read
 cache         private_revalidate
 pagination    monitoring_resource_id ASC
+default        generation_state=active_generation
 ```
 
-Filters: source ID, health class, evidence state, scope state/evidence, cursor, limit.
+Filters: source ID, generation state, health class, evidence state, scope state/evidence, cursor, limit.
 
-Items expose canonical health + scope/evidence state + revision/times/bounded problem IDs. A last-known healthy value with stale provider or scope evidence is visibly non-current.
+Items expose canonical health + source generation + derived generation state + scope/evidence state + revision/times/bounded problem IDs. A historical-generation projection never has current-health authority even if its retained class was `healthy`.
 
 ## `monitoring.getHealthProjection`
 
@@ -641,7 +679,7 @@ action monitoring.health.read
 cache  private_revalidate
 ```
 
-Resource ID is projection identity. Provider severity is not serialized as health enum.
+Resource ID is projection identity. Response includes derived `generation_state`. Provider severity is not serialized as health enum.
 
 ---
 
@@ -701,6 +739,7 @@ created_at / updated_at
 monitoring_resource_id
 monitoring_source_id
 source_instance_generation
+generation_state active_generation|historical_generation
 display_name
 resource_kind
 scope_state
@@ -720,6 +759,7 @@ metric_definition_id
 monitoring_resource_id
 monitoring_source_id
 source_instance_generation
+generation_state active_generation|historical_generation
 name
 value_kind
 unit
@@ -737,6 +777,7 @@ metric_definition_id
 monitoring_resource_id
 monitoring_source_id
 source_instance_generation
+generation_state active_generation|historical_generation
 scope_state
 scope_evidence_state
 current_observation_id
@@ -771,6 +812,7 @@ Untrusted text/log values are data and cannot become active browser content.
 problem_id
 monitoring_source_id
 source_instance_generation
+generation_state active_generation|historical_generation
 monitoring_resource_ids (bounded)
 summary
 problem_state active|resolved
@@ -786,6 +828,7 @@ bounded external_references/provider_metadata
 monitoring_resource_id
 monitoring_source_id
 source_instance_generation
+generation_state active_generation|historical_generation
 scope_state
 scope_evidence_state
 health_class unknown|healthy|degraded|unhealthy
@@ -804,7 +847,7 @@ gap_detected
 reconciliation_required
 ```
 
-`complete` is evidence-backed; provider/scope gaps are not hidden by pagination.
+`complete` is evidence-backed; provider/scope/generation gaps are not hidden by pagination.
 
 ## Sync operation
 
@@ -821,7 +864,7 @@ Common operation representation + source/generation/trigger/checkpoint/safe depe
 | replacement cutover | active-generation/config/scope fence + successor responsibility | key + If-Match | prohibited | privileged |
 | reads | local authoritative/projection reads | intrinsic | no provider passthrough | access telemetry |
 
-A source scope edit is not an unbounded multi-row rewrite transaction. The API serves local accepted state/evidence; it is not an unbounded synchronous proxy to Zabbix.
+Neither source scope edit nor generation cutover is an unbounded child-row rewrite transaction. The API serves local accepted state/evidence; it is not an unbounded synchronous proxy to Zabbix.
 
 # Data-size / abuse boundary
 
@@ -836,6 +879,7 @@ collection serialized response bytes
 history time-window maximum
 history rows/bytes per response
 provider scope-selector count/size
+source generations retained / historical-query envelope
 scope-reconciliation batch/backlog/concurrency
 problem metadata count/size
 replacement candidates retained per source
@@ -848,9 +892,9 @@ Runtime may return fewer rows than nominal row limit to honor byte budget. A sin
 
 # Observability
 
-Every operation propagates correlation context. Safe telemetry captures route/operation, bounded attribution, auth outcome class, latency/status/error class, sync/scope correlation and history window/cost class without raw credentials, unrestricted metric/log values, provider payloads/tags or raw external errors.
+Every operation propagates correlation context. Safe telemetry captures route/operation, bounded attribution, auth outcome class, latency/status/error class, sync/scope/generation correlation and history window/cost class without raw credentials, unrestricted metric/log values, provider payloads/tags or raw external errors.
 
-Monitoring operational evidence includes source sync age/evidence state, replacement candidate/validation state, scope revision/reconciliation lag, dependency state, backlog/gaps, historical projector lag, current-state transition failures and tenant fairness/saturation.
+Monitoring operational evidence includes source sync age/evidence state, replacement candidate/validation state, active generation/cutover, scope revision/reconciliation lag, dependency state, backlog/gaps, historical projector lag, current-state transition failures and tenant fairness/saturation.
 
 # Recovery / relocation
 
@@ -859,21 +903,22 @@ After PITR/relocation:
 - active source generation/configuration/scope revisions reconcile before mutation;
 - replacement candidate/cutover winner reconciles before further activation;
 - candidate reachability alone cannot become active authority;
+- historical generation cannot be reclassified active from stale restored state;
 - stale scope projection cannot claim current `in_scope` or authorize negative inference;
 - retired placement/poll authority cannot mutate current state;
 - missing observation/history/checkpoint is uncertainty;
-- current metric values may remain last-known but expose non-current evidence until reconciled;
+- current metric values may remain last-known but expose non-current generation/provider/scope evidence until reconciled;
 - historical completeness may downgrade;
-- cursor anchors re-resolve under current tenant/filter/window state;
+- cursor anchors re-resolve under current tenant/filter/window/generation state;
 - idempotency/replacement outcomes reconcile through `(R,F]` before repeat execution.
 
 # Dashboard composition
 
-No mutable `/monitoring-dashboards` aggregate is created. Initial Monitoring dashboard composes resources, metric definitions, dedicated current-state reads, health, problems, bounded history and sync/scope evidence via BFF/read composition. Persistent presentation/cross-domain projections remain Reporting & Experience ownership.
+No mutable `/monitoring-dashboards` aggregate is created. Initial Monitoring dashboard composes **active-generation** resources, metric definitions, dedicated current-state reads, health, problems, bounded history and sync/scope/generation evidence via BFF/read composition. Historical-generation evidence requires explicit historical/drill-down use. Persistent presentation/cross-domain projections remain Reporting & Experience ownership.
 
 # Compatibility-sensitive changes
 
-Security/compatibility review is required for changes to tenant/action scope, replacement candidate/cutover semantics, configured-scope revision/currentness semantics, canonical identity/generation, current metric semantics/surface, negative evidence, severity/health/evidence state, historical completeness, cursor classification/anchor rules, idempotency/precondition replay, provider metadata authority, cache classification or recovery fencing.
+Security/compatibility review is required for changes to tenant/action scope, source-generation operational lifecycle, replacement candidate/cutover semantics, configured-scope revision/currentness semantics, canonical identity/generation, current metric semantics/surface, negative evidence, severity/health/evidence state, historical completeness, cursor classification/anchor rules, idempotency/precondition replay, provider metadata authority, cache classification or recovery fencing.
 
 # Falsification matrix
 
@@ -884,27 +929,30 @@ Security/compatibility review is required for changes to tenant/action scope, re
 5. Bad replacement candidate cannot fence/degrade healthy active generation solely by being requested.
 6. Candidate generation cannot write canonical Monitoring state before activation.
 7. Concurrent cutover attempts result in at most one active-generation winner and one successor responsibility.
-8. New Zabbix generation never merges same-looking native IDs with old mappings.
-9. Scope edit commits without O(N) resource/metric row rewrite.
-10. Stale scope projection cannot claim current `in_scope`, fresh health/value, provider-work eligibility or negative inference.
-11. Scope exclusion never becomes provider removal/retirement/resolution by itself.
-12. Re-inclusion requires fresh provider evidence before currentness is restored.
-13. Provider outage/visibility loss never turns known state into 404/removed/retired/resolved.
-14. Metric-definition listing does not embed all current values.
-15. Current metric API reads transactional current projection without querying historical latest per request.
-16. Current/history/problem payloads are `no_store` and cannot become shared/public cache entries.
-17. Same current observation under later poll causes no duplicate transition/current `last_changed_at` advancement.
-18. Provider clock rollback cannot freeze genuinely newer fenced current state.
-19. History requires metric/from/to and finite window; no all-history fallback.
-20. Every history page reauthorizes and non-completeness remains explicit.
-21. Cursor is only authorized-row anchor, contains/references no protected continuation payload/state, and possession grants no authority.
-22. Cross-tenant/wrong-filter/wrong-window cursor anchors fail without existence leakage.
-23. Zabbix severity maps only to canonical classes; acknowledgement/tags remain metadata.
-24. Last-known health/current metric with non-current provider/scope evidence remains visibly non-current.
-25. Sync operation ID cannot grant authority or reveal topology.
-26. One tenant's history/sync/scope-reconciliation/cardinality pressure is bounded and cannot starve unrelated tenants.
-27. Oversized provider metric/log/text/problem values are bounded before memory/storage/response exhaustion.
-28. Recovery invalidates stale placement/poll/idempotency/candidate/scope assumptions rather than reopening authority.
+8. Cutover does not rewrite every prior-generation child row; generation currentness changes by authoritative active-generation pointer/fence.
+9. Prior-generation resources/metrics/problems/health/current values are excluded from current operational collections by default.
+10. Prior-generation unresolved problem remains historical evidence and cannot feed current problem/Alerting semantics.
+11. New Zabbix generation never merges same-looking native IDs with old mappings.
+12. Scope edit commits without O(N) resource/metric row rewrite.
+13. Stale scope projection cannot claim current `in_scope`, fresh health/value, provider-work eligibility or negative inference.
+14. Scope exclusion never becomes provider removal/retirement/resolution by itself.
+15. Re-inclusion requires fresh provider evidence before currentness is restored.
+16. Provider outage/visibility loss never turns known state into 404/removed/retired/resolved.
+17. Metric-definition listing does not embed all current values.
+18. Current metric API reads transactional current projection without querying historical latest per request.
+19. Current/history/problem payloads are `no_store` and cannot become shared/public cache entries.
+20. Same current observation under later poll causes no duplicate transition/current `last_changed_at` advancement.
+21. Provider clock rollback cannot freeze genuinely newer fenced current state.
+22. History requires metric/from/to and finite window; no all-history fallback or implicit cross-generation union.
+23. Every history page reauthorizes and non-completeness remains explicit.
+24. Cursor is only authorized-row anchor, contains/references no protected continuation payload/state, and possession grants no authority.
+25. Cross-tenant/wrong-filter/wrong-window/wrong-generation cursor anchors fail without existence leakage.
+26. Zabbix severity maps only to canonical classes; acknowledgement/tags remain metadata.
+27. Last-known health/current metric with non-current generation/provider/scope evidence remains visibly non-current.
+28. Sync operation ID cannot grant authority or reveal topology.
+29. One tenant's history/sync/scope-reconciliation/cardinality pressure is bounded and cannot starve unrelated tenants.
+30. Oversized provider metric/log/text/problem values are bounded before memory/storage/response exhaustion.
+31. Recovery invalidates stale placement/poll/idempotency/candidate/scope/generation assumptions rather than reopening authority.
 
 # OPENs preserved
 
@@ -915,7 +963,7 @@ This contract closes endpoint/use-case semantics but does not close:
 - secret-manager/KMS/credential-binding mechanism;
 - broker/outbox physical dispatch;
 - provider timeout/retry/page/history/reconciliation numerics;
-- mandatory per-value/page/window/scope-batch/candidate/concurrency bounds;
+- mandatory per-value/page/window/scope-batch/generation-retention/candidate/concurrency bounds;
 - production retention/capacity/SLO numerics.
 
 `OPEN-API-019` remains C5 and is **not activated** because this Monitoring profile uses only returned-row anchor cursors with no hidden protected continuation payload/state.

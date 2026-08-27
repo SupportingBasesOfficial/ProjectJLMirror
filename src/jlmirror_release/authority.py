@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from enum import Enum
 from threading import RLock
+from types import MappingProxyType
+from typing import Mapping
 
 from .compatibility import RolloutCompatibilityEvidence, require_rollout_compatibility
 from .configuration import ConfigurationValidationEvidence, require_validation_for_target
@@ -62,11 +64,17 @@ class CurrentAuthorityEvidence:
         expected_gate_id: str,
         *,
         expected_target_state_version: int | None = None,
+        expected_authority_profile_and_version: str | None = None,
     ) -> None:
         if self.gate_id != expected_gate_id:
             raise ReleaseError(f"release authority evidence gate mismatch: expected {expected_gate_id}")
         if not self.authority_profile_and_version:
             raise ReleaseError(f"{expected_gate_id} requires an owning authority profile/version")
+        if (expected_authority_profile_and_version is not None and
+                self.authority_profile_and_version != expected_authority_profile_and_version):
+            raise ReleaseError(
+                f"{expected_gate_id} authority evidence uses an unknown or substituted owning authority profile"
+            )
         require_immutable_evidence_reference(f"{expected_gate_id}.evidence_reference", self.evidence_reference)
         if self.scope_binding != self.scope_for(intent):
             raise ReleaseError(f"{expected_gate_id} authority evidence is bound to a different deployment scope")
@@ -119,6 +127,17 @@ _REQUIRED_ADMISSION_GATES = frozenset({
 })
 _TERMINAL_STATES = frozenset({PromotionState.COMPLETED, PromotionState.REJECTED, PromotionState.ABORTED, PromotionState.SUPERSEDED})
 
+# Phase 14 fixes one canonical owning-authority profile per admission gate identity, mirroring
+# RUNTIME_REQUIREMENTS_AUTHORITY_PROFILE / RUNTIME_VERIFIER_PRINCIPAL in verification.py. This is
+# gate authorship identity (who vouches for the gate), distinct from evidence content such as
+# intent.release_policy_profile_and_version (which policy applies) or deployment_principal_class
+# (already bound above) -- those remain separately checked where they are semantically relevant.
+# A gate whose authority_profile_and_version does not match its fixed owner cannot be substituted
+# in from a different or foreign authority even if every other field on it is internally consistent.
+_ADMISSION_GATE_AUTHORITY_PROFILES: Mapping[str, str] = MappingProxyType({
+    gate_id: f"release.{gate_id.replace('_', '-')}@1" for gate_id in _REQUIRED_ADMISSION_GATES
+})
+
 
 def _validated_admission_gate_map(
     intent: DeploymentIntent,
@@ -134,7 +153,11 @@ def _validated_admission_gate_map(
         extra = sorted(set(gates) - _REQUIRED_ADMISSION_GATES)
         raise ReleaseError(f"deployment admission authority gate set mismatch: missing={missing} extra={extra}")
     for gate_id, gate in gates.items():
-        gate.validate_for(intent, gate_id)
+        gate.validate_for(
+            intent,
+            gate_id,
+            expected_authority_profile_and_version=_ADMISSION_GATE_AUTHORITY_PROFILES[gate_id],
+        )
     return gates
 
 

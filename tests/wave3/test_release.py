@@ -158,10 +158,11 @@ def promotion_for(i, *, config_ref="evidence:config-1", rollout_ref="evidence:ro
     return PromotionEvidence(**values)
 
 
-def authority_gate(i, gate_id, *, current=True, scope=None, version=None, evidence_reference=None):
+def authority_gate(i, gate_id, *, current=True, scope=None, version=None, evidence_reference=None,
+                    authority_profile_and_version=None):
     return CurrentAuthorityEvidence(
         gate_id=gate_id,
-        authority_profile_and_version=f"release.{gate_id.replace('_', '-')}@1",
+        authority_profile_and_version=authority_profile_and_version or f"release.{gate_id.replace('_', '-')}@1",
         evidence_reference=evidence_reference or f"evidence:admission-{gate_id}",
         scope_binding=scope or CurrentAuthorityEvidence.scope_for(i),
         release_target_state_version=i.expected_release_target_state_version if version is None else version,
@@ -313,6 +314,22 @@ class ReleaseTests(unittest.TestCase):
         for overrides in cases:
             with self.subTest(overrides=overrides), self.assertRaises(ReleaseError):
                 DeploymentAuthority(ReleaseTargetState(i.target_id, 4)).create_or_observe(i, admission(i, gate_overrides=overrides))
+
+    def test_admission_gate_authority_profile_cannot_be_substituted(self):
+        # Regression test for a same-day add-then-revert (7ae33e6 -> 079c3e0): a gate that is
+        # internally self-consistent (correct scope, version, evidence_reference, current=True)
+        # but carries a foreign or cross-gate-substituted authority_profile_and_version must still
+        # be rejected -- non-emptiness alone is not authorship.
+        i = intent()
+        cases = {gate_id: {"authority_profile_and_version": "release.other@1"} for gate_id in ADMISSION_GATE_IDS}
+        # Cross-substitution: reuse a *real, valid-elsewhere* profile on the wrong gate. This proves
+        # the check pins each gate to its own exact owner, not merely to the set of known profiles.
+        cases["deployment_principal"] = {"authority_profile_and_version": "release.reliability@1"}
+        for gate_id, override in cases.items():
+            with self.subTest(gate_id=gate_id), self.assertRaises(ReleaseError):
+                DeploymentAuthority(ReleaseTargetState(i.target_id, 4)).create_or_observe(
+                    i, admission(i, gate_overrides={gate_id: override})
+                )
 
     def test_runtime_requirements_are_validated_before_effectful_admission(self):
         i = intent()

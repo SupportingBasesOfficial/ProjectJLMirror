@@ -21,33 +21,44 @@ from .provenance import require_immutable_evidence_reference
 
 RUNTIME_REQUIREMENTS_AUTHORITY_PROFILE = "release.runtime-verification-requirements@1"
 RUNTIME_VERIFIER_PRINCIPAL = "principal.release-verify@1"
+# The principal attesting a runtime-verification requirements pin is the promotion principal --
+# the same accepted, already-distinct-from-deploy principal that already owns attaching a
+# release-policy to an artifact/target (PromotionEvidence.promotion_principal_class,
+# provenance.py:177). This does not add a new principal identity to the canonical set; it reuses
+# the closest existing fit rather than inventing one.
+RUNTIME_REQUIREMENTS_PRINCIPAL = "principal.release-promote@1"
+EMPTY_RELIABILITY_FLOOR_AUTHORITY_PROFILE = "release.empty-reliability-floor-authority@1"
 
 # Phase 13 fixes these as the minimum non-conditional Phase 11 reliability bindings for
 # each concrete runtime profile. Conditional bindings (for example cache/secret/external
 # dependencies that are only present for a specific deployment) remain additional
 # pre-effect requirements selected by the current release-policy authority.
 #
-# OPEN (recorded 2026-08-26, deliberately not resolved by this wave -- requires an explicit
-# product/security decision, not a silent implementation default): four profiles below
-# (runtime.worker@1, runtime.untrusted-parser@1, runtime.edge-optional@1 and, in
-# WORKER_SPECIALIZATION_MINIMUM_RELIABILITY_BINDINGS below, worker.reconciliation@1) carry an
-# empty non-conditional floor. Combined with the fact that RuntimeVerificationRequirements
-# (submitted inside the same DeploymentAdmissionEvidence payload as everything else the deploy
-# submitter assembles) has no dedicated principal/authority-class field distinguishing it from
-# the deploy principal -- unlike its sibling evidence classes (PromotionEvidence,
-# BuildProvenanceEvidence, DeploymentAdmissionEvidence itself) -- a deployment declared with one
-# of these four profiles can have its entire required_reliability_profile_ids/
-# required_health_profile_ids set chosen by the same submitter that requests the deployment,
-# with no floor tying it to the deployment's actual risk surface. This is architecturally
-# consistent with the rest of this reference model (no evidence class here has real
-# cryptographic principal separation; require_immutable_evidence_reference is a format check,
-# not a resolution against an independently persisted record -- that is presumably delegated to
-# an out-of-scope trusted evidence store). Closing it for real requires either: (a) a genuinely
-# independent release-policy-authority evidence chain feeding required_health_profile_ids
-# (not merely another self-declared field in the same submitter payload), or (b) an explicit,
-# reviewed decision that the empty floor for these four profiles is intentional risk acceptance.
-# Do not fill in a non-empty floor here without that decision -- an invented minimum would be a
-# silent security-relevant judgment call, not a mechanical fix.
+# Four profiles below (runtime.worker@1, runtime.untrusted-parser@1, runtime.edge-optional@1
+# and, in WORKER_SPECIALIZATION_MINIMUM_RELIABILITY_BINDINGS below, worker.reconciliation@1)
+# carry an empty non-conditional floor -- deliberately, not by omission. Two structural
+# closures make an empty floor here safe rather than a silent gap (recorded 2026-08-27, this
+# repository owner's explicit decision to close this for real rather than accept the residual
+# risk noted in the prior version of this comment):
+#
+# 1. RuntimeVerificationRequirements now carries requirements_principal_class, checked against
+#    RUNTIME_REQUIREMENTS_PRINCIPAL ("principal.release-promote@1"), matching the existing
+#    self-declared-principal pattern already used by every sibling evidence class in this
+#    reference model (deployment_principal_class, promotion_principal_class,
+#    builder_principal_class). This closes the structural inconsistency where this one evidence
+#    class had no principal/authority-class field at all.
+# 2. When the combined mandatory floor for a given intent is empty, RuntimeVerificationRequirements
+#    now REQUIRES a current, evidence-backed EmptyReliabilityFloorJustification (mirroring the
+#    NO_APPLICABLE_CASE pattern already accepted in jlmirror_observability's ObservabilityBinding)
+#    -- an empty floor can never again pass silently as "the submitter just didn't declare
+#    anything"; it must be an explicit, scoped, currently-valid claim that zero is correct for
+#    this exact deployment.
+#
+# What remains explicitly OPEN, unresolved by this wave: the *specific* non-empty reliability
+# minimums that these four profiles might deserve are still a product/domain decision this wave
+# does not invent -- filling in an unjustified specific rel.* set here would itself be a silent
+# security-relevant judgment call. What this wave closes is the ability for that decision to be
+# skipped silently: now it must be made explicitly, per-deployment, with evidence, every time.
 RUNTIME_PROFILE_MINIMUM_RELIABILITY_BINDINGS: Mapping[str, frozenset[str]] = MappingProxyType({
     "runtime.web-bff@1": frozenset({"rel.security-session-authority@1"}),
     "runtime.api@1": frozenset({
@@ -134,6 +145,40 @@ def minimum_reliability_for_intent(intent: DeploymentIntent) -> frozenset[str]:
 
 
 @dataclass(frozen=True)
+class EmptyReliabilityFloorJustification:
+    """Evidence-backed justification required whenever minimum_reliability_for_intent() is empty
+    for a deployment intent (currently possible for runtime.worker@1, runtime.untrusted-parser@1,
+    runtime.edge-optional@1 and worker.reconciliation@1). Mirrors NoApplicableCaseEvidence in
+    jlmirror_observability's ObservabilityBinding: an empty mandatory floor is a claim that must be
+    reasoned, owned, evidenced, scoped and current -- never a bare absence that passes because
+    nobody declared anything.
+    """
+
+    reason: str
+    authority_profile: str
+    evidence_reference: str
+    scope_binding: str
+    current: bool
+
+    def validate_for(self, expected_scope: str) -> None:
+        if not all((self.reason, self.authority_profile, self.scope_binding, expected_scope)):
+            raise ReleaseError(
+                "empty reliability floor justification requires reason, authority, evidence and exact scope"
+            )
+        if self.authority_profile != EMPTY_RELIABILITY_FLOOR_AUTHORITY_PROFILE:
+            raise ReleaseError(
+                "empty reliability floor justification uses an unknown or substituted owning authority profile"
+            )
+        require_immutable_evidence_reference(
+            "empty_reliability_floor_justification.evidence_reference", self.evidence_reference
+        )
+        if not self.current:
+            raise ReleaseError("empty reliability floor justification is not current")
+        if self.scope_binding != expected_scope:
+            raise ReleaseError("empty reliability floor justification is bound to a different deployment scope")
+
+
+@dataclass(frozen=True)
 class RuntimeVerificationRequirements:
     """Pre-effect release-policy-governed authority for the exact runtime-verification gate set."""
 
@@ -146,6 +191,8 @@ class RuntimeVerificationRequirements:
     required_reliability_profile_ids: tuple[str, ...]
     required_health_profile_ids: tuple[str, ...]
     current: bool
+    requirements_principal_class: str
+    empty_floor_justification: "EmptyReliabilityFloorJustification | None" = None
 
     def validate_for(
         self,
@@ -156,6 +203,8 @@ class RuntimeVerificationRequirements:
     ) -> tuple[str, ...]:
         if self.authority_profile_and_version != RUNTIME_REQUIREMENTS_AUTHORITY_PROFILE:
             raise ReleaseError("runtime verification requirements use an unknown authority profile")
+        if self.requirements_principal_class != RUNTIME_REQUIREMENTS_PRINCIPAL:
+            raise ReleaseError("runtime verification requirements use an unknown or substituted owning principal")
         require_immutable_evidence_reference("runtime_requirements.evidence_reference", self.evidence_reference)
         require_immutable_evidence_reference(
             "runtime_requirements.release_policy_evidence_reference",
@@ -188,6 +237,28 @@ class RuntimeVerificationRequirements:
             )
 
         mandatory_reliability = minimum_reliability_for_intent(intent)
+        if not mandatory_reliability:
+            if self.empty_floor_justification is None:
+                raise ReleaseError(
+                    "intent has an empty mandatory reliability floor and requires an "
+                    "evidence-backed empty-floor justification"
+                )
+            # A dataclass type hint is not runtime-enforced (same class of gap fixed in
+            # HealthAssessment.state, jlmirror_observability/model.py): without this explicit
+            # isinstance check, any duck-typed object exposing a no-op validate_for(expected_scope)
+            # would satisfy "is not None" and be delegated to, bypassing every real check (reason,
+            # authority_profile, evidence_reference, current, scope) that EmptyReliabilityFloorJustification
+            # actually performs. Mirrors the existing guard in provenance.py
+            # (require_trusted_build_source: isinstance(source, AcceptedSourceEvidence) before
+            # source.validate()) -- the correct pattern already established elsewhere in this
+            # codebase for delegating to a nested evidence object's own validation.
+            if not isinstance(self.empty_floor_justification, EmptyReliabilityFloorJustification):
+                raise ReleaseError("empty reliability floor justification must be the canonical evidence type")
+            self.empty_floor_justification.validate_for(self.scope_binding)
+        elif self.empty_floor_justification is not None:
+            raise ReleaseError(
+                "non-empty mandatory reliability floor cannot also claim an empty-floor justification"
+            )
         missing_mandatory_reliability = mandatory_reliability - set(reliability_ids)
         if missing_mandatory_reliability:
             raise ReleaseError(

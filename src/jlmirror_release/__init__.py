@@ -31,6 +31,9 @@ from .provenance import (
 )
 from .recovery import RecoveryClassificationEvidence, classify_change_outcome
 from .verification import (
+    EMPTY_RELIABILITY_FLOOR_AUTHORITY_PROFILE,
+    RUNTIME_REQUIREMENTS_PRINCIPAL,
+    EmptyReliabilityFloorJustification,
     HealthGateEvidence,
     RuntimeVerificationEvidence,
     RuntimeVerificationRequirements,
@@ -41,8 +44,10 @@ __all__ = [
     "AcceptedSourceEvidence", "ArtifactIdentity", "BuildProvenanceEvidence", "CellCompatibilityEvidence",
     "ConfigurationValidationEvidence", "CurrentAuthorityEvidence", "DeploymentAdmissionEvidence",
     "DeploymentAuthority", "DeploymentIntent", "DeploymentObservation", "DeploymentRecord",
+    "EMPTY_RELIABILITY_FLOOR_AUTHORITY_PROFILE", "EmptyReliabilityFloorJustification",
     "HealthGateEvidence", "MixedVersionMatrix", "NoApplicableCaseEvidence", "OutcomeClass",
-    "PromotionEvidence", "PromotionState", "RecoveryClassificationEvidence", "ReleaseError",
+    "PromotionEvidence", "PromotionState", "RUNTIME_REQUIREMENTS_PRINCIPAL",
+    "RecoveryClassificationEvidence", "ReleaseError",
     "ReleaseTargetState", "RolloutCompatibilityEvidence", "RuntimeVerificationEvidence",
     "RuntimeVerificationRequirements", "SourceTrustClass", "TargetConfiguration", "ValidationScope",
     "classify_change_outcome", "require_deployment_admission", "require_promotion_authority",

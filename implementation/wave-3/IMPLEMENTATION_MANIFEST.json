@@ -50,7 +50,9 @@
     "HEALTH GREEN != RELEASE ADMISSION AUTHORITY",
     "TIMEOUT/LOST RESPONSE != RELEASE EFFECT ABSENCE",
     "RELEASE TARGET STATE != PLACEMENT/RUNTIME AUTHORITY",
-    "ONE RELEASE ARTIFACT -> MANY ENVIRONMENT PROMOTIONS"
+    "ONE RELEASE ARTIFACT -> MANY ENVIRONMENT PROMOTIONS",
+    "EMPTY RELIABILITY FLOOR != SILENT DEFAULT",
+    "RUNTIME REQUIREMENTS AUTHORSHIP != DEPLOY SUBMITTER ALONE"
   ],
   "residual_c2_choices_not_selected": [
     "observability_backend",
@@ -124,7 +126,9 @@
     "timeout_or_lost_response_for_effect_absence",
     "new_deployment_operation_id_for_unresolved_prior_operation",
     "externally_mutable_release_target_state_for_fencing",
-    "release_target_state_version_for_runtime_generation_or_placement_version"
+    "release_target_state_version_for_runtime_generation_or_placement_version",
+    "empty_reliability_floor_without_justification",
+    "deploy_submitter_principal_for_runtime_requirements_authorship"
   ],
   "next_wave_authorized": false
 }

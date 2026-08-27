@@ -191,6 +191,7 @@ def runtime_requirements(i=None, *, target_version=None, release_policy_evidence
         required_reliability_profile_ids=RUNTIME_RELIABILITY_REQUIREMENTS,
         required_health_profile_ids=RUNTIME_HEALTH_REQUIREMENTS,
         current=True,
+        requirements_principal_class="principal.release-promote@1",
     )
     values.update(changes)
     return RuntimeVerificationRequirements(**values)
@@ -568,6 +569,13 @@ class ReleaseTests(unittest.TestCase):
         ):
             bad = RuntimeVerificationRequirements(**{**base.__dict__, **mutation})
             with self.subTest(mutation=mutation), self.assertRaises(ReleaseError):
+                verify_direct(runtime_evidence(), bad)
+
+    def test_runtime_requirements_principal_cannot_be_substituted(self):
+        base = runtime_requirements()
+        for value in ("x", "principal.release-deploy@1", "attacker-chosen-principal@1"):
+            bad = RuntimeVerificationRequirements(**{**base.__dict__, "requirements_principal_class": value})
+            with self.subTest(value=value), self.assertRaises(ReleaseError):
                 verify_direct(runtime_evidence(), bad)
 
     def test_health_policy_boolean_requires_immutable_policy_lineage(self):

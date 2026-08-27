@@ -2,7 +2,12 @@ import unittest
 
 from jlmirror_observability import RELIABILITY_OBSERVABILITY_JOINS
 from jlmirror_release.model import ArtifactIdentity, DeploymentIntent, ReleaseError, TargetConfiguration, ValidationScope
-from jlmirror_release.verification import RuntimeVerificationEvidence, RuntimeVerificationRequirements, verify_runtime
+from jlmirror_release.verification import (
+    EmptyReliabilityFloorJustification,
+    RuntimeVerificationEvidence,
+    RuntimeVerificationRequirements,
+    verify_runtime,
+)
 
 
 def intent(runtime_profiles=("runtime.api@1",), worker_specializations=()):
@@ -25,7 +30,19 @@ def intent(runtime_profiles=("runtime.api@1",), worker_specializations=()):
     )
 
 
-def requirements(i, reliability_ids):
+def empty_floor_justification(i, **changes):
+    values = dict(
+        reason="worker.reconciliation@1 affected-profile bindings are contextual pre-effect requirements",
+        authority_profile="release.empty-reliability-floor-authority@1",
+        evidence_reference="evidence:empty-reliability-floor-1",
+        scope_binding=f"deployment:{i.target_id}:{i.deployment_operation_id}",
+        current=True,
+    )
+    values.update(changes)
+    return EmptyReliabilityFloorJustification(**values)
+
+
+def requirements(i, reliability_ids, *, justification=None):
     health_ids = tuple(sorted({
         health_id
         for reliability_id in reliability_ids
@@ -41,6 +58,8 @@ def requirements(i, reliability_ids):
         required_reliability_profile_ids=tuple(reliability_ids),
         required_health_profile_ids=health_ids,
         current=True,
+        requirements_principal_class="principal.release-promote@1",
+        empty_floor_justification=justification,
     )
 
 
@@ -144,11 +163,57 @@ class RuntimeProfileReliabilityTests(unittest.TestCase):
     def test_reconciliation_worker_uses_exact_pre_effect_affected_reliability(self):
         i = intent(("runtime.worker@1",), ("worker.reconciliation@1",))
         # The affected owner/profile is contextual, so Phase 13 does not define one universal
-        # reliability ID for reconciliation workers. The pre-effect requirements record remains
+        # reliability ID for reconciliation workers -- runtime.worker@1 and worker.reconciliation@1
+        # both carry an empty non-conditional floor, so the requirements record must present an
+        # evidence-backed empty-floor justification. The pre-effect requirements record remains
         # the authority and must still contain a non-empty canonical reliability set.
-        requirements(i, ("rel.replay-consume-state@1",)).validate_for(
-            i, expected_release_target_state_version=1
+        requirements(
+            i, ("rel.replay-consume-state@1",), justification=empty_floor_justification(i)
+        ).validate_for(i, expected_release_target_state_version=1)
+
+    def test_reconciliation_worker_empty_floor_requires_justification(self):
+        i = intent(("runtime.worker@1",), ("worker.reconciliation@1",))
+        with self.assertRaises(ReleaseError):
+            requirements(i, ("rel.replay-consume-state@1",)).validate_for(
+                i, expected_release_target_state_version=1
+            )
+
+    def test_reconciliation_worker_empty_floor_justification_cannot_be_substituted(self):
+        i = intent(("runtime.worker@1",), ("worker.reconciliation@1",))
+        for value in ("x", "release.runtime-verification-requirements@1", "attacker-authority@1"):
+            with self.subTest(value=value), self.assertRaises(ReleaseError):
+                requirements(
+                    i, ("rel.replay-consume-state@1",),
+                    justification=empty_floor_justification(i, authority_profile=value),
+                ).validate_for(i, expected_release_target_state_version=1)
+
+    def test_empty_floor_justification_must_be_the_canonical_evidence_type(self):
+        # Regression test: dataclass type hints are not runtime-enforced, so without an explicit
+        # isinstance check any duck-typed stand-in exposing a no-op validate_for(expected_scope)
+        # would satisfy "is not None" and be delegated to, skipping reason/authority_profile/
+        # evidence_reference/current/scope checks entirely.
+        class ForgedJustification:
+            def validate_for(self, expected_scope):
+                return None
+
+        i = intent(("runtime.worker@1",), ("worker.reconciliation@1",))
+        with self.assertRaises(ReleaseError):
+            requirements(
+                i, ("rel.replay-consume-state@1",), justification=ForgedJustification()
+            ).validate_for(i, expected_release_target_state_version=1)
+
+    def test_non_empty_floor_cannot_also_claim_empty_floor_justification(self):
+        i = intent()
+        complete = (
+            "rel.cell-transactional-store@1",
+            "rel.security-session-authority@1",
+            "rel.performance-cache@1",
+            "rel.configuration-authority@1",
         )
+        with self.assertRaises(ReleaseError):
+            requirements(i, complete, justification=empty_floor_justification(i)).validate_for(
+                i, expected_release_target_state_version=1
+            )
 
     def test_runtime_evidence_cannot_change_worker_specialization(self):
         i = intent(("runtime.worker@1",), ("worker.outbox-publication@1",))

@@ -16,6 +16,8 @@ REQUIRED_LAWS = {
     "SAME DEPLOYMENT OPERATION != REPINNABLE RUNTIME REQUIREMENTS",
     "RUNTIME REQUIREMENTS MUST PRECEDE EFFECTFUL DEPLOYMENT",
     "RUNTIME VERIFICATION POLICY CURRENTNESS != DIFFERENT PRE-EFFECT GATE POLICY LINEAGE",
+    "EMPTY RELIABILITY FLOOR != SILENT DEFAULT",
+    "RUNTIME REQUIREMENTS AUTHORSHIP != DEPLOY SUBMITTER ALONE",
 }
 REQUIRED_FORBIDDEN = {
     "post_effect_runtime_requirements_repin",
@@ -23,6 +25,8 @@ REQUIRED_FORBIDDEN = {
     "runtime_verification_evidence_embedded_requirements_authority",
     "runtime_requirements_not_persisted_before_effect",
     "rotated_runtime_release_policy_evidence_for_stale_pre_effect_gate_set",
+    "empty_reliability_floor_without_justification",
+    "deploy_submitter_principal_for_runtime_requirements_authorship",
 }
 REQUIRED_TESTS = {
     "test_runtime_requirements_are_validated_before_effectful_admission",
@@ -31,6 +35,7 @@ REQUIRED_TESTS = {
     "test_same_operation_cannot_repin_runtime_requirements",
     "test_runtime_requirements_cannot_be_empty_duplicate_unknown_or_incomplete",
     "test_runtime_requirements_cannot_be_replayed_across_scope_or_target_version",
+    "test_runtime_requirements_principal_cannot_be_substituted",
     "test_health_gate_cannot_be_replayed_across_target_state_version",
     "test_runtime_health_gate_set_must_match_requirements_exactly",
     "test_runtime_verification_cannot_rotate_release_policy_lineage_after_gate_set_authorized",
@@ -101,9 +106,28 @@ def validate() -> None:
         "required_reliability_profile_ids",
         "required_health_profile_ids",
         "current",
+        "requirements_principal_class",
+        "empty_floor_justification",
     }
     if requirements_fields != required_requirement_fields:
         fail(f"RuntimeVerificationRequirements field set drift: {sorted(requirements_fields)}")
+
+    empty_floor_cls = class_node(verification_tree, "EmptyReliabilityFloorJustification")
+    empty_floor_fields = dataclass_fields(empty_floor_cls)
+    required_empty_floor_fields = {"reason", "authority_profile", "evidence_reference", "scope_binding", "current"}
+    if empty_floor_fields != required_empty_floor_fields:
+        fail(f"EmptyReliabilityFloorJustification field set drift: {sorted(empty_floor_fields)}")
+
+    requirements_validate = method_node(requirements_cls, "validate_for")
+    requirements_validate_source = source_segment(VERIFICATION, requirements_validate)
+    for fragment in (
+        "self.requirements_principal_class != RUNTIME_REQUIREMENTS_PRINCIPAL",
+        "empty mandatory reliability floor and requires an",
+        "non-empty mandatory reliability floor cannot also claim an empty-floor justification",
+        "isinstance(self.empty_floor_justification, EmptyReliabilityFloorJustification)",
+    ):
+        if fragment not in requirements_validate_source:
+            fail(f"runtime requirements authorship/empty-floor invariant missing: {fragment}")
 
     runtime_evidence_cls = class_node(verification_tree, "RuntimeVerificationEvidence")
     runtime_evidence_fields = dataclass_fields(runtime_evidence_cls)

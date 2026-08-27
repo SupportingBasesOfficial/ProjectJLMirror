@@ -7,7 +7,7 @@
 
 ## Purpose
 
-This document closes the Monitoring domain/use-case semantics that Wave 4 code is not allowed to invent: canonical identity, provider-instance replacement, configured scope, current metric state, historical observations, problem/health normalization, negative evidence, synchronization ownership, recovery and tenant authority.
+This document closes the Monitoring domain/use-case semantics that Wave 4 code is not allowed to invent: canonical identity, provider-instance replacement, source-generation lifecycle, configured scope, current metric state, historical observations, problem/health normalization, negative evidence, synchronization ownership, recovery and tenant authority.
 
 The HTTP representation is defined by `docs/09-api-contracts/monitoring-domain-api-contract.md`.
 
@@ -38,7 +38,7 @@ problem
 health_projection
 monitoring_sync_operation
 provider external-reference mappings
-scope/synchronization/checkpoint/completeness evidence
+generation/scope/synchronization/checkpoint/completeness evidence
 ```
 
 Monitoring consumes trusted `TenantContext`, current placement/admission authority and provider-adapter evidence. It does not consume caller-supplied physical routing or provider-native tenant authority.
@@ -170,11 +170,44 @@ unavailable
 
 This is a domain-facing projection of synchronization trust. It cannot invent successful/current evidence when dependency authority is stale or unavailable.
 
+## Source-generation operational lifecycle
+
+Every generation-scoped Monitoring object derives an operational generation state from the authoritative source row:
+
+```text
+generation_state = active_generation | historical_generation
+```
+
+The value is **derived**, not a mass-updated lifecycle flag:
+
+```text
+object.source_instance_generation == source.active_source_instance_generation
+  -> active_generation
+otherwise
+  -> historical_generation
+```
+
+Normative rules:
+
+- a cutover changes the source's active-generation authority in one serialized transition; it SHALL NOT require rewriting every resource/metric/problem/health row from the prior generation;
+- immediately after cutover, prior-generation objects are operationally historical by derivation even if their stored `presence_state`, `definition_state` or `problem_state` preserves the last provider fact observed before retirement;
+- `historical_generation` is **not** equivalent to `removed`, `retired` or `resolved`; generation retirement cannot fabricate any of those provider/domain facts;
+- prior-generation resources/problems/health/current-value projections remain available only under explicit historical/last-known semantics and current authorization/retention policy;
+- prior-generation objects SHALL NOT participate in current inventory, current health, current metric-state, current problem/Alerting input, negative inference or provider synchronization unless a separately accepted migration/reconciliation contract explicitly grants such authority;
+- current operational list/read composition defaults to the active generation; historical-generation inclusion is explicit and visibly classified;
+- a direct lookup of a historical-generation canonical ID may return retained evidence, but the representation exposes `generation_state=historical_generation` and cannot describe it as currently monitored;
+- a prior-generation problem may remain `problem_state=active` as historical evidence that it was unresolved when that generation retired; `generation_state=historical_generation` prevents it from masquerading as a current operational problem;
+- prior-generation health/current-value projections preserve last-known evidence but have no current-authority meaning after cutover;
+- the new active generation begins with incomplete/reconciliation-required current coverage until successor synchronization establishes new generation-scoped resources/metrics/problems/health evidence;
+- replay/backfill for an historical generation may repair that generation's retained history only under accepted replay authority; it cannot regain current-state authority merely because it executes later.
+
+This separation preserves history without forcing cross-generation identity reuse and makes cutover O(1) with respect to object cardinality.
+
 ## Configured scope is not provider absence
 
 A source's configured provider scope is a JLMIRROR configuration boundary over what the adapter is allowed/expected to observe. Changing that scope is **not** provider negative evidence.
 
-The source carries a monotonic `scope_revision`. Resources and metric definitions expose a derived scope projection:
+The active source generation carries a monotonic `scope_revision`. Resources and metric definitions expose a derived scope projection:
 
 ```text
 scope_state = in_scope | out_of_scope
@@ -187,10 +220,11 @@ Normative rules:
 - a scope edit atomically commits only the new source scope/configuration revision, required audit/transition intent and one durable bounded scope-reconciliation responsibility;
 - a scope edit SHALL NOT require an O(number_of_resources + number_of_metrics) transaction that rewrites every affected object before the source mutation can commit;
 - per-object scope projections may be materialized/reconciled asynchronously in bounded batches;
-- a per-object projection is authoritative as `current` only when it is proven against the source's current `scope_revision`, or an equivalent current deterministic scope evaluation proves the same result;
+- for an **active-generation** object, a scope projection is authoritative as `current` only when it is proven against the source's current `scope_revision`, or an equivalent current deterministic scope evaluation proves the same result;
 - a stale scope projection cannot authorize a positive `in_scope` claim, negative inference, fresh health/current-value claim or provider work merely because an old row still says `in_scope`;
-- while scope membership has not been reconciled to the current source scope revision, the object exposes `scope_evidence_state=reconciliation_required` and current monitoring authority fails safe;
-- removing a host group or equivalent selector may ultimately project affected objects as `out_of_scope` without rewriting their identity/history;
+- while active-generation scope membership has not been reconciled to the current source scope revision, the object exposes `scope_evidence_state=reconciliation_required` and current monitoring authority fails safe;
+- historical-generation objects do not become subject to the successor/current generation's scope revision; their retained scope evidence is historical only and never current authority;
+- removing a host group or equivalent selector may ultimately project affected active-generation objects as `out_of_scope` without rewriting their identity/history;
 - `out_of_scope` preserves canonical identity, external mapping and retained history;
 - scope exclusion alone MUST NOT mark a resource `removed`, a metric definition `retired`, or a problem `resolved`;
 - active problems linked only to newly out-of-scope resources retain their last known state with non-current evidence until affirmative provider/domain evidence resolves them or governed retention removes their history;
@@ -220,6 +254,8 @@ created_at
 updated_at
 ```
 
+`generation_state` is derived at read/use time from source active-generation authority.
+
 `presence_state` is only:
 
 ```text
@@ -229,7 +265,7 @@ removed
 
 There is deliberately no `missing == removed` state transition. Provider failure, missing scope, truncated snapshot, permission loss, stale scope projection or recovery uncertainty leaves prior presence intact while evidence state degrades. `removed` requires accepted authoritative negative evidence while the object is within an evidence domain that can actually prove absence.
 
-`scope_state=out_of_scope` is orthogonal to `presence_state`; it means JLMIRROR intentionally stopped asserting current monitoring coverage for that object, not that the provider removed it.
+`scope_state=out_of_scope` is orthogonal to `presence_state`; `generation_state=historical_generation` is orthogonal to both.
 
 ## Metric definition
 
@@ -252,6 +288,8 @@ created_at
 updated_at
 ```
 
+`generation_state` is derived at read/use time.
+
 Canonical `value_kind`:
 
 ```text
@@ -270,7 +308,7 @@ active
 retired
 ```
 
-Retirement follows authoritative negative-evidence rules. Scope exclusion uses `scope_state=out_of_scope`; it is not retirement.
+Retirement follows authoritative negative-evidence rules. Scope exclusion uses `scope_state=out_of_scope`; historical generation uses `generation_state=historical_generation`. Neither is retirement.
 
 ## Current metric state
 
@@ -301,7 +339,7 @@ A genuinely different current observation may advance under a later valid fenced
 
 If current provider evidence becomes stale/incomplete/reconciliation-required/unavailable, the last-known current value may remain visible with non-current `evidence_state`; it cannot masquerade as freshly proven current truth.
 
-A metric whose current scope cannot be proven under the current `scope_revision` cannot present its last value as currently monitored. The last accepted value may remain retained/visible under authorized last-known/historical semantics, but scope/evidence must make the uncertainty or loss of coverage explicit.
+A metric whose current scope cannot be proven under the current `scope_revision` cannot present its last value as currently monitored. A metric from `historical_generation` likewise cannot be presented as current regardless of its stored last-known evidence. Retained values may remain visible under authorized historical/last-known semantics with explicit generation/scope/evidence classification.
 
 ## Historical metric observation
 
@@ -361,7 +399,9 @@ external_references
 bounded provider_metadata
 ```
 
-`resolved` requires affirmative provider evidence or accepted complete/object-specific negative evidence. Uncertainty never resolves a problem. Scope exclusion or stale scope membership never resolves a problem by itself.
+`generation_state` is derived at read/use time.
+
+`resolved` requires affirmative provider evidence or accepted complete/object-specific negative evidence. Uncertainty never resolves a problem. Scope exclusion, stale scope membership or generation retirement never resolves a problem by itself.
 
 Provider acknowledgement is metadata only and does not acknowledge/resolve Monitoring, Alerting or ITSM state. Provider tags are bounded metadata/evidence only unless a later accepted mapping promotes a specific namespace. Neither can choose tenant, authorization, placement or canonical identity.
 
@@ -389,6 +429,8 @@ last_evidence_at
 bounded problem/reason references
 ```
 
+`generation_state` is derived at read/use time.
+
 Provider-neutral derivation is conservative:
 
 - no trustworthy current evidence -> `unknown`, or last-known class with a non-current `evidence_state`;
@@ -397,9 +439,10 @@ Provider-neutral derivation is conservative:
 - active `critical` problem -> `unhealthy`;
 - active `unknown`-severity problem cannot prove `healthy`;
 - `informational` alone does not force degradation;
-- an object whose current scope cannot be proven cannot be advertised as freshly proven `healthy` merely from last-known evidence.
+- an object whose current scope cannot be proven cannot be advertised as freshly proven `healthy` merely from last-known evidence;
+- a historical-generation projection has no current-health authority even if its last stored class was `healthy`.
 
-Multiple active problems combine by the strongest canonical health effect. Provider severity itself is not the health enum.
+Multiple active-generation active problems combine by the strongest canonical health effect. Provider severity itself is not the health enum.
 
 ## Zabbix normalization destination
 
@@ -454,7 +497,7 @@ It requires current authorization, optimistic concurrency and mutation idempoten
 
 For Zabbix, base-URL change is prohibited here.
 
-A configured-scope edit atomically advances the source `scope_revision`, commits the new scope definition, audit/transition intent and one durable scope-reconciliation responsibility. It does **not** synchronously rewrite every resource/metric row. Derived object scope projections reconcile in bounded batches and cannot claim current `in_scope` authority until proven against the new revision.
+A configured-scope edit atomically advances the source `scope_revision`, commits the new scope definition, audit/transition intent and one durable scope-reconciliation responsibility. It does **not** synchronously rewrite every resource/metric row. Derived active-generation object scope projections reconcile in bounded batches and cannot claim current `in_scope` authority until proven against the new revision.
 
 ### Replace instance — staged candidate, then atomic cutover
 
@@ -505,12 +548,13 @@ Only a candidate with accepted current validation evidence is eligible for cutov
 3. fences prior active provider-instance/poll writer authority;
 4. atomically advances `active_source_instance_generation` to candidate generation and installs successor config/scope/credential references;
 5. advances source configuration and scope revisions;
-6. records candidate `activated` and prior-generation retirement/fence evidence;
+6. records candidate `activated` and prior generation retirement/fence evidence;
 7. persists required audit/transition intent;
 8. creates exactly one durable successor synchronization/scope-reconciliation responsibility;
-9. never merges old/new provider-native mappings or deletes old historical evidence.
+9. marks the source operational evidence at least `reconciliation_required` until successor current coverage is established;
+10. never merges old/new provider-native mappings or deletes old historical evidence.
 
-There is never more than one active source-instance generation. If cutover outcome is ambiguous across recovery/failure, admission remains reconciliation-required until active-generation/fence/audit/operation authorities prove the winner. A failed validation cannot silently activate, and recovery cannot silently reactivate the retired generation.
+There is never more than one active source-instance generation. The active-generation pointer change immediately makes all prior-generation objects historical by derivation; no O(N) object rewrite is required. If cutover outcome is ambiguous across recovery/failure, admission remains reconciliation-required until active-generation/fence/audit/operation authorities prove the winner. A failed validation cannot silently activate, and recovery cannot silently reactivate the retired generation.
 
 This staged design prevents a typo, bad credential or unreachable replacement endpoint from taking down an otherwise healthy source before the candidate has proved minimum admissibility.
 
@@ -524,7 +568,7 @@ Provider profiles provide ordering/fencing authority. Zabbix uses:
 
 The token decides whether a candidate observation is eligible against stale writers. It does not create semantic change by itself.
 
-A replacement candidate that has not completed atomic cutover has no current-state write authority even if it can reach Zabbix successfully.
+A replacement candidate that has not completed atomic cutover has no current-state write authority even if it can reach Zabbix successfully. An historical-generation poll/replay likewise has no current-state write authority.
 
 Poll epoch continuity across PITR/failover/relocation follows the accepted `(R,F]` and placement-fence model. A restored/local-lower sequence cannot make itself current.
 
@@ -539,6 +583,7 @@ provider timeout/unavailability
 authentication/permission failure
 configured scope exclusion
 stale/unreconciled scope projection
+source-generation retirement
 missing configured scope anchor
 truncated/limited/failed page
 incomplete snapshot
@@ -550,7 +595,7 @@ missing row under uncertain visibility
 
 `removed`, `retired` and `resolved` require a provider-profile accepted negative-evidence class: complete current-scope evidence, bounded authenticated object-specific reconciliation or a stronger explicit provider primitive.
 
-The negative transition and required audit/transition signal intent are atomic. Recovery cannot restore stale snapshot-complete/visibility/scope markers as current authority.
+The negative transition and required audit/transition signal intent are atomic. Recovery cannot restore stale snapshot-complete/visibility/scope/generation markers as current authority.
 
 ## Historical completeness and gaps
 
@@ -558,7 +603,7 @@ Historical telemetry exposes what JLMIRROR can prove.
 
 If late provider insertion, retention loss, restore uncertainty or another gap prevents completeness, Monitoring records explicit incomplete/gap/reconciliation evidence. A fast high-water mark is only a freshness optimization and never permanent completeness proof.
 
-Configured scope changes are represented as scope boundaries in coverage evidence; periods intentionally excluded from monitoring are not fabricated as complete provider history.
+Configured scope changes and generation cutovers are represented as explicit coverage boundaries. Periods intentionally excluded from monitoring, and gaps between successor activation and successor evidence establishment, are not fabricated as complete provider history/current coverage.
 
 ## Event/outbox boundary
 
@@ -574,13 +619,13 @@ The second is not emitted for an identical repeated current observation.
 
 High-volume raw observations are not required to traverse the general integration-event broker. Physical dispatch remains Phase 10/C2 implementation authority.
 
-Replacement candidate validation and scope-reconciliation progress do not masquerade as Monitoring provider facts.
+Replacement candidate validation, generation retirement and scope-reconciliation progress do not masquerade as provider facts. A cutover may emit its own stable source-generation transition under the accepted integration-event contract, but it does not synthesize remove/resolve events for every prior-generation object.
 
 ## Dashboard boundary
 
-Monitoring dashboards are a Product outcome composed from Monitoring inventory, current metric state, health, problems, history and sync/scope evidence.
+Monitoring dashboards are a Product outcome composed from active-generation Monitoring inventory, current metric state, health, problems, history and sync/scope/generation evidence.
 
-BFF/read composition may build the initial view. Persistent presentation-oriented/cross-domain dashboard projections remain Reporting & Experience ownership and do not gain Monitoring mutation ownership.
+BFF/read composition may build the initial view. Historical-generation evidence is included only through explicit historical/drill-down semantics. Persistent presentation-oriented/cross-domain dashboard projections remain Reporting & Experience ownership and do not gain Monitoring mutation ownership.
 
 ## Authorization
 
@@ -608,16 +653,16 @@ Organization & Access maps roles/custom roles to actions/resource scope. Provide
 - provider strings are untrusted data and are bounded/safely encoded;
 - logs/traces do not emit unrestricted observation/problem payloads or credentials;
 - accepted per-value byte limits, page byte budgets and parser limits are mandatory before implementation; `OPEN` cannot mean unbounded;
-- stale scope projection cannot be used as authorization, current monitoring proof or negative-evidence authority;
-- tenant/provider cardinality, scope reconciliation, history, webhook hints, reconciliation and backlog are bounded/attributable.
+- stale scope projection or historical-generation state cannot be used as authorization, current monitoring proof or negative-evidence authority;
+- tenant/provider cardinality, generation cutover, scope reconciliation, history, webhook hints, reconciliation and backlog are bounded/attributable.
 
 ## Recovery/relocation
 
 Before recovered/relocated Monitoring write authority resumes, applicable active source generation, replacement-candidate state, configuration/scope revisions, scope reconciliation, poll authority, observation acceptance, historical projection, current metric state, sync/checkpoint, negative evidence and transition/outbox continuity is reconciled through `(R,F]`.
 
-Missing state is uncertainty, not permission to reaccept/retry/remove/resolve/activate a candidate or claim current `in_scope`. A retired-placement writer cannot become current merely because it can still reach the provider.
+Missing state is uncertainty, not permission to reaccept/retry/remove/resolve/activate a candidate, claim current `in_scope`, or reclassify an historical generation as active. A retired-placement writer cannot become current merely because it can still reach the provider.
 
-Recovery must prove which source generation/scope revision is active and which replacement candidate/cutover outcome won before protected/effectful Monitoring writes resume.
+Recovery must prove which source generation/scope revision is active and which replacement candidate/cutover outcome won before protected/effectful Monitoring writes resume. Historical-generation retained evidence remains historical after recovery unless a distinct currently authorized migration decision changes identity/lifecycle semantics.
 
 ## Capacity dimensions
 
@@ -627,8 +672,9 @@ Implementation measures/bounds at least:
 tenants/cell
 sources/tenant
 replacement candidates/source
-resources/source
-metrics/resource
+source generations retained/source
+resources/source/generation
+metrics/resource/generation
 scope-reconciliation backlog/rate
 current-metric projection size
 current-state rows/read page and serialized response bytes
@@ -645,7 +691,7 @@ Production numerics remain C3/evidence-driven; `OPEN` never means unlimited and 
 
 ## Compatibility-sensitive semantics
 
-Breaking/security-sensitive changes include identity scope, cross-generation mapping, replacement candidate/cutover semantics, configured-scope revision/currentness semantics, current-state fencing/idempotency, current metric state meaning/surface, observation value representation, negative evidence, problem severity/health/evidence vocabularies, provider metadata authority, history completeness or domain ownership.
+Breaking/security-sensitive changes include identity scope, cross-generation mapping, source-generation operational lifecycle, replacement candidate/cutover semantics, configured-scope revision/currentness semantics, current-state fencing/idempotency, current metric state meaning/surface, observation value representation, negative evidence, problem severity/health/evidence vocabularies, provider metadata authority, history completeness or domain ownership.
 
 ## Validation / falsification vectors
 
@@ -658,27 +704,30 @@ Before implementation conformance:
 5. Concurrent replacement commands produce one idempotent candidate per command and at most one serialized cutover winner.
 6. Candidate generation cannot mutate canonical current state before cutover.
 7. Atomic cutover leaves exactly one active generation and one successor synchronization responsibility.
-8. Scope edit commits without an O(N) resource/metric rewrite transaction.
-9. Stale per-object scope projection cannot claim current `in_scope`, current health/value or authorize negative inference.
-10. Scope exclusion never becomes provider `removed`/metric `retired`/problem `resolved` by itself.
-11. Re-inclusion re-establishes currentness from provider evidence rather than restoring stale current evidence as fresh.
-12. Stale poll/placement cannot mutate current state.
-13. Provider clock rollback does not freeze a genuinely newer current observation.
-14. Same current observation under a later poll emits no duplicate semantic transition.
-15. Current metric reads use `metric_current_state`, not per-request “latest history row” inference.
-16. Metric-definition enumeration does not require embedding all current values.
-17. History/backfill acceptance does not grant current authority.
-18. Incomplete/visibility-degraded snapshots never remove/retire/resolve by omission.
-19. PITR/relocation cannot revive stale negative-evidence/poll/candidate/scope authority.
-20. Observations are immutable and historical projection is idempotent by canonical identity.
-21. Accepted non-latest observations still retain historical-projection obligation.
-22. Historical gap/late-arrival/scope uncertainty is explicit.
-23. Provider acknowledgement/tags cannot mutate Alerting/ITSM/authorization.
-24. Zabbix severity maps only to canonical classes and retains native severity only as external evidence.
-25. One tenant's provider/scope-reconciliation failure/backlog does not stall unrelated tenants.
-26. Logs/traces/errors contain no credential secret or unrestricted sensitive observation payload.
-27. Current/history/problem responses cannot become shared/public cache entries and sensitive value responses follow stricter API cache class.
-28. Oversized provider values/history pages are bounded before memory/storage/response exhaustion rather than treated as unlimited valid payloads.
+8. Cutover does not require O(number of prior-generation objects) rewrites; prior objects become historical by derived generation state.
+9. Historical-generation resources/problems/health/current values cannot appear as current operational state by default.
+10. An unresolved prior-generation problem remains historical evidence rather than being falsely resolved or treated as a current problem.
+11. Scope edit commits without an O(N) resource/metric rewrite transaction.
+12. Stale per-object scope projection cannot claim current `in_scope`, current health/value or authorize negative inference.
+13. Scope exclusion never becomes provider `removed`/metric `retired`/problem `resolved` by itself.
+14. Re-inclusion re-establishes currentness from provider evidence rather than restoring stale current evidence as fresh.
+15. Stale poll/placement/historical generation cannot mutate current state.
+16. Provider clock rollback does not freeze a genuinely newer current observation.
+17. Same current observation under a later poll emits no duplicate semantic transition.
+18. Current metric reads use `metric_current_state`, not per-request “latest history row” inference.
+19. Metric-definition enumeration does not require embedding all current values.
+20. History/backfill acceptance does not grant current authority.
+21. Incomplete/visibility-degraded snapshots never remove/retire/resolve by omission.
+22. PITR/relocation cannot revive stale negative-evidence/poll/candidate/scope/generation authority.
+23. Observations are immutable and historical projection is idempotent by canonical identity.
+24. Accepted non-latest observations still retain historical-projection obligation.
+25. Historical gap/late-arrival/scope/generation uncertainty is explicit.
+26. Provider acknowledgement/tags cannot mutate Alerting/ITSM/authorization.
+27. Zabbix severity maps only to canonical classes and retains native severity only as external evidence.
+28. One tenant's provider/scope-reconciliation failure/backlog does not stall unrelated tenants.
+29. Logs/traces/errors contain no credential secret or unrestricted sensitive observation payload.
+30. Current/history/problem responses cannot become shared/public cache entries and sensitive value responses follow stricter API cache class.
+31. Oversized provider values/history pages are bounded before memory/storage/response exhaustion rather than treated as unlimited valid payloads.
 
 ## Remaining OPENs / blockers
 

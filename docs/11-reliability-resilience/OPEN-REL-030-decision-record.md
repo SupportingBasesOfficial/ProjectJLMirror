@@ -42,26 +42,35 @@ The acceptance boundary reuses the exact mechanism ADR-008 already accepts and W
 
 ```text
 BEGIN
-  atomic create-or-observe on (observation_identity_scope, observation_id)   -- ADR-008 idempotency-claim pattern
+  observation = atomic create-or-observe on (observation_identity_scope, observation_id)
   if newly accepted:
       persist canonical observation record
-      append outbox intent for Tier 2 historical projection                  -- UNCONDITIONAL: every accepted
-                                                                               -- observation reaches history,
-                                                                               -- whether or not it is "latest"
-      conditional compare-and-set current-state projection by ordering token  -- telemetry-plane.md ordering contract
+      append outbox intent for Tier 2 historical projection                  -- exactly once per logical
+                                                                               -- accepted observation;
+                                                                               -- independent of "latest"
+
+  if this arrival is an owner-contract current-state candidate:
+      validate current provider/source authority and accepted projection ordering token
+      conditional compare-and-set current-state projection by ordering token  -- MAY execute even when
+                                                                               -- observation already existed
       if advanced:
           persist stable transition identity
-          append outbox intent for current-state-changed downstream signal   -- CONDITIONAL: only on advancement
+          append outbox intent for current-state-changed downstream signal
 COMMIT
 ```
 
-The historical-projection dispatch is deliberately **not** nested under `if advanced`: Tier 2 is a record of every accepted observation, not only the ones that happen to be "latest" at processing time (a stale/out-of-order sample is still valid historical telemetry per `telemetry-plane.md`'s "Historical/event-time analytics may process late observations under their own explicit window/watermark semantics" rule) — only the current-state-changed *signal* is conditional on advancement, matching ADR-008's "State-transition signal atomicity" section exactly.
+Two separations are deliberate and correctness-critical:
+
+1. **Historical projection is coupled to first durable acceptance, not to current-state advancement.** Every newly accepted canonical observation gets its Tier 2 historical-projection intent even if it is stale/non-latest for current-state purposes.
+2. **Current-state candidacy is not coupled to first acceptance.** The same canonical observation may have been accepted earlier through a historical/backfill path and only later be encountered through a provider-authoritative current-snapshot path, or may need its current projection re-attempted during replay/reconciliation. In those cases the create-or-observe result is "already exists," but the current-state CAS is still eligible under the owner contract's current authority + ordering token. Re-running that CAS is idempotent: an equal/older token does not advance, while a genuinely newer authorized token may advance and atomically creates its transition/signal obligation.
+
+A provider timestamp/event-time value is **not automatically a current-state ordering token**. The owner/provider contract must supply an ordering authority that satisfies `telemetry-plane.md`'s monotonic-projection rule; that document explicitly says `observed_at` alone is insufficient because provider clocks can skew or move backwards. For the initial Zabbix profile, `docs/09-api-contracts/zabbix-monitoring-source-provider-contract.md` therefore uses a platform-owned fenced poll generation for current/latest snapshots, while `clock`/`ns` remain historical/freshness metadata. Historical `history.get` observations do not acquire current-state authority merely by having a larger event timestamp.
 
 This directly satisfies `telemetry-plane.md:86-90`'s second option ("a transactional persistence record plus outbox when PostgreSQL is the accepted ingestion authority") and ADR-008's "State-transition signal atomicity" section without requiring a new *pattern* — the schema shape and the atomicity argument's structure already exist and were already adversarially reviewed for the structurally identical Wave 2 cross-authority operation/reconciliation pattern this reuses. What still requires new evidence, specific to this tier's real-database behavior, is listed in full under "Evidence and validation required" below.
 
 ### Tier 2 — historical telemetry projection: TimescaleDB (PostgreSQL extension)
 
-Current-state remains Tier 1's responsibility (the compare-and-set projection inside the same transaction as durable acceptance, above) — Tier 2 covers only the high-volume historical side, matching `telemetry-plane.md`'s own separation of "Transactional current state in the cell" from "Historical telemetry through the telemetry port."
+Current-state remains Tier 1's responsibility (the compare-and-set projection inside the same accepted transaction boundary when a current-state candidate is evaluated, above) — Tier 2 covers only the high-volume historical side, matching `telemetry-plane.md`'s own separation of "Transactional current state in the cell" from "Historical telemetry through the telemetry port."
 
 For the high-volume historical telemetry side (`metric_observation` history, per `telemetry-plane.md`'s "Historical telemetry through the telemetry port" section), the selected mechanism is **TimescaleDB**, a PostgreSQL extension providing hypertables (automatic time-partitioning), native compression, continuous aggregates (for rollups), and retention policies.
 
@@ -79,6 +88,7 @@ TimescaleDB is a **C2 implementation choice**, not an architectural commitment: 
 ### Positive
 
 - reuses an already-accepted, already-adversarially-reviewed correctness *pattern and schema shape* for the highest-risk part (durable acceptance) instead of designing or reviewing a new one — only concurrent-PostgreSQL behavioral evidence remains outstanding, not a new architectural argument;
+- historical acceptance and current-state candidacy are independent, so backfill/replay order cannot silently decide which observation is allowed to repair/advance current state;
 - no new distributed system enters the platform's day-one operational surface;
 - one database technology family (PostgreSQL + TimescaleDB) serves both current-state (Tier 1) and historical telemetry (Tier 2), simplifying backup/recovery/on-call;
 - compression and continuous aggregates directly address the long-retention/rollup requirement `telemetry-plane.md:177-187` anticipates, without deferring that problem to a later rearchitecture;
@@ -87,6 +97,7 @@ TimescaleDB is a **C2 implementation choice**, not an architectural commitment: 
 ### Negative / cost
 
 - TimescaleDB is an additional PostgreSQL extension to install/operate/upgrade, even though it is not a new database engine;
+- current-state candidate evaluation needs an explicit owner/provider ordering authority in addition to canonical observation identity; event-time metadata cannot be promoted to that authority by convenience;
 - hypertable chunk-interval, compression policy, and continuous-aggregate refresh cadence are new tuning surfaces requiring their own capacity evidence before production (`OPEN-REL-020`'s numeric envelopes, `docs/16-implementation-readiness/03-consolidated-open-decision-register.md:91`, remain separately open);
 - at very large multi-tenant scale, a single shared PostgreSQL/TimescaleDB cluster may eventually require read-replica or sharding strategy work that a purpose-built distributed time-series store would have provided natively — accepted as a deferred, evidence-gated concern per the "Exit / revisit conditions" below, not a day-one requirement.
 
@@ -106,9 +117,11 @@ Because Tier 1 (the correctness-critical acceptance boundary) is unchanged from 
 
 Per the register's closure evidence rule, this record alone does not make the decision canonical. The following remain outstanding and SHALL be produced by an explicitly governed bounded spike (matching the `bounded_evidence_spike_eligible` state already assigned to `impl.customer-telemetry@1`) before this decision closes:
 
-- `FV-TEL-002` conformance: crash injection around the Tier 1 atomic-accept/compare-and-set/outbox-intent transaction, against a real concurrent PostgreSQL backend rather than the in-memory reference-model ledgers Wave 2's own tests currently exercise (per `implementation/wave-2/KNOWN_DEFERRED_ITEMS.md:8-25`) — mirroring the exact fault-injection discipline ADR-008 §"Validation" already requires, but proving it newly against real concurrent connections rather than assuming Wave 2's existing tests already cover it;
+- `FV-TEL-002` conformance: crash injection around the Tier 1 atomic create-or-observe / historical-intent / current-state-CAS / transition-signal transaction, against a real concurrent PostgreSQL backend rather than the in-memory reference-model ledgers Wave 2's own tests currently exercise (per `implementation/wave-2/KNOWN_DEFERRED_ITEMS.md:8-25`) — mirroring the exact fault-injection discipline ADR-008 §"Validation" already requires, but proving it newly against real concurrent connections rather than assuming Wave 2's existing tests already cover it;
 - backlog behavior: durable acceptance continuing to accept within bounded storage budget while a downstream TimescaleDB projection is temporarily unavailable, per `telemetry-plane.md`'s "Unavailability/backpressure" section;
 - replay: out-of-order and duplicate observation delivery proven not to regress current-state projections or duplicate historical rows, per `telemetry-plane.md`'s "Identity validation" testing requirement;
+- already-accepted/current-candidate independence: an observation first accepted through historical/backfill ingestion and later encountered as an authoritative current-state candidate can still attempt/advance the current projection under its valid ordering authority, without emitting a second historical-projection intent;
+- event-time non-authority: a provider clock rollback or a numerically larger stale/backfill event timestamp cannot by itself advance/freeze current state when the owner/provider current-ordering authority says otherwise;
 - unconditional historical dispatch: an accepted observation that does **not** advance current state (stale/non-latest at acceptance time) still reaches Tier 2 historical storage — proving the historical-projection outbox intent is genuinely unconditional on advancement, not accidentally coupled to the current-state-changed signal;
 - relocation: tenant relocation continuity for both the Tier 1 acceptance record and Tier 2 hypertable data, per `telemetry-plane.md`'s "Tenant relocation" section and the accepted `(R,F]` recovery model;
 - a first capacity benchmark proving TimescaleDB compression/continuous-aggregate behavior meets the bounded time-range query requirement at a representative multi-tenant sample scale (informs, but does not block, the separately-open `OPEN-REL-020` production numerics).

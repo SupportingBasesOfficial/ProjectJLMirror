@@ -79,13 +79,14 @@ Owner: **Monitoring**
 /api/v1/tenants/{tenant_id}/monitoring-sources
 /api/v1/tenants/{tenant_id}/monitoring-resources
 /api/v1/tenants/{tenant_id}/metric-definitions
+/api/v1/tenants/{tenant_id}/metric-current-states
 /api/v1/tenants/{tenant_id}/metric-observations
 /api/v1/tenants/{tenant_id}/problems
 /api/v1/tenants/{tenant_id}/health-projections
 /api/v1/tenants/{tenant_id}/monitoring-sync-operations
 ```
 
-Historical telemetry queries require bounded resource/metric/time scope and cursor/export semantics. Provider-specific resource IDs never replace canonical monitoring resource IDs.
+`metric-current-states` is the bounded current-value projection owned by Monitoring and remains distinct from metric-definition metadata and historical observations. Historical telemetry queries require bounded resource/metric/time scope and cursor/export semantics. Provider-specific resource IDs never replace canonical monitoring resource IDs.
 
 ## Alerting
 

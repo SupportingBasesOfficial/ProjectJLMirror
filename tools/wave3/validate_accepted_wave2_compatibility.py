@@ -16,6 +16,9 @@ if str(SRC) not in sys.path:
 
 from tools.async_core import validate_wave2 as wave2  # noqa: E402
 
+# IMMUTABLE forever — anchors historical_scope_findings()'s proof of exactly what Wave 2's own
+# acceptance PR (#24) contained. Must never move again; future_substrate_drift_findings() does
+# NOT use this constant (see PROTECTED_WAVE2_DRIFT_BASELINE_SHA below for why).
 ACCEPTED_WAVE2_SHA = "b1f5fb83d2aa53e981007dddd0b751e22db40eee"
 PROFILE = "jlmirror-wave2-future-compatibility/v1"
 PROTECTED_WAVE2_PREFIXES = (
@@ -25,6 +28,34 @@ PROTECTED_WAVE2_PREFIXES = (
 PROTECTED_WAVE2_EXACT = frozenset({
     "tools/authority/wave1_scope.py", "tests/wave1/test_wave1_scope_guard.py",
 })
+# Deliberately SEPARATE from ACCEPTED_WAVE2_SHA. future_substrate_drift_findings() diffs against
+# this pointer instead of the immutable historical anchor, because those are two different
+# invariants that must not share one constant:
+#   - ACCEPTED_WAVE2_SHA is a frozen, one-time fact ("what the original Wave 2 PR contained")
+#     and can never move without falsifying that fact.
+#   - This baseline is the live edge of "protected substrate has not silently drifted since it
+#     was last explicitly, humanly reviewed" — and a genuine, authorized correction to protected
+#     substrate (e.g. a bug in tools/async_core/'s own validator code) legitimately needs this
+#     edge to advance, or the guard can never be corrected without permanently failing on itself.
+#
+# Repin convention for a future correction to protected substrate (no automated enforcement
+# beyond this comment and ordinary PR review — this repo has no branch protection requiring
+# green CI to merge, and already requires explicit human authorization for every single merge
+# regardless of CI color):
+#   1. The corrective PR lands with its fix. Its own resulting merge commit SHA cannot be known
+#      in advance (GitHub computes it at merge time), so the PR is expected — and its description
+#      should say so explicitly — to fail jlmirror-wave2-future-compatibility/v1 with exactly the
+#      protected path(s) it touched, and nothing else.
+#   2. An immediate, minimal follow-up PR bumps PROTECTED_WAVE2_DRIFT_BASELINE_SHA to the
+#      corrective PR's actual merge SHA. That follow-up PR's own diff against the old baseline
+#      (`git diff <old>..<new>`) is the entire review surface for what is being accepted, and
+#      restores a green result.
+# Precedent: incident of 2026-08-27 — PR #29's fix to tools/async_core/validate_wave2.py tripped
+# this guard on the very next CI run because there was no legitimate way to repin. This mechanism
+# closes that recursion while every one of the 5 protected prefixes above stays exactly as
+# strictly frozen against live drift as before. PR that installs this mechanism also performs
+# step 2 retroactively for #29 (already-known, historical merge SHA — zero red window).
+PROTECTED_WAVE2_DRIFT_BASELINE_SHA = "8b7f1c34ea3ccbe8d98bb950c353fb4662f5085a"
 # `implementation/wave-2/KNOWN_DEFERRED_ITEMS.md` is a living, forward-looking governance
 # record (see its own header), not a frozen description of what Wave 2 built — unlike
 # IMPLEMENTATION_MANIFEST.json/STATE.md/README.md/RECONCILIATION_AUTHORITY_BOUNDARY.md, which
@@ -72,7 +103,7 @@ def historical_scope_findings(paths: list[str] | None = None) -> list[str]:
 
 def future_substrate_drift_findings(paths: list[str] | None = None) -> list[str]:
     try:
-        actual = _git_changed(ACCEPTED_WAVE2_SHA, "HEAD") if paths is None else list(paths)
+        actual = _git_changed(PROTECTED_WAVE2_DRIFT_BASELINE_SHA, "HEAD") if paths is None else list(paths)
     except (OSError, subprocess.CalledProcessError) as exc:
         return [f"future Wave 2 substrate drift proof unavailable: {exc}"]
     findings: list[str] = []

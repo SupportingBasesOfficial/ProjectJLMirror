@@ -100,6 +100,17 @@ class ObservabilityTests(unittest.TestCase):
             with self.subTest(reason=reason), self.assertRaisesRegex(ObservationError, "reviewed finite"):
                 HealthAssessment("health.cell@1", HealthState.DEGRADED, reason, True)
 
+    def test_health_state_must_be_reviewed_enum_member_not_arbitrary_string(self):
+        # A dataclass type hint on `state: HealthState` is not runtime-enforced; without an
+        # explicit membership check any string reaches evidence_complete=True unrejected.
+        with self.assertRaisesRegex(ObservationError, "HealthState enum"):
+            HealthAssessment(
+                "health.security-authority@1",
+                "fully_operational_definitely_not_quarantined",
+                "healthy_or_eligible",
+                True,
+            )
+
     def _nac(self, **changes):
         values = dict(
             reason="direct SLI would create an error-budget allowance for a hard correctness gate",
@@ -158,6 +169,30 @@ class ObservabilityTests(unittest.TestCase):
             "rel.security-session-authority@1", self._nac(),
         )
         self.assertFalse(binding.direct_sli_applicable)
+
+    def test_no_applicable_case_rejects_unregistered_authority_profile(self):
+        # authority_profile was previously checked only for truthiness (any non-empty string),
+        # unlike every other classification field in this package.
+        for value in ("x", "attacker-chosen-authority@1", "product.scope-authority@1"):
+            with self.subTest(value=value), self.assertRaises(ObservationError):
+                ObservabilityBinding(
+                    "health.security-authority@1", (), ("alert.security-trust@1",), False,
+                    "rel.security-session-authority@1", self._nac(authority_profile=value),
+                )
+
+    def test_product_applicability_rejects_unregistered_authority_profile(self):
+        for value in ("x", "attacker-chosen-authority@1", "observability.applicability-policy@1"):
+            with self.subTest(value=value), self.assertRaises(ObservationError):
+                require_product_applicability(
+                    self._product(authority_profile=value), expected_scope="rel.webhook-delivery@1",
+                    expected_selector_id="webhook_product_state",
+                )
+
+    def test_product_applicability_selector_check_cannot_be_omitted(self):
+        # expected_selector_id has no default; omitting it must be a caller-side error, not a
+        # silently-permissive truthy-only check.
+        with self.assertRaises(TypeError):
+            require_product_applicability(self._product(), expected_scope="rel.webhook-delivery@1")
 
     def test_product_applicability_rejects_stale_or_wrong_scope(self):
         with self.assertRaises(ObservationError):

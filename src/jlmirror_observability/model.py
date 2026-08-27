@@ -322,6 +322,14 @@ class HealthAssessment:
     def __post_init__(self) -> None:
         if self.profile_id not in CORE_HEALTH_PROFILES:
             raise ObservationError(f"unknown health profile: {self.profile_id}")
+        # A dataclass type hint is not runtime-enforced: without this explicit membership
+        # check, any string (e.g. a caller/producer-supplied token) would silently pass
+        # through as `state` and only fail to match the HealthState.UNKNOWN identity check
+        # below on the evidence_complete=True path -- never actually being validated as one
+        # of the six reviewed HealthState values. Sibling fields (profile_id, reason_class)
+        # are already exact-membership checked; state was not, which is the gap this closes.
+        if not isinstance(self.state, HealthState):
+            raise ObservationError("health state must be a member of the reviewed HealthState enum")
         if self.reason_class not in REVIEWED_HEALTH_REASON_CLASSES:
             raise ObservationError("health reason_class is not in the reviewed finite Phase 12/Wave 3 registry")
         if not self.evidence_complete and self.state is not HealthState.UNKNOWN:

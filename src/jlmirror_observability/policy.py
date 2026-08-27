@@ -9,6 +9,17 @@ from .model import CORE_ALERT_PROFILES, CORE_HEALTH_PROFILES, CORE_SLI_PROFILES,
 
 _EVIDENCE_REFERENCE_RE = re.compile(r"^evidence:[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,190}$")
 
+# Fixed owning-authority profile per evidence kind, mirroring RUNTIME_REQUIREMENTS_AUTHORITY_PROFILE
+# / RUNTIME_VERIFIER_PRINCIPAL / _ADMISSION_GATE_AUTHORITY_PROFILES in jlmirror_release. Previously
+# authority_profile on both evidence classes below was checked only for truthiness (any non-empty
+# string), unlike every other classification field in this package (classification,
+# tenant_scope_class, operation_class, reason_class, outcome_class -- all exact frozenset/enum
+# membership). That let an unregistered, self-declared authority string satisfy a Product-
+# enablement or NO_APPLICABLE_CASE decision. These are the exact literals already used
+# consistently by the existing test fixtures.
+NO_APPLICABLE_CASE_AUTHORITY_PROFILE = "observability.applicability-policy@1"
+PRODUCT_APPLICABILITY_AUTHORITY_PROFILE = "product.scope-authority@1"
+
 
 def _require_evidence_reference(name: str, value: str) -> None:
     if not isinstance(value, str) or not _EVIDENCE_REFERENCE_RE.fullmatch(value):
@@ -26,6 +37,8 @@ class NoApplicableCaseEvidence:
     def validate_for(self, expected_scope: str) -> None:
         if not all((self.reason, self.authority_profile, self.scope_binding, expected_scope)):
             raise ObservationError("NO_APPLICABLE_CASE requires reason, authority, evidence and exact scope")
+        if self.authority_profile != NO_APPLICABLE_CASE_AUTHORITY_PROFILE:
+            raise ObservationError("NO_APPLICABLE_CASE uses an unknown or substituted owning authority profile")
         _require_evidence_reference("no_applicable_case.evidence_reference", self.evidence_reference)
         if not self.current:
             raise ObservationError("NO_APPLICABLE_CASE evidence is not current")
@@ -42,15 +55,17 @@ class ProductApplicabilityEvidence:
     current: bool
     enabled: bool
 
-    def validate_for(self, expected_scope: str, *, expected_selector_id: str | None = None) -> None:
+    def validate_for(self, expected_scope: str, *, expected_selector_id: str) -> None:
         if not all((self.selector_id, self.authority_profile, self.scope_binding, expected_scope)):
             raise ObservationError("Product applicability requires selector, authority, evidence and exact scope")
+        if self.authority_profile != PRODUCT_APPLICABILITY_AUTHORITY_PROFILE:
+            raise ObservationError("Product applicability uses an unknown or substituted owning authority profile")
         _require_evidence_reference("product_applicability.evidence_reference", self.evidence_reference)
         if not self.current:
             raise ObservationError("Product applicability evidence is not current")
         if self.scope_binding != expected_scope:
             raise ObservationError("Product applicability evidence is bound to a different scope")
-        if expected_selector_id is not None and self.selector_id != expected_selector_id:
+        if self.selector_id != expected_selector_id:
             raise ObservationError("Product applicability evidence is bound to a different selector")
 
 
@@ -90,8 +105,13 @@ def require_product_applicability(
     evidence: ProductApplicabilityEvidence,
     *,
     expected_scope: str,
-    expected_selector_id: str | None = None,
+    expected_selector_id: str,
 ) -> bool:
-    """Fail closed: Product applicability requires current authority/evidence bound to exact scope."""
+    """Fail closed: Product applicability requires current authority/evidence bound to exact scope
+    and the exact expected Product selector. expected_selector_id has no default -- omitting it
+    previously let evidence for any selector satisfy any caller's check, matching only on
+    non-emptiness rather than proving it governs the specific Product capability being asked
+    about.
+    """
     evidence.validate_for(expected_scope, expected_selector_id=expected_selector_id)
     return evidence.enabled

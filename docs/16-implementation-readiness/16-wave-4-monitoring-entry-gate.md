@@ -40,7 +40,7 @@ The first three are **normative contract gaps**. The last is a distinct **C2 evi
 TRACK A — normative authority
   Monitoring domain contract
   + Monitoring API contract
-  + Zabbix normalization profile
+  + Zabbix provider/normalization propagation
   + Monitoring surface-map propagation
   + this entry gate
   -> exact-HEAD adversarial review
@@ -70,6 +70,7 @@ Track B cannot define missing Product/domain semantics by existing first. Track 
 - source/resource/metric/observation/problem/health/sync identities;
 - strict provider-instance generation boundary for initial Zabbix mappings;
 - active generation versus non-authoritative replacement candidate;
+- finite/current candidate validation evidence versus permanent readiness;
 - active-generation versus historical-generation operational semantics without O(N) cutover rewrite;
 - configured scope revision versus provider absence;
 - bounded scope reconciliation rather than O(N) source mutation;
@@ -109,7 +110,7 @@ Metric-definition reads remain metadata-oriented. Efficient latest/current value
 
 Current operational collections default to the source's active generation. Historical-generation evidence is explicitly classified and never silently unioned into current inventory/health/problem/current-value views.
 
-The API fixes current auth/tenant routing, mutation idempotency + `If-Match`, staged source replacement, revisioned configured-scope semantics, endpoint-specific cache classes and finite row/byte/history bounds.
+The API fixes current auth/tenant routing, mutation idempotency + `If-Match`, staged source replacement with validation currentness, revisioned configured-scope semantics, endpoint-specific cache classes and finite row/byte/history bounds.
 
 Network-dependent DNS/provider/redirect/egress validation is outside source mutation database transactions. Source commands validate deterministic URI/profile/static policy and outbound connector authority is revalidated immediately before provider use.
 
@@ -122,7 +123,7 @@ ACTIVE N
   -> replacement command
   -> CANDIDATE N+1 validating
        fail -> ACTIVE N remains active
-       pass -> candidate ready_for_cutover
+       pass -> candidate ready_for_cutover (bounded current evidence)
                 -> atomic cutover
                      fence N
                      active_generation := N+1
@@ -134,9 +135,13 @@ Required properties:
 - candidate reachability/credentials/scope are validated outside source mutation transaction;
 - candidate validation cannot mutate canonical current resource/metric/problem/health state;
 - bad/unreachable candidate cannot retire a healthy active generation merely because replacement was requested;
-- cutover revalidates current authority/revision/candidate evidence and serializes one winner;
+- candidate config/scope/effective credential binding and the validation policy/evidence generation are bound to readiness;
+- changed candidate intent or invalidated credential/policy proof resets readiness rather than preserving stale validation;
+- validation evidence has a finite evidence-driven freshness horizon; `OPEN` does not mean infinite;
+- cutover revalidates current authority/revision/candidate fingerprint and current validation evidence generation/freshness;
+- actual provider use still revalidates connector/credential authority, so validation does not freeze DNS/reachability/secret state;
 - after cutover exactly one active generation exists;
-- ambiguity/recovery cannot silently activate a failed candidate or resurrect retired generation.
+- ambiguity/recovery cannot silently activate a failed/stale candidate or resurrect retired generation.
 
 ### Generation lifecycle invariant — O(1) cutover, no false currentness
 
@@ -237,9 +242,17 @@ Therefore this vertical does **not** activate/reclassify `OPEN-API-019`, which r
 
 `docs/09-api-contracts/domain-api-surface-map.md` reserves `metric-current-states` as the Monitoring-owned bounded current-value family, distinct from metric-definition metadata and historical observations. The surface map therefore matches the exact endpoint contract instead of retaining an older vocabulary snapshot.
 
-### Zabbix normalization profile
+### Zabbix provider + normalization propagation
 
-`docs/09-api-contracts/zabbix-monitoring-normalization-profile.md` resolves the provider contract's deferred normalization question:
+The Zabbix provider contract is aligned with these semantics:
+
+- current-state poll authority additionally requires that the poll's `zabbix_instance_generation` still equals the source's active generation;
+- retired-generation polling may repair historical evidence only under explicit historical authority and cannot mutate current state;
+- a JLMIRROR configured-scope edit is not provider negative evidence;
+- snapshot-complete negative inference requires current poll, placement, active-generation and configured-scope authority;
+- source cutover/scope revision invalidates stale snapshot-complete eligibility.
+
+`zabbix-monitoring-normalization-profile.md` resolves the deferred normalization question:
 
 ```text
 Not classified -> unknown
@@ -274,7 +287,7 @@ Monitoring dashboards may compose active-generation inventory, dedicated current
 | Monitoring domain semantics | exact | n/a | contract-ready |
 | Monitoring-core endpoint subset (`OPEN-API-016`) | exact for this vertical | unrelated/future endpoints remain incremental | Monitoring subset contract-ready |
 | source management API | exact | credential binding/secret mechanism still C2 | contract-ready, mechanism selection where used |
-| replacement candidate/cutover | exact semantics | implementation mechanism still subject to conformance | contract-ready |
+| replacement candidate/cutover | exact semantics incl. validation currentness | secret freshness representation + numeric horizon remain evidence/mechanism dependent | contract-ready |
 | generation lifecycle/currentness | exact semantics | storage/query mechanism replaceable | contract-ready |
 | configured-scope handling | exact revision/currentness semantics | batch/concurrency numerics C3 | contract-ready |
 | Zabbix trust + normalization | exact | provider production numerics C3 | provider-contract-ready |
@@ -317,6 +330,8 @@ The eventual implementation profile must falsify:
 
 - bad candidate cannot fence healthy active generation;
 - candidate cannot write canonical state before activation;
+- candidate config/scope/effective credential/policy mutation invalidates old readiness;
+- validation expiry/restored stale readiness cannot authorize cutover;
 - concurrent candidate/cutover commands produce one active-generation winner;
 - crash after fence/before response remains reconcilable and idempotent;
 - old writer cannot regain current authority after cutover;
@@ -327,7 +342,7 @@ The eventual implementation profile must falsify:
 - stale scope projection cannot grant `in_scope` currentness or negative-inference authority;
 - scope exclusion cannot synthesize provider absence/retirement/resolution;
 - re-inclusion cannot relabel stale last-known evidence as fresh;
-- one tenant's scope-reconciliation/historical workload cannot stall unrelated tenants.
+- one tenant's candidate-validation/scope-reconciliation/historical workload cannot stall unrelated tenants.
 
 These semantics are fixed by Track A; concrete implementation evidence belongs to implementation/conformance rather than being fabricated in docs.
 
@@ -379,6 +394,7 @@ normalized metric value bytes by kind
 provider/body bytes
 page rows and serialized response bytes
 history maximum time window/rows/bytes
+replacement-validation freshness horizon/refresh workload
 source generations retained/historical query envelope
 scope selector count/size
 scope-reconciliation batch/backlog/concurrency
@@ -420,30 +436,32 @@ Exact-final-HEAD review must prove:
 2. Zabbix generation boundary cannot merge reused native IDs;
 3. source ordinary edit cannot bypass explicit replacement;
 4. replacement request cannot retire healthy active generation before candidate admissibility is proven;
-5. candidate cannot mutate canonical current state before atomic cutover;
-6. cutover has one serialized winner and leaves exactly one active generation;
-7. cutover changes child operational currentness by derived generation authority, not O(N) rewrites;
-8. historical-generation objects cannot masquerade as current inventory/health/current-value/problem state;
-9. generation retirement cannot fabricate `removed`, `retired` or `resolved`;
-10. scope edit commits without O(N) resource/metric rewrite;
-11. stale scope projection cannot claim current `in_scope`, fresh health/value, provider-work eligibility or negative-inference authority;
-12. configured scope exclusion cannot masquerade as provider negative evidence;
-13. base URL cannot embed credentials/query/fragment; DNS/provider/redirect/egress work stays outside DB mutation transaction and is revalidated before provider use;
-14. current metric state is explicitly separate from history and from metric-definition enumeration;
-15. current/history/problem responses use conservative `no_store`, while private metadata/status reuse revalidates current authorization plus generation/scope currentness;
-16. value/page/history/generation-retention/scope-reconciliation resource sizes are bounded as mandatory pre-implementation obligations;
-17. fenced poll progress does not manufacture semantic state changes;
-18. history acceptance is independent from current candidacy and does not implicitly union generations;
-19. incomplete/uncertain snapshots cannot create absence/resolution;
-20. severity/ack/tags/native IDs cannot become tenant/domain authority;
-21. history completeness is evidence-backed and scope/generation gaps are explicit;
-22. Phase 09 current-auth/idempotency/precondition/cache/error/collection laws are preserved;
-23. cursor is only a non-sensitive returned-row anchor and C5 is not silently reclassified;
-24. Monitoring surface map includes the dedicated current-state family and matches endpoint vocabulary;
-25. Monitoring-core endpoint contracts satisfy incremental `OPEN-API-016` responsibility without pretending unrelated families are closed;
-26. `OPEN-REL-030` remains open and TimescaleDB remains non-canonical;
-27. no Waves 0–3 implementation substrate changes;
-28. exact final HEAD has P0/P1/P2=0 and no unresolved review thread.
+5. candidate readiness is finite/current and bound to candidate config/scope/credential/policy evidence rather than permanent;
+6. candidate cannot mutate canonical current state before atomic cutover;
+7. cutover has one serialized winner and leaves exactly one active generation;
+8. cutover changes child operational currentness by derived generation authority, not O(N) rewrites;
+9. historical-generation objects cannot masquerade as current inventory/health/current-value/problem state;
+10. generation retirement cannot fabricate `removed`, `retired` or `resolved`;
+11. scope edit commits without O(N) resource/metric rewrite;
+12. stale scope projection cannot claim current `in_scope`, fresh health/value, provider-work eligibility or negative-inference authority;
+13. configured scope exclusion cannot masquerade as provider negative evidence;
+14. Zabbix poll current-state/negative-inference authority requires current source-instance generation in addition to poll/placement/scope authority;
+15. base URL cannot embed credentials/query/fragment; DNS/provider/redirect/egress work stays outside DB mutation transaction and is revalidated before provider use;
+16. current metric state is explicitly separate from history and from metric-definition enumeration;
+17. current/history/problem responses use conservative `no_store`, while private metadata/status reuse revalidates current authorization plus generation/scope currentness;
+18. value/page/history/validation/generation-retention/scope-reconciliation resource sizes are bounded as mandatory pre-implementation obligations;
+19. fenced poll progress does not manufacture semantic state changes;
+20. history acceptance is independent from current candidacy and does not implicitly union generations;
+21. incomplete/uncertain snapshots cannot create absence/resolution;
+22. severity/ack/tags/native IDs cannot become tenant/domain authority;
+23. history completeness is evidence-backed and scope/generation gaps are explicit;
+24. Phase 09 current-auth/idempotency/precondition/cache/error/collection laws are preserved;
+25. cursor is only a non-sensitive returned-row anchor and C5 is not silently reclassified;
+26. Monitoring surface map includes the dedicated current-state family and matches endpoint vocabulary;
+27. Monitoring-core endpoint contracts satisfy incremental `OPEN-API-016` responsibility without pretending unrelated families are closed;
+28. `OPEN-REL-030` remains open and TimescaleDB remains non-canonical;
+29. no Waves 0–3 implementation substrate changes;
+30. exact final HEAD has P0/P1/P2=0 and no unresolved review thread.
 
 A clean Track A gate still requires separate explicit user merge authorization.
 

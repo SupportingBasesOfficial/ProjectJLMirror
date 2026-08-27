@@ -2,96 +2,81 @@
 
 **Status:** proposed gate record  
 **Base authority:** `main@d63b435ffa26fba7794187ceafaf0d5a9773223b`  
-**Scope:** Monitoring first vertical entry prerequisites; no implementation authorization  
-**Depends on:** accepted Implementation Readiness Gate, Waves 0–3, `CAP-MONITORING`, `FR-MON-001..006`, Monitoring bounded context/data ownership, Phase 09/10 contracts, Zabbix provider contract, `OPEN-REL-030`
+**Scope:** first Monitoring vertical entry prerequisites; no implementation authorization  
+**Depends on:** accepted Implementation Readiness Gate, Waves 0–3, `CAP-MONITORING`, `FR-MON-001..006`, Monitoring ownership/data, Phase 09/10 contracts, Zabbix provider contract, `OPEN-REL-030`
 
 ## Purpose
 
-Wave 4 is not a generic “start product code” phase. `docs/16-implementation-readiness/11-initial-implementation-sequencing.md` requires a Product/domain vertical slice to have exact endpoint/event/data/authority contracts before it starts, and separately states that `impl.customer-telemetry@1` remains blocked until the C2 mechanism required by `OPEN-REL-030` is selected and conformance evidence is accepted.
+Wave 4 is not a generic permission to start product code. The accepted sequencing rule requires exact Product/domain endpoint/data/authority contracts, while `impl.customer-telemetry@1` is separately blocked until `OPEN-REL-030` C2 selection/conformance evidence is accepted.
 
-This gate records the exact Monitoring entry state so that:
+This gate prevents provider contracts, experimental code or infrastructure defaults from filling normative gaps silently.
 
-- accepted Product/domain semantics are not confused with candidate implementation mechanisms;
-- the Zabbix provider contract is not mistaken for the Monitoring domain contract;
-- an evidence spike is not mistaken for canonical customer-telemetry implementation;
-- endpoint implementation does not invent missing state/identity/authorization semantics;
-- merging documentation does not silently become implementation authorization.
+## Canonical pre-state at base
 
-## Canonical pre-state at this gate base
+At `main@d63b435ffa26fba7794187ceafaf0d5a9773223b` the repository already has:
 
-At `main@d63b435ffa26fba7794187ceafaf0d5a9773223b`:
+- accepted Monitoring Product scope/requirements;
+- Monitoring bounded-context/logical data ownership;
+- generic Phase 09 Monitoring resource-family vocabulary;
+- Phase 09/10 authority, transaction, async, recovery and collection laws;
+- Waves 0–3 implementation substrate;
+- accepted Zabbix trust/auth/poll/reconciliation profile;
+- `OPEN-REL-030` with Tier 1 PostgreSQL pattern selected at mechanism level and TimescaleDB only a leading Tier 2 candidate pending evidence.
 
-### Already present
+Still missing at that base:
 
-- Product capability/scope for Monitoring (`CAP-MONITORING`, `FR-MON-001..006`);
-- accepted Monitoring bounded-context ownership;
-- accepted logical `monitoring` data ownership;
-- generic Phase 09 resource-family vocabulary;
-- accepted transaction/outbox/idempotency/recovery laws;
-- accepted Phase 10 async semantics;
-- accepted Waves 0–3 implementation substrate;
-- Zabbix provider trust/auth/poll/reconciliation profile;
-- `OPEN-REL-030` decision record with Tier 1 PostgreSQL mechanism selected at pattern level and TimescaleDB retained only as a leading Tier 2 candidate pending conformance.
+- exact Monitoring canonical identity/lifecycle/negative-evidence/problem/health/current-metric semantics;
+- exact endpoint/use-case contracts;
+- explicit Zabbix problem/value normalization destination;
+- accepted `OPEN-REL-030` conformance evidence.
 
-### Still missing before this branch
+The first three are **normative contract gaps**. The last is a distinct **C2 evidence gap**.
 
-- exact canonical Monitoring domain lifecycle/state semantics suitable for implementation;
-- exact endpoint/use-case contracts under the Phase 09 endpoint template;
-- explicit canonical problem severity/health/evidence vocabulary and Zabbix normalization destination;
-- explicit source ordinary-edit vs replace-instance API contract;
-- explicit public/query semantics for historical completeness/gaps;
-- an accepted bounded `OPEN-REL-030` conformance evidence result.
-
-The first five are **normative contract gaps**. The last is an **evidence-generating C2 gap**. They must not be closed by the same kind of artifact.
-
-## Two-track governance split
-
-The required progression is:
+## Mandatory two-track progression
 
 ```text
-TRACK A — normative contract authority
+TRACK A — normative authority
   Monitoring domain contract
-    + Monitoring API contract
-    + provider normalization propagation
-  -> exact-HEAD review
+  + Monitoring API contract
+  + Zabbix normalization profile
+  + this entry gate
+  -> exact-HEAD adversarial review
   -> explicit merge authorization
   -> accepted contract base
 
-TRACK B — C2 evidence authority
-  bounded OPEN-REL-030 spike from accepted contract base
-  -> experimental/conformance code + evidence only
-  -> falsification / security / concurrency / recovery / capacity evidence
+TRACK B — C2 bounded evidence
+  OPEN-REL-030 spike from exact accepted Track A base
+  -> experimental/conformance code + reproducible evidence
+  -> security/concurrency/recovery/capacity falsification
   -> reviewed C2 decision update
-  -> explicit merge/acceptance authorization
+  -> explicit acceptance authorization
 
 ONLY AFTER BOTH
-  -> explicit Wave 4 implementation authorization
-  -> canonical Monitoring vertical implementation PR(s)
+  -> separate explicit Wave 4 implementation authorization
+  -> canonical vertical implementation PR(s)
 ```
 
-Track B SHALL NOT precede Track A in a way that lets candidate code define the missing domain/API semantics. Track A SHALL NOT claim Track B evidence exists.
+Track B cannot define missing Product/domain semantics by existing first. Track A cannot claim Track B evidence exists.
 
-## Track A — artifacts proposed by this branch
+## Track A artifacts
 
-### 1. Monitoring domain contract
+### Monitoring domain contract
 
 `docs/03-domains/monitoring-domain-contract.md` fixes:
 
-- canonical logical identities for source/resource/metric/observation/problem/health/sync operation;
-- source-instance generation and replacement semantics;
-- current evidence vs stale/incomplete/reconciliation semantics;
-- resource removal, metric retirement and problem resolution negative-evidence rules;
-- canonical problem severity and health vocabularies;
-- provider acknowledgement/tag non-authority;
-- historical observation/completeness/gap semantics;
-- current-state semantic idempotency;
-- dashboard ownership boundary;
-- authorization action vocabulary;
-- recovery/relocation/fencing consequences.
+- source/resource/metric/observation/problem/health/sync identities;
+- strict provider-instance generation boundary for initial Zabbix mappings;
+- explicit `metric_current_state` separate from history;
+- source ordinary-edit vs replacement/fencing;
+- current-state precedence vs semantic idempotency;
+- authoritative negative evidence;
+- severity/health/evidence vocabularies;
+- historical completeness/gap semantics;
+- dashboard/authorization/security/recovery/capacity boundaries.
 
-### 2. Monitoring API contract
+### Monitoring API contract
 
-`docs/09-api-contracts/monitoring-domain-api-contract.md` fixes the initial accepted Monitoring endpoint set:
+`docs/09-api-contracts/monitoring-domain-api-contract.md` fixes:
 
 ```text
 GET/POST    /monitoring-sources
@@ -101,7 +86,7 @@ GET         /monitoring-resources
 GET         /monitoring-resources/{resource_id}
 GET         /metric-definitions
 GET         /metric-definitions/{metric_definition_id}
-GET         /metric-observations            (mandatory bounded metric/time window)
+GET         /metric-observations
 GET         /problems
 GET         /problems/{problem_id}
 GET         /health-projections
@@ -110,13 +95,23 @@ GET         /monitoring-sync-operations
 GET         /monitoring-sync-operations/{operation_id}
 ```
 
-It also fixes current authorization, cache, cursor semantics, source mutation idempotency/concurrency, historical completeness representation, safe failure semantics and operation authority.
+Metric-definition reads include the efficient `current_state` projection required by `FR-MON-003`; historical Tier 2 is not queried on each request to discover “latest”.
 
-No tenant-facing manual `:sync/:retry/:resume`, source `DELETE`, provider write-back, alert acknowledgement, incident creation or mutable dashboard endpoint is created without Product authority.
+The API also fixes current auth/tenant routing, source mutation idempotency + `If-Match`, source replacement, canonical HTTPS endpoint input, errors/cache and finite history queries.
 
-### 3. Zabbix normalization propagation
+### Cursor governance
 
-The Zabbix profile must consume the new canonical Monitoring severity/metadata decisions:
+Monitoring collection continuation is deliberately constrained to Phase 09 `url_safe_non_sensitive_handle` semantics:
+
+- exposed cursor contains/reveals no protected payload/credential/provider secret/physical topology;
+- possession grants no continuation authority;
+- current authorization occurs on every page.
+
+Therefore this initial vertical **does not activate or reclassify `OPEN-API-019`**, which remains C5 for protected continuation-token semantics. A future need for protected cursor payload/token behavior returns to owning governance.
+
+### Zabbix normalization profile
+
+`docs/09-api-contracts/zabbix-monitoring-normalization-profile.md` resolves the provider contract's deferred normalization question:
 
 ```text
 Not classified -> unknown
@@ -127,164 +122,164 @@ High           -> critical
 Disaster       -> critical
 ```
 
-Zabbix acknowledgement remains provider metadata and does not become JLMIRROR Alerting/ITSM acknowledgement. Zabbix tags remain bounded provider metadata/evidence and do not become tenant/authorization/resource identity.
+Acknowledgement and tags remain bounded provider metadata only, never JLMIRROR Alerting/ITSM/tenant/authorization authority. Zabbix value classes map to canonical Monitoring value kinds.
 
-## Readiness matrix after Track A acceptance
+## Product-scope exclusions
 
-The table describes the state **if and only if this exact contract package is accepted**. It does not itself grant implementation authority.
+Track A does not create:
 
-| Slice/capability | Contract state after Track A | Evidence/mechanism state | Result |
+- source delete/retirement semantics;
+- tenant-facing manual `:sync/:retry/:resume`;
+- provider write-back;
+- Alerting acknowledgement/lifecycle;
+- ITSM mutation;
+- AIOps product behavior;
+- public SDKs;
+- a mutable Monitoring-dashboard aggregate.
+
+Monitoring dashboards may compose current metric state, inventory, health, problems, history and sync evidence; persistent presentation/cross-domain projections remain Reporting & Experience ownership.
+
+## Readiness matrix if Track A is accepted
+
+| Slice/capability | Contract state | Evidence/mechanism state | Result |
 |---|---|---|---|
-| Monitoring domain semantics | exact proposed contracts become accepted | n/a | contract-ready |
-| Monitoring source management API | exact endpoint/authority/idempotency contracts exist | credential-binding/secret mechanism remains C2 | contract-ready; mechanism selection still required where used |
-| Zabbix provider trust/auth/reconciliation | accepted provider profile + Monitoring normalization destination | provider production numerics remain C3 | provider-contract-ready |
-| `impl.customer-telemetry@1` | domain/API semantics exist | `OPEN-REL-030` conformance NOT YET accepted | **bounded-evidence-spike-only** |
-| historical Tier 2 projection | semantics exist | TimescaleDB only leading candidate | **not canonical** |
-| Monitoring read APIs backed by customer telemetry | contracts exist | ingestion/projection conformance still blocked | implementation authorization blocked with telemetry path |
-| general integration-event broker for raw telemetry | not required by contract | broker C2 independent | no forced dependency |
-| Alerting / ITSM / AIOps consumers | separate domain Product contracts | not activated by Monitoring | blocked until their own vertical contracts |
+| Monitoring domain semantics | exact | n/a | contract-ready |
+| source management API | exact | credential binding/secret mechanism still C2 | contract-ready, mechanism selection where used |
+| Zabbix trust + normalization | exact | provider production numerics C3 | provider-contract-ready |
+| current metric projection semantics/API | exact | backing acceptance path still depends on telemetry conformance | contract-ready, implementation blocked with customer telemetry |
+| `impl.customer-telemetry@1` | exact domain/API semantics | `OPEN-REL-030` NOT conformed | **bounded-evidence-spike-only** |
+| Tier 2 history | exact semantics | TimescaleDB only candidate | **not canonical** |
+| protected cursor C5 | not required | remains deferred | **not activated** |
+| raw telemetry general broker | not required | broker C2 independent | no forced dependency |
+| Alerting/ITSM/AIOps | separate Product/domain authority | not activated | blocked by own vertical contracts |
 
-## Track B — exact bounded evidence program required next
+## Track B — required next bounded evidence program
 
-After Track A is accepted, the next repository mutation should be a **separate evidence branch/PR**, not a production implementation branch.
-
-Recommended lineage:
+After Track A acceptance, next mutation is a separate evidence branch/PR, conceptually:
 
 ```text
-base: exact accepted Track A squash on main
-branch: evidence/open-rel-030-monitoring-conformance
-artifact class: C2 bounded spike / conformance evidence
-canonical product behavior: unchanged
+base    exact accepted Track A squash
+branch  evidence/open-rel-030-monitoring-conformance
+class   C2 bounded spike / conformance evidence
+product semantics unchanged
+production authority none
 ```
 
-The spike must produce reproducible evidence for at least these classes already required by the current `OPEN-REL-030` record and the new Monitoring contracts:
+### Tier 1 PostgreSQL evidence
 
-### Tier 1 PostgreSQL authority
+Prove with real multi-connection PostgreSQL:
 
-- real multi-connection atomic create-or-observe;
-- observation persistence + one historical projection obligation;
-- current-state candidate CAS independent from first observation acceptance;
+- atomic create-or-observe;
+- observation + exactly one history projection obligation;
+- current-state candidate CAS independent from first acceptance;
+- current metric projection advancement and semantic no-op on repeated current observation;
 - transition identity + signal obligation atomicity;
-- concurrent duplicate/replay behavior;
-- crash injection before/inside/after commit boundaries;
-- backlog when Tier 2 is unavailable;
+- duplicate/concurrent/replay behavior;
+- crash injection around transaction boundaries;
+- downstream Tier 2 outage/backlog;
 - restore/PITR `(R,F]` continuity.
 
-### Zabbix provider/current-state/history behavior
+### Zabbix/current/history evidence
 
-- single-winner fenced poll epoch/generation under concurrent scheduled/hint work;
-- stale poll rejection;
-- provider clock rollback without current-state freeze;
-- repeated same current observation without duplicate semantic transition;
+- single-winner fenced poll epoch/generation across scheduled/hint work;
+- stale poll/retired placement rejection;
+- clock rollback without current-state freeze;
+- same current observation without duplicate semantic transition;
+- current metric state remains last-known + explicitly stale when authority is stale;
 - same-second history saturation/checkpoint safety;
-- late insertion beyond fast overlap recovered by independent bounded sweep;
+- delayed insertion beyond fast overlap recovered by independent bounded sweep;
 - provider/proxy outage widening/reconciliation;
-- visibility-anchor loss blocking negative inference;
-- incomplete snapshot blocking remove/retire/resolve;
-- relocation/PITR poll-authority continuity.
+- visibility-anchor loss blocks negative inference;
+- incomplete snapshot blocks remove/retire/resolve;
+- new Zabbix generation cannot alias reused native IDs with old mappings;
+- PITR/relocation poll-authority continuity.
 
 ### Tier 2 candidate security
 
-For TimescaleDB, if retained as candidate, attack the exact features intended for production:
-
-- raw hypertables;
-- compressed/columnar states actually used;
-- continuous aggregates and backing/materialization objects;
-- projection workers;
-- application/reporting/read roles;
-- background refresh/compression/retention jobs;
-- migration/DDL and operational roles;
-- `SET`, `set_config`, role/session authorization, search-path and helper-function abuse;
-- backup/PITR/recovery role/policy/object restoration.
-
-One leaked Tenant B row under Tenant A context rejects the tested profile.
-
-### Tier 2 capacity under the same security profile
-
-Measure, without disabling required isolation:
-
-- representative multi-tenant ingest;
-- per-tenant skew/noisy-neighbor pressure;
-- bounded time-range queries;
-- retention/compression/rollup behavior;
-- background-job load;
-- downstream outage/backlog/drain;
-- storage growth/cost dimensions sufficient to inform later C3 production numerics.
-
-A benchmark obtained by weakening required tenant isolation is invalid evidence.
-
-## Evidence artifact requirements
-
-The Track B PR must include machine/reviewer-consumable evidence sufficient to reproduce or falsify each claim:
+If TimescaleDB remains candidate, attack exact intended features/roles:
 
 ```text
-spike manifest + exact base/head
-candidate/version/config profile
-schema/migration used by spike
-commands/test harness owned by repository
-fault/concurrency scenarios
-security isolation matrix
-capacity dataset/workload description
-measured results with provenance
-known limitations/failures
-cleanup / no production authority statement
-C2 decision conclusion: accept candidate | reject candidate | further bounded evidence required
+raw hypertables
+compression/columnar states used
+continuous aggregates/materializations
+projection worker
+application/reporting/read roles
+background refresh/compression/retention jobs
+migration/DDL/ops/recovery roles
+SET/set_config/SET ROLE/session authorization/search_path/helper-function abuse
+backup/PITR restored role/policy/object state
 ```
 
-A passing benchmark is not a substitute for security/concurrency/recovery evidence. A passing unit test is not a production capacity claim.
+One Tenant B row reachable under Tenant A's normal trust class rejects that profile.
 
-## Decisions intentionally not made by this gate
+### Tier 2 capacity under same security profile
 
-This gate does not select:
+Measure representative multi-tenant ingest/skew, bounded time-range queries, compression/retention/rollup, background-job load, downstream outage/backlog/drain and storage/cost dimensions **without disabling required isolation**.
 
-- identity provider/session/CSRF C2 choices;
-- general async broker/product/topology;
-- message-equivalence cryptographic mechanism/backend;
-- production cell/region counts;
-- production SLO/RPO/RTO/retention/poll/page/window/backlog numerics;
-- Alerting/ITSM/AIOps product slices;
-- public SDKs;
-- manual tenant synchronization/retry controls;
-- source retirement/deletion semantics;
-- cross-domain dashboard persistence.
+Security-weakened benchmark results are invalid evidence.
 
-Those remain under their owning Product/C2/C3 authority and cannot be smuggled into the Monitoring implementation as framework defaults.
+## Evidence artifacts
 
-## Gate acceptance criteria
+Track B must retain machine/reviewer-consumable provenance:
 
-Track A is ready for acceptance only when exact-final-HEAD review proves:
+```text
+exact base/head
+candidate/version/config
+schema/migration
+repo-owned test/fault harness
+security matrix
+workload/dataset definition
+measured output
+known failures/limits
+cleanup/no-production-authority statement
+C2 conclusion: accept | reject | further bounded evidence
+```
 
-1. every Monitoring concept implemented by the proposed API has one owner and one canonical identity;
-2. source ordinary edit cannot bypass explicit provider-instance replacement/generation semantics;
-3. provider/native identity/severity/tag/ack cannot become tenant/platform authority;
-4. current-state ordering is fenced but semantic transition remains idempotent;
-5. historical acceptance is independent from current-state candidacy;
-6. historical query completeness never means “no error occurred”; it is evidence-backed;
-7. incomplete/uncertain snapshots never create authoritative absence;
-8. API operations satisfy tenant/current-authorization/idempotency/concurrency/cache/error/recovery semantics from Phase 09;
-9. dashboard composition does not transfer Monitoring ownership into a generic presentation aggregate;
-10. `OPEN-REL-030` remains explicitly open and no candidate telemetry store is declared canonical without evidence;
-11. no Wave 0–3 implementation substrate is modified by this normative contract PR;
-12. P0/P1/P2 findings and review threads are zero on the exact final HEAD.
+Unit-green != capacity proof; benchmark-green != security/concurrency/recovery proof.
 
-Even after a clean Track A gate, merge requires separate explicit user authorization.
+## Decisions intentionally not made
 
-## Advancement states
+This gate does not select IdP/session/CSRF, general async broker/topology, message-equivalence crypto/backend, protected cursor C5, production topology/counts, production numerics, Alerting/ITSM/AIOps, manual tenant sync controls, source delete/retirement or cross-domain dashboard persistence.
+
+## Track A acceptance criteria
+
+Exact-final-HEAD review must prove:
+
+1. every Monitoring concept has one owner/canonical identity;
+2. Zabbix generation boundary cannot merge reused native IDs;
+3. source ordinary edit cannot bypass explicit replacement;
+4. base URL input cannot embed credentials/query/fragment and remains SSRF/egress controlled;
+5. current metric state is explicitly separate from history;
+6. fenced poll progress does not manufacture semantic state changes;
+7. history acceptance is independent from current candidacy;
+8. incomplete/uncertain snapshots cannot create absence/resolution;
+9. severity/ack/tags/native IDs cannot become tenant/domain authority;
+10. history completeness is evidence-backed;
+11. Phase 09 current-auth/idempotency/precondition/cache/error/collection laws are preserved;
+12. cursor class remains URL-safe/non-sensitive and does not silently reclassify C5;
+13. `OPEN-REL-030` remains open and TimescaleDB remains non-canonical;
+14. no Waves 0–3 implementation substrate changes;
+15. exact final HEAD has P0/P1/P2=0 and no unresolved review thread.
+
+A clean Track A gate still requires separate explicit user merge authorization.
+
+## Advancement state machine
 
 ```text
 CURRENT BASE d63b435f...
-  Wave 4 Monitoring entry        BLOCKED ON CONTRACT + C2 EVIDENCE
+  Wave 4 Monitoring entry          BLOCKED ON CONTRACT + C2 EVIDENCE
 
 AFTER TRACK A ACCEPTED
-  Monitoring contract authority  READY
-  OPEN-REL-030                   STILL C2 OPEN
-  customer telemetry             BOUNDED EVIDENCE SPIKE ELIGIBLE ONLY
-  canonical Wave 4 implementation NOT AUTHORIZED
+  Monitoring contract authority    READY
+  OPEN-REL-030                     STILL C2 OPEN
+  customer telemetry               BOUNDED EVIDENCE SPIKE ONLY
+  protected cursor C5              UNCHANGED / NOT ACTIVATED
+  canonical Wave 4 implementation  NOT AUTHORIZED
 
 AFTER TRACK B ACCEPTED
-  Monitoring contract authority  READY
-  OPEN-REL-030                   selected + conformed for accepted candidate/profile
-  Wave 4 implementation          ELIGIBLE FOR SEPARATE EXPLICIT AUTHORIZATION
+  Monitoring contract authority    READY
+  OPEN-REL-030                     SELECTED + CONFORMED FOR ACCEPTED PROFILE
+  Wave 4 implementation            ELIGIBLE FOR SEPARATE EXPLICIT AUTHORIZATION
 ```
 
-This state machine is the gate. No CI status, candidate code, external reviewer or AI output can skip a transition.
+No CI result, candidate code, external reviewer or AI output can skip a transition.

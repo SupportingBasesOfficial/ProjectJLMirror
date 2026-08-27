@@ -82,7 +82,7 @@ Roles/custom roles remain Organization & Access ownership; this contract does no
 
 Canonical IDs are opaque non-empty strings. Clients cannot parse provider/cell/topology meaning from them.
 
-Timestamps use the accepted UTC Phase 09 representation. Provider event time remains data, not authorization/current-ordering authority.
+Timestamps use accepted UTC Phase 09 representation. Provider event time remains data, not authorization/current-ordering authority.
 
 Provider-native IDs/metadata are optional bounded protected external evidence and never replace canonical IDs.
 
@@ -95,9 +95,9 @@ The exposed `cursor` is only an opaque anchor identity derived from an item alre
 Continuation requests resubmit the same canonical non-sensitive filters/window parameters explicitly. The server:
 
 1. re-establishes current authentication, tenant placement and authorization;
-2. resolves the supplied anchor inside the current tenant/resource scope;
-3. verifies that the anchor is eligible under the current endpoint's resubmitted filters/window;
-4. derives deterministic sort position from the authoritative anchored row;
+2. resolves supplied anchor inside current tenant/resource scope;
+3. verifies anchor eligibility under current endpoint filters/window;
+4. derives deterministic sort position from authoritative anchored row;
 5. returns only rows after that position according to declared ordering.
 
 Anchor classes:
@@ -124,7 +124,7 @@ current authorization and current filter/window validation on every page
 cross-tenant / wrong-filter / wrong-window anchors fail sparsely without existence leakage
 ```
 
-A server implementation SHALL NOT replace this profile with an encrypted/signed protected payload or a server-side handle whose hidden state carries protected continuation/query data while still claiming `OPEN-API-019` is deferred.
+A server implementation SHALL NOT replace this profile with an encrypted/signed protected payload or server-side hidden query state while still claiming `OPEN-API-019` is deferred.
 
 Collection shape:
 
@@ -137,8 +137,6 @@ All collections have deterministic stable ordering, finite row limits **and fini
 ## Response-cache profile by data class
 
 Protected Monitoring data is never `public_shared`.
-
-The initial profile is deliberately conservative:
 
 | Surface | Cache class | Rationale |
 |---|---|---|
@@ -154,8 +152,6 @@ The initial profile is deliberately conservative:
 | sync operations | `no_store` | operational/provider diagnostic metadata |
 
 For `private_revalidate`, reuse requires server revalidation/current authorization under the accepted Phase 09 cache contract; it is not an authorization-bypassing freshness TTL. BFF policy may be stricter.
-
-Protected authentication/authorization/existence-concealing error variants follow `no_store` or the stricter inherited private policy.
 
 ## Errors
 
@@ -177,6 +173,7 @@ monitoring.source_instance_replacement_required
 monitoring.replacement_candidate_invalid
 monitoring.replacement_candidate_not_ready
 monitoring.replacement_reconciliation_required
+monitoring.scope_reconciliation_required
 monitoring.source_visibility_degraded
 monitoring.history_window_required
 monitoring.history_incomplete
@@ -192,17 +189,17 @@ Source mutations use current authorization, canonical request semantics, require
 
 Response-loss rule:
 
-- for a **new idempotency key**, the one logical executor validates supplied current resource precondition before committing;
-- for an **existing same-key/same-fingerprint claim**, the server observes the recorded/in-progress logical operation before treating the now-advanced revision as a fresh conflicting request;
-- retry after successful-but-response-lost mutation can therefore recover original logical result;
+- for a new idempotency key, the one logical executor validates supplied current resource precondition before committing;
+- for an existing same-key/same-fingerprint claim, the server observes recorded/in-progress logical operation before treating advanced revision as a fresh conflicting request;
+- retry after successful-but-response-lost mutation can recover original logical result;
 - same key with different canonical fingerprint returns `409 idempotency.key_reused`;
-- a different idempotency key is a new command and must satisfy current `If-Match`.
+- a different key is a new command and must satisfy current `If-Match`.
 
 Current authentication/authorization is re-evaluated on replay; idempotency never freezes permission.
 
 ## Base URL/provider-endpoint safety
 
-For Zabbix, submitted base URL configuration uses a canonical HTTPS URI profile:
+For Zabbix, submitted base URL uses a canonical HTTPS URI profile:
 
 ```text
 scheme          https
@@ -219,7 +216,7 @@ Source-command admission performs deterministic canonical URI/profile validation
 
 **DNS resolution, connection attempts, redirect evaluation and every network-dependent SSRF/egress validation SHALL NOT occur inside an ordinary source-configuration database transaction.**
 
-Before each provider use, the outbound connector independently revalidates destination under accepted DNS/IP/protocol/redirect/egress policy and fails closed/degrades the relevant operation when authority cannot be proven safely.
+Before each provider use, outbound connector independently revalidates destination under accepted DNS/IP/protocol/redirect/egress policy and fails closed/degrades relevant operation when authority cannot be proven safely.
 
 URL/DNS/network location never becomes tenant, resource or authorization authority.
 
@@ -234,10 +231,10 @@ GET /api/v1/tenants/{tenant_id}/monitoring-sources
 action        monitoring.source.read
 consistency   committed configuration + projected operational evidence
 cache         no_store
-pagination    live traversal, monitoring_source_id ASC
+pagination    monitoring_source_id ASC
 ```
 
-Filters: `provider_profile`, `operational_evidence_state`, `cursor`, `limit`.
+Filters: `provider_profile`, `operational_evidence_state`, cursor, limit.
 
 `200` returns bounded `MonitoringSourceSummary[]` + `next_cursor`.
 
@@ -270,7 +267,7 @@ Rules:
 - unknown body members reject;
 - deterministic URL/profile/scope syntax/static policy validates before commit;
 - no DNS/provider/network call is held inside local transaction;
-- create persists source + first active generation + revision + audit + durable validation/sync responsibility when ingestion is activated.
+- create persists source + first active generation + first scope revision + audit + durable validation/sync responsibility when ingestion is activated.
 
 Idempotency scope:
 
@@ -284,11 +281,11 @@ tenant_id + monitoring.createSource + key
 
 ```text
 GET /api/v1/tenants/{tenant_id}/monitoring-sources/{monitoring_source_id}
-action       monitoring.source.read
-cache        no_store
+action monitoring.source.read
+cache  no_store
 ```
 
-Returns canonical ID, profile/display metadata, active generation, revision, safe endpoint/scope metadata, policy-safe credential-binding reference metadata, evidence state, replacement-candidate reference/state when present, and sync timestamps/references. Never returns credential secret bytes.
+Returns canonical ID, profile/display metadata, active generation, configuration revision, scope revision, safe endpoint/scope metadata, policy-safe credential-binding reference metadata, evidence state, replacement-candidate state when present, and sync references. Never returns credential secret bytes.
 
 ## `monitoring.updateSource`
 
@@ -315,23 +312,40 @@ At least one field required; unknown fields reject.
 
 For Zabbix, base URL/provider-instance endpoint change here returns `409 monitoring.source_instance_replacement_required` without mutation.
 
-### Scope-edit semantics
+### Scope-edit semantics — revisioned and bounded
 
 A configured-scope edit is local configuration authority, not provider negative evidence.
 
-When the new scope excludes previously monitored objects:
+The local source transaction:
 
-- affected resources/metric definitions become `scope_state=out_of_scope` under the new configuration revision;
-- their identities and retained history remain;
-- exclusion alone cannot mark resources `removed`, metric definitions `retired`, or problems `resolved`;
-- last-known current/health/problem evidence cannot be presented as freshly monitored after exclusion;
+1. validates current auth, source revision and canonical scope shape;
+2. commits new `configured_provider_scope` and monotonically advances `scope_revision`;
+3. persists required audit/transition intent;
+4. creates one durable bounded scope-reconciliation responsibility;
+5. **does not synchronously rewrite every resource/metric row**.
+
+Per-object scope state is a derived projection carrying:
+
+```text
+scope_state = in_scope | out_of_scope
+scope_projection_revision
+scope_evidence_state = current | reconciliation_required
+```
+
+An object may claim current `in_scope` only when its projection is proven against the source's current `scope_revision`, or an equivalent current deterministic scope evaluation proves it. A stale projection fails safe with `scope_evidence_state=reconciliation_required`; it cannot authorize provider work, fresh current-value/health semantics, or negative inference.
+
+When reconciliation establishes exclusion:
+
+- affected resources/metric definitions project `out_of_scope`;
+- identity/history remain;
+- exclusion alone cannot mark resource `removed`, metric `retired`, or problem `resolved`;
 - re-inclusion requires provider evidence to re-establish currentness.
 
-The source revision, scope-state transitions and required audit/transition intent commit under one local serialization boundary. Provider revalidation/sync occurs asynchronously afterwards.
+This makes the mutation O(1)/bounded with respect to source configuration rather than O(number_of_resources + number_of_metrics). Derived projection work is bounded/partitioned asynchronously.
 
 New-key executor validates `If-Match`; missing -> `428`, mismatch -> `412`. Same-key replay follows shared response-loss rule.
 
-`200` returns updated source/new revision.
+`200` returns updated source/new revision plus scope-reconciliation operation/reference when scope changed.
 
 ## `monitoring.replaceSourceInstance` — create candidate
 
@@ -352,16 +366,16 @@ This command **does not immediately fence the active generation**.
 One logical command:
 
 1. validates current auth/revision and deterministic configuration shape;
-2. reserves one collision-safe candidate generation;
+2. reserves one collision-safe candidate generation and candidate scope revision;
 3. persists candidate config/credential/scope references and audit evidence;
 4. creates one durable bounded candidate-validation operation;
-5. leaves active source generation/config and its writer authority unchanged.
+5. leaves active source generation/config and writer authority unchanged.
 
-`202 Accepted` returns `MonitoringSyncOperation` specialized as replacement validation plus candidate reference/state. Same idempotency key/fingerprint observes same candidate.
+`202 Accepted` returns replacement validation operation + candidate state. Same idempotency key/fingerprint observes same candidate.
 
-Candidate provider/DNS/credential/scope validation runs outside the local transaction. Candidate evidence cannot mutate tenant-facing resource/metric/problem/health/current state before cutover.
+Candidate provider/DNS/credential/scope validation runs outside local transaction. Candidate evidence cannot mutate tenant-facing resource/metric/problem/health/current state before cutover.
 
-Validation failure leaves the healthy active generation in place and records a safe failure class. It never silently activates the candidate.
+Validation failure leaves healthy active generation in place and records safe failure class.
 
 ## `monitoring.activateReplacementCandidate` — atomic cutover
 
@@ -375,7 +389,7 @@ cache            no_store
 consistency      serialized active-generation cutover + durable successor sync responsibility
 ```
 
-The candidate must have accepted current `ready_for_cutover` validation evidence. If not, return `409 monitoring.replacement_candidate_not_ready` without changing active generation.
+Candidate must have accepted current `ready_for_cutover` validation evidence. Otherwise return `409 monitoring.replacement_candidate_not_ready` without changing active generation.
 
 One logical cutover:
 
@@ -383,17 +397,15 @@ One logical cutover:
 2. validates expected source revision, candidate identity/state and validation evidence generation;
 3. fences prior active provider-instance/poll writer authority;
 4. atomically sets active generation/config/scope/credential refs to candidate;
-5. advances source revision;
+5. advances source configuration and scope revisions;
 6. marks candidate activated and records prior-generation retirement/fence evidence;
 7. persists required audit/transition intent;
-8. creates exactly one durable successor synchronization/reconciliation responsibility;
+8. creates exactly one durable successor synchronization/scope-reconciliation responsibility;
 9. never merges old/new provider-native mappings or deletes historical evidence.
 
 `202 Accepted` returns successor sync operation + updated source link.
 
 If cutover outcome is ambiguous across crash/PITR/relocation, further protected/effectful replacement admission is `reconciliation_required` until active-generation/fence/audit/idempotency/operation authorities prove the winner. There is never more than one active generation.
-
-This two-step API intentionally prevents a bad URL, invalid credential or unreachable candidate from immediately taking down a healthy existing integration.
 
 ---
 
@@ -409,9 +421,11 @@ cache         private_revalidate
 pagination    monitoring_resource_id ASC
 ```
 
-Filters: source ID, `scope_state=in_scope|out_of_scope`, `presence_state=present|removed`, resource kind, health class/evidence state, cursor, limit.
+Filters: source ID, `scope_state=in_scope|out_of_scope`, `scope_evidence_state=current|reconciliation_required`, `presence_state=present|removed`, resource kind, health/evidence state, cursor, limit.
 
-Summary responses exclude unrestricted provider metadata. Missing provider rows under stale/incomplete/visibility-degraded evidence do not disappear. `removed` means authoritative negative evidence already committed. `out_of_scope` means local configuration no longer claims monitoring coverage.
+Summary responses exclude unrestricted provider metadata. Missing provider rows under stale/incomplete/visibility/scope-reconciliation uncertainty do not disappear. `removed` means authoritative negative evidence already committed.
+
+A returned `scope_state=in_scope` with `scope_evidence_state=current` means membership was proven under current source scope revision. `reconciliation_required` is explicit and cannot be interpreted as current monitoring coverage.
 
 ## `monitoring.getResource`
 
@@ -421,7 +435,7 @@ action monitoring.resource.read
 cache  no_store
 ```
 
-Returns canonical identity, scope/presence/source generation/last-observed evidence and bounded protected external references where authorized.
+Returns canonical identity, scope state/evidence/revision, presence/source generation/last-observed evidence and bounded protected external references where authorized.
 
 ---
 
@@ -439,7 +453,7 @@ pagination    metric_definition_id ASC
 
 Required singleton filter: `monitoring_resource_id`.
 
-Optional: `scope_state=in_scope|out_of_scope`, `definition_state=active|retired`, cursor, limit.
+Optional: scope state/evidence, `definition_state=active|retired`, cursor, limit.
 
 Each item contains metadata only:
 
@@ -451,11 +465,12 @@ Each item contains metadata only:
   "value_kind": "number|integer|boolean|string|text|log",
   "unit": "nullable",
   "scope_state": "in_scope|out_of_scope",
+  "scope_evidence_state": "current|reconciliation_required",
   "definition_state": "active|retired"
 }
 ```
 
-Current metric values are deliberately **not embedded in every definition row**. This keeps definition enumeration bounded as metric cardinality/value size grows.
+Current metric values are deliberately **not embedded in every definition row**.
 
 ## `monitoring.getMetricDefinition`
 
@@ -465,7 +480,7 @@ action monitoring.metric.read
 cache  no_store
 ```
 
-Returns `MetricDefinitionDetail` plus bounded protected external references where authorized. It may link to current-state and history surfaces; it does not query history to synthesize latest value.
+Returns `MetricDefinitionDetail` plus bounded protected external references. It may link to current-state/history surfaces; it does not query history to synthesize latest value.
 
 ---
 
@@ -481,13 +496,9 @@ cache         no_store
 pagination    metric_definition_id ASC
 ```
 
-Required singleton filter:
+Required singleton filter: `monitoring_resource_id`.
 
-```text
-monitoring_resource_id
-```
-
-Optional singleton filters: `metric_definition_id`, evidence state, `scope_state`, cursor, limit.
+Optional filters: `metric_definition_id`, evidence state, scope state/evidence, cursor, limit.
 
 Each row:
 
@@ -498,6 +509,7 @@ Each row:
   "monitoring_source_id": "opaque",
   "source_instance_generation": "opaque",
   "scope_state": "in_scope|out_of_scope",
+  "scope_evidence_state": "current|reconciliation_required",
   "current_observation_id": "opaque-or-null",
   "observed_at": "timestamp-or-null",
   "accepted_at": "timestamp-or-null",
@@ -509,11 +521,9 @@ Each row:
 }
 ```
 
-This is the efficient current-state surface required by `FR-MON-003`; it never queries historical Tier 2 for “latest”.
+This is the efficient current-state surface required by `FR-MON-003`; it never queries historical Tier 2 for latest.
 
-A last-known value with non-current evidence cannot be presented as freshly proven current state. An out-of-scope metric cannot be presented as currently monitored even if a last value is retained.
-
-Response admission is bounded by both row count and serialized byte budget. Every value kind has a mandatory accepted serialized-value bound before implementation; an oversized provider value cannot turn one request into unbounded memory/response consumption.
+A metric with stale/unreconciled scope cannot be presented as currently monitored even if last value is retained. Response admission is bounded by row count and serialized byte budget. Every value kind has mandatory accepted serialized-value bound before implementation.
 
 ## `monitoring.getMetricCurrentState`
 
@@ -536,10 +546,10 @@ GET /api/v1/tenants/{tenant_id}/metric-observations
 action        monitoring.metric.read
 consistency   historical_window
 cache         no_store
-pagination    sort (observed_at ASC, observation_id ASC)
+pagination    (observed_at ASC, observation_id ASC)
 ```
 
-Required singleton query:
+Required query:
 
 ```text
 metric_definition_id
@@ -559,7 +569,7 @@ Rules:
 - every page reauthorizes current metric/resource scope;
 - provider event time is historical data, not current authority;
 - response is bounded by row count, time window and serialized byte budget;
-- accepted per-value bounds apply to historical values as well.
+- accepted per-value bounds apply to historical values.
 
 `200`:
 
@@ -577,7 +587,7 @@ Rules:
 }
 ```
 
-`complete` requires accepted lateness/retention/reconciliation evidence, not merely successful query execution. Configured out-of-scope intervals or known/uncertain provider gaps cannot be fabricated as continuous complete coverage.
+`complete` requires accepted lateness/retention/reconciliation evidence. Configured out-of-scope or unreconciled scope intervals and known/uncertain provider gaps cannot be fabricated as continuous complete coverage.
 
 ---
 
@@ -592,9 +602,9 @@ cache         no_store
 pagination    (opened_at DESC, problem_id ASC)
 ```
 
-Filters: source ID, resource ID, `problem_state=active|resolved`, canonical severity, opened_from/to, cursor, limit.
+Filters: source ID, resource ID, problem state, canonical severity, opened_from/to, cursor, limit.
 
-Missing provider row is never implicit resolution. Scope exclusion is never implicit resolution. Items expose canonical state/severity, resource/source, timestamps and evidence state. Zabbix acknowledgement/tags may appear only as bounded non-authoritative provider metadata where policy permits.
+Missing provider row is never implicit resolution. Scope exclusion/stale scope membership is never implicit resolution. Items expose canonical state/severity, resource/source, timestamps and evidence state. Zabbix acknowledgement/tags may appear only as bounded non-authoritative provider metadata where policy permits.
 
 ## `monitoring.getProblem`
 
@@ -619,9 +629,9 @@ cache         private_revalidate
 pagination    monitoring_resource_id ASC
 ```
 
-Filters: source ID, `health_class=unknown|healthy|degraded|unhealthy`, evidence state, resource scope state, cursor, limit.
+Filters: source ID, health class, evidence state, scope state/evidence, cursor, limit.
 
-Items expose only canonical health + scope/evidence state + revision/times/bounded problem IDs. A last-known `healthy` with stale evidence or out-of-scope coverage is visibly non-current.
+Items expose canonical health + scope/evidence state + revision/times/bounded problem IDs. A last-known healthy value with stale provider or scope evidence is visibly non-current.
 
 ## `monitoring.getHealthProjection`
 
@@ -660,7 +670,7 @@ cache  no_store
 
 Current authorization is re-established. Operation ID is never bearer authority.
 
-No tenant-facing manual `:sync/:retry/:resume` command is invented here. Schedule, webhook hint, configuration, replacement and recovery workflows own execution until Product explicitly authorizes a manual command contract.
+No tenant-facing manual `:sync/:retry/:resume` command is invented here. Schedule, webhook hint, configuration, scope reconciliation, replacement and recovery workflows own execution until Product explicitly authorizes a manual command contract.
 
 ---
 
@@ -674,6 +684,7 @@ display_name
 provider_profile
 active_source_instance_generation
 configuration_revision
+scope_revision
 safe provider configuration/scope metadata
 credential_binding_ref metadata only where authorized
 operational_evidence_state
@@ -692,7 +703,9 @@ monitoring_source_id
 source_instance_generation
 display_name
 resource_kind
-scope_state in_scope|out_of_scope
+scope_state
+scope_projection_revision
+scope_evidence_state
 presence_state present|removed
 bounded external_references only on permitted detail surface
 last_observed_at
@@ -710,7 +723,9 @@ source_instance_generation
 name
 value_kind
 unit
-scope_state in_scope|out_of_scope
+scope_state
+scope_projection_revision
+scope_evidence_state
 definition_state active|retired
 bounded external_references only on permitted detail surface
 ```
@@ -723,6 +738,7 @@ monitoring_resource_id
 monitoring_source_id
 source_instance_generation
 scope_state
+scope_evidence_state
 current_observation_id
 observed_at
 accepted_at
@@ -771,6 +787,7 @@ monitoring_resource_id
 monitoring_source_id
 source_instance_generation
 scope_state
+scope_evidence_state
 health_class unknown|healthy|degraded|unhealthy
 evidence_state current|stale|incomplete|reconciliation_required|unavailable
 projection_revision
@@ -787,7 +804,7 @@ gap_detected
 reconciliation_required
 ```
 
-`complete` is evidence-backed; gap/incomplete/out-of-scope coverage is not hidden by pagination.
+`complete` is evidence-backed; provider/scope gaps are not hidden by pagination.
 
 ## Sync operation
 
@@ -797,17 +814,18 @@ Common operation representation + source/generation/trigger/checkpoint/safe depe
 
 | Class | Local authority | Idempotency/precondition | Provider call inside tx | Audit |
 |---|---|---|---|---|
-| source create | source + first active generation + sync responsibility | required key | prohibited | privileged |
-| source edit | source revision + scope state + revalidation/sync responsibility | key + If-Match | prohibited | privileged |
+| source create | source + first active generation/scope revision + sync responsibility | required key | prohibited | privileged |
+| source metadata edit | source revision + revalidation responsibility | key + If-Match | prohibited | privileged |
+| source scope edit | source scope revision + scope-reconciliation responsibility | key + If-Match | prohibited | privileged |
 | replacement candidate | candidate + validation responsibility | key + If-Match | prohibited | privileged |
-| replacement cutover | active-generation fence/config + successor responsibility | key + If-Match | prohibited | privileged |
+| replacement cutover | active-generation/config/scope fence + successor responsibility | key + If-Match | prohibited | privileged |
 | reads | local authoritative/projection reads | intrinsic | no provider passthrough | access telemetry |
 
-The API serves local accepted state/evidence; it is not an unbounded synchronous proxy to Zabbix.
+A source scope edit is not an unbounded multi-row rewrite transaction. The API serves local accepted state/evidence; it is not an unbounded synchronous proxy to Zabbix.
 
 # Data-size / abuse boundary
 
-Before implementation, the accepted profile SHALL provide finite values for every mandatory resource bound used by this vertical, including:
+Before implementation, accepted profile SHALL provide finite values for every mandatory resource bound used by this vertical, including:
 
 ```text
 provider response/body bytes
@@ -818,43 +836,44 @@ collection serialized response bytes
 history time-window maximum
 history rows/bytes per response
 provider scope-selector count/size
+scope-reconciliation batch/backlog/concurrency
 problem metadata count/size
 replacement candidates retained per source
 sync/concurrency/backlog per tenant/source
 ```
 
-The runtime may return fewer rows than the nominal row limit to honor the byte budget. A single oversized provider value is rejected/quarantined/degraded according to the accepted normalization/ingress profile; it is never admitted as an unbounded payload merely because the provider sent it.
+Runtime may return fewer rows than nominal row limit to honor byte budget. A single oversized provider value is rejected/quarantined/degraded according to accepted normalization/ingress profile; it is never admitted as unbounded payload merely because provider sent it.
 
 `SEC-ABUSE-001/002` tenant/principal/route/integration controls apply independently from pagination.
 
 # Observability
 
-Every operation propagates correlation context. Safe telemetry captures route/operation, bounded attribution, auth outcome class, latency/status/error class, sync correlation and history window/cost class without raw credentials, unrestricted metric/log values, provider payloads/tags or raw external errors.
+Every operation propagates correlation context. Safe telemetry captures route/operation, bounded attribution, auth outcome class, latency/status/error class, sync/scope correlation and history window/cost class without raw credentials, unrestricted metric/log values, provider payloads/tags or raw external errors.
 
-Monitoring operational evidence includes source sync age/evidence state, replacement candidate/validation state, dependency state, backlog/reconciliation/gaps, historical projector lag, current-state transition failures and tenant fairness/saturation.
+Monitoring operational evidence includes source sync age/evidence state, replacement candidate/validation state, scope revision/reconciliation lag, dependency state, backlog/gaps, historical projector lag, current-state transition failures and tenant fairness/saturation.
 
 # Recovery / relocation
 
 After PITR/relocation:
 
-- active source generation/revision reconciles before mutation;
+- active source generation/configuration/scope revisions reconcile before mutation;
 - replacement candidate/cutover winner reconciles before further activation;
 - candidate reachability alone cannot become active authority;
+- stale scope projection cannot claim current `in_scope` or authorize negative inference;
 - retired placement/poll authority cannot mutate current state;
 - missing observation/history/checkpoint is uncertainty;
 - current metric values may remain last-known but expose non-current evidence until reconciled;
-- configured scope revision/state is reconciled before absence inference;
 - historical completeness may downgrade;
-- cursor anchors are re-resolved under current tenant/filter/window state;
+- cursor anchors re-resolve under current tenant/filter/window state;
 - idempotency/replacement outcomes reconcile through `(R,F]` before repeat execution.
 
 # Dashboard composition
 
-No mutable `/monitoring-dashboards` aggregate is created. The initial Monitoring dashboard composes resources, metric definitions, dedicated current-state reads, health, problems, bounded history and sync evidence via BFF/read composition. Persistent presentation/cross-domain projections remain Reporting & Experience ownership.
+No mutable `/monitoring-dashboards` aggregate is created. Initial Monitoring dashboard composes resources, metric definitions, dedicated current-state reads, health, problems, bounded history and sync/scope evidence via BFF/read composition. Persistent presentation/cross-domain projections remain Reporting & Experience ownership.
 
 # Compatibility-sensitive changes
 
-Security/compatibility review is required for changes to tenant/action scope, replacement candidate/cutover semantics, configured-scope semantics, canonical identity/generation, current metric semantics/surface, negative evidence, severity/health/evidence state, historical completeness, cursor classification/anchor rules, idempotency/precondition replay, provider metadata authority, cache classification or recovery fencing.
+Security/compatibility review is required for changes to tenant/action scope, replacement candidate/cutover semantics, configured-scope revision/currentness semantics, canonical identity/generation, current metric semantics/surface, negative evidence, severity/health/evidence state, historical completeness, cursor classification/anchor rules, idempotency/precondition replay, provider metadata authority, cache classification or recovery fencing.
 
 # Falsification matrix
 
@@ -866,24 +885,26 @@ Security/compatibility review is required for changes to tenant/action scope, re
 6. Candidate generation cannot write canonical Monitoring state before activation.
 7. Concurrent cutover attempts result in at most one active-generation winner and one successor responsibility.
 8. New Zabbix generation never merges same-looking native IDs with old mappings.
-9. Scope exclusion produces out-of-scope state and never provider removal/retirement/resolution by itself.
-10. Re-inclusion requires fresh provider evidence before currentness is restored.
-11. Provider outage/visibility loss never turns known state into 404/removed/retired/resolved.
-12. Metric-definition listing does not embed all current values.
-13. Current metric API reads transactional current projection without querying historical latest per request.
-14. Current/history/problem payloads are `no_store` and cannot become shared/public cache entries.
-15. Same current observation under later poll causes no duplicate transition/current `last_changed_at` advancement.
-16. Provider clock rollback cannot freeze genuinely newer fenced current state.
-17. History requires metric/from/to and finite window; no all-history fallback.
-18. Every history page reauthorizes and non-completeness remains explicit.
-19. Cursor is only authorized-row anchor, contains/references no protected continuation payload/state, and possession grants no authority.
-20. Cross-tenant/wrong-filter/wrong-window cursor anchors fail without existence leakage.
-21. Zabbix severity maps only to canonical classes; acknowledgement/tags remain metadata.
-22. Last-known health/current metric with non-current evidence or out-of-scope state remains visibly non-current.
-23. Sync operation ID cannot grant authority or reveal topology.
-24. One tenant's history/sync/cardinality pressure is bounded and cannot starve unrelated tenants.
-25. Oversized provider metric/log/text/problem values are bounded before memory/storage/response exhaustion.
-26. Recovery invalidates stale placement/poll/idempotency/candidate assumptions rather than reopening authority.
+9. Scope edit commits without O(N) resource/metric row rewrite.
+10. Stale scope projection cannot claim current `in_scope`, fresh health/value, provider-work eligibility or negative inference.
+11. Scope exclusion never becomes provider removal/retirement/resolution by itself.
+12. Re-inclusion requires fresh provider evidence before currentness is restored.
+13. Provider outage/visibility loss never turns known state into 404/removed/retired/resolved.
+14. Metric-definition listing does not embed all current values.
+15. Current metric API reads transactional current projection without querying historical latest per request.
+16. Current/history/problem payloads are `no_store` and cannot become shared/public cache entries.
+17. Same current observation under later poll causes no duplicate transition/current `last_changed_at` advancement.
+18. Provider clock rollback cannot freeze genuinely newer fenced current state.
+19. History requires metric/from/to and finite window; no all-history fallback.
+20. Every history page reauthorizes and non-completeness remains explicit.
+21. Cursor is only authorized-row anchor, contains/references no protected continuation payload/state, and possession grants no authority.
+22. Cross-tenant/wrong-filter/wrong-window cursor anchors fail without existence leakage.
+23. Zabbix severity maps only to canonical classes; acknowledgement/tags remain metadata.
+24. Last-known health/current metric with non-current provider/scope evidence remains visibly non-current.
+25. Sync operation ID cannot grant authority or reveal topology.
+26. One tenant's history/sync/scope-reconciliation/cardinality pressure is bounded and cannot starve unrelated tenants.
+27. Oversized provider metric/log/text/problem values are bounded before memory/storage/response exhaustion.
+28. Recovery invalidates stale placement/poll/idempotency/candidate/scope assumptions rather than reopening authority.
 
 # OPENs preserved
 
@@ -894,7 +915,7 @@ This contract closes endpoint/use-case semantics but does not close:
 - secret-manager/KMS/credential-binding mechanism;
 - broker/outbox physical dispatch;
 - provider timeout/retry/page/history/reconciliation numerics;
-- mandatory per-value/page/window/candidate/concurrency bounds;
+- mandatory per-value/page/window/scope-batch/candidate/concurrency bounds;
 - production retention/capacity/SLO numerics.
 
 `OPEN-API-019` remains C5 and is **not activated** because this Monitoring profile uses only returned-row anchor cursors with no hidden protected continuation payload/state.

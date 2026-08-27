@@ -1,12 +1,31 @@
 #!/usr/bin/env python3
-"""Observer-only validation for Wave 2 cell/async correctness substrate."""
+"""Observer-only validation for Wave 2 cell/async correctness substrate.
+
+Historical note (recorded when Wave 3 was accepted): this module was originally the
+sole Wave 2 acceptance gate and also carried two PR-review-window-only checks —
+a live-HEAD git scope diff and a direct CI-wiring check for its own invocation.
+Both were structurally valid only *before* Wave 2 was accepted (i.e. while `HEAD`
+still meant "the Wave 2 PR under review"); once Wave 2 was accepted and later waves
+legitimately landed on top, a live-HEAD diff against the original Wave 1 base would
+flag every subsequent wave's changes as "out-of-scope Wave 2 delta" forever, and the
+CI-wiring check would flag the now-correct Wave 3 wiring as missing. Both were
+retired from this module for that reason. Their forward-compatible successors —
+comparing against the frozen `ACCEPTED_WAVE2_SHA` instead of live `HEAD`, and
+checking for the current CI wiring — live in
+`tools/wave3/validate_accepted_wave2_compatibility.py`, which imports the static
+semantic-law checks below as its library. This module remains independently
+runnable; it now checks only the static Wave 2 correctness laws (manifest, state,
+source authority anchors, stdlib boundary, execution/redrive/reconciliation
+boundaries, SQL contract, and Wave 1 compatibility maintenance) — not repository
+scope or CI wiring, which are point-in-time concerns owned by the compatibility
+validator instead.
+"""
 
 from __future__ import annotations
 
 import ast
 import json
 from pathlib import Path
-import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -504,49 +523,6 @@ def _wave1_compatibility_maintenance_findings() -> list[str]:
     return findings
 
 
-def _git_scope_findings() -> list[str]:
-    try:
-        subprocess.run(
-            ["git", "cat-file", "-e", f"{AUTHORITY_BASE_SHA}^{{commit}}"],
-            cwd=ROOT,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        completed = subprocess.run(
-            ["git", "diff", "--name-only", f"{AUTHORITY_BASE_SHA}...HEAD"],
-            cwd=ROOT,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        return [f"Wave 2 scope proof unavailable: {exc}"]
-    findings: list[str] = []
-    for raw in completed.stdout.splitlines():
-        path = raw.strip()
-        if not path:
-            continue
-        if path in ALLOWED_DELTA_EXACT or any(path.startswith(prefix) for prefix in ALLOWED_DELTA_PREFIXES):
-            continue
-        findings.append(f"out-of-scope Wave 2 delta: {path}")
-    return findings
-
-
-def _workflow_findings() -> list[str]:
-    text = (ROOT / ".github/workflows/deterministic-assurance.yml").read_text(encoding="utf-8")
-    required = (
-        "python3 -m unittest discover -s tests/wave2 -p 'test_*.py'",
-        "python3 tools/async_core/validate_wave2.py",
-        "python3 tools/async_core/validate_reconciliation_attempt_binding.py",
-        "persist-credentials: false",
-        "permissions:\n  contents: read",
-    )
-    return [f"Wave 2 workflow wiring missing: {item}" for item in required if item not in text]
-
-
 def validate() -> list[str]:
     findings: list[str] = []
     for check in (
@@ -559,8 +535,6 @@ def validate() -> list[str]:
         _reconciliation_authority_boundary_findings,
         _sql_findings,
         _wave1_compatibility_maintenance_findings,
-        _git_scope_findings,
-        _workflow_findings,
     ):
         try:
             findings.extend(check())

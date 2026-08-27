@@ -50,18 +50,21 @@ BEGIN
 
   if this arrival is an owner-contract current-state candidate:
       validate current provider/source authority and accepted projection ordering token
-      conditional compare-and-set current-state projection by ordering token  -- MAY execute even when
-                                                                               -- observation already existed
-      if advanced:
-          persist stable transition identity
-          append outbox intent for current-state-changed downstream signal
+      if current projection already references the same canonical observation identity:
+          no semantic current-state transition                               -- idempotent repeat/current snapshot
+      else:
+          conditional compare-and-set current-state projection by ordering token
+          if advanced:
+              persist stable transition identity
+              append outbox intent for current-state-changed downstream signal
 COMMIT
 ```
 
-Two separations are deliberate and correctness-critical:
+Three separations are deliberate and correctness-critical:
 
 1. **Historical projection is coupled to first durable acceptance, not to current-state advancement.** Every newly accepted canonical observation gets its Tier 2 historical-projection intent even if it is stale/non-latest for current-state purposes.
-2. **Current-state candidacy is not coupled to first acceptance.** The same canonical observation may have been accepted earlier through a historical/backfill path and only later be encountered through a provider-authoritative current-snapshot path, or may need its current projection re-attempted during replay/reconciliation. In those cases the create-or-observe result is "already exists," but the current-state CAS is still eligible under the owner contract's current authority + ordering token.
+2. **Current-state candidacy is not coupled to first acceptance.** The same canonical observation may have been accepted earlier through a historical/backfill path and only later be encountered through a provider-authoritative current-snapshot path, or may need its current projection re-attempted during replay/reconciliation. In those cases the create-or-observe result is "already exists," but the current-state CAS remains eligible under the owner contract's current authority + ordering token when the current projection does not already reference that observation.
+3. **Ordering/fencing progress is not itself a semantic state change.** A later poll/worker generation proves which candidate is eligible to win; it does not manufacture a new current observation. Re-reading the same canonical observation identity is idempotent and does not emit another `current-state-changed` signal merely because the poll generation advanced. A genuinely different canonical current observation may advance even when its provider event timestamp moved backwards, provided the owner/provider ordering authority says the candidate is current.
 
 A provider timestamp/event-time value is **not automatically a current-state ordering token**. The owner/provider contract must supply an ordering authority that satisfies `telemetry-plane.md`'s monotonic-projection rule; that document explicitly says `observed_at` alone is insufficient because provider clocks can skew or move backwards. For the initial Zabbix profile, `docs/09-api-contracts/zabbix-monitoring-source-provider-contract.md` uses a platform-owned fenced poll epoch/generation for current/latest snapshots, while `clock`/`ns` remain historical/freshness metadata. That poll epoch additionally inherits placement/recovery fencing so PITR/relocation cannot make a restored lower poll sequence authoritative.
 
@@ -94,6 +97,7 @@ An application `WHERE tenant_id = ...` convention by itself is not an accepted s
 
 - Tier 1 reuses an already-accepted correctness pattern/schema shape instead of designing a new acceptance authority;
 - historical acceptance and current-state candidacy are independent, so backfill/replay order cannot silently decide which observation is allowed to repair/advance current state;
+- repeated observation of the already-current canonical observation is idempotent even when the poll/worker ordering generation advances;
 - Tier 2 remains replaceable behind the telemetry projection seam;
 - TimescaleDB can still win on its real strengths, but only after the exact security/performance profile is proven rather than assumed;
 - `broker_or_job_transport` (Wave 2 residual C2) is **not** a prerequisite for Tier 1 durable acceptance — Tier 1's outbox records the dispatch obligation while transport remains separately selectable.
@@ -102,7 +106,7 @@ An application `WHERE tenant_id = ...` convention by itself is not an accepted s
 
 - Tier 1 still requires real concurrent PostgreSQL fault/concurrency proof;
 - TimescaleDB adds an extension and operational/tuning surface if selected;
-- current-state candidate evaluation needs an explicit owner/provider ordering authority in addition to canonical observation identity; event-time metadata cannot be promoted to that authority by convenience;
+- current-state candidate evaluation needs both a stable canonical observation identity and an explicit owner/provider ordering authority; event-time metadata cannot be promoted to that authority by convenience;
 - TimescaleDB's attractive compression/columnar/continuous-aggregate features cannot be assumed usable on pooled protected data until their isolation profile is proven, which may force a different query topology, physical segmentation or different store;
 - hypertable/chunk, compression/columnstore, aggregate refresh and retention settings remain capacity evidence decisions before production (`OPEN-REL-020`);
 - at very large multi-tenant scale, Tier 2 may still require read scaling/sharding/segmentation beyond one cluster.
@@ -129,6 +133,7 @@ Per the register's closure evidence rule, this record alone does not make the C2
 - backlog behavior: durable acceptance continuing within a bounded storage budget while the Tier 2 projector is unavailable, without acknowledging beyond durable responsibility;
 - replay: out-of-order and duplicate observation delivery proven not to regress current-state projections or duplicate historical rows;
 - already-accepted/current-candidate independence: an observation first accepted through historical/backfill ingestion and later encountered as an authoritative current-state candidate can still attempt/advance the current projection without emitting a second historical-projection intent;
+- repeated-current idempotence: repeated authoritative snapshots that reference the same canonical observation identity do not create a second current-state transition/signal merely because the poll/worker ordering generation advanced;
 - event-time non-authority: provider clock rollback or a numerically larger stale/backfill timestamp cannot by itself advance/freeze current state when the owner/provider ordering authority says otherwise;
 - poll-authority recovery continuity for the initial Zabbix profile: restore/PITR/relocation cannot reuse a stale/lower poll sequence as current authority; existing epoch continuity is proven or a successor epoch is admitted only after stale-placement fencing and `(R,F]` reconciliation;
 - unconditional historical dispatch: an accepted observation that does **not** advance current state still reaches Tier 2 historical storage;

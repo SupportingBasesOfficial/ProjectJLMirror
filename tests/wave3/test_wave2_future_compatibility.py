@@ -23,6 +23,17 @@ class Wave2FutureCompatibilityTests(unittest.TestCase):
         self.assertTrue(findings)
         self.assertIn("protected substrate changed", findings[0])
 
+    def test_known_deferred_items_addition_is_not_flagged_as_protected_substrate_change(self):
+        self.assertEqual(
+            future_substrate_drift_findings(["implementation/wave-2/KNOWN_DEFERRED_ITEMS.md"]),
+            [],
+        )
+
+    def test_unlisted_new_file_under_wave2_implementation_folder_still_fails_closed(self):
+        findings = future_substrate_drift_findings(["implementation/wave-2/SOME_OTHER_NEW_FILE.md"])
+        self.assertTrue(findings)
+        self.assertIn("protected substrate changed", findings[0])
+
     def test_original_wave2_scope_still_rejects_wave3_as_hypothetical_wave2_delta(self):
         findings = historical_scope_findings(["implementation/wave-3/README.md"])
         self.assertTrue(findings)

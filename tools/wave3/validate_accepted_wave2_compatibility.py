@@ -25,6 +25,15 @@ PROTECTED_WAVE2_PREFIXES = (
 PROTECTED_WAVE2_EXACT = frozenset({
     "tools/authority/wave1_scope.py", "tests/wave1/test_wave1_scope_guard.py",
 })
+# `implementation/wave-2/KNOWN_DEFERRED_ITEMS.md` is a living, forward-looking governance
+# record (see its own header), not a frozen description of what Wave 2 built — unlike
+# IMPLEMENTATION_MANIFEST.json/STATE.md/README.md/RECONCILIATION_AUTHORITY_BOUNDARY.md, which
+# this guard must keep protecting exactly as before. It is expected to gain new entries or have
+# existing ones marked closed as later waves resolve them, so it is named here explicitly rather
+# than loosening the `implementation/wave-2/` prefix match for the rest of the protected substrate.
+ALLOWED_GOVERNANCE_RECORD_PATHS = frozenset({
+    "implementation/wave-2/KNOWN_DEFERRED_ITEMS.md",
+})
 
 
 def _canonical_repo_path(raw: str) -> str | None:
@@ -71,6 +80,8 @@ def future_substrate_drift_findings(paths: list[str] | None = None) -> list[str]
         path = _canonical_repo_path(raw)
         if path is None:
             findings.append(f"future changed path is non-canonical: {raw!r}")
+            continue
+        if path in ALLOWED_GOVERNANCE_RECORD_PATHS:
             continue
         if path in PROTECTED_WAVE2_EXACT or path.startswith(PROTECTED_WAVE2_PREFIXES):
             findings.append(f"accepted Wave 2 protected substrate changed after acceptance: {path}")

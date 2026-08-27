@@ -41,6 +41,7 @@ TRACK A — normative authority
   Monitoring domain contract
   + Monitoring API contract
   + Zabbix normalization profile
+  + Monitoring surface-map propagation
   + this entry gate
   -> exact-HEAD adversarial review
   -> explicit merge authorization
@@ -69,7 +70,8 @@ Track B cannot define missing Product/domain semantics by existing first. Track 
 - source/resource/metric/observation/problem/health/sync identities;
 - strict provider-instance generation boundary for initial Zabbix mappings;
 - active generation versus non-authoritative replacement candidate;
-- configured scope versus provider absence;
+- configured scope revision versus provider absence;
+- bounded scope reconciliation rather than O(N) source mutation;
 - explicit `metric_current_state` separate from history;
 - dedicated current-state read semantics rather than embedding all values in definition enumeration;
 - current-state precedence versus semantic idempotency;
@@ -102,11 +104,11 @@ GET         /monitoring-sync-operations
 GET         /monitoring-sync-operations/{operation_id}
 ```
 
-Metric-definition reads remain metadata-oriented. Efficient latest/current values are served from the dedicated transactional `metric-current-states` projection required by `FR-MON-003`; historical Tier 2 is never queried on each request to discover “latest”.
+Metric-definition reads remain metadata-oriented. Efficient latest/current values are served from dedicated transactional `metric-current-states`; historical Tier 2 is never queried on each request to discover latest.
 
-The API also fixes current auth/tenant routing, source mutation idempotency + `If-Match`, staged source replacement, configured-scope semantics, canonical HTTPS endpoint input, endpoint-specific cache classes and finite row/byte/history bounds.
+The API fixes current auth/tenant routing, mutation idempotency + `If-Match`, staged source replacement, revisioned configured-scope semantics, endpoint-specific cache classes and finite row/byte/history bounds.
 
-Network-dependent DNS/provider/redirect/egress validation is explicitly outside source mutation database transactions. Source commands validate deterministic URI/profile/static policy, commit local authority plus durable responsibility, and outbound connector authority is revalidated immediately before provider use.
+Network-dependent DNS/provider/redirect/egress validation is outside source mutation database transactions. Source commands validate deterministic URI/profile/static policy and outbound connector authority is revalidated immediately before provider use.
 
 ### Non-disruptive replacement invariant
 
@@ -126,30 +128,50 @@ ACTIVE N
 
 Required properties:
 
-- candidate reachability/credentials/scope are validated outside the source mutation transaction;
+- candidate reachability/credentials/scope are validated outside source mutation transaction;
 - candidate validation cannot mutate canonical current resource/metric/problem/health state;
-- bad/unreachable candidate cannot retire a healthy active generation merely because a replacement was requested;
+- bad/unreachable candidate cannot retire a healthy active generation merely because replacement was requested;
 - cutover revalidates current authority/revision/candidate evidence and serializes one winner;
 - after cutover exactly one active generation exists;
-- ambiguity/recovery cannot silently activate a failed candidate or resurrect the retired generation.
+- ambiguity/recovery cannot silently activate a failed candidate or resurrect retired generation.
 
-### Configured-scope invariant
+### Configured-scope invariant — bounded at enterprise cardinality
 
 Editing `configured_provider_scope` is local configuration authority, not provider negative evidence.
 
-When a host group or equivalent selector is removed:
+The source mutation SHALL be bounded independently of resource/metric cardinality:
 
-- affected resource/metric objects become `scope_state=out_of_scope`;
-- identity and retained history remain;
+```text
+commit new configured_provider_scope
+advance monotonic scope_revision
+persist audit/transition intent
+create one durable scope-reconciliation responsibility
+COMMIT
+```
+
+It SHALL NOT synchronously rewrite every resource/metric row before returning success.
+
+Per-object scope projection carries:
+
+```text
+scope_state = in_scope | out_of_scope
+scope_projection_revision
+scope_evidence_state = current | reconciliation_required
+```
+
+Required properties:
+
+- per-object projection can reconcile asynchronously in bounded batches;
+- `in_scope` is authoritative only when proven against current source `scope_revision` or equivalent current deterministic evaluation;
+- stale scope projection cannot authorize provider work, negative inference, fresh health or current-value semantics;
+- unreconciled membership fails safe as `scope_evidence_state=reconciliation_required`;
 - scope exclusion alone cannot cause resource `removed`, metric `retired`, problem `resolved` or fresh `healthy` status;
-- re-inclusion requires provider evidence before currentness is restored;
-- coverage/history semantics expose intentional unmonitored intervals rather than fabricating completeness.
+- re-inclusion requires provider evidence before currentness returns;
+- history exposes intentional scope gaps rather than fabricating completeness.
 
 ### Data classification and cache invariant
 
 Protected Monitoring data is never shared/public cached.
-
-Initial response classes:
 
 ```text
 source/config/credential metadata      no_store
@@ -159,9 +181,9 @@ metric-definition summary              private_revalidate
 metric-definition detail               no_store
 metric current values                  no_store
 metric history                         no_store
-problem summary/detail                  no_store
+problem summary/detail                 no_store
 health canonical summary               private_revalidate
-sync/replacement operational detail     no_store
+sync/replacement/scope operational detail no_store
 ```
 
 `private_revalidate` still requires server revalidation/current authorization; it is not an authorization TTL.
@@ -181,6 +203,10 @@ Monitoring continuation is constrained to Phase 09 `url_safe_non_sensitive_handl
 - possession grants no continuation authority.
 
 Therefore this vertical does **not** activate/reclassify `OPEN-API-019`, which remains C5.
+
+### Surface-map propagation
+
+`docs/09-api-contracts/domain-api-surface-map.md` reserves `metric-current-states` as the Monitoring-owned bounded current-value family, distinct from metric-definition metadata and historical observations. The surface map therefore matches the exact endpoint contract instead of retaining an older vocabulary snapshot.
 
 ### Zabbix normalization profile
 
@@ -210,7 +236,7 @@ Track A does not create:
 - public SDKs;
 - a mutable Monitoring-dashboard aggregate.
 
-Monitoring dashboards may compose inventory, dedicated current metric state, health, problems, history and sync evidence; persistent presentation/cross-domain projections remain Reporting & Experience ownership.
+Monitoring dashboards may compose inventory, dedicated current metric state, health, problems, history and sync/scope evidence; persistent presentation/cross-domain projections remain Reporting & Experience ownership.
 
 ## Readiness matrix if Track A is accepted
 
@@ -220,7 +246,7 @@ Monitoring dashboards may compose inventory, dedicated current metric state, hea
 | Monitoring-core endpoint subset (`OPEN-API-016`) | exact for this vertical | unrelated/future endpoints remain incremental | Monitoring subset contract-ready |
 | source management API | exact | credential binding/secret mechanism still C2 | contract-ready, mechanism selection where used |
 | replacement candidate/cutover | exact semantics | implementation mechanism still subject to conformance | contract-ready |
-| configured-scope handling | exact semantics | provider sync numerics C3 | contract-ready |
+| configured-scope handling | exact revision/currentness semantics | batch/concurrency numerics C3 | contract-ready |
 | Zabbix trust + normalization | exact | provider production numerics C3 | provider-contract-ready |
 | current metric projection semantics/API | exact | backing acceptance path still depends on telemetry conformance | contract-ready, implementation blocked with customer telemetry |
 | `impl.customer-telemetry@1` | exact domain/API semantics | `OPEN-REL-030` NOT conformed | **bounded-evidence-spike-only** |
@@ -257,17 +283,20 @@ Prove with real multi-connection PostgreSQL:
 
 ### Replacement/scope evidence
 
-The implementation profile that eventually consumes Track A must falsify:
+The eventual implementation profile must falsify:
 
 - bad candidate cannot fence healthy active generation;
 - candidate cannot write canonical state before activation;
 - concurrent candidate/cutover commands produce one active-generation winner;
 - crash after fence/before response remains reconcilable and idempotent;
 - old writer cannot regain current authority after cutover;
+- scope edit remains bounded regardless of resource/metric cardinality;
+- stale scope projection cannot grant `in_scope` currentness or negative-inference authority;
 - scope exclusion cannot synthesize provider absence/retirement/resolution;
-- re-inclusion cannot relabel stale last-known evidence as fresh.
+- re-inclusion cannot relabel stale last-known evidence as fresh;
+- one tenant's scope-reconciliation backlog cannot stall unrelated tenants.
 
-These semantics are fixed by Track A; their concrete implementation evidence belongs to the implementation/conformance path rather than being fabricated in docs.
+These semantics are fixed by Track A; their concrete implementation evidence belongs to implementation/conformance rather than being fabricated in docs.
 
 ### Zabbix/current/history evidence
 
@@ -318,6 +347,7 @@ provider/body bytes
 page rows and serialized response bytes
 history maximum time window/rows/bytes
 scope selector count/size
+scope-reconciliation batch/backlog/concurrency
 problem metadata count/size
 replacement candidate retention/count
 per-tenant/source sync/concurrency/backlog
@@ -358,22 +388,25 @@ Exact-final-HEAD review must prove:
 4. replacement request cannot retire healthy active generation before candidate admissibility is proven;
 5. candidate cannot mutate canonical current state before atomic cutover;
 6. cutover has one serialized winner and leaves exactly one active generation;
-7. configured scope exclusion cannot masquerade as provider negative evidence;
-8. base URL cannot embed credentials/query/fragment; DNS/provider/redirect/egress work stays outside DB mutation transaction and is revalidated before provider use;
-9. current metric state is explicitly separate from history and from metric-definition enumeration;
-10. current/history/problem responses use conservative `no_store`, while private metadata/status reuse still revalidates current authorization;
-11. value/page/history response sizes are explicitly bounded as a mandatory pre-implementation obligation;
-12. fenced poll progress does not manufacture semantic state changes;
-13. history acceptance is independent from current candidacy;
-14. incomplete/uncertain snapshots cannot create absence/resolution;
-15. severity/ack/tags/native IDs cannot become tenant/domain authority;
-16. history completeness is evidence-backed and scope gaps are explicit;
-17. Phase 09 current-auth/idempotency/precondition/cache/error/collection laws are preserved;
-18. cursor is only a non-sensitive returned-row anchor and C5 is not silently reclassified;
-19. Monitoring-core endpoint contracts satisfy incremental `OPEN-API-016` responsibility without pretending unrelated families are closed;
-20. `OPEN-REL-030` remains open and TimescaleDB remains non-canonical;
-21. no Waves 0–3 implementation substrate changes;
-22. exact final HEAD has P0/P1/P2=0 and no unresolved review thread.
+7. scope edit commits without O(N) resource/metric rewrite;
+8. stale scope projection cannot claim current `in_scope`, fresh health/value, provider-work eligibility or negative-inference authority;
+9. configured scope exclusion cannot masquerade as provider negative evidence;
+10. base URL cannot embed credentials/query/fragment; DNS/provider/redirect/egress work stays outside DB mutation transaction and is revalidated before provider use;
+11. current metric state is explicitly separate from history and from metric-definition enumeration;
+12. current/history/problem responses use conservative `no_store`, while private metadata/status reuse still revalidates current authorization;
+13. value/page/history/scope-reconciliation resource sizes are bounded as mandatory pre-implementation obligations;
+14. fenced poll progress does not manufacture semantic state changes;
+15. history acceptance is independent from current candidacy;
+16. incomplete/uncertain snapshots cannot create absence/resolution;
+17. severity/ack/tags/native IDs cannot become tenant/domain authority;
+18. history completeness is evidence-backed and scope gaps are explicit;
+19. Phase 09 current-auth/idempotency/precondition/cache/error/collection laws are preserved;
+20. cursor is only a non-sensitive returned-row anchor and C5 is not silently reclassified;
+21. Monitoring surface map includes the dedicated current-state family and matches endpoint vocabulary;
+22. Monitoring-core endpoint contracts satisfy incremental `OPEN-API-016` responsibility without pretending unrelated families are closed;
+23. `OPEN-REL-030` remains open and TimescaleDB remains non-canonical;
+24. no Waves 0–3 implementation substrate changes;
+25. exact final HEAD has P0/P1/P2=0 and no unresolved review thread.
 
 A clean Track A gate still requires separate explicit user merge authorization.
 

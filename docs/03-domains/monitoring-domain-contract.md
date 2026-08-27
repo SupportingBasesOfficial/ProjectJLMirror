@@ -515,6 +515,8 @@ candidate credential_binding_ref
 candidate configured_provider_scope
 candidate_state
 validation_operation_id
+validation_evidence_generation nullable
+validated_at nullable
 created_at / updated_at
 ```
 
@@ -537,14 +539,37 @@ Candidate creation:
 4. creates exactly one durable bounded validation responsibility;
 5. leaves the current active generation/configuration and its poll authority unchanged.
 
+Candidate configuration is immutable for one candidate generation after validation begins. A requested change to candidate endpoint/configuration, credential binding or configured scope creates/supersedes through a new candidate revision/generation and resets readiness; it cannot silently preserve old validation evidence.
+
 Candidate validation runs outside the ordinary source mutation transaction through the accepted outbound/SSRF boundary. It may perform bounded authenticated capability/scope checks required to prove the candidate can be used safely. Validation evidence is candidate-scoped and cannot mutate tenant-facing current resource/metric/problem/health truth.
+
+### Replacement-validation currentness
+
+`ready_for_cutover` is not permanent truth. Its evidence is bound to at least:
+
+```text
+candidate_generation
+candidate_configuration_revision
+candidate_scope_revision
+canonical endpoint/configuration fingerprint
+credential-binding freshness/generation evidence (mechanism-specific once selected)
+validation policy/profile generation
+validation_evidence_generation
+validated_at
+```
+
+The exact secret-manager/KMS representation remains C2, but the invariant does not: changing/rotating the effective credential binding, candidate configuration/scope, applicable egress/validation policy generation, or another dependency whose change invalidates the proof MUST invalidate or re-establish candidate readiness before cutover.
+
+Validation evidence has a finite accepted freshness horizon selected by evidence before implementation/production; `OPEN` never means infinite. If its freshness cannot be established safely, the candidate is not eligible for activation and returns to validation/reconciliation-required semantics.
+
+This does not claim that provider reachability can be frozen between validation and cutover. It prevents knowingly using stale validation authority; each actual provider use still revalidates outbound/credential authority under the accepted connector/security profile.
 
 A failed candidate does **not** fence or retire the active generation. Failure is durable/auditable and may be superseded by a new explicitly authorized replacement command.
 
-Only a candidate with accepted current validation evidence is eligible for cutover. Cutover is one local serialized authority transition that:
+Only a candidate with accepted **currently valid** validation evidence is eligible for cutover. Cutover is one local serialized authority transition that:
 
 1. re-establishes current source-management authorization when human authority participates in the delayed effect;
-2. verifies expected current source revision, candidate identity/state and candidate validation generation/evidence;
+2. verifies expected current source revision, candidate identity/state, immutable candidate revisions/fingerprint and current validation evidence generation/freshness;
 3. fences prior active provider-instance/poll writer authority;
 4. atomically advances `active_source_instance_generation` to candidate generation and installs successor config/scope/credential references;
 5. advances source configuration and scope revisions;
@@ -554,9 +579,9 @@ Only a candidate with accepted current validation evidence is eligible for cutov
 9. marks the source operational evidence at least `reconciliation_required` until successor current coverage is established;
 10. never merges old/new provider-native mappings or deletes old historical evidence.
 
-There is never more than one active source-instance generation. The active-generation pointer change immediately makes all prior-generation objects historical by derivation; no O(N) object rewrite is required. If cutover outcome is ambiguous across recovery/failure, admission remains reconciliation-required until active-generation/fence/audit/operation authorities prove the winner. A failed validation cannot silently activate, and recovery cannot silently reactivate the retired generation.
+There is never more than one active source-instance generation. The active-generation pointer change immediately makes all prior-generation objects historical by derivation; no O(N) object rewrite is required. If cutover outcome is ambiguous across recovery/failure, admission remains reconciliation-required until active-generation/fence/audit/operation authorities prove the winner. A failed/expired/stale validation cannot silently activate, and recovery cannot silently reactivate the retired generation.
 
-This staged design prevents a typo, bad credential or unreachable replacement endpoint from taking down an otherwise healthy source before the candidate has proved minimum admissibility.
+This staged design prevents a typo, bad credential, stale candidate proof or unreachable replacement endpoint known at validation time from taking down an otherwise healthy source before the candidate has proved minimum admissibility.
 
 ## Current-state fencing
 
@@ -653,16 +678,16 @@ Organization & Access maps roles/custom roles to actions/resource scope. Provide
 - provider strings are untrusted data and are bounded/safely encoded;
 - logs/traces do not emit unrestricted observation/problem payloads or credentials;
 - accepted per-value byte limits, page byte budgets and parser limits are mandatory before implementation; `OPEN` cannot mean unbounded;
-- stale scope projection or historical-generation state cannot be used as authorization, current monitoring proof or negative-evidence authority;
+- stale scope projection, stale replacement validation or historical-generation state cannot be used as authorization, current monitoring proof or negative-evidence authority;
 - tenant/provider cardinality, generation cutover, scope reconciliation, history, webhook hints, reconciliation and backlog are bounded/attributable.
 
 ## Recovery/relocation
 
-Before recovered/relocated Monitoring write authority resumes, applicable active source generation, replacement-candidate state, configuration/scope revisions, scope reconciliation, poll authority, observation acceptance, historical projection, current metric state, sync/checkpoint, negative evidence and transition/outbox continuity is reconciled through `(R,F]`.
+Before recovered/relocated Monitoring write authority resumes, applicable active source generation, replacement-candidate state and validation evidence generation/freshness, configuration/scope revisions, scope reconciliation, poll authority, observation acceptance, historical projection, current metric state, sync/checkpoint, negative evidence and transition/outbox continuity is reconciled through `(R,F]`.
 
 Missing state is uncertainty, not permission to reaccept/retry/remove/resolve/activate a candidate, claim current `in_scope`, or reclassify an historical generation as active. A retired-placement writer cannot become current merely because it can still reach the provider.
 
-Recovery must prove which source generation/scope revision is active and which replacement candidate/cutover outcome won before protected/effectful Monitoring writes resume. Historical-generation retained evidence remains historical after recovery unless a distinct currently authorized migration decision changes identity/lifecycle semantics.
+Recovery must prove which source generation/scope revision is active and which replacement candidate/cutover outcome won before protected/effectful Monitoring writes resume. Restored `ready_for_cutover` state without current validation continuity is not activation authority. Historical-generation retained evidence remains historical after recovery unless a distinct currently authorized migration decision changes identity/lifecycle semantics.
 
 ## Capacity dimensions
 
@@ -672,6 +697,7 @@ Implementation measures/bounds at least:
 tenants/cell
 sources/tenant
 replacement candidates/source
+replacement validation age/refresh workload
 source generations retained/source
 resources/source/generation
 metrics/resource/generation
@@ -691,7 +717,7 @@ Production numerics remain C3/evidence-driven; `OPEN` never means unlimited and 
 
 ## Compatibility-sensitive semantics
 
-Breaking/security-sensitive changes include identity scope, cross-generation mapping, source-generation operational lifecycle, replacement candidate/cutover semantics, configured-scope revision/currentness semantics, current-state fencing/idempotency, current metric state meaning/surface, observation value representation, negative evidence, problem severity/health/evidence vocabularies, provider metadata authority, history completeness or domain ownership.
+Breaking/security-sensitive changes include identity scope, cross-generation mapping, source-generation operational lifecycle, replacement candidate/validation-currentness/cutover semantics, configured-scope revision/currentness semantics, current-state fencing/idempotency, current metric state meaning/surface, observation value representation, negative evidence, problem severity/health/evidence vocabularies, provider metadata authority, history completeness or domain ownership.
 
 ## Validation / falsification vectors
 
@@ -701,33 +727,34 @@ Before implementation conformance:
 2. Same Zabbix native IDs in two tenants/sources/generations remain independent mappings.
 3. Ordinary edit cannot change Zabbix base URL.
 4. Replacement candidate with bad URL/credential cannot fence or degrade healthy active generation solely by being requested.
-5. Concurrent replacement commands produce one idempotent candidate per command and at most one serialized cutover winner.
-6. Candidate generation cannot mutate canonical current state before cutover.
-7. Atomic cutover leaves exactly one active generation and one successor synchronization responsibility.
-8. Cutover does not require O(number of prior-generation objects) rewrites; prior objects become historical by derived generation state.
-9. Historical-generation resources/problems/health/current values cannot appear as current operational state by default.
-10. An unresolved prior-generation problem remains historical evidence rather than being falsely resolved or treated as a current problem.
-11. Scope edit commits without an O(N) resource/metric rewrite transaction.
-12. Stale per-object scope projection cannot claim current `in_scope`, current health/value or authorize negative inference.
-13. Scope exclusion never becomes provider `removed`/metric `retired`/problem `resolved` by itself.
-14. Re-inclusion re-establishes currentness from provider evidence rather than restoring stale current evidence as fresh.
-15. Stale poll/placement/historical generation cannot mutate current state.
-16. Provider clock rollback does not freeze a genuinely newer current observation.
-17. Same current observation under a later poll emits no duplicate semantic transition.
-18. Current metric reads use `metric_current_state`, not per-request “latest history row” inference.
-19. Metric-definition enumeration does not require embedding all current values.
-20. History/backfill acceptance does not grant current authority.
-21. Incomplete/visibility-degraded snapshots never remove/retire/resolve by omission.
-22. PITR/relocation cannot revive stale negative-evidence/poll/candidate/scope/generation authority.
-23. Observations are immutable and historical projection is idempotent by canonical identity.
-24. Accepted non-latest observations still retain historical-projection obligation.
-25. Historical gap/late-arrival/scope/generation uncertainty is explicit.
-26. Provider acknowledgement/tags cannot mutate Alerting/ITSM/authorization.
-27. Zabbix severity maps only to canonical classes and retains native severity only as external evidence.
-28. One tenant's provider/scope-reconciliation failure/backlog does not stall unrelated tenants.
-29. Logs/traces/errors contain no credential secret or unrestricted sensitive observation payload.
-30. Current/history/problem responses cannot become shared/public cache entries and sensitive value responses follow stricter API cache class.
-31. Oversized provider values/history pages are bounded before memory/storage/response exhaustion rather than treated as unlimited valid payloads.
+5. Candidate configuration/credential/scope/policy change or validation expiry invalidates old `ready_for_cutover` evidence rather than preserving readiness forever.
+6. Concurrent replacement commands produce one idempotent candidate per command and at most one serialized cutover winner.
+7. Candidate generation cannot mutate canonical current state before cutover.
+8. Atomic cutover leaves exactly one active generation and one successor synchronization responsibility.
+9. Cutover does not require O(number of prior-generation objects) rewrites; prior objects become historical by derived generation state.
+10. Historical-generation resources/problems/health/current values cannot appear as current operational state by default.
+11. An unresolved prior-generation problem remains historical evidence rather than being falsely resolved or treated as a current problem.
+12. Scope edit commits without an O(N) resource/metric rewrite transaction.
+13. Stale per-object scope projection cannot claim current `in_scope`, current health/value or authorize negative inference.
+14. Scope exclusion never becomes provider `removed`/metric `retired`/problem `resolved` by itself.
+15. Re-inclusion re-establishes currentness from provider evidence rather than restoring stale current evidence as fresh.
+16. Stale poll/placement/historical generation cannot mutate current state.
+17. Provider clock rollback does not freeze a genuinely newer current observation.
+18. Same current observation under a later poll emits no duplicate semantic transition.
+19. Current metric reads use `metric_current_state`, not per-request “latest history row” inference.
+20. Metric-definition enumeration does not require embedding all current values.
+21. History/backfill acceptance does not grant current authority.
+22. Incomplete/visibility-degraded snapshots never remove/retire/resolve by omission.
+23. PITR/relocation cannot revive stale negative-evidence/poll/candidate-validation/scope/generation authority.
+24. Observations are immutable and historical projection is idempotent by canonical identity.
+25. Accepted non-latest observations still retain historical-projection obligation.
+26. Historical gap/late-arrival/scope/generation uncertainty is explicit.
+27. Provider acknowledgement/tags cannot mutate Alerting/ITSM/authorization.
+28. Zabbix severity maps only to canonical classes and retains native severity only as external evidence.
+29. One tenant's provider/validation/scope-reconciliation failure/backlog does not stall unrelated tenants.
+30. Logs/traces/errors contain no credential secret or unrestricted sensitive observation payload.
+31. Current/history/problem responses cannot become shared/public cache entries and sensitive value responses follow stricter API cache class.
+32. Oversized provider values/history pages are bounded before memory/storage/response exhaustion rather than treated as unlimited valid payloads.
 
 ## Remaining OPENs / blockers
 
@@ -738,6 +765,7 @@ Semantic ownership above is fixed by this proposed contract; mechanism/numeric c
 - secret-manager/KMS/credential-binding mechanism;
 - broker/outbox physical dispatch mechanism;
 - provider timeout/retry/page/history/backfill/reconciliation numerics;
+- replacement-validation freshness numeric horizon and mechanism-specific credential freshness representation;
 - mandatory per-value/page byte and cardinality bounds;
 - production capacity/retention/SLO/RPO/RTO numerics.
 

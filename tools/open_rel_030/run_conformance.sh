@@ -28,14 +28,22 @@ cleanup
 
 wait_for_postgres() {
   local container="$1"
-  for _ in $(seq 1 60); do
+  local consecutive=0
+  for _ in $(seq 1 120); do
+    # Probe the exact TCP transport used by tenant/runtime login tests. A Unix
+    # socket becoming ready earlier is not evidence that 127.0.0.1 is admitted.
     if docker exec -e PGPASSWORD="$DB_PASSWORD" "$container" \
-      pg_isready -U postgres -d jlmirror >/dev/null 2>&1; then
-      return 0
+      pg_isready -h 127.0.0.1 -U postgres -d jlmirror >/dev/null 2>&1; then
+      consecutive=$((consecutive + 1))
+      if [[ "$consecutive" -ge 3 ]]; then
+        return 0
+      fi
+    else
+      consecutive=0
     fi
-    sleep 1
+    sleep 0.25
   done
-  echo "database did not become ready: $container" >&2
+  echo "database TCP path did not become stably ready: $container" >&2
   docker logs "$container" >&2 || true
   return 1
 }
@@ -103,6 +111,7 @@ docker cp sql/d2-open-rel-030/001_tier1_acceptance.sql \
 docker cp sql/d2-open-rel-030/002_tier1_assertions.sql \
   "$PG_CONTAINER:/tmp/002_tier1_assertions.sql"
 admin_psql "$PG_CONTAINER" -f /tmp/001_tier1_acceptance.sql
+wait_for_postgres "$PG_CONTAINER"
 python3 tools/open_rel_030/tier1_concurrency.py "$PG_CONTAINER"
 admin_psql "$PG_CONTAINER" -f /tmp/002_tier1_assertions.sql
 
@@ -118,6 +127,7 @@ wait_for_postgres "$TS_CONTAINER"
 docker cp sql/d2-open-rel-030/010_timescale_candidate.sql \
   "$TS_CONTAINER:/tmp/010_timescale_candidate.sql"
 admin_psql "$TS_CONTAINER" -f /tmp/010_timescale_candidate.sql
+wait_for_postgres "$TS_CONTAINER"
 
 TENANT_A="aaaaaaaa-0000-0000-0000-000000000001"
 TENANT_B="aaaaaaaa-0000-0000-0000-000000000002"

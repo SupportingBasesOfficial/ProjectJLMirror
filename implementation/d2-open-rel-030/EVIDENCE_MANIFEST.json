@@ -19,23 +19,23 @@
       "product": "PostgreSQL",
       "evaluation_version": "17.11-alpine",
       "image": "postgres@sha256:5d61573b31c206ae538c85893edeb6e320e1a9ffd838c0f9dca927fb6f765fa4",
-      "purpose": "real multi-connection transactional acceptance, owner-authority, ambiguity and physical PITR evidence"
+      "purpose": "real multi-connection transactional acceptance, owner-authority, ambiguity, physical PITR and relocation-fence evidence"
     },
     "tier2_timescale": {
       "product": "TimescaleDB",
       "evaluation_version": "2.29.2-pg17",
       "image": "timescale/timescaledb@sha256:bc8527e62f70f0766b29515077965025872fabb5349db421565f69ee273baf2d",
-      "purpose": "candidate tenant-isolation, background-job, restore, relocation and bounded capacity-profile falsification"
+      "purpose": "candidate tenant-isolation, background-job, fresh-cluster restore, relocation-completeness and bounded capacity-profile falsification"
     }
   },
   "classification_basis": {
-    "exact_preclassification_head": "c05195132a6ab701eaa9f6fad358193fbaf37e8e",
-    "deterministic_assurance_run_number": 1916,
-    "deterministic_assurance_run_id": 33189397157,
-    "open_rel_030_conformance_run_number": 26,
-    "open_rel_030_conformance_run_id": 33189397115,
+    "exact_preclassification_head": "339bc7063d6dcc0408f1fc63aa7906f8e3883dcb",
+    "deterministic_assurance_run_number": 1936,
+    "deterministic_assurance_run_id": 33196516141,
+    "open_rel_030_conformance_run_number": 36,
+    "open_rel_030_conformance_run_id": 33196516140,
     "result": "success",
-    "note": "This anchor includes the Codex P1 repairs for immutable observation content and in-transaction source authority, plus the panoramic durable poll-claim hardening. Every later classification-changing commit must rerun both gates on its own exact HEAD before review/acceptance."
+    "note": "This anchor includes immutable observation-content and owner-authority repairs, durable live poll claims, fresh-cluster Timescale restore/role reconstruction, lock-before-fence relocation ordering, and gap-free target completeness via durable count+digest+max receipt. Every later classification-changing commit must rerun both gates on its own exact HEAD before review/acceptance."
   },
   "tier1_vectors": [
     "real_multi_connection_create_or_observe",
@@ -60,7 +60,9 @@
     "client_ack_ambiguity_after_commit",
     "physical_pitr_rf_reconciliation",
     "zabbix_poll_epoch_restore_relocation_continuity",
-    "late_history_gap_watermark_reconciliation"
+    "late_history_gap_watermark_reconciliation",
+    "relocation_fence_locks_authority_before_deriving_f",
+    "relocation_inflight_acceptance_is_included_in_f"
   ],
   "tier2_vectors": [
     "raw_hypertable_rls_tenant_a_vs_b",
@@ -79,8 +81,12 @@
     "search_path_helper_shadow_attack",
     "security_definer_fixed_search_path",
     "background_job_attack_matrix",
-    "logical_migration_restore_role_change_matrix",
-    "post_restore_background_job_attack_matrix",
+    "fresh_cluster_restore_role_reconstruction",
+    "fresh_cluster_restore_object_and_job_owner_validation",
+    "fresh_cluster_post_restore_attack_matrix",
+    "fresh_cluster_post_restore_job_attack_matrix",
+    "tenant_relocation_max_f_with_internal_gap_rejected",
+    "tenant_relocation_count_digest_max_receipt_required",
     "tenant_relocation_tier1_tier2_continuity",
     "bounded_capacity_query_fitness_same_security_profile"
   ],
@@ -95,6 +101,30 @@
     "capacity_query_fitness_same_security_profile"
   ],
   "mandatory_vectors_not_yet_claimed_complete": [],
+  "fresh_restore_evidence": {
+    "restore_topology": "new_timescale_container_and_new_postgresql_cluster",
+    "jlmirror_roles_before_bootstrap": 0,
+    "jlmirror_roles_after_minimal_bootstrap": 5,
+    "restored_rows": 100004,
+    "restored_background_jobs": 2,
+    "job_owner": "ts_automation_owner",
+    "mapping_and_mediation_owner": "ts_owner",
+    "automation_owner_password_credential": "absent",
+    "tenant_runtime_owner_memberships": 0,
+    "post_restore_attack_matrix": "pass",
+    "post_restore_background_job_attack_matrix": "pass"
+  },
+  "relocation_evidence": {
+    "fence_derivation": "placement authority locked before F is derived",
+    "inflight_acceptance_race": "acceptance holding placement lock commits before fence and is included in F",
+    "fence_ordinal": 3,
+    "max_only_completeness": "explicitly_rejected",
+    "negative_gap_vector": "target reached max=F with missing lower rows; receipt remained incomplete and activation was rejected",
+    "completion_receipt": "durable authoritative count+ordered identity digest+target count+target digest+target max, revalidated under frozen authority",
+    "complete_receipt": "complete|3|3|3",
+    "post_cutover_authoritative_acceptances": 4,
+    "stale_source_after_cutover": "rejected"
+  },
   "tier2_profile_classification": {
     "direct_pooled_rls_plus_columnstore": "rejected_ineligible_on_evaluated_profile_sqlstate_0A000",
     "direct_pooled_rls_plus_continuous_aggregate": "rejected_ineligible_on_evaluated_profile_sqlstate_0A000",
@@ -106,7 +136,8 @@
       "fixed-search-path SECURITY DEFINER mediated reader",
       "separate NOLOGIN mediation owner and least-privilege LOGIN automation owner",
       "tenant-facing/runtime roles have no owner membership, CREATEROLE, SUPERUSER or BYPASSRLS",
-      "same isolation attacks repeat after background jobs and restore"
+      "backup/restore role topology is reconstructed in a fresh cluster rather than inherited from the source cluster",
+      "same isolation attacks repeat after background jobs, fresh-cluster restore and restored-job execution"
     ]
   },
   "bounded_capacity_observation": {
@@ -115,13 +146,18 @@
     "columnstore_bytes": 655360,
     "continuous_aggregate_bytes": 163840,
     "mediated_query_rows": 57,
-    "representative_query_duration_ns": 72117137,
+    "representative_query_duration_ns": 71613050,
     "interpretation": "Mechanism-level bounded fitness evidence only. These values are not production SLOs, limits, retention settings, cardinality envelopes or sizing commitments. Production envelopes remain OPEN-REL-020 C3."
   },
   "decision_recommendation": {
-    "tier1": "accept PostgreSQL transactional acceptance/outbox/current-state pattern as OPEN-REL-030 Tier 1 mechanism only with immutable canonical observation content, owner-controlled source generation/epoch and durable live poll-claim admission resolved in-transaction, after exact-head review and explicit Track B acceptance",
-    "tier2": "accept TimescaleDB historical projection only under the conformed mediated shared-history profile after exact-head review and explicit Track B acceptance",
-    "rejected_assumption": "do not treat RLS on a pooled raw hypertable as automatically compatible with or inherited by columnstore/continuous-aggregate surfaces",
-    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity, idempotent historical projection, watermarks/reconciliation, tenant isolation and recovery/relocation semantics"
+    "tier1": "accept PostgreSQL transactional acceptance/outbox/current-state pattern as OPEN-REL-030 Tier 1 mechanism only with immutable canonical observation content, owner-controlled source generation/epoch, durable live poll-claim admission resolved in-transaction, and lock-before-F relocation fencing, after exact-head review and explicit Track B acceptance",
+    "tier2": "accept TimescaleDB historical projection only under the conformed mediated shared-history profile, including fresh-cluster restore role reconstruction and count+digest+max relocation completeness receipts, after exact-head review and explicit Track B acceptance",
+    "rejected_assumptions": [
+      "do not treat RLS on a pooled raw hypertable as automatically compatible with or inherited by columnstore/continuous-aggregate surfaces",
+      "do not treat same-cluster database restore as evidence that cluster-global role topology can be safely reconstructed",
+      "do not derive relocation F before acquiring the authority lock that excludes later source acceptance",
+      "do not treat max(target_ordinal)=F as proof that every authoritative observation through F exists on the target"
+    ],
+    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity, idempotent historical projection, complete-set reconciliation receipts, tenant isolation and recovery/relocation semantics"
   }
 }

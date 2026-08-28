@@ -25,6 +25,7 @@ The package is an evidence laboratory only. It creates ephemeral databases, runs
 - A failed or unsupported Timescale feature combination is evidence, not something the harness may hide.
 - Provider event time is metadata, never the Tier 1 current-state ordering authority.
 - `OPEN-REL-020` remains the owner of production telemetry capacity/numeric envelopes.
+- The evidence-only SHA-256/HMAC-SHA-256 checkpoint does not select a production KMS/HSM/secret-management topology.
 - `READY_FOR_MERGE != AUTHORIZED_TO_MERGE` continues to apply.
 
 ## Reproducibility profile
@@ -34,7 +35,7 @@ The CI harness uses immutable container-image index digests and records the data
 Evaluation images are deliberately **evidence dependencies**, not production stack selections:
 
 - PostgreSQL 17.11 Alpine — Tier 1 real-database semantics, ambiguity, reconciliation, PITR and relocation;
-- TimescaleDB 2.29.2 on PostgreSQL 17 — Tier 2 isolation, jobs, fresh-cluster restore, relocation and bounded capacity evaluation.
+- TimescaleDB 2.29.2 on PostgreSQL 17 — Tier 2 isolation, jobs, fresh-cluster restore, authenticated target checkpoint/freeze, relocation and bounded capacity evaluation.
 
 Changing either image requires new evidence and does not silently inherit a previous conclusion.
 
@@ -68,7 +69,7 @@ tools/open_rel_030/
 
 ## Tier 1 coverage
 
-The final executable package proves or falsifies:
+The executable package proves or falsifies:
 
 - atomic create-or-observe under independent PostgreSQL connections;
 - immutable canonical observation content under stable identity;
@@ -86,7 +87,8 @@ The final executable package proves or falsifies:
 - minimum reconciliation/provider snapshot currentness before history finalization;
 - explicit durable `gap` rather than false completeness when history cannot be recovered;
 - physical PostgreSQL PITR to a committed `R` with surviving `(R,F]` reconciliation;
-- relocation source fencing that locks authority before deriving `F`.
+- relocation source fencing that locks authority before deriving `F`;
+- verification of a target-owned authenticated sealed canonical-payload checkpoint before target activation.
 
 ## Late-history completeness
 
@@ -122,8 +124,8 @@ The surviving candidate profile requires:
 - no direct tenant-facing privilege on shared raw history, continuous aggregates or internal materialization;
 - tenant binding outside caller-writable SQL state;
 - hardened `SECURITY DEFINER` reader with fixed safe `search_path`;
-- `ts_owner` as NOLOGIN mediation/mapping/function owner;
-- separate least-privilege LOGIN `ts_automation_owner` for Timescale background-job ownership, with no password credential or elevated role attributes;
+- `ts_owner` as NOLOGIN mediation/mapping/checkpoint/function owner;
+- separate least-privilege LOGIN `ts_automation_owner` where Timescale automation requires it, with no password credential or elevated role attributes;
 - no runtime/reporting membership in either owner;
 - repeated direct-read, role, membership, tenant-crossing, `SET`/`set_config`, session-authorization, BYPASSRLS and search-path attacks.
 
@@ -135,14 +137,81 @@ The test proves zero JLMirror `ts_*` roles exist first, reconstructs exactly the
 
 This prevents inherited source-cluster `pg_authid`/`pg_auth_members` state from masquerading as restore correctness.
 
-## Relocation completeness
+## Relocation completeness and currentness
 
-Relocation uses two independent protections:
+Relocation uses two independently controlled fences:
 
-1. source placement authority is locked before `F` is derived, so an acceptance already holding the source-authority lock completes first and is included in `F`;
-2. target cutover requires a durable complete-set receipt over authoritative count + ordered observation-identity digest + target count + target digest + target maximum ordinal.
+1. **Source fence:** source placement authority is locked before `F` is derived, so an acceptance already holding source authority completes first and is included in `F`.
+2. **Target checkpoint:** target cutover requires a target-owned authenticated checkpoint that is sealed against further mutation at or below `F` before Tier 1 activation.
 
-A negative vector deliberately makes `max(target)=F` while lower authoritative rows are missing. The receipt remains `incomplete` and activation is rejected. `max=F` is explicitly not accepted as completeness evidence.
+### Canonical complete-set fingerprint
+
+Source and target compare an ordered SHA-256 fingerprint over the canonical numeric observation evidence profile:
+
+- accepted ordinal;
+- observation identity;
+- metric definition identity;
+- normalized UTC observation timestamp;
+- normalized numeric value.
+
+This deliberately fixes the prior identity-only weakness. A negative vector keeps identity/ordinal coverage intact but changes `observed_at`; the target remains `incomplete`.
+
+Future implementation for other accepted Monitoring payload kinds must define deterministic canonical serialization over **all immutable accepted payload fields**. The numeric evidence profile is not permission to omit string/text/log/boolean/integer payload semantics later.
+
+### Authenticated target checkpoint
+
+The target measures its actual count, maximum ordinal and SHA-256 canonical-payload digest under target-owned authority. The checkpoint facts are authenticated with domain-separated HMAC-SHA-256 (`open-rel-030-target-checkpoint-v1`). Tier 1 verifies the attestation and compares the target set to the frozen authoritative source set.
+
+A fabricated target field with a genuine old HMAC is rejected. Caller-provided target facts alone can never create `complete`.
+
+The HMAC key in this harness is ephemeral evidence plumbing. Production key custody, KMS/HSM/TEE backend, distribution and rotation are **not selected by D2**.
+
+### Seal and freeze
+
+The target checkpoint has an `open -> sealed -> activated` lifecycle with no unseal path.
+
+Target-history DML acquires shared target-control authority. Seal acquires exclusive target-control authority **before** calculating the digest. This removes the measure→seal race:
+
+- a DML transaction already holding authority finishes before seal measurement and is included;
+- a DML transaction starting after seal authority is acquired blocks, then observes the sealed state and is rejected for data at/below `F`.
+
+The freeze validates both OLD and NEW tenant scopes for UPDATE, preventing a protected row from being moved out of a sealed tenant. Target history/checkpoint authority is owned by NOLOGIN `ts_owner`; the projection writer cannot disable the freeze or read the attestation key.
+
+### Negative matrix
+
+The executable relocation matrix includes:
+
+- `max(target)=F` with internal gap → `incomplete`;
+- same identities/ordinals with canonical payload mismatch → `incomplete`;
+- fabricated checkpoint facts → attestation rejected;
+- seal racing target mutation → mutation blocks then rejects;
+- sealed DELETE → rejected;
+- sealed cross-tenant UPDATE → rejected;
+- projection writer reads attestation key → rejected;
+- projection writer disables freeze → rejected;
+- stale source after cutover → rejected;
+- tenant-facing direct relocation-history read → rejected.
+
+Only the authenticated sealed checkpoint with complete canonical-payload equivalence permits cutover.
+
+## Empirical reviewer anchor
+
+Before reviewer-document mutation, the hardened executable package passed:
+
+```text
+HEAD
+747e0bb84a7b617e7ca97eb835ea0f0d64ac804d
+
+JLMIRROR Deterministic Assurance #1965
+run id 33200595850
+SUCCESS
+
+JLMIRROR OPEN-REL-030 Conformance #51
+run id 33200595957
+SUCCESS
+```
+
+This anchor is provenance only. The exact final package HEAD created by documentation/classification changes must independently pass both workflows again.
 
 ## Capacity boundary
 

@@ -6,10 +6,21 @@ DROP SCHEMA IF EXISTS ts_evidence CASCADE;
 DROP ROLE IF EXISTS ts_report_a;
 DROP ROLE IF EXISTS ts_report_b;
 DROP ROLE IF EXISTS ts_runtime;
+DROP ROLE IF EXISTS ts_automation_owner;
 DROP ROLE IF EXISTS ts_owner;
 
+-- ts_owner is deliberately NOLOGIN: it owns the tenant-principal binding and
+-- SECURITY DEFINER mediation surface but is never an interactive/runtime role.
 CREATE ROLE ts_owner
     NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+
+-- Timescale background workers require the owner of job-bearing hypertables to
+-- have LOGIN. Keep that requirement in a separate non-interactive trust class
+-- rather than weakening ts_owner. No password is assigned and no tenant-facing
+-- role receives membership in it.
+CREATE ROLE ts_automation_owner
+    LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+
 CREATE ROLE ts_runtime
     LOGIN PASSWORD 'runtime-evidence-only'
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
@@ -21,7 +32,9 @@ CREATE ROLE ts_report_b
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
 
 CREATE SCHEMA ts_evidence AUTHORIZATION ts_owner;
-GRANT USAGE ON SCHEMA ts_evidence TO ts_runtime, ts_report_a, ts_report_b;
+GRANT USAGE ON SCHEMA ts_evidence
+    TO ts_runtime, ts_report_a, ts_report_b, ts_automation_owner;
+GRANT CREATE ON SCHEMA ts_evidence TO ts_automation_owner;
 
 CREATE TABLE ts_evidence.capability_probe (
     probe text PRIMARY KEY,
@@ -160,12 +173,13 @@ DROP MATERIALIZED VIEW IF EXISTS ts_evidence.rls_hourly;
 
 -- ---------------------------------------------------------------------------
 -- Profile B: mediated pooled query surface.
--- The shared raw/CAGG relations intentionally do not claim row-level isolation;
--- normal reporting principals receive zero direct table/view privilege. Their
--- tenant boundary is a principal mapping outside caller-writable SQL state plus
--- a narrowly scoped fixed-search-path SECURITY DEFINER reader.
+--
+-- Shared raw/CAGG objects are owned by ts_automation_owner because those
+-- objects need Timescale background jobs. The tenant binding and SECURITY
+-- DEFINER reader remain owned by separate NOLOGIN ts_owner. Reporting/runtime
+-- principals receive no membership in either owner role.
 -- ---------------------------------------------------------------------------
-SET ROLE ts_owner;
+SET ROLE ts_automation_owner;
 CREATE TABLE ts_evidence.shared_history (
     tenant_id uuid NOT NULL,
     observed_at timestamptz NOT NULL,
@@ -177,16 +191,6 @@ SELECT public.create_hypertable(
     'observed_at',
     chunk_time_interval => interval '1 day'
 );
-
-CREATE TABLE ts_evidence.report_principal_tenant (
-    login_name name PRIMARY KEY,
-    tenant_id uuid NOT NULL UNIQUE
-);
-
-INSERT INTO ts_evidence.report_principal_tenant (login_name, tenant_id)
-VALUES
-    ('ts_report_a', 'aaaaaaaa-0000-0000-0000-000000000001'::uuid),
-    ('ts_report_b', 'aaaaaaaa-0000-0000-0000-000000000002'::uuid);
 
 INSERT INTO ts_evidence.shared_history (
     tenant_id, observed_at, metric_definition_id, numeric_value
@@ -236,6 +240,22 @@ CALL public.refresh_continuous_aggregate(
     NULL,
     NULL
 );
+RESET ROLE;
+
+-- The mediation owner can read the CAGG but never owns the job-bearing raw/CAGG
+-- objects. It cannot thereby become a Timescale background-job principal.
+GRANT SELECT ON ts_evidence.shared_hourly TO ts_owner;
+
+SET ROLE ts_owner;
+CREATE TABLE ts_evidence.report_principal_tenant (
+    login_name name PRIMARY KEY,
+    tenant_id uuid NOT NULL UNIQUE
+);
+
+INSERT INTO ts_evidence.report_principal_tenant (login_name, tenant_id)
+VALUES
+    ('ts_report_a', 'aaaaaaaa-0000-0000-0000-000000000001'::uuid),
+    ('ts_report_b', 'aaaaaaaa-0000-0000-0000-000000000002'::uuid);
 
 CREATE OR REPLACE FUNCTION ts_evidence.read_hourly()
 RETURNS TABLE (
@@ -269,6 +289,46 @@ RESET ROLE;
 REVOKE ALL ON ts_evidence.shared_history FROM PUBLIC, ts_report_a, ts_report_b;
 REVOKE ALL ON ts_evidence.shared_hourly FROM PUBLIC, ts_report_a, ts_report_b;
 REVOKE ALL ON ts_evidence.report_principal_tenant FROM PUBLIC, ts_report_a, ts_report_b;
+
+-- Trust-class invariants are data, not prose-only expectations.
+DO $$
+DECLARE
+    v_bad bigint;
+BEGIN
+    SELECT count(*) INTO v_bad
+    FROM pg_roles
+    WHERE rolname = 'ts_owner'
+      AND (rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole OR rolinherit OR rolbypassrls);
+    IF v_bad <> 0 THEN
+        RAISE EXCEPTION 'ts_owner trust class widened unexpectedly';
+    END IF;
+
+    SELECT count(*) INTO v_bad
+    FROM pg_roles
+    WHERE rolname = 'ts_automation_owner'
+      AND (
+          NOT rolcanlogin
+          OR rolsuper
+          OR rolcreatedb
+          OR rolcreaterole
+          OR rolinherit
+          OR rolbypassrls
+      );
+    IF v_bad <> 0 THEN
+        RAISE EXCEPTION 'ts_automation_owner trust class invalid';
+    END IF;
+
+    SELECT count(*) INTO v_bad
+    FROM pg_auth_members m
+    JOIN pg_roles parent ON parent.oid = m.roleid
+    JOIN pg_roles member ON member.oid = m.member
+    WHERE parent.rolname IN ('ts_owner', 'ts_automation_owner')
+      AND member.rolname IN ('ts_runtime', 'ts_report_a', 'ts_report_b');
+    IF v_bad <> 0 THEN
+        RAISE EXCEPTION 'tenant-facing/runtime role inherited owner trust class';
+    END IF;
+END;
+$$;
 
 SELECT
     current_setting('server_version') AS postgresql_version,

@@ -4,7 +4,7 @@
 **Production authority:** none  
 **Wave 4 implementation authorization:** not granted  
 **Track B acceptance authorization:** not granted  
-**Tier 1 recommendation:** PostgreSQL transactional acceptance/outbox/current-state mechanism only with immutable canonical observation content + owner-controlled source generation/poll epoch + durable live poll claim resolved in-transaction + lock-before-`F` relocation fencing — conformed; recommended for C2 acceptance  
+**Tier 1 recommendation:** PostgreSQL transactional acceptance/outbox/current-state mechanism only with immutable canonical observation content + owner-controlled source generation/poll epoch + durable live poll claim resolved in-transaction + contiguous/current reconciliation coverage anchored at the supported history floor + lock-before-`F` relocation fencing — conformed; recommended for C2 acceptance  
 **Tier 2 recommendation:** TimescaleDB historical projection only under the conformed mediated shared-history profile, including fresh-cluster role reconstruction and durable complete-set relocation receipts — recommended for C2 acceptance  
 **Production versions/numerics:** not selected; production telemetry envelopes remain `OPEN-REL-020` C3
 
@@ -17,28 +17,28 @@ D1 ratified canonical base
         v
 D2 bounded evidence harness
         |
-        +-- Tier 1 real PostgreSQL proof                 COMPLETE
-        +-- identity-content conflict rejection          COMPLETE
-        +-- owner source/epoch + poll-claim proof        COMPLETE
-        +-- crash / ambiguity / recovery matrix          COMPLETE
-        +-- physical PITR (R,F] reconciliation           COMPLETE
-        +-- late-history / explicit-gap matrix            COMPLETE
-        +-- relocation authority race / fence ordering   COMPLETE
-        +-- relocation complete-set receipt / gap test   COMPLETE
-        +-- Tier 2 isolation / escalation matrix         COMPLETE
-        +-- Timescale fresh-cluster restore / roles      COMPLETE
-        +-- restored Timescale jobs + attack matrix      COMPLETE
-        +-- bounded capacity under safe profile           COMPLETE FOR C2
+        +-- Tier 1 real PostgreSQL proof                    COMPLETE
+        +-- identity-content conflict rejection             COMPLETE
+        +-- owner source/epoch + poll-claim proof           COMPLETE
+        +-- crash / ambiguity / recovery matrix             COMPLETE
+        +-- late-history contiguous coverage/currentness     COMPLETE
+        +-- physical PITR (R,F] reconciliation              COMPLETE
+        +-- relocation authority race / fence ordering      COMPLETE
+        +-- relocation complete-set receipt / gap test      COMPLETE
+        +-- Tier 2 isolation / escalation matrix            COMPLETE
+        +-- Timescale fresh-cluster restore / roles         COMPLETE
+        +-- restored Timescale jobs + attack matrix         COMPLETE
+        +-- bounded capacity under safe profile              COMPLETE FOR C2
         |
         v
-C2 decision recommendation                              READY FOR EXACT-HEAD REVIEW
+C2 decision recommendation                                 READY FOR EXACT-HEAD REVIEW
         |
-        +-- production capacity numerics                  STILL OPEN / OPEN-REL-020 C3
-        +-- production version pinning                     NOT SELECTED
-        +-- Wave 4 implementation authorization            NOT GRANTED
+        +-- production capacity numerics                     STILL OPEN / OPEN-REL-020 C3
+        +-- production version pinning                        NOT SELECTED
+        +-- Wave 4 implementation authorization               NOT GRANTED
         |
         v
-OPEN-REL-030 acceptance                                  REQUIRES REVIEW + EXPLICIT TRACK B ACCEPTANCE
+OPEN-REL-030 acceptance                                     REQUIRES REVIEW + EXPLICIT TRACK B ACCEPTANCE
 ```
 
 ## Tier 1 authority profile
@@ -53,9 +53,27 @@ Current-state candidacy is accepted only when all of these are true in the same 
 
 The harness rejects conflicting identity content, fabricated/missing claims, retired claims, predecessor generation after replacement, and caller attempts to self-assert current source authority. The successor generation advances only under its successor owner epoch/claim.
 
+## Late-history completeness profile
+
+A reconciliation sweep endpoint is **not** a completeness watermark by itself.
+
+History finalization is permitted only when reconciliation evidence forms a continuous interval beginning at the owner's `supported_history_floor` and reaches the requested finalization boundary. Reconciliation runs are ordered/merged only when their intervals overlap or touch; the first unswept hole terminates continuous coverage.
+
+Finalization additionally specifies a minimum provider/reconciliation snapshot currentness. Runs older than that minimum cannot be reused to prove current completeness, even if their interval geometry would otherwise cover the requested range.
+
+The negative matrix proves:
+
+- a high-only sweep `11:55..12:00` leaves anchored coverage absent and cannot finalize;
+- a low sweep `supported_history_floor..10:00` plus the high sweep retains the real `10:00..11:55` hole; generic `max(window_to)=12:00` does not help, continuous coverage remains only through `10:00`, and finalization is rejected;
+- a bridging sweep `10:00..12:00` at provider snapshot `12:15` closes the interval, recovers the delayed `10:30` observation, and establishes continuous coverage from `2026-08-27T00:00:00Z` through `2026-08-28T12:00:00Z`;
+- the same interval evidence cannot satisfy a later finalization that requires reconciliation current through `12:16`; it succeeds only when the required minimum snapshot is no newer than the actual covering evidence;
+- provider retention loss remains an explicit durable `gap` and can never fabricate `complete`.
+
+Thus `max(reconciliation window_to)` and stale reconciliation evidence are both explicitly rejected as authorities for completeness.
+
 ## Relocation authority and completeness profile
 
-Relocation no longer treats `F` or a target maximum ordinal as self-proving authority.
+Relocation does not treat `F` or a target maximum ordinal as self-proving authority.
 
 The source fence procedure locks the tenant placement authority **before** deriving `F`. A concurrent acceptance that already holds the placement lock must finish first and is included in `F`; an acceptance arriving after the fence waits and then observes the fenced source state, so it cannot create an authoritative row beyond `F`.
 
@@ -87,7 +105,7 @@ The surviving Tier 2 candidate is the **mediated shared-history profile**:
 - `ts_automation_owner` has LOGIN only because Timescale background workers require the job-bearing object owner to have it, with no password, SUPERUSER, CREATEROLE or BYPASSRLS and no tenant-facing/runtime membership;
 - escalation, direct-read and tenant-crossing attacks are repeated after background jobs, after restore into a genuinely fresh PostgreSQL/Timescale cluster, and after a restored background job executes.
 
-The fresh restore proves the source cluster's global role state is absent first (`0` JLMirror roles), reconstructs exactly the five minimum evidence roles, restores `100004/100004` history rows and both Timescale jobs, verifies object/function/job ownership, then re-runs the complete isolation/escalation matrix. A same-cluster database restore is no longer treated as sufficient role-topology evidence.
+The fresh restore proves the source cluster's global role state is absent first (`0` JLMirror roles), reconstructs exactly the five minimum evidence roles, restores `100004/100004` history rows and both Timescale jobs, verifies object/function/job ownership, then re-runs the complete isolation/escalation matrix. A same-cluster database restore is not sufficient role-topology evidence.
 
 ## C2 versus C3 capacity boundary
 

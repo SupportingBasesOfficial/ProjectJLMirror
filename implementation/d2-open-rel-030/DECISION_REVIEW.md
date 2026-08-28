@@ -12,14 +12,16 @@
 
 Subject to exact-final-HEAD review and explicit Track B acceptance:
 
-1. select the ADR-008 PostgreSQL transactional acceptance pattern as Tier 1 only with **immutable canonical observation content**, **owner-controlled active source generation and poll epoch resolved inside the acceptance transaction**, an exact **durable live poll claim**, and **lock-before-`F` relocation fencing**;
+1. select the ADR-008 PostgreSQL transactional acceptance pattern as Tier 1 only with **immutable canonical observation content**, **owner-controlled active source generation and poll epoch resolved inside the acceptance transaction**, an exact **durable live poll claim**, **contiguous/current history-reconciliation evidence anchored at `supported_history_floor`**, and **lock-before-`F` relocation fencing**;
 2. select TimescaleDB as Tier 2 historical projection **only under the mediated shared-history security profile proven by this spike**, including fresh-cluster role reconstruction and complete-set relocation receipts;
 3. reject direct pooled RLS assumptions for Timescale columnstore/continuous-aggregate surfaces on the evaluated profile;
 4. reject same-cluster database restore as sufficient proof of cluster-global role-topology recovery;
 5. reject `max(target_ordinal)=F` as proof of target completeness;
-6. preserve `OPEN-REL-020` as owner of production telemetry buffer/loss/checkpoint/retention/cardinality/cost and other production capacity numerics;
-7. treat pinned PostgreSQL/Timescale versions and image digests as reproducible evidence dependencies, not production version selections;
-8. preserve the telemetry projection seam and require any future Tier 2 replacement to re-prove identity, idempotency, complete-set reconciliation, isolation, recovery and relocation semantics.
+6. reject `max(reconciliation window_to)` as proof that history has been continuously reconciled from the supported history floor;
+7. require history finalization to use reconciliation evidence whose provider snapshot is at least as current as the finalization requires;
+8. preserve `OPEN-REL-020` as owner of production telemetry buffer/loss/checkpoint/retention/cardinality/cost and other production capacity numerics;
+9. treat pinned PostgreSQL/Timescale versions and image digests as reproducible evidence dependencies, not production version selections;
+10. preserve the telemetry projection seam and require any future Tier 2 replacement to re-prove identity, idempotency, continuous reconciliation, complete-set relocation, isolation, recovery and relocation semantics.
 
 ## Exact empirical anchor before this classification mutation
 
@@ -27,20 +29,20 @@ The hardened evidence package ran on:
 
 ```text
 HEAD
-339bc7063d6dcc0408f1fc63aa7906f8e3883dcb
+81c34cee1cb55104cc1e1a2235748b466a4e2853
 
 JLMIRROR Deterministic Assurance
-run #1936
-run id 33196516141
+run #1948
+run id 33197124252
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #36
-run id 33196516140
+run #42
+run id 33197124383
 SUCCESS
 ```
 
-The conformance run includes baseline plus ambiguity, recovery, physical PITR, Timescale background jobs, **fresh-cluster restore and role reconstruction**, post-restore attacks, relocation fence concurrency, deliberate gap-at-`F` rejection and final complete-set cutover.
+The conformance run includes baseline plus ambiguity, owner-source/poll authority, contiguous/current late-history reconciliation, recovery, physical PITR, Timescale background jobs, **fresh-cluster restore and role reconstruction**, post-restore attacks, relocation fence concurrency, deliberate gap-at-`F` rejection and final complete-set cutover.
 
 Any classification/documentation commit after that SHA must rerun both gates on its own exact HEAD. This anchor is provenance, not permission to reuse a green result across changed commits.
 
@@ -60,10 +62,55 @@ The real PostgreSQL harness established:
 - crash rollback around observation, history intent, current CAS and transition signal stages;
 - Tier 2 outage backlog remains durable rather than falsely acknowledged as projected;
 - post-COMMIT client ambiguity converges under retry without duplicate observation/history/signal effects;
-- late history either reconciles or leaves explicit durable gap evidence;
+- late-history completeness requires continuous and sufficiently current reconciliation evidence rather than a maximum sweep endpoint;
 - physical PostgreSQL PITR restores exactly to committed `R`, remains fail-closed, consumes surviving `(R,F]` evidence and admits successor authority without replaying the rollback-subject post-`R` business mutation.
 
 The concurrency oracle reports `authority=owner_source_plus_live_poll_claim` and the ambiguity vector converges to one durable observation, one historical obligation and one semantic signal.
+
+## Late-history reconciliation evidence
+
+History reconciliation now distinguishes **provisional high-water evidence** from **continuous completeness evidence**.
+
+The durable evidence consists of reconciliation runs with exact `window_from`, `window_to` and `provider_snapshot_at`. `contiguous_covered_through` begins only at the stream owner's `supported_history_floor`, orders the eligible runs by interval, extends coverage only through overlapping/touching windows, and stops at the first hole.
+
+Finalization additionally supplies `min_reconciliation_snapshot_at`. Runs older than that currentness bound do not count toward final completeness.
+
+The adversarial matrix proves:
+
+```text
+supported_history_floor                2026-08-27T00:00:00Z
+fast/high-only sweep                    11:55..12:00
+anchored coverage after high-only       NONE
+high-only finalization                  REJECTED
+
+low sweep                               floor..10:00
+existing high sweep                     11:55..12:00
+max(window_to)                           12:00
+actual contiguous coverage              only through 10:00
+disjoint-sweep finalization             REJECTED
+
+bridging sweep                          10:00..12:00 @ snapshot 12:15
+delayed observation                     10:30 recovered
+continuous coverage                     floor..12:00
+finalization requiring snapshot 12:16  REJECTED
+finalization requiring snapshot 12:15  ACCEPTED
+```
+
+The final state emitted by run #42 is:
+
+```text
+zabbix:item:42
+  state                           complete
+  reconciliation_covered_from     2026-08-27 00:00:00+00
+  reconciliation_covered_through  2026-08-28 12:00:00+00
+  finalized_through               2026-08-28 12:00:00+00
+
+zabbix:item:retention-loss
+  state                           gap
+  finalized_through               NULL
+```
+
+Therefore a high sweep, a disjoint set of sweeps, `max(window_to)`, or stale reconciliation evidence cannot manufacture a complete watermark. Provider retention loss remains explicit `gap`, never inferred absence/complete.
 
 ## Physical PITR evidence
 
@@ -120,7 +167,7 @@ The attack matrix covers raw/CAGG/internal materialization reads, caller-writabl
 
 ## Fresh-cluster Timescale restore evidence
 
-The final restore test no longer restores to a second database inside the source PostgreSQL cluster. It creates a genuinely new Timescale/PostgreSQL container and first proves:
+The restore test creates a genuinely new Timescale/PostgreSQL container and first proves:
 
 ```text
 JLMirror ts_* roles before bootstrap     0
@@ -147,11 +194,9 @@ The full isolation/escalation matrix is repeated **after the fresh restore** and
 
 ### Fence ordering
 
-The final source fence locks the tenant placement authority before deriving `F`.
+The source fence locks the tenant placement authority before deriving `F`.
 
 The concurrency falsifier starts a source acceptance that acquires the placement lock and then sleeps. The test waits until PostgreSQL reports that exact `PgSleep`, then concurrently requests the fence. The fence cannot overtake the already-authoritative acceptance; it waits, the acceptance commits, and the committed ordinal becomes part of `F`.
-
-Empirical result:
 
 ```text
 relocation_acceptance_lock_race_setup          PASS
@@ -164,7 +209,7 @@ After the fence, source acceptance is rejected.
 
 ### Complete-set target admission
 
-Target authority no longer accepts a caller-provided projection watermark. A durable `projection_receipt` is bound to the frozen source set through `F` and records:
+Target authority does not accept a caller-provided projection watermark. A durable `projection_receipt` is bound to the frozen source set through `F` and records:
 
 - authoritative count;
 - ordered canonical identity digest;
@@ -172,17 +217,15 @@ Target authority no longer accepts a caller-provided projection watermark. A dur
 - target digest;
 - target maximum ordinal.
 
-The negative vector copies **only the highest ordinal** to the target. Therefore `max(target)=F` is true while lower authoritative rows are absent. The result is intentionally:
+The negative vector copies **only the highest ordinal** to the target. Therefore `max(target)=F` is true while lower authoritative rows are absent:
 
 ```text
 relocation_incomplete_target_still_reaches_F   PASS
 relocation_gap_receipt_detected                 incomplete
-relocation_target_cannot_activate_with_gap_at_F false / rejected
+relocation_target_cannot_activate_with_gap_at_F rejected
 ```
 
 After all authoritative rows through `F` are projected, count + digest + max match, the durable receipt becomes `complete`, and only then may target activation occur.
-
-Final result:
 
 ```text
 complete receipt                       complete|3|3|3
@@ -208,7 +251,7 @@ rowstore relation bytes         11886592
 columnstore relation bytes        655360
 continuous aggregate bytes        163840
 mediated query returned rows           57
-representative query duration    71613050 ns
+representative query duration    66737135 ns
 ```
 
 A small chunk emitted a poor-compression-ratio warning, retained as tuning evidence rather than hidden.
@@ -217,7 +260,7 @@ These measurements demonstrate bounded C2 mechanism/query fitness only. They do 
 
 ## Findings discovered and closed by the spike
 
-The program falsified and corrected ten material assumptions/harness defects:
+The program falsified and corrected eleven material assumptions/harness defects:
 
 1. **Readiness transport mismatch** — Unix-socket readiness did not prove the TCP path used by tenant-facing probes; readiness now uses the same TCP path.
 2. **Timescale background-owner requirement** — job-bearing objects require a login-capable owner; `ts_owner` and narrowly privileged `ts_automation_owner` were separated.
@@ -229,6 +272,7 @@ The program falsified and corrected ten material assumptions/harness defects:
 8. **Native Assurance — same-cluster restore false assurance** — restoring to another database inside the same cluster preserved global roles and could not prove role reconstruction; restore now uses a new cluster with zero pre-existing JLMirror roles.
 9. **Codex P1 — fence derived before authority lock** — relocation could omit an in-flight accepted row from `F`; the fence now locks placement before deriving `F`, with a real concurrent race test.
 10. **Codex P1 — max-only target completeness** — `max(target)=F` could hide internal gaps; cutover now requires a durable count + ordered identity digest + max receipt and includes an explicit gap-at-`F` negative vector.
+11. **Codex P1 — max-only history reconciliation coverage** — a high or disjoint sweep could formerly advance `reconciliation_covered_through` past an unswept interval. Coverage is now anchored at `supported_history_floor`, continuous across recorded windows, serialized per stream, and filtered by the minimum provider snapshot currentness required for finalization.
 
 ## What acceptance would and would not mean
 

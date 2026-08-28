@@ -20,6 +20,7 @@ It evaluates:
 
 - Provider event time is metadata, never current-state authority.
 - Worker/caller assertions are never allowed to substitute for source, poll, provider-finality, recovery or target-checkpoint authority.
+- Canonical equivalence requires a deterministic, **unambiguous/self-delimiting** byte representation before hashing; delimiter-framed unrestricted text is not sufficient.
 - A single cross-tenant leak rejects the candidate profile.
 - `OPEN-REL-020` retains production telemetry capacity/numeric ownership.
 - PostgreSQL/Timescale versions and image digests are evidence dependencies, not immutable production selections.
@@ -150,13 +151,37 @@ The candidate requires:
 
 Tier 1 locks placement authority before deriving `F`. An acceptance already holding authority commits before the fence and is included in `F`; later source acceptance is rejected.
 
+### Canonical representation before hashing
+
+The checkpoint digest is only authoritative if the pre-hash representation is unambiguous.
+
+The evaluated profile encodes **each immutable field independently** as:
+
+```text
+<UTF-8 byte length in decimal>:<lowercase UTF-8 hex>
+```
+
+The row fields are then concatenated in deterministic row order. Because the payload portion is hex and every field carries its byte length, text content cannot impersonate a field or row boundary.
+
+The current evidence profile covers:
+
+- accepted ordinal;
+- observation ID;
+- metric definition ID;
+- UTC `observed_at` normalized to microsecond precision;
+- normalized numeric value.
+
+A dedicated negative demonstrates that the former `0x1f` field / `0x1e` row delimiter scheme is ambiguous when `observation_id` is unrestricted `text`: distinct logical field boundaries can yield the same raw pre-hash bytes. The self-delimiting representation produces different bytes for those logical values, and a cross-store probe proves PostgreSQL and Timescale produce the same canonical field representation for text containing literal `0x1f` and `0x1e` bytes.
+
+Future accepted Monitoring payload kinds must deterministically serialize **every immutable accepted field** with a versioned, injective or equivalently unambiguous representation. A cryptographic digest does not repair ambiguous serialization.
+
 ### Target completeness
 
 `max(target)=F` is insufficient. The target-owned checkpoint measures actual current target state and includes:
 
 - row count;
 - maximum ordinal;
-- deterministic SHA-256 over canonical immutable observation payload represented by the evidence profile.
+- deterministic SHA-256 over the self-delimiting canonical immutable observation payload represented by the evidence profile.
 
 The checkpoint is HMAC-authenticated and verified before Tier 1 target activation. A same-identity payload mismatch remains `incomplete`; fabricated checkpoint facts are rejected.
 
@@ -206,15 +231,29 @@ These measurements are bounded **C2 mechanism-fitness evidence only**. Productio
 
 ```text
 HEAD
-f205fe823f9f7635ffb27debb2a2d980fe8cc35f
+cbd433f09a7568048a45b75cd9abb6760b5687d8
 
-JLMIRROR Deterministic Assurance #1990
-run id 33202904143
+JLMIRROR Deterministic Assurance #2000
+run id 33206933772
 SUCCESS
 
-JLMIRROR OPEN-REL-030 Conformance #63
-run id 33202904081
+JLMIRROR OPEN-REL-030 Conformance #68
+run id 33206933620
 SUCCESS
+```
+
+The #68 extended run includes, on this exact SHA:
+
+```text
+relocation_delimiter_collision_closed=PASS value=true|true
+relocation_canonical_field_cross_store=PASS
+history_owner_currentness_authority=PASS
+physical_pitr_local_self_mint_cannot_admit=PASS
+physical_pitr_tampered_external_grant_rejected=PASS
+physical_pitr_external_grant_verified=PASS
+relocation_preseal_future_row_blocks_checkpoint=PASS
+relocation_postseal_future_insert_rejected=PASS
+relocation_authenticated_complete_projection_receipt=PASS
 ```
 
 This anchor is provenance only. Documentation changes create a new HEAD and require both workflows again.

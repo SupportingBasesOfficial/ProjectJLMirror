@@ -1,7 +1,7 @@
 # Wave 4 Monitoring Entry Gate
 
-**Status:** proposed gate record  
-**Base authority:** `main@d63b435ffa26fba7794187ceafaf0d5a9773223b`  
+**Status:** accepted gate record — Track A accepted 2026-08-28 (all 36 Track A acceptance criteria satisfied, including `adr/ADR-021-monitoring-source-instance-replacement.md`'s acceptance); Track B remains open per the state machine below  
+**Base authority:** `main@d63b435ffa26fba7794187ceafaf0d5a9773223b` at authoring; superseded by the exact accepted Track A HEAD at acceptance  
 **Scope:** first Monitoring vertical entry prerequisites; no implementation authorization  
 **Depends on:** accepted Implementation Readiness Gate, Waves 0–3, `CAP-MONITORING`, `FR-MON-001..006`, Monitoring ownership/data, Phase 09/10 contracts, Zabbix provider contract, `OPEN-REL-030`
 
@@ -332,7 +332,7 @@ Track A does not create:
 
 Monitoring dashboards may compose active-generation inventory, dedicated current metric state, health, problems, history and sync/scope/generation evidence; persistent presentation/cross-domain projections remain Reporting & Experience ownership.
 
-## Readiness matrix if Track A is accepted
+## Readiness matrix — Track A accepted 2026-08-28
 
 | Slice/capability | Contract state | Evidence/mechanism state | Result |
 |---|---|---|---|
@@ -340,7 +340,7 @@ Monitoring dashboards may compose active-generation inventory, dedicated current
 | Monitoring-core endpoint subset (`OPEN-API-016`) | exact for this vertical | unrelated/future endpoints remain incremental | Monitoring subset contract-ready |
 | Monitoring applicable event semantics | exact logical contracts | transport/serializer/equivalence mechanism still C2 | contract-ready; implementation package still required |
 | source management API | exact | credential binding/secret mechanism still C2 | contract-ready, mechanism selection where used |
-| replacement candidate/cutover | exact semantics incl. validation currentness | secret freshness representation + numeric horizon remain evidence/mechanism dependent | **PROPOSED mechanism — pending ADR-021**, not treated as contract-ready until `adr/ADR-021-monitoring-source-instance-replacement.md` is accepted |
+| replacement candidate/cutover | exact semantics incl. validation currentness | secret freshness representation + numeric horizon remain evidence/mechanism dependent | contract-ready — `adr/ADR-021-monitoring-source-instance-replacement.md` accepted 2026-08-28; ADR-021's own Validation-section conformance evidence still gates implementation, not this readiness classification |
 | generation lifecycle/currentness | exact semantics | storage/query mechanism replaceable | contract-ready |
 | configured-scope handling | exact revision/currentness semantics | batch/concurrency numerics C3 | contract-ready |
 | Zabbix trust + normalization | exact | provider production numerics C3 | provider-contract-ready |
@@ -528,22 +528,23 @@ Exact-final-HEAD review must prove:
 33. `OPEN-REL-030` remains open and TimescaleDB remains non-canonical;
 34. no Waves 0–3 implementation substrate changes;
 35. exact final HEAD has P0/P1/P2=0 and no unresolved review thread;
-36. the "replacement candidate/cutover" readiness-matrix row is not promoted to `contract-ready` until `adr/ADR-021-monitoring-source-instance-replacement.md` is accepted.
+36. SATISFIED — the "replacement candidate/cutover" readiness-matrix row is promoted to `contract-ready` because `adr/ADR-021-monitoring-source-instance-replacement.md` is accepted (2026-08-28); the mechanism's own Validation-section conformance evidence remains a separate, still-open condition on Wave 4 implementation, distinct from this readiness-matrix classification.
 
 A clean Track A gate still requires separate explicit user merge authorization.
 
 ## Advancement state machine
 
 ```text
-CURRENT BASE d63b435f...
-  Wave 4 Monitoring entry          BLOCKED ON CONTRACT + C2 EVIDENCE
+CURRENT BASE d63b435f... (historical, at authoring time)
+  Wave 4 Monitoring entry          WAS BLOCKED ON CONTRACT + C2 EVIDENCE
 
-AFTER TRACK A ACCEPTED
+TRACK A — ACCEPTED (2026-08-28)
   Monitoring domain/API/events     READY
+  ADR-021                          ACCEPTED
   OPEN-REL-030                     STILL C2 OPEN
   customer telemetry               BOUNDED EVIDENCE SPIKE ONLY
   protected cursor C5              UNCHANGED / NOT ACTIVATED
-  canonical Wave 4 implementation  NOT AUTHORIZED
+  canonical Wave 4 implementation  NOT YET AUTHORIZED — Track B still required
 
 AFTER TRACK B ACCEPTED
   Monitoring contract authority    READY

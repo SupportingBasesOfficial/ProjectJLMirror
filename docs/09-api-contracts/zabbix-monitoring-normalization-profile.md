@@ -1,6 +1,6 @@
 # Zabbix Monitoring — Canonical Normalization Profile
 
-**Status:** proposed baseline  
+**Status:** accepted — Wave 4 Monitoring Track A accepted 2026-08-28 (`docs/16-implementation-readiness/16-wave-4-monitoring-entry-gate.md`)  
 **Provider:** Zabbix  
 **Owner of canonical semantics:** Monitoring  
 **Companions:** `zabbix-monitoring-source-provider-contract.md`, `monitoring-domain-api-contract.md`, `docs/03-domains/monitoring-domain-contract.md`  

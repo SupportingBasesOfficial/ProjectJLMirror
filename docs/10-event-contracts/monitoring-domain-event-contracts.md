@@ -1,6 +1,6 @@
 # Monitoring Domain Event Contracts — Wave 4 Entry
 
-**Status:** proposed baseline  
+**Status:** accepted — Wave 4 Monitoring Track A accepted 2026-08-28 (`docs/16-implementation-readiness/16-wave-4-monitoring-entry-gate.md`)  
 **Phase:** 10 contract instantiation for Wave 4 Monitoring  
 **Owner/producer:** Monitoring  
 **Traceability:** `CAP-MONITORING`, `FR-MON-001..006`, ADR-008, ADR-009, `message-envelope-and-classes.md`, `publication-outbox-and-producer-authority.md`, `security-tenant-context-and-data-classification.md`, `docs/03-domains/monitoring-domain-contract.md`

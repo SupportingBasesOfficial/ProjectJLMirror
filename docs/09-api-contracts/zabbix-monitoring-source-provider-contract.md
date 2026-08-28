@@ -1,6 +1,6 @@
 # Zabbix Monitoring Source — Provider Adapter Contract
 
-**Status:** proposed baseline
+**Status:** accepted — Wave 4 Monitoring Track A accepted 2026-08-28 (`docs/16-implementation-readiness/16-wave-4-monitoring-entry-gate.md`)
 **Instantiates:** ADR-013 (External Provider Adapter Architecture), `provider-callback-and-ingress-contracts.md`, `docs/07-system-design/realtime-cache-and-provider-boundaries.md`
 **Drivers:** `FR-MON-001..006`, `FR-OPS-001..002`
 
@@ -8,7 +8,7 @@
 
 `docs/01-product/product-definition.md` names Zabbix as JLMIRROR's initial Monitoring Source, and ADR-013 explicitly anticipates it ("Initial Monitoring Source support MAY include Zabbix, but Zabbix concepts SHALL NOT become the only canonical Monitoring model"). Neither document fixes Zabbix's concrete API version, authentication mechanism, polling cadence, or trust model — those are exactly what this contract supplies. This document is a **provider-specific instantiation**, not a new architecture decision, but that inheritance is split across two distinct sources rather than ADR-013 alone: the provider-boundary trust rules (outbound connector requirements, inbound webhook authentication/trust in the "(B) Webhook hint path" section below) are inherited unchanged from ADR-013 and `provider-callback-and-ingress-contracts.md`; the current-state ordering/epoch/generation mechanism (the "Current-state ordering authority" section below) is inherited from `docs/08-data/telemetry-plane.md`'s ordering-semantics rule and ADR-008's state-transition-signal-atomicity pattern, per `docs/11-reliability-resilience/OPEN-REL-030-decision-record.md:69`, which names this exact Zabbix mechanism as satisfying that rule — ADR-013 does not itself define ordering, epochs, or generations. This document only fixes Zabbix's concrete values inside those already-accepted frames.
 
-This contract does not itself authorize `impl.provider-integration@1` implementation — per `docs/16-implementation-readiness/15-implementation-slice-readiness-manifest.md:34`, that slice is `deferred_product_gated` until "exact Product/domain + provider trust/auth/reconciliation contract is accepted." This provider contract supplies the Zabbix trust/auth/reconciliation half of that gate. `docs/03-domains/monitoring-domain-contract.md`, `monitoring-domain-api-contract.md` and `zabbix-monitoring-normalization-profile.md` now **propose** the previously missing Monitoring domain/API/normalization half; it remains non-canonical until that exact companion package is reviewed and accepted.
+This contract does not itself authorize `impl.provider-integration@1` implementation — per `docs/16-implementation-readiness/15-implementation-slice-readiness-manifest.md:34`, that slice is `deferred_product_gated` until "exact Product/domain + provider trust/auth/reconciliation contract is accepted." This provider contract supplies the Zabbix trust/auth/reconciliation half of that gate. `docs/03-domains/monitoring-domain-contract.md`, `monitoring-domain-api-contract.md` and `zabbix-monitoring-normalization-profile.md` supply the previously missing Monitoring domain/API/normalization half; that companion package (Wave 4 Monitoring Track A) is accepted as of 2026-08-28.
 
 ## Integration model: authenticated pull, webhook as untrusted hint only
 
@@ -203,7 +203,7 @@ In addition to every test already required by `provider-callback-and-ingress-con
 - editing JLMIRROR configured scope does not create provider negative evidence: excluded objects may become `out_of_scope` under the Monitoring scope-revision contract but are not marked removed/retired/resolved solely because the edit stopped querying them;
 - a complete staged snapshot may nominate negative candidates, but destructive/resolve transitions are individually revalidated when the provider cannot prove transactionally stable cross-page snapshot semantics;
 - a stale snapshot-complete or visibility marker restored across PITR/relocation cannot authorize negative transitions under a retired poll epoch/placement/source generation;
-- severity/ack/tag/value normalization conforms to `zabbix-monitoring-normalization-profile.md` when that companion profile is accepted; provider acknowledgement/tags cannot mutate Alerting/ITSM/authorization and provider severity cannot bypass canonical Monitoring severity/health semantics.
+- severity/ack/tag/value normalization conforms to `zabbix-monitoring-normalization-profile.md`; provider acknowledgement/tags cannot mutate Alerting/ITSM/authorization and provider severity cannot bypass canonical Monitoring severity/health semantics.
 
 ## Open items
 
@@ -213,4 +213,4 @@ In addition to every test already required by `provider-callback-and-ingress-con
 - Exact webhook-hint coalesce/debounce window: `OPEN`, pending capacity evidence.
 - Exact webhook raw-body maximum size: `OPEN` — per `provider-callback-and-ingress-contracts.md:66`'s mandatory per-provider closure requirement, this MUST be fixed to a concrete evidenced value (or remain explicitly `OPEN`, never silently inherited from another provider's default) before implementation/release.
 - Secret storage mechanism for the Zabbix API token: depends on `secret_manager_kms` (Wave 1 residual C2), not yet selected.
-- Problem severity/acknowledgement/tag/value normalization: **PROPOSED RESOLVED** by `docs/03-domains/monitoring-domain-contract.md` + `zabbix-monitoring-normalization-profile.md`; it remains non-canonical/open on `main` until this exact companion contract package is accepted.
+- Problem severity/acknowledgement/tag/value normalization: **RESOLVED** by `docs/03-domains/monitoring-domain-contract.md` + `zabbix-monitoring-normalization-profile.md`, accepted 2026-08-28 as part of Wave 4 Monitoring Track A.

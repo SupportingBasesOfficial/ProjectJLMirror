@@ -3,8 +3,30 @@
 DROP SCHEMA IF EXISTS tel_evidence CASCADE;
 CREATE SCHEMA tel_evidence;
 
+CREATE TABLE tel_evidence.monitoring_source_authority (
+    tenant_id uuid NOT NULL,
+    source_id uuid NOT NULL,
+    active_source_instance_generation uuid NOT NULL,
+    active_poll_epoch bigint NOT NULL CHECK (active_poll_epoch >= 0),
+    placement_version bigint NOT NULL CHECK (placement_version > 0),
+    PRIMARY KEY (tenant_id, source_id)
+);
+
+CREATE TABLE tel_evidence.poll_claim (
+    tenant_id uuid NOT NULL,
+    source_id uuid NOT NULL,
+    source_instance_generation uuid NOT NULL,
+    poll_epoch bigint NOT NULL CHECK (poll_epoch >= 0),
+    poll_generation bigint NOT NULL CHECK (poll_generation >= 0),
+    claim_state text NOT NULL CHECK (claim_state IN ('live','retired')),
+    PRIMARY KEY (
+        tenant_id, source_id, source_instance_generation, poll_epoch, poll_generation
+    )
+);
+
 CREATE TABLE tel_evidence.observation (
     tenant_id uuid NOT NULL,
+    source_id uuid NOT NULL,
     observation_identity_scope text NOT NULL,
     observation_id uuid NOT NULL,
     metric_definition_id uuid NOT NULL,
@@ -12,7 +34,15 @@ CREATE TABLE tel_evidence.observation (
     observed_at timestamptz NOT NULL,
     numeric_value numeric NOT NULL,
     accepted_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-    PRIMARY KEY (tenant_id, observation_identity_scope, observation_id)
+    PRIMARY KEY (tenant_id, observation_identity_scope, observation_id),
+    UNIQUE (
+        tenant_id,
+        observation_identity_scope,
+        observation_id,
+        source_id,
+        metric_definition_id,
+        source_instance_generation
+    )
 );
 
 CREATE TABLE tel_evidence.historical_projection_outbox (
@@ -31,6 +61,7 @@ CREATE TABLE tel_evidence.historical_projection_outbox (
 
 CREATE TABLE tel_evidence.metric_current_state (
     tenant_id uuid NOT NULL,
+    source_id uuid NOT NULL,
     metric_definition_id uuid NOT NULL,
     observation_identity_scope text NOT NULL,
     observation_id uuid NOT NULL,
@@ -38,18 +69,28 @@ CREATE TABLE tel_evidence.metric_current_state (
     poll_epoch bigint NOT NULL CHECK (poll_epoch >= 0),
     poll_generation bigint NOT NULL CHECK (poll_generation >= 0),
     changed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-    PRIMARY KEY (tenant_id, metric_definition_id),
-    FOREIGN KEY (tenant_id, observation_identity_scope, observation_id)
-        REFERENCES tel_evidence.observation (
-            tenant_id,
-            observation_identity_scope,
-            observation_id
-        )
+    PRIMARY KEY (tenant_id, source_id, metric_definition_id),
+    FOREIGN KEY (
+        tenant_id,
+        observation_identity_scope,
+        observation_id,
+        source_id,
+        metric_definition_id,
+        source_instance_generation
+    ) REFERENCES tel_evidence.observation (
+        tenant_id,
+        observation_identity_scope,
+        observation_id,
+        source_id,
+        metric_definition_id,
+        source_instance_generation
+    )
 );
 
 CREATE TABLE tel_evidence.current_transition (
     transition_identity text PRIMARY KEY,
     tenant_id uuid NOT NULL,
+    source_id uuid NOT NULL,
     metric_definition_id uuid NOT NULL,
     observation_identity_scope text NOT NULL,
     observation_id uuid NOT NULL,
@@ -63,17 +104,18 @@ CREATE TABLE tel_evidence.current_changed_outbox (
     transition_identity text PRIMARY KEY
         REFERENCES tel_evidence.current_transition (transition_identity),
     tenant_id uuid NOT NULL,
+    source_id uuid NOT NULL,
     metric_definition_id uuid NOT NULL,
     created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 
 CREATE OR REPLACE FUNCTION tel_evidence.accept_observation(
     p_tenant_id uuid,
+    p_source_id uuid,
     p_observation_identity_scope text,
     p_observation_id uuid,
     p_metric_definition_id uuid,
     p_source_instance_generation uuid,
-    p_active_source_instance_generation uuid,
     p_poll_epoch bigint,
     p_poll_generation bigint,
     p_observed_at timestamptz,
@@ -92,7 +134,11 @@ SET search_path = pg_catalog, tel_evidence
 AS $$
 DECLARE
     v_rows integer := 0;
+    v_existing tel_evidence.observation%ROWTYPE;
     v_current tel_evidence.metric_current_state%ROWTYPE;
+    v_active_generation uuid;
+    v_active_poll_epoch bigint;
+    v_claim_state text;
     v_transition_identity text;
 BEGIN
     IF p_poll_epoch < 0 OR p_poll_generation < 0 THEN
@@ -101,6 +147,7 @@ BEGIN
 
     INSERT INTO tel_evidence.observation (
         tenant_id,
+        source_id,
         observation_identity_scope,
         observation_id,
         metric_definition_id,
@@ -110,6 +157,7 @@ BEGIN
     )
     VALUES (
         p_tenant_id,
+        p_source_id,
         p_observation_identity_scope,
         p_observation_id,
         p_metric_definition_id,
@@ -123,6 +171,28 @@ BEGIN
     newly_accepted := (v_rows = 1);
     ordering_advanced := false;
     semantic_transition := false;
+
+    IF NOT newly_accepted THEN
+        SELECT *
+          INTO v_existing
+          FROM tel_evidence.observation
+         WHERE tenant_id = p_tenant_id
+           AND observation_identity_scope = p_observation_identity_scope
+           AND observation_id = p_observation_id
+         FOR KEY SHARE;
+
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'existing observation identity disappeared during create-or-observe';
+        END IF;
+
+        IF v_existing.source_id IS DISTINCT FROM p_source_id
+           OR v_existing.metric_definition_id IS DISTINCT FROM p_metric_definition_id
+           OR v_existing.source_instance_generation IS DISTINCT FROM p_source_instance_generation
+           OR v_existing.observed_at IS DISTINCT FROM p_observed_at
+           OR v_existing.numeric_value IS DISTINCT FROM p_numeric_value THEN
+            RAISE EXCEPTION 'observation identity content mismatch';
+        END IF;
+    END IF;
 
     IF p_failpoint = 'after_observation' THEN
         RAISE EXCEPTION 'injected:after_observation';
@@ -145,19 +215,56 @@ BEGIN
         RAISE EXCEPTION 'injected:after_history_intent';
     END IF;
 
-    IF p_current_candidate
-       AND p_source_instance_generation = p_active_source_instance_generation THEN
+    IF p_current_candidate THEN
+        -- The caller never supplies the active generation/epoch as authority.
+        -- Read and lock the owner-controlled source row inside this transaction,
+        -- so replacement/epoch rotation cannot race the accepted current effect.
+        SELECT active_source_instance_generation, active_poll_epoch
+          INTO v_active_generation, v_active_poll_epoch
+          FROM tel_evidence.monitoring_source_authority
+         WHERE tenant_id = p_tenant_id
+           AND source_id = p_source_id
+         FOR SHARE;
+
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'current candidate has no owner-controlled source authority';
+        END IF;
+
+        IF p_source_instance_generation <> v_active_generation THEN
+            RAISE EXCEPTION 'stale source generation current candidate';
+        END IF;
+
+        IF p_poll_epoch <> v_active_poll_epoch THEN
+            RAISE EXCEPTION 'stale or fabricated poll epoch';
+        END IF;
+
+        SELECT claim_state
+          INTO v_claim_state
+          FROM tel_evidence.poll_claim
+         WHERE tenant_id = p_tenant_id
+           AND source_id = p_source_id
+           AND source_instance_generation = p_source_instance_generation
+           AND poll_epoch = p_poll_epoch
+           AND poll_generation = p_poll_generation
+         FOR SHARE;
+
+        IF NOT FOUND OR v_claim_state <> 'live' THEN
+            RAISE EXCEPTION 'missing or retired durable poll claim';
+        END IF;
+
         LOOP
             SELECT *
               INTO v_current
               FROM tel_evidence.metric_current_state
              WHERE tenant_id = p_tenant_id
+               AND source_id = p_source_id
                AND metric_definition_id = p_metric_definition_id
              FOR UPDATE;
 
             IF NOT FOUND THEN
                 INSERT INTO tel_evidence.metric_current_state (
                     tenant_id,
+                    source_id,
                     metric_definition_id,
                     observation_identity_scope,
                     observation_id,
@@ -167,6 +274,7 @@ BEGIN
                 )
                 VALUES (
                     p_tenant_id,
+                    p_source_id,
                     p_metric_definition_id,
                     p_observation_identity_scope,
                     p_observation_id,
@@ -174,7 +282,7 @@ BEGIN
                     p_poll_epoch,
                     p_poll_generation
                 )
-                ON CONFLICT (tenant_id, metric_definition_id) DO NOTHING;
+                ON CONFLICT (tenant_id, source_id, metric_definition_id) DO NOTHING;
 
                 GET DIAGNOSTICS v_rows = ROW_COUNT;
                 IF v_rows = 0 THEN
@@ -186,7 +294,7 @@ BEGIN
                 EXIT;
             END IF;
 
-            IF v_current.source_instance_generation <> p_active_source_instance_generation THEN
+            IF v_current.source_instance_generation <> v_active_generation THEN
                 UPDATE tel_evidence.metric_current_state
                    SET observation_identity_scope = p_observation_identity_scope,
                        observation_id = p_observation_id,
@@ -195,6 +303,7 @@ BEGIN
                        poll_generation = p_poll_generation,
                        changed_at = clock_timestamp()
                  WHERE tenant_id = p_tenant_id
+                   AND source_id = p_source_id
                    AND metric_definition_id = p_metric_definition_id;
                 ordering_advanced := true;
                 semantic_transition := true;
@@ -209,6 +318,7 @@ BEGIN
                        SET poll_epoch = p_poll_epoch,
                            poll_generation = p_poll_generation
                      WHERE tenant_id = p_tenant_id
+                       AND source_id = p_source_id
                        AND metric_definition_id = p_metric_definition_id;
                     ordering_advanced := true;
                     semantic_transition := false;
@@ -221,6 +331,7 @@ BEGIN
                            poll_generation = p_poll_generation,
                            changed_at = clock_timestamp()
                      WHERE tenant_id = p_tenant_id
+                       AND source_id = p_source_id
                        AND metric_definition_id = p_metric_definition_id;
                     ordering_advanced := true;
                     semantic_transition := true;
@@ -239,6 +350,7 @@ BEGIN
         v_transition_identity := concat_ws(
             '|',
             p_tenant_id::text,
+            p_source_id::text,
             p_metric_definition_id::text,
             p_source_instance_generation::text,
             p_poll_epoch::text,
@@ -250,6 +362,7 @@ BEGIN
         INSERT INTO tel_evidence.current_transition (
             transition_identity,
             tenant_id,
+            source_id,
             metric_definition_id,
             observation_identity_scope,
             observation_id,
@@ -260,6 +373,7 @@ BEGIN
         VALUES (
             v_transition_identity,
             p_tenant_id,
+            p_source_id,
             p_metric_definition_id,
             p_observation_identity_scope,
             p_observation_id,
@@ -272,11 +386,13 @@ BEGIN
         INSERT INTO tel_evidence.current_changed_outbox (
             transition_identity,
             tenant_id,
+            source_id,
             metric_definition_id
         )
         VALUES (
             v_transition_identity,
             p_tenant_id,
+            p_source_id,
             p_metric_definition_id
         )
         ON CONFLICT (transition_identity) DO NOTHING;
@@ -290,8 +406,51 @@ BEGIN
 END;
 $$;
 
+-- Seed only durable owner authority/claims required by the baseline vectors.
+INSERT INTO tel_evidence.monitoring_source_authority (
+    tenant_id, source_id, active_source_instance_generation, active_poll_epoch, placement_version
+) VALUES
+(
+    '11111111-1111-1111-1111-111111111111'::uuid,
+    '10101010-1010-1010-1010-101010101010'::uuid,
+    '33333333-3333-3333-3333-333333333333'::uuid,
+    10,
+    1
+),
+(
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid,
+    'abababab-abab-abab-abab-abababababab'::uuid,
+    'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid,
+    1,
+    1
+);
+
+INSERT INTO tel_evidence.poll_claim (
+    tenant_id, source_id, source_instance_generation, poll_epoch, poll_generation, claim_state
+)
+SELECT
+    '11111111-1111-1111-1111-111111111111'::uuid,
+    '10101010-1010-1010-1010-101010101010'::uuid,
+    '33333333-3333-3333-3333-333333333333'::uuid,
+    10,
+    g,
+    'live'
+FROM unnest(ARRAY[99,100,101,102,103,104]) AS g;
+
+INSERT INTO tel_evidence.poll_claim (
+    tenant_id, source_id, source_instance_generation, poll_epoch, poll_generation, claim_state
+)
+SELECT
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid,
+    'abababab-abab-abab-abab-abababababab'::uuid,
+    'cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid,
+    1,
+    g,
+    'live'
+FROM generate_series(1,4) AS g;
+
 COMMENT ON FUNCTION tel_evidence.accept_observation(
-    uuid, text, uuid, uuid, uuid, uuid, bigint, bigint,
+    uuid, uuid, text, uuid, uuid, uuid, bigint, bigint,
     timestamptz, numeric, boolean, text
 ) IS
-'OPEN-REL-030 evidence-only transactional oracle. Not a production Monitoring implementation.';
+'OPEN-REL-030 evidence-only transactional oracle. Owner-controlled source authority and durable poll claims are resolved in-transaction. Not a production Monitoring implementation.';

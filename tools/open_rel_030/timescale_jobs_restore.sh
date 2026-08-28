@@ -295,10 +295,12 @@ fi
 printf 'timescale_fresh_restore_jobs=PASS count=%s\n' "$restore_jobs"
 
 bad_job_owners="$(admin_psql "$restore_container" "$restore_db" "
-  SELECT count(*) FROM timescaledb_information.jobs
-  WHERE hypertable_schema='ts_evidence'
-    AND hypertable_name IN ('shared_history','shared_hourly')
-    AND owner <> 'ts_automation_owner';
+  SELECT count(*)
+  FROM timescaledb_information.jobs j
+  JOIN pg_roles r ON r.oid=j.owner
+  WHERE j.hypertable_schema='ts_evidence'
+    AND j.hypertable_name IN ('shared_history','shared_hourly')
+    AND r.rolname <> 'ts_automation_owner';
 ")"
 assert_exact "timescale_fresh_restore_job_owners" "0" "$bad_job_owners"
 

@@ -354,7 +354,7 @@ printf '%s\n' 'relocation_acceptance_lock_race_setup=PASS'
 fence="$(pg_sql "SELECT relocation_evidence.fence_source('$tenant');")"
 wait "$race_pid"
 race_result="$(tr -d '[:space:]' < "$race_out")"
-assert_exact "relocation_racing_acceptance_committed" "t" "$race_result"
+assert_exact "relocation_racing_acceptance_committed" "true" "$race_result"
 
 ord_race="$(pg_sql "SELECT accepted_ordinal FROM relocation_evidence.acceptance WHERE observation_id='obs-race-pre-fence';")"
 assert_exact "relocation_fence_includes_inflight_acceptance" "$ord_race" "$fence"

@@ -19,7 +19,7 @@
       "product": "PostgreSQL",
       "evaluation_version": "17.11-alpine",
       "image": "postgres@sha256:5d61573b31c206ae538c85893edeb6e320e1a9ffd838c0f9dca927fb6f765fa4",
-      "purpose": "real multi-connection transactional acceptance and physical PITR evidence"
+      "purpose": "real multi-connection transactional acceptance, owner-authority, ambiguity and physical PITR evidence"
     },
     "tier2_timescale": {
       "product": "TimescaleDB",
@@ -29,16 +29,23 @@
     }
   },
   "classification_basis": {
-    "exact_preclassification_head": "89d8f724ae76ab74a5abf8cb0ae60e8dcc8ed95d",
-    "deterministic_assurance_run_number": 1900,
-    "deterministic_assurance_run_id": 33188581043,
-    "open_rel_030_conformance_run_number": 18,
-    "open_rel_030_conformance_run_id": 33188581098,
+    "exact_preclassification_head": "c05195132a6ab701eaa9f6fad358193fbaf37e8e",
+    "deterministic_assurance_run_number": 1916,
+    "deterministic_assurance_run_id": 33189397157,
+    "open_rel_030_conformance_run_number": 26,
+    "open_rel_030_conformance_run_id": 33189397115,
     "result": "success",
-    "note": "Every classification-changing commit must rerun both gates on its own exact HEAD before review/acceptance."
+    "note": "This anchor includes the Codex P1 repairs for immutable observation content and in-transaction source authority, plus the panoramic durable poll-claim hardening. Every later classification-changing commit must rerun both gates on its own exact HEAD before review/acceptance."
   },
   "tier1_vectors": [
     "real_multi_connection_create_or_observe",
+    "immutable_observation_identity_content_mismatch_rejection",
+    "owner_controlled_active_source_generation_resolved_in_transaction",
+    "owner_controlled_active_poll_epoch_resolved_in_transaction",
+    "durable_live_poll_claim_required_for_current_candidate",
+    "retired_poll_claim_rejected",
+    "retired_source_generation_rejected_after_replacement",
+    "successor_generation_current_authority",
     "historical_outbox_first_acceptance_atomicity",
     "current_state_owner_ordering_cas",
     "repeated_current_semantic_idempotence",
@@ -108,11 +115,11 @@
     "columnstore_bytes": 655360,
     "continuous_aggregate_bytes": 163840,
     "mediated_query_rows": 57,
-    "representative_query_duration_ns": 71833455,
+    "representative_query_duration_ns": 72117137,
     "interpretation": "Mechanism-level bounded fitness evidence only. These values are not production SLOs, limits, retention settings, cardinality envelopes or sizing commitments. Production envelopes remain OPEN-REL-020 C3."
   },
   "decision_recommendation": {
-    "tier1": "accept PostgreSQL transactional acceptance/outbox/current-state pattern as OPEN-REL-030 Tier 1 mechanism after exact-head review and explicit Track B acceptance",
+    "tier1": "accept PostgreSQL transactional acceptance/outbox/current-state pattern as OPEN-REL-030 Tier 1 mechanism only with immutable canonical observation content, owner-controlled source generation/epoch and durable live poll-claim admission resolved in-transaction, after exact-head review and explicit Track B acceptance",
     "tier2": "accept TimescaleDB historical projection only under the conformed mediated shared-history profile after exact-head review and explicit Track B acceptance",
     "rejected_assumption": "do not treat RLS on a pooled raw hypertable as automatically compatible with or inherited by columnstore/continuous-aggregate surfaces",
     "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity, idempotent historical projection, watermarks/reconciliation, tenant isolation and recovery/relocation semantics"

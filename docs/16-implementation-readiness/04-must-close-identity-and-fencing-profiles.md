@@ -31,6 +31,7 @@ Requirements:
 - session identifiers rotate or are replaced at privilege/authentication boundary changes where session-fixation resistance requires it;
 - session validity is not current authorization: every protected operation re-establishes current membership/permission/tenant authority as required by accepted contracts;
 - logout/revocation/session retirement invalidates server-side session authority even if a browser cookie remains present;
+- where the identity authority itself can revoke/disable a principal or force logout independently of the BFF (an IdP-side administrative action), that revocation reaches BFF session authority within an accepted bound; the concrete propagation mechanism and bound are fixed by the applicable IdP C2 decision record, not left unbound by this profile;
 - ambient cookie possession does not replace CSRF/Origin controls from Phase 09;
 - token validation rejects wrong issuer, audience, authorized-party/client binding or expired/not-yet-valid token state according to the accepted token profile;
 - raw authorization codes/tokens/session handles are excluded from ordinary logs/telemetry.
@@ -243,6 +244,7 @@ Before an implementation slice claims conformance, tests SHALL cover:
 - privileged operation with missing/stale/insufficient MFA/step-up assurance;
 - post-step-up operation with revoked permission or tenant access;
 - browser inability to read long-lived platform credentials;
+- IdP-side administrative account disable/forced logout propagates to BFF session invalidation within the bound fixed by the applicable IdP C2 decision record;
 - `private_key_jwt` duplicate-`jti` replay, wrong-audience, expired/not-yet-valid and retired-key rejection;
 - concurrent presentation of the same otherwise valid machine assertion to different token-boundary replicas yields at most one accepted client authentication/token issuance;
 - unavailable/partitioned machine-assertion replay authority fails closed rather than issuing from unproven-unused state;

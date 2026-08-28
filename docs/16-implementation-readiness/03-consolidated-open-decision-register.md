@@ -59,7 +59,7 @@ Where a source OPEN contains subdecisions with different closure gates, this ove
 | `OPEN-EVT-024..025` | C2 | webhook egress and recovery-generation/reconciliation mechanisms |
 | `OPEN-EVT-026..028` | C3 | retention/replay/quarantine, residency and deprecation production horizons |
 
-## Phase 11 overlay — exact source rows `OPEN-REL-001..030`
+## Phase 11 overlay — exact source rows `OPEN-REL-001..031`
 
 Phase 11 already assigned a primary roadmap class. This gate preserves those classes and explicitly splits source rows whose own closure text gives different gates to mechanism vs numeric/Product subdecisions.
 
@@ -100,6 +100,8 @@ Phase 11 already assigned a primary roadmap class. This gate preserves those cla
 | `OPEN-REL-029.A` | C2 | configuration store/distribution/schema/rollout mechanism |
 | `OPEN-REL-029.B` | C3 | last-known-good/convergence numeric horizons before production |
 | `OPEN-REL-030` | C2 | customer-monitoring durable acceptance/projection mechanism; specifically blocks `impl.customer-telemetry@1` until selected and conformed |
+| `OPEN-REL-031.A` | C2 | identity/session-authority durable-store topology and ownership (control-plane-owned vs. its own tier), mechanism selection |
+| `OPEN-REL-031.B` | C3 | identity/session-authority RPO/RTO and failover numerics before production eligibility |
 
 No Phase 11 source row is implicitly covered by “all C2/C3 rows”; every ID is enumerated here.
 
@@ -173,7 +175,7 @@ For each source registry range:
 ```text
 Phase 09  OPEN-API-001..022
 Phase 10  OPEN-EVT-001..028
-Phase 11  OPEN-REL-001..030
+Phase 11  OPEN-REL-001..031
 Phase 12  OPEN-OBS-001..037
 Phase 13  OPEN-PRT-001..040
 Phase 14  OPEN-RLS-001..039

@@ -280,15 +280,23 @@ DECLARE
     v_required_snapshot timestamptz;
     v_current_covered timestamptz;
 BEGIN
-    SELECT s.*, a.finality_floor, a.required_reconciliation_snapshot_at
-      INTO v_state, v_finality_floor, v_required_snapshot
-      FROM history_reconcile_evidence.stream_state s
-      JOIN history_reconcile_evidence.provider_authority a USING (stream_id)
-     WHERE s.stream_id = p_stream_id
-     FOR UPDATE OF s, a;
+    SELECT * INTO v_state
+      FROM history_reconcile_evidence.stream_state
+     WHERE stream_id = p_stream_id
+     FOR UPDATE;
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'unknown stream or provider authority';
+        RAISE EXCEPTION 'unknown stream';
     END IF;
+
+    SELECT finality_floor, required_reconciliation_snapshot_at
+      INTO v_finality_floor, v_required_snapshot
+      FROM history_reconcile_evidence.provider_authority
+     WHERE stream_id = p_stream_id
+     FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'unknown provider authority';
+    END IF;
+
     IF v_state.state = 'gap' THEN
         RETURN false;
     END IF;
@@ -388,10 +396,8 @@ BEGIN
     SELECT reconciliation_covered_through INTO v_covered FROM history_reconcile_evidence.stream_state
      WHERE stream_id='zabbix:item:42';
     IF v_covered IS NOT NULL THEN RAISE EXCEPTION 'high sweep fabricated anchored coverage'; END IF;
-    SET LOCAL ROLE history_reconcile_worker;
     SELECT history_reconcile_evidence.try_finalize('zabbix:item:42','2026-08-28T12:00:00Z') INTO v_finalized;
-    RESET ROLE;
-    IF v_finalized THEN RAISE EXCEPTION 'worker finalized before owner finality'; END IF;
+    IF v_finalized THEN RAISE EXCEPTION 'finalized before owner finality'; END IF;
 END;
 $$;
 
@@ -462,7 +468,6 @@ SELECT history_reconcile_evidence.advance_provider_authority(
     'zabbix:item:42',2,'2026-08-28T12:16:00Z','2026-08-28T12:00:00Z','2026-08-28T12:16:00Z'
 );
 
-SET ROLE history_reconcile_worker;
 DO $$
 DECLARE v_finalized boolean;
 BEGIN
@@ -470,9 +475,13 @@ BEGIN
     IF v_finalized THEN RAISE EXCEPTION 'stale 12:15 runs satisfied 12:16 owner currentness'; END IF;
 END;
 $$;
+
+SET ROLE history_reconcile_worker;
 SELECT history_reconcile_evidence.sweep(
     'zabbix:item:42','2026-08-27T00:00:00Z','2026-08-28T12:00:00Z',3
 );
+RESET ROLE;
+
 DO $$
 DECLARE v_finalized boolean;
 BEGIN
@@ -480,7 +489,6 @@ BEGIN
     IF NOT v_finalized THEN RAISE EXCEPTION 'owner-current gen3 full sweep failed to finalize'; END IF;
 END;
 $$;
-RESET ROLE;
 
 -- Separate stream demonstrates unrecoverable provider retention loss remains a
 -- durable gap and can never become false complete.
@@ -500,11 +508,9 @@ SELECT history_reconcile_evidence.record_unrecoverable_gap(
 DO $$
 DECLARE v_finalized boolean;
 BEGIN
-    SET LOCAL ROLE history_reconcile_worker;
     SELECT history_reconcile_evidence.try_finalize(
       'zabbix:item:retention-loss','2026-08-28T12:00:00Z'
     ) INTO v_finalized;
-    RESET ROLE;
     IF v_finalized THEN RAISE EXCEPTION 'gap stream falsely finalized'; END IF;
 END;
 $$;

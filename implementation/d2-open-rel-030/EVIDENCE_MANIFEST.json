@@ -29,13 +29,14 @@
     }
   },
   "classification_basis": {
-    "exact_preclassification_head": "339bc7063d6dcc0408f1fc63aa7906f8e3883dcb",
+    "exact_empirical_head_before_reviewer_documentation": "339bc7063d6dcc0408f1fc63aa7906f8e3883dcb",
     "deterministic_assurance_run_number": 1936,
     "deterministic_assurance_run_id": 33196516141,
     "open_rel_030_conformance_run_number": 36,
     "open_rel_030_conformance_run_id": 33196516140,
     "result": "success",
-    "note": "This anchor includes immutable observation-content and owner-authority repairs, durable live poll claims, fresh-cluster Timescale restore/role reconstruction, lock-before-fence relocation ordering, and gap-free target completeness via durable count+digest+max receipt. Every later classification-changing commit must rerun both gates on its own exact HEAD before review/acceptance."
+    "final_package_gate_requirement": "The exact final package HEAD, including this manifest and reviewer documentation, must independently rerun both gates before review/acceptance.",
+    "note": "The empirical anchor includes immutable observation-content and owner-authority repairs, durable live poll claims, fresh-cluster Timescale restore/role reconstruction, lock-before-fence relocation ordering, and gap-free target completeness via durable count+digest+max receipt."
   },
   "tier1_vectors": [
     "real_multi_connection_create_or_observe",

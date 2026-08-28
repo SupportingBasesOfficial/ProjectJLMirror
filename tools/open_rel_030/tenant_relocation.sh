@@ -147,16 +147,30 @@ pg_sql "
   END;
   \$\$;
 
+  -- Every canonical field is self-delimiting: byte length + ':' + UTF-8 hex.
+  -- The hex alphabet cannot contain framing characters, and the byte length
+  -- prevents boundary ambiguity even when text contains control separators.
+  CREATE OR REPLACE FUNCTION relocation_evidence.canonical_field(p_value text)
+  RETURNS text LANGUAGE sql IMMUTABLE STRICT
+  SET search_path=pg_catalog
+  AS \$\$
+    SELECT octet_length(convert_to(p_value,'UTF8'))::text || ':' ||
+           encode(convert_to(p_value,'UTF8'),'hex')
+  \$\$;
+
   CREATE OR REPLACE FUNCTION relocation_evidence.authoritative_digest(p_tenant uuid,p_fence bigint)
   RETURNS text LANGUAGE sql STABLE
   SET search_path=pg_catalog,relocation_evidence
   AS \$\$
     SELECT encode(public.digest(convert_to(coalesce(string_agg(
-      accepted_ordinal::text || E'\\x1f' || observation_id || E'\\x1f' ||
-      metric_definition_id::text || E'\\x1f' ||
-      to_char(observed_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') || E'\\x1f' ||
-      trim_scale(numeric_value)::text,
-      E'\\x1e' ORDER BY accepted_ordinal,observation_id
+      relocation_evidence.canonical_field(accepted_ordinal::text) ||
+      relocation_evidence.canonical_field(observation_id) ||
+      relocation_evidence.canonical_field(metric_definition_id::text) ||
+      relocation_evidence.canonical_field(
+        to_char(observed_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')
+      ) ||
+      relocation_evidence.canonical_field(trim_scale(numeric_value)::text),
+      '' ORDER BY accepted_ordinal,observation_id
     ),''),'UTF8'),'sha256'),'hex')
     FROM relocation_evidence.acceptance
     WHERE tenant_id=p_tenant AND accepted_ordinal<=p_fence
@@ -274,6 +288,19 @@ pre2="$(pg_sql "SELECT relocation_evidence.accept_observation('$tenant','source'
 assert_exact "relocation_source_pre1_accept" "true" "$pre1"
 assert_exact "relocation_source_pre2_accept" "true" "$pre2"
 
+# The legacy delimiter framing is ambiguous for unrestricted text: these two
+# logical two-field groupings produce identical raw bytes. Length-prefixed hex
+# makes the field boundaries unique even with literal US/RS control bytes.
+serialization_probe="$(pg_sql "
+  SELECT (
+    ('a' || E'\\x1f' || (E'b\\x1ec')) = ((E'a\\x1fb') || E'\\x1e' || 'c')
+  )::text || '|' || (
+    relocation_evidence.canonical_field('a') || relocation_evidence.canonical_field(E'b\\x1ec') <>
+    relocation_evidence.canonical_field(E'a\\x1fb') || relocation_evidence.canonical_field('c')
+  )::text;
+")"
+assert_exact "relocation_delimiter_collision_closed" "true|true" "$serialization_probe"
+
 # ---------------------------------------------------------------------------
 # Tier 2 target-owned checkpoint/freeze authority.
 # ---------------------------------------------------------------------------
@@ -333,16 +360,29 @@ ts_sql "
   REVOKE ALL ON relocation_evidence.target_attestation_key FROM PUBLIC,ts_runtime,ts_report_a,ts_report_b,ts_automation_owner;
   REVOKE ALL ON relocation_evidence.target_history FROM PUBLIC,ts_runtime,ts_report_a,ts_report_b;
 
+  CREATE OR REPLACE FUNCTION relocation_evidence.canonical_field(p_value text)
+  RETURNS text LANGUAGE sql IMMUTABLE STRICT SECURITY DEFINER
+  SET search_path=pg_catalog
+  AS \$\$
+    SELECT octet_length(convert_to(p_value,'UTF8'))::text || ':' ||
+           encode(convert_to(p_value,'UTF8'),'hex')
+  \$\$;
+  ALTER FUNCTION relocation_evidence.canonical_field(text) OWNER TO ts_owner;
+  REVOKE ALL ON FUNCTION relocation_evidence.canonical_field(text) FROM PUBLIC;
+
   CREATE OR REPLACE FUNCTION relocation_evidence.target_digest(p_tenant uuid,p_fence bigint)
   RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path=pg_catalog,relocation_evidence
   AS \$\$
     SELECT encode(public.digest(convert_to(coalesce(string_agg(
-      accepted_ordinal::text || E'\\x1f' || observation_id || E'\\x1f' ||
-      metric_definition_id::text || E'\\x1f' ||
-      to_char(observed_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') || E'\\x1f' ||
-      trim_scale(numeric_value)::text,
-      E'\\x1e' ORDER BY accepted_ordinal,observation_id
+      relocation_evidence.canonical_field(accepted_ordinal::text) ||
+      relocation_evidence.canonical_field(observation_id) ||
+      relocation_evidence.canonical_field(metric_definition_id::text) ||
+      relocation_evidence.canonical_field(
+        to_char(observed_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')
+      ) ||
+      relocation_evidence.canonical_field(trim_scale(numeric_value)::text),
+      '' ORDER BY accepted_ordinal,observation_id
     ),''),'UTF8'),'sha256'),'hex')
     FROM relocation_evidence.target_history
     WHERE tenant_id=p_tenant AND accepted_ordinal<=p_fence
@@ -472,6 +512,12 @@ ts_sql "
   GRANT EXECUTE ON FUNCTION relocation_evidence.mark_target_checkpoint_activated(uuid,uuid) TO ts_automation_owner;
 " >/dev/null
 
+# Cross-store proof that both authorities use the same self-delimiting encoding,
+# including control bytes that previously belonged to the framing alphabet.
+pg_canonical_separator="$(pg_sql "SELECT relocation_evidence.canonical_field(E'obs\\x1fmid\\x1etail');")"
+ts_canonical_separator="$(ts_sql "SELECT relocation_evidence.canonical_field(E'obs\\x1fmid\\x1etail');")"
+assert_exact "relocation_canonical_field_cross_store" "$pg_canonical_separator" "$ts_canonical_separator"
+
 expect_ts_reject "relocation_projection_writer_cannot_read_attestation_key" "permission denied" \
   "SET ROLE ts_automation_owner; SELECT key_material FROM relocation_evidence.target_attestation_key;"
 expect_ts_reject "relocation_projection_writer_cannot_disable_freeze" "must be owner" \
@@ -542,8 +588,8 @@ assert_exact "relocation_canonical_payload_mismatch_detected" "incomplete" "$pay
 ts_sql "SET ROLE ts_automation_owner; UPDATE relocation_evidence.target_history SET observed_at='2026-08-28T10:00:00Z' WHERE tenant_id='$tenant' AND observation_id='obs-pre-1'; RESET ROLE;" >/dev/null
 
 # ---------------------------------------------------------------------------
-# New P1 negative: any target row above F before seal makes sealing fail. The
-# row cannot be silently omitted by the <=F digest and survive cutover.
+# Any target row above F before seal makes sealing fail. The row cannot be
+# silently omitted by the <=F digest and survive cutover.
 # ---------------------------------------------------------------------------
 future_ordinal=$((fence + 1))
 ts_sql "SET ROLE ts_automation_owner; INSERT INTO relocation_evidence.target_history(tenant_id,observation_id,metric_definition_id,accepted_ordinal,observed_at,numeric_value) VALUES('$tenant','obs-uncheckpointed-future','$metric',$future_ordinal,'2026-08-28T10:01:50Z',77); RESET ROLE;" >/dev/null

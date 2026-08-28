@@ -107,7 +107,7 @@ GET         /problems/{problem_id}
 GET         /health-projections
 GET         /health-projections/{resource_id}
 GET         /monitoring-sync-operations
-GET         /monitoring-sync-operations/{operation_id}
+GET         /monitoring-sync-operations/{monitoring_sync_operation_id}
 ```
 
 Metric-definition reads remain metadata-oriented. Efficient latest/current values are served from dedicated transactional `metric-current-states`; historical Tier 2 is never queried on each request to discover latest.
@@ -340,7 +340,7 @@ Monitoring dashboards may compose active-generation inventory, dedicated current
 | Monitoring-core endpoint subset (`OPEN-API-016`) | exact for this vertical | unrelated/future endpoints remain incremental | Monitoring subset contract-ready |
 | Monitoring applicable event semantics | exact logical contracts | transport/serializer/equivalence mechanism still C2 | contract-ready; implementation package still required |
 | source management API | exact | credential binding/secret mechanism still C2 | contract-ready, mechanism selection where used |
-| replacement candidate/cutover | exact semantics incl. validation currentness | secret freshness representation + numeric horizon remain evidence/mechanism dependent | contract-ready |
+| replacement candidate/cutover | exact semantics incl. validation currentness | secret freshness representation + numeric horizon remain evidence/mechanism dependent | **PROPOSED mechanism — pending ADR-021**, not treated as contract-ready until `adr/ADR-021-monitoring-source-instance-replacement.md` is accepted |
 | generation lifecycle/currentness | exact semantics | storage/query mechanism replaceable | contract-ready |
 | configured-scope handling | exact revision/currentness semantics | batch/concurrency numerics C3 | contract-ready |
 | Zabbix trust + normalization | exact | provider production numerics C3 | provider-contract-ready |
@@ -527,7 +527,8 @@ Exact-final-HEAD review must prove:
 32. Monitoring-core endpoint contracts satisfy incremental `OPEN-API-016` responsibility without pretending unrelated families are closed;
 33. `OPEN-REL-030` remains open and TimescaleDB remains non-canonical;
 34. no Waves 0–3 implementation substrate changes;
-35. exact final HEAD has P0/P1/P2=0 and no unresolved review thread.
+35. exact final HEAD has P0/P1/P2=0 and no unresolved review thread;
+36. the "replacement candidate/cutover" readiness-matrix row is not promoted to `contract-ready` until `adr/ADR-021-monitoring-source-instance-replacement.md` is accepted.
 
 A clean Track A gate still requires separate explicit user merge authorization.
 

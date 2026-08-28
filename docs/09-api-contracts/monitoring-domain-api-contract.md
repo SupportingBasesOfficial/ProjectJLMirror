@@ -86,6 +86,8 @@ Timestamps use accepted UTC Phase 09 representation. Provider event time remains
 
 Provider-native IDs/metadata are optional bounded protected external evidence and never replace canonical IDs.
 
+`source_instance_generation`, `active_source_instance_generation` and `candidate_generation` are opaque, high-entropy tokens compared only for equality. Clients and servers MUST NOT compare them for magnitude/ordering or infer recency from their value, consistent with this platform's existing `session_generation` convention (`src/jlmirror_authority/session.py`).
+
 ## Generation-state response semantics
 
 Every generation-scoped resource/metric/problem/health/current-state representation exposes:
@@ -193,15 +195,10 @@ monitoring.replacement_candidate_invalid
 monitoring.replacement_candidate_not_ready
 monitoring.replacement_validation_stale
 monitoring.replacement_reconciliation_required
-monitoring.scope_reconciliation_required
-monitoring.source_visibility_degraded
 monitoring.history_window_required
-monitoring.history_incomplete
-monitoring.history_gap
-monitoring.reconciliation_required
 ```
 
-No raw provider exception/credential/internal topology is exposed. Provider omission/outage cannot turn a previously known resource into 404/removed/resolved by itself.
+Provider/scope/history incompleteness, degraded visibility and unreconciled state are represented through response-level `evidence_state`/`scope_evidence_state`/`completeness.state` fields on the affected resource, not as distinct error classes — an incomplete or stale projection is still a successful read of currently known evidence, not a failed request. No raw provider exception/credential/internal topology is exposed. Provider omission/outage cannot turn a previously known resource into 404/removed/resolved by itself.
 
 ## Mutation idempotency + precondition ordering
 
@@ -371,6 +368,8 @@ New-key executor validates `If-Match`; missing -> `428`, mismatch -> `412`. Same
 
 ## `monitoring.replaceSourceInstance` — create candidate
 
+> **PROPOSED — pending ADR-021.**
+
 ```text
 POST /api/v1/tenants/{tenant_id}/monitoring-sources/{monitoring_source_id}:replace-instance
 action          monitoring.source.manage
@@ -411,6 +410,8 @@ Validation failure leaves healthy active generation in place and records safe fa
 
 ## `monitoring.activateReplacementCandidate` — atomic cutover
 
+> **PROPOSED — pending ADR-021.**
+
 ```text
 POST /api/v1/tenants/{tenant_id}/monitoring-sources/{monitoring_source_id}/replacement-candidates/{candidate_generation}:activate
 action          monitoring.source.manage
@@ -440,7 +441,7 @@ The active-generation pointer change immediately makes all old generation-scoped
 
 `202 Accepted` returns successor sync operation + updated source link.
 
-If cutover outcome is ambiguous across crash/PITR/relocation, further protected/effectful replacement admission is `reconciliation_required` until active-generation/fence/audit/idempotency/operation authorities prove the winner. There is never more than one active generation. Restored/expired validation state without current evidence cannot authorize cutover.
+If cutover outcome is ambiguous across crash/PITR/relocation, further protected/effectful replacement admission returns `409 monitoring.replacement_reconciliation_required` until active-generation/fence/audit/idempotency/operation authorities prove the winner. There is never more than one active generation. Restored/expired validation state without current evidence cannot authorize cutover.
 
 ---
 
@@ -498,12 +499,14 @@ Each item contains metadata only:
 {
   "metric_definition_id": "opaque",
   "monitoring_resource_id": "opaque",
+  "monitoring_source_id": "opaque",
   "source_instance_generation": "opaque",
   "generation_state": "active_generation|historical_generation",
   "name": "...",
   "value_kind": "number|integer|boolean|string|text|log",
   "unit": "nullable",
   "scope_state": "in_scope|out_of_scope",
+  "scope_projection_revision": "opaque",
   "scope_evidence_state": "current|reconciliation_required",
   "definition_state": "active|retired"
 }
@@ -702,7 +705,7 @@ Resource ID is projection identity. Response includes derived `generation_state`
 GET /api/v1/tenants/{tenant_id}/monitoring-sync-operations
 action        monitoring.sync.read
 cache         no_store
-pagination    created_at DESC, operation_id ASC
+pagination    created_at DESC, monitoring_sync_operation_id ASC
 ```
 
 Filters: source ID, source/candidate generation, common operation state, trigger class, cursor, limit.

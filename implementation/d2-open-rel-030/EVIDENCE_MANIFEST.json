@@ -19,7 +19,7 @@
       "product": "PostgreSQL",
       "evaluation_version": "17.11-alpine",
       "image": "postgres@sha256:5d61573b31c206ae538c85893edeb6e320e1a9ffd838c0f9dca927fb6f765fa4",
-      "purpose": "real multi-connection transactional acceptance, owner-authority, ambiguity, physical PITR and relocation-fence evidence"
+      "purpose": "real multi-connection transactional acceptance, owner-authority, ambiguity, history reconciliation, physical PITR and relocation-fence evidence"
     },
     "tier2_timescale": {
       "product": "TimescaleDB",
@@ -29,14 +29,14 @@
     }
   },
   "classification_basis": {
-    "exact_empirical_head_before_reviewer_documentation": "339bc7063d6dcc0408f1fc63aa7906f8e3883dcb",
-    "deterministic_assurance_run_number": 1936,
-    "deterministic_assurance_run_id": 33196516141,
-    "open_rel_030_conformance_run_number": 36,
-    "open_rel_030_conformance_run_id": 33196516140,
+    "exact_empirical_head_before_reviewer_documentation": "81c34cee1cb55104cc1e1a2235748b466a4e2853",
+    "deterministic_assurance_run_number": 1948,
+    "deterministic_assurance_run_id": 33197124252,
+    "open_rel_030_conformance_run_number": 42,
+    "open_rel_030_conformance_run_id": 33197124383,
     "result": "success",
     "final_package_gate_requirement": "The exact final package HEAD, including this manifest and reviewer documentation, must independently rerun both gates before review/acceptance.",
-    "note": "The empirical anchor includes immutable observation-content and owner-authority repairs, durable live poll claims, fresh-cluster Timescale restore/role reconstruction, lock-before-fence relocation ordering, and gap-free target completeness via durable count+digest+max receipt."
+    "note": "The empirical anchor includes immutable observation-content and owner-authority repairs, durable live poll claims, contiguous/current late-history reconciliation from the supported history floor, fresh-cluster Timescale restore/role reconstruction, lock-before-fence relocation ordering, and gap-free target completeness via durable count+digest+max receipt."
   },
   "tier1_vectors": [
     "real_multi_connection_create_or_observe",
@@ -61,6 +61,10 @@
     "client_ack_ambiguity_after_commit",
     "physical_pitr_rf_reconciliation",
     "zabbix_poll_epoch_restore_relocation_continuity",
+    "late_history_high_only_sweep_cannot_finalize",
+    "late_history_disjoint_sweeps_cannot_finalize",
+    "late_history_contiguous_coverage_anchored_at_supported_floor",
+    "late_history_reconciliation_snapshot_currentness_required",
     "late_history_gap_watermark_reconciliation",
     "relocation_fence_locks_authority_before_deriving_f",
     "relocation_inflight_acceptance_is_included_in_f"
@@ -102,6 +106,16 @@
     "capacity_query_fitness_same_security_profile"
   ],
   "mandatory_vectors_not_yet_claimed_complete": [],
+  "late_history_evidence": {
+    "coverage_anchor": "supported_history_floor",
+    "coverage_semantics": "only overlapping/touching reconciliation windows form continuous coverage; a later disjoint window cannot jump an unswept interval",
+    "high_only_negative_vector": "11:55..12:00 sweep left anchored reconciliation coverage NULL and could not finalize",
+    "disjoint_negative_vector": "supported_history_floor..10:00 plus 11:55..12:00 left contiguous coverage at 10:00 even though max(window_to)=12:00; finalization rejected",
+    "bridge_vector": "10:00..12:00 sweep closed the gap, recovered the delayed 10:30 observation and established contiguous coverage through 12:00",
+    "snapshot_currentness_negative_vector": "finalization requiring reconciliation snapshot >=12:16 was rejected when covering sweeps were only current through 12:15",
+    "accepted_final_coverage": "2026-08-27T00:00:00Z..2026-08-28T12:00:00Z",
+    "unrecoverable_retention_loss": "explicit durable gap; never false complete"
+  },
   "fresh_restore_evidence": {
     "restore_topology": "new_timescale_container_and_new_postgresql_cluster",
     "jlmirror_roles_before_bootstrap": 0,
@@ -147,18 +161,20 @@
     "columnstore_bytes": 655360,
     "continuous_aggregate_bytes": 163840,
     "mediated_query_rows": 57,
-    "representative_query_duration_ns": 71613050,
+    "representative_query_duration_ns": 66737135,
     "interpretation": "Mechanism-level bounded fitness evidence only. These values are not production SLOs, limits, retention settings, cardinality envelopes or sizing commitments. Production envelopes remain OPEN-REL-020 C3."
   },
   "decision_recommendation": {
-    "tier1": "accept PostgreSQL transactional acceptance/outbox/current-state pattern as OPEN-REL-030 Tier 1 mechanism only with immutable canonical observation content, owner-controlled source generation/epoch, durable live poll-claim admission resolved in-transaction, and lock-before-F relocation fencing, after exact-head review and explicit Track B acceptance",
+    "tier1": "accept PostgreSQL transactional acceptance/outbox/current-state pattern as OPEN-REL-030 Tier 1 mechanism only with immutable canonical observation content, owner-controlled source generation/epoch, durable live poll-claim admission resolved in-transaction, contiguous/current reconciliation coverage anchored at the supported history floor, and lock-before-F relocation fencing, after exact-head review and explicit Track B acceptance",
     "tier2": "accept TimescaleDB historical projection only under the conformed mediated shared-history profile, including fresh-cluster restore role reconstruction and count+digest+max relocation completeness receipts, after exact-head review and explicit Track B acceptance",
     "rejected_assumptions": [
       "do not treat RLS on a pooled raw hypertable as automatically compatible with or inherited by columnstore/continuous-aggregate surfaces",
       "do not treat same-cluster database restore as evidence that cluster-global role topology can be safely reconstructed",
       "do not derive relocation F before acquiring the authority lock that excludes later source acceptance",
-      "do not treat max(target_ordinal)=F as proof that every authoritative observation through F exists on the target"
+      "do not treat max(target_ordinal)=F as proof that every authoritative observation through F exists on the target",
+      "do not treat max(reconciliation window_to) as proof of contiguous history coverage from supported_history_floor",
+      "do not reuse reconciliation windows older than the snapshot currentness required by finalization"
     ],
-    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity, idempotent historical projection, complete-set reconciliation receipts, tenant isolation and recovery/relocation semantics"
+    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity, idempotent historical projection, contiguous/current reconciliation evidence, complete-set relocation receipts, tenant isolation and recovery/relocation semantics"
   }
 }

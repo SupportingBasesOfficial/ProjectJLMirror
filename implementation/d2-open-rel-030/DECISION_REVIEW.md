@@ -5,117 +5,97 @@
 **Canonical spike base:** `main@5f031ae4bacc0c441eeee16f9c67d272e39d6b0b`  
 **Current disposition:** evidence complete; recommendation ready for exact-HEAD review; not yet accepted  
 **Production authority:** none  
+**Track B acceptance authorization:** not granted  
 **Wave 4 implementation authorization:** not granted
 
 ## Recommendation
 
 Subject to exact-final-HEAD review and explicit Track B acceptance:
 
-1. select the ADR-008 PostgreSQL transactional acceptance pattern as Tier 1 only with **immutable canonical observation content**, **owner-controlled active source generation and poll epoch resolved inside the acceptance transaction**, and an exact **durable live poll claim** for current-state candidacy;
-2. select TimescaleDB as Tier 2 historical projection **only under the mediated shared-history security profile proven by this spike**;
-3. explicitly reject a design that assumes pooled PostgreSQL RLS can be combined directly with or automatically inherited by Timescale columnstore/continuous-aggregate surfaces;
-4. preserve `OPEN-REL-020` as owner of production telemetry buffer/loss/checkpoint/retention/cardinality/cost and other capacity numerics;
-5. treat pinned PostgreSQL/Timescale versions and image digests as reproducible evidence dependencies, not production version selections;
-6. preserve the telemetry projection seam and require any future Tier 2 replacement to re-prove identity, idempotency, isolation, recovery and relocation semantics.
+1. select the ADR-008 PostgreSQL transactional acceptance pattern as Tier 1 only with **immutable canonical observation content**, **owner-controlled active source generation and poll epoch resolved inside the acceptance transaction**, an exact **durable live poll claim**, and **lock-before-`F` relocation fencing**;
+2. select TimescaleDB as Tier 2 historical projection **only under the mediated shared-history security profile proven by this spike**, including fresh-cluster role reconstruction and complete-set relocation receipts;
+3. reject direct pooled RLS assumptions for Timescale columnstore/continuous-aggregate surfaces on the evaluated profile;
+4. reject same-cluster database restore as sufficient proof of cluster-global role-topology recovery;
+5. reject `max(target_ordinal)=F` as proof of target completeness;
+6. preserve `OPEN-REL-020` as owner of production telemetry buffer/loss/checkpoint/retention/cardinality/cost and other production capacity numerics;
+7. treat pinned PostgreSQL/Timescale versions and image digests as reproducible evidence dependencies, not production version selections;
+8. preserve the telemetry projection seam and require any future Tier 2 replacement to re-prove identity, idempotency, complete-set reconciliation, isolation, recovery and relocation semantics.
 
-## Exact successful evidence anchor before this classification mutation
+## Exact empirical anchor before this classification mutation
 
-The hardened empirical package ran on:
+The hardened evidence package ran on:
 
 ```text
 HEAD
-c05195132a6ab701eaa9f6fad358193fbaf37e8e
+339bc7063d6dcc0408f1fc63aa7906f8e3883dcb
 
 JLMIRROR Deterministic Assurance
-run #1916
-run id 33189397157
+run #1936
+run id 33196516141
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #26
-run id 33189397115
+run #36
+run id 33196516140
 SUCCESS
 ```
 
-This anchor includes the two real Codex P1 repairs from the earlier review plus the panoramic poll-claim hardening. Classification/documentation commits after that SHA must rerun both gates on their own exact HEAD. The anchor above is provenance, not permission to reuse a green result across changed commits.
+The conformance run includes baseline plus ambiguity, recovery, physical PITR, Timescale background jobs, **fresh-cluster restore and role reconstruction**, post-restore attacks, relocation fence concurrency, deliberate gap-at-`F` rejection and final complete-set cutover.
+
+Any classification/documentation commit after that SHA must rerun both gates on its own exact HEAD. This anchor is provenance, not permission to reuse a green result across changed commits.
 
 ## Tier 1 classification — conformant under owner-controlled authority profile
 
 The real PostgreSQL harness established:
 
 - atomic create-or-observe under 24 independent database sessions with exactly one logical acceptance winner;
-- immutable canonical observation identity/content: reuse of the same `(tenant_id, observation_identity_scope, observation_id)` with conflicting source, metric, source generation, timestamp or value is rejected instead of being treated as an ordinary duplicate;
-- current-source authority is not caller-asserted: `active_source_instance_generation` and active poll epoch are read from and locked against owner-controlled database state inside the acceptance transaction;
-- current-state candidacy additionally requires the exact durable `(tenant, source, generation, poll_epoch, poll_generation)` claim to exist in `live` state;
-- fabricated/missing poll claims are rejected;
-- retired poll claims are rejected;
-- after source replacement, an old generation cannot regain current authority merely because an old poll claim still exists;
-- only a successor generation admitted under the successor epoch/claim may advance current state;
+- immutable canonical observation identity/content: conflicting source, metric, source generation, timestamp or value under the same canonical identity is rejected before current-state effects;
+- active source generation and poll epoch are read from owner-controlled database state inside the transaction, not asserted by the caller;
+- current candidacy additionally requires the exact durable poll claim in `live` state;
+- fabricated/missing claims, retired claims and predecessor-generation authority after replacement are rejected;
+- only the admitted successor generation/epoch/claim can advance current state;
 - first-acceptance historical outbox atomicity;
-- current-state compare-and-set under owner ordering authority;
-- repeated-current semantic idempotence;
-- historical-first/current-later independence;
-- provider event time not acting as current-state authority;
-- stale ordering not regressing current state;
-- rollback after injected failures around observation/history-intent/current-CAS/transition-signal stages;
-- durable backlog responsibility while Tier 2 is absent;
-- post-COMMIT client ambiguity converging under retry without duplicate observation/history/signal effects while revalidating the same durable source/poll authority;
-- Zabbix-style poll epoch/generation recovery fencing;
-- late-history reconciliation and explicit durable `gap` rather than false completeness;
-- physical PostgreSQL PITR to a committed `R`, with surviving external `F` evidence, fail-closed restored admission, `(R,F]` continuity reconciliation and successor epoch/placement admission without blindly replaying post-`R` business state;
-- tenant relocation source fencing, target activation only after projection watermark reaches `F`, and stale-source rejection.
+- repeated-current semantic idempotence and history-first/current-later independence;
+- provider event time cannot become current-state authority;
+- crash rollback around observation, history intent, current CAS and transition signal stages;
+- Tier 2 outage backlog remains durable rather than falsely acknowledged as projected;
+- post-COMMIT client ambiguity converges under retry without duplicate observation/history/signal effects;
+- late history either reconciles or leaves explicit durable gap evidence;
+- physical PostgreSQL PITR restores exactly to committed `R`, remains fail-closed, consumes surviving `(R,F]` evidence and admits successor authority without replaying the rollback-subject post-`R` business mutation.
 
-The concurrency run explicitly reported:
+The concurrency oracle reports `authority=owner_source_plus_live_poll_claim` and the ambiguity vector converges to one durable observation, one historical obligation and one semantic signal.
 
-```text
-tier1_concurrency=PASS
-workers=24
-newly_accepted=1
-ordering_advanced=1
-semantic_transition=1
-authority=owner_source_plus_live_poll_claim
-```
+## Physical PITR evidence
 
-The ambiguity vector likewise converged to `1|1|1` durable observation/history/signal state under `owner_source_plus_live_poll_claim`.
-
-### Physical PITR evidence
-
-The successful physical PITR vector proved that `R` and `F` are distinct durable transaction/WAL boundaries:
+The physical PITR vector proves distinct durable transaction/WAL boundaries:
 
 ```text
 R committed state      state_at_R | epoch 5 | generation 10
 F committed state      post_R_business_change | generation 11 | continuity receipt present
 R restore point LSN    0/40020B8
 F restore point LSN    0/40022A0
-archived WAL files     6
 ```
 
-The restored database contained exactly the state at `R` and no post-`R` continuity receipt. It remained non-authoritative until surviving `(R,F]` evidence was reconciled, after which it carried successor epoch/placement authority while rollback-subject business state stayed at `R`.
+The restored database contains exactly the state at `R`, no post-`R` continuity receipt, and remains non-authoritative until surviving `(R,F]` evidence is reconciled. After reconciliation it receives successor epoch/placement authority while rollback-subject business state remains at `R`.
 
 ## Tier 2 classification — conformant only under mediated profile
-
-### Rejected feature combinations
 
 Against TimescaleDB 2.29.2 / PostgreSQL 17.11:
 
 ```text
 direct pooled RLS + columnstore
   -> SQLSTATE 0A000
-  -> "columnstore cannot be used on table with row security"
+  -> columnstore cannot be used on table with row security
 
 direct pooled RLS + continuous aggregate
   -> SQLSTATE 0A000
-  -> "cannot create continuous aggregate on hypertable with row security"
+  -> cannot create continuous aggregate on hypertable with row security
 ```
 
-These are evidence outcomes, not failures to bypass. The direct pooled feature-bearing profile is ineligible on the evaluated candidate profile.
-
-### Accepted-for-review mediated shape
-
-The surviving candidate profile uses:
+Those direct feature-bearing profiles are ineligible on the evaluated candidate. The surviving shape is:
 
 ```text
-shared historical hypertable / columnstore / continuous aggregate
+shared history / columnstore / continuous aggregate
         |
         | no direct tenant-facing privilege
         v
@@ -124,90 +104,131 @@ hardened mediated reader
         +-- tenant binding outside caller-writable SQL state
         +-- SECURITY DEFINER
         +-- fixed search_path = pg_catalog, ts_evidence
-        +-- separate owner trust classes
+        +-- NOLOGIN mediation owner
+        +-- separate least-privilege automation owner
         v
 tenant-facing/reporting principal
 ```
 
-Owner split:
+Owner classes:
 
-- `ts_owner`: NOLOGIN mediation/mapping owner, no SUPERUSER/CREATEDB/CREATEROLE/INHERIT/BYPASSRLS;
-- `ts_automation_owner`: LOGIN because Timescale requires the owner of job-bearing objects to be login-capable, but no password assigned and no SUPERUSER/CREATEDB/CREATEROLE/INHERIT/BYPASSRLS;
+- `ts_owner`: NOLOGIN mediation/mapping/function owner; no SUPERUSER/CREATEDB/CREATEROLE/INHERIT/BYPASSRLS;
+- `ts_automation_owner`: LOGIN only because Timescale background jobs require a login-capable owner; no password assigned and no SUPERUSER/CREATEDB/CREATEROLE/INHERIT/BYPASSRLS;
 - `ts_runtime`, `ts_report_a`, `ts_report_b`: no membership in either owner role.
 
-The harness attacks direct raw/CAGG/materialization reads, caller-controlled tenant GUCs, `SET ROLE` to both owners, session authorization, owner-membership grants, direct privilege grants, BYPASSRLS escalation and `search_path` shadowing. The same attack class repeats after Timescale background jobs, after logical restore, and after a restored background job executes.
+The attack matrix covers raw/CAGG/internal materialization reads, caller-writable tenant GUCs, `SET ROLE` to both owners/runtime, session authorization, owner-membership grants, direct privilege grants, BYPASSRLS escalation and `search_path` shadowing.
 
-No cross-tenant row leak was observed in the accepted-for-review profile.
+## Fresh-cluster Timescale restore evidence
 
-## Timescale jobs and restore evidence
-
-The tested shared profile produced and executed:
+The final restore test no longer restores to a second database inside the source PostgreSQL cluster. It creates a genuinely new Timescale/PostgreSQL container and first proves:
 
 ```text
-job 1000  policy_compression                  owner ts_automation_owner
-job 1001  policy_refresh_continuous_aggregate owner ts_automation_owner
+JLMirror ts_* roles before bootstrap     0
+JLMirror roles after minimum bootstrap   5
 ```
 
-Both foreground `run_job()` executions passed. Logical `pg_dump`/`pg_restore` using Timescale pre/post-restore procedures preserved:
-
-- PostgreSQL/Timescale versions for the evidence environment;
-- 100,004 / 100,004 historical rows;
-- both background jobs;
-- owner trust classes;
-- mediated tenant binding;
-- denial of tenant-facing access to raw/CAGG/internal materialization.
-
-## Tier 1 <-> Tier 2 relocation evidence
-
-The cross-store relocation vector established:
+Only then are the minimum role classes reconstructed and the source database restored with Timescale pre/post-restore procedures. The fresh cluster proves:
 
 ```text
-source accepted pre-cutover observations      2
-fence F                                        2
-source acceptance after fence                  rejected
-target activation below F                      rejected
-target activation at F                         accepted
-target post-cutover observation                accepted
-stale source after target activation            rejected
-authoritative accepted observations            3
-target historical observations                 3
-target distinct observation identities          3
-retired-source post-cutover projection rows     0
-final authority                                 target / placement version 2
+restored historical rows                 100004 / 100004
+restored background jobs                 2
+job owner                                ts_automation_owner
+shared_history owner                     ts_automation_owner
+shared_hourly owner                      ts_automation_owner
+report_principal_tenant owner            ts_owner
+read_hourly() owner                      ts_owner
+automation-owner password credential     absent
+runtime/report membership in owners      0
 ```
 
-The target historical projection was not allowed to become authoritative before reaching the Tier 1 fence watermark, and tenant-facing direct access to internal relocation history remained denied.
+The full isolation/escalation matrix is repeated **after the fresh restore** and again **after a restored background job executes**. No tenant-crossing or privilege-escalation path succeeded.
+
+## Tier 1 ↔ Tier 2 relocation evidence
+
+### Fence ordering
+
+The final source fence locks the tenant placement authority before deriving `F`.
+
+The concurrency falsifier starts a source acceptance that acquires the placement lock and then sleeps. The test waits until PostgreSQL reports that exact `PgSleep`, then concurrently requests the fence. The fence cannot overtake the already-authoritative acceptance; it waits, the acceptance commits, and the committed ordinal becomes part of `F`.
+
+Empirical result:
+
+```text
+relocation_acceptance_lock_race_setup          PASS
+relocation_racing_acceptance_committed         PASS
+relocation_fence_includes_inflight_acceptance  PASS
+F                                              3
+```
+
+After the fence, source acceptance is rejected.
+
+### Complete-set target admission
+
+Target authority no longer accepts a caller-provided projection watermark. A durable `projection_receipt` is bound to the frozen source set through `F` and records:
+
+- authoritative count;
+- ordered canonical identity digest;
+- target count;
+- target digest;
+- target maximum ordinal.
+
+The negative vector copies **only the highest ordinal** to the target. Therefore `max(target)=F` is true while lower authoritative rows are absent. The result is intentionally:
+
+```text
+relocation_incomplete_target_still_reaches_F   PASS
+relocation_gap_receipt_detected                 incomplete
+relocation_target_cannot_activate_with_gap_at_F false / rejected
+```
+
+After all authoritative rows through `F` are projected, count + digest + max match, the durable receipt becomes `complete`, and only then may target activation occur.
+
+Final result:
+
+```text
+complete receipt                       complete|3|3|3
+target activation                      accepted only after complete receipt
+post-cutover target acceptance         accepted
+total authoritative observations       4
+target historical observations         4
+target distinct identities             4
+stale source post-cutover               rejected
+retired-source post-cutover projection 0
+final authority                        active|target|2|3
+```
+
+Tenant-facing direct access to the relocation history remains denied.
 
 ## Bounded capacity classification
 
-The spike measured the **same security profile**, not a privileged bypass profile:
+The same accepted-for-review mediated security profile was exercised with:
 
 ```text
-historical rows                 100,004
-rowstore relation bytes         11,886,592
-columnstore relation bytes         655,360
-continuous aggregate bytes         163,840
-mediated query returned rows            57
-representative query duration    72,117,137 ns
+historical rows                 100004
+rowstore relation bytes         11886592
+columnstore relation bytes        655360
+continuous aggregate bytes        163840
+mediated query returned rows           57
+representative query duration    71613050 ns
 ```
 
-One small chunk emitted a poor-compression-ratio warning (32 KiB before, 40 KiB after), retained as tuning evidence rather than hidden.
+A small chunk emitted a poor-compression-ratio warning, retained as tuning evidence rather than hidden.
 
-These measurements demonstrate bounded mechanism/query fitness sufficient for C2 selection review. They do **not** establish a production throughput target, latency SLO, retention horizon, supported cardinality, chunk interval, compression schedule, aggregate refresh schedule, cost envelope, loss budget, checkpoint horizon or fleet topology. Those remain `OPEN-REL-020` C3 / production-capacity work.
+These measurements demonstrate bounded C2 mechanism/query fitness only. They do **not** establish production throughput, latency SLO, retention, supported cardinality, chunk interval, compression schedule, aggregate refresh schedule, cost envelope, loss budget, checkpoint horizon or fleet topology. Those remain `OPEN-REL-020` C3.
 
 ## Findings discovered and closed by the spike
 
-The evidence program falsified and corrected seven material assumptions/harness defects:
+The program falsified and corrected ten material assumptions/harness defects:
 
-1. **Readiness transport mismatch** — readiness checked a Unix socket while tenant-facing probes used TCP. The harness now requires the same TCP path to become stably ready.
-2. **Timescale background-owner requirement** — job-bearing hypertables require a LOGIN-capable owner. The design split `ts_owner` from narrowly privileged `ts_automation_owner` and attacks the new escalation surface.
-3. **RLS feature incompatibility** — direct RLS plus columnstore/CAGG is not supported on the evaluated Timescale profile. The candidate changed to an explicitly mediated shared-history profile rather than weakening tenant isolation.
-4. **PITR transaction-boundary error** — a restore point emitted before the surrounding mutation commits restores the earlier state. Final PITR makes `R` and `F` committed and independently observed before creating restore points.
-5. **Codex P1 — conflicting observation content** — create-or-observe previously treated conflicting content under an existing canonical identity as an ordinary duplicate. The final oracle locks/reads the canonical observation and rejects any immutable-content mismatch before current-state effects.
-6. **Codex P1 — caller-asserted active source generation** — the initial oracle accepted an `active_source_instance_generation` argument from the caller. The final oracle removes that argument and resolves/locks active source generation and epoch from owner-controlled state inside the transaction.
-7. **Panoramic authority extension — poll claim currentness** — fixing generation authority exposed the same class for poll ordering. The final oracle additionally requires an exact durable live poll claim and rejects missing, retired or predecessor-generation claims.
-
-The final profile therefore survived both the original planned falsification matrix and the review findings that invalidated earlier assumptions.
+1. **Readiness transport mismatch** — Unix-socket readiness did not prove the TCP path used by tenant-facing probes; readiness now uses the same TCP path.
+2. **Timescale background-owner requirement** — job-bearing objects require a login-capable owner; `ts_owner` and narrowly privileged `ts_automation_owner` were separated.
+3. **RLS feature incompatibility** — direct RLS + columnstore/CAGG is unsupported on the evaluated Timescale profile; the design moved to mediated shared history instead of weakening isolation.
+4. **PITR transaction-boundary error** — a restore point emitted before the surrounding mutation commits does not contain that mutation; `R`/`F` now commit before their restore points.
+5. **Codex P1 — conflicting observation content** — existing canonical identity with different content was formerly treated as duplicate; immutable content is now compared and mismatch rejected.
+6. **Codex P1 — caller-asserted active source generation** — caller input could self-assert current authority; owner source/epoch are now resolved and locked in-transaction.
+7. **Panoramic poll-authority extension** — the same trust flaw existed for poll ordering; an exact durable live poll claim is now mandatory.
+8. **Native Assurance — same-cluster restore false assurance** — restoring to another database inside the same cluster preserved global roles and could not prove role reconstruction; restore now uses a new cluster with zero pre-existing JLMirror roles.
+9. **Codex P1 — fence derived before authority lock** — relocation could omit an in-flight accepted row from `F`; the fence now locks placement before deriving `F`, with a real concurrent race test.
+10. **Codex P1 — max-only target completeness** — `max(target)=F` could hide internal gaps; cutover now requires a durable count + ordered identity digest + max receipt and includes an explicit gap-at-`F` negative vector.
 
 ## What acceptance would and would not mean
 
@@ -231,7 +252,7 @@ Acceptance would **not**:
 - authorize deployment or production data authority;
 - authorize unrelated Monitoring, Alerting, ITSM, realtime, webhook or broker capabilities;
 - allow tenant-facing direct access to shared Timescale feature-bearing relations;
-- permit future Timescale upgrades/config changes to bypass compatibility/security revalidation.
+- permit future Timescale upgrades/config changes to bypass compatibility/security/recovery revalidation.
 
 ## Review disposition
 

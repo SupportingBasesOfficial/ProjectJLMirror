@@ -57,9 +57,17 @@ jobs:
           assert manifest['class'] == 'C2_bounded_spike'
           assert manifest['production_authority'] == 'none'
           assert manifest['product_feature_activation'] == 'none'
+          assert manifest['wave4_implementation_authorization'] == 'not_granted'
+          assert manifest['evidence_state'] == 'complete_ready_for_decision_review'
           assert manifest['closure_claim'] is False
-          assert manifest['mandatory_vectors_not_yet_claimed_complete']
-          print('evidence_manifest_guard=PASS')
+          assert manifest['acceptance_authorization'] == 'not_granted'
+          assert manifest['production_versions_selected'] is False
+          assert manifest['production_capacity_numerics_selected'] is False
+          assert manifest['production_capacity_owner'] == 'OPEN-REL-020'
+          assert len(manifest['completed_mandatory_vectors']) == 8
+          assert manifest['mandatory_vectors_not_yet_claimed_complete'] == []
+          assert manifest['tier2_profile_classification']['mediated_shared_history_columnstore_cagg'] == 'conformant_candidate_recommended_for_c2_acceptance'
+          print('evidence_manifest_guard=PASS state=complete_ready_for_decision_review acceptance=not_granted')
           PY
 
       - name: Run initial real PostgreSQL and Timescale falsification

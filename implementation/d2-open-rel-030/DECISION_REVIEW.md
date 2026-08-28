@@ -21,28 +21,29 @@ Subject to exact-final-HEAD review and explicit Track B acceptance:
 7. require genuine fresh-cluster reconstruction of database-global role topology;
 8. require source relocation placement authority to be locked before deriving `F`;
 9. require target-owned authenticated sealed canonical-payload checkpoints before target activation;
-10. reject any target data above `F` before activation unless it is excluded by the target lifecycle: seal fails if such data already exists, sealed state rejects all DML, and activated state permits only new append above `F` while existing history remains immutable;
-11. preserve `OPEN-REL-020` as owner of production capacity/SLO/retention/cardinality/cost numerics;
-12. treat database versions, image digests and evidence crypto as reproducibility dependencies, not automatic production selections.
+10. require source and target to hash the same **deterministic, versioned, self-delimiting/unambiguous canonical byte representation** of every immutable accepted payload field; delimiter-framed unrestricted text is rejected;
+11. reject any target data above `F` before activation unless it is excluded by the target lifecycle: seal fails if such data already exists, sealed state rejects all DML, and activated state permits only new append above `F` while existing history remains immutable;
+12. preserve `OPEN-REL-020` as owner of production capacity/SLO/retention/cardinality/cost numerics;
+13. treat database versions, image digests, evidence crypto and the concrete evidence encoding as reproducibility dependencies; production may choose equivalent mechanisms only if the accepted authority/integrity/unambiguous-serialization semantics are preserved and revalidated.
 
 ## Exact empirical anchor before this review-document mutation
 
 ```text
 HEAD
-f205fe823f9f7635ffb27debb2a2d980fe8cc35f
+cbd433f09a7568048a45b75cd9abb6760b5687d8
 
 JLMIRROR Deterministic Assurance
-run #1990
-run id 33202904143
+run #2000
+run id 33206933772
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #63
-run id 33202904081
+run #68
+run id 33206933620
 SUCCESS
 ```
 
-This SHA proves the executable mechanism after the latest three P1 repairs. It becomes provenance after this document mutation; the exact final package HEAD must rerun both gates.
+This SHA proves the executable mechanism after the P1 authority/recovery/relocation repairs and the P2 canonical-framing repair. It becomes provenance after this document mutation; the exact final package HEAD must rerun both gates.
 
 ## Tier 1 acceptance authority
 
@@ -211,17 +212,59 @@ Empirical boundary:
 F = 3
 ```
 
+### Canonical target representation
+
+#### Former weakness
+
+The previous digest serialized rows using `0x1f` as a field separator and `0x1e` as a row separator while `observation_id` remained unrestricted `text`. Therefore the hash function itself could be strong while its input representation remained ambiguous: an ID containing those control bytes could move apparent framing boundaries and make different logical tuples produce the same pre-hash byte stream.
+
+This is a **serialization collision**, not a SHA-256 collision.
+
+#### Current mechanism
+
+Both Tier 1 and Tier 2 now serialize every canonical field as:
+
+```text
+<UTF-8 byte length in decimal>:<lowercase UTF-8 hex>
+```
+
+The current evidence observation profile serializes, in deterministic row order:
+
+1. accepted ordinal;
+2. observation ID;
+3. metric definition ID;
+4. UTC `observed_at` normalized to microsecond precision;
+5. normalized numeric value.
+
+Because each field is self-delimiting and the encoded payload alphabet cannot impersonate framing, unrestricted text cannot alter field boundaries. Rows are concatenated only after every component has its own boundary.
+
+The #68 negative probe demonstrates both sides of the class:
+
+```text
+relocation_delimiter_collision_closed=PASS value=true|true
+```
+
+The first `true` proves two distinct logical groupings can produce identical legacy delimiter-framed bytes. The second proves their self-delimiting canonical encodings are different.
+
+A second probe sends text containing literal `0x1f` and `0x1e` through both stores and proves identical canonical field output:
+
+```text
+relocation_canonical_field_cross_store=PASS
+```
+
+Future accepted Monitoring payload kinds must preserve a deterministic, **versioned, injective or equivalently unambiguous** canonical serialization for every immutable accepted field before any digest/attestation. Hashing an ambiguous representation is explicitly rejected.
+
 ### Canonical target checkpoint
 
 The target checkpoint is owned by the target-side NOLOGIN authority and measures the actual target state. It binds:
 
 - count;
 - maximum ordinal;
-- deterministic SHA-256 over ordered canonical immutable payload represented by this evidence profile.
+- deterministic SHA-256 over the ordered self-delimiting canonical immutable payload represented by this evidence profile.
 
 The checkpoint is domain-separated HMAC-SHA-256 authenticated. Tier 1 verifies the attestation and recomputes its frozen authoritative digest before activation.
 
-Negative vectors include internal gaps at `F`, canonical-payload mismatch and fabricated checkpoint facts.
+Negative vectors include internal gaps at `F`, canonical-payload mismatch, ambiguous-framing regression and fabricated checkpoint facts.
 
 ### Former `>F` weakness
 
@@ -259,14 +302,16 @@ The executable matrix proves:
 
 This closes the uncheckpointed post-fence target-row P1.
 
-## Recovery, crypto and trust boundaries
+## Recovery, crypto and representation boundaries
 
 The evidence uses HMAC-SHA-256 for two distinct bounded mechanisms:
 
 1. target checkpoint attestation;
 2. surviving external PITR recovery grant.
 
-These are evidence mechanisms used to demonstrate independently held integrity/freshness authority. They do **not** select production key provider, KMS/HSM/TEE topology, key provisioning or rotation. Production must preserve equivalent-or-stronger semantics under separately accepted security/platform architecture.
+It uses UTF-8 byte-length + lowercase hex as the bounded canonical-field encoding for the relocation evidence profile.
+
+These are evidence mechanisms used to demonstrate independently held integrity/freshness authority and unambiguous representation. They do **not** select production key provider, KMS/HSM/TEE topology, key provisioning/rotation, or require this exact textual encoding if another accepted representation proves equivalent-or-stronger deterministic/versioned/injective semantics. Production must preserve those semantics under separately accepted security/platform architecture.
 
 ## Capacity classification
 
@@ -278,7 +323,6 @@ rowstore relation bytes         11886592
 columnstore relation bytes        655360
 continuous aggregate bytes        163840
 mediated query returned rows           57
-representative query duration    74558370 ns
 ```
 
 This is bounded mechanism-fitness evidence only, not production sizing/SLO evidence. `OPEN-REL-020` remains owner of production capacity numerics.
@@ -305,7 +349,8 @@ The evidence program has materially corrected the following classes:
 16. Timescale LOGIN automation owner trust class needed explicit production admission boundary;
 17. PITR restored authority could self-mint its recovery receipt;
 18. history worker could self-assert provider finality/currentness;
-19. target could carry uncheckpointed `>F` history through cutover.
+19. target could carry uncheckpointed `>F` history through cutover;
+20. delimiter-framed unrestricted text made canonical relocation serialization ambiguous before hashing.
 
 Each material finding triggered a class-level/panoramic repair, not a line-only patch.
 
@@ -326,16 +371,17 @@ Acceptance would not:
 - make PostgreSQL 17.11 or TimescaleDB 2.29.2 immutable production pins;
 - choose production KMS/HSM/secret topology;
 - choose production database authentication/network topology;
+- require the exact evidence text encoding if another implementation proves the same versioned unambiguous canonical semantics;
 - close `OPEN-REL-020` capacity numerics;
 - authorize product implementation, deployment or production authority;
 - permit direct tenant access to shared Timescale feature-bearing relations;
-- permit future upgrades/topology changes to inherit this conformance without relevant revalidation.
+- permit future upgrades/topology/serialization changes to inherit this conformance without relevant revalidation.
 
 ## Review disposition
 
 ```text
 Evidence completeness        COMPLETE
-Executable empirical anchor  f205fe823f9f7635ffb27debb2a2d980fe8cc35f / #1990 / #63
+Executable empirical anchor  cbd433f09a7568048a45b75cd9abb6760b5687d8 / #2000 / #68
 Final documentation HEAD     REQUIRES FRESH EXACT-HEAD CI
 Codex final review           REQUIRED
 Native Assurance             REQUIRED

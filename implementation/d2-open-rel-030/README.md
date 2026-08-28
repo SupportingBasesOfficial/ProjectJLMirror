@@ -1,28 +1,31 @@
 # D2 — OPEN-REL-030 Monitoring Conformance Evidence
 
-**Status:** experimental C2 bounded-spike harness; no production authority  
+**Status:** evidence complete — ready for exact-HEAD decision review; no production authority  
 **Canonical base:** `main@5f031ae4bacc0c441eeee16f9c67d272e39d6b0b`  
 **Branch:** `evidence/open-rel-030-monitoring-conformance`  
-**Decision under test:** `docs/11-reliability-resilience/OPEN-REL-030-decision-record.md`
+**Decision under test:** `docs/11-reliability-resilience/OPEN-REL-030-decision-record.md`  
+**Track B acceptance:** not granted  
+**Wave 4 implementation authorization:** not granted
 
 ## Purpose
 
-This package supplies reproducible, falsifiable evidence for the two physical-mechanism questions left open by `OPEN-REL-030` without implementing the Monitoring product vertical:
+This package supplies reproducible, falsifiable evidence for the physical-mechanism questions left open by `OPEN-REL-030` without implementing the Monitoring product vertical:
 
-1. **Tier 1:** prove the selected PostgreSQL transactional durable-acceptance pattern against real concurrent database sessions rather than the Wave 2 in-process reference ledgers;
+1. **Tier 1:** prove the selected PostgreSQL transactional durable-acceptance pattern against real concurrent database sessions and recovery/relocation faults;
 2. **Tier 2:** attack the TimescaleDB candidate under JLMIRROR's accepted tenant-isolation model and identify which concrete feature profiles are eligible or ineligible.
 
-The package is an evidence laboratory only. It creates ephemeral databases, runs assertions, emits logs/results, and exits. It has no credentials, production connectivity, product API, long-lived state or mutation authority over the repository.
+The package is an evidence laboratory only. It creates ephemeral databases, runs assertions, emits logs/results, and exits. It has no production connectivity, product API, long-lived production state or product mutation authority.
 
 ## Non-negotiable boundaries
 
 - Product/domain/API/event semantics remain unchanged.
 - Current Monitoring state remains a Tier 1 responsibility.
-- TimescaleDB remains a **candidate**, not canonical, until the complete required matrix is green and the decision record is separately updated/reviewed/accepted.
+- TimescaleDB remains a **candidate recommendation**, not canonical, until exact-final-HEAD review is clean and Track B is explicitly accepted.
 - A single demonstrated cross-tenant row leak fails the candidate profile under test.
-- A failed or unsupported Timescale feature combination is evidence, not something the harness may hide with `continue-on-error`.
+- A failed or unsupported Timescale feature combination is evidence, not something the harness may hide.
 - Provider event time is metadata, never the Tier 1 current-state ordering authority.
-- `READY_FOR_MERGE != AUTHORIZED_TO_MERGE` continues to apply to every PR carrying this evidence.
+- `OPEN-REL-020` remains the owner of production telemetry capacity/numeric envelopes.
+- `READY_FOR_MERGE != AUTHORIZED_TO_MERGE` continues to apply.
 
 ## Reproducibility profile
 
@@ -30,10 +33,10 @@ The CI harness uses immutable container-image index digests and records the data
 
 Evaluation images are deliberately **evidence dependencies**, not production stack selections:
 
-- PostgreSQL 17.11 Alpine — Tier 1 real-database semantics;
-- TimescaleDB 2.29.2 on PostgreSQL 17 — Tier 2 candidate evaluation.
+- PostgreSQL 17.11 Alpine — Tier 1 real-database semantics, ambiguity, PITR and relocation;
+- TimescaleDB 2.29.2 on PostgreSQL 17 — Tier 2 isolation, jobs, fresh-cluster restore, relocation and bounded capacity evaluation.
 
-Changing either image is a new evidence run and does not silently inherit a previous conclusion.
+Changing either image requires new evidence and does not silently inherit a previous conclusion.
 
 ## Evidence layout
 
@@ -42,62 +45,101 @@ implementation/d2-open-rel-030/
   README.md
   STATE.md
   EVIDENCE_MANIFEST.json
+  DECISION_REVIEW.md
 sql/d2-open-rel-030/
   001_tier1_acceptance.sql
   002_tier1_assertions.sql
+  003_tier1_recovery_authority.sql
+  004_history_reconciliation.sql
   010_timescale_candidate.sql
+  011_timescale_jobs_capacity.sql
+  012_timescale_restore_role_bootstrap.sql
 tools/open_rel_030/
   tier1_concurrency.py
+  tier1_commit_ambiguity.sh
+  physical_pitr.sh
+  timescale_jobs_restore.sh
+  tenant_relocation.sh
   run_conformance.sh
+  run_conformance_extended.sh
 .github/workflows/
   open-rel-030-conformance.yml
 ```
 
-## Tier 1 coverage in this harness
+## Tier 1 coverage
 
-The first executable slice proves or falsifies:
+The final executable package proves or falsifies:
 
 - atomic create-or-observe under independent PostgreSQL connections;
-- exactly one durable historical-projection obligation per first accepted canonical observation;
-- current-state compare-and-set by owner ordering token, never `observed_at`;
-- repeated-current semantic idempotence while allowing the ordering fence to advance;
-- an already-accepted historical observation remaining eligible to become current later;
-- stale/out-of-order candidates not regressing current state;
-- transaction rollback at injected crash points around observation, history intent, current-state CAS and transition signal;
-- durable backlog accumulation while Tier 2 is absent.
+- immutable canonical observation content under stable identity;
+- exactly one durable historical-projection obligation per first accepted observation;
+- active source generation and poll epoch resolved from owner-controlled state inside the transaction;
+- exact durable `live` poll claim required for current-state candidacy;
+- current-state compare-and-set by owner ordering authority, never provider event time;
+- repeated-current semantic idempotence;
+- history-first/current-later independence;
+- stale/predecessor source authority rejection;
+- transaction rollback across injected crash points;
+- durable Tier 2-down backlog responsibility;
+- post-COMMIT ambiguity/retry convergence;
+- physical PostgreSQL PITR to a committed `R` with surviving `(R,F]` reconciliation;
+- late-history reconciliation or explicit durable gap state;
+- relocation source fencing that locks authority before deriving `F`.
 
-This deliberately closes the real-multi-connection hole recorded in `implementation/wave-2/KNOWN_DEFERRED_ITEMS.md`; it does **not** retroactively turn Wave 2 reference models into a production runtime.
+## Tier 2 classification
 
-## Tier 2 profiles under test
+### Rejected direct pooled feature profiles
 
-### Profile A — direct pooled hypertable with RLS
+On the evaluated Timescale profile:
 
-The harness proves ordinary rowstore RLS behavior for a normal trusted application runtime and then probes the Timescale feature combinations that make the candidate attractive.
+- direct pooled `RLS + columnstore` is rejected with SQLSTATE `0A000`;
+- direct pooled `RLS + continuous aggregate` is rejected with SQLSTATE `0A000`.
 
-Current Timescale documentation states that columnstore chunks do not support RLS, and continuous-aggregate guidance excludes RLS-enabled source hypertables. The harness therefore treats direct pooled `RLS + columnstore` and direct pooled `RLS + continuous aggregate` as capability probes that must be proven rather than assumed.
+These are capability outcomes, not bypassable test failures.
 
-### Profile B — mediated aggregate/query surface
+### Conformant candidate — mediated shared history
 
-If a shared Timescale object cannot itself preserve the accepted RLS boundary, the only eligible pooled alternative in this spike is a separately hardened mediated surface where tenant-facing reporting principals:
+The surviving candidate profile requires:
 
-- have no direct privilege on the raw hypertable, continuous aggregate or internal materialization;
-- are tenant-bound outside caller-writable SQL state;
-- cannot `SET ROLE` into an owner/bypass role;
-- cannot use `SET`, `set_config`, `search_path` or helper shadowing to change tenant authority;
-- can execute only a narrowly scoped `SECURITY DEFINER` reader with fixed safe `search_path` and explicit tenant binding.
+- no direct tenant-facing privilege on shared raw history, continuous aggregates or internal materialization;
+- tenant binding outside caller-writable SQL state;
+- hardened `SECURITY DEFINER` reader with fixed safe `search_path`;
+- `ts_owner` as NOLOGIN mediation/mapping/function owner;
+- separate least-privilege LOGIN `ts_automation_owner` for Timescale background-job ownership, with no password credential or elevated role attributes;
+- no runtime/reporting membership in either owner;
+- repeated direct-read, role, membership, tenant-crossing, `SET`/`set_config`, session-authorization, BYPASSRLS and search-path attacks.
 
-Passing this profile would establish only that the **mediation class** is technically viable for the pinned candidate version. It would not yet settle production topology, capacity numerics, operational ownership or whether JLMIRROR should choose that complexity over another telemetry store.
+## Fresh-cluster restore
 
-## Still required before OPEN-REL-030 can close
+Restore evidence uses a **new PostgreSQL/Timescale cluster**, not another database in the source cluster.
 
-This initial executable harness is intentionally staged. The final D2 gate still requires the full `OPEN-REL-030` evidence set, including:
+The test proves zero JLMirror `ts_*` roles exist first, reconstructs exactly the minimum evidence role topology, restores the source database, verifies object/function/job ownership, verifies the automation owner still has no password credential, and repeats the full attack matrix after restore and again after a restored background job runs.
 
-- client-ack ambiguity/replay around commit;
-- PITR / restore fence `R,F]` evidence;
-- Zabbix poll-epoch continuity across recovery and relocation;
-- explicit late-history gap/watermark reconciliation;
-- relocation with one authoritative Tier 1 path and reconciled Tier 2 watermark;
-- Timescale background-job, migration/restore and role-change attack matrix;
-- capacity/query evidence under the exact same security profile used for isolation.
+This prevents inherited source-cluster `pg_authid`/`pg_auth_members` state from masquerading as restore correctness.
 
-Until those are present, `STATE.md` must remain `OPEN / PARTIAL EVIDENCE` and `OPEN-REL-030` must remain unclosed.
+## Relocation completeness
+
+Relocation uses two independent protections:
+
+1. source placement authority is locked before `F` is derived, so an acceptance already holding the source-authority lock completes first and is included in `F`;
+2. target cutover requires a durable complete-set receipt over authoritative count + ordered observation-identity digest + target count + target digest + target maximum ordinal.
+
+A negative vector deliberately makes `max(target)=F` while lower authoritative rows are missing. The receipt remains `incomplete` and activation is rejected. `max=F` is explicitly not accepted as completeness evidence.
+
+## Capacity boundary
+
+The same mediated security profile is exercised with 100,004 historical rows, columnstore conversion, continuous aggregate, background policies, fresh-cluster restore and a mediated query path.
+
+Those measurements are bounded C2 mechanism-fitness evidence only. Production throughput, retention, cardinality, buffer/loss/checkpoint, cost, chunk/compression/refresh schedules, SLOs and topology remain `OPEN-REL-020` C3.
+
+## Governance state
+
+Every mandatory D2 vector is represented in the reproducible package, but evidence completion does not accept the decision.
+
+The authoritative classification/recommendation lives in:
+
+- `EVIDENCE_MANIFEST.json`
+- `STATE.md`
+- `DECISION_REVIEW.md`
+
+Every classification-changing commit must rerun both exact-HEAD gates before review or acceptance. Only a later explicit Track B acceptance can make `OPEN-REL-030` selected/conformed, and Wave 4 product implementation still requires a separate explicit authorization after that.

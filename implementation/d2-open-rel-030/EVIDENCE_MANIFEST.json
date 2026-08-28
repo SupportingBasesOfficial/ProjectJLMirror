@@ -29,14 +29,14 @@
     }
   },
   "classification_basis": {
-    "exact_empirical_head_before_reviewer_documentation": "f205fe823f9f7635ffb27debb2a2d980fe8cc35f",
-    "deterministic_assurance_run_number": 1990,
-    "deterministic_assurance_run_id": 33202904143,
-    "open_rel_030_conformance_run_number": 63,
-    "open_rel_030_conformance_run_id": 33202904081,
+    "exact_empirical_head_before_reviewer_documentation": "cbd433f09a7568048a45b75cd9abb6760b5687d8",
+    "deterministic_assurance_run_number": 2000,
+    "deterministic_assurance_run_id": 33206933772,
+    "open_rel_030_conformance_run_number": 68,
+    "open_rel_030_conformance_run_id": 33206933620,
     "result": "success",
     "final_package_gate_requirement": "The exact final package HEAD, including reviewer documentation, must independently rerun both gates before review or acceptance.",
-    "note": "The executable anchor proves owner-controlled source/poll authority; owner-derived history finality/currentness; surviving external authenticated PITR recovery grants; genuine fresh-cluster Timescale reconstruction; lock-before-F source fencing; target-owned authenticated sealed checkpoints; canonical-payload equivalence; no uncheckpointed pre-activation target history; and seal-vs-DML serialization."
+    "note": "The executable anchor proves owner-controlled source/poll authority; owner-derived history finality/currentness; surviving external authenticated PITR recovery grants; genuine fresh-cluster Timescale reconstruction; lock-before-F source fencing; target-owned authenticated sealed checkpoints; unambiguous self-delimiting canonical-payload equivalence; no uncheckpointed pre-activation target history; and seal-vs-DML serialization."
   },
   "review_provenance": {
     "codex_material_findings_closed_by_current_mechanism": [
@@ -49,7 +49,8 @@
       "relocation fingerprint must include immutable canonical payload",
       "PITR admission must consume authenticated surviving (R,F] evidence rather than a locally self-minted receipt",
       "history finality/currentness must be derived from durable owner/provider authority rather than worker-supplied timestamps",
-      "target rows above F before activation must be rejected or included in checkpoint authority"
+      "target rows above F before activation must be rejected or included in checkpoint authority",
+      "canonical relocation serialization must be self-delimiting so unrestricted text cannot collide with field or row framing"
     ],
     "native_assurance_panorama_extensions": [
       "durable live poll claim required for current-state candidacy",
@@ -91,6 +92,7 @@
     "pitr_surviving_external_authenticated_grant_required",
     "relocation_fence_locks_authority_before_deriving_f",
     "relocation_inflight_acceptance_is_included_in_f",
+    "relocation_self_delimiting_canonical_serialization",
     "relocation_target_checkpoint_hmac_verification",
     "relocation_source_and_target_sha256_canonical_payload_equivalence"
   ],
@@ -117,6 +119,8 @@
     "fresh_cluster_post_restore_job_attack_matrix",
     "tenant_relocation_max_f_with_internal_gap_rejected",
     "tenant_relocation_canonical_payload_mismatch_rejected",
+    "tenant_relocation_delimiter_collision_rejected",
+    "tenant_relocation_canonical_field_cross_store_equivalence",
     "tenant_relocation_target_checkpoint_target_owned",
     "tenant_relocation_projection_writer_cannot_read_attestation_key",
     "tenant_relocation_projection_writer_cannot_disable_freeze",
@@ -193,7 +197,19 @@
     "source_inflight_acceptance_race": "acceptance holding placement lock commits before fence and is included in F",
     "fence_ordinal": 3,
     "max_only_completeness": "explicitly_rejected",
-    "canonical_payload_fingerprint": "SHA-256 over ordered accepted_ordinal, observation_id, metric_definition_id, normalized UTC observed_at and normalized numeric_value for the evidence observation profile",
+    "canonical_payload_fields": [
+      "accepted_ordinal",
+      "observation_id",
+      "metric_definition_id",
+      "normalized_UTC_observed_at_microseconds",
+      "normalized_numeric_value"
+    ],
+    "canonical_field_encoding": "UTF-8 byte length in decimal + ':' + lowercase UTF-8 hex",
+    "canonical_serialization": "ordered rows; every field self-delimiting; row concatenation uses no delimiter as an authority boundary",
+    "delimiter_framing_with_unrestricted_text": "explicitly_rejected",
+    "delimiter_collision_negative": "legacy US/RS framing can produce identical pre-hash bytes for different logical field boundaries; self-delimiting encoding produces distinct bytes",
+    "cross_store_encoding": "PostgreSQL and Timescale produce identical canonical_field output even for observation text containing literal 0x1f/0x1e control bytes",
+    "canonical_payload_fingerprint": "SHA-256 over the deterministic self-delimiting canonical serialization of the evidence observation profile",
     "target_checkpoint_owner": "NOLOGIN ts_owner",
     "projection_writer": "ts_automation_owner with projection DML but without checkpoint/key ownership or freeze-disable authority",
     "checkpoint_attestation": "domain-separated HMAC-SHA-256 over target-owned checkpoint facts",
@@ -211,6 +227,7 @@
   "crypto_evidence_boundary": {
     "checkpoint_sha256_and_hmac_sha256": "bounded evidence mechanisms; not production KMS/HSM/secret topology selection",
     "recovery_grant_hmac_sha256": "bounded evidence mechanism proving restored authority cannot derive its own recovery grant from restored state",
+    "canonical_encoding": "bounded evidence representation using UTF-8 byte-length plus hex framing; production/future payload contracts must preserve deterministic, versioned, injective or equivalently unambiguous serialization for every immutable accepted field",
     "production_key_provider_selected": false,
     "production_key_rotation_selected": false,
     "production_requirement": "accepted implementation must preserve equivalent or stronger independently trustworthy checkpoint and recovery-grant authority under the separately accepted security/platform key-management architecture"
@@ -250,19 +267,20 @@
     "interpretation": "Mechanism-level bounded fitness evidence only. Production SLOs, retention, cardinality, sizing, cost and topology remain OPEN-REL-020 C3."
   },
   "decision_recommendation": {
-    "tier1": "accept PostgreSQL Tier 1 mechanism only with immutable canonical observation content, owner-controlled source/poll authority, durable live poll claims, owner-derived provider finality/currentness, contiguous reconciliation, authenticated surviving recovery grants after PITR, lock-before-F relocation fencing and verification of target-owned sealed canonical-payload checkpoints",
-    "tier2": "accept TimescaleDB historical projection only under the mediated shared-history profile, privileged automation-owner admission boundary, genuine fresh-cluster role reconstruction, complete target checkpoint equivalence, rejection of any uncheckpointed target data before activation, and immutable pre-F target history after cutover",
+    "tier1": "accept PostgreSQL Tier 1 mechanism only with immutable canonical observation content, owner-controlled source/poll authority, durable live poll claims, owner-derived provider finality/currentness, contiguous reconciliation, authenticated surviving recovery grants after PITR, lock-before-F relocation fencing and verification of target-owned sealed checkpoints over an unambiguous deterministic canonical payload serialization",
+    "tier2": "accept TimescaleDB historical projection only under the mediated shared-history profile, privileged automation-owner admission boundary, genuine fresh-cluster role reconstruction, complete target checkpoint equivalence, rejection of any uncheckpointed target data before activation, immutable pre-F target history after cutover, and the same versioned unambiguous canonical payload serialization at both sides of the projection seam",
     "rejected_assumptions": [
       "caller or worker supplied timestamps are not provider finality/currentness authority",
       "a locally recreated post-R receipt is not surviving (R,F] recovery authority",
       "max(target_ordinal)=F is not target completeness",
       "target count/digest/max supplied by caller are not current target authority",
       "identity-only digests are not canonical payload equivalence",
+      "delimiter-framed concatenation of unrestricted text is not an unambiguous canonical serialization",
       "target rows above F may not exist invisibly before activation",
       "PASSWORD NULL on a LOGIN role is not NOLOGIN or production connection-admission proof",
       "same-cluster restore is not fresh role-topology recovery evidence",
       "max(reconciliation window_to) is not contiguous history completeness"
     ],
-    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity/payload, idempotent projection, owner-derived currentness, externally surviving recovery authority, target checkpoint/freeze semantics, privileged-infrastructure boundaries, tenant isolation and relocation/recovery semantics"
+    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity/payload, deterministic versioned unambiguous serialization, idempotent projection, owner-derived currentness, externally surviving recovery authority, target checkpoint/freeze semantics, privileged-infrastructure boundaries, tenant isolation and relocation/recovery semantics"
   }
 }

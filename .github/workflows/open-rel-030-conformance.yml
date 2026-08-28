@@ -1,0 +1,62 @@
+name: JLMIRROR OPEN-REL-030 Conformance
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  open-rel-030-conformance:
+    name: OPEN-REL-030 bounded C2 evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
+
+      - name: Validate evidence harness structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tools/open_rel_030/run_conformance.sh
+          python3 -m py_compile tools/open_rel_030/tier1_concurrency.py
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('implementation/d2-open-rel-030/EVIDENCE_MANIFEST.json').read_text())
+          assert manifest['decision'] == 'OPEN-REL-030'
+          assert manifest['class'] == 'C2_bounded_spike'
+          assert manifest['production_authority'] == 'none'
+          assert manifest['product_feature_activation'] == 'none'
+          assert manifest['closure_claim'] is False
+          assert manifest['mandatory_vectors_not_yet_claimed_complete']
+          print('evidence_manifest_guard=PASS')
+          PY
+
+      - name: Run real PostgreSQL and Timescale falsification
+        shell: bash
+        run: bash tools/open_rel_030/run_conformance.sh

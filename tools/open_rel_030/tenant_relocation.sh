@@ -499,9 +499,6 @@ ts_sql "
     v_new_f bigint;
   BEGIN
     IF TG_OP = 'UPDATE' THEN
-      -- Lock both authority scopes in deterministic order. This prevents a
-      -- cross-tenant UPDATE from moving a protected pre-F row out of a sealed
-      -- tenant while also avoiding lock-order inversions across tenants.
       PERFORM tenant_id
         FROM relocation_evidence.target_control
        WHERE tenant_id IN (OLD.tenant_id, NEW.tenant_id)
@@ -583,12 +580,10 @@ ts_sql "
     v_max bigint;
     v_attestation text;
   BEGIN
-    -- Serializes against every target-history DML transaction via the trigger's
-    -- FOR SHARE lock. The digest is calculated only after this lock is won.
-    SELECT phase,checkpoint_generation
+    SELECT tc.phase,tc.checkpoint_generation
       INTO v_phase,v_generation
-      FROM relocation_evidence.target_control
-     WHERE tenant_id=p_tenant
+      FROM relocation_evidence.target_control AS tc
+     WHERE tc.tenant_id=p_tenant
      FOR UPDATE;
 
     IF NOT FOUND THEN
@@ -690,7 +685,6 @@ ts_sql "
   RESET ROLE;
 " >/dev/null
 
-# Source acceptance already holding authority must be included in F.
 set +e
 docker exec -e PGPASSWORD="$password" "$pg_container" \
   psql -X -v ON_ERROR_STOP=1 -U postgres -d jlmirror -Atq -c \
@@ -744,8 +738,6 @@ assert_exact "relocation_source_blocked_after_fence" "false" "$stale_during_fenc
 premature_no_receipt="$(pg_sql "SELECT relocation_evidence.activate_target('$tenant')::text;")"
 assert_exact "relocation_target_cannot_activate_without_receipt" "false" "$premature_no_receipt"
 
-# max(target)=F with missing lower rows remains incomplete even with an authentic
-# target-side measurement because it is unsealed and its SHA-256 set differs.
 ts_sql "
   SET ROLE ts_automation_owner;
   INSERT INTO relocation_evidence.target_history
@@ -782,7 +774,6 @@ ts_sql "
   RESET ROLE;
 " >/dev/null
 
-# Exact identities/ordinals but wrong canonical payload must not compare equal.
 ts_sql "
   SET ROLE ts_automation_owner;
   UPDATE relocation_evidence.target_history
@@ -810,9 +801,6 @@ ts_sql "
   RESET ROLE;
 " >/dev/null
 
-# Final seal race. The seal takes target_control FOR UPDATE and sleeps. A target
-# mutation starting afterward must block on the trigger's FOR SHARE, then reject
-# after the seal commits and exposes phase=sealed.
 set +e
 docker exec -e PGPASSWORD="$password" "$ts_container" \
   psql -X -v ON_ERROR_STOP=1 -U postgres -d jlmirror -Atq -c \
@@ -877,7 +865,6 @@ if [[ $seal_mutation_rc -eq 0 || "$seal_mutation_result" != *"sealed target chec
 fi
 printf '%s\n' 'relocation_target_seal_rejects_concurrent_mutation=PASS'
 
-# Changing any field while replaying a genuine HMAC must fail verification.
 expect_pg_reject \
   "relocation_fabricated_target_attestation_rejected" \
   "invalid target checkpoint attestation" \

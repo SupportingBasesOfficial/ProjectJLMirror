@@ -5,7 +5,7 @@
 **Wave 4 implementation authorization:** not granted  
 **Track B acceptance authorization:** not granted  
 **Tier 1 recommendation:** PostgreSQL transactional acceptance/outbox/current-state mechanism only with immutable canonical observation content + owner-controlled source generation/poll epoch + durable live poll claim resolved in-transaction + contiguous/current reconciliation coverage anchored at the supported history floor + lock-before-`F` relocation fencing + verification of a target-owned authenticated sealed canonical-payload checkpoint — conformed; recommended for C2 acceptance  
-**Tier 2 recommendation:** TimescaleDB historical projection only under the conformed mediated shared-history profile, including fresh-cluster role reconstruction and target-owned authenticated sealed relocation checkpoints — recommended for C2 acceptance  
+**Tier 2 recommendation:** TimescaleDB historical projection only under the conformed mediated shared-history profile, including fresh-cluster role reconstruction, explicit privileged-infrastructure treatment of `ts_automation_owner`, deployment admission isolation for that LOGIN owner, and target-owned authenticated sealed relocation checkpoints — recommended for C2 acceptance  
 **Production versions/numerics:** not selected; production telemetry envelopes remain `OPEN-REL-020` C3
 
 ## Gate state
@@ -30,6 +30,7 @@ D2 bounded evidence harness
         +-- Tier 2 isolation / escalation matrix             COMPLETE
         +-- Timescale fresh-cluster restore / roles          COMPLETE
         +-- restored Timescale jobs + attack matrix          COMPLETE
+        +-- privileged automation-owner trust boundary       EXPLICIT
         +-- bounded capacity under safe profile               COMPLETE FOR C2
         |
         v
@@ -38,6 +39,7 @@ C2 decision recommendation                                  READY FOR EXACT-HEAD
         +-- production capacity numerics                      STILL OPEN / OPEN-REL-020 C3
         +-- production version pinning                         NOT SELECTED
         +-- production key/KMS topology                        NOT SELECTED HERE
+        +-- production DB authentication/admission topology    DEPLOYMENT INVARIANT / NOT CLAIMED BY SPIKE
         +-- Wave 4 implementation authorization                NOT GRANTED
         |
         v
@@ -167,10 +169,15 @@ The surviving Tier 2 candidate is the **mediated shared-history profile**:
 - tenant binding is not selected by caller-writable SQL state;
 - the read boundary is hardened `SECURITY DEFINER` with fixed `search_path`;
 - `ts_owner` is a NOLOGIN mediation/mapping/checkpoint owner;
-- `ts_automation_owner` has LOGIN only where required by the evaluated Timescale automation shape, with no password, SUPERUSER, CREATEROLE or BYPASSRLS and no tenant-facing/runtime membership;
+- `ts_automation_owner` is a LOGIN **cross-tenant privileged infrastructure principal** where required by the evaluated Timescale automation shape; it has no password credential, SUPERUSER, CREATEROLE or BYPASSRLS and no tenant-facing/runtime membership;
+- `PASSWORD NULL` is not equivalent to `NOLOGIN` and is not treated as proof that the role cannot authenticate;
+- production database connection/authentication admission — including `pg_hba`, local socket/peer/trust behavior, network exposure and role-assumption paths — must prevent tenant/application principals from authenticating as or assuming `ts_automation_owner`;
+- assigning an application-usable credential, widening database admission, adding tenant/application membership, or otherwise exposing that owner invalidates this conformed profile until fresh security review/evidence;
 - escalation, direct-read and tenant-crossing attacks are repeated after background jobs, after restore into a genuinely fresh PostgreSQL/Timescale cluster, and after a restored background job executes.
 
 The fresh restore proves the source cluster's global role state is absent first (`0` JLMirror roles), reconstructs exactly the five minimum evidence roles, restores `100004/100004` history rows and both Timescale jobs, verifies object/function/job ownership, then re-runs the complete isolation/escalation matrix. A same-cluster database restore is not sufficient role-topology evidence.
+
+The spike proves the **database privilege/ownership shape** and the absence of a password credential in its ephemeral profile. It does not claim to prove production `pg_hba`/socket/network admission topology; that topology is a deployment invariant required to instantiate the accepted profile safely.
 
 ## C2 versus C3 capacity boundary
 

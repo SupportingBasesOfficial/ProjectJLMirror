@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "evidence_id": "open-rel-030-monitoring-conformance/v1",
+  "decision": "OPEN-REL-030",
+  "class": "C2_bounded_spike",
+  "canonical_base_sha": "5f031ae4bacc0c441eeee16f9c67d272e39d6b0b",
+  "production_authority": "none",
+  "product_feature_activation": "none",
+  "dependencies_are_production_selections": false,
+  "database_images": {
+    "tier1_postgresql": {
+      "product": "PostgreSQL",
+      "evaluation_version": "17.11-alpine",
+      "image": "postgres@sha256:5d61573b31c206ae538c85893edeb6e320e1a9ffd838c0f9dca927fb6f765fa4",
+      "purpose": "real multi-connection transactional acceptance evidence"
+    },
+    "tier2_timescale": {
+      "product": "TimescaleDB",
+      "evaluation_version": "2.29.2-pg17",
+      "image": "timescale/timescaledb@sha256:bc8527e62f70f0766b29515077965025872fabb5349db421565f69ee273baf2d",
+      "purpose": "candidate tenant-isolation and feature-profile falsification"
+    }
+  },
+  "tier1_vectors": [
+    "real_multi_connection_create_or_observe",
+    "historical_outbox_first_acceptance_atomicity",
+    "current_state_owner_ordering_cas",
+    "repeated_current_semantic_idempotence",
+    "history_first_current_later_independence",
+    "event_time_non_authority",
+    "stale_ordering_non_regression",
+    "crash_after_observation_rollback",
+    "crash_after_history_intent_rollback",
+    "crash_after_current_cas_rollback",
+    "crash_after_transition_signal_rollback",
+    "tier2_absent_backlog_durability"
+  ],
+  "tier2_vectors": [
+    "raw_hypertable_rls_tenant_a_vs_b",
+    "runtime_role_no_bypassrls",
+    "columnstore_with_rls_capability_probe",
+    "continuous_aggregate_with_rls_capability_probe",
+    "mediated_surface_no_direct_raw_access",
+    "mediated_surface_no_direct_aggregate_access",
+    "tenant_bound_reporting_identity",
+    "set_and_set_config_attack",
+    "set_role_attack",
+    "search_path_helper_shadow_attack",
+    "security_definer_fixed_search_path"
+  ],
+  "mandatory_vectors_not_yet_claimed_complete": [
+    "client_ack_ambiguity_after_commit",
+    "pitr_restore_rf_reconciliation",
+    "zabbix_poll_epoch_restore_relocation_continuity",
+    "late_history_gap_watermark_reconciliation",
+    "tenant_relocation_tier1_tier2_continuity",
+    "timescale_background_job_attack_matrix",
+    "timescale_migration_restore_role_change_matrix",
+    "capacity_query_fitness_same_security_profile"
+  ],
+  "closure_claim": false
+}

@@ -18,6 +18,7 @@ This document follows the decision-quality checklist from `docs/00-foundation/de
 - ADR-017: security-authority unavailability fails closed unless a separately documented durable/local verification path remains valid.
 - IR-D-001: logout/revocation/session retirement invalidates server-side BFF session authority even if a browser cookie remains present.
 - Back-channel identity resolution SHALL NOT trust raw `sid` or `sub` as a platform-owned identity or tenant selector.
+- Uncertainty about provider-session/external-identity mapping SHALL NOT be treated as confirmed absence.
 
 ## Decision
 
@@ -48,7 +49,7 @@ After cryptographic authenticity, the BFF SHALL:
 
 - bind `iss` and `aud` to the exact registered Keycloak issuer/client;
 - validate `iat` freshness and `exp` under the accepted bounded clock-skew policy;
-- durably recognize `jti` for the supported replay-safety horizon and reject reuse;
+- durably recognize replay identity under at least `(issuer, client, jti)` for the supported replay-safety horizon and reject reuse; the same `jti` under a different trusted issuer/client does not collide merely because its string is equal;
 - require the back-channel-logout `events` member;
 - reject any `nonce` claim;
 - require `sid`, `sub`, or both.
@@ -59,7 +60,9 @@ After cryptographic authenticity, the BFF SHALL:
 
 - `(issuer, client, sid)` may resolve to the corresponding provider-session binding/session-lineage authority; raw `sid` is never interpreted as a JLMirror `session_id`;
 - `(issuer, sub)` resolves through the platform-owned external-identity link to the JLMirror principal; raw `sub` is never a JLMirror principal ID and never selects tenant membership/authorization by itself;
-- a token whose cryptographically valid provider identity has no current trusted mapping causes no guessed platform mutation; it is handled as an explicit unknown/already-retired mapping outcome according to the callback contract and audit/reconciliation policy;
+- provider-session/external-identity mapping lifecycle must preserve enough historical/current linkage to revoke any still-active BFF session created under that provider identity; account unlink/relink cannot silently make an active provider-originated session unresolvable to a valid logout;
+- if a trusted lookup **confirms** that the provider session/identity has no active mapped JLMirror session authority (including an already-retired session), the valid logout is an idempotent no-op/success rather than an invitation to guess another principal;
+- if mapping/currentness lookup is unavailable, contradictory or otherwise uncertain, that uncertainty is not absence and is handled through the callback's fail/retry/reconciliation path; it SHALL NOT acknowledge success on the assumption that nothing exists;
 - the token cannot carry or infer tenant authority. Revoking Identity/session authority may subsequently cause protected requests to fail current Membership/Authorization checks, but Keycloak does not mutate those business authorities.
 
 #### Bounded revocation effect — no O(N) session rewrite
@@ -87,14 +90,15 @@ Identity/session residency remains subject to the platform's future region/resid
 - explicit signature/algorithm/key validation prevents forged claim sets from reaching revocation authority;
 - exact `exp`/`iat`/`jti`/`events`/`nonce` handling makes the Logout Token profile unambiguous;
 - issuer-bound `sid`/`sub` mappings preserve provider-identity != platform-identity;
+- confirmed mapping absence is idempotent while lookup uncertainty remains fail/reconcile rather than false absence;
 - principal-wide logout can fence a generation in bounded work instead of enumerating active sessions;
 - outage behavior remains tied to current JLMirror authority, not Keycloak reachability alone.
 
 ### Negative / cost
 - Back-Channel Logout is a wired security integration requiring conformance tests and durable replay state;
 - signing/JWKS rotation currentness becomes a security-operability surface;
-- provider-session/external-principal mapping lifecycle must remain current across logout, recovery and account-link changes;
-- durable `jti` recognition consumes bounded security-state capacity;
+- provider-session/external-principal mapping lifecycle must remain current across logout, recovery, unlink and relink;
+- durable replay recognition consumes bounded security-state capacity;
 - Keycloak outage blocks new login/step-up even when existing locally-verifiable sessions remain usable.
 
 ## Validation
@@ -103,10 +107,12 @@ Before this selection is treated as canonical/production-eligible as applicable,
 - a Keycloak-side admin disable/forced logout propagates to the mapped BFF session/principal-session generation within the accepted bound;
 - a correctly signed, unexpired standards-compliant Logout Token is accepted with required `iss`, `aud`, `iat`, `exp`, `jti`, `events`, `sid`/`sub` and no `nonce`;
 - forged/bad signature, `alg=none`, unapproved algorithm, unknown/retired key or untrusted remote-key indirection rejects before any platform identity lookup/mutation;
-- expired `exp`, future/stale `iat` outside policy, replayed `jti`, malformed/missing `events`, missing both `sid` and `sub`, or present `nonce` rejects;
+- expired `exp`, future/stale `iat` outside policy, replayed `(issuer, client, jti)`, malformed/missing `events`, missing both `sid` and `sub`, or present `nonce` rejects;
+- equal raw `jti` strings from distinct trusted issuer/client scopes do not collide incorrectly, while reuse inside one replay scope is rejected;
 - a valid `sid` is resolved only through `(issuer, client, sid)` provider-session mapping and cannot collide into an unrelated BFF session;
-- a valid `sub` is resolved only through the current issuer-bound external-identity link and cannot be treated as a tenant/principal/platform ID directly;
-- unknown/retired provider identity mapping does not guess or mutate an unrelated platform principal;
+- a valid `sub` is resolved only through the current/trusted issuer-bound external-identity linkage and cannot be treated as a tenant/principal/platform ID directly;
+- unlink/relink while a provider-originated BFF session remains active does not make a valid subsequent logout unresolvable to that session authority;
+- confirmed already-retired/no-active-session mapping is idempotent success, but injected mapping-store outage/contradiction is not acknowledged as absence;
 - `sub`-wide logout remains O(1) or bounded-constant relative to active-session count by generation/fence rather than synchronous session enumeration;
 - cache propagation follows the accepted security-cache fencing/recovery protocol and a crash after source revocation cannot leave stale positive session authority admitted;
 - valid signing-key rotation is accepted only after trusted currentness is established, while retired key authority cannot be revived by an untrusted `kid`;

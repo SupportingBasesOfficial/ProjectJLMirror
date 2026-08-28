@@ -181,7 +181,7 @@ pg_sql "
   STABLE
   SET search_path = pg_catalog, relocation_evidence
   AS \$\$
-    SELECT encode(digest(convert_to(coalesce(string_agg(
+    SELECT encode(public.digest(convert_to(coalesce(string_agg(
       accepted_ordinal::text || E'\\x1f' ||
       observation_id || E'\\x1f' ||
       metric_definition_id::text || E'\\x1f' ||
@@ -261,8 +261,9 @@ pg_sql "
       FROM relocation_evidence.target_attestation_key
      WHERE singleton;
 
-    v_expected_attestation := encode(hmac(
-      convert_to(concat_ws('|',p_tenant::text,p_fence::text,p_checkpoint_id::text,
+    v_expected_attestation := encode(public.hmac(
+      convert_to(concat_ws('|','open-rel-030-target-checkpoint-v1',
+        p_tenant::text,p_fence::text,p_checkpoint_id::text,
         p_checkpoint_generation::text,p_target_sealed::text,p_target_count::text,
         p_target_digest,p_target_max_ordinal::text),'UTF8'),
       decode(v_key,'hex'),'sha256'),'hex');
@@ -348,8 +349,9 @@ pg_sql "
       FROM relocation_evidence.target_attestation_key
      WHERE singleton;
 
-    v_expected_attestation := encode(hmac(
-      convert_to(concat_ws('|',v_receipt.tenant_id::text,v_receipt.fence_ordinal::text,
+    v_expected_attestation := encode(public.hmac(
+      convert_to(concat_ws('|','open-rel-030-target-checkpoint-v1',
+        v_receipt.tenant_id::text,v_receipt.fence_ordinal::text,
         v_receipt.checkpoint_id::text,v_receipt.checkpoint_generation::text,
         v_receipt.target_sealed::text,v_receipt.target_count::text,
         v_receipt.target_digest,v_receipt.target_max_ordinal::text),'UTF8'),
@@ -390,8 +392,7 @@ assert_exact "relocation_source_pre1_accept" "true" "$pre1"
 assert_exact "relocation_source_pre2_accept" "true" "$pre2"
 
 # Tier 2 owns the checkpoint and freeze state. ts_automation_owner can project
-# rows but cannot alter the checkpoint authority or disable the trigger because
-# the history/checkpoint objects are owned by the NOLOGIN ts_owner role.
+# rows but cannot alter checkpoint authority or disable the freeze trigger.
 ts_sql "
   CREATE EXTENSION IF NOT EXISTS pgcrypto;
   DROP SCHEMA IF EXISTS relocation_evidence CASCADE;
@@ -471,7 +472,7 @@ ts_sql "
   SECURITY DEFINER
   SET search_path = pg_catalog, relocation_evidence
   AS \$\$
-    SELECT encode(digest(convert_to(coalesce(string_agg(
+    SELECT encode(public.digest(convert_to(coalesce(string_agg(
       accepted_ordinal::text || E'\\x1f' ||
       observation_id || E'\\x1f' ||
       metric_definition_id::text || E'\\x1f' ||
@@ -492,29 +493,58 @@ ts_sql "
   SET search_path = pg_catalog, relocation_evidence
   AS \$\$
   DECLARE
-    v_phase text;
-    v_f bigint;
-    v_tenant uuid;
-    v_ordinal bigint;
+    v_old_phase text;
+    v_old_f bigint;
+    v_new_phase text;
+    v_new_f bigint;
   BEGIN
-    v_tenant := CASE WHEN TG_OP='DELETE' THEN OLD.tenant_id ELSE NEW.tenant_id END;
-    v_ordinal := CASE WHEN TG_OP='DELETE' THEN OLD.accepted_ordinal ELSE NEW.accepted_ordinal END;
+    IF TG_OP = 'UPDATE' THEN
+      -- Lock both authority scopes in deterministic order. This prevents a
+      -- cross-tenant UPDATE from moving a protected pre-F row out of a sealed
+      -- tenant while also avoiding lock-order inversions across tenants.
+      PERFORM tenant_id
+        FROM relocation_evidence.target_control
+       WHERE tenant_id IN (OLD.tenant_id, NEW.tenant_id)
+       ORDER BY tenant_id
+       FOR SHARE;
 
-    -- Every projection DML transaction holds a shared lock on target_control
-    -- until commit. Sealing takes FOR UPDATE before measuring the target set.
-    SELECT phase,fence_ordinal INTO v_phase,v_f
-      FROM relocation_evidence.target_control
-     WHERE tenant_id=v_tenant
-     FOR SHARE;
+      SELECT phase,fence_ordinal INTO v_old_phase,v_old_f
+        FROM relocation_evidence.target_control
+       WHERE tenant_id=OLD.tenant_id;
+      SELECT phase,fence_ordinal INTO v_new_phase,v_new_f
+        FROM relocation_evidence.target_control
+       WHERE tenant_id=NEW.tenant_id;
 
-    IF v_phase IN ('sealed','activated') AND v_f IS NOT NULL THEN
-      IF v_ordinal <= v_f OR (TG_OP='UPDATE' AND OLD.accepted_ordinal <= v_f) THEN
+      IF v_old_phase IN ('sealed','activated') AND v_old_f IS NOT NULL
+         AND OLD.accepted_ordinal <= v_old_f THEN
         RAISE EXCEPTION 'sealed target checkpoint forbids mutation through fence';
       END IF;
+      IF v_new_phase IN ('sealed','activated') AND v_new_f IS NOT NULL
+         AND NEW.accepted_ordinal <= v_new_f THEN
+        RAISE EXCEPTION 'sealed target checkpoint forbids mutation through fence';
+      END IF;
+      RETURN NEW;
     END IF;
 
-    IF TG_OP='DELETE' THEN
+    IF TG_OP = 'DELETE' THEN
+      SELECT phase,fence_ordinal INTO v_old_phase,v_old_f
+        FROM relocation_evidence.target_control
+       WHERE tenant_id=OLD.tenant_id
+       FOR SHARE;
+      IF v_old_phase IN ('sealed','activated') AND v_old_f IS NOT NULL
+         AND OLD.accepted_ordinal <= v_old_f THEN
+        RAISE EXCEPTION 'sealed target checkpoint forbids mutation through fence';
+      END IF;
       RETURN OLD;
+    END IF;
+
+    SELECT phase,fence_ordinal INTO v_new_phase,v_new_f
+      FROM relocation_evidence.target_control
+     WHERE tenant_id=NEW.tenant_id
+     FOR SHARE;
+    IF v_new_phase IN ('sealed','activated') AND v_new_f IS NOT NULL
+       AND NEW.accepted_ordinal <= v_new_f THEN
+      RAISE EXCEPTION 'sealed target checkpoint forbids mutation through fence';
     END IF;
     RETURN NEW;
   END;
@@ -584,8 +614,9 @@ ts_sql "
       FROM relocation_evidence.target_attestation_key
      WHERE singleton;
 
-    v_attestation := encode(hmac(
-      convert_to(concat_ws('|',p_tenant::text,p_fence::text,v_checkpoint_id::text,
+    v_attestation := encode(public.hmac(
+      convert_to(concat_ws('|','open-rel-030-target-checkpoint-v1',
+        p_tenant::text,p_fence::text,v_checkpoint_id::text,
         v_generation::text,p_seal::text,v_count::text,v_digest,v_max::text),'UTF8'),
       decode(v_key,'hex'),'sha256'),'hex');
 
@@ -641,6 +672,11 @@ expect_ts_reject \
   "relocation_projection_writer_cannot_read_attestation_key" \
   "permission denied" \
   "SET ROLE ts_automation_owner; SELECT key_material FROM relocation_evidence.target_attestation_key;"
+
+expect_ts_reject \
+  "relocation_projection_writer_cannot_disable_freeze" \
+  "must be owner" \
+  "SET ROLE ts_automation_owner; ALTER TABLE relocation_evidence.target_history DISABLE TRIGGER target_history_freeze;"
 
 ord1="$(pg_sql "SELECT accepted_ordinal FROM relocation_evidence.acceptance WHERE observation_id='obs-pre-1';")"
 ord2="$(pg_sql "SELECT accepted_ordinal FROM relocation_evidence.acceptance WHERE observation_id='obs-pre-2';")"
@@ -854,6 +890,11 @@ expect_ts_reject \
   "relocation_sealed_target_delete_rejected" \
   "sealed target checkpoint forbids mutation through fence" \
   "SET ROLE ts_automation_owner; DELETE FROM relocation_evidence.target_history WHERE tenant_id='$tenant' AND observation_id='obs-pre-2';"
+
+expect_ts_reject \
+  "relocation_sealed_target_tenant_move_rejected" \
+  "sealed target checkpoint forbids mutation through fence" \
+  "SET ROLE ts_automation_owner; UPDATE relocation_evidence.target_history SET tenant_id='bbbbbbbb-0000-0000-0000-000000000099' WHERE tenant_id='$tenant' AND observation_id='obs-pre-1';"
 
 activated="$(pg_sql "SELECT relocation_evidence.activate_target('$tenant')::text;")"
 assert_exact "relocation_target_activate_after_authenticated_checkpoint" "true" "$activated"

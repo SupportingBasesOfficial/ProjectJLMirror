@@ -69,6 +69,8 @@ configured_provider_scope
 
 For Zabbix, the active source-instance generation is the authoritative `zabbix_instance_generation`.
 
+`source_instance_generation`, `active_source_instance_generation` and `candidate_generation` are opaque, high-entropy tokens — the same convention already established for `session_generation` in `src/jlmirror_authority/session.py` — not small monotonically-incrementing integers. Every classification/fencing rule in this document compares them only for equality (is this object's generation the currently active one, does this cycle's generation match the source's authoritative generation), never by magnitude or recency. Clients and adapters MUST NOT infer ordering, elapsed time, or replacement count from a generation value's contents.
+
 ### Provider-instance generation is an identity-domain boundary
 
 Provider-native IDs are scoped by at least:
@@ -501,6 +503,8 @@ For Zabbix, base-URL change is prohibited here.
 A configured-scope edit atomically advances the source `scope_revision`, commits the new scope definition, required audit/accountability intent, one durable `monitoring.source-scope.changed` outbox event and one durable scope-reconciliation responsibility. It does **not** synchronously rewrite every resource/metric row. Derived active-generation object scope projections reconcile in bounded batches and cannot claim current `in_scope` authority until proven against the new revision.
 
 ### Replace instance — staged candidate, then atomic cutover
+
+> **PROPOSED — pending ADR-021.** This section instantiates the platform's already-accepted generation-fencing/staged-cutover idiom (ADR-004 tenant placement, ADR-006 artifact lifecycle, ADR-018 PITR recovery cutover, ADR-019 tenant relocation cutover) for the Monitoring domain's source-instance-replacement mechanism, but no ADR yet authorizes instance-replacement/candidate/cutover as a Monitoring-domain mechanism specifically. The design below is not treated as binding for Wave 4 implementation until `adr/ADR-021-monitoring-source-instance-replacement.md` (or equivalent) is accepted — see that ADR for the full decision record.
 
 Replacing the provider instance is intentionally **non-disruptive for a healthy active generation until the successor proves basic admissibility**.
 

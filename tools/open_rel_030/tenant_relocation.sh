@@ -74,12 +74,6 @@ expect_ts_reject() {
   printf '%s=PASS rejected=%q\n' "$label" "$needle"
 }
 
-# ---------------------------------------------------------------------------
-# Tier 1: authoritative acceptance, relocation fence and receipt verifier.
-# The target never self-certifies through caller-provided count/max fields: a
-# target-owned checkpoint is HMAC-authenticated and Tier 1 verifies the HMAC.
-# Canonical set fingerprints use SHA-256 over identity + immutable payload.
-# ---------------------------------------------------------------------------
 pg_sql "
   CREATE EXTENSION IF NOT EXISTS pgcrypto;
   DROP SCHEMA IF EXISTS relocation_evidence CASCADE;
@@ -264,19 +258,10 @@ pg_sql "
      WHERE singleton;
 
     v_expected_attestation := encode(hmac(
-      concat_ws('|',
-        p_tenant::text,
-        p_fence::text,
-        p_checkpoint_id::text,
-        p_checkpoint_generation::text,
-        p_target_sealed::text,
-        p_target_count::text,
-        p_target_digest,
-        p_target_max_ordinal::text
-      ),
-      v_key,
-      'sha256'
-    ),'hex');
+      concat_ws('|',p_tenant::text,p_fence::text,p_checkpoint_id::text,
+        p_checkpoint_generation::text,p_target_sealed::text,p_target_count::text,
+        p_target_digest,p_target_max_ordinal::text),
+      v_key,'sha256'),'hex');
 
     IF v_expected_attestation IS DISTINCT FROM p_target_attestation THEN
       RAISE EXCEPTION 'invalid target checkpoint attestation';
@@ -360,19 +345,11 @@ pg_sql "
      WHERE singleton;
 
     v_expected_attestation := encode(hmac(
-      concat_ws('|',
-        v_receipt.tenant_id::text,
-        v_receipt.fence_ordinal::text,
-        v_receipt.checkpoint_id::text,
-        v_receipt.checkpoint_generation::text,
-        v_receipt.target_sealed::text,
-        v_receipt.target_count::text,
-        v_receipt.target_digest,
-        v_receipt.target_max_ordinal::text
-      ),
-      v_key,
-      'sha256'
-    ),'hex');
+      concat_ws('|',v_receipt.tenant_id::text,v_receipt.fence_ordinal::text,
+        v_receipt.checkpoint_id::text,v_receipt.checkpoint_generation::text,
+        v_receipt.target_sealed::text,v_receipt.target_count::text,
+        v_receipt.target_digest,v_receipt.target_max_ordinal::text),
+      v_key,'sha256'),'hex');
 
     IF v_expected_attestation IS DISTINCT FROM v_receipt.target_attestation THEN
       RETURN false;
@@ -408,11 +385,6 @@ pre2="$(pg_sql "SELECT relocation_evidence.accept_observation('$tenant','source'
 assert_exact "relocation_source_pre1_accept" "true" "$pre1"
 assert_exact "relocation_source_pre2_accept" "true" "$pre2"
 
-# ---------------------------------------------------------------------------
-# Tier 2 target-side checkpoint authority. The target history is owned by the
-# NOLOGIN mediation owner; the projection writer gets DML only and therefore
-# cannot disable the freeze trigger. A sealed checkpoint has no unseal path.
-# ---------------------------------------------------------------------------
 ts_sql "
   CREATE EXTENSION IF NOT EXISTS pgcrypto;
   DROP SCHEMA IF EXISTS relocation_evidence CASCADE;
@@ -485,10 +457,8 @@ ts_sql "
   REVOKE ALL ON relocation_evidence.source_history FROM PUBLIC,ts_runtime,ts_report_a,ts_report_b;
   REVOKE ALL ON relocation_evidence.target_history FROM PUBLIC,ts_runtime,ts_report_a,ts_report_b;
 
-  CREATE OR REPLACE FUNCTION relocation_evidence.target_digest(
-    p_tenant uuid,
-    p_fence bigint
-  ) RETURNS text
+  CREATE OR REPLACE FUNCTION relocation_evidence.target_digest(p_tenant uuid,p_fence bigint)
+  RETURNS text
   LANGUAGE sql
   STABLE
   SECURITY DEFINER
@@ -528,8 +498,7 @@ ts_sql "
      WHERE tenant_id=v_tenant;
 
     IF v_phase IN ('sealed','activated') AND v_f IS NOT NULL THEN
-      IF v_ordinal <= v_f
-         OR (TG_OP='UPDATE' AND OLD.accepted_ordinal <= v_f) THEN
+      IF v_ordinal <= v_f OR (TG_OP='UPDATE' AND OLD.accepted_ordinal <= v_f) THEN
         RAISE EXCEPTION 'sealed target checkpoint forbids mutation through fence';
       END IF;
     END IF;
@@ -544,9 +513,7 @@ ts_sql "
   FOR EACH ROW EXECUTE FUNCTION relocation_evidence.freeze_target_history();
 
   CREATE OR REPLACE FUNCTION relocation_evidence.attest_target_checkpoint(
-    p_tenant uuid,
-    p_fence bigint,
-    p_seal boolean
+    p_tenant uuid,p_fence bigint,p_seal boolean
   ) RETURNS TABLE (
     checkpoint_id uuid,
     checkpoint_generation bigint,
@@ -579,7 +546,6 @@ ts_sql "
     IF NOT FOUND THEN
       RAISE EXCEPTION 'target checkpoint has no control authority';
     END IF;
-
     IF p_seal AND v_phase <> 'open' THEN
       RAISE EXCEPTION 'target checkpoint already sealed or activated';
     END IF;
@@ -597,19 +563,9 @@ ts_sql "
      WHERE singleton;
 
     v_attestation := encode(hmac(
-      concat_ws('|',
-        p_tenant::text,
-        p_fence::text,
-        v_checkpoint_id::text,
-        v_generation::text,
-        p_seal::text,
-        v_count::text,
-        v_digest,
-        v_max::text
-      ),
-      v_key,
-      'sha256'
-    ),'hex');
+      concat_ws('|',p_tenant::text,p_fence::text,v_checkpoint_id::text,
+        v_generation::text,p_seal::text,v_count::text,v_digest,v_max::text),
+      v_key,'sha256'),'hex');
 
     IF p_seal THEN
       UPDATE relocation_evidence.target_control
@@ -641,8 +597,7 @@ ts_sql "
   GRANT EXECUTE ON FUNCTION relocation_evidence.attest_target_checkpoint(uuid,bigint,boolean) TO ts_automation_owner;
 
   CREATE OR REPLACE FUNCTION relocation_evidence.mark_target_checkpoint_activated(
-    p_tenant uuid,
-    p_checkpoint_id uuid
+    p_tenant uuid,p_checkpoint_id uuid
   ) RETURNS boolean
   LANGUAGE plpgsql
   SECURITY DEFINER
@@ -651,9 +606,7 @@ ts_sql "
   BEGIN
     UPDATE relocation_evidence.target_control
        SET phase='activated'
-     WHERE tenant_id=p_tenant
-       AND phase='sealed'
-       AND checkpoint_id=p_checkpoint_id;
+     WHERE tenant_id=p_tenant AND phase='sealed' AND checkpoint_id=p_checkpoint_id;
     RETURN FOUND;
   END;
   \$\$;
@@ -679,214 +632,196 @@ ts_sql "
   RESET ROLE;
 " >/dev/null
 
-# Real acceptance↔fence race: acceptance sleeps only after placement FOR UPDATE.
-+set +e
-+docker exec -e PGPASSWORD="$password" "$pg_container" \
-+  psql -X -v ON_ERROR_STOP=1 -U postgres -d jlmirror -Atq -c \
-+  "SELECT relocation_evidence.accept_observation('$tenant','source',1,'obs-race-pre-fence','$metric','2026-08-28T10:01:30Z',12.5,2.0)::text;" \
-+  >"$race_out" 2>&1 &
-+race_pid=$!
-+set -e
-+
-+race_sleeping=0
-+for _ in $(seq 1 100); do
-+  sleeping="$(pg_sql "
-+    SELECT count(*) FROM pg_stat_activity
-+    WHERE datname='jlmirror'
-+      AND query LIKE '%obs-race-pre-fence%'
-+      AND wait_event='PgSleep';
-+  ")"
-+  if [[ "$sleeping" -ge 1 ]]; then
-+    race_sleeping=1
-+    break
-+  fi
-+  sleep 0.02
-+done
-+if [[ "$race_sleeping" != "1" ]]; then
-+  cat "$race_out" >&2 || true
-+  kill "$race_pid" >/dev/null 2>&1 || true
-+  wait "$race_pid" >/dev/null 2>&1 || true
-+  echo "relocation fence race setup never observed acceptance sleeping after placement lock" >&2
-+  exit 1
-+fi
-+printf '%s\n' 'relocation_acceptance_lock_race_setup=PASS'
-+
-+fence="$(pg_sql "SELECT relocation_evidence.fence_source('$tenant');")"
-+wait "$race_pid"
-+race_result="$(tr -d '[:space:]' < "$race_out")"
-+assert_exact "relocation_racing_acceptance_committed" "true" "$race_result"
-+
-+ord_race="$(pg_sql "SELECT accepted_ordinal FROM relocation_evidence.acceptance WHERE observation_id='obs-race-pre-fence';")"
-+assert_exact "relocation_fence_includes_inflight_acceptance" "$ord_race" "$fence"
-+
-+ts_sql "
-+  SET ROLE ts_automation_owner;
-+  INSERT INTO relocation_evidence.source_history
-+    (tenant_id,observation_id,metric_definition_id,accepted_ordinal,observed_at,numeric_value)
-+  VALUES ('$tenant','obs-race-pre-fence','$metric',$ord_race,'2026-08-28T10:01:30Z',12.5);
-+  RESET ROLE;
-+" >/dev/null
-+
-+stale_during_fence="$(pg_sql "SELECT relocation_evidence.accept_observation('$tenant','source',1,'obs-stale-during-fence','$metric','2026-08-28T10:01:45Z',99)::text;")"
-+assert_exact "relocation_source_blocked_after_fence" "false" "$stale_during_fence"
-+
-+premature_no_receipt="$(pg_sql "SELECT relocation_evidence.activate_target('$tenant')::text;")"
-+assert_exact "relocation_target_cannot_activate_without_receipt" "false" "$premature_no_receipt"
-+
-+# ---------------------------------------------------------------------------
-+# Negative 1: max(target)=F with missing lower rows. Target-side measurement is
-+# authentic but explicitly unsealed, and Tier 1 records it only as incomplete.
-+# ---------------------------------------------------------------------------
-+ts_sql "
-+  SET ROLE ts_automation_owner;
-+  INSERT INTO relocation_evidence.target_history
-+    (tenant_id,observation_id,metric_definition_id,accepted_ordinal,observed_at,numeric_value)
-+  SELECT tenant_id,observation_id,metric_definition_id,accepted_ordinal,observed_at,numeric_value
-+    FROM relocation_evidence.source_history
-+   WHERE accepted_ordinal = $fence;
-+  RESET ROLE;
-+" >/dev/null
-+
-+gap_attestation="$(ts_sql "
-+  SET ROLE ts_automation_owner;
-+  SELECT checkpoint_id||'|'||checkpoint_generation||'|'||target_sealed||'|'||target_count||'|'||target_digest||'|'||target_max_ordinal||'|'||attestation
-+    FROM relocation_evidence.attest_target_checkpoint('$tenant',$fence,false);
-+  RESET ROLE;
-+")"
-+IFS='|' read -r gap_cp gap_gen gap_sealed gap_count gap_digest gap_max gap_hmac <<< "$gap_attestation"
-+assert_exact "relocation_incomplete_target_still_reaches_F" "$fence" "$gap_max"
-+
-+gap_receipt="$(pg_sql "SELECT relocation_evidence.record_projection_receipt('$tenant',$fence,'$gap_cp',$gap_gen,$gap_sealed,$gap_count,'$gap_digest',$gap_max,'$gap_hmac');")"
-+assert_exact "relocation_gap_receipt_detected" "incomplete" "$gap_receipt"
-+
-+premature_gap="$(pg_sql "SELECT relocation_evidence.activate_target('$tenant')::text;")"
-+assert_exact "relocation_target_cannot_activate_with_gap_at_F" "false" "$premature_gap"
-+
-+# Complete the target replay through F.
-+ts_sql "
-+  SET ROLE ts_automation_owner;
-+  INSERT INTO relocation_evidence.target_history
-+    (tenant_id,observation_id,metric_definition_id,accepted_ordinal,observed_at,numeric_value)
-+  SELECT tenant_id,observation_id,metric_definition_id,accepted_ordinal,observed_at,numeric_value
-+    FROM relocation_evidence.source_history
-+   WHERE accepted_ordinal <= $fence
-+  ON CONFLICT DO NOTHING;
-+  RESET ROLE;
-+" >/dev/null
-+
-+# ---------------------------------------------------------------------------
-+# Negative 2: identity/ordinal coverage is exact but canonical payload differs.
-+# SHA-256 includes observed_at + metric_definition_id + numeric_value, so the
-+# authentic target-side measurement must remain incomplete.
-+# ---------------------------------------------------------------------------
-+ts_sql "
-+  SET ROLE ts_automation_owner;
-+  UPDATE relocation_evidence.target_history
-+     SET observed_at = observed_at + interval '1 second'
-+   WHERE tenant_id='$tenant' AND observation_id='obs-pre-1';
-+  RESET ROLE;
-+" >/dev/null
-+
-+payload_attestation="$(ts_sql "
-+  SET ROLE ts_automation_owner;
-+  SELECT checkpoint_id||'|'||checkpoint_generation||'|'||target_sealed||'|'||target_count||'|'||target_digest||'|'||target_max_ordinal||'|'||attestation
-+    FROM relocation_evidence.attest_target_checkpoint('$tenant',$fence,false);
-+  RESET ROLE;
-+")"
-+IFS='|' read -r payload_cp payload_gen payload_sealed payload_count payload_digest payload_max payload_hmac <<< "$payload_attestation"
-+
-+payload_receipt="$(pg_sql "SELECT relocation_evidence.record_projection_receipt('$tenant',$fence,'$payload_cp',$payload_gen,$payload_sealed,$payload_count,'$payload_digest',$payload_max,'$payload_hmac');")"
-+assert_exact "relocation_canonical_payload_mismatch_detected" "incomplete" "$payload_receipt"
-+
-+ts_sql "
-+  SET ROLE ts_automation_owner;
-+  UPDATE relocation_evidence.target_history
-+     SET observed_at = '2026-08-28T10:00:00Z'
-+   WHERE tenant_id='$tenant' AND observation_id='obs-pre-1';
-+  RESET ROLE;
-+" >/dev/null
-+
-+# ---------------------------------------------------------------------------
-+# Final trusted checkpoint: target computes actual current state and seals it.
-+# The one-way seal freezes every target row <= F before Tier 1 can activate.
-+# ---------------------------------------------------------------------------
-+sealed_attestation="$(ts_sql "
-+  SET ROLE ts_automation_owner;
-+  SELECT checkpoint_id||'|'||checkpoint_generation||'|'||target_sealed||'|'||target_count||'|'||target_digest||'|'||target_max_ordinal||'|'||attestation
-+    FROM relocation_evidence.attest_target_checkpoint('$tenant',$fence,true);
-+  RESET ROLE;
-+")"
-+IFS='|' read -r sealed_cp sealed_gen sealed_flag sealed_count sealed_digest sealed_max sealed_hmac <<< "$sealed_attestation"
-+assert_exact "relocation_target_checkpoint_is_sealed" "true" "$sealed_flag"
-+
-+# Fabricating any target field while replaying the genuine HMAC must fail.
-+expect_pg_reject \
-+  "relocation_fabricated_target_attestation_rejected" \
-+  "invalid target checkpoint attestation" \
-+  "SELECT relocation_evidence.record_projection_receipt('$tenant',$fence,'$sealed_cp',$sealed_gen,$sealed_flag,$sealed_count,'00$sealed_digest',$sealed_max,'$sealed_hmac');"
-+
-+complete_receipt="$(pg_sql "SELECT relocation_evidence.record_projection_receipt('$tenant',$fence,'$sealed_cp',$sealed_gen,$sealed_flag,$sealed_count,'$sealed_digest',$sealed_max,'$sealed_hmac');")"
-+assert_exact "relocation_authenticated_complete_projection_receipt" "complete" "$complete_receipt"
-+
-+# The projection writer cannot mutate/delete the set that the checkpoint attests.
-+expect_ts_reject \
-+  "relocation_sealed_target_update_rejected" \
-+  "sealed target checkpoint forbids mutation through fence" \
-+  "SET ROLE ts_automation_owner; UPDATE relocation_evidence.target_history SET numeric_value=numeric_value+1 WHERE tenant_id='$tenant' AND observation_id='obs-pre-1';"
-+
-+expect_ts_reject \
-+  "relocation_sealed_target_delete_rejected" \
-+  "sealed target checkpoint forbids mutation through fence" \
-+  "SET ROLE ts_automation_owner; DELETE FROM relocation_evidence.target_history WHERE tenant_id='$tenant' AND observation_id='obs-pre-2';"
-+
-+activated="$(pg_sql "SELECT relocation_evidence.activate_target('$tenant')::text;")"
-+assert_exact "relocation_target_activate_after_authenticated_checkpoint" "true" "$activated"
-+
-+target_marked="$(ts_sql "SET ROLE ts_automation_owner; SELECT relocation_evidence.mark_target_checkpoint_activated('$tenant','$sealed_cp')::text; RESET ROLE;")"
-+assert_exact "relocation_target_checkpoint_marked_activated" "true" "$target_marked"
-+
-+post="$(pg_sql "SELECT relocation_evidence.accept_observation('$tenant','target',2,'obs-post-1','$metric','2026-08-28T10:02:00Z',13.5)::text;")"
-+assert_exact "relocation_target_post_cutover_accept" "true" "$post"
-+
-+stale_source="$(pg_sql "SELECT relocation_evidence.accept_observation('$tenant','source',1,'obs-stale-source','$metric','2026-08-28T10:03:00Z',88)::text;")"
-+assert_exact "relocation_stale_source_rejected" "false" "$stale_source"
-+
-+ord_post="$(pg_sql "SELECT accepted_ordinal FROM relocation_evidence.acceptance WHERE observation_id='obs-post-1';")"
-+ts_sql "
-+  SET ROLE ts_automation_owner;
-+  INSERT INTO relocation_evidence.target_history
-+    (tenant_id,observation_id,metric_definition_id,accepted_ordinal,observed_at,numeric_value)
-+  VALUES ('$tenant','obs-post-1','$metric',$ord_post,'2026-08-28T10:02:00Z',13.5);
-+  RESET ROLE;
-+" >/dev/null
-+
-+acceptance_count="$(pg_sql "SELECT count(*) FROM relocation_evidence.acceptance WHERE tenant_id='$tenant';")"
-+target_count="$(ts_sql "SELECT count(*) FROM relocation_evidence.target_history WHERE tenant_id='$tenant';")"
-+target_distinct="$(ts_sql "SELECT count(DISTINCT observation_id) FROM relocation_evidence.target_history WHERE tenant_id='$tenant';")"
-+source_post_count="$(ts_sql "SELECT count(*) FROM relocation_evidence.source_history WHERE observation_id='obs-post-1';")"
-+placement="$(pg_sql "SELECT phase||'|'||current_writer||'|'||placement_version||'|'||fence_ordinal FROM relocation_evidence.placement WHERE tenant_id='$tenant';")"
-+receipt_state="$(pg_sql "SELECT state||'|'||authoritative_count||'|'||target_count||'|'||target_max_ordinal||'|'||target_sealed FROM relocation_evidence.projection_receipt WHERE tenant_id='$tenant' AND fence_ordinal=$fence;")"
-+target_checkpoint_state="$(ts_sql "SELECT phase||'|'||checkpoint_id||'|'||checkpoint_generation FROM relocation_evidence.target_control WHERE tenant_id='$tenant';")"
-+source_digest="$(pg_sql "SELECT relocation_evidence.authoritative_digest('$tenant',$fence);")"
-+sealed_target_digest="$(ts_sql "SELECT target_digest FROM relocation_evidence.target_checkpoint WHERE checkpoint_id='$sealed_cp';")"
-+
-+assert_exact "relocation_authoritative_acceptance_count" "4" "$acceptance_count"
-+assert_exact "relocation_target_history_complete" "$acceptance_count" "$target_count"
-+assert_exact "relocation_target_history_no_duplicates" "$target_count" "$target_distinct"
-+assert_exact "relocation_retired_source_no_post_cutover_projection" "0" "$source_post_count"
-+assert_exact "relocation_final_authority" "active|target|2|$fence" "$placement"
-+assert_exact "relocation_durable_complete_receipt" "complete|3|3|$fence|true" "$receipt_state"
-+assert_exact "relocation_sha256_canonical_payload_digest" "$source_digest" "$sealed_target_digest"
-+assert_exact "relocation_target_checkpoint_current" "activated|$sealed_cp|$sealed_gen" "$target_checkpoint_state"
-+
-+# Tenant-facing roles still cannot bypass the internal target history.
-+if docker exec -e PGPASSWORD=report-a-evidence-only "$ts_container" \
-+    psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U ts_report_a -d jlmirror -Atq \
-+    -c "SELECT count(*) FROM relocation_evidence.target_history;" >/tmp/relocation-attack.out 2>&1; then
-+  echo "relocation tenant-facing direct target-history read unexpectedly succeeded" >&2
-+  cat /tmp/relocation-attack.out >&2 || true
-+  exit 1
-+fi
-+printf '%s\n' 'relocation_tier2_direct_tenant_read=PASS rejected'
-+
-+printf 'tenant_relocation_tier1_tier2_continuity=PASS F=%s receipt=%s checkpoint=%s\n' "$fence" "$receipt_state" "$sealed_cp"
+set +e
+docker exec -e PGPASSWORD="$password" "$pg_container" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d jlmirror -Atq -c \
+  "SELECT relocation_evidence.accept_observation('$tenant','source',1,'obs-race-pre-fence','$metric','2026-08-28T10:01:30Z',12.5,2.0)::text;" \
+  >"$race_out" 2>&1 &
+race_pid=$!
+set -e
+
+race_sleeping=0
+for _ in $(seq 1 100); do
+  sleeping="$(pg_sql "
+    SELECT count(*) FROM pg_stat_activity
+    WHERE datname='jlmirror'
+      AND query LIKE '%obs-race-pre-fence%'
+      AND wait_event='PgSleep';
+  ")"
+  if [[ "$sleeping" -ge 1 ]]; then
+    race_sleeping=1
+    break
+  fi
+  sleep 0.02
+done
+if [[ "$race_sleeping" != "1" ]]; then
+  cat "$race_out" >&2 || true
+  kill "$race_pid" >/dev/null 2>&1 || true
+  wait "$race_pid" >/dev/null 2>&1 || true
+  echo "relocation fence race setup never observed acceptance sleeping after placement lock" >&2
+  exit 1
+fi
+printf '%s\n' 'relocation_acceptance_lock_race_setup=PASS'
+
+fence="$(pg_sql "SELECT relocation_evidence.fence_source('$tenant');")"
+wait "$race_pid"
+race_result="$(tr -d '[:space:]' < "$race_out")"
+assert_exact "relocation_racing_acceptance_committed" "true" "$race_result"
+
+ord_race="$(pg_sql "SELECT accepted_ordinal FROM relocation_evidence.acceptance WHERE observation_id='obs-race-pre-fence';")"
+assert_exact "relocation_fence_includes_inflight_acceptance" "$ord_race" "$fence"
+
+ts_sql "
+  SET ROLE ts_automation_owner;
+  INSERT INTO relocation_evidence.source_history
+    (tenant_id,observation_id,metric_definition_id,accepted_ordinal,observed_at,numeric_value)
+  VALUES ('$tenant','obs-race-pre-fence','$metric',$ord_race,'2026-08-28T10:01:30Z',12.5);
+  RESET ROLE;
+" >/dev/null
+
+stale_during_fence="$(pg_sql "SELECT relocation_evidence.accept_observation('$tenant','source',1,'obs-stale-during-fence','$metric','2026-08-28T10:01:45Z',99)::text;")"
+assert_exact "relocation_source_blocked_after_fence" "false" "$stale_during_fence"
+
+premature_no_receipt="$(pg_sql "SELECT relocation_evidence.activate_target('$tenant')::text;")"
+assert_exact "relocation_target_cannot_activate_without_receipt" "false" "$premature_no_receipt"
+
+ts_sql "
+  SET ROLE ts_automation_owner;
+  INSERT INTO relocation_evidence.target_history
+    (tenant_id,observation_id,metric_definition_id,accepted_ordinal,observed_at,numeric_value)
+  SELECT tenant_id,observation_id,metric_definition_id,accepted_ordinal,observed_at,numeric_value
+    FROM relocation_evidence.source_history
+   WHERE accepted_ordinal = $fence;
+  RESET ROLE;
+" >/dev/null
+
+gap_attestation="$(ts_sql "
+  SET ROLE ts_automation_owner;
+  SELECT checkpoint_id||'|'||checkpoint_generation||'|'||target_sealed||'|'||target_count||'|'||target_digest||'|'||target_max_ordinal||'|'||attestation
+    FROM relocation_evidence.attest_target_checkpoint('$tenant',$fence,false);
+  RESET ROLE;
+")"
+IFS='|' read -r gap_cp gap_gen gap_sealed gap_count gap_digest gap_max gap_hmac <<< "$gap_attestation"
+assert_exact "relocation_incomplete_target_still_reaches_F" "$fence" "$gap_max"
+
+gap_receipt="$(pg_sql "SELECT relocation_evidence.record_projection_receipt('$tenant',$fence,'$gap_cp',$gap_gen,$gap_sealed,$gap_count,'$gap_digest',$gap_max,'$gap_hmac');")"
+assert_exact "relocation_gap_receipt_detected" "incomplete" "$gap_receipt"
+
+premature_gap="$(pg_sql "SELECT relocation_evidence.activate_target('$tenant')::text;")"
+assert_exact "relocation_target_cannot_activate_with_gap_at_F" "false" "$premature_gap"
+
+ts_sql "
+  SET ROLE ts_automation_owner;
+  INSERT INTO relocation_evidence.target_history
+    (tenant_id,observation_id,metric_definition_id,accepted_ordinal,observed_at,numeric_value)
+  SELECT tenant_id,observation_id,metric_definition_id,accepted_ordinal,observed_at,numeric_value
+    FROM relocation_evidence.source_history
+   WHERE accepted_ordinal <= $fence
+  ON CONFLICT DO NOTHING;
+  RESET ROLE;
+" >/dev/null
+
+ts_sql "
+  SET ROLE ts_automation_owner;
+  UPDATE relocation_evidence.target_history
+     SET observed_at = observed_at + interval '1 second'
+   WHERE tenant_id='$tenant' AND observation_id='obs-pre-1';
+  RESET ROLE;
+" >/dev/null
+
+payload_attestation="$(ts_sql "
+  SET ROLE ts_automation_owner;
+  SELECT checkpoint_id||'|'||checkpoint_generation||'|'||target_sealed||'|'||target_count||'|'||target_digest||'|'||target_max_ordinal||'|'||attestation
+    FROM relocation_evidence.attest_target_checkpoint('$tenant',$fence,false);
+  RESET ROLE;
+")"
+IFS='|' read -r payload_cp payload_gen payload_sealed payload_count payload_digest payload_max payload_hmac <<< "$payload_attestation"
+
+payload_receipt="$(pg_sql "SELECT relocation_evidence.record_projection_receipt('$tenant',$fence,'$payload_cp',$payload_gen,$payload_sealed,$payload_count,'$payload_digest',$payload_max,'$payload_hmac');")"
+assert_exact "relocation_canonical_payload_mismatch_detected" "incomplete" "$payload_receipt"
+
+ts_sql "
+  SET ROLE ts_automation_owner;
+  UPDATE relocation_evidence.target_history
+     SET observed_at = '2026-08-28T10:00:00Z'
+   WHERE tenant_id='$tenant' AND observation_id='obs-pre-1';
+  RESET ROLE;
+" >/dev/null
+
+sealed_attestation="$(ts_sql "
+  SET ROLE ts_automation_owner;
+  SELECT checkpoint_id||'|'||checkpoint_generation||'|'||target_sealed||'|'||target_count||'|'||target_digest||'|'||target_max_ordinal||'|'||attestation
+    FROM relocation_evidence.attest_target_checkpoint('$tenant',$fence,true);
+  RESET ROLE;
+")"
+IFS='|' read -r sealed_cp sealed_gen sealed_flag sealed_count sealed_digest sealed_max sealed_hmac <<< "$sealed_attestation"
+assert_exact "relocation_target_checkpoint_is_sealed" "true" "$sealed_flag"
+
+expect_pg_reject \
+  "relocation_fabricated_target_attestation_rejected" \
+  "invalid target checkpoint attestation" \
+  "SELECT relocation_evidence.record_projection_receipt('$tenant',$fence,'$sealed_cp',$sealed_gen,$sealed_flag,$sealed_count,'00$sealed_digest',$sealed_max,'$sealed_hmac');"
+
+complete_receipt="$(pg_sql "SELECT relocation_evidence.record_projection_receipt('$tenant',$fence,'$sealed_cp',$sealed_gen,$sealed_flag,$sealed_count,'$sealed_digest',$sealed_max,'$sealed_hmac');")"
+assert_exact "relocation_authenticated_complete_projection_receipt" "complete" "$complete_receipt"
+
+expect_ts_reject \
+  "relocation_sealed_target_update_rejected" \
+  "sealed target checkpoint forbids mutation through fence" \
+  "SET ROLE ts_automation_owner; UPDATE relocation_evidence.target_history SET numeric_value=numeric_value+1 WHERE tenant_id='$tenant' AND observation_id='obs-pre-1';"
+
+expect_ts_reject \
+  "relocation_sealed_target_delete_rejected" \
+  "sealed target checkpoint forbids mutation through fence" \
+  "SET ROLE ts_automation_owner; DELETE FROM relocation_evidence.target_history WHERE tenant_id='$tenant' AND observation_id='obs-pre-2';"
+
+activated="$(pg_sql "SELECT relocation_evidence.activate_target('$tenant')::text;")"
+assert_exact "relocation_target_activate_after_authenticated_checkpoint" "true" "$activated"
+
+target_marked="$(ts_sql "SET ROLE ts_automation_owner; SELECT relocation_evidence.mark_target_checkpoint_activated('$tenant','$sealed_cp')::text; RESET ROLE;")"
+assert_exact "relocation_target_checkpoint_marked_activated" "true" "$target_marked"
+
+post="$(pg_sql "SELECT relocation_evidence.accept_observation('$tenant','target',2,'obs-post-1','$metric','2026-08-28T10:02:00Z',13.5)::text;")"
+assert_exact "relocation_target_post_cutover_accept" "true" "$post"
+
+stale_source="$(pg_sql "SELECT relocation_evidence.accept_observation('$tenant','source',1,'obs-stale-source','$metric','2026-08-28T10:03:00Z',88)::text;")"
+assert_exact "relocation_stale_source_rejected" "false" "$stale_source"
+
+ord_post="$(pg_sql "SELECT accepted_ordinal FROM relocation_evidence.acceptance WHERE observation_id='obs-post-1';")"
+ts_sql "
+  SET ROLE ts_automation_owner;
+  INSERT INTO relocation_evidence.target_history
+    (tenant_id,observation_id,metric_definition_id,accepted_ordinal,observed_at,numeric_value)
+  VALUES ('$tenant','obs-post-1','$metric',$ord_post,'2026-08-28T10:02:00Z',13.5);
+  RESET ROLE;
+" >/dev/null
+
+acceptance_count="$(pg_sql "SELECT count(*) FROM relocation_evidence.acceptance WHERE tenant_id='$tenant';")"
+target_count="$(ts_sql "SELECT count(*) FROM relocation_evidence.target_history WHERE tenant_id='$tenant';")"
+target_distinct="$(ts_sql "SELECT count(DISTINCT observation_id) FROM relocation_evidence.target_history WHERE tenant_id='$tenant';")"
+source_post_count="$(ts_sql "SELECT count(*) FROM relocation_evidence.source_history WHERE observation_id='obs-post-1';")"
+placement="$(pg_sql "SELECT phase||'|'||current_writer||'|'||placement_version||'|'||fence_ordinal FROM relocation_evidence.placement WHERE tenant_id='$tenant';")"
+receipt_state="$(pg_sql "SELECT state||'|'||authoritative_count||'|'||target_count||'|'||target_max_ordinal||'|'||target_sealed FROM relocation_evidence.projection_receipt WHERE tenant_id='$tenant' AND fence_ordinal=$fence;")"
+target_checkpoint_state="$(ts_sql "SELECT phase||'|'||checkpoint_id||'|'||checkpoint_generation FROM relocation_evidence.target_control WHERE tenant_id='$tenant';")"
+source_digest="$(pg_sql "SELECT relocation_evidence.authoritative_digest('$tenant',$fence);")"
+sealed_target_digest="$(ts_sql "SELECT target_digest FROM relocation_evidence.target_checkpoint WHERE checkpoint_id='$sealed_cp';")"
+
+assert_exact "relocation_authoritative_acceptance_count" "4" "$acceptance_count"
+assert_exact "relocation_target_history_complete" "$acceptance_count" "$target_count"
+assert_exact "relocation_target_history_no_duplicates" "$target_count" "$target_distinct"
+assert_exact "relocation_retired_source_no_post_cutover_projection" "0" "$source_post_count"
+assert_exact "relocation_final_authority" "active|target|2|$fence" "$placement"
+assert_exact "relocation_durable_complete_receipt" "complete|3|3|$fence|true" "$receipt_state"
+assert_exact "relocation_sha256_canonical_payload_digest" "$source_digest" "$sealed_target_digest"
+assert_exact "relocation_target_checkpoint_current" "activated|$sealed_cp|$sealed_gen" "$target_checkpoint_state"
+
+if docker exec -e PGPASSWORD=report-a-evidence-only "$ts_container" \
+    psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U ts_report_a -d jlmirror -Atq \
+    -c "SELECT count(*) FROM relocation_evidence.target_history;" >/tmp/relocation-attack.out 2>&1; then
+  echo "relocation tenant-facing direct target-history read unexpectedly succeeded" >&2
+  cat /tmp/relocation-attack.out >&2 || true
+  exit 1
+fi
+printf '%s\n' 'relocation_tier2_direct_tenant_read=PASS rejected'
+
+printf 'tenant_relocation_tier1_tier2_continuity=PASS F=%s receipt=%s checkpoint=%s\n' "$fence" "$receipt_state" "$sealed_cp"

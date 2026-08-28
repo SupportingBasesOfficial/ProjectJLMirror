@@ -1,6 +1,6 @@
 # Monitoring Domain Contract — Wave 4 Entry
 
-**Status:** proposed baseline  
+**Status:** accepted — Wave 4 Monitoring Track A accepted 2026-08-28 (`docs/16-implementation-readiness/16-wave-4-monitoring-entry-gate.md`), following `adr/ADR-021-monitoring-source-instance-replacement.md`'s acceptance  
 **Owner:** Monitoring bounded context  
 **Wave:** 4 — Product/domain vertical-slice prerequisite  
 **Traceability:** `CAP-MONITORING`, `FR-MON-001..006`, `FR-OPS-001..003`, `AC-001`, `AC-003`, `AC-006`, `AC-012`, ADR-008, ADR-009, ADR-013, ADR-019, `docs/08-data/telemetry-plane.md`, `docs/09-api-contracts/zabbix-monitoring-source-provider-contract.md`, `docs/10-event-contracts/monitoring-domain-event-contracts.md`, `docs/11-reliability-resilience/OPEN-REL-030-decision-record.md`
@@ -504,7 +504,7 @@ A configured-scope edit atomically advances the source `scope_revision`, commits
 
 ### Replace instance — staged candidate, then atomic cutover
 
-> **PROPOSED — pending ADR-021.** This section instantiates the platform's already-accepted generation-fencing/staged-cutover idiom (ADR-004 tenant placement, ADR-006 artifact lifecycle, ADR-018 PITR recovery cutover, ADR-019 tenant relocation cutover) for the Monitoring domain's source-instance-replacement mechanism, but no ADR yet authorizes instance-replacement/candidate/cutover as a Monitoring-domain mechanism specifically. The design below is not treated as binding for Wave 4 implementation until `adr/ADR-021-monitoring-source-instance-replacement.md` (or equivalent) is accepted — see that ADR for the full decision record.
+> **ACCEPTED — authorized by `adr/ADR-021-monitoring-source-instance-replacement.md`.** This section instantiates the platform's already-accepted generation-fencing/staged-cutover idiom (ADR-004 tenant placement, ADR-006 artifact lifecycle, ADR-018 PITR recovery cutover, ADR-019 tenant relocation cutover) for the Monitoring domain's source-instance-replacement mechanism. ADR-021 authorizes instance-replacement/candidate/cutover as a Monitoring-domain mechanism at the architecture-decision level; this section remains the field-level specification ADR-021 points to. The design below is binding for Wave 4 implementation subject to the conformance evidence ADR-021's Validation section still requires before implementation treats it as production-ready.
 
 Replacing the provider instance is intentionally **non-disruptive for a healthy active generation until the successor proves basic admissibility**.
 
@@ -800,7 +800,7 @@ Before implementation conformance:
 
 ## Remaining OPENs / blockers
 
-Semantic ownership above is fixed by this proposed contract; mechanism/numeric choices remain:
+Semantic ownership above is fixed by this accepted contract; mechanism/numeric choices remain:
 
 - `OPEN-REL-030` C2 customer-monitoring durable acceptance/projection conformance;
 - Tier 2 telemetry-store selection/conformance;

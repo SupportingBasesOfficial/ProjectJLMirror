@@ -49,7 +49,8 @@
     "native_assurance_panorama_extensions": [
       "seal must serialize against target DML before measuring the checkpoint set",
       "freeze must protect both OLD and NEW tenant authority scopes for cross-tenant UPDATE",
-      "projection writer must not own or be able to disable the target freeze authority"
+      "projection writer must not own or be able to disable the target freeze authority",
+      "Timescale LOGIN automation owner must be classified as a privileged cross-tenant infrastructure principal; PASSWORD NULL is not equivalent to NOLOGIN or proof of production authentication/admission isolation"
     ]
   },
   "tier1_vectors": [
@@ -148,7 +149,10 @@
     "restored_background_jobs": 2,
     "job_owner": "ts_automation_owner",
     "mapping_and_mediation_owner": "ts_owner",
+    "automation_owner_login": true,
+    "automation_owner_cross_tenant_privileged_infrastructure": true,
     "automation_owner_password_credential": "absent",
+    "password_absence_is_authentication_barrier": false,
     "tenant_runtime_owner_memberships": 0,
     "post_restore_attack_matrix": "pass",
     "post_restore_background_job_attack_matrix": "pass"
@@ -186,12 +190,22 @@
     "direct_pooled_rls_plus_columnstore": "rejected_ineligible_on_evaluated_profile_sqlstate_0A000",
     "direct_pooled_rls_plus_continuous_aggregate": "rejected_ineligible_on_evaluated_profile_sqlstate_0A000",
     "mediated_shared_history_columnstore_cagg": "conformant_candidate_recommended_for_c2_acceptance",
+    "privileged_automation_boundary": {
+      "principal": "ts_automation_owner",
+      "classification": "cross_tenant_privileged_infrastructure",
+      "login_required_by_evaluated_timescale_profile": true,
+      "password_credential_in_evidence": "absent",
+      "password_null_equivalent_to_nologin": false,
+      "production_requirement": "database connection/authentication admission, pg_hba/socket/network exposure and role-membership policy must prevent tenant/application principals from authenticating as or assuming ts_automation_owner; widening this boundary invalidates the conformed profile until re-reviewed"
+    },
     "required_security_shape": [
       "no direct tenant-facing privilege on shared raw history",
       "no direct tenant-facing privilege on continuous aggregate or internal materialization",
       "tenant binding outside caller-writable SQL state",
       "fixed-search-path SECURITY DEFINER mediated reader",
       "separate NOLOGIN mediation/checkpoint owner and least-privilege LOGIN automation owner",
+      "LOGIN automation owner is explicitly a cross-tenant privileged infrastructure principal; PASSWORD NULL is not NOLOGIN and is not production admission evidence",
+      "production authentication/connection topology must prevent tenant/application principals from authenticating as or assuming the automation owner",
       "tenant-facing/runtime roles have no owner membership, CREATEROLE, SUPERUSER or BYPASSRLS",
       "projection writer cannot read target attestation key or disable the sealed target-history freeze",
       "backup/restore role topology is reconstructed in a fresh cluster rather than inherited from the source cluster",
@@ -209,10 +223,12 @@
   },
   "decision_recommendation": {
     "tier1": "accept PostgreSQL transactional acceptance/outbox/current-state pattern as OPEN-REL-030 Tier 1 mechanism only with immutable canonical observation content, owner-controlled source generation/epoch, durable live poll-claim admission resolved in-transaction, contiguous/current reconciliation coverage anchored at the supported history floor, lock-before-F relocation fencing, and verification of a target-owned authenticated sealed canonical-payload checkpoint, after exact-head review and explicit Track B acceptance",
-    "tier2": "accept TimescaleDB historical projection only under the conformed mediated shared-history profile, including fresh-cluster restore role reconstruction and target-owned authenticated sealed relocation checkpoints whose SHA-256 canonical-payload set matches the frozen Tier 1 authoritative set, after exact-head review and explicit Track B acceptance",
+    "tier2": "accept TimescaleDB historical projection only under the conformed mediated shared-history profile, including fresh-cluster restore role reconstruction, explicit cross-tenant privileged treatment and deployment admission isolation for ts_automation_owner, and target-owned authenticated sealed relocation checkpoints whose SHA-256 canonical-payload set matches the frozen Tier 1 authoritative set, after exact-head review and explicit Track B acceptance",
     "rejected_assumptions": [
       "do not treat RLS on a pooled raw hypertable as automatically compatible with or inherited by columnstore/continuous-aggregate surfaces",
       "do not treat same-cluster database restore as evidence that cluster-global role topology can be safely reconstructed",
+      "do not treat PASSWORD NULL on a LOGIN role as equivalent to NOLOGIN or as proof that production pg_hba/socket/network authentication cannot admit that role",
+      "do not expose or delegate the privileged cross-tenant Timescale automation owner to tenant/application principals",
       "do not derive relocation F before acquiring the authority lock that excludes later source acceptance",
       "do not treat max(target_ordinal)=F as proof that every authoritative observation through F exists on the target",
       "do not trust caller-supplied target count/digest/max as proof of the target's current actual state",
@@ -223,6 +239,6 @@
       "do not treat max(reconciliation window_to) as proof of contiguous history coverage from supported_history_floor",
       "do not reuse reconciliation windows older than the snapshot currentness required by finalization"
     ],
-    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity and payload, idempotent historical projection, contiguous/current reconciliation evidence, independently trustworthy target checkpoint/freeze semantics, tenant isolation and recovery/relocation semantics"
+    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity and payload, idempotent historical projection, contiguous/current reconciliation evidence, privileged-infrastructure admission boundaries, independently trustworthy target checkpoint/freeze semantics, tenant isolation and recovery/relocation semantics"
   }
 }

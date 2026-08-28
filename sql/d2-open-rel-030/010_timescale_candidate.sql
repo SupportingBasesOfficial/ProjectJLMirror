@@ -15,9 +15,13 @@ CREATE ROLE ts_owner
     NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
 
 -- Timescale background workers require the owner of job-bearing hypertables to
--- have LOGIN. Keep that requirement in a separate non-interactive trust class
--- rather than weakening ts_owner. No password is assigned and no tenant-facing
--- role receives membership in it.
+-- have LOGIN. Keep that requirement in a separate privileged cross-tenant
+-- infrastructure trust class rather than weakening ts_owner. No password is
+-- assigned, but PASSWORD NULL is not equivalent to NOLOGIN and is not evidence
+-- of production connection/authentication admission. A production deployment of
+-- this profile must prevent tenant/application principals from authenticating as
+-- or assuming this owner through pg_hba/socket/network/role-membership policy;
+-- widening that boundary requires fresh security/conformance review.
 CREATE ROLE ts_automation_owner
     LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
 

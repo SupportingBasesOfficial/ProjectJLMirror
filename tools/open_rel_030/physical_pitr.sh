@@ -14,6 +14,7 @@ restored_container="jlmirror-open-rel-030-pitr-restored"
 tmpdir="$(mktemp -d)"
 recovery_key="$(openssl rand -hex 32)"
 recovery_nonce="$(openssl rand -hex 16)"
+required_receipt='effect|after-r'
 
 cleanup() {
   docker rm -f "$source_container" "$restored_container" >/dev/null 2>&1 || true
@@ -64,14 +65,45 @@ assert_exact() {
 }
 
 # ---------------------------------------------------------------------------
-# Surviving authority. The HMAC key exists only in the external control plane;
-# it is never copied to source/basebackup/restored PostgreSQL. A restore can
-# therefore not self-mint the grant that fences re-admission after PITR.
+# Surviving authority. Structured grants are stored as typed fields; the HMAC
+# covers a deterministic self-delimiting canonical representation. No caller,
+# restored DB, or shell delimiter split is allowed to define field boundaries.
 # ---------------------------------------------------------------------------
 psql_in "$control_container" "
   CREATE EXTENSION IF NOT EXISTS pgcrypto;
   DROP SCHEMA IF EXISTS pitr_external_evidence CASCADE;
   CREATE SCHEMA pitr_external_evidence;
+
+  CREATE OR REPLACE FUNCTION pitr_external_evidence.canonical_field(p_value text)
+  RETURNS text
+  LANGUAGE sql IMMUTABLE STRICT
+  SET search_path=pg_catalog
+  AS \$\$
+    SELECT octet_length(convert_to(p_value,'UTF8'))::text || ':' ||
+           encode(convert_to(p_value,'UTF8'),'hex')
+  \$\$;
+
+  CREATE OR REPLACE FUNCTION pitr_external_evidence.canonical_grant(
+    p_domain text,
+    p_boundary_r text,
+    p_boundary_f text,
+    p_successor_epoch bigint,
+    p_placement_version bigint,
+    p_required_receipt text,
+    p_nonce text
+  ) RETURNS text
+  LANGUAGE sql IMMUTABLE STRICT
+  SET search_path=pg_catalog,pitr_external_evidence
+  AS \$\$
+    SELECT
+      pitr_external_evidence.canonical_field(p_domain) ||
+      pitr_external_evidence.canonical_field(p_boundary_r) ||
+      pitr_external_evidence.canonical_field(p_boundary_f) ||
+      pitr_external_evidence.canonical_field(p_successor_epoch::text) ||
+      pitr_external_evidence.canonical_field(p_placement_version::text) ||
+      pitr_external_evidence.canonical_field(p_required_receipt) ||
+      pitr_external_evidence.canonical_field(p_nonce)
+  \$\$;
 
   CREATE TABLE pitr_external_evidence.authority (
     singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
@@ -83,7 +115,7 @@ psql_in "$control_container" "
   );
   INSERT INTO pitr_external_evidence.authority
     (singleton,boundary_r,boundary_f,expected_successor_epoch,expected_placement_version,required_receipt)
-  VALUES (true,'R','F',6,8,'effect-after-r');
+  VALUES (true,'R','F',6,8,'$required_receipt');
 
   CREATE TABLE pitr_external_evidence.signing_key (
     singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
@@ -95,41 +127,87 @@ psql_in "$control_container" "
 
   CREATE TABLE pitr_external_evidence.recovery_grant (
     grant_id text PRIMARY KEY,
-    payload text NOT NULL,
+    domain text NOT NULL,
+    boundary_r text NOT NULL,
+    boundary_f text NOT NULL,
+    successor_epoch bigint NOT NULL,
+    placement_version bigint NOT NULL,
+    required_receipt text NOT NULL,
+    nonce text NOT NULL,
+    canonical_payload text NOT NULL,
     attestation text NOT NULL,
     issued_at timestamptz NOT NULL DEFAULT clock_timestamp()
   );
 
   CREATE OR REPLACE FUNCTION pitr_external_evidence.verify_grant(
     p_grant_id text,
-    p_payload text,
+    p_domain text,
+    p_boundary_r text,
+    p_boundary_f text,
+    p_successor_epoch bigint,
+    p_placement_version bigint,
+    p_required_receipt text,
+    p_nonce text,
     p_attestation text
   ) RETURNS boolean
   LANGUAGE plpgsql
   SECURITY DEFINER
-  SET search_path = pg_catalog, pitr_external_evidence
+  SET search_path=pg_catalog,pitr_external_evidence
   AS \$\$
   DECLARE
     v_key text;
     v_grant pitr_external_evidence.recovery_grant%ROWTYPE;
+    v_canonical text;
     v_expected text;
   BEGIN
     SELECT * INTO v_grant
       FROM pitr_external_evidence.recovery_grant
      WHERE grant_id=p_grant_id;
-    IF NOT FOUND OR v_grant.payload IS DISTINCT FROM p_payload
+    IF NOT FOUND
+       OR v_grant.domain IS DISTINCT FROM p_domain
+       OR v_grant.boundary_r IS DISTINCT FROM p_boundary_r
+       OR v_grant.boundary_f IS DISTINCT FROM p_boundary_f
+       OR v_grant.successor_epoch IS DISTINCT FROM p_successor_epoch
+       OR v_grant.placement_version IS DISTINCT FROM p_placement_version
+       OR v_grant.required_receipt IS DISTINCT FROM p_required_receipt
+       OR v_grant.nonce IS DISTINCT FROM p_nonce
        OR v_grant.attestation IS DISTINCT FROM p_attestation THEN
       RETURN false;
     END IF;
+
+    v_canonical := pitr_external_evidence.canonical_grant(
+      p_domain,p_boundary_r,p_boundary_f,p_successor_epoch,
+      p_placement_version,p_required_receipt,p_nonce
+    );
+    IF v_grant.canonical_payload IS DISTINCT FROM v_canonical THEN
+      RETURN false;
+    END IF;
+
     SELECT key_material INTO STRICT v_key
       FROM pitr_external_evidence.signing_key WHERE singleton;
     v_expected := encode(public.hmac(
-      convert_to(p_payload,'UTF8'),decode(v_key,'hex'),'sha256'),'hex');
+      convert_to(v_canonical,'UTF8'),decode(v_key,'hex'),'sha256'),'hex');
     RETURN v_expected = p_attestation;
   END;
   \$\$;
-  REVOKE ALL ON FUNCTION pitr_external_evidence.verify_grant(text,text,text) FROM PUBLIC;
+  REVOKE ALL ON FUNCTION pitr_external_evidence.verify_grant(text,text,text,text,bigint,bigint,text,text,text) FROM PUBLIC;
 " >/dev/null
+
+# Prove why the old pipe framing is not a structured authority boundary.
+legacy_probe="$(psql_in "$control_container" "
+  SELECT (
+    ('domain' || '|' || 'R|F' || '|' || 'tail') =
+    ('domain|R' || '|' || 'F' || '|' || 'tail')
+  )::text || '|' || (
+    pitr_external_evidence.canonical_field('domain') ||
+    pitr_external_evidence.canonical_field('R|F') ||
+    pitr_external_evidence.canonical_field('tail') <>
+    pitr_external_evidence.canonical_field('domain|R') ||
+    pitr_external_evidence.canonical_field('F') ||
+    pitr_external_evidence.canonical_field('tail')
+  )::text;
+")"
+assert_exact "physical_pitr_grant_delimiter_collision_closed" "true|true" "$legacy_probe"
 
 docker run -d --name "$source_container" \
   -e POSTGRES_PASSWORD="$password" \
@@ -153,9 +231,7 @@ psql_in "$source_container" "
     external_grant_id text,
     external_grant_fingerprint text
   );
-  CREATE TABLE pitr_continuity_receipt (
-    receipt_id text PRIMARY KEY
-  );
+  CREATE TABLE pitr_continuity_receipt (receipt_id text PRIMARY KEY);
   INSERT INTO pitr_local_state
     (singleton,business_state,poll_epoch,poll_generation,placement_version,reconciled_through_f)
   VALUES (true,'pre_R',4,9,7,false);
@@ -167,7 +243,7 @@ docker exec -u postgres -e PGPASSWORD="$password" "$source_container" \
 
 psql_in "$source_container" "
   UPDATE pitr_local_state
-     SET business_state='state_at_R', poll_epoch=5, poll_generation=10
+     SET business_state='state_at_R',poll_epoch=5,poll_generation=10
    WHERE singleton;
 " >/dev/null
 r_committed="$(psql_in "$source_container" "SELECT business_state||'|'||poll_epoch||'|'||poll_generation FROM pitr_local_state WHERE singleton;")"
@@ -176,9 +252,9 @@ r_lsn="$(psql_in "$source_container" "SELECT pg_create_restore_point('jlmirror_R
 
 psql_in "$source_container" "
   UPDATE pitr_local_state
-     SET business_state='post_R_business_change', poll_generation=11
+     SET business_state='post_R_business_change',poll_generation=11
    WHERE singleton;
-  INSERT INTO pitr_continuity_receipt(receipt_id) VALUES ('effect-after-r');
+  INSERT INTO pitr_continuity_receipt(receipt_id) VALUES ('$required_receipt');
 " >/dev/null
 f_committed="$(psql_in "$source_container" "SELECT business_state||'|'||poll_generation||'|'||(SELECT count(*) FROM pitr_continuity_receipt) FROM pitr_local_state WHERE singleton;")"
 assert_exact "physical_pitr_F_transaction_committed" "post_R_business_change|11|1" "$f_committed"
@@ -189,24 +265,54 @@ if [[ "$r_lsn" == "$f_lsn" ]]; then
 fi
 printf 'physical_pitr_restore_points=PASS R=%s F=%s\n' "$r_lsn" "$f_lsn"
 
-# Only after F exists does the surviving authority issue the recovery grant.
-# The nonce and HMAC were never present in the source database or base backup.
-grant_payload="open-rel-030-recovery-v1|R|F|6|8|effect-after-r|$recovery_nonce"
+# Only after F exists does the surviving authority issue the structured grant.
 psql_in "$control_container" "
-  INSERT INTO pitr_external_evidence.recovery_grant(grant_id,payload,attestation)
-  SELECT 'grant-F-1',
-         '$grant_payload',
-         encode(public.hmac(convert_to('$grant_payload','UTF8'),decode(key_material,'hex'),'sha256'),'hex')
-    FROM pitr_external_evidence.signing_key
-   WHERE singleton;
+  WITH facts AS (
+    SELECT
+      'grant-F-1'::text AS grant_id,
+      'open-rel-030-recovery-v1'::text AS domain,
+      boundary_r,
+      boundary_f,
+      expected_successor_epoch AS successor_epoch,
+      expected_placement_version AS placement_version,
+      required_receipt,
+      '$recovery_nonce'::text AS nonce
+    FROM pitr_external_evidence.authority WHERE singleton
+  ), canonical AS (
+    SELECT f.*,
+      pitr_external_evidence.canonical_grant(
+        domain,boundary_r,boundary_f,successor_epoch,
+        placement_version,required_receipt,nonce
+      ) AS payload
+    FROM facts f
+  )
+  INSERT INTO pitr_external_evidence.recovery_grant(
+    grant_id,domain,boundary_r,boundary_f,successor_epoch,placement_version,
+    required_receipt,nonce,canonical_payload,attestation
+  )
+  SELECT c.grant_id,c.domain,c.boundary_r,c.boundary_f,c.successor_epoch,
+         c.placement_version,c.required_receipt,c.nonce,c.payload,
+         encode(public.hmac(convert_to(c.payload,'UTF8'),decode(k.key_material,'hex'),'sha256'),'hex')
+    FROM canonical c CROSS JOIN pitr_external_evidence.signing_key k
+   WHERE k.singleton;
 " >/dev/null
 
-grant_row="$(psql_in "$control_container" "SELECT grant_id||'|'||payload||'|'||attestation FROM pitr_external_evidence.recovery_grant WHERE grant_id='grant-F-1';")"
-IFS='|' read -r grant_id grant_domain grant_r grant_f grant_epoch grant_placement grant_receipt grant_nonce grant_attestation <<< "$grant_row"
-if [[ -z "${grant_attestation:-}" ]]; then
-  echo "surviving authority failed to issue authenticated recovery grant" >&2
+# Read structured facts independently. No delimiter parsing defines authority.
+grant_id="$(psql_in "$control_container" "SELECT grant_id FROM pitr_external_evidence.recovery_grant WHERE grant_id='grant-F-1';")"
+grant_domain="$(psql_in "$control_container" "SELECT domain FROM pitr_external_evidence.recovery_grant WHERE grant_id='grant-F-1';")"
+grant_r="$(psql_in "$control_container" "SELECT boundary_r FROM pitr_external_evidence.recovery_grant WHERE grant_id='grant-F-1';")"
+grant_f="$(psql_in "$control_container" "SELECT boundary_f FROM pitr_external_evidence.recovery_grant WHERE grant_id='grant-F-1';")"
+grant_epoch="$(psql_in "$control_container" "SELECT successor_epoch FROM pitr_external_evidence.recovery_grant WHERE grant_id='grant-F-1';")"
+grant_placement="$(psql_in "$control_container" "SELECT placement_version FROM pitr_external_evidence.recovery_grant WHERE grant_id='grant-F-1';")"
+grant_receipt="$(psql_in "$control_container" "SELECT required_receipt FROM pitr_external_evidence.recovery_grant WHERE grant_id='grant-F-1';")"
+grant_nonce="$(psql_in "$control_container" "SELECT nonce FROM pitr_external_evidence.recovery_grant WHERE grant_id='grant-F-1';")"
+grant_payload="$(psql_in "$control_container" "SELECT canonical_payload FROM pitr_external_evidence.recovery_grant WHERE grant_id='grant-F-1';")"
+grant_attestation="$(psql_in "$control_container" "SELECT attestation FROM pitr_external_evidence.recovery_grant WHERE grant_id='grant-F-1';")"
+if [[ -z "$grant_attestation" || -z "$grant_payload" ]]; then
+  echo "surviving authority failed to issue authenticated structured recovery grant" >&2
   exit 1
 fi
+assert_exact "physical_pitr_grant_receipt_contains_pipe" "$required_receipt" "$grant_receipt"
 
 docker exec -e PGPASSWORD="$password" "$source_container" \
   psql -X -v ON_ERROR_STOP=1 -U postgres -d jlmirror -Atq -c \
@@ -259,53 +365,58 @@ recovery_flag="$(psql_in "$restored_container" "SELECT pg_is_in_recovery()::text
 assert_exact "physical_pitr_promoted_at_R" "false" "$recovery_flag"
 
 restored_state="$(psql_in "$restored_container" "
-  SELECT business_state || '|' || poll_epoch || '|' || poll_generation || '|' ||
-         placement_version || '|' || reconciled_through_f::text || '|' ||
-         (SELECT count(*) FROM pitr_continuity_receipt) || '|' ||
-         coalesce(external_grant_id,'')
+  SELECT business_state||'|'||poll_epoch||'|'||poll_generation||'|'||
+         placement_version||'|'||reconciled_through_f::text||'|'||
+         (SELECT count(*) FROM pitr_continuity_receipt)||'|'||coalesce(external_grant_id,'')
   FROM pitr_local_state WHERE singleton;
 ")"
 assert_exact "physical_pitr_exact_R_state" "state_at_R|5|10|7|false|0|" "$restored_state"
 
-external_state="$(psql_in "$control_container" "
-  SELECT expected_successor_epoch || '|' || expected_placement_version || '|' || required_receipt
-  FROM pitr_external_evidence.authority WHERE singleton;
-")"
-assert_exact "physical_pitr_external_F_survives" "6|8|effect-after-r" "$external_state"
+external_epoch="$(psql_in "$control_container" "SELECT expected_successor_epoch FROM pitr_external_evidence.authority WHERE singleton;")"
+external_placement="$(psql_in "$control_container" "SELECT expected_placement_version FROM pitr_external_evidence.authority WHERE singleton;")"
+external_receipt="$(psql_in "$control_container" "SELECT required_receipt FROM pitr_external_evidence.authority WHERE singleton;")"
+assert_exact "physical_pitr_external_F_epoch_survives" "6" "$external_epoch"
+assert_exact "physical_pitr_external_F_placement_survives" "8" "$external_placement"
+assert_exact "physical_pitr_external_F_receipt_survives" "$required_receipt" "$external_receipt"
 
-# A restore can reproduce a local receipt string, but that is not admission
-# evidence anymore. Without a verified external grant it remains fenced.
+# A restore can reproduce a local receipt string, but that is not admission.
 psql_in "$restored_container" "
   INSERT INTO pitr_continuity_receipt(receipt_id)
-  VALUES ('effect-after-r') ON CONFLICT DO NOTHING;
+  VALUES ('$required_receipt') ON CONFLICT DO NOTHING;
 " >/dev/null
 local_self_mint="$(psql_in "$restored_container" "
-  SELECT (
-    reconciled_through_f
-    AND external_grant_id IS NOT NULL
-    AND external_grant_fingerprint IS NOT NULL
-  )::text FROM pitr_local_state WHERE singleton;
+  SELECT (reconciled_through_f AND external_grant_id IS NOT NULL
+          AND external_grant_fingerprint IS NOT NULL)::text
+  FROM pitr_local_state WHERE singleton;
 ")"
 assert_exact "physical_pitr_local_self_mint_cannot_admit" "false" "$local_self_mint"
 
-# Tampering with any surviving grant field fails at the external authority.
-tampered_verify="$(psql_in "$control_container" "SELECT pitr_external_evidence.verify_grant('grant-F-1','$grant_payload-tampered','$grant_attestation')::text;")"
+# Tampering a structured field while replaying the old attestation must fail.
+tampered_verify="$(psql_in "$control_container" "
+  SELECT pitr_external_evidence.verify_grant(
+    '$grant_id','$grant_domain','$grant_r','$grant_f',$grant_epoch,$grant_placement,
+    'effect|after-r-tampered','$grant_nonce','$grant_attestation'
+  )::text;
+")"
 assert_exact "physical_pitr_tampered_external_grant_rejected" "false" "$tampered_verify"
 
-verified="$(psql_in "$control_container" "SELECT pitr_external_evidence.verify_grant('$grant_id','$grant_payload','$grant_attestation')::text;")"
+verified="$(psql_in "$control_container" "
+  SELECT pitr_external_evidence.verify_grant(
+    '$grant_id','$grant_domain','$grant_r','$grant_f',$grant_epoch,$grant_placement,
+    '$grant_receipt','$grant_nonce','$grant_attestation'
+  )::text;
+")"
 assert_exact "physical_pitr_external_grant_verified" "true" "$verified"
-
 assert_exact "physical_pitr_grant_domain" "open-rel-030-recovery-v1" "$grant_domain"
 assert_exact "physical_pitr_grant_R" "R" "$grant_r"
 assert_exact "physical_pitr_grant_F" "F" "$grant_f"
 assert_exact "physical_pitr_grant_epoch" "6" "$grant_epoch"
 assert_exact "physical_pitr_grant_placement" "8" "$grant_placement"
-assert_exact "physical_pitr_grant_receipt" "effect-after-r" "$grant_receipt"
+assert_exact "physical_pitr_grant_receipt" "$required_receipt" "$grant_receipt"
 
 grant_fingerprint="$(printf '%s' "$grant_payload" | sha256sum | awk '{print $1}')"
 
-# Apply only facts extracted from the authenticated surviving grant. The local
-# rollback-subject business mutation after R is deliberately not replayed.
+# Apply only facts extracted from the authenticated surviving grant.
 psql_in "$restored_container" "
   UPDATE pitr_local_state
      SET poll_epoch=$grant_epoch,
@@ -318,17 +429,14 @@ psql_in "$restored_container" "
 " >/dev/null
 
 after_state="$(psql_in "$restored_container" "
-  SELECT business_state || '|' || poll_epoch || '|' || poll_generation || '|' ||
-         placement_version || '|' || reconciled_through_f::text || '|' ||
-         (SELECT count(*) FROM pitr_continuity_receipt) || '|' || external_grant_id
+  SELECT business_state||'|'||poll_epoch||'|'||poll_generation||'|'||
+         placement_version||'|'||reconciled_through_f::text||'|'||
+         (SELECT count(*) FROM pitr_continuity_receipt)||'|'||external_grant_id
   FROM pitr_local_state WHERE singleton;
 ")"
 assert_exact "physical_pitr_reconciled_without_business_replay" \
   "state_at_R|6|1|8|true|1|grant-F-1" "$after_state"
 
-# Final admission is explicitly a conjunction of restored local state and a
-# fresh verification by the surviving authority; the restored database cannot
-# make this final decision by minting its own receipt.
 local_ready="$(psql_in "$restored_container" "
   SELECT (
     reconciled_through_f
@@ -339,12 +447,17 @@ local_ready="$(psql_in "$restored_container" "
     AND EXISTS (SELECT 1 FROM pitr_continuity_receipt WHERE receipt_id='$grant_receipt')
   )::text FROM pitr_local_state WHERE singleton;
 ")"
-external_ready="$(psql_in "$control_container" "SELECT pitr_external_evidence.verify_grant('$grant_id','$grant_payload','$grant_attestation')::text;")"
+external_ready="$(psql_in "$control_container" "
+  SELECT pitr_external_evidence.verify_grant(
+    '$grant_id','$grant_domain','$grant_r','$grant_f',$grant_epoch,$grant_placement,
+    '$grant_receipt','$grant_nonce','$grant_attestation'
+  )::text;
+")"
 assert_exact "physical_pitr_local_reconciled_state" "true" "$local_ready"
 assert_exact "physical_pitr_external_authority_still_verifies" "true" "$external_ready"
 if [[ "$local_ready" != "true" || "$external_ready" != "true" ]]; then
   echo "physical PITR admission lacks surviving external authority" >&2
   exit 1
 fi
-printf '%s\n' 'physical_pitr_post_reconcile_admission=PASS authority=surviving_external_authenticated_grant'
+printf '%s\n' 'physical_pitr_post_reconcile_admission=PASS authority=surviving_external_authenticated_structured_grant'
 printf '%s\n' 'physical_pitr_rf_reconciliation=PASS'

@@ -147,15 +147,30 @@ pg_sql "
   END;
   \$\$;
 
-  -- Every canonical field is self-delimiting: byte length + ':' + UTF-8 hex.
-  -- The hex alphabet cannot contain framing characters, and the byte length
-  -- prevents boundary ambiguity even when text contains control separators.
   CREATE OR REPLACE FUNCTION relocation_evidence.canonical_field(p_value text)
   RETURNS text LANGUAGE sql IMMUTABLE STRICT
   SET search_path=pg_catalog
   AS \$\$
     SELECT octet_length(convert_to(p_value,'UTF8'))::text || ':' ||
            encode(convert_to(p_value,'UTF8'),'hex')
+  \$\$;
+
+  CREATE OR REPLACE FUNCTION relocation_evidence.canonical_checkpoint_payload(
+    p_tenant uuid,p_fence bigint,p_checkpoint_id uuid,p_generation bigint,
+    p_sealed boolean,p_count bigint,p_digest text,p_max bigint
+  ) RETURNS text LANGUAGE sql IMMUTABLE STRICT
+  SET search_path=pg_catalog,relocation_evidence
+  AS \$\$
+    SELECT
+      relocation_evidence.canonical_field('open-rel-030-target-checkpoint-v1') ||
+      relocation_evidence.canonical_field(p_tenant::text) ||
+      relocation_evidence.canonical_field(p_fence::text) ||
+      relocation_evidence.canonical_field(p_checkpoint_id::text) ||
+      relocation_evidence.canonical_field(p_generation::text) ||
+      relocation_evidence.canonical_field(p_sealed::text) ||
+      relocation_evidence.canonical_field(p_count::text) ||
+      relocation_evidence.canonical_field(p_digest) ||
+      relocation_evidence.canonical_field(p_max::text)
   \$\$;
 
   CREATE OR REPLACE FUNCTION relocation_evidence.authoritative_digest(p_tenant uuid,p_fence bigint)
@@ -203,7 +218,7 @@ pg_sql "
   AS \$\$
   DECLARE
     v_phase text; v_writer text; v_f bigint; v_source_count bigint;
-    v_source_digest text; v_key text; v_expected text; v_state text;
+    v_source_digest text; v_key text; v_expected text; v_state text; v_payload text;
   BEGIN
     SELECT phase,current_writer,fence_ordinal INTO v_phase,v_writer,v_f
       FROM relocation_evidence.placement WHERE tenant_id=p_tenant FOR UPDATE;
@@ -211,10 +226,11 @@ pg_sql "
       RAISE EXCEPTION 'projection receipt does not match current relocation fence';
     END IF;
     SELECT key_material INTO STRICT v_key FROM relocation_evidence.target_attestation_key WHERE singleton;
-    v_expected := encode(public.hmac(convert_to(concat_ws('|',
-      'open-rel-030-target-checkpoint-v1',p_tenant::text,p_fence::text,p_checkpoint_id::text,
-      p_checkpoint_generation::text,p_target_sealed::text,p_target_count::text,
-      p_target_digest,p_target_max_ordinal::text),'UTF8'),decode(v_key,'hex'),'sha256'),'hex');
+    v_payload := relocation_evidence.canonical_checkpoint_payload(
+      p_tenant,p_fence,p_checkpoint_id,p_checkpoint_generation,p_target_sealed,
+      p_target_count,p_target_digest,p_target_max_ordinal
+    );
+    v_expected := encode(public.hmac(convert_to(v_payload,'UTF8'),decode(v_key,'hex'),'sha256'),'hex');
     IF v_expected IS DISTINCT FROM p_target_attestation THEN
       RAISE EXCEPTION 'invalid target checkpoint attestation';
     END IF;
@@ -249,7 +265,7 @@ pg_sql "
   AS \$\$
   DECLARE
     v_f bigint; v_source_count bigint; v_source_digest text; v_key text;
-    v_expected text; v_receipt relocation_evidence.projection_receipt%ROWTYPE;
+    v_expected text; v_payload text; v_receipt relocation_evidence.projection_receipt%ROWTYPE;
   BEGIN
     SELECT fence_ordinal INTO v_f FROM relocation_evidence.placement
      WHERE tenant_id=p_tenant AND phase='fenced' AND current_writer='none' FOR UPDATE;
@@ -258,11 +274,12 @@ pg_sql "
      WHERE tenant_id=p_tenant AND fence_ordinal=v_f AND state='complete' AND target_sealed;
     IF NOT FOUND THEN RETURN false; END IF;
     SELECT key_material INTO STRICT v_key FROM relocation_evidence.target_attestation_key WHERE singleton;
-    v_expected := encode(public.hmac(convert_to(concat_ws('|',
-      'open-rel-030-target-checkpoint-v1',v_receipt.tenant_id::text,v_receipt.fence_ordinal::text,
-      v_receipt.checkpoint_id::text,v_receipt.checkpoint_generation::text,
-      v_receipt.target_sealed::text,v_receipt.target_count::text,
-      v_receipt.target_digest,v_receipt.target_max_ordinal::text),'UTF8'),decode(v_key,'hex'),'sha256'),'hex');
+    v_payload := relocation_evidence.canonical_checkpoint_payload(
+      v_receipt.tenant_id,v_receipt.fence_ordinal,v_receipt.checkpoint_id,
+      v_receipt.checkpoint_generation,v_receipt.target_sealed,v_receipt.target_count,
+      v_receipt.target_digest,v_receipt.target_max_ordinal
+    );
+    v_expected := encode(public.hmac(convert_to(v_payload,'UTF8'),decode(v_key,'hex'),'sha256'),'hex');
     IF v_expected IS DISTINCT FROM v_receipt.target_attestation THEN RETURN false; END IF;
     SELECT count(*),relocation_evidence.authoritative_digest(p_tenant,v_f)
       INTO v_source_count,v_source_digest
@@ -288,9 +305,6 @@ pre2="$(pg_sql "SELECT relocation_evidence.accept_observation('$tenant','source'
 assert_exact "relocation_source_pre1_accept" "true" "$pre1"
 assert_exact "relocation_source_pre2_accept" "true" "$pre2"
 
-# The legacy delimiter framing is ambiguous for unrestricted text: these two
-# logical two-field groupings produce identical raw bytes. Length-prefixed hex
-# makes the field boundaries unique even with literal US/RS control bytes.
 serialization_probe="$(pg_sql "
   SELECT (
     ('a' || E'\\x1f' || (E'b\\x1ec')) = ((E'a\\x1fb') || E'\\x1e' || 'c')
@@ -370,6 +384,26 @@ ts_sql "
   ALTER FUNCTION relocation_evidence.canonical_field(text) OWNER TO ts_owner;
   REVOKE ALL ON FUNCTION relocation_evidence.canonical_field(text) FROM PUBLIC;
 
+  CREATE OR REPLACE FUNCTION relocation_evidence.canonical_checkpoint_payload(
+    p_tenant uuid,p_fence bigint,p_checkpoint_id uuid,p_generation bigint,
+    p_sealed boolean,p_count bigint,p_digest text,p_max bigint
+  ) RETURNS text LANGUAGE sql IMMUTABLE STRICT SECURITY DEFINER
+  SET search_path=pg_catalog,relocation_evidence
+  AS \$\$
+    SELECT
+      relocation_evidence.canonical_field('open-rel-030-target-checkpoint-v1') ||
+      relocation_evidence.canonical_field(p_tenant::text) ||
+      relocation_evidence.canonical_field(p_fence::text) ||
+      relocation_evidence.canonical_field(p_checkpoint_id::text) ||
+      relocation_evidence.canonical_field(p_generation::text) ||
+      relocation_evidence.canonical_field(p_sealed::text) ||
+      relocation_evidence.canonical_field(p_count::text) ||
+      relocation_evidence.canonical_field(p_digest) ||
+      relocation_evidence.canonical_field(p_max::text)
+  \$\$;
+  ALTER FUNCTION relocation_evidence.canonical_checkpoint_payload(uuid,bigint,uuid,bigint,boolean,bigint,text,bigint) OWNER TO ts_owner;
+  REVOKE ALL ON FUNCTION relocation_evidence.canonical_checkpoint_payload(uuid,bigint,uuid,bigint,boolean,bigint,text,bigint) FROM PUBLIC;
+
   CREATE OR REPLACE FUNCTION relocation_evidence.target_digest(p_tenant uuid,p_fence bigint)
   RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path=pg_catalog,relocation_evidence
@@ -399,7 +433,6 @@ ts_sql "
     IF TG_OP='UPDATE' AND NEW.tenant_id IS DISTINCT FROM OLD.tenant_id THEN
       RAISE EXCEPTION 'target history tenant identity is immutable';
     END IF;
-
     FOR v_control IN
       SELECT tenant_id,phase,fence_ordinal
         FROM relocation_evidence.target_control
@@ -407,16 +440,13 @@ ts_sql "
          CASE WHEN TG_OP='INSERT' THEN NEW.tenant_id ELSE OLD.tenant_id END,
          CASE WHEN TG_OP='DELETE' THEN OLD.tenant_id ELSE NEW.tenant_id END
        )
-       ORDER BY tenant_id
-       FOR SHARE
+       ORDER BY tenant_id FOR SHARE
     LOOP
       IF v_control.phase='sealed' THEN
         RAISE EXCEPTION 'sealed target checkpoint forbids all pre-activation mutation';
       END IF;
       IF v_control.phase='activated' THEN
-        IF TG_OP <> 'INSERT' THEN
-          RAISE EXCEPTION 'activated target history is immutable';
-        END IF;
+        IF TG_OP <> 'INSERT' THEN RAISE EXCEPTION 'activated target history is immutable'; END IF;
         IF NEW.tenant_id=v_control.tenant_id
            AND v_control.fence_ordinal IS NOT NULL
            AND NEW.accepted_ordinal<=v_control.fence_ordinal THEN
@@ -424,7 +454,6 @@ ts_sql "
         END IF;
       END IF;
     END LOOP;
-
     IF TG_OP='DELETE' THEN RETURN OLD; END IF;
     RETURN NEW;
   END;
@@ -446,36 +475,30 @@ ts_sql "
   DECLARE
     v_phase text; v_generation bigint; v_key text; v_checkpoint_id uuid;
     v_count bigint; v_digest text; v_max bigint; v_attestation text; v_future bigint;
+    v_payload text;
   BEGIN
     SELECT tc.phase,tc.checkpoint_generation INTO v_phase,v_generation
       FROM relocation_evidence.target_control tc
      WHERE tc.tenant_id=p_tenant FOR UPDATE;
     IF NOT FOUND THEN RAISE EXCEPTION 'target checkpoint has no control authority'; END IF;
     IF p_seal AND v_phase<>'open' THEN RAISE EXCEPTION 'target checkpoint already sealed or activated'; END IF;
-
     IF p_hold_after_lock_seconds>0 THEN PERFORM pg_sleep(p_hold_after_lock_seconds); END IF;
-
     IF p_seal THEN
       SELECT count(*) INTO v_future FROM relocation_evidence.target_history
        WHERE tenant_id=p_tenant AND accepted_ordinal>p_fence;
-      IF v_future<>0 THEN
-        RAISE EXCEPTION 'target contains uncheckpointed rows above fence';
-      END IF;
+      IF v_future<>0 THEN RAISE EXCEPTION 'target contains uncheckpointed rows above fence'; END IF;
     END IF;
-
     SELECT count(*),relocation_evidence.target_digest(p_tenant,p_fence),coalesce(max(accepted_ordinal),0)
       INTO v_count,v_digest,v_max
       FROM relocation_evidence.target_history
      WHERE tenant_id=p_tenant AND accepted_ordinal<=p_fence;
-
     v_checkpoint_id:=gen_random_uuid();
     v_generation:=v_generation+1;
     SELECT key_material INTO STRICT v_key FROM relocation_evidence.target_attestation_key WHERE singleton;
-    v_attestation:=encode(public.hmac(convert_to(concat_ws('|',
-      'open-rel-030-target-checkpoint-v1',p_tenant::text,p_fence::text,v_checkpoint_id::text,
-      v_generation::text,p_seal::text,v_count::text,v_digest,v_max::text),'UTF8'),
-      decode(v_key,'hex'),'sha256'),'hex');
-
+    v_payload := relocation_evidence.canonical_checkpoint_payload(
+      p_tenant,p_fence,v_checkpoint_id,v_generation,p_seal,v_count,v_digest,v_max
+    );
+    v_attestation:=encode(public.hmac(convert_to(v_payload,'UTF8'),decode(v_key,'hex'),'sha256'),'hex');
     IF p_seal THEN
       UPDATE relocation_evidence.target_control
          SET phase='sealed',fence_ordinal=p_fence,checkpoint_id=v_checkpoint_id,
@@ -486,7 +509,6 @@ ts_sql "
         target_digest,target_max_ordinal,attestation
       ) VALUES(v_checkpoint_id,p_tenant,p_fence,v_generation,v_count,v_digest,v_max,v_attestation);
     END IF;
-
     checkpoint_id:=v_checkpoint_id; checkpoint_generation:=v_generation;
     target_sealed:=p_seal; target_count:=v_count; target_digest:=v_digest;
     target_max_ordinal:=v_max; attestation:=v_attestation;
@@ -512,11 +534,15 @@ ts_sql "
   GRANT EXECUTE ON FUNCTION relocation_evidence.mark_target_checkpoint_activated(uuid,uuid) TO ts_automation_owner;
 " >/dev/null
 
-# Cross-store proof that both authorities use the same self-delimiting encoding,
-# including control bytes that previously belonged to the framing alphabet.
 pg_canonical_separator="$(pg_sql "SELECT relocation_evidence.canonical_field(E'obs\\x1fmid\\x1etail');")"
 ts_canonical_separator="$(ts_sql "SELECT relocation_evidence.canonical_field(E'obs\\x1fmid\\x1etail');")"
 assert_exact "relocation_canonical_field_cross_store" "$pg_canonical_separator" "$ts_canonical_separator"
+
+checkpoint_probe_id="11111111-1111-1111-1111-111111111111"
+checkpoint_probe_digest="$(printf 'ab%.0s' $(seq 1 32))"
+pg_checkpoint_payload="$(pg_sql "SELECT relocation_evidence.canonical_checkpoint_payload('$tenant',3,'$checkpoint_probe_id',1,true,3,'$checkpoint_probe_digest',3);")"
+ts_checkpoint_payload="$(ts_sql "SELECT relocation_evidence.canonical_checkpoint_payload('$tenant',3,'$checkpoint_probe_id',1,true,3,'$checkpoint_probe_digest',3);")"
+assert_exact "relocation_checkpoint_hmac_payload_cross_store" "$pg_checkpoint_payload" "$ts_checkpoint_payload"
 
 expect_ts_reject "relocation_projection_writer_cannot_read_attestation_key" "permission denied" \
   "SET ROLE ts_automation_owner; SELECT key_material FROM relocation_evidence.target_attestation_key;"
@@ -560,9 +586,7 @@ assert_exact "relocation_target_cannot_activate_without_receipt" "false" "$prema
 ord1="$(pg_sql "SELECT accepted_ordinal FROM relocation_evidence.acceptance WHERE observation_id='obs-pre-1';")"
 ord2="$(pg_sql "SELECT accepted_ordinal FROM relocation_evidence.acceptance WHERE observation_id='obs-pre-2';")"
 
-# ---------------------------------------------------------------------------
 # max(target)=F with lower gap remains incomplete.
-# ---------------------------------------------------------------------------
 ts_sql "SET ROLE ts_automation_owner; INSERT INTO relocation_evidence.target_history(tenant_id,observation_id,metric_definition_id,accepted_ordinal,observed_at,numeric_value) VALUES('$tenant','obs-race-pre-fence','$metric',$ord_race,'2026-08-28T10:01:30Z',12.5); RESET ROLE;" >/dev/null
 
 gap_attestation="$(ts_sql "SET ROLE ts_automation_owner; SELECT checkpoint_id||'|'||checkpoint_generation||'|'||target_sealed||'|'||target_count||'|'||target_digest||'|'||target_max_ordinal||'|'||attestation FROM relocation_evidence.attest_target_checkpoint('$tenant',$fence,false,0); RESET ROLE;")"
@@ -572,14 +596,12 @@ gap_receipt="$(pg_sql "SELECT relocation_evidence.record_projection_receipt('$te
 assert_exact "relocation_gap_receipt_detected" "incomplete" "$gap_receipt"
 assert_exact "relocation_target_cannot_activate_with_gap_at_F" "false" "$(pg_sql "SELECT relocation_evidence.activate_target('$tenant')::text;")"
 
-# Fill complete authoritative set through F.
 ts_sql "SET ROLE ts_automation_owner;
   INSERT INTO relocation_evidence.target_history(tenant_id,observation_id,metric_definition_id,accepted_ordinal,observed_at,numeric_value) VALUES
     ('$tenant','obs-pre-1','$metric',$ord1,'2026-08-28T10:00:00Z',10.5),
     ('$tenant','obs-pre-2','$metric',$ord2,'2026-08-28T10:01:00Z',11.5)
   ON CONFLICT DO NOTHING; RESET ROLE;" >/dev/null
 
-# Same identities/ordinals with wrong immutable payload cannot compare equal.
 ts_sql "SET ROLE ts_automation_owner; UPDATE relocation_evidence.target_history SET observed_at=observed_at+interval '1 second' WHERE tenant_id='$tenant' AND observation_id='obs-pre-1'; RESET ROLE;" >/dev/null
 payload_attestation="$(ts_sql "SET ROLE ts_automation_owner; SELECT checkpoint_id||'|'||checkpoint_generation||'|'||target_sealed||'|'||target_count||'|'||target_digest||'|'||target_max_ordinal||'|'||attestation FROM relocation_evidence.attest_target_checkpoint('$tenant',$fence,false,0); RESET ROLE;")"
 IFS='|' read -r payload_cp payload_gen payload_sealed payload_count payload_digest payload_max payload_hmac <<< "$payload_attestation"
@@ -587,10 +609,6 @@ payload_receipt="$(pg_sql "SELECT relocation_evidence.record_projection_receipt(
 assert_exact "relocation_canonical_payload_mismatch_detected" "incomplete" "$payload_receipt"
 ts_sql "SET ROLE ts_automation_owner; UPDATE relocation_evidence.target_history SET observed_at='2026-08-28T10:00:00Z' WHERE tenant_id='$tenant' AND observation_id='obs-pre-1'; RESET ROLE;" >/dev/null
 
-# ---------------------------------------------------------------------------
-# Any target row above F before seal makes sealing fail. The row cannot be
-# silently omitted by the <=F digest and survive cutover.
-# ---------------------------------------------------------------------------
 future_ordinal=$((fence + 1))
 ts_sql "SET ROLE ts_automation_owner; INSERT INTO relocation_evidence.target_history(tenant_id,observation_id,metric_definition_id,accepted_ordinal,observed_at,numeric_value) VALUES('$tenant','obs-uncheckpointed-future','$metric',$future_ordinal,'2026-08-28T10:01:50Z',77); RESET ROLE;" >/dev/null
 expect_ts_reject "relocation_preseal_future_row_blocks_checkpoint" "target contains uncheckpointed rows above fence" \
@@ -599,12 +617,7 @@ phase_after_failed_seal="$(ts_sql "SELECT phase FROM relocation_evidence.target_
 assert_exact "relocation_failed_future_seal_remains_open" "open" "$phase_after_failed_seal"
 ts_sql "SET ROLE ts_automation_owner; DELETE FROM relocation_evidence.target_history WHERE tenant_id='$tenant' AND observation_id='obs-uncheckpointed-future'; RESET ROLE;" >/dev/null
 
-# ---------------------------------------------------------------------------
-# Final seal race: seal owns target_control FOR UPDATE before measurement. A
-# concurrent mutation blocks, then sees sealed and is rejected. Sealed state
-# rejects ALL DML, including a post-fence insert that would otherwise escape the
-# checkpoint. Only activated state may accept a new ordinal >F.
-# ---------------------------------------------------------------------------
+# Final seal race.
 set +e
 docker exec -e PGPASSWORD="$password" "$ts_container" \
   psql -X -v ON_ERROR_STOP=1 -U postgres -d jlmirror -Atq -c \
@@ -671,7 +684,6 @@ assert_exact "relocation_target_activate_after_authenticated_checkpoint" "true" 
 target_marked="$(ts_sql "SET ROLE ts_automation_owner; SELECT relocation_evidence.mark_target_checkpoint_activated('$tenant','$sealed_cp')::text; RESET ROLE;")"
 assert_exact "relocation_target_checkpoint_marked_activated" "true" "$target_marked"
 
-# Activated history remains immutable through F, while new >F append is allowed.
 expect_ts_reject "relocation_activated_prefence_update_rejected" "activated target history is immutable" \
   "SET ROLE ts_automation_owner; UPDATE relocation_evidence.target_history SET numeric_value=99 WHERE tenant_id='$tenant' AND observation_id='obs-pre-1';"
 

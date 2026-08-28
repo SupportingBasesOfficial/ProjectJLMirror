@@ -1,6 +1,6 @@
 # Monitoring Domain API Contract — Wave 4 Entry
 
-**Status:** proposed baseline  
+**Status:** accepted — Wave 4 Monitoring Track A accepted 2026-08-28 (`docs/16-implementation-readiness/16-wave-4-monitoring-entry-gate.md`), following `adr/ADR-021-monitoring-source-instance-replacement.md`'s acceptance  
 **API major:** v1  
 **Owner:** Monitoring  
 **Companion:** `docs/03-domains/monitoring-domain-contract.md`  
@@ -368,7 +368,7 @@ New-key executor validates `If-Match`; missing -> `428`, mismatch -> `412`. Same
 
 ## `monitoring.replaceSourceInstance` — create candidate
 
-> **PROPOSED — pending ADR-021.**
+> **ACCEPTED — authorized by `adr/ADR-021-monitoring-source-instance-replacement.md`.**
 
 ```text
 POST /api/v1/tenants/{tenant_id}/monitoring-sources/{monitoring_source_id}:replace-instance
@@ -410,7 +410,7 @@ Validation failure leaves healthy active generation in place and records safe fa
 
 ## `monitoring.activateReplacementCandidate` — atomic cutover
 
-> **PROPOSED — pending ADR-021.**
+> **ACCEPTED — authorized by `adr/ADR-021-monitoring-source-instance-replacement.md`.**
 
 ```text
 POST /api/v1/tenants/{tenant_id}/monitoring-sources/{monitoring_source_id}/replacement-candidates/{candidate_generation}:activate

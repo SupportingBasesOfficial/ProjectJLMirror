@@ -1,7 +1,8 @@
 # ADR-021 — Monitoring Source-Instance Replacement: Staged Candidate and Atomic Cutover
 
-**Status:** proposed
+**Status:** accepted
 **Date:** 2026-08-27
+**Accepted:** 2026-08-28 — closed the Wave 4 Monitoring Track A governance gap this ADR exists to fix; see `docs/16-implementation-readiness/16-wave-4-monitoring-entry-gate.md` for the readiness-matrix promotion this acceptance triggers.
 **Reversibility:** costly (identity-domain-boundary semantics; downstream Monitoring consumers depend on generation stability once accepted)
 
 ## Context
@@ -91,4 +92,4 @@ Revisit this ADR if: a future provider profile's native identity model makes ins
 
 ## Migration / rollout
 
-No existing implementation depends on this mechanism (Wave 4 has not yet begun implementation). Once accepted, `docs/16-implementation-readiness/16-wave-4-monitoring-entry-gate.md`'s readiness matrix row for "replacement candidate/cutover" is promoted from "PROPOSED mechanism — pending ADR-021" to its prior `contract-ready` classification, and Wave 4 implementation may treat the mechanism as binding.
+No existing implementation depends on this mechanism (Wave 4 has not yet begun implementation). With this ADR now accepted, `docs/16-implementation-readiness/16-wave-4-monitoring-entry-gate.md`'s readiness matrix row for "replacement candidate/cutover" is promoted from "PROPOSED mechanism — pending ADR-021" to `contract-ready`, and Wave 4 implementation may treat the mechanism as binding, subject to the Validation section's conformance evidence still being produced before implementation relies on it in production.

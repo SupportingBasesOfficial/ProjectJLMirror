@@ -19,38 +19,46 @@
       "product": "PostgreSQL",
       "evaluation_version": "17.11-alpine",
       "image": "postgres@sha256:5d61573b31c206ae538c85893edeb6e320e1a9ffd838c0f9dca927fb6f765fa4",
-      "purpose": "real multi-connection transactional acceptance, owner-authority, ambiguity, history reconciliation, physical PITR and relocation-fence evidence"
+      "purpose": "real multi-connection transactional acceptance, owner-authority, ambiguity, owner-derived history currentness, physical PITR and surviving-authority recovery evidence"
     },
     "tier2_timescale": {
       "product": "TimescaleDB",
       "evaluation_version": "2.29.2-pg17",
       "image": "timescale/timescaledb@sha256:bc8527e62f70f0766b29515077965025872fabb5349db421565f69ee273baf2d",
-      "purpose": "candidate tenant-isolation, background-job, fresh-cluster restore, authenticated relocation-checkpoint and bounded capacity-profile falsification"
+      "purpose": "candidate tenant isolation, background jobs, fresh-cluster restore, authenticated relocation checkpoint/freeze and bounded capacity falsification"
     }
   },
   "classification_basis": {
-    "exact_empirical_head_before_reviewer_documentation": "747e0bb84a7b617e7ca97eb835ea0f0d64ac804d",
-    "deterministic_assurance_run_number": 1965,
-    "deterministic_assurance_run_id": 33200595850,
-    "open_rel_030_conformance_run_number": 51,
-    "open_rel_030_conformance_run_id": 33200595957,
+    "exact_empirical_head_before_reviewer_documentation": "f205fe823f9f7635ffb27debb2a2d980fe8cc35f",
+    "deterministic_assurance_run_number": 1990,
+    "deterministic_assurance_run_id": 33202904143,
+    "open_rel_030_conformance_run_number": 63,
+    "open_rel_030_conformance_run_id": 33202904081,
     "result": "success",
-    "final_package_gate_requirement": "The exact final package HEAD, including this manifest and reviewer documentation, must independently rerun both gates before review/acceptance.",
-    "note": "The empirical anchor includes immutable observation-content and owner-authority repairs, durable live poll claims, contiguous/current late-history reconciliation from the supported history floor, fresh-cluster Timescale restore/role reconstruction, lock-before-F source fencing, target-owned authenticated sealed checkpoints, SHA-256 canonical-payload equivalence and seal-vs-DML serialization."
+    "final_package_gate_requirement": "The exact final package HEAD, including reviewer documentation, must independently rerun both gates before review or acceptance.",
+    "note": "The executable anchor proves owner-controlled source/poll authority; owner-derived history finality/currentness; surviving external authenticated PITR recovery grants; genuine fresh-cluster Timescale reconstruction; lock-before-F source fencing; target-owned authenticated sealed checkpoints; canonical-payload equivalence; no uncheckpointed pre-activation target history; and seal-vs-DML serialization."
   },
   "review_provenance": {
-    "codex_reviewed_head": "9a1f471d6a1f37b5f394bebd203ecf9715c70001",
-    "codex_review_id": 5053787158,
-    "codex_disposition": "two_material_p1_findings_repaired_after_review",
-    "codex_findings": [
-      "target completeness receipt was not authenticated against current actual target state before activation",
-      "relocation digest covered identity/ordinal but not the immutable canonical observation payload"
+    "codex_material_findings_closed_by_current_mechanism": [
+      "conflicting canonical observation content under stable identity must reject",
+      "active source and poll authority must be resolved from owner-controlled state in the transaction",
+      "relocation source placement must be locked before deriving F",
+      "max(target)=F cannot prove complete target coverage",
+      "history completeness requires contiguous coverage from supported_history_floor",
+      "target activation must bind to current actual target state",
+      "relocation fingerprint must include immutable canonical payload",
+      "PITR admission must consume authenticated surviving (R,F] evidence rather than a locally self-minted receipt",
+      "history finality/currentness must be derived from durable owner/provider authority rather than worker-supplied timestamps",
+      "target rows above F before activation must be rejected or included in checkpoint authority"
     ],
     "native_assurance_panorama_extensions": [
-      "seal must serialize against target DML before measuring the checkpoint set",
-      "freeze must protect both OLD and NEW tenant authority scopes for cross-tenant UPDATE",
-      "projection writer must not own or be able to disable the target freeze authority",
-      "Timescale LOGIN automation owner must be classified as a privileged cross-tenant infrastructure principal; PASSWORD NULL is not equivalent to NOLOGIN or proof of production authentication/admission isolation"
+      "durable live poll claim required for current-state candidacy",
+      "reconciliation snapshot currentness required in addition to interval geometry",
+      "seal serializes against target DML before measuring checkpoint set",
+      "freeze protects cross-tenant identity and the full sealed pre-activation target state",
+      "activated target history through F remains immutable while only post-F append is eligible",
+      "projection writer cannot read attestation key or disable target freeze",
+      "Timescale LOGIN automation owner is explicitly a cross-tenant privileged infrastructure principal; PASSWORD NULL is not NOLOGIN or production admission proof"
     ]
   },
   "tier1_vectors": [
@@ -68,19 +76,19 @@
     "history_first_current_later_independence",
     "event_time_non_authority",
     "stale_ordering_non_regression",
-    "crash_after_observation_rollback",
-    "crash_after_history_intent_rollback",
-    "crash_after_current_cas_rollback",
-    "crash_after_transition_signal_rollback",
+    "crash_stage_rollback_matrix",
     "tier2_absent_backlog_durability",
     "client_ack_ambiguity_after_commit",
-    "physical_pitr_rf_reconciliation",
-    "zabbix_poll_epoch_restore_relocation_continuity",
-    "late_history_high_only_sweep_cannot_finalize",
-    "late_history_disjoint_sweeps_cannot_finalize",
+    "provider_authority_generation_currentness",
+    "reconciliation_worker_cannot_mutate_provider_authority",
+    "stale_reconciliation_worker_generation_rejected",
     "late_history_contiguous_coverage_anchored_at_supported_floor",
-    "late_history_reconciliation_snapshot_currentness_required",
+    "late_history_owner_required_snapshot_currentness",
     "late_history_gap_watermark_reconciliation",
+    "physical_pitr_exact_R_restore",
+    "pitr_local_self_minted_receipt_cannot_admit",
+    "pitr_tampered_external_grant_rejected",
+    "pitr_surviving_external_authenticated_grant_required",
     "relocation_fence_locks_authority_before_deriving_f",
     "relocation_inflight_acceptance_is_included_in_f",
     "relocation_target_checkpoint_hmac_verification",
@@ -112,10 +120,13 @@
     "tenant_relocation_target_checkpoint_target_owned",
     "tenant_relocation_projection_writer_cannot_read_attestation_key",
     "tenant_relocation_projection_writer_cannot_disable_freeze",
-    "tenant_relocation_seal_blocks_and_rejects_concurrent_prefence_mutation",
+    "tenant_relocation_preseal_future_row_blocks_checkpoint",
+    "tenant_relocation_postseal_future_insert_rejected",
+    "tenant_relocation_seal_blocks_and_rejects_concurrent_mutation",
     "tenant_relocation_fabricated_checkpoint_attestation_rejected",
-    "tenant_relocation_sealed_delete_rejected",
-    "tenant_relocation_sealed_cross_tenant_move_rejected",
+    "tenant_relocation_sealed_delete_and_tenant_move_rejected",
+    "tenant_relocation_activated_prefence_history_immutable",
+    "tenant_relocation_postactivation_append_above_f_allowed",
     "tenant_relocation_authenticated_complete_set_checkpoint_required",
     "tenant_relocation_tier1_tier2_continuity",
     "bounded_capacity_query_fitness_same_security_profile"
@@ -132,14 +143,34 @@
   ],
   "mandatory_vectors_not_yet_claimed_complete": [],
   "late_history_evidence": {
+    "authority_owner": "history_reconcile_owner NOLOGIN",
+    "worker": "history_reconcile_worker NOLOGIN with EXECUTE only on sweep/finalize",
+    "provider_authority_fields": [
+      "authority_generation",
+      "current_snapshot_at",
+      "finality_floor",
+      "required_reconciliation_snapshot_at"
+    ],
+    "sweep_authority": "worker supplies only window plus expected authority generation; actual provider snapshot is read and locked from provider_authority",
+    "finalization_authority": "try_finalize accepts no caller finality/currentness timestamps; it reads and locks owner provider_authority",
+    "stale_worker": "rejected when expected generation differs from durable current authority",
     "coverage_anchor": "supported_history_floor",
-    "coverage_semantics": "only overlapping/touching reconciliation windows form continuous coverage; a later disjoint window cannot jump an unswept interval",
-    "high_only_negative_vector": "11:55..12:00 sweep left anchored reconciliation coverage NULL and could not finalize",
-    "disjoint_negative_vector": "supported_history_floor..10:00 plus 11:55..12:00 left contiguous coverage at 10:00 even though max(window_to)=12:00; finalization rejected",
-    "bridge_vector": "10:00..12:00 sweep closed the gap, recovered the delayed 10:30 observation and established contiguous coverage through 12:00",
-    "snapshot_currentness_negative_vector": "finalization requiring reconciliation snapshot >=12:16 was rejected when covering sweeps were only current through 12:15",
+    "coverage_semantics": "only overlapping/touching runs whose durable provider_snapshot_at satisfies owner-required currentness form continuous coverage",
+    "owner_currentness_negative": "generation-2 runs at snapshot 12:15 cannot satisfy generation-3 owner requirement 12:16; a fresh generation-3 covering sweep is required",
     "accepted_final_coverage": "2026-08-27T00:00:00Z..2026-08-28T12:00:00Z",
     "unrecoverable_retention_loss": "explicit durable gap; never false complete"
+  },
+  "recovery_evidence": {
+    "restore_boundary": "physical PostgreSQL PITR to committed R",
+    "surviving_authority": "separate external control PostgreSQL not included in source backup/restore",
+    "grant_domain": "open-rel-030-recovery-v1",
+    "grant_issued_after_f": true,
+    "grant_authentication": "HMAC-SHA-256 with random key stored only in surviving external authority",
+    "source_or_restored_contains_grant_signing_key": false,
+    "local_self_minted_receipt_admits": false,
+    "tampered_external_grant": "rejected",
+    "successful_admission": "requires reconciled local R state plus fresh successful verification of the surviving external authenticated grant",
+    "rollback_subject_business_mutation_replayed": false
   },
   "fresh_restore_evidence": {
     "restore_topology": "new_timescale_container_and_new_postgresql_cluster",
@@ -162,29 +193,27 @@
     "source_inflight_acceptance_race": "acceptance holding placement lock commits before fence and is included in F",
     "fence_ordinal": 3,
     "max_only_completeness": "explicitly_rejected",
-    "negative_gap_vector": "target reached max=F with missing lower rows; authenticated measurement remained incomplete and activation was rejected",
-    "canonical_payload_negative_vector": "target retained the same identities/ordinals but a changed observed_at; SHA-256 canonical-payload digest differed and receipt remained incomplete",
     "canonical_payload_fingerprint": "SHA-256 over ordered accepted_ordinal, observation_id, metric_definition_id, normalized UTC observed_at and normalized numeric_value for the evidence observation profile",
     "target_checkpoint_owner": "NOLOGIN ts_owner",
-    "projection_writer": "ts_automation_owner with projection DML but without checkpoint-table/key ownership or freeze-disable authority",
-    "checkpoint_attestation": "HMAC-SHA-256 over domain-separated target-owned checkpoint facts",
+    "projection_writer": "ts_automation_owner with projection DML but without checkpoint/key ownership or freeze-disable authority",
+    "checkpoint_attestation": "domain-separated HMAC-SHA-256 over target-owned checkpoint facts",
     "attestation_domain": "open-rel-030-target-checkpoint-v1",
-    "checkpoint_seal": "target_control transitions open -> sealed before Tier 1 activation; there is no unseal path",
-    "seal_dml_serialization": "target DML holds target_control FOR SHARE and seal holds FOR UPDATE before digest calculation; post-lock concurrent mutation blocks and then rejects",
-    "cross_tenant_freeze": "UPDATE locks and validates both OLD and NEW tenant control scopes in deterministic tenant order",
+    "preseal_future_row": "any target row accepted_ordinal > F makes sealing fail and leaves control phase open",
+    "sealed_phase": "all target-history DML for the relocating tenant is rejected; therefore no >F row can enter during seal-to-activation",
+    "activated_phase": "existing history is immutable; INSERT is eligible only above the relocation fence",
+    "seal_dml_serialization": "target DML takes target_control shared authority; seal takes exclusive authority before future-row check and digest",
     "fabricated_attestation": "rejected",
-    "sealed_delete": "rejected",
-    "sealed_cross_tenant_move": "rejected",
     "complete_receipt": "complete|3|3|3|true",
     "post_cutover_authoritative_acceptances": 4,
+    "post_cutover_append_ordinal": 4,
     "stale_source_after_cutover": "rejected"
   },
   "crypto_evidence_boundary": {
-    "sha256_and_hmac_sha256": "selected only as the bounded evidence mechanism needed to prove collision-resistant canonical-set comparison and authenticated target checkpoint semantics",
+    "checkpoint_sha256_and_hmac_sha256": "bounded evidence mechanisms; not production KMS/HSM/secret topology selection",
+    "recovery_grant_hmac_sha256": "bounded evidence mechanism proving restored authority cannot derive its own recovery grant from restored state",
     "production_key_provider_selected": false,
-    "production_kms_hsm_secret_topology_selected": false,
     "production_key_rotation_selected": false,
-    "production_requirement": "the implementation must preserve an independently trustworthy target attestation/freeze authority and equivalent or stronger integrity semantics under the separately accepted security/platform key-management architecture"
+    "production_requirement": "accepted implementation must preserve equivalent or stronger independently trustworthy checkpoint and recovery-grant authority under the separately accepted security/platform key-management architecture"
   },
   "tier2_profile_classification": {
     "direct_pooled_rls_plus_columnstore": "rejected_ineligible_on_evaluated_profile_sqlstate_0A000",
@@ -196,20 +225,19 @@
       "login_required_by_evaluated_timescale_profile": true,
       "password_credential_in_evidence": "absent",
       "password_null_equivalent_to_nologin": false,
-      "production_requirement": "database connection/authentication admission, pg_hba/socket/network exposure and role-membership policy must prevent tenant/application principals from authenticating as or assuming ts_automation_owner; widening this boundary invalidates the conformed profile until re-reviewed"
+      "production_requirement": "database connection/authentication admission, pg_hba/socket/network exposure and role-membership policy must prevent tenant/application principals from authenticating as or assuming ts_automation_owner"
     },
     "required_security_shape": [
-      "no direct tenant-facing privilege on shared raw history",
-      "no direct tenant-facing privilege on continuous aggregate or internal materialization",
+      "no direct tenant-facing privilege on shared raw history, continuous aggregate or internal materialization",
       "tenant binding outside caller-writable SQL state",
       "fixed-search-path SECURITY DEFINER mediated reader",
       "separate NOLOGIN mediation/checkpoint owner and least-privilege LOGIN automation owner",
-      "LOGIN automation owner is explicitly a cross-tenant privileged infrastructure principal; PASSWORD NULL is not NOLOGIN and is not production admission evidence",
-      "production authentication/connection topology must prevent tenant/application principals from authenticating as or assuming the automation owner",
+      "LOGIN automation owner is explicitly cross-tenant privileged infrastructure",
+      "production connection/authentication topology excludes tenant/application use of automation owner",
       "tenant-facing/runtime roles have no owner membership, CREATEROLE, SUPERUSER or BYPASSRLS",
-      "projection writer cannot read target attestation key or disable the sealed target-history freeze",
-      "backup/restore role topology is reconstructed in a fresh cluster rather than inherited from the source cluster",
-      "same isolation attacks repeat after background jobs, fresh-cluster restore and restored-job execution"
+      "projection writer cannot read target attestation key or disable target freeze",
+      "backup/restore role topology is reconstructed in a genuinely fresh cluster",
+      "isolation attacks repeat after jobs, fresh-cluster restore and restored-job execution"
     ]
   },
   "bounded_capacity_observation": {
@@ -218,27 +246,23 @@
     "columnstore_bytes": 655360,
     "continuous_aggregate_bytes": 163840,
     "mediated_query_rows": 57,
-    "representative_query_duration_ns": 67263218,
-    "interpretation": "Mechanism-level bounded fitness evidence only. These values are not production SLOs, limits, retention settings, cardinality envelopes or sizing commitments. Production envelopes remain OPEN-REL-020 C3."
+    "representative_query_duration_ns": 74558370,
+    "interpretation": "Mechanism-level bounded fitness evidence only. Production SLOs, retention, cardinality, sizing, cost and topology remain OPEN-REL-020 C3."
   },
   "decision_recommendation": {
-    "tier1": "accept PostgreSQL transactional acceptance/outbox/current-state pattern as OPEN-REL-030 Tier 1 mechanism only with immutable canonical observation content, owner-controlled source generation/epoch, durable live poll-claim admission resolved in-transaction, contiguous/current reconciliation coverage anchored at the supported history floor, lock-before-F relocation fencing, and verification of a target-owned authenticated sealed canonical-payload checkpoint, after exact-head review and explicit Track B acceptance",
-    "tier2": "accept TimescaleDB historical projection only under the conformed mediated shared-history profile, including fresh-cluster restore role reconstruction, explicit cross-tenant privileged treatment and deployment admission isolation for ts_automation_owner, and target-owned authenticated sealed relocation checkpoints whose SHA-256 canonical-payload set matches the frozen Tier 1 authoritative set, after exact-head review and explicit Track B acceptance",
+    "tier1": "accept PostgreSQL Tier 1 mechanism only with immutable canonical observation content, owner-controlled source/poll authority, durable live poll claims, owner-derived provider finality/currentness, contiguous reconciliation, authenticated surviving recovery grants after PITR, lock-before-F relocation fencing and verification of target-owned sealed canonical-payload checkpoints",
+    "tier2": "accept TimescaleDB historical projection only under the mediated shared-history profile, privileged automation-owner admission boundary, genuine fresh-cluster role reconstruction, complete target checkpoint equivalence, rejection of any uncheckpointed target data before activation, and immutable pre-F target history after cutover",
     "rejected_assumptions": [
-      "do not treat RLS on a pooled raw hypertable as automatically compatible with or inherited by columnstore/continuous-aggregate surfaces",
-      "do not treat same-cluster database restore as evidence that cluster-global role topology can be safely reconstructed",
-      "do not treat PASSWORD NULL on a LOGIN role as equivalent to NOLOGIN or as proof that production pg_hba/socket/network authentication cannot admit that role",
-      "do not expose or delegate the privileged cross-tenant Timescale automation owner to tenant/application principals",
-      "do not derive relocation F before acquiring the authority lock that excludes later source acceptance",
-      "do not treat max(target_ordinal)=F as proof that every authoritative observation through F exists on the target",
-      "do not trust caller-supplied target count/digest/max as proof of the target's current actual state",
-      "do not fingerprint only message identity/ordinal when canonical payload equivalence is required",
-      "do not measure a target checkpoint before acquiring the authority lock that serializes target DML",
-      "do not allow UPDATE to escape a sealed tenant by checking only the NEW tenant authority scope",
-      "do not let the projection writer own or disable the freeze mechanism that makes a checkpoint current through activation",
-      "do not treat max(reconciliation window_to) as proof of contiguous history coverage from supported_history_floor",
-      "do not reuse reconciliation windows older than the snapshot currentness required by finalization"
+      "caller or worker supplied timestamps are not provider finality/currentness authority",
+      "a locally recreated post-R receipt is not surviving (R,F] recovery authority",
+      "max(target_ordinal)=F is not target completeness",
+      "target count/digest/max supplied by caller are not current target authority",
+      "identity-only digests are not canonical payload equivalence",
+      "target rows above F may not exist invisibly before activation",
+      "PASSWORD NULL on a LOGIN role is not NOLOGIN or production connection-admission proof",
+      "same-cluster restore is not fresh role-topology recovery evidence",
+      "max(reconciliation window_to) is not contiguous history completeness"
     ],
-    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity and payload, idempotent historical projection, contiguous/current reconciliation evidence, privileged-infrastructure admission boundaries, independently trustworthy target checkpoint/freeze semantics, tenant isolation and recovery/relocation semantics"
+    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity/payload, idempotent projection, owner-derived currentness, externally surviving recovery authority, target checkpoint/freeze semantics, privileged-infrastructure boundaries, tenant isolation and relocation/recovery semantics"
   }
 }

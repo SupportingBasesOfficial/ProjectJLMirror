@@ -26,6 +26,8 @@ The package is an evidence laboratory only. It creates ephemeral databases, runs
 - Provider event time is metadata, never the Tier 1 current-state ordering authority.
 - `OPEN-REL-020` remains the owner of production telemetry capacity/numeric envelopes.
 - The evidence-only SHA-256/HMAC-SHA-256 checkpoint does not select a production KMS/HSM/secret-management topology.
+- `ts_automation_owner` is a LOGIN cross-tenant privileged infrastructure principal in the evaluated Timescale profile; absence of a password credential is not equivalent to `NOLOGIN` and is not proof of production authentication/admission isolation.
+- Production database connection/authentication topology must prevent tenant/application principals from authenticating as or assuming `ts_automation_owner`; widening that boundary requires fresh security/conformance review.
 - `READY_FOR_MERGE != AUTHORIZED_TO_MERGE` continues to apply.
 
 ## Reproducibility profile
@@ -125,9 +127,16 @@ The surviving candidate profile requires:
 - tenant binding outside caller-writable SQL state;
 - hardened `SECURITY DEFINER` reader with fixed safe `search_path`;
 - `ts_owner` as NOLOGIN mediation/mapping/checkpoint/function owner;
-- separate least-privilege LOGIN `ts_automation_owner` where Timescale automation requires it, with no password credential or elevated role attributes;
+- separate least-privilege LOGIN `ts_automation_owner` where Timescale automation requires it;
+- explicit classification of `ts_automation_owner` as **cross-tenant privileged infrastructure**, because it owns shared job-bearing objects;
+- no password credential or elevated role attributes on the evidence automation owner, while explicitly recognizing that `PASSWORD NULL` is not `NOLOGIN` and does not by itself prevent authentication under every `pg_hba`/socket topology;
+- production connection/authentication admission that prevents tenant/application principals from authenticating as or assuming the automation owner;
 - no runtime/reporting membership in either owner;
 - repeated direct-read, role, membership, tenant-crossing, `SET`/`set_config`, session-authorization, BYPASSRLS and search-path attacks.
+
+The evidence container validates database role attributes, memberships, object ownership and attack behavior. It does **not** claim that its ephemeral local authentication configuration proves a future production `pg_hba`, local socket, peer/trust or network-admission topology. That admission boundary is a required deployment invariant of this conformed profile.
+
+Assigning an application-usable credential, widening connection admission, granting tenant/application membership, or otherwise exposing `ts_automation_owner` to ordinary application/tenant principals invalidates the profile until fresh review/evidence.
 
 ## Fresh-cluster restore
 

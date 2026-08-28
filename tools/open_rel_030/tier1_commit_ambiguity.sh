@@ -9,6 +9,7 @@ fi
 container="$1"
 password="evidence"
 tenant="12121212-1212-1212-1212-121212121212"
+source="13131313-1313-1313-1313-131313131313"
 metric="23232323-2323-2323-2323-232323232323"
 source_generation="34343434-3434-3434-3434-343434343434"
 observation="45454545-4545-4545-4545-454545454545"
@@ -17,6 +18,25 @@ psql_exec() {
   docker exec -e PGPASSWORD="$password" "$container" \
     psql -X -v ON_ERROR_STOP=1 -U postgres -d jlmirror -Atq -c "$1"
 }
+
+# The current candidate is valid only because these owner-controlled records are
+# durable before the ambiguous client begins. The caller cannot self-assert an
+# active generation or fabricate a poll token.
+psql_exec "
+INSERT INTO tel_evidence.monitoring_source_authority
+  (tenant_id,source_id,active_source_instance_generation,active_poll_epoch,placement_version)
+VALUES ('$tenant'::uuid,'$source'::uuid,'$source_generation'::uuid,20,1)
+ON CONFLICT (tenant_id,source_id) DO UPDATE
+SET active_source_instance_generation=EXCLUDED.active_source_instance_generation,
+    active_poll_epoch=EXCLUDED.active_poll_epoch,
+    placement_version=EXCLUDED.placement_version;
+
+INSERT INTO tel_evidence.poll_claim
+  (tenant_id,source_id,source_instance_generation,poll_epoch,poll_generation,claim_state)
+VALUES ('$tenant'::uuid,'$source'::uuid,'$source_generation'::uuid,20,1,'live')
+ON CONFLICT (tenant_id,source_id,source_instance_generation,poll_epoch,poll_generation)
+DO UPDATE SET claim_state='live';
+" >/dev/null
 
 # The client performs the authoritative transaction and then blocks in an
 # unrelated query. A second connection observes the committed row before we
@@ -27,10 +47,10 @@ sql="
 BEGIN;
 SELECT * FROM tel_evidence.accept_observation(
   '$tenant'::uuid,
+  '$source'::uuid,
   'ambiguity-vector',
   '$observation'::uuid,
   '$metric'::uuid,
-  '$source_generation'::uuid,
   '$source_generation'::uuid,
   20,
   1,
@@ -52,7 +72,7 @@ set -e
 
 committed=0
 for _ in $(seq 1 100); do
-  count="$(psql_exec "SELECT count(*) FROM tel_evidence.observation WHERE tenant_id='$tenant'::uuid AND observation_identity_scope='ambiguity-vector' AND observation_id='$observation'::uuid;")"
+  count="$(psql_exec "SELECT count(*) FROM tel_evidence.observation WHERE tenant_id='$tenant'::uuid AND source_id='$source'::uuid AND observation_identity_scope='ambiguity-vector' AND observation_id='$observation'::uuid;")"
   if [[ "$count" == "1" ]]; then
     committed=1
     break
@@ -68,8 +88,6 @@ if [[ "$committed" != "1" ]]; then
   exit 1
 fi
 
-# Lose the client-side result after commit has been proven by a separate DB
-# session. The caller cannot distinguish success from transport loss.
 kill -TERM "$client_pid" >/dev/null 2>&1 || true
 set +e
 wait "$client_pid"
@@ -80,16 +98,17 @@ if [[ "$client_rc" -eq 0 ]]; then
   exit 1
 fi
 
-# Retry with the same canonical identity. It must observe the committed result,
-# not create another durable observation/history obligation/semantic signal.
+# Retry with the same canonical identity and the same still-live owner claim. It
+# must observe the committed canonical content and converge without duplicate
+# observation/history/signal state.
 retry="$(psql_exec "
 SELECT newly_accepted::text || '|' || ordering_advanced::text || '|' || semantic_transition::text
 FROM tel_evidence.accept_observation(
   '$tenant'::uuid,
+  '$source'::uuid,
   'ambiguity-vector',
   '$observation'::uuid,
   '$metric'::uuid,
-  '$source_generation'::uuid,
   '$source_generation'::uuid,
   20,
   1,
@@ -107,18 +126,18 @@ fi
 counts="$(psql_exec "
 SELECT
   (SELECT count(*) FROM tel_evidence.observation
-    WHERE tenant_id='$tenant'::uuid AND observation_identity_scope='ambiguity-vector' AND observation_id='$observation'::uuid)::text
+    WHERE tenant_id='$tenant'::uuid AND source_id='$source'::uuid AND observation_identity_scope='ambiguity-vector' AND observation_id='$observation'::uuid)::text
   || '|' ||
   (SELECT count(*) FROM tel_evidence.historical_projection_outbox
     WHERE tenant_id='$tenant'::uuid AND observation_identity_scope='ambiguity-vector' AND observation_id='$observation'::uuid)::text
   || '|' ||
   (SELECT count(*) FROM tel_evidence.current_changed_outbox
-    WHERE tenant_id='$tenant'::uuid AND metric_definition_id='$metric'::uuid)::text;")"
+    WHERE tenant_id='$tenant'::uuid AND source_id='$source'::uuid AND metric_definition_id='$metric'::uuid)::text;")"
 
 if [[ "$counts" != "1|1|1" ]]; then
   echo "ambiguous post-commit retry duplicated/lost durable state: $counts" >&2
   exit 1
 fi
 
-printf 'tier1_post_commit_ambiguity=PASS client_rc=%s retry=%s counts=%s\n' \
+printf 'tier1_post_commit_ambiguity=PASS client_rc=%s retry=%s counts=%s authority=owner_source_plus_live_poll_claim\n' \
   "$client_rc" "$retry" "$counts"

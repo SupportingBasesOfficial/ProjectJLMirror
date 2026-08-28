@@ -4,11 +4,11 @@
 **Decision class:** C2 (`docs/16-implementation-readiness/04-must-close-identity-and-fencing-profiles.md:52` — "the... BFF session-store product... remain[s] a C2 choice"), opening `OPEN-REL-031.A`/`.B` (`docs/11-reliability-resilience/12-phase-11-open-decisions-and-blockers.md`)
 **Drivers:** `ADR-005`, `ADR-012`, `ADR-017`, `ADR-002`, `ADR-006`, `TM-013`, `rel.security-session-authority@1` (`docs/11-reliability-resilience/07-capability-resilience-profiles.md:18,45`)
 
-This document follows the decision-quality checklist from `docs/00-foundation/decision-policy.md`. It is **not** a new ADR: it selects a physical mechanism for the BFF session-store C2 residual named by IR-D-001, inside architecture already accepted by ADR-005 (BFF-managed confidential session), ADR-012 (cache/ephemeral-state classification) and ADR-017 (dependency failure categories). It was produced from an adversarial multi-round red/blue-team review; all four confirmed findings below are closed here or in companion edits to already-accepted documents.
+This document follows the decision-quality checklist from `docs/00-foundation/decision-policy.md`. It is **not** a new ADR: it selects a physical mechanism for the BFF session-store C2 residual named by IR-D-001, inside architecture already accepted by ADR-005 (BFF-managed confidential session), ADR-012 (cache/ephemeral-state classification) and ADR-017 (dependency failure categories). It was produced from an adversarial multi-round red/blue-team review; all confirmed findings below are closed here or in companion edits to already-accepted documents.
 
 ## Context and problem
 
-The BFF-managed browser session (ADR-005) needs a durable system of record plus a fast-path lookup layer. This record selects PostgreSQL as the system of record and Redis as the fast-path acceleration cache. The adversarial review found the direction sound but identified four real, previously-unaddressed gaps, all confirmed by independent re-verification against the repository with no refutations.
+The BFF-managed browser session (ADR-005) needs a durable system of record plus a fast-path lookup layer. This record selects PostgreSQL as the system of record and Redis as the fast-path acceleration cache. The adversarial review found the direction sound but identified previously-unaddressed gaps that this record closes or explicitly leaves tracked as OPEN.
 
 ## Requirements and invariants this selection must satisfy
 
@@ -20,23 +20,38 @@ The BFF-managed browser session (ADR-005) needs a durable system of record plus 
 
 ## Decision
 
-PostgreSQL is the session/identity system of record; Redis is a fast-path acceleration cache for session/permission/revocation lookups. Selection is conditioned on the four closure requirements below.
+PostgreSQL is the session/identity system of record; Redis is a fast-path acceleration cache for session/permission/revocation lookups. Selection is conditioned on the closure requirements below.
 
 ### Closure condition 1 — HA/topology tracking (opens `OPEN-REL-031`, high severity)
 
 Unlike `rel.cell-transactional-store` (tracked by `OPEN-REL-003`/`004`) or `rel.control-plane-placement` (tracked by `OPEN-REL-001`/`002`/`004`), `rel.security-session-authority`'s own backing-store HA/topology had no OPEN item tracking it at all, despite its stricter (no-stale-tolerance) failure category making its blast radius *less* tolerable, not more. This record opens `OPEN-REL-031` (`docs/11-reliability-resilience/12-phase-11-open-decisions-and-blockers.md`) with the mechanism/ownership question as `.A` (C2) and RPO/RTO/failover numerics as `.B` (C3), mirroring `OPEN-REL-003`'s own mechanism-vs-numerics split. This record does **not** itself select single-global-primary vs. per-region/per-cell-group primaries — that is `OPEN-REL-031.A`'s open question — but it requires the decision to be made explicitly rather than defaulted, and requires a stated ownership answer (control-plane-owned vs. its own tier) so it inherits the correct existing OPEN-REL lineage.
 
-### Closure condition 2 — synchronous revocation invalidation + generation counter (binding, high severity)
+### Closure condition 2 — failure-safe revocation fencing, durable reconciliation and one-read fast path (binding, high severity)
 
-ADR-012's "durable/current authority or explicit fail-closed policy" requirement for this cache class was unmet as originally stated — the candidate decision specified no synchronous-invalidation guarantee and no staleness bound, and a pub/sub-based invalidation is best-effort and drops messages during partitions, leaving only Redis's TTL (chosen for performance, not security) as the real bound.
+ADR-012's "durable/current authority or explicit fail-closed policy" requirement for this cache class prohibits a PostgreSQL-committed revocation from being masked by a stale positive Redis entry. A two-system sequence of "commit PostgreSQL, then update Redis" is insufficient: a process crash or Redis write failure after the PostgreSQL commit would leave the durable authority revoked while another BFF replica could still authorize from the old cache value. Retrying the API cannot undo the committed revocation, so this partial-write outcome must be safe by construction rather than repaired only on a best-effort timer.
 
-**Requirement:** security-critical writes — logout-all-devices, membership/permission revocation, tenant suspension, MFA/step-up state change — SHALL (1) commit the new authorization/session generation to PostgreSQL as the durable record of truth, and (2) synchronously write that same generation value into the corresponding Redis session entry itself (not a separate tombstone key requiring an extra lookup, but part of the same cached record already read on every request) before the revoking API call returns success.
+The selected semantic protocol is therefore a **pre-commit fail-closed cache fence + durable reconciliation obligation**, while preserving the ordinary one-Redis-read hot path:
 
-This is deliberately **not** a design where an ordinary request reads Redis and then separately queries PostgreSQL to check the generation — doing so would put PostgreSQL back on every request's hot path regardless of cache-hit rate, exactly the defect a reviewer correctly flagged in the first version of this record (a cached generation compared against a counter "stored only in PostgreSQL" implies a PostgreSQL read on every hit, which defeats Redis's acceleration purpose even at a 100% cache-hit rate). Instead: an ordinary request's authorization check reads the session **and its generation** from Redis in one round trip and nothing else; the value is guaranteed current as of the last synchronous write in step (2) above, so no live PostgreSQL comparison is needed on the read path. PostgreSQL is read on the request path only on a genuine Redis cache miss (key absent — first request after eviction, cold start, or Redis-tier failure), at which point the fetched authoritative record repopulates Redis before the request proceeds. If Redis itself is deployed as a replicated cluster, security-critical reads SHALL target the primary (or a replica proven caught up past the relevant write) rather than an arbitrary replica that may lag behind the synchronous write in step (2) — otherwise replication lag inside the cache tier reintroduces the exact staleness window this mechanism exists to close. The resulting maximum staleness bound (bounded by Redis primary-write durability and, where applicable, replica catch-up lag) is published as an explicit security SLO, not left as an incidental cache TTL.
+1. **Fence before durable authority change when Redis is admitted healthy.** Before a security-critical session/authorization mutation commits, the writer atomically compare-and-sets the affected Redis cache record from the expected current `session_generation` to a non-authorizing `revocation_fence` state carrying a stable transition/reconciliation identity. The fence occupies the same logical cache record read by ordinary admission, so it does not require a second per-request tombstone lookup.
+2. **A fenced record never grants and is not cache-filled around.** Any BFF reading `revocation_fence` fails closed for that affected session/scope while reconciliation is unresolved. It SHALL NOT treat the fence as an ordinary cache miss and repopulate an older positive value from PostgreSQL, because doing so would reopen the race the fence exists to close.
+3. **Commit durable truth and repair responsibility together.** The PostgreSQL transaction commits the new session/authorization generation or retirement state **and** a durable cache-reconciliation obligation/transition identity in the same durable transaction. This follows the platform's accepted durable-intent/outbox pattern: repair responsibility cannot disappear merely because the process dies after the business/security mutation commits.
+4. **Finalize the cache after commit.** After PostgreSQL commits, the writer may replace the fence with the corresponding new non-authorizing/updated cache state. The durable reconciliation worker remains responsible until it observes Redis at the exact durable generation/state. A crash after PostgreSQL commit but before this finalization leaves the already-installed fence in place, so stale positive authorization is impossible while the worker later converges Redis.
+5. **Rollback/abort is safe.** If PostgreSQL rolls back or the process dies before the durable mutation commits, the fence may cause temporary denial but cannot grant excess authority. Reconciliation reads the unchanged PostgreSQL authority and restores the prior admissible cache state only after proving that no durable transition committed for the fence identity.
+6. **Concurrent writers are fenced by expected generation.** Failure to install the fence against the expected generation means the mutation lost a current-authority race and must re-resolve rather than overwrite another transition. A fence/transition identity is stable across retry; retries do not invent a second logical revocation.
+
+This protocol deliberately preserves the D0 performance correction: an ordinary authenticated request in healthy steady state reads the session **and its current generation/state** from Redis in one round trip and performs zero PostgreSQL generation queries. PostgreSQL is consulted on a genuine ordinary cache miss only when the key is not fenced and the cache tier is currently admitted for security-positive reads.
+
+#### Redis outage and recovery admission
+
+The accepted failure matrix allows Redis-only outage to bypass to PostgreSQL under a bulkhead, so security mutations are not required to make Redis available in order to change durable authority. That does **not** permit stale pre-outage Redis contents to become authoritative when Redis returns.
+
+When the Redis security-cache tier is unavailable or cannot install the pre-commit fence, the tier is first treated as **not admitted for security-positive reads**. Reads bypass to PostgreSQL under the accepted bulkhead while the durable authority is healthy. A security-critical mutation may then commit to PostgreSQL together with its durable cache-reconciliation obligation. Redis re-entry is gated by an explicit recovery-admission barrier: the recovered tier advances/re-establishes a trusted cache recovery generation/epoch or equivalently invalidates the pre-outage positive namespace, replays/reconciles every durable security-cache obligation through the recovery boundary, and only then becomes eligible to serve positive session/permission authority again. Exact Redis deployment/topology mechanics for that recovery generation remain part of `OPEN-REL-031.A`; the fixed invariant is that stale pre-outage cache state is never trusted merely because Redis is reachable again.
+
+If Redis itself is replicated, security-critical cache reads/writes use the primary or a replica proven caught up through the relevant fence/finalization generation. Arbitrary lagging replicas cannot serve positive authority past the accepted bound. The resulting maximum staleness/reconciliation bound is published as an explicit security SLO, not left as an incidental cache TTL.
 
 ### Closure condition 3 — degradation-matrix row split (binding, medium severity; companion edit applied)
 
-`docs/07-system-design/failure-and-degradation-matrix.md` previously merged "Redis fast-path down" and "Postgres SoR down" into one ambiguous "Security/session authority unavailable" row, even though ADR-012 deliberately created a distinct "security acceleration cache" category specifically because its failure semantics differ from the SoR. This is now split into two explicit rows in that document: a durable-store-unavailable row (unchanged fail-closed, no permissive fallback) and a new acceleration-cache-only-unavailable row (bypass to PostgreSQL under an explicit per-cell bulkhead/concurrency budget sized for full-cache-miss load; does not fail closed platform-wide). The PostgreSQL connection pool/bulkhead for the 100%-cache-miss scenario is sized and load-tested before production, tracked under `OPEN-REL-008.A/B`.
+`docs/07-system-design/failure-and-degradation-matrix.md` previously merged "Redis fast-path down" and "Postgres SoR down" into one ambiguous "Security/session authority unavailable" row, even though ADR-012 deliberately created a distinct "security acceleration cache" category specifically because its failure semantics differ from the SoR. This is split into two explicit rows in that document: a durable-store-unavailable row (unchanged fail-closed, no permissive fallback) and an acceleration-cache-only-unavailable row (bypass to PostgreSQL under an explicit per-cell bulkhead/concurrency budget sized for full-cache-miss load; does not fail closed platform-wide). The cache-only recovery row also requires the recovery-admission barrier above before Redis may again serve positive security authority. The PostgreSQL connection pool/bulkhead for the 100%-cache-miss scenario is sized and load-tested before production, tracked under `OPEN-REL-008.A/B`.
 
 ### Closure condition 4 — named residency/reversibility risk (binding, medium severity; recorded, not resolved)
 
@@ -48,24 +63,36 @@ This is deliberately **not** a design where an ordinary request reads Redis and 
 
 ### Positive
 - reuses PostgreSQL, already the platform's accepted transactional pattern, for the session SoR rather than introducing a new durability model;
-- the generation-counter + synchronous-tombstone requirement closes the one revocation-consistency gap ADR-012 already demanded but the candidate decision left open;
-- the degradation-matrix split prevents both a false platform-wide login outage on a Redis-only blip and a thundering herd against Postgres on a cache miss.
+- preserves a one-Redis-round-trip, zero-PostgreSQL-query healthy read path;
+- makes the PostgreSQL→Redis partial-write window fail closed instead of allowing a committed revocation to be hidden by stale positive cache state;
+- durable reconciliation guarantees repair responsibility survives writer crash;
+- Redis outage remains a performance/degradation event when PostgreSQL is healthy, while Redis recovery cannot silently reintroduce stale authority;
+- the degradation-matrix split prevents both a false platform-wide login outage on a Redis-only blip and an uncontrolled thundering herd against PostgreSQL.
 
 ### Negative / cost
-- synchronous invalidation adds latency to every security-critical write (not to ordinary reads, which remain a single Redis round trip);
-- security-critical reads must be pinned to a Redis primary (or a provably caught-up replica) if Redis replication is used, which forecloses routing those specific reads to an arbitrary nearest replica for latency;
+- security-critical writes gain an additional Redis fence operation when the cache tier is healthy and may temporarily deny the affected session/scope while a transition is in flight;
+- durable cache-reconciliation records/workers and recovery-admission state become correctness/security infrastructure rather than optional cache hygiene;
+- Redis recovery requires explicit reconciliation/epoch admission before positive cache traffic resumes;
+- security-critical cache reads must be pinned to a Redis primary (or a provably caught-up replica) if Redis replication is used, which forecloses routing those specific reads to an arbitrary nearest replica for latency;
 - `OPEN-REL-031.A`'s topology decision is now a tracked, must-close item before production, not an implicit default.
 
 ## Validation
 
 Before production eligibility, conformance evidence SHALL prove:
-- a forced logout/permission revocation/tenant suspension is honored on the very next request after the synchronous Redis write, without any BFF replica needing to separately query PostgreSQL to learn the new generation;
-- an ordinary authenticated request under normal operation issues zero PostgreSQL queries for session/generation validation — only a single Redis round trip — at any cache-hit rate up to and including 100%;
-- a Redis-only outage (Postgres healthy) does not trigger platform-wide fail-closed login denial, and does not thundering-herd Postgres past its sized bulkhead;
-- a Postgres SoR outage does fail closed for security-sensitive operations, unchanged from today;
-- a request routed to a lagging Redis replica (if replication is used) does not observe a pre-revocation generation past the accepted replica-lag bound;
-- the topology decision under `OPEN-REL-031.A` is made explicit and its failover mechanism is fault-tested per `OPEN-REL-003.A/B`'s evidence bar.
+- a forced logout/permission revocation/tenant suspension is honored on the very next request after the revocation transition commits, without any BFF replica needing to separately query PostgreSQL during the healthy-cache fast path;
+- an ordinary authenticated request under normal operation issues zero PostgreSQL queries for session/generation validation — only a single Redis logical-record read — at any cache-hit rate up to and including 100%;
+- crash after Redis fence installation but **before** PostgreSQL commit never grants excess authority; if PostgreSQL did not commit, reconciliation restores only the durable pre-transition authority;
+- crash or process kill **after** PostgreSQL commit but before Redis finalization leaves the cache non-authorizing and the durable reconciliation obligation eventually converges Redis to the committed generation/state;
+- Redis failure while attempting the pre-commit fence cannot be followed by a PostgreSQL commit while stale Redis remains admitted for positive security reads; the cache tier is demoted/bypassed first or the mutation fails closed;
+- a fenced cache record cannot be treated as an ordinary miss and cannot be overwritten by a concurrent stale cache-fill;
+- concurrent revocations/permission changes using the same expected generation produce one winning current-authority transition and stable retry identity rather than last-write-wins cache corruption;
+- Redis-only outage (PostgreSQL healthy) does not trigger platform-wide fail-closed login denial and does not thundering-herd PostgreSQL past its sized bulkhead;
+- Redis recovery with deliberately preserved stale pre-outage cache contents does not serve those positives before the recovery-admission epoch/reconciliation barrier completes;
+- a PostgreSQL SoR outage still fails closed for security-sensitive operations, unchanged from today;
+- a request routed to a lagging Redis replica (if replication is used) does not observe a pre-revocation generation past the accepted replica-lag/currentness bound;
+- PITR/failover/restore of either store cannot resurrect an already-retired session merely because cache state rolled back farther than durable authority; recovery re-establishes a new admitted cache generation and reconciles from current durable authority before positive admission resumes;
+- the topology decision under `OPEN-REL-031.A` is made explicit and its failover mechanism is fault-tested per the project's existing reliability evidence bar.
 
 ## Exit / revisit conditions
 
-Revisit if `OPEN-REL-031.A`'s topology evidence shows single-global-primary is untenable at production scale, or if a future region-above-cells decision requires session-store residency repartitioning.
+Revisit if `OPEN-REL-031.A`'s topology evidence shows the selected PostgreSQL/Redis ownership shape is untenable at production scale, if measured fence/reconciliation cost violates the accepted security/latency envelope, or if a future region-above-cells decision requires session-store residency repartitioning.

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Real multi-connection falsifier for the OPEN-REL-030 Tier 1 transaction.
 
-The script intentionally has no database driver dependency. Every worker starts an
-independent `psql` process inside the ephemeral PostgreSQL evidence container, so
-success cannot be explained by a shared in-process lock or connection.
+Every worker starts an independent `psql` process against the ephemeral real
+PostgreSQL evidence backend. The source generation and poll token are accepted
+as current only because the SQL oracle resolves matching durable owner authority
+and a live poll claim inside each transaction.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import sys
 
 WORKERS = 24
 TENANT = "11111111-1111-1111-1111-111111111111"
+SOURCE = "10101010-1010-1010-1010-101010101010"
 METRIC = "22222222-2222-2222-2222-222222222222"
 SOURCE_GENERATION = "33333333-3333-3333-3333-333333333333"
 OBSERVATION = "44444444-4444-4444-4444-444444444444"
@@ -21,22 +23,9 @@ OBSERVATION = "44444444-4444-4444-4444-444444444444"
 
 def run_psql(container: str, sql: str) -> str:
     command = [
-        "docker",
-        "exec",
-        "-e",
-        "PGPASSWORD=evidence",
-        container,
-        "psql",
-        "-X",
-        "-v",
-        "ON_ERROR_STOP=1",
-        "-U",
-        "postgres",
-        "-d",
-        "jlmirror",
-        "-Atq",
-        "-c",
-        sql,
+        "docker", "exec", "-e", "PGPASSWORD=evidence", container,
+        "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "postgres",
+        "-d", "jlmirror", "-Atq", "-c", sql,
     ]
     result = subprocess.run(command, text=True, capture_output=True, check=False)
     if result.returncode != 0:
@@ -55,10 +44,10 @@ def main() -> int:
         SELECT newly_accepted, ordering_advanced, semantic_transition
         FROM tel_evidence.accept_observation(
             '{TENANT}'::uuid,
+            '{SOURCE}'::uuid,
             'zabbix:source:metric',
             '{OBSERVATION}'::uuid,
             '{METRIC}'::uuid,
-            '{SOURCE_GENERATION}'::uuid,
             '{SOURCE_GENERATION}'::uuid,
             10,
             100,
@@ -99,7 +88,8 @@ def main() -> int:
     print(
         "tier1_concurrency=PASS "
         f"workers={WORKERS} newly_accepted={newly_accepted} "
-        f"ordering_advanced={ordering_advanced} semantic_transition={semantic_transition}"
+        f"ordering_advanced={ordering_advanced} semantic_transition={semantic_transition} "
+        "authority=owner_source_plus_live_poll_claim"
     )
     return 0
 

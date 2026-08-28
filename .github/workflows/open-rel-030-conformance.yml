@@ -18,7 +18,7 @@ jobs:
   open-rel-030-conformance:
     name: OPEN-REL-030 bounded C2 evidence
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 35
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
@@ -43,6 +43,9 @@ jobs:
         run: |
           set -euo pipefail
           bash -n tools/open_rel_030/run_conformance.sh
+          bash -n tools/open_rel_030/run_conformance_extended.sh
+          bash -n tools/open_rel_030/tier1_commit_ambiguity.sh
+          bash -n tools/open_rel_030/timescale_jobs_restore.sh
           python3 -m py_compile tools/open_rel_030/tier1_concurrency.py
           python3 - <<'PY'
           import json
@@ -57,6 +60,10 @@ jobs:
           print('evidence_manifest_guard=PASS')
           PY
 
-      - name: Run real PostgreSQL and Timescale falsification
+      - name: Run initial real PostgreSQL and Timescale falsification
         shell: bash
         run: bash tools/open_rel_030/run_conformance.sh
+
+      - name: Run ambiguity recovery jobs capacity and restore falsification
+        shell: bash
+        run: bash tools/open_rel_030/run_conformance_extended.sh

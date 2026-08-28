@@ -48,6 +48,7 @@ jobs:
           bash -n tools/open_rel_030/timescale_jobs_restore.sh
           bash -n tools/open_rel_030/physical_pitr.sh
           bash -n tools/open_rel_030/tenant_relocation.sh
+          test -s sql/d2-open-rel-030/012_timescale_restore_role_bootstrap.sql
           python3 -m py_compile tools/open_rel_030/tier1_concurrency.py
           python3 - <<'PY'
           import json
@@ -74,6 +75,6 @@ jobs:
         shell: bash
         run: bash tools/open_rel_030/run_conformance.sh
 
-      - name: Run ambiguity recovery jobs capacity restore PITR and relocation falsification
+      - name: Run ambiguity recovery jobs capacity fresh-cluster restore PITR and relocation falsification
         shell: bash
         run: bash tools/open_rel_030/run_conformance_extended.sh

@@ -61,9 +61,6 @@ assert_exact() {
   printf '%s=PASS value=%q\n' "$label" "$actual"
 }
 
-# External continuity authority is deliberately outside the database image that
-# will be rolled back. It represents the surviving placement/recovery evidence
-# ADR-018 requires for (R,F] reconciliation.
 psql_in "$control_container" "
   DROP SCHEMA IF EXISTS pitr_external_evidence CASCADE;
   CREATE SCHEMA pitr_external_evidence;
@@ -107,29 +104,42 @@ psql_in "$source_container" "
   VALUES (true,'pre_R',4,9,7,false);
 " >/dev/null
 
-# Physical base backup predates R. The restore must therefore replay archived WAL
-# and stop at the named restore point instead of merely cloning the latest data.
 docker exec -u postgres -e PGPASSWORD="$password" "$source_container" \
   sh -c 'rm -rf /tmp/basebackup && pg_basebackup -h 127.0.0.1 -U postgres -D /tmp/basebackup -Fp -Xs -P' \
   >/dev/null
 
+# R is a durable transaction boundary, not merely a textual location inside a
+# multi-statement query. Commit the rollback-subject state first, prove it is
+# visible from a new statement, and only then emit the named WAL restore point.
 psql_in "$source_container" "
   UPDATE pitr_local_state
      SET business_state='state_at_R', poll_epoch=5, poll_generation=10
    WHERE singleton;
-  SELECT pg_create_restore_point('jlmirror_R');
+" >/dev/null
+r_committed="$(psql_in "$source_container" "SELECT business_state||'|'||poll_epoch||'|'||poll_generation FROM pitr_local_state WHERE singleton;")"
+assert_exact "physical_pitr_R_transaction_committed" "state_at_R|5|10" "$r_committed"
+r_lsn="$(psql_in "$source_container" "SELECT pg_create_restore_point('jlmirror_R');")"
 
+# Likewise, F is created only after the post-R continuity/effect evidence has
+# committed. A PITR to R must therefore exclude these rows while the surviving
+# authority still knows they occurred in (R,F].
+psql_in "$source_container" "
   UPDATE pitr_local_state
      SET business_state='post_R_business_change', poll_generation=11
    WHERE singleton;
   INSERT INTO pitr_continuity_receipt(receipt_id) VALUES ('effect-after-r');
-  SELECT pg_create_restore_point('jlmirror_F');
-  SELECT pg_switch_wal();
-  CHECKPOINT;
-  SELECT pg_switch_wal();
 " >/dev/null
+f_committed="$(psql_in "$source_container" "SELECT business_state||'|'||poll_generation||'|'||(SELECT count(*) FROM pitr_continuity_receipt) FROM pitr_local_state WHERE singleton;")"
+assert_exact "physical_pitr_F_transaction_committed" "post_R_business_change|11|1" "$f_committed"
+f_lsn="$(psql_in "$source_container" "SELECT pg_create_restore_point('jlmirror_F');")"
+if [[ "$r_lsn" == "$f_lsn" ]]; then
+  echo "PITR R and F unexpectedly share the same WAL LSN" >&2
+  exit 1
+fi
+printf 'physical_pitr_restore_points=PASS R=%s F=%s\n' "$r_lsn" "$f_lsn"
 
-# Wait until archiving has definitely emitted WAL after the restore points.
+psql_in "$source_container" "SELECT pg_switch_wal(); CHECKPOINT; SELECT pg_switch_wal();" >/dev/null
+
 for _ in $(seq 1 80); do
   archived_count="$(psql_in "$source_container" "SELECT archived_count FROM pg_stat_archiver;")"
   failed_count="$(psql_in "$source_container" "SELECT failed_count FROM pg_stat_archiver;")"
@@ -193,8 +203,6 @@ external_state="$(psql_in "$control_container" "
 ")"
 assert_exact "physical_pitr_external_F_survives" "6|8|effect-after-r" "$external_state"
 
-# A locally healthy restored database is still non-authoritative: it lacks F
-# continuity and its epoch/placement are stale relative to the surviving owner.
 before_admission="$(psql_in "$restored_container" "
   SELECT (
     s.reconciled_through_f
@@ -206,8 +214,6 @@ before_admission="$(psql_in "$restored_container" "
 ")"
 assert_exact "physical_pitr_pre_reconcile_fail_closed" "false" "$before_admission"
 
-# Reconcile only continuity/safety authority from (R,F]. The business rollback
-# remains intentionally at R; we do not blindly replay post-R business state.
 psql_in "$restored_container" "
   INSERT INTO pitr_continuity_receipt(receipt_id)
   VALUES ('effect-after-r') ON CONFLICT DO NOTHING;

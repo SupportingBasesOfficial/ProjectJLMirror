@@ -4,8 +4,8 @@
 **Production authority:** none  
 **Wave 4 implementation authorization:** not granted  
 **Track B acceptance authorization:** not granted  
-**Tier 1 recommendation:** PostgreSQL transactional acceptance/outbox/current-state mechanism only with immutable canonical observation content + owner-controlled source generation/poll epoch + durable live poll claim resolved in-transaction + contiguous/current reconciliation coverage anchored at the supported history floor + lock-before-`F` relocation fencing — conformed; recommended for C2 acceptance  
-**Tier 2 recommendation:** TimescaleDB historical projection only under the conformed mediated shared-history profile, including fresh-cluster role reconstruction and durable complete-set relocation receipts — recommended for C2 acceptance  
+**Tier 1 recommendation:** PostgreSQL transactional acceptance/outbox/current-state mechanism only with immutable canonical observation content + owner-controlled source generation/poll epoch + durable live poll claim resolved in-transaction + contiguous/current reconciliation coverage anchored at the supported history floor + lock-before-`F` relocation fencing + verification of a target-owned authenticated sealed canonical-payload checkpoint — conformed; recommended for C2 acceptance  
+**Tier 2 recommendation:** TimescaleDB historical projection only under the conformed mediated shared-history profile, including fresh-cluster role reconstruction and target-owned authenticated sealed relocation checkpoints — recommended for C2 acceptance  
 **Production versions/numerics:** not selected; production telemetry envelopes remain `OPEN-REL-020` C3
 
 ## Gate state
@@ -17,29 +17,53 @@ D1 ratified canonical base
         v
 D2 bounded evidence harness
         |
-        +-- Tier 1 real PostgreSQL proof                    COMPLETE
-        +-- identity-content conflict rejection             COMPLETE
-        +-- owner source/epoch + poll-claim proof           COMPLETE
-        +-- crash / ambiguity / recovery matrix             COMPLETE
-        +-- late-history contiguous coverage/currentness     COMPLETE
-        +-- physical PITR (R,F] reconciliation              COMPLETE
-        +-- relocation authority race / fence ordering      COMPLETE
-        +-- relocation complete-set receipt / gap test      COMPLETE
-        +-- Tier 2 isolation / escalation matrix            COMPLETE
-        +-- Timescale fresh-cluster restore / roles         COMPLETE
-        +-- restored Timescale jobs + attack matrix         COMPLETE
-        +-- bounded capacity under safe profile              COMPLETE FOR C2
+        +-- Tier 1 real PostgreSQL proof                     COMPLETE
+        +-- identity-content conflict rejection              COMPLETE
+        +-- owner source/epoch + poll-claim proof            COMPLETE
+        +-- crash / ambiguity / recovery matrix              COMPLETE
+        +-- late-history contiguous coverage/currentness      COMPLETE
+        +-- physical PITR (R,F] reconciliation               COMPLETE
+        +-- source relocation fence ordering/race            COMPLETE
+        +-- target authenticated sealed checkpoint           COMPLETE
+        +-- canonical-payload SHA-256 equivalence            COMPLETE
+        +-- target seal-vs-DML / tenant-scope freeze         COMPLETE
+        +-- Tier 2 isolation / escalation matrix             COMPLETE
+        +-- Timescale fresh-cluster restore / roles          COMPLETE
+        +-- restored Timescale jobs + attack matrix          COMPLETE
+        +-- bounded capacity under safe profile               COMPLETE FOR C2
         |
         v
-C2 decision recommendation                                 READY FOR EXACT-HEAD REVIEW
+C2 decision recommendation                                  READY FOR EXACT-HEAD REVIEW
         |
-        +-- production capacity numerics                     STILL OPEN / OPEN-REL-020 C3
-        +-- production version pinning                        NOT SELECTED
-        +-- Wave 4 implementation authorization               NOT GRANTED
+        +-- production capacity numerics                      STILL OPEN / OPEN-REL-020 C3
+        +-- production version pinning                         NOT SELECTED
+        +-- production key/KMS topology                        NOT SELECTED HERE
+        +-- Wave 4 implementation authorization                NOT GRANTED
         |
         v
-OPEN-REL-030 acceptance                                     REQUIRES REVIEW + EXPLICIT TRACK B ACCEPTANCE
+OPEN-REL-030 acceptance                                      REQUIRES REVIEW + EXPLICIT TRACK B ACCEPTANCE
 ```
+
+## Exact empirical anchor before reviewer-document mutation
+
+The hardened executable package reached the current reviewer-classification point on:
+
+```text
+HEAD
+747e0bb84a7b617e7ca97eb835ea0f0d64ac804d
+
+JLMIRROR Deterministic Assurance
+run #1965
+run id 33200595850
+SUCCESS
+
+JLMIRROR OPEN-REL-030 Conformance
+run #51
+run id 33200595957
+SUCCESS
+```
+
+This is provenance, not a reusable final gate. Any commit that changes this STATE, the manifest, the decision review or other package content must rerun both workflows on its own exact HEAD.
 
 ## Tier 1 authority profile
 
@@ -64,30 +88,71 @@ Finalization additionally specifies a minimum provider/reconciliation snapshot c
 The negative matrix proves:
 
 - a high-only sweep `11:55..12:00` leaves anchored coverage absent and cannot finalize;
-- a low sweep `supported_history_floor..10:00` plus the high sweep retains the real `10:00..11:55` hole; generic `max(window_to)=12:00` does not help, continuous coverage remains only through `10:00`, and finalization is rejected;
-- a bridging sweep `10:00..12:00` at provider snapshot `12:15` closes the interval, recovers the delayed `10:30` observation, and establishes continuous coverage from `2026-08-27T00:00:00Z` through `2026-08-28T12:00:00Z`;
-- the same interval evidence cannot satisfy a later finalization that requires reconciliation current through `12:16`; it succeeds only when the required minimum snapshot is no newer than the actual covering evidence;
+- a low sweep `supported_history_floor..10:00` plus the high sweep retains the real `10:00..11:55` hole; `max(window_to)=12:00` does not help;
+- a bridging sweep `10:00..12:00` at provider snapshot `12:15` closes the interval and recovers the delayed `10:30` observation;
+- the same interval evidence cannot satisfy a later finalization that requires reconciliation current through `12:16`;
 - provider retention loss remains an explicit durable `gap` and can never fabricate `complete`.
 
 Thus `max(reconciliation window_to)` and stale reconciliation evidence are both explicitly rejected as authorities for completeness.
 
-## Relocation authority and completeness profile
+## Relocation authority and authenticated completeness profile
 
-Relocation does not treat `F` or a target maximum ordinal as self-proving authority.
+Relocation has two independently fenced authorities: the Tier 1 source acceptance set and the Tier 2 target checkpoint set.
 
-The source fence procedure locks the tenant placement authority **before** deriving `F`. A concurrent acceptance that already holds the placement lock must finish first and is included in `F`; an acceptance arriving after the fence waits and then observes the fenced source state, so it cannot create an authoritative row beyond `F`.
+### Source fence
 
-Target activation consumes a durable `projection_receipt` bound to the exact frozen source set through `F`. The receipt records and compares:
+The source fence locks tenant placement authority **before** deriving `F`. A source acceptance already holding that lock must finish first and is included in `F`; a later acceptance waits and then observes the fenced source state, so it cannot become authoritative beyond `F`.
 
-- authoritative row count;
-- ordered canonical observation-identity digest;
-- target row count;
-- target digest;
-- target maximum ordinal.
+The empirical race finishes with `F=3` and proves the in-flight acceptance is included.
 
-The negative vector deliberately makes the target reach `max=F` while omitting lower authoritative rows. That state is recorded as `incomplete`, and cutover is rejected. Only after count + digest + max all match the frozen source set does the receipt become `complete` and target activation become eligible.
+### Target checkpoint
 
-The empirical fence race finished with `F=3`, a complete receipt `complete|3|3|3`, four total authoritative observations after the target's post-cutover acceptance, and stale-source writes rejected.
+Target activation no longer trusts caller-provided count/digest/max facts and no longer treats an identity-only digest as payload equivalence.
+
+The target side owns a checkpoint authority under NOLOGIN `ts_owner`. The projection writer `ts_automation_owner` may project data but:
+
+- cannot read the target checkpoint attestation key;
+- cannot own or disable the target-history freeze trigger;
+- cannot modify/delete a row at or below `F` after the target checkpoint is sealed;
+- cannot move a sealed pre-`F` row to another tenant.
+
+A target checkpoint is measured from the **actual target state** and contains count, maximum ordinal and an ordered SHA-256 fingerprint of the canonical observation payload represented by the evidence profile:
+
+- accepted ordinal;
+- observation identity;
+- metric definition identity;
+- normalized UTC observation timestamp;
+- normalized numeric value.
+
+The checkpoint facts are authenticated with domain-separated HMAC-SHA-256 (`open-rel-030-target-checkpoint-v1`). Tier 1 independently verifies that attestation and requires the sealed target SHA-256 set to equal the frozen authoritative Tier 1 set before recording `complete` or activating the target.
+
+The evidence deliberately proves all of these negative cases:
+
+- `max(target)=F` with missing lower rows remains `incomplete`;
+- the same identities/ordinals with a changed canonical payload remain `incomplete`;
+- altering target checkpoint facts while replaying a genuine HMAC is rejected;
+- a target mutation racing a seal blocks behind the target authority lock and is rejected after the seal commits;
+- DELETE and cross-tenant UPDATE of sealed pre-`F` data are rejected;
+- the projection writer cannot disable the freeze.
+
+The successful empirical terminal state is:
+
+```text
+source fence F                          3
+authenticated sealed receipt            complete|3|3|3|true
+post-cutover authoritative observations 4
+target historical observations          4
+stale source write                       rejected
+final authority                          active|target|2|3
+```
+
+This establishes the required semantic shape: **source lock-before-`F` + target-owned sealed checkpoint + authenticated canonical-payload complete-set equivalence + freeze continuity through cutover**.
+
+### Crypto boundary
+
+SHA-256 and HMAC-SHA-256 are used here to prove the C2 mechanism shape. This evidence does **not** select the production key provider, KMS/HSM/TEE topology, key rotation schedule, provisioning channel or secret-management implementation. Production must preserve equivalent-or-stronger integrity and independently trustworthy target attestation under the separately accepted security/platform architecture.
+
+For non-numeric Monitoring payload kinds, implementation must define the same kind of deterministic canonical serialization over **all immutable accepted payload fields** before this evidence shape can be instantiated; this spike must not be misread as saying numeric serialization is the only production payload profile.
 
 ## Tier 2 empirical classification
 
@@ -101,8 +166,8 @@ The surviving Tier 2 candidate is the **mediated shared-history profile**:
 - tenant-facing/reporting roles have no direct privilege on shared raw history, continuous aggregates or internal materialization;
 - tenant binding is not selected by caller-writable SQL state;
 - the read boundary is hardened `SECURITY DEFINER` with fixed `search_path`;
-- `ts_owner` is a NOLOGIN mediation/mapping owner;
-- `ts_automation_owner` has LOGIN only because Timescale background workers require the job-bearing object owner to have it, with no password, SUPERUSER, CREATEROLE or BYPASSRLS and no tenant-facing/runtime membership;
+- `ts_owner` is a NOLOGIN mediation/mapping/checkpoint owner;
+- `ts_automation_owner` has LOGIN only where required by the evaluated Timescale automation shape, with no password, SUPERUSER, CREATEROLE or BYPASSRLS and no tenant-facing/runtime membership;
 - escalation, direct-read and tenant-crossing attacks are repeated after background jobs, after restore into a genuinely fresh PostgreSQL/Timescale cluster, and after a restored background job executes.
 
 The fresh restore proves the source cluster's global role state is absent first (`0` JLMirror roles), reconstructs exactly the five minimum evidence roles, restores `100004/100004` history rows and both Timescale jobs, verifies object/function/job ownership, then re-runs the complete isolation/escalation matrix. A same-cluster database restore is not sufficient role-topology evidence.

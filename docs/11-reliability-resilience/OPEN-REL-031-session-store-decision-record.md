@@ -30,7 +30,9 @@ Unlike `rel.cell-transactional-store` (tracked by `OPEN-REL-003`/`004`) or `rel.
 
 ADR-012's "durable/current authority or explicit fail-closed policy" requirement for this cache class was unmet as originally stated — the candidate decision specified no synchronous-invalidation guarantee and no staleness bound, and a pub/sub-based invalidation is best-effort and drops messages during partitions, leaving only Redis's TTL (chosen for performance, not security) as the real bound.
 
-**Requirement:** security-critical writes — logout-all-devices, membership/permission revocation, tenant suspension, MFA/step-up state change — SHALL (1) commit to PostgreSQL, (2) synchronously invalidate/tombstone the Redis entry (or write a tombstone with the same TTL as the max acceptable staleness) before the revoking API call returns success, and (3) additionally advance a per-identity monotonic generation counter stored durably in PostgreSQL and carried as a cheap version check on every cache hit, so a partition-isolated replica serving a stale positive cache entry still fails the generation compare and re-fetches from PostgreSQL. The resulting maximum staleness bound is published as an explicit security SLO, not left as an incidental cache TTL.
+**Requirement:** security-critical writes — logout-all-devices, membership/permission revocation, tenant suspension, MFA/step-up state change — SHALL (1) commit the new authorization/session generation to PostgreSQL as the durable record of truth, and (2) synchronously write that same generation value into the corresponding Redis session entry itself (not a separate tombstone key requiring an extra lookup, but part of the same cached record already read on every request) before the revoking API call returns success.
+
+This is deliberately **not** a design where an ordinary request reads Redis and then separately queries PostgreSQL to check the generation — doing so would put PostgreSQL back on every request's hot path regardless of cache-hit rate, exactly the defect a reviewer correctly flagged in the first version of this record (a cached generation compared against a counter "stored only in PostgreSQL" implies a PostgreSQL read on every hit, which defeats Redis's acceleration purpose even at a 100% cache-hit rate). Instead: an ordinary request's authorization check reads the session **and its generation** from Redis in one round trip and nothing else; the value is guaranteed current as of the last synchronous write in step (2) above, so no live PostgreSQL comparison is needed on the read path. PostgreSQL is read on the request path only on a genuine Redis cache miss (key absent — first request after eviction, cold start, or Redis-tier failure), at which point the fetched authoritative record repopulates Redis before the request proceeds. If Redis itself is deployed as a replicated cluster, security-critical reads SHALL target the primary (or a replica proven caught up past the relevant write) rather than an arbitrary replica that may lag behind the synchronous write in step (2) — otherwise replication lag inside the cache tier reintroduces the exact staleness window this mechanism exists to close. The resulting maximum staleness bound (bounded by Redis primary-write durability and, where applicable, replica catch-up lag) is published as an explicit security SLO, not left as an incidental cache TTL.
 
 ### Closure condition 3 — degradation-matrix row split (binding, medium severity; companion edit applied)
 
@@ -50,16 +52,18 @@ ADR-012's "durable/current authority or explicit fail-closed policy" requirement
 - the degradation-matrix split prevents both a false platform-wide login outage on a Redis-only blip and a thundering herd against Postgres on a cache miss.
 
 ### Negative / cost
-- synchronous invalidation adds latency to every security-critical write;
-- the generation-counter check adds a cheap but non-zero read on every cache hit;
+- synchronous invalidation adds latency to every security-critical write (not to ordinary reads, which remain a single Redis round trip);
+- security-critical reads must be pinned to a Redis primary (or a provably caught-up replica) if Redis replication is used, which forecloses routing those specific reads to an arbitrary nearest replica for latency;
 - `OPEN-REL-031.A`'s topology decision is now a tracked, must-close item before production, not an implicit default.
 
 ## Validation
 
 Before production eligibility, conformance evidence SHALL prove:
-- a forced logout/permission revocation/tenant suspension is honored on every BFF replica within the published staleness SLO, including a replica that missed the pub/sub invalidation message;
+- a forced logout/permission revocation/tenant suspension is honored on the very next request after the synchronous Redis write, without any BFF replica needing to separately query PostgreSQL to learn the new generation;
+- an ordinary authenticated request under normal operation issues zero PostgreSQL queries for session/generation validation — only a single Redis round trip — at any cache-hit rate up to and including 100%;
 - a Redis-only outage (Postgres healthy) does not trigger platform-wide fail-closed login denial, and does not thundering-herd Postgres past its sized bulkhead;
 - a Postgres SoR outage does fail closed for security-sensitive operations, unchanged from today;
+- a request routed to a lagging Redis replica (if replication is used) does not observe a pre-revocation generation past the accepted replica-lag bound;
 - the topology decision under `OPEN-REL-031.A` is made explicit and its failover mechanism is fault-tested per `OPEN-REL-003.A/B`'s evidence bar.
 
 ## Exit / revisit conditions

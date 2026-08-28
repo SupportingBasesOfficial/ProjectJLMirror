@@ -21,7 +21,8 @@ Recommend C2 acceptance only with all of the following preserved together:
 - stale reconciliation worker generations rejected;
 - physical PITR to committed `R` remaining fail-closed until a **surviving external authenticated `(R,F]` recovery grant** is verified;
 - a locally recreated receipt after restore is insufficient for re-admission;
-- source relocation authority locked before deriving `F`.
+- source relocation authority locked before deriving `F`;
+- relocation/source↔target payload comparison using deterministic **self-delimiting canonical serialization**, never delimiter-framed unrestricted text.
 
 ### Tier 2 — Timescale mediated shared history
 
@@ -34,6 +35,7 @@ Recommend C2 acceptance only under the conformed mediated profile:
 - `PASSWORD NULL` is not treated as `NOLOGIN` or production admission proof;
 - fresh-cluster role reconstruction + attack matrix after restore/jobs;
 - target-owned authenticated sealed relocation checkpoint over the actual target canonical payload;
+- the same deterministic self-delimiting canonical representation on both sides of the projection seam;
 - no target row `>F` may survive or enter before activation;
 - `sealed` rejects all target-history DML; after `activated`, existing history is immutable and only append `>F` is eligible.
 
@@ -41,16 +43,16 @@ Recommend C2 acceptance only under the conformed mediated profile:
 
 ```text
 HEAD
-f205fe823f9f7635ffb27debb2a2d980fe8cc35f
+cbd433f09a7568048a45b75cd9abb6760b5687d8
 
 JLMIRROR Deterministic Assurance
-run #1990
-run id 33202904143
+run #2000
+run id 33206933772
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #63
-run id 33202904081
+run #68
+run id 33206933620
 SUCCESS
 ```
 
@@ -96,9 +98,31 @@ Positive evidence:
 - rollback-subject post-`R` business state is not replayed;
 - final admission requires both reconciled local state and fresh verification by the surviving external authority.
 
+## Canonical serialization gate
+
+Relocation equivalence is defined over an **unambiguous canonical byte representation**, not merely over a cryptographic hash function.
+
+The evidence profile serializes every immutable field as:
+
+```text
+<UTF-8 byte length in decimal>:<lowercase UTF-8 hex>
+```
+
+Rows are deterministically ordered and their self-delimiting fields are concatenated without using an in-band text delimiter as an authority boundary. The fields covered by the current evidence profile are:
+
+- accepted ordinal;
+- observation ID;
+- metric definition ID;
+- normalized UTC `observed_at` at microsecond precision;
+- normalized numeric value.
+
+The negative vector proves why the old `US/RS` (`0x1f`/`0x1e`) delimiter framing is invalid for unrestricted text: different logical field boundaries can yield the same pre-hash bytes when an ID contains those control characters. The new representation remains distinct, and PostgreSQL and Timescale produce the same canonical field bytes for text containing both control characters.
+
+Future/production payload kinds must use a deterministic, versioned, injective or equivalently unambiguous canonical serialization covering **every immutable accepted payload field**. SHA-256 cannot repair an ambiguous pre-hash representation.
+
 ## Relocation target gate
 
-Relocation now fences the complete pre-activation target state, not only rows `<=F`.
+Relocation fences the complete pre-activation target state, not only rows `<=F`.
 
 Before seal:
 
@@ -120,7 +144,7 @@ After `activated`:
 The same target checkpoint still requires:
 
 - target-owned measurement of actual current state;
-- count + max + SHA-256 of deterministic canonical immutable payload;
+- count + max + SHA-256 of deterministic self-delimiting canonical immutable payload;
 - domain-separated HMAC-SHA-256 attestation;
 - projection writer unable to read attestation key or disable freeze;
 - Tier 1 verification of the authenticated sealed checkpoint before target activation.

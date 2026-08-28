@@ -53,8 +53,6 @@ admin_psql() {
     psql -X -v ON_ERROR_STOP=1 -U postgres -d jlmirror "$@"
 }
 
-# Images were already pulled by the initial conformance stage in ordinary PR
-# execution, but explicit pull keeps this runner independently reproducible.
 docker pull "$PG_IMAGE" >/dev/null
 docker pull "$TS_IMAGE" >/dev/null
 
@@ -81,6 +79,10 @@ bash tools/open_rel_030/tier1_commit_ambiguity.sh "$PG_CONTAINER"
 admin_psql "$PG_CONTAINER" -f /tmp/003_tier1_recovery_authority.sql
 admin_psql "$PG_CONTAINER" -f /tmp/004_history_reconciliation.sql
 
+# Native physical PostgreSQL PITR to R, with F held by a separate surviving
+# authority. This must pass before the restored authority may be admitted.
+bash tools/open_rel_030/physical_pitr.sh "$PG_CONTAINER" "$PG_IMAGE"
+
 # ---------------------------------------------------------------------------
 # Tier 2 exact safe-profile jobs/capacity/restore vectors.
 # ---------------------------------------------------------------------------
@@ -100,5 +102,9 @@ admin_psql "$TS_CONTAINER" -f /tmp/011_timescale_jobs_capacity.sql
 wait_for_postgres "$TS_CONTAINER"
 bash tools/open_rel_030/timescale_jobs_restore.sh "$TS_CONTAINER"
 
+# Cross-store relocation: Tier 1 source fencing and Tier 2 projection watermark
+# must jointly permit target activation; stale source writes remain rejected.
+bash tools/open_rel_030/tenant_relocation.sh "$PG_CONTAINER" "$TS_CONTAINER"
+
 printf '%s\n' 'open_rel_030_extended_conformance=PASS'
-printf '%s\n' 'closure_claim=false physical_pitr_and_full_relocation_capacity_decision_still_require_final_classification'
+printf '%s\n' 'closure_claim=false final evidence classification and governed decision update still required'

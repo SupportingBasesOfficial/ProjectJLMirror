@@ -28,14 +28,20 @@ cleanup
 
 wait_for_postgres() {
   local container="$1"
-  for _ in $(seq 1 60); do
+  local consecutive=0
+  for _ in $(seq 1 120); do
     if docker exec -e PGPASSWORD="$DB_PASSWORD" "$container" \
-      pg_isready -U postgres -d jlmirror >/dev/null 2>&1; then
-      return 0
+      pg_isready -h 127.0.0.1 -U postgres -d jlmirror >/dev/null 2>&1; then
+      consecutive=$((consecutive + 1))
+      if [[ "$consecutive" -ge 3 ]]; then
+        return 0
+      fi
+    else
+      consecutive=0
     fi
-    sleep 1
+    sleep 0.25
   done
-  echo "database did not become ready: $container" >&2
+  echo "database TCP path did not become stably ready: $container" >&2
   docker logs "$container" >&2 || true
   return 1
 }
@@ -70,6 +76,7 @@ do
 done
 
 admin_psql "$PG_CONTAINER" -f /tmp/001_tier1_acceptance.sql
+wait_for_postgres "$PG_CONTAINER"
 bash tools/open_rel_030/tier1_commit_ambiguity.sh "$PG_CONTAINER"
 admin_psql "$PG_CONTAINER" -f /tmp/003_tier1_recovery_authority.sql
 admin_psql "$PG_CONTAINER" -f /tmp/004_history_reconciliation.sql
@@ -88,7 +95,9 @@ for file in 010_timescale_candidate.sql 011_timescale_jobs_capacity.sql; do
 done
 
 admin_psql "$TS_CONTAINER" -f /tmp/010_timescale_candidate.sql
+wait_for_postgres "$TS_CONTAINER"
 admin_psql "$TS_CONTAINER" -f /tmp/011_timescale_jobs_capacity.sql
+wait_for_postgres "$TS_CONTAINER"
 bash tools/open_rel_030/timescale_jobs_restore.sh "$TS_CONTAINER"
 
 printf '%s\n' 'open_rel_030_extended_conformance=PASS'

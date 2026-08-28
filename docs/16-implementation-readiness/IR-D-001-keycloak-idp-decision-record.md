@@ -33,16 +33,17 @@ Every other revocation class in this repository — session, membership, permiss
 Before trusting **any** `logout_token` claim or resolving a BFF session, the BFF SHALL:
 
 1. parse only within the accepted bounded callback/JWT size limits;
-2. cryptographically verify the JWS signature against the currently trusted Keycloak signing-key set for the configured issuer/client;
-3. enforce an explicit allowed-signature-algorithm policy chosen by trusted configuration, not by attacker-controlled token header alone; `alg=none`, an unexpected algorithm, an unknown/retired key, or signature failure is rejection;
-4. resolve `kid` only against trusted Keycloak/JWKS configuration and bounded key-rotation logic; token-supplied `jku`, `x5u` or equivalent remote-key indirection SHALL NOT select an arbitrary verification endpoint;
-5. only after signature/key/algorithm verification, verify `iss`/`aud` against the registered Keycloak issuer/client and process the protocol-specific claims below.
+2. if logout-token encryption is ever negotiated for the client, decrypt only with the algorithms/keys fixed by trusted client registration/configuration; encryption is never accepted as a substitute for signature validation;
+3. cryptographically verify the Logout Token JWS signature in the same trust profile as the configured Keycloak ID-token signing keys for that issuer/client;
+4. enforce an explicit allowed-signature-algorithm policy chosen by trusted discovery/registration/configuration, not by attacker-controlled token header alone; `alg=none`, an unexpected algorithm, an unknown/retired key, or signature failure is rejection;
+5. resolve `kid` only against trusted Keycloak/JWKS configuration and bounded key-rotation logic; token-supplied `jku`, `x5u` or equivalent remote-key indirection SHALL NOT select an arbitrary verification endpoint;
+6. only after cryptographic signature/key/algorithm verification, verify the protocol-specific claims below.
 
 ADR-013 already mandates provider signature/authentication verification before domain mutation; the bullets above are the Keycloak/OIDC concrete instantiation of that accepted rule, not a competing trust model.
 
-ADR-013's freshness/replay rule is protocol-conditional ("enforce timestamp/nonce/event-ID freshness semantics **provided by the protocol**"), and the Back-Channel Logout protocol's freshness/replay semantics are not the generic OIDC authentication `nonce`. Per the Back-Channel Logout specification, a `logout_token` is REQUIRED to carry `iat` and a unique `jti`, is REQUIRED to carry an `events` claim containing the `http://schemas.openid.net/event/backchannel-logout` member, carries `sid` and/or `sub` identifying the logged-out session/principal, and is REQUIRED to **not** contain a `nonce` claim. Applying a blanket "require nonce" rule (a mistake in an earlier draft of this record) would cause the BFF to reject every standards-compliant logout token Keycloak actually sends, silently defeating this entire closure condition.
+OIDC Back-Channel Logout defines `iss`, `aud`, `iat`, `exp`, `jti` and `events` as required Logout Token claims; the token contains `sid`, `sub`, or both, and a `nonce` claim is prohibited. JLMirror intentionally strengthens the specification's optional recent-`jti` duplicate check into a mandatory durable replay check because a replayed valid logout token reaches security-sensitive session mutation authority.
 
-After cryptographic authenticity is established, the BFF SHALL therefore: verify `iat` is within an accepted bounded clock-skew freshness window; persist `jti` for the replay-safety interval and reject reuse; reject any `logout_token` that carries a `nonce` claim; require the `events` claim to contain the back-channel-logout member; and resolve the affected BFF session(s) from `sid` where present, falling back to `sub` (all active sessions for that subject) otherwise. On accepted receipt, the BFF SHALL invalidate the corresponding session(s) within an explicit numeric propagation SLA (evidence-driven, `OPEN` until measured, tracked alongside `OPEN-REL-002`'s freshness-horizon discipline). The BFF's own session re-validation interval against Keycloak SHALL be capped as a self-healing backstop for a missed/delayed back-channel event. `docs/16-implementation-readiness/04-must-close-identity-and-fencing-profiles.md`'s required-implementation-evidence list includes this scenario explicitly.
+After cryptographic authenticity is established, the BFF SHALL therefore: verify `iss`/`aud` against the registered Keycloak issuer/client; validate both `iat` freshness and `exp` expiry under the accepted bounded clock-skew policy; persist `jti` for the replay-safety interval and reject reuse; reject any `logout_token` that carries a `nonce` claim; require the `events` claim to contain the back-channel-logout member; require `sid`, `sub`, or both; and resolve the affected BFF session(s) from `sid` where present, falling back to `sub` (all active sessions for that subject) otherwise. On accepted receipt, the BFF SHALL invalidate the corresponding session(s) within an explicit numeric propagation SLA (evidence-driven, `OPEN` until measured, tracked alongside `OPEN-REL-002`'s freshness-horizon discipline). The BFF's own session re-validation interval against Keycloak SHALL be capped as a self-healing backstop for a missed/delayed back-channel event. `docs/16-implementation-readiness/04-must-close-identity-and-fencing-profiles.md`'s required-implementation-evidence list includes this scenario explicitly.
 
 ### Closure condition 2 — outage classification under ADR-017 (binding, medium severity)
 
@@ -62,11 +63,13 @@ Identity/session residency (a minor, non-blocking consistency note): `threat-mod
 - reuses a mature, widely-deployed OIDC provider rather than building custom human-identity infrastructure;
 - back-channel logout closes the one revocation class this platform's own bar had left unaddressed;
 - explicit JWS signature/algorithm/key verification prevents forged claim sets from reaching session revocation authority and makes ADR-013's generic callback-authentication rule concrete at the Keycloak boundary;
+- explicit `exp` validation and mandatory JLMirror replay handling close ambiguity between generic JWT parsing and the exact Logout Token profile;
 - the ADR-017 classification makes Keycloak's outage behavior an explicit, tested, accepted-risk decision rather than an implicit assumption.
 
 ### Negative / cost
 - back-channel logout is a new wired integration requiring its own conformance tests under ADR-013's framework;
 - signing-key rotation/JWKS currentness becomes part of the identity-provider adapter's security-operability surface and requires bounded refresh/failure semantics;
+- mandatory durable `jti` replay recognition is intentionally stricter than the OIDC minimum and consumes bounded security-state capacity for the accepted replay interval;
 - the fail-closed-for-new-sessions branch means a Keycloak outage genuinely blocks new logins/step-up platform-wide — an accepted cost of the stricter security-authority category, not mitigated by this record.
 
 ### Risks
@@ -76,13 +79,14 @@ Identity/session residency (a minor, non-blocking consistency note): `threat-mod
 
 Before this selection is treated as production-eligible, conformance evidence SHALL prove:
 - a Keycloak-side admin account disable/forced logout propagates to BFF session revocation within the accepted bound;
-- a standards-compliant, **correctly signed** `logout_token` (no `nonce` claim, per spec) is accepted and processed, not rejected;
+- a standards-compliant, **correctly signed and unexpired** `logout_token` is accepted and processed, including the required `iss`, `aud`, `iat`, `exp`, `jti`, `events` and `sid`/`sub` profile with no `nonce`;
 - a forged/bad-signature token, `alg=none`, an algorithm outside the configured allow-list, an unknown/retired signing key, or a token attempting untrusted remote-key indirection is rejected before any `sid`/`sub` lookup or session mutation;
+- an expired `exp`, future/stale `iat` outside the accepted skew/freshness policy, reused `jti`, missing/incorrect `events`, missing both `sid` and `sub`, or present `nonce` is rejected;
 - valid signing-key rotation is accepted only after the new key is established through trusted Keycloak/JWKS configuration/currentness rules, while a retired key cannot regain authority merely because its `kid` appears again in an untrusted token;
-- a `logout_token` carrying a `nonce` claim, a stale/out-of-window `iat`, a reused `jti`, or a missing/incorrect `events` member is rejected;
+- if encrypted Logout Tokens are later negotiated, wrong encryption algorithm/key or decrypt failure rejects before claims/signature can authorize effects, and successful decryption is still followed by required signature validation;
 - a Keycloak outage leaves already-issued sessions honored via BFF-local checks while new session/step-up admission fails closed;
 - no authorization-relevant code path or IaC/config references Keycloak realm roles, groups, or Organizations.
 
 ## Exit / revisit conditions
 
-Revisit if a future client architecture change (per ADR-005's own exit clause), a change in Keycloak/OIDC signing-key operational requirements, or a measured back-channel-logout propagation cost disproportionate to actual revocation frequency argues for a different mechanism.
+Revisit if a future client architecture change (per ADR-005's own exit clause), a change in Keycloak/OIDC signing/encryption-key operational requirements, or a measured back-channel-logout propagation cost disproportionate to actual revocation frequency argues for a different mechanism.

@@ -15,6 +15,7 @@ Move a tenant between cells without changing logical tenant/resource identities,
 - target has capacity and satisfies isolation/residency policy;
 - relocation operation has durable Control Plane state;
 - tenant-specific data classes/artifacts/telemetry are inventoried in a migration manifest;
+- where duplicate-sensitive inbox/dedup evidence uses keyed/authenticated (e.g. HMAC) comparison, the migration manifest additionally inventories the historical key/verifier-generation reference required to interpret that evidence at the target, not only the fingerprint bytes themselves;
 - pending async/process state is inventoried;
 - active realtime subscription retirement/resubscription behavior for the tenant is defined;
 - rollback boundary is declared before execution;
@@ -93,7 +94,7 @@ At cutover every pending unit is in one of these states:
 - transferred as pending durable process/job state according to contract;
 - quarantined for operator reconciliation.
 
-Inbox/deduplication and idempotency state required to recognize pre-cutover message/operation IDs is available at target before target starts effectful processing.
+Inbox/deduplication and idempotency state required to recognize pre-cutover message/operation IDs is available at target before target starts effectful processing. Where that state's comparison evidence is keyed/authenticated, "available" includes the target holding, or having narrowly-scoped read access to, the source cell's historical key/verifier generation for the in-flight dedup horizon — per `08-cryptographic-authority-and-secret-recovery.md`'s "historical verification" concept, a verifier made available this way does not become current cryptographic authority for unrelated work. Its absence at cutover is a `recovery_continuity_blocked` condition for the affected identities, not a license to trust the fingerprint bytes alone.
 
 For recovery-driven relocation, this rule extends through `(R, F]`: completed irreversible effects after `R` retain the receipts/operation identities needed to prevent replay even if corresponding business state is intentionally restored to `R`. Ambiguous external outcomes are reconciled or quarantined before target effectful processing begins.
 
@@ -160,7 +161,7 @@ Post-cutover verification is defense in depth. Validate:
 - approved cryptographic erasure remains effective and recovery did not restore an older usable key path that defeats it;
 - transactional domain counts/invariants;
 - outbox publication watermark and no duplicate unpublished transfer;
-- inbox/idempotency continuity;
+- inbox/idempotency continuity, including historical key/verifier-generation availability at target where dedup evidence is keyed/authenticated;
 - long-running process/job ownership;
 - current monitoring state and telemetry accessibility;
 - artifact accessibility;

@@ -30,8 +30,8 @@ Drivers: `FR-MON-001..006`, `FR-OPS-001..003`, `AC-001` (tenant isolation), `AC-
 
 A tenant replacing their monitoring server would create an entirely new `monitoring_source` and manually retire the old one.
 
-- Strengths: zero new mechanism, zero new ADR needed.
-- Weaknesses: breaks `FR-MON-006`'s intent that provider identifiers stay external references under a *stable* logical source — every instance swap would force the tenant to lose their source's history/dashboards/configuration continuity, or require ad hoc, ungoverned data-migration tooling per swap. Does not scale to a mega-tech multi-tenant platform where instance replacement (DR failover, vendor migration, version upgrade) is a routine operational event across hundreds/thousands of tenants, not a rare edge case.
+- Strengths: zero new mechanism, zero new ADR needed; does not itself violate `FR-MON-006` (a new `monitoring_source` still keeps provider-native IDs as external references under a new platform-owned identity, which is all that requirement fixes).
+- Weaknesses: no existing requirement mandates source-identity continuity across provider-instance replacement, but the product cost is severe and unmandated-by-omission rather than actually acceptable — every instance swap (server migration, DR failover, vendor/version upgrade) would force the tenant to lose their source's history/dashboards/configuration continuity, or require ad hoc, ungoverned data-migration tooling built per swap. That cost does not scale to a mega-tech multi-tenant platform where instance replacement is a routine operational event across hundreds/thousands of tenants, not a rare edge case.
 
 ### Option B — In-place instance swap with no staged validation or generation fencing
 

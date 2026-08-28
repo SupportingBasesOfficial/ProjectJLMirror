@@ -19,42 +19,15 @@ It evaluates:
 ## Non-negotiable boundaries
 
 - Provider event time is metadata, never current-state authority.
-- Worker/caller assertions are never allowed to substitute for source, poll, provider-finality, recovery or target-checkpoint authority.
-- Canonical equivalence requires a deterministic, **unambiguous/self-delimiting** byte representation before hashing; delimiter-framed unrestricted text is not sufficient.
+- Worker/caller assertions never substitute for source, poll, provider-finality, recovery or target-checkpoint authority.
+- Every structured message protected by a hash or HMAC must first have a deterministic **unambiguous/self-delimiting** canonical representation.
+- A strong cryptographic primitive does not repair ambiguous structured serialization.
 - A single cross-tenant leak rejects the candidate profile.
 - `OPEN-REL-020` retains production telemetry capacity/numeric ownership.
 - PostgreSQL/Timescale versions and image digests are evidence dependencies, not immutable production selections.
-- SHA-256/HMAC-SHA-256 used by the evidence harness do not select production KMS/HSM/secret topology.
+- SHA-256/HMAC-SHA-256 and the evidence canonical encoding do not select production KMS/HSM/secret topology or a mandatory production wire format.
 - `ts_automation_owner` is a LOGIN cross-tenant privileged infrastructure principal; `PASSWORD NULL` is not equivalent to `NOLOGIN` or proof of production connection admission.
 - `READY_FOR_MERGE != AUTHORIZED_TO_MERGE`.
-
-## Evidence layout
-
-```text
-implementation/d2-open-rel-030/
-  README.md
-  STATE.md
-  EVIDENCE_MANIFEST.json
-  DECISION_REVIEW.md
-sql/d2-open-rel-030/
-  001_tier1_acceptance.sql
-  002_tier1_assertions.sql
-  003_tier1_recovery_authority.sql
-  004_history_reconciliation.sql
-  010_timescale_candidate.sql
-  011_timescale_jobs_capacity.sql
-  012_timescale_restore_role_bootstrap.sql
-tools/open_rel_030/
-  tier1_concurrency.py
-  tier1_commit_ambiguity.sh
-  physical_pitr.sh
-  timescale_jobs_restore.sh
-  tenant_relocation.sh
-  run_conformance.sh
-  run_conformance_extended.sh
-.github/workflows/
-  open-rel-030-conformance.yml
-```
 
 ## Tier 1 authority coverage
 
@@ -67,35 +40,19 @@ The executable package proves:
 - current-state CAS by platform source/poll authority;
 - repeated-current semantic idempotence and history-first/current-later independence;
 - stale/predecessor source and retired/fabricated poll authority rejection;
-- transaction rollback at injected crash stages;
+- rollback at injected crash stages;
 - post-COMMIT ambiguity convergence without duplicate history/signal effects;
 - durable Tier 2-down backlog responsibility.
 
 ## Owner-derived late-history finality/currentness
 
-Reconciliation workers no longer supply provider snapshot/finality timestamps as authority.
+Reconciliation workers do not supply provider snapshot/finality timestamps as authority.
 
-The durable owner-controlled `provider_authority` record contains:
+Durable `provider_authority` owns `authority_generation`, `current_snapshot_at`, `finality_floor` and `required_reconciliation_snapshot_at`. `sweep(...)` takes only window + expected generation, locks the owner record and records the actual owner snapshot. `try_finalize(...)` takes no caller finality/currentness timestamp and locks current owner authority.
 
-- `authority_generation`;
-- `current_snapshot_at`;
-- `finality_floor`;
-- `required_reconciliation_snapshot_at`.
+The matrix proves stale generation rejection, worker inability to mutate owner authority, contiguous coverage from the supported history floor, required snapshot currentness and durable `gap` on unrecoverable retention loss.
 
-A worker calls `sweep(stream, window_from, window_to, expected_generation)`. The function locks `provider_authority`, rejects a stale expected generation and records the actual owner snapshot internally.
-
-`try_finalize(stream, finalize_through)` accepts no finality/currentness timestamp from the worker. It locks current owner authority and accepts only reconciliation runs sufficiently current for the durable owner requirement.
-
-The negative matrix proves:
-
-- the worker cannot execute the owner authority transition;
-- stale generation cannot sweep;
-- a high-only or disjoint set of windows cannot create anchored completeness;
-- generation-2 coverage at provider snapshot `12:15` cannot satisfy a generation-3 required snapshot of `12:16`;
-- only a new covering sweep under generation 3 permits finalization;
-- retention loss remains durable `gap`, never false `complete`.
-
-## Physical PITR with surviving external recovery authority
+## Physical PITR with surviving structured recovery authority
 
 PITR uses three distinct authorities:
 
@@ -109,18 +66,31 @@ restored PostgreSQL at R
 surviving external control PostgreSQL
   -> excluded from source backup/restore
   -> owns recovery signing key
-  -> issues authenticated recovery grant after F
+  -> issues authenticated structured recovery grant after F
 ```
 
-The external control authority stores a random HMAC key that is never copied into the source database, base backup or restored database. It issues a domain-separated recovery grant after `F` containing the required successor epoch, placement and continuity receipt.
+The recovery grant is stored in typed columns: domain, `R`, `F`, successor epoch, placement version, required receipt and nonce, plus canonical payload and attestation. The HMAC key exists only in the surviving authority.
 
-Negative vectors prove:
+Every signed field is encoded as:
 
-- exact restore to `R` has no post-`R` receipt/grant metadata;
-- locally recreating `effect-after-r` does **not** admit the restore;
-- tampering with the external grant payload while replaying its attestation fails verification.
+```text
+<UTF-8 byte length in decimal>:<lowercase UTF-8 hex>
+```
 
-Only after the surviving authority verifies the exact grant are its authenticated successor facts applied. Final admission requires both reconciled local state and fresh successful verification by the surviving authority. The post-`R` rollback-subject business mutation is not replayed.
+The shell reads the structured columns independently. It does **not** split an authenticated delimiter-framed text blob to recover authority.
+
+The negative/positive matrix proves:
+
+```text
+physical_pitr_grant_delimiter_collision_closed=PASS
+physical_pitr_grant_receipt_contains_pipe=PASS
+physical_pitr_local_self_mint_cannot_admit=PASS
+physical_pitr_tampered_external_grant_rejected=PASS
+physical_pitr_external_grant_verified=PASS
+physical_pitr_post_reconcile_admission=PASS
+```
+
+The receipt is deliberately `effect|after-r`, proving a literal former delimiter cannot alter structured boundaries. Only the authenticated surviving grant permits successor facts to be applied; rollback-subject business state is not replayed.
 
 ## Tier 2 classification
 
@@ -145,49 +115,55 @@ The candidate requires:
 
 `ts_automation_owner` is explicitly **cross-tenant privileged infrastructure**. Its evidence role has no password credential, SUPERUSER, CREATEROLE or BYPASSRLS, but `PASSWORD NULL` is not an authentication barrier. Production `pg_hba`, socket/network exposure, role membership and credential provisioning must prevent application/tenant principals from authenticating as or assuming it.
 
-## Relocation: source fence + complete pre-activation target fence
+## Canonical representation before cryptography
 
-### Source
-
-Tier 1 locks placement authority before deriving `F`. An acceptance already holding authority commits before the fence and is included in `F`; later source acceptance is rejected.
-
-### Canonical representation before hashing
-
-The checkpoint digest is only authoritative if the pre-hash representation is unambiguous.
-
-The evaluated profile encodes **each immutable field independently** as:
+The bounded evidence representation uses the same field encoding for all structured crypto boundaries:
 
 ```text
 <UTF-8 byte length in decimal>:<lowercase UTF-8 hex>
 ```
 
-The row fields are then concatenated in deterministic row order. Because the payload portion is hex and every field carries its byte length, text content cannot impersonate a field or row boundary.
+It is applied to:
 
-The current evidence profile covers:
+1. immutable observation fields before the relocation SHA-256 digest;
+2. target-checkpoint facts before the target HMAC-SHA-256 attestation;
+3. recovery-grant facts before the PITR HMAC-SHA-256 attestation.
 
-- accepted ordinal;
-- observation ID;
-- metric definition ID;
-- UTC `observed_at` normalized to microsecond precision;
-- normalized numeric value.
+### Observation digest
 
-A dedicated negative demonstrates that the former `0x1f` field / `0x1e` row delimiter scheme is ambiguous when `observation_id` is unrestricted `text`: distinct logical field boundaries can yield the same raw pre-hash bytes. The self-delimiting representation produces different bytes for those logical values, and a cross-store probe proves PostgreSQL and Timescale produce the same canonical field representation for text containing literal `0x1f` and `0x1e` bytes.
+The current evidence profile covers accepted ordinal, observation ID, metric definition ID, normalized UTC `observed_at` at microsecond precision and normalized numeric value. A dedicated negative proves the old `0x1f/0x1e` delimiter framing was ambiguous with unrestricted text; the self-delimiting representation remains distinct.
 
-Future accepted Monitoring payload kinds must deterministically serialize **every immutable accepted field** with a versioned, injective or equivalently unambiguous representation. A cryptographic digest does not repair ambiguous serialization.
+### Target checkpoint attestation
 
-### Target completeness
+Both Timescale issuer and PostgreSQL verifier independently construct `canonical_checkpoint_payload` from:
 
-`max(target)=F` is insufficient. The target-owned checkpoint measures actual current target state and includes:
+- domain;
+- tenant;
+- `F`;
+- checkpoint ID;
+- checkpoint generation;
+- sealed flag;
+- target count;
+- target digest;
+- target max ordinal.
 
-- row count;
-- maximum ordinal;
-- deterministic SHA-256 over the self-delimiting canonical immutable observation payload represented by the evidence profile.
+Exact-head evidence proves:
 
-The checkpoint is HMAC-authenticated and verified before Tier 1 target activation. A same-identity payload mismatch remains `incomplete`; fabricated checkpoint facts are rejected.
+```text
+relocation_checkpoint_hmac_payload_cross_store=PASS
+```
 
-### No uncheckpointed post-fence rows
+Thus the HMAC protects an identical structured byte representation on both sides of the storage seam instead of a delimiter-concatenated string.
 
-The target lifecycle is deliberately strict:
+### Production boundary
+
+The exact UTF-8 length+hex encoding is a bounded evidence mechanism, not a mandatory production serialization. Another accepted representation is allowed only if it is deterministic, versioned, injective or equivalently unambiguous for every protected structured field and is independently revalidated.
+
+## Relocation target lifecycle
+
+Tier 1 locks placement before deriving `F`. `max(target)=F` is not treated as completeness. The target-owned checkpoint measures actual current target count/max/digest and is authenticated before activation.
+
+Target lifecycle:
 
 ```text
 open
@@ -204,62 +180,31 @@ activated
   -> new append > F allowed
 ```
 
-The negative matrix proves:
+The matrix covers internal gaps, canonical payload mismatch, fabricated attestation, seal-vs-DML race, pre-seal/post-seal `>F`, DELETE, tenant move, activated pre-fence mutation and stale source rejection.
 
-- a pre-seal row `>F` blocks checkpoint creation and leaves phase `open`;
-- a post-seal row `>F` is rejected;
-- a mutation racing seal blocks then rejects;
-- sealed DELETE and tenant move reject;
-- activated pre-fence UPDATE rejects;
-- only after activation does the next authoritative ordinal `F+1` append successfully.
+## Fresh-cluster restore and capacity boundary
 
-This removes the gap where a row outside the `<=F` digest could otherwise survive cutover unnoticed.
+Restore occurs in a new PostgreSQL/Timescale cluster. The harness proves zero JLMirror roles before bootstrap, reconstructs the minimum five-role topology, restores 100,004 history rows and both Timescale jobs, validates ownership and repeats isolation/escalation attacks after restore and after restored-job execution.
 
-## Fresh-cluster restore and background jobs
+The same security profile is exercised for bounded capacity mechanism fitness. Production throughput, retention, cardinality, cost, loss/buffer/checkpoint budgets, chunk/compression/refresh schedules, SLOs and topology remain `OPEN-REL-020` C3.
 
-Restore occurs in a new PostgreSQL/Timescale cluster. The harness first proves zero JLMirror roles exist, reconstructs exactly the minimum five-role topology, restores 100,004 history rows and two Timescale jobs, validates object/function/job ownership and re-runs the full attack matrix after restore and after restored-job execution.
-
-A same-cluster database restore is not accepted as role-topology recovery evidence.
-
-## Capacity boundary
-
-The same mediated profile is exercised with 100,004 historical rows, columnstore, continuous aggregate, background policies, fresh restore and mediated query measurement.
-
-These measurements are bounded **C2 mechanism-fitness evidence only**. Production throughput, retention, cardinality, cost, loss/buffer/checkpoint budgets, chunk/compression/refresh schedules, SLOs and topology remain `OPEN-REL-020` C3.
-
-## Empirical anchor before reviewer documentation
+## Exact empirical anchor before reviewer documentation
 
 ```text
 HEAD
-cbd433f09a7568048a45b75cd9abb6760b5687d8
+3ffc96073b54fe7a8b5d002523733947ee59ba57
 
-JLMIRROR Deterministic Assurance #2000
-run id 33206933772
+JLMIRROR Deterministic Assurance #2012
+run id 33208029855
 SUCCESS
 
-JLMIRROR OPEN-REL-030 Conformance #68
-run id 33206933620
+JLMIRROR OPEN-REL-030 Conformance #74
+run id 33208029866
 SUCCESS
 ```
 
-The #68 extended run includes, on this exact SHA:
-
-```text
-relocation_delimiter_collision_closed=PASS value=true|true
-relocation_canonical_field_cross_store=PASS
-history_owner_currentness_authority=PASS
-physical_pitr_local_self_mint_cannot_admit=PASS
-physical_pitr_tampered_external_grant_rejected=PASS
-physical_pitr_external_grant_verified=PASS
-relocation_preseal_future_row_blocks_checkpoint=PASS
-relocation_postseal_future_insert_rejected=PASS
-relocation_authenticated_complete_projection_receipt=PASS
-```
-
-This anchor is provenance only. Documentation changes create a new HEAD and require both workflows again.
+The #74 extended run includes the new structured-serialization evidence plus all previous authority/isolation/recovery/relocation vectors. This anchor is provenance only: documentation changes create a new HEAD and require both workflows again.
 
 ## Governance state
-
-The authoritative classification/recommendation is carried by `EVIDENCE_MANIFEST.json`, `STATE.md` and `DECISION_REVIEW.md`.
 
 Evidence completion does not accept `OPEN-REL-030`, authorize Wave 4, select production deployment topology or authorize merge. Exact-final-HEAD CI, Codex review, Native Assurance and explicit Track B acceptance remain separate gates.

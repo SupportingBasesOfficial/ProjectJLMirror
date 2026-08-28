@@ -4,7 +4,7 @@
 **Production authority:** none  
 **Wave 4 implementation authorization:** not granted  
 **Track B acceptance authorization:** not granted  
-**Tier 1 recommendation:** PostgreSQL transactional acceptance/outbox/current-state mechanism — conformed; recommended for C2 acceptance  
+**Tier 1 recommendation:** PostgreSQL transactional acceptance/outbox/current-state mechanism only with immutable canonical observation content + owner-controlled source generation/poll epoch + durable live poll claim resolved in-transaction — conformed; recommended for C2 acceptance  
 **Tier 2 recommendation:** TimescaleDB historical projection only under the conformed mediated shared-history profile — recommended for C2 acceptance  
 **Production versions/numerics:** not selected; production telemetry envelopes remain `OPEN-REL-020` C3
 
@@ -18,6 +18,8 @@ D1 ratified canonical base
 D2 bounded evidence harness
         |
         +-- Tier 1 real PostgreSQL proof          COMPLETE
+        +-- identity-content conflict rejection   COMPLETE
+        +-- owner source/epoch + poll-claim proof COMPLETE
         +-- crash / ambiguity / recovery matrix   COMPLETE
         +-- physical PITR (R,F] reconciliation    COMPLETE
         +-- late-history / explicit-gap matrix     COMPLETE
@@ -37,7 +39,19 @@ C2 decision recommendation                       READY FOR EXACT-HEAD REVIEW
 OPEN-REL-030 acceptance                           REQUIRES REVIEW + EXPLICIT TRACK B ACCEPTANCE
 ```
 
-## Empirical classification
+## Tier 1 authority profile
+
+Current-state candidacy is accepted only when all of these are true in the same transaction:
+
+- a canonical observation identity is new, or an existing identity matches its immutable canonical source/metric/generation/timestamp/value content exactly;
+- the source generation equals the active generation read from owner-controlled source authority;
+- the poll epoch equals the active owner-controlled epoch;
+- the exact poll generation has a durable `live` claim;
+- the current-state compare-and-set wins under that owner ordering authority.
+
+The final harness explicitly rejects conflicting identity content, fabricated/missing claims, retired claims, predecessor generation after replacement, and caller attempts to self-assert current source authority. The successor generation advances only under its successor owner epoch/claim.
+
+## Tier 2 empirical classification
 
 The bounded spike falsified the naive assumption that pooled PostgreSQL RLS can simply be combined with every Timescale feature:
 
@@ -55,7 +69,7 @@ The surviving Tier 2 candidate is therefore the **mediated shared-history profil
 
 ## C2 versus C3 capacity boundary
 
-The spike demonstrated bounded mechanism fitness under the same accepted security profile using 100,004 historical rows, columnstore conversion, continuous aggregates, background policies, logical restore and a mediated query path.
+The spike demonstrated bounded mechanism fitness under the same security profile using 100,004 historical rows, columnstore conversion, continuous aggregates, background policies, logical restore and a mediated query path.
 
 This is sufficient evidence to review the **C2 mechanism/profile selection**. It is explicitly **not** a production sizing claim. Throughput, retention, cardinality, buffer/loss, checkpoint, cost, chunk/compression schedules, aggregate refresh intervals and production SLO/capacity envelopes remain owned by `OPEN-REL-020` C3 and cannot be inferred from the spike measurements.
 
@@ -63,6 +77,6 @@ This is sufficient evidence to review the **C2 mechanism/profile selection**. It
 
 Evidence completion does not itself make either mechanism canonical.
 
-The next gate is exact-final-HEAD review of the evidence and the proposed decision classification. Only after that gate is clean may Track B be presented for explicit acceptance authorization. `OPEN-REL-030` becomes accepted/canonical only through that separate authorization/acceptance action.
+The next gate is exact-final-HEAD review of the evidence and proposed decision classification. Only after that gate is clean may Track B be presented for explicit acceptance authorization. `OPEN-REL-030` becomes accepted/canonical only through that separate authorization/acceptance action.
 
 Even after Track B acceptance, Wave 4 product implementation remains a **separate explicit authorization**. No evidence file, CI result, mergeability state or tool output grants that authorization implicitly.

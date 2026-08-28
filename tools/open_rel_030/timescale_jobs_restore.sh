@@ -105,6 +105,10 @@ attack_profile() {
     "$db" ts_report_a report-a-evidence-only \
     "SET ROLE ts_owner; SELECT current_user;"
   expect_login_failure \
+    "${prefix}_set_role_automation_owner_rejected" \
+    "$db" ts_report_a report-a-evidence-only \
+    "SET ROLE ts_automation_owner; SELECT current_user;"
+  expect_login_failure \
     "${prefix}_set_role_runtime_rejected" \
     "$db" ts_report_a report-a-evidence-only \
     "SET ROLE ts_runtime; SELECT current_user;"
@@ -117,6 +121,10 @@ attack_profile() {
     "$db" ts_report_a report-a-evidence-only \
     "GRANT ts_owner TO ts_report_a;"
   expect_login_failure \
+    "${prefix}_grant_automation_owner_membership_rejected" \
+    "$db" ts_report_a report-a-evidence-only \
+    "GRANT ts_automation_owner TO ts_report_a;"
+  expect_login_failure \
     "${prefix}_grant_raw_select_rejected" \
     "$db" ts_report_a report-a-evidence-only \
     "GRANT SELECT ON ts_evidence.shared_history TO ts_report_a;"
@@ -125,7 +133,7 @@ attack_profile() {
     "$db" ts_report_a report-a-evidence-only \
     "ALTER ROLE ts_report_a BYPASSRLS;"
 
-  local function_security
+  local function_security owner_profile
   function_security="$(admin_psql "$db" "
     SELECT prosecdef::text || '|' || array_to_string(proconfig, ',')
     FROM pg_proc
@@ -136,11 +144,20 @@ attack_profile() {
     return 1
   fi
   printf '%s_security_definer=PASS value=%q\n' "$prefix" "$function_security"
+
+  owner_profile="$(admin_psql "$db" "
+    SELECT string_agg(
+      rolname || ':' || rolcanlogin::text || ':' || rolsuper::text || ':' || rolcreaterole::text || ':' || rolbypassrls::text,
+      ',' ORDER BY rolname
+    )
+    FROM pg_roles
+    WHERE rolname IN ('ts_owner','ts_automation_owner');
+  ")"
+  assert_exact "${prefix}_owner_trust_classes" \
+    "ts_automation_owner:true:false:false:false,ts_owner:false:false:false:false" \
+    "$owner_profile"
 }
 
-# Run each Timescale background policy in the foreground. A green result is not
-# enough on its own; the tenant-facing isolation attacks are repeated after the
-# jobs mutate their internal objects/chunks.
 mapfile -t job_ids < <(admin_psql "$source_db" \
   "SELECT job_id FROM ts_evidence.job_evidence ORDER BY job_id;")
 if [[ ${#job_ids[@]} -lt 2 ]]; then
@@ -155,8 +172,6 @@ done
 
 attack_profile "$source_db" "timescale_post_job"
 
-# Record a bounded query measurement under the exact tenant-facing mediated
-# profile. This is evidence only; no production latency threshold is inferred.
 start_ns="$(date +%s%N)"
 row_count="$(login_psql "$source_db" ts_report_a report-a-evidence-only \
   "SELECT count(*) FROM ts_evidence.read_hourly();")"
@@ -168,10 +183,6 @@ fi
 printf 'timescale_mediated_capacity_query=MEASURED rows=%s duration_ns=%s\n' \
   "$row_count" "$((end_ns - start_ns))"
 
-# Official Timescale logical-restore sequence: pg_dump -> fresh database with
-# matching extension -> timescaledb_pre_restore -> pg_restore ->
-# timescaledb_post_restore. Roles are cluster-global here, so ownership and ACL
-# restoration are meaningfully exercised.
 docker exec -e PGPASSWORD="$password" "$container" \
   pg_dump -U postgres -d "$source_db" -Fc -f /tmp/open-rel-030-timescale.bak
 
@@ -208,8 +219,6 @@ printf 'timescale_restore_jobs=PASS count=%s\n' "$restore_jobs"
 
 attack_profile "$restore_db" "timescale_post_restore"
 
-# Run one restored job and attack once more so restore+background-worker restart
-# cannot silently alter tenant-facing grants or mediation behavior.
 restored_job="$(admin_psql "$restore_db" "
   SELECT job_id FROM timescaledb_information.jobs
   WHERE hypertable_schema='ts_evidence'

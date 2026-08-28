@@ -6,6 +6,7 @@ cd "$ROOT"
 
 PG_CONTAINER="jlmirror-open-rel-030-pg-extended"
 TS_CONTAINER="jlmirror-open-rel-030-ts-extended"
+TS_RESTORE_CONTAINER="${TS_CONTAINER}-fresh-restore"
 DB_PASSWORD="evidence"
 
 mapfile -t EVIDENCE_IMAGES < <(
@@ -21,7 +22,7 @@ PG_IMAGE="${EVIDENCE_IMAGES[0]}"
 TS_IMAGE="${EVIDENCE_IMAGES[1]}"
 
 cleanup() {
-  docker rm -f "$PG_CONTAINER" "$TS_CONTAINER" >/dev/null 2>&1 || true
+  docker rm -f "$PG_CONTAINER" "$TS_CONTAINER" "$TS_RESTORE_CONTAINER" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 cleanup
@@ -84,7 +85,7 @@ admin_psql "$PG_CONTAINER" -f /tmp/004_history_reconciliation.sql
 bash tools/open_rel_030/physical_pitr.sh "$PG_CONTAINER" "$PG_IMAGE"
 
 # ---------------------------------------------------------------------------
-# Tier 2 exact safe-profile jobs/capacity/restore vectors.
+# Tier 2 exact safe-profile jobs/capacity/fresh-cluster restore vectors.
 # ---------------------------------------------------------------------------
 docker run -d --name "$TS_CONTAINER" \
   -e POSTGRES_PASSWORD="$DB_PASSWORD" \
@@ -100,7 +101,11 @@ admin_psql "$TS_CONTAINER" -f /tmp/010_timescale_candidate.sql
 wait_for_postgres "$TS_CONTAINER"
 admin_psql "$TS_CONTAINER" -f /tmp/011_timescale_jobs_capacity.sql
 wait_for_postgres "$TS_CONTAINER"
-bash tools/open_rel_030/timescale_jobs_restore.sh "$TS_CONTAINER"
+
+# This script must restore into a separate Timescale container, prove the
+# JLMirror roles were absent there, reconstruct the minimum role topology, and
+# repeat the complete isolation/escalation/job matrix after restore.
+bash tools/open_rel_030/timescale_jobs_restore.sh "$TS_CONTAINER" "$TS_IMAGE"
 
 # Cross-store relocation: Tier 1 source fencing and Tier 2 projection watermark
 # must jointly permit target activation; stale source writes remain rejected.

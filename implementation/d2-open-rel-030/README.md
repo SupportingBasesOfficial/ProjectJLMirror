@@ -33,7 +33,7 @@ The CI harness uses immutable container-image index digests and records the data
 
 Evaluation images are deliberately **evidence dependencies**, not production stack selections:
 
-- PostgreSQL 17.11 Alpine — Tier 1 real-database semantics, ambiguity, PITR and relocation;
+- PostgreSQL 17.11 Alpine — Tier 1 real-database semantics, ambiguity, reconciliation, PITR and relocation;
 - TimescaleDB 2.29.2 on PostgreSQL 17 — Tier 2 isolation, jobs, fresh-cluster restore, relocation and bounded capacity evaluation.
 
 Changing either image requires new evidence and does not silently inherit a previous conclusion.
@@ -82,9 +82,27 @@ The final executable package proves or falsifies:
 - transaction rollback across injected crash points;
 - durable Tier 2-down backlog responsibility;
 - post-COMMIT ambiguity/retry convergence;
+- history reconciliation that proves contiguous coverage from `supported_history_floor`, not merely the greatest sweep endpoint;
+- minimum reconciliation/provider snapshot currentness before history finalization;
+- explicit durable `gap` rather than false completeness when history cannot be recovered;
 - physical PostgreSQL PITR to a committed `R` with surviving `(R,F]` reconciliation;
-- late-history reconciliation or explicit durable gap state;
 - relocation source fencing that locks authority before deriving `F`.
+
+## Late-history completeness
+
+`max(reconciliation window_to)` is explicitly not a completeness watermark.
+
+The evidence model stores each reconciliation run's exact interval and provider snapshot. Continuous coverage is derived only from runs that begin at or cover the owner's `supported_history_floor` and then overlap/touch without a hole. The first unswept interval stops coverage advancement.
+
+The negative matrix proves that:
+
+- a high-only `11:55..12:00` sweep cannot finalize because it is not anchored at the supported history floor;
+- `supported_history_floor..10:00` plus `11:55..12:00` cannot finalize even though `max(window_to)=12:00`, because `10:00..11:55` remains unswept;
+- bridging `10:00..12:00` recovers the delayed row and creates continuous coverage through `12:00`;
+- covering sweeps at provider snapshot `12:15` cannot satisfy a finalization that requires reconciliation evidence current through `12:16`;
+- unrecoverable retention loss stays `gap`, never `complete`.
+
+The accepted evidence path therefore requires both **contiguous interval coverage** and **sufficient reconciliation snapshot currentness**.
 
 ## Tier 2 classification
 

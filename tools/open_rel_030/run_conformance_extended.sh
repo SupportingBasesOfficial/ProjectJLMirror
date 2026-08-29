@@ -34,9 +34,7 @@ wait_for_postgres() {
     if docker exec -e PGPASSWORD="$DB_PASSWORD" "$container" \
       pg_isready -h 127.0.0.1 -U postgres -d jlmirror >/dev/null 2>&1; then
       consecutive=$((consecutive + 1))
-      if [[ "$consecutive" -ge 3 ]]; then
-        return 0
-      fi
+      if [[ "$consecutive" -ge 3 ]]; then return 0; fi
     else
       consecutive=0
     fi
@@ -69,7 +67,8 @@ wait_for_postgres "$PG_CONTAINER"
 for file in \
   001_tier1_acceptance.sql \
   003_tier1_recovery_authority.sql \
-  004_history_reconciliation.sql
+  004_history_reconciliation.sql \
+  005_history_identity_window_hardening.sql
 do
   docker cp "sql/d2-open-rel-030/$file" "$PG_CONTAINER:/tmp/$file"
 done
@@ -79,6 +78,7 @@ wait_for_postgres "$PG_CONTAINER"
 bash tools/open_rel_030/tier1_commit_ambiguity.sh "$PG_CONTAINER"
 admin_psql "$PG_CONTAINER" -f /tmp/003_tier1_recovery_authority.sql
 admin_psql "$PG_CONTAINER" -f /tmp/004_history_reconciliation.sql
+admin_psql "$PG_CONTAINER" -f /tmp/005_history_identity_window_hardening.sql
 
 # Native physical PostgreSQL PITR to R, with F held by a separate surviving
 # authority. This must pass before the restored authority may be admitted.
@@ -102,13 +102,12 @@ wait_for_postgres "$TS_CONTAINER"
 admin_psql "$TS_CONTAINER" -f /tmp/011_timescale_jobs_capacity.sql
 wait_for_postgres "$TS_CONTAINER"
 
-# This script must restore into a separate Timescale container, prove the
-# JLMirror roles were absent there, reconstruct the minimum role topology, and
-# repeat the complete isolation/escalation/job matrix after restore.
+# Restore into a separate Timescale container, prove JLMirror roles were absent,
+# reconstruct the minimum topology and repeat isolation/escalation/job attacks.
 bash tools/open_rel_030/timescale_jobs_restore.sh "$TS_CONTAINER" "$TS_IMAGE"
 
-# Cross-store relocation: Tier 1 source fencing and Tier 2 projection watermark
-# must jointly permit target activation; stale source writes remain rejected.
+# Cross-store relocation: source fencing, era-aware canonical payload equivalence,
+# target checkpoint authority and activation grant must jointly permit cutover.
 bash tools/open_rel_030/tenant_relocation.sh "$PG_CONTAINER" "$TS_CONTAINER"
 
 printf '%s\n' 'open_rel_030_extended_conformance=PASS'

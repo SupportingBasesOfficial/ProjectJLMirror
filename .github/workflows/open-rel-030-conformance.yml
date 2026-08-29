@@ -47,6 +47,7 @@ jobs:
           bash -n tools/open_rel_030/tier1_commit_ambiguity.sh
           bash -n tools/open_rel_030/timescale_jobs_restore.sh
           bash -n tools/open_rel_030/physical_pitr.sh
+          bash -n tools/open_rel_030/physical_pitr_active_authority_hardening.sh
           bash -n tools/open_rel_030/physical_pitr_post_enrollment_clone.sh
           bash -n tools/open_rel_030/tenant_relocation.sh
           test -s sql/d2-open-rel-030/012_timescale_restore_role_bootstrap.sql
@@ -131,7 +132,7 @@ jobs:
           assert not missing, f'history hardening modules not wired into extended runner: {missing}'
 
           required_vectors = [
-              'physical_pitr.sh',
+              'physical_pitr_active_authority_hardening.sh',
               'physical_pitr_post_enrollment_clone.sh',
               'tenant_relocation.sh',
           ]
@@ -139,6 +140,8 @@ jobs:
           assert not missing_vectors, f'critical extended vectors not wired into runner: {missing_vectors}'
 
           pitr = Path('tools/open_rel_030/physical_pitr.sh').read_text()
+          pitr_authority = Path('tools/open_rel_030/physical_pitr_active_authority_hardening.sh').read_text()
+          assert 'physical_pitr.sh' in pitr_authority, 'active-authority wrapper does not compose the base PITR vector'
           required_recovery_markers = [
               'physical_pitr_surviving_effect_evidence_published=PASS',
               'physical_pitr_recovery_cross_grant_boundary_single_winner_race=PASS',
@@ -171,6 +174,24 @@ jobs:
           assert 'iptables -I' in pitr
           assert 'dblink_cancel_query(v_name)' not in pitr
 
+          required_active_authority_markers = [
+              'physical_pitr_alt_epoch_grant_signature_valid',
+              'physical_pitr_alt_placement_grant_signature_valid',
+              'physical_pitr_alt_epoch_grant_rejected_by_active_authority',
+              'physical_pitr_alt_placement_grant_rejected_by_active_authority',
+              'physical_pitr_alt_grants_leave_claim_count_unchanged',
+              'physical_pitr_local_successor_authority_fence=PASS',
+              'physical_pitr_claim_locks_active_authority_before_winner_key=PASS',
+              'physical_pitr_verify_fetch_revalidate_active_authority=PASS',
+              'physical_pitr_active_authority_binding=PASS',
+          ]
+          missing_active_authority_markers = [m for m in required_active_authority_markers if m not in pitr_authority]
+          assert not missing_active_authority_markers, f'active recovery authority markers missing: {missing_active_authority_markers}'
+          assert 'FROM pitr_external_evidence.authority' in pitr_authority
+          assert 'WHERE singleton FOR UPDATE' in pitr_authority
+          assert 'expected_successor_epoch' in pitr_authority
+          assert 'expected_placement_version' in pitr_authority
+
           print(
               'evidence_manifest_guard=PASS '
               'state=complete_ready_for_decision_review '
@@ -183,6 +204,7 @@ jobs:
               'recovery_local_deadline_guard=true '
               'recovery_fetch_consistency_guard=true '
               'real_blackhole_guard=true '
+              'active_recovery_authority_guard=true '
               f'history_modules={len(history_modules)} '
               f'critical_vectors={len(required_vectors)}'
           )

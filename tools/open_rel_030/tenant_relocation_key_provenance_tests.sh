@@ -11,7 +11,11 @@ fi
 printf '%s\n' 'relocation_controller_does_not_retain_target_signing_key=PASS'
 
 target_key_shape="$(ts_sql "
-  SELECT (count(*)=1 AND min(length(key_material))=64 AND min(key_material ~ '^[0-9a-f]{64}$'))::text
+  SELECT (
+    count(*) = 1
+    AND bool_and(length(key_material) = 64)
+    AND bool_and(key_material ~ '^[0-9a-f]{64}$')
+  )::text
   FROM relocation_evidence.target_attestation_key;
 ")"
 assert_exact "relocation_target_authority_generated_signing_key" "true" "$target_key_shape"

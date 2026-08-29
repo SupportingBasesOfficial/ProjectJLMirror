@@ -53,6 +53,7 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
+
           manifest = json.loads(Path('implementation/d2-open-rel-030/EVIDENCE_MANIFEST.json').read_text())
           assert manifest['decision'] == 'OPEN-REL-030'
           assert manifest['class'] == 'C2_bounded_spike'
@@ -68,7 +69,19 @@ jobs:
           assert len(manifest['completed_mandatory_vectors']) == 8
           assert manifest['mandatory_vectors_not_yet_claimed_complete'] == []
           assert manifest['tier2_profile_classification']['mediated_shared_history_columnstore_cagg'] == 'conformant_candidate_recommended_for_c2_acceptance'
-          print('evidence_manifest_guard=PASS state=complete_ready_for_decision_review acceptance=not_granted')
+
+          runner = Path('tools/open_rel_030/run_conformance_extended.sh').read_text()
+          history_modules = sorted(Path('sql/d2-open-rel-030').glob('00[4-9]_history_*.sql'))
+          assert history_modules, 'history hardening module set is unexpectedly empty'
+          missing = [p.name for p in history_modules if p.name not in runner]
+          assert not missing, f'history hardening modules not wired into extended runner: {missing}'
+
+          print(
+              'evidence_manifest_guard=PASS '
+              'state=complete_ready_for_decision_review '
+              'acceptance=not_granted '
+              f'history_modules={len(history_modules)}'
+          )
           PY
 
       - name: Run initial real PostgreSQL and Timescale falsification

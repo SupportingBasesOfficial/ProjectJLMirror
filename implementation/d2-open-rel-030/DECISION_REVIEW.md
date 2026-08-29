@@ -14,47 +14,65 @@ Subject to exact-final-HEAD review and explicit Track B acceptance:
 
 1. select the ADR-008 PostgreSQL transactional acceptance pattern as Tier 1 only with immutable canonical observation content, owner-controlled active source/poll authority, durable live poll claims and current-state CAS by platform ordering authority;
 2. require late-history finality/currentness from durable provider-owner authority, never worker/caller timestamps;
-3. require physical PITR recovery admission from authenticated surviving `(R,F]` evidence external to the restored authority;
-4. require deterministic versioned self-delimiting structured bytes before hash/MAC/signature;
-5. select TimescaleDB as Tier 2 historical projection only under the mediated shared-history profile proven by this spike;
-6. classify `ts_automation_owner` as LOGIN cross-tenant privileged infrastructure and require production admission controls to exclude tenant/application use;
-7. reject direct pooled RLS assumptions for Timescale columnstore/CAGG on the evaluated profile;
-8. require genuine fresh-cluster reconstruction of database-global role topology;
-9. require source relocation placement authority to be locked before deriving `F`;
-10. require target-owned authenticated sealed canonical-payload checkpoints before Tier 1 can authorize target placement;
-11. require target checkpoint signing/mint authority exclusively on the target side;
-12. require the effective checkpoint signing key to be generated inside target authority, not provisioned or retained by an external orchestrator acting across both databases;
-13. require Tier 1 verification capability to exclude the target signing key or any equivalent mint capability;
-14. require cross-authority verifier connection secrets to remain restricted authority-owned state rather than embedded in function source;
-15. require Tier 1 successor placement and the exact durable activation grant to commit atomically, bound to tenant, `F`, checkpoint id/generation, target attestation and successor placement version;
-16. require target `sealed → activated` to verify that exact committed Tier 1 grant; the target automation principal must not self-promote;
-17. require cross-authority verification to be bounded/fail-closed and performed outside local authority-lock windows;
-18. reject any target data above `F` before activation unless excluded by the target lifecycle;
-19. preserve `OPEN-REL-020` as owner of production capacity/SLO/retention/cardinality/cost numerics;
-20. treat database versions, image digests, evidence crypto, verifier transport, capability-store layout and concrete canonical encoding as reproducibility dependencies rather than immutable production selections.
+3. bind every late-history coverage run to the exact owner `authority_generation` as well as owner-required snapshot currentness;
+4. invalidate prior materialized reconciliation coverage whenever owner authority generation advances, even if snapshot/finality timestamps remain equal;
+5. reject conflicting provider-visible canonical content under an already accepted `(stream_id, observation_id)` before recording any reconciliation coverage;
+6. require physical PITR recovery admission from authenticated surviving `(R,F]` evidence external to the restored authority;
+7. require deterministic versioned self-delimiting structured bytes before hash/MAC/signature;
+8. select TimescaleDB as Tier 2 historical projection only under the mediated shared-history profile proven by this spike;
+9. classify `ts_automation_owner` as LOGIN cross-tenant privileged infrastructure and require production admission controls to exclude tenant/application use;
+10. reject direct pooled RLS assumptions for Timescale columnstore/CAGG on the evaluated profile;
+11. require genuine fresh-cluster reconstruction of database-global role topology;
+12. require source relocation placement authority to be locked before deriving `F`;
+13. require target-owned authenticated sealed canonical-payload checkpoints before Tier 1 can authorize target placement;
+14. require target checkpoint signing/mint authority exclusively on the target side;
+15. require the effective checkpoint signing key to be generated inside target authority, not provisioned or retained by an external orchestrator acting across both databases;
+16. require Tier 1 verification capability to exclude the target signing key or any equivalent mint capability;
+17. require cross-authority verifier connection secrets to remain restricted authority-owned state rather than embedded in function source;
+18. require Tier 1 successor placement and the exact durable activation grant to commit atomically, bound to tenant, `F`, checkpoint id/generation, target attestation and successor placement version;
+19. require target `sealed → activated` to verify that exact committed Tier 1 grant; the target automation principal must not self-promote;
+20. require cross-authority verification to be bounded/fail-closed and performed outside local authority-lock windows;
+21. reject any target data above `F` before activation unless excluded by the target lifecycle;
+22. preserve `OPEN-REL-020` as owner of production capacity/SLO/retention/cardinality/cost numerics;
+23. treat database versions, image digests, evidence crypto, verifier transport, capability-store layout and concrete canonical encoding as reproducibility dependencies rather than immutable production selections.
 
 ## Exact empirical anchor before this review-document mutation
 
 ```text
 HEAD
-a0f9b03199d3881a48a18c52c826b9a36b65ac84
+387a68af2eb896f0ece8c916b241a84fde0876f3
 
 JLMIRROR Deterministic Assurance
-run #2054
-run id 33226307343
+run #2068
+run id 33226943467
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #95
-run id 33226307321
+run #102
+run id 33226943414
 SUCCESS
 ```
 
-This SHA proves the executable mechanism after the authority-level key-provenance and verifier-secret panorama. It becomes provenance after this document mutation; the exact final package HEAD must rerun both gates.
+This SHA proves the executable mechanism after the generation-bound owner-current history repair plus the authority-level key-provenance and verifier-secret panorama. It becomes provenance after this document mutation; the exact final package HEAD must rerun both gates.
 
-## Tier 1 acceptance and history authority
+## Tier 1 acceptance and owner-current history authority
 
-The PostgreSQL harness establishes independent-session atomic create-or-observe, immutable canonical identity/content, owner source generation and poll epoch, durable live poll claims, current-state CAS independent from provider event time, historical obligation/outbox atomicity, crash rollback and post-COMMIT ambiguity convergence. Late-history workers cannot self-assert provider finality/currentness; durable owner state controls finalization and contiguous coverage.
+The PostgreSQL harness establishes independent-session atomic create-or-observe, immutable canonical identity/content, owner source generation and poll epoch, durable live poll claims, current-state CAS independent from provider event time, historical obligation/outbox atomicity, crash rollback and post-COMMIT ambiguity convergence.
+
+Late-history workers cannot self-assert provider authority, finality or currentness. Durable `provider_authority` owns `authority_generation`, `current_snapshot_at`, `finality_floor` and `required_reconciliation_snapshot_at`.
+
+Coverage is valid only for the **exact current generation**. `contiguous_covered_through(...)` filters by current `authority_generation` and owner-required snapshot. `advance_provider_authority(...)` clears materialized coverage and transitions every non-gap stream to `reconciliation_required`, including a generation advance that keeps all timestamps unchanged. Therefore a provider correction/revision cannot recycle previous-generation coverage simply by retaining the same snapshot timestamp.
+
+Accepted history is also immutable under stable reconciliation identity. `sweep(...)` compares owner-visible `observed_at` and `numeric_value` against an existing accepted row before any insert/run record; mismatch raises `reconciled observation identity content mismatch`. The rejected sweep cannot change accepted canonical content or create a `reconciliation_run`.
+
+Exact #102 proves:
+
+```text
+history_conflicting_observation_rejected=PASS
+history_generation_bound_coverage=PASS
+history_owner_currentness_authority=PASS
+late_history_reconciliation=PASS
+```
 
 ## Physical PITR authority
 
@@ -97,7 +115,7 @@ Target and verifier construct the same deterministic self-delimiting checkpoint 
 
 The effective HMAC key is generated inside Tier 2 target authority using target-side randomness. The trusted disposable-lab controller may administer both databases for setup and fault injection, but it does not provision or retain the protocol key. Tier 1 contains no target signing-key relation. Projection writer and verifier principals cannot read the generated key.
 
-Exact #95 evidence:
+Exact #102 preserves:
 
 ```text
 relocation_tier1_has_no_target_signing_key=PASS
@@ -109,13 +127,11 @@ relocation_tier1_cannot_mint_target_attestation=PASS
 relocation_fabricated_target_attestation_rejected=PASS
 ```
 
-This closes the distinction between database-local key storage and actual authority-level key provenance.
-
 ### Verifier capability-secret isolation
 
 The evidence harness uses random verifier LOGIN credentials plus `dblink` solely to exercise independent database authorities. Credentials live in restricted owner-controlled capability tables; owner `SECURITY DEFINER` helpers use fixed search paths. Verifier/automation principals cannot read the tables, and the secrets are not embedded in `pg_proc` function source.
 
-Exact #95 evidence:
+Exact #102 preserves:
 
 ```text
 relocation_tier1_verifier_cannot_read_target_connection_capability=PASS
@@ -155,7 +171,7 @@ Remote verification occurs before local authority locks. After verification, eac
 
 The evidence program has repaired the following classes, with panoramic review after each repair:
 
-1. conflicting observation content under stable identity;
+1. conflicting observation content under stable Tier 1 acceptance identity;
 2. caller-asserted source/poll authority;
 3. same-cluster restore falsely implying role reconstruction;
 4. relocation `F` derived before authority lock;
@@ -176,7 +192,9 @@ The evidence program has repaired the following classes, with panoramic review a
 19. target automation leaving `sealed` before Tier 1 grant;
 20. placement/grant needing explicit all-or-nothing failure evidence;
 21. signing key being generated/provisioned by the cross-database controller instead of target authority;
-22. verifier connection secrets being embedded in SQL function source rather than restricted authority capability state.
+22. verifier connection secrets being embedded in SQL function source rather than restricted authority capability state;
+23. reconciliation coverage reusable across authority-generation changes when timestamps remained equal;
+24. owner-current provider history conflicting with persisted accepted content being silently treated as a duplicate.
 
 ## What acceptance would and would not mean
 
@@ -188,7 +206,7 @@ Acceptance would not freeze production PostgreSQL/Timescale versions, KMS/HSM to
 
 ```text
 Evidence completeness        COMPLETE
-Executable empirical anchor  a0f9b03199d3881a48a18c52c826b9a36b65ac84 / #2054 / #95
+Executable empirical anchor  387a68af2eb896f0ece8c916b241a84fde0876f3 / #2068 / #102
 Final documentation HEAD     REQUIRES FRESH EXACT-HEAD CI
 Codex final review           REQUIRED
 Native Assurance             REQUIRED

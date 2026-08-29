@@ -212,7 +212,9 @@ psql_in "$control_container" "
     )
   );
   INSERT INTO pitr_postclone_evidence.recovery_grant(grant_id)
-  VALUES('grant-post-enrollment-clone');
+  VALUES
+    ('grant-post-enrollment-clone'),
+    ('grant-post-enrollment-clone-probe');
   REVOKE ALL ON pitr_postclone_evidence.recovery_grant FROM PUBLIC;
 
   CREATE OR REPLACE FUNCTION pitr_postclone_evidence.instance_fingerprint(p_secret text)
@@ -287,6 +289,28 @@ control_ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress
 [[ -n "$control_ip" ]] || { echo "cannot resolve control IP" >&2; exit 1; }
 shared_conn="hostaddr=$control_ip port=5432 dbname=jlmirror user=$shared_role password=$shared_password connect_timeout=2"
 
+# Positive control for the clone path. The negative test below is meaningful
+# only if this exact clone can read its mounted proof, authenticate with the
+# shared external credential, reach the surviving authority and bind/verify a
+# separate grant. The stored fingerprint must equal the clone capability.
+assert_exact "physical_pitr_post_enrollment_clone_probe_claimed" "true" \
+  "$(psql_in "$clone_container" "SELECT pitr_claim_external('$shared_conn','grant-post-enrollment-clone-probe')::text;")"
+assert_exact "physical_pitr_post_enrollment_clone_probe_verify" "true" \
+  "$(psql_in "$clone_container" "SELECT pitr_verify_external('$shared_conn','grant-post-enrollment-clone-probe')::text;")"
+clone_probe_binding="$(psql_in "$control_container" "SELECT claimed_principal::text||'|'||claimed_instance_id::text||'|'||claimed_instance_fingerprint FROM pitr_postclone_evidence.recovery_grant WHERE grant_id='grant-post-enrollment-clone-probe';")"
+clone_probe_principal="${clone_probe_binding%%|*}"
+clone_probe_remaining="${clone_probe_binding#*|}"
+clone_probe_id="${clone_probe_remaining%%|*}"
+clone_probe_fp="${clone_probe_remaining#*|}"
+expected_clone_probe_fp="$(psql_in "$control_container" "SELECT pitr_postclone_evidence.instance_fingerprint('$clone_secret');")"
+assert_exact "physical_pitr_post_enrollment_clone_probe_principal_binding" "$shared_role" "$clone_probe_principal"
+assert_exact "physical_pitr_post_enrollment_clone_probe_database_id_binding" "$clone_instance_id" "$clone_probe_id"
+assert_exact "physical_pitr_post_enrollment_clone_probe_capability_binding" "$expected_clone_probe_fp" "$clone_probe_fp"
+printf '%s\n' 'physical_pitr_post_enrollment_clone_capability_path_operational=PASS'
+
+# Main authority negative. The primary claims the governed grant. The clone is
+# known-good from the probe above, so false now means the surviving authority
+# rejected its distinct external capability rather than a broken clone path.
 assert_exact "physical_pitr_post_enrollment_primary_claimed" "true" \
   "$(psql_in "$primary_container" "SELECT pitr_claim_external('$shared_conn','grant-post-enrollment-clone')::text;")"
 assert_exact "physical_pitr_post_enrollment_same_instance_retry" "true" \
@@ -308,10 +332,10 @@ assert_exact "physical_pitr_post_enrollment_copied_database_id_binding" "$primar
 [[ -n "$claimed_fp" ]] || { echo "missing post-enrollment claimed fingerprint" >&2; exit 1; }
 
 # The clone copied the same PGDATA identity and reused the same external DB
-# credential, yet was rejected because copying PGDATA did not copy the effective
-# instance authority. This is the precise C2 invariant the production mechanism
-# must preserve with a non-shareable workload/TPM/TEE/KMS-backed equivalent.
+# credential, its own capability path was positively proven operational, yet it
+# was rejected on the primary grant because PGDATA did not carry the effective
+# instance authority. Production must preserve the stronger non-shareable form.
 printf '%s\n' 'physical_pitr_post_enrollment_pgdata_clone_cannot_duplicate_authority=PASS'
 printf '%s\n' 'physical_pitr_post_enrollment_single_winner_external_capability=PASS'
 
-unset primary_secret clone_secret shared_password shared_conn
+unset primary_secret clone_secret shared_password shared_conn expected_clone_probe_fp

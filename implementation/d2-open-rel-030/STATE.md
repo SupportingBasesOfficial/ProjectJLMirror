@@ -30,6 +30,7 @@ Recommend C2 acceptance only with all of the following preserved together:
 - recovery admission is single-winner over **authenticated principal + restored-instance capability**, not principal name/credential alone;
 - independent restores from `R` must not converge merely because they reuse one external credential;
 - copying PostgreSQL `PGDATA` after instance enrollment must not copy the effective restored-instance authority: the conformed C2 hardening keeps the effective proof outside the physical database clone domain and proves a post-enrollment PGDATA copy with the same database identity and same external credential is rejected;
+- a clone-rejection vector is not valid merely because helper/transport errors return `false`: the clone must first prove its own capability path operational by successfully claiming/verifying a separate grant and binding the surviving-authority fingerprint to the clone-local capability fingerprint;
 - same-instance retry succeeds only for the authority that still presents the winning external-to-PGDATA capability;
 - the laboratory file/mount capability is evidence-only; production must preserve the stronger non-shareable per-instance property through an appropriate workload/TPM/TEE/KMS-backed or equivalent authority mechanism;
 - source relocation authority is locked before deriving `F`;
@@ -61,20 +62,20 @@ Recommend C2 acceptance only under the conformed mediated profile:
 
 ```text
 HEAD
-c9207f8bbd3c42ec0428987a2580b7f1bfb7e06d
+bd311cf107d27ca9bbb00b130c0bf0389e0deecd
 
 JLMIRROR Deterministic Assurance
-run #2181
-run id 33272308047
+run #2195
+run id 33272808511
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #158
-run id 33272308006
+run #165
+run id 33272808519
 SUCCESS
 ```
 
-This anchor includes the P1 post-enrollment physical-clone hardening. It becomes provenance after this documentation mutation; the exact final documentation HEAD must independently rerun both gates.
+This anchor includes the P1 post-enrollment physical-clone hardening **and** the P2 clone positive-control hardening. Exact #165 proves the clone capability/helper/network path succeeds on a dedicated grant before the same operational clone is rejected against the primary-winning grant. It becomes provenance after this documentation mutation; the exact final documentation HEAD must independently rerun both gates.
 
 ## Owner-current history gate
 
@@ -84,7 +85,7 @@ Stable provider identity is immutable. Identity rewrite rejects. DELETE and stat
 
 The final `sweep(...)` hardening validates already accepted stable identities independently of `became_visible_at`. If either accepted or owner-current `observed_at` intersects the requested window, immutable timestamp/value content is compared before provider visibility/window insertion filtering. Therefore a correction that simultaneously moves `observed_at` out of the window and `became_visible_at` beyond the current provider snapshot cannot disappear behind a fresh current-revision sweep.
 
-The structural guard enumerates existing `00[4-9]_history_*.sql` modules and fails if one is absent from `run_conformance_extended.sh`. Exact #158 preserves `history_modules=5` and executes `004 → 005 → 006 → 007 → 008`.
+The structural guard enumerates existing `00[4-9]_history_*.sql` modules and fails if one is absent from `run_conformance_extended.sh`. Exact #165 preserves `history_modules=5` and executes `004 → 005 → 006 → 007 → 008`.
 
 ## PITR recovery admission gate
 
@@ -92,25 +93,47 @@ The restored PostgreSQL cannot self-authorize from a local receipt. A separate s
 
 Authentication identity alone is insufficient for retry authority. The original physical vector starts two independent physical restores from the same committed `R` backup. Each generates a distinct post-R capability and both deliberately reuse the same external recovery role/password; the surviving authority binds the winning grant to authenticated `session_user + instance_id + fingerprint(instance_secret)`, so the independently restored rival is rejected.
 
-### P1 post-enrollment clone hardening
+### P1 post-enrollment clone hardening — material class #38
 
 Panoramic Native Assurance identified a stronger clone class: if the effective secret is persisted inside the restored database, a physical snapshot taken **after** capability creation copies both `instance_id` and `instance_secret` and can be misclassified as the same-instance retry. That invalidated the earlier CLEAN result and became material finding class #38.
 
-The final C2 hardening adds `physical_pitr_post_enrollment_clone.sh`, wired into `run_conformance_extended.sh` and structurally checked by CI. It:
+The C2 hardening adds `physical_pitr_post_enrollment_clone.sh`, wired into `run_conformance_extended.sh` and structurally checked by CI. It:
 
 1. enrolls a restored database identity;
 2. keeps the effective proof outside `PGDATA` in an evidence-only per-instance mount;
 3. physically copies `PGDATA` after enrollment, so primary and clone have the exact same database-visible `instance_id` and helper code;
 4. gives both copies the exact same surviving-authority external role/password;
 5. gives the clone a distinct external-to-PGDATA capability;
-6. proves primary claim + same-instance retry + verification succeed while clone claim and verification fail.
+6. proves the local fingerprints are present and distinct;
+7. proves primary claim + same-instance retry + verification succeed while the operational clone is rejected.
 
-Exact pre-documentation #158 passed the new vector, including:
+### P2 false-negative hardening — material class #39
+
+A later Native Assurance pass found that the initial clone negative could falsely pass because the local helper catches errors and returns `false`. A broken clone mount, helper or `dblink` path would therefore look identical to a legitimate capability mismatch.
+
+The final vector closes that ambiguity with a dedicated positive control **before** the governed negative:
+
+1. the already-cloned PostgreSQL reads its external capability and derives a domain-separated local fingerprint;
+2. the clone successfully claims `grant-post-enrollment-clone-probe` through the same helper, same `dblink` path and same external credential used by the negative;
+3. the clone successfully verifies that probe grant;
+4. surviving authority records the authenticated principal, copied database-visible instance id and capability fingerprint;
+5. the test requires the stored fingerprint to exactly equal the fingerprint derived by the clone itself from its mounted capability;
+6. only after that path is proven operational does the primary claim the governed grant and the clone's claim/verify on that grant have to return `false`;
+7. the primary grant fingerprint is also required to equal the primary-local capability fingerprint.
+
+Exact #165 passed the complete sequence:
 
 ```text
 physical_pitr_post_enrollment_capability_outside_pgdata=PASS
 physical_pitr_post_enrollment_pgdata_identity_copied=PASS
+physical_pitr_post_enrollment_local_capability_fingerprints_present=PASS
 physical_pitr_post_enrollment_external_capability_distinct=PASS
+physical_pitr_post_enrollment_clone_probe_claimed=PASS
+physical_pitr_post_enrollment_clone_probe_verify=PASS
+physical_pitr_post_enrollment_clone_probe_principal_binding=PASS
+physical_pitr_post_enrollment_clone_probe_database_id_binding=PASS
+physical_pitr_post_enrollment_clone_probe_capability_binding=PASS
+physical_pitr_post_enrollment_clone_capability_path_operational=PASS
 physical_pitr_post_enrollment_primary_claimed=PASS
 physical_pitr_post_enrollment_same_instance_retry=PASS
 physical_pitr_post_enrollment_pgdata_clone_claim_rejected=PASS
@@ -118,11 +141,12 @@ physical_pitr_post_enrollment_primary_verify=PASS
 physical_pitr_post_enrollment_pgdata_clone_verify_rejected=PASS
 physical_pitr_post_enrollment_authenticated_principal_binding=PASS
 physical_pitr_post_enrollment_copied_database_id_binding=PASS
+physical_pitr_post_enrollment_primary_capability_binding=PASS
 physical_pitr_post_enrollment_pgdata_clone_cannot_duplicate_authority=PASS
 physical_pitr_post_enrollment_single_winner_external_capability=PASS
 ```
 
-The mount/file mechanism is **not** a production secret-store or workload-identity selection. The proven C2 property is narrower and explicit: **copying PostgreSQL database state alone cannot duplicate restored-instance authority**. Production must strengthen this to genuinely non-shareable per-instance authority beyond reusable credentials and copyable recovered state.
+The mount/file mechanism is **not** a production secret-store or workload-identity selection. The proven C2 property is narrower and explicit: **copying PostgreSQL database state alone cannot duplicate restored-instance authority, and clone rejection is attributed to the capability binding rather than a broken execution path**. Production must strengthen this to genuinely non-shareable per-instance authority beyond reusable credentials and copyable recovered state.
 
 ## Canonical typed-value gate
 
@@ -130,17 +154,17 @@ Every structured cryptographic evidence message uses deterministic versioned sel
 
 ### `timestamptz`
 
-Finite values use UTC + microseconds + explicit `AD`/`BC`; PostgreSQL non-finite sentinels map to exact `-infinity` / `infinity` literals. Exact #158 preserves cross-store equality, distinct non-finite digest material and mandatory digest use of `canonical_timestamp(...)`.
+Finite values use UTC + microseconds + explicit `AD`/`BC`; PostgreSQL non-finite sentinels map to exact `-infinity` / `infinity` literals. Exact #165 preserves cross-store equality, distinct non-finite digest material and mandatory digest use of `canonical_timestamp(...)`.
 
 ### `numeric`
 
-The evidence `numeric_value` column is unconstrained. Both authorities use `canonical_numeric(...)`: finite values normalize through `trim_scale`; `NaN`, `Infinity` and `-Infinity` map to explicit exact literals before field framing. Exact #158 preserves all cross-store/special-value vectors.
+The evidence `numeric_value` column is unconstrained. Both authorities use `canonical_numeric(...)`: finite values normalize through `trim_scale`; `NaN`, `Infinity` and `-Infinity` map to explicit exact literals before field framing. Exact #165 preserves all cross-store/special-value vectors.
 
 ## Relocation target / verifier / activation gate
 
 The target checkpoint is bound to target-owned measurement of actual target state and SHA-256 over canonical immutable payload. Effective signing key is generated inside target authority; Tier 1 has no target signing-key relation and cannot mint. Connection capabilities are restricted authority-owned state; verifier secrets are absent from function source. Raw asynchronous transport is owner-only. Connection setup and established-response time are independently bounded.
 
-Tier 1 atomically commits successor placement plus a durable activation grant. Target remains `sealed` until it verifies that exact committed grant. Exact #158 preserves target key provenance, verifier-secret isolation, stalled-peer fail-closed vectors, seal-vs-DML serialization, forged-attestation rejection, grant-conflict rollback, target self-activation rejection, activation-grant atomicity and Tier1↔Tier2 continuity.
+Tier 1 atomically commits successor placement plus a durable activation grant. Target remains `sealed` until it verifies that exact committed grant. Exact #165 preserves target key provenance, verifier-secret isolation, stalled-peer fail-closed vectors, seal-vs-DML serialization, forged-attestation rejection, grant-conflict rollback, target self-activation rejection, activation-grant atomicity and Tier1↔Tier2 continuity.
 
 ## Tier 2 trust boundary
 
@@ -152,8 +176,8 @@ Evidence completion does not accept `OPEN-REL-030`.
 
 ```text
 Evidence package             COMPLETE
-Executable empirical anchor  c9207f8bbd3c42ec0428987a2580b7f1bfb7e06d / #2181 / #158
-Material finding classes     38
+Executable empirical anchor  bd311cf107d27ca9bbb00b130c0bf0389e0deecd / #2195 / #165
+Material finding classes     39
 Exact-final-HEAD CI          REQUIRED AGAIN AFTER DOC MUTATION
 Codex exact-final-HEAD       REQUIRED
 Native Assurance             REQUIRED AGAIN ON FINAL HEAD

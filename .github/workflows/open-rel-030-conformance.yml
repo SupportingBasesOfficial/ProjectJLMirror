@@ -71,7 +71,7 @@ jobs:
           assert len(manifest['completed_mandatory_vectors']) == 8
           assert manifest['mandatory_vectors_not_yet_claimed_complete'] == []
           assert manifest['tier2_profile_classification']['mediated_shared_history_columnstore_cagg'] == 'conformant_candidate_recommended_for_c2_acceptance'
-          assert manifest['review_provenance']['material_finding_classes_documented_in_decision_review'] == 44
+          assert manifest['review_provenance']['material_finding_classes_documented_in_decision_review'] == 45
 
           recovery = manifest['recovery_evidence']
 
@@ -124,6 +124,15 @@ jobs:
           assert recovery['real_established_tcp_blackhole_exercised'] is True
           assert recovery['real_blackhole_fails_closed_under_local_deadline'] is True
           assert recovery['timeout_backend_retirement_one_shot_session'] is True
+
+          # Active surviving recovery authority guards (#45).
+          assert recovery['active_recovery_authority_locked_before_claim'] is True
+          assert recovery['boundary_fingerprint_derived_from_active_authority'] is True
+          assert recovery['validly_signed_drifted_successor_epoch_claim_admitted'] is False
+          assert recovery['validly_signed_drifted_placement_version_claim_admitted'] is False
+          assert recovery['verify_and_fetch_require_active_authority_match'] is True
+          assert recovery['drifted_active_authority_grants_create_additional_claim'] is False
+          assert recovery['local_reconciled_state_requires_active_successor_authority'] is True
 
           runner = Path('tools/open_rel_030/run_conformance_extended.sh').read_text()
           history_modules = sorted(Path('sql/d2-open-rel-030').glob('00[4-9]_history_*.sql'))
@@ -196,7 +205,7 @@ jobs:
               'evidence_manifest_guard=PASS '
               'state=complete_ready_for_decision_review '
               'acceptance=not_granted '
-              'material_findings=44 '
+              'material_findings=45 '
               'post_enrollment_clone_guard=true '
               'clone_positive_control_guard=true '
               'recovery_boundary_single_winner_guard=true '

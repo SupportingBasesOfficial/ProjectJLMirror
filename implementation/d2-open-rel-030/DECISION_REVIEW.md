@@ -26,7 +26,7 @@ Subject to exact-final-HEAD review and explicit Track B acceptance:
 12. require surviving recovery-grant consumption to be atomic single-winner authority derived from an authenticated surviving-authority session principal, never a caller-supplied target/principal identifier;
 13. require recovery claim/verification interfaces to resolve grant facts internally and expose no direct grant-table read privilege to recovery principals;
 14. require deterministic versioned self-delimiting structured bytes before hash/MAC/signature;
-15. require canonical typed values themselves to be total and injective over the full accepted domain; for PostgreSQL `timestamptz`, finite relocation serialization must preserve UTC time, microseconds and explicit AD/BC era, while non-finite values must use distinct reserved `infinity` / `-infinity` representations rather than NULL/omission;
+15. require canonical typed values themselves to be total and injective over the full accepted domain: PostgreSQL `timestamptz` must preserve finite UTC time, microseconds and explicit AD/BC era plus distinct exact `infinity`/`-infinity`; unconstrained PostgreSQL `numeric` must normalize finite values and preserve distinct exact `NaN`, `Infinity` and `-Infinity` values before field framing;
 16. select TimescaleDB as Tier 2 historical projection only under the mediated shared-history profile proven by this spike;
 17. classify `ts_automation_owner` as LOGIN cross-tenant privileged infrastructure and require production admission controls to exclude tenant/application use;
 18. reject direct pooled RLS assumptions for Timescale columnstore/CAGG on the evaluated profile;
@@ -44,40 +44,38 @@ Subject to exact-final-HEAD review and explicit Track B acceptance:
 30. preserve `OPEN-REL-020` as owner of production capacity/SLO/retention/cardinality/cost numerics;
 31. treat database versions, image digests, evidence crypto, recovery/verifier LOGIN mechanisms, verifier transport, capability-store layout, local evidence deadlines and concrete canonical encoding as reproducibility dependencies rather than immutable production selections.
 
-## Exact empirical anchor before this review-document mutation
+## Exact empirical anchor before reviewer-document mutation
 
 ```text
 HEAD
-723022253af332b0fa08ff7be3fbcad326dd8712
+4c6e3a051d76b257df8058bf2b4503e2b6d84013
 
 JLMIRROR Deterministic Assurance
-run #2131
-run id 33233145281
+run #2141
+run id 33233751143
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #133
-run id 33233145277
+run #138
+run id 33233751124
 SUCCESS
 ```
 
-This SHA proves the executable mechanism after generation/revision-bound owner-current history repair, cross-window stable-identity hardening, provider dataset mutation fencing, destructive DELETE/TRUNCATE fail-closed behavior, history-runner completeness guarding, authenticated-principal single-winner recovery, total AD/BC/non-finite relocation timestamp canonicalization, and caller-local post-connect verifier deadline repair. It becomes provenance after this document mutation; the exact final package HEAD must rerun both gates.
+This anchor proves the executable mechanism after generation/revision-bound owner-current history repair, cross-window stable-identity hardening, provider dataset mutation fencing, destructive DELETE/TRUNCATE fail-closed behavior, history-runner completeness guarding, authenticated-principal single-winner recovery, total/injective AD/BC/non-finite `timestamptz` canonicalization, total/injective finite-and-special-value `numeric` canonicalization, target-owned relocation authority and caller-local post-connect verifier deadline repair. It becomes provenance after reviewer-document mutation; the exact final package HEAD must independently rerun both gates.
 
 ## Tier 1 acceptance and owner-current history authority
 
 The PostgreSQL harness establishes independent-session atomic create-or-observe, immutable canonical identity/content, owner source generation and poll epoch, durable live poll claims, current-state CAS independent from provider event time, historical obligation/outbox atomicity, crash rollback and post-COMMIT ambiguity convergence.
 
-Late-history workers cannot self-assert provider authority, finality or currentness. Durable `provider_authority` owns `authority_generation`, `provider_dataset_revision`, `current_snapshot_at`, `finality_floor` and `required_reconciliation_snapshot_at`.
+Durable `provider_authority` owns `authority_generation`, `provider_dataset_revision`, `current_snapshot_at`, `finality_floor` and `required_reconciliation_snapshot_at`. Coverage is valid only for the exact current generation + exact current provider dataset revision + owner-required snapshot currentness. `advance_provider_authority(...)` clears materialized coverage; owner-visible provider INSERT/UPDATE increments dataset revision and invalidates coverage in the same transaction. `sweep(...)` and provider mutation serialize on the same `provider_authority` row.
 
-Coverage is valid only for the **exact current generation + exact current provider dataset revision + owner-required snapshot currentness**. `reconciliation_run` records both generation and dataset revision. `contiguous_covered_through(...)` filters by those current owner facts. `advance_provider_authority(...)` clears materialized coverage, and owner-visible provider INSERT/UPDATE increments the dataset revision and invalidates coverage in the same transaction. `sweep(...)` and dataset mutation serialize on the same `provider_authority` row, so a same-generation correction cannot retain or race past a stale completion watermark.
+Stable provider identity cannot be rewritten. DELETE is rejected and statement-level TRUNCATE has an independent fail-closed guard. The reconciliation worker has no direct provider INSERT/UPDATE/DELETE/TRUNCATE privilege, no provider-owner membership and no trigger-administration path. Production owner/superuser governance remains an explicit deployment trust boundary.
 
-Stable provider identity cannot be rewritten. Destructive DELETE is rejected by the provider dataset trigger. Statement-level TRUNCATE is separately guarded and fails closed; a row-level trigger alone is not considered coverage for destructive statement-level mutation. The reconciliation worker has no direct INSERT/UPDATE/DELETE/TRUNCATE privilege, no provider-owner membership and no trigger-administration path. Production owner/superuser governance remains an explicit deployment trust boundary.
+Accepted history is immutable under stable reconciliation identity. Conflict validation occurs before provider-time-only selection: when either accepted or owner-current `observed_at` intersects the requested window, immutable timestamp/value content is compared. Any mismatch rejects before a `reconciliation_run` can be minted.
 
-Accepted history is immutable under stable reconciliation identity. Conflict validation is performed before provider-time-only selection: if either accepted `observed_at` or owner-current provider `observed_at` intersects the requested window, the stable identity is checked. Thus a correction that moves an accepted row from inside the sweep window to outside it cannot evade validation and still authorize coverage. Any immutable timestamp/value mismatch raises `reconciled observation identity content mismatch`; the failed sweep cannot change accepted canonical content or create a `reconciliation_run`.
+The structural CI guard enumerates every existing `00[4-9]_history_*.sql` file and fails if it is not referenced by `run_conformance_extended.sh`. Exact #138 reports `history_modules=4` and executes `004 → 005 → 006 → 007`.
 
-The CI structural guard enumerates every existing `00[4-9]_history_*.sql` module and requires it to appear in `run_conformance_extended.sh`. Exact #133 reports `history_modules=4` and executes `004`, `005`, `006` and `007` in order, preventing a reviewer-critical hardening file from existing behind a false-green workflow that never runs it.
-
-Exact #133 proves:
+Representative #138 markers:
 
 ```text
 history_conflicting_observation_rejected=PASS
@@ -96,13 +94,11 @@ late_history_reconciliation=PASS
 
 ## Physical PITR authority and authenticated-principal single-winner recovery
 
-A separate surviving control PostgreSQL, excluded from source backup/restore, owns recovery authority and issues a structured authenticated grant only after `F`. The restored database cannot self-mint admission. Delimiter framing is explicitly falsified; the grant is authenticated over deterministic self-delimiting structured fields.
+A separate surviving control PostgreSQL, excluded from source backup/restore, owns recovery authority and issues a structured authenticated grant only after `F`. A local restored receipt is insufficient. Grant fields use deterministic self-delimiting canonical representation before HMAC.
 
-A valid signature is necessary but not sufficient. The bounded claim interface is intentionally reduced to `claim_grant(grant_id)` and `verify_claimed_grant(grant_id)`. Recovery principals have EXECUTE but no direct read privilege on `recovery_grant`. The surviving authority loads the grant internally, reconstructs and verifies its canonical HMAC, derives the claimant from `session_user`, locks the grant and atomically binds it to the first authenticated principal. The same principal may retry after ambiguity; a different authenticated principal receives false. The claim function accepts no caller-supplied target ID or principal identity and no caller-supplied signed grant fields. A rival credential used with the winner role name must fail authentication.
+The bounded claim interface is `claim_grant(grant_id)` / `verify_claimed_grant(grant_id)`. Recovery principals have EXECUTE but no direct read privilege on `recovery_grant`. The surviving authority loads and verifies the grant internally, derives the claimant from `session_user`, locks the grant and atomically binds it to the first authenticated principal. Same-principal retry converges; another authenticated principal returns false. Caller-supplied target/principal identity and caller-supplied signed grant facts are not authority inputs.
 
-The harness also issues a dedicated grant and races two independently authenticated principals. Exactly one must win, the winner retry must succeed, the loser retry must fail, and the persisted binding must equal the authenticated winner principal.
-
-Exact #133 preserves:
+Representative #138 markers include:
 
 ```text
 physical_pitr_recovery_claim_api_id_only=PASS
@@ -110,9 +106,6 @@ physical_pitr_recovery_claim_identity_from_authenticated_session=PASS
 physical_pitr_recovery_principal_no_direct_grant_read=PASS
 physical_pitr_recovery_principal_spoof_rejected=PASS
 physical_pitr_tampered_grant_cannot_claim=PASS
-physical_pitr_tamper_leaves_grant_unclaimed=PASS
-physical_pitr_recovery_claim_winner_retry=PASS
-physical_pitr_recovery_claim_loser_rejected=PASS
 physical_pitr_recovery_claim_single_winner_race=PASS
 physical_pitr_recovery_grant_same_principal_retry=PASS
 physical_pitr_recovery_grant_other_principal_rejected=PASS
@@ -122,44 +115,25 @@ physical_pitr_recovery_single_winner_authenticated_principal=PASS
 physical_pitr_post_reconcile_admission=PASS authority=surviving_external_authenticated_single_winner_principal
 ```
 
-The concrete PostgreSQL LOGIN/password path is evidence-only. Production may use another identity/authentication mechanism only if retries/admission remain bound to the same authenticated authority and caller-copyable identifiers cannot substitute for that authority.
+The concrete PostgreSQL LOGIN/password path is evidence-only; production identity/authentication remains separately selected.
 
 ## Timescale mediated profile
 
-On TimescaleDB 2.29.2 / PostgreSQL 17.11, direct pooled `RLS + columnstore` and `RLS + continuous aggregate` are ineligible (`0A000`). The surviving profile uses fixed-search-path `SECURITY DEFINER` mediation, NOLOGIN `ts_owner`, and separate least-privilege LOGIN `ts_automation_owner` only for evaluated job-bearing objects. Production connection/admission controls remain an explicit requirement.
+On TimescaleDB 2.29.2 / PostgreSQL 17.11, direct pooled `RLS + columnstore` and `RLS + continuous aggregate` are ineligible (`0A000`). The surviving profile uses fixed-search-path `SECURITY DEFINER` mediation, NOLOGIN `ts_owner`, and least-privilege LOGIN `ts_automation_owner` only as explicit cross-tenant privileged infrastructure. `PASSWORD NULL` is not treated as NOLOGIN or as production admission proof.
+
+Fresh-cluster restore reconstructs the minimum role topology and re-runs tenant-isolation/escalation attacks after restore and after restored background-job execution.
 
 ## Tier 1 ↔ Tier 2 relocation
 
-### Source fence and target lifecycle
+Tier 1 locks source placement before deriving `F`; an in-flight authoritative acceptance must resolve first and be included. `max(target)=F` is never completeness. Target state is measured and sealed by target authority; any target row `>F` before activation prevents seal, and `sealed` rejects all DML until authorized activation.
 
-Source placement is locked before deriving `F`; an in-flight authoritative acceptance must resolve first and is included. `max(target)=F` is not completeness.
+### Canonical typed values before cryptography
 
-```text
-open
-  staging allowed
-  seal rejects any row > F
+Target and verifier construct deterministic self-delimiting messages. Equal bytes are required across stores but do not imply equal signing authority.
 
-sealed
-  all target-history DML rejected
-  target cannot self-activate
+#### `timestamptz`
 
-Tier 1 committed activation authority
-  exact target checkpoint verified
-  placement + exact activation grant committed atomically
-
-activated
-  only after target verifies exact Tier 1 grant
-  existing history immutable
-  new append only > F
-```
-
-### Canonical checkpoint message and timestamp domain
-
-Target and verifier construct the same deterministic self-delimiting checkpoint message before HMAC. Cross-store equality is required, but equal bytes do not imply equal signing authority.
-
-Every typed canonical value must also be total and injective before field framing. Tier 1 `authoritative_digest(...)` and Tier 2 `target_digest(...)` both use a shared semantic `canonical_timestamp(...)`. Finite PostgreSQL `timestamptz` values use UTC, microseconds and explicit `AD`/`BC` era. Non-finite `-infinity` and `infinity` map to those exact reserved literals. They must remain non-NULL, distinct, cross-store identical and produce distinct self-delimiting SHA-256 inputs/digests.
-
-Exact #133 proves:
+Finite values serialize in UTC with microseconds and explicit `AD`/`BC`. PostgreSQL non-finite values use reserved exact `-infinity` / `infinity` literals. Both `authoritative_digest(...)` and `target_digest(...)` are statically verified to call `canonical_timestamp(...)` before field framing.
 
 ```text
 relocation_timestamp_era_injective=PASS
@@ -171,64 +145,46 @@ relocation_timestamp_nonfinite_digest_injective=PASS
 relocation_digest_uses_total_timestamp_canonicalizer=PASS
 ```
 
-### Target signing-key provenance
+#### `numeric`
 
-The effective HMAC key is generated inside Tier 2 target authority using target-side randomness. The trusted disposable-lab controller may administer both databases for setup and fault injection, but it does not provision or retain the protocol key. Tier 1 contains no target signing-key relation. Projection writer and verifier principals cannot read the generated key.
+The relocation evidence column is unconstrained PostgreSQL `numeric`. `canonical_numeric(...)` maps finite values through `trim_scale(...)::text` and maps `NaN`, `Infinity` and `-Infinity` to exact reserved literals before self-delimiting field framing. Both stores must produce the same canonical representation and distinct special-value digest material; the effective digest functions are statically verified to call the numeric canonicalizer.
 
-Exact #133 preserves:
+```text
+relocation_numeric_nan_canonical=PASS value=NaN
+relocation_numeric_positive_infinity_canonical=PASS value=Infinity
+relocation_numeric_negative_infinity_canonical=PASS value=-Infinity
+relocation_numeric_finite_scale_canonical=PASS value=1.23
+relocation_numeric_special_values_cross_store=PASS
+relocation_numeric_special_value_digest_injective=PASS
+relocation_digest_uses_total_numeric_canonicalizer=PASS
+```
+
+### Target signing-key provenance and verifier separation
+
+The effective HMAC key is generated inside Tier 2 target authority using target-side randomness. The cross-database test controller may administer the disposable laboratory but does not provision or retain the protocol key. Tier 1 has no target signing-key relation; projection writer and verifier principals cannot read it.
+
+Verifier connection credentials live in restricted owner-controlled capability tables and are absent from SQL function source. Raw bounded transport is owner-only. `connect_timeout` bounds setup; asynchronous `dblink_send_query` + `dblink_is_busy` polling enforces a caller-local post-connect response deadline. Failure or uncertainty returns false before local authority locks are acquired.
+
+### Durable activation grant and atomic rollback
+
+Tier 1 verifies the exact target checkpoint, then commits successor placement plus a durable activation grant bound to tenant, `F`, checkpoint id/generation, target attestation and successor placement version in one local transaction. Target remains sealed until it independently verifies that exact committed grant. A deliberately conflicting grant after the placement-update path forces a unique violation and proves the whole Tier 1 transaction rolls back.
+
+Representative evidence:
 
 ```text
 relocation_tier1_has_no_target_signing_key=PASS
 relocation_controller_does_not_retain_target_signing_key=PASS
 relocation_target_authority_generated_signing_key=PASS
-relocation_projection_writer_still_cannot_read_generated_signing_key=PASS
-relocation_target_verifier_still_cannot_read_generated_signing_key=PASS
-relocation_tier1_cannot_mint_target_attestation=PASS
-relocation_fabricated_target_attestation_rejected=PASS
-```
-
-### Verifier capability-secret isolation and bounded established calls
-
-The evidence harness uses random verifier LOGIN credentials plus `dblink` solely to exercise independent database authorities. Credentials live in restricted owner-controlled capability tables; owner `SECURITY DEFINER` helpers use fixed search paths. Verifier/automation principals cannot read the tables, and the secrets are not embedded in `pg_proc` function source.
-
-The raw asynchronous transport helper is not executable by verifier/projection principals. Connection establishment uses `connect_timeout=1`. After connection, `dblink_send_query` + `dblink_is_busy` are polled against a caller-local deadline; timeout/uncertainty disconnects and returns false. A five-second remote delay probe is tested against a 500 ms local probe deadline and must return well below 1.8 seconds.
-
-Exact #133 preserves:
-
-```text
-relocation_tier1_verifier_cannot_call_raw_bounded_transport=PASS
-relocation_target_principals_cannot_call_raw_bounded_transport=PASS
 relocation_target_verifier_stalled_peer_fails_closed=PASS
-relocation_target_verifier_local_deadline=PASS
 relocation_tier1_verifier_stalled_peer_fails_closed=PASS
-relocation_tier1_verifier_local_deadline=PASS
-```
-
-These values are laboratory evidence, not production timeout selections.
-
-### Durable activation grant and atomic rollback
-
-After target checkpoint verification, Tier 1 re-establishes local authority under lock and commits placement plus the exact activation grant in one PostgreSQL transaction. The target remains sealed until it independently verifies that grant.
-
-The fault injection preoccupies the grant identity after the placement-UPDATE path begins, forcing a unique violation and proving full rollback:
-
-```text
+relocation_tier1_cannot_mint_target_attestation=PASS
 relocation_target_cannot_self_activate_before_tier1_grant=PASS
-relocation_premature_mark_keeps_future_insert_blocked=PASS
 relocation_activation_commit_conflict_rolls_back=PASS
 relocation_activation_conflict_preserves_fenced_placement=PASS
-relocation_activation_conflict_did_not_replace_grant=PASS
-relocation_conflicting_grant_cannot_activate_target=PASS
-relocation_activation_conflict_keeps_target_sealed=PASS
 relocation_activation_grant_placement_atomicity=PASS
 relocation_tier1_activation_grant_committed=PASS
+tenant_relocation_tier1_tier2_continuity=PASS
 ```
-
-Neither authority can unilaterally create the full cutover state.
-
-## Cross-authority call ordering
-
-Remote verification occurs before local authority locks. Connection establishment and established-response time are independently bounded by the caller; after successful verification, each side performs only short local transactional/CAS work. Verification failure, disconnect, deadline expiry or uncertainty fails closed. Production may use a service/API, asymmetric verifier, KMS-backed verification or another mechanism only if it preserves issuer/verifier separation, target-only mint authority, bounded verification, exact grant binding and the same failure semantics.
 
 ## Material finding classes closed by D2
 
@@ -267,7 +223,8 @@ The evidence program has repaired the following classes, with panoramic review a
 31. provider-visible dataset mutation being able to leave completed coverage reusable without an owner dataset-revision change;
 32. a reviewer-critical history hardening module being present in the branch but omitted from the extended runner, producing false-green assurance for an unexecuted fix;
 33. PostgreSQL non-finite `timestamptz` values becoming NULL/omitted under `to_char(...)`, allowing `infinity` / `-infinity` timestamp facts to disappear from the digest;
-34. statement-level `TRUNCATE` bypassing row-level provider dataset revision/destructive-mutation triggers.
+34. statement-level `TRUNCATE` bypassing row-level provider dataset revision/destructive-mutation triggers;
+35. unconstrained PostgreSQL `numeric` special values (`NaN`, `Infinity`, `-Infinity`) lacking explicit total/injective cross-store canonicalization before relocation hashing.
 
 ## What acceptance would and would not mean
 
@@ -279,11 +236,11 @@ Acceptance would not freeze production PostgreSQL/Timescale versions, KMS/HSM to
 
 ```text
 Evidence completeness        COMPLETE
-Executable empirical anchor  723022253af332b0fa08ff7be3fbcad326dd8712 / #2131 / #133
-Material finding classes     34 closed by current mechanism
-Final documentation HEAD     REQUIRES FRESH EXACT-HEAD CI
-Codex final review           REQUIRED
-Native Assurance             REQUIRED
+Executable empirical anchor  4c6e3a051d76b257df8058bf2b4503e2b6d84013 / #2141 / #138
+Material finding classes     35 closed by current mechanism
+Final documentation HEAD     REQUIRES FRESH EXACT-HEAD CI AFTER THIS MUTATION
+Codex final review           REQUIRED ON FINAL EXACT HEAD
+Native Assurance             REQUIRED ON FINAL EXACT HEAD
 OPEN-REL-030 canonical state NOT YET ACCEPTED
 Track B acceptance           EXPLICIT AUTHORIZATION REQUIRED
 Wave 4 implementation        SEPARATE AUTHORIZATION REQUIRED

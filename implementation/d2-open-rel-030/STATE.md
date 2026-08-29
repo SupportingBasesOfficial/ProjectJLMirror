@@ -23,7 +23,9 @@ Recommend C2 acceptance only with all of the following preserved together:
 - recovery grant facts stored structurally and authenticated over a deterministic self-delimiting canonical representation, never reinterpreted through delimiter splitting;
 - a locally recreated receipt after restore is insufficient for re-admission;
 - source relocation authority locked before deriving `F`;
-- relocation/source↔target payload comparison and checkpoint attestation using deterministic self-delimiting canonical serialization.
+- relocation/source↔target payload comparison and checkpoint attestation using deterministic self-delimiting canonical serialization;
+- target checkpoint authenticity verified through a target-owned verification boundary while Tier 1 has **no target signing key and no mint capability**;
+- the exact relocation activation grant and the Tier 1 placement transition committed atomically, so neither can survive without the other.
 
 ### Tier 2 — Timescale mediated shared history
 
@@ -36,24 +38,27 @@ Recommend C2 acceptance only under the conformed mediated profile:
 - `PASSWORD NULL` is not treated as `NOLOGIN` or production admission proof;
 - fresh-cluster role reconstruction + attack matrix after restore/jobs;
 - target-owned authenticated sealed relocation checkpoint over the actual target canonical payload;
+- the target checkpoint signing key remains only inside target authority; verifier principals expose yes/no verification but cannot read that key;
 - the HMAC checkpoint payload itself uses the same deterministic self-delimiting canonical field representation on issuer and verifier;
 - no target row `>F` may survive or enter before activation;
-- `sealed` rejects all target-history DML; after `activated`, existing history is immutable and only append `>F` is eligible.
+- `sealed` rejects all target-history DML;
+- `sealed → activated` requires successful verification of the exact durable Tier 1 activation grant bound to tenant, `F`, checkpoint id/generation, target attestation and successor placement version;
+- after `activated`, existing history is immutable and only append `>F` is eligible.
 
 ## Exact empirical anchor before this reviewer-document mutation
 
 ```text
 HEAD
-3ffc96073b54fe7a8b5d002523733947ee59ba57
+e082cca72c13c725b0ffa837693ba73eb92ceb7e
 
 JLMIRROR Deterministic Assurance
-run #2012
-run id 33208029855
+run #2034
+run id 33223301992
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #74
-run id 33208029866
+run #85
+run id 33223301930
 SUCCESS
 ```
 
@@ -138,7 +143,7 @@ It is used for:
 2. all structured target-checkpoint facts before HMAC-SHA-256;
 3. all structured PITR recovery-grant facts before HMAC-SHA-256.
 
-The target checkpoint issuer in Timescale and verifier in PostgreSQL independently compute the same `canonical_checkpoint_payload`. Exact-head evidence includes:
+The target checkpoint issuer and the verification-side canonicalizer independently compute the same `canonical_checkpoint_payload`. Exact-head evidence includes:
 
 ```text
 relocation_checkpoint_hmac_payload_cross_store=PASS
@@ -164,8 +169,41 @@ The checkpoint remains bound to:
 - target-owned measurement of actual current state;
 - count + max + SHA-256 over deterministic self-delimiting canonical immutable payload;
 - domain-separated HMAC-SHA-256 over a deterministic self-delimiting `canonical_checkpoint_payload`;
-- projection writer unable to read attestation key or disable freeze;
-- Tier 1 verification of the authenticated sealed checkpoint before target activation.
+- signing key present only in target authority;
+- projection writer and verifier principals unable to read the attestation key or disable freeze;
+- Tier 1 consuming only target verification capability, never target mint capability.
+
+## Cross-authority relocation authorization gate
+
+The target checkpoint verifier and the Tier 1 activation verifier are deliberately **capability-restricted yes/no interfaces**. The evidence uses short-lived random verifier credentials plus PostgreSQL `dblink` only to exercise two independent database authorities. That concrete transport/auth mechanism is C2 laboratory machinery and **does not select production database-authentication, network, secret-distribution or RPC topology**.
+
+The accepted semantic requirement is:
+
+1. target owns checkpoint signing/mint authority and keeps its key out of Tier 1;
+2. Tier 1 may verify a target checkpoint but cannot create one;
+3. remote verification is bounded/fail-closed and occurs before the caller takes local authority locks;
+4. after verification, Tier 1 performs only short local transactional work;
+5. Tier 1 atomically commits both successor placement authority and a durable activation grant bound to tenant, `F`, checkpoint id/generation, target attestation and successor placement version;
+6. target remains `sealed` until it verifies that exact committed Tier 1 grant;
+7. only then may target become `activated` and admit new append `>F`.
+
+The #85 negative matrix proves:
+
+```text
+relocation_tier1_has_no_target_signing_key=PASS
+relocation_target_verifier_cannot_read_attestation_key=PASS
+relocation_tier1_cannot_mint_target_attestation=PASS
+relocation_target_cannot_self_activate_before_tier1_grant=PASS
+relocation_premature_mark_keeps_future_insert_blocked=PASS
+relocation_activation_commit_conflict_rolls_back=PASS
+relocation_activation_conflict_preserves_fenced_placement=PASS
+relocation_conflicting_grant_cannot_activate_target=PASS
+relocation_activation_conflict_keeps_target_sealed=PASS
+relocation_activation_grant_placement_atomicity=PASS
+relocation_tier1_activation_grant_committed=PASS
+```
+
+Therefore a verifier cannot substitute for an issuer, target cannot self-promote, and a mid-commit grant collision cannot leave partial authority on either side.
 
 ## Tier 2 trust boundary
 

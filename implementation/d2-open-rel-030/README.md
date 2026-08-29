@@ -25,19 +25,20 @@ It evaluates:
 - Structured crypto messages require deterministic versioned unambiguous/self-delimiting representation before cryptography.
 - A verifier must not inherit issuer/mint capability merely because it can validate an attestation.
 - Target signing material must originate and remain inside target authority; the test controller must not provision or retain it.
-- Recovery grants are not reusable bearer authorization: surviving authority binds each grant to one restore target with atomic single-winner claim semantics.
+- Recovery grants are not reusable bearer authorization: surviving authority atomically binds each grant to one **authenticated recovery principal** derived from session authority, not caller-supplied target/principal data.
+- Recovery claim/verification APIs are ID-only; restore principals have no direct grant-table read privilege.
 - Cross-authority verifier credentials must not be embedded in function source and must be held in restricted authority-owned capability state.
 - Cross-authority calls require a caller-local post-connect deadline; a connected but stalled peer must fail closed.
 - Cross-authority activation requires explicit durable authority from both sides; target cannot self-promote.
 - A single cross-tenant leak rejects the candidate profile.
 - `OPEN-REL-020` retains production telemetry capacity/numeric ownership.
 - PostgreSQL/Timescale versions and image digests are evidence dependencies, not immutable production selections.
-- Evidence HMAC/SHA, canonical encoding, `dblink`, verifier LOGIN roles and capability-store layout do not select production KMS/HSM, authentication, network or RPC topology.
+- Evidence HMAC/SHA, canonical encoding, `dblink`, recovery/verifier LOGIN roles and capability-store layout do not select production KMS/HSM, authentication, network or RPC topology.
 - `READY_FOR_MERGE != AUTHORIZED_TO_MERGE`.
 
 ## Tier 1 authority coverage
 
-The executable package proves atomic create-or-observe across independent connections; immutable canonical observation content; owner-controlled source/poll authority; exact durable `live` poll claims; current-state CAS by platform authority; stale/predecessor rejection; crash rollback; post-COMMIT ambiguity convergence; durable Tier2-down backlog responsibility; generation-bound owner-current late-history finality/currentness; conflicting reconciled-content rejection; and PITR recovery admission only from surviving authenticated `(R,F]` authority with single-winner restore-target binding.
+The executable package proves atomic create-or-observe across independent connections; immutable canonical observation content; owner-controlled source/poll authority; exact durable `live` poll claims; current-state CAS by platform authority; stale/predecessor rejection; crash rollback; post-COMMIT ambiguity convergence; durable Tier2-down backlog responsibility; generation-bound owner-current late-history finality/currentness; conflicting reconciled-content rejection; and PITR recovery admission only from surviving authenticated `(R,F]` authority with single-winner authenticated-principal binding.
 
 ### Owner-current late-history reconciliation
 
@@ -61,25 +62,33 @@ history_owner_currentness_authority=PASS
 late_history_reconciliation=PASS
 ```
 
-### Physical PITR single-winner recovery authority
+### Physical PITR single-winner authenticated recovery authority
 
 A surviving external control PostgreSQL is excluded from the source backup/restore and owns the recovery signing key. It issues a structured authenticated grant only after `F`.
 
-Verification does not itself authorize every restore. The grant must be atomically claimed against a unique restore `target_id`. Same-target retries converge after ambiguity; a different target loses. A dedicated race between two distinct target IDs requires exactly one winner. The restored database then applies successor epoch/placement only after the surviving authority confirms that exact target owns the grant.
+Verification does not itself authorize every restore. The bounded claim surface is deliberately reduced to `claim_grant(grant_id)` and `verify_claimed_grant(grant_id)`. Restore principals cannot directly read `recovery_grant` and cannot supply a target ID, principal identity or signed grant facts to the claim function. The surviving authority loads and verifies the grant internally, derives the claimant from `session_user`, and atomically binds the grant to the first authenticated principal. Retry by that same principal converges; a different authenticated principal loses. A dedicated race between two independently authenticated principals requires exactly one winner. A rival credential presented under the winner role name must fail authentication.
 
-Exact #108 proves:
+Exact #114 proves:
 
 ```text
+physical_pitr_recovery_claim_api_id_only=PASS
+physical_pitr_recovery_claim_identity_from_authenticated_session=PASS
+physical_pitr_recovery_principal_no_direct_grant_read=PASS
+physical_pitr_recovery_principal_spoof_rejected=PASS
+physical_pitr_tampered_grant_cannot_claim=PASS
+physical_pitr_tamper_leaves_grant_unclaimed=PASS
 physical_pitr_recovery_claim_winner_retry=PASS
 physical_pitr_recovery_claim_loser_rejected=PASS
 physical_pitr_recovery_claim_single_winner_race=PASS
-physical_pitr_recovery_grant_claimed=PASS
-physical_pitr_recovery_grant_same_target_retry=PASS
-physical_pitr_recovery_grant_other_target_rejected=PASS
+physical_pitr_recovery_grant_same_principal_retry=PASS
+physical_pitr_recovery_grant_other_principal_rejected=PASS
+physical_pitr_recovery_grant_authenticated_principal_binding=PASS
 physical_pitr_duplicate_restored_authority_not_admitted=PASS
-physical_pitr_recovery_single_winner=PASS
-physical_pitr_post_reconcile_admission=PASS authority=surviving_external_authenticated_single_winner_grant
+physical_pitr_recovery_single_winner_authenticated_principal=PASS
+physical_pitr_post_reconcile_admission=PASS authority=surviving_external_authenticated_single_winner_principal
 ```
+
+The PostgreSQL LOGIN/password mechanism is evidence-only. The accepted invariant is binding to the same authenticated recovery authority rather than to a caller-copyable identifier.
 
 ## Timescale mediated profile
 
@@ -160,7 +169,7 @@ relocation_tier1_verifier_stalled_peer_fails_closed=PASS
 relocation_tier1_verifier_local_deadline=PASS
 ```
 
-Exact #108 measured approximately 574 ms and 580 ms for the two stalled-peer directions. This is evidence machinery, not a production RPC/timeout selection.
+Exact #114 measured approximately 579 ms and 581 ms for the two stalled-peer directions. This is evidence machinery, not a production RPC/timeout selection.
 
 ### Activation atomicity
 
@@ -181,18 +190,18 @@ relocation_tier1_activation_grant_committed=PASS
 
 ```text
 HEAD
-1e58646d903f09954e85cca605c2c840f5099ee4
+176018388292c3842619292de2eba8947642bc1a
 
-JLMIRROR Deterministic Assurance #2080
-run id 33227438465
+JLMIRROR Deterministic Assurance #2092
+run id 33228913654
 SUCCESS
 
-JLMIRROR OPEN-REL-030 Conformance #108
-run id 33227438503
+JLMIRROR OPEN-REL-030 Conformance #114
+run id 33228913650
 SUCCESS
 ```
 
-The #108 extended run includes generation-bound late-history coverage, conflicting reconciled-content rejection, target key provenance, capability-secret isolation, bounded stalled-peer verification, verifier/mint separation, single-winner physical recovery grant claiming, durable activation grant, premature-activation negatives, grant/placement rollback injection, structured serialization and all prior authority/isolation/recovery/relocation vectors. This anchor becomes provenance after documentation mutation and the final documentation HEAD must rerun both workflows.
+The #114 extended run includes generation-bound late-history coverage, conflicting reconciled-content rejection, authenticated-principal single-winner physical recovery with ID-only authority API, target key provenance, capability-secret isolation, bounded stalled-peer verification, verifier/mint separation, durable activation grant, premature-activation negatives, grant/placement rollback injection, structured serialization and all prior authority/isolation/recovery/relocation vectors. This anchor becomes provenance after documentation mutation and the final documentation HEAD must rerun both workflows.
 
 ## Governance state
 

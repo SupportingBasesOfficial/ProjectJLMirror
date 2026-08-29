@@ -32,12 +32,14 @@ It evaluates:
 - Recovery material must be fetched from one consistent authority snapshot: revalidate active authority, lock grant, boundary claim and effect, hold signing state, then revalidate authority→claim→grant→effect before returning material.
 - Claim alone cannot mark reconciliation complete and a locally recreated continuity receipt cannot admit recovery.
 - Local reconciled state must remain fenced to the exact active successor epoch and placement.
+- **The effective hardened recovery path must itself complete a legitimate positive admission.** After active-authority hardening is installed, a reset-to-R winner must succeed through `claim → verify → fetch/apply → verify`.
 - Independent restores and post-enrollment PGDATA copies must not duplicate the effective restored-instance authority.
 - A fail-closed clone negative is accepted as evidence only after the same clone proves its capability/helper/credential/transport path operational through a positive-control grant.
-- Recovery claim, verify and material-fetch calls require caller-local established-response deadlines; `connect_timeout` only bounds connection setup.
+- Recovery and post-enrollment clone RPC require caller-local established-response deadlines; `connect_timeout` only bounds connection setup.
 - A cooperative server delay is insufficient deadline evidence by itself: an established authenticated TCP blackhole must also fail closed locally without synchronous remote cancel/cleanup extending the deadline path.
 - Target signing material originates/remains in target authority; verification does not imply mint capability.
 - Cross-authority activation requires explicit durable authority from both sides and target cannot self-promote.
+- **The effective final relocation verifier must not synchronously cancel/disconnect on deadline expiry.** Real response blackholes in both verification directions must fail closed under the caller-local deadline with bounded cleanup or equivalent session retirement.
 - A single cross-tenant leak rejects the candidate profile.
 - `OPEN-REL-020` retains production telemetry capacity/numeric ownership.
 - Evidence database versions, HMAC/SHA, `dblink`, LOGIN roles, capability mounts/stores, one-shot session retirement and deadlines are reproducibility dependencies, not production selections.
@@ -67,7 +69,7 @@ The workflow independently enumerates matching `00[4-9]_history_*.sql` files and
 
 The harness physically restores PostgreSQL to committed `R` and proves the restored state contains neither the later business change nor the continuity receipt. The live source then reaches committed `F` after the real post-R change.
 
-After `F`, the separate surviving control authority records a canonical `recovery_effect` derived from the **actual source state** and authenticates it. Recovery grants include the exact effect digest and cannot validate against absent/tampered/mismatched effect evidence.
+After `F`, the separate surviving control authority records canonical `recovery_effect` evidence derived from the **actual source state** and authenticates it. Recovery grants include the exact effect digest and cannot validate against absent/tampered/mismatched effect evidence.
 
 ### 2. Active authority and one winner per recovery event
 
@@ -79,57 +81,56 @@ The surviving singleton is the authority for the currently recoverable event:
 
 `claim_grant(...)` locks this row before deriving the winner key. The boundary fingerprint is derived from this locked tuple. An otherwise-valid grant must match it exactly before it can participate in the single-winner CAS. `verify_claimed_grant(...)` and `fetch_claimed_recovery_material(...)` revalidate the same authority.
 
-The class #45 vector creates two **validly signed** grants reusing the real main R/F/effect but drifting one dimension each:
-
-```text
-grant-F-alt-epoch      successor_epoch 6 -> 7
-grant-F-alt-placement  placement_version 8 -> 9
-```
-
-Exact #178 proves:
-
-```text
-physical_pitr_alt_epoch_grant_signature_valid=PASS value=true
-physical_pitr_alt_placement_grant_signature_valid=PASS value=true
-physical_pitr_active_authority_singleton=PASS value=open-rel-030-recovery-v1|R|F|6|8|effect|after-r
-physical_pitr_alt_epoch_grant_rejected_by_active_authority=PASS value=false
-physical_pitr_alt_placement_grant_rejected_by_active_authority=PASS value=false
-physical_pitr_alt_epoch_verify_rejected=PASS value=false
-physical_pitr_alt_placement_apply_rejected=PASS value=false
-physical_pitr_alt_grants_leave_claim_count_unchanged=PASS value=1
-physical_pitr_alt_grants_remain_unclaimed=PASS value=2
-physical_pitr_local_successor_authority_fence=PASS
-physical_pitr_main_grant_still_verifies_after_authority_hardening=PASS value=true
-physical_pitr_duplicate_grant_same_winner_retry_after_authority_hardening=PASS value=true
-physical_pitr_clone_still_rejected_after_authority_hardening=PASS value=false
-physical_pitr_claim_locks_active_authority_before_winner_key=PASS
-physical_pitr_verify_fetch_revalidate_active_authority=PASS
-physical_pitr_active_authority_binding=PASS
-```
-
 For equivalent grants that match the active tuple, `recovery_boundary_claim.boundary_fingerprint` remains the single-winner key. Sequential and concurrent cross-grant tests prove one claim row and same-winner convergence.
 
 ### 3. Effect-bound, consistent local reconciliation
 
-A successful boundary claim does not mutate local business truth. Only after the surviving authority verifies the winner may `fetch_claimed_recovery_material(...)` return recovery material. That fetch revalidates the active authority, locks the exact grant, canonical boundary claim and referenced effect, holds signing-key state and revalidates the complete authority/effect binding before returning. The restored side independently recomputes the canonical effect digest and atomically applies the authenticated post-R business state, receipt and successor authority.
+A successful boundary claim does not mutate local business truth. Only after surviving authority verifies the winner may `fetch_claimed_recovery_material(...)` return recovery material. That fetch revalidates active authority, locks the exact grant, canonical boundary claim and referenced effect, holds signing-key state and revalidates the complete authority/effect binding before returning. The restored side independently recomputes the canonical effect digest and atomically applies the authenticated post-R business state, receipt and successor authority.
 
-The in-flight substitution negative is empirical: a test-only hold wrapper keeps the fetch locks live while separate owner writes try to mutate the grant, effect and boundary claim. Each mutation must block until `lock_timeout` rather than replacing the state being materialized.
+The in-flight substitution negative is empirical: a test-only hold wrapper keeps the fetch locks live while separate owner writes try to mutate grant, effect and boundary claim. Each mutation must block until `lock_timeout` rather than replacing the state being materialized.
 
-### 4. Bounded recovery verifier transport and real blackhole
+### 4. Effective hardened positive replay — class #46
 
-Claim, verify and material-fetch all use the same local bounded asynchronous transport. `dblink_send_query` starts the established-session query; caller-side `dblink_is_busy` polling enforces a local deadline.
+Class #45 originally installed the active-authority definitions only after the base vector's successful recovery. Exact #180 closes that gap by retaining surviving authority/effect/boundary state, resetting the legitimate winning restore to exact R and replaying the positive path through the effective hardened functions:
 
-On timeout/uncertainty the C2 helper returns fail-closed without synchronous `dblink_cancel_query` or synchronous remote disconnect on that deadline path. The evidence call is executed from a one-shot SQL backend/session, so that local session is retired and closes its abandoned connection. This mechanism is deliberately evidence-only; production transport must provide independently bounded cancellation/cleanup or equivalent session retirement.
+```text
+physical_pitr_active_authority_replay_reset_to_R=PASS
+physical_pitr_active_authority_hardened_claim=PASS value=true
+physical_pitr_active_authority_hardened_verify_before_apply=PASS value=true
+physical_pitr_active_authority_hardened_claim_stays_at_R=PASS value=state_at_R|false|0
+physical_pitr_active_authority_hardened_fetch_apply=PASS value=true
+physical_pitr_active_authority_hardened_verify_after_apply=PASS value=true
+physical_pitr_active_authority_hardened_boundary_single_claim=PASS value=1
+physical_pitr_active_authority_hardened_clone_still_rejected=PASS value=false
+physical_pitr_active_authority_end_to_end_replay=PASS
+physical_pitr_active_authority_claim_fetch_apply_chain=PASS
+```
 
-Exact #178 preserved the cooperative five-second delay negative at ~562 ms and the real established-session TCP response blackhole at ~514 ms.
+This proves the hardened positive `claim → fetch → apply` path itself, not only verification and invalid-grant rejection.
 
-### 5. Restored-instance / post-enrollment clone authority
+### 5. Bounded recovery and post-enrollment clone transport — classes #44/#47
+
+Base physical-recovery claim, verify and material-fetch use local asynchronous send/poll with a caller-local deadline. Timeout/uncertainty returns fail-closed without synchronous remote cleanup; the one-shot SQL backend/session is retired. A real established TCP response blackhole is exercised.
+
+The separate post-enrollment clone path now has the same property. Exact #180 proves:
+
+```text
+physical_pitr_post_enrollment_helpers_use_bounded_transport=PASS
+physical_pitr_post_enrollment_deadline_path_has_no_synchronous_cleanup=PASS
+physical_pitr_post_enrollment_stalled_peer_fails_closed=PASS
+physical_pitr_post_enrollment_local_deadline=PASS elapsed_ms=564
+physical_pitr_post_enrollment_real_blackhole_fails_closed=PASS
+physical_pitr_post_enrollment_real_blackhole_local_deadline=PASS elapsed_ms=518
+physical_pitr_post_enrollment_timeout_backend_retirement=PASS one_shot_sql_session=true
+```
+
+The same bounded path then successfully executes the clone positive-control claim/verify and the primary-grant clone claim/verify negatives. Therefore a fail-closed negative is not accepted merely because the RPC path is broken or unbounded.
+
+### 6. Restored-instance / post-enrollment clone authority
 
 The baseline physical restore vector uses distinct post-R instance capabilities and deliberately demonstrates that reusable authentication credentials do not define unique restore identity.
 
 The post-enrollment clone vector covers the stronger copy case: PGDATA is physically copied after database identity enrollment. The effective C2 proof remains outside PGDATA, so the copy retains database-visible identity but cannot duplicate authority.
-
-Because fail-closed helpers can otherwise create false-negative evidence, the same clone must first successfully claim+verify a separate probe grant through the exact path used by the negative, and the surviving-authority fingerprint must equal the clone-local capability fingerprint. Only then is its rejection on the primary-winning grant accepted as meaningful capability-binding evidence.
 
 These file/mount and LOGIN mechanisms are C2 evidence machinery only. Production must preserve the semantic property with separately reviewed non-shareable workload/TPM/TEE/KMS-backed or equivalent authority.
 
@@ -143,36 +144,57 @@ Fresh-cluster restore reconstructs database-global roles before data restore, va
 
 Canonical field framing is self-delimiting. Relocation `timestamptz` covers finite UTC+microseconds+explicit AD/BC and exact `±infinity`; unconstrained `numeric` covers normalized finite values plus exact `NaN` and `±Infinity`.
 
-Relocation locks source placement before `F`, requires exact canonical source↔target completeness, seals target state under target-owned authority, keeps target signing/mint capability out of Tier 1, bounds verifier response locally, atomically commits Tier 1 placement + activation grant and keeps the target sealed until it independently verifies that exact grant.
+Relocation locks source placement before `F`, requires exact canonical source↔target completeness, seals target state under target-owned authority, keeps target signing/mint capability out of Tier 1, atomically commits Tier 1 placement + activation grant and keeps the target sealed until it independently verifies that exact grant.
+
+### Effective verifier timeout cleanup — class #48
+
+The final ordered relocation hardening layer replaces the effective Tier1/Tier2 verifier transport before subsequent authority operations. Successful calls may disconnect normally; timeout/send-error/uncertainty returns fail-closed without synchronous `dblink_cancel_query` or `dblink_disconnect`, and the one-shot SQL backend is retired.
+
+Exact #180 proves both directions under a real established response blackhole:
+
+```text
+relocation_response_deadline_has_no_synchronous_timeout_cleanup=PASS
+relocation_effective_verifier_transport_uses_session_retirement=PASS
+relocation_target_verifier_real_blackhole_fails_closed=PASS value=false
+relocation_target_verifier_real_blackhole_local_deadline=PASS elapsed_ms=506
+relocation_tier1_verifier_real_blackhole_fails_closed=PASS value=false
+relocation_tier1_verifier_real_blackhole_local_deadline=PASS elapsed_ms=520
+relocation_timeout_backend_retirement=PASS one_shot_sql_session=true
+```
+
+All downstream checkpoint, seal, canonical completeness, atomic placement+grant rollback/commit, activation and post-cutover vectors remain PASS after the final transport replacement.
 
 ## Exact empirical anchor before governance documentation
 
 ```text
 HEAD
-4fae89bc49a0cf589ad6d20f360bf29f2bb4f604
+f2a7f0c4cc1dedf02c64ed1129117f327d11931a
 
-JLMIRROR Deterministic Assurance #2221
-run id 33277420151
+JLMIRROR Deterministic Assurance #2225
+run id 33279609441
 SUCCESS
 
-JLMIRROR OPEN-REL-030 Conformance #178
-run id 33277420178
+JLMIRROR OPEN-REL-030 Conformance #180
+run id 33279609464
 SUCCESS
 ```
 
-The anchor includes all prior history, clone positive-control, Timescale, canonicalization and relocation vectors plus recovery classes #40–#45. It becomes provenance after the governance mutation; the exact final documentation HEAD must rerun both workflows.
+The anchor includes all prior history, recovery #38–#45, clone positive-control, Timescale, canonicalization and relocation vectors plus classes #46–#48. It becomes provenance after the governance mutation; the exact final documentation HEAD must rerun both workflows.
 
 ## Governance state
 
-Material finding classes closed by the evidence program: **45**.
+Material finding classes closed by the evidence program: **48**.
 
-Latest recovery classes:
+Latest recovery/transport classes:
 
 - **#40:** one winner per canonical recovery boundary across multiple equivalent grant IDs;
 - **#41:** authenticated surviving `(R,F]` effect evidence and local reconciliation derived from its verified application;
 - **#42:** caller-local bounded established-response semantics for physical-recovery claim/verify/material-fetch;
-- **#43:** consistent locked recovery-material fetch with complete claim→grant→effect revalidation against in-flight substitution;
+- **#43:** consistent locked recovery-material fetch with complete authority→claim→grant→effect revalidation against in-flight substitution;
 - **#44:** real established TCP-blackhole proof plus timeout-path session retirement without synchronous remote cleanup;
-- **#45:** locked active surviving-authority binding before winner-key derivation; validly signed epoch/placement drift cannot create or verify a second authority, and local reconciled state is fenced to the active successor.
+- **#45:** locked active surviving-authority binding before winner-key derivation; validly signed epoch/placement drift cannot create or verify a second authority;
+- **#46:** successful reset-to-R `claim → verify → fetch/apply → verify` replay after #45 hardening is installed;
+- **#47:** bounded async post-enrollment clone claim/verify with real-blackhole falsification and one-shot session retirement before positive-control/negative interpretation;
+- **#48:** effective relocation verifier timeout path has no synchronous remote cleanup and real blackholes fail closed in both cross-authority directions before downstream activation operations.
 
 Evidence completion does not accept `OPEN-REL-030`, authorize Wave 4, select production deployment/authentication/identity/RPC topology, select production capacity numerics, or authorize merge. Exact-final-HEAD CI, fresh adversarial Codex review, exact-head Native Assurance and explicit Track B acceptance remain separate gates.

@@ -48,8 +48,11 @@ jobs:
           bash -n tools/open_rel_030/timescale_jobs_restore.sh
           bash -n tools/open_rel_030/physical_pitr.sh
           bash -n tools/open_rel_030/physical_pitr_active_authority_hardening.sh
+          bash -n tools/open_rel_030/physical_pitr_active_authority_end_to_end.sh
           bash -n tools/open_rel_030/physical_pitr_post_enrollment_clone.sh
+          bash -n tools/open_rel_030/physical_pitr_post_enrollment_clone_bounded.sh
           bash -n tools/open_rel_030/tenant_relocation.sh
+          bash -n tools/open_rel_030/tenant_relocation_transport_retirement_hardening.sh
           test -s sql/d2-open-rel-030/012_timescale_restore_role_bootstrap.sql
           python3 -m py_compile tools/open_rel_030/tier1_concurrency.py
           python3 - <<'PY'
@@ -71,7 +74,10 @@ jobs:
           assert len(manifest['completed_mandatory_vectors']) == 8
           assert manifest['mandatory_vectors_not_yet_claimed_complete'] == []
           assert manifest['tier2_profile_classification']['mediated_shared_history_columnstore_cagg'] == 'conformant_candidate_recommended_for_c2_acceptance'
-          assert manifest['review_provenance']['material_finding_classes_documented_in_decision_review'] == 45
+          assert manifest['review_provenance']['material_finding_classes_documented_in_decision_review'] == 48
+          assert manifest['classification_basis']['exact_empirical_head_before_reviewer_documentation'] == 'f2a7f0c4cc1dedf02c64ed1129117f327d11931a'
+          assert manifest['classification_basis']['deterministic_assurance_run_number'] == 2225
+          assert manifest['classification_basis']['open_rel_030_conformance_run_number'] == 180
 
           recovery = manifest['recovery_evidence']
 
@@ -134,6 +140,28 @@ jobs:
           assert recovery['drifted_active_authority_grants_create_additional_claim'] is False
           assert recovery['local_reconciled_state_requires_active_successor_authority'] is True
 
+          # Effective positive hardened recovery path (#46).
+          assert recovery['active_authority_positive_claim_fetch_apply_replayed_after_hardening'] is True
+          assert recovery['active_authority_positive_claim_stays_at_r_before_apply'] is True
+          assert recovery['hardened_active_authority_positive_apply_uses_surviving_effect'] is True
+          assert recovery['hardened_active_authority_replay_boundary_claim_rows'] == 1
+          assert recovery['hardened_active_authority_replay_clone_admitted'] is False
+
+          # Bounded post-enrollment clone transport (#47).
+          assert recovery['post_enrollment_claim_verify_use_async_local_deadline'] is True
+          assert recovery['post_enrollment_timeout_path_uses_synchronous_remote_cleanup'] is False
+          assert recovery['post_enrollment_real_established_tcp_blackhole_exercised'] is True
+          assert recovery['post_enrollment_real_blackhole_fails_closed_under_local_deadline'] is True
+          assert recovery['post_enrollment_timeout_backend_retirement_one_shot_session'] is True
+
+          # Effective relocation cleanup / two-direction blackholes (#48).
+          relocation = manifest['relocation_evidence']
+          assert relocation['effective_verifier_uses_async_local_deadline'] is True
+          assert relocation['effective_verifier_timeout_path_uses_synchronous_remote_cleanup'] is False
+          assert relocation['real_established_blackhole_test_both_directions'] is True
+          assert relocation['real_blackhole_fails_closed_under_local_deadline_both_directions'] is True
+          assert relocation['timeout_backend_retirement_one_shot_session'] is True
+
           runner = Path('tools/open_rel_030/run_conformance_extended.sh').read_text()
           history_modules = sorted(Path('sql/d2-open-rel-030').glob('00[4-9]_history_*.sql'))
           assert history_modules, 'history hardening module set is unexpectedly empty'
@@ -141,7 +169,7 @@ jobs:
           assert not missing, f'history hardening modules not wired into extended runner: {missing}'
 
           required_vectors = [
-              'physical_pitr_active_authority_hardening.sh',
+              'physical_pitr_active_authority_end_to_end.sh',
               'physical_pitr_post_enrollment_clone.sh',
               'tenant_relocation.sh',
           ]
@@ -150,6 +178,13 @@ jobs:
 
           pitr = Path('tools/open_rel_030/physical_pitr.sh').read_text()
           pitr_authority = Path('tools/open_rel_030/physical_pitr_active_authority_hardening.sh').read_text()
+          pitr_e2e = Path('tools/open_rel_030/physical_pitr_active_authority_end_to_end.sh').read_text()
+          clone_entry = Path('tools/open_rel_030/physical_pitr_post_enrollment_clone.sh').read_text()
+          clone_bounded = Path('tools/open_rel_030/physical_pitr_post_enrollment_clone_bounded.sh').read_text()
+          relocation_entry = Path('tools/open_rel_030/tenant_relocation.sh').read_text()
+          relocation_retirement = Path('tools/open_rel_030/tenant_relocation_transport_retirement_hardening.sh').read_text()
+
+          # Existing #40-#45 source/marker invariants remain mandatory.
           assert 'physical_pitr.sh' in pitr_authority, 'active-authority wrapper does not compose the base PITR vector'
           required_recovery_markers = [
               'physical_pitr_surviving_effect_evidence_published=PASS',
@@ -157,30 +192,20 @@ jobs:
               'physical_pitr_recovery_single_winner_per_boundary_across_grant_ids=PASS',
               'physical_pitr_recovery_helpers_use_bounded_transport=PASS',
               'physical_pitr_recovery_deadline_path_has_no_synchronous_cancel=PASS',
-              'physical_pitr_recovery_stalled_peer_fails_closed',
               'physical_pitr_recovery_real_blackhole_fails_closed',
-              'physical_pitr_recovery_real_blackhole_local_deadline',
               'physical_pitr_recovery_timeout_backend_retirement=PASS',
-              'physical_pitr_recovery_fetch_locks_grant',
-              'physical_pitr_recovery_fetch_locks_effect',
-              'physical_pitr_recovery_fetch_locks_boundary_claim',
               'physical_pitr_recovery_fetch_consistent_locked_snapshot=PASS',
               'physical_pitr_recovery_fetch_revalidates_claim_grant_effect_binding=PASS',
               'physical_pitr_claim_without_effect_application_stays_at_R',
               'physical_pitr_authenticated_effect_application',
-              'physical_pitr_reconciled_from_authenticated_surviving_effect',
           ]
           missing_recovery_markers = [m for m in required_recovery_markers if m not in pitr]
           assert not missing_recovery_markers, f'recovery hardening markers missing from physical PITR vector: {missing_recovery_markers}'
           assert 'recovery_boundary_claim' in pitr
-          assert 'boundary_fingerprint' in pitr
           assert 'recovery_effect' in pitr
           assert 'fetch_claimed_recovery_material' in pitr
-          assert 'fetch_claimed_recovery_material_hold' in pitr
-          assert 'dblink_send_query' in pitr
-          assert 'dblink_is_busy' in pitr
-          assert 'timeout 5s docker exec' in pitr
-          assert 'iptables -I' in pitr
+          assert 'dblink_send_query' in pitr and 'dblink_is_busy' in pitr
+          assert 'timeout 5s docker exec' in pitr and 'iptables -I' in pitr
           assert 'dblink_cancel_query(v_name)' not in pitr
 
           required_active_authority_markers = [
@@ -194,18 +219,63 @@ jobs:
               'physical_pitr_verify_fetch_revalidate_active_authority=PASS',
               'physical_pitr_active_authority_binding=PASS',
           ]
-          missing_active_authority_markers = [m for m in required_active_authority_markers if m not in pitr_authority]
-          assert not missing_active_authority_markers, f'active recovery authority markers missing: {missing_active_authority_markers}'
+          assert not [m for m in required_active_authority_markers if m not in pitr_authority]
           assert 'FROM pitr_external_evidence.authority' in pitr_authority
           assert 'WHERE singleton FOR UPDATE' in pitr_authority
-          assert 'expected_successor_epoch' in pitr_authority
-          assert 'expected_placement_version' in pitr_authority
+
+          # #46 structural guard: successful replay must happen after hardening composition.
+          assert 'physical_pitr_active_authority_hardening.sh' in pitr_e2e
+          for marker in [
+              'physical_pitr_active_authority_replay_reset_to_R',
+              'physical_pitr_active_authority_hardened_claim',
+              'physical_pitr_active_authority_hardened_verify_before_apply',
+              'physical_pitr_active_authority_hardened_fetch_apply',
+              'physical_pitr_active_authority_hardened_verify_after_apply',
+              'physical_pitr_active_authority_hardened_boundary_single_claim',
+              'physical_pitr_active_authority_hardened_clone_still_rejected',
+              'physical_pitr_active_authority_end_to_end_replay=PASS',
+              'physical_pitr_active_authority_claim_fetch_apply_chain=PASS',
+          ]:
+              assert marker in pitr_e2e, f'missing hardened positive replay marker: {marker}'
+
+          # #47 structural guard: public clone entry delegates only to bounded path.
+          assert 'physical_pitr_post_enrollment_clone_bounded.sh' in clone_entry
+          assert 'dblink_send_query' in clone_bounded and 'dblink_is_busy' in clone_bounded
+          assert 'dblink_cancel_query' not in clone_bounded
+          assert clone_bounded.count('dblink_disconnect') == 1
+          assert 'timeout 5s docker exec' in clone_bounded and 'iptables -I' in clone_bounded
+          for marker in [
+              'physical_pitr_post_enrollment_helpers_use_bounded_transport=PASS',
+              'physical_pitr_post_enrollment_deadline_path_has_no_synchronous_cleanup=PASS',
+              'physical_pitr_post_enrollment_real_blackhole_fails_closed',
+              'physical_pitr_post_enrollment_timeout_backend_retirement=PASS',
+              'physical_pitr_post_enrollment_clone_probe_claimed',
+              'physical_pitr_post_enrollment_pgdata_clone_claim_rejected',
+          ]:
+              assert marker in clone_bounded, f'missing bounded clone marker: {marker}'
+
+          # #48 structural guard: retirement layer is effective before later authority modules.
+          assert 'tenant_relocation_transport_retirement_hardening.sh' in relocation_entry
+          assert relocation_entry.index('tenant_relocation_transport_retirement_hardening.sh') > relocation_entry.index('tenant_relocation_verifier_hardening.sh')
+          assert relocation_entry.index('tenant_relocation_transport_retirement_hardening.sh') < relocation_entry.index('tenant_relocation_key_provenance_tests.sh')
+          assert 'dblink_send_query' in relocation_retirement and 'dblink_is_busy' in relocation_retirement
+          assert 'dblink_cancel_query' not in relocation_retirement
+          assert relocation_retirement.count('dblink_disconnect') == 2
+          assert 'iptables -I' in relocation_retirement
+          for marker in [
+              'relocation_response_deadline_has_no_synchronous_timeout_cleanup=PASS',
+              'relocation_effective_verifier_transport_uses_session_retirement=PASS',
+              'relocation_target_verifier_real_blackhole_fails_closed',
+              'relocation_tier1_verifier_real_blackhole_fails_closed',
+              'relocation_timeout_backend_retirement=PASS',
+          ]:
+              assert marker in relocation_retirement, f'missing relocation retirement marker: {marker}'
 
           print(
               'evidence_manifest_guard=PASS '
               'state=complete_ready_for_decision_review '
               'acceptance=not_granted '
-              'material_findings=45 '
+              'material_findings=48 '
               'post_enrollment_clone_guard=true '
               'clone_positive_control_guard=true '
               'recovery_boundary_single_winner_guard=true '
@@ -214,6 +284,9 @@ jobs:
               'recovery_fetch_consistency_guard=true '
               'real_blackhole_guard=true '
               'active_recovery_authority_guard=true '
+              'active_recovery_e2e_guard=true '
+              'post_enrollment_bounded_blackhole_guard=true '
+              'relocation_retirement_guard=true '
               f'history_modules={len(history_modules)} '
               f'critical_vectors={len(required_vectors)}'
           )

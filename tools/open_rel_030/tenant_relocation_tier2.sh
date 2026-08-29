@@ -1,5 +1,8 @@
 # ---------------------------------------------------------------------------
-# Tier 2 target authority. The checkpoint HMAC key exists only here.
+# Tier 2 target authority. The effective checkpoint HMAC key is generated
+# inside this database authority; it is not provisioned by Tier 1 or the shell
+# controller. The controller remains trusted laboratory setup/fault injection,
+# not a modeled production/Tier-1 application principal.
 # The verifier role can ask yes/no questions but cannot read key/state tables.
 # ---------------------------------------------------------------------------
 ts_sql "
@@ -59,7 +62,8 @@ ts_sql "
     key_material text NOT NULL
   );
   ALTER TABLE relocation_evidence.target_attestation_key OWNER TO ts_owner;
-  INSERT INTO relocation_evidence.target_attestation_key(singleton,key_material) VALUES(true,'$attestation_key');
+  INSERT INTO relocation_evidence.target_attestation_key(singleton,key_material)
+  VALUES(true,encode(gen_random_bytes(32),'hex'));
 
   INSERT INTO relocation_evidence.target_control(tenant_id,phase) VALUES('$tenant','open');
 

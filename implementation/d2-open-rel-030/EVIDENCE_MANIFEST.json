@@ -19,7 +19,7 @@
       "product": "PostgreSQL",
       "evaluation_version": "17.11-alpine",
       "image": "postgres@sha256:5d61573b31c206ae538c85893edeb6e320e1a9ffd838c0f9dca927fb6f765fa4",
-      "purpose": "real multi-connection transactional acceptance, owner authority, ambiguity, owner-derived history currentness, physical PITR, surviving-authority recovery evidence and Tier 1 relocation activation authority"
+      "purpose": "real multi-connection transactional acceptance, owner authority, ambiguity, generation-bound owner-current history reconciliation, physical PITR, surviving-authority recovery evidence and Tier 1 relocation activation authority"
     },
     "tier2_timescale": {
       "product": "TimescaleDB",
@@ -29,14 +29,14 @@
     }
   },
   "classification_basis": {
-    "exact_empirical_head_before_reviewer_documentation": "a0f9b03199d3881a48a18c52c826b9a36b65ac84",
-    "deterministic_assurance_run_number": 2054,
-    "deterministic_assurance_run_id": 33226307343,
-    "open_rel_030_conformance_run_number": 95,
-    "open_rel_030_conformance_run_id": 33226307321,
+    "exact_empirical_head_before_reviewer_documentation": "387a68af2eb896f0ece8c916b241a84fde0876f3",
+    "deterministic_assurance_run_number": 2068,
+    "deterministic_assurance_run_id": 33226943467,
+    "open_rel_030_conformance_run_number": 102,
+    "open_rel_030_conformance_run_id": 33226943414,
     "result": "success",
     "final_package_gate_requirement": "The exact final package HEAD, including reviewer documentation, must independently rerun both gates before review or acceptance.",
-    "note": "The executable anchor proves owner-controlled source/poll authority; owner-derived history finality/currentness; surviving external authenticated PITR recovery grants; genuine fresh-cluster Timescale reconstruction; lock-before-F source fencing; deterministic self-delimiting structured cryptographic representations; target-owned checkpoint signing authority whose effective key is generated inside Tier 2 and is neither provisioned nor retained by the cross-database test controller; Tier 1 verification without mint capability; restricted authority-owned verifier connection capability state with verifier secrets absent from function source; durable Tier 1 activation grants; target promotion only after exact grant verification; no uncheckpointed pre-activation target history; seal-vs-DML serialization; and atomic rollback of the Tier 1 placement+grant commit when a grant conflict is injected."
+    "note": "The executable anchor proves owner-controlled source/poll authority; owner-derived history finality/currentness whose coverage is bound to the exact current authority generation and invalidated on every generation transition even when timestamps remain equal; rejection of conflicting owner-visible canonical content under an already accepted reconciliation identity before any coverage run is minted; surviving external authenticated PITR recovery grants; genuine fresh-cluster Timescale reconstruction; lock-before-F source fencing; deterministic self-delimiting structured cryptographic representations; target-owned checkpoint signing authority whose effective key is generated inside Tier 2 and is neither provisioned nor retained by the cross-database test controller; Tier 1 verification without mint capability; restricted authority-owned verifier connection capability state with verifier secrets absent from function source; durable Tier 1 activation grants; target promotion only after exact grant verification; no uncheckpointed pre-activation target history; seal-vs-DML serialization; and atomic rollback of the Tier 1 placement+grant commit when a grant conflict is injected."
   },
   "review_provenance": {
     "material_findings_closed_by_current_mechanism": [
@@ -49,6 +49,9 @@
       "relocation fingerprint must include immutable canonical payload",
       "PITR admission must consume authenticated surviving (R,F] evidence rather than a locally self-minted receipt",
       "history finality/currentness must be derived from durable owner/provider authority rather than worker-supplied timestamps",
+      "history reconciliation coverage must be bound to the exact current authority generation, not only snapshot timestamps",
+      "an authority-generation transition must invalidate prior materialized reconciliation coverage even when currentness timestamps are unchanged",
+      "conflicting owner-current provider content under an existing reconciled observation identity must reject before recording coverage",
       "target rows above F before activation must be rejected or included in checkpoint authority",
       "canonical relocation serialization must be self-delimiting so unrestricted text cannot collide with field or row framing",
       "structured cryptographic evidence messages must be self-delimiting before HMAC; cryptographic integrity cannot repair ambiguous field framing",
@@ -61,6 +64,10 @@
     "native_assurance_panorama_extensions": [
       "durable live poll claim required for current-state candidacy",
       "reconciliation snapshot currentness required in addition to interval geometry",
+      "reconciliation_run eligibility requires exact equality with locked current authority_generation",
+      "advance_provider_authority clears materialized coverage and forces non-gap reconciliation_required even on same-timestamp generation changes",
+      "same-snapshot authority-generation bump cannot reuse previous-generation coverage and requires a fresh current-generation sweep",
+      "reconciled stable identity with changed observed_at or numeric_value aborts the sweep, preserves accepted canonical content and creates no reconciliation_run",
       "recovery grant stored as structured typed fields and independently read without shell delimiter parsing",
       "recovery receipt contains a literal pipe in the positive vector without changing authority boundaries",
       "target checkpoint HMAC uses the same cross-store canonical field encoding as its digest",
@@ -104,11 +111,16 @@
       "finality_floor",
       "required_reconciliation_snapshot_at"
     ],
-    "sweep_authority": "worker supplies only window plus expected authority generation; actual provider snapshot is read and locked from provider_authority",
-    "finalization_authority": "try_finalize accepts no caller finality/currentness timestamps; it reads and locks owner provider_authority",
+    "sweep_authority": "worker supplies only window plus expected authority generation; actual generation and provider snapshot are read and locked from provider_authority",
+    "finalization_authority": "try_finalize accepts no caller authority/finality/currentness values; it reads and locks current authority_generation, finality and required snapshot from provider_authority",
     "stale_worker": "rejected when expected generation differs from durable current authority",
     "coverage_anchor": "supported_history_floor",
-    "coverage_semantics": "only overlapping/touching runs whose durable provider_snapshot_at satisfies owner-required currentness form continuous coverage",
+    "coverage_generation": "only reconciliation_run rows whose authority_generation equals the exact currently locked owner generation are eligible",
+    "generation_transition": "every authority-generation advance clears materialized coverage and moves non-gap state to reconciliation_required even if snapshot/finality/currentness timestamps are unchanged",
+    "coverage_semantics": "only overlapping/touching runs from the exact current authority generation whose durable provider_snapshot_at satisfies owner-required currentness form continuous coverage",
+    "stable_identity_content": "existing accepted (stream_id,observation_id) content is immutable; owner-visible observed_at or numeric_value mismatch rejects the sweep before a reconciliation_run is recorded",
+    "conflict_failure_atomicity": "rejected conflicting sweep preserves accepted canonical content and does not mint coverage",
+    "same_timestamp_generation_negative": "generation 3 reuses generation 2 timestamps but cannot reuse generation 2 coverage; a fresh generation 3 sweep is required before finalization",
     "unrecoverable_retention_loss": "explicit durable gap; never false complete"
   },
   "recovery_evidence": {
@@ -239,10 +251,12 @@
     "interpretation": "Mechanism-level bounded fitness evidence only. Production SLOs, retention, cardinality, sizing, cost and topology remain OPEN-REL-020 C3."
   },
   "decision_recommendation": {
-    "tier1": "accept PostgreSQL Tier 1 mechanism only with immutable canonical observation content, owner-controlled source/poll authority, durable live poll claims, owner-derived provider finality/currentness, contiguous reconciliation, structured self-delimiting authenticated surviving recovery grants after PITR, lock-before-F relocation fencing, target verification without mint authority, and atomic durable activation-grant plus placement commitment",
+    "tier1": "accept PostgreSQL Tier 1 mechanism only with immutable canonical observation content, owner-controlled source/poll authority, durable live poll claims, owner-derived provider finality/currentness, contiguous generation-bound reconciliation, invalidation on authority-generation transition, rejection of conflicting canonical reconciled content under stable identity, structured self-delimiting authenticated surviving recovery grants after PITR, lock-before-F relocation fencing, target verification without mint authority, and atomic durable activation-grant plus placement commitment",
     "tier2": "accept TimescaleDB historical projection only under the mediated shared-history profile, privileged automation-owner admission boundary, genuine fresh-cluster role reconstruction, complete target checkpoint equivalence, target-originated target-only checkpoint signing authority, rejection of uncheckpointed target data before activation, target promotion only after exact Tier 1 activation-grant verification, immutable pre-F history after cutover, restricted verifier capability secrets, and cross-store self-delimiting checkpoint representations",
     "rejected_assumptions": [
       "caller or worker supplied timestamps are not provider finality/currentness authority",
+      "same snapshot timestamp does not make reconciliation coverage valid across owner authority-generation changes",
+      "an existing reconciled observation identity with changed canonical content is not an idempotent duplicate",
       "a locally recreated post-R receipt is not surviving (R,F] recovery authority",
       "delimiter-parsed recovery payload text is not a structured cryptographic authority",
       "max(target_ordinal)=F is not target completeness",
@@ -260,6 +274,6 @@
       "same-cluster restore is not fresh role-topology recovery evidence",
       "max(reconciliation window_to) is not contiguous history completeness"
     ],
-    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity/payload, deterministic versioned unambiguous structured serialization, idempotent projection, owner-derived currentness, externally surviving recovery authority, target-originated target-only mint/sign authority, verifier-without-mint capability, verifier-secret isolation, target checkpoint/freeze semantics, exact durable activation-grant binding, atomic placement+grant commitment, privileged-infrastructure boundaries, tenant isolation and relocation/recovery semantics"
+    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity/payload, deterministic versioned unambiguous structured serialization, idempotent projection, owner-derived currentness, exact-generation reconciliation coverage, authority-transition invalidation, stable-identity content immutability, externally surviving recovery authority, target-originated target-only mint/sign authority, verifier-without-mint capability, verifier-secret isolation, target checkpoint/freeze semantics, exact durable activation-grant binding, atomic placement+grant commitment, privileged-infrastructure boundaries, tenant isolation and relocation/recovery semantics"
   }
 }

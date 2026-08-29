@@ -19,12 +19,13 @@ Recommend C2 acceptance only with all of the following preserved together:
 - contiguous late-history reconciliation anchored at `supported_history_floor`;
 - provider snapshot/finality/currentness derived from durable owner authority, not worker-supplied timestamps;
 - stale reconciliation worker generations rejected;
-- physical PITR to committed `R` remaining fail-closed until a **surviving external authenticated `(R,F]` recovery grant** is verified;
-- recovery grant facts stored structurally and authenticated over a deterministic self-delimiting canonical representation, never reinterpreted through delimiter splitting;
+- physical PITR to committed `R` remaining fail-closed until a surviving external authenticated `(R,F]` recovery grant is verified;
+- recovery grant facts stored structurally and authenticated over a deterministic self-delimiting canonical representation;
 - a locally recreated receipt after restore is insufficient for re-admission;
 - source relocation authority locked before deriving `F`;
-- relocation/source↔target payload comparison and checkpoint attestation using deterministic self-delimiting canonical serialization;
-- target checkpoint authenticity verified through a target-owned verification boundary while Tier 1 has **no target signing key and no mint capability**;
+- source↔target payload comparison and checkpoint attestation using deterministic self-delimiting canonical serialization;
+- target checkpoint authenticity verified through a target-owned verification boundary while Tier 1 has no target signing key and no mint capability;
+- verifier transport credentials held in authority-owned restricted capability stores rather than embedded in function source;
 - the exact relocation activation grant and the Tier 1 placement transition committed atomically, so neither can survive without the other.
 
 ### Tier 2 — Timescale mediated shared history
@@ -34,12 +35,14 @@ Recommend C2 acceptance only under the conformed mediated profile:
 - no direct tenant-facing privilege on shared raw history, CAGG or internal materialization;
 - fixed-search-path `SECURITY DEFINER` mediation with tenant binding outside caller-writable SQL state;
 - `ts_owner` NOLOGIN mediation/checkpoint authority;
-- `ts_automation_owner` LOGIN only as explicit **cross-tenant privileged infrastructure**, never as an application/tenant principal;
+- `ts_automation_owner` LOGIN only as explicit cross-tenant privileged infrastructure, never as an application/tenant principal;
 - `PASSWORD NULL` is not treated as `NOLOGIN` or production admission proof;
 - fresh-cluster role reconstruction + attack matrix after restore/jobs;
 - target-owned authenticated sealed relocation checkpoint over the actual target canonical payload;
-- the target checkpoint signing key remains only inside target authority; verifier principals expose yes/no verification but cannot read that key;
-- the HMAC checkpoint payload itself uses the same deterministic self-delimiting canonical field representation on issuer and verifier;
+- the effective checkpoint signing key is generated inside Tier 2 target authority and is not provisioned or retained by the test controller;
+- verifier and projection-writer principals cannot read that signing key;
+- target/Tier1 verifier connection capabilities are restricted authority-owned state and are not readable by verifier/automation principals;
+- verifier secrets are not embedded in `pg_proc` function source;
 - no target row `>F` may survive or enter before activation;
 - `sealed` rejects all target-history DML;
 - `sealed → activated` requires successful verification of the exact durable Tier 1 activation grant bound to tenant, `F`, checkpoint id/generation, target attestation and successor placement version;
@@ -49,150 +52,65 @@ Recommend C2 acceptance only under the conformed mediated profile:
 
 ```text
 HEAD
-e082cca72c13c725b0ffa837693ba73eb92ceb7e
+a0f9b03199d3881a48a18c52c826b9a36b65ac84
 
 JLMIRROR Deterministic Assurance
-run #2034
-run id 33223301992
+run #2054
+run id 33226307343
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #85
-run id 33223301930
+run #95
+run id 33226307321
 SUCCESS
 ```
 
-That SHA is **provenance only** after this documentation update. The exact final documentation HEAD must rerun both gates.
+That SHA is provenance only after this documentation update. The exact final documentation HEAD must rerun both gates.
 
 ## Owner-currentness history gate
 
-The history worker does not provide finality/currentness timestamps.
-
-Durable `provider_authority` owns:
-
-- `authority_generation`;
-- `current_snapshot_at`;
-- `finality_floor`;
-- `required_reconciliation_snapshot_at`.
-
-`sweep(...)` accepts only the requested window plus `expected_authority_generation`; it locks and derives the actual snapshot from owner authority. `try_finalize(...)` accepts only stream + finalization boundary and locks finality/currentness from owner authority.
-
-The evidence proves worker mutation of authority is unavailable, stale generation rejects, owner-required snapshot currentness is enforced, continuous coverage is anchored at the supported floor, and unrecoverable retention loss remains durable `gap`.
+The history worker does not provide finality/currentness timestamps. Durable `provider_authority` owns `authority_generation`, `current_snapshot_at`, `finality_floor` and `required_reconciliation_snapshot_at`. `sweep(...)` accepts only the requested window plus `expected_authority_generation`; `try_finalize(...)` accepts no caller finality/currentness timestamp. The matrix proves stale generation rejection, owner-required snapshot currentness, continuous coverage from the supported floor, and durable `gap` on unrecoverable retention loss.
 
 ## PITR recovery admission gate
 
-The restored PostgreSQL cannot self-authorize from a local receipt.
-
-A separate surviving control database, excluded from the source backup/restore, holds a random HMAC key and issues a recovery grant **after `F`**. Neither source nor restored database contains that signing key.
-
-The grant is stored as structured fields:
-
-```text
-domain
-R
-F
-successor epoch
-placement version
-required receipt
-nonce
-canonical payload
-attestation
-```
-
-Each signed field is canonicalized as:
-
-```text
-<UTF-8 byte length in decimal>:<lowercase UTF-8 hex>
-```
-
-The fields are concatenated only after each field is self-delimiting. HMAC-SHA-256 covers this canonical payload. The shell reads the authoritative columns independently; it does **not** recover structured authority by splitting an authenticated text blob.
-
-A dedicated negative proves that ordinary pipe framing can map different logical field boundaries to the same raw string while the canonical representation remains distinct. The positive path deliberately uses:
-
-```text
-required_receipt = effect|after-r
-```
-
-and still verifies correctly, proving that literal delimiter characters do not alter grant structure.
-
-Negative evidence also proves:
-
-- restoring exactly to `R` has no post-`R` receipt/grant metadata;
-- locally reinserting the receipt still leaves admission false;
-- tampering with one structured grant field while replaying the original attestation is rejected.
-
-Positive evidence proves the surviving authority verifies the exact structured grant, authenticated successor facts are applied without replaying rollback-subject business state, and final admission requires both reconciled local state and fresh verification by the surviving external authority.
+The restored PostgreSQL cannot self-authorize from a local receipt. A separate surviving control database, excluded from the source backup/restore, owns the recovery signing key and issues a grant after `F`. The structured grant facts are individually self-delimiting before HMAC-SHA-256. The matrix proves local self-mint cannot admit, tampering rejects, surviving authority verifies the exact grant, and authenticated successor facts can be applied without replaying rollback-subject business state.
 
 ## Canonical structured-message gate
 
-The D2 rule is broader than the observation digest:
+Every structured cryptographic evidence message must use deterministic, versioned, injective or equivalently unambiguous serialization before hash/MAC/signature. The bounded evidence representation is `<UTF-8 byte length in decimal>:<lowercase UTF-8 hex>`, used for observation payloads, target-checkpoint facts and PITR recovery-grant facts. An accepted implementation may use another canonical representation only with equivalent independently reviewed evidence.
 
-> A hash/HMAC can authenticate only the bytes it receives. It cannot repair an ambiguous mapping from structured facts to those bytes.
+## Relocation target and issuer/verifier gate
 
-Therefore **every structured cryptographic evidence message** must use deterministic, versioned, injective or equivalently unambiguous serialization before hashing/signing.
+The target checkpoint is bound to target-owned measurement of actual current state, count/max/SHA-256 over canonical immutable payload, and domain-separated HMAC over the canonical checkpoint message. The effective signing key is generated inside target authority using target-side randomness. The trusted disposable-lab controller can administer both databases for setup/fault injection, but it neither provisions nor retains the protocol signing key.
 
-The bounded evidence representation is:
-
-```text
-<UTF-8 byte length in decimal>:<lowercase UTF-8 hex>
-```
-
-It is used for:
-
-1. immutable observation fields before the relocation SHA-256 digest;
-2. all structured target-checkpoint facts before HMAC-SHA-256;
-3. all structured PITR recovery-grant facts before HMAC-SHA-256.
-
-The target checkpoint issuer and the verification-side canonicalizer independently compute the same `canonical_checkpoint_payload`. Exact-head evidence includes:
-
-```text
-relocation_checkpoint_hmac_payload_cross_store=PASS
-```
-
-The PITR evidence includes:
-
-```text
-physical_pitr_grant_delimiter_collision_closed=PASS
-physical_pitr_grant_receipt_contains_pipe=PASS
-physical_pitr_tampered_external_grant_rejected=PASS
-physical_pitr_external_grant_verified=PASS
-```
-
-The exact textual encoding is a bounded evidence choice, not an immutable production wire format. An accepted implementation may use CBOR/Protobuf/another canonical representation only if the same versioned unambiguous-structure property and all authority/integrity semantics are independently proven.
-
-## Relocation target gate
-
-Before seal, staging is allowed but any row `>F` blocks sealing. During `sealed`, all target-history DML is rejected. After `activated`, existing history remains immutable and only new append above `F` is eligible.
-
-The checkpoint remains bound to:
-
-- target-owned measurement of actual current state;
-- count + max + SHA-256 over deterministic self-delimiting canonical immutable payload;
-- domain-separated HMAC-SHA-256 over a deterministic self-delimiting `canonical_checkpoint_payload`;
-- signing key present only in target authority;
-- projection writer and verifier principals unable to read the attestation key or disable freeze;
-- Tier 1 consuming only target verification capability, never target mint capability.
-
-## Cross-authority relocation authorization gate
-
-The target checkpoint verifier and the Tier 1 activation verifier are deliberately **capability-restricted yes/no interfaces**. The evidence uses short-lived random verifier credentials plus PostgreSQL `dblink` only to exercise two independent database authorities. That concrete transport/auth mechanism is C2 laboratory machinery and **does not select production database-authentication, network, secret-distribution or RPC topology**.
-
-The accepted semantic requirement is:
-
-1. target owns checkpoint signing/mint authority and keeps its key out of Tier 1;
-2. Tier 1 may verify a target checkpoint but cannot create one;
-3. remote verification is bounded/fail-closed and occurs before the caller takes local authority locks;
-4. after verification, Tier 1 performs only short local transactional work;
-5. Tier 1 atomically commits both successor placement authority and a durable activation grant bound to tenant, `F`, checkpoint id/generation, target attestation and successor placement version;
-6. target remains `sealed` until it verifies that exact committed Tier 1 grant;
-7. only then may target become `activated` and admit new append `>F`.
-
-The #85 negative matrix proves:
+Exact #95 evidence includes:
 
 ```text
 relocation_tier1_has_no_target_signing_key=PASS
-relocation_target_verifier_cannot_read_attestation_key=PASS
+relocation_controller_does_not_retain_target_signing_key=PASS
+relocation_target_authority_generated_signing_key=PASS
+relocation_projection_writer_still_cannot_read_generated_signing_key=PASS
+relocation_target_verifier_still_cannot_read_generated_signing_key=PASS
+relocation_tier1_verifier_cannot_read_target_connection_capability=PASS
+relocation_projection_writer_cannot_read_tier1_connection_capability=PASS
+relocation_target_verifier_cannot_read_tier1_connection_capability=PASS
+relocation_target_verifier_secret_not_in_function_source=PASS
+relocation_tier1_verifier_secret_not_in_function_source=PASS
 relocation_tier1_cannot_mint_target_attestation=PASS
+relocation_fabricated_target_attestation_rejected=PASS
+```
+
+Thus the evidence now separates issuer from verifier at the database-authority and key-provenance levels, not merely by table naming.
+
+## Cross-authority activation gate
+
+The target checkpoint verifier and Tier 1 activation verifier are capability-restricted yes/no interfaces. The evidence uses short-lived random verifier credentials plus PostgreSQL `dblink` only to exercise independent authorities. Those credentials live in restricted authority-owned capability tables and are not embedded in verifier function source. This concrete transport/auth mechanism remains C2 laboratory machinery and does not select production database-authentication, network, secret-distribution or RPC topology.
+
+Remote verification is bounded/fail-closed and happens before local authority locks. Tier 1 then atomically commits successor placement plus a durable activation grant. Target remains `sealed` until it verifies the exact committed grant.
+
+Exact #95 also proves:
+
+```text
 relocation_target_cannot_self_activate_before_tier1_grant=PASS
 relocation_premature_mark_keeps_future_insert_blocked=PASS
 relocation_activation_commit_conflict_rolls_back=PASS
@@ -203,13 +121,9 @@ relocation_activation_grant_placement_atomicity=PASS
 relocation_tier1_activation_grant_committed=PASS
 ```
 
-Therefore a verifier cannot substitute for an issuer, target cannot self-promote, and a mid-commit grant collision cannot leave partial authority on either side.
-
 ## Tier 2 trust boundary
 
-`ts_automation_owner` is explicitly a **LOGIN cross-tenant privileged infrastructure principal** because the evaluated Timescale background-job profile requires ownership by a login-capable role. Its evidence profile has no password credential, SUPERUSER, CREATEROLE or BYPASSRLS, and tenant/runtime roles have no membership in it.
-
-However, `PASSWORD NULL` is not an authentication barrier. A production deployment must prevent tenant/application principals from authenticating as or assuming this owner through `pg_hba`, local socket/peer/trust behavior, network exposure, role membership or credential provisioning. Widening that boundary invalidates the conformed profile until fresh review/evidence.
+`ts_automation_owner` remains a LOGIN cross-tenant privileged infrastructure principal because the evaluated Timescale background-job profile requires it. Production must prevent tenant/application principals from authenticating as or assuming this owner through `pg_hba`, local socket/peer/trust behavior, network exposure, role membership or credential provisioning. Widening that boundary invalidates the conformed profile until fresh review/evidence.
 
 ## Acceptance boundary
 
@@ -222,7 +136,7 @@ Codex exact-final-HEAD       REQUIRED
 Native Assurance             REQUIRED
 Track B acceptance           EXPLICIT AUTHORIZATION REQUIRED
 Wave 4 implementation        SEPARATE EXPLICIT AUTHORIZATION REQUIRED
-Merge                         NOT AUTHORIZED
+Merge                        NOT AUTHORIZED
 ```
 
 Only after exact-final-HEAD CI + adversarial review + Native Assurance are clean may Track B be presented for explicit acceptance. Acceptance still does not authorize Wave 4 implementation or production deployment.

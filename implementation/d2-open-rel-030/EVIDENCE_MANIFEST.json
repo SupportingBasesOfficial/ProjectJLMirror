@@ -19,7 +19,7 @@
       "product": "PostgreSQL",
       "evaluation_version": "17.11-alpine",
       "image": "postgres@sha256:5d61573b31c206ae538c85893edeb6e320e1a9ffd838c0f9dca927fb6f765fa4",
-      "purpose": "transactional acceptance, owner-current history, physical PITR, effect-bound recovery, boundary-single-winner recovery, post-enrollment clone falsification and relocation authority"
+      "purpose": "transactional acceptance, owner-current history, physical PITR, effect-bound recovery, boundary-single-winner recovery, consistent recovery-material fetch, real-blackhole falsification, post-enrollment clone falsification and relocation authority"
     },
     "tier2_timescale": {
       "product": "TimescaleDB",
@@ -29,17 +29,17 @@
     }
   },
   "classification_basis": {
-    "exact_empirical_head_before_reviewer_documentation": "6f46c6700855207ad85fc206e258da00ce896c8b",
-    "deterministic_assurance_run_number": 2207,
-    "deterministic_assurance_run_id": 33274303103,
-    "open_rel_030_conformance_run_number": 171,
-    "open_rel_030_conformance_run_id": 33274303155,
+    "exact_empirical_head_before_reviewer_documentation": "b162ff5ace52cee09610ebcff2e8d142a4822160",
+    "deterministic_assurance_run_number": 2211,
+    "deterministic_assurance_run_id": 33275135337,
+    "open_rel_030_conformance_run_number": 173,
+    "open_rel_030_conformance_run_id": 33275135328,
     "result": "success",
     "final_package_gate_requirement": "The exact final package HEAD, including governance documentation and guards, must independently rerun both gates before review or acceptance.",
-    "note": "Anchor proves prior Tier1/history/Timescale/relocation invariants plus recovery single-winner authority scoped to canonical recovery boundary across grant ids, authenticated surviving effect evidence bound into grants and applied locally before reconciliation, caller-local bounded physical-recovery RPC, post-enrollment PGDATA clone rejection and same-path positive-control evidence."
+    "note": "Anchor proves prior Tier1/history/Timescale/relocation invariants plus recovery single-winner authority scoped to canonical recovery boundary across grant ids, authenticated surviving effect evidence bound into grants and applied locally before reconciliation, consistent locked claim-grant-effect material fetch, real established TCP-blackhole fail-closed behavior without synchronous timeout-path remote cleanup, post-enrollment PGDATA clone rejection and same-path positive-control evidence."
   },
   "review_provenance": {
-    "material_finding_classes_documented_in_decision_review": 42,
+    "material_finding_classes_documented_in_decision_review": 44,
     "material_findings_closed_by_current_mechanism": [
       "conflicting canonical observation content under stable Tier 1 acceptance identity must reject",
       "active source and poll authority must be resolved from owner-controlled state",
@@ -74,7 +74,9 @@
       "clone rejection requires same-path positive control before a fail-closed false result counts as evidence",
       "recovery single-winner authority is scoped to canonical governed recovery boundary rather than grant id",
       "recovery admission binds to authenticated surviving post-R effect evidence and local state is derived from verified application",
-      "physical-recovery claim verify and material-fetch require caller-local established-response deadlines"
+      "physical-recovery claim verify and material-fetch require caller-local established-response deadlines",
+      "recovery material fetch must lock and revalidate grant boundary claim effect and signing state against in-flight substitution",
+      "real established network blackhole must fail closed under the caller-local deadline without unbounded synchronous remote cleanup"
     ],
     "native_assurance_panorama_extensions": [
       "durable live poll claim required for current-state candidacy",
@@ -92,8 +94,12 @@
       "grant validation requires the exact surviving effect digest",
       "claim alone leaves restored local state at R",
       "verified recovery material application produces the post-R business state and reconciliation flag atomically",
+      "recovery material fetch locks grant effect and boundary claim, holds signing state, and owner mutations are blocked during materialization",
+      "recovery material fetch revalidates complete claim grant effect authority binding before return",
       "recovery claim verify and material-fetch share asynchronous caller-local bounded transport",
-      "authenticated five-second recovery peer delay fails closed under sub-two-second local deadline",
+      "authenticated five-second cooperative recovery peer delay fails closed under sub-two-second local deadline",
+      "real established TCP response blackhole fails closed in the same local deadline domain",
+      "timeout path does not call synchronous remote cancel or disconnect and retires the one-shot SQL backend session",
       "target checkpoint signing key remains target-only",
       "stalled relocation verifier peers fail closed under caller-local deadlines",
       "grant-conflict injection preserves relocation atomic rollback",
@@ -161,6 +167,11 @@
     "claim_without_effect_application_leaves_restore_at_r": true,
     "local_reconciled_state_derived_from_verified_effect": true,
     "verified_effect_application_is_local_atomic_mutation": true,
+    "fetch_uses_consistent_locked_snapshot": true,
+    "fetch_locks_grant_boundary_claim_and_effect": true,
+    "fetch_holds_signing_state": true,
+    "fetch_revalidates_claim_grant_effect_binding": true,
+    "inflight_authority_substitution_blocked": true,
     "tampered_external_grant": "rejected without creating a recovery boundary claim",
     "baseline_instance_capability_origin": "each independent restore creates a fresh post-R instance id and 256-bit secret",
     "baseline_same_instance_retry": true,
@@ -185,12 +196,17 @@
     "pgdata_copy_alone_duplicates_recovery_authority": false,
     "claim_verify_fetch_use_async_local_deadline": true,
     "connect_timeout_is_only_connection_setup_bound": true,
-    "established_peer_blackhole_fails_closed_under_local_deadline": true,
+    "timeout_path_uses_synchronous_remote_cancel_or_disconnect": false,
+    "cooperative_stalled_peer_fails_closed_under_local_deadline": true,
+    "real_established_tcp_blackhole_exercised": true,
+    "real_blackhole_fails_closed_under_local_deadline": true,
     "recovery_delay_probe_remote_ms": 5000,
-    "recovery_anchor_local_deadline_observed_ms": 578,
+    "cooperative_delay_anchor_local_deadline_observed_ms": 573,
+    "real_blackhole_anchor_local_deadline_observed_ms": 517,
+    "timeout_backend_retirement_one_shot_session": true,
     "duplicate_restored_authority_admitted": false,
     "evidence_identity_mechanism_is_production_selection": false,
-    "production_requirement": "preserve genuinely non-shareable per-restored-instance authority, one winner per recovery boundary, authenticated surviving effect evidence, and bounded fail-closed cross-authority verification; exact workload identity KMS HSM TPM TEE secret-store and RPC mechanisms remain unselected"
+    "production_requirement": "preserve genuinely non-shareable per-restored-instance authority, one winner per recovery boundary, authenticated surviving effect evidence, consistent locked claim-grant-effect materialization, and bounded fail-closed cross-authority response plus independently bounded cleanup or equivalent session retirement; exact workload identity KMS HSM TPM TEE secret-store and RPC mechanisms remain unselected"
   },
   "fresh_restore_evidence": {
     "restore_topology": "new_timescale_container_and_new_postgresql_cluster",
@@ -252,13 +268,16 @@
     "interpretation": "mechanism-level bounded fitness only; production SLO retention cardinality sizing cost and topology remain OPEN-REL-020 C3"
   },
   "decision_recommendation": {
-    "tier1": "accept only with owner-controlled transactional authority, immutable canonical content, generation and dataset-revision history fencing, effect-bound boundary-single-winner recovery with restored-instance capability, same-path clone positive control, and bounded recovery RPC",
+    "tier1": "accept only with owner-controlled transactional authority, immutable canonical content, generation and dataset-revision history fencing, effect-bound boundary-single-winner recovery with restored-instance capability, same-path clone positive control, consistent locked recovery-material fetch, and real-blackhole bounded recovery RPC",
     "tier2": "accept only under mediated shared history, explicit privileged automation boundary, genuine fresh-cluster reconstruction, total typed canonicalization, target-only signing authority and bounded dual-authority activation",
     "rejected_assumptions": [
       "grant id is not the identity of a recovery boundary",
       "a locally recreated post-R receipt is not proof the surviving business effect was reconciled",
       "a recovery grant that is not bound to authenticated surviving effect evidence is insufficient",
+      "verify then unlocked reread is not a consistent recovery material fetch",
       "connect_timeout does not bound an established stalled recovery peer",
+      "a cooperative pg_sleep delay does not prove behavior under a real established network blackhole",
+      "timeout cleanup is not bounded merely because response polling is bounded",
       "same external credential does not identify a unique physical restore",
       "database-resident instance capability is not non-shareable across a post-enrollment PGDATA clone",
       "a fail-closed false clone result is not evidence unless the same path is positively proven operational",
@@ -267,6 +286,6 @@
       "PASSWORD NULL on LOGIN is not NOLOGIN",
       "same-cluster restore is not fresh role-topology evidence"
     ],
-    "reversibility": "Tier 2 stays behind the projection seam; any replacement must preserve canonical identity payload, owner currentness, exact history fencing, surviving effect-bound boundary-single-winner recovery, non-shareable restored-instance authority, bounded verification, target-only mint authority, exact activation binding, atomic authority transitions and tenant isolation"
+    "reversibility": "Tier 2 stays behind the projection seam; any replacement must preserve canonical identity payload, owner currentness, exact history fencing, surviving effect-bound boundary-single-winner recovery, non-shareable restored-instance authority, consistent claim-grant-effect materialization, bounded verification and cleanup/session retirement, target-only mint authority, exact activation binding, atomic authority transitions and tenant isolation"
   }
 }

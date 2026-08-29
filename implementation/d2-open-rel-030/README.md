@@ -28,15 +28,17 @@ It evaluates:
 - Recovery authorization is not a reusable bearer grant and a reusable external credential is not a restored-instance identity.
 - **One recovery event has one winner even when multiple valid grant IDs represent it.** Winner scope is the canonical governed recovery boundary, not `grant_id`.
 - **Recovery admission must authenticate what survived `(R,F]`, not merely who may recover.** Every grant is bound to an authenticated surviving effect digest, and local reconciliation is derived from applying verified recovery material.
+- Recovery material must be fetched from one consistent authority snapshot: lock grant, boundary claim and effect, hold signing state, then revalidate claim→grant→effect before returning material.
 - Claim alone cannot mark reconciliation complete and a locally recreated continuity receipt cannot admit recovery.
 - Independent restores and post-enrollment PGDATA copies must not duplicate the effective restored-instance authority.
 - A fail-closed clone negative is accepted as evidence only after the same clone proves its capability/helper/credential/transport path operational through a positive-control grant.
 - Recovery claim, verify and material-fetch calls require caller-local established-response deadlines; `connect_timeout` only bounds connection setup.
+- A cooperative server delay is insufficient deadline evidence by itself: an established authenticated TCP blackhole must also fail closed locally without synchronous remote cancel/cleanup extending the deadline path.
 - Target signing material originates/remains in target authority; verification does not imply mint capability.
 - Cross-authority activation requires explicit durable authority from both sides and target cannot self-promote.
 - A single cross-tenant leak rejects the candidate profile.
 - `OPEN-REL-020` retains production telemetry capacity/numeric ownership.
-- Evidence database versions, HMAC/SHA, `dblink`, LOGIN roles, capability mounts/stores and deadlines are reproducibility dependencies, not production selections.
+- Evidence database versions, HMAC/SHA, `dblink`, LOGIN roles, capability mounts/stores, one-shot session retirement and deadlines are reproducibility dependencies, not production selections.
 - `READY_FOR_MERGE != AUTHORIZED_TO_MERGE`.
 
 ## Tier 1 history authority
@@ -95,7 +97,7 @@ physical_pitr_recovery_main_boundary_single_claim=PASS value=1
 physical_pitr_recovery_single_winner_per_boundary_across_grant_ids=PASS
 ```
 
-### 3. Effect-bound local reconciliation
+### 3. Effect-bound, consistent local reconciliation
 
 A successful boundary claim does not mutate local business truth. Exact evidence first proves:
 
@@ -103,28 +105,43 @@ A successful boundary claim does not mutate local business truth. Exact evidence
 physical_pitr_claim_without_effect_application_stays_at_R=PASS value=state_at_R|false|0
 ```
 
-Only after the surviving authority verifies the boundary winner may `fetch_claimed_recovery_material(...)` return recovery material. The restored side independently recomputes the canonical effect digest and then atomically applies the authenticated post-R business state, receipt and successor authority.
+Only after the surviving authority verifies the boundary winner may `fetch_claimed_recovery_material(...)` return recovery material. That fetch locks the exact grant, canonical boundary claim and referenced effect, holds signing-key state and revalidates the complete authority/effect binding before returning. The restored side independently recomputes the canonical effect digest and then atomically applies the authenticated post-R business state, receipt and successor authority.
+
+The in-flight substitution negative is empirical: a test-only hold wrapper keeps the fetch locks live while separate owner writes try to mutate the grant, effect and boundary claim. Each mutation must block until `lock_timeout` rather than replacing the state being materialized.
 
 ```text
 physical_pitr_surviving_effect_source_state=PASS
 physical_pitr_surviving_effect_evidence_published=PASS
 physical_pitr_recovery_effect_digest_binding=PASS
+physical_pitr_recovery_fetch_locks_grant=PASS
+physical_pitr_recovery_fetch_locks_effect=PASS
+physical_pitr_recovery_fetch_locks_boundary_claim=PASS
+physical_pitr_recovery_fetch_consistent_locked_snapshot=PASS
+physical_pitr_recovery_fetch_revalidates_claim_grant_effect_binding=PASS
 physical_pitr_authenticated_effect_application=PASS value=true
 physical_pitr_reconciled_from_authenticated_surviving_effect=PASS
 physical_pitr_local_reconciled_state=PASS value=true
 ```
 
-### 4. Bounded recovery verifier transport
+### 4. Bounded recovery verifier transport and real blackhole
 
-Claim, verify and material-fetch all use the same local bounded asynchronous transport. `dblink_send_query` starts the established-session query; caller-side `dblink_is_busy` polling enforces a local deadline; expiry cancels/disconnects and returns uncertainty as fail-closed.
+Claim, verify and material-fetch all use the same local bounded asynchronous transport. `dblink_send_query` starts the established-session query; caller-side `dblink_is_busy` polling enforces a local deadline.
 
-An authenticated five-second remote delay is terminated locally around 578 ms in the anchor run:
+On timeout/uncertainty the C2 helper returns fail-closed without synchronous `dblink_cancel_query` or synchronous remote disconnect on that deadline path. The evidence call is executed from a one-shot SQL backend/session, so that local session is retired and closes its abandoned connection. This mechanism is deliberately evidence-only; production transport must provide independently bounded cancellation/cleanup or equivalent session retirement.
+
+The anchor requires two distinct negatives:
 
 ```text
 physical_pitr_recovery_helpers_use_bounded_transport=PASS
+physical_pitr_recovery_deadline_path_has_no_synchronous_cancel=PASS
 physical_pitr_recovery_stalled_peer_fails_closed=PASS
-physical_pitr_recovery_local_deadline=PASS elapsed_ms=578
+physical_pitr_recovery_local_deadline=PASS elapsed_ms=573
+physical_pitr_recovery_real_blackhole_fails_closed=PASS
+physical_pitr_recovery_real_blackhole_local_deadline=PASS elapsed_ms=517
+physical_pitr_recovery_timeout_backend_retirement=PASS one_shot_sql_session=true
 ```
+
+The second vector is a real established-session network blackhole: the remote authenticated query is observed active, then server→client TCP responses are dropped. An outer five-second watchdog protects only the harness from hanging if the local guarantee regresses.
 
 ### 5. Restored-instance / post-enrollment clone authority
 
@@ -152,27 +169,29 @@ Relocation locks source placement before `F`, requires exact canonical source↔
 
 ```text
 HEAD
-6f46c6700855207ad85fc206e258da00ce896c8b
+b162ff5ace52cee09610ebcff2e8d142a4822160
 
-JLMIRROR Deterministic Assurance #2207
-run id 33274303103
+JLMIRROR Deterministic Assurance #2211
+run id 33275135337
 SUCCESS
 
-JLMIRROR OPEN-REL-030 Conformance #171
-run id 33274303155
+JLMIRROR OPEN-REL-030 Conformance #173
+run id 33275135328
 SUCCESS
 ```
 
-The anchor includes all prior history, clone positive-control, Timescale, canonicalization and relocation vectors plus recovery classes #40–#42. It becomes provenance after the governance mutation; the exact final documentation HEAD must rerun both workflows.
+The anchor includes all prior history, clone positive-control, Timescale, canonicalization and relocation vectors plus recovery classes #40–#44. It becomes provenance after the governance mutation; the exact final documentation HEAD must rerun both workflows.
 
 ## Governance state
 
-Material finding classes closed by the evidence program: **42**.
+Material finding classes closed by the evidence program: **44**.
 
 Latest recovery classes:
 
 - **#40:** one winner per canonical recovery boundary across multiple grant IDs;
 - **#41:** authenticated surviving `(R,F]` effect evidence and local reconciliation derived from its verified application;
-- **#42:** caller-local bounded response semantics for physical-recovery claim/verify/material-fetch.
+- **#42:** caller-local bounded established-response semantics for physical-recovery claim/verify/material-fetch;
+- **#43:** consistent locked recovery-material fetch with complete claim→grant→effect revalidation against in-flight substitution;
+- **#44:** real established TCP-blackhole proof plus timeout-path session retirement without synchronous remote cleanup.
 
 Evidence completion does not accept `OPEN-REL-030`, authorize Wave 4, select production deployment/authentication/identity/RPC topology, select production capacity numerics, or authorize merge. Exact-final-HEAD CI, fresh adversarial Codex review, exact-head Native Assurance and explicit Track B acceptance remain separate gates.

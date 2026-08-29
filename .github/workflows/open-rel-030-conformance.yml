@@ -70,7 +70,7 @@ jobs:
           assert len(manifest['completed_mandatory_vectors']) == 8
           assert manifest['mandatory_vectors_not_yet_claimed_complete'] == []
           assert manifest['tier2_profile_classification']['mediated_shared_history_columnstore_cagg'] == 'conformant_candidate_recommended_for_c2_acceptance'
-          assert manifest['review_provenance']['material_finding_classes_documented_in_decision_review'] == 42
+          assert manifest['review_provenance']['material_finding_classes_documented_in_decision_review'] == 44
 
           recovery = manifest['recovery_evidence']
 
@@ -108,8 +108,21 @@ jobs:
           assert recovery['local_self_minted_receipt_admits'] is False
           assert recovery['claim_verify_fetch_use_async_local_deadline'] is True
           assert recovery['connect_timeout_is_only_connection_setup_bound'] is True
-          assert recovery['established_peer_blackhole_fails_closed_under_local_deadline'] is True
           assert recovery['duplicate_restored_authority_admitted'] is False
+
+          # Consistent recovery material fetch guards (#43).
+          assert recovery['fetch_uses_consistent_locked_snapshot'] is True
+          assert recovery['fetch_locks_grant_boundary_claim_and_effect'] is True
+          assert recovery['fetch_holds_signing_state'] is True
+          assert recovery['fetch_revalidates_claim_grant_effect_binding'] is True
+          assert recovery['inflight_authority_substitution_blocked'] is True
+
+          # Real established-blackhole / cleanup-bound guards (#44).
+          assert recovery['timeout_path_uses_synchronous_remote_cancel_or_disconnect'] is False
+          assert recovery['cooperative_stalled_peer_fails_closed_under_local_deadline'] is True
+          assert recovery['real_established_tcp_blackhole_exercised'] is True
+          assert recovery['real_blackhole_fails_closed_under_local_deadline'] is True
+          assert recovery['timeout_backend_retirement_one_shot_session'] is True
 
           runner = Path('tools/open_rel_030/run_conformance_extended.sh').read_text()
           history_modules = sorted(Path('sql/d2-open-rel-030').glob('00[4-9]_history_*.sql'))
@@ -131,7 +144,16 @@ jobs:
               'physical_pitr_recovery_cross_grant_boundary_single_winner_race=PASS',
               'physical_pitr_recovery_single_winner_per_boundary_across_grant_ids=PASS',
               'physical_pitr_recovery_helpers_use_bounded_transport=PASS',
+              'physical_pitr_recovery_deadline_path_has_no_synchronous_cancel=PASS',
               'physical_pitr_recovery_stalled_peer_fails_closed',
+              'physical_pitr_recovery_real_blackhole_fails_closed',
+              'physical_pitr_recovery_real_blackhole_local_deadline',
+              'physical_pitr_recovery_timeout_backend_retirement=PASS',
+              'physical_pitr_recovery_fetch_locks_grant=PASS',
+              'physical_pitr_recovery_fetch_locks_effect=PASS',
+              'physical_pitr_recovery_fetch_locks_boundary_claim=PASS',
+              'physical_pitr_recovery_fetch_consistent_locked_snapshot=PASS',
+              'physical_pitr_recovery_fetch_revalidates_claim_grant_effect_binding=PASS',
               'physical_pitr_claim_without_effect_application_stays_at_R',
               'physical_pitr_authenticated_effect_application',
               'physical_pitr_reconciled_from_authenticated_surviving_effect',
@@ -142,20 +164,25 @@ jobs:
           assert 'boundary_fingerprint' in pitr
           assert 'recovery_effect' in pitr
           assert 'fetch_claimed_recovery_material' in pitr
+          assert 'fetch_claimed_recovery_material_hold' in pitr
           assert 'dblink_send_query' in pitr
           assert 'dblink_is_busy' in pitr
-          assert 'dblink_cancel_query' in pitr
+          assert 'timeout 5s docker exec' in pitr
+          assert 'iptables -I' in pitr
+          assert 'dblink_cancel_query(v_name)' not in pitr
 
           print(
               'evidence_manifest_guard=PASS '
               'state=complete_ready_for_decision_review '
               'acceptance=not_granted '
-              'material_findings=42 '
+              'material_findings=44 '
               'post_enrollment_clone_guard=true '
               'clone_positive_control_guard=true '
               'recovery_boundary_single_winner_guard=true '
               'surviving_effect_guard=true '
               'recovery_local_deadline_guard=true '
+              'recovery_fetch_consistency_guard=true '
+              'real_blackhole_guard=true '
               f'history_modules={len(history_modules)} '
               f'critical_vectors={len(required_vectors)}'
           )

@@ -27,43 +27,44 @@ Subject to exact-final-HEAD CI, fresh adversarial review, clean Native Assurance
 13. require surviving recovery-grant consumption to be atomic single-winner authority;
 14. treat authenticated principal/session identity as necessary but insufficient for idempotent recovery retry when credentials can be copied across restores;
 15. bind recovery admission to authenticated principal plus restored-instance authority whose effective proof is outside the physical database clone domain; preserve same-instance retry while rejecting both independently restored rivals and a PGDATA copy taken after enrollment even when the copy reuses the exact same external credential and database-visible instance id;
-16. keep grant facts and HMAC verification inside surviving authority; recovery principals must not read grant state directly or provide signed grant facts/principal identity as authority;
-17. require deterministic versioned self-delimiting structured bytes before hash/MAC/signature;
-18. require canonical typed values to be total/injective over the full accepted domain: PostgreSQL `timestamptz` preserves UTC time, microseconds, AD/BC and exact `±infinity`; unconstrained `numeric` preserves normalized finite values and exact `NaN`, `Infinity`, `-Infinity`;
-19. select TimescaleDB as Tier 2 historical projection only under the mediated shared-history profile proven by this spike;
-20. classify `ts_automation_owner` as LOGIN cross-tenant privileged infrastructure and require production admission controls to exclude tenant/application use;
-21. reject direct pooled RLS assumptions for Timescale columnstore/CAGG on the evaluated profile;
-22. require genuine fresh-cluster reconstruction of database-global role topology;
-23. require source relocation placement authority to be locked before deriving `F`;
-24. require target-owned authenticated sealed canonical-payload checkpoints before Tier 1 can authorize target placement;
-25. require target checkpoint signing/mint authority exclusively on the target side and effective signing key generation inside target authority;
-26. require Tier 1 verifier capability to exclude target signing key/equivalent mint capability;
-27. require cross-authority verifier secrets to remain restricted authority-owned state, not embedded in function source;
-28. require cross-authority verification to be bounded/fail-closed at both connection establishment and established response, outside local authority-lock windows;
-29. require Tier 1 successor placement and exact durable activation grant to commit atomically, bound to tenant, `F`, checkpoint id/generation, target attestation and successor placement version;
-30. require target `sealed → activated` to verify that exact committed Tier 1 grant; target automation cannot self-promote;
-31. reject target data above `F` before activation unless explicitly covered by target lifecycle;
-32. preserve `OPEN-REL-020` as owner of production capacity/SLO/retention/cardinality/cost numerics;
-33. treat database versions, image digests, evidence crypto, recovery/verifier LOGIN mechanisms, evidence-only external-to-PGDATA capability mount, verifier transport, capability-store layout, deadlines and concrete canonical encoding as reproducibility dependencies rather than immutable production selections.
+16. require every clone-rejection negative to have a same-path positive control: the physical clone must first prove its mounted capability, helper, external credential and surviving-authority transport are operational on a separate grant, with exact clone-local fingerprint binding, before `false` on the winner grant is accepted as authority evidence;
+17. keep grant facts and HMAC verification inside surviving authority; recovery principals must not read grant state directly or provide signed grant facts/principal identity as authority;
+18. require deterministic versioned self-delimiting structured bytes before hash/MAC/signature;
+19. require canonical typed values to be total/injective over the full accepted domain: PostgreSQL `timestamptz` preserves UTC time, microseconds, AD/BC and exact `±infinity`; unconstrained `numeric` preserves normalized finite values and exact `NaN`, `Infinity`, `-Infinity`;
+20. select TimescaleDB as Tier 2 historical projection only under the mediated shared-history profile proven by this spike;
+21. classify `ts_automation_owner` as LOGIN cross-tenant privileged infrastructure and require production admission controls to exclude tenant/application use;
+22. reject direct pooled RLS assumptions for Timescale columnstore/CAGG on the evaluated profile;
+23. require genuine fresh-cluster reconstruction of database-global role topology;
+24. require source relocation placement authority to be locked before deriving `F`;
+25. require target-owned authenticated sealed canonical-payload checkpoints before Tier 1 can authorize target placement;
+26. require target checkpoint signing/mint authority exclusively on the target side and effective signing key generation inside target authority;
+27. require Tier 1 verifier capability to exclude target signing key/equivalent mint capability;
+28. require cross-authority verifier secrets to remain restricted authority-owned state, not embedded in function source;
+29. require cross-authority verification to be bounded/fail-closed at both connection establishment and established response, outside local authority-lock windows;
+30. require Tier 1 successor placement and exact durable activation grant to commit atomically, bound to tenant, `F`, checkpoint id/generation, target attestation and successor placement version;
+31. require target `sealed → activated` to verify that exact committed Tier 1 grant; target automation cannot self-promote;
+32. reject target data above `F` before activation unless explicitly covered by target lifecycle;
+33. preserve `OPEN-REL-020` as owner of production capacity/SLO/retention/cardinality/cost numerics;
+34. treat database versions, image digests, evidence crypto, recovery/verifier LOGIN mechanisms, evidence-only external-to-PGDATA capability mount, verifier transport, capability-store layout, deadlines and concrete canonical encoding as reproducibility dependencies rather than immutable production selections.
 
 ## Exact empirical anchor before reviewer-document mutation
 
 ```text
 HEAD
-c9207f8bbd3c42ec0428987a2580b7f1bfb7e06d
+bd311cf107d27ca9bbb00b130c0bf0389e0deecd
 
 JLMIRROR Deterministic Assurance
-run #2181
-run id 33272308047
+run #2195
+run id 33272808511
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #158
-run id 33272308006
+run #165
+run id 33272808519
 SUCCESS
 ```
 
-This anchor executes all five history hardening modules (`004–008`), preserves visibility-shift conflict closure, executes both physical PITR recovery vectors including the post-enrollment PGDATA-clone negative, and preserves all prior Tier1/Timescale/relocation/canonicalization vectors. It becomes provenance after reviewer-document mutation; exact final package HEAD must independently rerun both gates.
+This anchor executes all five history hardening modules (`004–008`), preserves visibility-shift conflict closure, executes both physical PITR recovery vectors, proves the post-enrollment PGDATA-clone negative, and independently proves the clone's own capability/helper/network path on a separate positive-control grant before interpreting the negative. It preserves all prior Tier1/Timescale/relocation/canonicalization vectors. It becomes provenance after reviewer-document mutation; exact final package HEAD must independently rerun both gates.
 
 ## Tier 1 acceptance and owner-current history authority
 
@@ -79,7 +80,7 @@ The final `sweep(...)` compares an already accepted stable identity against owne
 
 The dedicated vector begins with accepted/provider content at 11:58, finalizes coverage, then performs an owner correction to the same stable identity with `observed_at=12:01`, `became_visible_at=12:30` while the current snapshot remains 12:00, and changed numeric content. Dataset revision invalidation fires, a fresh 11:00..12:00 sweep rejects the immutable-content conflict before a new run can be minted, and accepted canonical content remains unchanged.
 
-Exact #158 preserves:
+Exact #165 preserves:
 
 ```text
 history_modules=5
@@ -105,18 +106,39 @@ A separate surviving control PostgreSQL, excluded from source backup/restore, ow
 
 Authentication principal alone is insufficient because two restored authorities can reuse one role/credential and therefore share `session_user`. The baseline physical vector starts two independent restores from the same committed R backup, generates distinct post-R local capabilities, deliberately reuses the same recovery role/password and proves the independently restored rival is rejected while same-instance retry converges.
 
-### Post-enrollment physical-clone hardening
+### Post-enrollment physical-clone hardening — class #38
 
-Native Assurance later found a stronger P1 class: a database-resident `instance_secret` is copyable if an operator or failure mode snapshots PGDATA **after** the capability row exists. Such a copy inherits the winning `instance_id + instance_secret` and can be misclassified by surviving authority as the same-instance retry.
+Native Assurance found a stronger P1 class: a database-resident `instance_secret` is copyable if an operator or failure mode snapshots PGDATA **after** the capability row exists. Such a copy inherits the winning `instance_id + instance_secret` and can be misclassified by surviving authority as the same-instance retry.
 
-The final C2 package therefore adds `physical_pitr_post_enrollment_clone.sh`. The vector enrolls the primary database identity, keeps the effective proof outside PGDATA in an evidence-only per-instance mount, then stops PostgreSQL and physically copies PGDATA. Primary and clone consequently have the exact same database-visible instance id and helper code and deliberately reuse the exact same external recovery role/password. Only the external-to-PGDATA capability differs. Surviving authority binds the grant to authenticated session principal + copied database id + fingerprint of that external proof.
+The C2 package therefore adds `physical_pitr_post_enrollment_clone.sh`. The vector enrolls the primary database identity, keeps the effective proof outside PGDATA in an evidence-only per-instance mount, then stops PostgreSQL and physically copies PGDATA. Primary and clone consequently have the exact same database-visible instance id and helper code and deliberately reuse the exact same external recovery role/password. Only the external-to-PGDATA capability differs. Surviving authority binds the grant to authenticated session principal + copied database id + fingerprint of that external proof.
 
-The pre-documentation exact #158 proves:
+### Clone positive-control hardening — class #39
+
+A later Native Assurance pass found a P2 evidence-quality gap: `pitr_claim_external(...)` and `pitr_verify_external(...)` fail closed and catch errors as `false`, so the original clone-rejection negative could pass if the clone mount, helper or `dblink` path was broken rather than because the surviving authority rejected a different capability.
+
+The final vector now requires a positive control before the governed negative. The same physical clone, with the same copied database-visible identity, same helper code, same external role/password and same mounted clone capability:
+
+- derives a domain-separated fingerprint locally from the exact mounted proof;
+- successfully claims a separate probe grant through the same helper/transport path;
+- successfully verifies that probe grant;
+- is recorded by surviving authority under the expected authenticated principal and copied instance id;
+- must have the surviving-authority stored fingerprint exactly match the clone-local fingerprint;
+- only then is rejection against the primary-winning grant interpreted as capability-binding enforcement;
+- the primary-winning grant must likewise bind to the primary-local fingerprint.
+
+Exact #165 proves:
 
 ```text
 physical_pitr_post_enrollment_capability_outside_pgdata=PASS
 physical_pitr_post_enrollment_pgdata_identity_copied=PASS
+physical_pitr_post_enrollment_local_capability_fingerprints_present=PASS
 physical_pitr_post_enrollment_external_capability_distinct=PASS
+physical_pitr_post_enrollment_clone_probe_claimed=PASS
+physical_pitr_post_enrollment_clone_probe_verify=PASS
+physical_pitr_post_enrollment_clone_probe_principal_binding=PASS
+physical_pitr_post_enrollment_clone_probe_database_id_binding=PASS
+physical_pitr_post_enrollment_clone_probe_capability_binding=PASS
+physical_pitr_post_enrollment_clone_capability_path_operational=PASS
 physical_pitr_post_enrollment_primary_claimed=PASS
 physical_pitr_post_enrollment_same_instance_retry=PASS
 physical_pitr_post_enrollment_pgdata_clone_claim_rejected=PASS
@@ -124,11 +146,12 @@ physical_pitr_post_enrollment_primary_verify=PASS
 physical_pitr_post_enrollment_pgdata_clone_verify_rejected=PASS
 physical_pitr_post_enrollment_authenticated_principal_binding=PASS
 physical_pitr_post_enrollment_copied_database_id_binding=PASS
+physical_pitr_post_enrollment_primary_capability_binding=PASS
 physical_pitr_post_enrollment_pgdata_clone_cannot_duplicate_authority=PASS
 physical_pitr_post_enrollment_single_winner_external_capability=PASS
 ```
 
-This closes the exact evidence gap without pretending the laboratory mount is a production identity system. Production must preserve the stronger property: restored-instance authority must be non-shareable across concurrently live physical authorities and must not be recoverable merely by copying reusable credentials or PostgreSQL data state. TPM/TEE/KMS-backed non-exportable material, platform workload identity or another mechanism remains an explicitly unselected production decision.
+This closes both the authority gap and the false-negative evidence gap without pretending the laboratory mount is a production identity system. Production must preserve the stronger property: restored-instance authority must be non-shareable across concurrently live physical authorities and must not be recoverable merely by copying reusable credentials or PostgreSQL data state. TPM/TEE/KMS-backed non-exportable material, platform workload identity or another mechanism remains an explicitly unselected production decision.
 
 ## Timescale mediated profile
 
@@ -154,7 +177,7 @@ Tier 1 verifies exact target checkpoint, then commits successor placement plus d
 
 ## Material finding classes closed by D2
 
-The evidence program has repaired **38 material classes**, with panoramic review after each repair:
+The evidence program has repaired **39 material classes**, with panoramic review after each repair:
 
 1. conflicting observation content under stable Tier 1 acceptance identity;
 2. caller-asserted source/poll authority;
@@ -193,7 +216,8 @@ The evidence program has repaired **38 material classes**, with panoramic review
 35. numeric `NaN`/`Infinity`/`-Infinity` lacking total cross-store canonicalization;
 36. accepted stable-identity conflict hidden by owner correction moving `became_visible_at` beyond current snapshot;
 37. duplicate independent physical restore being accepted as same-principal retry when external recovery credential is copied/reused;
-38. post-enrollment physical PGDATA clone inheriting database-resident instance capability and being accepted as same-instance retry.
+38. post-enrollment physical PGDATA clone inheriting database-resident instance capability and being accepted as same-instance retry;
+39. post-enrollment clone rejection being able to false-pass because fail-closed helper/transport failure was indistinguishable from surviving-authority capability rejection.
 
 ## What acceptance would and would not mean
 
@@ -205,8 +229,8 @@ Acceptance would not freeze production PostgreSQL/Timescale versions, KMS/HSM to
 
 ```text
 Evidence completeness        COMPLETE
-Executable empirical anchor  c9207f8bbd3c42ec0428987a2580b7f1bfb7e06d / #2181 / #158
-Material finding classes     38
+Executable empirical anchor  bd311cf107d27ca9bbb00b130c0bf0389e0deecd / #2195 / #165
+Material finding classes     39
 Exact-final documentation CI REQUIRED AFTER THIS DOC MUTATION
 Fresh Codex exact-head        REQUIRED
 Native Assurance exact-head   REQUIRED AGAIN

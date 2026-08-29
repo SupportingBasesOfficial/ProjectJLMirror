@@ -15,6 +15,7 @@ for module in \
   tenant_relocation_tier1.sh \
   tenant_relocation_tier2.sh \
   tenant_relocation_verifier_hardening.sh \
+  tenant_relocation_key_provenance_tests.sh \
   tenant_relocation_tier1_atomic.sh \
   tenant_relocation_atomicity_tests.sh \
   tenant_relocation_tests.sh
@@ -34,6 +35,8 @@ unset attestation_key
 source "$ROOT/tenant_relocation_tier2.sh"
 # shellcheck source=/dev/null
 source "$ROOT/tenant_relocation_verifier_hardening.sh"
+# shellcheck source=/dev/null
+source "$ROOT/tenant_relocation_key_provenance_tests.sh"
 # shellcheck source=/dev/null
 source "$ROOT/tenant_relocation_tier1_atomic.sh"
 # shellcheck source=/dev/null

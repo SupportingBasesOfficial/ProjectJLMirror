@@ -90,6 +90,21 @@ psql_in "$primary_container" "
   VALUES(true,gen_random_uuid());
   REVOKE ALL ON pitr_instance_identity FROM PUBLIC;
 
+  CREATE OR REPLACE FUNCTION pitr_local_instance_fingerprint()
+  RETURNS text LANGUAGE plpgsql STRICT SECURITY DEFINER
+  SET search_path=pg_catalog,public
+  AS \$\$
+  DECLARE v_secret text;
+  BEGIN
+    v_secret := btrim(pg_catalog.pg_read_file('$secret_path'));
+    IF v_secret = '' THEN RAISE EXCEPTION 'empty instance capability'; END IF;
+    RETURN encode(public.digest(
+      convert_to('open-rel-030-postclone-instance-v1:' || v_secret,'UTF8'),
+      'sha256'
+    ),'hex');
+  END;
+  \$\$;
+
   CREATE OR REPLACE FUNCTION pitr_claim_external(p_conn text,p_grant_id text)
   RETURNS boolean LANGUAGE plpgsql STRICT SECURITY DEFINER
   SET search_path=pg_catalog,public
@@ -138,6 +153,7 @@ psql_in "$primary_container" "
   END;
   \$\$;
 
+  REVOKE ALL ON FUNCTION pitr_local_instance_fingerprint() FROM PUBLIC;
   REVOKE ALL ON FUNCTION pitr_claim_external(text,text) FROM PUBLIC;
   REVOKE ALL ON FUNCTION pitr_verify_external(text,text) FROM PUBLIC;
 " >/dev/null
@@ -181,9 +197,18 @@ wait_tcp "$clone_container"
 clone_instance_id="$(psql_in "$clone_container" "SELECT instance_id::text FROM pitr_instance_identity WHERE singleton;")"
 assert_exact "physical_pitr_post_enrollment_pgdata_identity_copied" "$primary_instance_id" "$clone_instance_id"
 
-primary_secret_fp="$(printf '%s' "$primary_secret" | sha256sum | awk '{print $1}')"
-clone_secret_fp="$(printf '%s' "$clone_secret" | sha256sum | awk '{print $1}')"
-[[ "$primary_secret_fp" != "$clone_secret_fp" ]] || { echo "external instance capability fingerprints collided" >&2; exit 1; }
+# Derive only domain-separated fingerprints inside each physical PostgreSQL
+# authority. This proves the two external mounts are usable and distinct without
+# exporting their secrets or trusting a controller-side reimplementation.
+primary_local_fp="$(psql_in "$primary_container" "SELECT pitr_local_instance_fingerprint();")"
+clone_local_fp="$(psql_in "$clone_container" "SELECT pitr_local_instance_fingerprint();")"
+[[ -n "$primary_local_fp" && -n "$clone_local_fp" ]] || {
+  echo "missing local instance capability fingerprint" >&2; exit 1;
+}
+[[ "$primary_local_fp" != "$clone_local_fp" ]] || {
+  echo "post-enrollment physical copies share effective capability fingerprint" >&2; exit 1;
+}
+printf '%s\n' 'physical_pitr_post_enrollment_local_capability_fingerprints_present=PASS'
 printf '%s\n' 'physical_pitr_post_enrollment_external_capability_distinct=PASS'
 
 # Surviving external authority. Both physical copies intentionally authenticate
@@ -292,7 +317,8 @@ shared_conn="hostaddr=$control_ip port=5432 dbname=jlmirror user=$shared_role pa
 # Positive control for the clone path. The negative test below is meaningful
 # only if this exact clone can read its mounted proof, authenticate with the
 # shared external credential, reach the surviving authority and bind/verify a
-# separate grant. The stored fingerprint must equal the clone capability.
+# separate grant. The stored fingerprint must equal the fingerprint derived by
+# the clone itself from the exact mounted proof it presents.
 assert_exact "physical_pitr_post_enrollment_clone_probe_claimed" "true" \
   "$(psql_in "$clone_container" "SELECT pitr_claim_external('$shared_conn','grant-post-enrollment-clone-probe')::text;")"
 assert_exact "physical_pitr_post_enrollment_clone_probe_verify" "true" \
@@ -302,10 +328,9 @@ clone_probe_principal="${clone_probe_binding%%|*}"
 clone_probe_remaining="${clone_probe_binding#*|}"
 clone_probe_id="${clone_probe_remaining%%|*}"
 clone_probe_fp="${clone_probe_remaining#*|}"
-expected_clone_probe_fp="$(psql_in "$control_container" "SELECT pitr_postclone_evidence.instance_fingerprint('$clone_secret');")"
 assert_exact "physical_pitr_post_enrollment_clone_probe_principal_binding" "$shared_role" "$clone_probe_principal"
 assert_exact "physical_pitr_post_enrollment_clone_probe_database_id_binding" "$clone_instance_id" "$clone_probe_id"
-assert_exact "physical_pitr_post_enrollment_clone_probe_capability_binding" "$expected_clone_probe_fp" "$clone_probe_fp"
+assert_exact "physical_pitr_post_enrollment_clone_probe_capability_binding" "$clone_local_fp" "$clone_probe_fp"
 printf '%s\n' 'physical_pitr_post_enrollment_clone_capability_path_operational=PASS'
 
 # Main authority negative. The primary claims the governed grant. The clone is
@@ -329,7 +354,7 @@ claimed_id="${remaining%%|*}"
 claimed_fp="${remaining#*|}"
 assert_exact "physical_pitr_post_enrollment_authenticated_principal_binding" "$shared_role" "$claimed_principal"
 assert_exact "physical_pitr_post_enrollment_copied_database_id_binding" "$primary_instance_id" "$claimed_id"
-[[ -n "$claimed_fp" ]] || { echo "missing post-enrollment claimed fingerprint" >&2; exit 1; }
+assert_exact "physical_pitr_post_enrollment_primary_capability_binding" "$primary_local_fp" "$claimed_fp"
 
 # The clone copied the same PGDATA identity and reused the same external DB
 # credential, its own capability path was positively proven operational, yet it
@@ -338,4 +363,4 @@ assert_exact "physical_pitr_post_enrollment_copied_database_id_binding" "$primar
 printf '%s\n' 'physical_pitr_post_enrollment_pgdata_clone_cannot_duplicate_authority=PASS'
 printf '%s\n' 'physical_pitr_post_enrollment_single_winner_external_capability=PASS'
 
-unset primary_secret clone_secret shared_password shared_conn expected_clone_probe_fp
+unset primary_secret clone_secret shared_password shared_conn primary_local_fp clone_local_fp

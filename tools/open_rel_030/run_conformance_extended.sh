@@ -94,6 +94,12 @@ done
 # authority. This must pass before the restored authority may be admitted.
 bash tools/open_rel_030/physical_pitr.sh "$PG_CONTAINER" "$PG_IMAGE"
 
+# A second physical vector snapshots PGDATA only after the restored identity has
+# been enrolled. The copy inherits the exact database identity and reuses the
+# exact same external credential, but must not inherit effective instance
+# authority merely by copying PGDATA.
+bash tools/open_rel_030/physical_pitr_post_enrollment_clone.sh "$PG_CONTAINER" "$PG_IMAGE"
+
 # ---------------------------------------------------------------------------
 # Tier 2 exact safe-profile jobs/capacity/fresh-cluster restore vectors.
 # ---------------------------------------------------------------------------

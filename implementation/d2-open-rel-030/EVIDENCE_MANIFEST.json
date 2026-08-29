@@ -19,24 +19,24 @@
       "product": "PostgreSQL",
       "evaluation_version": "17.11-alpine",
       "image": "postgres@sha256:5d61573b31c206ae538c85893edeb6e320e1a9ffd838c0f9dca927fb6f765fa4",
-      "purpose": "real multi-connection transactional acceptance, owner authority, ambiguity, owner-derived history currentness, physical PITR and surviving-authority recovery evidence"
+      "purpose": "real multi-connection transactional acceptance, owner authority, ambiguity, owner-derived history currentness, physical PITR, surviving-authority recovery evidence and Tier 1 relocation activation authority"
     },
     "tier2_timescale": {
       "product": "TimescaleDB",
       "evaluation_version": "2.29.2-pg17",
       "image": "timescale/timescaledb@sha256:bc8527e62f70f0766b29515077965025872fabb5349db421565f69ee273baf2d",
-      "purpose": "candidate tenant isolation, background jobs, fresh-cluster restore, authenticated relocation checkpoint/freeze and bounded capacity falsification"
+      "purpose": "candidate tenant isolation, background jobs, fresh-cluster restore, target-only checkpoint signing/freeze authority, cross-authority activation verification and bounded capacity falsification"
     }
   },
   "classification_basis": {
-    "exact_empirical_head_before_reviewer_documentation": "3ffc96073b54fe7a8b5d002523733947ee59ba57",
-    "deterministic_assurance_run_number": 2012,
-    "deterministic_assurance_run_id": 33208029855,
-    "open_rel_030_conformance_run_number": 74,
-    "open_rel_030_conformance_run_id": 33208029866,
+    "exact_empirical_head_before_reviewer_documentation": "e082cca72c13c725b0ffa837693ba73eb92ceb7e",
+    "deterministic_assurance_run_number": 2034,
+    "deterministic_assurance_run_id": 33223301992,
+    "open_rel_030_conformance_run_number": 85,
+    "open_rel_030_conformance_run_id": 33223301930,
     "result": "success",
     "final_package_gate_requirement": "The exact final package HEAD, including reviewer documentation, must independently rerun both gates before review or acceptance.",
-    "note": "The executable anchor proves owner-controlled source/poll authority; owner-derived history finality/currentness; surviving external authenticated PITR recovery grants; genuine fresh-cluster Timescale reconstruction; lock-before-F source fencing; target-owned authenticated sealed checkpoints; unambiguous self-delimiting canonical observation equivalence; unambiguous self-delimiting structured HMAC payloads for both recovery grants and target checkpoints; no uncheckpointed pre-activation target history; and seal-vs-DML serialization."
+    "note": "The executable anchor proves owner-controlled source/poll authority; owner-derived history finality/currentness; surviving external authenticated PITR recovery grants; genuine fresh-cluster Timescale reconstruction; lock-before-F source fencing; target-owned authenticated sealed checkpoints; unambiguous self-delimiting canonical observation and structured HMAC representations; target-only checkpoint signing authority; Tier 1 verification without mint capability; durable Tier 1 activation grants; target promotion only after exact grant verification; no uncheckpointed pre-activation target history; seal-vs-DML serialization; and atomic rollback of the Tier 1 placement+grant commit when a grant conflict is injected."
   },
   "review_provenance": {
     "material_findings_closed_by_current_mechanism": [
@@ -51,7 +51,10 @@
       "history finality/currentness must be derived from durable owner/provider authority rather than worker-supplied timestamps",
       "target rows above F before activation must be rejected or included in checkpoint authority",
       "canonical relocation serialization must be self-delimiting so unrestricted text cannot collide with field or row framing",
-      "structured cryptographic evidence messages must be self-delimiting before HMAC; cryptographic integrity cannot repair ambiguous field framing"
+      "structured cryptographic evidence messages must be self-delimiting before HMAC; cryptographic integrity cannot repair ambiguous field framing",
+      "Tier 1 checkpoint verification must not hold the target signing key or equivalent mint capability",
+      "target automation must not transition sealed to activated before exact Tier 1 cutover authority exists",
+      "Tier 1 placement activation and durable activation-grant creation must be all-or-nothing under mid-commit failure"
     ],
     "native_assurance_panorama_extensions": [
       "durable live poll claim required for current-state candidacy",
@@ -59,6 +62,13 @@
       "recovery grant stored as structured typed fields and independently read without shell delimiter parsing",
       "recovery receipt contains a literal pipe in the positive vector without changing authority boundaries",
       "target checkpoint HMAC uses the same cross-store canonical field encoding as its digest",
+      "target checkpoint signing key exists only in target authority and Tier 1 contains no target signing-key relation",
+      "target verifier principal cannot read target signing key and Tier 1 verifier principal cannot read activation-grant or placement tables",
+      "Tier 1 forged checkpoint attestation is rejected by target authority",
+      "target self-activation before Tier 1 grant is rejected and sealed future-write protection remains active",
+      "Tier 1 activation grant binds tenant, F, checkpoint id/generation, target attestation and successor placement version",
+      "cross-authority verification is bounded and performed before local authority locks; post-verification work is local transactional/CAS only",
+      "grant-conflict fault injection proves placement rolls back and target remains sealed",
       "seal serializes against target DML before measuring checkpoint set",
       "freeze protects cross-tenant identity and the full sealed pre-activation target state",
       "activated target history through F remains immutable while only post-F append is eligible",
@@ -130,7 +140,7 @@
   "relocation_evidence": {
     "source_fence_derivation": "placement authority locked before F is derived",
     "source_inflight_acceptance_race": "acceptance holding placement lock commits before fence and is included in F",
-    "fence_ordinal": 3,
+    "fence_ordinal": 4,
     "max_only_completeness": "explicitly_rejected",
     "canonical_payload_fields": [
       "accepted_ordinal",
@@ -145,29 +155,53 @@
     "cross_store_encoding": "PostgreSQL and Timescale produce identical canonical_field output for text containing literal 0x1f/0x1e control bytes",
     "canonical_payload_fingerprint": "SHA-256 over deterministic self-delimiting canonical observation serialization",
     "checkpoint_attestation_payload": "domain, tenant, F, checkpoint id, generation, sealed flag, target count, target digest and target max are independently canonical_field encoded before HMAC",
-    "checkpoint_attestation_cross_store": "PostgreSQL verifier and Timescale issuer produce identical canonical_checkpoint_payload for the same facts",
+    "checkpoint_attestation_cross_store": "Tier 1 canonicalizer and Timescale issuer produce identical canonical_checkpoint_payload for the same facts",
     "target_checkpoint_owner": "NOLOGIN ts_owner",
     "projection_writer": "ts_automation_owner with projection DML but without checkpoint/key ownership or freeze-disable authority",
+    "target_signing_key_location": "target authority only",
+    "tier1_contains_target_signing_key": false,
+    "target_verifier_capability": "yes/no SECURITY DEFINER verification only; verifier cannot read signing key",
+    "tier1_verifier_capability": "yes/no SECURITY DEFINER activation-grant verification only; verifier cannot read grant or placement tables",
     "checkpoint_attestation": "domain-separated HMAC-SHA-256 over self-delimiting target-owned checkpoint facts",
     "attestation_domain": "open-rel-030-target-checkpoint-v1",
+    "tier1_forged_attestation": "rejected by target authority",
     "preseal_future_row": "any target row accepted_ordinal > F makes sealing fail and leaves control phase open",
-    "sealed_phase": "all target-history DML for the relocating tenant is rejected",
+    "sealed_phase": "all target-history DML for the relocating tenant is rejected and target self-activation without a Tier 1 grant returns false",
+    "activation_grant_fields": [
+      "tenant_id",
+      "fence_ordinal",
+      "checkpoint_id",
+      "checkpoint_generation",
+      "target_attestation",
+      "successor_placement_version",
+      "committed_state"
+    ],
+    "tier1_activation_commit": "placement transition and exact activation grant are committed in one local PostgreSQL transaction; conflict raises and rolls both back",
+    "activation_conflict_fault_injection": "duplicate grant conflict after placement UPDATE path proves fenced placement survives, injected grant cannot activate target and target remains sealed",
+    "target_activation_authority": "target verifies exact committed Tier 1 grant and matching active placement before sealed-to-activated transition",
+    "cross_authority_call_order": "remote verification occurs before local authority locks; after verification each authority performs short local transactional/CAS work only",
+    "cross_authority_failure_semantics": "bounded verifier failure or uncertainty returns false/fail-closed",
+    "evidence_verifier_transport": "PostgreSQL dblink plus random LOGIN verifier credentials with bounded connection/statement timeouts",
+    "evidence_verifier_transport_is_production_selection": false,
     "activated_phase": "existing history is immutable; INSERT is eligible only above the relocation fence",
     "seal_dml_serialization": "target DML takes target_control shared authority; seal takes exclusive authority before future-row check and digest",
     "fabricated_attestation": "rejected",
-    "complete_receipt": "complete|3|3|3|true",
+    "complete_receipt": "complete|3|3|4|true",
     "post_cutover_authoritative_acceptances": 4,
-    "post_cutover_append_ordinal": 4,
+    "post_cutover_append_ordinal": 5,
     "stale_source_after_cutover": "rejected"
   },
   "crypto_evidence_boundary": {
     "rule": "every structured message protected by hash/HMAC must first have deterministic versioned injective or equivalently unambiguous field framing; cryptographic integrity is not a substitute for canonical structure",
     "canonical_encoding": "bounded evidence representation using UTF-8 byte-length plus lowercase hex for observation payload fields, recovery-grant fields and checkpoint-attestation fields",
-    "target_checkpoint_hmac_sha256": "bounded evidence integrity mechanism over canonical_checkpoint_payload",
+    "target_checkpoint_hmac_sha256": "bounded evidence integrity mechanism over canonical_checkpoint_payload with key stored only in target authority",
     "recovery_grant_hmac_sha256": "bounded evidence integrity mechanism over canonical_grant",
+    "issuer_verifier_separation": "verification capability does not include signing/mint capability; Tier 1 has no target signing key",
     "production_key_provider_selected": false,
     "production_key_rotation_selected": false,
-    "production_requirement": "accepted implementation may use an equivalent encoding/crypto system only if independently reviewed evidence preserves deterministic versioning, unambiguous structured representation, integrity, authority separation and key isolation"
+    "production_database_authentication_topology_selected": false,
+    "production_cross_authority_transport_selected": false,
+    "production_requirement": "accepted implementation may use equivalent encoding, crypto and verifier transport only if independently reviewed evidence preserves deterministic versioning, unambiguous structured representation, target-only mint authority, verifier-without-mint capability, bounded fail-closed verification outside local lock windows, exact activation-grant binding, atomic Tier 1 grant+placement commitment and key isolation"
   },
   "tier2_profile_classification": {
     "direct_pooled_rls_plus_columnstore": "rejected_ineligible_on_evaluated_profile_sqlstate_0A000",
@@ -187,8 +221,8 @@
     "interpretation": "Mechanism-level bounded fitness evidence only. Production SLOs, retention, cardinality, sizing, cost and topology remain OPEN-REL-020 C3."
   },
   "decision_recommendation": {
-    "tier1": "accept PostgreSQL Tier 1 mechanism only with immutable canonical observation content, owner-controlled source/poll authority, durable live poll claims, owner-derived provider finality/currentness, contiguous reconciliation, structured self-delimiting authenticated surviving recovery grants after PITR, and lock-before-F relocation fencing",
-    "tier2": "accept TimescaleDB historical projection only under the mediated shared-history profile, privileged automation-owner admission boundary, genuine fresh-cluster role reconstruction, complete target checkpoint equivalence, rejection of uncheckpointed target data before activation, immutable pre-F history after cutover, and cross-store self-delimiting checkpoint attestation payloads",
+    "tier1": "accept PostgreSQL Tier 1 mechanism only with immutable canonical observation content, owner-controlled source/poll authority, durable live poll claims, owner-derived provider finality/currentness, contiguous reconciliation, structured self-delimiting authenticated surviving recovery grants after PITR, lock-before-F relocation fencing, target verification without mint authority, and atomic durable activation-grant plus placement commitment",
+    "tier2": "accept TimescaleDB historical projection only under the mediated shared-history profile, privileged automation-owner admission boundary, genuine fresh-cluster role reconstruction, complete target checkpoint equivalence, target-only checkpoint signing authority, rejection of uncheckpointed target data before activation, target promotion only after exact Tier 1 activation-grant verification, immutable pre-F history after cutover, and cross-store self-delimiting checkpoint representations",
     "rejected_assumptions": [
       "caller or worker supplied timestamps are not provider finality/currentness authority",
       "a locally recreated post-R receipt is not surviving (R,F] recovery authority",
@@ -198,11 +232,14 @@
       "identity-only digests are not canonical payload equivalence",
       "delimiter-framed concatenation of unrestricted text is not an unambiguous canonical serialization",
       "a strong hash or HMAC does not repair ambiguous pre-crypto structured serialization",
+      "a Tier 1 verifier that holds the target HMAC key is not independent target verification",
+      "target automation cannot self-authorize sealed-to-activated without a committed Tier 1 activation grant",
+      "placement activation without an atomically committed exact activation grant is not valid successor authority",
       "target rows above F may not exist invisibly before activation",
       "PASSWORD NULL on a LOGIN role is not NOLOGIN or production connection-admission proof",
       "same-cluster restore is not fresh role-topology recovery evidence",
       "max(reconciliation window_to) is not contiguous history completeness"
     ],
-    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity/payload, deterministic versioned unambiguous structured serialization, idempotent projection, owner-derived currentness, externally surviving recovery authority, target checkpoint/freeze semantics, privileged-infrastructure boundaries, tenant isolation and relocation/recovery semantics"
+    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity/payload, deterministic versioned unambiguous structured serialization, idempotent projection, owner-derived currentness, externally surviving recovery authority, target-only mint/sign authority, verifier-without-mint capability, target checkpoint/freeze semantics, exact durable activation-grant binding, atomic placement+grant commitment, privileged-infrastructure boundaries, tenant isolation and relocation/recovery semantics"
   }
 }

@@ -19,24 +19,24 @@
       "product": "PostgreSQL",
       "evaluation_version": "17.11-alpine",
       "image": "postgres@sha256:5d61573b31c206ae538c85893edeb6e320e1a9ffd838c0f9dca927fb6f765fa4",
-      "purpose": "real multi-connection transactional acceptance, owner authority, ambiguity, generation-bound owner-current history reconciliation, physical PITR, surviving-authority recovery evidence and Tier 1 relocation activation authority"
+      "purpose": "real multi-connection transactional acceptance, owner authority, ambiguity, generation-bound owner-current history reconciliation, physical PITR, single-winner surviving-authority recovery evidence and Tier 1 relocation activation authority"
     },
     "tier2_timescale": {
       "product": "TimescaleDB",
       "evaluation_version": "2.29.2-pg17",
       "image": "timescale/timescaledb@sha256:bc8527e62f70f0766b29515077965025872fabb5349db421565f69ee273baf2d",
-      "purpose": "candidate tenant isolation, background jobs, fresh-cluster restore, target-owned key generation/checkpoint/freeze authority, cross-authority activation verification and bounded capacity falsification"
+      "purpose": "candidate tenant isolation, background jobs, fresh-cluster restore, target-owned key generation/checkpoint/freeze authority, bounded cross-authority activation verification and bounded capacity falsification"
     }
   },
   "classification_basis": {
-    "exact_empirical_head_before_reviewer_documentation": "387a68af2eb896f0ece8c916b241a84fde0876f3",
-    "deterministic_assurance_run_number": 2068,
-    "deterministic_assurance_run_id": 33226943467,
-    "open_rel_030_conformance_run_number": 102,
-    "open_rel_030_conformance_run_id": 33226943414,
+    "exact_empirical_head_before_reviewer_documentation": "1e58646d903f09954e85cca605c2c840f5099ee4",
+    "deterministic_assurance_run_number": 2080,
+    "deterministic_assurance_run_id": 33227438465,
+    "open_rel_030_conformance_run_number": 108,
+    "open_rel_030_conformance_run_id": 33227438503,
     "result": "success",
     "final_package_gate_requirement": "The exact final package HEAD, including reviewer documentation, must independently rerun both gates before review or acceptance.",
-    "note": "The executable anchor proves owner-controlled source/poll authority; owner-derived history finality/currentness whose coverage is bound to the exact current authority generation and invalidated on every generation transition even when timestamps remain equal; rejection of conflicting owner-visible canonical content under an already accepted reconciliation identity before any coverage run is minted; surviving external authenticated PITR recovery grants; genuine fresh-cluster Timescale reconstruction; lock-before-F source fencing; deterministic self-delimiting structured cryptographic representations; target-owned checkpoint signing authority whose effective key is generated inside Tier 2 and is neither provisioned nor retained by the cross-database test controller; Tier 1 verification without mint capability; restricted authority-owned verifier connection capability state with verifier secrets absent from function source; durable Tier 1 activation grants; target promotion only after exact grant verification; no uncheckpointed pre-activation target history; seal-vs-DML serialization; and atomic rollback of the Tier 1 placement+grant commit when a grant conflict is injected."
+    "note": "The executable anchor proves owner-controlled source/poll authority; owner-derived history finality/currentness whose coverage is bound to the exact current authority generation and invalidated on every generation transition even when timestamps remain equal; rejection of conflicting owner-visible canonical content under an already accepted reconciliation identity before any coverage run is minted; surviving external authenticated PITR recovery grants with atomic single-winner restore-target claims and same-target retry convergence; genuine fresh-cluster Timescale reconstruction; lock-before-F source fencing; deterministic self-delimiting structured cryptographic representations; target-owned checkpoint signing authority whose effective key is generated inside Tier 2 and is neither provisioned nor retained by the cross-database test controller; Tier 1 verification without mint capability; restricted authority-owned verifier connection capability state with verifier secrets absent from function source; caller-local post-connect verification deadlines with stalled peers failing closed; durable Tier 1 activation grants; target promotion only after exact grant verification; no uncheckpointed pre-activation target history; seal-vs-DML serialization; and atomic rollback of the Tier 1 placement+grant commit when a grant conflict is injected."
   },
   "review_provenance": {
     "material_findings_closed_by_current_mechanism": [
@@ -59,7 +59,9 @@
       "target automation must not transition sealed to activated before exact Tier 1 cutover authority exists",
       "Tier 1 placement activation and durable activation-grant creation must be all-or-nothing under mid-commit failure",
       "target-only key authority requires the effective signing key to originate inside target authority rather than being generated or retained by a cross-authority controller",
-      "cross-authority verifier credentials must not be embedded in SQL function source and must remain restricted authority capability state"
+      "cross-authority verifier credentials must not be embedded in SQL function source and must remain restricted authority capability state",
+      "surviving recovery grant must not behave as a reusable bearer across multiple restored authorities; it requires atomic single-winner target binding",
+      "connect_timeout alone does not bound an established cross-authority response; caller-local post-connect deadlines are required"
     ],
     "native_assurance_panorama_extensions": [
       "durable live poll claim required for current-state candidacy",
@@ -70,6 +72,10 @@
       "reconciled stable identity with changed observed_at or numeric_value aborts the sweep, preserves accepted canonical content and creates no reconciliation_run",
       "recovery grant stored as structured typed fields and independently read without shell delimiter parsing",
       "recovery receipt contains a literal pipe in the positive vector without changing authority boundaries",
+      "surviving recovery authority generates and retains its signing key; the test controller does not retain it",
+      "recovery grant claim is atomic create-or-observe against target_id: same-target retries converge and different targets fail",
+      "a concurrent two-target recovery claim race produces exactly one winner",
+      "duplicate restored authority is denied after the real restore target owns the grant",
       "target checkpoint HMAC uses the same cross-store canonical field encoding as its digest",
       "target checkpoint signing key exists only in target authority and Tier 1 contains no target signing-key relation",
       "effective target signing key is generated inside Tier 2 target authority using target-side randomness",
@@ -79,6 +85,8 @@
       "target and Tier 1 verifier connection capabilities are stored in restricted authority-owned state",
       "verifier and automation principals cannot read cross-authority connection capability state",
       "random verifier secrets are absent from verifier SQL function source",
+      "raw asynchronous bounded transport helper is not executable by verifier/projection principals",
+      "established remote verifier queries are polled against a caller-local deadline and stalled authenticated peers fail closed",
       "Tier 1 forged checkpoint attestation is rejected by target authority",
       "target self-activation before Tier 1 grant is rejected and sealed future-write protection remains active",
       "Tier 1 activation grant binds tenant, F, checkpoint id/generation, target attestation and successor placement version",
@@ -128,17 +136,22 @@
     "surviving_authority": "separate external control PostgreSQL not included in source backup/restore",
     "grant_domain": "open-rel-030-recovery-v1",
     "grant_issued_after_f": true,
-    "grant_storage": "structured typed columns: domain, R, F, successor epoch, placement version, required receipt, nonce, canonical payload, attestation",
+    "grant_storage": "structured typed columns: domain, R, F, successor epoch, placement version, required receipt, nonce, canonical payload, attestation, claimed target identity and claim timestamp",
     "grant_canonical_field_encoding": "UTF-8 byte length in decimal + ':' + lowercase UTF-8 hex",
     "grant_canonicalization": "all structured fields are independently self-delimiting before HMAC-SHA-256",
-    "grant_authentication": "HMAC-SHA-256 with random key stored only in surviving external authority",
+    "grant_authentication": "HMAC-SHA-256 with random key generated and stored only in surviving external authority",
+    "controller_provisions_or_retains_recovery_signing_key": false,
     "source_or_restored_contains_grant_signing_key": false,
     "shell_delimiter_parsing_defines_authority": false,
     "delimiter_collision_negative": "legacy pipe framing admits ambiguous logical field boundaries; the self-delimiting encoding distinguishes them",
     "receipt_with_literal_pipe_positive": "effect|after-r",
     "local_self_minted_receipt_admits": false,
-    "tampered_external_grant": "rejected",
-    "successful_admission": "requires reconciled local R state plus fresh successful verification of the surviving externally held structured canonical grant",
+    "tampered_external_grant": "rejected and cannot claim the grant",
+    "restore_target_identity": "generated after restore and not present in the R backup",
+    "grant_claim_semantics": "surviving authority locks the grant; first target_id claims, same-target retry returns true, different target returns false",
+    "grant_claim_concurrency": "dedicated two-target concurrent race against one grant requires exactly one winner",
+    "duplicate_restored_authority_admitted": false,
+    "successful_admission": "requires reconciled local R state plus fresh successful authenticated single-winner claim of the surviving externally held structured canonical grant by the exact restore target",
     "rollback_subject_business_mutation_replayed": false
   },
   "fresh_restore_evidence": {
@@ -189,6 +202,7 @@
     "target_connection_capability_store": "restricted target-authority-owned state; target verifier cannot read",
     "tier1_connection_capability_store": "restricted Tier1-authority-owned state; projection writer and target verifier cannot read",
     "verifier_secrets_embedded_in_function_source": false,
+    "raw_bounded_transport_executable_by_verifier_or_projection_principals": false,
     "checkpoint_attestation": "domain-separated HMAC-SHA-256 over self-delimiting target-owned checkpoint facts",
     "attestation_domain": "open-rel-030-target-checkpoint-v1",
     "tier1_forged_attestation": "rejected by target authority",
@@ -207,9 +221,11 @@
     "activation_conflict_fault_injection": "duplicate grant conflict after placement UPDATE path proves fenced placement survives, injected grant cannot activate target and target remains sealed",
     "target_activation_authority": "target verifies exact committed Tier 1 grant and matching active placement before sealed-to-activated transition",
     "cross_authority_call_order": "remote verification occurs before local authority locks; after verification each authority performs short local transactional/CAS work only",
-    "cross_authority_failure_semantics": "bounded verifier failure or uncertainty returns false/fail-closed",
-    "evidence_verifier_transport": "PostgreSQL dblink plus random LOGIN verifier credentials with bounded connection/statement timeouts and restricted authority-owned connection capability stores",
+    "cross_authority_failure_semantics": "connection failure, established-call local deadline expiry, disconnect, verifier error or uncertainty returns false/fail-closed",
+    "established_call_deadline_evidence": "five-second remote delay probes are issued through asynchronous dblink polling with a 500 ms local probe deadline; both directions return false well below 1.8 seconds",
+    "evidence_verifier_transport": "PostgreSQL asynchronous dblink plus random LOGIN verifier credentials, connect_timeout=1 for connection setup, caller-local post-connect polling deadlines, and restricted authority-owned connection capability stores",
     "evidence_verifier_transport_is_production_selection": false,
+    "evidence_timeout_values_are_production_selection": false,
     "evidence_capability_store_is_production_selection": false,
     "activated_phase": "existing history is immutable; INSERT is eligible only above the relocation fence",
     "seal_dml_serialization": "target DML takes target_control shared authority; seal takes exclusive authority before future-row check and digest",
@@ -231,7 +247,7 @@
     "production_database_authentication_topology_selected": false,
     "production_cross_authority_transport_selected": false,
     "production_verifier_secret_store_selected": false,
-    "production_requirement": "accepted implementation may use equivalent encoding, crypto, verifier transport and secret storage only if independently reviewed evidence preserves deterministic versioning, unambiguous structured representation, target-originated target-only mint authority, verifier-without-mint capability, secret isolation from callable function source and unprivileged principals, bounded fail-closed verification outside local lock windows, exact activation-grant binding, atomic Tier 1 grant+placement commitment and key isolation"
+    "production_requirement": "accepted implementation may use equivalent encoding, crypto, verifier transport and secret storage only if independently reviewed evidence preserves deterministic versioning, unambiguous structured representation, target-originated target-only mint authority, verifier-without-mint capability, secret isolation from callable function source and unprivileged principals, single-winner target-bound recovery admission, bounded connection and established-response verification outside local lock windows, exact activation-grant binding, atomic Tier 1 grant+placement commitment and key isolation"
   },
   "tier2_profile_classification": {
     "direct_pooled_rls_plus_columnstore": "rejected_ineligible_on_evaluated_profile_sqlstate_0A000",
@@ -251,13 +267,14 @@
     "interpretation": "Mechanism-level bounded fitness evidence only. Production SLOs, retention, cardinality, sizing, cost and topology remain OPEN-REL-020 C3."
   },
   "decision_recommendation": {
-    "tier1": "accept PostgreSQL Tier 1 mechanism only with immutable canonical observation content, owner-controlled source/poll authority, durable live poll claims, owner-derived provider finality/currentness, contiguous generation-bound reconciliation, invalidation on authority-generation transition, rejection of conflicting canonical reconciled content under stable identity, structured self-delimiting authenticated surviving recovery grants after PITR, lock-before-F relocation fencing, target verification without mint authority, and atomic durable activation-grant plus placement commitment",
-    "tier2": "accept TimescaleDB historical projection only under the mediated shared-history profile, privileged automation-owner admission boundary, genuine fresh-cluster role reconstruction, complete target checkpoint equivalence, target-originated target-only checkpoint signing authority, rejection of uncheckpointed target data before activation, target promotion only after exact Tier 1 activation-grant verification, immutable pre-F history after cutover, restricted verifier capability secrets, and cross-store self-delimiting checkpoint representations",
+    "tier1": "accept PostgreSQL Tier 1 mechanism only with immutable canonical observation content, owner-controlled source/poll authority, durable live poll claims, owner-derived provider finality/currentness, contiguous generation-bound reconciliation, invalidation on authority-generation transition, rejection of conflicting canonical reconciled content under stable identity, structured self-delimiting authenticated surviving recovery grants after PITR with atomic single-winner restore-target claims, lock-before-F relocation fencing, target verification without mint authority, and atomic durable activation-grant plus placement commitment",
+    "tier2": "accept TimescaleDB historical projection only under the mediated shared-history profile, privileged automation-owner admission boundary, genuine fresh-cluster role reconstruction, complete target checkpoint equivalence, target-originated target-only checkpoint signing authority, rejection of uncheckpointed target data before activation, target promotion only after exact Tier 1 activation-grant verification, immutable pre-F history after cutover, restricted verifier capability secrets, caller-local established-response deadlines, and cross-store self-delimiting checkpoint representations",
     "rejected_assumptions": [
       "caller or worker supplied timestamps are not provider finality/currentness authority",
       "same snapshot timestamp does not make reconciliation coverage valid across owner authority-generation changes",
       "an existing reconciled observation identity with changed canonical content is not an idempotent duplicate",
       "a locally recreated post-R receipt is not surviving (R,F] recovery authority",
+      "an authenticated surviving recovery grant is not reusable bearer authority for multiple restored instances",
       "delimiter-parsed recovery payload text is not a structured cryptographic authority",
       "max(target_ordinal)=F is not target completeness",
       "target count/digest/max supplied by caller are not current target authority",
@@ -267,6 +284,7 @@
       "a Tier 1 verifier that holds the target HMAC key is not independent target verification",
       "a key stored only in the target database is not target-originated authority if a cross-authority controller generated, provisioned or retained the effective key",
       "verifier credentials embedded in SQL function source are not acceptable capability-secret isolation",
+      "connect_timeout does not bound a peer that connected successfully and then stopped returning a response",
       "target automation cannot self-authorize sealed-to-activated without a committed Tier 1 activation grant",
       "placement activation without an atomically committed exact activation grant is not valid successor authority",
       "target rows above F may not exist invisibly before activation",
@@ -274,6 +292,6 @@
       "same-cluster restore is not fresh role-topology recovery evidence",
       "max(reconciliation window_to) is not contiguous history completeness"
     ],
-    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity/payload, deterministic versioned unambiguous structured serialization, idempotent projection, owner-derived currentness, exact-generation reconciliation coverage, authority-transition invalidation, stable-identity content immutability, externally surviving recovery authority, target-originated target-only mint/sign authority, verifier-without-mint capability, verifier-secret isolation, target checkpoint/freeze semantics, exact durable activation-grant binding, atomic placement+grant commitment, privileged-infrastructure boundaries, tenant isolation and relocation/recovery semantics"
+    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity/payload, deterministic versioned unambiguous structured serialization, idempotent projection, owner-derived currentness, exact-generation reconciliation coverage, authority-transition invalidation, stable-identity content immutability, externally surviving recovery authority with single-winner restore-target admission, target-originated target-only mint/sign authority, verifier-without-mint capability, verifier-secret isolation, bounded established-response verification, target checkpoint/freeze semantics, exact durable activation-grant binding, atomic placement+grant commitment, privileged-infrastructure boundaries, tenant isolation and relocation/recovery semantics"
   }
 }

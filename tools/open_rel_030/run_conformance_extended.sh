@@ -91,15 +91,16 @@ for file in "${HISTORY_MODULES[@]}"; do
 done
 
 # Native physical PostgreSQL PITR to R, with F held by a separate surviving
-# authority. The active-authority hardening wrapper keeps the base restored
-# instances alive long enough to bind claims to the locked singleton authority
-# and exercise validly-signed successor epoch/placement drift negatives.
-bash tools/open_rel_030/physical_pitr_active_authority_hardening.sh "$PG_CONTAINER" "$PG_IMAGE"
+# authority. The end-to-end wrapper composes
+# physical_pitr_active_authority_hardening.sh and then resets/replays the real
+# winner through claim -> hardened fetch -> apply, proving the #45 definitions
+# themselves complete a legitimate admission (#46).
+bash tools/open_rel_030/physical_pitr_active_authority_end_to_end.sh "$PG_CONTAINER" "$PG_IMAGE"
 
 # A second physical vector snapshots PGDATA only after the restored identity has
-# been enrolled. The copy inherits the exact database identity and reuses the
-# exact same external credential, but must not inherit effective instance
-# authority merely by copying PGDATA.
+# been enrolled. Its public entrypoint delegates to a bounded async implementation
+# that proves both cooperative and real-blackhole response deadlines before the
+# positive-control/main authority checks (#47).
 bash tools/open_rel_030/physical_pitr_post_enrollment_clone.sh "$PG_CONTAINER" "$PG_IMAGE"
 
 # ---------------------------------------------------------------------------
@@ -126,7 +127,8 @@ bash tools/open_rel_030/timescale_jobs_restore.sh "$TS_CONTAINER" "$TS_IMAGE"
 
 # Cross-store relocation: source fencing, era/non-finite-aware canonical payload
 # equivalence, target checkpoint authority and activation grant jointly permit
-# cutover only after all negative vectors pass.
+# cutover only after all negative vectors pass. The ordered verifier composition
+# installs session-retirement timeout semantics before those authority tests (#48).
 bash tools/open_rel_030/tenant_relocation.sh "$PG_CONTAINER" "$TS_CONTAINER"
 
 printf '%s\n' 'open_rel_030_extended_conformance=PASS'

@@ -9,13 +9,14 @@ fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Fail before any evidence state is mutated if one protocol module is invalid.
-# Modules are sourced in authority order. Era-aware canonicalization is applied
-# after both stores exist and before any checkpoint/verifier evidence runs.
+# Modules are sourced in authority order. The transport-retirement layer replaces
+# the bootstrap async verifier before any subsequent relocation authority tests.
 for module in \
   tenant_relocation_tier1.sh \
   tenant_relocation_tier2.sh \
   tenant_relocation_timestamp_canonicalization.sh \
   tenant_relocation_verifier_hardening.sh \
+  tenant_relocation_transport_retirement_hardening.sh \
   tenant_relocation_key_provenance_tests.sh \
   tenant_relocation_tier1_atomic.sh \
   tenant_relocation_atomicity_tests.sh \
@@ -37,6 +38,8 @@ source "$ROOT/tenant_relocation_tier2.sh"
 source "$ROOT/tenant_relocation_timestamp_canonicalization.sh"
 # shellcheck source=/dev/null
 source "$ROOT/tenant_relocation_verifier_hardening.sh"
+# shellcheck source=/dev/null
+source "$ROOT/tenant_relocation_transport_retirement_hardening.sh"
 # shellcheck source=/dev/null
 source "$ROOT/tenant_relocation_key_provenance_tests.sh"
 # shellcheck source=/dev/null

@@ -70,6 +70,7 @@ HISTORY_MODULES=(
   004_history_reconciliation.sql
   005_history_identity_window_hardening.sql
   006_history_dataset_revision_hardening.sql
+  007_history_dataset_revision_edge_hardening.sql
 )
 
 for file in \

@@ -57,6 +57,8 @@ docker pull "$TS_IMAGE" >/dev/null
 
 # ---------------------------------------------------------------------------
 # Tier 1 extended fault/recovery vectors.
+# Every ordered history-hardening module is part of the executable evidence
+# chain; adding a module without wiring it here is a conformance failure.
 # ---------------------------------------------------------------------------
 docker run -d --name "$PG_CONTAINER" \
   -e POSTGRES_PASSWORD="$DB_PASSWORD" \
@@ -64,11 +66,16 @@ docker run -d --name "$PG_CONTAINER" \
   "$PG_IMAGE" >/dev/null
 wait_for_postgres "$PG_CONTAINER"
 
+HISTORY_MODULES=(
+  004_history_reconciliation.sql
+  005_history_identity_window_hardening.sql
+  006_history_dataset_revision_hardening.sql
+)
+
 for file in \
   001_tier1_acceptance.sql \
   003_tier1_recovery_authority.sql \
-  004_history_reconciliation.sql \
-  005_history_identity_window_hardening.sql
+  "${HISTORY_MODULES[@]}"
 do
   docker cp "sql/d2-open-rel-030/$file" "$PG_CONTAINER:/tmp/$file"
 done
@@ -77,8 +84,9 @@ admin_psql "$PG_CONTAINER" -f /tmp/001_tier1_acceptance.sql
 wait_for_postgres "$PG_CONTAINER"
 bash tools/open_rel_030/tier1_commit_ambiguity.sh "$PG_CONTAINER"
 admin_psql "$PG_CONTAINER" -f /tmp/003_tier1_recovery_authority.sql
-admin_psql "$PG_CONTAINER" -f /tmp/004_history_reconciliation.sql
-admin_psql "$PG_CONTAINER" -f /tmp/005_history_identity_window_hardening.sql
+for file in "${HISTORY_MODULES[@]}"; do
+  admin_psql "$PG_CONTAINER" -f "/tmp/$file"
+done
 
 # Native physical PostgreSQL PITR to R, with F held by a separate surviving
 # authority. This must pass before the restored authority may be admitted.
@@ -106,8 +114,9 @@ wait_for_postgres "$TS_CONTAINER"
 # reconstruct the minimum topology and repeat isolation/escalation/job attacks.
 bash tools/open_rel_030/timescale_jobs_restore.sh "$TS_CONTAINER" "$TS_IMAGE"
 
-# Cross-store relocation: source fencing, era-aware canonical payload equivalence,
-# target checkpoint authority and activation grant must jointly permit cutover.
+# Cross-store relocation: source fencing, era/non-finite-aware canonical payload
+# equivalence, target checkpoint authority and activation grant jointly permit
+# cutover only after all negative vectors pass.
 bash tools/open_rel_030/tenant_relocation.sh "$PG_CONTAINER" "$TS_CONTAINER"
 
 printf '%s\n' 'open_rel_030_extended_conformance=PASS'

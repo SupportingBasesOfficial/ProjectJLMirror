@@ -71,6 +71,7 @@ HISTORY_MODULES=(
   005_history_identity_window_hardening.sql
   006_history_dataset_revision_hardening.sql
   007_history_dataset_revision_edge_hardening.sql
+  008_history_visibility_correction_hardening.sql
 )
 
 for file in \

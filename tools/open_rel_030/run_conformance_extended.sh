@@ -91,8 +91,10 @@ for file in "${HISTORY_MODULES[@]}"; do
 done
 
 # Native physical PostgreSQL PITR to R, with F held by a separate surviving
-# authority. This must pass before the restored authority may be admitted.
-bash tools/open_rel_030/physical_pitr.sh "$PG_CONTAINER" "$PG_IMAGE"
+# authority. The active-authority hardening wrapper keeps the base restored
+# instances alive long enough to bind claims to the locked singleton authority
+# and exercise validly-signed successor epoch/placement drift negatives.
+bash tools/open_rel_030/physical_pitr_active_authority_hardening.sh "$PG_CONTAINER" "$PG_IMAGE"
 
 # A second physical vector snapshots PGDATA only after the restored identity has
 # been enrolled. The copy inherits the exact database identity and reuses the

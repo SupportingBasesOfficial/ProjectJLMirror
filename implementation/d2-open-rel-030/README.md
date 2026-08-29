@@ -13,8 +13,8 @@ This package is a bounded, reproducible falsification laboratory for `OPEN-REL-0
 
 It evaluates:
 
-1. **Tier 1 PostgreSQL:** acceptance/idempotency, source/poll authority, current-state CAS, ambiguity, late-history reconciliation, physical PITR and relocation fencing.
-2. **Tier 2 TimescaleDB:** tenant isolation, feature compatibility, privileged background-job ownership, fresh-cluster restore, relocation checkpoint/freeze semantics and bounded mechanism capacity.
+1. **Tier 1 PostgreSQL:** acceptance/idempotency, source/poll authority, current-state CAS, ambiguity, late-history reconciliation, physical PITR and relocation fencing/activation authority.
+2. **Tier 2 TimescaleDB:** tenant isolation, feature compatibility, privileged background-job ownership, fresh-cluster restore, target-owned relocation checkpoint/freeze semantics and bounded mechanism capacity.
 
 ## Non-negotiable boundaries
 
@@ -22,10 +22,13 @@ It evaluates:
 - Worker/caller assertions never substitute for source, poll, provider-finality, recovery or target-checkpoint authority.
 - Every structured message protected by a hash or HMAC must first have a deterministic **unambiguous/self-delimiting** canonical representation.
 - A strong cryptographic primitive does not repair ambiguous structured serialization.
+- A verifier must not inherit issuer/mint capability merely because it can validate an attestation.
+- Cross-authority activation requires explicit durable authority from both sides; target cannot self-promote.
 - A single cross-tenant leak rejects the candidate profile.
 - `OPEN-REL-020` retains production telemetry capacity/numeric ownership.
 - PostgreSQL/Timescale versions and image digests are evidence dependencies, not immutable production selections.
 - SHA-256/HMAC-SHA-256 and the evidence canonical encoding do not select production KMS/HSM/secret topology or a mandatory production wire format.
+- The evidence `dblink`/LOGIN verifier transport does not select production database-authentication, network or RPC topology.
 - `ts_automation_owner` is a LOGIN cross-tenant privileged infrastructure principal; `PASSWORD NULL` is not equivalent to `NOLOGIN` or proof of production connection admission.
 - `READY_FOR_MERGE != AUTHORIZED_TO_MERGE`.
 
@@ -135,7 +138,7 @@ The current evidence profile covers accepted ordinal, observation ID, metric def
 
 ### Target checkpoint attestation
 
-Both Timescale issuer and PostgreSQL verifier independently construct `canonical_checkpoint_payload` from:
+Both storage authorities independently construct the same `canonical_checkpoint_payload` shape from:
 
 - domain;
 - tenant;
@@ -147,21 +150,21 @@ Both Timescale issuer and PostgreSQL verifier independently construct `canonical
 - target digest;
 - target max ordinal.
 
-Exact-head evidence proves:
+Exact evidence proves:
 
 ```text
 relocation_checkpoint_hmac_payload_cross_store=PASS
 ```
 
-Thus the HMAC protects an identical structured byte representation on both sides of the storage seam instead of a delimiter-concatenated string.
+The target alone holds the HMAC signing key. Tier 1 has no copy of that key; it consumes a target-side yes/no verification capability. Therefore equal canonical bytes support verification without collapsing the issuer/verifier authority boundary.
 
 ### Production boundary
 
 The exact UTF-8 length+hex encoding is a bounded evidence mechanism, not a mandatory production serialization. Another accepted representation is allowed only if it is deterministic, versioned, injective or equivalently unambiguous for every protected structured field and is independently revalidated.
 
-## Relocation target lifecycle
+## Relocation cross-authority protocol
 
-Tier 1 locks placement before deriving `F`. `max(target)=F` is not treated as completeness. The target-owned checkpoint measures actual current target count/max/digest and is authenticated before activation.
+Tier 1 locks placement before deriving `F`. `max(target)=F` is not treated as completeness. The target-owned checkpoint measures actual current target count/max/digest and is authenticated before Tier 1 can commit cutover authority.
 
 Target lifecycle:
 
@@ -172,15 +175,72 @@ open
 
 sealed
   -> ALL target-history DML rejected
-  -> checkpoint set cannot change before activation
+  -> checkpoint set cannot change
+  -> target cannot self-activate
+
+Tier 1 activation commit
+  -> target checkpoint verified through target-owned verifier capability
+  -> no remote call while Tier 1 authority locks are held
+  -> placement moves to target and exact activation_grant is committed atomically
 
 activated
+  -> only after target verifies the exact Tier 1 grant
   -> existing target history immutable
   -> INSERT <= F rejected
   -> new append > F allowed
 ```
 
-The matrix covers internal gaps, canonical payload mismatch, fabricated attestation, seal-vs-DML race, pre-seal/post-seal `>F`, DELETE, tenant move, activated pre-fence mutation and stale source rejection.
+The target signing key never exists in Tier 1. The target verification principal cannot read the target key; the Tier 1 grant-verification principal cannot read grant/placement tables. The evidence verifier roles expose only bounded yes/no functions.
+
+The Tier 1 grant is bound to:
+
+```text
+tenant
+F
+checkpoint id
+checkpoint generation
+target attestation
+successor placement version
+committed state
+```
+
+The matrix explicitly proves:
+
+```text
+relocation_tier1_has_no_target_signing_key=PASS
+relocation_target_verifier_cannot_read_attestation_key=PASS
+relocation_tier1_cannot_mint_target_attestation=PASS
+relocation_target_cannot_self_activate_before_tier1_grant=PASS
+relocation_premature_mark_keeps_future_insert_blocked=PASS
+relocation_tier1_activation_grant_committed=PASS
+```
+
+It also injects a conflicting grant **after the placement UPDATE path has begun**. The duplicate-key failure rolls the transaction back and proves:
+
+```text
+relocation_activation_commit_conflict_rolls_back=PASS
+relocation_activation_conflict_preserves_fenced_placement=PASS
+relocation_activation_conflict_did_not_replace_grant=PASS
+relocation_conflicting_grant_cannot_activate_target=PASS
+relocation_activation_conflict_keeps_target_sealed=PASS
+relocation_activation_grant_placement_atomicity=PASS
+```
+
+Thus no partial successor authority is admitted if the local Tier 1 commit fails.
+
+### Evidence transport boundary
+
+This C2 harness uses random verifier LOGIN credentials and PostgreSQL `dblink` with bounded connection/statement timeouts to exercise independent authorities. Remote verification occurs before local authority locks, and uncertainty/failure returns false. This is **not** a production topology decision. Production may use a service/API, asymmetric signature verifier, KMS-backed verification or another mechanism only if it preserves:
+
+- target-only mint/sign authority;
+- verifier without mint capability;
+- bounded fail-closed cross-authority verification;
+- no long local transaction around a remote call;
+- exact durable activation-grant binding;
+- atomic Tier 1 grant + placement commitment;
+- target activation only after the committed grant is independently verified.
+
+The wider relocation matrix still covers internal gaps, canonical payload mismatch, fabricated attestation, seal-vs-DML race, pre-seal/post-seal `>F`, DELETE, tenant move, activated pre-fence mutation and stale source rejection.
 
 ## Fresh-cluster restore and capacity boundary
 
@@ -192,19 +252,19 @@ The same security profile is exercised for bounded capacity mechanism fitness. P
 
 ```text
 HEAD
-3ffc96073b54fe7a8b5d002523733947ee59ba57
+e082cca72c13c725b0ffa837693ba73eb92ceb7e
 
-JLMIRROR Deterministic Assurance #2012
-run id 33208029855
+JLMIRROR Deterministic Assurance #2034
+run id 33223301992
 SUCCESS
 
-JLMIRROR OPEN-REL-030 Conformance #74
-run id 33208029866
+JLMIRROR OPEN-REL-030 Conformance #85
+run id 33223301930
 SUCCESS
 ```
 
-The #74 extended run includes the new structured-serialization evidence plus all previous authority/isolation/recovery/relocation vectors. This anchor is provenance only: documentation changes create a new HEAD and require both workflows again.
+The #85 extended run includes the target-only signing authority, verifier/mint separation, Tier 1 durable activation grant, premature-target-activation negatives, grant/placement atomic rollback injection, structured-serialization evidence and all previous authority/isolation/recovery/relocation vectors. This anchor is provenance only: documentation changes create a new HEAD and require both workflows again.
 
 ## Governance state
 
-Evidence completion does not accept `OPEN-REL-030`, authorize Wave 4, select production deployment topology or authorize merge. Exact-final-HEAD CI, Codex review, Native Assurance and explicit Track B acceptance remain separate gates.
+Evidence completion does not accept `OPEN-REL-030`, authorize Wave 4, select production deployment/authentication topology or authorize merge. Exact-final-HEAD CI, Codex review, Native Assurance and explicit Track B acceptance remain separate gates.

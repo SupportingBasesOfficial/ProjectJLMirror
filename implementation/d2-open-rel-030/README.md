@@ -25,7 +25,9 @@ It evaluates:
 - Structured crypto messages require deterministic versioned unambiguous/self-delimiting representation before cryptography.
 - A verifier must not inherit issuer/mint capability merely because it can validate an attestation.
 - Target signing material must originate and remain inside target authority; the test controller must not provision or retain it.
+- Recovery grants are not reusable bearer authorization: surviving authority binds each grant to one restore target with atomic single-winner claim semantics.
 - Cross-authority verifier credentials must not be embedded in function source and must be held in restricted authority-owned capability state.
+- Cross-authority calls require a caller-local post-connect deadline; a connected but stalled peer must fail closed.
 - Cross-authority activation requires explicit durable authority from both sides; target cannot self-promote.
 - A single cross-tenant leak rejects the candidate profile.
 - `OPEN-REL-020` retains production telemetry capacity/numeric ownership.
@@ -35,7 +37,7 @@ It evaluates:
 
 ## Tier 1 authority coverage
 
-The executable package proves atomic create-or-observe across independent connections; immutable canonical observation content; owner-controlled source/poll authority; exact durable `live` poll claims; current-state CAS by platform authority; stale/predecessor rejection; crash rollback; post-COMMIT ambiguity convergence; durable Tier2-down backlog responsibility; generation-bound owner-current late-history finality/currentness; conflicting reconciled-content rejection; and PITR recovery admission only from surviving authenticated `(R,F]` authority.
+The executable package proves atomic create-or-observe across independent connections; immutable canonical observation content; owner-controlled source/poll authority; exact durable `live` poll claims; current-state CAS by platform authority; stale/predecessor rejection; crash rollback; post-COMMIT ambiguity convergence; durable Tier2-down backlog responsibility; generation-bound owner-current late-history finality/currentness; conflicting reconciled-content rejection; and PITR recovery admission only from surviving authenticated `(R,F]` authority with single-winner restore-target binding.
 
 ### Owner-current late-history reconciliation
 
@@ -57,6 +59,26 @@ history_conflicting_observation_rejected=PASS
 history_generation_bound_coverage=PASS
 history_owner_currentness_authority=PASS
 late_history_reconciliation=PASS
+```
+
+### Physical PITR single-winner recovery authority
+
+A surviving external control PostgreSQL is excluded from the source backup/restore and owns the recovery signing key. It issues a structured authenticated grant only after `F`.
+
+Verification does not itself authorize every restore. The grant must be atomically claimed against a unique restore `target_id`. Same-target retries converge after ambiguity; a different target loses. A dedicated race between two distinct target IDs requires exactly one winner. The restored database then applies successor epoch/placement only after the surviving authority confirms that exact target owns the grant.
+
+Exact #108 proves:
+
+```text
+physical_pitr_recovery_claim_winner_retry=PASS
+physical_pitr_recovery_claim_loser_rejected=PASS
+physical_pitr_recovery_claim_single_winner_race=PASS
+physical_pitr_recovery_grant_claimed=PASS
+physical_pitr_recovery_grant_same_target_retry=PASS
+physical_pitr_recovery_grant_other_target_rejected=PASS
+physical_pitr_duplicate_restored_authority_not_admitted=PASS
+physical_pitr_recovery_single_winner=PASS
+physical_pitr_post_reconcile_admission=PASS authority=surviving_external_authenticated_single_winner_grant
 ```
 
 ## Timescale mediated profile
@@ -116,9 +138,11 @@ relocation_tier1_cannot_mint_target_attestation=PASS
 relocation_fabricated_target_attestation_rejected=PASS
 ```
 
-### Verifier capability-secret isolation
+### Verifier capability-secret isolation and local deadline
 
 The C2 harness uses random LOGIN credentials plus PostgreSQL `dblink` only to exercise separate authorities. Credentials are stored in restricted authority-owned capability tables and read only through owner `SECURITY DEFINER` helpers with fixed search paths. They are not interpolated into function definitions.
+
+The raw asynchronous transport helper is owner-only. Verifier/projection principals cannot call it directly. Connection setup is bounded with `connect_timeout=1`; established queries use `dblink_send_query` + `dblink_is_busy` polling with a caller-local deadline. A remote five-second delay probe is required to fail closed near the 500 ms probe deadline and well below 1.8 seconds.
 
 The matrix proves:
 
@@ -128,9 +152,15 @@ relocation_projection_writer_cannot_read_tier1_connection_capability=PASS
 relocation_target_verifier_cannot_read_tier1_connection_capability=PASS
 relocation_target_verifier_secret_not_in_function_source=PASS
 relocation_tier1_verifier_secret_not_in_function_source=PASS
+relocation_tier1_verifier_cannot_call_raw_bounded_transport=PASS
+relocation_target_principals_cannot_call_raw_bounded_transport=PASS
+relocation_target_verifier_stalled_peer_fails_closed=PASS
+relocation_target_verifier_local_deadline=PASS
+relocation_tier1_verifier_stalled_peer_fails_closed=PASS
+relocation_tier1_verifier_local_deadline=PASS
 ```
 
-This is an evidence mechanism, not a production secret-distribution choice.
+Exact #108 measured approximately 574 ms and 580 ms for the two stalled-peer directions. This is evidence machinery, not a production RPC/timeout selection.
 
 ### Activation atomicity
 
@@ -151,18 +181,18 @@ relocation_tier1_activation_grant_committed=PASS
 
 ```text
 HEAD
-387a68af2eb896f0ece8c916b241a84fde0876f3
+1e58646d903f09954e85cca605c2c840f5099ee4
 
-JLMIRROR Deterministic Assurance #2068
-run id 33226943467
+JLMIRROR Deterministic Assurance #2080
+run id 33227438465
 SUCCESS
 
-JLMIRROR OPEN-REL-030 Conformance #102
-run id 33226943414
+JLMIRROR OPEN-REL-030 Conformance #108
+run id 33227438503
 SUCCESS
 ```
 
-The #102 extended run includes generation-bound late-history coverage, conflicting reconciled-content rejection, key-provenance, capability-secret isolation, verifier/mint separation, durable activation grant, premature-activation negatives, grant/placement rollback injection, structured serialization and all prior authority/isolation/recovery/relocation vectors. This anchor becomes provenance after documentation mutation and the final documentation HEAD must rerun both workflows.
+The #108 extended run includes generation-bound late-history coverage, conflicting reconciled-content rejection, target key provenance, capability-secret isolation, bounded stalled-peer verification, verifier/mint separation, single-winner physical recovery grant claiming, durable activation grant, premature-activation negatives, grant/placement rollback injection, structured serialization and all prior authority/isolation/recovery/relocation vectors. This anchor becomes provenance after documentation mutation and the final documentation HEAD must rerun both workflows.
 
 ## Governance state
 

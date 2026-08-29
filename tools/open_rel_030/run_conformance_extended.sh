@@ -111,4 +111,4 @@ bash tools/open_rel_030/timescale_jobs_restore.sh "$TS_CONTAINER" "$TS_IMAGE"
 bash tools/open_rel_030/tenant_relocation.sh "$PG_CONTAINER" "$TS_CONTAINER"
 
 printf '%s\n' 'open_rel_030_extended_conformance=PASS'
-printf '%s\n' 'closure_claim=false final evidence classification and governed decision update still required'
+printf '%s\n' 'closure_claim=false governed Track B acceptance still required; production/Wave4/merge authorization not granted'

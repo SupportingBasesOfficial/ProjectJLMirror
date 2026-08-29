@@ -72,6 +72,7 @@ HISTORY_MODULES=(
   006_history_dataset_revision_hardening.sql
   007_history_dataset_revision_edge_hardening.sql
   008_history_visibility_correction_hardening.sql
+  009_history_retained_finalized_watermark_hardening.sql
 )
 
 for file in \

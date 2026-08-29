@@ -24,11 +24,13 @@ Recommend C2 acceptance only with all of the following preserved together:
 - stale reconciliation worker generations rejected;
 - physical PITR to committed `R` remaining fail-closed until a surviving external authenticated `(R,F]` recovery grant is verified;
 - recovery grant facts stored structurally and authenticated over a deterministic self-delimiting canonical representation;
+- recovery admission is single-winner in surviving authority: the first exact restore target claims the grant atomically, same-target retries converge, and a different restored authority is rejected;
 - a locally recreated receipt after restore is insufficient for re-admission;
 - source relocation authority locked before deriving `F`;
 - source↔target payload comparison and checkpoint attestation using deterministic self-delimiting canonical serialization;
 - target checkpoint authenticity verified through a target-owned verification boundary while Tier 1 has no target signing key and no mint capability;
 - verifier transport credentials held in authority-owned restricted capability stores rather than embedded in function source;
+- cross-authority verification has both bounded connection setup and a caller-local post-connect response deadline; stalled peers fail closed before local authority locks;
 - the exact relocation activation grant and the Tier 1 placement transition committed atomically, so neither can survive without the other.
 
 ### Tier 2 — Timescale mediated shared history
@@ -46,6 +48,8 @@ Recommend C2 acceptance only under the conformed mediated profile:
 - verifier and projection-writer principals cannot read that signing key;
 - target/Tier1 verifier connection capabilities are restricted authority-owned state and are not readable by verifier/automation principals;
 - verifier secrets are not embedded in `pg_proc` function source;
+- raw verifier transport helpers are not executable by tenant/projection verifier principals;
+- established cross-authority calls use asynchronous polling with a local deadline and fail closed on a stalled authenticated peer;
 - no target row `>F` may survive or enter before activation;
 - `sealed` rejects all target-history DML;
 - `sealed → activated` requires successful verification of the exact durable Tier 1 activation grant bound to tenant, `F`, checkpoint id/generation, target attestation and successor placement version;
@@ -55,16 +59,16 @@ Recommend C2 acceptance only under the conformed mediated profile:
 
 ```text
 HEAD
-387a68af2eb896f0ece8c916b241a84fde0876f3
+1e58646d903f09954e85cca605c2c840f5099ee4
 
 JLMIRROR Deterministic Assurance
-run #2068
-run id 33226943467
+run #2080
+run id 33227438465
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #102
-run id 33226943414
+run #108
+run id 33227438503
 SUCCESS
 ```
 
@@ -74,11 +78,11 @@ That SHA is provenance only after this documentation update. The exact final doc
 
 The history worker does not provide authority, finality or currentness facts. Durable `provider_authority` owns `authority_generation`, `current_snapshot_at`, `finality_floor` and `required_reconciliation_snapshot_at`. `sweep(...)` accepts only the requested window plus `expected_authority_generation`; `try_finalize(...)` accepts no caller authority/finality/currentness timestamp.
 
-Coverage is now a function of **both** the exact owner generation and the required owner snapshot. `contiguous_covered_through(...)` filters `reconciliation_run` by `authority_generation = current authority_generation`; `advance_provider_authority(...)` clears materialized coverage and moves non-gap streams to `reconciliation_required` even if all timestamps remain identical. This prevents an authority correction/revision from reusing stale coverage simply because its timestamp did not move.
+Coverage is a function of **both** the exact owner generation and the required owner snapshot. `contiguous_covered_through(...)` filters `reconciliation_run` by `authority_generation = current authority_generation`; `advance_provider_authority(...)` clears materialized coverage and moves non-gap streams to `reconciliation_required` even if all timestamps remain identical. This prevents an authority correction/revision from reusing stale coverage simply because its timestamp did not move.
 
-An existing `(stream_id, observation_id)` is also immutable canonical history. Before inserting or recording a reconciliation run, `sweep(...)` compares owner-visible `observed_at` and `numeric_value` against the persisted accepted row; mismatch raises `reconciled observation identity content mismatch`. The failed sweep records no new run and leaves accepted canonical content unchanged.
+An existing `(stream_id, observation_id)` is immutable canonical history. Before inserting or recording a reconciliation run, `sweep(...)` compares owner-visible `observed_at` and `numeric_value` against the persisted accepted row; mismatch raises `reconciled observation identity content mismatch`. The failed sweep records no new run and leaves accepted canonical content unchanged.
 
-Exact #102 proves:
+Exact #108 proves:
 
 ```text
 history_conflicting_observation_rejected=PASS
@@ -91,7 +95,23 @@ The same run preserves continuous coverage from the supported floor and durable 
 
 ## PITR recovery admission gate
 
-The restored PostgreSQL cannot self-authorize from a local receipt. A separate surviving control database, excluded from the source backup/restore, owns the recovery signing key and issues a grant after `F`. The structured grant facts are individually self-delimiting before HMAC-SHA-256. The matrix proves local self-mint cannot admit, tampering rejects, surviving authority verifies the exact grant, and authenticated successor facts can be applied without replaying rollback-subject business state.
+The restored PostgreSQL cannot self-authorize from a local receipt. A separate surviving control database, excluded from the source backup/restore, owns the recovery signing key and issues a grant after `F`. The structured grant facts are individually self-delimiting before HMAC-SHA-256.
+
+Grant validation alone is not admission. The surviving authority exposes an atomic single-winner claim bound to a restore `target_id`. The first target claims the grant; an ambiguous/repeated attempt by the same target is idempotently accepted; any different target is rejected. The harness also races distinct targets against a dedicated grant and requires exactly one winner.
+
+Exact #108 proves:
+
+```text
+physical_pitr_recovery_claim_winner_retry=PASS
+physical_pitr_recovery_claim_loser_rejected=PASS
+physical_pitr_recovery_claim_single_winner_race=PASS
+physical_pitr_recovery_grant_claimed=PASS
+physical_pitr_recovery_grant_same_target_retry=PASS
+physical_pitr_recovery_grant_other_target_rejected=PASS
+physical_pitr_duplicate_restored_authority_not_admitted=PASS
+physical_pitr_recovery_single_winner=PASS
+physical_pitr_post_reconcile_admission=PASS authority=surviving_external_authenticated_single_winner_grant
+```
 
 ## Canonical structured-message gate
 
@@ -101,7 +121,7 @@ Every structured cryptographic evidence message must use deterministic, versione
 
 The target checkpoint is bound to target-owned measurement of actual current state, count/max/SHA-256 over canonical immutable payload, and domain-separated HMAC over the canonical checkpoint message. The effective signing key is generated inside target authority using target-side randomness. The trusted disposable-lab controller can administer both databases for setup/fault injection, but it neither provisions nor retains the protocol signing key.
 
-Exact #102 continues to prove:
+Exact #108 continues to prove:
 
 ```text
 relocation_tier1_has_no_target_signing_key=PASS
@@ -114,6 +134,8 @@ relocation_projection_writer_cannot_read_tier1_connection_capability=PASS
 relocation_target_verifier_cannot_read_tier1_connection_capability=PASS
 relocation_target_verifier_secret_not_in_function_source=PASS
 relocation_tier1_verifier_secret_not_in_function_source=PASS
+relocation_tier1_verifier_cannot_call_raw_bounded_transport=PASS
+relocation_target_principals_cannot_call_raw_bounded_transport=PASS
 relocation_tier1_cannot_mint_target_attestation=PASS
 relocation_fabricated_target_attestation_rejected=PASS
 ```
@@ -124,9 +146,18 @@ Thus the evidence separates issuer from verifier at the database-authority and k
 
 The target checkpoint verifier and Tier 1 activation verifier are capability-restricted yes/no interfaces. The evidence uses short-lived random verifier credentials plus PostgreSQL `dblink` only to exercise independent authorities. Those credentials live in restricted authority-owned capability tables and are not embedded in verifier function source. This concrete transport/auth mechanism remains C2 laboratory machinery and does not select production database-authentication, network, secret-distribution or RPC topology.
 
-Remote verification is bounded/fail-closed and happens before local authority locks. Tier 1 then atomically commits successor placement plus a durable activation grant. Target remains `sealed` until it verifies the exact committed grant.
+`connect_timeout=1` bounds connection establishment. After connection, the owner-only helper uses `dblink_send_query` + `dblink_is_busy` polling with a caller-local deadline; a 5-second remote delay probe must return false in well under 1.8 seconds. Exact #108 measured approximately 574 ms and 580 ms for the two directions using a 500 ms local probe deadline. The raw bounded transport helper is not executable by verifier/projection principals.
 
-Exact #102 also preserves:
+```text
+relocation_target_verifier_stalled_peer_fails_closed=PASS
+relocation_target_verifier_local_deadline=PASS
+relocation_tier1_verifier_stalled_peer_fails_closed=PASS
+relocation_tier1_verifier_local_deadline=PASS
+```
+
+Remote verification remains outside local authority-lock windows. Tier 1 then atomically commits successor placement plus a durable activation grant. Target remains `sealed` until it verifies the exact committed grant.
+
+Exact #108 also preserves:
 
 ```text
 relocation_target_cannot_self_activate_before_tier1_grant=PASS

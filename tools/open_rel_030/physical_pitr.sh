@@ -25,7 +25,17 @@ rival_role="pitr_restore_rival"
 race_a_role="pitr_restore_race_a"
 race_b_role="pitr_restore_race_b"
 
+blackhole_rule_installed=0
+blackhole_chain=""
+blackhole_restored_ip=""
+blackhole_control_ip=""
+
 cleanup() {
+  if [[ "$blackhole_rule_installed" == "1" && -n "$blackhole_chain" && -n "$blackhole_control_ip" && -n "$blackhole_restored_ip" ]]; then
+    sudo iptables -D "$blackhole_chain" -s "$blackhole_control_ip" -d "$blackhole_restored_ip" \
+      -p tcp --sport 5432 -j DROP >/dev/null 2>&1 || true
+    blackhole_rule_installed=0
+  fi
   docker rm -f "$source_container" "$restored_container" "$clone_container" >/dev/null 2>&1 || true
   sudo rm -rf "$tmpdir" >/dev/null 2>&1 || true
 }
@@ -360,24 +370,58 @@ psql_in "$control_container" "
   CREATE OR REPLACE FUNCTION pitr_external_evidence.fetch_claimed_recovery_material(
     p_grant_id text,p_instance_id uuid,p_instance_secret text
   ) RETURNS text LANGUAGE plpgsql STRICT SECURITY DEFINER
-  SET search_path=pg_catalog,pitr_external_evidence
+  SET search_path=pg_catalog,pitr_external_evidence,public
   AS \$\$
   DECLARE v_grant pitr_external_evidence.recovery_grant%ROWTYPE;
           v_effect pitr_external_evidence.recovery_effect%ROWTYPE;
           v_claim pitr_external_evidence.recovery_boundary_claim%ROWTYPE;
-          v_boundary_fp text;
+          v_boundary_fp text; v_principal name := session_user; v_instance_fp text;
   BEGIN
-    IF NOT pitr_external_evidence.verify_claimed_grant(p_grant_id,p_instance_id,p_instance_secret) THEN
-      RETURN NULL;
-    END IF;
-    SELECT * INTO STRICT v_grant FROM pitr_external_evidence.recovery_grant WHERE grant_id=p_grant_id;
-    SELECT * INTO STRICT v_effect FROM pitr_external_evidence.recovery_effect WHERE effect_digest=v_grant.effect_digest;
+    SELECT * INTO v_grant FROM pitr_external_evidence.recovery_grant
+     WHERE grant_id=p_grant_id FOR UPDATE;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+
+    v_instance_fp := pitr_external_evidence.instance_fingerprint(p_instance_secret);
     v_boundary_fp := pitr_external_evidence.boundary_fingerprint(
       v_grant.domain,v_grant.boundary_r,v_grant.boundary_f,
       v_grant.successor_epoch,v_grant.placement_version,v_grant.required_receipt
     );
-    SELECT * INTO STRICT v_claim FROM pitr_external_evidence.recovery_boundary_claim
-     WHERE boundary_fingerprint=v_boundary_fp;
+
+    SELECT * INTO v_claim FROM pitr_external_evidence.recovery_boundary_claim
+     WHERE boundary_fingerprint=v_boundary_fp FOR UPDATE;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+
+    SELECT * INTO v_effect FROM pitr_external_evidence.recovery_effect
+     WHERE effect_digest=v_grant.effect_digest FOR UPDATE;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+
+    PERFORM 1 FROM pitr_external_evidence.signing_key WHERE singleton FOR SHARE;
+
+    IF v_claim.domain IS DISTINCT FROM v_grant.domain
+       OR v_claim.boundary_r IS DISTINCT FROM v_grant.boundary_r
+       OR v_claim.boundary_f IS DISTINCT FROM v_grant.boundary_f
+       OR v_claim.successor_epoch IS DISTINCT FROM v_grant.successor_epoch
+       OR v_claim.placement_version IS DISTINCT FROM v_grant.placement_version
+       OR v_claim.required_receipt IS DISTINCT FROM v_grant.required_receipt
+       OR v_claim.effect_digest IS DISTINCT FROM v_grant.effect_digest
+       OR v_claim.claimed_principal IS DISTINCT FROM v_principal
+       OR v_claim.claimed_instance_id IS DISTINCT FROM p_instance_id
+       OR v_claim.claimed_instance_fingerprint IS DISTINCT FROM v_instance_fp THEN
+      RETURN NULL;
+    END IF;
+
+    IF v_effect.domain IS DISTINCT FROM v_grant.domain
+       OR v_effect.boundary_r IS DISTINCT FROM v_grant.boundary_r
+       OR v_effect.boundary_f IS DISTINCT FROM v_grant.boundary_f
+       OR v_effect.required_receipt IS DISTINCT FROM v_grant.required_receipt THEN
+      RETURN NULL;
+    END IF;
+
+    IF NOT pitr_external_evidence.stored_effect_is_valid(v_effect.effect_digest)
+       OR NOT pitr_external_evidence.stored_grant_is_valid(v_grant.grant_id) THEN
+      RETURN NULL;
+    END IF;
+
     RETURN jsonb_build_object(
       'domain',v_grant.domain,'boundary_r',v_grant.boundary_r,'boundary_f',v_grant.boundary_f,
       'successor_epoch',v_grant.successor_epoch,'placement_version',v_grant.placement_version,
@@ -387,6 +431,23 @@ psql_in "$control_container" "
       'claimed_instance_id',v_claim.claimed_instance_id::text,
       'claimed_instance_fingerprint',v_claim.claimed_instance_fingerprint
     )::text;
+  END;
+  \$\$;
+
+  CREATE OR REPLACE FUNCTION pitr_external_evidence.fetch_claimed_recovery_material_hold(
+    p_grant_id text,p_instance_id uuid,p_instance_secret text,p_hold_ms integer
+  ) RETURNS text LANGUAGE plpgsql STRICT SECURITY DEFINER
+  SET search_path=pg_catalog,pitr_external_evidence
+  AS \$\$
+  DECLARE v_material text;
+  BEGIN
+    IF p_hold_ms < 100 OR p_hold_ms > 5000 THEN RETURN NULL; END IF;
+    v_material := pitr_external_evidence.fetch_claimed_recovery_material(
+      p_grant_id,p_instance_id,p_instance_secret
+    );
+    IF v_material IS NULL THEN RETURN NULL; END IF;
+    PERFORM pg_catalog.pg_sleep(p_hold_ms::numeric / 1000);
+    RETURN v_material;
   END;
   \$\$;
 
@@ -401,6 +462,7 @@ psql_in "$control_container" "
   REVOKE ALL ON FUNCTION pitr_external_evidence.claim_grant(text,uuid,text) FROM PUBLIC;
   REVOKE ALL ON FUNCTION pitr_external_evidence.verify_claimed_grant(text,uuid,text) FROM PUBLIC;
   REVOKE ALL ON FUNCTION pitr_external_evidence.fetch_claimed_recovery_material(text,uuid,text) FROM PUBLIC;
+  REVOKE ALL ON FUNCTION pitr_external_evidence.fetch_claimed_recovery_material_hold(text,uuid,text,integer) FROM PUBLIC;
   REVOKE ALL ON FUNCTION pitr_external_evidence.verifier_delay_probe() FROM PUBLIC;
 " >/dev/null
 
@@ -598,8 +660,14 @@ assert_exact "physical_pitr_clone_exact_R_state" "state_at_R|5|10|7|false|0|" \
 
 # ---------------------------------------------------------------------------
 # Restored-instance capability + bounded local cross-authority transport.
-# All claim/verify/material-fetch helpers share the same async dblink primitive;
-# connect_timeout bounds setup and caller-local polling bounds response time.
+# All claim/verify/material-fetch helpers share the same async dblink primitive.
+# Connection setup and established-response time are separate bounds.
+#
+# On uncertain/timeout paths this C2 helper deliberately does not invoke a
+# synchronous remote cancel/disconnect operation. The one-shot SQL caller retires
+# the local backend/session immediately, which closes the abandoned connection.
+# Production transport remains unselected and must provide independently bounded
+# cancellation/cleanup or equivalent session retirement semantics.
 # ---------------------------------------------------------------------------
 for c in "$restored_container" "$clone_container"; do
   psql_in "$c" "
@@ -627,14 +695,11 @@ for c in "$restored_container" "$clone_container"; do
       v_deadline := clock_timestamp() + (p_timeout_ms::text || ' milliseconds')::interval;
       PERFORM public.dblink_connect(v_name,p_conn);
       IF public.dblink_send_query(v_name,p_sql) <> 1 THEN
-        BEGIN PERFORM public.dblink_disconnect(v_name); EXCEPTION WHEN OTHERS THEN NULL; END;
         RETURN NULL;
       END IF;
       LOOP
         EXIT WHEN public.dblink_is_busy(v_name)=0;
         IF clock_timestamp() >= v_deadline THEN
-          BEGIN PERFORM public.dblink_cancel_query(v_name); EXCEPTION WHEN OTHERS THEN NULL; END;
-          BEGIN PERFORM public.dblink_disconnect(v_name); EXCEPTION WHEN OTHERS THEN NULL; END;
           RETURN NULL;
         END IF;
         PERFORM pg_catalog.pg_sleep(0.025);
@@ -643,7 +708,6 @@ for c in "$restored_container" "$clone_container"; do
       PERFORM public.dblink_disconnect(v_name);
       RETURN v_value;
     EXCEPTION WHEN OTHERS THEN
-      BEGIN PERFORM public.dblink_disconnect(v_name); EXCEPTION WHEN OTHERS THEN NULL; END;
       RETURN NULL;
     END;
     \$\$;
@@ -752,6 +816,7 @@ psql_in "$control_container" "
   GRANT EXECUTE ON FUNCTION pitr_external_evidence.claim_grant(text,uuid,text),
     pitr_external_evidence.verify_claimed_grant(text,uuid,text),
     pitr_external_evidence.fetch_claimed_recovery_material(text,uuid,text),
+    pitr_external_evidence.fetch_claimed_recovery_material_hold(text,uuid,text,integer),
     pitr_external_evidence.verifier_delay_probe()
     TO $primary_role,$rival_role,$race_a_role,$race_b_role;
 " >/dev/null
@@ -792,15 +857,20 @@ assert_exact "physical_pitr_tampered_grant_cannot_claim" "false" \
 assert_exact "physical_pitr_tamper_leaves_boundary_unclaimed" "0" \
   "$(psql_in "$control_container" "SELECT count(*)::text FROM pitr_external_evidence.recovery_boundary_claim WHERE boundary_r='R' AND boundary_f='F';")"
 
-# Local bounded-response negative: authenticated peer accepts the session but
-# sleeps for 5 seconds. The caller-local 500 ms deadline must fail closed first.
+# Cooperative stalled-response negative: a responsive peer runs a 5-second query.
+# The caller-local polling deadline must return false first.
 claim_source="$(psql_in "$restored_container" "SELECT pg_get_functiondef('pitr_local_claim_external(text,text)'::regprocedure);")"
 verify_source="$(psql_in "$restored_container" "SELECT pg_get_functiondef('pitr_local_verify_external(text,text)'::regprocedure);")"
 apply_source="$(psql_in "$restored_container" "SELECT pg_get_functiondef('pitr_local_apply_external(text,text)'::regprocedure);")"
+bounded_source="$(psql_in "$restored_container" "SELECT pg_get_functiondef('pitr_bounded_remote_text(text,text,integer)'::regprocedure);")"
 [[ "$claim_source" == *"pitr_bounded_remote_text"* && "$verify_source" == *"pitr_bounded_remote_text"* && "$apply_source" == *"pitr_bounded_remote_text"* ]] || {
   echo "recovery helpers bypass bounded local transport" >&2; exit 1;
 }
+[[ "$bounded_source" != *"dblink_cancel_query"* ]] || {
+  echo "recovery deadline path still includes synchronous dblink_cancel_query" >&2; exit 1;
+}
 printf '%s\n' 'physical_pitr_recovery_helpers_use_bounded_transport=PASS'
+printf '%s\n' 'physical_pitr_recovery_deadline_path_has_no_synchronous_cancel=PASS'
 delay_start="$(date +%s%3N)"
 delay_value="$(psql_in "$restored_container" "SELECT coalesce(pitr_bounded_remote_text('$primary_conn','SELECT pitr_external_evidence.verifier_delay_probe()::text',500),'');")"
 delay_end="$(date +%s%3N)"
@@ -808,6 +878,55 @@ delay_ms=$((delay_end - delay_start))
 assert_exact "physical_pitr_recovery_stalled_peer_fails_closed" "" "$delay_value"
 [[ "$delay_ms" -lt 1800 ]] || { echo "recovery local deadline not authoritative: ${delay_ms}ms" >&2; exit 1; }
 printf 'physical_pitr_recovery_local_deadline=PASS elapsed_ms=%s\n' "$delay_ms"
+
+# Real established-session blackhole: start the authenticated remote query, wait
+# until pg_stat_activity proves it is active, then drop every server->client TCP
+# packet from the surviving PostgreSQL. An outer 5-second watchdog prevents the
+# evidence harness itself from hanging if the local deadline/cleanup claim fails.
+blackhole_restored_ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$restored_container")"
+blackhole_control_ip="$control_ip"
+[[ -n "$blackhole_restored_ip" ]] || { echo "cannot resolve restored container IP" >&2; exit 1; }
+if sudo iptables -nL DOCKER-USER >/dev/null 2>&1; then
+  blackhole_chain="DOCKER-USER"
+else
+  blackhole_chain="FORWARD"
+fi
+blackhole_start="$(date +%s%3N)"
+(
+  set +e
+  timeout 5s docker exec -e PGPASSWORD="$password" "$restored_container" \
+    psql -X -v ON_ERROR_STOP=1 -U postgres -d jlmirror -Atq \
+    -c "SELECT coalesce(pitr_bounded_remote_text('$primary_conn','SELECT pitr_external_evidence.verifier_delay_probe()::text',500),'');" \
+    >"$tmpdir/blackhole.out" 2>"$tmpdir/blackhole.err"
+  printf '%s\n' "$?" >"$tmpdir/blackhole.rc"
+) & blackhole_pid=$!
+blackhole_active=0
+for _ in $(seq 1 40); do
+  blackhole_active="$(psql_in "$control_container" "SELECT count(*)::text FROM pg_stat_activity WHERE usename='$primary_role' AND state='active' AND query LIKE '%verifier_delay_probe%';")"
+  [[ "$blackhole_active" -ge 1 ]] && break
+  sleep 0.05
+done
+[[ "$blackhole_active" -ge 1 ]] || { echo "blackhole probe never reached established active query" >&2; kill "$blackhole_pid" >/dev/null 2>&1 || true; wait "$blackhole_pid" >/dev/null 2>&1 || true; exit 1; }
+sudo iptables -I "$blackhole_chain" 1 -s "$blackhole_control_ip" -d "$blackhole_restored_ip" \
+  -p tcp --sport 5432 -j DROP
+blackhole_rule_installed=1
+blackhole_rule_at="$(date +%s%3N)"
+wait "$blackhole_pid"
+blackhole_rc="$(cat "$tmpdir/blackhole.rc")"
+sudo iptables -D "$blackhole_chain" -s "$blackhole_control_ip" -d "$blackhole_restored_ip" \
+  -p tcp --sport 5432 -j DROP
+blackhole_rule_installed=0
+blackhole_end="$(date +%s%3N)"
+blackhole_elapsed_ms=$((blackhole_end - blackhole_rule_at))
+[[ "$blackhole_rc" == "0" ]] || {
+  echo "real blackhole exceeded local bound or failed rc=$blackhole_rc" >&2
+  cat "$tmpdir/blackhole.err" >&2 || true
+  exit 1
+}
+assert_exact "physical_pitr_recovery_real_blackhole_fails_closed" "" "$(cat "$tmpdir/blackhole.out")"
+[[ "$blackhole_elapsed_ms" -lt 1800 ]] || { echo "real blackhole local deadline not authoritative: ${blackhole_elapsed_ms}ms" >&2; exit 1; }
+printf 'physical_pitr_recovery_real_blackhole_local_deadline=PASS elapsed_ms=%s\n' "$blackhole_elapsed_ms"
+printf '%s\n' 'physical_pitr_recovery_timeout_backend_retirement=PASS one_shot_sql_session=true'
 
 # Cross-grant concurrent race on a separate boundary: two different grant IDs,
 # two authenticated principals and two instance capabilities still yield one
@@ -832,9 +951,11 @@ if [[ "$race_a|$race_b" != "true|false" && "$race_a|$race_b" != "false|true" ]];
 fi
 if [[ "$race_a" == true ]]; then
   race_winner_role="$race_a_role"; race_winner_password="$race_a_password"; race_winner_sql="$race_sql_a"
+  race_winner_grant="grant-race-a"; race_winner_id="$race_a_id"; race_winner_secret="$race_a_secret"
   race_loser_role="$race_b_role"; race_loser_password="$race_b_password"; race_loser_sql="$race_sql_b"
 else
   race_winner_role="$race_b_role"; race_winner_password="$race_b_password"; race_winner_sql="$race_sql_b"
+  race_winner_grant="grant-race-b"; race_winner_id="$race_b_id"; race_winner_secret="$race_b_secret"
   race_loser_role="$race_a_role"; race_loser_password="$race_a_password"; race_loser_sql="$race_sql_a"
 fi
 assert_exact "physical_pitr_recovery_claim_winner_retry" "true" "$(psql_control_direct "$race_winner_role" "$race_winner_password" "$race_winner_sql")"
@@ -843,6 +964,49 @@ assert_exact "physical_pitr_recovery_boundary_claim_rows_after_cross_grant_race"
   "$(psql_in "$control_container" "SELECT count(*)::text FROM pitr_external_evidence.recovery_boundary_claim WHERE boundary_r='R-race' AND boundary_f='F-race';")"
 printf '%s\n' 'physical_pitr_recovery_cross_grant_boundary_single_winner_race=PASS'
 printf '%s\n' 'physical_pitr_recovery_claim_single_winner_race=PASS'
+
+# Fetch consistency/TOCTOU evidence. The final fetch locks grant, boundary claim,
+# effect and signing-key state before revalidating all claim->grant->effect fields.
+# A test-only wrapper holds those locks after materialization; owner mutations of
+# each authority row must hit lock_timeout instead of substituting state in-flight.
+(
+  psql_control_direct "$race_winner_role" "$race_winner_password" \
+    "SELECT length(pitr_external_evidence.fetch_claimed_recovery_material_hold('$race_winner_grant','$race_winner_id'::uuid,'$race_winner_secret',3000))::text;" \
+    >"$tmpdir/fetch-hold.out"
+) & fetch_hold_pid=$!
+
+wait_for_lock_timeout() {
+  local label="$1" sql="$2" matched=0
+  for _ in $(seq 1 20); do
+    set +e
+    psql_in "$control_container" "SET lock_timeout='150ms'; $sql" \
+      >"$tmpdir/${label}.out" 2>"$tmpdir/${label}.err"
+    local rc=$?
+    set -e
+    if [[ "$rc" -ne 0 ]] && grep -qi 'lock timeout' "$tmpdir/${label}.err"; then
+      matched=1
+      break
+    fi
+    sleep 0.05
+  done
+  [[ "$matched" == "1" ]] || {
+    echo "$label did not observe fetch-held row lock" >&2
+    cat "$tmpdir/${label}.err" >&2 || true
+    return 1
+  }
+  printf '%s=PASS\n' "$label"
+}
+
+wait_for_lock_timeout "physical_pitr_recovery_fetch_locks_grant" \
+  "UPDATE pitr_external_evidence.recovery_grant SET issued_at=issued_at WHERE grant_id='$race_winner_grant';"
+wait_for_lock_timeout "physical_pitr_recovery_fetch_locks_effect" \
+  "UPDATE pitr_external_evidence.recovery_effect SET issued_at=issued_at WHERE effect_digest=(SELECT effect_digest FROM pitr_external_evidence.recovery_grant WHERE grant_id='$race_winner_grant');"
+wait_for_lock_timeout "physical_pitr_recovery_fetch_locks_boundary_claim" \
+  "UPDATE pitr_external_evidence.recovery_boundary_claim SET claimed_at=claimed_at WHERE boundary_r='R-race' AND boundary_f='F-race';"
+wait "$fetch_hold_pid"
+[[ "$(cat "$tmpdir/fetch-hold.out")" =~ ^[1-9][0-9]*$ ]] || { echo "locked fetch did not return recovery material" >&2; exit 1; }
+printf '%s\n' 'physical_pitr_recovery_fetch_consistent_locked_snapshot=PASS'
+printf '%s\n' 'physical_pitr_recovery_fetch_revalidates_claim_grant_effect_binding=PASS'
 
 # A locally recreated continuity receipt is still insufficient. The clone can
 # fabricate the expected receipt but has no surviving boundary claim/effect proof.

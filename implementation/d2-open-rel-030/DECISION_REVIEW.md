@@ -14,68 +14,83 @@ Subject to exact-final-HEAD review and explicit Track B acceptance:
 
 1. select the ADR-008 PostgreSQL transactional acceptance pattern as Tier 1 only with immutable canonical observation content, owner-controlled active source/poll authority, durable live poll claims and current-state CAS by platform ordering authority;
 2. require late-history finality/currentness from durable provider-owner authority, never worker/caller timestamps;
-3. bind every late-history coverage run to the exact owner `authority_generation` as well as owner-required snapshot currentness;
+3. bind every late-history coverage run to the exact owner `authority_generation`, exact current `provider_dataset_revision` and owner-required snapshot currentness;
 4. invalidate prior materialized reconciliation coverage whenever owner authority generation advances, even if snapshot/finality timestamps remain equal;
-5. reject conflicting provider-visible canonical content under an already accepted `(stream_id, observation_id)` before recording any reconciliation coverage;
-6. perform stable-identity conflict validation before provider-time window selection whenever either the accepted or owner-current timestamp intersects the requested window, so a correction that moves across a window boundary cannot mint false coverage;
-7. require physical PITR recovery admission from authenticated surviving `(R,F]` evidence external to the restored authority;
-8. require surviving recovery-grant consumption to be atomic single-winner authority derived from an authenticated surviving-authority session principal, never a caller-supplied target/principal identifier;
-9. require recovery claim/verification interfaces to resolve grant facts internally and expose no direct grant-table read privilege to recovery principals;
-10. require deterministic versioned self-delimiting structured bytes before hash/MAC/signature;
-11. require canonical typed values themselves to be injective over the full accepted domain; for PostgreSQL `timestamptz`, relocation serialization must preserve explicit AD/BC era as well as UTC time and microseconds;
-12. select TimescaleDB as Tier 2 historical projection only under the mediated shared-history profile proven by this spike;
-13. classify `ts_automation_owner` as LOGIN cross-tenant privileged infrastructure and require production admission controls to exclude tenant/application use;
-14. reject direct pooled RLS assumptions for Timescale columnstore/CAGG on the evaluated profile;
-15. require genuine fresh-cluster reconstruction of database-global role topology;
-16. require source relocation placement authority to be locked before deriving `F`;
-17. require target-owned authenticated sealed canonical-payload checkpoints before Tier 1 can authorize target placement;
-18. require target checkpoint signing/mint authority exclusively on the target side;
-19. require the effective checkpoint signing key to be generated inside target authority, not provisioned or retained by an external orchestrator acting across both databases;
-20. require Tier 1 verification capability to exclude the target signing key or any equivalent mint capability;
-21. require cross-authority verifier connection secrets to remain restricted authority-owned state rather than embedded in function source;
-22. require Tier 1 successor placement and the exact durable activation grant to commit atomically, bound to tenant, `F`, checkpoint id/generation, target attestation and successor placement version;
-23. require target `sealed → activated` to verify that exact committed Tier 1 grant; the target automation principal must not self-promote;
-24. require cross-authority verification to be bounded/fail-closed both at connection establishment and after a peer has connected; established-call response deadlines must be locally enforced by the caller and verification must remain outside local authority-lock windows;
-25. reject any target data above `F` before activation unless excluded by the target lifecycle;
-26. preserve `OPEN-REL-020` as owner of production capacity/SLO/retention/cardinality/cost numerics;
-27. treat database versions, image digests, evidence crypto, recovery/verifier LOGIN mechanisms, verifier transport, capability-store layout, local evidence deadlines and concrete canonical encoding as reproducibility dependencies rather than immutable production selections.
+5. atomically increment `provider_dataset_revision` and invalidate coverage for owner-visible provider INSERT/UPDATE, including same-generation corrections whose timestamps do not advance;
+6. prohibit stable provider identity rewrite and require destructive provider-history DELETE/TRUNCATE to fail closed unless a separate explicit governed gap/authority path is selected;
+7. keep the reconciliation worker out of direct provider-history INSERT/UPDATE/DELETE/TRUNCATE and provider-owner/trigger-administration authority;
+8. require every ordered history hardening module matching `00[4-9]_history_*.sql` to be wired into the extended conformance runner, with CI failing if an existing reviewer-critical module is omitted;
+9. reject conflicting provider-visible canonical content under an already accepted `(stream_id, observation_id)` before recording any reconciliation coverage;
+10. perform stable-identity conflict validation before provider-time window selection whenever either the accepted or owner-current timestamp intersects the requested window, so a correction that moves across a window boundary cannot mint false coverage;
+11. require physical PITR recovery admission from authenticated surviving `(R,F]` evidence external to the restored authority;
+12. require surviving recovery-grant consumption to be atomic single-winner authority derived from an authenticated surviving-authority session principal, never a caller-supplied target/principal identifier;
+13. require recovery claim/verification interfaces to resolve grant facts internally and expose no direct grant-table read privilege to recovery principals;
+14. require deterministic versioned self-delimiting structured bytes before hash/MAC/signature;
+15. require canonical typed values themselves to be total and injective over the full accepted domain; for PostgreSQL `timestamptz`, finite relocation serialization must preserve UTC time, microseconds and explicit AD/BC era, while non-finite values must use distinct reserved `infinity` / `-infinity` representations rather than NULL/omission;
+16. select TimescaleDB as Tier 2 historical projection only under the mediated shared-history profile proven by this spike;
+17. classify `ts_automation_owner` as LOGIN cross-tenant privileged infrastructure and require production admission controls to exclude tenant/application use;
+18. reject direct pooled RLS assumptions for Timescale columnstore/CAGG on the evaluated profile;
+19. require genuine fresh-cluster reconstruction of database-global role topology;
+20. require source relocation placement authority to be locked before deriving `F`;
+21. require target-owned authenticated sealed canonical-payload checkpoints before Tier 1 can authorize target placement;
+22. require target checkpoint signing/mint authority exclusively on the target side;
+23. require the effective checkpoint signing key to be generated inside target authority, not provisioned or retained by an external orchestrator acting across both databases;
+24. require Tier 1 verification capability to exclude the target signing key or any equivalent mint capability;
+25. require cross-authority verifier connection secrets to remain restricted authority-owned state rather than embedded in function source;
+26. require Tier 1 successor placement and the exact durable activation grant to commit atomically, bound to tenant, `F`, checkpoint id/generation, target attestation and successor placement version;
+27. require target `sealed → activated` to verify that exact committed Tier 1 grant; the target automation principal must not self-promote;
+28. require cross-authority verification to be bounded/fail-closed both at connection establishment and after a peer has connected; established-call response deadlines must be locally enforced by the caller and verification must remain outside local authority-lock windows;
+29. reject any target data above `F` before activation unless excluded by the target lifecycle;
+30. preserve `OPEN-REL-020` as owner of production capacity/SLO/retention/cardinality/cost numerics;
+31. treat database versions, image digests, evidence crypto, recovery/verifier LOGIN mechanisms, verifier transport, capability-store layout, local evidence deadlines and concrete canonical encoding as reproducibility dependencies rather than immutable production selections.
 
 ## Exact empirical anchor before this review-document mutation
 
 ```text
 HEAD
-bf84ed0d4a3822bb3038da50a2fdd9dd90dad7ab
+723022253af332b0fa08ff7be3fbcad326dd8712
 
 JLMIRROR Deterministic Assurance
-run #2108
-run id 33231690461
+run #2131
+run id 33233145281
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #122
-run id 33231690454
+run #133
+run id 33233145277
 SUCCESS
 ```
 
-This SHA proves the executable mechanism after generation-bound owner-current history repair, cross-window stable-identity hardening, authenticated-principal single-winner recovery, era-aware injective relocation timestamp canonicalization, and caller-local post-connect verifier deadline repair. It becomes provenance after this document mutation; the exact final package HEAD must rerun both gates.
+This SHA proves the executable mechanism after generation/revision-bound owner-current history repair, cross-window stable-identity hardening, provider dataset mutation fencing, destructive DELETE/TRUNCATE fail-closed behavior, history-runner completeness guarding, authenticated-principal single-winner recovery, total AD/BC/non-finite relocation timestamp canonicalization, and caller-local post-connect verifier deadline repair. It becomes provenance after this document mutation; the exact final package HEAD must rerun both gates.
 
 ## Tier 1 acceptance and owner-current history authority
 
 The PostgreSQL harness establishes independent-session atomic create-or-observe, immutable canonical identity/content, owner source generation and poll epoch, durable live poll claims, current-state CAS independent from provider event time, historical obligation/outbox atomicity, crash rollback and post-COMMIT ambiguity convergence.
 
-Late-history workers cannot self-assert provider authority, finality or currentness. Durable `provider_authority` owns `authority_generation`, `current_snapshot_at`, `finality_floor` and `required_reconciliation_snapshot_at`.
+Late-history workers cannot self-assert provider authority, finality or currentness. Durable `provider_authority` owns `authority_generation`, `provider_dataset_revision`, `current_snapshot_at`, `finality_floor` and `required_reconciliation_snapshot_at`.
 
-Coverage is valid only for the **exact current generation**. `contiguous_covered_through(...)` filters by current `authority_generation` and owner-required snapshot. `advance_provider_authority(...)` clears materialized coverage and transitions every non-gap stream to `reconciliation_required`, including a generation advance that keeps all timestamps unchanged. Therefore a provider correction/revision cannot recycle previous-generation coverage simply by retaining the same snapshot timestamp.
+Coverage is valid only for the **exact current generation + exact current provider dataset revision + owner-required snapshot currentness**. `reconciliation_run` records both generation and dataset revision. `contiguous_covered_through(...)` filters by those current owner facts. `advance_provider_authority(...)` clears materialized coverage, and owner-visible provider INSERT/UPDATE increments the dataset revision and invalidates coverage in the same transaction. `sweep(...)` and dataset mutation serialize on the same `provider_authority` row, so a same-generation correction cannot retain or race past a stale completion watermark.
+
+Stable provider identity cannot be rewritten. Destructive DELETE is rejected by the provider dataset trigger. Statement-level TRUNCATE is separately guarded and fails closed; a row-level trigger alone is not considered coverage for destructive statement-level mutation. The reconciliation worker has no direct INSERT/UPDATE/DELETE/TRUNCATE privilege, no provider-owner membership and no trigger-administration path. Production owner/superuser governance remains an explicit deployment trust boundary.
 
 Accepted history is immutable under stable reconciliation identity. Conflict validation is performed before provider-time-only selection: if either accepted `observed_at` or owner-current provider `observed_at` intersects the requested window, the stable identity is checked. Thus a correction that moves an accepted row from inside the sweep window to outside it cannot evade validation and still authorize coverage. Any immutable timestamp/value mismatch raises `reconciled observation identity content mismatch`; the failed sweep cannot change accepted canonical content or create a `reconciliation_run`.
 
-Exact #122 proves:
+The CI structural guard enumerates every existing `00[4-9]_history_*.sql` module and requires it to appear in `run_conformance_extended.sh`. Exact #133 reports `history_modules=4` and executes `004`, `005`, `006` and `007` in order, preventing a reviewer-critical hardening file from existing behind a false-green workflow that never runs it.
+
+Exact #133 proves:
 
 ```text
 history_conflicting_observation_rejected=PASS
 history_cross_window_identity_conflict_rejected=PASS
 history_generation_bound_coverage=PASS
 history_owner_currentness_authority=PASS
+history_provider_mutation_invalidates_coverage=PASS
+history_dataset_revision_bound_coverage=PASS
+history_same_generation_dataset_mutation_fenced=PASS
+history_provider_destructive_mutation_fails_closed=PASS
+history_worker_no_direct_provider_mutation=PASS
+history_worker_cannot_administer_provider_triggers=PASS
+history_provider_truncate_fails_closed=PASS
 late_history_reconciliation=PASS
 ```
 
@@ -87,7 +102,7 @@ A valid signature is necessary but not sufficient. The bounded claim interface i
 
 The harness also issues a dedicated grant and races two independently authenticated principals. Exactly one must win, the winner retry must succeed, the loser retry must fail, and the persisted binding must equal the authenticated winner principal.
 
-Exact #122 proves:
+Exact #133 preserves:
 
 ```text
 physical_pitr_recovery_claim_api_id_only=PASS
@@ -142,21 +157,25 @@ activated
 
 Target and verifier construct the same deterministic self-delimiting checkpoint message before HMAC. Cross-store equality is required, but equal bytes do not imply equal signing authority.
 
-Every typed canonical value must also be injective before field framing. PostgreSQL supports BC `timestamptz` values, so formatting only `YYYY-MM-DD` would collide across corresponding 1 BC / 1 AD timestamps. Tier 1 `authoritative_digest(...)` and Tier 2 `target_digest(...)` both use a shared semantic `canonical_timestamp(...)` representation: UTC, microseconds and explicit `AD`/`BC` era, then `canonical_field(...)`.
+Every typed canonical value must also be total and injective before field framing. Tier 1 `authoritative_digest(...)` and Tier 2 `target_digest(...)` both use a shared semantic `canonical_timestamp(...)`. Finite PostgreSQL `timestamptz` values use UTC, microseconds and explicit `AD`/`BC` era. Non-finite `-infinity` and `infinity` map to those exact reserved literals. They must remain non-NULL, distinct, cross-store identical and produce distinct self-delimiting SHA-256 inputs/digests.
 
-Exact #122 proves:
+Exact #133 proves:
 
 ```text
 relocation_timestamp_era_injective=PASS
 relocation_timestamp_era_cross_store=PASS
-relocation_digest_uses_era_aware_timestamp=PASS
+relocation_timestamp_negative_infinity_canonical=PASS value=-infinity
+relocation_timestamp_positive_infinity_canonical=PASS value=infinity
+relocation_timestamp_nonfinite_cross_store=PASS
+relocation_timestamp_nonfinite_digest_injective=PASS
+relocation_digest_uses_total_timestamp_canonicalizer=PASS
 ```
 
 ### Target signing-key provenance
 
 The effective HMAC key is generated inside Tier 2 target authority using target-side randomness. The trusted disposable-lab controller may administer both databases for setup and fault injection, but it does not provision or retain the protocol key. Tier 1 contains no target signing-key relation. Projection writer and verifier principals cannot read the generated key.
 
-Exact #122 preserves:
+Exact #133 preserves:
 
 ```text
 relocation_tier1_has_no_target_signing_key=PASS
@@ -174,7 +193,7 @@ The evidence harness uses random verifier LOGIN credentials plus `dblink` solely
 
 The raw asynchronous transport helper is not executable by verifier/projection principals. Connection establishment uses `connect_timeout=1`. After connection, `dblink_send_query` + `dblink_is_busy` are polled against a caller-local deadline; timeout/uncertainty disconnects and returns false. A five-second remote delay probe is tested against a 500 ms local probe deadline and must return well below 1.8 seconds.
 
-Exact #122 proves:
+Exact #133 preserves:
 
 ```text
 relocation_tier1_verifier_cannot_call_raw_bounded_transport=PASS
@@ -185,7 +204,7 @@ relocation_tier1_verifier_stalled_peer_fails_closed=PASS
 relocation_tier1_verifier_local_deadline=PASS
 ```
 
-Observed evidence durations were approximately 561 ms and 565 ms. These values are laboratory evidence, not production timeout selections.
+These values are laboratory evidence, not production timeout selections.
 
 ### Durable activation grant and atomic rollback
 
@@ -244,7 +263,11 @@ The evidence program has repaired the following classes, with panoramic review a
 27. recovery single-winner binding relying on a caller-copyable target identifier instead of authenticated surviving-authority session identity;
 28. recovery principals needing direct grant-table reads or caller-supplied signed grant facts to consume authority;
 29. stable reconciled identity corrections escaping validation when owner-current timestamp crosses the requested sweep-window boundary;
-30. relocation timestamp canonicalization being non-injective across PostgreSQL BC/AD eras.
+30. relocation timestamp canonicalization being non-injective across PostgreSQL BC/AD eras;
+31. provider-visible dataset mutation being able to leave completed coverage reusable without an owner dataset-revision change;
+32. a reviewer-critical history hardening module being present in the branch but omitted from the extended runner, producing false-green assurance for an unexecuted fix;
+33. PostgreSQL non-finite `timestamptz` values becoming NULL/omitted under `to_char(...)`, allowing `infinity` / `-infinity` timestamp facts to disappear from the digest;
+34. statement-level `TRUNCATE` bypassing row-level provider dataset revision/destructive-mutation triggers.
 
 ## What acceptance would and would not mean
 
@@ -256,7 +279,8 @@ Acceptance would not freeze production PostgreSQL/Timescale versions, KMS/HSM to
 
 ```text
 Evidence completeness        COMPLETE
-Executable empirical anchor  bf84ed0d4a3822bb3038da50a2fdd9dd90dad7ab / #2108 / #122
+Executable empirical anchor  723022253af332b0fa08ff7be3fbcad326dd8712 / #2131 / #133
+Material finding classes     34 closed by current mechanism
 Final documentation HEAD     REQUIRES FRESH EXACT-HEAD CI
 Codex final review           REQUIRED
 Native Assurance             REQUIRED

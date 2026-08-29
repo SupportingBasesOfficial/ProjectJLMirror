@@ -18,42 +18,43 @@ Subject to exact-final-HEAD review and explicit Track B acceptance:
 4. invalidate prior materialized reconciliation coverage whenever owner authority generation advances, even if snapshot/finality timestamps remain equal;
 5. reject conflicting provider-visible canonical content under an already accepted `(stream_id, observation_id)` before recording any reconciliation coverage;
 6. require physical PITR recovery admission from authenticated surviving `(R,F]` evidence external to the restored authority;
-7. require deterministic versioned self-delimiting structured bytes before hash/MAC/signature;
-8. select TimescaleDB as Tier 2 historical projection only under the mediated shared-history profile proven by this spike;
-9. classify `ts_automation_owner` as LOGIN cross-tenant privileged infrastructure and require production admission controls to exclude tenant/application use;
-10. reject direct pooled RLS assumptions for Timescale columnstore/CAGG on the evaluated profile;
-11. require genuine fresh-cluster reconstruction of database-global role topology;
-12. require source relocation placement authority to be locked before deriving `F`;
-13. require target-owned authenticated sealed canonical-payload checkpoints before Tier 1 can authorize target placement;
-14. require target checkpoint signing/mint authority exclusively on the target side;
-15. require the effective checkpoint signing key to be generated inside target authority, not provisioned or retained by an external orchestrator acting across both databases;
-16. require Tier 1 verification capability to exclude the target signing key or any equivalent mint capability;
-17. require cross-authority verifier connection secrets to remain restricted authority-owned state rather than embedded in function source;
-18. require Tier 1 successor placement and the exact durable activation grant to commit atomically, bound to tenant, `F`, checkpoint id/generation, target attestation and successor placement version;
-19. require target `sealed → activated` to verify that exact committed Tier 1 grant; the target automation principal must not self-promote;
-20. require cross-authority verification to be bounded/fail-closed and performed outside local authority-lock windows;
-21. reject any target data above `F` before activation unless excluded by the target lifecycle;
-22. preserve `OPEN-REL-020` as owner of production capacity/SLO/retention/cardinality/cost numerics;
-23. treat database versions, image digests, evidence crypto, verifier transport, capability-store layout and concrete canonical encoding as reproducibility dependencies rather than immutable production selections.
+7. require that surviving recovery grants be atomically claimed by one unique restore target; same-target retry may converge, but a different target must be rejected;
+8. require deterministic versioned self-delimiting structured bytes before hash/MAC/signature;
+9. select TimescaleDB as Tier 2 historical projection only under the mediated shared-history profile proven by this spike;
+10. classify `ts_automation_owner` as LOGIN cross-tenant privileged infrastructure and require production admission controls to exclude tenant/application use;
+11. reject direct pooled RLS assumptions for Timescale columnstore/CAGG on the evaluated profile;
+12. require genuine fresh-cluster reconstruction of database-global role topology;
+13. require source relocation placement authority to be locked before deriving `F`;
+14. require target-owned authenticated sealed canonical-payload checkpoints before Tier 1 can authorize target placement;
+15. require target checkpoint signing/mint authority exclusively on the target side;
+16. require the effective checkpoint signing key to be generated inside target authority, not provisioned or retained by an external orchestrator acting across both databases;
+17. require Tier 1 verification capability to exclude the target signing key or any equivalent mint capability;
+18. require cross-authority verifier connection secrets to remain restricted authority-owned state rather than embedded in function source;
+19. require Tier 1 successor placement and the exact durable activation grant to commit atomically, bound to tenant, `F`, checkpoint id/generation, target attestation and successor placement version;
+20. require target `sealed → activated` to verify that exact committed Tier 1 grant; the target automation principal must not self-promote;
+21. require cross-authority verification to be bounded/fail-closed both at connection establishment and after a peer has connected; established-call response deadlines must be locally enforced by the caller and verification must remain outside local authority-lock windows;
+22. reject any target data above `F` before activation unless excluded by the target lifecycle;
+23. preserve `OPEN-REL-020` as owner of production capacity/SLO/retention/cardinality/cost numerics;
+24. treat database versions, image digests, evidence crypto, verifier transport, capability-store layout, local evidence deadlines and concrete canonical encoding as reproducibility dependencies rather than immutable production selections.
 
 ## Exact empirical anchor before this review-document mutation
 
 ```text
 HEAD
-387a68af2eb896f0ece8c916b241a84fde0876f3
+1e58646d903f09954e85cca605c2c840f5099ee4
 
 JLMIRROR Deterministic Assurance
-run #2068
-run id 33226943467
+run #2080
+run id 33227438465
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #102
-run id 33226943414
+run #108
+run id 33227438503
 SUCCESS
 ```
 
-This SHA proves the executable mechanism after the generation-bound owner-current history repair plus the authority-level key-provenance and verifier-secret panorama. It becomes provenance after this document mutation; the exact final package HEAD must rerun both gates.
+This SHA proves the executable mechanism after the generation-bound owner-current history repair, single-winner recovery grant claim and local post-connect verifier deadline repair. It becomes provenance after this document mutation; the exact final package HEAD must rerun both gates.
 
 ## Tier 1 acceptance and owner-current history authority
 
@@ -65,7 +66,7 @@ Coverage is valid only for the **exact current generation**. `contiguous_covered
 
 Accepted history is also immutable under stable reconciliation identity. `sweep(...)` compares owner-visible `observed_at` and `numeric_value` against an existing accepted row before any insert/run record; mismatch raises `reconciled observation identity content mismatch`. The rejected sweep cannot change accepted canonical content or create a `reconciliation_run`.
 
-Exact #102 proves:
+Exact #108 proves:
 
 ```text
 history_conflicting_observation_rejected=PASS
@@ -74,9 +75,25 @@ history_owner_currentness_authority=PASS
 late_history_reconciliation=PASS
 ```
 
-## Physical PITR authority
+## Physical PITR authority and single-winner recovery
 
-A separate surviving control PostgreSQL, excluded from source backup/restore, owns recovery authority and issues a structured authenticated grant only after `F`. The restored database cannot self-mint admission. Delimiter framing is explicitly falsified; the grant is authenticated over deterministic self-delimiting structured fields. Recovery succeeds only after fresh verification of surviving authority.
+A separate surviving control PostgreSQL, excluded from source backup/restore, owns recovery authority and issues a structured authenticated grant only after `F`. The restored database cannot self-mint admission. Delimiter framing is explicitly falsified; the grant is authenticated over deterministic self-delimiting structured fields.
+
+A valid signature is necessary but not sufficient. The surviving authority stores the claimed restore target and exposes atomic create-or-observe semantics under row lock: the first target wins; a same-target retry returns success; a different target returns false. The harness also issues a dedicated grant and races two distinct target IDs, requiring exactly one winner. The real restored authority receives a fresh target ID after restore and must claim the grant before successor epoch/placement can be applied.
+
+Exact #108 proves:
+
+```text
+physical_pitr_recovery_claim_winner_retry=PASS
+physical_pitr_recovery_claim_loser_rejected=PASS
+physical_pitr_recovery_claim_single_winner_race=PASS
+physical_pitr_recovery_grant_claimed=PASS
+physical_pitr_recovery_grant_same_target_retry=PASS
+physical_pitr_recovery_grant_other_target_rejected=PASS
+physical_pitr_duplicate_restored_authority_not_admitted=PASS
+physical_pitr_recovery_single_winner=PASS
+physical_pitr_post_reconcile_admission=PASS authority=surviving_external_authenticated_single_winner_grant
+```
 
 ## Timescale mediated profile
 
@@ -115,7 +132,7 @@ Target and verifier construct the same deterministic self-delimiting checkpoint 
 
 The effective HMAC key is generated inside Tier 2 target authority using target-side randomness. The trusted disposable-lab controller may administer both databases for setup and fault injection, but it does not provision or retain the protocol key. Tier 1 contains no target signing-key relation. Projection writer and verifier principals cannot read the generated key.
 
-Exact #102 preserves:
+Exact #108 preserves:
 
 ```text
 relocation_tier1_has_no_target_signing_key=PASS
@@ -127,21 +144,24 @@ relocation_tier1_cannot_mint_target_attestation=PASS
 relocation_fabricated_target_attestation_rejected=PASS
 ```
 
-### Verifier capability-secret isolation
+### Verifier capability-secret isolation and bounded established calls
 
 The evidence harness uses random verifier LOGIN credentials plus `dblink` solely to exercise independent database authorities. Credentials live in restricted owner-controlled capability tables; owner `SECURITY DEFINER` helpers use fixed search paths. Verifier/automation principals cannot read the tables, and the secrets are not embedded in `pg_proc` function source.
 
-Exact #102 preserves:
+The raw asynchronous transport helper is not executable by verifier/projection principals. Connection establishment uses `connect_timeout=1`. After connection, `dblink_send_query` + `dblink_is_busy` are polled against a caller-local deadline; timeout/uncertainty disconnects and returns false. A five-second remote delay probe is tested against a 500 ms local probe deadline and must return well below 1.8 seconds.
+
+Exact #108 proves:
 
 ```text
-relocation_tier1_verifier_cannot_read_target_connection_capability=PASS
-relocation_projection_writer_cannot_read_tier1_connection_capability=PASS
-relocation_target_verifier_cannot_read_tier1_connection_capability=PASS
-relocation_target_verifier_secret_not_in_function_source=PASS
-relocation_tier1_verifier_secret_not_in_function_source=PASS
+relocation_tier1_verifier_cannot_call_raw_bounded_transport=PASS
+relocation_target_principals_cannot_call_raw_bounded_transport=PASS
+relocation_target_verifier_stalled_peer_fails_closed=PASS
+relocation_target_verifier_local_deadline=PASS
+relocation_tier1_verifier_stalled_peer_fails_closed=PASS
+relocation_tier1_verifier_local_deadline=PASS
 ```
 
-This is evidence-only secret plumbing; it does not select production database authentication, network, service RPC or secret-distribution topology.
+Observed evidence durations were approximately 574 ms and 580 ms. These values are laboratory evidence, not production timeout selections.
 
 ### Durable activation grant and atomic rollback
 
@@ -165,7 +185,7 @@ Neither authority can unilaterally create the full cutover state.
 
 ## Cross-authority call ordering
 
-Remote verification occurs before local authority locks. After verification, each side performs only short local transactional/CAS work. Verification failure or uncertainty fails closed. Production may use a service/API, asymmetric verifier, KMS-backed verification or another mechanism only if it preserves issuer/verifier separation, target-only mint authority, bounded verification, exact grant binding and the same failure semantics.
+Remote verification occurs before local authority locks. Connection establishment and established-response time are independently bounded by the caller; after successful verification, each side performs only short local transactional/CAS work. Verification failure, disconnect, deadline expiry or uncertainty fails closed. Production may use a service/API, asymmetric verifier, KMS-backed verification or another mechanism only if it preserves issuer/verifier separation, target-only mint authority, bounded verification, exact grant binding and the same failure semantics.
 
 ## Material finding classes closed by D2
 
@@ -194,19 +214,21 @@ The evidence program has repaired the following classes, with panoramic review a
 21. signing key being generated/provisioned by the cross-database controller instead of target authority;
 22. verifier connection secrets being embedded in SQL function source rather than restricted authority capability state;
 23. reconciliation coverage reusable across authority-generation changes when timestamps remained equal;
-24. owner-current provider history conflicting with persisted accepted content being silently treated as a duplicate.
+24. owner-current provider history conflicting with persisted accepted content being silently treated as a duplicate;
+25. surviving recovery grant behaving as a reusable bearer across multiple restored authorities instead of a single-winner target-bound claim;
+26. established cross-authority `dblink` calls lacking a caller-local response deadline after TCP connection succeeded.
 
 ## What acceptance would and would not mean
 
 If the exact-final-HEAD package is reviewed clean and Track B is explicitly accepted, `OPEN-REL-030` may be selected/conformed for the accepted mechanism/profile. Wave 4 implementation remains separately unauthorized.
 
-Acceptance would not freeze production PostgreSQL/Timescale versions, KMS/HSM topology, database authentication/network/RPC topology, verifier secret-store mechanism, capacity numerics, or the exact evidence encoding/`dblink` mechanism.
+Acceptance would not freeze production PostgreSQL/Timescale versions, KMS/HSM topology, database authentication/network/RPC topology, verifier secret-store mechanism, production timeout numerics, capacity numerics, or the exact evidence encoding/`dblink` mechanism.
 
 ## Review disposition
 
 ```text
 Evidence completeness        COMPLETE
-Executable empirical anchor  387a68af2eb896f0ece8c916b241a84fde0876f3 / #2068 / #102
+Executable empirical anchor  1e58646d903f09954e85cca605c2c840f5099ee4 / #2080 / #108
 Final documentation HEAD     REQUIRES FRESH EXACT-HEAD CI
 Codex final review           REQUIRED
 Native Assurance             REQUIRED

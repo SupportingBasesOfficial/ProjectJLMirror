@@ -19,26 +19,27 @@
       "product": "PostgreSQL",
       "evaluation_version": "17.11-alpine",
       "image": "postgres@sha256:5d61573b31c206ae538c85893edeb6e320e1a9ffd838c0f9dca927fb6f765fa4",
-      "purpose": "real multi-connection transactional acceptance, owner authority, ambiguity, generation-bound and cross-window owner-current history reconciliation, physical PITR, authenticated-principal single-winner surviving-authority recovery evidence and Tier 1 relocation activation authority"
+      "purpose": "real multi-connection transactional acceptance, owner authority, ambiguity, generation-and-dataset-revision-bound owner-current history reconciliation, provider mutation fencing, physical PITR, authenticated-principal single-winner surviving-authority recovery evidence and Tier 1 relocation activation authority"
     },
     "tier2_timescale": {
       "product": "TimescaleDB",
       "evaluation_version": "2.29.2-pg17",
       "image": "timescale/timescaledb@sha256:bc8527e62f70f0766b29515077965025872fabb5349db421565f69ee273baf2d",
-      "purpose": "candidate tenant isolation, background jobs, fresh-cluster restore, target-owned key generation/checkpoint/freeze authority, era-aware canonical relocation projection, bounded cross-authority activation verification and bounded capacity falsification"
+      "purpose": "candidate tenant isolation, background jobs, fresh-cluster restore, target-owned key generation/checkpoint/freeze authority, total era-and-nonfinite-aware canonical relocation projection, bounded cross-authority activation verification and bounded capacity falsification"
     }
   },
   "classification_basis": {
-    "exact_empirical_head_before_reviewer_documentation": "bf84ed0d4a3822bb3038da50a2fdd9dd90dad7ab",
-    "deterministic_assurance_run_number": 2108,
-    "deterministic_assurance_run_id": 33231690461,
-    "open_rel_030_conformance_run_number": 122,
-    "open_rel_030_conformance_run_id": 33231690454,
+    "exact_empirical_head_before_reviewer_documentation": "723022253af332b0fa08ff7be3fbcad326dd8712",
+    "deterministic_assurance_run_number": 2131,
+    "deterministic_assurance_run_id": 33233145281,
+    "open_rel_030_conformance_run_number": 133,
+    "open_rel_030_conformance_run_id": 33233145277,
     "result": "success",
     "final_package_gate_requirement": "The exact final package HEAD, including reviewer documentation, must independently rerun both gates before review or acceptance.",
-    "note": "The executable anchor proves owner-controlled source/poll authority; owner-derived history finality/currentness whose coverage is bound to the exact current authority generation and invalidated on every generation transition even when timestamps remain equal; stable reconciliation identities validated before provider-time windowing so owner-current corrections cannot evade conflict checks by moving across a requested window boundary; surviving external authenticated PITR recovery grants consumed through an ID-only authority API whose grant facts are resolved internally and whose single-winner identity is derived from authenticated session authority rather than caller-supplied target/principal data; recovery principals have no direct grant-table read privilege; same-principal retry convergence and different-principal rejection under concurrent races and credential-spoof negatives; genuine fresh-cluster Timescale reconstruction; lock-before-F source fencing; deterministic self-delimiting structured cryptographic representations whose typed timestamp representation is injective across PostgreSQL AD/BC eras; target-owned checkpoint signing authority whose effective key is generated inside Tier 2 and is neither provisioned nor retained by the cross-database test controller; Tier 1 verification without mint capability; restricted authority-owned verifier connection capability state with verifier secrets absent from function source; caller-local post-connect verification deadlines with stalled peers failing closed; durable Tier 1 activation grants; target promotion only after exact grant verification; no uncheckpointed pre-activation target history; seal-vs-DML serialization; and atomic rollback of the Tier 1 placement+grant commit when a grant conflict is injected."
+    "note": "The executable anchor proves owner-controlled source/poll authority; owner-derived history finality/currentness whose coverage is bound to the exact current authority generation, exact current provider dataset revision and required snapshot currentness; atomic provider dataset revision/invalidation on owner-visible INSERT/UPDATE; fail-closed identity rewrite, DELETE and TRUNCATE behavior; worker exclusion from direct provider mutation/trigger administration; executable wiring of every current 00[4-9]_history_*.sql hardening module with a structural anti-orphan guard; stable reconciliation identities validated before provider-time windowing; surviving external authenticated PITR recovery grants consumed through an ID-only authority API whose grant facts are resolved internally and whose single-winner identity is derived from authenticated session authority; genuine fresh-cluster Timescale reconstruction; lock-before-F source fencing; deterministic self-delimiting structured cryptographic representations whose typed timestamp representation is total/injective across finite AD/BC and non-finite infinity/-infinity PostgreSQL timestamptz values; target-owned checkpoint signing authority whose effective key is generated inside Tier 2 and is neither provisioned nor retained by the cross-database test controller; Tier 1 verification without mint capability; restricted authority-owned verifier connection capability state; caller-local post-connect verification deadlines with stalled peers failing closed; durable Tier 1 activation grants; target promotion only after exact grant verification; no uncheckpointed pre-activation target history; seal-vs-DML serialization; and atomic rollback of the Tier 1 placement+grant commit when a grant conflict is injected."
   },
   "review_provenance": {
+    "material_finding_classes_documented_in_decision_review": 34,
     "material_findings_closed_by_current_mechanism": [
       "conflicting canonical observation content under stable identity must reject",
       "active source and poll authority must be resolved from owner-controlled state in the transaction",
@@ -65,14 +66,25 @@
       "recovery claim APIs must not require direct grant-table reads or caller-supplied signed grant facts",
       "connect_timeout alone does not bound an established cross-authority response; caller-local post-connect deadlines are required",
       "stable reconciled identity conflicts must be validated before provider-time windowing so a correction crossing the requested window boundary cannot evade validation",
-      "relocation timestamp canonicalization must preserve explicit era because era-less PostgreSQL BC/AD timestamps are not injective"
+      "relocation timestamp canonicalization must preserve explicit era because era-less PostgreSQL BC/AD timestamps are not injective",
+      "provider-visible dataset mutation must atomically invalidate coverage through an owner dataset revision even when authority generation and currentness timestamps do not change",
+      "reviewer-critical history hardening modules must be executable conformance inputs; a file present but omitted from the runner is false-green assurance",
+      "PostgreSQL non-finite timestamptz sentinels must have explicit non-NULL canonical representations so infinity and -infinity cannot disappear from a digest",
+      "statement-level TRUNCATE must not bypass row-level provider dataset revision and destructive-mutation fencing"
     ],
     "native_assurance_panorama_extensions": [
       "durable live poll claim required for current-state candidacy",
       "reconciliation snapshot currentness required in addition to interval geometry",
-      "reconciliation_run eligibility requires exact equality with locked current authority_generation",
+      "reconciliation_run eligibility requires exact equality with locked current authority_generation and provider_dataset_revision",
       "advance_provider_authority clears materialized coverage and forces non-gap reconciliation_required even on same-timestamp generation changes",
       "same-snapshot authority-generation bump cannot reuse previous-generation coverage and requires a fresh current-generation sweep",
+      "owner-visible provider INSERT/UPDATE atomically increments provider_dataset_revision and invalidates materialized coverage",
+      "provider dataset mutation and sweep serialize on the same provider_authority row so same-generation corrections cannot retain stale coverage",
+      "stable provider observation identity rewrite is rejected; destructive DELETE requires explicit gap authority and cannot silently change the reconciled universe",
+      "statement-level TRUNCATE is independently guarded and fails closed because row-level mutation triggers do not cover TRUNCATE",
+      "history_reconcile_worker has no direct provider INSERT/UPDATE/DELETE/TRUNCATE privilege, no owner membership and no trigger-administration path",
+      "workflow structural guard enumerates every existing 00[4-9]_history_*.sql module and requires it to be referenced by the extended runner",
+      "exact empirical run executes 004, 005, 006 and 007 and reports history_modules=4",
       "reconciled stable identity with changed observed_at or numeric_value aborts the sweep, preserves accepted canonical content and creates no reconciliation_run",
       "cross-window stable-identity validation checks a conflict when either accepted observed_at or owner-current provider observed_at intersects the requested sweep window",
       "provider correction moving an accepted 11:58 identity to 12:01 is rejected by an 11:55..12:00 sweep before any reconciliation_run is minted",
@@ -88,9 +100,10 @@
       "same authenticated principal retry converges while a different authenticated principal is rejected",
       "duplicate restored authority is denied after the authenticated winner owns the grant",
       "target checkpoint HMAC uses the same cross-store canonical field encoding as its digest",
-      "relocation timestamp canonicalization serializes UTC microseconds plus explicit AD/BC era on both PostgreSQL and Timescale authorities",
-      "1 BC and 1 AD timestamp representations are distinct and cross-store equal for the same era",
-      "both authoritative_digest and target_digest are statically verified to call era-aware canonical_timestamp",
+      "finite relocation timestamp canonicalization serializes UTC microseconds plus explicit AD/BC era on both PostgreSQL and Timescale authorities",
+      "non-finite relocation timestamp canonicalization maps -infinity and infinity to distinct reserved exact literals on both authorities",
+      "non-finite timestamp canonical fields are nonempty/cross-store equal and produce distinct SHA-256 digests",
+      "authoritative_digest and target_digest are statically verified to call the total canonical_timestamp function",
       "target checkpoint signing key exists only in target authority and Tier 1 contains no target signing-key relation",
       "effective target signing key is generated inside Tier 2 target authority using target-side randomness",
       "cross-database test controller does not provision or retain the effective target signing key",
@@ -126,25 +139,40 @@
   "mandatory_vectors_not_yet_claimed_complete": [],
   "late_history_evidence": {
     "authority_owner": "history_reconcile_owner NOLOGIN",
-    "worker": "history_reconcile_worker NOLOGIN with EXECUTE only on sweep/finalize",
+    "worker": "history_reconcile_worker NOLOGIN with EXECUTE only on governed sweep/finalize surfaces and no direct provider-history mutation/trigger-admin authority",
     "provider_authority_fields": [
       "authority_generation",
+      "provider_dataset_revision",
       "current_snapshot_at",
       "finality_floor",
       "required_reconciliation_snapshot_at"
     ],
-    "sweep_authority": "worker supplies only window plus expected authority generation; actual generation and provider snapshot are read and locked from provider_authority",
-    "finalization_authority": "try_finalize accepts no caller authority/finality/currentness values; it reads and locks current authority_generation, finality and required snapshot from provider_authority",
-    "stale_worker": "rejected when expected generation differs from durable current authority",
+    "sweep_authority": "worker supplies only window plus expected owner authority; actual generation, dataset revision and provider snapshot are read and locked from provider_authority",
+    "finalization_authority": "try_finalize accepts no caller authority/finality/currentness values; it reads and locks current authority_generation, provider_dataset_revision, finality and required snapshot from provider_authority",
+    "stale_worker": "rejected when expected authority differs from durable current owner state",
     "coverage_anchor": "supported_history_floor",
     "coverage_generation": "only reconciliation_run rows whose authority_generation equals the exact currently locked owner generation are eligible",
+    "coverage_dataset_revision": "only reconciliation_run rows whose provider_dataset_revision equals the exact currently locked owner dataset revision are eligible",
     "generation_transition": "every authority-generation advance clears materialized coverage and moves non-gap state to reconciliation_required even if snapshot/finality/currentness timestamps are unchanged",
-    "coverage_semantics": "only overlapping/touching runs from the exact current authority generation whose durable provider_snapshot_at satisfies owner-required currentness form continuous coverage",
+    "provider_mutation_invalidation": "owner-visible INSERT/UPDATE increments provider_dataset_revision and invalidates materialized coverage atomically in the same transaction; rollback reverts both mutation and revision bump",
+    "provider_mutation_serialization": "provider mutation trigger and sweep both lock the same provider_authority row so a same-generation correction cannot race past a just-published coverage state",
+    "destructive_mutation_policy": "stable identity rewrite rejects; DELETE fails closed requiring explicit gap authority; statement-level TRUNCATE has a separate BEFORE TRUNCATE fail-closed guard",
+    "worker_provider_mutation_privilege": false,
+    "worker_provider_owner_membership": false,
+    "worker_trigger_administration_authority": false,
+    "history_hardening_modules_executed": [
+      "004_history_reconciliation.sql",
+      "005_history_identity_window_hardening.sql",
+      "006_history_dataset_revision_hardening.sql",
+      "007_history_dataset_revision_edge_hardening.sql"
+    ],
+    "history_runner_completeness_guard": "workflow enumerates existing 00[4-9]_history_*.sql files and fails if any are not referenced by run_conformance_extended.sh; exact anchor reports history_modules=4",
+    "coverage_semantics": "only overlapping/touching runs from the exact current authority generation and exact current provider dataset revision whose durable provider_snapshot_at satisfies owner-required currentness form continuous coverage",
     "stable_identity_content": "existing accepted (stream_id,observation_id) content is immutable; owner-visible observed_at or numeric_value mismatch rejects the sweep before a reconciliation_run is recorded",
     "cross_window_identity_validation": "stable identity conflict validation precedes provider-time insertion filtering; a conflict is checked when either accepted observed_at or owner-current provider observed_at intersects the requested sweep window",
     "cross_window_negative": "accepted 11:58 identity corrected by owner-current provider to 12:01 is rejected by an 11:55..12:00 sweep; accepted content remains unchanged and no reconciliation_run is created",
     "conflict_failure_atomicity": "rejected conflicting sweep preserves accepted canonical content and does not mint coverage",
-    "same_timestamp_generation_negative": "generation 3 reuses generation 2 timestamps but cannot reuse generation 2 coverage; a fresh generation 3 sweep is required before finalization",
+    "same_timestamp_generation_negative": "generation transition with unchanged timestamps cannot reuse previous coverage; a fresh current-generation/current-revision sweep is required before finalization",
     "unrecoverable_retention_loss": "explicit durable gap; never false complete"
   },
   "recovery_evidence": {
@@ -200,15 +228,17 @@
       "accepted_ordinal",
       "observation_id",
       "metric_definition_id",
-      "normalized_UTC_observed_at_microseconds_with_explicit_AD_BC_era",
+      "normalized_UTC_observed_at_microseconds_with_explicit_AD_BC_era_or_reserved_nonfinite_literal",
       "normalized_numeric_value"
     ],
     "canonical_field_encoding": "UTF-8 byte length in decimal + ':' + lowercase UTF-8 hex",
-    "canonical_timestamp_encoding": "UTC YYYY-MM-DDTHH24:MI:SS.USZ plus explicit AD/BC era before canonical_field framing",
+    "canonical_timestamp_encoding": "finite: UTC YYYY-MM-DDTHH24:MI:SS.USZ plus explicit AD/BC era; non-finite: exact reserved -infinity or infinity literal before canonical_field framing",
     "canonical_timestamp_full_domain_injective": true,
     "timestamp_era_negative": "0001-01-01 BC and 0001-01-01 AD canonical timestamps are distinct on both Tier 1 PostgreSQL and Tier 2 Timescale",
-    "canonical_timestamp_cross_store": "PostgreSQL and Timescale canonical_timestamp produce identical values for the same BC or AD timestamp",
-    "digest_era_aware": "authoritative_digest and target_digest both call canonical_timestamp before canonical_field",
+    "timestamp_nonfinite_negative": "-infinity and infinity canonical timestamps are nonempty, distinct and exactly represented on both Tier 1 PostgreSQL and Tier 2 Timescale",
+    "canonical_timestamp_cross_store": "PostgreSQL and Timescale canonical_timestamp produce identical values for the same finite AD/BC or non-finite timestamp",
+    "nonfinite_timestamp_digest": "self-delimiting canonical fields for -infinity and infinity are cross-store equal but distinct and produce distinct SHA-256 digests",
+    "digest_total_timestamp_canonicalizer": "authoritative_digest and target_digest are statically verified to call the total canonical_timestamp before canonical_field",
     "canonical_serialization": "ordered rows; every field self-delimiting; row concatenation uses no delimiter as an authority boundary",
     "delimiter_framing_with_unrestricted_text": "explicitly_rejected",
     "cross_store_encoding": "PostgreSQL and Timescale produce identical canonical_field output for text containing literal 0x1f/0x1e control bytes",
@@ -262,9 +292,9 @@
     "stale_source_after_cutover": "rejected"
   },
   "crypto_evidence_boundary": {
-    "rule": "every structured message protected by hash/HMAC must first have deterministic versioned injective or equivalently unambiguous field framing, and each typed value must itself have an injective canonical representation over the full accepted domain; cryptographic integrity is not a substitute for canonical structure",
+    "rule": "every structured message protected by hash/HMAC must first have deterministic versioned injective or equivalently unambiguous field framing, and each typed value must itself have a total injective canonical representation over the full accepted domain; cryptographic integrity is not a substitute for canonical structure",
     "canonical_encoding": "bounded evidence representation using UTF-8 byte-length plus lowercase hex for observation payload fields, recovery-grant fields and checkpoint-attestation fields",
-    "timestamp_rule": "relocation timestamptz canonicalization uses UTC microseconds plus explicit AD/BC era before field framing",
+    "timestamp_rule": "relocation timestamptz canonicalization uses UTC microseconds plus explicit AD/BC era for finite values and exact reserved -infinity/infinity literals for non-finite values before field framing",
     "target_checkpoint_hmac_sha256": "bounded evidence integrity mechanism over canonical_checkpoint_payload with effective key generated and retained inside target authority",
     "recovery_grant_hmac_sha256": "bounded evidence integrity mechanism over canonical_grant",
     "issuer_verifier_separation": "verification capability does not include signing/mint capability; Tier 1 has no target signing key; cross-authority controller does not provision or retain the target key",
@@ -274,7 +304,7 @@
     "production_database_authentication_topology_selected": false,
     "production_cross_authority_transport_selected": false,
     "production_verifier_secret_store_selected": false,
-    "production_requirement": "accepted implementation may use equivalent encoding, typed canonicalization, crypto, recovery identity, verifier transport and secret storage only if independently reviewed evidence preserves deterministic versioning, injective full-domain typed representation including timestamp-era distinction, unambiguous structured representation, target-originated target-only mint authority, verifier-without-mint capability, secret isolation from callable function source and unprivileged principals, single-winner authenticated-principal recovery admission whose authority is not caller-supplied, bounded connection and established-response verification outside local lock windows, exact activation-grant binding, atomic Tier 1 grant+placement commitment and key isolation"
+    "production_requirement": "accepted implementation may use equivalent encoding, typed canonicalization, crypto, recovery identity, verifier transport and secret storage only if independently reviewed evidence preserves deterministic versioning, total/injective full-domain typed representation including finite timestamp-era and non-finite sentinel distinction, unambiguous structured representation, target-originated target-only mint authority, verifier-without-mint capability, secret isolation from callable function source and unprivileged principals, single-winner authenticated-principal recovery admission whose authority is not caller-supplied, bounded connection and established-response verification outside local lock windows, exact activation-grant binding, atomic Tier 1 grant+placement commitment and key isolation"
   },
   "tier2_profile_classification": {
     "direct_pooled_rls_plus_columnstore": "rejected_ineligible_on_evaluated_profile_sqlstate_0A000",
@@ -294,13 +324,17 @@
     "interpretation": "Mechanism-level bounded fitness evidence only. Production SLOs, retention, cardinality, sizing, cost and topology remain OPEN-REL-020 C3."
   },
   "decision_recommendation": {
-    "tier1": "accept PostgreSQL Tier 1 mechanism only with immutable canonical observation content, owner-controlled source/poll authority, durable live poll claims, owner-derived provider finality/currentness, contiguous generation-bound reconciliation, invalidation on authority-generation transition, stable-identity conflict validation before provider-time windowing including cross-window corrections, rejection of conflicting canonical reconciled content, structured self-delimiting authenticated surviving recovery grants after PITR with an ID-only claim API and atomic single-winner authenticated-principal admission, lock-before-F relocation fencing, target verification without mint authority, and atomic durable activation-grant plus placement commitment",
-    "tier2": "accept TimescaleDB historical projection only under the mediated shared-history profile, privileged automation-owner admission boundary, genuine fresh-cluster role reconstruction, complete target checkpoint equivalence, era-aware full-domain injective timestamp serialization, target-originated target-only checkpoint signing authority, rejection of uncheckpointed target data before activation, target promotion only after exact Tier 1 activation-grant verification, immutable pre-F history after cutover, restricted verifier capability secrets, caller-local established-response deadlines, and cross-store self-delimiting checkpoint representations",
+    "tier1": "accept PostgreSQL Tier 1 mechanism only with immutable canonical observation content, owner-controlled source/poll authority, durable live poll claims, owner-derived provider finality/currentness, contiguous reconciliation bound to exact authority generation + exact provider dataset revision + required snapshot currentness, atomic dataset revision/invalidation on owner-visible mutation, destructive DELETE/TRUNCATE fail-closed behavior, worker exclusion from provider mutation/trigger administration, executable history-hardening module completeness, stable-identity conflict validation before provider-time windowing, structured self-delimiting authenticated surviving recovery grants after PITR with an ID-only claim API and atomic single-winner authenticated-principal admission, lock-before-F relocation fencing, target verification without mint authority, and atomic durable activation-grant plus placement commitment",
+    "tier2": "accept TimescaleDB historical projection only under the mediated shared-history profile, privileged automation-owner admission boundary, genuine fresh-cluster role reconstruction, complete target checkpoint equivalence, total era-and-nonfinite-aware full-domain injective timestamp serialization, target-originated target-only checkpoint signing authority, rejection of uncheckpointed target data before activation, target promotion only after exact Tier 1 activation-grant verification, immutable pre-F history after cutover, restricted verifier capability secrets, caller-local established-response deadlines, and cross-store self-delimiting checkpoint representations",
     "rejected_assumptions": [
       "caller or worker supplied timestamps are not provider finality/currentness authority",
       "same snapshot timestamp does not make reconciliation coverage valid across owner authority-generation changes",
+      "same authority generation does not make reconciliation coverage valid after the owner-visible provider dataset revision changes",
+      "a provider dataset mutation cannot preserve a prior completed watermark merely because currentness timestamps did not move",
+      "a reviewer-critical evidence module existing in the branch is not assurance unless the conformance runner actually executes it",
       "an existing reconciled observation identity with changed canonical content is not an idempotent duplicate",
       "provider-time window filtering must not hide a stable identity conflict when the accepted and corrected timestamps straddle the requested sweep boundary",
+      "stable provider identity rewrite, DELETE or TRUNCATE cannot silently redefine the owner-current history set behind existing coverage",
       "a locally recreated post-R receipt is not surviving (R,F] recovery authority",
       "an authenticated surviving recovery grant is not reusable bearer authority for multiple restored instances",
       "a caller-copyable recovery target ID or principal name is not authenticated recovery authority",
@@ -311,7 +345,8 @@
       "identity-only digests are not canonical payload equivalence",
       "delimiter-framed concatenation of unrestricted text is not an unambiguous canonical serialization",
       "era-less timestamp formatting is not injective across the supported PostgreSQL BC/AD domain",
-      "a strong hash or HMAC does not repair ambiguous pre-crypto structured serialization",
+      "to_char returning NULL for PostgreSQL infinity/-infinity is not an acceptable timestamp representation and must not omit a field from canonical digest material",
+      "a strong hash or HMAC does not repair ambiguous or missing pre-crypto structured serialization",
       "a Tier 1 verifier that holds the target HMAC key is not independent target verification",
       "a key stored only in the target database is not target-originated authority if a cross-authority controller generated, provisioned or retained the effective key",
       "verifier credentials embedded in SQL function source are not acceptable capability-secret isolation",
@@ -323,6 +358,6 @@
       "same-cluster restore is not fresh role-topology recovery evidence",
       "max(reconciliation window_to) is not contiguous history completeness"
     ],
-    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity/payload, deterministic versioned unambiguous structured serialization, injective typed canonicalization over the full accepted domain including timestamp eras, idempotent projection, owner-derived currentness, exact-generation reconciliation coverage, authority-transition invalidation, cross-window stable-identity content immutability, externally surviving recovery authority with single-winner authenticated-principal admission not derived from caller data, target-originated target-only mint/sign authority, verifier-without-mint capability, verifier-secret isolation, bounded established-response verification, target checkpoint/freeze semantics, exact durable activation-grant binding, atomic placement+grant commitment, privileged-infrastructure boundaries, tenant isolation and relocation/recovery semantics"
+    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity/payload, deterministic versioned unambiguous structured serialization, total/injective typed canonicalization over the full accepted domain including finite timestamp eras and non-finite sentinels, idempotent projection, owner-derived currentness, exact-generation + exact-dataset-revision reconciliation coverage, authority/dataset mutation invalidation, destructive-mutation fail-closed semantics, cross-window stable-identity content immutability, externally surviving recovery authority with single-winner authenticated-principal admission not derived from caller data, target-originated target-only mint/sign authority, verifier-without-mint capability, verifier-secret isolation, bounded established-response verification, target checkpoint/freeze semantics, exact durable activation-grant binding, atomic placement+grant commitment, privileged-infrastructure boundaries, tenant isolation and relocation/recovery semantics"
   }
 }

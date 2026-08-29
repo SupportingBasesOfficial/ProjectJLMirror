@@ -21,32 +21,36 @@ Subject to exact-final-HEAD review and explicit Track B acceptance:
 7. reject direct pooled RLS assumptions for Timescale columnstore/CAGG on the evaluated profile;
 8. require genuine fresh-cluster reconstruction of database-global role topology;
 9. require source relocation placement authority to be locked before deriving `F`;
-10. require target-owned authenticated sealed canonical-payload checkpoints before target activation;
+10. require target-owned authenticated sealed canonical-payload checkpoints before Tier 1 can authorize target placement;
 11. require source and target to hash the same deterministic, versioned, self-delimiting/unambiguous canonical observation representation;
-12. require target checkpoint HMAC issuer and verifier to construct the same self-delimiting canonical checkpoint payload before cryptography;
-13. reject any target data above `F` before activation unless excluded by the target lifecycle: seal fails if such data already exists, sealed rejects all DML, and activated permits only new append above `F` while existing history remains immutable;
-14. apply the general rule that **cryptographic integrity never substitutes for unambiguous structured serialization**;
-15. preserve `OPEN-REL-020` as owner of production capacity/SLO/retention/cardinality/cost numerics;
-16. treat database versions, image digests, evidence crypto and the concrete evidence encoding as reproducibility dependencies; production may choose equivalent mechanisms only if the accepted authority/integrity/unambiguous-serialization semantics are preserved and revalidated.
+12. require target checkpoint issuer and verification boundary to construct the same self-delimiting canonical checkpoint payload before cryptography;
+13. require target checkpoint signing/mint authority to remain exclusively on the target side; Tier 1 verification capability must not include the signing key or any equivalent mint capability;
+14. require Tier 1 successor placement and the exact durable activation grant to commit atomically, bound to tenant, `F`, checkpoint id/generation, target attestation and successor placement version;
+15. require target `sealed → activated` to verify that exact committed Tier 1 grant; the target automation principal must not self-promote;
+16. require cross-authority verification to be bounded/fail-closed and performed outside local authority-lock windows so no long local transaction spans the remote call;
+17. reject any target data above `F` before activation unless excluded by the target lifecycle: seal fails if such data already exists, sealed rejects all DML, and activated permits only new append above `F` while existing history remains immutable;
+18. apply the general rule that **cryptographic integrity never substitutes for unambiguous structured serialization**;
+19. preserve `OPEN-REL-020` as owner of production capacity/SLO/retention/cardinality/cost numerics;
+20. treat database versions, image digests, evidence crypto, verifier transport and the concrete evidence encoding as reproducibility dependencies; production may choose equivalent mechanisms only if the accepted authority/integrity/unambiguous-serialization semantics are preserved and revalidated.
 
 ## Exact empirical anchor before this review-document mutation
 
 ```text
 HEAD
-3ffc96073b54fe7a8b5d002523733947ee59ba57
+e082cca72c13c725b0ffa837693ba73eb92ceb7e
 
 JLMIRROR Deterministic Assurance
-run #2012
-run id 33208029855
+run #2034
+run id 33223301992
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #74
-run id 33208029866
+run #85
+run id 33223301930
 SUCCESS
 ```
 
-This SHA proves the executable mechanism after the structured-crypto serialization panorama. It becomes provenance after this document mutation; the exact final package HEAD must rerun both gates.
+This SHA proves the executable mechanism after the full cross-authority relocation repair and transactional rollback falsification. It becomes provenance after this document mutation; the exact final package HEAD must rerun both gates.
 
 ## Tier 1 acceptance authority
 
@@ -159,8 +163,14 @@ open
 
 sealed
   all target-history DML rejected
+  target cannot self-activate
+
+Tier 1 committed activation authority
+  target checkpoint already verified
+  placement + exact activation grant committed atomically
 
 activated
+  only after target verifies exact Tier 1 grant
   existing history immutable
   INSERT <= F rejected
   new append > F allowed
@@ -172,7 +182,7 @@ Each observation field is serialized as UTF-8 byte length + lowercase UTF-8 hex.
 
 ### Canonical checkpoint attestation
 
-The checkpoint HMAC itself now follows the same structural rule. Both target issuer and Tier 1 verifier encode these fields independently with `canonical_field`:
+The checkpoint HMAC follows the same structural rule. Target authority and verification-side canonicalization encode these fields with `canonical_field`:
 
 ```text
 open-rel-030-target-checkpoint-v1
@@ -192,9 +202,69 @@ The exact run proves both stores produce the same pre-HMAC bytes:
 relocation_checkpoint_hmac_payload_cross_store=PASS
 ```
 
-The target HMAC therefore authenticates a canonical structured checkpoint message, not a delimiter-concatenated string whose safety depends on the present field types.
+Equal canonical bytes do **not** imply equal signing authority. The random HMAC key is stored only inside target authority. Tier 1 has no target-key relation and cannot mint a valid target checkpoint. It asks a narrowly privileged target verifier for a yes/no result.
 
-The wider matrix continues to prove target-owned current-state measurement, fabricated attestation rejection, canonical payload mismatch rejection, seal-vs-DML serialization, pre-seal/post-seal `>F` exclusion, immutable activated history and stale source rejection.
+Exact evidence proves:
+
+```text
+relocation_tier1_has_no_target_signing_key=PASS
+relocation_projection_writer_cannot_read_attestation_key=PASS
+relocation_target_verifier_cannot_read_attestation_key=PASS
+relocation_tier1_cannot_mint_target_attestation=PASS
+relocation_fabricated_target_attestation_rejected=PASS
+```
+
+### Durable activation grant and target promotion
+
+After a sealed checkpoint verifies, Tier 1 re-establishes local placement/receipt/source authority under lock. It then commits in one PostgreSQL transaction:
+
+```text
+placement
+  phase = active
+  current_writer = target
+  placement_version = successor
+
+activation_grant
+  tenant
+  F
+  checkpoint id
+  checkpoint generation
+  target attestation
+  successor placement version
+  state = committed
+```
+
+A plain conflicting grant INSERT is a protocol error. The #85 fault injection pre-occupies the grant identity, allows the placement UPDATE path to execute, then forces a unique-key failure. PostgreSQL rolls the statement/transaction back. The target stays sealed and the placement stays fenced:
+
+```text
+relocation_activation_commit_conflict_rolls_back=PASS
+relocation_activation_conflict_preserves_fenced_placement=PASS
+relocation_activation_conflict_did_not_replace_grant=PASS
+relocation_conflicting_grant_cannot_activate_target=PASS
+relocation_activation_conflict_keeps_target_sealed=PASS
+relocation_activation_grant_placement_atomicity=PASS
+```
+
+On the positive path, the grant is committed and target promotion verifies that exact grant before changing local control state:
+
+```text
+relocation_target_cannot_self_activate_before_tier1_grant=PASS
+relocation_premature_mark_keeps_future_insert_blocked=PASS
+relocation_tier1_activation_grant_committed=PASS
+relocation_target_checkpoint_marked_activated=PASS
+```
+
+Therefore neither authority can unilaterally create the full cutover state.
+
+### Cross-authority call ordering and evidence transport
+
+The C2 harness uses random LOGIN verifier credentials plus PostgreSQL `dblink` with bounded connection/statement timeouts. This concrete mechanism is **evidence-only**.
+
+The semantic invariant is that external verification occurs before local authority locks; after that point each side performs only short local transactional/CAS work. Failure or uncertainty verifies as false/fail-closed. Production must preserve this property without making a normal business transaction span a remote call.
+
+This record does **not** select production `pg_hba`, sockets, network exposure, service-to-service RPC, asymmetric vs symmetric verification, KMS/HSM topology or credential distribution. A different production mechanism is acceptable only if it preserves issuer/verifier separation, target-only mint authority, bounded verification, exact grant binding and the same failure semantics.
+
+The wider matrix continues to prove target-owned current-state measurement, canonical payload mismatch rejection, seal-vs-DML serialization, pre-seal/post-seal `>F` exclusion, immutable activated history and stale source rejection.
 
 ## General structured-crypto invariant
 
@@ -208,7 +278,7 @@ The concrete UTF-8 length+hex representation is a bounded evidence mechanism, no
 
 Capacity measurements remain bounded mechanism-fitness evidence; `OPEN-REL-020` retains production numeric ownership.
 
-HMAC-SHA-256/SHA-256 do not select production KMS/HSM/TEE, key rotation, secret provisioning or the exact canonical wire format. Database image versions are reproducibility dependencies rather than permanent production pins.
+HMAC-SHA-256/SHA-256 do not select production KMS/HSM/TEE, key rotation, secret provisioning or the exact canonical wire format. `dblink` and the evidence verifier LOGIN roles do not select production database authentication/network topology. Database image versions are reproducibility dependencies rather than permanent production pins.
 
 ## Material finding classes closed by D2
 
@@ -230,7 +300,10 @@ The program has repaired, among others:
 14. uncheckpointed target `>F` history surviving cutover;
 15. delimiter-framed unrestricted observation text producing ambiguous pre-hash serialization;
 16. delimiter-framed structured recovery grants producing ambiguous authenticated-message boundaries;
-17. checkpoint HMAC relying on delimiter concatenation rather than the same canonical structured representation used by the verifier.
+17. checkpoint HMAC relying on delimiter concatenation rather than canonical structured representation;
+18. Tier 1 holding the target checkpoint HMAC key and therefore inheriting target mint capability;
+19. target automation being able to leave `sealed` before Tier 1 granted cutover authority;
+20. activation grant and placement transition needing explicit all-or-nothing failure evidence.
 
 Each material finding triggered class-level/panoramic repair rather than a line-only patch.
 
@@ -246,13 +319,13 @@ Wave 4 implementation
   -> still NOT automatically authorized
 ```
 
-Acceptance would not choose immutable production PostgreSQL/Timescale versions, production KMS/HSM topology, production database authentication/network topology, production capacity numerics, or require the exact evidence encoding if another implementation proves equivalent deterministic/versioned/unambiguous structured serialization.
+Acceptance would not choose immutable production PostgreSQL/Timescale versions, production KMS/HSM topology, production database authentication/network/RPC topology, production capacity numerics, or require the exact evidence encoding/`dblink` mechanism if another implementation proves equivalent deterministic/versioned/unambiguous serialization and authority separation.
 
 ## Review disposition
 
 ```text
 Evidence completeness        COMPLETE
-Executable empirical anchor  3ffc96073b54fe7a8b5d002523733947ee59ba57 / #2012 / #74
+Executable empirical anchor  e082cca72c13c725b0ffa837693ba73eb92ceb7e / #2034 / #85
 Final documentation HEAD     REQUIRES FRESH EXACT-HEAD CI
 Codex final review           REQUIRED
 Native Assurance             REQUIRED

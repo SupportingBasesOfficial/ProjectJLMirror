@@ -70,9 +70,11 @@ jobs:
           assert len(manifest['completed_mandatory_vectors']) == 8
           assert manifest['mandatory_vectors_not_yet_claimed_complete'] == []
           assert manifest['tier2_profile_classification']['mediated_shared_history_columnstore_cagg'] == 'conformant_candidate_recommended_for_c2_acceptance'
-          assert manifest['review_provenance']['material_finding_classes_documented_in_decision_review'] == 39
+          assert manifest['review_provenance']['material_finding_classes_documented_in_decision_review'] == 42
 
           recovery = manifest['recovery_evidence']
+
+          # Post-enrollment clone authority + evidence-quality guards (#38/#39).
           assert recovery['post_enrollment_clone_vector'] is True
           assert recovery['post_enrollment_same_database_instance_id'] is True
           assert recovery['post_enrollment_same_external_credential'] is True
@@ -91,6 +93,24 @@ jobs:
           assert recovery['post_enrollment_negative_is_not_broken_path_false_pass'] is True
           assert recovery['pgdata_copy_alone_duplicates_recovery_authority'] is False
 
+          # Recovery boundary/effect/deadline guards (#40/#41/#42).
+          assert recovery['single_winner_keyed_by_recovery_boundary'] is True
+          assert recovery['multiple_grant_ids_same_boundary_create_multiple_authorities'] is False
+          assert recovery['same_winner_retry_through_equivalent_grant_id'] is True
+          assert recovery['cross_grant_boundary_race_exactly_one_winner'] is True
+          assert recovery['cross_grant_boundary_race_claim_rows'] == 1
+          assert recovery['surviving_effect_evidence_authenticated'] is True
+          assert recovery['surviving_effect_canonicalized_and_hmac_authenticated'] is True
+          assert recovery['grant_binds_effect_digest'] is True
+          assert recovery['claim_without_effect_application_leaves_restore_at_r'] is True
+          assert recovery['local_reconciled_state_derived_from_verified_effect'] is True
+          assert recovery['verified_effect_application_is_local_atomic_mutation'] is True
+          assert recovery['local_self_minted_receipt_admits'] is False
+          assert recovery['claim_verify_fetch_use_async_local_deadline'] is True
+          assert recovery['connect_timeout_is_only_connection_setup_bound'] is True
+          assert recovery['established_peer_blackhole_fails_closed_under_local_deadline'] is True
+          assert recovery['duplicate_restored_authority_admitted'] is False
+
           runner = Path('tools/open_rel_030/run_conformance_extended.sh').read_text()
           history_modules = sorted(Path('sql/d2-open-rel-030').glob('00[4-9]_history_*.sql'))
           assert history_modules, 'history hardening module set is unexpectedly empty'
@@ -105,13 +125,37 @@ jobs:
           missing_vectors = [name for name in required_vectors if name not in runner]
           assert not missing_vectors, f'critical extended vectors not wired into runner: {missing_vectors}'
 
+          pitr = Path('tools/open_rel_030/physical_pitr.sh').read_text()
+          required_recovery_markers = [
+              'physical_pitr_surviving_effect_evidence_published=PASS',
+              'physical_pitr_recovery_cross_grant_boundary_single_winner_race=PASS',
+              'physical_pitr_recovery_single_winner_per_boundary_across_grant_ids=PASS',
+              'physical_pitr_recovery_helpers_use_bounded_transport=PASS',
+              'physical_pitr_recovery_stalled_peer_fails_closed',
+              'physical_pitr_claim_without_effect_application_stays_at_R',
+              'physical_pitr_authenticated_effect_application',
+              'physical_pitr_reconciled_from_authenticated_surviving_effect',
+          ]
+          missing_recovery_markers = [m for m in required_recovery_markers if m not in pitr]
+          assert not missing_recovery_markers, f'recovery hardening markers missing from physical PITR vector: {missing_recovery_markers}'
+          assert 'recovery_boundary_claim' in pitr
+          assert 'boundary_fingerprint' in pitr
+          assert 'recovery_effect' in pitr
+          assert 'fetch_claimed_recovery_material' in pitr
+          assert 'dblink_send_query' in pitr
+          assert 'dblink_is_busy' in pitr
+          assert 'dblink_cancel_query' in pitr
+
           print(
               'evidence_manifest_guard=PASS '
               'state=complete_ready_for_decision_review '
               'acceptance=not_granted '
-              'material_findings=39 '
+              'material_findings=42 '
               'post_enrollment_clone_guard=true '
               'clone_positive_control_guard=true '
+              'recovery_boundary_single_winner_guard=true '
+              'surviving_effect_guard=true '
+              'recovery_local_deadline_guard=true '
               f'history_modules={len(history_modules)} '
               f'critical_vectors={len(required_vectors)}'
           )

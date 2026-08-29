@@ -47,6 +47,7 @@ jobs:
           bash -n tools/open_rel_030/tier1_commit_ambiguity.sh
           bash -n tools/open_rel_030/timescale_jobs_restore.sh
           bash -n tools/open_rel_030/physical_pitr.sh
+          bash -n tools/open_rel_030/physical_pitr_post_enrollment_clone.sh
           bash -n tools/open_rel_030/tenant_relocation.sh
           test -s sql/d2-open-rel-030/012_timescale_restore_role_bootstrap.sql
           python3 -m py_compile tools/open_rel_030/tier1_concurrency.py
@@ -76,11 +77,20 @@ jobs:
           missing = [p.name for p in history_modules if p.name not in runner]
           assert not missing, f'history hardening modules not wired into extended runner: {missing}'
 
+          required_vectors = [
+              'physical_pitr.sh',
+              'physical_pitr_post_enrollment_clone.sh',
+              'tenant_relocation.sh',
+          ]
+          missing_vectors = [name for name in required_vectors if name not in runner]
+          assert not missing_vectors, f'critical extended vectors not wired into runner: {missing_vectors}'
+
           print(
               'evidence_manifest_guard=PASS '
               'state=complete_ready_for_decision_review '
               'acceptance=not_granted '
-              f'history_modules={len(history_modules)}'
+              f'history_modules={len(history_modules)} '
+              f'critical_vectors={len(required_vectors)}'
           )
           PY
 

@@ -18,6 +18,9 @@ Recommend C2 acceptance only with all of the following preserved together:
 - current-state CAS by platform source/poll authority, never provider event time;
 - contiguous late-history reconciliation anchored at `supported_history_floor`;
 - provider snapshot/finality/currentness derived from durable owner authority, not worker-supplied timestamps;
+- reconciliation coverage bound to the exact current `authority_generation`, even when snapshot timestamps are unchanged;
+- every authority-generation transition invalidates prior materialized coverage until a fresh sweep under the new generation re-establishes it;
+- conflicting canonical content under an existing reconciled observation identity rejects the sweep before a new coverage run can be recorded;
 - stale reconciliation worker generations rejected;
 - physical PITR to committed `R` remaining fail-closed until a surviving external authenticated `(R,F]` recovery grant is verified;
 - recovery grant facts stored structurally and authenticated over a deterministic self-delimiting canonical representation;
@@ -52,16 +55,16 @@ Recommend C2 acceptance only under the conformed mediated profile:
 
 ```text
 HEAD
-a0f9b03199d3881a48a18c52c826b9a36b65ac84
+387a68af2eb896f0ece8c916b241a84fde0876f3
 
 JLMIRROR Deterministic Assurance
-run #2054
-run id 33226307343
+run #2068
+run id 33226943467
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #95
-run id 33226307321
+run #102
+run id 33226943414
 SUCCESS
 ```
 
@@ -69,7 +72,22 @@ That SHA is provenance only after this documentation update. The exact final doc
 
 ## Owner-currentness history gate
 
-The history worker does not provide finality/currentness timestamps. Durable `provider_authority` owns `authority_generation`, `current_snapshot_at`, `finality_floor` and `required_reconciliation_snapshot_at`. `sweep(...)` accepts only the requested window plus `expected_authority_generation`; `try_finalize(...)` accepts no caller finality/currentness timestamp. The matrix proves stale generation rejection, owner-required snapshot currentness, continuous coverage from the supported floor, and durable `gap` on unrecoverable retention loss.
+The history worker does not provide authority, finality or currentness facts. Durable `provider_authority` owns `authority_generation`, `current_snapshot_at`, `finality_floor` and `required_reconciliation_snapshot_at`. `sweep(...)` accepts only the requested window plus `expected_authority_generation`; `try_finalize(...)` accepts no caller authority/finality/currentness timestamp.
+
+Coverage is now a function of **both** the exact owner generation and the required owner snapshot. `contiguous_covered_through(...)` filters `reconciliation_run` by `authority_generation = current authority_generation`; `advance_provider_authority(...)` clears materialized coverage and moves non-gap streams to `reconciliation_required` even if all timestamps remain identical. This prevents an authority correction/revision from reusing stale coverage simply because its timestamp did not move.
+
+An existing `(stream_id, observation_id)` is also immutable canonical history. Before inserting or recording a reconciliation run, `sweep(...)` compares owner-visible `observed_at` and `numeric_value` against the persisted accepted row; mismatch raises `reconciled observation identity content mismatch`. The failed sweep records no new run and leaves accepted canonical content unchanged.
+
+Exact #102 proves:
+
+```text
+history_conflicting_observation_rejected=PASS
+history_generation_bound_coverage=PASS
+history_owner_currentness_authority=PASS
+late_history_reconciliation=PASS
+```
+
+The same run preserves continuous coverage from the supported floor and durable `gap` on unrecoverable retention loss.
 
 ## PITR recovery admission gate
 
@@ -83,7 +101,7 @@ Every structured cryptographic evidence message must use deterministic, versione
 
 The target checkpoint is bound to target-owned measurement of actual current state, count/max/SHA-256 over canonical immutable payload, and domain-separated HMAC over the canonical checkpoint message. The effective signing key is generated inside target authority using target-side randomness. The trusted disposable-lab controller can administer both databases for setup/fault injection, but it neither provisions nor retains the protocol signing key.
 
-Exact #95 evidence includes:
+Exact #102 continues to prove:
 
 ```text
 relocation_tier1_has_no_target_signing_key=PASS
@@ -100,7 +118,7 @@ relocation_tier1_cannot_mint_target_attestation=PASS
 relocation_fabricated_target_attestation_rejected=PASS
 ```
 
-Thus the evidence now separates issuer from verifier at the database-authority and key-provenance levels, not merely by table naming.
+Thus the evidence separates issuer from verifier at the database-authority and key-provenance levels, not merely by table naming.
 
 ## Cross-authority activation gate
 
@@ -108,7 +126,7 @@ The target checkpoint verifier and Tier 1 activation verifier are capability-res
 
 Remote verification is bounded/fail-closed and happens before local authority locks. Tier 1 then atomically commits successor placement plus a durable activation grant. Target remains `sealed` until it verifies the exact committed grant.
 
-Exact #95 also proves:
+Exact #102 also preserves:
 
 ```text
 relocation_target_cannot_self_activate_before_tier1_grant=PASS
@@ -119,6 +137,7 @@ relocation_conflicting_grant_cannot_activate_target=PASS
 relocation_activation_conflict_keeps_target_sealed=PASS
 relocation_activation_grant_placement_atomicity=PASS
 relocation_tier1_activation_grant_committed=PASS
+open_rel_030_extended_conformance=PASS
 ```
 
 ## Tier 2 trust boundary

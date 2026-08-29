@@ -13,13 +13,15 @@ This package is a bounded, reproducible falsification laboratory for `OPEN-REL-0
 
 It evaluates:
 
-1. **Tier 1 PostgreSQL:** transactional acceptance/idempotency, source/poll authority, current-state CAS, ambiguity, late-history reconciliation, PITR and relocation activation authority.
+1. **Tier 1 PostgreSQL:** transactional acceptance/idempotency, source/poll authority, current-state CAS, ambiguity, owner-current late-history reconciliation, PITR and relocation activation authority.
 2. **Tier 2 TimescaleDB:** tenant isolation, feature compatibility, privileged background jobs, fresh-cluster restore, target-owned checkpoint/freeze authority and bounded mechanism capacity.
 
 ## Non-negotiable boundaries
 
 - Provider event time is metadata, never current-state authority.
 - Worker/caller assertions never substitute for source, poll, provider-finality, recovery or target-checkpoint authority.
+- Reconciliation completeness is bound to exact owner `authority_generation` plus owner-required snapshot currentness; timestamp equality alone never carries coverage across generations.
+- Existing reconciled observation identity implies immutable canonical accepted content; owner-visible conflicting content rejects/quarantines rather than becoming a duplicate.
 - Structured crypto messages require deterministic versioned unambiguous/self-delimiting representation before cryptography.
 - A verifier must not inherit issuer/mint capability merely because it can validate an attestation.
 - Target signing material must originate and remain inside target authority; the test controller must not provision or retain it.
@@ -33,7 +35,29 @@ It evaluates:
 
 ## Tier 1 authority coverage
 
-The executable package proves atomic create-or-observe across independent connections; immutable canonical observation content; owner-controlled source/poll authority; exact durable `live` poll claims; current-state CAS by platform authority; stale/predecessor rejection; crash rollback; post-COMMIT ambiguity convergence; durable Tier2-down backlog responsibility; owner-current late-history finality/currentness; and PITR recovery admission only from surviving authenticated `(R,F]` authority.
+The executable package proves atomic create-or-observe across independent connections; immutable canonical observation content; owner-controlled source/poll authority; exact durable `live` poll claims; current-state CAS by platform authority; stale/predecessor rejection; crash rollback; post-COMMIT ambiguity convergence; durable Tier2-down backlog responsibility; generation-bound owner-current late-history finality/currentness; conflicting reconciled-content rejection; and PITR recovery admission only from surviving authenticated `(R,F]` authority.
+
+### Owner-current late-history reconciliation
+
+`provider_authority` durably owns `authority_generation`, `current_snapshot_at`, `finality_floor` and `required_reconciliation_snapshot_at`. Workers supply only a window and an expected generation.
+
+A reconciliation run contributes to contiguous coverage only when both are true:
+
+1. its `authority_generation` equals the currently locked owner generation;
+2. its provider snapshot satisfies the owner-required snapshot floor.
+
+Every `advance_provider_authority(...)` invalidates the stream's materialized reconciliation coverage and moves a non-gap stream to `reconciliation_required`, even if the new generation uses exactly the same timestamps. A fresh sweep under that generation must re-establish coverage.
+
+Before a sweep inserts or records any run, it compares any already-accepted observation identity against the currently visible provider content. A mismatch in immutable `observed_at` or `numeric_value` raises `reconciled observation identity content mismatch`; the failed transaction cannot alter accepted canonical history or mint a coverage run.
+
+Exact empirical evidence includes:
+
+```text
+history_conflicting_observation_rejected=PASS
+history_generation_bound_coverage=PASS
+history_owner_currentness_authority=PASS
+late_history_reconciliation=PASS
+```
 
 ## Timescale mediated profile
 
@@ -127,18 +151,18 @@ relocation_tier1_activation_grant_committed=PASS
 
 ```text
 HEAD
-a0f9b03199d3881a48a18c52c826b9a36b65ac84
+387a68af2eb896f0ece8c916b241a84fde0876f3
 
-JLMIRROR Deterministic Assurance #2054
-run id 33226307343
+JLMIRROR Deterministic Assurance #2068
+run id 33226943467
 SUCCESS
 
-JLMIRROR OPEN-REL-030 Conformance #95
-run id 33226307321
+JLMIRROR OPEN-REL-030 Conformance #102
+run id 33226943414
 SUCCESS
 ```
 
-The #95 extended run includes key-provenance, capability-secret isolation, verifier/mint separation, durable activation grant, premature-activation negatives, grant/placement rollback injection, structured serialization and all prior authority/isolation/recovery/relocation vectors. This anchor becomes provenance after documentation mutation and the final documentation HEAD must rerun both workflows.
+The #102 extended run includes generation-bound late-history coverage, conflicting reconciled-content rejection, key-provenance, capability-secret isolation, verifier/mint separation, durable activation grant, premature-activation negatives, grant/placement rollback injection, structured serialization and all prior authority/isolation/recovery/relocation vectors. This anchor becomes provenance after documentation mutation and the final documentation HEAD must rerun both workflows.
 
 ## Governance state
 

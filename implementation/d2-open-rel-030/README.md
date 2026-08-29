@@ -30,7 +30,8 @@ It evaluates:
 - A verifier must not inherit issuer/mint capability merely because it can validate an attestation.
 - Target signing material must originate and remain inside target authority; the test controller must not provision or retain it.
 - Recovery grants are not reusable bearer authorization and **a reusable external credential is not a restored-instance identity**.
-- Surviving recovery authority binds admission to authenticated principal plus a post-R instance capability generated independently by each physical restore.
+- Independent restores from R must not converge on one recovery authority merely because they reuse credentials.
+- A physical copy of PostgreSQL `PGDATA` taken after restored-instance enrollment must not copy the effective restored-instance authority.
 - Recovery principals have no direct grant-table read privilege and cannot submit principal/target identity or signed grant facts as authority.
 - Cross-authority verifier credentials stay out of function source and inside restricted authority-owned capability state.
 - Cross-authority calls require a caller-local post-connect deadline; a connected but stalled peer must fail closed.
@@ -38,7 +39,7 @@ It evaluates:
 - A single cross-tenant leak rejects the candidate profile.
 - `OPEN-REL-020` retains production telemetry capacity/numeric ownership.
 - PostgreSQL/Timescale versions and image digests are evidence dependencies, not immutable production selections.
-- Evidence HMAC/SHA, canonical encoding, `dblink`, recovery/verifier LOGIN roles, instance-secret mechanism and capability-store layout do not select production KMS/HSM, workload identity, TPM/TEE, authentication, network or RPC topology.
+- Evidence HMAC/SHA, canonical encoding, `dblink`, recovery/verifier LOGIN roles, external-to-PGDATA capability mount and capability-store layout do not select production KMS/HSM, workload identity, TPM/TEE, authentication, network or RPC topology.
 - `READY_FOR_MERGE != AUTHORIZED_TO_MERGE`.
 
 ## Tier 1 authority coverage
@@ -65,72 +66,46 @@ The extended runner executes:
 008_history_visibility_correction_hardening.sql
 ```
 
-The workflow independently enumerates existing `00[4-9]_history_*.sql` files and fails if any is absent from the runner. Exact #145 reports `history_modules=5` and proves/preserves:
-
-```text
-history_conflicting_observation_rejected=PASS
-history_cross_window_identity_conflict_rejected=PASS
-history_generation_bound_coverage=PASS
-history_owner_currentness_authority=PASS
-history_provider_mutation_invalidates_coverage=PASS
-history_dataset_revision_bound_coverage=PASS
-history_same_generation_dataset_mutation_fenced=PASS
-history_provider_destructive_mutation_fails_closed=PASS
-history_worker_no_direct_provider_mutation=PASS
-history_worker_cannot_administer_provider_triggers=PASS
-history_provider_truncate_fails_closed=PASS
-history_visibility_shift_conflict_rejected=PASS
-history_visibility_shift_cannot_mint_coverage=PASS
-late_history_reconciliation=PASS
-```
+The workflow independently enumerates existing `00[4-9]_history_*.sql` files and fails if any is absent from the runner. Pre-documentation exact #158 reports `history_modules=5` and preserves all prior owner-current history vectors.
 
 ### Physical PITR single-winner restored-instance authority
 
 A surviving external control PostgreSQL is excluded from source backup/restore and owns the recovery signing key. It issues a structured authenticated grant only after `F`; a local recreated receipt remains insufficient.
 
-Grant integrity is resolved internally by the surviving authority and recovery principals cannot directly read the grant relation. Authentication principal is one authority dimension, but it is not sufficient for idempotent retry because an external role/password can be copied.
+The baseline PITR vector proves that authentication principal alone is insufficient: two independent physical restores from the same committed R backup intentionally reuse one external role/password but generate distinct post-R capabilities. The surviving grant binds the winner to authenticated session principal plus instance identity/fingerprint, same-instance retry succeeds, and the independently restored rival is rejected.
 
-The physical vector therefore starts **two PostgreSQL restores from the same committed R backup**. Each independently creates after R:
+#### Post-enrollment clone hardening
 
-```text
-instance_id     random UUID
-instance_secret random 256-bit local secret
-```
+Native Assurance then found material class #38: if the effective secret lives inside PostgreSQL, a physical snapshot made **after** capability creation inherits `instance_id + instance_secret` and can look exactly like the winning retry.
 
-The normal claim path keeps the secret inside the restored database and uses a local `SECURITY DEFINER` helper to prove possession to the surviving authority. The surviving grant is atomically bound to:
+The final C2 package therefore wires `physical_pitr_post_enrollment_clone.sh` into the extended runner and guards that wiring in CI. The vector:
 
-```text
-session_user
-instance_id
-fingerprint(instance_secret)
-```
+1. enrolls the restored database identity;
+2. keeps the effective instance proof outside `PGDATA` in an evidence-only per-instance mount;
+3. stops PostgreSQL and physically copies PGDATA after enrollment;
+4. proves primary and clone expose the exact same copied database `instance_id`;
+5. gives both copies the exact same surviving-authority external role/password;
+6. gives the clone a distinct external-to-PGDATA proof;
+7. proves primary claim/retry/verify succeeds while clone claim/verify fails.
 
-The winning restore and its physical clone intentionally use the **same external recovery role/password**. Same-instance retry succeeds; the clone's different post-R capability is rejected despite identical external credentials. A separate two-principal/two-capability race still requires exactly one winner.
-
-Exact #145 proves:
+Pre-documentation exact #158 passed:
 
 ```text
-physical_pitr_recovery_instance_capability_generated_post_R=PASS
-physical_pitr_recovery_clone_capability_distinct=PASS
-physical_pitr_recovery_claim_api_grant_plus_instance_proof=PASS
-physical_pitr_recovery_claim_identity_from_authenticated_session=PASS
-physical_pitr_recovery_principal_no_direct_grant_read=PASS
-physical_pitr_recovery_principal_spoof_rejected=PASS
-physical_pitr_tampered_grant_cannot_claim=PASS
-physical_pitr_tamper_leaves_grant_unclaimed=PASS
-physical_pitr_recovery_claim_single_winner_race=PASS
-physical_pitr_recovery_grant_same_instance_retry=PASS
-physical_pitr_recovery_same_principal_clone_rejected=PASS
-physical_pitr_recovery_other_principal_rejected=PASS
-physical_pitr_recovery_grant_authenticated_principal_binding=PASS
-physical_pitr_recovery_grant_instance_id_binding=PASS
-physical_pitr_recovery_instance_fingerprint_binding=PASS
-physical_pitr_duplicate_restored_authority_not_admitted=PASS
-physical_pitr_recovery_single_winner_instance_capability=PASS
-physical_pitr_post_reconcile_admission=PASS authority=surviving_external_authenticated_single_winner_instance_capability
+physical_pitr_post_enrollment_capability_outside_pgdata=PASS
+physical_pitr_post_enrollment_pgdata_identity_copied=PASS
+physical_pitr_post_enrollment_external_capability_distinct=PASS
+physical_pitr_post_enrollment_primary_claimed=PASS
+physical_pitr_post_enrollment_same_instance_retry=PASS
+physical_pitr_post_enrollment_pgdata_clone_claim_rejected=PASS
+physical_pitr_post_enrollment_primary_verify=PASS
+physical_pitr_post_enrollment_pgdata_clone_verify_rejected=PASS
+physical_pitr_post_enrollment_authenticated_principal_binding=PASS
+physical_pitr_post_enrollment_copied_database_id_binding=PASS
+physical_pitr_post_enrollment_pgdata_clone_cannot_duplicate_authority=PASS
+physical_pitr_post_enrollment_single_winner_external_capability=PASS
 ```
 
-This PostgreSQL LOGIN + post-R local secret + `dblink` path is evidence-only. Production may use a different non-shareable workload/instance authority such as TPM/TEE/KMS-backed or platform workload identity, but it must preserve the proven property: copied reusable credentials alone cannot impersonate the admitted restored instance.
+The file/mount mechanism is C2 evidence machinery only. It proves the precise clone-domain property: **copying PostgreSQL data state alone does not duplicate recovery authority**. Production must strengthen this into genuinely non-shareable per-instance authority using an appropriate workload identity, TPM/TEE/KMS-backed non-exportable capability or another separately reviewed mechanism.
 
 ## Timescale mediated profile
 
@@ -146,15 +121,7 @@ The bounded field representation is:
 <UTF-8 byte length in decimal>:<lowercase UTF-8 hex>
 ```
 
-Field framing is applied only after each typed value has a total/injective canonical text form.
-
-### Timestamp
-
-Finite PostgreSQL `timestamptz` values serialize as UTC + microseconds + explicit `AD`/`BC`. Non-finite `-infinity` and `infinity` use exact reserved literals. Exact #145 preserves era injectivity, cross-store equality, non-finite distinction and mandatory digest use of `canonical_timestamp(...)`.
-
-### Numeric
-
-The accepted relocation value column is unconstrained PostgreSQL `numeric`. Both Tier 1 and Tier 2 use `canonical_numeric(...)`: finite values normalize through `trim_scale`, while `NaN`, `Infinity` and `-Infinity` map to explicit exact literals. Exact #145 preserves special-value cross-store equality/injectivity and mandatory digest use of the numeric canonicalizer.
+Field framing is applied only after each typed value has a total/injective canonical text form. Finite `timestamptz` values serialize as UTC + microseconds + explicit AD/BC; non-finite values use exact sentinels. Unconstrained `numeric` uses normalized finite values plus exact `NaN`, `Infinity` and `-Infinity` sentinels. Pre-documentation #158 preserves all canonicalization vectors.
 
 ## Relocation authority model
 
@@ -183,25 +150,25 @@ activated
 
 The effective target checkpoint key is generated inside Tier 2. Tier 1 contains no target signing-key relation; the controller does not retain the key; projection writer/verifier cannot read it. Verifier connection credentials are restricted capability state and absent from function source. Raw asynchronous transport is owner-only; `connect_timeout` bounds connection setup and asynchronous polling enforces caller-local established-response deadlines.
 
-Exact #145 preserves target-key provenance, verifier-secret isolation, stalled-peer fail-closed behavior, target seal/DML serialization, forged-attestation rejection, placement+grant rollback injection, target self-activation rejection, exact activation-grant verification and final Tier1↔Tier2 continuity.
-
 ## Exact empirical anchor before reviewer documentation
 
 ```text
 HEAD
-ce6f04c1192aae68f305d0b9f5fcaefd4964f8fb
+c9207f8bbd3c42ec0428987a2580b7f1bfb7e06d
 
-JLMIRROR Deterministic Assurance #2155
-run id 33255911094
+JLMIRROR Deterministic Assurance #2181
+run id 33272308047
 SUCCESS
 
-JLMIRROR OPEN-REL-030 Conformance #145
-run id 33255911080
+JLMIRROR OPEN-REL-030 Conformance #158
+run id 33272308006
 SUCCESS
 ```
 
-The #145 extended run executes all five history-hardening modules (`004–008`), closes the visibility-shift conflict class, proves recovery single-winner authority against a second physical restore reusing the exact same external credential, and preserves all prior Tier1/Timescale/relocation/canonicalization vectors. This anchor becomes provenance after reviewer-document mutation; exact final documentation HEAD must rerun both workflows.
+This anchor includes the post-enrollment physical-clone hardening and all prior Tier1/Timescale/relocation/canonicalization vectors. It becomes provenance after reviewer-document mutation; exact final documentation HEAD must rerun both workflows.
 
 ## Governance state
+
+Material finding classes closed by the evidence program: **38**.
 
 Evidence completion does not accept `OPEN-REL-030`, authorize Wave 4, select production deployment/authentication/instance-identity topology or authorize merge. Exact-final-HEAD CI, fresh Codex review, Native Assurance and explicit Track B acceptance remain separate gates.

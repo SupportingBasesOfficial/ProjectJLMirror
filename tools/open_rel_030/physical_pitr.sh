@@ -16,11 +16,17 @@ recovery_nonce="$(openssl rand -hex 16)"
 recovery_race_nonce="$(openssl rand -hex 16)"
 required_receipt='effect|after-r'
 
+primary_role="pitr_restore_primary"
+rival_role="pitr_restore_rival"
+race_a_role="pitr_restore_race_a"
+race_b_role="pitr_restore_race_b"
+
 cleanup() {
   docker rm -f "$source_container" "$restored_container" >/dev/null 2>&1 || true
   sudo rm -rf "$tmpdir" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
+
 cleanup_containers() {
   docker rm -f "$source_container" "$restored_container" >/dev/null 2>&1 || true
 }
@@ -68,15 +74,20 @@ assert_exact() {
 # Surviving recovery authority.
 #
 # Structured grants are authenticated over deterministic self-delimiting facts.
-# Signature verification alone is deliberately NOT recovery admission: the
-# surviving authority must atomically claim each grant for exactly one restored
-# target identity. Same-target retries are idempotent; another target fails.
-# The signing key is generated inside this surviving authority, not provisioned
-# or retained by the cross-database test controller.
+# Signature verification alone is deliberately NOT recovery admission.
+# Admission is bound to the authenticated PostgreSQL session principal in the
+# surviving authority. The claim function accepts no caller-supplied target ID.
+# Same-principal retries are idempotent; another authenticated principal fails.
+# The concrete LOGIN/password exchange is C2 laboratory machinery, not a
+# production identity/authentication selection.
 # ---------------------------------------------------------------------------
 psql_in "$control_container" "
   CREATE EXTENSION IF NOT EXISTS pgcrypto;
   DROP SCHEMA IF EXISTS pitr_external_evidence CASCADE;
+  DROP ROLE IF EXISTS $primary_role;
+  DROP ROLE IF EXISTS $rival_role;
+  DROP ROLE IF EXISTS $race_a_role;
+  DROP ROLE IF EXISTS $race_b_role;
   CREATE SCHEMA pitr_external_evidence;
 
   CREATE OR REPLACE FUNCTION pitr_external_evidence.canonical_field(p_value text)
@@ -142,9 +153,9 @@ psql_in "$control_container" "
     canonical_payload text NOT NULL,
     attestation text NOT NULL,
     issued_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-    claimed_target_id uuid,
+    claimed_principal name,
     claimed_at timestamptz,
-    CHECK ((claimed_target_id IS NULL) = (claimed_at IS NULL))
+    CHECK ((claimed_principal IS NULL) = (claimed_at IS NULL))
   );
 
   CREATE OR REPLACE FUNCTION pitr_external_evidence.verify_grant(
@@ -208,8 +219,7 @@ psql_in "$control_container" "
     p_placement_version bigint,
     p_required_receipt text,
     p_nonce text,
-    p_attestation text,
-    p_target_id uuid
+    p_attestation text
   ) RETURNS boolean
   LANGUAGE plpgsql STRICT
   SECURITY DEFINER
@@ -220,6 +230,7 @@ psql_in "$control_container" "
     v_grant pitr_external_evidence.recovery_grant%ROWTYPE;
     v_canonical text;
     v_expected text;
+    v_principal name := session_user;
   BEGIN
     SELECT * INTO v_grant
       FROM pitr_external_evidence.recovery_grant
@@ -253,15 +264,15 @@ psql_in "$control_container" "
       RETURN false;
     END IF;
 
-    IF v_grant.claimed_target_id IS NULL THEN
+    IF v_grant.claimed_principal IS NULL THEN
       UPDATE pitr_external_evidence.recovery_grant
-         SET claimed_target_id=p_target_id,
+         SET claimed_principal=v_principal,
              claimed_at=clock_timestamp()
        WHERE grant_id=p_grant_id;
       RETURN true;
     END IF;
 
-    RETURN v_grant.claimed_target_id = p_target_id;
+    RETURN v_grant.claimed_principal = v_principal;
   END;
   \$\$;
 
@@ -274,19 +285,18 @@ psql_in "$control_container" "
     p_placement_version bigint,
     p_required_receipt text,
     p_nonce text,
-    p_attestation text,
-    p_target_id uuid
+    p_attestation text
   ) RETURNS boolean
   LANGUAGE plpgsql STRICT
   SECURITY DEFINER
   SET search_path=pg_catalog,pitr_external_evidence
   AS \$\$
-  DECLARE v_claimed uuid;
+  DECLARE v_claimed name; v_principal name := session_user;
   BEGIN
-    SELECT claimed_target_id INTO v_claimed
+    SELECT claimed_principal INTO v_claimed
       FROM pitr_external_evidence.recovery_grant
      WHERE grant_id=p_grant_id;
-    IF NOT FOUND OR v_claimed IS DISTINCT FROM p_target_id THEN
+    IF NOT FOUND OR v_claimed IS DISTINCT FROM v_principal THEN
       RETURN false;
     END IF;
     RETURN pitr_external_evidence.verify_grant(
@@ -297,8 +307,9 @@ psql_in "$control_container" "
   \$\$;
 
   REVOKE ALL ON FUNCTION pitr_external_evidence.verify_grant(text,text,text,text,bigint,bigint,text,text,text) FROM PUBLIC;
-  REVOKE ALL ON FUNCTION pitr_external_evidence.claim_grant(text,text,text,text,bigint,bigint,text,text,text,uuid) FROM PUBLIC;
-  REVOKE ALL ON FUNCTION pitr_external_evidence.verify_claimed_grant(text,text,text,text,bigint,bigint,text,text,text,uuid) FROM PUBLIC;
+  REVOKE ALL ON FUNCTION pitr_external_evidence.claim_grant(text,text,text,text,bigint,bigint,text,text,text) FROM PUBLIC;
+  REVOKE ALL ON FUNCTION pitr_external_evidence.verify_claimed_grant(text,text,text,text,bigint,bigint,text,text,text) FROM PUBLIC;
+  REVOKE ALL ON pitr_external_evidence.recovery_grant FROM PUBLIC;
 " >/dev/null
 
 if [[ ${recovery_key+x} == x ]]; then
@@ -344,7 +355,7 @@ psql_in "$source_container" "
     reconciled_through_f boolean NOT NULL DEFAULT false,
     external_grant_id text,
     external_grant_fingerprint text,
-    external_grant_target_id uuid
+    external_grant_principal text
   );
   CREATE TABLE pitr_continuity_receipt (receipt_id text PRIMARY KEY);
   INSERT INTO pitr_local_state
@@ -380,9 +391,7 @@ if [[ "$r_lsn" == "$f_lsn" ]]; then
 fi
 printf 'physical_pitr_restore_points=PASS R=%s F=%s\n' "$r_lsn" "$f_lsn"
 
-# Only after F exists does the surviving authority issue grants. One grant is
-# used by the actual restored target; a second identical-authority grant is used
-# to race two distinct target IDs and falsify duplicate admission.
+# Only after F exists does the surviving authority issue grants.
 psql_in "$control_container" "
   WITH facts AS (
     SELECT
@@ -425,8 +434,6 @@ psql_in "$control_container" "
    WHERE k.singleton;
 " >/dev/null
 
-# Read the actual grant's structured facts independently. No delimiter parsing
-# defines authority.
 grant_id="$(psql_in "$control_container" "SELECT grant_id FROM pitr_external_evidence.recovery_grant WHERE grant_id='grant-F-1';")"
 grant_domain="$(psql_in "$control_container" "SELECT domain FROM pitr_external_evidence.recovery_grant WHERE grant_id='grant-F-1';")"
 grant_r="$(psql_in "$control_container" "SELECT boundary_r FROM pitr_external_evidence.recovery_grant WHERE grant_id='grant-F-1';")"
@@ -442,38 +449,6 @@ if [[ -z "$grant_attestation" || -z "$grant_payload" ]]; then
   exit 1
 fi
 assert_exact "physical_pitr_grant_receipt_contains_pipe" "$required_receipt" "$grant_receipt"
-
-# Atomic create-or-observe race: two distinct restore identities contend for a
-# dedicated recovery grant. Exactly one may claim it; the winner is idempotent.
-race_target_a="$(psql_in "$control_container" "SELECT gen_random_uuid();")"
-race_target_b="$(psql_in "$control_container" "SELECT gen_random_uuid();")"
-race_sql_a="SELECT pitr_external_evidence.claim_grant(g.grant_id,g.domain,g.boundary_r,g.boundary_f,g.successor_epoch,g.placement_version,g.required_receipt,g.nonce,g.attestation,'$race_target_a'::uuid)::text FROM pitr_external_evidence.recovery_grant g WHERE g.grant_id='grant-F-race';"
-race_sql_b="SELECT pitr_external_evidence.claim_grant(g.grant_id,g.domain,g.boundary_r,g.boundary_f,g.successor_epoch,g.placement_version,g.required_receipt,g.nonce,g.attestation,'$race_target_b'::uuid)::text FROM pitr_external_evidence.recovery_grant g WHERE g.grant_id='grant-F-race';"
-( psql_in "$control_container" "$race_sql_a" >"$tmpdir/race-a.out" ) &
-race_pid_a=$!
-( psql_in "$control_container" "$race_sql_b" >"$tmpdir/race-b.out" ) &
-race_pid_b=$!
-wait "$race_pid_a"
-wait "$race_pid_b"
-race_a="$(cat "$tmpdir/race-a.out")"
-race_b="$(cat "$tmpdir/race-b.out")"
-if [[ "$race_a|$race_b" != "true|false" && "$race_a|$race_b" != "false|true" ]]; then
-  echo "recovery claim race did not produce exactly one winner: $race_a|$race_b" >&2
-  exit 1
-fi
-if [[ "$race_a" == "true" ]]; then
-  race_winner="$race_target_a"
-  race_loser="$race_target_b"
-else
-  race_winner="$race_target_b"
-  race_loser="$race_target_a"
-fi
-race_winner_retry="$(psql_in "$control_container" "SELECT pitr_external_evidence.claim_grant(g.grant_id,g.domain,g.boundary_r,g.boundary_f,g.successor_epoch,g.placement_version,g.required_receipt,g.nonce,g.attestation,'$race_winner'::uuid)::text FROM pitr_external_evidence.recovery_grant g WHERE g.grant_id='grant-F-race';")"
-race_loser_retry="$(psql_in "$control_container" "SELECT pitr_external_evidence.claim_grant(g.grant_id,g.domain,g.boundary_r,g.boundary_f,g.successor_epoch,g.placement_version,g.required_receipt,g.nonce,g.attestation,'$race_loser'::uuid)::text FROM pitr_external_evidence.recovery_grant g WHERE g.grant_id='grant-F-race';")"
-assert_exact "physical_pitr_recovery_claim_winner_retry" "true" "$race_winner_retry"
-assert_exact "physical_pitr_recovery_claim_loser_rejected" "false" "$race_loser_retry"
-race_claimed_target="$(psql_in "$control_container" "SELECT claimed_target_id::text FROM pitr_external_evidence.recovery_grant WHERE grant_id='grant-F-race';")"
-assert_exact "physical_pitr_recovery_claim_single_winner_race" "$race_winner" "$race_claimed_target"
 
 docker exec -e PGPASSWORD="$password" "$source_container" \
   psql -X -v ON_ERROR_STOP=1 -U postgres -d jlmirror -Atq -c \
@@ -533,23 +508,97 @@ restored_state="$(psql_in "$restored_container" "
 ")"
 assert_exact "physical_pitr_exact_R_state" "state_at_R|5|10|7|false|0|" "$restored_state"
 
-# The restored authority creates a fresh identity after restore. It was not part
-# of the R backup, so clones from the same backup do not share this claim target.
-psql_in "$restored_container" "
-  CREATE EXTENSION IF NOT EXISTS pgcrypto;
-  CREATE TABLE pitr_recovery_instance(
-    target_id uuid PRIMARY KEY,
-    created_at timestamptz NOT NULL DEFAULT clock_timestamp()
-  );
-  INSERT INTO pitr_recovery_instance(target_id) VALUES(gen_random_uuid());
-" >/dev/null
-restore_target_id="$(psql_in "$restored_container" "SELECT target_id::text FROM pitr_recovery_instance;")"
-rival_target_id="$(psql_in "$control_container" "SELECT gen_random_uuid();")"
-if [[ -z "$restore_target_id" || "$restore_target_id" == "$rival_target_id" ]]; then
-  echo "restore target identity was not unique" >&2
+# ---------------------------------------------------------------------------
+# Post-R authenticated recovery principals.
+#
+# The credentials are created only after the restore has reached R, so they are
+# not present in the restored database image. The concrete PostgreSQL LOGIN
+# mechanism is evidence-only; the invariant is that external authority derives
+# claim identity from authenticated session state rather than caller data.
+# ---------------------------------------------------------------------------
+primary_password="$(openssl rand -hex 24)"
+rival_password="$(openssl rand -hex 24)"
+race_a_password="$(openssl rand -hex 24)"
+race_b_password="$(openssl rand -hex 24)"
+control_ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$control_container")"
+if [[ -z "$control_ip" ]]; then
+  echo "cannot resolve surviving authority container IP" >&2
   exit 1
 fi
-printf 'physical_pitr_restore_target_identity=PASS target=%s\n' "$restore_target_id"
+
+psql_in "$control_container" "
+  CREATE ROLE $primary_role LOGIN PASSWORD '$primary_password';
+  CREATE ROLE $rival_role LOGIN PASSWORD '$rival_password';
+  CREATE ROLE $race_a_role LOGIN PASSWORD '$race_a_password';
+  CREATE ROLE $race_b_role LOGIN PASSWORD '$race_b_password';
+  GRANT USAGE ON SCHEMA pitr_external_evidence TO $primary_role,$rival_role,$race_a_role,$race_b_role;
+  GRANT EXECUTE ON FUNCTION pitr_external_evidence.claim_grant(text,text,text,text,bigint,bigint,text,text,text)
+    TO $primary_role,$rival_role,$race_a_role,$race_b_role;
+  GRANT EXECUTE ON FUNCTION pitr_external_evidence.verify_claimed_grant(text,text,text,text,bigint,bigint,text,text,text)
+    TO $primary_role,$rival_role,$race_a_role,$race_b_role;
+" >/dev/null
+
+psql_control_as() {
+  local user="$1"
+  local pass="$2"
+  local sql="$3"
+  docker exec -e PGPASSWORD="$pass" "$restored_container" \
+    psql -X -v ON_ERROR_STOP=1 -h "$control_ip" -U "$user" -d jlmirror -Atq -c "$sql"
+}
+
+# Prove the claim API cannot accept caller-supplied target identity.
+claim_args="$(psql_in "$control_container" "SELECT pg_get_function_identity_arguments('pitr_external_evidence.claim_grant(text,text,text,text,bigint,bigint,text,text,text)'::regprocedure);")"
+if [[ "$claim_args" == *"target"* || "$claim_args" == *"principal"* ]]; then
+  echo "recovery claim API still accepts caller-supplied target/principal identity: $claim_args" >&2
+  exit 1
+fi
+printf '%s\n' 'physical_pitr_recovery_claim_identity_from_authenticated_session=PASS'
+
+# Password authentication is part of the bounded evidence path. Knowing the
+# winner role name while presenting the rival credential must not authenticate.
+set +e
+docker exec -e PGPASSWORD="$rival_password" "$restored_container" \
+  psql -X -v ON_ERROR_STOP=1 -h "$control_ip" -U "$primary_role" -d jlmirror -Atq -c 'SELECT 1;' \
+  >"$tmpdir/spoof.out" 2>"$tmpdir/spoof.err"
+spoof_rc=$?
+set -e
+if [[ "$spoof_rc" -eq 0 ]]; then
+  echo "rival credential authenticated as winning recovery principal" >&2
+  exit 1
+fi
+printf '%s\n' 'physical_pitr_recovery_principal_spoof_rejected=PASS'
+
+# Two independently authenticated principals race the same dedicated grant.
+race_sql="SELECT pitr_external_evidence.claim_grant(g.grant_id,g.domain,g.boundary_r,g.boundary_f,g.successor_epoch,g.placement_version,g.required_receipt,g.nonce,g.attestation)::text FROM pitr_external_evidence.recovery_grant g WHERE g.grant_id='grant-F-race';"
+( psql_control_as "$race_a_role" "$race_a_password" "$race_sql" >"$tmpdir/race-a.out" ) &
+race_pid_a=$!
+( psql_control_as "$race_b_role" "$race_b_password" "$race_sql" >"$tmpdir/race-b.out" ) &
+race_pid_b=$!
+wait "$race_pid_a"
+wait "$race_pid_b"
+race_a="$(cat "$tmpdir/race-a.out")"
+race_b="$(cat "$tmpdir/race-b.out")"
+if [[ "$race_a|$race_b" != "true|false" && "$race_a|$race_b" != "false|true" ]]; then
+  echo "authenticated recovery claim race did not produce exactly one winner: $race_a|$race_b" >&2
+  exit 1
+fi
+if [[ "$race_a" == "true" ]]; then
+  race_winner_role="$race_a_role"
+  race_winner_password="$race_a_password"
+  race_loser_role="$race_b_role"
+  race_loser_password="$race_b_password"
+else
+  race_winner_role="$race_b_role"
+  race_winner_password="$race_b_password"
+  race_loser_role="$race_a_role"
+  race_loser_password="$race_a_password"
+fi
+race_winner_retry="$(psql_control_as "$race_winner_role" "$race_winner_password" "$race_sql")"
+race_loser_retry="$(psql_control_as "$race_loser_role" "$race_loser_password" "$race_sql")"
+assert_exact "physical_pitr_recovery_claim_winner_retry" "true" "$race_winner_retry"
+assert_exact "physical_pitr_recovery_claim_loser_rejected" "false" "$race_loser_retry"
+race_claimed_principal="$(psql_in "$control_container" "SELECT claimed_principal::text FROM pitr_external_evidence.recovery_grant WHERE grant_id='grant-F-race';")"
+assert_exact "physical_pitr_recovery_claim_single_winner_race" "$race_winner_role" "$race_claimed_principal"
 
 external_epoch="$(psql_in "$control_container" "SELECT expected_successor_epoch FROM pitr_external_evidence.authority WHERE singleton;")"
 external_placement="$(psql_in "$control_container" "SELECT expected_placement_version FROM pitr_external_evidence.authority WHERE singleton;")"
@@ -566,31 +615,19 @@ psql_in "$restored_container" "
 local_self_mint="$(psql_in "$restored_container" "
   SELECT (reconciled_through_f AND external_grant_id IS NOT NULL
           AND external_grant_fingerprint IS NOT NULL
-          AND external_grant_target_id IS NOT NULL)::text
+          AND external_grant_principal IS NOT NULL)::text
   FROM pitr_local_state WHERE singleton;
 ")"
 assert_exact "physical_pitr_local_self_mint_cannot_admit" "false" "$local_self_mint"
 
-# Tampering a structured field while replaying the old attestation must fail and
-# must not claim the grant for any target.
-tampered_verify="$(psql_in "$control_container" "
-  SELECT pitr_external_evidence.verify_grant(
-    '$grant_id','$grant_domain','$grant_r','$grant_f',$grant_epoch,$grant_placement,
-    'effect|after-r-tampered','$grant_nonce','$grant_attestation'
-  )::text;
-")"
-assert_exact "physical_pitr_tampered_external_grant_rejected" "false" "$tampered_verify"
-tampered_claim="$(psql_in "$control_container" "
-  SELECT pitr_external_evidence.claim_grant(
-    '$grant_id','$grant_domain','$grant_r','$grant_f',$grant_epoch,$grant_placement,
-    'effect|after-r-tampered','$grant_nonce','$grant_attestation','$restore_target_id'::uuid
-  )::text;
-")"
+# Tampering structured grant facts must fail and must not claim the grant.
+tampered_claim_sql="SELECT pitr_external_evidence.claim_grant('$grant_id','$grant_domain','$grant_r','$grant_f',$grant_epoch,$grant_placement,'effect|after-r-tampered','$grant_nonce','$grant_attestation')::text;"
+tampered_claim="$(psql_control_as "$primary_role" "$primary_password" "$tampered_claim_sql")"
 assert_exact "physical_pitr_tampered_grant_cannot_claim" "false" "$tampered_claim"
-unclaimed_after_tamper="$(psql_in "$control_container" "SELECT (claimed_target_id IS NULL)::text FROM pitr_external_evidence.recovery_grant WHERE grant_id='$grant_id';")"
+unclaimed_after_tamper="$(psql_in "$control_container" "SELECT (claimed_principal IS NULL)::text FROM pitr_external_evidence.recovery_grant WHERE grant_id='$grant_id';")"
 assert_exact "physical_pitr_tamper_leaves_grant_unclaimed" "true" "$unclaimed_after_tamper"
 
-# Integrity verification is useful evidence but is not admission by itself.
+# Integrity verification by surviving authority is necessary but not admission.
 verified="$(psql_in "$control_container" "
   SELECT pitr_external_evidence.verify_grant(
     '$grant_id','$grant_domain','$grant_r','$grant_f',$grant_epoch,$grant_placement,
@@ -605,36 +642,22 @@ assert_exact "physical_pitr_grant_epoch" "6" "$grant_epoch"
 assert_exact "physical_pitr_grant_placement" "8" "$grant_placement"
 assert_exact "physical_pitr_grant_receipt" "$required_receipt" "$grant_receipt"
 
-# Admission authority is an atomic surviving-authority claim. The exact target
-# wins once; its retry converges; another target cannot consume the bearer grant.
-claimed="$(psql_in "$control_container" "
-  SELECT pitr_external_evidence.claim_grant(
-    '$grant_id','$grant_domain','$grant_r','$grant_f',$grant_epoch,$grant_placement,
-    '$grant_receipt','$grant_nonce','$grant_attestation','$restore_target_id'::uuid
-  )::text;
-")"
+# The actual restored authority claims through its authenticated session. Retry
+# by the same authenticated principal converges; a different principal fails.
+claim_sql="SELECT pitr_external_evidence.claim_grant('$grant_id','$grant_domain','$grant_r','$grant_f',$grant_epoch,$grant_placement,'$grant_receipt','$grant_nonce','$grant_attestation')::text;"
+claimed="$(psql_control_as "$primary_role" "$primary_password" "$claim_sql")"
 assert_exact "physical_pitr_recovery_grant_claimed" "true" "$claimed"
-claim_retry="$(psql_in "$control_container" "
-  SELECT pitr_external_evidence.claim_grant(
-    '$grant_id','$grant_domain','$grant_r','$grant_f',$grant_epoch,$grant_placement,
-    '$grant_receipt','$grant_nonce','$grant_attestation','$restore_target_id'::uuid
-  )::text;
-")"
-assert_exact "physical_pitr_recovery_grant_same_target_retry" "true" "$claim_retry"
-rival_claim="$(psql_in "$control_container" "
-  SELECT pitr_external_evidence.claim_grant(
-    '$grant_id','$grant_domain','$grant_r','$grant_f',$grant_epoch,$grant_placement,
-    '$grant_receipt','$grant_nonce','$grant_attestation','$rival_target_id'::uuid
-  )::text;
-")"
-assert_exact "physical_pitr_recovery_grant_other_target_rejected" "false" "$rival_claim"
-claimed_target="$(psql_in "$control_container" "SELECT claimed_target_id::text FROM pitr_external_evidence.recovery_grant WHERE grant_id='$grant_id';")"
-assert_exact "physical_pitr_recovery_grant_target_binding" "$restore_target_id" "$claimed_target"
+claim_retry="$(psql_control_as "$primary_role" "$primary_password" "$claim_sql")"
+assert_exact "physical_pitr_recovery_grant_same_principal_retry" "true" "$claim_retry"
+rival_claim="$(psql_control_as "$rival_role" "$rival_password" "$claim_sql")"
+assert_exact "physical_pitr_recovery_grant_other_principal_rejected" "false" "$rival_claim"
+claimed_principal="$(psql_in "$control_container" "SELECT claimed_principal::text FROM pitr_external_evidence.recovery_grant WHERE grant_id='$grant_id';")"
+assert_exact "physical_pitr_recovery_grant_authenticated_principal_binding" "$primary_role" "$claimed_principal"
 
 grant_fingerprint="$(printf '%s' "$grant_payload" | sha256sum | awk '{print $1}')"
 
-# Apply only facts extracted from the authenticated, single-winner surviving
-# grant after the restored target has durably won the external claim.
+# Apply only facts from the authenticated, single-winner surviving grant after
+# the restored authority's external session has won the claim.
 psql_in "$restored_container" "
   UPDATE pitr_local_state
      SET poll_epoch=$grant_epoch,
@@ -643,7 +666,7 @@ psql_in "$restored_container" "
          reconciled_through_f=true,
          external_grant_id='$grant_id',
          external_grant_fingerprint='$grant_fingerprint',
-         external_grant_target_id='$restore_target_id'::uuid
+         external_grant_principal='$primary_role'
    WHERE singleton;
 " >/dev/null
 
@@ -663,29 +686,24 @@ local_ready="$(psql_in "$restored_container" "
     AND placement_version=$grant_placement
     AND external_grant_id='$grant_id'
     AND external_grant_fingerprint='$grant_fingerprint'
-    AND external_grant_target_id='$restore_target_id'::uuid
+    AND external_grant_principal='$primary_role'
     AND EXISTS (SELECT 1 FROM pitr_continuity_receipt WHERE receipt_id='$grant_receipt')
   )::text FROM pitr_local_state WHERE singleton;
 ")"
-external_ready="$(psql_in "$control_container" "
-  SELECT pitr_external_evidence.verify_claimed_grant(
-    '$grant_id','$grant_domain','$grant_r','$grant_f',$grant_epoch,$grant_placement,
-    '$grant_receipt','$grant_nonce','$grant_attestation','$restore_target_id'::uuid
-  )::text;
-")"
-rival_ready="$(psql_in "$control_container" "
-  SELECT pitr_external_evidence.verify_claimed_grant(
-    '$grant_id','$grant_domain','$grant_r','$grant_f',$grant_epoch,$grant_placement,
-    '$grant_receipt','$grant_nonce','$grant_attestation','$rival_target_id'::uuid
-  )::text;
-")"
+verify_claimed_sql="SELECT pitr_external_evidence.verify_claimed_grant('$grant_id','$grant_domain','$grant_r','$grant_f',$grant_epoch,$grant_placement,'$grant_receipt','$grant_nonce','$grant_attestation')::text;"
+external_ready="$(psql_control_as "$primary_role" "$primary_password" "$verify_claimed_sql")"
+rival_ready="$(psql_control_as "$rival_role" "$rival_password" "$verify_claimed_sql")"
 assert_exact "physical_pitr_local_reconciled_state" "true" "$local_ready"
 assert_exact "physical_pitr_external_authority_still_verifies" "true" "$external_ready"
 assert_exact "physical_pitr_duplicate_restored_authority_not_admitted" "false" "$rival_ready"
 if [[ "$local_ready" != "true" || "$external_ready" != "true" || "$rival_ready" != "false" ]]; then
-  echo "physical PITR admission lacks unique surviving external authority" >&2
+  echo "physical PITR admission lacks unique authenticated surviving external authority" >&2
   exit 1
 fi
-printf '%s\n' 'physical_pitr_recovery_single_winner=PASS'
-printf '%s\n' 'physical_pitr_post_reconcile_admission=PASS authority=surviving_external_authenticated_single_winner_grant'
+
+# Clear transient evidence credentials from the controller process. Production
+# identity/credential provisioning is deliberately outside this C2 selection.
+unset primary_password rival_password race_a_password race_b_password
+printf '%s\n' 'physical_pitr_recovery_single_winner_authenticated_principal=PASS'
+printf '%s\n' 'physical_pitr_post_reconcile_admission=PASS authority=surviving_external_authenticated_single_winner_principal'
 printf '%s\n' 'physical_pitr_rf_reconciliation=PASS'

@@ -86,7 +86,9 @@ CREATE TABLE history_reconcile_evidence.reconciliation_run (
     CHECK (window_from <= window_to)
 );
 
--- Owner-only authority transition. The worker receives no EXECUTE privilege.
+-- Owner-only authority transition. Advancing generation invalidates every
+-- previously materialized coverage claim even when snapshot timestamps remain
+-- equal: generation is authority, not merely metadata about a timestamp.
 CREATE OR REPLACE FUNCTION history_reconcile_evidence.advance_provider_authority(
     p_stream_id text,
     p_expected_generation bigint,
@@ -128,12 +130,23 @@ BEGIN
            finality_floor = p_finality_floor,
            required_reconciliation_snapshot_at = p_required_reconciliation_snapshot_at
      WHERE stream_id = p_stream_id;
+
+    UPDATE history_reconcile_evidence.stream_state
+       SET reconciliation_covered_from = NULL,
+           reconciliation_covered_through = NULL,
+           state = CASE
+               WHEN state = 'gap' THEN state
+               ELSE 'reconciliation_required'::history_reconcile_evidence.completeness_state
+           END
+     WHERE stream_id = p_stream_id;
+
     RETURN v_next;
 END;
 $$;
 
 CREATE OR REPLACE FUNCTION history_reconcile_evidence.contiguous_covered_through(
     p_stream_id text,
+    p_authority_generation bigint,
     p_min_provider_snapshot_at timestamptz
 )
 RETURNS timestamptz
@@ -159,6 +172,7 @@ BEGIN
         SELECT window_from, window_to
           FROM history_reconcile_evidence.reconciliation_run
          WHERE stream_id = p_stream_id
+           AND authority_generation = p_authority_generation
            AND provider_snapshot_at >= p_min_provider_snapshot_at
            AND window_to >= v_floor
          ORDER BY window_from, window_to
@@ -186,6 +200,8 @@ $$;
 
 -- Worker supplies only the window and the generation it believes current. The
 -- actual snapshot timestamp is resolved and locked from owner authority here.
+-- Existing observation identities are immutable: changed canonical content is
+-- an authority conflict and aborts the whole sweep before a run is recorded.
 CREATE OR REPLACE FUNCTION history_reconcile_evidence.sweep(
     p_stream_id text,
     p_window_from timestamptz,
@@ -222,6 +238,24 @@ BEGIN
         RAISE EXCEPTION 'stale reconciliation worker authority';
     END IF;
 
+    IF EXISTS (
+        SELECT 1
+          FROM history_reconcile_evidence.provider_visible_history p
+          JOIN history_reconcile_evidence.accepted_history a
+            ON a.stream_id = p.stream_id
+           AND a.observation_id = p.observation_id
+         WHERE p.stream_id = p_stream_id
+           AND p.observed_at >= p_window_from
+           AND p.observed_at <= p_window_to
+           AND p.became_visible_at <= v_snapshot
+           AND (
+               a.observed_at IS DISTINCT FROM p.observed_at
+               OR a.numeric_value IS DISTINCT FROM p.numeric_value
+           )
+    ) THEN
+        RAISE EXCEPTION 'reconciled observation identity content mismatch';
+    END IF;
+
     SELECT count(*) INTO v_before
       FROM history_reconcile_evidence.accepted_history
      WHERE stream_id = p_stream_id;
@@ -250,7 +284,7 @@ BEGIN
     );
 
     SELECT history_reconcile_evidence.contiguous_covered_through(
-        p_stream_id, '-infinity'::timestamptz
+        p_stream_id, v_generation, '-infinity'::timestamptz
     ) INTO v_covered;
 
     UPDATE history_reconcile_evidence.stream_state
@@ -263,8 +297,9 @@ BEGIN
 END;
 $$;
 
--- Finalization takes no caller-provided finality/currentness timestamp. Both are
--- locked and derived from owner/provider authority in the same transaction.
+-- Finalization takes no caller-provided authority, finality, or currentness.
+-- Generation and timestamps are locked from owner/provider state in the same
+-- transaction; only runs from that exact generation can authorize completion.
 CREATE OR REPLACE FUNCTION history_reconcile_evidence.try_finalize(
     p_stream_id text,
     p_finalize_through timestamptz
@@ -276,6 +311,7 @@ SET search_path = pg_catalog, history_reconcile_evidence
 AS $$
 DECLARE
     v_state history_reconcile_evidence.stream_state%ROWTYPE;
+    v_generation bigint;
     v_finality_floor timestamptz;
     v_required_snapshot timestamptz;
     v_current_covered timestamptz;
@@ -288,8 +324,8 @@ BEGIN
         RAISE EXCEPTION 'unknown stream';
     END IF;
 
-    SELECT finality_floor, required_reconciliation_snapshot_at
-      INTO v_finality_floor, v_required_snapshot
+    SELECT authority_generation, finality_floor, required_reconciliation_snapshot_at
+      INTO v_generation, v_finality_floor, v_required_snapshot
       FROM history_reconcile_evidence.provider_authority
      WHERE stream_id = p_stream_id
      FOR UPDATE;
@@ -302,20 +338,27 @@ BEGIN
     END IF;
 
     SELECT history_reconcile_evidence.contiguous_covered_through(
-        p_stream_id, v_required_snapshot
+        p_stream_id, v_generation, v_required_snapshot
     ) INTO v_current_covered;
 
     IF p_finalize_through > v_finality_floor
        OR v_current_covered IS NULL
        OR v_current_covered < p_finalize_through THEN
         UPDATE history_reconcile_evidence.stream_state
-           SET state = 'reconciliation_required'
+           SET reconciliation_covered_from = CASE
+                   WHEN v_current_covered IS NULL THEN NULL
+                   ELSE supported_history_floor
+               END,
+               reconciliation_covered_through = v_current_covered,
+               state = 'reconciliation_required'
          WHERE stream_id = p_stream_id;
         RETURN false;
     END IF;
 
     UPDATE history_reconcile_evidence.stream_state
-       SET finalized_through = CASE
+       SET reconciliation_covered_from = supported_history_floor,
+           reconciliation_covered_through = v_current_covered,
+           finalized_through = CASE
                WHEN finalized_through IS NULL THEN p_finalize_through
                ELSE GREATEST(finalized_through, p_finalize_through)
            END,
@@ -462,17 +505,69 @@ BEGIN
 END;
 $$;
 
--- Owner now requires reconciliation current through snapshot 12:16. Existing
--- generation-2 runs at 12:15 cannot satisfy this stronger currentness authority.
+-- Same stable identity with owner-current conflicting canonical content must
+-- reject the sweep and must not mutate accepted history or mint a coverage run.
+UPDATE history_reconcile_evidence.provider_visible_history
+   SET numeric_value = 999
+ WHERE stream_id='zabbix:item:42'
+   AND observation_id='01010101-0101-0101-0101-010101010101'::uuid;
+
+DO $$
+DECLARE v_runs_before bigint; v_runs_after bigint; v_value numeric;
+BEGIN
+    SELECT count(*) INTO v_runs_before
+      FROM history_reconcile_evidence.reconciliation_run
+     WHERE stream_id='zabbix:item:42';
+    BEGIN
+        PERFORM history_reconcile_evidence.sweep(
+            'zabbix:item:42','2026-08-28T11:55:00Z','2026-08-28T12:00:00Z',2
+        );
+        RAISE EXCEPTION 'conflicting reconciled observation unexpectedly accepted';
+    EXCEPTION WHEN OTHERS THEN
+        IF SQLERRM NOT LIKE '%reconciled observation identity content mismatch%' THEN RAISE; END IF;
+    END;
+    SELECT count(*) INTO v_runs_after
+      FROM history_reconcile_evidence.reconciliation_run
+     WHERE stream_id='zabbix:item:42';
+    SELECT numeric_value INTO v_value
+      FROM history_reconcile_evidence.accepted_history
+     WHERE stream_id='zabbix:item:42'
+       AND observation_id='01010101-0101-0101-0101-010101010101'::uuid;
+    IF v_runs_after <> v_runs_before THEN
+        RAISE EXCEPTION 'conflicting observation minted reconciliation coverage';
+    END IF;
+    IF v_value IS DISTINCT FROM 1::numeric THEN
+        RAISE EXCEPTION 'conflicting observation mutated accepted canonical content';
+    END IF;
+END;
+$$;
+
+UPDATE history_reconcile_evidence.provider_visible_history
+   SET numeric_value = 1
+ WHERE stream_id='zabbix:item:42'
+   AND observation_id='01010101-0101-0101-0101-010101010101'::uuid;
+
+SELECT 'history_conflicting_observation_rejected=PASS' AS result;
+
+-- Generation 3 deliberately keeps the exact same snapshot/finality/currentness
+-- timestamps as generation 2. Old generation-2 coverage must still be invalid.
 SELECT history_reconcile_evidence.advance_provider_authority(
-    'zabbix:item:42',2,'2026-08-28T12:16:00Z','2026-08-28T12:00:00Z','2026-08-28T12:16:00Z'
+    'zabbix:item:42',2,'2026-08-28T12:15:00Z','2026-08-28T12:00:00Z','2026-08-28T12:15:00Z'
 );
 
 DO $$
-DECLARE v_finalized boolean;
+DECLARE v_finalized boolean; v_covered timestamptz; v_state history_reconcile_evidence.completeness_state;
 BEGIN
+    SELECT reconciliation_covered_through, state INTO v_covered, v_state
+      FROM history_reconcile_evidence.stream_state
+     WHERE stream_id='zabbix:item:42';
+    IF v_covered IS NOT NULL OR v_state <> 'reconciliation_required' THEN
+        RAISE EXCEPTION 'generation bump retained stale materialized coverage';
+    END IF;
     SELECT history_reconcile_evidence.try_finalize('zabbix:item:42','2026-08-28T12:00:00Z') INTO v_finalized;
-    IF v_finalized THEN RAISE EXCEPTION 'stale 12:15 runs satisfied 12:16 owner currentness'; END IF;
+    IF v_finalized THEN
+        RAISE EXCEPTION 'generation-2 coverage authorized generation-3 finalization at same snapshot';
+    END IF;
 END;
 $$;
 
@@ -486,7 +581,37 @@ DO $$
 DECLARE v_finalized boolean;
 BEGIN
     SELECT history_reconcile_evidence.try_finalize('zabbix:item:42','2026-08-28T12:00:00Z') INTO v_finalized;
-    IF NOT v_finalized THEN RAISE EXCEPTION 'owner-current gen3 full sweep failed to finalize'; END IF;
+    IF NOT v_finalized THEN RAISE EXCEPTION 'fresh generation-3 sweep failed same-snapshot revalidation'; END IF;
+END;
+$$;
+
+SELECT 'history_generation_bound_coverage=PASS' AS result;
+
+-- Owner now requires reconciliation current through snapshot 12:16. Existing
+-- generation-3 runs at 12:15 cannot satisfy generation 4/currentness authority.
+SELECT history_reconcile_evidence.advance_provider_authority(
+    'zabbix:item:42',3,'2026-08-28T12:16:00Z','2026-08-28T12:00:00Z','2026-08-28T12:16:00Z'
+);
+
+DO $$
+DECLARE v_finalized boolean;
+BEGIN
+    SELECT history_reconcile_evidence.try_finalize('zabbix:item:42','2026-08-28T12:00:00Z') INTO v_finalized;
+    IF v_finalized THEN RAISE EXCEPTION 'stale generation-3 runs satisfied generation-4 owner currentness'; END IF;
+END;
+$$;
+
+SET ROLE history_reconcile_worker;
+SELECT history_reconcile_evidence.sweep(
+    'zabbix:item:42','2026-08-27T00:00:00Z','2026-08-28T12:00:00Z',4
+);
+RESET ROLE;
+
+DO $$
+DECLARE v_finalized boolean;
+BEGIN
+    SELECT history_reconcile_evidence.try_finalize('zabbix:item:42','2026-08-28T12:00:00Z') INTO v_finalized;
+    IF NOT v_finalized THEN RAISE EXCEPTION 'owner-current gen4 full sweep failed to finalize'; END IF;
 END;
 $$;
 

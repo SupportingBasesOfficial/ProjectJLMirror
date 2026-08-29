@@ -19,7 +19,7 @@
       "product": "PostgreSQL",
       "evaluation_version": "17.11-alpine",
       "image": "postgres@sha256:5d61573b31c206ae538c85893edeb6e320e1a9ffd838c0f9dca927fb6f765fa4",
-      "purpose": "real multi-connection transactional acceptance, owner-current reconciliation, provider dataset mutation fencing, physical PITR, independent-restore and post-enrollment-PGDATA-clone recovery authority falsification, and Tier 1 relocation activation authority"
+      "purpose": "real multi-connection transactional acceptance, owner-current reconciliation, provider dataset mutation fencing, physical PITR, independent-restore and post-enrollment-PGDATA-clone recovery authority falsification, clone-path positive-control falsification, and Tier 1 relocation activation authority"
     },
     "tier2_timescale": {
       "product": "TimescaleDB",
@@ -29,17 +29,17 @@
     }
   },
   "classification_basis": {
-    "exact_empirical_head_before_reviewer_documentation": "c9207f8bbd3c42ec0428987a2580b7f1bfb7e06d",
-    "deterministic_assurance_run_number": 2181,
-    "deterministic_assurance_run_id": 33272308047,
-    "open_rel_030_conformance_run_number": 158,
-    "open_rel_030_conformance_run_id": 33272308006,
+    "exact_empirical_head_before_reviewer_documentation": "bd311cf107d27ca9bbb00b130c0bf0389e0deecd",
+    "deterministic_assurance_run_number": 2195,
+    "deterministic_assurance_run_id": 33272808511,
+    "open_rel_030_conformance_run_number": 165,
+    "open_rel_030_conformance_run_id": 33272808519,
     "result": "success",
     "final_package_gate_requirement": "The exact final package HEAD, including reviewer documentation, must independently rerun both gates before review or acceptance.",
-    "note": "The executable anchor proves owner-controlled source/poll authority; generation-and-dataset-revision-bound owner-current history coverage; stable accepted identity validation independent of current provider visibility timestamp; five history hardening modules executed under anti-orphan guard; fail-closed identity rewrite/DELETE/TRUNCATE; physical PITR with surviving external recovery authority; independent-restore credential-reuse rejection; post-enrollment PGDATA clone rejection using effective instance proof outside the physical database clone domain; genuine fresh-cluster Timescale reconstruction; total/injective timestamp and numeric canonicalization; target-originated target-only checkpoint signing authority; verifier-without-mint separation; caller-local post-connect deadlines; durable Tier 1 activation grant; target promotion only after exact grant verification; seal-vs-DML serialization; and atomic placement+grant rollback on injected conflict."
+    "note": "The executable anchor proves owner-controlled source/poll authority; generation-and-dataset-revision-bound owner-current history coverage; stable accepted identity validation independent of current provider visibility timestamp; five history hardening modules executed under anti-orphan guard; fail-closed identity rewrite/DELETE/TRUNCATE; physical PITR with surviving external recovery authority; independent-restore credential-reuse rejection; post-enrollment PGDATA clone rejection using effective instance proof outside the physical database clone domain; same-path clone positive-control claim/verify with surviving-authority fingerprint equality to the clone-local capability fingerprint before the governed negative; genuine fresh-cluster Timescale reconstruction; total/injective timestamp and numeric canonicalization; target-originated target-only checkpoint signing authority; verifier-without-mint separation; caller-local post-connect deadlines; durable Tier 1 activation grant; target promotion only after exact grant verification; seal-vs-DML serialization; and atomic placement+grant rollback on injected conflict."
   },
   "review_provenance": {
-    "material_finding_classes_documented_in_decision_review": 38,
+    "material_finding_classes_documented_in_decision_review": 39,
     "material_findings_closed_by_current_mechanism": [
       "conflicting canonical observation content under stable Tier 1 acceptance identity must reject",
       "active source and poll authority must be resolved from owner-controlled state in the transaction",
@@ -70,7 +70,8 @@
       "recovery grant facts must be resolved inside surviving authority without direct caller table read",
       "authenticated recovery principal alone is insufficient when the same credential can be reused by multiple physical restores",
       "idempotent recovery retry must require the same restored-instance authority as the winning claim",
-      "post-enrollment physical PGDATA cloning must not copy effective restored-instance authority from database-resident capability state"
+      "post-enrollment physical PGDATA cloning must not copy effective restored-instance authority from database-resident capability state",
+      "post-enrollment clone rejection must not false-pass because fail-closed helper, mount or transport failure is indistinguishable from capability rejection"
     ],
     "native_assurance_panorama_extensions": [
       "durable live poll claim required for current-state candidacy",
@@ -90,7 +91,11 @@
       "post-enrollment clone vector copies PGDATA after database identity enrollment",
       "post-enrollment primary and clone expose the exact same copied database instance id and reuse the exact same external credential",
       "effective post-enrollment proof remains outside PGDATA and differs between concurrently live physical copies",
-      "post-enrollment clone claim and verify both fail while legitimate same-instance retry succeeds",
+      "clone-local and primary-local domain-separated capability fingerprints are present and distinct",
+      "post-enrollment clone successfully claims and verifies a separate probe grant through the same helper transport and external credential used by the governed negative",
+      "surviving-authority probe fingerprint equals the fingerprint derived by the clone itself from its mounted capability",
+      "post-enrollment clone claim and verify both fail on the primary-winning grant only after its path is positively proven operational",
+      "primary-winning grant fingerprint equals the primary-local capability fingerprint",
       "target checkpoint signing key exists only in target authority and controller does not retain it",
       "raw asynchronous bounded transport is not executable by verifier/projection principals",
       "stalled authenticated verifier peers fail closed under caller-local deadlines",
@@ -164,13 +169,22 @@
     "post_enrollment_same_external_credential": true,
     "post_enrollment_effective_capability_location": "evidence-only read-only per-instance file mount outside PostgreSQL PGDATA",
     "post_enrollment_effective_capability_is_copied_by_pgdata_clone": false,
+    "post_enrollment_local_capability_fingerprints_present_and_distinct": true,
+    "post_enrollment_clone_positive_control_claim": true,
+    "post_enrollment_clone_positive_control_verify": true,
+    "post_enrollment_clone_positive_control_principal_binding": true,
+    "post_enrollment_clone_positive_control_database_id_binding": true,
+    "post_enrollment_clone_positive_control_fingerprint_binding": true,
+    "post_enrollment_clone_capability_path_operational_before_negative": true,
     "post_enrollment_pgdata_clone_claim": false,
     "post_enrollment_pgdata_clone_verify": false,
     "post_enrollment_legitimate_same_instance_retry": true,
+    "post_enrollment_primary_capability_fingerprint_binding": true,
+    "post_enrollment_negative_is_not_broken_path_false_pass": true,
     "pgdata_copy_alone_duplicates_recovery_authority": false,
     "independent_claim_race": "two independently authenticated principals/capabilities race a dedicated grant and exactly one wins",
     "duplicate_restored_authority_admitted": false,
-    "evidence_identity_mechanism": "baseline database-local capability plus final post-enrollment hardening with effective proof outside PGDATA; both are C2 falsification machinery",
+    "evidence_identity_mechanism": "baseline database-local capability plus final post-enrollment hardening with effective proof outside PGDATA and same-path positive control; both are C2 falsification machinery",
     "evidence_identity_mechanism_is_production_selection": false,
     "production_requirement": "production recovery identity must preserve genuinely non-shareable per-restored-instance authority beyond reusable external credentials and copyable recovered database state; exact TPM/TEE/KMS/workload-identity mechanism remains unselected"
   },
@@ -261,7 +275,7 @@
     "interpretation": "Mechanism-level bounded fitness evidence only. Production SLOs, retention, cardinality, sizing, cost and topology remain OPEN-REL-020 C3."
   },
   "decision_recommendation": {
-    "tier1": "accept PostgreSQL Tier 1 only with immutable canonical content, owner-controlled source/poll authority, durable live poll claims, owner-derived provider currentness, exact generation+dataset-revision coverage, provider mutation invalidation, destructive mutation fail-closed behavior, stable accepted identity conflict validation independent of current visibility timestamp, executable history-module completeness, surviving single-winner recovery authority whose effective instance proof is outside the physical database clone domain, lock-before-F relocation fencing and atomic activation-grant plus placement commitment",
+    "tier1": "accept PostgreSQL Tier 1 only with immutable canonical content, owner-controlled source/poll authority, durable live poll claims, owner-derived provider currentness, exact generation+dataset-revision coverage, provider mutation invalidation, destructive mutation fail-closed behavior, stable accepted identity conflict validation independent of current visibility timestamp, executable history-module completeness, surviving single-winner recovery authority whose effective instance proof is outside the physical database clone domain and whose clone-rejection evidence is preceded by a same-path positive control, lock-before-F relocation fencing and atomic activation-grant plus placement commitment",
     "tier2": "accept TimescaleDB historical projection only under mediated shared history, privileged automation-owner boundary, genuine fresh-cluster role reconstruction, total typed canonicalization, target-originated target-only signing authority, no uncheckpointed pre-activation data, exact Tier 1 activation-grant verification, immutable pre-F history after cutover, verifier-secret isolation and bounded cross-authority verification",
     "rejected_assumptions": [
       "caller or worker timestamps are not provider finality/currentness authority",
@@ -275,6 +289,7 @@
       "same external recovery role/password does not identify one unique physical restore",
       "principal-only same-session retry is insufficient when credentials can be cloned",
       "database-resident instance capability is not non-shareable authority across a post-enrollment PGDATA clone",
+      "a fail-closed false result is not proof of capability rejection unless the same clone path is positively proven operational",
       "max target ordinal is not completeness",
       "delimiter-framed unrestricted text is not canonical structure",
       "era-less timestamp formatting is not injective across BC/AD",
@@ -285,6 +300,6 @@
       "PASSWORD NULL on LOGIN is not NOLOGIN",
       "same-cluster restore is not fresh role-topology evidence"
     ],
-    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity/payload, deterministic unambiguous serialization, total typed canonicalization, owner-derived currentness, exact generation+dataset-revision coverage, mutation invalidation, stable-identity conflict validation independent of current visibility timing, destructive-mutation fail-closed semantics, externally surviving single-winner recovery authority with effective instance proof outside copyable recovered database state and genuinely non-shareable production binding beyond reusable credentials, target-originated target-only signing authority, verifier-without-mint separation, bounded verification, exact activation-grant binding, atomic placement+grant commitment, tenant isolation and relocation/recovery semantics"
+    "reversibility": "Tier 2 remains behind the telemetry projection seam; replacement must preserve canonical observation identity/payload, deterministic unambiguous serialization, total typed canonicalization, owner-derived currentness, exact generation+dataset-revision coverage, mutation invalidation, stable-identity conflict validation independent of current visibility timing, destructive-mutation fail-closed semantics, externally surviving single-winner recovery authority with effective instance proof outside copyable recovered database state, same-path positive control for fail-closed clone rejection evidence and genuinely non-shareable production binding beyond reusable credentials, target-originated target-only signing authority, verifier-without-mint separation, bounded verification, exact activation-grant binding, atomic placement+grant commitment, tenant isolation and relocation/recovery semantics"
   }
 }

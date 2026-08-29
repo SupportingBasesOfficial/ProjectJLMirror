@@ -22,7 +22,9 @@ It evaluates:
 - Worker/caller assertions never substitute for source, poll, provider-finality, recovery or target-checkpoint authority.
 - Reconciliation completeness is bound to exact owner `authority_generation` plus owner-required snapshot currentness; timestamp equality alone never carries coverage across generations.
 - Existing reconciled observation identity implies immutable canonical accepted content; owner-visible conflicting content rejects/quarantines rather than becoming a duplicate.
+- Stable-identity conflict validation precedes provider-time windowing whenever either accepted or owner-current timestamp intersects the sweep window; a correction cannot evade validation by moving across a window boundary.
 - Structured crypto messages require deterministic versioned unambiguous/self-delimiting representation before cryptography.
+- Typed canonical values must be injective across their full supported domain; relocation timestamps include explicit AD/BC era before hashing.
 - A verifier must not inherit issuer/mint capability merely because it can validate an attestation.
 - Target signing material must originate and remain inside target authority; the test controller must not provision or retain it.
 - Recovery grants are not reusable bearer authorization: surviving authority atomically binds each grant to one **authenticated recovery principal** derived from session authority, not caller-supplied target/principal data.
@@ -38,7 +40,7 @@ It evaluates:
 
 ## Tier 1 authority coverage
 
-The executable package proves atomic create-or-observe across independent connections; immutable canonical observation content; owner-controlled source/poll authority; exact durable `live` poll claims; current-state CAS by platform authority; stale/predecessor rejection; crash rollback; post-COMMIT ambiguity convergence; durable Tier2-down backlog responsibility; generation-bound owner-current late-history finality/currentness; conflicting reconciled-content rejection; and PITR recovery admission only from surviving authenticated `(R,F]` authority with single-winner authenticated-principal binding.
+The executable package proves atomic create-or-observe across independent connections; immutable canonical observation content; owner-controlled source/poll authority; exact durable `live` poll claims; current-state CAS by platform authority; stale/predecessor rejection; crash rollback; post-COMMIT ambiguity convergence; durable Tier2-down backlog responsibility; generation-bound owner-current late-history finality/currentness; conflicting reconciled-content rejection including corrections crossing requested window boundaries; and PITR recovery admission only from surviving authenticated `(R,F]` authority with single-winner authenticated-principal binding.
 
 ### Owner-current late-history reconciliation
 
@@ -51,12 +53,13 @@ A reconciliation run contributes to contiguous coverage only when both are true:
 
 Every `advance_provider_authority(...)` invalidates the stream's materialized reconciliation coverage and moves a non-gap stream to `reconciliation_required`, even if the new generation uses exactly the same timestamps. A fresh sweep under that generation must re-establish coverage.
 
-Before a sweep inserts or records any run, it compares any already-accepted observation identity against the currently visible provider content. A mismatch in immutable `observed_at` or `numeric_value` raises `reconciled observation identity content mismatch`; the failed transaction cannot alter accepted canonical history or mint a coverage run.
+Stable identity validation happens before provider-time window selection. If either the accepted timestamp or the owner-current provider timestamp intersects the requested window, an existing `(stream_id, observation_id)` is compared against owner-current content. A correction from an accepted row inside the window to a provider timestamp outside the window therefore cannot be omitted and followed by a false coverage run. Any immutable `observed_at` or `numeric_value` mismatch raises `reconciled observation identity content mismatch`; the failed transaction cannot alter accepted canonical history or mint a coverage run.
 
 Exact empirical evidence includes:
 
 ```text
 history_conflicting_observation_rejected=PASS
+history_cross_window_identity_conflict_rejected=PASS
 history_generation_bound_coverage=PASS
 history_owner_currentness_authority=PASS
 late_history_reconciliation=PASS
@@ -68,7 +71,7 @@ A surviving external control PostgreSQL is excluded from the source backup/resto
 
 Verification does not itself authorize every restore. The bounded claim surface is deliberately reduced to `claim_grant(grant_id)` and `verify_claimed_grant(grant_id)`. Restore principals cannot directly read `recovery_grant` and cannot supply a target ID, principal identity or signed grant facts to the claim function. The surviving authority loads and verifies the grant internally, derives the claimant from `session_user`, and atomically binds the grant to the first authenticated principal. Retry by that same principal converges; a different authenticated principal loses. A dedicated race between two independently authenticated principals requires exactly one winner. A rival credential presented under the winner role name must fail authentication.
 
-Exact #114 proves:
+Exact #122 proves:
 
 ```text
 physical_pitr_recovery_claim_api_id_only=PASS
@@ -98,13 +101,23 @@ Fresh-cluster restore reconstructs the minimum role topology, restores the histo
 
 ## Canonical representation before cryptography
 
-The bounded evidence representation is:
+The bounded field representation is:
 
 ```text
 <UTF-8 byte length in decimal>:<lowercase UTF-8 hex>
 ```
 
 It is applied to immutable observation fields, target-checkpoint facts and PITR recovery-grant facts. The evidence explicitly falsifies delimiter-based framing and proves cross-store equality of the canonical checkpoint payload.
+
+Field framing alone is not enough if the typed value is already ambiguous. PostgreSQL `timestamptz` supports BC dates, so an era-less `YYYY-MM-DD` representation is not injective across corresponding BC/AD dates. Both Tier 1 and Tier 2 now serialize relocation timestamps as UTC + microseconds + explicit `AD`/`BC` before `canonical_field(...)` and before SHA-256.
+
+Exact #122 proves:
+
+```text
+relocation_timestamp_era_injective=PASS
+relocation_timestamp_era_cross_store=PASS
+relocation_digest_uses_era_aware_timestamp=PASS
+```
 
 ## Relocation authority model
 
@@ -169,7 +182,7 @@ relocation_tier1_verifier_stalled_peer_fails_closed=PASS
 relocation_tier1_verifier_local_deadline=PASS
 ```
 
-Exact #114 measured approximately 579 ms and 581 ms for the two stalled-peer directions. This is evidence machinery, not a production RPC/timeout selection.
+Exact #122 measured approximately 561 ms and 565 ms for the two stalled-peer directions. This is evidence machinery, not a production RPC/timeout selection.
 
 ### Activation atomicity
 
@@ -190,18 +203,18 @@ relocation_tier1_activation_grant_committed=PASS
 
 ```text
 HEAD
-176018388292c3842619292de2eba8947642bc1a
+bf84ed0d4a3822bb3038da50a2fdd9dd90dad7ab
 
-JLMIRROR Deterministic Assurance #2092
-run id 33228913654
+JLMIRROR Deterministic Assurance #2108
+run id 33231690461
 SUCCESS
 
-JLMIRROR OPEN-REL-030 Conformance #114
-run id 33228913650
+JLMIRROR OPEN-REL-030 Conformance #122
+run id 33231690454
 SUCCESS
 ```
 
-The #114 extended run includes generation-bound late-history coverage, conflicting reconciled-content rejection, authenticated-principal single-winner physical recovery with ID-only authority API, target key provenance, capability-secret isolation, bounded stalled-peer verification, verifier/mint separation, durable activation grant, premature-activation negatives, grant/placement rollback injection, structured serialization and all prior authority/isolation/recovery/relocation vectors. This anchor becomes provenance after documentation mutation and the final documentation HEAD must rerun both workflows.
+The #122 extended run includes generation-bound and cross-window stable-identity late-history hardening, authenticated-principal single-winner physical recovery with ID-only authority API, era-aware injective timestamp canonicalization, target key provenance, capability-secret isolation, bounded stalled-peer verification, verifier/mint separation, durable activation grant, premature-activation negatives, grant/placement rollback injection, structured serialization and all prior authority/isolation/recovery/relocation vectors. This anchor becomes provenance after documentation mutation and the final documentation HEAD must rerun both workflows.
 
 ## Governance state
 

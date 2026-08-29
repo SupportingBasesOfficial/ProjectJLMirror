@@ -241,8 +241,9 @@ jobs:
           # #47 structural guard: public clone entry delegates only to bounded path.
           assert 'physical_pitr_post_enrollment_clone_bounded.sh' in clone_entry
           assert 'dblink_send_query' in clone_bounded and 'dblink_is_busy' in clone_bounded
-          assert 'dblink_cancel_query' not in clone_bounded
-          assert clone_bounded.count('dblink_disconnect') == 1
+          assert 'bounded_source' in clone_bounded
+          assert '!= *"dblink_cancel_query"*' in clone_bounded
+          assert 'disconnect_count=' in clone_bounded and '[[ "$disconnect_count" == "1" ]]' in clone_bounded
           assert 'timeout 5s docker exec' in clone_bounded and 'iptables -I' in clone_bounded
           for marker in [
               'physical_pitr_post_enrollment_helpers_use_bounded_transport=PASS',
@@ -259,8 +260,9 @@ jobs:
           assert relocation_entry.index('tenant_relocation_transport_retirement_hardening.sh') > relocation_entry.index('tenant_relocation_verifier_hardening.sh')
           assert relocation_entry.index('tenant_relocation_transport_retirement_hardening.sh') < relocation_entry.index('tenant_relocation_key_provenance_tests.sh')
           assert 'dblink_send_query' in relocation_retirement and 'dblink_is_busy' in relocation_retirement
-          assert 'dblink_cancel_query' not in relocation_retirement
-          assert relocation_retirement.count('dblink_disconnect') == 2
+          assert 'pg_bounded_source' in relocation_retirement and 'ts_bounded_source' in relocation_retirement
+          assert '!= *"dblink_cancel_query"*' in relocation_retirement
+          assert 'disconnect_count=' in relocation_retirement and '[[ "$disconnect_count" == "1" ]]' in relocation_retirement
           assert 'iptables -I' in relocation_retirement
           for marker in [
               'relocation_response_deadline_has_no_synchronous_timeout_cleanup=PASS',

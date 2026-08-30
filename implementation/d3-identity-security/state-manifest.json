@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "gate_id": "D3",
   "gate_name": "identity_security_authority_c2",
   "canonical_base": "b70d0c20873f92ca0a6040a3cbcd1dfcdace6828",
@@ -26,16 +26,45 @@
         "idp_outage_currentness_join",
         "idp_native_roles_groups_organizations_non_authority"
       ],
-      "evidence_completed": [],
-      "evidence_remaining": [
+      "evidence_completed": [
         "oidc_authorization_code_pkce_bff_binding",
-        "token_signature_issuer_audience_client_time_jwks_algorithm_validation",
+        "token_signature_issuer_audience_client_time_jwks_algorithm_validation"
+      ],
+      "evidence_remaining": [
         "acr_amr_mfa_step_up_context",
         "backchannel_logout_authenticity_replay_profile",
         "provider_sid_sub_mapping_non_authority",
         "principal_wide_logout_generation_fence",
         "idp_outage_currentness_join",
         "idp_native_roles_groups_organizations_non_authority"
+      ],
+      "evidence_proofs": [
+        {
+          "evidence_id": "oidc_authorization_code_pkce_bff_binding",
+          "evidence_sha": "91861314002d9f5721456c7416d208e414ec4c58",
+          "workflow_run_id": 33314472945,
+          "workflow_run_number": 21,
+          "workflow_file": ".github/workflows/d3-keycloak-exploratory.yml",
+          "job_name": "Keycloak 26.7.2 pinned browser + back-channel contracts",
+          "probe": "implementation/d3-identity-security/harness/keycloak_browser_probe.py",
+          "artifact_pins": [
+            "quay.io/keycloak/keycloak@sha256:831330513f55695572286e521f94fcd3c7e285250ed5b848090265a33192f669"
+          ],
+          "result": "pass"
+        },
+        {
+          "evidence_id": "token_signature_issuer_audience_client_time_jwks_algorithm_validation",
+          "evidence_sha": "91861314002d9f5721456c7416d208e414ec4c58",
+          "workflow_run_id": 33314472945,
+          "workflow_run_number": 21,
+          "workflow_file": ".github/workflows/d3-keycloak-exploratory.yml",
+          "job_name": "Keycloak 26.7.2 pinned browser + back-channel contracts",
+          "probe": "implementation/d3-identity-security/harness/keycloak_browser_probe.py",
+          "artifact_pins": [
+            "quay.io/keycloak/keycloak@sha256:831330513f55695572286e521f94fcd3c7e285250ed5b848090265a33192f669"
+          ],
+          "result": "pass"
+        }
       ],
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
@@ -73,6 +102,7 @@
         "broad_revocation_bounded_constant",
         "degraded_owner_read_bulkhead_fail_closed"
       ],
+      "evidence_proofs": [],
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     },
@@ -104,6 +134,7 @@
         "privilege_boundary_reissue",
         "uncertain_key_generation_fail_closed"
       ],
+      "evidence_proofs": [],
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     },
@@ -133,6 +164,7 @@
         "issuer_restore_retired_authority_nonresurrection",
         "vendor_credential_adapter_least_privilege"
       ],
+      "evidence_proofs": [],
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     },
@@ -164,6 +196,7 @@
         "key_generation_rotation_retirement",
         "provider_neutral_key_authority_port"
       ],
+      "evidence_proofs": [],
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     }

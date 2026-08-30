@@ -6,18 +6,51 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from validate_d3_identity_security_state import GATE_DOC, MANIFEST, validate
+from validate_d3_identity_security_state import (
+    APPROVED_EVIDENCE_PROOFS,
+    GATE_DOC,
+    MANIFEST,
+    validate,
+)
 
 REPO = Path(__file__).resolve().parents[2]
 BASE_MANIFEST = json.loads((REPO / MANIFEST).read_text(encoding="utf-8"))
 BASE_GATE_DOC = (REPO / GATE_DOC).read_text(encoding="utf-8")
 
 
-def complete_all_evidence(manifest: dict) -> None:
+def synthetic_proof(track: dict, evidence_id: str, ordinal: int) -> dict:
+    artifact_pins = []
+    if track["track_id"] == "D3-A":
+        artifact_pins = [track["candidate_image_digest"]]
+    return {
+        "evidence_id": evidence_id,
+        "evidence_sha": f"{ordinal:040x}",
+        "workflow_run_id": 90000000000 + ordinal,
+        "workflow_run_number": ordinal,
+        "workflow_file": ".github/workflows/d3-synthetic-positive-control.yml",
+        "job_name": "D3 synthetic positive-control job",
+        "probe": "tools/assurance/test_validate_d3_identity_security_state.py",
+        "artifact_pins": artifact_pins,
+        "result": "pass",
+    }
+
+
+def complete_all_evidence(manifest: dict) -> dict:
+    registry = {}
+    ordinal = 1
     for track in manifest["tracks"]:
+        proofs = []
+        for evidence_id in track["required_evidence"]:
+            proof = synthetic_proof(track, evidence_id, ordinal)
+            proofs.append(proof)
+            registry[(track["track_id"], evidence_id)] = copy.deepcopy(proof)
+            ordinal += 1
         track["evidence_completed"] = list(track["required_evidence"])
         track["evidence_remaining"] = []
+        track["evidence_proofs"] = proofs
+    return registry
 
 
 class D3IdentitySecurityStateTests(unittest.TestCase):
@@ -61,7 +94,7 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
 
     def test_schema_downgrade_is_rejected(self):
         with self.assertRaises(AssertionError):
-            validate(self._root(lambda m: m.__setitem__("schema_version", 1)))
+            validate(self._root(lambda m: m.__setitem__("schema_version", 2)))
 
     def test_candidate_identity_drift_is_rejected(self):
         def mutate(m):
@@ -161,6 +194,60 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             validate(self._root(mutate))
 
+    def test_completed_evidence_without_proof_is_rejected(self):
+        def mutate(m):
+            track = next(t for t in m["tracks"] if t["track_id"] == "D3-A")
+            track["evidence_proofs"].pop()
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
+    def test_proof_for_remaining_evidence_is_rejected(self):
+        def mutate(m):
+            track = next(t for t in m["tracks"] if t["track_id"] == "D3-C")
+            evidence_id = track["evidence_remaining"][0]
+            track["evidence_proofs"].append(synthetic_proof(track, evidence_id, 700))
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
+    def test_unapproved_structurally_valid_proof_is_rejected(self):
+        def mutate(m):
+            track = next(t for t in m["tracks"] if t["track_id"] == "D3-C")
+            evidence_id = track["evidence_remaining"].pop(0)
+            track["evidence_completed"].append(evidence_id)
+            track["evidence_proofs"].append(synthetic_proof(track, evidence_id, 701))
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
+    def test_malformed_evidence_sha_is_rejected(self):
+        def mutate(m):
+            track = next(t for t in m["tracks"] if t["track_id"] == "D3-A")
+            track["evidence_proofs"][0]["evidence_sha"] = "BAD-SHA"
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
+    def test_invalid_workflow_run_id_is_rejected(self):
+        def mutate(m):
+            track = next(t for t in m["tracks"] if t["track_id"] == "D3-A")
+            track["evidence_proofs"][0]["workflow_run_id"] = 0
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
+    def test_mutable_artifact_pin_is_rejected(self):
+        def mutate(m):
+            track = next(t for t in m["tracks"] if t["track_id"] == "D3-A")
+            track["evidence_proofs"][0]["artifact_pins"] = ["quay.io/keycloak/keycloak:26.7.2"]
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
+    def test_approved_proof_digest_drift_is_rejected(self):
+        def mutate(m):
+            track = next(t for t in m["tracks"] if t["track_id"] == "D3-A")
+            track["evidence_proofs"][0]["artifact_pins"] = [
+                "quay.io/keycloak/keycloak@sha256:" + "0" * 64
+            ]
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
     def test_terminal_track_with_remaining_evidence_is_rejected(self):
         def mutate(m):
             track = next(t for t in m["tracks"] if t["track_id"] == "D3-D")
@@ -201,39 +288,51 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
             validate(self._root(mutate))
 
     def test_per_track_conformed_gate_requires_exact_track_state(self):
+        registry = {}
         def mutate(m):
             m["gate_state"] = "per_track_conformed"
-            complete_all_evidence(m)
+            registry.update(complete_all_evidence(m))
             for track in m["tracks"]:
                 track["state"] = "per_track_conformed"
             m["tracks"][0]["state"] = "accepted_candidate"
-        with self.assertRaises(AssertionError):
-            validate(self._root(mutate))
+        root = self._root(mutate)
+        with patch.dict(APPROVED_EVIDENCE_PROOFS, registry, clear=True):
+            with self.assertRaises(AssertionError):
+                validate(root)
 
-    def test_acceptance_eligible_requires_terminal_tracks_and_completed_evidence(self):
+    def test_acceptance_eligible_requires_terminal_tracks_completed_evidence_and_approved_proofs(self):
+        registry = {}
         def mutate(m):
             m["gate_state"] = "d3_acceptance_eligible"
-            complete_all_evidence(m)
+            registry.update(complete_all_evidence(m))
             for track in m["tracks"]:
                 track["state"] = "per_track_conformed"
-        validate(self._root(mutate))
+        root = self._root(mutate)
+        with patch.dict(APPROVED_EVIDENCE_PROOFS, registry, clear=True):
+            validate(root)
 
     def test_separate_acceptance_requires_accepted_candidate_track_state(self):
+        registry = {}
         def mutate(m):
             m["gate_state"] = "separately_accepted"
-            complete_all_evidence(m)
+            registry.update(complete_all_evidence(m))
             for track in m["tracks"]:
                 track["state"] = "per_track_conformed"
-        with self.assertRaises(AssertionError):
-            validate(self._root(mutate))
+        root = self._root(mutate)
+        with patch.dict(APPROVED_EVIDENCE_PROOFS, registry, clear=True):
+            with self.assertRaises(AssertionError):
+                validate(root)
 
-    def test_separately_accepted_requires_terminal_tracks_and_completed_evidence(self):
+    def test_separately_accepted_requires_terminal_tracks_completed_evidence_and_approved_proofs(self):
+        registry = {}
         def mutate(m):
             m["gate_state"] = "separately_accepted"
-            complete_all_evidence(m)
+            registry.update(complete_all_evidence(m))
             for track in m["tracks"]:
                 track["state"] = "accepted_candidate"
-        validate(self._root(mutate))
+        root = self._root(mutate)
+        with patch.dict(APPROVED_EVIDENCE_PROOFS, registry, clear=True):
+            validate(root)
 
     def test_required_exclusion_cannot_disappear(self):
         def mutate(m):

@@ -109,14 +109,86 @@ class CsrfToken:
         return cls(key_version=int(version_part[1:]), mac=mac)
 
 
+@dataclass(frozen=True)
+class CsrfRotationWindow:
+    """Bounded non-production timing profile used only to falsify D3-C rotation safety."""
+
+    rotation_started_at: int
+    previous_valid_until: int
+    minimum_safety_lifetime_seconds: int
+
+    def __post_init__(self) -> None:
+        for label, value in (
+            ("rotation_started_at", self.rotation_started_at),
+            ("previous_valid_until", self.previous_valid_until),
+            ("minimum_safety_lifetime_seconds", self.minimum_safety_lifetime_seconds),
+        ):
+            if type(value) is not int:
+                raise ValueError(f"{label} must be an integer")
+        if self.rotation_started_at < 0:
+            raise ValueError("rotation_started_at must be non-negative")
+        if self.previous_valid_until < self.rotation_started_at:
+            raise ValueError("previous_valid_until precedes rotation start")
+        if self.minimum_safety_lifetime_seconds <= 0:
+            raise ValueError("minimum safety lifetime must be positive")
+        overlap = self.previous_valid_until - self.rotation_started_at
+        if overlap < self.minimum_safety_lifetime_seconds:
+            raise ValueError("previous-key overlap is shorter than the accepted safety lifetime")
+
+    def previous_is_within_overlap(self, *, now_epoch_seconds: int) -> bool:
+        if type(now_epoch_seconds) is not int or now_epoch_seconds < self.rotation_started_at:
+            raise ValueError("verification time is outside the canonical rotation epoch")
+        return now_epoch_seconds <= self.previous_valid_until
+
+
+@dataclass(frozen=True)
+class CsrfVerificationEvidence:
+    accepted: bool
+    presented_key_version: int | None
+    presented_previous_generation: bool
+    accepted_previous_generation: bool
+    reason: str
+
+
+def _canonicalize_csrf_presentation(*, cookie_values: list[str], header_values: list[str]) -> str:
+    if not isinstance(cookie_values, list) or not isinstance(header_values, list):
+        raise ValueError("CSRF presentation must use canonical value lists")
+    if len(cookie_values) != 1 or len(header_values) != 1:
+        raise ValueError("ambiguous CSRF presentation")
+    cookie = _canon(cookie_values[0], "csrf_cookie").decode("utf-8")
+    header = _canon(header_values[0], "csrf_header").decode("utf-8")
+    if not hmac.compare_digest(cookie, header):
+        raise ValueError("mismatched CSRF presentation")
+    return cookie
+
+
+def canonicalize_ingress_csrf(*, cookie_values: list[str], header_values: list[str]) -> str:
+    """Canonical HTTP ingress boundary for the bounded D3-C evidence model."""
+    return _canonicalize_csrf_presentation(cookie_values=cookie_values, header_values=header_values)
+
+
+def canonicalize_bff_csrf(*, cookie_values: list[str], header_values: list[str]) -> str:
+    """BFF boundary intentionally delegates to the identical canonicalization rule."""
+    return _canonicalize_csrf_presentation(cookie_values=cookie_values, header_values=header_values)
+
+
 class CsrfKeyRing:
     """D3-C reference profile: exactly current + previous verification generations."""
 
-    def __init__(self, *, authority: KeyAuthorityPort, current: int, previous: int | None):
+    def __init__(
+        self,
+        *,
+        authority: KeyAuthorityPort,
+        current: int,
+        previous: int | None,
+        rotation_window: CsrfRotationWindow | None = None,
+    ):
         if current <= 0 or (previous is not None and previous <= 0):
             raise ValueError("key versions must be positive")
         if previous == current:
             raise ValueError("current and previous must differ")
+        if previous is None and rotation_window is not None:
+            raise ValueError("rotation window requires a previous generation")
         if authority.can_sign(key_version=current) is not True:
             raise ValueError("current CSRF generation must be sign-capable")
         if authority.can_verify(key_version=current) is not True:
@@ -126,6 +198,7 @@ class CsrfKeyRing:
         self._authority = authority
         self.current = current
         self.previous = previous
+        self.rotation_window = rotation_window
 
     @staticmethod
     def _context() -> bytes:
@@ -143,16 +216,61 @@ class CsrfKeyRing:
         )
         return CsrfToken(self.current, mac).encode()
 
-    def verify(self, *, token: str, session_lineage_id: str) -> bool:
+    def verify_with_evidence(
+        self,
+        *,
+        token: str,
+        session_lineage_id: str,
+        now_epoch_seconds: int | None = None,
+    ) -> CsrfVerificationEvidence:
         try:
             parsed = CsrfToken.parse(token)
         except (ValueError, UnicodeError):
-            return False
+            return CsrfVerificationEvidence(False, None, False, False, "malformed_token")
+
+        presented_previous = self.previous is not None and parsed.key_version == self.previous
         allowed = {self.current}
         if self.previous is not None:
             allowed.add(self.previous)
         if parsed.key_version not in allowed:
-            return False
+            return CsrfVerificationEvidence(
+                False,
+                parsed.key_version,
+                False,
+                False,
+                "generation_not_current_or_previous",
+            )
+
+        if presented_previous and self.rotation_window is not None:
+            if now_epoch_seconds is None:
+                return CsrfVerificationEvidence(
+                    False,
+                    parsed.key_version,
+                    True,
+                    False,
+                    "previous_overlap_time_uncertain",
+                )
+            try:
+                within_overlap = self.rotation_window.previous_is_within_overlap(
+                    now_epoch_seconds=now_epoch_seconds
+                )
+            except ValueError:
+                return CsrfVerificationEvidence(
+                    False,
+                    parsed.key_version,
+                    True,
+                    False,
+                    "previous_overlap_time_invalid",
+                )
+            if not within_overlap:
+                return CsrfVerificationEvidence(
+                    False,
+                    parsed.key_version,
+                    True,
+                    False,
+                    "previous_overlap_expired",
+                )
+
         try:
             expected = self._authority.hmac_sha256(
                 key_version=parsed.key_version,
@@ -160,8 +278,43 @@ class CsrfKeyRing:
                 message=self._message(session_lineage_id),
             )
         except ValueError:
-            return False
-        return hmac.compare_digest(parsed.mac, expected)
+            return CsrfVerificationEvidence(
+                False,
+                parsed.key_version,
+                presented_previous,
+                False,
+                "verification_key_unavailable",
+            )
+
+        accepted = hmac.compare_digest(parsed.mac, expected)
+        if not accepted:
+            return CsrfVerificationEvidence(
+                False,
+                parsed.key_version,
+                presented_previous,
+                False,
+                "mac_mismatch",
+            )
+        return CsrfVerificationEvidence(
+            True,
+            parsed.key_version,
+            presented_previous,
+            presented_previous,
+            "accepted_previous" if presented_previous else "accepted_current",
+        )
+
+    def verify(
+        self,
+        *,
+        token: str,
+        session_lineage_id: str,
+        now_epoch_seconds: int | None = None,
+    ) -> bool:
+        return self.verify_with_evidence(
+            token=token,
+            session_lineage_id=session_lineage_id,
+            now_epoch_seconds=now_epoch_seconds,
+        ).accepted
 
 
 class AtomicReplayLedger:

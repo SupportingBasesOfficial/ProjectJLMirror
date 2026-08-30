@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "gate_id": "D3",
   "gate_name": "identity_security_authority_c2",
   "canonical_base": "b70d0c20873f92ca0a6040a3cbcd1dfcdace6828",
@@ -16,8 +16,27 @@
       "source_decisions": ["IR-D-001-keycloak-idp", "IR-D-001"],
       "candidate": "keycloak_26_7_2",
       "candidate_image_digest": "quay.io/keycloak/keycloak@sha256:831330513f55695572286e521f94fcd3c7e285250ed5b848090265a33192f669",
+      "required_evidence": [
+        "oidc_authorization_code_pkce_bff_binding",
+        "token_signature_issuer_audience_client_time_jwks_algorithm_validation",
+        "acr_amr_mfa_step_up_context",
+        "backchannel_logout_authenticity_replay_profile",
+        "provider_sid_sub_mapping_non_authority",
+        "principal_wide_logout_generation_fence",
+        "idp_outage_currentness_join",
+        "idp_native_roles_groups_organizations_non_authority"
+      ],
       "evidence_completed": [],
-      "evidence_remaining": ["digest_pinned_backchannel_replay", "idp_outage_currentness_join", "idp_native_roles_groups_non_authority_join"],
+      "evidence_remaining": [
+        "oidc_authorization_code_pkce_bff_binding",
+        "token_signature_issuer_audience_client_time_jwks_algorithm_validation",
+        "acr_amr_mfa_step_up_context",
+        "backchannel_logout_authenticity_replay_profile",
+        "provider_sid_sub_mapping_non_authority",
+        "principal_wide_logout_generation_fence",
+        "idp_outage_currentness_join",
+        "idp_native_roles_groups_organizations_non_authority"
+      ],
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     },
@@ -27,6 +46,33 @@
       "source_decisions": ["OPEN-REL-031.A", "OPEN-REL-015", "OPEN-REL-008.A:security-session-profile-only"],
       "candidate": "postgresql_18_6_session_sor_plus_redis_compatible_security_cache",
       "portability_control": "valkey_9_1",
+      "required_evidence": [
+        "session_authority_owner_boundaries",
+        "cache_generation_bound_derived_only",
+        "healthy_single_roundtrip_zero_pg_generation_queries",
+        "mixed_generation_read_rejected",
+        "independent_cache_admission_epoch",
+        "revocation_partial_write_safety",
+        "prepare_fence_commit_finalize_single_winner",
+        "fleet_wide_cache_exclusion_barrier",
+        "restore_failover_positive_authority_nonresurrection",
+        "broad_revocation_bounded_constant",
+        "degraded_owner_read_bulkhead_fail_closed"
+      ],
+      "evidence_completed": [],
+      "evidence_remaining": [
+        "session_authority_owner_boundaries",
+        "cache_generation_bound_derived_only",
+        "healthy_single_roundtrip_zero_pg_generation_queries",
+        "mixed_generation_read_rejected",
+        "independent_cache_admission_epoch",
+        "revocation_partial_write_safety",
+        "prepare_fence_commit_finalize_single_winner",
+        "fleet_wide_cache_exclusion_barrier",
+        "restore_failover_positive_authority_nonresurrection",
+        "broad_revocation_bounded_constant",
+        "degraded_owner_read_bulkhead_fail_closed"
+      ],
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     },
@@ -35,6 +81,29 @@
       "name": "browser_csrf_key_rotation",
       "source_decisions": ["OPEN-API-002"],
       "candidate": "hmac_sha256_double_submit_versioned_keyring",
+      "required_evidence": [
+        "token_session_lineage_binding",
+        "current_previous_key_only",
+        "rotation_overlap_safety_lifetime",
+        "no_historical_key_search",
+        "previous_key_observability_stale_detection",
+        "duplicate_conflicting_cookie_header_ingress_rejection",
+        "routine_session_renewal_preserves_csrf",
+        "privilege_boundary_reissue",
+        "uncertain_key_generation_fail_closed"
+      ],
+      "evidence_completed": [],
+      "evidence_remaining": [
+        "token_session_lineage_binding",
+        "current_previous_key_only",
+        "rotation_overlap_safety_lifetime",
+        "no_historical_key_search",
+        "previous_key_observability_stale_detection",
+        "duplicate_conflicting_cookie_header_ingress_rejection",
+        "routine_session_renewal_preserves_csrf",
+        "privilege_boundary_reissue",
+        "uncertain_key_generation_fail_closed"
+      ],
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     },
@@ -43,6 +112,27 @@
       "name": "workload_identity_issuer_attestation",
       "source_decisions": ["OPEN-PRT-008.B", "IR-D-002"],
       "candidate": "spire_1_15_2",
+      "required_evidence": [
+        "runtime_attestation_not_caller_identity",
+        "trust_domain_environment_runtime_binding",
+        "short_lived_rotation_retired_bundle_rejection",
+        "cross_environment_rejection",
+        "workload_identity_non_tenant_authority",
+        "private_key_non_exportability_profile",
+        "issuer_restore_retired_authority_nonresurrection",
+        "vendor_credential_adapter_least_privilege"
+      ],
+      "evidence_completed": [],
+      "evidence_remaining": [
+        "runtime_attestation_not_caller_identity",
+        "trust_domain_environment_runtime_binding",
+        "short_lived_rotation_retired_bundle_rejection",
+        "cross_environment_rejection",
+        "workload_identity_non_tenant_authority",
+        "private_key_non_exportability_profile",
+        "issuer_restore_retired_authority_nonresurrection",
+        "vendor_credential_adapter_least_privilege"
+      ],
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     },
@@ -51,6 +141,29 @@
       "name": "cryptographic_replay_historical_verifier_authority",
       "source_decisions": ["OPEN-REL-016.A", "IR-D-001:private_key_jwt_replay", "OPEN-EVT-011:cryptographic_comparison_authority_only"],
       "candidate": "openbao_2_6_2_transit_behind_provider_neutral_key_authority_port",
+      "required_evidence": [
+        "tenant_scope_domain_separation",
+        "erasure_granularity_key_alignment",
+        "historical_verifier_relocation_recovery_continuity",
+        "retired_erased_key_nonresurrection",
+        "private_key_jwt_replay_atomic_single_winner",
+        "replay_partition_fail_closed",
+        "replay_consumed_identity_survives_restore_loss",
+        "key_generation_rotation_retirement",
+        "provider_neutral_key_authority_port"
+      ],
+      "evidence_completed": [],
+      "evidence_remaining": [
+        "tenant_scope_domain_separation",
+        "erasure_granularity_key_alignment",
+        "historical_verifier_relocation_recovery_continuity",
+        "retired_erased_key_nonresurrection",
+        "private_key_jwt_replay_atomic_single_winner",
+        "replay_partition_fail_closed",
+        "replay_consumed_identity_survives_restore_loss",
+        "key_generation_rotation_retirement",
+        "provider_neutral_key_authority_port"
+      ],
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     }
@@ -78,6 +191,6 @@
     "OPEN-REL-023",
     "production_capacity_topology_slo_rpo_rto_numeric_profiles"
   ],
-  "acceptance_rule": "all_tracks_conformed_and_exact_head_assurance_clean_then_separate_acceptance",
+  "acceptance_rule": "all_tracks_conformed_all_required_evidence_completed_and_exact_head_assurance_clean_then_separate_acceptance",
   "merge_rule": "separate_explicit_user_authorization_after_final_exact_head_clean_gate"
 }

@@ -14,6 +14,12 @@ BASE_MANIFEST = json.loads((REPO / MANIFEST).read_text(encoding="utf-8"))
 BASE_GATE_DOC = (REPO / GATE_DOC).read_text(encoding="utf-8")
 
 
+def complete_all_evidence(manifest: dict) -> None:
+    for track in manifest["tracks"]:
+        track["evidence_completed"] = list(track["required_evidence"])
+        track["evidence_remaining"] = []
+
+
 class D3IdentitySecurityStateTests(unittest.TestCase):
     def _root(self, mutate=None) -> Path:
         tmp = tempfile.TemporaryDirectory()
@@ -52,6 +58,10 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
     def test_invalid_gate_state_is_rejected(self):
         with self.assertRaises(AssertionError):
             validate(self._root(lambda m: m.__setitem__("gate_state", "accepted")))
+
+    def test_schema_downgrade_is_rejected(self):
+        with self.assertRaises(AssertionError):
+            validate(self._root(lambda m: m.__setitem__("schema_version", 1)))
 
     def test_missing_track_is_rejected(self):
         def mutate(m):
@@ -101,6 +111,42 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             validate(self._root(mutate))
 
+    def test_missing_required_evidence_is_rejected(self):
+        def mutate(m):
+            track = next(t for t in m["tracks"] if t["track_id"] == "D3-A")
+            missing = track["required_evidence"].pop()
+            track["evidence_remaining"].remove(missing)
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
+    def test_unknown_completed_evidence_is_rejected(self):
+        def mutate(m):
+            track = next(t for t in m["tracks"] if t["track_id"] == "D3-C")
+            track["evidence_completed"].append("fabricated_evidence")
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
+    def test_evidence_cannot_be_completed_and_remaining(self):
+        def mutate(m):
+            track = next(t for t in m["tracks"] if t["track_id"] == "D3-E")
+            track["evidence_completed"].append(track["evidence_remaining"][0])
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
+    def test_unaccounted_required_evidence_is_rejected(self):
+        def mutate(m):
+            track = next(t for t in m["tracks"] if t["track_id"] == "D3-B")
+            track["evidence_remaining"].pop()
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
+    def test_terminal_track_with_remaining_evidence_is_rejected(self):
+        def mutate(m):
+            track = next(t for t in m["tracks"] if t["track_id"] == "D3-D")
+            track["state"] = "per_track_conformed"
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
     def test_missing_c3_boundary_is_rejected(self):
         def mutate(m):
             m["c3_remains_open"].remove("OPEN-REL-031.B")
@@ -119,16 +165,26 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             validate(self._root(mutate))
 
-    def test_acceptance_eligible_requires_all_tracks_terminal(self):
+    def test_status_only_acceptance_is_rejected_without_evidence_completion(self):
         def mutate(m):
             m["gate_state"] = "d3_acceptance_eligible"
             for track in m["tracks"]:
                 track["state"] = "per_track_conformed"
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
+    def test_acceptance_eligible_requires_terminal_tracks_and_completed_evidence(self):
+        def mutate(m):
+            m["gate_state"] = "d3_acceptance_eligible"
+            complete_all_evidence(m)
+            for track in m["tracks"]:
+                track["state"] = "per_track_conformed"
         validate(self._root(mutate))
 
-    def test_separately_accepted_requires_all_tracks_terminal(self):
+    def test_separately_accepted_requires_terminal_tracks_and_completed_evidence(self):
         def mutate(m):
             m["gate_state"] = "separately_accepted"
+            complete_all_evidence(m)
             for track in m["tracks"]:
                 track["state"] = "accepted_candidate"
         validate(self._root(mutate))

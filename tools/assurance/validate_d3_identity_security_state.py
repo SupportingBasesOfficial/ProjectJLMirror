@@ -28,6 +28,63 @@ REQUIRED_SOURCE_ANCHORS = {
     "D3-D": {"OPEN-PRT-008.B", "IR-D-002"},
     "D3-E": {"OPEN-REL-016.A", "IR-D-001", "OPEN-EVT-011"},
 }
+REQUIRED_EVIDENCE = {
+    "D3-A": {
+        "oidc_authorization_code_pkce_bff_binding",
+        "token_signature_issuer_audience_client_time_jwks_algorithm_validation",
+        "acr_amr_mfa_step_up_context",
+        "backchannel_logout_authenticity_replay_profile",
+        "provider_sid_sub_mapping_non_authority",
+        "principal_wide_logout_generation_fence",
+        "idp_outage_currentness_join",
+        "idp_native_roles_groups_organizations_non_authority",
+    },
+    "D3-B": {
+        "session_authority_owner_boundaries",
+        "cache_generation_bound_derived_only",
+        "healthy_single_roundtrip_zero_pg_generation_queries",
+        "mixed_generation_read_rejected",
+        "independent_cache_admission_epoch",
+        "revocation_partial_write_safety",
+        "prepare_fence_commit_finalize_single_winner",
+        "fleet_wide_cache_exclusion_barrier",
+        "restore_failover_positive_authority_nonresurrection",
+        "broad_revocation_bounded_constant",
+        "degraded_owner_read_bulkhead_fail_closed",
+    },
+    "D3-C": {
+        "token_session_lineage_binding",
+        "current_previous_key_only",
+        "rotation_overlap_safety_lifetime",
+        "no_historical_key_search",
+        "previous_key_observability_stale_detection",
+        "duplicate_conflicting_cookie_header_ingress_rejection",
+        "routine_session_renewal_preserves_csrf",
+        "privilege_boundary_reissue",
+        "uncertain_key_generation_fail_closed",
+    },
+    "D3-D": {
+        "runtime_attestation_not_caller_identity",
+        "trust_domain_environment_runtime_binding",
+        "short_lived_rotation_retired_bundle_rejection",
+        "cross_environment_rejection",
+        "workload_identity_non_tenant_authority",
+        "private_key_non_exportability_profile",
+        "issuer_restore_retired_authority_nonresurrection",
+        "vendor_credential_adapter_least_privilege",
+    },
+    "D3-E": {
+        "tenant_scope_domain_separation",
+        "erasure_granularity_key_alignment",
+        "historical_verifier_relocation_recovery_continuity",
+        "retired_erased_key_nonresurrection",
+        "private_key_jwt_replay_atomic_single_winner",
+        "replay_partition_fail_closed",
+        "replay_consumed_identity_survives_restore_loss",
+        "key_generation_rotation_retirement",
+        "provider_neutral_key_authority_port",
+    },
+}
 FORBIDDEN_D4_SOURCES = {
     "OPEN-EVT-001",
     "OPEN-EVT-002",
@@ -85,13 +142,22 @@ def _source_anchor(value: str) -> str:
     return value.split(":", 1)[0]
 
 
+def _string_set(track_id: str, track: dict, key: str) -> set[str]:
+    value = track.get(key)
+    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+        raise AssertionError(f"{track_id}: {key} must be a string list")
+    if len(set(value)) != len(value):
+        raise AssertionError(f"{track_id}: {key} contains duplicate entries")
+    return set(value)
+
+
 def validate(root: Path) -> None:
     data = _load(root)
     gate_doc = root / GATE_DOC
     if not gate_doc.is_file():
         raise AssertionError(f"missing D3 gate document: {GATE_DOC}")
 
-    _require_equal(data, "schema_version", 1)
+    _require_equal(data, "schema_version", 2)
     _require_equal(data, "gate_id", "D3")
     _require_equal(data, "gate_name", "identity_security_authority_c2")
     _require_equal(data, "canonical_base", EXPECTED_BASE)
@@ -99,6 +165,11 @@ def validate(root: Path) -> None:
     _require_equal(data, "wave4_implementation_authority", "not_granted")
     _require_equal(data, "production_authority", "none")
     _require_equal(data, "d4_transport_authority", "not_selected_not_granted")
+    _require_equal(
+        data,
+        "acceptance_rule",
+        "all_tracks_conformed_all_required_evidence_completed_and_exact_head_assurance_clean_then_separate_acceptance",
+    )
     _require_equal(
         data,
         "merge_rule",
@@ -160,14 +231,43 @@ def validate(root: Path) -> None:
                 f"{track_id}: D4 event-transport source leaked into D3: {forbidden}"
             )
 
-        # OPEN-EVT-011 is intentionally allowed only for D3-E's cryptographic
-        # comparison-authority join. No other event OPEN belongs to D3.
         evt_sources = sorted(anchor for anchor in anchors if anchor.startswith("OPEN-EVT-"))
         if evt_sources:
             if track_id != "D3-E" or evt_sources != ["OPEN-EVT-011"]:
                 raise AssertionError(
                     f"{track_id}: event OPEN ownership exceeds D3 crypto-only join: {evt_sources}"
                 )
+
+        expected_evidence = REQUIRED_EVIDENCE[track_id]
+        declared_required = _string_set(track_id, track, "required_evidence")
+        completed = _string_set(track_id, track, "evidence_completed")
+        remaining = _string_set(track_id, track, "evidence_remaining")
+
+        if declared_required != expected_evidence:
+            missing = sorted(expected_evidence - declared_required)
+            unexpected = sorted(declared_required - expected_evidence)
+            raise AssertionError(
+                f"{track_id}: required_evidence mismatch; missing={missing} unexpected={unexpected}"
+            )
+        if completed - expected_evidence:
+            raise AssertionError(
+                f"{track_id}: evidence_completed contains unknown evidence: {sorted(completed - expected_evidence)}"
+            )
+        if remaining - expected_evidence:
+            raise AssertionError(
+                f"{track_id}: evidence_remaining contains unknown evidence: {sorted(remaining - expected_evidence)}"
+            )
+        overlap = completed & remaining
+        if overlap:
+            raise AssertionError(f"{track_id}: evidence cannot be both completed and remaining: {sorted(overlap)}")
+        accounted = completed | remaining
+        if accounted != expected_evidence:
+            missing = sorted(expected_evidence - accounted)
+            raise AssertionError(f"{track_id}: required evidence is unaccounted: {missing}")
+        if state in TERMINAL_TRACK_STATES and remaining:
+            raise AssertionError(
+                f"{track_id}: terminal state {state!r} still has remaining evidence: {sorted(remaining)}"
+            )
 
     if seen != set(EXPECTED_TRACKS):
         raise AssertionError(f"D3 track set mismatch: {sorted(seen)}")
@@ -195,8 +295,6 @@ def validate(root: Path) -> None:
         if required_c3 not in c3_open:
             raise AssertionError(f"D3 attempted to lose required C3 boundary: {required_c3}")
 
-    # Acceptance eligibility and final separate acceptance both require every
-    # required D3 track to have reached a terminal evidence disposition.
     if gate_state in ACCEPTANCE_GATED_STATES:
         nonterminal = [
             track["track_id"]
@@ -217,7 +315,7 @@ def main(argv: list[str]) -> int:
         print(f"d3_identity_security_state=FAIL reason={exc}", file=sys.stderr)
         return 1
     print(
-        "d3_identity_security_state=PASS tracks=5 "
+        "d3_identity_security_state=PASS tracks=5 evidence_ledger=complete_accounting "
         "wave4=not_granted production=none d4=not_selected_not_granted"
     )
     return 0

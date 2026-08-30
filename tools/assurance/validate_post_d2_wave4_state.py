@@ -67,8 +67,11 @@ _FUTURE_OR_TENTATIVE_BEFORE_RE = re.compile(
     r"\b(?:will|would|could|should|might|may)\b"
 )
 _NEGATION_END_RE = re.compile(
-    r"\b(?:not|never|no\s+longer)\s+"
-    r"(?:(?:currently|presently|explicitly|formally|yet|now)\s+){0,2}$"
+    r"(?:"
+    r"\b(?:not|never)(?:\s+(?:currently|presently|explicitly|formally|yet|now)){0,2}"
+    r"|"
+    r"\bno\s+longer(?:\s+(?:currently|presently|explicitly|formally|yet|now)){0,2}"
+    r")$"
 )
 
 
@@ -240,7 +243,8 @@ def _reject_contradictory_authority_prose(docs: dict[str, str]) -> None:
 
     Sentence boundaries own question/undecided scope. Clause boundaries own denial and
     conditional scope. Authority words are treated fail-closed: adverbs may surround them,
-    but unrelated denial/eligibility text cannot cancel a later predicate.
+    but unrelated denial/eligibility text cannot cancel a later predicate. Canonical
+    machine assignments are validated separately and never reinterpreted as prose.
     """
 
     for key, text in docs.items():
@@ -248,6 +252,10 @@ def _reject_contradictory_authority_prose(docs: dict[str, str]) -> None:
             if not raw.strip():
                 continue
             _reject_machine_authority_overrides(key, raw)
+
+            machine_line = _machine_line(raw)
+            if _ASSIGNMENT_RE.fullmatch(machine_line) is not None:
+                continue
 
             line = _plain_line(raw)
             if not line:

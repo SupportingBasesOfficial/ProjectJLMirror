@@ -248,10 +248,10 @@ _D3D_SPIRE_COMPLETION_RUN_COMMON = {
     "artifact_pins": [SPIRE_1_15_3_ARTIFACT],
     "result": "pass",
 }
-_D3D_SPIRE_VENDOR_REVOCATION_PROOF_COMMON = {
-    "evidence_sha": "0ed5383a49fb64ab7ade16494959a4b6237491fc",
-    "workflow_run_id": 33341773683,
-    "workflow_run_number": 31,
+_D3D_SPIRE_STRENGTHENED_BOUNDARY_PROOF_COMMON = {
+    "evidence_sha": "c8ac05c4bcea367949489c94dfe876605e2f4261",
+    "workflow_run_id": 33342690140,
+    "workflow_run_number": 38,
     "workflow_file": ".github/workflows/d3-spire-candidate-evaluation.yml",
     "job_name": "SPIRE 1.15.3 bounded workload-identity evaluation",
     "artifact_pins": [SPIRE_1_15_3_ARTIFACT],
@@ -350,12 +350,12 @@ APPROVED_EVIDENCE_PROOFS = {
     ("D3-D", "issuer_restore_retired_authority_nonresurrection"): {
         "evidence_id": "issuer_restore_retired_authority_nonresurrection",
         "probe": "implementation/d3-identity-security/harness/spire_restore_nonresurrection_probe.py",
-        **_D3D_SPIRE_COMPLETION_RUN_COMMON,
+        **_D3D_SPIRE_STRENGTHENED_BOUNDARY_PROOF_COMMON,
     },
     ("D3-D", "vendor_credential_adapter_least_privilege"): {
         "evidence_id": "vendor_credential_adapter_least_privilege",
         "probe": "implementation/d3-identity-security/harness/spire_vendor_credential_adapter_probe.py",
-        **_D3D_SPIRE_VENDOR_REVOCATION_PROOF_COMMON,
+        **_D3D_SPIRE_STRENGTHENED_BOUNDARY_PROOF_COMMON,
     },
     ("D3-E", "tenant_scope_domain_separation"): {
         "evidence_id": "tenant_scope_domain_separation",

@@ -2,7 +2,7 @@
 
 This directory contains the governed C2 evidence package for `OPEN-REL-030`.
 
-The bounded C2 Track B mechanism/profile has now been **explicitly accepted**. This directory still does not constitute the Monitoring production implementation, production deployment authority, Wave 4 authorization, production topology selection, OPEN closure authorization, or merge authorization.
+The bounded C2 Track B mechanism/profile has been **explicitly accepted**. This directory still does not constitute the Monitoring production implementation, production deployment authority, Wave 4 authorization, production topology selection, OPEN closure authorization, or merge authorization.
 
 ## Governed state
 
@@ -15,9 +15,9 @@ Wave 4 authorization        not_granted
 Production authority        none
 Production versions         not selected
 Production capacity         OPEN-REL-020
-Material finding classes    51
+Material finding classes    52
 History hardening modules   7 (004–010)
-Merge                       not authorized
+Merge authorization         not_granted
 ```
 
 ## Acceptance basis
@@ -34,9 +34,11 @@ Inline review threads — 0 unresolved
 PR mergeable — true
 ```
 
-Because recording acceptance changes the Git HEAD, the accepted-state commit must itself pass the same exact-head CI + Native + fresh Codex assurance cycle before merge-readiness can be asserted.
+Because recording acceptance changes the Git HEAD, the accepted-state HEAD must itself pass exact-head CI + Native + fresh Codex assurance before merge-readiness can be asserted.
 
-## Empirical mechanism anchor
+## Empirical anchors
+
+History/mechanism anchor through material class #51:
 
 ```text
 51cddbca4258a78ed8f4a3254ff54a01a332e933
@@ -44,7 +46,15 @@ Deterministic Assurance #2261 — SUCCESS — run 33283602526
 OPEN-REL-030 Conformance #198 — SUCCESS — run 33283602532
 ```
 
-That anchor executes all mandatory vectors, all seven history hardening modules, physical PITR/recovery, post-enrollment clone, Timescale restore/jobs and Tier1↔Tier2 relocation, ending with `open_rel_030_extended_conformance=PASS`.
+Governance repair anchor for material class #52:
+
+```text
+0f0d72ca443ff2c87f44409e65f893c99b530aed
+Deterministic Assurance #2295 — SUCCESS — run 33285211010
+OPEN-REL-030 Conformance #215 — SUCCESS — run 33285210993
+```
+
+#52 makes `merge_authorization` explicit governed state. The extended runner derives the terminal `merge=...` output from the manifest, and the workflow guard rejects hard-coded merge authorization output.
 
 ## Accepted evidence architecture
 
@@ -64,21 +74,26 @@ The accepted Track B profile is the mediated shared-history Timescale candidate.
 
 Relocation preserves total/injective typed canonicalization, target-originated checkpoint authority, verifier-without-mint separation, restricted capability state, source lock-before-F, exact target completeness, atomic placement+activation-grant commitment, exact-grant target activation, caller-local response deadlines, no synchronous timeout cleanup, and real TCP blackholes in both directions.
 
+### Governance state
+
+Decision, acceptance, closure, Wave 4, production authority and merge authorization are machine-readable governed state. Conformance may not invent or hard-code those current authorization values; the terminal governed-decision statement must derive them from the manifest.
+
 ## Material findings
 
-All **51 material finding classes** remain closed/documented by the accepted mechanism. `DECISION_REVIEW.md` is the normative enumeration. The latest three are:
+All **52 material finding classes** remain closed/documented. `DECISION_REVIEW.md` is the normative enumeration. The latest four are:
 
 - **#49:** retained finalized watermark requires current-revision revalidation through the retained historical bound;
 - **#50:** NULL finalization cutoff is rejected with SQLSTATE `22004`;
-- **#51:** mutation/sweep/finalization use one canonical `provider_authority → stream_state` lock order with concurrent deadlock falsification.
+- **#51:** mutation/sweep/finalization use one canonical `provider_authority → stream_state` lock order with concurrent deadlock falsification;
+- **#52:** merge authorization can no longer be hard-coded by conformance; `merge_authorization=not_granted` is explicit governed state and terminal output is manifest-derived.
 
 ## Files
 
 - `STATE.md` — accepted decision state and authorization boundaries.
-- `DECISION_REVIEW.md` — normative acceptance record and all 51 material findings.
+- `DECISION_REVIEW.md` — normative acceptance record and all 52 material findings.
 - `EVIDENCE_MANIFEST.json` — machine-readable accepted state, evidence and authorization basis.
 - `sql/d2-open-rel-030/*` — executable Tier 1/history/Timescale evidence mechanisms.
-- `tools/open_rel_030/*` — orchestration, recovery, clone, restore, relocation and concurrency falsification harnesses.
+- `tools/open_rel_030/*` — orchestration, recovery, clone, restore, relocation, concurrency and governed-state conformance harnesses.
 - `.github/workflows/open-rel-030-conformance.yml` — exact-head structural + empirical conformance gate.
 
 ## Post-acceptance gate rule

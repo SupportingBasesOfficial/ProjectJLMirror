@@ -8,7 +8,7 @@
 **Wave 4 implementation authorization:** not granted  
 **Production authority:** none  
 **Production versions/numerics:** not selected; capacity envelopes remain `OPEN-REL-020` C3  
-**Merge authorization:** not granted
+**Merge authorization:** `not_granted` — explicit governed state
 
 ## Acceptance authorization basis
 
@@ -24,7 +24,7 @@ Inline review threads        0 unresolved
 PR mergeable                 true
 ```
 
-The acceptance mutation itself changes HEAD. Therefore the accepted-state commit must independently pass deterministic assurance, OPEN-REL-030 conformance, Native Assurance and a fresh adversarial Codex review before it is considered exact-head assured for merge-readiness purposes.
+The acceptance mutation changes HEAD. Therefore the accepted-state commit must independently pass deterministic assurance, OPEN-REL-030 conformance, Native Assurance and a fresh adversarial Codex review before merge-readiness may be asserted.
 
 ## Accepted Track B profile
 
@@ -73,7 +73,7 @@ The accepted C2 mechanism/profile is the coupled invariant set already proven by
 
 ## Evidence provenance
 
-Empirical mechanism anchor before the #51 governance promotion:
+History/mechanism anchor before #51 governance promotion:
 
 ```text
 51cddbca4258a78ed8f4a3254ff54a01a332e933
@@ -81,17 +81,27 @@ Deterministic Assurance #2261 — run 33283602526 — SUCCESS
 OPEN-REL-030 Conformance #198 — run 33283602532 — SUCCESS
 ```
 
-The prior final decision-review HEAD `622c094c9274a778d1c21c5976dd3b2ca7b4cedf` then passed #2273/#204, Native P0/P1/P2=0 and fresh Codex CLEAN, establishing the basis for the explicit Track B authorization.
+The final pre-acceptance decision-review HEAD `622c094c9274a778d1c21c5976dd3b2ca7b4cedf` passed #2273/#204, Native P0/P1/P2=0 and fresh Codex CLEAN, establishing the basis for explicit Track B authorization.
+
+Governance repair anchor for material class #52:
+
+```text
+0f0d72ca443ff2c87f44409e65f893c99b530aed
+Deterministic Assurance #2295 — run 33285211010 — SUCCESS
+OPEN-REL-030 Conformance #215 — run 33285210993 — SUCCESS
+```
+
+Class #52 makes current merge authorization a first-class governed manifest value. The extended runner asserts and derives its terminal `merge=...` field from that value; the workflow guard rejects the prior hard-coded terminal value.
 
 ## Material findings
 
-All **51 material finding classes** remain closed/documented by the accepted mechanism. The latest classes are:
+All **52 material finding classes** remain closed/documented by the accepted package. The latest classes are:
 
-- **#49:** retained finalized watermark stale resurrection — current-revision coverage must revalidate through the retained watermark before `complete` can return.
 - **#50:** NULL finalization cutoff — SQLSTATE `22004` rejection prevents three-valued logic from minting completeness.
 - **#51:** inconsistent history authority lock order — mutation, sweep and finalization now acquire `provider_authority → stream_state`; concurrent deadlock vectors are required.
+- **#52:** merge authorization output hard-coded instead of governed — `merge_authorization` is explicit machine-readable state and conformance derives/asserts the terminal value from it.
 
-Classes #1–#48 remain enumerated in `DECISION_REVIEW.md` and are not superseded by acceptance.
+Classes #1–#49 remain enumerated in `DECISION_REVIEW.md` and are not superseded by acceptance.
 
 ## Authorization boundary
 
@@ -103,7 +113,7 @@ Closure claim                FALSE / NOT AUTHORIZED
 Wave 4 implementation        NOT AUTHORIZED
 Production authority         NONE
 Production selections        NOT MADE
-Merge                        NOT AUTHORIZED
+Merge authorization          NOT_GRANTED
 Post-acceptance exact-head   CI + Native + fresh Codex REQUIRED
 ```
 

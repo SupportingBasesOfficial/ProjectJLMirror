@@ -39,6 +39,19 @@
     "critical_vectors": 3,
     "note": "Anchor preserves the complete prior C2 package and closes material class #51 by enforcing one explicit provider_authority -> stream_state lock order across provider mutation, sweep and finalization, with real concurrent mutation-vs-finalize and mutation-vs-sweep falsification."
   },
+  "governance_repair_basis": {
+    "material_class": 52,
+    "title": "merge authorization output derived from governed state",
+    "exact_repair_head_before_promotion": "0f0d72ca443ff2c87f44409e65f893c99b530aed",
+    "deterministic_assurance_run_number": 2295,
+    "deterministic_assurance_run_id": 33285211010,
+    "open_rel_030_conformance_run_number": 215,
+    "open_rel_030_conformance_run_id": 33285210993,
+    "result": "success",
+    "merge_authorization_guard": true,
+    "terminal_state_is_manifest_derived": true,
+    "hard_coded_merge_authorization_terminal_value_allowed": false
+  },
   "acceptance_authorization_basis": {
     "authorized_from_exact_head": "622c094c9274a778d1c21c5976dd3b2ca7b4cedf",
     "deterministic_assurance_run_number": 2273,
@@ -56,12 +69,12 @@
     "post_acceptance_exact_head_assurance_required": true
   },
   "review_provenance": {
-    "material_finding_classes_documented_in_decision_review": 51,
-    "material_finding_classes_closed_by_current_mechanism": 51,
-    "latest_material_class": 51,
-    "latest_material_class_title": "history authority lock-order consistency",
-    "latest_codex_reviewed_pre_repair_sha": "5d301bb5482b830ff741e9b0682d64b4fb5980b3",
-    "latest_codex_thread": "PRRT_kwDOT7x07M6ddqA2",
+    "material_finding_classes_documented_in_decision_review": 52,
+    "material_finding_classes_closed_by_current_mechanism": 52,
+    "latest_material_class": 52,
+    "latest_material_class_title": "merge authorization output derived from governed state",
+    "latest_codex_reviewed_pre_repair_sha": "b09979d96f9461e024fc717a67a8944c2e34f8b2",
+    "latest_codex_thread": "PRRT_kwDOT7x07M6dd3bh",
     "latest_codex_thread_resolved_after_exact_head_evidence": true
   },
   "completed_mandatory_vectors": [

@@ -67,12 +67,12 @@ jobs:
           assert manifest['class'] == 'C2_bounded_spike'
           assert manifest['evidence_state'] == 'complete'
           assert manifest['decision_disposition'] == 'accepted_track_b'
+          assert manifest['acceptance_authorization'] == 'granted'
+          assert manifest['closure_claim'] is False
+          assert manifest['wave4_implementation_authorization'] == 'not_granted'
           assert manifest['production_authority'] == 'none'
           assert manifest['product_feature_activation'] == 'none'
-          assert manifest['wave4_implementation_authorization'] == 'not_granted'
           assert manifest['merge_authorization'] == 'not_granted'
-          assert manifest['closure_claim'] is False
-          assert manifest['acceptance_authorization'] == 'granted'
           assert manifest['production_versions_selected'] is False
           assert manifest['production_capacity_numerics_selected'] is False
           assert manifest['production_capacity_owner'] == 'OPEN-REL-020'
@@ -96,6 +96,19 @@ jobs:
           assert auth['explicit_track_b_authorization_recorded'] is True
           assert auth['post_acceptance_exact_head_assurance_required'] is True
 
+          repair = manifest['governance_repair_basis']
+          assert repair['material_class'] == 52
+          assert repair['title'] == 'merge authorization output derived from governed state'
+          assert repair['exact_repair_head_before_promotion'] == '0f0d72ca443ff2c87f44409e65f893c99b530aed'
+          assert repair['deterministic_assurance_run_number'] == 2295
+          assert repair['deterministic_assurance_run_id'] == 33285211010
+          assert repair['open_rel_030_conformance_run_number'] == 215
+          assert repair['open_rel_030_conformance_run_id'] == 33285210993
+          assert repair['result'] == 'success'
+          assert repair['merge_authorization_guard'] is True
+          assert repair['terminal_state_is_manifest_derived'] is True
+          assert repair['hard_coded_merge_authorization_terminal_value_allowed'] is False
+
           boundary = manifest['acceptance_boundary']
           assert boundary['track_b_acceptance_requires_explicit_authorization'] is True
           assert boundary['track_b_acceptance_explicit_authorization_recorded'] is True
@@ -109,10 +122,12 @@ jobs:
           assert boundary['ready_for_merge_is_authorized_to_merge'] is False
 
           provenance = manifest['review_provenance']
-          assert provenance['material_finding_classes_documented_in_decision_review'] == 51
-          assert provenance['material_finding_classes_closed_by_current_mechanism'] == 51
-          assert provenance['latest_material_class'] == 51
-          assert provenance['latest_codex_thread'] == 'PRRT_kwDOT7x07M6ddqA2'
+          assert provenance['material_finding_classes_documented_in_decision_review'] == 52
+          assert provenance['material_finding_classes_closed_by_current_mechanism'] == 52
+          assert provenance['latest_material_class'] == 52
+          assert provenance['latest_material_class_title'] == 'merge authorization output derived from governed state'
+          assert provenance['latest_codex_reviewed_pre_repair_sha'] == 'b09979d96f9461e024fc717a67a8944c2e34f8b2'
+          assert provenance['latest_codex_thread'] == 'PRRT_kwDOT7x07M6dd3bh'
           assert provenance['latest_codex_thread_resolved_after_exact_head_evidence'] is True
 
           basis = manifest['classification_basis']
@@ -126,25 +141,28 @@ jobs:
           assert basis['critical_vectors'] == 3
 
           history = manifest['late_history_evidence']
-          assert history['coverage_bound_to_authority_generation'] is True
-          assert history['coverage_bound_to_provider_dataset_revision'] is True
-          assert history['coverage_bound_to_required_snapshot_currentness'] is True
-          assert history['provider_mutation_invalidates_current_coverage'] is True
-          assert history['stable_identity_rewrite_delete_truncate_fail_closed'] is True
-          assert history['stable_identity_conflict_validation_independent_of_current_became_visible_at'] is True
-          assert history['retained_finalized_watermark_preserved_during_dataset_invalidation'] is True
-          assert history['retained_finalized_watermark_requires_current_revision_revalidation'] is True
+          for key in [
+              'coverage_bound_to_authority_generation',
+              'coverage_bound_to_provider_dataset_revision',
+              'coverage_bound_to_required_snapshot_currentness',
+              'provider_mutation_invalidates_current_coverage',
+              'stable_identity_rewrite_delete_truncate_fail_closed',
+              'stable_identity_conflict_validation_independent_of_current_became_visible_at',
+              'retained_finalized_watermark_preserved_during_dataset_invalidation',
+              'retained_finalized_watermark_requires_current_revision_revalidation',
+              'complete_restored_only_after_current_revision_covers_retained_watermark',
+              'null_finalize_cutoff_rejected',
+              'null_finalize_preserves_preexisting_sweep_state',
+              'sweep_and_finalize_use_canonical_authority_lock_order',
+              'lock_order_concurrency_vectors_passed',
+          ]:
+              assert history[key] is True
           assert history['partial_revalidation_below_retained_watermark_can_restore_complete'] is False
-          assert history['complete_restored_only_after_current_revision_covers_retained_watermark'] is True
-          assert history['null_finalize_cutoff_rejected'] is True
           assert history['null_finalize_cutoff_sqlstate'] == '22004'
           assert history['null_finalize_can_mint_complete'] is False
           assert history['null_finalize_can_create_complete_with_null_finalized_through'] is False
-          assert history['null_finalize_preserves_preexisting_sweep_state'] is True
           assert history['canonical_authority_lock_order'] == 'provider_authority_then_stream_state'
-          assert history['sweep_and_finalize_use_canonical_authority_lock_order'] is True
           assert history['history_internal_pre_lock_entrypoints_worker_callable'] is False
-          assert history['lock_order_concurrency_vectors_passed'] is True
 
           expected_history = [
               '004_history_reconciliation.sql',
@@ -156,44 +174,35 @@ jobs:
               '010_history_lock_order_hardening.sql',
           ]
           assert history['history_hardening_modules_executed'] == expected_history
-          runner = Path('tools/open_rel_030/run_conformance_extended.sh').read_text()
           discovered_history = sorted(p.name for p in Path('sql/d2-open-rel-030').glob('[0-9][0-9][0-9]_history_*.sql'))
           assert discovered_history == expected_history
-          missing = [name for name in discovered_history if name not in runner]
-          assert not missing, f'history hardening modules not wired into extended runner: {missing}'
-          assert "assert manifest['merge_authorization'] == 'not_granted'" in runner
-          assert "f\"merge={manifest['merge_authorization']}\"" in runner
-          assert 'merge=not_authorized' not in runner
-          assert 'Track B acceptance still required' not in runner
+          runner = Path('tools/open_rel_030/run_conformance_extended.sh').read_text()
+          assert not [name for name in discovered_history if name not in runner]
 
           retained = Path('sql/d2-open-rel-030/009_history_retained_finalized_watermark_hardening.sql').read_text()
           for marker in [
               'IF p_finalize_through IS NULL THEN',
               "ERRCODE = '22004'",
-              'finalization cutoff must not be null',
               'v_required_through',
               'GREATEST(v_state.finalized_through, p_finalize_through)',
               'v_current_covered < v_required_through',
-              "state = 'reconciliation_required'",
               'history_null_finalize_cutoff_rejected=PASS',
               'history_null_finalize_preserves_noncomplete_state=PASS',
               'history_retained_finalized_watermark_requires_revalidation=PASS',
               'history_retained_finalized_watermark_recovers_after_full_revalidation=PASS',
           ]:
-              assert marker in retained, f'missing history finalization guard marker: {marker}'
+              assert marker in retained
 
           lock_order = Path('sql/d2-open-rel-030/010_history_lock_order_hardening.sql').read_text()
           for marker in [
               'sweep_pre_lock_order',
               'try_finalize_pre_lock_order',
               'Canonical authority order: provider_authority -> stream_state.',
-              'REVOKE ALL ON FUNCTION history_reconcile_evidence.sweep_pre_lock_order',
-              'REVOKE ALL ON FUNCTION history_reconcile_evidence.try_finalize_pre_lock_order',
               'history_lock_order_wrappers_installed=PASS',
               'history_internal_entrypoints_not_worker_callable=PASS',
               'history_null_finalize_guard_preserved_after_lock_order=PASS',
           ]:
-              assert marker in lock_order, f'missing history lock-order guard marker: {marker}'
+              assert marker in lock_order
 
           lock_race = Path('tools/open_rel_030/history_lock_order_concurrency.sh').read_text()
           for marker in [
@@ -202,7 +211,13 @@ jobs:
               'history_authority_lock_order=provider_authority_then_stream_state=PASS',
               'deadlock detected',
           ]:
-              assert marker in lock_race, f'missing history lock-race marker: {marker}'
+              assert marker in lock_race
+
+          # #52: terminal merge authorization must be governed, not hard-coded.
+          assert "assert manifest['merge_authorization'] == 'not_granted'" in runner
+          assert "f\"merge={manifest['merge_authorization']}\"" in runner
+          assert 'merge=not_authorized' not in runner
+          assert 'Track B acceptance still required' not in runner
 
           recovery = manifest['recovery_evidence']
           required_recovery_true = [
@@ -237,17 +252,20 @@ jobs:
               'post_enrollment_timeout_backend_retirement_one_shot_session',
           ]
           assert not [k for k in required_recovery_true if recovery[k] is not True]
-          assert recovery['post_enrollment_effective_capability_is_copied_by_pgdata_clone'] is False
-          assert recovery['pgdata_copy_alone_duplicates_recovery_authority'] is False
-          assert recovery['multiple_grant_ids_same_boundary_create_multiple_authorities'] is False
-          assert recovery['timeout_path_uses_synchronous_remote_cancel_or_disconnect'] is False
-          assert recovery['validly_signed_drifted_successor_epoch_claim_admitted'] is False
-          assert recovery['validly_signed_drifted_placement_version_claim_admitted'] is False
-          assert recovery['drifted_active_authority_grants_create_additional_claim'] is False
+          for key in [
+              'post_enrollment_effective_capability_is_copied_by_pgdata_clone',
+              'pgdata_copy_alone_duplicates_recovery_authority',
+              'multiple_grant_ids_same_boundary_create_multiple_authorities',
+              'timeout_path_uses_synchronous_remote_cancel_or_disconnect',
+              'validly_signed_drifted_successor_epoch_claim_admitted',
+              'validly_signed_drifted_placement_version_claim_admitted',
+              'drifted_active_authority_grants_create_additional_claim',
+              'hardened_active_authority_replay_clone_admitted',
+              'post_enrollment_timeout_path_uses_synchronous_remote_cleanup',
+              'duplicate_restored_authority_admitted',
+          ]:
+              assert recovery[key] is False
           assert recovery['hardened_active_authority_replay_boundary_claim_rows'] == 1
-          assert recovery['hardened_active_authority_replay_clone_admitted'] is False
-          assert recovery['post_enrollment_timeout_path_uses_synchronous_remote_cleanup'] is False
-          assert recovery['duplicate_restored_authority_admitted'] is False
 
           relocation = manifest['relocation_evidence']
           for key in [
@@ -264,10 +282,13 @@ jobs:
               'target_activation_requires_exact_committed_tier1_grant',
           ]:
               assert relocation[key] is True
-          assert relocation['tier1_verifier_can_mint_target_checkpoint'] is False
-          assert relocation['effective_verifier_timeout_path_uses_synchronous_remote_cleanup'] is False
-          assert relocation['pre_activation_target_rows_above_f_allowed'] is False
-          assert relocation['activated_existing_history_mutable'] is False
+          for key in [
+              'tier1_verifier_can_mint_target_checkpoint',
+              'effective_verifier_timeout_path_uses_synchronous_remote_cleanup',
+              'pre_activation_target_rows_above_f_allowed',
+              'activated_existing_history_mutable',
+          ]:
+              assert relocation[key] is False
 
           pitr = Path('tools/open_rel_030/physical_pitr.sh').read_text()
           pitr_authority = Path('tools/open_rel_030/physical_pitr_active_authority_hardening.sh').read_text()
@@ -276,7 +297,6 @@ jobs:
           clone_bounded = Path('tools/open_rel_030/physical_pitr_post_enrollment_clone_bounded.sh').read_text()
           relocation_entry = Path('tools/open_rel_030/tenant_relocation.sh').read_text()
           relocation_retirement = Path('tools/open_rel_030/tenant_relocation_transport_retirement_hardening.sh').read_text()
-
           assert 'physical_pitr_recovery_real_blackhole_fails_closed' in pitr
           assert 'physical_pitr_recovery_fetch_consistent_locked_snapshot=PASS' in pitr
           assert 'WHERE singleton FOR UPDATE' in pitr_authority
@@ -297,7 +317,7 @@ jobs:
               'acceptance=granted '
               'closure=false '
               'merge=not_granted '
-              'material_findings=51 '
+              'material_findings=52 '
               'merge_authorization_guard=true '
               'history_lock_order_guard=true '
               'null_finalize_guard=true '

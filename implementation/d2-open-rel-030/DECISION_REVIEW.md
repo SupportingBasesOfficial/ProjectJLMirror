@@ -8,7 +8,7 @@
 **Closure claim:** false — separately unauthorized  
 **Wave 4 implementation authorization:** not granted  
 **Production authority:** none  
-**Merge authorization:** not granted
+**Merge authorization:** `not_granted`
 
 ## Authorization basis
 
@@ -66,19 +66,30 @@ Track B accepts the bounded C2 mechanism/profile only as the following coupled i
 34. target `sealed → activated` requires that exact committed Tier 1 grant;
 35. pre-activation future rows are rejected; activated existing history is immutable and only new append `>F` is eligible;
 36. `OPEN-REL-020` remains owner of production capacity/SLO/retention/cardinality/cost numerics;
-37. evaluation database versions, image digests, evidence HMACs, LOGIN roles, external-to-PGDATA mounts, `dblink`, one-shot session retirement and laboratory deadline values remain reproducibility dependencies rather than frozen production selections.
+37. evaluation database versions, image digests, evidence HMACs, LOGIN roles, external-to-PGDATA mounts, `dblink`, one-shot session retirement and laboratory deadline values remain reproducibility dependencies rather than frozen production selections;
+38. current merge authorization is explicit governed state; conformance derives/asserts it from the manifest and may not hard-code a current merge status.
 
-## Empirical mechanism provenance
+## Empirical provenance
+
+History/mechanism anchor through class #51:
 
 ```text
-Mechanism anchor             51cddbca4258a78ed8f4a3254ff54a01a332e933
-Deterministic Assurance     #2261 / 33283602526 / SUCCESS
-OPEN-REL-030 Conformance    #198 / 33283602532 / SUCCESS
-History hardening modules   7 (004–010)
-Material findings           51
+51cddbca4258a78ed8f4a3254ff54a01a332e933
+Deterministic Assurance #2261 / 33283602526 / SUCCESS
+OPEN-REL-030 Conformance #198 / 33283602532 / SUCCESS
+History hardening modules 7 (004–010)
 ```
 
-The following governance HEAD then passed the decision gates and became the authorization basis:
+Class #52 governance repair anchor:
+
+```text
+0f0d72ca443ff2c87f44409e65f893c99b530aed
+Deterministic Assurance #2295 / 33285211010 / SUCCESS
+OPEN-REL-030 Conformance #215 / 33285210993 / SUCCESS
+merge_authorization_guard=true
+```
+
+The pre-acceptance authorization-basis HEAD remains:
 
 ```text
 622c094c9274a778d1c21c5976dd3b2ca7b4cedf
@@ -87,7 +98,7 @@ The following governance HEAD then passed the decision gates and became the auth
 
 ## Material finding classes closed by D2
 
-The accepted evidence program repaired **51 material classes**, each followed by panoramic review:
+The accepted evidence program repaired **52 material classes**, each followed by panoramic review:
 
 1. conflicting observation content under stable Tier 1 identity;
 2. caller-asserted source/poll authority;
@@ -139,7 +150,23 @@ The accepted evidence program repaired **51 material classes**, each followed by
 48. effective relocation verifier timeout cleanup synchronously disconnecting under blackhole;
 49. retained finalized watermark re-advertised after dataset invalidation using only shorter current coverage;
 50. NULL finalization cutoff exploiting SQL three-valued logic to mint completeness;
-51. inconsistent provider/history authority lock order allowing mutation-versus-finalization deadlock.
+51. inconsistent provider/history authority lock order allowing mutation-versus-finalization deadlock;
+52. conformance hard-coding merge authorization instead of deriving current merge state from governed authority.
+
+## Class #52 closure
+
+Codex identified #52 on exact accepted-state SHA `b09979d96f9461e024fc717a67a8944c2e34f8b2` in thread `PRRT_kwDOT7x07M6dd3bh`.
+
+The repair on `0f0d72ca443ff2c87f44409e65f893c99b530aed`:
+
+- adds top-level machine-readable `merge_authorization=not_granted`;
+- records that merge authorization has not been separately granted;
+- makes the extended runner assert that governed value;
+- derives the terminal `merge=...` value directly from the manifest;
+- makes the workflow guard require the dynamic expression and reject the prior hard-coded terminal value;
+- preserves Track B accepted, closure false, Wave 4 not granted and production authority none.
+
+Exact repair gates #2295/#215 are SUCCESS, and the Codex thread was resolved only after that evidence was recorded.
 
 ## Meaning of acceptance
 
@@ -160,13 +187,13 @@ It **does not**:
 Evidence completeness        COMPLETE
 Track B decision             ACCEPTED
 Track B authorization        GRANTED
-Material finding classes     51
+Material finding classes     52
 History hardening modules    7 (004–010)
 Closure claim                FALSE / NOT AUTHORIZED
 Wave 4 implementation        NOT AUTHORIZED
 Production authority         NONE
 Production selections        NOT MADE
-Merge                        NOT AUTHORIZED
+Merge authorization          NOT_GRANTED
 Post-acceptance exact-head   CI + Native + fresh Codex REQUIRED
 ```
 

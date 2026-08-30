@@ -93,21 +93,98 @@
         "broad_revocation_bounded_constant",
         "degraded_owner_read_bulkhead_fail_closed"
       ],
-      "evidence_completed": [],
-      "evidence_remaining": [
-        "session_authority_owner_boundaries",
+      "evidence_completed": [
         "cache_generation_bound_derived_only",
         "healthy_single_roundtrip_zero_pg_generation_queries",
         "mixed_generation_read_rejected",
         "independent_cache_admission_epoch",
+        "broad_revocation_bounded_constant"
+      ],
+      "evidence_remaining": [
+        "session_authority_owner_boundaries",
         "revocation_partial_write_safety",
         "prepare_fence_commit_finalize_single_winner",
         "fleet_wide_cache_exclusion_barrier",
         "restore_failover_positive_authority_nonresurrection",
-        "broad_revocation_bounded_constant",
         "degraded_owner_read_bulkhead_fail_closed"
       ],
-      "evidence_proofs": [],
+      "evidence_proofs": [
+        {
+          "evidence_id": "cache_generation_bound_derived_only",
+          "evidence_sha": "a437bb46eb8695e8e48d26b8db5569ff8f12ea7b",
+          "workflow_run_id": 33314980744,
+          "workflow_run_number": 19,
+          "workflow_file": ".github/workflows/d3-cache-exploratory.yml",
+          "job_name": "PostgreSQL 18.6 + Redis 8.10 / Valkey 9.1 pinned",
+          "probe": "implementation/d3-identity-security/harness/cache_admission_probe.sh",
+          "artifact_pins": [
+            "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+            "redis@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366",
+            "valkey/valkey@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411"
+          ],
+          "result": "pass"
+        },
+        {
+          "evidence_id": "healthy_single_roundtrip_zero_pg_generation_queries",
+          "evidence_sha": "a437bb46eb8695e8e48d26b8db5569ff8f12ea7b",
+          "workflow_run_id": 33314980744,
+          "workflow_run_number": 19,
+          "workflow_file": ".github/workflows/d3-cache-exploratory.yml",
+          "job_name": "PostgreSQL 18.6 + Redis 8.10 / Valkey 9.1 pinned",
+          "probe": "implementation/d3-identity-security/harness/cache_admission_probe.sh",
+          "artifact_pins": [
+            "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+            "redis@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366",
+            "valkey/valkey@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411"
+          ],
+          "result": "pass"
+        },
+        {
+          "evidence_id": "mixed_generation_read_rejected",
+          "evidence_sha": "a437bb46eb8695e8e48d26b8db5569ff8f12ea7b",
+          "workflow_run_id": 33314980744,
+          "workflow_run_number": 19,
+          "workflow_file": ".github/workflows/d3-cache-exploratory.yml",
+          "job_name": "PostgreSQL 18.6 + Redis 8.10 / Valkey 9.1 pinned",
+          "probe": "implementation/d3-identity-security/harness/cache_admission_probe.sh",
+          "artifact_pins": [
+            "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+            "redis@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366",
+            "valkey/valkey@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411"
+          ],
+          "result": "pass"
+        },
+        {
+          "evidence_id": "independent_cache_admission_epoch",
+          "evidence_sha": "a437bb46eb8695e8e48d26b8db5569ff8f12ea7b",
+          "workflow_run_id": 33314980744,
+          "workflow_run_number": 19,
+          "workflow_file": ".github/workflows/d3-cache-exploratory.yml",
+          "job_name": "PostgreSQL 18.6 + Redis 8.10 / Valkey 9.1 pinned",
+          "probe": "implementation/d3-identity-security/harness/cache_admission_probe.sh",
+          "artifact_pins": [
+            "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+            "redis@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366",
+            "valkey/valkey@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411"
+          ],
+          "result": "pass"
+        },
+        {
+          "evidence_id": "broad_revocation_bounded_constant",
+          "evidence_sha": "a437bb46eb8695e8e48d26b8db5569ff8f12ea7b",
+          "workflow_run_id": 33314980744,
+          "workflow_run_number": 19,
+          "workflow_file": ".github/workflows/d3-cache-exploratory.yml",
+          "job_name": "PostgreSQL 18.6 + Redis 8.10 / Valkey 9.1 pinned",
+          "probe": "implementation/d3-identity-security/harness/cache_admission_probe.sh",
+          "artifact_pins": [
+            "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+            "redis@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366",
+            "valkey/valkey@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411"
+          ],
+          "result": "pass"
+        }
+      ],
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     },

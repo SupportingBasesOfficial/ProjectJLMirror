@@ -26,6 +26,9 @@ EXPECTED_TRACKS = {
     "D3-D": ("workload_identity_issuer_attestation", True),
     "D3-E": ("cryptographic_replay_historical_verifier_authority", True),
 }
+POSTGRES_18_6_DIGEST = "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280"
+REDIS_8_10_DIGEST = "redis@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366"
+VALKEY_9_1_DIGEST = "valkey/valkey@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411"
 EXPECTED_CANDIDATE_FIELDS = {
     "D3-A": {
         "candidate": "keycloak_26_7_2",
@@ -35,9 +38,9 @@ EXPECTED_CANDIDATE_FIELDS = {
         "candidate": "postgresql_18_6_session_sor_plus_redis_compatible_security_cache",
         "portability_control": "valkey_9_1",
         "candidate_artifact_digests": {
-            "postgresql": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
-            "redis_compatible_primary": "redis@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366",
-            "portability_control": "valkey/valkey@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411",
+            "postgresql": POSTGRES_18_6_DIGEST,
+            "redis_compatible_primary": REDIS_8_10_DIGEST,
+            "portability_control": VALKEY_9_1_DIGEST,
         },
     },
     "D3-C": {"candidate": "hmac_sha256_double_submit_versioned_keyring"},
@@ -169,6 +172,16 @@ _D3A_BROWSER_PROOF_COMMON = {
     "artifact_pins": [KEYCLOAK_26_7_2_DIGEST],
     "result": "pass",
 }
+_D3B_PINNED_PROOF_COMMON = {
+    "evidence_sha": "a437bb46eb8695e8e48d26b8db5569ff8f12ea7b",
+    "workflow_run_id": 33314980744,
+    "workflow_run_number": 19,
+    "workflow_file": ".github/workflows/d3-cache-exploratory.yml",
+    "job_name": "PostgreSQL 18.6 + Redis 8.10 / Valkey 9.1 pinned",
+    "probe": "implementation/d3-identity-security/harness/cache_admission_probe.sh",
+    "artifact_pins": [POSTGRES_18_6_DIGEST, REDIS_8_10_DIGEST, VALKEY_9_1_DIGEST],
+    "result": "pass",
+}
 APPROVED_EVIDENCE_PROOFS = {
     ("D3-A", "oidc_authorization_code_pkce_bff_binding"): {
         "evidence_id": "oidc_authorization_code_pkce_bff_binding",
@@ -177,6 +190,26 @@ APPROVED_EVIDENCE_PROOFS = {
     ("D3-A", "token_signature_issuer_audience_client_time_jwks_algorithm_validation"): {
         "evidence_id": "token_signature_issuer_audience_client_time_jwks_algorithm_validation",
         **_D3A_BROWSER_PROOF_COMMON,
+    },
+    ("D3-B", "cache_generation_bound_derived_only"): {
+        "evidence_id": "cache_generation_bound_derived_only",
+        **_D3B_PINNED_PROOF_COMMON,
+    },
+    ("D3-B", "healthy_single_roundtrip_zero_pg_generation_queries"): {
+        "evidence_id": "healthy_single_roundtrip_zero_pg_generation_queries",
+        **_D3B_PINNED_PROOF_COMMON,
+    },
+    ("D3-B", "mixed_generation_read_rejected"): {
+        "evidence_id": "mixed_generation_read_rejected",
+        **_D3B_PINNED_PROOF_COMMON,
+    },
+    ("D3-B", "independent_cache_admission_epoch"): {
+        "evidence_id": "independent_cache_admission_epoch",
+        **_D3B_PINNED_PROOF_COMMON,
+    },
+    ("D3-B", "broad_revocation_bounded_constant"): {
+        "evidence_id": "broad_revocation_bounded_constant",
+        **_D3B_PINNED_PROOF_COMMON,
     },
 }
 
@@ -274,6 +307,12 @@ def _validate_proofs(track_id: str, track: dict, completed: set[str]) -> None:
             raise AssertionError(
                 f"{track_id}/{evidence_id}: proof does not bind the exact Keycloak candidate digest"
             )
+        if track_id == "D3-B":
+            expected_pins = set(track.get("candidate_artifact_digests", {}).values())
+            if set(pins) != expected_pins:
+                raise AssertionError(
+                    f"{track_id}/{evidence_id}: proof does not bind the exact D3-B candidate artifact set"
+                )
 
         if proof.get("result") != "pass":
             raise AssertionError(f"{track_id}/{evidence_id}: only passing proof may complete evidence")

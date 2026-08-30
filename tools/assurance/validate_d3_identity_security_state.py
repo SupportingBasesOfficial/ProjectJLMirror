@@ -192,6 +192,16 @@ _D3_REFERENCE_PROOF_COMMON = {
     "artifact_pins": [],
     "result": "pass",
 }
+_D3C_COMPLETION_PROOF_COMMON = {
+    "evidence_sha": "f9bf130677d627adf54af4529abde1b1212c1594",
+    "workflow_run_id": 33315948185,
+    "workflow_run_number": 36,
+    "workflow_file": ".github/workflows/d3-identity-security-evidence.yml",
+    "job_name": "D3 reference security contracts",
+    "probe": "implementation/d3-identity-security/harness/test_crypto_reference.py",
+    "artifact_pins": [],
+    "result": "pass",
+}
 APPROVED_EVIDENCE_PROOFS = {
     ("D3-A", "oidc_authorization_code_pkce_bff_binding"): {
         "evidence_id": "oidc_authorization_code_pkce_bff_binding",
@@ -229,9 +239,21 @@ APPROVED_EVIDENCE_PROOFS = {
         "evidence_id": "current_previous_key_only",
         **_D3_REFERENCE_PROOF_COMMON,
     },
+    ("D3-C", "rotation_overlap_safety_lifetime"): {
+        "evidence_id": "rotation_overlap_safety_lifetime",
+        **_D3C_COMPLETION_PROOF_COMMON,
+    },
     ("D3-C", "no_historical_key_search"): {
         "evidence_id": "no_historical_key_search",
         **_D3_REFERENCE_PROOF_COMMON,
+    },
+    ("D3-C", "previous_key_observability_stale_detection"): {
+        "evidence_id": "previous_key_observability_stale_detection",
+        **_D3C_COMPLETION_PROOF_COMMON,
+    },
+    ("D3-C", "duplicate_conflicting_cookie_header_ingress_rejection"): {
+        "evidence_id": "duplicate_conflicting_cookie_header_ingress_rejection",
+        **_D3C_COMPLETION_PROOF_COMMON,
     },
     ("D3-C", "routine_session_renewal_preserves_csrf"): {
         "evidence_id": "routine_session_renewal_preserves_csrf",

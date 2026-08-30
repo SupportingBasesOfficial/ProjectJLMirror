@@ -116,10 +116,9 @@ jobs:
               ;;
           esac
 
-          chmod 0400 "$tls_dir/ca.key"
+          chmod 0400 "$tls_dir/ca.key" "$server_dir/server.key"
           chmod 0444 "$tls_dir/ca.crt" "$server_dir/server.crt"
           sudo chown "$keycloak_uid" "$server_dir/server.key"
-          chmod 0400 "$server_dir/server.key"
 
           test "$(stat -c '%u' "$server_dir/server.key")" = "$keycloak_uid"
           test "$(stat -c '%a' "$server_dir/server.key")" = "400"

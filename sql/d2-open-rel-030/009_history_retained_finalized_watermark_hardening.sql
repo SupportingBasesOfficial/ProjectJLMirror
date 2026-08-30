@@ -151,7 +151,7 @@ BEGIN
 
     IF v_covered <> '2026-08-28T11:15:00Z'::timestamptz
        OR v_finalized_through IS NOT NULL
-       OR v_state <> 'reconciliation_required' THEN
+       OR v_state <> 'provisional' THEN
         RAISE EXCEPTION 'NULL finalization cutoff changed completeness state: % % %',
             v_covered, v_finalized_through, v_state;
     END IF;

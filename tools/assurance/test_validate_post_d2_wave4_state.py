@@ -70,8 +70,18 @@ class PostD2Wave4StateGuardTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             validate(self.root)
 
-    def test_rejects_implicit_wave4_authorization(self) -> None:
+    def test_rejects_implicit_wave4_authorization_in_transition(self) -> None:
         path = self.root / FILES["transition"]
+        path.write_text(
+            path.read_text(encoding="utf-8")
+            + "\nwave4_implementation_authorization = granted",
+            encoding="utf-8",
+        )
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_rejects_implicit_wave4_authorization_in_open_register(self) -> None:
+        path = self.root / FILES["open_register"]
         path.write_text(
             path.read_text(encoding="utf-8")
             + "\nwave4_implementation_authorization = granted",

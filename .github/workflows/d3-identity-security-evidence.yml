@@ -67,7 +67,19 @@ jobs:
           assert state['production_authority'] == 'none'
           assert state['d4_transport_authority'] == 'not_selected_not_granted'
           tracks = {item['track_id']: item for item in state['tracks']}
-          assert tracks['D3-C']['state'] == 'candidate_selected_conformance_pending'
-          assert tracks['D3-E']['state'] == 'candidate_selected_conformance_pending'
-          print('d3_reference_evidence=PASS authority=unchanged conformance_claim=partial_only')
+
+          d3c = tracks['D3-C']
+          assert d3c['state'] == 'per_track_conformed'
+          assert set(d3c['evidence_completed']) == set(d3c['required_evidence'])
+          assert d3c['evidence_remaining'] == []
+          assert len(d3c['evidence_proofs']) == len(d3c['required_evidence'])
+
+          d3e = tracks['D3-E']
+          assert d3e['state'] == 'candidate_selected_conformance_pending'
+          assert d3e['evidence_remaining']
+
+          print(
+              'd3_reference_evidence=PASS authority=unchanged '
+              'd3_c=per_track_conformed d3_e=partial_only'
+          )
           PY

@@ -63,6 +63,27 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             validate(self._root(lambda m: m.__setitem__("schema_version", 1)))
 
+    def test_candidate_identity_drift_is_rejected(self):
+        def mutate(m):
+            track = next(t for t in m["tracks"] if t["track_id"] == "D3-A")
+            track["candidate"] = "keycloak_26_7_0"
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
+    def test_candidate_digest_drift_is_rejected(self):
+        def mutate(m):
+            track = next(t for t in m["tracks"] if t["track_id"] == "D3-A")
+            track["candidate_image_digest"] = "quay.io/keycloak/keycloak@sha256:deadbeef"
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
+    def test_portability_control_drift_is_rejected(self):
+        def mutate(m):
+            track = next(t for t in m["tracks"] if t["track_id"] == "D3-B")
+            track["portability_control"] = "redis_only"
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
     def test_missing_track_is_rejected(self):
         def mutate(m):
             m["tracks"] = [t for t in m["tracks"] if t["track_id"] != "D3-D"]
@@ -153,6 +174,12 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             validate(self._root(mutate))
 
+    def test_per_track_conformed_gate_rejects_pending_tracks(self):
+        def mutate(m):
+            m["gate_state"] = "per_track_conformed"
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
     def test_premature_acceptance_with_pending_track_is_rejected(self):
         def mutate(m):
             m["gate_state"] = "d3_acceptance_eligible"
@@ -173,6 +200,16 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             validate(self._root(mutate))
 
+    def test_per_track_conformed_gate_requires_exact_track_state(self):
+        def mutate(m):
+            m["gate_state"] = "per_track_conformed"
+            complete_all_evidence(m)
+            for track in m["tracks"]:
+                track["state"] = "per_track_conformed"
+            m["tracks"][0]["state"] = "accepted_candidate"
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
     def test_acceptance_eligible_requires_terminal_tracks_and_completed_evidence(self):
         def mutate(m):
             m["gate_state"] = "d3_acceptance_eligible"
@@ -180,6 +217,15 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
             for track in m["tracks"]:
                 track["state"] = "per_track_conformed"
         validate(self._root(mutate))
+
+    def test_separate_acceptance_requires_accepted_candidate_track_state(self):
+        def mutate(m):
+            m["gate_state"] = "separately_accepted"
+            complete_all_evidence(m)
+            for track in m["tracks"]:
+                track["state"] = "per_track_conformed"
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
 
     def test_separately_accepted_requires_terminal_tracks_and_completed_evidence(self):
         def mutate(m):

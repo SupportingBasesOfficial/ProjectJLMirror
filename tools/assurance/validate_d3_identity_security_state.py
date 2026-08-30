@@ -21,6 +21,19 @@ EXPECTED_TRACKS = {
     "D3-D": ("workload_identity_issuer_attestation", True),
     "D3-E": ("cryptographic_replay_historical_verifier_authority", True),
 }
+EXPECTED_CANDIDATE_FIELDS = {
+    "D3-A": {
+        "candidate": "keycloak_26_7_2",
+        "candidate_image_digest": "quay.io/keycloak/keycloak@sha256:831330513f55695572286e521f94fcd3c7e285250ed5b848090265a33192f669",
+    },
+    "D3-B": {
+        "candidate": "postgresql_18_6_session_sor_plus_redis_compatible_security_cache",
+        "portability_control": "valkey_9_1",
+    },
+    "D3-C": {"candidate": "hmac_sha256_double_submit_versioned_keyring"},
+    "D3-D": {"candidate": "spire_1_15_2"},
+    "D3-E": {"candidate": "openbao_2_6_2_transit_behind_provider_neutral_key_authority_port"},
+}
 REQUIRED_SOURCE_ANCHORS = {
     "D3-A": {"IR-D-001-keycloak-idp", "IR-D-001"},
     "D3-B": {"OPEN-REL-031.A", "OPEN-REL-015", "OPEN-REL-008.A"},
@@ -115,7 +128,11 @@ ALLOWED_GATE_STATES = {
     "d3_acceptance_eligible",
     "separately_accepted",
 }
-ACCEPTANCE_GATED_STATES = {"d3_acceptance_eligible", "separately_accepted"}
+EVIDENCE_COMPLETE_GATE_STATES = {
+    "per_track_conformed",
+    "d3_acceptance_eligible",
+    "separately_accepted",
+}
 TERMINAL_TRACK_STATES = {"per_track_conformed", "accepted_candidate"}
 
 
@@ -209,6 +226,12 @@ def validate(root: Path) -> None:
         if state not in ALLOWED_STATES:
             raise AssertionError(f"{track_id}: invalid state {state!r}")
 
+        for field, expected in EXPECTED_CANDIDATE_FIELDS[track_id].items():
+            if track.get(field) != expected:
+                raise AssertionError(
+                    f"{track_id}: candidate field {field} drifted; expected={expected!r} actual={track.get(field)!r}"
+                )
+
         sources = track.get("source_decisions")
         if not isinstance(sources, list) or not sources or not all(isinstance(x, str) and x for x in sources):
             raise AssertionError(f"{track_id}: source_decisions must be a non-empty string list")
@@ -295,7 +318,7 @@ def validate(root: Path) -> None:
         if required_c3 not in c3_open:
             raise AssertionError(f"D3 attempted to lose required C3 boundary: {required_c3}")
 
-    if gate_state in ACCEPTANCE_GATED_STATES:
+    if gate_state in EVIDENCE_COMPLETE_GATE_STATES:
         nonterminal = [
             track["track_id"]
             for track in tracks
@@ -304,6 +327,37 @@ def validate(root: Path) -> None:
         if nonterminal:
             raise AssertionError(
                 f"D3 gate cannot enter {gate_state!r} with nonterminal tracks: {nonterminal}"
+            )
+        incomplete = [
+            track["track_id"]
+            for track in tracks
+            if track.get("evidence_remaining")
+        ]
+        if incomplete:
+            raise AssertionError(
+                f"D3 gate cannot enter {gate_state!r} with incomplete evidence: {incomplete}"
+            )
+
+    if gate_state in {"per_track_conformed", "d3_acceptance_eligible"}:
+        wrong_state = [
+            track["track_id"]
+            for track in tracks
+            if track.get("state") != "per_track_conformed"
+        ]
+        if wrong_state:
+            raise AssertionError(
+                f"D3 gate {gate_state!r} requires every track state 'per_track_conformed': {wrong_state}"
+            )
+
+    if gate_state == "separately_accepted":
+        not_accepted = [
+            track["track_id"]
+            for track in tracks
+            if track.get("state") != "accepted_candidate"
+        ]
+        if not_accepted:
+            raise AssertionError(
+                f"D3 separate acceptance requires every track state 'accepted_candidate': {not_accepted}"
             )
 
 
@@ -316,6 +370,7 @@ def main(argv: list[str]) -> int:
         return 1
     print(
         "d3_identity_security_state=PASS tracks=5 evidence_ledger=complete_accounting "
+        "candidate_pins=locked gate_state_coherence=locked "
         "wave4=not_granted production=none d4=not_selected_not_granted"
     )
     return 0

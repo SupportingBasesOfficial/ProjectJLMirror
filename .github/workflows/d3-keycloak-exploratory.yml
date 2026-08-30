@@ -1,0 +1,102 @@
+name: JLMIRROR D3-A Keycloak Exploratory Evidence
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keycloak-backchannel:
+    name: Keycloak 26.7.0 back-channel logout
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      KEYCLOAK_IMAGE: quay.io/keycloak/keycloak:26.7.0
+      KEYCLOAK_ADMIN_USER: admin
+      KEYCLOAK_ADMIN_PASSWORD: d3-admin-password
+      KEYCLOAK_BASE_URL: http://127.0.0.1:8080
+    steps:
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
+
+      - name: Validate D3 machine-owned state
+        shell: bash
+        run: python3 tools/assurance/validate_d3_identity_security_state.py .
+
+      - name: Pull candidate and capture immutable repository digest
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull "$KEYCLOAK_IMAGE"
+          repo_digest="$(docker image inspect "$KEYCLOAK_IMAGE" --format '{{index .RepoDigests 0}}')"
+          image_id="$(docker image inspect "$KEYCLOAK_IMAGE" --format '{{.Id}}')"
+          test -n "$repo_digest"
+          test -n "$image_id"
+          printf 'keycloak_repo_digest=%s\nkeycloak_image_id=%s\n' "$repo_digest" "$image_id"
+          printf 'repo_digest=%s\n' "$repo_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Start isolated Keycloak candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --rm \
+            --name jlmirror-d3-keycloak \
+            --add-host=host.docker.internal:host-gateway \
+            -p 127.0.0.1:8080:8080 \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME="$KEYCLOAK_ADMIN_USER" \
+            -e KC_BOOTSTRAP_ADMIN_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD" \
+            "$KEYCLOAK_IMAGE" \
+            start-dev
+
+      - name: Exercise real back-channel logout token contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile implementation/d3-identity-security/harness/keycloak_backchannel_probe.py
+          python3 implementation/d3-identity-security/harness/keycloak_backchannel_probe.py
+
+      - name: Record exploratory evidence boundary
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n '${{ steps.image.outputs.repo_digest }}'
+          printf 'd3_keycloak_candidate=PASS_EXPLORATORY\n'
+          printf 'candidate_tag=%s\n' "$KEYCLOAK_IMAGE"
+          printf 'candidate_digest=%s\n' '${{ steps.image.outputs.repo_digest }}'
+          printf 'canonical_conformance=false reason=workflow_not_yet_digest_pinned\n'
+          printf 'wave4=not_granted production=none d4=not_selected_not_granted\n'
+
+      - name: Capture Keycloak logs on failure
+        if: failure()
+        shell: bash
+        run: docker logs jlmirror-d3-keycloak 2>&1 || true
+
+      - name: Retire exploratory candidate container
+        if: always()
+        shell: bash
+        run: docker rm -f jlmirror-d3-keycloak >/dev/null 2>&1 || true

@@ -73,6 +73,7 @@ HISTORY_MODULES=(
   007_history_dataset_revision_edge_hardening.sql
   008_history_visibility_correction_hardening.sql
   009_history_retained_finalized_watermark_hardening.sql
+  010_history_lock_order_hardening.sql
 )
 
 for file in \
@@ -90,6 +91,12 @@ admin_psql "$PG_CONTAINER" -f /tmp/003_tier1_recovery_authority.sql
 for file in "${HISTORY_MODULES[@]}"; do
   admin_psql "$PG_CONTAINER" -f "/tmp/$file"
 done
+
+# #51: provider-visible mutation, sweep and finalization now share one explicit
+# authority-row order (provider_authority -> stream_state). Exercise real
+# concurrent mutation-vs-finalize and mutation-vs-sweep races; either session
+# aborting on deadlock is a conformance failure.
+bash tools/open_rel_030/history_lock_order_concurrency.sh "$PG_CONTAINER"
 
 # Native physical PostgreSQL PITR to R, with F held by a separate surviving
 # authority. The end-to-end wrapper composes

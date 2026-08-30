@@ -24,7 +24,7 @@ Inline review threads        0 unresolved
 PR mergeable                 true
 ```
 
-The acceptance mutation changes HEAD. Therefore the accepted-state commit must independently pass deterministic assurance, OPEN-REL-030 conformance, Native Assurance and a fresh adversarial Codex review before merge-readiness may be asserted.
+The acceptance mutation changes HEAD. Therefore every accepted-state successor commit must independently pass deterministic assurance, OPEN-REL-030 conformance, Native Assurance and a fresh adversarial Codex review before merge-readiness may be asserted.
 
 ## Accepted Track B profile
 
@@ -62,7 +62,9 @@ The accepted C2 mechanism/profile is the coupled invariant set already proven by
 - only the mediated shared-history Timescale profile is accepted by Track B;
 - tenant/application principals have no direct shared raw/CAGG/internal-materialization authority;
 - `ts_automation_owner` remains privileged cross-tenant infrastructure;
-- fresh-cluster role reconstruction and post-restore/job attack matrices remain mandatory;
+- fresh-cluster role reconstruction remains mandatory;
+- the restored policy-job inventory must match the source evidence cardinality and cover both `shared_history` and `shared_hourly`;
+- every restored Timescale policy job must execute successfully before the post-job tenant/escalation attack matrix may pass;
 - timestamp/numeric canonicalization is total and injective over the evaluated domains;
 - target checkpoint mint authority is target-side; Tier 1 verifies but cannot mint;
 - verifier capability state remains restricted;
@@ -93,13 +95,24 @@ OPEN-REL-030 Conformance #215 — run 33285210993 — SUCCESS
 
 Class #52 makes current merge authorization a first-class governed manifest value. The extended runner asserts and derives its terminal `merge=...` field from that value; the workflow guard rejects the prior hard-coded terminal value.
 
+Timescale fresh-restore repair anchor for material class #53:
+
+```text
+d20e83780d1c370e96a5a960f27a6a959f7a320c
+Deterministic Assurance #2309 — run 33286313003 — SUCCESS
+OPEN-REL-030 Conformance #222 — run 33286312997 — SUCCESS
+```
+
+Class #53 requires enumeration and execution of every restored Timescale policy job, source↔restore cardinality agreement, target coverage of `shared_history` + `shared_hourly`, and execution of the post-job tenant/escalation matrix only after every restored job has completed successfully.
+
 ## Material findings
 
-All **52 material finding classes** remain closed/documented by the accepted package. The latest classes are:
+All **53 material finding classes** remain closed/documented by the accepted package. The latest classes are:
 
 - **#50:** NULL finalization cutoff — SQLSTATE `22004` rejection prevents three-valued logic from minting completeness.
 - **#51:** inconsistent history authority lock order — mutation, sweep and finalization now acquire `provider_authority → stream_state`; concurrent deadlock vectors are required.
 - **#52:** merge authorization output hard-coded instead of governed — `merge_authorization` is explicit machine-readable state and conformance derives/asserts the terminal value from it.
+- **#53:** fresh restore executed only one Timescale policy job — all restored jobs are now enumerated, cardinality/targets are checked, every job is executed, and only then may the post-job attack matrix pass.
 
 Classes #1–#49 remain enumerated in `DECISION_REVIEW.md` and are not superseded by acceptance.
 

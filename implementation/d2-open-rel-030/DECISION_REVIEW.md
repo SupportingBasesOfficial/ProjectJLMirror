@@ -24,7 +24,7 @@ Inline threads             0 unresolved
 PR mergeable               true
 ```
 
-The acceptance-state governance mutation creates a new HEAD and therefore must independently pass exact-head CI, Native Assurance and fresh Codex before merge-readiness can be asserted. That assurance requirement does not revoke the explicit decision authorization; it validates the exact recorded accepted state.
+The acceptance-state governance mutation and every accepted-state successor create a new HEAD and therefore must independently pass exact-head CI, Native Assurance and fresh Codex before merge-readiness can be asserted. That assurance requirement does not revoke the explicit decision authorization; it validates the exact recorded accepted state.
 
 ## Accepted mechanism/profile
 
@@ -57,17 +57,19 @@ Track B accepts the bounded C2 mechanism/profile only as the following coupled i
 25. Timescale Tier 2 is accepted only under the mediated shared-history profile proven by C2 evidence;
 26. `ts_automation_owner` remains privileged cross-tenant infrastructure, excluded from tenant/application authority;
 27. fresh-cluster role reconstruction and post-restore/job attack matrices remain mandatory;
-28. source relocation authority is locked before F and target completeness is canonical-set completeness;
-29. target checkpoint measurement/signing authority originates target-side; Tier 1 verifies but cannot mint;
-30. verifier credentials remain restricted capability state and absent from function source;
-31. effective cross-authority verifier transport has caller-local response deadlines and no synchronous timeout cleanup;
-32. real response blackholes are exercised in both relocation directions;
-33. Tier 1 successor placement and exact activation grant commit atomically;
-34. target `sealed → activated` requires that exact committed Tier 1 grant;
-35. pre-activation future rows are rejected; activated existing history is immutable and only new append `>F` is eligible;
-36. `OPEN-REL-020` remains owner of production capacity/SLO/retention/cardinality/cost numerics;
-37. evaluation database versions, image digests, evidence HMACs, LOGIN roles, external-to-PGDATA mounts, `dblink`, one-shot session retirement and laboratory deadline values remain reproducibility dependencies rather than frozen production selections;
-38. current merge authorization is explicit governed state; conformance derives/asserts it from the manifest and may not hard-code a current merge status.
+28. fresh-restored policy-job inventory must match source evidence cardinality and cover both `shared_history` and `shared_hourly`;
+29. every restored Timescale policy job must execute successfully before the post-job tenant/escalation matrix is evaluated;
+30. source relocation authority is locked before F and target completeness is canonical-set completeness;
+31. target checkpoint measurement/signing authority originates target-side; Tier 1 verifies but cannot mint;
+32. verifier credentials remain restricted capability state and absent from function source;
+33. effective cross-authority verifier transport has caller-local response deadlines and no synchronous timeout cleanup;
+34. real response blackholes are exercised in both relocation directions;
+35. Tier 1 successor placement and exact activation grant commit atomically;
+36. target `sealed → activated` requires that exact committed Tier 1 grant;
+37. pre-activation future rows are rejected; activated existing history is immutable and only new append `>F` is eligible;
+38. `OPEN-REL-020` remains owner of production capacity/SLO/retention/cardinality/cost numerics;
+39. evaluation database versions, image digests, evidence HMACs, LOGIN roles, external-to-PGDATA mounts, `dblink`, one-shot session retirement and laboratory deadline values remain reproducibility dependencies rather than frozen production selections;
+40. current merge authorization is explicit governed state; conformance derives/asserts it from the manifest and may not hard-code a current merge status.
 
 ## Empirical provenance
 
@@ -89,6 +91,16 @@ OPEN-REL-030 Conformance #215 / 33285210993 / SUCCESS
 merge_authorization_guard=true
 ```
 
+Class #53 Timescale fresh-restore repair anchor:
+
+```text
+d20e83780d1c370e96a5a960f27a6a959f7a320c
+Deterministic Assurance #2309 / 33286313003 / SUCCESS
+OPEN-REL-030 Conformance #222 / 33286312997 / SUCCESS
+restored_policy_jobs_executed=2
+restored_job_targets=shared_history,shared_hourly
+```
+
 The pre-acceptance authorization-basis HEAD remains:
 
 ```text
@@ -98,7 +110,7 @@ The pre-acceptance authorization-basis HEAD remains:
 
 ## Material finding classes closed by D2
 
-The accepted evidence program repaired **52 material classes**, each followed by panoramic review:
+The accepted evidence program repaired **53 material classes**, each followed by panoramic review:
 
 1. conflicting observation content under stable Tier 1 identity;
 2. caller-asserted source/poll authority;
@@ -151,7 +163,8 @@ The accepted evidence program repaired **52 material classes**, each followed by
 49. retained finalized watermark re-advertised after dataset invalidation using only shorter current coverage;
 50. NULL finalization cutoff exploiting SQL three-valued logic to mint completeness;
 51. inconsistent provider/history authority lock order allowing mutation-versus-finalization deadlock;
-52. conformance hard-coding merge authorization instead of deriving current merge state from governed authority.
+52. conformance hard-coding merge authorization instead of deriving current merge state from governed authority;
+53. fresh restore executing only one restored Timescale policy job while allowing the other restored job to remain unexercised.
 
 ## Class #52 closure
 
@@ -167,6 +180,23 @@ The repair on `0f0d72ca443ff2c87f44409e65f893c99b530aed`:
 - preserves Track B accepted, closure false, Wave 4 not granted and production authority none.
 
 Exact repair gates #2295/#215 are SUCCESS, and the Codex thread was resolved only after that evidence was recorded.
+
+## Class #53 closure
+
+Codex identified #53 on exact accepted-state SHA `01e4ba2c366d5d22a925d320403dce317dc81dd3` in thread `PRRT_kwDOT7x07M6dd_SA`.
+
+The repair on `d20e83780d1c370e96a5a960f27a6a959f7a320c`:
+
+- removes the single restored-job `LIMIT 1` execution path;
+- enumerates every restored `ts_evidence` policy job;
+- requires enumerated restore cardinality to match both restore inventory and source evidence cardinality;
+- requires restored job targets to cover exactly `shared_history` and `shared_hourly` in the bounded profile;
+- executes `public.run_job(...)` for every restored job ID;
+- emits per-job PASS markers and `timescale_fresh_restore_all_jobs_executed=PASS count=2`;
+- runs the full post-job tenant/escalation attack matrix only after all restored jobs have completed successfully;
+- preserves Track B accepted, closure false, Wave 4 not granted, production authority none and merge not granted.
+
+Exact repair gates #2309/#222 are SUCCESS. #222 proves both restored jobs execute, target/cardinality checks pass, the complete post-job attack matrix remains green, and the full history/PITR/clone/recovery/relocation regression package still ends `open_rel_030_extended_conformance=PASS`. The Codex thread was resolved only after that exact-head evidence was recorded.
 
 ## Meaning of acceptance
 
@@ -187,7 +217,7 @@ It **does not**:
 Evidence completeness        COMPLETE
 Track B decision             ACCEPTED
 Track B authorization        GRANTED
-Material finding classes     52
+Material finding classes     53
 History hardening modules    7 (004–010)
 Closure claim                FALSE / NOT AUTHORIZED
 Wave 4 implementation        NOT AUTHORIZED

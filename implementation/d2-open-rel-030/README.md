@@ -15,7 +15,7 @@ Wave 4 authorization        not_granted
 Production authority        none
 Production versions         not selected
 Production capacity         OPEN-REL-020
-Material finding classes    52
+Material finding classes    53
 History hardening modules   7 (004–010)
 Merge authorization         not_granted
 ```
@@ -34,7 +34,7 @@ Inline review threads — 0 unresolved
 PR mergeable — true
 ```
 
-Because recording acceptance changes the Git HEAD, the accepted-state HEAD must itself pass exact-head CI + Native + fresh Codex assurance before merge-readiness can be asserted.
+Because recording acceptance changes the Git HEAD, every accepted-state successor HEAD must itself pass exact-head CI + Native + fresh Codex assurance before merge-readiness can be asserted.
 
 ## Empirical anchors
 
@@ -56,6 +56,16 @@ OPEN-REL-030 Conformance #215 — SUCCESS — run 33285210993
 
 #52 makes `merge_authorization` explicit governed state. The extended runner derives the terminal `merge=...` output from the manifest, and the workflow guard rejects hard-coded merge authorization output.
 
+Timescale fresh-restore repair anchor for material class #53:
+
+```text
+d20e83780d1c370e96a5a960f27a6a959f7a320c
+Deterministic Assurance #2309 — SUCCESS — run 33286313003
+OPEN-REL-030 Conformance #222 — SUCCESS — run 33286312997
+```
+
+#53 requires source↔restore policy-job cardinality agreement, coverage of both expected restored job targets, execution of every restored policy job, and only then the full post-job tenant/escalation attack matrix.
+
 ## Accepted evidence architecture
 
 ### Tier 1 / history
@@ -68,7 +78,7 @@ Recovery authority remains external to restored database state, effect-bound, ac
 
 ### Timescale / Tier 2
 
-The accepted Track B profile is the mediated shared-history Timescale candidate. Tenant/application principals do not directly access shared raw history, CAGGs or internal materialization. Privileged automation remains a separate cross-tenant trust boundary. Fresh-cluster restore and tenant/escalation/job matrices remain mandatory evidence.
+The accepted Track B profile is the mediated shared-history Timescale candidate. Tenant/application principals do not directly access shared raw history, CAGGs or internal materialization. Privileged automation remains a separate cross-tenant trust boundary. Fresh-cluster restore remains mandatory evidence. Its restored policy-job inventory must match the source evidence cardinality and cover `shared_history` plus `shared_hourly`; every restored policy job must execute successfully before the post-job tenant/escalation attack matrix is evaluated.
 
 ### Relocation
 
@@ -80,17 +90,18 @@ Decision, acceptance, closure, Wave 4, production authority and merge authorizat
 
 ## Material findings
 
-All **52 material finding classes** remain closed/documented. `DECISION_REVIEW.md` is the normative enumeration. The latest four are:
+All **53 material finding classes** remain closed/documented. `DECISION_REVIEW.md` is the normative enumeration. The latest five are:
 
 - **#49:** retained finalized watermark requires current-revision revalidation through the retained historical bound;
 - **#50:** NULL finalization cutoff is rejected with SQLSTATE `22004`;
 - **#51:** mutation/sweep/finalization use one canonical `provider_authority → stream_state` lock order with concurrent deadlock falsification;
-- **#52:** merge authorization can no longer be hard-coded by conformance; `merge_authorization=not_granted` is explicit governed state and terminal output is manifest-derived.
+- **#52:** merge authorization can no longer be hard-coded by conformance; `merge_authorization=not_granted` is explicit governed state and terminal output is manifest-derived;
+- **#53:** fresh restore can no longer validate only one Timescale policy job; all restored jobs are enumerated and executed before post-job security validation.
 
 ## Files
 
 - `STATE.md` — accepted decision state and authorization boundaries.
-- `DECISION_REVIEW.md` — normative acceptance record and all 52 material findings.
+- `DECISION_REVIEW.md` — normative acceptance record and all 53 material findings.
 - `EVIDENCE_MANIFEST.json` — machine-readable accepted state, evidence and authorization basis.
 - `sql/d2-open-rel-030/*` — executable Tier 1/history/Timescale evidence mechanisms.
 - `tools/open_rel_030/*` — orchestration, recovery, clone, restore, relocation, concurrency and governed-state conformance harnesses.

@@ -109,6 +109,25 @@ jobs:
           assert repair['terminal_state_is_manifest_derived'] is True
           assert repair['hard_coded_merge_authorization_terminal_value_allowed'] is False
 
+          restore_repair = manifest['timescale_restore_job_repair_basis']
+          assert restore_repair['material_class'] == 53
+          assert restore_repair['title'] == 'run every restored Timescale policy job'
+          assert restore_repair['codex_reviewed_pre_repair_sha'] == '01e4ba2c366d5d22a925d320403dce317dc81dd3'
+          assert restore_repair['codex_thread'] == 'PRRT_kwDOT7x07M6dd_SA'
+          assert restore_repair['codex_top_comment_database_id'] == 3888184776
+          assert restore_repair['exact_repair_head_before_promotion'] == 'd20e83780d1c370e96a5a960f27a6a959f7a320c'
+          assert restore_repair['deterministic_assurance_run_number'] == 2309
+          assert restore_repair['deterministic_assurance_run_id'] == 33286313003
+          assert restore_repair['open_rel_030_conformance_run_number'] == 222
+          assert restore_repair['open_rel_030_conformance_run_id'] == 33286312997
+          assert restore_repair['result'] == 'success'
+          assert restore_repair['source_policy_jobs_executed'] == 2
+          assert restore_repair['restored_policy_jobs_executed'] == 2
+          assert restore_repair['restored_job_cardinality_matches_source'] is True
+          assert restore_repair['restored_job_targets'] == ['shared_history', 'shared_hourly']
+          assert restore_repair['all_restored_policy_jobs_executed_before_post_job_attack_matrix'] is True
+          assert restore_repair['post_restore_job_tenant_escalation_matrix_preserved'] is True
+
           boundary = manifest['acceptance_boundary']
           assert boundary['track_b_acceptance_requires_explicit_authorization'] is True
           assert boundary['track_b_acceptance_explicit_authorization_recorded'] is True
@@ -122,12 +141,12 @@ jobs:
           assert boundary['ready_for_merge_is_authorized_to_merge'] is False
 
           provenance = manifest['review_provenance']
-          assert provenance['material_finding_classes_documented_in_decision_review'] == 52
-          assert provenance['material_finding_classes_closed_by_current_mechanism'] == 52
-          assert provenance['latest_material_class'] == 52
-          assert provenance['latest_material_class_title'] == 'merge authorization output derived from governed state'
-          assert provenance['latest_codex_reviewed_pre_repair_sha'] == 'b09979d96f9461e024fc717a67a8944c2e34f8b2'
-          assert provenance['latest_codex_thread'] == 'PRRT_kwDOT7x07M6dd3bh'
+          assert provenance['material_finding_classes_documented_in_decision_review'] == 53
+          assert provenance['material_finding_classes_closed_by_current_mechanism'] == 53
+          assert provenance['latest_material_class'] == 53
+          assert provenance['latest_material_class_title'] == 'run every restored Timescale policy job'
+          assert provenance['latest_codex_reviewed_pre_repair_sha'] == '01e4ba2c366d5d22a925d320403dce317dc81dd3'
+          assert provenance['latest_codex_thread'] == 'PRRT_kwDOT7x07M6dd_SA'
           assert provenance['latest_codex_thread_resolved_after_exact_head_evidence'] is True
 
           basis = manifest['classification_basis']
@@ -218,6 +237,28 @@ jobs:
           assert "f\"merge={manifest['merge_authorization']}\"" in runner
           assert 'merge=not_authorized' not in runner
           assert 'Track B acceptance still required' not in runner
+
+          # #53: every restored Timescale policy job must be enumerated and executed.
+          tier2_restore = manifest['tier2_restore_job_evidence']
+          assert tier2_restore['source_policy_jobs_minimum'] == 2
+          assert tier2_restore['restored_job_inventory_matches_source_cardinality'] is True
+          assert tier2_restore['restored_job_targets'] == ['shared_history', 'shared_hourly']
+          assert tier2_restore['all_restored_policy_jobs_executed'] is True
+          assert tier2_restore['post_job_attack_matrix_runs_after_all_restored_jobs'] is True
+          timescale_restore = Path('tools/open_rel_030/timescale_jobs_restore.sh').read_text()
+          for marker in [
+              'mapfile -t restored_job_ids',
+              'enumerated restored job count disagrees with restore inventory',
+              'restored policy-job cardinality differs from source evidence',
+              'timescale_fresh_restore_job_target_coverage',
+              'for restored_job_id in "${restored_job_ids[@]}"; do',
+              'CALL public.run_job($restored_job_id);',
+              'timescale_fresh_restore_run_job_${restored_job_id}=PASS',
+              'timescale_fresh_restore_all_jobs_executed=PASS',
+              'attack_profile "$restore_container" "$restore_db" "timescale_fresh_post_restore_job"',
+          ]:
+              assert marker in timescale_restore
+          assert 'ORDER BY job_id LIMIT 1' not in timescale_restore
 
           recovery = manifest['recovery_evidence']
           required_recovery_true = [
@@ -317,8 +358,9 @@ jobs:
               'acceptance=granted '
               'closure=false '
               'merge=not_granted '
-              'material_findings=52 '
+              'material_findings=53 '
               'merge_authorization_guard=true '
+              'timescale_restore_all_jobs_guard=true '
               'history_lock_order_guard=true '
               'null_finalize_guard=true '
               'retained_finalized_watermark_guard=true '

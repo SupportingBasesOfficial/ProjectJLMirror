@@ -52,6 +52,28 @@
     "terminal_state_is_manifest_derived": true,
     "hard_coded_merge_authorization_terminal_value_allowed": false
   },
+  "timescale_restore_job_repair_basis": {
+    "material_class": 53,
+    "title": "run every restored Timescale policy job",
+    "codex_reviewed_pre_repair_sha": "01e4ba2c366d5d22a925d320403dce317dc81dd3",
+    "codex_thread": "PRRT_kwDOT7x07M6dd_SA",
+    "codex_top_comment_database_id": 3888184776,
+    "exact_repair_head_before_promotion": "d20e83780d1c370e96a5a960f27a6a959f7a320c",
+    "deterministic_assurance_run_number": 2309,
+    "deterministic_assurance_run_id": 33286313003,
+    "open_rel_030_conformance_run_number": 222,
+    "open_rel_030_conformance_run_id": 33286312997,
+    "result": "success",
+    "source_policy_jobs_executed": 2,
+    "restored_policy_jobs_executed": 2,
+    "restored_job_cardinality_matches_source": true,
+    "restored_job_targets": [
+      "shared_history",
+      "shared_hourly"
+    ],
+    "all_restored_policy_jobs_executed_before_post_job_attack_matrix": true,
+    "post_restore_job_tenant_escalation_matrix_preserved": true
+  },
   "acceptance_authorization_basis": {
     "authorized_from_exact_head": "622c094c9274a778d1c21c5976dd3b2ca7b4cedf",
     "deterministic_assurance_run_number": 2273,
@@ -69,12 +91,12 @@
     "post_acceptance_exact_head_assurance_required": true
   },
   "review_provenance": {
-    "material_finding_classes_documented_in_decision_review": 52,
-    "material_finding_classes_closed_by_current_mechanism": 52,
-    "latest_material_class": 52,
-    "latest_material_class_title": "merge authorization output derived from governed state",
-    "latest_codex_reviewed_pre_repair_sha": "b09979d96f9461e024fc717a67a8944c2e34f8b2",
-    "latest_codex_thread": "PRRT_kwDOT7x07M6dd3bh",
+    "material_finding_classes_documented_in_decision_review": 53,
+    "material_finding_classes_closed_by_current_mechanism": 53,
+    "latest_material_class": 53,
+    "latest_material_class_title": "run every restored Timescale policy job",
+    "latest_codex_reviewed_pre_repair_sha": "01e4ba2c366d5d22a925d320403dce317dc81dd3",
+    "latest_codex_thread": "PRRT_kwDOT7x07M6dd_SA",
     "latest_codex_thread_resolved_after_exact_head_evidence": true
   },
   "completed_mandatory_vectors": [
@@ -181,6 +203,16 @@
     "target_activation_requires_exact_committed_tier1_grant": true,
     "pre_activation_target_rows_above_f_allowed": false,
     "activated_existing_history_mutable": false
+  },
+  "tier2_restore_job_evidence": {
+    "source_policy_jobs_minimum": 2,
+    "restored_job_inventory_matches_source_cardinality": true,
+    "restored_job_targets": [
+      "shared_history",
+      "shared_hourly"
+    ],
+    "all_restored_policy_jobs_executed": true,
+    "post_job_attack_matrix_runs_after_all_restored_jobs": true
   },
   "tier2_profile_classification": {
     "mediated_shared_history_columnstore_cagg": "accepted_track_b_c2_profile",

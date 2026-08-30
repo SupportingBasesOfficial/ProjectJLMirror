@@ -8,7 +8,7 @@
     {"path": "docs/13-platform-runtime/09-runtime-semantic-manifest.md", "git_blob_sha": "a0b2aaa950bab2a71f54f8df37a855b6ed34ad8b"},
     {"path": "docs/14-deployment-release-supply-chain/11-release-semantic-manifest.md", "git_blob_sha": "5bb4f7e50ab7eaa7d9162cd9e2f633a10c4d17ff"},
     {"path": "docs/15-operations-recovery-incident-readiness/11-operations-semantic-manifest.md", "git_blob_sha": "ed8ab1e370f8dff95ab3bfdf36b90694a8489c0b"},
-    {"path": "docs/16-implementation-readiness/15-implementation-slice-readiness-manifest.md", "git_blob_sha": "fc810728322d928ce9a5f71243101a390384189a"}
+    {"path": "docs/16-implementation-readiness/15-implementation-slice-readiness-manifest.md", "git_blob_sha": "3f5f72e1b616ebac623e6f2f54d47cac79a93fe5"}
   ],
   "http_manifest_source": {
     "path": "docs/09-api-contracts/contract-governance-openapi-and-testing.md",

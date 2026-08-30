@@ -62,6 +62,48 @@ class D3CryptoReferenceTests(unittest.TestCase):
         rotated = CsrfKeyRing(authority=self.authority(), current=3, previous=2)
         self.assertFalse(rotated.verify(token=old_token, session_lineage_id="lineage-A"))
 
+    def test_csrf_retired_generation_rejection_never_queries_historical_key(self):
+        old_authority = ReferenceKeyAuthority(
+            [ReferenceKeyVersion(1, key(1), signing_enabled=True, verification_enabled=True)]
+        )
+        old_token = CsrfKeyRing(authority=old_authority, current=1, previous=None).issue(
+            session_lineage_id="lineage-A"
+        )
+        delegate = self.authority()
+
+        class HistoricalLookupSentinel:
+            def can_sign(self, *, key_version: int) -> bool:
+                return delegate.can_sign(key_version=key_version)
+
+            def can_verify(self, *, key_version: int) -> bool:
+                return delegate.can_verify(key_version=key_version)
+
+            def hmac_sha256(self, *, key_version: int, context: bytes, message: bytes) -> bytes:
+                if key_version == 1:
+                    raise AssertionError("retired historical generation was queried")
+                return delegate.hmac_sha256(
+                    key_version=key_version,
+                    context=context,
+                    message=message,
+                )
+
+        rotated = CsrfKeyRing(authority=HistoricalLookupSentinel(), current=3, previous=2)
+        self.assertFalse(rotated.verify(token=old_token, session_lineage_id="lineage-A"))
+
+    def test_csrf_uncertain_generation_authority_fails_closed_before_issuance(self):
+        class UncertainGenerationAuthority:
+            def can_sign(self, *, key_version: int) -> bool:
+                raise RuntimeError("key-generation authority unavailable")
+
+            def can_verify(self, *, key_version: int) -> bool:
+                raise RuntimeError("key-generation authority unavailable")
+
+            def hmac_sha256(self, *, key_version: int, context: bytes, message: bytes) -> bytes:
+                raise AssertionError("cryptographic operation must not run under uncertain generation")
+
+        with self.assertRaises(RuntimeError):
+            CsrfKeyRing(authority=UncertainGenerationAuthority(), current=3, previous=2)
+
     def test_csrf_malformed_or_noncanonical_token_fails_closed(self):
         ring = CsrfKeyRing(authority=self.authority(), current=3, previous=2)
         for token in ("", "v3", "v03.abc", "v3.abc=", "v3.!!!!", "v99.AAAA"):

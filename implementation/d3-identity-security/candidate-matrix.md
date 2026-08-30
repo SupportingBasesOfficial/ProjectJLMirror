@@ -20,18 +20,20 @@ Popularity is supporting evidence, never architectural authority.
 
 ## D3-A — human IdP
 
-**Primary evidence candidate:** Keycloak `26.7.0`.
+**Primary evidence candidate:** Keycloak `26.7.2`.
 
 Rationale:
 
 - existing `IR-D-001-keycloak-idp-decision-record.md` already selects Keycloak as the candidate human IdP;
-- Keycloak 26.7.0 was released 2026-07-09 and remains actively security-maintained;
+- Keycloak 26.7.2 was released 2026-08-19 and supersedes 26.7.0/26.7.1 with current security fixes, so D3 security evidence must target the current maintained patch rather than carry forward evidence from a superseded patch;
 - current Keycloak documentation/release history supports OIDC Back-Channel Logout; the D3 harness must prove the exact JLMirror profile rather than trust feature presence;
-- Keycloak remains behind the JLMirror OIDC/BFF boundary; realm/group/organization objects are forbidden from becoming JLMirror authorization truth.
+- Keycloak remains behind the JLMirror OIDC/BFF boundary; realm/group/organization objects are forbidden from becoming JLMirror authorization truth;
+- prior 26.7.0 exploratory evidence is historical only and is not credited to the 26.7.2 candidate until the digest-pinned exact-HEAD harness passes.
 
 External evidence references:
 
-- https://www.keycloak.org/2026/07/keycloak-2670-released
+- https://www.keycloak.org/2026/08/keycloak-2672-released
+- https://www.keycloak.org/downloads
 - https://www.keycloak.org/docs/latest/release_notes/
 
 ## D3-B — session durable authority + security acceleration cache

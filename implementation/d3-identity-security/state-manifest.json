@@ -14,9 +14,9 @@
       "track_id": "D3-A",
       "name": "human_idp",
       "source_decisions": ["IR-D-001-keycloak-idp", "IR-D-001"],
-      "candidate": "keycloak_26_7_0",
-      "candidate_image_digest": "quay.io/keycloak/keycloak@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13",
-      "evidence_completed": ["real_backchannel_logout_exploratory_tag_resolved_to_digest"],
+      "candidate": "keycloak_26_7_2",
+      "candidate_image_digest": "quay.io/keycloak/keycloak@sha256:831330513f55695572286e521f94fcd3c7e285250ed5b848090265a33192f669",
+      "evidence_completed": [],
       "evidence_remaining": ["digest_pinned_backchannel_replay", "idp_outage_currentness_join", "idp_native_roles_groups_non_authority_join"],
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true

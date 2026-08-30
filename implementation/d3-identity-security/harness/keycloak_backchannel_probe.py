@@ -209,7 +209,11 @@ def configure_and_capture() -> str:
     user = {
         "username": USER,
         "enabled": True,
+        "firstName": "D3",
+        "lastName": "Evidence",
+        "email": "d3-evidence@example.invalid",
         "emailVerified": True,
+        "requiredActions": [],
         "credentials": [{"type": "password", "value": PASSWORD, "temporary": False}],
     }
     request("POST", f"{BASE}/admin/realms/{REALM}/users", token=token, body=user)

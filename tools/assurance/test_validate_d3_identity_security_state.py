@@ -26,6 +26,8 @@ def synthetic_proof(track: dict, evidence_id: str, ordinal: int) -> dict:
         artifact_pins = [track["candidate_image_digest"]]
     elif track["track_id"] == "D3-B":
         artifact_pins = list(track["candidate_artifact_digests"].values())
+    elif track["track_id"] == "D3-D":
+        artifact_pins = [track["candidate_artifact_digest"]]
     return {
         "evidence_id": evidence_id,
         "evidence_sha": f"{ordinal:040x}",
@@ -136,6 +138,15 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
             track = next(t for t in m["tracks"] if t["track_id"] == "D3-B")
             track["candidate_artifact_digests"]["redis_compatible_primary"] = (
                 "redis@sha256:" + "0" * 64
+            )
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
+    def test_d3d_candidate_artifact_digest_drift_is_rejected(self):
+        def mutate(m):
+            track = next(t for t in m["tracks"] if t["track_id"] == "D3-D")
+            track["candidate_artifact_digest"] = (
+                "spire-1.15.3-linux-amd64-musl.tar.gz@sha256:" + "0" * 64
             )
         with self.assertRaises(AssertionError):
             validate(self._root(mutate))

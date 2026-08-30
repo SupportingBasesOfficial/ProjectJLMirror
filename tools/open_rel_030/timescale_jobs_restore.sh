@@ -326,13 +326,34 @@ assert_exact "timescale_fresh_restore_function_owner" "ts_owner" "$function_owne
 
 attack_profile "$restore_container" "$restore_db" "timescale_fresh_post_restore"
 
-restored_job="$(admin_psql "$restore_container" "$restore_db" "
+mapfile -t restored_job_ids < <(admin_psql "$restore_container" "$restore_db" "
   SELECT job_id FROM timescaledb_information.jobs
   WHERE hypertable_schema='ts_evidence'
     AND hypertable_name IN ('shared_history','shared_hourly')
-  ORDER BY job_id LIMIT 1;
+  ORDER BY job_id;
+")
+if [[ ${#restored_job_ids[@]} -ne "$restore_jobs" ]]; then
+  echo "enumerated restored job count disagrees with restore inventory: enumerated=${#restored_job_ids[@]} inventory=$restore_jobs" >&2
+  exit 1
+fi
+if [[ ${#restored_job_ids[@]} -ne ${#job_ids[@]} ]]; then
+  echo "restored policy-job cardinality differs from source evidence: source=${#job_ids[@]} restored=${#restored_job_ids[@]}" >&2
+  exit 1
+fi
+restored_job_targets="$(admin_psql "$restore_container" "$restore_db" "
+  SELECT string_agg(DISTINCT hypertable_name, ',' ORDER BY hypertable_name)
+  FROM timescaledb_information.jobs
+  WHERE hypertable_schema='ts_evidence'
+    AND hypertable_name IN ('shared_history','shared_hourly');
 ")"
-admin_psql "$restore_container" "$restore_db" "CALL public.run_job($restored_job);" >/dev/null
+assert_exact "timescale_fresh_restore_job_target_coverage" "shared_history,shared_hourly" "$restored_job_targets"
+for restored_job_id in "${restored_job_ids[@]}"; do
+  echo "timescale_fresh_restore_run_job job_id=$restored_job_id"
+  admin_psql "$restore_container" "$restore_db" "CALL public.run_job($restored_job_id);" >/dev/null
+  echo "timescale_fresh_restore_run_job_${restored_job_id}=PASS"
+done
+printf 'timescale_fresh_restore_all_jobs_executed=PASS count=%s\n' "${#restored_job_ids[@]}"
+
 attack_profile "$restore_container" "$restore_db" "timescale_fresh_post_restore_job"
 
 printf 'timescale_fresh_cluster_jobs_restore=PASS source_rows=%s restored_rows=%s\n' \

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,6 +20,10 @@ class PostD2Wave4StateGuardTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
+        self._git("init", "-q")
+        self._git("config", "user.email", "assurance@example.invalid")
+        self._git("config", "user.name", "JLMIRROR Assurance")
+
         for path in FILES.values():
             (self.root / path).parent.mkdir(parents=True, exist_ok=True)
 
@@ -62,14 +68,35 @@ class PostD2Wave4StateGuardTest(unittest.TestCase):
             "every other concrete provider/effectful subprofile remains `deferred_product_gated`",
             encoding="utf-8",
         )
+        self._commit_all("baseline")
         self.baseline = compute_surface_blobs(self.root)
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
+    def _git(self, *args: str) -> str:
+        result = subprocess.run(
+            ["git", "-C", str(self.root), *args],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        return result.stdout
+
+    def _commit_all(self, message: str) -> None:
+        self._git("add", "-A")
+        self._git("commit", "-q", "--allow-empty", "-m", message)
+
     def _append(self, key: str, line: str) -> None:
         path = self.root / FILES[key]
         path.write_text(path.read_text(encoding="utf-8") + f"\n{line}", encoding="utf-8")
+        self._commit_all(f"append-{key}")
+
+    def _replace(self, key: str, old: str, new: str) -> None:
+        path = self.root / FILES[key]
+        path.write_text(path.read_text(encoding="utf-8").replace(old, new), encoding="utf-8")
+        self._commit_all(f"replace-{key}")
 
     def _validate(self) -> None:
         validate(self.root, expected_surface_blobs=self.baseline)
@@ -88,6 +115,8 @@ class PostD2Wave4StateGuardTest(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     self._validate()
                 (self.root / FILES[key]).write_text(original, encoding="utf-8")
+                self._commit_all(f"restore-{key}")
+                self._validate()
 
     def test_rejects_invalid_governed_blob_oid(self) -> None:
         baseline = dict(self.baseline)
@@ -108,53 +137,61 @@ class PostD2Wave4StateGuardTest(unittest.TestCase):
         self._rebaseline()
         self._validate()
 
-    def test_rejects_structured_wave4_grant_even_after_rebaseline(self) -> None:
+    def test_worktree_crlf_does_not_change_evaluated_git_blob(self) -> None:
         path = self.root / FILES["transition"]
-        path.write_text(
-            path.read_text(encoding="utf-8").replace(
-                "wave4_implementation_authorization = not_granted",
-                "wave4_implementation_authorization = granted",
-            ),
-            encoding="utf-8",
+        canonical = path.read_text(encoding="utf-8")
+        path.write_bytes(canonical.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8"))
+        self._validate()
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlink support required")
+    def test_rejects_tracked_symlink_even_if_oid_is_rebaselined(self) -> None:
+        relative = FILES["sequencing"]
+        path = self.root / relative
+        copy_path = self.root / "baseline-sequencing-copy.md"
+        copy_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+        path.unlink()
+        os.symlink("../../baseline-sequencing-copy.md", path)
+        self._commit_all("replace-governed-surface-with-symlink")
+
+        entry = self._git("ls-tree", "HEAD", "--", relative.as_posix()).strip()
+        metadata = entry.partition("\t")[0].split()
+        self.assertEqual(metadata[0], "120000")
+        baseline = dict(self.baseline)
+        baseline["sequencing"] = metadata[2]
+        with self.assertRaises(AssertionError):
+            validate(self.root, expected_surface_blobs=baseline)
+
+    def test_rejects_structured_wave4_grant_even_after_rebaseline(self) -> None:
+        self._replace(
+            "transition",
+            "wave4_implementation_authorization = not_granted",
+            "wave4_implementation_authorization = granted",
         )
         self._rebaseline()
         with self.assertRaises(AssertionError):
             self._validate()
 
     def test_rejects_structured_production_grant_even_after_rebaseline(self) -> None:
-        path = self.root / FILES["transition"]
-        path.write_text(
-            path.read_text(encoding="utf-8").replace(
-                "production_authority = none",
-                "production_authority = granted",
-            ),
-            encoding="utf-8",
-        )
+        self._replace("transition", "production_authority = none", "production_authority = granted")
         self._rebaseline()
         with self.assertRaises(AssertionError):
             self._validate()
 
     def test_rejects_structured_open_rel_020_closure_even_after_rebaseline(self) -> None:
-        path = self.root / FILES["transition"]
-        path.write_text(
-            path.read_text(encoding="utf-8").replace(
-                "open_rel_020_production_state = open_c3",
-                "open_rel_020_production_state = closed",
-            ),
-            encoding="utf-8",
+        self._replace(
+            "transition",
+            "open_rel_020_production_state = open_c3",
+            "open_rel_020_production_state = closed",
         )
         self._rebaseline()
         with self.assertRaises(AssertionError):
             self._validate()
 
     def test_rejects_duplicate_structured_authority_key_even_after_rebaseline(self) -> None:
-        path = self.root / FILES["transition"]
-        path.write_text(
-            path.read_text(encoding="utf-8").replace(
-                "production_authority = none\n",
-                "production_authority = none\nproduction_authority = none\n",
-            ),
-            encoding="utf-8",
+        self._replace(
+            "transition",
+            "production_authority = none\n",
+            "production_authority = none\nproduction_authority = none\n",
         )
         self._rebaseline()
         with self.assertRaises(AssertionError):
@@ -178,6 +215,33 @@ class PostD2Wave4StateGuardTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self._validate()
 
+    def test_rejects_second_wave4_assignment_after_safe_predecessor(self) -> None:
+        self._append(
+            "open_register",
+            "wave4_implementation_authorization = not_granted; wave4_implementation_authorization = granted",
+        )
+        self._rebaseline()
+        with self.assertRaises(AssertionError):
+            self._validate()
+
+    def test_rejects_second_production_assignment_after_safe_predecessor(self) -> None:
+        self._append(
+            "blockers",
+            "production_authority = none; production_authority = granted",
+        )
+        self._rebaseline()
+        with self.assertRaises(AssertionError):
+            self._validate()
+
+    def test_rejects_second_open_rel_assignment_after_safe_predecessor(self) -> None:
+        self._append(
+            "open_register",
+            "open_rel_020_production_state = open_c3; open_rel_020_production_state = closed",
+        )
+        self._rebaseline()
+        with self.assertRaises(AssertionError):
+            self._validate()
+
     def test_rejects_stale_customer_telemetry_blocker_even_after_rebaseline(self) -> None:
         self._append(
             "blockers",
@@ -187,8 +251,8 @@ class PostD2Wave4StateGuardTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self._validate()
 
-    # Exact fresh Codex vectors on predecessor 38d4a4f6. These no longer depend on
-    # language recognition: any unreviewed prose mutation changes the governed blob.
+    # Exact Codex vectors on predecessor 38d4a4f6. These no longer depend on
+    # language recognition: any committed prose mutation changes the governed blob.
     def test_rejects_future_modifier_hiding_present_closure(self) -> None:
         self._append(
             "open_register",

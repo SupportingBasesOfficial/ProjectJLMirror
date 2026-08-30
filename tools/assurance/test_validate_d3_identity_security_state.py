@@ -49,6 +49,10 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             validate(self._root(lambda m: m.__setitem__("d4_transport_authority", "kafka_selected")))
 
+    def test_invalid_gate_state_is_rejected(self):
+        with self.assertRaises(AssertionError):
+            validate(self._root(lambda m: m.__setitem__("gate_state", "accepted")))
+
     def test_missing_track_is_rejected(self):
         def mutate(m):
             m["tracks"] = [t for t in m["tracks"] if t["track_id"] != "D3-D"]
@@ -76,6 +80,27 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
     def test_d3e_crypto_only_evt_011_join_is_allowed(self):
         validate(self._root())
 
+    def test_missing_required_source_anchor_is_rejected(self):
+        def mutate(m):
+            d3b = next(t for t in m["tracks"] if t["track_id"] == "D3-B")
+            d3b["source_decisions"] = ["OPEN-REL-015", "OPEN-REL-008.A:security-session-profile-only"]
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
+    def test_unrelated_source_anchor_is_rejected(self):
+        def mutate(m):
+            d3c = next(t for t in m["tracks"] if t["track_id"] == "D3-C")
+            d3c["source_decisions"] = ["OPEN-API-002", "UNRELATED-DECISION"]
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
+    def test_duplicate_source_anchor_is_rejected(self):
+        def mutate(m):
+            d3e = next(t for t in m["tracks"] if t["track_id"] == "D3-E")
+            d3e["source_decisions"].append("OPEN-EVT-011:duplicate")
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
     def test_missing_c3_boundary_is_rejected(self):
         def mutate(m):
             m["c3_remains_open"].remove("OPEN-REL-031.B")
@@ -88,11 +113,24 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             validate(self._root(mutate))
 
+    def test_separately_accepted_with_pending_track_is_rejected(self):
+        def mutate(m):
+            m["gate_state"] = "separately_accepted"
+        with self.assertRaises(AssertionError):
+            validate(self._root(mutate))
+
     def test_acceptance_eligible_requires_all_tracks_terminal(self):
         def mutate(m):
             m["gate_state"] = "d3_acceptance_eligible"
             for track in m["tracks"]:
                 track["state"] = "per_track_conformed"
+        validate(self._root(mutate))
+
+    def test_separately_accepted_requires_all_tracks_terminal(self):
+        def mutate(m):
+            m["gate_state"] = "separately_accepted"
+            for track in m["tracks"]:
+                track["state"] = "accepted_candidate"
         validate(self._root(mutate))
 
     def test_required_exclusion_cannot_disappear(self):

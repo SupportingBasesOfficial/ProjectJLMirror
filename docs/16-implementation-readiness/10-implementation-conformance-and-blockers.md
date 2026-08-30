@@ -1,6 +1,6 @@
 # Implementation Readiness — Implementation Conformance & Blocker Register
 
-**Status:** proposed gate baseline
+**Status:** proposed gate baseline; post-D2 operational state reconciled by `18-d2-track-b-acceptance-propagation.md`
 
 ## Global implementation blockers
 
@@ -54,13 +54,17 @@ Blocked until a C2 transport/equivalence/outbox/inbox mechanism is selected thro
 
 Each provider adapter is independently blocked until Product/domain authority and provider-specific callback/outbound authentication/reconciliation profiles exist.
 
+For the first Monitoring/Zabbix vertical, Track A already supplies the accepted Monitoring domain/API/event and Zabbix trust/normalization contracts. Any remaining concrete credential/secret/transport mechanism stays governed by its existing C2 owner and by the exact slice authorization scope.
+
 ### `impl.realtime@1`
 
 Initially deferred. Blocked until the realtime implementation slice is explicitly activated and its browser presentation/resume C5 decisions are reclassified/closed.
 
 ### `impl.customer-telemetry@1`
 
-Blocked until `OPEN-REL-030` C2 durable acceptance/projection mechanism is selected and conformance plan accepted.
+The former `OPEN-REL-030` evidence blocker is **satisfied for the accepted Track B profile** merged by PR #40 at `main@2ffec007d7dff32e0a45116b0bc875d5c2743b12`.
+
+The slice is therefore `eligible_for_implementation_authorization`, but it remains **not authorized to implement** until a separate Wave 4 implementation-authorization gate grants the exact slice. Implementation must preserve the accepted D2 profile and all joined Product/domain/API/event/security/recovery contracts. `OPEN-REL-020` C3 production capacity/performance/cost envelopes remain production blockers rather than reasons to reinterpret D2 as unlimited.
 
 ### `impl.artifact@1`
 
@@ -77,6 +81,8 @@ Tooling may implement accepted operational records/runbooks but cannot invent st
 ## Release and production blockers
 
 Implementation readiness does not clear C3 OPENs. A future release/production gate must prove actual runtime evidence, including measured capacity/performance, SLO/RPO/RTO, rollout thresholds, retention, recovery drills, build provenance, incident/on-call readiness and compliance obligations where applicable.
+
+Track B acceptance does not turn production numerics into implementation defaults. Any provisional non-production bounds used to generate evidence must be finite, explicit, non-authoritative and traceable to the owning C3 closure path.
 
 ## Branch protection hosting gap
 

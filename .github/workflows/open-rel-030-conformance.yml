@@ -1,0 +1,382 @@
+name: JLMIRROR OPEN-REL-030 Conformance
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  open-rel-030-conformance:
+    name: OPEN-REL-030 bounded C2 evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
+
+      - name: Validate evidence harness structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tools/open_rel_030/run_conformance.sh
+          bash -n tools/open_rel_030/run_conformance_extended.sh
+          bash -n tools/open_rel_030/tier1_commit_ambiguity.sh
+          bash -n tools/open_rel_030/history_lock_order_concurrency.sh
+          bash -n tools/open_rel_030/timescale_jobs_restore.sh
+          bash -n tools/open_rel_030/physical_pitr.sh
+          bash -n tools/open_rel_030/physical_pitr_active_authority_hardening.sh
+          bash -n tools/open_rel_030/physical_pitr_active_authority_end_to_end.sh
+          bash -n tools/open_rel_030/physical_pitr_post_enrollment_clone.sh
+          bash -n tools/open_rel_030/physical_pitr_post_enrollment_clone_bounded.sh
+          bash -n tools/open_rel_030/tenant_relocation.sh
+          bash -n tools/open_rel_030/tenant_relocation_transport_retirement_hardening.sh
+          test -s sql/d2-open-rel-030/009_history_retained_finalized_watermark_hardening.sql
+          test -s sql/d2-open-rel-030/010_history_lock_order_hardening.sql
+          test -s sql/d2-open-rel-030/012_timescale_restore_role_bootstrap.sql
+          python3 -m py_compile tools/open_rel_030/tier1_concurrency.py
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path('implementation/d2-open-rel-030/EVIDENCE_MANIFEST.json').read_text())
+          assert manifest['decision'] == 'OPEN-REL-030'
+          assert manifest['class'] == 'C2_bounded_spike'
+          assert manifest['evidence_state'] == 'complete'
+          assert manifest['decision_disposition'] == 'accepted_track_b'
+          assert manifest['acceptance_authorization'] == 'granted'
+          assert manifest['closure_claim'] is False
+          assert manifest['wave4_implementation_authorization'] == 'not_granted'
+          assert manifest['production_authority'] == 'none'
+          assert manifest['product_feature_activation'] == 'none'
+          assert manifest['merge_authorization'] == 'not_granted'
+          assert manifest['production_versions_selected'] is False
+          assert manifest['production_capacity_numerics_selected'] is False
+          assert manifest['production_capacity_owner'] == 'OPEN-REL-020'
+          assert len(manifest['completed_mandatory_vectors']) == 8
+          assert manifest['mandatory_vectors_not_yet_claimed_complete'] == []
+          assert manifest['tier2_profile_classification']['mediated_shared_history_columnstore_cagg'] == 'accepted_track_b_c2_profile'
+
+          auth = manifest['acceptance_authorization_basis']
+          assert auth['authorized_from_exact_head'] == '622c094c9274a778d1c21c5976dd3b2ca7b4cedf'
+          assert auth['deterministic_assurance_run_number'] == 2273
+          assert auth['deterministic_assurance_run_id'] == 33283807517
+          assert auth['open_rel_030_conformance_run_number'] == 204
+          assert auth['open_rel_030_conformance_run_id'] == 33283807551
+          assert auth['native_assurance_review_id'] == 5059581679
+          assert auth['native_assurance_result'] == 'P0=0/P1=0/P2=0'
+          assert auth['codex_final_trigger_comment_id'] == 5465808207
+          assert auth['codex_final_response_comment_id'] == 5465822591
+          assert auth['codex_final_result'] == 'clean_no_major_issues'
+          assert auth['inline_review_threads_unresolved'] == 0
+          assert auth['pr_mergeable'] is True
+          assert auth['explicit_track_b_authorization_recorded'] is True
+          assert auth['post_acceptance_exact_head_assurance_required'] is True
+
+          repair = manifest['governance_repair_basis']
+          assert repair['material_class'] == 52
+          assert repair['title'] == 'merge authorization output derived from governed state'
+          assert repair['exact_repair_head_before_promotion'] == '0f0d72ca443ff2c87f44409e65f893c99b530aed'
+          assert repair['deterministic_assurance_run_number'] == 2295
+          assert repair['deterministic_assurance_run_id'] == 33285211010
+          assert repair['open_rel_030_conformance_run_number'] == 215
+          assert repair['open_rel_030_conformance_run_id'] == 33285210993
+          assert repair['result'] == 'success'
+          assert repair['merge_authorization_guard'] is True
+          assert repair['terminal_state_is_manifest_derived'] is True
+          assert repair['hard_coded_merge_authorization_terminal_value_allowed'] is False
+
+          restore_repair = manifest['timescale_restore_job_repair_basis']
+          assert restore_repair['material_class'] == 53
+          assert restore_repair['title'] == 'run every restored Timescale policy job'
+          assert restore_repair['codex_reviewed_pre_repair_sha'] == '01e4ba2c366d5d22a925d320403dce317dc81dd3'
+          assert restore_repair['codex_thread'] == 'PRRT_kwDOT7x07M6dd_SA'
+          assert restore_repair['codex_top_comment_database_id'] == 3888184776
+          assert restore_repair['exact_repair_head_before_promotion'] == 'd20e83780d1c370e96a5a960f27a6a959f7a320c'
+          assert restore_repair['deterministic_assurance_run_number'] == 2309
+          assert restore_repair['deterministic_assurance_run_id'] == 33286313003
+          assert restore_repair['open_rel_030_conformance_run_number'] == 222
+          assert restore_repair['open_rel_030_conformance_run_id'] == 33286312997
+          assert restore_repair['result'] == 'success'
+          assert restore_repair['source_policy_jobs_executed'] == 2
+          assert restore_repair['restored_policy_jobs_executed'] == 2
+          assert restore_repair['restored_job_cardinality_matches_source'] is True
+          assert restore_repair['restored_job_targets'] == ['shared_history', 'shared_hourly']
+          assert restore_repair['all_restored_policy_jobs_executed_before_post_job_attack_matrix'] is True
+          assert restore_repair['post_restore_job_tenant_escalation_matrix_preserved'] is True
+
+          boundary = manifest['acceptance_boundary']
+          assert boundary['track_b_acceptance_requires_explicit_authorization'] is True
+          assert boundary['track_b_acceptance_explicit_authorization_recorded'] is True
+          assert boundary['track_b_accepted'] is True
+          assert boundary['closure_requires_separate_explicit_authorization'] is True
+          assert boundary['closure_authorization_recorded'] is False
+          assert boundary['wave4_implementation_requires_separate_explicit_authorization'] is True
+          assert boundary['merge_requires_separate_explicit_authorization'] is True
+          assert boundary['merge_authorization_recorded'] is False
+          assert boundary['production_identity_kms_rpc_timeout_capacity_choices_selected'] is False
+          assert boundary['ready_for_merge_is_authorized_to_merge'] is False
+
+          provenance = manifest['review_provenance']
+          assert provenance['material_finding_classes_documented_in_decision_review'] == 53
+          assert provenance['material_finding_classes_closed_by_current_mechanism'] == 53
+          assert provenance['latest_material_class'] == 53
+          assert provenance['latest_material_class_title'] == 'run every restored Timescale policy job'
+          assert provenance['latest_codex_reviewed_pre_repair_sha'] == '01e4ba2c366d5d22a925d320403dce317dc81dd3'
+          assert provenance['latest_codex_thread'] == 'PRRT_kwDOT7x07M6dd_SA'
+          assert provenance['latest_codex_thread_resolved_after_exact_head_evidence'] is True
+
+          basis = manifest['classification_basis']
+          assert basis['exact_empirical_head_before_reviewer_documentation'] == '51cddbca4258a78ed8f4a3254ff54a01a332e933'
+          assert basis['deterministic_assurance_run_number'] == 2261
+          assert basis['deterministic_assurance_run_id'] == 33283602526
+          assert basis['open_rel_030_conformance_run_number'] == 198
+          assert basis['open_rel_030_conformance_run_id'] == 33283602532
+          assert basis['result'] == 'success'
+          assert basis['history_modules_executed'] == 7
+          assert basis['critical_vectors'] == 3
+
+          history = manifest['late_history_evidence']
+          for key in [
+              'coverage_bound_to_authority_generation',
+              'coverage_bound_to_provider_dataset_revision',
+              'coverage_bound_to_required_snapshot_currentness',
+              'provider_mutation_invalidates_current_coverage',
+              'stable_identity_rewrite_delete_truncate_fail_closed',
+              'stable_identity_conflict_validation_independent_of_current_became_visible_at',
+              'retained_finalized_watermark_preserved_during_dataset_invalidation',
+              'retained_finalized_watermark_requires_current_revision_revalidation',
+              'complete_restored_only_after_current_revision_covers_retained_watermark',
+              'null_finalize_cutoff_rejected',
+              'null_finalize_preserves_preexisting_sweep_state',
+              'sweep_and_finalize_use_canonical_authority_lock_order',
+              'lock_order_concurrency_vectors_passed',
+          ]:
+              assert history[key] is True
+          assert history['partial_revalidation_below_retained_watermark_can_restore_complete'] is False
+          assert history['null_finalize_cutoff_sqlstate'] == '22004'
+          assert history['null_finalize_can_mint_complete'] is False
+          assert history['null_finalize_can_create_complete_with_null_finalized_through'] is False
+          assert history['canonical_authority_lock_order'] == 'provider_authority_then_stream_state'
+          assert history['history_internal_pre_lock_entrypoints_worker_callable'] is False
+
+          expected_history = [
+              '004_history_reconciliation.sql',
+              '005_history_identity_window_hardening.sql',
+              '006_history_dataset_revision_hardening.sql',
+              '007_history_dataset_revision_edge_hardening.sql',
+              '008_history_visibility_correction_hardening.sql',
+              '009_history_retained_finalized_watermark_hardening.sql',
+              '010_history_lock_order_hardening.sql',
+          ]
+          assert history['history_hardening_modules_executed'] == expected_history
+          discovered_history = sorted(p.name for p in Path('sql/d2-open-rel-030').glob('[0-9][0-9][0-9]_history_*.sql'))
+          assert discovered_history == expected_history
+          runner = Path('tools/open_rel_030/run_conformance_extended.sh').read_text()
+          assert not [name for name in discovered_history if name not in runner]
+
+          retained = Path('sql/d2-open-rel-030/009_history_retained_finalized_watermark_hardening.sql').read_text()
+          for marker in [
+              'IF p_finalize_through IS NULL THEN',
+              "ERRCODE = '22004'",
+              'v_required_through',
+              'GREATEST(v_state.finalized_through, p_finalize_through)',
+              'v_current_covered < v_required_through',
+              'history_null_finalize_cutoff_rejected=PASS',
+              'history_null_finalize_preserves_noncomplete_state=PASS',
+              'history_retained_finalized_watermark_requires_revalidation=PASS',
+              'history_retained_finalized_watermark_recovers_after_full_revalidation=PASS',
+          ]:
+              assert marker in retained
+
+          lock_order = Path('sql/d2-open-rel-030/010_history_lock_order_hardening.sql').read_text()
+          for marker in [
+              'sweep_pre_lock_order',
+              'try_finalize_pre_lock_order',
+              'Canonical authority order: provider_authority -> stream_state.',
+              'history_lock_order_wrappers_installed=PASS',
+              'history_internal_entrypoints_not_worker_callable=PASS',
+              'history_null_finalize_guard_preserved_after_lock_order=PASS',
+          ]:
+              assert marker in lock_order
+
+          lock_race = Path('tools/open_rel_030/history_lock_order_concurrency.sh').read_text()
+          for marker in [
+              'history_finalization_lock_order_concurrency=PASS',
+              'history_sweep_lock_order_concurrency=PASS',
+              'history_authority_lock_order=provider_authority_then_stream_state=PASS',
+              'deadlock detected',
+          ]:
+              assert marker in lock_race
+
+          # #52: terminal merge authorization must be governed, not hard-coded.
+          assert "assert manifest['merge_authorization'] == 'not_granted'" in runner
+          assert "f\"merge={manifest['merge_authorization']}\"" in runner
+          assert 'merge=not_authorized' not in runner
+          assert 'Track B acceptance still required' not in runner
+
+          # #53: every restored Timescale policy job must be enumerated and executed.
+          tier2_restore = manifest['tier2_restore_job_evidence']
+          assert tier2_restore['source_policy_jobs_minimum'] == 2
+          assert tier2_restore['restored_job_inventory_matches_source_cardinality'] is True
+          assert tier2_restore['restored_job_targets'] == ['shared_history', 'shared_hourly']
+          assert tier2_restore['all_restored_policy_jobs_executed'] is True
+          assert tier2_restore['post_job_attack_matrix_runs_after_all_restored_jobs'] is True
+          timescale_restore = Path('tools/open_rel_030/timescale_jobs_restore.sh').read_text()
+          for marker in [
+              'mapfile -t restored_job_ids',
+              'enumerated restored job count disagrees with restore inventory',
+              'restored policy-job cardinality differs from source evidence',
+              'timescale_fresh_restore_job_target_coverage',
+              'for restored_job_id in "${restored_job_ids[@]}"; do',
+              'CALL public.run_job($restored_job_id);',
+              'timescale_fresh_restore_run_job_${restored_job_id}=PASS',
+              'timescale_fresh_restore_all_jobs_executed=PASS',
+              'attack_profile "$restore_container" "$restore_db" "timescale_fresh_post_restore_job"',
+          ]:
+              assert marker in timescale_restore
+          assert 'ORDER BY job_id LIMIT 1' not in timescale_restore
+
+          recovery = manifest['recovery_evidence']
+          required_recovery_true = [
+              'surviving_authority_external_to_restored_database',
+              'post_enrollment_clone_positive_control_claim',
+              'post_enrollment_clone_positive_control_verify',
+              'post_enrollment_negative_is_not_broken_path_false_pass',
+              'single_winner_keyed_by_recovery_boundary',
+              'cross_grant_boundary_race_exactly_one_winner',
+              'surviving_effect_evidence_authenticated',
+              'grant_binds_effect_digest',
+              'claim_without_effect_application_leaves_restore_at_r',
+              'local_reconciled_state_derived_from_verified_effect',
+              'claim_verify_fetch_use_async_local_deadline',
+              'real_established_tcp_blackhole_exercised',
+              'real_blackhole_fails_closed_under_local_deadline',
+              'timeout_backend_retirement_one_shot_session',
+              'fetch_uses_consistent_locked_snapshot',
+              'fetch_locks_grant_boundary_claim_and_effect',
+              'fetch_revalidates_claim_grant_effect_binding',
+              'inflight_authority_substitution_blocked',
+              'active_recovery_authority_locked_before_claim',
+              'boundary_fingerprint_derived_from_active_authority',
+              'verify_and_fetch_require_active_authority_match',
+              'local_reconciled_state_requires_active_successor_authority',
+              'active_authority_positive_claim_fetch_apply_replayed_after_hardening',
+              'active_authority_positive_claim_stays_at_r_before_apply',
+              'hardened_active_authority_positive_apply_uses_surviving_effect',
+              'post_enrollment_claim_verify_use_async_local_deadline',
+              'post_enrollment_real_established_tcp_blackhole_exercised',
+              'post_enrollment_real_blackhole_fails_closed_under_local_deadline',
+              'post_enrollment_timeout_backend_retirement_one_shot_session',
+          ]
+          assert not [k for k in required_recovery_true if recovery[k] is not True]
+          for key in [
+              'post_enrollment_effective_capability_is_copied_by_pgdata_clone',
+              'pgdata_copy_alone_duplicates_recovery_authority',
+              'multiple_grant_ids_same_boundary_create_multiple_authorities',
+              'timeout_path_uses_synchronous_remote_cancel_or_disconnect',
+              'validly_signed_drifted_successor_epoch_claim_admitted',
+              'validly_signed_drifted_placement_version_claim_admitted',
+              'drifted_active_authority_grants_create_additional_claim',
+              'hardened_active_authority_replay_clone_admitted',
+              'post_enrollment_timeout_path_uses_synchronous_remote_cleanup',
+              'duplicate_restored_authority_admitted',
+          ]:
+              assert recovery[key] is False
+          assert recovery['hardened_active_authority_replay_boundary_claim_rows'] == 1
+
+          relocation = manifest['relocation_evidence']
+          for key in [
+              'source_locked_before_fence',
+              'target_completeness_is_canonical_set_not_max_only',
+              'typed_timestamp_canonicalization_total_and_injective',
+              'typed_numeric_canonicalization_total_and_injective',
+              'target_checkpoint_signing_key_target_only',
+              'effective_verifier_uses_async_local_deadline',
+              'real_established_blackhole_test_both_directions',
+              'real_blackhole_fails_closed_under_local_deadline_both_directions',
+              'timeout_backend_retirement_one_shot_session',
+              'tier1_placement_and_activation_grant_atomic',
+              'target_activation_requires_exact_committed_tier1_grant',
+          ]:
+              assert relocation[key] is True
+          for key in [
+              'tier1_verifier_can_mint_target_checkpoint',
+              'effective_verifier_timeout_path_uses_synchronous_remote_cleanup',
+              'pre_activation_target_rows_above_f_allowed',
+              'activated_existing_history_mutable',
+          ]:
+              assert relocation[key] is False
+
+          pitr = Path('tools/open_rel_030/physical_pitr.sh').read_text()
+          pitr_authority = Path('tools/open_rel_030/physical_pitr_active_authority_hardening.sh').read_text()
+          pitr_e2e = Path('tools/open_rel_030/physical_pitr_active_authority_end_to_end.sh').read_text()
+          clone_entry = Path('tools/open_rel_030/physical_pitr_post_enrollment_clone.sh').read_text()
+          clone_bounded = Path('tools/open_rel_030/physical_pitr_post_enrollment_clone_bounded.sh').read_text()
+          relocation_entry = Path('tools/open_rel_030/tenant_relocation.sh').read_text()
+          relocation_retirement = Path('tools/open_rel_030/tenant_relocation_transport_retirement_hardening.sh').read_text()
+          assert 'physical_pitr_recovery_real_blackhole_fails_closed' in pitr
+          assert 'physical_pitr_recovery_fetch_consistent_locked_snapshot=PASS' in pitr
+          assert 'WHERE singleton FOR UPDATE' in pitr_authority
+          assert 'physical_pitr_active_authority_end_to_end_replay=PASS' in pitr_e2e
+          assert 'physical_pitr_active_authority_claim_fetch_apply_chain=PASS' in pitr_e2e
+          assert 'physical_pitr_post_enrollment_clone_bounded.sh' in clone_entry
+          assert 'dblink_send_query' in clone_bounded and 'dblink_is_busy' in clone_bounded
+          assert 'physical_pitr_post_enrollment_real_blackhole_fails_closed' in clone_bounded
+          assert 'tenant_relocation_transport_retirement_hardening.sh' in relocation_entry
+          assert 'dblink_send_query' in relocation_retirement and 'dblink_is_busy' in relocation_retirement
+          assert 'relocation_target_verifier_real_blackhole_fails_closed' in relocation_retirement
+          assert 'relocation_tier1_verifier_real_blackhole_fails_closed' in relocation_retirement
+
+          print(
+              'evidence_manifest_guard=PASS '
+              'state=complete '
+              'decision=accepted_track_b '
+              'acceptance=granted '
+              'closure=false '
+              'merge=not_granted '
+              'material_findings=53 '
+              'merge_authorization_guard=true '
+              'timescale_restore_all_jobs_guard=true '
+              'history_lock_order_guard=true '
+              'null_finalize_guard=true '
+              'retained_finalized_watermark_guard=true '
+              'active_recovery_authority_guard=true '
+              'active_recovery_e2e_guard=true '
+              'post_enrollment_bounded_blackhole_guard=true '
+              'relocation_retirement_guard=true '
+              f'history_modules={len(discovered_history)} '
+              'critical_vectors=3'
+          )
+          PY
+
+      - name: Run initial real PostgreSQL and Timescale falsification
+        shell: bash
+        run: bash tools/open_rel_030/run_conformance.sh
+
+      - name: Run ambiguity recovery jobs capacity fresh-cluster restore PITR and relocation falsification
+        shell: bash
+        run: bash tools/open_rel_030/run_conformance_extended.sh

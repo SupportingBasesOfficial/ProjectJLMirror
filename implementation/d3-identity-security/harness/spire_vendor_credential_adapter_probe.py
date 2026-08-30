@@ -104,10 +104,26 @@ class BoundedVendorCredentialAdapter:
     No vendor secret value is materialized. The adapter records only non-secret authority
     metadata and an independently advancing vendor credential generation so the probe can
     falsify privilege broadening, tenant injection, identity collapse and stale vendor use.
+    Workload currentness is re-established at every exchange/admission from the admitted
+    SVID validity interval; equality with a cached Principal is never sufficient by itself.
     """
 
-    def __init__(self, *, current_principal: Principal) -> None:
+    def __init__(
+        self,
+        *,
+        current_principal: Principal,
+        workload_not_before: datetime,
+        workload_not_after: datetime,
+    ) -> None:
+        if workload_not_before.tzinfo is None or workload_not_before.utcoffset() is None:
+            raise ValueError("workload not-before must be timezone-aware")
+        if workload_not_after.tzinfo is None or workload_not_after.utcoffset() is None:
+            raise ValueError("workload not-after must be timezone-aware")
+        if workload_not_after <= workload_not_before:
+            raise ValueError("workload validity interval is invalid")
         self.current_principal = current_principal
+        self.workload_not_before = workload_not_before.astimezone(timezone.utc)
+        self.workload_not_after = workload_not_after.astimezone(timezone.utc)
         self._vendor_credential_epoch = INITIAL_VENDOR_CREDENTIAL_EPOCH
         self.exchange_calls = 0
         self.admission_calls = 0
@@ -116,11 +132,18 @@ class BoundedVendorCredentialAdapter:
     def current_vendor_credential_generation(self) -> str:
         return f"{VENDOR_CREDENTIAL_GENERATION_PREFIX}{self._vendor_credential_epoch}"
 
-    def _require_current_workload(self, principal: Principal) -> None:
+    def _require_current_workload(self, principal: Principal, *, now: datetime) -> None:
         if principal.kind is not PrincipalKind.INTERNAL_SERVICE_PRINCIPAL:
             raise AdmissionDenied("vendor adapter requires authenticated internal service principal")
         if principal.active is not True or principal != self.current_principal:
             raise AdmissionDenied("vendor adapter requires current workload principal generation")
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise AdmissionDenied("vendor adapter workload currentness time must be authoritative UTC evidence")
+        current = now.astimezone(timezone.utc)
+        if current < self.workload_not_before:
+            raise AdmissionDenied("vendor adapter workload SVID is not yet valid")
+        if current >= self.workload_not_after:
+            raise AdmissionDenied("vendor adapter workload SVID is expired")
 
         identity = parse_workload_identity(principal.principal_id)
         if identity.environment_class is not EnvironmentClass.VALIDATION:
@@ -137,13 +160,11 @@ class BoundedVendorCredentialAdapter:
         now: datetime,
     ) -> VendorCredentialGrant:
         self.exchange_calls += 1
-        self._require_current_workload(principal)
+        self._require_current_workload(principal, now=now)
         if tenant_binding is not None:
             raise AdmissionDenied("vendor credential cannot encode or broaden tenant authority")
         if requested_scope != ALLOWED_SCOPE:
             raise AdmissionDenied("vendor credential scope exceeds exact least-privilege state-port scope")
-        if now.tzinfo is None or now.utcoffset() is None:
-            raise AdmissionDenied("vendor credential issuance time must be authoritative UTC evidence")
         issued_at = now.astimezone(timezone.utc)
         return VendorCredentialGrant(
             source_workload_principal_id=principal.principal_id,
@@ -163,7 +184,7 @@ class BoundedVendorCredentialAdapter:
         now: datetime,
     ) -> None:
         self.admission_calls += 1
-        self._require_current_workload(principal)
+        self._require_current_workload(principal, now=now)
         if grant.source_workload_principal_id != principal.principal_id:
             raise AdmissionDenied("vendor credential source workload principal is stale or mismatched")
         if grant.source_workload_credential_generation != principal.credential_generation:
@@ -174,8 +195,6 @@ class BoundedVendorCredentialAdapter:
             raise AdmissionDenied("vendor credential scope exceeds exact least-privilege state-port scope")
         if grant.credential_generation != self.current_vendor_credential_generation:
             raise AdmissionDenied("vendor credential generation is stale")
-        if now.tzinfo is None or now.utcoffset() is None:
-            raise AdmissionDenied("vendor credential admission time must be authoritative UTC evidence")
         current = now.astimezone(timezone.utc)
         if current < grant.issued_at:
             raise AdmissionDenied("vendor credential is not yet valid")
@@ -234,7 +253,11 @@ def main() -> int:
     if principal.principal_id != CANONICAL_SPIFFE_ID:
         raise AssertionError("SPIRE wire adapter changed canonical workload principal")
 
-    adapter = BoundedVendorCredentialAdapter(current_principal=principal)
+    adapter = BoundedVendorCredentialAdapter(
+        current_principal=principal,
+        workload_not_before=not_before,
+        workload_not_after=not_after,
+    )
     grant = adapter.exchange(
         principal=principal,
         requested_scope=ALLOWED_SCOPE,
@@ -298,6 +321,17 @@ def main() -> int:
         ),
     )
 
+    _expect_denied(
+        "expired_workload_exchange",
+        "workload SVID is expired",
+        lambda: adapter.exchange(
+            principal=principal,
+            requested_scope=ALLOWED_SCOPE,
+            tenant_binding=None,
+            now=not_after,
+        ),
+    )
+
     # Advance only vendor-credential authority. The SPIFFE workload principal and its
     # credential generation remain current and unchanged. The old grant must become stale
     # immediately for currentness admission even though its TTL has not expired.
@@ -348,7 +382,7 @@ def main() -> int:
     else:
         raise AssertionError("vendor principal was unexpectedly accepted as canonical workload identity")
 
-    if adapter.exchange_calls != 6:
+    if adapter.exchange_calls != 7:
         raise AssertionError(f"unexpected vendor adapter exchange call count: {adapter.exchange_calls}")
     if adapter.admission_calls != 3:
         raise AssertionError(f"unexpected vendor credential admission call count: {adapter.admission_calls}")
@@ -358,10 +392,11 @@ def main() -> int:
         f"wire_spiffe_id={WIRE_SPIFFE_ID} canonical_principal={principal.principal_id} "
         f"allowed_scope={ALLOWED_SCOPE} vendor_principal={successor_grant.vendor_principal_id} "
         "admin_scope_denied=true owner_scope_denied=true tenant_injection_denied=true "
-        "stale_workload_generation_denied=true independent_vendor_generation_advanced=true "
-        "stale_vendor_grant_denied_before_expiry=true current_workload_generation_unchanged=true "
-        "successor_vendor_grant_admitted=true independently_revocable=true short_lived=true "
-        "vendor_identity_noncanonical=true secret_material_exported=false"
+        "stale_workload_generation_denied=true expired_workload_exchange_denied=true "
+        "independent_vendor_generation_advanced=true stale_vendor_grant_denied_before_expiry=true "
+        "current_workload_generation_unchanged=true successor_vendor_grant_admitted=true "
+        "independently_revocable=true short_lived=true vendor_identity_noncanonical=true "
+        "secret_material_exported=false"
     )
     print(
         "conformance_claim=exploratory_only evidence_credited=false ledger_change=false "

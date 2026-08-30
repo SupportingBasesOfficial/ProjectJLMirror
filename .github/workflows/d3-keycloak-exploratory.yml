@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   keycloak-backchannel:
-    name: Keycloak 26.7.2 pinned back-channel logout
+    name: Keycloak 26.7.2 pinned browser + back-channel contracts
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -74,6 +74,13 @@ jobs:
             "$KEYCLOAK_IMAGE" \
             start-dev
 
+      - name: Exercise real Authorization Code + PKCE/BFF contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile implementation/d3-identity-security/harness/keycloak_browser_probe.py
+          python3 implementation/d3-identity-security/harness/keycloak_browser_probe.py
+
       - name: Exercise real back-channel logout token contract
         shell: bash
         run: |
@@ -86,9 +93,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          printf 'd3_keycloak_browser_candidate=PASS_PINNED\n'
           printf 'd3_keycloak_backchannel_candidate=PASS_PINNED\n'
           printf 'candidate_digest=%s\n' "$KEYCLOAK_IMAGE"
-          printf 'd3_a_full_conformance=false reason=remaining_outage_currentness_and_non_authority_vectors\n'
+          printf 'd3_a_full_conformance=false reason=remaining_mfa_replay_mapping_outage_and_non_authority_vectors\n'
           printf 'wave4=not_granted production=none d4=not_selected_not_granted\n'
 
       - name: Capture Keycloak logs on failure

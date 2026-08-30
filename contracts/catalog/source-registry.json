@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "catalog_id": "jlmirror.contract-source-registry@1",
-  "accepted_authority_base": "ebd06f14b9367391c68d127b764489a3f2d8340c",
+  "accepted_authority_base": "dacb58bfd827d462a847687cee49abd5946d5c34",
   "profile_sources": [
     {"path": "docs/11-reliability-resilience/08-reliability-semantic-manifest.md", "git_blob_sha": "2a599b618d0eb8d494af088f11feb00f9576ff57"},
     {"path": "docs/12-observability-sre/10-observability-semantic-manifest.md", "git_blob_sha": "80054d9a15fb82ba26a91c34f98b10964ab3c83d"},

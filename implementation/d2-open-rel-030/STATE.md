@@ -20,8 +20,10 @@ Recommend C2 Track B acceptance only if the complete invariant set below remains
 - accepted stable identities are compared with owner-current canonical content before coverage publication whenever either side intersects the requested window, independently of current `became_visible_at`;
 - a retained durable `finalized_through=T2` is historical authority, not reusable coverage: after dataset invalidation, any later finalization request for `T1<T2` must still prove current-revision contiguous coverage through T2 before the stream may return to `complete`;
 - partial current-revision revalidation below a retained watermark leaves `state=reconciliation_required` and preserves the historical watermark without advertising it as currently complete;
-- `try_finalize(..., p_finalize_through)` rejects `NULL` cutoff with SQLSTATE `22004` before any completeness decision; malformed worker input cannot mint `complete` or a complete state with `finalized_through=NULL`;
-- every current `00[4-9]_history_*.sql` hardening module is executed by the extended runner and structurally guarded against orphaning; the current set is `004–009`.
+- `try_finalize(..., p_finalize_through)` rejects `NULL` cutoff with SQLSTATE `22004` before any completeness decision;
+- provider mutation, sweep and finalization use one explicit authority-row lock order: `provider_authority → stream_state`; the pre-lock internal sweep/finalize entry points are not executable by the reconciliation worker;
+- real concurrent mutation×finalization and mutation×sweep vectors must complete without deadlock/lock abort;
+- every ordered history hardening module is executed by the extended runner and structurally guarded against orphaning; the current set is `004–010`.
 
 ### Physical PITR recovery authority
 
@@ -59,40 +61,45 @@ Recovery admission remains a surviving, authenticated, effect-bound, active-auth
 
 ```text
 HEAD
-68938d0f02efaf1cc6ee23a288beedeae8d14214
+51cddbca4258a78ed8f4a3254ff54a01a332e933
 
 JLMIRROR Deterministic Assurance
-run #2237
-run id 33282676657
+run #2261
+run id 33283602526
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #186
-run id 33282676651
+run #198
+run id 33283602532
 SUCCESS
 ```
 
-Exact #186 checked out and verified that SHA, executed all six history hardening modules (`004–009`), the complete PITR/recovery package, post-enrollment clone, Timescale restore/jobs and Tier1↔Tier2 relocation, then ended with `open_rel_030_extended_conformance=PASS` while retaining `closure_claim=false`.
+Exact #198 checked out and verified that SHA, executed all seven history hardening modules (`004–010`), the complete PITR/recovery package, post-enrollment clone, Timescale restore/jobs and Tier1↔Tier2 relocation, then ended with `open_rel_030_extended_conformance=PASS` while retaining `closure_claim=false`.
 
-### Class #50 empirical proof
+### Class #51 empirical proof
 
-The Codex finding identified a SQL three-valued-logic path: on a stream without an existing finalized watermark, `try_finalize(stream_id,NULL)` could derive `v_required_through=NULL`; comparisons against that value became `NULL` rather than true, allowing the rejection branch to be skipped and `state=complete` to be written with `finalized_through=NULL`.
+The Codex finding identified a lock-order cycle under ordinary concurrency: the prior effective finalizer acquired `stream_state → provider_authority`, while provider-visible mutation invalidation acquired `provider_authority → stream_state`. A mutation and finalization for the same stream could therefore deadlock and force PostgreSQL to abort one operation. Panoramic review also found that sweep previously relied on a joint `FOR UPDATE OF s,a` rather than an explicit global order.
 
-The effective final `try_finalize(...)` now rejects a NULL requested cutoff immediately with SQLSTATE `22004` (`null_value_not_allowed`) before state/authority lookup or completeness calculation.
+The effective worker-facing `sweep(...)` and `try_finalize(...)` are now authority-order wrappers. Each acquires `provider_authority` first and `stream_state` second before delegating to the already-proven internal implementation. Those internal pre-lock entry points are owner-only and not executable by `history_reconcile_worker`, so the canonical order cannot be bypassed by the governed worker path. The #50 NULL cutoff remains rejected before authority work.
 
-Exact #186 proves:
+Exact #198 proves:
 
 ```text
+history_lock_order_wrappers_installed=PASS
+history_internal_entrypoints_not_worker_callable=PASS
+history_null_finalize_guard_preserved_after_lock_order=PASS
+history_finalization_lock_order_concurrency=PASS
+history_sweep_lock_order_concurrency=PASS
+history_authority_lock_order=provider_authority_then_stream_state=PASS
 history_null_finalize_cutoff_rejected=PASS
-history_null_finalize_preserves_noncomplete_state=PASS
 history_retained_finalized_watermark_requires_revalidation=PASS
 history_retained_finalized_watermark_recovers_after_full_revalidation=PASS
 open_rel_030_extended_conformance=PASS
 ```
 
-The #50 vector establishes valid short current coverage on a never-finalized stream, invokes `try_finalize(...,NULL)`, requires the explicit rejection, and proves the pre-existing `provisional` sweep state and coverage remain intact while `finalized_through` remains NULL. Thus malformed input cannot create completeness.
+The concurrent vectors deliberately hold `provider_authority`, then race provider dataset invalidation against finalization and sweep. Both sessions complete without deadlock, timeout or lock abort under the canonical order.
 
-## Material classes #38–#50
+## Material classes #38–#51
 
 - **#38:** post-enrollment PGDATA clone authority — effective proof moved outside PGDATA clone domain.
 - **#39:** clone-negative false pass — same-path positive control required first.
@@ -107,17 +114,18 @@ The #50 vector establishes valid short current coverage on a never-finalized str
 - **#48:** relocation timeout cleanup outside deadline — effective final transport override with two-direction real blackholes and one-shot retirement.
 - **#49:** retained finalized watermark stale resurrection — current-revision coverage must revalidate through the retained historical watermark before `complete` can be restored.
 - **#50:** NULL finalization watermark — malformed NULL cutoff is rejected before three-valued logic can mint `complete` with a NULL finalized watermark.
+- **#51:** inconsistent history authority lock order — provider mutation, sweep and finalization now acquire `provider_authority → stream_state`, with worker bypass removed and concurrent deadlock vectors required.
 
-Classes #1–#37 remain part of the same evidence lineage and are enumerated in `DECISION_REVIEW.md`; no prior closure is superseded by #50.
+Classes #1–#37 remain part of the same evidence lineage and are enumerated in `DECISION_REVIEW.md`; no prior closure is superseded by #51.
 
 ## Acceptance boundary
 
 ```text
 Evidence package             COMPLETE
-Executable empirical anchor  68938d0f02efaf1cc6ee23a288beedeae8d14214 / #2237 / #186
-Material finding classes     50
-History hardening modules    6 (004–009)
-Inline review threads        0 unresolved after #50 evidence reply
+Executable empirical anchor  51cddbca4258a78ed8f4a3254ff54a01a332e933 / #2261 / #198
+Material finding classes     51
+History hardening modules    7 (004–010)
+Inline review threads        0 unresolved after #51 evidence reply
 Exact-final-HEAD CI          REQUIRED AGAIN AFTER THIS GOVERNANCE MUTATION
 Fresh Codex exact-head       REQUIRED
 Native Assurance exact-head  REQUIRED AGAIN

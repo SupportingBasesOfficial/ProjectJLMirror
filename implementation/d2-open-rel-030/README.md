@@ -14,8 +14,8 @@ Wave 4 authorization        not_granted
 Production authority        none
 Production versions         not selected
 Production capacity         OPEN-REL-020
-Material finding classes    50
-History hardening modules   6 (004–009)
+Material finding classes    51
+History hardening modules   7 (004–010)
 Merge                       not authorized
 ```
 
@@ -24,12 +24,12 @@ Merge                       not authorized
 The current mechanism anchor before the latest governance-only promotion is:
 
 ```text
-68938d0f02efaf1cc6ee23a288beedeae8d14214
-Deterministic Assurance #2237 — SUCCESS — run id 33282676657
-OPEN-REL-030 Conformance #186 — SUCCESS — run id 33282676651
+51cddbca4258a78ed8f4a3254ff54a01a332e933
+Deterministic Assurance #2261 — SUCCESS — run id 33283602526
+OPEN-REL-030 Conformance #198 — SUCCESS — run id 33283602532
 ```
 
-#186 verifies the exact SHA, executes all mandatory vectors, all six history hardening modules, physical PITR/recovery, the post-enrollment clone vector, Timescale restore/jobs and Tier1↔Tier2 relocation, then ends with `open_rel_030_extended_conformance=PASS` and `closure_claim=false`.
+#198 verifies the exact SHA, executes all mandatory vectors, all seven history hardening modules, physical PITR/recovery, the post-enrollment clone vector, Timescale restore/jobs and Tier1↔Tier2 relocation, then ends with `open_rel_030_extended_conformance=PASS` and `closure_claim=false`.
 
 ## Evidence architecture
 
@@ -47,8 +47,11 @@ History reconciliation is intentionally fail-closed:
 - stable identity rewrite, DELETE and TRUNCATE fail closed;
 - accepted stable identities are checked against owner-current canonical content independently of current `became_visible_at`;
 - retained `finalized_through` is historical authority and must be revalidated under the current dataset revision before `complete` can return;
-- `try_finalize(..., NULL)` is malformed authority input and fails closed with SQLSTATE `22004`; it cannot mint `complete` or a NULL completeness watermark;
-- all existing `00[4-9]_history_*.sql` modules must be present in the extended runner.
+- `try_finalize(..., NULL)` is malformed authority input and fails closed with SQLSTATE `22004`;
+- provider mutation, worker sweep and worker finalization all acquire `provider_authority → stream_state` in that order;
+- the pre-lock internal sweep/finalize entry points are owner-only and unavailable to the governed worker;
+- concurrent mutation×finalization and mutation×sweep vectors must complete without deadlock or lock abort;
+- the exact ordered module set `004–010` must be present in the extended runner and structural guard.
 
 The current ordered history chain is:
 
@@ -59,44 +62,35 @@ The current ordered history chain is:
 007_history_dataset_revision_edge_hardening.sql
 008_history_visibility_correction_hardening.sql
 009_history_retained_finalized_watermark_hardening.sql
+010_history_lock_order_hardening.sql
 ```
 
 ### #49 — retained finalized watermark
 
 After a stream has historically finalized through T2, a later provider dataset mutation may invalidate current coverage while preserving the durable T2 watermark. The finalizer never uses a shorter T1 request to restore `complete` unless current-revision coverage again reaches T2.
 
-```text
-required_through = max(requested_finalize_through, existing_finalized_through)
-complete only if current revision/generation/snapshot coverage reaches required_through
-```
-
 ### #50 — NULL finalization cutoff
 
-A never-finalized stream formerly allowed `try_finalize(stream_id,NULL)` to produce `v_required_through=NULL`; SQL three-valued comparisons could skip the fail-closed branch and permit `complete` with `finalized_through=NULL`.
+The effective finalizer rejects a NULL requested cutoff with SQLSTATE `22004` before completeness processing, so SQL three-valued logic cannot mint `complete` with a NULL watermark.
 
-The effective finalizer now rejects the NULL cutoff before completeness processing. Exact #186 proves:
+### #51 — canonical history lock order
+
+Provider mutation already used `provider_authority → stream_state`; the former finalizer used the reverse order, creating a real deadlock cycle. The final worker-facing `sweep(...)` and `try_finalize(...)` now acquire the canonical order before calling their owner-only internal implementations. Exact #198 proves:
 
 ```text
-history_null_finalize_cutoff_rejected=PASS
-history_null_finalize_preserves_noncomplete_state=PASS
-history_retained_finalized_watermark_requires_revalidation=PASS
-history_retained_finalized_watermark_recovers_after_full_revalidation=PASS
+history_lock_order_wrappers_installed=PASS
+history_internal_entrypoints_not_worker_callable=PASS
+history_null_finalize_guard_preserved_after_lock_order=PASS
+history_finalization_lock_order_concurrency=PASS
+history_sweep_lock_order_concurrency=PASS
+history_authority_lock_order=provider_authority_then_stream_state=PASS
 ```
+
+The same run preserves both #49 regression markers and #50 NULL rejection.
 
 ### Physical PITR / restored authority
 
-The recovery vector preserves the full recovery authority chain:
-
-- effective per-instance proof is outside PGDATA clone state;
-- clone negatives require same-path positive controls;
-- recovery ownership is one winner per canonical recovery boundary, not per arbitrary grant ID;
-- surviving post-R effect evidence is authenticated and grant-bound;
-- claim alone leaves restored truth at R;
-- material fetch locks and revalidates active authority, grant, boundary claim, effect and signing state;
-- validly signed successor epoch/placement drift grants fail closed;
-- a real successful claim→verify→fetch/apply→verify is replayed after hardening installation;
-- established response deadlines are caller-local and real TCP response blackholes are exercised;
-- timeout/uncertainty uses one-shot backend retirement rather than synchronous remote cleanup.
+The recovery vector preserves the full recovery authority chain: effective per-instance proof outside PGDATA; same-path clone positive controls; one winner per canonical recovery boundary; authenticated surviving post-R effect; claim-at-R until verified material application; consistent locked recovery-material fetch; active-authority binding; hardened positive replay; caller-local deadlines; real TCP blackholes; and one-shot backend retirement on timeout/uncertainty.
 
 ### Post-enrollment PGDATA clone
 
@@ -108,17 +102,15 @@ The evaluated Tier 2 candidate is the mediated shared-history profile. Tenant/ap
 
 ### Relocation
 
-Relocation preserves total/injective typed canonicalization, target-originated checkpoint signing authority, verifier-without-mint separation, restricted verifier capability state, source lock-before-F, exact target completeness, authenticated sealing, atomic Tier 1 placement+activation-grant commit and target activation only after exact grant verification.
-
-The effective final verifier transport has asynchronous caller-local deadlines, no synchronous timeout cancel/disconnect, one-shot session retirement, and real TCP response-blackhole tests in both directions.
+Relocation preserves total/injective typed canonicalization, target-originated checkpoint signing authority, verifier-without-mint separation, restricted verifier capability state, source lock-before-F, exact target completeness, authenticated sealing, atomic Tier 1 placement+activation-grant commit and target activation only after exact grant verification. The effective verifier transport has asynchronous caller-local deadlines, no synchronous timeout cleanup, one-shot session retirement and real TCP response-blackhole tests in both directions.
 
 ## Files
 
 - `STATE.md` — current governed evidence state and acceptance boundary.
-- `DECISION_REVIEW.md` — normative decision-review record and all 50 material finding classes.
+- `DECISION_REVIEW.md` — normative decision-review record and all 51 material finding classes.
 - `EVIDENCE_MANIFEST.json` — machine-readable evidence classification and guard facts.
 - `sql/d2-open-rel-030/*` — executable Tier 1 / history / Timescale evidence modules.
-- `tools/open_rel_030/*` — orchestration, recovery, clone, restore and relocation falsification harnesses.
+- `tools/open_rel_030/*` — orchestration, recovery, clone, restore and concurrency falsification harnesses.
 - `.github/workflows/open-rel-030-conformance.yml` — exact-HEAD structural + empirical conformance gate.
 
 ## Final-gate rule

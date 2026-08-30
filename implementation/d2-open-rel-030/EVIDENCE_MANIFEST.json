@@ -27,23 +27,23 @@
     }
   },
   "classification_basis": {
-    "exact_empirical_head_before_reviewer_documentation": "68938d0f02efaf1cc6ee23a288beedeae8d14214",
-    "deterministic_assurance_run_number": 2237,
-    "deterministic_assurance_run_id": 33282676657,
-    "open_rel_030_conformance_run_number": 186,
-    "open_rel_030_conformance_run_id": 33282676651,
+    "exact_empirical_head_before_reviewer_documentation": "51cddbca4258a78ed8f4a3254ff54a01a332e933",
+    "deterministic_assurance_run_number": 2261,
+    "deterministic_assurance_run_id": 33283602526,
+    "open_rel_030_conformance_run_number": 198,
+    "open_rel_030_conformance_run_id": 33283602532,
     "result": "success",
-    "history_modules_executed": 6,
+    "history_modules_executed": 7,
     "critical_vectors": 3,
-    "note": "Anchor preserves the complete prior C2 package and closes material class #50 by rejecting a NULL requested finalization cutoff before SQL three-valued comparisons can mint completeness or a NULL finalized watermark."
+    "note": "Anchor preserves the complete prior C2 package and closes material class #51 by enforcing one explicit provider_authority -> stream_state lock order across provider mutation, sweep and finalization, with real concurrent mutation-vs-finalize and mutation-vs-sweep falsification."
   },
   "review_provenance": {
-    "material_finding_classes_documented_in_decision_review": 50,
-    "material_finding_classes_closed_by_current_mechanism": 50,
-    "latest_material_class": 50,
-    "latest_material_class_title": "null finalization watermark rejection",
-    "latest_codex_reviewed_pre_repair_sha": "f201d4a18e4edb402480f3d2a9745b06b084079c",
-    "latest_codex_thread": "PRRT_kwDOT7x07M6ddhwC",
+    "material_finding_classes_documented_in_decision_review": 51,
+    "material_finding_classes_closed_by_current_mechanism": 51,
+    "latest_material_class": 51,
+    "latest_material_class_title": "history authority lock-order consistency",
+    "latest_codex_reviewed_pre_repair_sha": "5d301bb5482b830ff741e9b0682d64b4fb5980b3",
+    "latest_codex_thread": "PRRT_kwDOT7x07M6ddqA2",
     "latest_codex_thread_resolved_after_exact_head_evidence": true
   },
   "completed_mandatory_vectors": [
@@ -76,15 +76,20 @@
     "null_finalize_can_mint_complete": false,
     "null_finalize_can_create_complete_with_null_finalized_through": false,
     "null_finalize_preserves_preexisting_sweep_state": true,
+    "canonical_authority_lock_order": "provider_authority_then_stream_state",
+    "sweep_and_finalize_use_canonical_authority_lock_order": true,
+    "history_internal_pre_lock_entrypoints_worker_callable": false,
+    "lock_order_concurrency_vectors_passed": true,
     "history_hardening_modules_executed": [
       "004_history_reconciliation.sql",
       "005_history_identity_window_hardening.sql",
       "006_history_dataset_revision_hardening.sql",
       "007_history_dataset_revision_edge_hardening.sql",
       "008_history_visibility_correction_hardening.sql",
-      "009_history_retained_finalized_watermark_hardening.sql"
+      "009_history_retained_finalized_watermark_hardening.sql",
+      "010_history_lock_order_hardening.sql"
     ],
-    "history_runner_completeness_guard": "all existing 00[4-9]_history_*.sql modules must be wired into run_conformance_extended.sh",
+    "history_runner_completeness_guard": "the exact ordered module set 004-010 must be wired into run_conformance_extended.sh and structurally guarded",
     "unrecoverable_retention_loss": "explicit durable gap; never false complete"
   },
   "recovery_evidence": {

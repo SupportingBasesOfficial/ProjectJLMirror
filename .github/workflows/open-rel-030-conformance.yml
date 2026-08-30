@@ -45,6 +45,7 @@ jobs:
           bash -n tools/open_rel_030/run_conformance.sh
           bash -n tools/open_rel_030/run_conformance_extended.sh
           bash -n tools/open_rel_030/tier1_commit_ambiguity.sh
+          bash -n tools/open_rel_030/history_lock_order_concurrency.sh
           bash -n tools/open_rel_030/timescale_jobs_restore.sh
           bash -n tools/open_rel_030/physical_pitr.sh
           bash -n tools/open_rel_030/physical_pitr_active_authority_hardening.sh
@@ -54,6 +55,7 @@ jobs:
           bash -n tools/open_rel_030/tenant_relocation.sh
           bash -n tools/open_rel_030/tenant_relocation_transport_retirement_hardening.sh
           test -s sql/d2-open-rel-030/009_history_retained_finalized_watermark_hardening.sql
+          test -s sql/d2-open-rel-030/010_history_lock_order_hardening.sql
           test -s sql/d2-open-rel-030/012_timescale_restore_role_bootstrap.sql
           python3 -m py_compile tools/open_rel_030/tier1_concurrency.py
           python3 - <<'PY'
@@ -77,20 +79,20 @@ jobs:
           assert manifest['tier2_profile_classification']['mediated_shared_history_columnstore_cagg'] == 'conformant_candidate_recommended_for_c2_acceptance'
 
           provenance = manifest['review_provenance']
-          assert provenance['material_finding_classes_documented_in_decision_review'] == 50
-          assert provenance['material_finding_classes_closed_by_current_mechanism'] == 50
-          assert provenance['latest_material_class'] == 50
-          assert provenance['latest_codex_thread'] == 'PRRT_kwDOT7x07M6ddhwC'
+          assert provenance['material_finding_classes_documented_in_decision_review'] == 51
+          assert provenance['material_finding_classes_closed_by_current_mechanism'] == 51
+          assert provenance['latest_material_class'] == 51
+          assert provenance['latest_codex_thread'] == 'PRRT_kwDOT7x07M6ddqA2'
           assert provenance['latest_codex_thread_resolved_after_exact_head_evidence'] is True
 
           basis = manifest['classification_basis']
-          assert basis['exact_empirical_head_before_reviewer_documentation'] == '68938d0f02efaf1cc6ee23a288beedeae8d14214'
-          assert basis['deterministic_assurance_run_number'] == 2237
-          assert basis['deterministic_assurance_run_id'] == 33282676657
-          assert basis['open_rel_030_conformance_run_number'] == 186
-          assert basis['open_rel_030_conformance_run_id'] == 33282676651
+          assert basis['exact_empirical_head_before_reviewer_documentation'] == '51cddbca4258a78ed8f4a3254ff54a01a332e933'
+          assert basis['deterministic_assurance_run_number'] == 2261
+          assert basis['deterministic_assurance_run_id'] == 33283602526
+          assert basis['open_rel_030_conformance_run_number'] == 198
+          assert basis['open_rel_030_conformance_run_id'] == 33283602532
           assert basis['result'] == 'success'
-          assert basis['history_modules_executed'] == 6
+          assert basis['history_modules_executed'] == 7
           assert basis['critical_vectors'] == 3
 
           history = manifest['late_history_evidence']
@@ -109,6 +111,10 @@ jobs:
           assert history['null_finalize_can_mint_complete'] is False
           assert history['null_finalize_can_create_complete_with_null_finalized_through'] is False
           assert history['null_finalize_preserves_preexisting_sweep_state'] is True
+          assert history['canonical_authority_lock_order'] == 'provider_authority_then_stream_state'
+          assert history['sweep_and_finalize_use_canonical_authority_lock_order'] is True
+          assert history['history_internal_pre_lock_entrypoints_worker_callable'] is False
+          assert history['lock_order_concurrency_vectors_passed'] is True
 
           expected_history = [
               '004_history_reconciliation.sql',
@@ -117,10 +123,11 @@ jobs:
               '007_history_dataset_revision_edge_hardening.sql',
               '008_history_visibility_correction_hardening.sql',
               '009_history_retained_finalized_watermark_hardening.sql',
+              '010_history_lock_order_hardening.sql',
           ]
           assert history['history_hardening_modules_executed'] == expected_history
           runner = Path('tools/open_rel_030/run_conformance_extended.sh').read_text()
-          discovered_history = sorted(p.name for p in Path('sql/d2-open-rel-030').glob('00[4-9]_history_*.sql'))
+          discovered_history = sorted(p.name for p in Path('sql/d2-open-rel-030').glob('[0-9][0-9][0-9]_history_*.sql'))
           assert discovered_history == expected_history
           missing = [name for name in discovered_history if name not in runner]
           assert not missing, f'history hardening modules not wired into extended runner: {missing}'
@@ -140,6 +147,28 @@ jobs:
               'history_retained_finalized_watermark_recovers_after_full_revalidation=PASS',
           ]:
               assert marker in retained, f'missing history finalization guard marker: {marker}'
+
+          lock_order = Path('sql/d2-open-rel-030/010_history_lock_order_hardening.sql').read_text()
+          for marker in [
+              'sweep_pre_lock_order',
+              'try_finalize_pre_lock_order',
+              'Canonical authority order: provider_authority -> stream_state.',
+              'REVOKE ALL ON FUNCTION history_reconcile_evidence.sweep_pre_lock_order',
+              'REVOKE ALL ON FUNCTION history_reconcile_evidence.try_finalize_pre_lock_order',
+              'history_lock_order_wrappers_installed=PASS',
+              'history_internal_entrypoints_not_worker_callable=PASS',
+              'history_null_finalize_guard_preserved_after_lock_order=PASS',
+          ]:
+              assert marker in lock_order, f'missing history lock-order guard marker: {marker}'
+
+          lock_race = Path('tools/open_rel_030/history_lock_order_concurrency.sh').read_text()
+          for marker in [
+              'history_finalization_lock_order_concurrency=PASS',
+              'history_sweep_lock_order_concurrency=PASS',
+              'history_authority_lock_order=provider_authority_then_stream_state=PASS',
+              'deadlock detected',
+          ]:
+              assert marker in lock_race, f'missing history lock-race marker: {marker}'
 
           recovery = manifest['recovery_evidence']
           required_recovery_true = [
@@ -231,7 +260,8 @@ jobs:
               'evidence_manifest_guard=PASS '
               'state=complete_ready_for_decision_review '
               'acceptance=not_granted '
-              'material_findings=50 '
+              'material_findings=51 '
+              'history_lock_order_guard=true '
               'null_finalize_guard=true '
               'retained_finalized_watermark_guard=true '
               'active_recovery_authority_guard=true '

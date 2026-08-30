@@ -9,15 +9,21 @@ SERVER_BIN="${SPIRE_ROOT}/bin/spire-server"
 AGENT_BIN="${SPIRE_ROOT}/bin/spire-agent"
 EXPECTED_VERSION="1.15.3"
 TRUST_DOMAIN="validation.d3.jlmirror.invalid"
+FOREIGN_TRUST_DOMAIN="foreign.d3.jlmirror.invalid"
 CANONICAL_VALIDATION_ENV="environment.validation@1"
 CANONICAL_PRODUCTION_ENV="environment.production@1"
 CANONICAL_RUNTIME_PROFILE="runtime.api@1"
+CANONICAL_WRONG_RUNTIME_PROFILE="runtime.worker@1"
 # SPIFFE path segments intentionally use an adapter-safe representation. The canonical
 # JLMirror identifiers above remain unchanged and MUST NOT inherit SPIFFE path grammar.
 VALIDATION_ID="spiffe://${TRUST_DOMAIN}/environment/validation/v1/runtime/api/v1/workload-probe"
 PRODUCTION_ID="spiffe://${TRUST_DOMAIN}/environment/production/v1/runtime/api/v1/forbidden-probe"
+WRONG_RUNTIME_ID="spiffe://${TRUST_DOMAIN}/environment/validation/v1/runtime/worker/v1/forbidden-profile-probe"
+FOREIGN_TRUST_ID="spiffe://${FOREIGN_TRUST_DOMAIN}/environment/validation/v1/runtime/api/v1/foreign-probe"
 CURRENT_UID="$(id -u)"
 FORBIDDEN_UID="0"
+WORKLOAD_BIN_PATH="$(readlink -f "${AGENT_BIN}")"
+WRONG_WORKLOAD_PATH="/nonexistent/jlmirror-d3-wrong-runtime"
 
 if [[ "${CURRENT_UID}" == "${FORBIDDEN_UID}" ]]; then
   echo "probe requires a non-root workload caller so unix:uid attestation can be falsified" >&2
@@ -33,6 +39,9 @@ for binary in "${SERVER_BIN}" "${AGENT_BIN}"; do
   test -x "${binary}"
 done
 
+test -n "${WORKLOAD_BIN_PATH}"
+test "${WORKLOAD_BIN_PATH}" != "${WRONG_WORKLOAD_PATH}"
+
 mkdir -p "${WORK_DIR}"/{server-data,agent-data,run,output}
 chmod 700 "${WORK_DIR}" "${WORK_DIR}/server-data" "${WORK_DIR}/agent-data" "${WORK_DIR}/run"
 
@@ -45,6 +54,7 @@ JOIN_TOKEN_FILE="${WORK_DIR}/run/join-token"
 SERVER_LOG="${WORK_DIR}/server.log"
 AGENT_LOG="${WORK_DIR}/agent.log"
 FETCH_LOG="${WORK_DIR}/fetch.log"
+FOREIGN_ENTRY_LOG="${WORK_DIR}/foreign-entry.log"
 SERVER_PID=""
 AGENT_PID=""
 
@@ -148,7 +158,10 @@ plugins {
         }
     }
     WorkloadAttestor "unix" {
-        plugin_data {}
+        plugin_data {
+            discover_workload_path = true
+            workload_size_limit = -1
+        }
     }
 }
 EOF
@@ -209,12 +222,26 @@ if [[ -z "${ATTESTED_NODE_ID}" ]]; then
   exit 1
 fi
 
-# The allowed identity is selected by runtime evidence (unix uid), not by caller-supplied SPIFFE ID.
+# A non-federated foreign trust-domain identity must not be registrable under this server.
+if "${SERVER_BIN}" entry create \
+     -socketPath "${SERVER_SOCKET}" \
+     -parentID "${ATTESTED_NODE_ID}" \
+     -spiffeID "${FOREIGN_TRUST_ID}" \
+     -selector "unix:uid:${CURRENT_UID}" \
+     -x509SVIDTTL 30 >"${FOREIGN_ENTRY_LOG}" 2>&1; then
+  echo "foreign trust-domain workload identity was unexpectedly registrable" >&2
+  cat "${FOREIGN_ENTRY_LOG}" >&2 || true
+  exit 1
+fi
+
+# The allowed identity requires both process ownership and the exact observed workload path.
+# This makes the runtime-profile evidence stronger than a shared uid alone.
 "${SERVER_BIN}" entry create \
   -socketPath "${SERVER_SOCKET}" \
   -parentID "${ATTESTED_NODE_ID}" \
   -spiffeID "${VALIDATION_ID}" \
   -selector "unix:uid:${CURRENT_UID}" \
+  -selector "unix:path:${WORKLOAD_BIN_PATH}" \
   -x509SVIDTTL 30 >/dev/null
 
 # A broader production-shaped identity exists in the backend but is selector-bound to a UID
@@ -224,6 +251,17 @@ fi
   -parentID "${ATTESTED_NODE_ID}" \
   -spiffeID "${PRODUCTION_ID}" \
   -selector "unix:uid:${FORBIDDEN_UID}" \
+  -selector "unix:path:${WORKLOAD_BIN_PATH}" \
+  -x509SVIDTTL 30 >/dev/null
+
+# A different runtime-profile identity shares the caller uid but is bound to an impossible
+# workload path. Caller uid alone therefore cannot authorize a broader runtime profile.
+"${SERVER_BIN}" entry create \
+  -socketPath "${SERVER_SOCKET}" \
+  -parentID "${ATTESTED_NODE_ID}" \
+  -spiffeID "${WRONG_RUNTIME_ID}" \
+  -selector "unix:uid:${CURRENT_UID}" \
+  -selector "unix:path:${WRONG_WORKLOAD_PATH}" \
   -x509SVIDTTL 30 >/dev/null
 
 # SPIRE Agent synchronizes authorized entries with the Server asynchronously (default 5s).
@@ -257,10 +295,12 @@ SVID_CERT="${SVID_CERTS[0]}"
 
 CERT_TEXT="$(openssl x509 -in "${SVID_CERT}" -noout -text)"
 printf '%s\n' "${CERT_TEXT}" | grep -F "URI:${VALIDATION_ID}" >/dev/null
-if printf '%s\n' "${CERT_TEXT}" | grep -F "${PRODUCTION_ID}" >/dev/null; then
-  echo "selector-bound forbidden production identity leaked into workload SVID" >&2
-  exit 1
-fi
+for forbidden_id in "${PRODUCTION_ID}" "${WRONG_RUNTIME_ID}" "${FOREIGN_TRUST_ID}"; do
+  if printf '%s\n' "${CERT_TEXT}" | grep -F "${forbidden_id}" >/dev/null; then
+    echo "forbidden workload identity leaked into workload SVID: ${forbidden_id}" >&2
+    exit 1
+  fi
+done
 
 NOT_BEFORE="$(openssl x509 -in "${SVID_CERT}" -noout -startdate | cut -d= -f2-)"
 NOT_AFTER="$(openssl x509 -in "${SVID_CERT}" -noout -enddate | cut -d= -f2-)"
@@ -272,19 +312,25 @@ if (( LIFETIME <= 0 || LIFETIME > 45 )); then
   exit 1
 fi
 
-# X.509 Workload API fetch exposes no caller SPIFFE-ID selector; the returned identity set is
-# determined by attested process selectors. This negative control also ensures the forbidden
-# registration is present server-side rather than accidentally omitted from the setup.
-entry_output="$("${SERVER_BIN}" entry show -socketPath "${SERVER_SOCKET}" -spiffeID "${PRODUCTION_ID}")"
-printf '%s\n' "${entry_output}" | grep -F "${PRODUCTION_ID}" >/dev/null
-printf '%s\n' "${entry_output}" | grep -F "unix:uid:${FORBIDDEN_UID}" >/dev/null
+# Negative controls prove the forbidden registrations really exist server-side and differ
+# only at the intended environment/runtime selector boundaries.
+production_entry_output="$("${SERVER_BIN}" entry show -socketPath "${SERVER_SOCKET}" -spiffeID "${PRODUCTION_ID}")"
+printf '%s\n' "${production_entry_output}" | grep -F "${PRODUCTION_ID}" >/dev/null
+printf '%s\n' "${production_entry_output}" | grep -F "unix:uid:${FORBIDDEN_UID}" >/dev/null
+
+wrong_runtime_entry_output="$("${SERVER_BIN}" entry show -socketPath "${SERVER_SOCKET}" -spiffeID "${WRONG_RUNTIME_ID}")"
+printf '%s\n' "${wrong_runtime_entry_output}" | grep -F "${WRONG_RUNTIME_ID}" >/dev/null
+printf '%s\n' "${wrong_runtime_entry_output}" | grep -F "unix:uid:${CURRENT_UID}" >/dev/null
+printf '%s\n' "${wrong_runtime_entry_output}" | grep -F "unix:path:${WRONG_WORKLOAD_PATH}" >/dev/null
 
 printf 'spire_candidate_evaluation=PASS version=%s trust_domain=%s\n' "${SPIRE_VERSION}" "${TRUST_DOMAIN}"
 printf 'backend_attested_parent=PASS parent_id=%s canonical_authority=false\n' "${ATTESTED_NODE_ID}"
 printf 'canonical_to_spiffe_adapter=PASS canonical_environment=%s canonical_runtime=%s wire_spiffe_id=%s\n' \
   "${CANONICAL_VALIDATION_ENV}" "${CANONICAL_RUNTIME_PROFILE}" "${VALIDATION_ID}"
-printf 'runtime_attestation_selector_binding=PASS caller_uid=%s authorized_id=%s forbidden_environment=%s forbidden_id_not_issued=true\n' \
-  "${CURRENT_UID}" "${VALIDATION_ID}" "${CANONICAL_PRODUCTION_ENV}"
-printf 'short_lived_x509_svid=PASS lifetime_seconds=%s\n' "${LIFETIME}"
+printf 'runtime_attestation_selector_binding=PASS caller_uid=%s workload_path=%s authorized_id=%s\n' \
+  "${CURRENT_UID}" "${WORKLOAD_BIN_PATH}" "${VALIDATION_ID}"
+printf 'trust_domain_environment_runtime_binding=PASS foreign_trust_registration_rejected=true forbidden_environment=%s forbidden_environment_not_issued=true wrong_runtime=%s wrong_runtime_not_issued=true\n' \
+  "${CANONICAL_PRODUCTION_ENV}" "${CANONICAL_WRONG_RUNTIME_PROFILE}"
+printf 'short_lived_x509_svid=PASS lifetime_seconds=%s rotation_retired_bundle=not_claimed\n' "${LIFETIME}"
 printf 'conformance_claim=exploratory_only evidence_credited=false private_key_non_exportability=not_claimed restore_recovery=not_claimed vendor_adapter=not_claimed\n'
 printf 'wave4=not_granted production=none d4=not_selected_not_granted\n'

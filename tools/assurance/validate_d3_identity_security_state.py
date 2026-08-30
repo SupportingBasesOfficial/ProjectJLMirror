@@ -21,6 +21,13 @@ EXPECTED_TRACKS = {
     "D3-D": ("workload_identity_issuer_attestation", True),
     "D3-E": ("cryptographic_replay_historical_verifier_authority", True),
 }
+REQUIRED_SOURCE_ANCHORS = {
+    "D3-A": {"IR-D-001-keycloak-idp", "IR-D-001"},
+    "D3-B": {"OPEN-REL-031.A", "OPEN-REL-015", "OPEN-REL-008.A"},
+    "D3-C": {"OPEN-API-002"},
+    "D3-D": {"OPEN-PRT-008.B", "IR-D-002"},
+    "D3-E": {"OPEN-REL-016.A", "IR-D-001", "OPEN-EVT-011"},
+}
 FORBIDDEN_D4_SOURCES = {
     "OPEN-EVT-001",
     "OPEN-EVT-002",
@@ -44,6 +51,15 @@ ALLOWED_STATES = {
     "per_track_conformed",
     "accepted_candidate",
 }
+ALLOWED_GATE_STATES = {
+    "scoped",
+    "candidate_evidence_running",
+    "per_track_conformed",
+    "d3_acceptance_eligible",
+    "separately_accepted",
+}
+ACCEPTANCE_GATED_STATES = {"d3_acceptance_eligible", "separately_accepted"}
+TERMINAL_TRACK_STATES = {"per_track_conformed", "accepted_candidate"}
 
 
 def _load(root: Path) -> dict:
@@ -89,6 +105,10 @@ def validate(root: Path) -> None:
         "separate_explicit_user_authorization_after_final_exact_head_clean_gate",
     )
 
+    gate_state = data.get("gate_state")
+    if gate_state not in ALLOWED_GATE_STATES:
+        raise AssertionError(f"gate_state: invalid state {gate_state!r}")
+
     tracks = data.get("tracks")
     if not isinstance(tracks, list) or len(tracks) != len(EXPECTED_TRACKS):
         raise AssertionError(
@@ -122,6 +142,18 @@ def validate(root: Path) -> None:
         if not isinstance(sources, list) or not sources or not all(isinstance(x, str) and x for x in sources):
             raise AssertionError(f"{track_id}: source_decisions must be a non-empty string list")
         anchors = {_source_anchor(source) for source in sources}
+        if len(anchors) != len(sources):
+            raise AssertionError(f"{track_id}: duplicate source-decision anchor is forbidden")
+
+        expected_anchors = REQUIRED_SOURCE_ANCHORS[track_id]
+        if anchors != expected_anchors:
+            missing = sorted(expected_anchors - anchors)
+            unexpected = sorted(anchors - expected_anchors)
+            raise AssertionError(
+                f"{track_id}: source-decision anchors mismatch; "
+                f"missing={missing} unexpected={unexpected}"
+            )
+
         forbidden = sorted(anchors & FORBIDDEN_D4_SOURCES)
         if forbidden:
             raise AssertionError(
@@ -163,16 +195,17 @@ def validate(root: Path) -> None:
         if required_c3 not in c3_open:
             raise AssertionError(f"D3 attempted to lose required C3 boundary: {required_c3}")
 
-    # Acceptance cannot be claimed while a required track is not terminal.
-    if data.get("gate_state") in {"d3_acceptance_eligible", "accepted"}:
+    # Acceptance eligibility and final separate acceptance both require every
+    # required D3 track to have reached a terminal evidence disposition.
+    if gate_state in ACCEPTANCE_GATED_STATES:
         nonterminal = [
             track["track_id"]
             for track in tracks
-            if track.get("state") not in {"per_track_conformed", "accepted_candidate"}
+            if track.get("state") not in TERMINAL_TRACK_STATES
         ]
         if nonterminal:
             raise AssertionError(
-                f"D3 gate cannot be acceptance-eligible with nonterminal tracks: {nonterminal}"
+                f"D3 gate cannot enter {gate_state!r} with nonterminal tracks: {nonterminal}"
             )
 
 

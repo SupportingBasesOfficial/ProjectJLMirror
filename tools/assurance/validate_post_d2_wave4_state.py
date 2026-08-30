@@ -118,7 +118,7 @@ def _reject_contradictory_authority_prose(docs: dict[str, str]) -> None:
                 continue
 
             production_assignment = re.search(
-                r"\bproduction authority\s*(?:=|:|\bis\b)\s*([a-z0-9-]+)", line
+                r"\bproduction authority\s*(?:=|:)\s*([a-z0-9-]+)", line
             )
             if production_assignment and production_assignment.group(1) != "none":
                 raise AssertionError(

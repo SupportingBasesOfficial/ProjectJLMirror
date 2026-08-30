@@ -420,44 +420,65 @@ def _registered_sources(registry: dict[str, Any]) -> tuple[dict[str, Any], ...]:
 
 
 def validate_authority_base_bindings(root: Path, registry: dict[str, Any]) -> None:
-    """Prove each declared source blob is the blob at path in accepted_authority_base."""
+    """Prove a durable accepted base plus exact evaluated-HEAD source bindings.
+
+    The accepted_authority_base is lineage authority and must already be durable/reachable.
+    Candidate normative source pins bind to the exact commit being evaluated (HEAD), not to an
+    intermediate PR commit recorded in the registry. This preserves exact source binding while
+    remaining valid after squash merge, where internal PR commits are intentionally not ancestors
+    of the resulting canonical main commit.
+    """
 
     repository_root = root.resolve()
     base = registry["accepted_authority_base"]
     _run_git(repository_root, "cat-file", "-e", f"{base}^{{commit}}")
+    evaluated = (
+        _run_git(repository_root, "rev-parse", "--verify", "HEAD^{commit}")
+        .decode("ascii")
+        .strip()
+    )
+    try:
+        _run_git(repository_root, "merge-base", "--is-ancestor", base, evaluated)
+    except ContractProjectionError as exc:
+        raise ContractProjectionError(
+            f"accepted_authority_base is not an ancestor of evaluated authority commit: "
+            f"base={base} evaluated={evaluated}"
+        ) from exc
 
     for source in _registered_sources(registry):
         relative = _validate_docs_markdown_path(source["path"], "registered source")
-        output = _run_git(repository_root, "ls-tree", "-z", base, "--", relative)
+        output = _run_git(repository_root, "ls-tree", "-z", evaluated, "--", relative)
         records = [record for record in output.split(b"\0") if record]
         if len(records) != 1:
             raise ContractProjectionError(
-                f"accepted authority base does not resolve exactly one source path: {base}:{relative}"
+                f"evaluated authority commit does not resolve exactly one source path: "
+                f"{evaluated}:{relative}"
             )
         metadata, separator, encoded_path = records[0].partition(b"\t")
         if not separator:
             raise ContractProjectionError(
-                f"cannot parse accepted authority tree record for {base}:{relative}"
+                f"cannot parse evaluated authority tree record for {evaluated}:{relative}"
             )
         try:
             mode, object_type, object_sha = metadata.decode("ascii").split()
             resolved_path = encoded_path.decode("utf-8")
         except (UnicodeDecodeError, ValueError) as exc:
             raise ContractProjectionError(
-                f"cannot decode accepted authority tree record for {base}:{relative}"
+                f"cannot decode evaluated authority tree record for {evaluated}:{relative}"
             ) from exc
         if object_type != "blob" or mode not in {"100644", "100755"}:
             raise ContractProjectionError(
-                f"accepted authority path is not a regular blob: {base}:{relative}"
+                f"evaluated authority path is not a regular blob: {evaluated}:{relative}"
             )
         if resolved_path != relative:
             raise ContractProjectionError(
-                f"accepted authority path mismatch: expected {relative}, got {resolved_path}"
+                f"evaluated authority path mismatch: expected {relative}, got {resolved_path}"
             )
         if object_sha != source["git_blob_sha"]:
             raise ContractProjectionError(
-                f"accepted authority binding mismatch: {base}:{relative} resolves to {object_sha}, "
-                f"registry declares {source['git_blob_sha']}"
+                f"accepted authority binding mismatch: base={base} evaluated={evaluated} "
+                f"path={relative} resolves to {object_sha}, registry declares "
+                f"{source['git_blob_sha']}"
             )
 
 
@@ -643,6 +664,11 @@ def build_manifest_projection(
 def build_bundle(root: Path) -> dict[str, Any]:
     registry = load_registry(root)
     validate_authority_base_bindings(root, registry)
+    evaluated_authority_commit = (
+        _run_git(root.resolve(), "rev-parse", "--verify", "HEAD^{commit}")
+        .decode("ascii")
+        .strip()
+    )
     profile_catalog = build_profile_catalog(root, registry)
     http_schema = build_manifest_projection(
         root, registry["http_manifest_source"], "http-endpoint-manifest:v1"
@@ -654,8 +680,9 @@ def build_bundle(root: Path) -> dict[str, Any]:
     return {
         "bundle_id": "jlmirror.contract-projection-bundle@1",
         "accepted_authority_base": registry["accepted_authority_base"],
+        "evaluated_authority_commit": evaluated_authority_commit,
         "authority": "projection_only_reviewed_markdown_remains_normative",
-        "authority_binding": "accepted_base_path_blob_verified",
+        "authority_binding": "accepted_base_ancestor_plus_evaluated_head_path_blob_verified",
         "source_registry_sha256": sha256(registry_bytes).hexdigest(),
         "profile_catalog": profile_catalog,
         "http_endpoint_manifest_schema": http_schema,

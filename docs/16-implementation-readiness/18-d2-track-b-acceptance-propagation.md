@@ -116,7 +116,7 @@ It does **not** supersede the historical Track A design rationale, acceptance cr
 
 ## Readiness propagation requirements
 
-The current readiness surfaces shall agree on these values:
+The following fenced block is the machine authority state for this transition. Readiness prose is descriptive and cannot independently mint Wave 4 implementation authority, production authority, or closure of `OPEN-REL-020`; any such authority change requires an explicit reviewed change to these structured fields and their deterministic guard.
 
 ```text
 open_rel_030_track_b = accepted
@@ -125,9 +125,10 @@ customer_telemetry_slice = eligible_for_implementation_authorization
 wave4_monitoring = eligible_for_separate_explicit_authorization
 wave4_implementation_authorization = not_granted
 production_authority = none
+open_rel_020_production_state = open_c3
 ```
 
-A stale readiness artifact that still uses pre-D2 blocker language after this propagation is a governance inconsistency and must fail review.
+A stale readiness artifact that still uses pre-D2 blocker language, or any current-state surface that contradicts the structured authority block with a positive Wave 4/production grant or `OPEN-REL-020` closure claim, is a governance inconsistency and must fail deterministic assurance.
 
 ## Advancement boundary
 

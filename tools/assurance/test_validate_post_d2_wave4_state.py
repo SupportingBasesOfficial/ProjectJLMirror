@@ -20,12 +20,16 @@ class PostD2Wave4StateGuardTest(unittest.TestCase):
             "\n".join(
                 [
                     MERGE_SHA,
+                    "## Readiness propagation requirements",
+                    "```text",
                     "open_rel_030_track_b = accepted",
                     "open_rel_030_profile = selected_and_conformed",
                     "customer_telemetry_slice = eligible_for_implementation_authorization",
                     "wave4_monitoring = eligible_for_separate_explicit_authorization",
                     "wave4_implementation_authorization = not_granted",
                     "production_authority = none",
+                    "open_rel_020_production_state = open_c3",
+                    "```",
                     "READY_TO_AUTHORIZE != AUTHORIZED_TO_IMPLEMENT",
                 ]
             ),
@@ -57,38 +61,93 @@ class PostD2Wave4StateGuardTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
+    def _append(self, key: str, line: str) -> None:
+        path = self.root / FILES[key]
+        path.write_text(path.read_text(encoding="utf-8") + f"\n{line}", encoding="utf-8")
+
     def test_accepts_consistent_post_d2_state(self) -> None:
         validate(self.root)
 
     def test_rejects_stale_customer_telemetry_blocker(self) -> None:
-        path = self.root / FILES["blockers"]
-        path.write_text(
-            path.read_text(encoding="utf-8")
-            + "\nBlocked until `OPEN-REL-030` C2 durable acceptance/projection mechanism",
-            encoding="utf-8",
+        self._append(
+            "blockers",
+            "Blocked until `OPEN-REL-030` C2 durable acceptance/projection mechanism",
         )
         with self.assertRaises(AssertionError):
             validate(self.root)
 
-    def test_rejects_implicit_wave4_authorization_in_transition(self) -> None:
+    def test_rejects_structured_wave4_authorization_grant(self) -> None:
         path = self.root / FILES["transition"]
-        path.write_text(
-            path.read_text(encoding="utf-8")
-            + "\nwave4_implementation_authorization = granted",
-            encoding="utf-8",
+        text = path.read_text(encoding="utf-8").replace(
+            "wave4_implementation_authorization = not_granted",
+            "wave4_implementation_authorization = granted",
         )
+        path.write_text(text, encoding="utf-8")
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_rejects_structured_production_authority_grant(self) -> None:
+        path = self.root / FILES["transition"]
+        text = path.read_text(encoding="utf-8").replace(
+            "production_authority = none",
+            "production_authority = granted",
+        )
+        path.write_text(text, encoding="utf-8")
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_rejects_structured_open_rel_020_closure(self) -> None:
+        path = self.root / FILES["transition"]
+        text = path.read_text(encoding="utf-8").replace(
+            "open_rel_020_production_state = open_c3",
+            "open_rel_020_production_state = closed",
+        )
+        path.write_text(text, encoding="utf-8")
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_rejects_duplicate_structured_authority_key(self) -> None:
+        path = self.root / FILES["transition"]
+        text = path.read_text(encoding="utf-8").replace(
+            "production_authority = none\n",
+            "production_authority = none\nproduction_authority = none\n",
+        )
+        path.write_text(text, encoding="utf-8")
         with self.assertRaises(AssertionError):
             validate(self.root)
 
     def test_rejects_implicit_wave4_authorization_in_open_register(self) -> None:
-        path = self.root / FILES["open_register"]
-        path.write_text(
-            path.read_text(encoding="utf-8")
-            + "\nwave4_implementation_authorization = granted",
-            encoding="utf-8",
+        self._append("open_register", "wave4_implementation_authorization = granted")
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_rejects_natural_language_wave4_authorization(self) -> None:
+        self._append("sequencing", "Wave 4 implementation is AUTHORIZED TO IMPLEMENT")
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_rejects_natural_language_provider_authorization(self) -> None:
+        self._append(
+            "slice_manifest",
+            "accepted Monitoring/Zabbix subprofile is authorized to implement",
         )
         with self.assertRaises(AssertionError):
             validate(self.root)
+
+    def test_rejects_production_authority_grant_in_current_surface(self) -> None:
+        self._append("blockers", "production_authority = granted")
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_rejects_open_rel_020_closure_in_current_surface(self) -> None:
+        self._append("blockers", "OPEN-REL-020 = CLOSED")
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_allows_explicit_negative_authority_language(self) -> None:
+        self._append("sequencing", "Wave 4 remains not authorized to implement here")
+        self._append("blockers", "This record does not authorize production deployment")
+        validate(self.root)
 
 
 if __name__ == "__main__":

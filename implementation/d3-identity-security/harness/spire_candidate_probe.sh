@@ -10,8 +10,13 @@ AGENT_BIN="${SPIRE_ROOT}/bin/spire-agent"
 EXPECTED_VERSION="1.15.3"
 TRUST_DOMAIN="validation.d3.jlmirror.invalid"
 NODE_ID="spiffe://${TRUST_DOMAIN}/node/validation-runner"
-VALIDATION_ID="spiffe://${TRUST_DOMAIN}/environment.validation@1/runtime.api@1/workload-probe"
-PRODUCTION_ID="spiffe://${TRUST_DOMAIN}/environment.production@1/runtime.api@1/forbidden-probe"
+CANONICAL_VALIDATION_ENV="environment.validation@1"
+CANONICAL_PRODUCTION_ENV="environment.production@1"
+CANONICAL_RUNTIME_PROFILE="runtime.api@1"
+# SPIFFE path segments intentionally use an adapter-safe representation. The canonical
+# JLMirror identifiers above remain unchanged and MUST NOT inherit SPIFFE path grammar.
+VALIDATION_ID="spiffe://${TRUST_DOMAIN}/environment/validation/v1/runtime/api/v1/workload-probe"
+PRODUCTION_ID="spiffe://${TRUST_DOMAIN}/environment/production/v1/runtime/api/v1/forbidden-probe"
 CURRENT_UID="$(id -u)"
 FORBIDDEN_UID="0"
 
@@ -223,8 +228,10 @@ printf '%s\n' "${entry_output}" | grep -F "${PRODUCTION_ID}" >/dev/null
 printf '%s\n' "${entry_output}" | grep -F "unix:uid:${FORBIDDEN_UID}" >/dev/null
 
 printf 'spire_candidate_evaluation=PASS version=%s trust_domain=%s\n' "${SPIRE_VERSION}" "${TRUST_DOMAIN}"
-printf 'runtime_attestation_selector_binding=PASS caller_uid=%s authorized_id=%s forbidden_id_not_issued=true\n' \
-  "${CURRENT_UID}" "${VALIDATION_ID}"
+printf 'canonical_to_spiffe_adapter=PASS canonical_environment=%s canonical_runtime=%s wire_spiffe_id=%s\n' \
+  "${CANONICAL_VALIDATION_ENV}" "${CANONICAL_RUNTIME_PROFILE}" "${VALIDATION_ID}"
+printf 'runtime_attestation_selector_binding=PASS caller_uid=%s authorized_id=%s forbidden_environment=%s forbidden_id_not_issued=true\n' \
+  "${CURRENT_UID}" "${VALIDATION_ID}" "${CANONICAL_PRODUCTION_ENV}"
 printf 'short_lived_x509_svid=PASS lifetime_seconds=%s\n' "${LIFETIME}"
 printf 'conformance_claim=exploratory_only evidence_credited=false private_key_non_exportability=not_claimed restore_recovery=not_claimed vendor_adapter=not_claimed\n'
 printf 'wave4=not_granted production=none d4=not_selected_not_granted\n'

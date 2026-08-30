@@ -14,7 +14,7 @@ Wave 4 authorization        not_granted
 Production authority        none
 Production versions         not selected
 Production capacity         OPEN-REL-020
-Material finding classes    49
+Material finding classes    50
 History hardening modules   6 (004–009)
 Merge                       not authorized
 ```
@@ -24,12 +24,12 @@ Merge                       not authorized
 The current mechanism anchor before the latest governance-only promotion is:
 
 ```text
-61f8ae668f719f18024a36f06a068937169534a6
-Deterministic Assurance #2231 — SUCCESS — run id 33281621862
-OPEN-REL-030 Conformance #183 — SUCCESS — run id 33281621858
+68938d0f02efaf1cc6ee23a288beedeae8d14214
+Deterministic Assurance #2237 — SUCCESS — run id 33282676657
+OPEN-REL-030 Conformance #186 — SUCCESS — run id 33282676651
 ```
 
-#183 verifies the exact SHA, executes all mandatory vectors, all six history hardening modules, physical PITR/recovery, the post-enrollment clone vector, Timescale restore/jobs and Tier1↔Tier2 relocation, then ends with `open_rel_030_extended_conformance=PASS` and `closure_claim=false`.
+#186 verifies the exact SHA, executes all mandatory vectors, all six history hardening modules, physical PITR/recovery, the post-enrollment clone vector, Timescale restore/jobs and Tier1↔Tier2 relocation, then ends with `open_rel_030_extended_conformance=PASS` and `closure_claim=false`.
 
 ## Evidence architecture
 
@@ -46,6 +46,8 @@ History reconciliation is intentionally fail-closed:
 - provider-visible INSERT/UPDATE advances dataset revision and invalidates current coverage atomically;
 - stable identity rewrite, DELETE and TRUNCATE fail closed;
 - accepted stable identities are checked against owner-current canonical content independently of current `became_visible_at`;
+- retained `finalized_through` is historical authority and must be revalidated under the current dataset revision before `complete` can return;
+- `try_finalize(..., NULL)` is malformed authority input and fails closed with SQLSTATE `22004`; it cannot mint `complete` or a NULL completeness watermark;
 - all existing `00[4-9]_history_*.sql` modules must be present in the extended runner.
 
 The current ordered history chain is:
@@ -61,27 +63,29 @@ The current ordered history chain is:
 
 ### #49 — retained finalized watermark
 
-After a stream has historically finalized through T2, a later provider dataset mutation may invalidate current coverage while preserving the durable T2 watermark. The finalizer must never use a shorter T1 request to restore `complete` unless current-revision coverage again reaches T2.
-
-The effective final rule is:
+After a stream has historically finalized through T2, a later provider dataset mutation may invalidate current coverage while preserving the durable T2 watermark. The finalizer never uses a shorter T1 request to restore `complete` unless current-revision coverage again reaches T2.
 
 ```text
 required_through = max(requested_finalize_through, existing_finalized_through)
 complete only if current revision/generation/snapshot coverage reaches required_through
 ```
 
-Exact #183 proves:
+### #50 — NULL finalization cutoff
+
+A never-finalized stream formerly allowed `try_finalize(stream_id,NULL)` to produce `v_required_through=NULL`; SQL three-valued comparisons could skip the fail-closed branch and permit `complete` with `finalized_through=NULL`.
+
+The effective finalizer now rejects the NULL cutoff before completeness processing. Exact #186 proves:
 
 ```text
+history_null_finalize_cutoff_rejected=PASS
+history_null_finalize_preserves_noncomplete_state=PASS
 history_retained_finalized_watermark_requires_revalidation=PASS
 history_retained_finalized_watermark_recovers_after_full_revalidation=PASS
 ```
 
-Partial revalidation below T2 preserves the historical watermark but keeps the stream `reconciliation_required`. Full current-revision revalidation through T2 is required before `complete` can return.
-
 ### Physical PITR / restored authority
 
-The recovery vector preserves the full #38–#46 authority chain:
+The recovery vector preserves the full recovery authority chain:
 
 - effective per-instance proof is outside PGDATA clone state;
 - clone negatives require same-path positive controls;
@@ -91,7 +95,7 @@ The recovery vector preserves the full #38–#46 authority chain:
 - material fetch locks and revalidates active authority, grant, boundary claim, effect and signing state;
 - validly signed successor epoch/placement drift grants fail closed;
 - a real successful claim→verify→fetch/apply→verify is replayed after hardening installation;
-- established response deadlines are caller-local and a real TCP response blackhole is exercised;
+- established response deadlines are caller-local and real TCP response blackholes are exercised;
 - timeout/uncertainty uses one-shot backend retirement rather than synchronous remote cleanup.
 
 ### Post-enrollment PGDATA clone
@@ -111,7 +115,7 @@ The effective final verifier transport has asynchronous caller-local deadlines, 
 ## Files
 
 - `STATE.md` — current governed evidence state and acceptance boundary.
-- `DECISION_REVIEW.md` — normative decision-review record and all 49 material finding classes.
+- `DECISION_REVIEW.md` — normative decision-review record and all 50 material finding classes.
 - `EVIDENCE_MANIFEST.json` — machine-readable evidence classification and guard facts.
 - `sql/d2-open-rel-030/*` — executable Tier 1 / history / Timescale evidence modules.
 - `tools/open_rel_030/*` — orchestration, recovery, clone, restore and relocation falsification harnesses.

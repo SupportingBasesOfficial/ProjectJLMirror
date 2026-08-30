@@ -20,6 +20,7 @@ Recommend C2 Track B acceptance only if the complete invariant set below remains
 - accepted stable identities are compared with owner-current canonical content before coverage publication whenever either side intersects the requested window, independently of current `became_visible_at`;
 - a retained durable `finalized_through=T2` is historical authority, not reusable coverage: after dataset invalidation, any later finalization request for `T1<T2` must still prove current-revision contiguous coverage through T2 before the stream may return to `complete`;
 - partial current-revision revalidation below a retained watermark leaves `state=reconciliation_required` and preserves the historical watermark without advertising it as currently complete;
+- `try_finalize(..., p_finalize_through)` rejects `NULL` cutoff with SQLSTATE `22004` before any completeness decision; malformed worker input cannot mint `complete` or a complete state with `finalized_through=NULL`;
 - every current `00[4-9]_history_*.sql` hardening module is executed by the extended runner and structurally guarded against orphaning; the current set is `004–009`.
 
 ### Physical PITR recovery authority
@@ -58,45 +59,40 @@ Recovery admission remains a surviving, authenticated, effect-bound, active-auth
 
 ```text
 HEAD
-61f8ae668f719f18024a36f06a068937169534a6
+68938d0f02efaf1cc6ee23a288beedeae8d14214
 
 JLMIRROR Deterministic Assurance
-run #2231
-run id 33281621862
+run #2237
+run id 33282676657
 SUCCESS
 
 JLMIRROR OPEN-REL-030 Conformance
-run #183
-run id 33281621858
+run #186
+run id 33282676651
 SUCCESS
 ```
 
-Exact #183 checked out and verified that SHA, executed all six history hardening modules (`004–009`), the complete PITR/recovery package, post-enrollment clone, Timescale restore/jobs and Tier1↔Tier2 relocation, then ended with `open_rel_030_extended_conformance=PASS` while retaining `closure_claim=false`.
+Exact #186 checked out and verified that SHA, executed all six history hardening modules (`004–009`), the complete PITR/recovery package, post-enrollment clone, Timescale restore/jobs and Tier1↔Tier2 relocation, then ended with `open_rel_030_extended_conformance=PASS` while retaining `closure_claim=false`.
 
-### Class #49 empirical proof
+### Class #50 empirical proof
 
-The Codex finding identified a stale-completeness path: after a stream had finalized through T2, provider-dataset invalidation cleared current coverage but retained T2. A worker could re-sweep only through earlier T1 and the old `GREATEST(finalized_through,p_finalize_through)` assignment could mark the stream complete at retained T2 without revalidating `(T1,T2]`.
+The Codex finding identified a SQL three-valued-logic path: on a stream without an existing finalized watermark, `try_finalize(stream_id,NULL)` could derive `v_required_through=NULL`; comparisons against that value became `NULL` rather than true, allowing the rejection branch to be skipped and `state=complete` to be written with `finalized_through=NULL`.
 
-The effective final `try_finalize(...)` now computes:
+The effective final `try_finalize(...)` now rejects a NULL requested cutoff immediately with SQLSTATE `22004` (`null_value_not_allowed`) before state/authority lookup or completeness calculation.
 
-```text
-required_through = max(existing finalized_through, requested finalize_through)
-```
-
-and requires current authority-generation + provider-dataset-revision + required-snapshot contiguous coverage through that bound before returning `complete`.
-
-Exact #183 proves:
+Exact #186 proves:
 
 ```text
+history_null_finalize_cutoff_rejected=PASS
+history_null_finalize_preserves_noncomplete_state=PASS
 history_retained_finalized_watermark_requires_revalidation=PASS
 history_retained_finalized_watermark_recovers_after_full_revalidation=PASS
-history_modules=6
 open_rel_030_extended_conformance=PASS
 ```
 
-The regression vector first finalizes T2=12:00, mutates owner-visible provider history so revision advances and current coverage is invalidated, re-sweeps only to T1=11:30 and proves finalization fails closed while historical T2 remains durable. Only after current-revision coverage is restored through T2 does the same T1 request regain `complete`.
+The #50 vector establishes valid short current coverage on a never-finalized stream, invokes `try_finalize(...,NULL)`, requires the explicit rejection, and proves the pre-existing `provisional` sweep state and coverage remain intact while `finalized_through` remains NULL. Thus malformed input cannot create completeness.
 
-## Material classes #38–#49
+## Material classes #38–#50
 
 - **#38:** post-enrollment PGDATA clone authority — effective proof moved outside PGDATA clone domain.
 - **#39:** clone-negative false pass — same-path positive control required first.
@@ -110,17 +106,18 @@ The regression vector first finalizes T2=12:00, mutates owner-visible provider h
 - **#47:** post-enrollment clone unbounded response — bounded async transport, real blackhole and backend retirement.
 - **#48:** relocation timeout cleanup outside deadline — effective final transport override with two-direction real blackholes and one-shot retirement.
 - **#49:** retained finalized watermark stale resurrection — current-revision coverage must revalidate through the retained historical watermark before `complete` can be restored.
+- **#50:** NULL finalization watermark — malformed NULL cutoff is rejected before three-valued logic can mint `complete` with a NULL finalized watermark.
 
-Classes #1–#37 remain part of the same accepted evidence lineage and are enumerated in `DECISION_REVIEW.md`; no prior closure is superseded by #49.
+Classes #1–#37 remain part of the same evidence lineage and are enumerated in `DECISION_REVIEW.md`; no prior closure is superseded by #50.
 
 ## Acceptance boundary
 
 ```text
 Evidence package             COMPLETE
-Executable empirical anchor  61f8ae668f719f18024a36f06a068937169534a6 / #2231 / #183
-Material finding classes     49
+Executable empirical anchor  68938d0f02efaf1cc6ee23a288beedeae8d14214 / #2237 / #186
+Material finding classes     50
 History hardening modules    6 (004–009)
-Inline review threads        0 unresolved after #49 evidence reply
+Inline review threads        0 unresolved after #50 evidence reply
 Exact-final-HEAD CI          REQUIRED AGAIN AFTER THIS GOVERNANCE MUTATION
 Fresh Codex exact-head       REQUIRED
 Native Assurance exact-head  REQUIRED AGAIN

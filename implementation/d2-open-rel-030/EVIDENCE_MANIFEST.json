@@ -27,23 +27,23 @@
     }
   },
   "classification_basis": {
-    "exact_empirical_head_before_reviewer_documentation": "61f8ae668f719f18024a36f06a068937169534a6",
-    "deterministic_assurance_run_number": 2231,
-    "deterministic_assurance_run_id": 33281621862,
-    "open_rel_030_conformance_run_number": 183,
-    "open_rel_030_conformance_run_id": 33281621858,
+    "exact_empirical_head_before_reviewer_documentation": "68938d0f02efaf1cc6ee23a288beedeae8d14214",
+    "deterministic_assurance_run_number": 2237,
+    "deterministic_assurance_run_id": 33282676657,
+    "open_rel_030_conformance_run_number": 186,
+    "open_rel_030_conformance_run_id": 33282676651,
     "result": "success",
     "history_modules_executed": 6,
     "critical_vectors": 3,
-    "note": "Anchor preserves the complete prior C2 package and closes material class #49 by requiring current-revision reconciliation coverage through any retained finalized watermark before a stream may return to complete."
+    "note": "Anchor preserves the complete prior C2 package and closes material class #50 by rejecting a NULL requested finalization cutoff before SQL three-valued comparisons can mint completeness or a NULL finalized watermark."
   },
   "review_provenance": {
-    "material_finding_classes_documented_in_decision_review": 49,
-    "material_finding_classes_closed_by_current_mechanism": 49,
-    "latest_material_class": 49,
-    "latest_material_class_title": "retained finalized watermark revalidation",
-    "latest_codex_reviewed_pre_repair_sha": "efa9cd33ab490daafd1f5054962aef87f9a585af",
-    "latest_codex_thread": "PRRT_kwDOT7x07M6ddV1O",
+    "material_finding_classes_documented_in_decision_review": 50,
+    "material_finding_classes_closed_by_current_mechanism": 50,
+    "latest_material_class": 50,
+    "latest_material_class_title": "null finalization watermark rejection",
+    "latest_codex_reviewed_pre_repair_sha": "f201d4a18e4edb402480f3d2a9745b06b084079c",
+    "latest_codex_thread": "PRRT_kwDOT7x07M6ddhwC",
     "latest_codex_thread_resolved_after_exact_head_evidence": true
   },
   "completed_mandatory_vectors": [
@@ -71,6 +71,11 @@
     "retained_finalized_watermark_requires_current_revision_revalidation": true,
     "partial_revalidation_below_retained_watermark_can_restore_complete": false,
     "complete_restored_only_after_current_revision_covers_retained_watermark": true,
+    "null_finalize_cutoff_rejected": true,
+    "null_finalize_cutoff_sqlstate": "22004",
+    "null_finalize_can_mint_complete": false,
+    "null_finalize_can_create_complete_with_null_finalized_through": false,
+    "null_finalize_preserves_preexisting_sweep_state": true,
     "history_hardening_modules_executed": [
       "004_history_reconciliation.sql",
       "005_history_identity_window_hardening.sql",

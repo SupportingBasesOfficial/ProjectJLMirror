@@ -77,17 +77,18 @@ jobs:
           assert manifest['tier2_profile_classification']['mediated_shared_history_columnstore_cagg'] == 'conformant_candidate_recommended_for_c2_acceptance'
 
           provenance = manifest['review_provenance']
-          assert provenance['material_finding_classes_documented_in_decision_review'] == 49
-          assert provenance['material_finding_classes_closed_by_current_mechanism'] == 49
-          assert provenance['latest_material_class'] == 49
+          assert provenance['material_finding_classes_documented_in_decision_review'] == 50
+          assert provenance['material_finding_classes_closed_by_current_mechanism'] == 50
+          assert provenance['latest_material_class'] == 50
+          assert provenance['latest_codex_thread'] == 'PRRT_kwDOT7x07M6ddhwC'
           assert provenance['latest_codex_thread_resolved_after_exact_head_evidence'] is True
 
           basis = manifest['classification_basis']
-          assert basis['exact_empirical_head_before_reviewer_documentation'] == '61f8ae668f719f18024a36f06a068937169534a6'
-          assert basis['deterministic_assurance_run_number'] == 2231
-          assert basis['deterministic_assurance_run_id'] == 33281621862
-          assert basis['open_rel_030_conformance_run_number'] == 183
-          assert basis['open_rel_030_conformance_run_id'] == 33281621858
+          assert basis['exact_empirical_head_before_reviewer_documentation'] == '68938d0f02efaf1cc6ee23a288beedeae8d14214'
+          assert basis['deterministic_assurance_run_number'] == 2237
+          assert basis['deterministic_assurance_run_id'] == 33282676657
+          assert basis['open_rel_030_conformance_run_number'] == 186
+          assert basis['open_rel_030_conformance_run_id'] == 33282676651
           assert basis['result'] == 'success'
           assert basis['history_modules_executed'] == 6
           assert basis['critical_vectors'] == 3
@@ -103,6 +104,11 @@ jobs:
           assert history['retained_finalized_watermark_requires_current_revision_revalidation'] is True
           assert history['partial_revalidation_below_retained_watermark_can_restore_complete'] is False
           assert history['complete_restored_only_after_current_revision_covers_retained_watermark'] is True
+          assert history['null_finalize_cutoff_rejected'] is True
+          assert history['null_finalize_cutoff_sqlstate'] == '22004'
+          assert history['null_finalize_can_mint_complete'] is False
+          assert history['null_finalize_can_create_complete_with_null_finalized_through'] is False
+          assert history['null_finalize_preserves_preexisting_sweep_state'] is True
 
           expected_history = [
               '004_history_reconciliation.sql',
@@ -121,14 +127,19 @@ jobs:
 
           retained = Path('sql/d2-open-rel-030/009_history_retained_finalized_watermark_hardening.sql').read_text()
           for marker in [
+              'IF p_finalize_through IS NULL THEN',
+              "ERRCODE = '22004'",
+              'finalization cutoff must not be null',
               'v_required_through',
               'GREATEST(v_state.finalized_through, p_finalize_through)',
               'v_current_covered < v_required_through',
               "state = 'reconciliation_required'",
+              'history_null_finalize_cutoff_rejected=PASS',
+              'history_null_finalize_preserves_noncomplete_state=PASS',
               'history_retained_finalized_watermark_requires_revalidation=PASS',
               'history_retained_finalized_watermark_recovers_after_full_revalidation=PASS',
           ]:
-              assert marker in retained, f'missing retained-watermark guard marker: {marker}'
+              assert marker in retained, f'missing history finalization guard marker: {marker}'
 
           recovery = manifest['recovery_evidence']
           required_recovery_true = [
@@ -220,7 +231,8 @@ jobs:
               'evidence_manifest_guard=PASS '
               'state=complete_ready_for_decision_review '
               'acceptance=not_granted '
-              'material_findings=49 '
+              'material_findings=50 '
+              'null_finalize_guard=true '
               'retained_finalized_watermark_guard=true '
               'active_recovery_authority_guard=true '
               'active_recovery_e2e_guard=true '

@@ -39,12 +39,18 @@ class D3CryptoReferenceTests(unittest.TestCase):
         self.assertFalse(ring.verify(token=token, session_lineage_id="lineage-B"))
 
     def test_csrf_previous_generation_is_verify_only_overlap(self):
-        authority = self.authority()
-        old_ring = CsrfKeyRing(authority=authority, current=2, previous=None)
-        old_token = old_ring.issue(session_lineage_id="lineage-A")
-        rotated = CsrfKeyRing(authority=authority, current=3, previous=2)
+        pre_rotation = ReferenceKeyAuthority(
+            [ReferenceKeyVersion(2, key(2), signing_enabled=True, verification_enabled=True)]
+        )
+        old_token = CsrfKeyRing(authority=pre_rotation, current=2, previous=None).issue(
+            session_lineage_id="lineage-A"
+        )
+
+        post_rotation = self.authority()
+        rotated = CsrfKeyRing(authority=post_rotation, current=3, previous=2)
         self.assertTrue(rotated.verify(token=old_token, session_lineage_id="lineage-A"))
-        self.assertFalse(authority.can_sign(key_version=2))
+        self.assertFalse(post_rotation.can_sign(key_version=2))
+        self.assertTrue(post_rotation.can_verify(key_version=2))
 
     def test_csrf_retired_generation_is_rejected(self):
         old_authority = ReferenceKeyAuthority(
@@ -110,12 +116,14 @@ class D3CryptoReferenceTests(unittest.TestCase):
 
     def test_replay_concurrency_has_exactly_one_winner(self):
         ledger = AtomicReplayLedger()
+
         def attempt(_: int) -> bool:
             return ledger.create_or_observe(
                 client_principal="machine-A",
                 jti="assertion-jti-1",
                 expected_generation=1,
             )
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
             outcomes = list(pool.map(attempt, range(64)))
         self.assertEqual(1, sum(outcomes))

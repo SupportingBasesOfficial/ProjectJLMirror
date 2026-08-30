@@ -32,12 +32,52 @@ _ASSIGNMENT_RE = re.compile(r"^([a-z][a-z0-9_]*)\s*=\s*([a-z][a-z0-9_]*)$")
 _WAVE4_SUBJECT_RE = re.compile(
     r"(?:\bwave\s*4\b|\bwave4\b|monitoring\s*/\s*zabbix|customer[ -]telemetry)"
 )
-_POSITIVE_AUTHORITY_TOKEN_RE = re.compile(
-    r"\b(?:authorized|authorised|granted|approved|activated)\b"
+_PRODUCTION_SUBJECT_RE = re.compile(r"\bproduction\b")
+_CLAUSE_SPLIT_RE = re.compile(
+    r"(?:\s*;\s*|\s*[.!?]\s+|\s*,\s*(?:but|however|yet)\s+|\s+\b(?:but|however|yet|and)\b\s+)"
 )
-_SAFE_AUTHORITY_CONTEXT_RE = re.compile(
-    r"\b(?:not|never|cannot|can't|does\s+not|is\s+not|are\s+not|remains\s+not|"
-    r"eligible|eligibility|separate|without|no)\b"
+_PRESENT_GRANT_RE = re.compile(
+    r"(?:"
+    r"\b(?:is|are|was|were|has been|have been)\s+"
+    r"(?:authorized|authorised|granted|approved|activated|permitted|allowed)\b"
+    r"(?:\s+(?:to\s+implement|for\s+implementation|to\s+proceed|for\s+deployment))?"
+    r"|"
+    r"\b(?:authorized|authorised|granted|permitted|allowed)\s+to\s+implement\b"
+    r"|"
+    r"\b(?:may|can)\s+(?:now\s+)?(?:proceed|deploy|implement)\b"
+    r"|"
+    r"\b(?:implementation|production deployment|deployment)\s+"
+    r"(?:is|are|has been|have been)\s+"
+    r"(?:authorized|authorised|granted|approved|activated|permitted|allowed)\b"
+    r")"
+)
+_NON_GRANT_RE = re.compile(
+    r"(?:"
+    r"\b(?:not|never)\s+(?:currently\s+)?"
+    r"(?:authorized|authorised|granted|approved|activated|permitted|allowed)\b"
+    r"|"
+    r"\b(?:cannot|can't|may not|must not)\s+(?:now\s+)?(?:proceed|deploy|implement)\b"
+    r"|"
+    r"\bdoes\s+not\s+authorize\b"
+    r"|"
+    r"\b(?:authorized|authorised|granted|approved|activated|permitted|allowed)\b"
+    r"(?:\s+to\s+implement|\s+for\s+implementation|\s+to\s+proceed|\s+for\s+deployment)?"
+    r"\s+only\s+(?:after|if|when|once|upon|subject to)\b"
+    r"|"
+    r"\b(?:may|can)\s+(?:now\s+)?(?:proceed|deploy|implement)\s+only\s+"
+    r"(?:after|if|when|once|upon|subject to)\b"
+    r"|"
+    r"\bwhether\b.*\b(?:authorized|authorised|granted|approved|permitted|allowed)\b"
+    r".*\b(?:undecided|unknown|open|pending|unresolved)\b"
+    r")"
+)
+_OPEN_REL_020_CLOSURE_RE = re.compile(
+    r"(?:"
+    r"\bopen-rel-020\b\s*(?:=|:)\s*(?:closed|resolved|accepted|complete|completed)\b"
+    r"|"
+    r"\bopen-rel-020\b\s+(?:is|was|has been|became)\s+"
+    r"(?:closed|resolved|accepted|complete|completed)\b"
+    r")"
 )
 
 
@@ -98,65 +138,103 @@ def _plain_line(raw: str) -> str:
     return re.sub(r"\s+", " ", line).strip()
 
 
-def _positive_authority_is_negated(line: str, token_start: int) -> bool:
-    prefix = line[max(0, token_start - 80) : token_start]
-    return _SAFE_AUTHORITY_CONTEXT_RE.search(prefix) is not None
+def _machine_line(raw: str) -> str:
+    line = raw.casefold().replace("`", "").replace("*", "")
+    return re.sub(r"\s+", " ", line).strip()
+
+
+def _iter_clauses(line: str) -> tuple[str, ...]:
+    clauses = tuple(
+        part.strip(" ,;:-")
+        for part in _CLAUSE_SPLIT_RE.split(line)
+        if part.strip(" ,;:-")
+    )
+    return clauses or (line,)
+
+
+def _is_question_or_conditional_non_grant(clause: str, raw: str) -> bool:
+    if raw.strip().endswith("?"):
+        return True
+    return _NON_GRANT_RE.search(clause) is not None
+
+
+def _reject_machine_authority_overrides(key: str, raw: str) -> None:
+    line = _machine_line(raw)
+
+    wave4 = re.search(
+        r"\bwave4_implementation_authorization\s*(?:=|:)\s*([a-z][a-z0-9_]*)\b",
+        line,
+    )
+    if wave4 and wave4.group(1) != "not_granted":
+        raise AssertionError(
+            f"{key}: contradictory Wave 4 authority assignment: {raw.strip()!r}"
+        )
+
+    production = re.search(
+        r"\bproduction_authority\s*(?:=|:)\s*([a-z][a-z0-9_]*)\b",
+        line,
+    )
+    if production and production.group(1) != "none":
+        raise AssertionError(
+            f"{key}: contradictory production authority assignment: {raw.strip()!r}"
+        )
+
+    open_rel = re.search(
+        r"\bopen_rel_020_production_state\s*(?:=|:)\s*([a-z][a-z0-9_]*)\b",
+        line,
+    )
+    if open_rel and open_rel.group(1) != "open_c3":
+        raise AssertionError(
+            f"{key}: contradictory OPEN-REL-020 structured state: {raw.strip()!r}"
+        )
 
 
 def _reject_contradictory_authority_prose(docs: dict[str, str]) -> None:
-    """Fail closed on positive implementation/production grants outside canonical state.
+    """Reject present-tense grants while allowing scoped denial/conditions/questions.
 
-    Markdown prose is descriptive; it cannot independently mint Wave 4 or production authority.
-    The structured transition block is the machine authority source. This scan intentionally
-    catches broad positive grant forms so wording changes cannot bypass two exact sentinels.
+    The structured transition block owns machine authority. Descriptive prose must not
+    contradict it. We parse clauses rather than using an 80-character prefix so a safe
+    statement in one clause cannot conceal a positive grant in a later clause.
     """
 
     for key, text in docs.items():
         for raw in text.splitlines():
+            if not raw.strip():
+                continue
+            _reject_machine_authority_overrides(key, raw)
+
             line = _plain_line(raw)
             if not line:
                 continue
 
-            production_assignment = re.search(
-                r"\bproduction authority\s*(?:=|:)\s*([a-z0-9-]+)", line
-            )
-            if production_assignment and production_assignment.group(1) != "none":
-                raise AssertionError(
-                    f"{key}: contradictory production authority claim: {raw.strip()!r}"
-                )
-
-            if re.search(
-                r"\bopen-rel-020\s*(?:=|:|\bis\b)\s*(?:closed|resolved|accepted)\b",
-                line,
-            ):
+            if _OPEN_REL_020_CLOSURE_RE.search(line):
                 raise AssertionError(
                     f"{key}: contradictory OPEN-REL-020 closure claim: {raw.strip()!r}"
                 )
 
-            explicit_true = re.search(
-                r"\bauthorized\s+to\s+implement\s*(?:=|:|\bis\b)\s*(?:true|yes|granted)\b",
-                line,
-            )
-            if explicit_true and not _positive_authority_is_negated(line, explicit_true.start()):
-                raise AssertionError(
-                    f"{key}: contradictory implementation authority claim: {raw.strip()!r}"
-                )
+            wave4_scope = _WAVE4_SUBJECT_RE.search(line) is not None
+            production_scope = _PRODUCTION_SUBJECT_RE.search(line) is not None
 
-            if _WAVE4_SUBJECT_RE.search(line):
-                for token in _POSITIVE_AUTHORITY_TOKEN_RE.finditer(line):
-                    if not _positive_authority_is_negated(line, token.start()):
-                        raise AssertionError(
-                            f"{key}: positive Wave 4/Monitoring authority prose is forbidden: "
-                            f"{raw.strip()!r}"
-                        )
+            if not (wave4_scope or production_scope):
+                continue
 
-            if "production" in line:
-                for token in _POSITIVE_AUTHORITY_TOKEN_RE.finditer(line):
-                    if not _positive_authority_is_negated(line, token.start()):
-                        raise AssertionError(
-                            f"{key}: positive production authority prose is forbidden: "
-                            f"{raw.strip()!r}"
-                        )
+            for clause in _iter_clauses(line):
+                grant = _PRESENT_GRANT_RE.search(clause)
+                if grant is None:
+                    continue
+                if _is_question_or_conditional_non_grant(clause, raw):
+                    continue
+
+                if wave4_scope:
+                    raise AssertionError(
+                        f"{key}: positive Wave 4/Monitoring authority prose is forbidden: "
+                        f"{raw.strip()!r}"
+                    )
+                if production_scope:
+                    raise AssertionError(
+                        f"{key}: positive production authority prose is forbidden: "
+                        f"{raw.strip()!r}"
+                    )
 
 
 def validate(root: Path) -> None:
@@ -232,7 +310,8 @@ def main(argv: list[str]) -> int:
     print(
         "post_d2_wave4_state_guard=PASS "
         "track_b=accepted telemetry_slice=eligible wave4_authorization=not_granted "
-        "production_authority=none open_rel_020=open_c3 authority_state=structured"
+        "production_authority=none open_rel_020=open_c3 authority_state=structured "
+        "prose_guard=clause_scoped"
     )
     return 0
 

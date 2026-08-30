@@ -1,12 +1,14 @@
 \set ON_ERROR_STOP on
 
--- #49 — retained finalized watermark revalidation.
+-- #49/#50 — retained finalized watermark revalidation and null-cutoff rejection.
 --
 -- A dataset mutation intentionally invalidates current coverage while preserving
 -- the durable historical finalized watermark. A later request to finalize only
 -- an earlier T1 must therefore revalidate the *retained* T2 watermark before the
 -- stream may return to complete. Otherwise GREATEST(finalized_through,T1) can
--- advertise stale coverage for (T1,T2].
+-- advertise stale coverage for (T1,T2]. A missing requested cutoff is malformed
+-- authority input and must fail closed before it can participate in SQL three-
+-- valued comparisons or mint a NULL completeness watermark.
 
 SET ROLE history_reconcile_owner;
 
@@ -27,6 +29,12 @@ DECLARE
     v_current_covered timestamptz;
     v_required_through timestamptz;
 BEGIN
+    IF p_finalize_through IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '22004',
+            MESSAGE = 'finalization cutoff must not be null';
+    END IF;
+
     SELECT * INTO v_state
       FROM history_reconcile_evidence.stream_state
      WHERE stream_id = p_stream_id
@@ -87,7 +95,72 @@ GRANT EXECUTE ON FUNCTION history_reconcile_evidence.try_finalize(text,timestamp
 
 RESET ROLE;
 
--- Dedicated regression vector: establish T2, invalidate the dataset revision,
+-- #50 regression: a worker with only short current coverage must not be able to
+-- mint completeness by omitting the requested finalization watermark.
+INSERT INTO history_reconcile_evidence.stream_state (
+    stream_id, supported_history_floor, state
+) VALUES (
+    'zabbix:item:null-finalization-watermark',
+    '2026-08-28T11:00:00Z',
+    'reconciliation_required'
+);
+
+INSERT INTO history_reconcile_evidence.provider_authority (
+    stream_id, authority_generation, current_snapshot_at,
+    finality_floor, required_reconciliation_snapshot_at
+) VALUES (
+    'zabbix:item:null-finalization-watermark', 1,
+    '2026-08-28T13:00:00Z', '2026-08-28T13:00:00Z', '2026-08-28T13:00:00Z'
+);
+
+SET ROLE history_reconcile_worker;
+SELECT history_reconcile_evidence.sweep(
+    'zabbix:item:null-finalization-watermark',
+    '2026-08-28T11:00:00Z','2026-08-28T11:15:00Z',1
+);
+DO $$
+DECLARE
+    v_rejected boolean := false;
+BEGIN
+    BEGIN
+        PERFORM history_reconcile_evidence.try_finalize(
+            'zabbix:item:null-finalization-watermark', NULL::timestamptz
+        );
+    EXCEPTION
+        WHEN SQLSTATE '22004' THEN
+            v_rejected := true;
+    END;
+
+    IF NOT v_rejected THEN
+        RAISE EXCEPTION 'NULL finalization cutoff was not rejected with SQLSTATE 22004';
+    END IF;
+END;
+$$;
+RESET ROLE;
+
+DO $$
+DECLARE
+    v_covered timestamptz;
+    v_finalized_through timestamptz;
+    v_state history_reconcile_evidence.completeness_state;
+BEGIN
+    SELECT reconciliation_covered_through, finalized_through, state
+      INTO v_covered, v_finalized_through, v_state
+      FROM history_reconcile_evidence.stream_state
+     WHERE stream_id='zabbix:item:null-finalization-watermark';
+
+    IF v_covered <> '2026-08-28T11:15:00Z'::timestamptz
+       OR v_finalized_through IS NOT NULL
+       OR v_state <> 'reconciliation_required' THEN
+        RAISE EXCEPTION 'NULL finalization cutoff changed completeness state: % % %',
+            v_covered, v_finalized_through, v_state;
+    END IF;
+END;
+$$;
+SELECT 'history_null_finalize_cutoff_rejected=PASS' AS result;
+SELECT 'history_null_finalize_preserves_noncomplete_state=PASS' AS result;
+
+-- Dedicated #49 regression vector: establish T2, invalidate the dataset revision,
 -- re-sweep only to T1<T2 and prove that T2 cannot be retained as complete until
 -- current-revision coverage has again reached T2.
 INSERT INTO history_reconcile_evidence.stream_state (

@@ -149,6 +149,64 @@ class PostD2Wave4StateGuardTest(unittest.TestCase):
         self._append("blockers", "This record does not authorize production deployment")
         validate(self.root)
 
+    def test_rejects_safe_prefix_then_wave4_grant(self) -> None:
+        self._append(
+            "sequencing",
+            "Wave 4 is eligible for review and is authorized to implement",
+        )
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_rejects_negative_prefix_then_production_grant(self) -> None:
+        self._append(
+            "blockers",
+            "Production is not ready, but is approved for deployment",
+        )
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_rejects_wave4_may_now_proceed(self) -> None:
+        self._append("sequencing", "Wave 4 implementation may now proceed")
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_rejects_production_deployment_permitted(self) -> None:
+        self._append("blockers", "Production deployment is permitted")
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_rejects_open_rel_020_has_been_closed(self) -> None:
+        self._append("open_register", "OPEN-REL-020 has been closed")
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_rejects_open_rel_020_is_complete(self) -> None:
+        self._append("open_register", "OPEN-REL-020 is complete")
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_allows_authority_question_remains_undecided(self) -> None:
+        self._append("sequencing", "Whether Wave 4 is authorized remains undecided")
+        validate(self.root)
+
+    def test_allows_authorized_only_after_explicit_gate(self) -> None:
+        self._append(
+            "sequencing",
+            "Wave 4 is authorized only after a separate explicit gate",
+        )
+        validate(self.root)
+
+    def test_allows_direct_authority_question(self) -> None:
+        self._append("sequencing", "Is Wave 4 authorized?")
+        validate(self.root)
+
+    def test_allows_production_only_after_gate(self) -> None:
+        self._append(
+            "blockers",
+            "Production deployment is permitted only after a separate production gate",
+        )
+        validate(self.root)
+
 
 if __name__ == "__main__":
     unittest.main()

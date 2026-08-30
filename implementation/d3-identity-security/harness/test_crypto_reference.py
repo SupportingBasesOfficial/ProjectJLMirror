@@ -134,6 +134,22 @@ class D3CryptoReferenceTests(unittest.TestCase):
         d = hkdf_expand_sha256(master_key=master, tenant_id="t1", scope="consumer-a", erasure_unit="record-2")
         self.assertEqual(4, len({a, b, c, d}))
 
+    def test_erasure_unit_is_explicit_key_derivation_boundary(self):
+        master = key(9)
+        first = hkdf_expand_sha256(
+            master_key=master,
+            tenant_id="tenant-A",
+            scope="comparison",
+            erasure_unit="record-1",
+        )
+        second = hkdf_expand_sha256(
+            master_key=master,
+            tenant_id="tenant-A",
+            scope="comparison",
+            erasure_unit="record-2",
+        )
+        self.assertNotEqual(first, second)
+
     def test_same_message_has_unlinkable_mac_across_domains(self):
         master = key(9)
         message = b"low-entropy-value"
@@ -142,6 +158,42 @@ class D3CryptoReferenceTests(unittest.TestCase):
         mac_a = hmac.new(subkey_a, message, hashlib.sha256).digest()
         mac_b = hmac.new(subkey_b, message, hashlib.sha256).digest()
         self.assertNotEqual(mac_a, mac_b)
+
+    def test_provider_neutral_key_authority_substitution_preserves_csrf_semantics(self):
+        materials = {2: key(2), 3: key(3)}
+
+        class IndependentKeyAuthority:
+            def can_sign(self, *, key_version: int) -> bool:
+                return key_version == 3
+
+            def can_verify(self, *, key_version: int) -> bool:
+                return key_version in materials
+
+            def hmac_sha256(self, *, key_version: int, context: bytes, message: bytes) -> bytes:
+                material = materials.get(key_version)
+                if material is None:
+                    raise ValueError("key version unavailable for verification")
+                derived = hmac.new(material, b"context\x00" + context, hashlib.sha256).digest()
+                return hmac.new(derived, message, hashlib.sha256).digest()
+
+        reference_ring = CsrfKeyRing(authority=self.authority(), current=3, previous=2)
+        independent_ring = CsrfKeyRing(authority=IndependentKeyAuthority(), current=3, previous=2)
+
+        reference_token = reference_ring.issue(session_lineage_id="lineage-portable")
+        self.assertTrue(
+            independent_ring.verify(
+                token=reference_token,
+                session_lineage_id="lineage-portable",
+            )
+        )
+
+        independent_token = independent_ring.issue(session_lineage_id="lineage-portable")
+        self.assertTrue(
+            reference_ring.verify(
+                token=independent_token,
+                session_lineage_id="lineage-portable",
+            )
+        )
 
     def test_historical_verifier_can_verify_without_signing(self):
         authority = self.authority()

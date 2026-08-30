@@ -38,13 +38,13 @@ from keycloak_backchannel_probe import (  # noqa: E402
     wait_ready,
 )
 
-BASE = os.environ.get("KEYCLOAK_BASE_URL", "http://127.0.0.1:8080").rstrip("/")
+BASE = os.environ.get("KEYCLOAK_BASE_URL", "https://127.0.0.1:8443").rstrip("/")
 REALM = "d3browser"
 CLIENT_ID = "d3-browser-bff"
 CLIENT_SECRET = "d3-browser-client-secret"
 USER = "browser-alice"
 PASSWORD = "d3-browser-user-password"
-REDIRECT_URI = "http://127.0.0.1:18082/callback"
+REDIRECT_URI = "https://bff.d3.invalid/callback"
 PLATFORM_PRINCIPAL = "principal-d3-browser-evidence"
 
 
@@ -426,7 +426,7 @@ def main() -> int:
     expect_token_exchange_failure(
         code=bad_redirect_code,
         verifier=bad_redirect.transaction.pkce_verifier,
-        redirect_uri="http://127.0.0.1:18082/wrong-callback",
+        redirect_uri="https://bff.d3.invalid/wrong-callback",
         label="wrong_redirect_binding",
     )
 

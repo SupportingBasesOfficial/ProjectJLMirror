@@ -25,7 +25,8 @@ jobs:
       KEYCLOAK_EXPECTED_DIGEST: quay.io/keycloak/keycloak@sha256:831330513f55695572286e521f94fcd3c7e285250ed5b848090265a33192f669
       KEYCLOAK_ADMIN_USER: admin
       KEYCLOAK_ADMIN_PASSWORD: d3-admin-password
-      KEYCLOAK_BASE_URL: http://127.0.0.1:8080
+      KEYCLOAK_BASE_URL: https://127.0.0.1:8443
+      SSL_CERT_FILE: ${{ runner.temp }}/d3-keycloak-tls/ca.crt
     steps:
       - name: Checkout exact analyzed HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,18 +62,60 @@ jobs:
           test -n "$image_id"
           printf 'keycloak_pinned_digest=%s\nkeycloak_image_id=%s\n' "$KEYCLOAK_IMAGE" "$image_id"
 
-      - name: Start isolated Keycloak candidate
+      - name: Generate ephemeral TLS evidence identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          tls_dir="${RUNNER_TEMP}/d3-keycloak-tls"
+          mkdir -p "$tls_dir"
+          openssl req -x509 -newkey rsa:2048 -nodes \
+            -keyout "$tls_dir/ca.key" \
+            -out "$tls_dir/ca.crt" \
+            -days 1 \
+            -subj '/CN=JLMirror D3 ephemeral evidence CA' \
+            -addext 'basicConstraints=critical,CA:TRUE' \
+            -addext 'keyUsage=critical,keyCertSign,cRLSign'
+          openssl req -newkey rsa:2048 -nodes \
+            -keyout "$tls_dir/server.key" \
+            -out "$tls_dir/server.csr" \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
+          cat > "$tls_dir/server.ext" <<'EOF'
+          basicConstraints=critical,CA:FALSE
+          keyUsage=critical,digitalSignature,keyEncipherment
+          extendedKeyUsage=serverAuth
+          subjectAltName=DNS:localhost,IP:127.0.0.1
+          EOF
+          openssl x509 -req \
+            -in "$tls_dir/server.csr" \
+            -CA "$tls_dir/ca.crt" \
+            -CAkey "$tls_dir/ca.key" \
+            -CAcreateserial \
+            -out "$tls_dir/server.crt" \
+            -days 1 \
+            -sha256 \
+            -extfile "$tls_dir/server.ext"
+          openssl verify -CAfile "$tls_dir/ca.crt" "$tls_dir/server.crt"
+          openssl x509 -in "$tls_dir/server.crt" -noout -checkend 0
+          chmod 0400 "$tls_dir/ca.key" "$tls_dir/server.key"
+          chmod 0444 "$tls_dir/ca.crt" "$tls_dir/server.crt"
+
+      - name: Start isolated TLS Keycloak candidate
         shell: bash
         run: |
           set -euo pipefail
           docker run -d --rm \
             --name jlmirror-d3-keycloak \
             --add-host=host.docker.internal:host-gateway \
-            -p 127.0.0.1:8080:8080 \
+            -p 127.0.0.1:8443:8443 \
+            -v "${RUNNER_TEMP}/d3-keycloak-tls:/opt/keycloak/conf/d3-tls:ro" \
             -e KC_BOOTSTRAP_ADMIN_USERNAME="$KEYCLOAK_ADMIN_USER" \
             -e KC_BOOTSTRAP_ADMIN_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD" \
             "$KEYCLOAK_IMAGE" \
-            start-dev
+            start-dev \
+            --http-enabled=false \
+            --https-certificate-file=/opt/keycloak/conf/d3-tls/server.crt \
+            --https-certificate-key-file=/opt/keycloak/conf/d3-tls/server.key
 
       - name: Exercise real Authorization Code + PKCE/BFF contract
         shell: bash
@@ -93,8 +136,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf 'd3_keycloak_browser_candidate=PASS_PINNED\n'
-          printf 'd3_keycloak_backchannel_candidate=PASS_PINNED\n'
+          printf 'd3_keycloak_browser_candidate=PASS_PINNED_TLS\n'
+          printf 'd3_keycloak_backchannel_candidate=PASS_PINNED_TLS\n'
           printf 'candidate_digest=%s\n' "$KEYCLOAK_IMAGE"
           printf 'd3_a_full_conformance=false reason=remaining_mfa_replay_mapping_outage_and_non_authority_vectors\n'
           printf 'wave4=not_granted production=none d4=not_selected_not_granted\n'
@@ -108,3 +151,8 @@ jobs:
         if: always()
         shell: bash
         run: docker rm -f jlmirror-d3-keycloak >/dev/null 2>&1 || true
+
+      - name: Remove ephemeral TLS private material
+        if: always()
+        shell: bash
+        run: rm -rf "${RUNNER_TEMP}/d3-keycloak-tls"

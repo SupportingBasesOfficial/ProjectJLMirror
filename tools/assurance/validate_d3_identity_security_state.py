@@ -219,6 +219,16 @@ _D3D_SPIRE_PROOF_COMMON = {
     "artifact_pins": [SPIRE_1_15_3_ARTIFACT],
     "result": "pass",
 }
+_D3D_SPIRE_ROTATION_PROOF_COMMON = {
+    "evidence_sha": "524c8e8cc294113f860d00cf64d5f886a3ff03c7",
+    "workflow_run_id": 33319516438,
+    "workflow_run_number": 12,
+    "workflow_file": ".github/workflows/d3-spire-candidate-evaluation.yml",
+    "job_name": "SPIRE 1.15.3 bounded workload-identity evaluation",
+    "probe": "implementation/d3-identity-security/harness/spire_rotation_probe.sh",
+    "artifact_pins": [SPIRE_1_15_3_ARTIFACT],
+    "result": "pass",
+}
 APPROVED_EVIDENCE_PROOFS = {
     ("D3-A", "oidc_authorization_code_pkce_bff_binding"): {
         "evidence_id": "oidc_authorization_code_pkce_bff_binding",
@@ -291,6 +301,10 @@ APPROVED_EVIDENCE_PROOFS = {
     ("D3-D", "trust_domain_environment_runtime_binding"): {
         "evidence_id": "trust_domain_environment_runtime_binding",
         **_D3D_SPIRE_PROOF_COMMON,
+    },
+    ("D3-D", "short_lived_rotation_retired_bundle_rejection"): {
+        "evidence_id": "short_lived_rotation_retired_bundle_rejection",
+        **_D3D_SPIRE_ROTATION_PROOF_COMMON,
     },
     ("D3-D", "cross_environment_rejection"): {
         "evidence_id": "cross_environment_rejection",

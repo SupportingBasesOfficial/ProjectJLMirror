@@ -339,10 +339,10 @@
       "evidence_completed": [
         "runtime_attestation_not_caller_identity",
         "trust_domain_environment_runtime_binding",
+        "short_lived_rotation_retired_bundle_rejection",
         "cross_environment_rejection"
       ],
       "evidence_remaining": [
-        "short_lived_rotation_retired_bundle_rejection",
         "workload_identity_non_tenant_authority",
         "private_key_non_exportability_profile",
         "issuer_restore_retired_authority_nonresurrection",
@@ -370,6 +370,19 @@
           "workflow_file": ".github/workflows/d3-spire-candidate-evaluation.yml",
           "job_name": "SPIRE 1.15.3 bounded workload-identity evaluation",
           "probe": "implementation/d3-identity-security/harness/spire_candidate_probe.sh",
+          "artifact_pins": [
+            "spire-1.15.3-linux-amd64-musl.tar.gz@sha256:ca1a4d1155317bdd2afc7f36663828a10410c7c840e54725b90b4064b0a301c7"
+          ],
+          "result": "pass"
+        },
+        {
+          "evidence_id": "short_lived_rotation_retired_bundle_rejection",
+          "evidence_sha": "524c8e8cc294113f860d00cf64d5f886a3ff03c7",
+          "workflow_run_id": 33319516438,
+          "workflow_run_number": 12,
+          "workflow_file": ".github/workflows/d3-spire-candidate-evaluation.yml",
+          "job_name": "SPIRE 1.15.3 bounded workload-identity evaluation",
+          "probe": "implementation/d3-identity-security/harness/spire_rotation_probe.sh",
           "artifact_pins": [
             "spire-1.15.3-linux-amd64-musl.tar.gz@sha256:ca1a4d1155317bdd2afc7f36663828a10410c7c840e54725b90b4064b0a301c7"
           ],

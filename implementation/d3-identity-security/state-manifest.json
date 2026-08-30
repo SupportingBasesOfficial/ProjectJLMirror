@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "gate_id": "D3",
+  "gate_name": "identity_security_authority_c2",
+  "canonical_base": "b70d0c20873f92ca0a6040a3cbcd1dfcdace6828",
+  "gate_state": "scoped_evidence_pending",
+  "canonical_product_implementation_authority": "not_granted",
+  "wave4_implementation_authority": "not_granted",
+  "production_authority": "none",
+  "d4_transport_authority": "not_selected_not_granted",
+  "tracks": [
+    {
+      "track_id": "D3-A",
+      "name": "human_idp",
+      "source_decisions": ["IR-D-001-keycloak-idp", "IR-D-001"],
+      "candidate": "keycloak",
+      "state": "candidate_selected_conformance_pending",
+      "required_before_d3_acceptance": true
+    },
+    {
+      "track_id": "D3-B",
+      "name": "bff_session_security_cache",
+      "source_decisions": ["OPEN-REL-031.A", "OPEN-REL-015", "OPEN-REL-008.A:security-session-profile-only"],
+      "candidate": "postgresql_session_sor_plus_redis_security_cache",
+      "state": "candidate_selected_conformance_pending",
+      "required_before_d3_acceptance": true
+    },
+    {
+      "track_id": "D3-C",
+      "name": "browser_csrf_key_rotation",
+      "source_decisions": ["OPEN-API-002"],
+      "candidate": "hmac_double_submit_versioned_keyring",
+      "state": "candidate_selected_conformance_pending",
+      "required_before_d3_acceptance": true
+    },
+    {
+      "track_id": "D3-D",
+      "name": "workload_identity_issuer_attestation",
+      "source_decisions": ["OPEN-PRT-008.B", "IR-D-002"],
+      "candidate": "unselected_spiffe_svid_compatible_backend",
+      "state": "candidate_evaluation_required",
+      "required_before_d3_acceptance": true
+    },
+    {
+      "track_id": "D3-E",
+      "name": "cryptographic_replay_historical_verifier_authority",
+      "source_decisions": ["OPEN-REL-016.A", "IR-D-001:private_key_jwt_replay", "OPEN-EVT-011:cryptographic_comparison_authority_only"],
+      "candidate": "hmac_hkdf_provider_neutral_key_authority_backend_unselected",
+      "state": "candidate_evaluation_required",
+      "required_before_d3_acceptance": true
+    }
+  ],
+  "explicit_exclusions": [
+    "OPEN-EVT-001:transport",
+    "OPEN-EVT-002:serialization",
+    "OPEN-EVT-003:catalog",
+    "OPEN-EVT-004:version_syntax",
+    "OPEN-EVT-005:physical_topology",
+    "event_delivery_ack_lease_quarantine_transport",
+    "wave4_monitoring_product_implementation",
+    "production_c3_numerics",
+    "realtime",
+    "outbound_webhooks",
+    "public_sdk",
+    "alerting_product_behavior",
+    "itsm_product_behavior",
+    "aiops_product_behavior"
+  ],
+  "c3_remains_open": [
+    "OPEN-REL-031.B",
+    "OPEN-REL-008.B",
+    "OPEN-REL-016.B",
+    "OPEN-REL-023",
+    "production_capacity_topology_slo_rpo_rto_numeric_profiles"
+  ],
+  "acceptance_rule": "all_tracks_conformed_and_exact_head_assurance_clean_then_separate_acceptance",
+  "merge_rule": "separate_explicit_user_authorization_after_final_exact_head_clean_gate"
+}

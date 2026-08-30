@@ -87,11 +87,17 @@ jobs:
           set -euo pipefail
           bash -n implementation/d3-identity-security/harness/spire_candidate_probe.sh
           bash -n implementation/d3-identity-security/harness/spire_rotation_probe.sh
+          python3 -m py_compile implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py
           grep -F 'conformance_claim=exploratory_only' implementation/d3-identity-security/harness/spire_candidate_probe.sh >/dev/null
           grep -F 'evidence_credited=false' implementation/d3-identity-security/harness/spire_candidate_probe.sh >/dev/null
           grep -F 'rotation_retired_bundle=PASS' implementation/d3-identity-security/harness/spire_rotation_probe.sh >/dev/null
           grep -F 'evidence_credited=false' implementation/d3-identity-security/harness/spire_rotation_probe.sh >/dev/null
-          if grep -F 'conformance_claim=complete' implementation/d3-identity-security/harness/spire_candidate_probe.sh implementation/d3-identity-security/harness/spire_rotation_probe.sh >/dev/null; then
+          grep -F 'workload_identity_non_tenant_authority=PASS' implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py >/dev/null
+          grep -F 'evidence_credited=false' implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py >/dev/null
+          if grep -F 'conformance_claim=complete' \
+              implementation/d3-identity-security/harness/spire_candidate_probe.sh \
+              implementation/d3-identity-security/harness/spire_rotation_probe.sh \
+              implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py >/dev/null; then
             echo 'SPIRE candidate evaluation attempted to claim complete D3-D conformance' >&2
             exit 1
           fi
@@ -130,6 +136,14 @@ jobs:
           SPIRE_VERSION="$SPIRE_VERSION" \
             bash implementation/d3-identity-security/harness/spire_candidate_probe.sh
 
+      - name: Prove workload identity cannot grant tenant authority
+        shell: bash
+        env:
+          SPIRE_EVIDENCE_DIR: ${{ runner.temp }}/jlmirror-d3-spire/output
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src python3 implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py
+
       - name: Exercise X.509 rotation and retired-bundle lifecycle
         shell: bash
         env:
@@ -150,6 +164,7 @@ jobs:
           printf 'candidate_artifact_pin=%s\n' "$SPIRE_ARTIFACT_PIN"
           printf 'canonical_candidate_promoted=true ledger_evidence_credited=4 current_run_auto_credit=false d3_d_conformed=false\n'
           printf 'rotation_evidence_provenance=run_12_pinned current_run_ledger_change=false\n'
+          printf 'new_non_tenant_authority_probe=PASS_EXPLORATORY_ONLY ledger_change=false\n'
           printf 'remaining_evidence=workload_identity_non_tenant_authority,private_key_non_exportability_profile,issuer_restore_retired_authority_nonresurrection,vendor_credential_adapter_least_privilege\n'
           printf 'wave4=not_granted production=none d4=not_selected_not_granted\n'
 

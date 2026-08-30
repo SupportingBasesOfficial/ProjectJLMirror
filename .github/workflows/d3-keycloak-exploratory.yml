@@ -26,7 +26,6 @@ jobs:
       KEYCLOAK_ADMIN_USER: admin
       KEYCLOAK_ADMIN_PASSWORD: d3-admin-password
       KEYCLOAK_BASE_URL: https://127.0.0.1:8443
-      SSL_CERT_FILE: ${{ runner.temp }}/d3-keycloak-tls/ca.crt
     steps:
       - name: Checkout exact analyzed HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -99,6 +98,7 @@ jobs:
           openssl x509 -in "$tls_dir/server.crt" -noout -checkend 0
           chmod 0400 "$tls_dir/ca.key" "$tls_dir/server.key"
           chmod 0444 "$tls_dir/ca.crt" "$tls_dir/server.crt"
+          printf 'SSL_CERT_FILE=%s/ca.crt\n' "$tls_dir" >> "$GITHUB_ENV"
 
       - name: Start isolated TLS Keycloak candidate
         shell: bash

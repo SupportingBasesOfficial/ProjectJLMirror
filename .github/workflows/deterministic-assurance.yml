@@ -55,6 +55,14 @@ jobs:
         shell: bash
         run: python3 tools/assurance/validate_post_d2_wave4_state.py .
 
+      - name: Falsify D3 Identity/Security state guard
+        shell: bash
+        run: PYTHONPATH=tools/assurance python3 tools/assurance/test_validate_d3_identity_security_state.py
+
+      - name: Validate D3 Identity/Security state
+        shell: bash
+        run: python3 tools/assurance/validate_d3_identity_security_state.py .
+
       - name: Falsify contract tooling reference models
         shell: bash
         run: python3 -m unittest discover -s tools/contracts/tests -p 'test_*.py'

@@ -1,0 +1,375 @@
+from __future__ import annotations
+
+import concurrent.futures
+import hashlib
+import hmac
+import unittest
+
+from crypto_reference import (
+    AtomicReplayLedger,
+    CsrfKeyRing,
+    CsrfRotationWindow,
+    ReferenceKeyAuthority,
+    ReferenceKeyVersion,
+    canonicalize_bff_csrf,
+    canonicalize_ingress_csrf,
+    hkdf_expand_sha256,
+)
+
+
+def key(byte: int) -> bytes:
+    return bytes([byte]) * 32
+
+
+class D3CryptoReferenceTests(unittest.TestCase):
+    def authority(self) -> ReferenceKeyAuthority:
+        return ReferenceKeyAuthority(
+            [
+                ReferenceKeyVersion(1, key(1), signing_enabled=False, verification_enabled=False),
+                ReferenceKeyVersion(2, key(2), signing_enabled=False, verification_enabled=True),
+                ReferenceKeyVersion(3, key(3), signing_enabled=True, verification_enabled=True),
+            ]
+        )
+
+    def test_csrf_current_token_verifies_for_same_lineage(self):
+        ring = CsrfKeyRing(authority=self.authority(), current=3, previous=2)
+        token = ring.issue(session_lineage_id="lineage-A")
+        self.assertTrue(ring.verify(token=token, session_lineage_id="lineage-A"))
+
+    def test_csrf_token_cannot_cross_session_lineage(self):
+        ring = CsrfKeyRing(authority=self.authority(), current=3, previous=2)
+        token = ring.issue(session_lineage_id="lineage-A")
+        self.assertFalse(ring.verify(token=token, session_lineage_id="lineage-B"))
+
+    def test_csrf_previous_generation_is_verify_only_overlap(self):
+        pre_rotation = ReferenceKeyAuthority(
+            [ReferenceKeyVersion(2, key(2), signing_enabled=True, verification_enabled=True)]
+        )
+        old_token = CsrfKeyRing(authority=pre_rotation, current=2, previous=None).issue(
+            session_lineage_id="lineage-A"
+        )
+
+        post_rotation = self.authority()
+        rotated = CsrfKeyRing(authority=post_rotation, current=3, previous=2)
+        self.assertTrue(rotated.verify(token=old_token, session_lineage_id="lineage-A"))
+        self.assertFalse(post_rotation.can_sign(key_version=2))
+        self.assertTrue(post_rotation.can_verify(key_version=2))
+
+    def test_csrf_retired_generation_is_rejected(self):
+        old_authority = ReferenceKeyAuthority(
+            [ReferenceKeyVersion(1, key(1), signing_enabled=True, verification_enabled=True)]
+        )
+        old_token = CsrfKeyRing(authority=old_authority, current=1, previous=None).issue(
+            session_lineage_id="lineage-A"
+        )
+        rotated = CsrfKeyRing(authority=self.authority(), current=3, previous=2)
+        self.assertFalse(rotated.verify(token=old_token, session_lineage_id="lineage-A"))
+
+    def test_csrf_retired_generation_rejection_never_queries_historical_key(self):
+        old_authority = ReferenceKeyAuthority(
+            [ReferenceKeyVersion(1, key(1), signing_enabled=True, verification_enabled=True)]
+        )
+        old_token = CsrfKeyRing(authority=old_authority, current=1, previous=None).issue(
+            session_lineage_id="lineage-A"
+        )
+        delegate = self.authority()
+
+        class HistoricalLookupSentinel:
+            def can_sign(self, *, key_version: int) -> bool:
+                return delegate.can_sign(key_version=key_version)
+
+            def can_verify(self, *, key_version: int) -> bool:
+                return delegate.can_verify(key_version=key_version)
+
+            def hmac_sha256(self, *, key_version: int, context: bytes, message: bytes) -> bytes:
+                if key_version == 1:
+                    raise AssertionError("retired historical generation was queried")
+                return delegate.hmac_sha256(
+                    key_version=key_version,
+                    context=context,
+                    message=message,
+                )
+
+        rotated = CsrfKeyRing(authority=HistoricalLookupSentinel(), current=3, previous=2)
+        self.assertFalse(rotated.verify(token=old_token, session_lineage_id="lineage-A"))
+
+    def test_csrf_uncertain_generation_authority_fails_closed_before_issuance(self):
+        class UncertainGenerationAuthority:
+            def can_sign(self, *, key_version: int) -> bool:
+                raise RuntimeError("key-generation authority unavailable")
+
+            def can_verify(self, *, key_version: int) -> bool:
+                raise RuntimeError("key-generation authority unavailable")
+
+            def hmac_sha256(self, *, key_version: int, context: bytes, message: bytes) -> bytes:
+                raise AssertionError("cryptographic operation must not run under uncertain generation")
+
+        with self.assertRaises(RuntimeError):
+            CsrfKeyRing(authority=UncertainGenerationAuthority(), current=3, previous=2)
+
+    def test_csrf_malformed_or_noncanonical_token_fails_closed(self):
+        ring = CsrfKeyRing(authority=self.authority(), current=3, previous=2)
+        for token in ("", "v3", "v03.abc", "v3.abc=", "v3.!!!!", "v99.AAAA"):
+            self.assertFalse(ring.verify(token=token, session_lineage_id="lineage-A"), token)
+
+    def test_csrf_routine_renewal_preserves_lineage_binding(self):
+        ring = CsrfKeyRing(authority=self.authority(), current=3, previous=2)
+        token_before_opaque_session_rotation = ring.issue(session_lineage_id="stable-lineage")
+        self.assertTrue(
+            ring.verify(
+                token=token_before_opaque_session_rotation,
+                session_lineage_id="stable-lineage",
+            )
+        )
+
+    def test_csrf_privilege_boundary_new_lineage_requires_reissue(self):
+        ring = CsrfKeyRing(authority=self.authority(), current=3, previous=2)
+        old = ring.issue(session_lineage_id="pre-step-up")
+        self.assertFalse(ring.verify(token=old, session_lineage_id="post-step-up"))
+        new = ring.issue(session_lineage_id="post-step-up")
+        self.assertTrue(ring.verify(token=new, session_lineage_id="post-step-up"))
+
+    def test_csrf_rotation_overlap_must_cover_accepted_safety_lifetime(self):
+        accepted = CsrfRotationWindow(
+            rotation_started_at=1_000,
+            previous_valid_until=1_300,
+            minimum_safety_lifetime_seconds=300,
+        )
+        self.assertTrue(accepted.previous_is_within_overlap(now_epoch_seconds=1_300))
+        self.assertFalse(accepted.previous_is_within_overlap(now_epoch_seconds=1_301))
+        with self.assertRaisesRegex(ValueError, "shorter than the accepted safety lifetime"):
+            CsrfRotationWindow(
+                rotation_started_at=1_000,
+                previous_valid_until=1_299,
+                minimum_safety_lifetime_seconds=300,
+            )
+
+    def test_csrf_previous_generation_use_is_observable_and_stale_use_is_rejected(self):
+        pre_rotation = ReferenceKeyAuthority(
+            [ReferenceKeyVersion(2, key(2), signing_enabled=True, verification_enabled=True)]
+        )
+        old_token = CsrfKeyRing(authority=pre_rotation, current=2, previous=None).issue(
+            session_lineage_id="lineage-observed"
+        )
+        window = CsrfRotationWindow(
+            rotation_started_at=2_000,
+            previous_valid_until=2_300,
+            minimum_safety_lifetime_seconds=300,
+        )
+        rotated = CsrfKeyRing(
+            authority=self.authority(),
+            current=3,
+            previous=2,
+            rotation_window=window,
+        )
+
+        within = rotated.verify_with_evidence(
+            token=old_token,
+            session_lineage_id="lineage-observed",
+            now_epoch_seconds=2_250,
+        )
+        self.assertTrue(within.accepted)
+        self.assertTrue(within.presented_previous_generation)
+        self.assertTrue(within.accepted_previous_generation)
+        self.assertEqual("accepted_previous", within.reason)
+
+        stale = rotated.verify_with_evidence(
+            token=old_token,
+            session_lineage_id="lineage-observed",
+            now_epoch_seconds=2_301,
+        )
+        self.assertFalse(stale.accepted)
+        self.assertTrue(stale.presented_previous_generation)
+        self.assertFalse(stale.accepted_previous_generation)
+        self.assertEqual("previous_overlap_expired", stale.reason)
+
+        uncertain = rotated.verify_with_evidence(
+            token=old_token,
+            session_lineage_id="lineage-observed",
+        )
+        self.assertFalse(uncertain.accepted)
+        self.assertEqual("previous_overlap_time_uncertain", uncertain.reason)
+
+    def test_csrf_ingress_and_bff_reject_duplicate_or_conflicting_presentation_identically(self):
+        cases = [
+            (["token-A", "token-A"], ["token-A"]),
+            (["token-A"], ["token-A", "token-A"]),
+            (["token-A"], ["token-B"]),
+            ([], ["token-A"]),
+            (["token-A"], []),
+        ]
+        for cookie_values, header_values in cases:
+            failures = []
+            for canonicalizer in (canonicalize_ingress_csrf, canonicalize_bff_csrf):
+                with self.assertRaises(ValueError) as raised:
+                    canonicalizer(cookie_values=cookie_values, header_values=header_values)
+                failures.append(str(raised.exception))
+            self.assertEqual(failures[0], failures[1])
+
+        self.assertEqual(
+            "token-A",
+            canonicalize_ingress_csrf(cookie_values=["token-A"], header_values=["token-A"]),
+        )
+        self.assertEqual(
+            "token-A",
+            canonicalize_bff_csrf(cookie_values=["token-A"], header_values=["token-A"]),
+        )
+
+    def test_domain_separation_changes_key_by_tenant_scope_and_erasure_unit(self):
+        master = key(9)
+        a = hkdf_expand_sha256(master_key=master, tenant_id="t1", scope="consumer-a", erasure_unit="record-1")
+        b = hkdf_expand_sha256(master_key=master, tenant_id="t2", scope="consumer-a", erasure_unit="record-1")
+        c = hkdf_expand_sha256(master_key=master, tenant_id="t1", scope="consumer-b", erasure_unit="record-1")
+        d = hkdf_expand_sha256(master_key=master, tenant_id="t1", scope="consumer-a", erasure_unit="record-2")
+        self.assertEqual(4, len({a, b, c, d}))
+
+    def test_erasure_unit_is_explicit_key_derivation_boundary(self):
+        master = key(9)
+        first = hkdf_expand_sha256(
+            master_key=master,
+            tenant_id="tenant-A",
+            scope="comparison",
+            erasure_unit="record-1",
+        )
+        second = hkdf_expand_sha256(
+            master_key=master,
+            tenant_id="tenant-A",
+            scope="comparison",
+            erasure_unit="record-2",
+        )
+        self.assertNotEqual(first, second)
+
+    def test_same_message_has_unlinkable_mac_across_domains(self):
+        master = key(9)
+        message = b"low-entropy-value"
+        subkey_a = hkdf_expand_sha256(master_key=master, tenant_id="t1", scope="s1", erasure_unit="r1")
+        subkey_b = hkdf_expand_sha256(master_key=master, tenant_id="t2", scope="s1", erasure_unit="r1")
+        mac_a = hmac.new(subkey_a, message, hashlib.sha256).digest()
+        mac_b = hmac.new(subkey_b, message, hashlib.sha256).digest()
+        self.assertNotEqual(mac_a, mac_b)
+
+    def test_provider_neutral_key_authority_substitution_preserves_csrf_semantics(self):
+        materials = {2: key(2), 3: key(3)}
+
+        class IndependentKeyAuthority:
+            def can_sign(self, *, key_version: int) -> bool:
+                return key_version == 3
+
+            def can_verify(self, *, key_version: int) -> bool:
+                return key_version in materials
+
+            def hmac_sha256(self, *, key_version: int, context: bytes, message: bytes) -> bytes:
+                material = materials.get(key_version)
+                if material is None:
+                    raise ValueError("key version unavailable for verification")
+                derived = hmac.new(material, b"context\x00" + context, hashlib.sha256).digest()
+                return hmac.new(derived, message, hashlib.sha256).digest()
+
+        reference_ring = CsrfKeyRing(authority=self.authority(), current=3, previous=2)
+        independent_ring = CsrfKeyRing(authority=IndependentKeyAuthority(), current=3, previous=2)
+
+        reference_token = reference_ring.issue(session_lineage_id="lineage-portable")
+        self.assertTrue(
+            independent_ring.verify(
+                token=reference_token,
+                session_lineage_id="lineage-portable",
+            )
+        )
+
+        independent_token = independent_ring.issue(session_lineage_id="lineage-portable")
+        self.assertTrue(
+            reference_ring.verify(
+                token=independent_token,
+                session_lineage_id="lineage-portable",
+            )
+        )
+
+    def test_historical_verifier_can_verify_without_signing(self):
+        authority = self.authority()
+        self.assertFalse(authority.can_sign(key_version=2))
+        self.assertTrue(authority.can_verify(key_version=2))
+        mac = authority.hmac_sha256(key_version=2, context=b"history", message=b"evidence")
+        self.assertEqual(32, len(mac))
+
+    def test_retired_historical_key_cannot_be_recreated_by_reference_authority(self):
+        authority = self.authority()
+        self.assertFalse(authority.can_verify(key_version=1))
+        with self.assertRaises(ValueError):
+            authority.hmac_sha256(key_version=1, context=b"history", message=b"evidence")
+
+    def test_replay_concurrency_has_exactly_one_winner(self):
+        ledger = AtomicReplayLedger()
+
+        def attempt(_: int) -> bool:
+            return ledger.create_or_observe(
+                client_principal="machine-A",
+                jti="assertion-jti-1",
+                expected_generation=1,
+            )
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+            outcomes = list(pool.map(attempt, range(64)))
+        self.assertEqual(1, sum(outcomes))
+
+    def test_replay_authority_unavailable_fails_closed(self):
+        ledger = AtomicReplayLedger()
+        ledger.available = False
+        with self.assertRaises(RuntimeError):
+            ledger.create_or_observe(
+                client_principal="machine-A",
+                jti="assertion-jti-1",
+                expected_generation=1,
+            )
+
+    def test_replay_restore_generation_mismatch_fails_closed(self):
+        ledger = AtomicReplayLedger()
+        self.assertTrue(
+            ledger.create_or_observe(
+                client_principal="machine-A",
+                jti="assertion-jti-1",
+                expected_generation=1,
+            )
+        )
+        ledger.retire_continuity()
+        with self.assertRaises(RuntimeError):
+            ledger.create_or_observe(
+                client_principal="machine-A",
+                jti="assertion-jti-1",
+                expected_generation=1,
+            )
+
+    def test_replay_consumed_identity_survives_continuity_retirement(self):
+        ledger = AtomicReplayLedger()
+        self.assertTrue(
+            ledger.create_or_observe(
+                client_principal="machine-A",
+                jti="assertion-jti-1",
+                expected_generation=1,
+            )
+        )
+        next_generation = ledger.retire_continuity()
+        self.assertEqual(2, next_generation)
+        self.assertFalse(
+            ledger.create_or_observe(
+                client_principal="machine-A",
+                jti="assertion-jti-1",
+                expected_generation=next_generation,
+            )
+        )
+        self.assertTrue(
+            ledger.create_or_observe(
+                client_principal="machine-A",
+                jti="assertion-jti-2",
+                expected_generation=next_generation,
+            )
+        )
+
+    def test_replay_identity_is_scoped_to_client_principal(self):
+        ledger = AtomicReplayLedger()
+        self.assertTrue(ledger.create_or_observe(client_principal="A", jti="same-jti", expected_generation=1))
+        self.assertTrue(ledger.create_or_observe(client_principal="B", jti="same-jti", expected_generation=1))
+        self.assertFalse(ledger.create_or_observe(client_principal="A", jti="same-jti", expected_generation=1))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

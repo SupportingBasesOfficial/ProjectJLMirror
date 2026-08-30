@@ -1,0 +1,134 @@
+name: JLMIRROR D3-B Cache Portability Pinned Evidence
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cache-portability:
+    name: PostgreSQL 18.6 + Redis 8.10 / Valkey 9.1 pinned
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      POSTGRES_IMAGE: postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+      REDIS_IMAGE: redis@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366
+      VALKEY_IMAGE: valkey/valkey@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411
+    steps:
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
+
+      - name: Validate D3 machine-owned state
+        shell: bash
+        run: python3 tools/assurance/validate_d3_identity_security_state.py .
+
+      - name: Validate probe structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n implementation/d3-identity-security/harness/cache_admission_probe.sh
+          grep -F 'conformance_claim=partial_only' implementation/d3-identity-security/harness/cache_admission_probe.sh >/dev/null
+          if grep -Eq 'CLUSTER|MIGRATE|MODULE|JSON\.|FT\.|TS\.' implementation/d3-identity-security/harness/cache_admission_probe.sh; then
+            echo 'product/extension-specific cache command leaked into portable D3-B probe' >&2
+            exit 1
+          fi
+
+      - name: Pull immutable candidates and verify exact digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for image in "$POSTGRES_IMAGE" "$REDIS_IMAGE" "$VALKEY_IMAGE"; do
+            case "$image" in
+              *@sha256:*) ;;
+              *) echo "mutable D3-B image reference is forbidden: $image" >&2; exit 1 ;;
+            esac
+            docker pull "$image"
+            resolved="$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')"
+            test "$resolved" = "$image"
+            printf 'candidate_digest=%s\n' "$resolved"
+          done
+
+      - name: Start PostgreSQL authority candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --rm \
+            --name jlmirror-d3-postgres \
+            -e POSTGRES_PASSWORD=d3-postgres-password \
+            -e POSTGRES_DB=d3 \
+            "$POSTGRES_IMAGE"
+
+      - name: Exercise Redis-compatible candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --rm --name jlmirror-d3-redis "$REDIS_IMAGE" \
+            redis-server --save '' --appendonly no
+          PG_CONTAINER=jlmirror-d3-postgres \
+          CACHE_CONTAINER=jlmirror-d3-redis \
+          CACHE_LABEL=redis_8_10_0 \
+          CACHE_CLI=redis-cli \
+            bash implementation/d3-identity-security/harness/cache_admission_probe.sh
+
+      - name: Exercise Valkey substitution control with identical semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --rm --name jlmirror-d3-valkey "$VALKEY_IMAGE" \
+            valkey-server --save '' --appendonly no
+          PG_CONTAINER=jlmirror-d3-postgres \
+          CACHE_CONTAINER=jlmirror-d3-valkey \
+          CACHE_LABEL=valkey_9_1_0 \
+          CACHE_CLI=valkey-cli \
+            bash implementation/d3-identity-security/harness/cache_admission_probe.sh
+
+      - name: Record pinned portability boundary
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'd3_b_cache_portability=PASS_PINNED\n'
+          printf 'postgres_digest=%s\n' "$POSTGRES_IMAGE"
+          printf 'redis_digest=%s\n' "$REDIS_IMAGE"
+          printf 'valkey_digest=%s\n' "$VALKEY_IMAGE"
+          printf 'canonical_conformance=false reason=fleet_multi_replica_restore_failover_concurrency_and_degraded_owner_vectors_remaining\n'
+          printf 'wave4=not_granted production=none d4=not_selected_not_granted\n'
+
+      - name: Capture candidate logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          docker logs jlmirror-d3-postgres 2>&1 || true
+          docker logs jlmirror-d3-redis 2>&1 || true
+          docker logs jlmirror-d3-valkey 2>&1 || true
+
+      - name: Retire candidate containers
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f jlmirror-d3-postgres >/dev/null 2>&1 || true
+          docker rm -f jlmirror-d3-redis >/dev/null 2>&1 || true
+          docker rm -f jlmirror-d3-valkey >/dev/null 2>&1 || true

@@ -114,7 +114,7 @@ Initially not authorized by this sequencing document:
 
 ## Customer telemetry
 
-`impl.customer-telemetry@1` is now `eligible_for_implementation_authorization` for the accepted Monitoring Track B profile. It is not globally authorized, and it may not infer unbounded production settings from still-open `OPEN-REL-020` C3 capacity/performance/cost envelopes.
+`impl.customer-telemetry@1` is now `eligible_for_implementation_authorization` for the accepted Monitoring Track B profile. No global implementation authority exists for this slice. Unbounded production settings remain unavailable while `OPEN-REL-020` C3 capacity/performance/cost envelopes remain open.
 
 The accepted implementation must preserve the D2 security, concurrency, history, PITR/recovery, Timescale mediated-access and relocation/fencing invariants rather than treating the evidence harness as optional test-only behavior.
 

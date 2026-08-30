@@ -292,6 +292,11 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
     def test_terminal_track_with_remaining_evidence_is_rejected(self):
         def mutate(m):
             track = next(t for t in m["tracks"] if t["track_id"] == "D3-D")
+            evidence_id = track["evidence_completed"].pop()
+            track["evidence_remaining"].append(evidence_id)
+            track["evidence_proofs"] = [
+                proof for proof in track["evidence_proofs"] if proof["evidence_id"] != evidence_id
+            ]
             track["state"] = "per_track_conformed"
         with self.assertRaises(AssertionError):
             validate(self._root(mutate))

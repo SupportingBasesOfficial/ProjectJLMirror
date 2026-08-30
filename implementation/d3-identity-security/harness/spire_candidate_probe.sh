@@ -183,17 +183,16 @@ agent_json="$("${SERVER_BIN}" agent list -socketPath "${SERVER_SOCKET}" -attesta
 ATTESTED_NODE_ID="$(AGENT_JSON="${agent_json}" TRUST_DOMAIN="${TRUST_DOMAIN}" python3 - <<'PY'
 import json
 import os
-import sys
 
 payload = json.loads(os.environ["AGENT_JSON"])
 agents = payload.get("agents", [])
 if len(agents) != 1:
     raise SystemExit(f"expected exactly one attested join_token agent, got {len(agents)}")
 agent = agents[0]
-if agent.get("attestationType") != "join_token":
+if agent.get("attestation_type") != "join_token":
     raise SystemExit("attested agent type drifted from join_token")
 spiffe_id = agent.get("id") or {}
-trust_domain = spiffe_id.get("trustDomain")
+trust_domain = spiffe_id.get("trust_domain")
 path = spiffe_id.get("path")
 expected_trust_domain = os.environ["TRUST_DOMAIN"]
 if trust_domain != expected_trust_domain:

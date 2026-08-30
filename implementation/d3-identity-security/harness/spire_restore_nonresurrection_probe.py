@@ -26,14 +26,21 @@ _URI_RE = re.compile(r"URI:([^,\s]+)")
 
 
 def _run(*args: str, check: bool = True, timeout: float = 15.0) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    proc = subprocess.run(
         args,
-        check=check,
+        check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         timeout=timeout,
     )
+    if check and proc.returncode != 0:
+        raise AssertionError(
+            "command failed "
+            f"rc={proc.returncode} args={args!r} "
+            f"stdout={proc.stdout.strip()!r} stderr={proc.stderr.strip()!r}"
+        )
+    return proc
 
 
 def _openssl_date(cert: Path, option: str) -> datetime:
@@ -305,7 +312,7 @@ def _mint_svid(server_bin: Path, socket_path: Path, output_dir: Path) -> Path:
         "-spiffeID",
         WIRE_SPIFFE_ID,
         "-ttl",
-        "30",
+        "30s",
         "-write",
         str(output_dir),
     )
@@ -322,7 +329,9 @@ def _snapshot_provider_state(source_data_dir: Path, snapshot_data_dir: Path) -> 
     with sqlite3.connect(f"file:{source_db}?mode=ro", uri=True) as source:
         with sqlite3.connect(destination_db) as destination:
             source.backup(destination)
-            destination.execute("PRAGMA integrity_check")
+            integrity = destination.execute("PRAGMA integrity_check").fetchone()
+            if integrity != ("ok",):
+                raise AssertionError(f"SPIRE snapshot integrity check failed: {integrity!r}")
     shutil.copy2(source_keys, snapshot_data_dir / "keys.json")
     _require_file(destination_db)
     _require_file(snapshot_data_dir / "keys.json")

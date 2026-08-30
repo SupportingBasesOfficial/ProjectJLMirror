@@ -2,17 +2,17 @@
 """Validate post-D2 OPEN-REL-030 / Wave 4 readiness-state consistency.
 
 Authority is machine-owned by the structured readiness block. The five current-state
-Markdown surfaces are content-addressed governance snapshots: deterministic assurance
-does not attempt free-form NLP. Any prose edit changes a governed blob and requires an
-explicit reviewed re-baseline. Structured authority values remain independently checked,
-so re-baselining prose cannot silently grant Wave 4, production authority, or close
-OPEN-REL-020.
+Markdown surfaces are content-addressed governance snapshots resolved from the exact
+Git commit under evaluation. Deterministic assurance does not infer free-form prose.
+Any reviewed surface edit requires an explicit content re-baseline, while structured
+authority values remain independently constrained so re-baselining cannot silently
+grant Wave 4, production authority, or close OPEN-REL-020.
 """
 
 from __future__ import annotations
 
-import hashlib
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -48,13 +48,103 @@ EXPECTED_AUTHORITY_STATE = {
 }
 
 _ASSIGNMENT_RE = re.compile(r"^([a-z][a-z0-9_]*)\s*=\s*([a-z][a-z0-9_]*)$")
+_MACHINE_ASSIGNMENTS = {
+    "wave4_implementation_authorization": (
+        re.compile(
+            r"\bwave4_implementation_authorization\s*(?:=|:)\s*([a-z][a-z0-9_]*)\b"
+        ),
+        "not_granted",
+        "Wave 4 authority",
+    ),
+    "production_authority": (
+        re.compile(r"\bproduction_authority\s*(?:=|:)\s*([a-z][a-z0-9_]*)\b"),
+        "none",
+        "production authority",
+    ),
+    "open_rel_020_production_state": (
+        re.compile(
+            r"\bopen_rel_020_production_state\s*(?:=|:)\s*([a-z][a-z0-9_]*)\b"
+        ),
+        "open_c3",
+        "OPEN-REL-020 structured state",
+    ),
+}
+
+
+def _git(root: Path, *args: str, text: bool = True) -> str | bytes:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), *args],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=text,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = getattr(exc, "stderr", None)
+        if isinstance(detail, bytes):
+            detail = detail.decode("utf-8", errors="replace")
+        suffix = f": {detail.strip()}" if isinstance(detail, str) and detail.strip() else ""
+        raise AssertionError(f"git command failed: {' '.join(args)}{suffix}") from exc
+    return result.stdout
+
+
+def _evaluated_commit(root: Path) -> str:
+    commit = str(_git(root, "rev-parse", "--verify", "HEAD^{commit}")).strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise AssertionError(f"invalid evaluated Git commit: {commit!r}")
+    return commit
+
+
+def _git_tree_entry(root: Path, relative: Path) -> tuple[str, str, str]:
+    commit = _evaluated_commit(root)
+    output = str(
+        _git(
+            root,
+            "ls-tree",
+            commit,
+            "--",
+            relative.as_posix(),
+        )
+    ).rstrip("\n")
+    if not output:
+        raise AssertionError(f"missing governed path in evaluated commit: {relative}")
+
+    lines = output.splitlines()
+    if len(lines) != 1:
+        raise AssertionError(f"ambiguous governed path in evaluated commit: {relative}")
+
+    metadata, separator, returned_path = lines[0].partition("\t")
+    if separator != "\t" or returned_path != relative.as_posix():
+        raise AssertionError(f"unexpected git ls-tree result for {relative}: {lines[0]!r}")
+
+    parts = metadata.split()
+    if len(parts) != 3:
+        raise AssertionError(f"invalid git tree metadata for {relative}: {metadata!r}")
+    mode, object_type, oid = parts
+    if object_type != "blob" or not re.fullmatch(r"[0-9a-f]{40}", oid):
+        raise AssertionError(f"invalid governed Git object for {relative}: {metadata!r}")
+    return mode, object_type, oid
+
+
+def _governed_blob_oid(root: Path, relative: Path) -> str:
+    mode, _object_type, oid = _git_tree_entry(root, relative)
+    if mode != "100644":
+        raise AssertionError(
+            f"governed path must be a regular non-executable file: {relative} mode={mode}"
+        )
+    return oid
 
 
 def _read(root: Path, key: str) -> str:
-    path = root / FILES[key]
-    if not path.is_file():
-        raise AssertionError(f"missing required post-D2 state file: {FILES[key]}")
-    return path.read_text(encoding="utf-8")
+    relative = FILES[key]
+    oid = _governed_blob_oid(root, relative)
+    data = _git(root, "cat-file", "blob", oid, text=False)
+    assert isinstance(data, bytes)
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise AssertionError(f"{key}: governed blob is not UTF-8") from exc
 
 
 def _require(text: str, needle: str, label: str) -> None:
@@ -67,19 +157,8 @@ def _forbid(text: str, needle: str, label: str) -> None:
         raise AssertionError(f"{label}: stale/forbidden marker remains: {needle!r}")
 
 
-def _git_blob_oid(data: bytes) -> str:
-    header = f"blob {len(data)}\0".encode("ascii")
-    return hashlib.sha1(header + data).hexdigest()
-
-
 def compute_surface_blobs(root: Path) -> dict[str, str]:
-    blobs: dict[str, str] = {}
-    for key, relative in FILES.items():
-        path = root / relative
-        if not path.is_file():
-            raise AssertionError(f"missing required post-D2 state file: {relative}")
-        blobs[key] = _git_blob_oid(path.read_bytes())
-    return blobs
+    return {key: _governed_blob_oid(root, relative) for key, relative in FILES.items()}
 
 
 def _validate_surface_blobs(
@@ -146,33 +225,12 @@ def _machine_line(raw: str) -> str:
 
 def _reject_machine_authority_overrides(key: str, raw: str) -> None:
     line = _machine_line(raw)
-
-    wave4 = re.search(
-        r"\bwave4_implementation_authorization\s*(?:=|:)\s*([a-z][a-z0-9_]*)\b",
-        line,
-    )
-    if wave4 and wave4.group(1) != "not_granted":
-        raise AssertionError(
-            f"{key}: contradictory Wave 4 authority assignment: {raw.strip()!r}"
-        )
-
-    production = re.search(
-        r"\bproduction_authority\s*(?:=|:)\s*([a-z][a-z0-9_]*)\b",
-        line,
-    )
-    if production and production.group(1) != "none":
-        raise AssertionError(
-            f"{key}: contradictory production authority assignment: {raw.strip()!r}"
-        )
-
-    open_rel = re.search(
-        r"\bopen_rel_020_production_state\s*(?:=|:)\s*([a-z][a-z0-9_]*)\b",
-        line,
-    )
-    if open_rel and open_rel.group(1) != "open_c3":
-        raise AssertionError(
-            f"{key}: contradictory OPEN-REL-020 structured state: {raw.strip()!r}"
-        )
+    for _field, (pattern, expected, label) in _MACHINE_ASSIGNMENTS.items():
+        for match in pattern.finditer(line):
+            if match.group(1) != expected:
+                raise AssertionError(
+                    f"{key}: contradictory {label} assignment: {raw.strip()!r}"
+                )
 
 
 def validate(
@@ -242,7 +300,8 @@ def validate(
         _forbid(current_state_text, stale, "post-D2 current-state surfaces")
 
     # Machine-looking overrides remain semantically checked even after an intentional
-    # content re-baseline; prose itself is governed by exact content identity.
+    # content re-baseline. Every assignment occurrence is evaluated; a safe predecessor
+    # cannot conceal a contradictory later value on the same line.
     for key, text in docs.items():
         for raw in text.splitlines():
             if raw.strip():
@@ -261,7 +320,7 @@ def main(argv: list[str]) -> int:
         "post_d2_wave4_state_guard=PASS "
         "track_b=accepted telemetry_slice=eligible wave4_authorization=not_granted "
         "production_authority=none open_rel_020=open_c3 authority_state=structured "
-        "governed_surfaces=content_addressed_v1"
+        "governed_surfaces=git_tree_content_addressed_v2"
     )
     return 0
 

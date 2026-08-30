@@ -207,6 +207,55 @@ class PostD2Wave4StateGuardTest(unittest.TestCase):
         )
         validate(self.root)
 
+    def test_rejects_grant_before_trailing_question_sentence(self) -> None:
+        self._append(
+            "sequencing",
+            "Wave 4 is authorized to implement. Is production ready?",
+        )
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_rejects_colon_separated_production_grant(self) -> None:
+        self._append(
+            "blockers",
+            "Wave 4 is not authorized: production deployment is approved",
+        )
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_rejects_adverb_qualified_wave4_grant(self) -> None:
+        self._append("sequencing", "Wave 4 implementation is hereby authorized")
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_rejects_adverb_qualified_production_grant(self) -> None:
+        self._append("blockers", "Production deployment is explicitly approved")
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_rejects_open_rel_020_is_now_closed(self) -> None:
+        self._append("open_register", "OPEN-REL-020 is now closed")
+        with self.assertRaises(AssertionError):
+            validate(self.root)
+
+    def test_allows_coordinated_undecided_authority_predicates(self) -> None:
+        self._append(
+            "sequencing",
+            "Whether Wave 4 is authorized and may proceed remains undecided",
+        )
+        validate(self.root)
+
+    def test_allows_open_rel_020_explicit_non_closure(self) -> None:
+        self._append("open_register", "OPEN-REL-020 is not closed")
+        validate(self.root)
+
+    def test_allows_open_rel_020_future_conditional_closure(self) -> None:
+        self._append(
+            "open_register",
+            "OPEN-REL-020 will be closed only after the production gate is accepted",
+        )
+        validate(self.root)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -229,6 +229,16 @@ _D3D_SPIRE_ROTATION_PROOF_COMMON = {
     "artifact_pins": [SPIRE_1_15_3_ARTIFACT],
     "result": "pass",
 }
+_D3D_SPIRE_NON_TENANT_PROOF_COMMON = {
+    "evidence_sha": "2cb2956246aeeb2a8aef0527c9395b155ce8253e",
+    "workflow_run_id": 33320117683,
+    "workflow_run_number": 15,
+    "workflow_file": ".github/workflows/d3-spire-candidate-evaluation.yml",
+    "job_name": "SPIRE 1.15.3 bounded workload-identity evaluation",
+    "probe": "implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py",
+    "artifact_pins": [SPIRE_1_15_3_ARTIFACT],
+    "result": "pass",
+}
 APPROVED_EVIDENCE_PROOFS = {
     ("D3-A", "oidc_authorization_code_pkce_bff_binding"): {
         "evidence_id": "oidc_authorization_code_pkce_bff_binding",
@@ -309,6 +319,10 @@ APPROVED_EVIDENCE_PROOFS = {
     ("D3-D", "cross_environment_rejection"): {
         "evidence_id": "cross_environment_rejection",
         **_D3D_SPIRE_PROOF_COMMON,
+    },
+    ("D3-D", "workload_identity_non_tenant_authority"): {
+        "evidence_id": "workload_identity_non_tenant_authority",
+        **_D3D_SPIRE_NON_TENANT_PROOF_COMMON,
     },
     ("D3-E", "tenant_scope_domain_separation"): {
         "evidence_id": "tenant_scope_domain_separation",

@@ -6,7 +6,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from validate_post_d2_wave4_state import FILES, MERGE_SHA, validate
+from validate_post_d2_wave4_state import (
+    FILES,
+    MERGE_SHA,
+    compute_surface_blobs,
+    validate,
+)
 
 
 class PostD2Wave4StateGuardTest(unittest.TestCase):
@@ -57,6 +62,7 @@ class PostD2Wave4StateGuardTest(unittest.TestCase):
             "every other concrete provider/effectful subprofile remains `deferred_product_gated`",
             encoding="utf-8",
         )
+        self.baseline = compute_surface_blobs(self.root)
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
@@ -65,196 +71,171 @@ class PostD2Wave4StateGuardTest(unittest.TestCase):
         path = self.root / FILES[key]
         path.write_text(path.read_text(encoding="utf-8") + f"\n{line}", encoding="utf-8")
 
-    def test_accepts_consistent_post_d2_state(self) -> None:
-        validate(self.root)
+    def _validate(self) -> None:
+        validate(self.root, expected_surface_blobs=self.baseline)
 
-    def test_rejects_stale_customer_telemetry_blocker(self) -> None:
+    def _rebaseline(self) -> None:
+        self.baseline = compute_surface_blobs(self.root)
+
+    def test_accepts_consistent_post_d2_state(self) -> None:
+        self._validate()
+
+    def test_every_governed_surface_is_content_addressed(self) -> None:
+        for key in FILES:
+            with self.subTest(key=key):
+                original = (self.root / FILES[key]).read_text(encoding="utf-8")
+                self._append(key, "editorial drift")
+                with self.assertRaises(AssertionError):
+                    self._validate()
+                (self.root / FILES[key]).write_text(original, encoding="utf-8")
+
+    def test_rejects_invalid_governed_blob_oid(self) -> None:
+        baseline = dict(self.baseline)
+        baseline["sequencing"] = "not-a-git-blob"
+        with self.assertRaises(AssertionError):
+            validate(self.root, expected_surface_blobs=baseline)
+
+    def test_rejects_incomplete_governed_surface_baseline(self) -> None:
+        baseline = dict(self.baseline)
+        baseline.pop("open_register")
+        with self.assertRaises(AssertionError):
+            validate(self.root, expected_surface_blobs=baseline)
+
+    def test_reviewed_rebaseline_can_accept_nonsemantic_editorial_change(self) -> None:
+        self._append("sequencing", "Editorial note: D2 evidence remains canonical.")
+        with self.assertRaises(AssertionError):
+            self._validate()
+        self._rebaseline()
+        self._validate()
+
+    def test_rejects_structured_wave4_grant_even_after_rebaseline(self) -> None:
+        path = self.root / FILES["transition"]
+        path.write_text(
+            path.read_text(encoding="utf-8").replace(
+                "wave4_implementation_authorization = not_granted",
+                "wave4_implementation_authorization = granted",
+            ),
+            encoding="utf-8",
+        )
+        self._rebaseline()
+        with self.assertRaises(AssertionError):
+            self._validate()
+
+    def test_rejects_structured_production_grant_even_after_rebaseline(self) -> None:
+        path = self.root / FILES["transition"]
+        path.write_text(
+            path.read_text(encoding="utf-8").replace(
+                "production_authority = none",
+                "production_authority = granted",
+            ),
+            encoding="utf-8",
+        )
+        self._rebaseline()
+        with self.assertRaises(AssertionError):
+            self._validate()
+
+    def test_rejects_structured_open_rel_020_closure_even_after_rebaseline(self) -> None:
+        path = self.root / FILES["transition"]
+        path.write_text(
+            path.read_text(encoding="utf-8").replace(
+                "open_rel_020_production_state = open_c3",
+                "open_rel_020_production_state = closed",
+            ),
+            encoding="utf-8",
+        )
+        self._rebaseline()
+        with self.assertRaises(AssertionError):
+            self._validate()
+
+    def test_rejects_duplicate_structured_authority_key_even_after_rebaseline(self) -> None:
+        path = self.root / FILES["transition"]
+        path.write_text(
+            path.read_text(encoding="utf-8").replace(
+                "production_authority = none\n",
+                "production_authority = none\nproduction_authority = none\n",
+            ),
+            encoding="utf-8",
+        )
+        self._rebaseline()
+        with self.assertRaises(AssertionError):
+            self._validate()
+
+    def test_rejects_machine_wave4_override_on_other_surface_after_rebaseline(self) -> None:
+        self._append("open_register", "wave4_implementation_authorization = granted")
+        self._rebaseline()
+        with self.assertRaises(AssertionError):
+            self._validate()
+
+    def test_rejects_machine_production_override_on_other_surface_after_rebaseline(self) -> None:
+        self._append("blockers", "production_authority = granted")
+        self._rebaseline()
+        with self.assertRaises(AssertionError):
+            self._validate()
+
+    def test_rejects_machine_open_rel_override_on_other_surface_after_rebaseline(self) -> None:
+        self._append("open_register", "open_rel_020_production_state = closed")
+        self._rebaseline()
+        with self.assertRaises(AssertionError):
+            self._validate()
+
+    def test_rejects_stale_customer_telemetry_blocker_even_after_rebaseline(self) -> None:
         self._append(
             "blockers",
             "Blocked until `OPEN-REL-030` C2 durable acceptance/projection mechanism",
         )
+        self._rebaseline()
         with self.assertRaises(AssertionError):
-            validate(self.root)
+            self._validate()
 
-    def test_rejects_structured_wave4_authorization_grant(self) -> None:
-        path = self.root / FILES["transition"]
-        text = path.read_text(encoding="utf-8").replace(
-            "wave4_implementation_authorization = not_granted",
-            "wave4_implementation_authorization = granted",
-        )
-        path.write_text(text, encoding="utf-8")
-        with self.assertRaises(AssertionError):
-            validate(self.root)
-
-    def test_rejects_structured_production_authority_grant(self) -> None:
-        path = self.root / FILES["transition"]
-        text = path.read_text(encoding="utf-8").replace(
-            "production_authority = none",
-            "production_authority = granted",
-        )
-        path.write_text(text, encoding="utf-8")
-        with self.assertRaises(AssertionError):
-            validate(self.root)
-
-    def test_rejects_structured_open_rel_020_closure(self) -> None:
-        path = self.root / FILES["transition"]
-        text = path.read_text(encoding="utf-8").replace(
-            "open_rel_020_production_state = open_c3",
-            "open_rel_020_production_state = closed",
-        )
-        path.write_text(text, encoding="utf-8")
-        with self.assertRaises(AssertionError):
-            validate(self.root)
-
-    def test_rejects_duplicate_structured_authority_key(self) -> None:
-        path = self.root / FILES["transition"]
-        text = path.read_text(encoding="utf-8").replace(
-            "production_authority = none\n",
-            "production_authority = none\nproduction_authority = none\n",
-        )
-        path.write_text(text, encoding="utf-8")
-        with self.assertRaises(AssertionError):
-            validate(self.root)
-
-    def test_rejects_implicit_wave4_authorization_in_open_register(self) -> None:
-        self._append("open_register", "wave4_implementation_authorization = granted")
-        with self.assertRaises(AssertionError):
-            validate(self.root)
-
-    def test_rejects_natural_language_wave4_authorization(self) -> None:
-        self._append("sequencing", "Wave 4 implementation is AUTHORIZED TO IMPLEMENT")
-        with self.assertRaises(AssertionError):
-            validate(self.root)
-
-    def test_rejects_natural_language_provider_authorization(self) -> None:
+    # Exact fresh Codex vectors on predecessor 38d4a4f6. These no longer depend on
+    # language recognition: any unreviewed prose mutation changes the governed blob.
+    def test_rejects_future_modifier_hiding_present_closure(self) -> None:
         self._append(
-            "slice_manifest",
-            "accepted Monitoring/Zabbix subprofile is authorized to implement",
+            "open_register",
+            "OPEN-REL-020 may require review, but it is now closed",
         )
         with self.assertRaises(AssertionError):
-            validate(self.root)
+            self._validate()
 
-    def test_rejects_production_authority_grant_in_current_surface(self) -> None:
-        self._append("blockers", "production_authority = granted")
-        with self.assertRaises(AssertionError):
-            validate(self.root)
-
-    def test_rejects_open_rel_020_closure_in_current_surface(self) -> None:
-        self._append("blockers", "OPEN-REL-020 = CLOSED")
-        with self.assertRaises(AssertionError):
-            validate(self.root)
-
-    def test_allows_explicit_negative_authority_language(self) -> None:
-        self._append("sequencing", "Wave 4 remains not authorized to implement here")
-        self._append("blockers", "This record does not authorize production deployment")
-        validate(self.root)
-
-    def test_rejects_safe_prefix_then_wave4_grant(self) -> None:
+    def test_rejects_undecided_prefix_hiding_production_grant(self) -> None:
         self._append(
             "sequencing",
-            "Wave 4 is eligible for review and is authorized to implement",
+            "Whether Wave 4 is authorized remains undecided, but production deployment is approved and its timing remains undecided",
         )
         with self.assertRaises(AssertionError):
-            validate(self.root)
+            self._validate()
 
-    def test_rejects_negative_prefix_then_production_grant(self) -> None:
-        self._append(
-            "blockers",
-            "Production is not ready, but is approved for deployment",
-        )
+    def test_rejects_noun_form_authority_grant(self) -> None:
+        self._append("sequencing", "Wave 4 implementation has authority to proceed")
         with self.assertRaises(AssertionError):
-            validate(self.root)
+            self._validate()
 
-    def test_rejects_wave4_may_now_proceed(self) -> None:
-        self._append("sequencing", "Wave 4 implementation may now proceed")
+    def test_rejects_inverse_open_rel_020_not_open_claim(self) -> None:
+        self._append("open_register", "OPEN-REL-020 is no longer open")
         with self.assertRaises(AssertionError):
-            validate(self.root)
+            self._validate()
 
-    def test_rejects_production_deployment_permitted(self) -> None:
-        self._append("blockers", "Production deployment is permitted")
-        with self.assertRaises(AssertionError):
-            validate(self.root)
-
-    def test_rejects_open_rel_020_has_been_closed(self) -> None:
-        self._append("open_register", "OPEN-REL-020 has been closed")
-        with self.assertRaises(AssertionError):
-            validate(self.root)
-
-    def test_rejects_open_rel_020_is_complete(self) -> None:
-        self._append("open_register", "OPEN-REL-020 is complete")
-        with self.assertRaises(AssertionError):
-            validate(self.root)
-
-    def test_allows_authority_question_remains_undecided(self) -> None:
-        self._append("sequencing", "Whether Wave 4 is authorized remains undecided")
-        validate(self.root)
-
-    def test_allows_authorized_only_after_explicit_gate(self) -> None:
-        self._append(
-            "sequencing",
-            "Wave 4 is authorized only after a separate explicit gate",
-        )
-        validate(self.root)
-
-    def test_allows_direct_authority_question(self) -> None:
-        self._append("sequencing", "Is Wave 4 authorized?")
-        validate(self.root)
-
-    def test_allows_production_only_after_gate(self) -> None:
-        self._append(
-            "blockers",
-            "Production deployment is permitted only after a separate production gate",
-        )
-        validate(self.root)
-
-    def test_rejects_grant_before_trailing_question_sentence(self) -> None:
+    # Representative predecessor vectors remain covered by the same closed-world rule.
+    def test_rejects_trailing_question_bypass(self) -> None:
         self._append(
             "sequencing",
             "Wave 4 is authorized to implement. Is production ready?",
         )
         with self.assertRaises(AssertionError):
-            validate(self.root)
+            self._validate()
 
-    def test_rejects_colon_separated_production_grant(self) -> None:
+    def test_rejects_adverb_qualified_grant(self) -> None:
+        self._append("blockers", "Production deployment is explicitly approved")
+        with self.assertRaises(AssertionError):
+            self._validate()
+
+    def test_rejects_colon_scope_bypass(self) -> None:
         self._append(
             "blockers",
             "Wave 4 is not authorized: production deployment is approved",
         )
         with self.assertRaises(AssertionError):
-            validate(self.root)
-
-    def test_rejects_adverb_qualified_wave4_grant(self) -> None:
-        self._append("sequencing", "Wave 4 implementation is hereby authorized")
-        with self.assertRaises(AssertionError):
-            validate(self.root)
-
-    def test_rejects_adverb_qualified_production_grant(self) -> None:
-        self._append("blockers", "Production deployment is explicitly approved")
-        with self.assertRaises(AssertionError):
-            validate(self.root)
-
-    def test_rejects_open_rel_020_is_now_closed(self) -> None:
-        self._append("open_register", "OPEN-REL-020 is now closed")
-        with self.assertRaises(AssertionError):
-            validate(self.root)
-
-    def test_allows_coordinated_undecided_authority_predicates(self) -> None:
-        self._append(
-            "sequencing",
-            "Whether Wave 4 is authorized and may proceed remains undecided",
-        )
-        validate(self.root)
-
-    def test_allows_open_rel_020_explicit_non_closure(self) -> None:
-        self._append("open_register", "OPEN-REL-020 is not closed")
-        validate(self.root)
-
-    def test_allows_open_rel_020_future_conditional_closure(self) -> None:
-        self._append(
-            "open_register",
-            "OPEN-REL-020 will be closed only after the production gate is accepted",
-        )
-        validate(self.root)
+            self._validate()
 
 
 if __name__ == "__main__":

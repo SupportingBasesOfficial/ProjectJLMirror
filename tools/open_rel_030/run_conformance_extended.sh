@@ -140,4 +140,14 @@ bash tools/open_rel_030/timescale_jobs_restore.sh "$TS_CONTAINER" "$TS_IMAGE"
 bash tools/open_rel_030/tenant_relocation.sh "$PG_CONTAINER" "$TS_CONTAINER"
 
 printf '%s\n' 'open_rel_030_extended_conformance=PASS'
-printf '%s\n' 'closure_claim=false governed Track B acceptance still required; production/Wave4/merge authorization not granted'
+python3 - <<'PY'
+import json
+from pathlib import Path
+manifest = json.loads(Path('implementation/d2-open-rel-030/EVIDENCE_MANIFEST.json').read_text())
+assert manifest['decision_disposition'] == 'accepted_track_b'
+assert manifest['acceptance_authorization'] == 'granted'
+assert manifest['closure_claim'] is False
+assert manifest['production_authority'] == 'none'
+assert manifest['wave4_implementation_authorization'] == 'not_granted'
+print('governed_decision_state=PASS decision=accepted_track_b acceptance=granted closure_claim=false production_authority=none wave4=not_granted merge=not_authorized')
+PY

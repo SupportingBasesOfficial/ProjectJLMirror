@@ -159,6 +159,8 @@ jobs:
           assert discovered_history == expected_history
           missing = [name for name in discovered_history if name not in runner]
           assert not missing, f'history hardening modules not wired into extended runner: {missing}'
+          assert 'governed_decision_state=PASS decision=accepted_track_b acceptance=granted closure_claim=false production_authority=none wave4=not_granted merge=not_authorized' in runner
+          assert 'Track B acceptance still required' not in runner
 
           retained = Path('sql/d2-open-rel-030/009_history_retained_finalized_watermark_hardening.sql').read_text()
           for marker in [

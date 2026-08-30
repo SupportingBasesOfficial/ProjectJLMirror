@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS d3_session_authority (
 CREATE TABLE IF NOT EXISTS d3_fence_intent (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   target_epoch bigint NOT NULL,
-  state text NOT NULL CHECK (state IN ('prepared','cache_fenced','source_committed','finalized','aborted'))
+  state text NOT NULL CHECK (state IN ($d3$prepared$d3$,$d3$cache_fenced$d3$,$d3$source_committed$d3$,$d3$finalized$d3$,$d3$aborted$d3$))
 );
 INSERT INTO d3_session_authority
   (id, session_gen, principal_gen, membership_gen, permission_gen, tenant_gen, access_gen, admission_epoch)

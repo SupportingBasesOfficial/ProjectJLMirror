@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Validate post-D2 OPEN-REL-030 / Wave 4 readiness-state consistency."""
+"""Validate post-D2 OPEN-REL-030 / Wave 4 readiness-state consistency.
+
+Authority is machine-owned by the structured readiness block. Markdown prose may
+explain that state, but it cannot mint a contradictory grant or closure. The prose
+check is deliberately a bounded controlled predicate parser, not free-form NLP.
+"""
 
 from __future__ import annotations
 
@@ -33,51 +38,37 @@ _WAVE4_SUBJECT_RE = re.compile(
     r"(?:\bwave\s*4\b|\bwave4\b|monitoring\s*/\s*zabbix|customer[ -]telemetry)"
 )
 _PRODUCTION_SUBJECT_RE = re.compile(r"\bproduction\b")
+_SENTENCE_RE = re.compile(r"[^.!?]+(?:[.!?]+|$)")
 _CLAUSE_SPLIT_RE = re.compile(
-    r"(?:\s*;\s*|\s*[.!?]\s+|\s*,\s*(?:but|however|yet)\s+|\s+\b(?:but|however|yet|and)\b\s+)"
+    r"(?:\s*[;:,]\s*|\s+\b(?:but|however|yet|and)\b\s+)"
 )
-_PRESENT_GRANT_RE = re.compile(
-    r"(?:"
-    r"\b(?:is|are|was|were|has been|have been)\s+"
-    r"(?:authorized|authorised|granted|approved|activated|permitted|allowed)\b"
-    r"(?:\s+(?:to\s+implement|for\s+implementation|to\s+proceed|for\s+deployment))?"
-    r"|"
-    r"\b(?:authorized|authorised|granted|permitted|allowed)\s+to\s+implement\b"
-    r"|"
-    r"\b(?:may|can)\s+(?:now\s+)?(?:proceed|deploy|implement)\b"
-    r"|"
-    r"\b(?:implementation|production deployment|deployment)\s+"
-    r"(?:is|are|has been|have been)\s+"
-    r"(?:authorized|authorised|granted|approved|activated|permitted|allowed)\b"
-    r")"
-)
-_NON_GRANT_RE = re.compile(
-    r"(?:"
-    r"\b(?:not|never)\s+(?:currently\s+)?"
-    r"(?:authorized|authorised|granted|approved|activated|permitted|allowed)\b"
-    r"|"
-    r"\b(?:cannot|can't|may not|must not)\s+(?:now\s+)?(?:proceed|deploy|implement)\b"
-    r"|"
-    r"\bdoes\s+not\s+authorize\b"
-    r"|"
+_AUTHORITY_WORD_RE = re.compile(
     r"\b(?:authorized|authorised|granted|approved|activated|permitted|allowed)\b"
-    r"(?:\s+to\s+implement|\s+for\s+implementation|\s+to\s+proceed|\s+for\s+deployment)?"
-    r"\s+only\s+(?:after|if|when|once|upon|subject to)\b"
-    r"|"
-    r"\b(?:may|can)\s+(?:now\s+)?(?:proceed|deploy|implement)\s+only\s+"
-    r"(?:after|if|when|once|upon|subject to)\b"
-    r"|"
-    r"\bwhether\b.*\b(?:authorized|authorised|granted|approved|permitted|allowed)\b"
-    r".*\b(?:undecided|unknown|open|pending|unresolved)\b"
-    r")"
 )
-_OPEN_REL_020_CLOSURE_RE = re.compile(
-    r"(?:"
-    r"\bopen-rel-020\b\s*(?:=|:)\s*(?:closed|resolved|accepted|complete|completed)\b"
-    r"|"
-    r"\bopen-rel-020\b\s+(?:is|was|has been|became)\s+"
-    r"(?:closed|resolved|accepted|complete|completed)\b"
-    r")"
+_MAY_PROCEED_RE = re.compile(
+    r"\b(?:may|can)\s+"
+    r"(?:(?!(?:not|never|no)\b)[a-z][a-z-]*\s+){0,4}"
+    r"(?:proceed|deploy|implement|launch|go\s+live)\b"
+)
+_CLOSURE_WORD_RE = re.compile(
+    r"\b(?:closed|resolved|accepted|complete|completed)\b"
+)
+_UNDECIDED_TAIL_RE = re.compile(
+    r"\b(?:remains?|is|are)\s+(?:undecided|unknown|open|pending|unresolved)\s*$"
+)
+_INTERROGATIVE_START_RE = re.compile(
+    r"^(?:is|are|was|were|has|have|does|do|did|can|may|should|will|would|could|whether)\b"
+)
+_CONDITIONAL_START_RE = re.compile(r"^(?:if|when|once|upon|provided|assuming)\b")
+_CONDITIONAL_TAIL_RE = re.compile(
+    r"\bonly\s+(?:after|if|when|once|upon|subject\s+to)\b"
+)
+_FUTURE_OR_TENTATIVE_BEFORE_RE = re.compile(
+    r"\b(?:will|would|could|should|might|may)\b"
+)
+_NEGATION_END_RE = re.compile(
+    r"\b(?:not|never|no\s+longer)\s+"
+    r"(?:(?:currently|presently|explicitly|formally|yet|now)\s+){0,2}$"
 )
 
 
@@ -143,19 +134,54 @@ def _machine_line(raw: str) -> str:
     return re.sub(r"\s+", " ", line).strip()
 
 
-def _iter_clauses(line: str) -> tuple[str, ...]:
+def _iter_sentences(line: str) -> tuple[str, ...]:
+    sentences = tuple(
+        match.group(0).strip()
+        for match in _SENTENCE_RE.finditer(line)
+        if match.group(0).strip()
+    )
+    return sentences or (line,)
+
+
+def _strip_terminal_punctuation(value: str) -> str:
+    return value.rstrip().rstrip(".!?").rstrip()
+
+
+def _iter_clauses(sentence: str) -> tuple[str, ...]:
+    plain = _strip_terminal_punctuation(sentence)
     clauses = tuple(
         part.strip(" ,;:-")
-        for part in _CLAUSE_SPLIT_RE.split(line)
+        for part in _CLAUSE_SPLIT_RE.split(plain)
         if part.strip(" ,;:-")
     )
-    return clauses or (line,)
+    return clauses or (plain,)
 
 
-def _is_question_or_conditional_non_grant(clause: str, raw: str) -> bool:
-    if raw.strip().endswith("?"):
+def _is_direct_question(sentence: str) -> bool:
+    plain = sentence.strip()
+    return plain.endswith("?") and _INTERROGATIVE_START_RE.search(plain) is not None
+
+
+def _is_undecided_sentence(sentence: str) -> bool:
+    plain = _strip_terminal_punctuation(sentence)
+    return plain.startswith("whether ") and _UNDECIDED_TAIL_RE.search(plain) is not None
+
+
+def _is_signal_negated(clause: str, signal_start: int) -> bool:
+    prefix = clause[:signal_start].rstrip()
+    return _NEGATION_END_RE.search(prefix) is not None
+
+
+def _is_signal_conditional(clause: str, signal_end: int) -> bool:
+    if _CONDITIONAL_START_RE.search(clause) is not None:
         return True
-    return _NON_GRANT_RE.search(clause) is not None
+    tail = clause[signal_end:]
+    return _CONDITIONAL_TAIL_RE.search(tail) is not None
+
+
+def _iter_authority_signals(clause: str) -> tuple[re.Match[str], ...]:
+    matches = [*_AUTHORITY_WORD_RE.finditer(clause), *_MAY_PROCEED_RE.finditer(clause)]
+    return tuple(sorted(matches, key=lambda item: item.start()))
 
 
 def _reject_machine_authority_overrides(key: str, raw: str) -> None:
@@ -189,12 +215,32 @@ def _reject_machine_authority_overrides(key: str, raw: str) -> None:
         )
 
 
-def _reject_contradictory_authority_prose(docs: dict[str, str]) -> None:
-    """Reject present-tense grants while allowing scoped denial/conditions/questions.
+def _reject_open_rel_020_closure(key: str, raw: str, sentence: str) -> None:
+    if "open-rel-020" not in sentence:
+        return
+    if _is_direct_question(sentence) or _is_undecided_sentence(sentence):
+        return
 
-    The structured transition block owns machine authority. Descriptive prose must not
-    contradict it. We parse clauses rather than using an 80-character prefix so a safe
-    statement in one clause cannot conceal a positive grant in a later clause.
+    subject_index = sentence.find("open-rel-020")
+    for closure in _CLOSURE_WORD_RE.finditer(sentence, subject_index + len("open-rel-020")):
+        if _is_signal_negated(sentence, closure.start()):
+            continue
+        if _is_signal_conditional(sentence, closure.end()):
+            continue
+        prefix = sentence[subject_index:closure.start()]
+        if _FUTURE_OR_TENTATIVE_BEFORE_RE.search(prefix) is not None:
+            continue
+        raise AssertionError(
+            f"{key}: contradictory OPEN-REL-020 closure claim: {raw.strip()!r}"
+        )
+
+
+def _reject_contradictory_authority_prose(docs: dict[str, str]) -> None:
+    """Reject current authority grants using a bounded controlled predicate grammar.
+
+    Sentence boundaries own question/undecided scope. Clause boundaries own denial and
+    conditional scope. Authority words are treated fail-closed: adverbs may surround them,
+    but unrelated denial/eligibility text cannot cancel a later predicate.
     """
 
     for key, text in docs.items():
@@ -207,34 +253,34 @@ def _reject_contradictory_authority_prose(docs: dict[str, str]) -> None:
             if not line:
                 continue
 
-            if _OPEN_REL_020_CLOSURE_RE.search(line):
-                raise AssertionError(
-                    f"{key}: contradictory OPEN-REL-020 closure claim: {raw.strip()!r}"
-                )
+            for sentence in _iter_sentences(line):
+                _reject_open_rel_020_closure(key, raw, sentence)
 
-            wave4_scope = _WAVE4_SUBJECT_RE.search(line) is not None
-            production_scope = _PRODUCTION_SUBJECT_RE.search(line) is not None
-
-            if not (wave4_scope or production_scope):
-                continue
-
-            for clause in _iter_clauses(line):
-                grant = _PRESENT_GRANT_RE.search(clause)
-                if grant is None:
-                    continue
-                if _is_question_or_conditional_non_grant(clause, raw):
+                wave4_scope = _WAVE4_SUBJECT_RE.search(sentence) is not None
+                production_scope = _PRODUCTION_SUBJECT_RE.search(sentence) is not None
+                if not (wave4_scope or production_scope):
                     continue
 
-                if wave4_scope:
-                    raise AssertionError(
-                        f"{key}: positive Wave 4/Monitoring authority prose is forbidden: "
-                        f"{raw.strip()!r}"
-                    )
-                if production_scope:
-                    raise AssertionError(
-                        f"{key}: positive production authority prose is forbidden: "
-                        f"{raw.strip()!r}"
-                    )
+                if _is_direct_question(sentence) or _is_undecided_sentence(sentence):
+                    continue
+
+                for clause in _iter_clauses(sentence):
+                    for signal in _iter_authority_signals(clause):
+                        if _is_signal_negated(clause, signal.start()):
+                            continue
+                        if _is_signal_conditional(clause, signal.end()):
+                            continue
+
+                        if wave4_scope:
+                            raise AssertionError(
+                                f"{key}: positive Wave 4/Monitoring authority prose is forbidden: "
+                                f"{raw.strip()!r}"
+                            )
+                        if production_scope:
+                            raise AssertionError(
+                                f"{key}: positive production authority prose is forbidden: "
+                                f"{raw.strip()!r}"
+                            )
 
 
 def validate(root: Path) -> None:
@@ -311,7 +357,7 @@ def main(argv: list[str]) -> int:
         "post_d2_wave4_state_guard=PASS "
         "track_b=accepted telemetry_slice=eligible wave4_authorization=not_granted "
         "production_authority=none open_rel_020=open_c3 authority_state=structured "
-        "prose_guard=clause_scoped"
+        "prose_guard=controlled_predicate_v2"
     )
     return 0
 

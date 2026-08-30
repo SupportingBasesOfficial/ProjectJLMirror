@@ -204,19 +204,87 @@
         "privilege_boundary_reissue",
         "uncertain_key_generation_fail_closed"
       ],
-      "evidence_completed": [],
-      "evidence_remaining": [
+      "evidence_completed": [
         "token_session_lineage_binding",
         "current_previous_key_only",
-        "rotation_overlap_safety_lifetime",
         "no_historical_key_search",
-        "previous_key_observability_stale_detection",
-        "duplicate_conflicting_cookie_header_ingress_rejection",
         "routine_session_renewal_preserves_csrf",
         "privilege_boundary_reissue",
         "uncertain_key_generation_fail_closed"
       ],
-      "evidence_proofs": [],
+      "evidence_remaining": [
+        "rotation_overlap_safety_lifetime",
+        "previous_key_observability_stale_detection",
+        "duplicate_conflicting_cookie_header_ingress_rejection"
+      ],
+      "evidence_proofs": [
+        {
+          "evidence_id": "token_session_lineage_binding",
+          "evidence_sha": "796ada5529103d30fb6b711699fe863751ed0f42",
+          "workflow_run_id": 33315407695,
+          "workflow_run_number": 32,
+          "workflow_file": ".github/workflows/d3-identity-security-evidence.yml",
+          "job_name": "D3 reference security contracts",
+          "probe": "implementation/d3-identity-security/harness/test_crypto_reference.py",
+          "artifact_pins": [],
+          "result": "pass"
+        },
+        {
+          "evidence_id": "current_previous_key_only",
+          "evidence_sha": "796ada5529103d30fb6b711699fe863751ed0f42",
+          "workflow_run_id": 33315407695,
+          "workflow_run_number": 32,
+          "workflow_file": ".github/workflows/d3-identity-security-evidence.yml",
+          "job_name": "D3 reference security contracts",
+          "probe": "implementation/d3-identity-security/harness/test_crypto_reference.py",
+          "artifact_pins": [],
+          "result": "pass"
+        },
+        {
+          "evidence_id": "no_historical_key_search",
+          "evidence_sha": "796ada5529103d30fb6b711699fe863751ed0f42",
+          "workflow_run_id": 33315407695,
+          "workflow_run_number": 32,
+          "workflow_file": ".github/workflows/d3-identity-security-evidence.yml",
+          "job_name": "D3 reference security contracts",
+          "probe": "implementation/d3-identity-security/harness/test_crypto_reference.py",
+          "artifact_pins": [],
+          "result": "pass"
+        },
+        {
+          "evidence_id": "routine_session_renewal_preserves_csrf",
+          "evidence_sha": "796ada5529103d30fb6b711699fe863751ed0f42",
+          "workflow_run_id": 33315407695,
+          "workflow_run_number": 32,
+          "workflow_file": ".github/workflows/d3-identity-security-evidence.yml",
+          "job_name": "D3 reference security contracts",
+          "probe": "implementation/d3-identity-security/harness/test_crypto_reference.py",
+          "artifact_pins": [],
+          "result": "pass"
+        },
+        {
+          "evidence_id": "privilege_boundary_reissue",
+          "evidence_sha": "796ada5529103d30fb6b711699fe863751ed0f42",
+          "workflow_run_id": 33315407695,
+          "workflow_run_number": 32,
+          "workflow_file": ".github/workflows/d3-identity-security-evidence.yml",
+          "job_name": "D3 reference security contracts",
+          "probe": "implementation/d3-identity-security/harness/test_crypto_reference.py",
+          "artifact_pins": [],
+          "result": "pass"
+        },
+        {
+          "evidence_id": "uncertain_key_generation_fail_closed",
+          "evidence_sha": "796ada5529103d30fb6b711699fe863751ed0f42",
+          "workflow_run_id": 33315407695,
+          "workflow_run_number": 32,
+          "workflow_file": ".github/workflows/d3-identity-security-evidence.yml",
+          "job_name": "D3 reference security contracts",
+          "probe": "implementation/d3-identity-security/harness/test_crypto_reference.py",
+          "artifact_pins": [],
+          "result": "pass"
+        }
+      ],
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     },
@@ -266,19 +334,54 @@
         "key_generation_rotation_retirement",
         "provider_neutral_key_authority_port"
       ],
-      "evidence_completed": [],
-      "evidence_remaining": [
+      "evidence_completed": [
         "tenant_scope_domain_separation",
         "erasure_granularity_key_alignment",
+        "provider_neutral_key_authority_port"
+      ],
+      "evidence_remaining": [
         "historical_verifier_relocation_recovery_continuity",
         "retired_erased_key_nonresurrection",
         "private_key_jwt_replay_atomic_single_winner",
         "replay_partition_fail_closed",
         "replay_consumed_identity_survives_restore_loss",
-        "key_generation_rotation_retirement",
-        "provider_neutral_key_authority_port"
+        "key_generation_rotation_retirement"
       ],
-      "evidence_proofs": [],
+      "evidence_proofs": [
+        {
+          "evidence_id": "tenant_scope_domain_separation",
+          "evidence_sha": "796ada5529103d30fb6b711699fe863751ed0f42",
+          "workflow_run_id": 33315407695,
+          "workflow_run_number": 32,
+          "workflow_file": ".github/workflows/d3-identity-security-evidence.yml",
+          "job_name": "D3 reference security contracts",
+          "probe": "implementation/d3-identity-security/harness/test_crypto_reference.py",
+          "artifact_pins": [],
+          "result": "pass"
+        },
+        {
+          "evidence_id": "erasure_granularity_key_alignment",
+          "evidence_sha": "796ada5529103d30fb6b711699fe863751ed0f42",
+          "workflow_run_id": 33315407695,
+          "workflow_run_number": 32,
+          "workflow_file": ".github/workflows/d3-identity-security-evidence.yml",
+          "job_name": "D3 reference security contracts",
+          "probe": "implementation/d3-identity-security/harness/test_crypto_reference.py",
+          "artifact_pins": [],
+          "result": "pass"
+        },
+        {
+          "evidence_id": "provider_neutral_key_authority_port",
+          "evidence_sha": "796ada5529103d30fb6b711699fe863751ed0f42",
+          "workflow_run_id": 33315407695,
+          "workflow_run_number": 32,
+          "workflow_file": ".github/workflows/d3-identity-security-evidence.yml",
+          "job_name": "D3 reference security contracts",
+          "probe": "implementation/d3-identity-security/harness/test_crypto_reference.py",
+          "artifact_pins": [],
+          "result": "pass"
+        }
+      ],
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     }

@@ -18,7 +18,7 @@ jobs:
   spire-candidate-evaluation:
     name: SPIRE 1.15.3 bounded workload-identity evaluation
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 15
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       SPIRE_VERSION: 1.15.3
@@ -87,6 +87,7 @@ jobs:
           set -euo pipefail
           bash -n implementation/d3-identity-security/harness/spire_candidate_probe.sh
           bash -n implementation/d3-identity-security/harness/spire_rotation_probe.sh
+          bash -n implementation/d3-identity-security/harness/spire_private_key_profile_probe.sh
           python3 -m py_compile implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py
           grep -F 'conformance_claim=exploratory_only' implementation/d3-identity-security/harness/spire_candidate_probe.sh >/dev/null
           grep -F 'evidence_credited=false' implementation/d3-identity-security/harness/spire_candidate_probe.sh >/dev/null
@@ -94,9 +95,12 @@ jobs:
           grep -F 'evidence_credited=false' implementation/d3-identity-security/harness/spire_rotation_probe.sh >/dev/null
           grep -F 'workload_identity_non_tenant_authority=PASS' implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py >/dev/null
           grep -F 'evidence_credited=false' implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py >/dev/null
+          grep -F 'private_key_non_exportability_profile=PASS' implementation/d3-identity-security/harness/spire_private_key_profile_probe.sh >/dev/null
+          grep -F 'evidence_credited=false' implementation/d3-identity-security/harness/spire_private_key_profile_probe.sh >/dev/null
           if grep -F 'conformance_claim=complete' \
               implementation/d3-identity-security/harness/spire_candidate_probe.sh \
               implementation/d3-identity-security/harness/spire_rotation_probe.sh \
+              implementation/d3-identity-security/harness/spire_private_key_profile_probe.sh \
               implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py >/dev/null; then
             echo 'SPIRE candidate evaluation attempted to claim complete D3-D conformance' >&2
             exit 1
@@ -144,6 +148,17 @@ jobs:
           set -euo pipefail
           PYTHONPATH=src python3 implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py
 
+      - name: Exercise non-exporting agent SVID signer boundary
+        shell: bash
+        env:
+          SPIRE_ROOT: ${{ steps.candidate.outputs.spire_root }}
+          WORK_DIR: ${{ runner.temp }}/jlmirror-d3-spire-key-profile
+        run: |
+          set -euo pipefail
+          rm -rf "$WORK_DIR"
+          SPIRE_VERSION="$SPIRE_VERSION" \
+            bash implementation/d3-identity-security/harness/spire_private_key_profile_probe.sh
+
       - name: Exercise X.509 rotation and retired-bundle lifecycle
         shell: bash
         env:
@@ -165,6 +180,7 @@ jobs:
           printf 'canonical_candidate_promoted=true ledger_evidence_credited=5 current_run_auto_credit=false d3_d_conformed=false\n'
           printf 'rotation_evidence_provenance=run_12_pinned current_run_ledger_change=false\n'
           printf 'non_tenant_authority_evidence_provenance=run_15_pinned current_run_ledger_change=false\n'
+          printf 'new_private_key_profile_probe=PASS_EXPLORATORY_ONLY ledger_change=false\n'
           printf 'remaining_evidence=private_key_non_exportability_profile,issuer_restore_retired_authority_nonresurrection,vendor_credential_adapter_least_privilege\n'
           printf 'wave4=not_granted production=none d4=not_selected_not_granted\n'
 
@@ -173,7 +189,11 @@ jobs:
         shell: bash
         run: |
           set +e
-          for log in "$RUNNER_TEMP"/jlmirror-d3-spire/*.log "$RUNNER_TEMP"/jlmirror-d3-spire-rotation/*.log; do
+          for log in \
+              "$RUNNER_TEMP"/jlmirror-d3-spire/*.log \
+              "$RUNNER_TEMP"/jlmirror-d3-spire-key-profile/*.log \
+              "$RUNNER_TEMP"/jlmirror-d3-spire-key-profile/run/*.log \
+              "$RUNNER_TEMP"/jlmirror-d3-spire-rotation/*.log; do
             test -f "$log" || continue
             printf '\n===== %s =====\n' "$log"
             tail -n 250 "$log"
@@ -183,4 +203,9 @@ jobs:
         if: always()
         shell: bash
         run: |
-          rm -rf "$RUNNER_TEMP/jlmirror-d3-spire" "$RUNNER_TEMP/jlmirror-d3-spire-rotation" "$RUNNER_TEMP/spire-candidate" "$RUNNER_TEMP/spire-${SPIRE_VERSION}.tar.gz"
+          rm -rf \
+            "$RUNNER_TEMP/jlmirror-d3-spire" \
+            "$RUNNER_TEMP/jlmirror-d3-spire-key-profile" \
+            "$RUNNER_TEMP/jlmirror-d3-spire-rotation" \
+            "$RUNNER_TEMP/spire-candidate" \
+            "$RUNNER_TEMP/spire-${SPIRE_VERSION}.tar.gz"

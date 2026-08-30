@@ -66,20 +66,21 @@ No browser/framework library becomes authority. The evidence harness tests the a
 
 ## D3-D — workload identity issuer/attestation
 
-**Primary evidence candidate:** SPIRE `1.15.2`.
+**Primary evidence candidate:** SPIRE `1.15.3`.
 
 Rationale:
 
 - IR-D-002 already fixes SPIFFE-compatible workload URI identity + X.509-SVID-compatible short-lived credentials + mTLS;
 - SPIRE is the reference runtime environment for SPIFFE and is a CNCF Graduated workload-identity project;
-- release 1.15.2 was published 2026-07-09 and includes current security/attestation maintenance;
-- the candidate naturally tests whether JLMirror can keep canonical workload identity independent of pod/node/IP/vendor identity.
+- SPIRE 1.15.3 was published 2026-08-21 and the D3 harness pins the official Linux amd64 musl release asset to `sha256:ca1a4d1155317bdd2afc7f36663828a10410c7c840e54725b90b4064b0a301c7`;
+- the candidate naturally tests whether JLMirror can keep canonical workload identity independent of pod/node/IP/vendor identity;
+- SPIRE's built-in agent `disk` KeyManager persists PKCS#8 private-key material and therefore is not accepted as evidence for JLMirror's non-exporting signer profile; that blocker must be proved through a non-exporting signer boundary or a stronger selected-runtime equivalent rather than inferred from file permissions.
 
 External evidence references:
 
-- https://github.com/spiffe/spire/releases/tag/v1.15.2
-- https://github.com/spiffe/spire/blob/main/CHANGELOG.md
-- https://www.cncf.io/blog/2026/08/07/shadow-ai-in-ci-cd-threat-modeling-the-path-from-developer-laptop-to-kubernetes/
+- https://github.com/spiffe/spire/releases/tag/v1.15.3
+- https://github.com/spiffe/spire/blob/v1.15.3/pkg/agent/plugin/keymanager/disk/disk.go
+- https://github.com/spiffe/spire-plugin-sdk/blob/5dcde407c4d1/proto/spire/plugin/agent/keymanager/v1/keymanager.proto
 
 ## D3-E — key/replay/historical-verifier authority
 

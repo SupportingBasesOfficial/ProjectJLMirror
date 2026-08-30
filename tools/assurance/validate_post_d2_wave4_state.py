@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Validate post-D2 OPEN-REL-030 / Wave 4 readiness-state consistency.
 
-Authority is machine-owned by the structured readiness block. Markdown prose may
-explain that state, but it cannot mint a contradictory grant or closure. The prose
-check is deliberately a bounded controlled predicate parser, not free-form NLP.
+Authority is machine-owned by the structured readiness block. The five current-state
+Markdown surfaces are content-addressed governance snapshots: deterministic assurance
+does not attempt free-form NLP. Any prose edit changes a governed blob and requires an
+explicit reviewed re-baseline. Structured authority values remain independently checked,
+so re-baselining prose cannot silently grant Wave 4, production authority, or close
+OPEN-REL-020.
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -22,6 +26,16 @@ FILES = {
     "slice_manifest": Path("docs/16-implementation-readiness/15-implementation-slice-readiness-manifest.md"),
 }
 
+# Git blob OIDs are content identities and survive branch deletion and squash merge.
+# Updating any governed surface requires an explicit review-visible re-baseline here.
+EXPECTED_SURFACE_BLOBS = {
+    "transition": "9fd9408a4d6d4974a0e5aad5663b02f5aa85a366",
+    "open_register": "577eea9144955f59e7ce9c3c0d444eb19de50220",
+    "blockers": "083e218d26f57851c52ce7004d7aab78d3c6249a",
+    "sequencing": "43ef17e9eee910e89024fea5c7c0cdb87fd80b31",
+    "slice_manifest": "3f5f72e1b616ebac623e6f2f54d47cac79a93fe5",
+}
+
 AUTHORITY_STATE_HEADING = "## Readiness propagation requirements"
 EXPECTED_AUTHORITY_STATE = {
     "open_rel_030_track_b": "accepted",
@@ -34,45 +48,6 @@ EXPECTED_AUTHORITY_STATE = {
 }
 
 _ASSIGNMENT_RE = re.compile(r"^([a-z][a-z0-9_]*)\s*=\s*([a-z][a-z0-9_]*)$")
-_WAVE4_SUBJECT_RE = re.compile(
-    r"(?:\bwave\s*4\b|\bwave4\b|monitoring\s*/\s*zabbix|customer[ -]telemetry)"
-)
-_PRODUCTION_SUBJECT_RE = re.compile(r"\bproduction\b")
-_SENTENCE_RE = re.compile(r"[^.!?]+(?:[.!?]+|$)")
-_CLAUSE_SPLIT_RE = re.compile(
-    r"(?:\s*[;:,]\s*|\s+\b(?:but|however|yet|and)\b\s+)"
-)
-_AUTHORITY_WORD_RE = re.compile(
-    r"\b(?:authorized|authorised|granted|approved|activated|permitted|allowed)\b"
-)
-_MAY_PROCEED_RE = re.compile(
-    r"\b(?:may|can)\s+"
-    r"(?:(?!(?:not|never|no)\b)[a-z][a-z-]*\s+){0,4}"
-    r"(?:proceed|deploy|implement|launch|go\s+live)\b"
-)
-_CLOSURE_WORD_RE = re.compile(
-    r"\b(?:closed|resolved|accepted|complete|completed)\b"
-)
-_UNDECIDED_TAIL_RE = re.compile(
-    r"\b(?:remains?|is|are)\s+(?:undecided|unknown|open|pending|unresolved)\s*$"
-)
-_INTERROGATIVE_START_RE = re.compile(
-    r"^(?:is|are|was|were|has|have|does|do|did|can|may|should|will|would|could|whether)\b"
-)
-_CONDITIONAL_START_RE = re.compile(r"^(?:if|when|once|upon|provided|assuming)\b")
-_CONDITIONAL_TAIL_RE = re.compile(
-    r"\bonly\s+(?:after|if|when|once|upon|subject\s+to)\b"
-)
-_FUTURE_OR_TENTATIVE_BEFORE_RE = re.compile(
-    r"\b(?:will|would|could|should|might|may)\b"
-)
-_NEGATION_END_RE = re.compile(
-    r"(?:"
-    r"\b(?:not|never)(?:\s+(?:currently|presently|explicitly|formally|yet|now)){0,2}"
-    r"|"
-    r"\bno\s+longer(?:\s+(?:currently|presently|explicitly|formally|yet|now)){0,2}"
-    r")$"
-)
 
 
 def _read(root: Path, key: str) -> str:
@@ -90,6 +65,44 @@ def _require(text: str, needle: str, label: str) -> None:
 def _forbid(text: str, needle: str, label: str) -> None:
     if needle in text:
         raise AssertionError(f"{label}: stale/forbidden marker remains: {needle!r}")
+
+
+def _git_blob_oid(data: bytes) -> str:
+    header = f"blob {len(data)}\0".encode("ascii")
+    return hashlib.sha1(header + data).hexdigest()
+
+
+def compute_surface_blobs(root: Path) -> dict[str, str]:
+    blobs: dict[str, str] = {}
+    for key, relative in FILES.items():
+        path = root / relative
+        if not path.is_file():
+            raise AssertionError(f"missing required post-D2 state file: {relative}")
+        blobs[key] = _git_blob_oid(path.read_bytes())
+    return blobs
+
+
+def _validate_surface_blobs(
+    root: Path,
+    expected_surface_blobs: dict[str, str],
+) -> None:
+    if set(expected_surface_blobs) != set(FILES):
+        raise AssertionError(
+            "governed surface baseline keys must exactly match FILES: "
+            f"expected={sorted(FILES)} actual={sorted(expected_surface_blobs)}"
+        )
+
+    actual = compute_surface_blobs(root)
+    for key in FILES:
+        expected = expected_surface_blobs[key]
+        if not re.fullmatch(r"[0-9a-f]{40}", expected):
+            raise AssertionError(f"{key}: invalid governed blob oid: {expected!r}")
+        if actual[key] != expected:
+            raise AssertionError(
+                f"{key}: governed current-state surface drift: "
+                f"expected_blob={expected} actual_blob={actual[key]}; "
+                "authority prose/state edits require an explicit reviewed re-baseline"
+            )
 
 
 def _parse_authority_state(transition: str) -> dict[str, str]:
@@ -126,65 +139,9 @@ def _parse_authority_state(transition: str) -> dict[str, str]:
     return state
 
 
-def _plain_line(raw: str) -> str:
-    line = raw.casefold()
-    line = line.replace("`", "").replace("*", "").replace("_", " ")
-    return re.sub(r"\s+", " ", line).strip()
-
-
 def _machine_line(raw: str) -> str:
     line = raw.casefold().replace("`", "").replace("*", "")
     return re.sub(r"\s+", " ", line).strip()
-
-
-def _iter_sentences(line: str) -> tuple[str, ...]:
-    sentences = tuple(
-        match.group(0).strip()
-        for match in _SENTENCE_RE.finditer(line)
-        if match.group(0).strip()
-    )
-    return sentences or (line,)
-
-
-def _strip_terminal_punctuation(value: str) -> str:
-    return value.rstrip().rstrip(".!?").rstrip()
-
-
-def _iter_clauses(sentence: str) -> tuple[str, ...]:
-    plain = _strip_terminal_punctuation(sentence)
-    clauses = tuple(
-        part.strip(" ,;:-")
-        for part in _CLAUSE_SPLIT_RE.split(plain)
-        if part.strip(" ,;:-")
-    )
-    return clauses or (plain,)
-
-
-def _is_direct_question(sentence: str) -> bool:
-    plain = sentence.strip()
-    return plain.endswith("?") and _INTERROGATIVE_START_RE.search(plain) is not None
-
-
-def _is_undecided_sentence(sentence: str) -> bool:
-    plain = _strip_terminal_punctuation(sentence)
-    return plain.startswith("whether ") and _UNDECIDED_TAIL_RE.search(plain) is not None
-
-
-def _is_signal_negated(clause: str, signal_start: int) -> bool:
-    prefix = clause[:signal_start].rstrip()
-    return _NEGATION_END_RE.search(prefix) is not None
-
-
-def _is_signal_conditional(clause: str, signal_end: int) -> bool:
-    if _CONDITIONAL_START_RE.search(clause) is not None:
-        return True
-    tail = clause[signal_end:]
-    return _CONDITIONAL_TAIL_RE.search(tail) is not None
-
-
-def _iter_authority_signals(clause: str) -> tuple[re.Match[str], ...]:
-    matches = [*_AUTHORITY_WORD_RE.finditer(clause), *_MAY_PROCEED_RE.finditer(clause)]
-    return tuple(sorted(matches, key=lambda item: item.start()))
 
 
 def _reject_machine_authority_overrides(key: str, raw: str) -> None:
@@ -218,80 +175,14 @@ def _reject_machine_authority_overrides(key: str, raw: str) -> None:
         )
 
 
-def _reject_open_rel_020_closure(key: str, raw: str, sentence: str) -> None:
-    if "open-rel-020" not in sentence:
-        return
-    if _is_direct_question(sentence) or _is_undecided_sentence(sentence):
-        return
+def validate(
+    root: Path,
+    *,
+    expected_surface_blobs: dict[str, str] | None = None,
+) -> None:
+    baseline = EXPECTED_SURFACE_BLOBS if expected_surface_blobs is None else expected_surface_blobs
+    _validate_surface_blobs(root, baseline)
 
-    subject_index = sentence.find("open-rel-020")
-    for closure in _CLOSURE_WORD_RE.finditer(sentence, subject_index + len("open-rel-020")):
-        if _is_signal_negated(sentence, closure.start()):
-            continue
-        if _is_signal_conditional(sentence, closure.end()):
-            continue
-        prefix = sentence[subject_index:closure.start()]
-        if _FUTURE_OR_TENTATIVE_BEFORE_RE.search(prefix) is not None:
-            continue
-        raise AssertionError(
-            f"{key}: contradictory OPEN-REL-020 closure claim: {raw.strip()!r}"
-        )
-
-
-def _reject_contradictory_authority_prose(docs: dict[str, str]) -> None:
-    """Reject current authority grants using a bounded controlled predicate grammar.
-
-    Sentence boundaries own question/undecided scope. Clause boundaries own denial and
-    conditional scope. Authority words are treated fail-closed: adverbs may surround them,
-    but unrelated denial/eligibility text cannot cancel a later predicate. Canonical
-    machine assignments are validated separately and never reinterpreted as prose.
-    """
-
-    for key, text in docs.items():
-        for raw in text.splitlines():
-            if not raw.strip():
-                continue
-            _reject_machine_authority_overrides(key, raw)
-
-            machine_line = _machine_line(raw)
-            if _ASSIGNMENT_RE.fullmatch(machine_line) is not None:
-                continue
-
-            line = _plain_line(raw)
-            if not line:
-                continue
-
-            for sentence in _iter_sentences(line):
-                _reject_open_rel_020_closure(key, raw, sentence)
-
-                wave4_scope = _WAVE4_SUBJECT_RE.search(sentence) is not None
-                production_scope = _PRODUCTION_SUBJECT_RE.search(sentence) is not None
-                if not (wave4_scope or production_scope):
-                    continue
-
-                if _is_direct_question(sentence) or _is_undecided_sentence(sentence):
-                    continue
-
-                for clause in _iter_clauses(sentence):
-                    for signal in _iter_authority_signals(clause):
-                        if _is_signal_negated(clause, signal.start()):
-                            continue
-                        if _is_signal_conditional(clause, signal.end()):
-                            continue
-
-                        if wave4_scope:
-                            raise AssertionError(
-                                f"{key}: positive Wave 4/Monitoring authority prose is forbidden: "
-                                f"{raw.strip()!r}"
-                            )
-                        if production_scope:
-                            raise AssertionError(
-                                f"{key}: positive production authority prose is forbidden: "
-                                f"{raw.strip()!r}"
-                            )
-
-
-def validate(root: Path) -> None:
     docs = {key: _read(root, key) for key in FILES}
 
     transition = docs["transition"]
@@ -350,7 +241,12 @@ def validate(root: Path) -> None:
     ):
         _forbid(current_state_text, stale, "post-D2 current-state surfaces")
 
-    _reject_contradictory_authority_prose(docs)
+    # Machine-looking overrides remain semantically checked even after an intentional
+    # content re-baseline; prose itself is governed by exact content identity.
+    for key, text in docs.items():
+        for raw in text.splitlines():
+            if raw.strip():
+                _reject_machine_authority_overrides(key, raw)
 
 
 def main(argv: list[str]) -> int:
@@ -365,7 +261,7 @@ def main(argv: list[str]) -> int:
         "post_d2_wave4_state_guard=PASS "
         "track_b=accepted telemetry_slice=eligible wave4_authorization=not_granted "
         "production_authority=none open_rel_020=open_c3 authority_state=structured "
-        "prose_guard=controlled_predicate_v2"
+        "governed_surfaces=content_addressed_v1"
     )
     return 0
 

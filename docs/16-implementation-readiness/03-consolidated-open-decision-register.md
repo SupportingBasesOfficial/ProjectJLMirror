@@ -1,6 +1,6 @@
 # Implementation Readiness — Consolidated OPEN Decision Register
 
-**Status:** proposed gate baseline
+**Status:** proposed gate baseline; post-D2 operational state reconciled by `18-d2-track-b-acceptance-propagation.md`
 
 ## Purpose
 
@@ -99,11 +99,15 @@ Phase 11 already assigned a primary roadmap class. This gate preserves those cla
 | `OPEN-REL-028` | C2 | deployment/rollout/recovery mechanism satisfied semantically by Phase 14; concrete product remains replaceable C2 |
 | `OPEN-REL-029.A` | C2 | configuration store/distribution/schema/rollout mechanism |
 | `OPEN-REL-029.B` | C3 | last-known-good/convergence numeric horizons before production |
-| `OPEN-REL-030` | C2 | customer-monitoring durable acceptance/projection mechanism; specifically blocks `impl.customer-telemetry@1` until selected and conformed |
+| `OPEN-REL-030` | C2 | **ACCEPTED / selected + conformed for the Track B profile merged by PR #40 at `main@2ffec007d7dff32e0a45116b0bc875d5c2743b12`; no longer blocks `impl.customer-telemetry@1` eligibility. Production capacity/numerics remain separately owned by `OPEN-REL-020`.** |
 | `OPEN-REL-031.A` | C2 | identity/session-authority durable-store topology and ownership (control-plane-owned vs. its own tier), mechanism selection |
 | `OPEN-REL-031.B` | C3 | identity/session-authority RPO/RTO and failover numerics before production eligibility |
 
 No Phase 11 source row is implicitly covered by “all C2/C3 rows”; every ID is enumerated here.
+
+### Post-D2 `OPEN-REL-030` authority boundary
+
+The `OPEN-REL-030` row remains class C2 as lineage/classification history, but its first-Monitoring-vertical decision state is now accepted rather than unresolved. The accepted profile is exactly the bounded profile recorded under `implementation/d2-open-rel-030/*`; this propagation does not authorize arbitrary Timescale/PostgreSQL mechanisms outside that profile and does not close C3 production envelopes.
 
 ## Phase 12 overlay — `OPEN-OBS-001..037`
 
@@ -187,3 +191,5 @@ every source ID has exactly one active readiness disposition, except where the s
 ## Closure evidence rule
 
 A C1 closure updates this register and the owning source authority where necessary. A C2 selection produces a bounded decision/spike record and conformance evidence before becoming canonical. A C3 remains a production blocker. C4/C5 capabilities stay absent from implementation unless their governing authority deliberately changes their class/state.
+
+For the first Monitoring vertical, `OPEN-REL-030` now has that bounded C2 selection/conformance evidence through PR #40. Its accepted state does not imply Wave 4 implementation authorization; `18-d2-track-b-acceptance-propagation.md` owns that transition boundary.

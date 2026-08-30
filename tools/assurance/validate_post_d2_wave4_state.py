@@ -48,23 +48,35 @@ EXPECTED_AUTHORITY_STATE = {
 }
 
 _ASSIGNMENT_RE = re.compile(r"^([a-z][a-z0-9_]*)\s*=\s*([a-z][a-z0-9_]*)$")
+
+
+def _machine_assignment_pattern(field: str) -> re.Pattern[str]:
+    """Match bare, single-quoted, or double-quoted scalar assignments.
+
+    The optional quote is captured and must close with the same delimiter. This covers
+    JSON/YAML/TOML-style scalar encodings without treating arbitrary prose as authority.
+    """
+
+    return re.compile(
+        rf"\b{re.escape(field)}\s*(?:=|:)\s*"
+        rf"(?P<quote>[\"']?)(?P<value>[a-z][a-z0-9_]*)(?P=quote)"
+        rf"(?![a-z0-9_])"
+    )
+
+
 _MACHINE_ASSIGNMENTS = {
     "wave4_implementation_authorization": (
-        re.compile(
-            r"\bwave4_implementation_authorization\s*(?:=|:)\s*([a-z][a-z0-9_]*)\b"
-        ),
+        _machine_assignment_pattern("wave4_implementation_authorization"),
         "not_granted",
         "Wave 4 authority",
     ),
     "production_authority": (
-        re.compile(r"\bproduction_authority\s*(?:=|:)\s*([a-z][a-z0-9_]*)\b"),
+        _machine_assignment_pattern("production_authority"),
         "none",
         "production authority",
     ),
     "open_rel_020_production_state": (
-        re.compile(
-            r"\bopen_rel_020_production_state\s*(?:=|:)\s*([a-z][a-z0-9_]*)\b"
-        ),
+        _machine_assignment_pattern("open_rel_020_production_state"),
         "open_c3",
         "OPEN-REL-020 structured state",
     ),
@@ -227,7 +239,7 @@ def _reject_machine_authority_overrides(key: str, raw: str) -> None:
     line = _machine_line(raw)
     for _field, (pattern, expected, label) in _MACHINE_ASSIGNMENTS.items():
         for match in pattern.finditer(line):
-            if match.group(1) != expected:
+            if match.group("value") != expected:
                 raise AssertionError(
                     f"{key}: contradictory {label} assignment: {raw.strip()!r}"
                 )
@@ -301,7 +313,7 @@ def validate(
 
     # Machine-looking overrides remain semantically checked even after an intentional
     # content re-baseline. Every assignment occurrence is evaluated; a safe predecessor
-    # cannot conceal a contradictory later value on the same line.
+    # cannot conceal a contradictory later value, including quoted scalar encodings.
     for key, text in docs.items():
         for raw in text.splitlines():
             if raw.strip():
@@ -320,7 +332,7 @@ def main(argv: list[str]) -> int:
         "post_d2_wave4_state_guard=PASS "
         "track_b=accepted telemetry_slice=eligible wave4_authorization=not_granted "
         "production_authority=none open_rel_020=open_c3 authority_state=structured "
-        "governed_surfaces=git_tree_content_addressed_v2"
+        "governed_surfaces=git_tree_content_addressed_v3"
     )
     return 0
 

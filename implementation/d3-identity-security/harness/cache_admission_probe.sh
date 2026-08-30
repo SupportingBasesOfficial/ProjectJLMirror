@@ -49,13 +49,30 @@ assert_eq() {
 }
 
 wait_pg() {
-  for _ in $(seq 1 60); do
-    if docker exec "$PG_CONTAINER" pg_isready -U postgres -d postgres >/dev/null 2>&1; then
-      return 0
+  local state
+  for _ in $(seq 1 120); do
+    state="$(docker inspect -f '{{.State.Status}}' "$PG_CONTAINER" 2>/dev/null || true)"
+    if [[ "$state" != "running" ]]; then
+      echo "postgres container is not running before final readiness: state=$state" >&2
+      docker logs "$PG_CONTAINER" >&2 || true
+      exit 1
     fi
-    sleep 1
+
+    if docker logs "$PG_CONTAINER" 2>&1 \
+        | grep -Fq 'PostgreSQL init process complete; ready for start up.' \
+      && docker exec "$PG_CONTAINER" pg_isready -U postgres -d d3 >/dev/null 2>&1; then
+      sleep 0.5
+      if docker exec "$PG_CONTAINER" pg_isready -U postgres -d d3 >/dev/null 2>&1 \
+        && [[ "$(docker exec -e PGPASSWORD=d3-postgres-password "$PG_CONTAINER" \
+          psql -U postgres -d d3 -Atqc 'SELECT 1' 2>/dev/null || true)" == "1" ]]; then
+        return 0
+      fi
+    fi
+    sleep 0.5
   done
-  echo 'postgres readiness deadline exceeded' >&2
+  echo 'postgres final readiness deadline exceeded' >&2
+  docker inspect "$PG_CONTAINER" >&2 || true
+  docker logs "$PG_CONTAINER" >&2 || true
   exit 1
 }
 

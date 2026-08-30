@@ -182,6 +182,16 @@ _D3B_PINNED_PROOF_COMMON = {
     "artifact_pins": [POSTGRES_18_6_DIGEST, REDIS_8_10_DIGEST, VALKEY_9_1_DIGEST],
     "result": "pass",
 }
+_D3_REFERENCE_PROOF_COMMON = {
+    "evidence_sha": "796ada5529103d30fb6b711699fe863751ed0f42",
+    "workflow_run_id": 33315407695,
+    "workflow_run_number": 32,
+    "workflow_file": ".github/workflows/d3-identity-security-evidence.yml",
+    "job_name": "D3 reference security contracts",
+    "probe": "implementation/d3-identity-security/harness/test_crypto_reference.py",
+    "artifact_pins": [],
+    "result": "pass",
+}
 APPROVED_EVIDENCE_PROOFS = {
     ("D3-A", "oidc_authorization_code_pkce_bff_binding"): {
         "evidence_id": "oidc_authorization_code_pkce_bff_binding",
@@ -210,6 +220,42 @@ APPROVED_EVIDENCE_PROOFS = {
     ("D3-B", "broad_revocation_bounded_constant"): {
         "evidence_id": "broad_revocation_bounded_constant",
         **_D3B_PINNED_PROOF_COMMON,
+    },
+    ("D3-C", "token_session_lineage_binding"): {
+        "evidence_id": "token_session_lineage_binding",
+        **_D3_REFERENCE_PROOF_COMMON,
+    },
+    ("D3-C", "current_previous_key_only"): {
+        "evidence_id": "current_previous_key_only",
+        **_D3_REFERENCE_PROOF_COMMON,
+    },
+    ("D3-C", "no_historical_key_search"): {
+        "evidence_id": "no_historical_key_search",
+        **_D3_REFERENCE_PROOF_COMMON,
+    },
+    ("D3-C", "routine_session_renewal_preserves_csrf"): {
+        "evidence_id": "routine_session_renewal_preserves_csrf",
+        **_D3_REFERENCE_PROOF_COMMON,
+    },
+    ("D3-C", "privilege_boundary_reissue"): {
+        "evidence_id": "privilege_boundary_reissue",
+        **_D3_REFERENCE_PROOF_COMMON,
+    },
+    ("D3-C", "uncertain_key_generation_fail_closed"): {
+        "evidence_id": "uncertain_key_generation_fail_closed",
+        **_D3_REFERENCE_PROOF_COMMON,
+    },
+    ("D3-E", "tenant_scope_domain_separation"): {
+        "evidence_id": "tenant_scope_domain_separation",
+        **_D3_REFERENCE_PROOF_COMMON,
+    },
+    ("D3-E", "erasure_granularity_key_alignment"): {
+        "evidence_id": "erasure_granularity_key_alignment",
+        **_D3_REFERENCE_PROOF_COMMON,
+    },
+    ("D3-E", "provider_neutral_key_authority_port"): {
+        "evidence_id": "provider_neutral_key_authority_port",
+        **_D3_REFERENCE_PROOF_COMMON,
     },
 }
 

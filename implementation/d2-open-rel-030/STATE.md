@@ -1,138 +1,112 @@
 # D2 / OPEN-REL-030 Evidence State
 
-**State:** EVIDENCE COMPLETE — READY FOR EXACT-HEAD DECISION REVIEW  
-**Production authority:** none  
-**Track B acceptance authorization:** not granted  
+**State:** TRACK B ACCEPTED — post-acceptance exact-head assurance mandatory  
+**Evidence:** complete  
+**Decision disposition:** `accepted_track_b`  
+**Track B acceptance authorization:** granted by explicit user authorization  
+**Closure claim:** false — closure remains a separate authorization  
 **Wave 4 implementation authorization:** not granted  
-**Production versions/numerics:** not selected; capacity envelopes remain `OPEN-REL-020` C3
+**Production authority:** none  
+**Production versions/numerics:** not selected; capacity envelopes remain `OPEN-REL-020` C3  
+**Merge authorization:** not granted
 
-## Current recommendation
+## Acceptance authorization basis
 
-Recommend C2 Track B acceptance only if the complete invariant set below remains preserved together and the exact final governance HEAD passes deterministic assurance, OPEN-REL-030 conformance, Native Assurance and a fresh adversarial Codex review.
+Track B was explicitly authorized only after the prior exact stationary HEAD passed every required decision gate:
 
-### Tier 1 — transactional and history authority
+```text
+Authorized-from HEAD          622c094c9274a778d1c21c5976dd3b2ca7b4cedf
+Deterministic Assurance      #2273 / 33283807517 / SUCCESS
+OPEN-REL-030 Conformance     #204 / 33283807551 / SUCCESS
+Native Assurance             review 5059581679 / P0=0 P1=0 P2=0
+Fresh Codex exact-head       comment 5465822591 / CLEAN — no major issues
+Inline review threads        0 unresolved
+PR mergeable                 true
+```
 
-- canonical observation identity/content is immutable;
-- active source generation, poll epoch and durable `live` poll claim come from owner-controlled state inside the acceptance transaction;
-- current-state CAS uses platform authority, never provider event time;
-- reconciliation coverage is contiguous from `supported_history_floor` and bound to exact owner `authority_generation`, exact `provider_dataset_revision` and required snapshot currentness;
-- owner-visible provider mutation invalidates current coverage atomically; stable identity rewrite, DELETE and TRUNCATE fail closed;
-- accepted stable identities are compared with owner-current canonical content before coverage publication whenever either side intersects the requested window, independently of current `became_visible_at`;
-- a retained durable `finalized_through=T2` is historical authority, not reusable coverage: after dataset invalidation, any later finalization request for `T1<T2` must still prove current-revision contiguous coverage through T2 before the stream may return to `complete`;
-- partial current-revision revalidation below a retained watermark leaves `state=reconciliation_required` and preserves the historical watermark without advertising it as currently complete;
-- `try_finalize(..., p_finalize_through)` rejects `NULL` cutoff with SQLSTATE `22004` before any completeness decision;
-- provider mutation, sweep and finalization use one explicit authority-row lock order: `provider_authority → stream_state`; the pre-lock internal sweep/finalize entry points are not executable by the reconciliation worker;
-- real concurrent mutation×finalization and mutation×sweep vectors must complete without deadlock/lock abort;
-- every ordered history hardening module is executed by the extended runner and structurally guarded against orphaning; the current set is `004–010`.
+The acceptance mutation itself changes HEAD. Therefore the accepted-state commit must independently pass deterministic assurance, OPEN-REL-030 conformance, Native Assurance and a fresh adversarial Codex review before it is considered exact-head assured for merge-readiness purposes.
 
-### Physical PITR recovery authority
+## Accepted Track B profile
 
-Recovery admission remains a surviving, authenticated, effect-bound, active-authority-bound, boundary-single-winner authority:
+The accepted C2 mechanism/profile is the coupled invariant set already proven by the evidence package. Acceptance does not weaken or split those guarantees.
 
-1. committed R precedes a real committed `(R,F]` effect;
-2. surviving authority outside the restored database stores authenticated effect evidence derived from actual post-R source state;
-3. every recovery grant binds that exact effect digest;
-4. the surviving singleton active tuple `(domain,R,F,successor_epoch,placement_version,required_receipt)` is locked before winner-key derivation;
-5. validly signed epoch/placement drift grants fail closed and cannot create another claim;
-6. equivalent valid grant IDs converge to one canonical recovery-boundary claim;
-7. the winner is bound to authenticated principal plus restored-instance capability; reusable credentials alone are insufficient;
-8. post-enrollment PGDATA clone does not copy the effective instance proof, and clone rejection is accepted only after a same-path positive control;
-9. claim alone leaves local truth at R; only verified surviving recovery material may atomically apply post-R state and exact successor authority;
-10. recovery material fetch locks and revalidates active authority, grant, boundary claim, effect and signing state against in-flight substitution;
-11. the hardened positive path itself is replayed after hardening installation through `claim → verify → fetch/apply → verify`;
-12. established-response deadlines are caller-local and asynchronous; timeout/uncertainty has no synchronous remote cancel/disconnect and one-shot SQL session retirement closes abandoned evidence connections;
-13. real established TCP response blackholes are exercised directly.
+### Tier 1 / owner-current history
+
+- immutable canonical observation identity/content;
+- owner-controlled source generation, poll epoch and durable live poll claim inside transactional acceptance;
+- platform ordering authority for current-state CAS;
+- reconciliation coverage contiguous from `supported_history_floor`, bound to exact authority generation, provider dataset revision and owner-required snapshot currentness;
+- provider mutation invalidates current coverage; stable identity rewrite, DELETE and TRUNCATE fail closed;
+- accepted stable identities are validated independently of current `became_visible_at`;
+- retained `finalized_through` cannot be re-advertised as current completeness until current-revision coverage again reaches it;
+- `try_finalize(..., NULL)` fails closed with SQLSTATE `22004`;
+- provider mutation, sweep and finalization use the canonical lock order `provider_authority → stream_state`;
+- worker paths cannot bypass the lock-order wrappers;
+- all seven history hardening modules `004–010` are ordered, executed and anti-orphan guarded.
+
+### Physical PITR / recovery authority
+
+- surviving recovery authority is external to restored PostgreSQL state;
+- PGDATA copying alone cannot duplicate effective restored-instance authority;
+- clone negatives require same-path positive control;
+- one winner exists per canonical recovery boundary across equivalent grant IDs;
+- grants bind authenticated surviving post-R effect evidence;
+- claim alone leaves local truth at R; verified material is required for atomic effect/successor application;
+- material fetch uses locked, revalidated active-authority/grant/claim/effect/signing state;
+- validly signed successor epoch/placement drift fails closed;
+- hardened positive claim→verify→fetch/apply→verify is exercised after hardening installation;
+- recovery and clone calls use caller-local async response deadlines, real established TCP blackhole tests and one-shot session retirement without synchronous timeout cleanup.
 
 ### Tier 2 / relocation
 
-- Timescale shared history remains acceptable only under the mediated profile; tenant/application principals have no direct shared raw/CAGG/internal-materialization authority;
-- `ts_automation_owner` remains privileged cross-tenant infrastructure, not an application/tenant principal;
-- fresh-cluster role reconstruction and post-restore/job attack matrices remain mandatory evidence;
-- relocation typed canonicalization is total/injective over evaluated `timestamptz` and `numeric` domains;
-- target checkpoint measurement/signing authority originates inside Tier 2; Tier 1 verifies but cannot mint;
-- verifier capability secrets remain restricted and absent from function source;
-- the effective final verifier transport uses caller-local asynchronous deadlines and no synchronous timeout cleanup;
-- real established response blackholes are exercised in both Tier1→Tier2 and Tier2→Tier1 directions;
-- source authority is locked before F; target completeness is canonical-set completeness, never max-only;
-- Tier 1 successor placement + exact activation grant commit atomically;
-- target remains sealed until verifying that committed grant; existing history is immutable after activation and only new append `>F` is eligible.
+- only the mediated shared-history Timescale profile is accepted by Track B;
+- tenant/application principals have no direct shared raw/CAGG/internal-materialization authority;
+- `ts_automation_owner` remains privileged cross-tenant infrastructure;
+- fresh-cluster role reconstruction and post-restore/job attack matrices remain mandatory;
+- timestamp/numeric canonicalization is total and injective over the evaluated domains;
+- target checkpoint mint authority is target-side; Tier 1 verifies but cannot mint;
+- verifier capability state remains restricted;
+- effective verifier transport uses caller-local async deadlines, no synchronous timeout cleanup and real blackholes in both directions;
+- source is locked before F; target completeness is canonical-set completeness;
+- Tier 1 placement + activation grant commit atomically;
+- target activation requires the exact committed Tier 1 grant.
 
-## Exact empirical mechanism anchor before this governance mutation
+## Evidence provenance
+
+Empirical mechanism anchor before the #51 governance promotion:
 
 ```text
-HEAD
 51cddbca4258a78ed8f4a3254ff54a01a332e933
-
-JLMIRROR Deterministic Assurance
-run #2261
-run id 33283602526
-SUCCESS
-
-JLMIRROR OPEN-REL-030 Conformance
-run #198
-run id 33283602532
-SUCCESS
+Deterministic Assurance #2261 — run 33283602526 — SUCCESS
+OPEN-REL-030 Conformance #198 — run 33283602532 — SUCCESS
 ```
 
-Exact #198 checked out and verified that SHA, executed all seven history hardening modules (`004–010`), the complete PITR/recovery package, post-enrollment clone, Timescale restore/jobs and Tier1↔Tier2 relocation, then ended with `open_rel_030_extended_conformance=PASS` while retaining `closure_claim=false`.
+The prior final decision-review HEAD `622c094c9274a778d1c21c5976dd3b2ca7b4cedf` then passed #2273/#204, Native P0/P1/P2=0 and fresh Codex CLEAN, establishing the basis for the explicit Track B authorization.
 
-### Class #51 empirical proof
+## Material findings
 
-The Codex finding identified a lock-order cycle under ordinary concurrency: the prior effective finalizer acquired `stream_state → provider_authority`, while provider-visible mutation invalidation acquired `provider_authority → stream_state`. A mutation and finalization for the same stream could therefore deadlock and force PostgreSQL to abort one operation. Panoramic review also found that sweep previously relied on a joint `FOR UPDATE OF s,a` rather than an explicit global order.
+All **51 material finding classes** remain closed/documented by the accepted mechanism. The latest classes are:
 
-The effective worker-facing `sweep(...)` and `try_finalize(...)` are now authority-order wrappers. Each acquires `provider_authority` first and `stream_state` second before delegating to the already-proven internal implementation. Those internal pre-lock entry points are owner-only and not executable by `history_reconcile_worker`, so the canonical order cannot be bypassed by the governed worker path. The #50 NULL cutoff remains rejected before authority work.
+- **#49:** retained finalized watermark stale resurrection — current-revision coverage must revalidate through the retained watermark before `complete` can return.
+- **#50:** NULL finalization cutoff — SQLSTATE `22004` rejection prevents three-valued logic from minting completeness.
+- **#51:** inconsistent history authority lock order — mutation, sweep and finalization now acquire `provider_authority → stream_state`; concurrent deadlock vectors are required.
 
-Exact #198 proves:
+Classes #1–#48 remain enumerated in `DECISION_REVIEW.md` and are not superseded by acceptance.
 
-```text
-history_lock_order_wrappers_installed=PASS
-history_internal_entrypoints_not_worker_callable=PASS
-history_null_finalize_guard_preserved_after_lock_order=PASS
-history_finalization_lock_order_concurrency=PASS
-history_sweep_lock_order_concurrency=PASS
-history_authority_lock_order=provider_authority_then_stream_state=PASS
-history_null_finalize_cutoff_rejected=PASS
-history_retained_finalized_watermark_requires_revalidation=PASS
-history_retained_finalized_watermark_recovers_after_full_revalidation=PASS
-open_rel_030_extended_conformance=PASS
-```
-
-The concurrent vectors deliberately hold `provider_authority`, then race provider dataset invalidation against finalization and sweep. Both sessions complete without deadlock, timeout or lock abort under the canonical order.
-
-## Material classes #38–#51
-
-- **#38:** post-enrollment PGDATA clone authority — effective proof moved outside PGDATA clone domain.
-- **#39:** clone-negative false pass — same-path positive control required first.
-- **#40:** grant-id scoped winner — canonical recovery-boundary single-winner CAS.
-- **#41:** unauthenticated post-R reconciliation — authenticated surviving effect + grant digest binding.
-- **#42:** unbounded physical-recovery established response — asynchronous caller-local deadlines.
-- **#43:** recovery-material fetch TOCTOU — consistent locked snapshot and full binding revalidation.
-- **#44:** cooperative-delay false confidence — real TCP blackhole + no synchronous timeout cleanup + session retirement.
-- **#45:** validly signed drifted successor authority — locked active singleton tuple before winner derivation and verify/fetch revalidation.
-- **#46:** hardened positive-path gap — successful reset-to-R recovery replay under installed hardening.
-- **#47:** post-enrollment clone unbounded response — bounded async transport, real blackhole and backend retirement.
-- **#48:** relocation timeout cleanup outside deadline — effective final transport override with two-direction real blackholes and one-shot retirement.
-- **#49:** retained finalized watermark stale resurrection — current-revision coverage must revalidate through the retained historical watermark before `complete` can be restored.
-- **#50:** NULL finalization watermark — malformed NULL cutoff is rejected before three-valued logic can mint `complete` with a NULL finalized watermark.
-- **#51:** inconsistent history authority lock order — provider mutation, sweep and finalization now acquire `provider_authority → stream_state`, with worker bypass removed and concurrent deadlock vectors required.
-
-Classes #1–#37 remain part of the same evidence lineage and are enumerated in `DECISION_REVIEW.md`; no prior closure is superseded by #51.
-
-## Acceptance boundary
+## Authorization boundary
 
 ```text
 Evidence package             COMPLETE
-Executable empirical anchor  51cddbca4258a78ed8f4a3254ff54a01a332e933 / #2261 / #198
-Material finding classes     51
-History hardening modules    7 (004–010)
-Inline review threads        0 unresolved after #51 evidence reply
-Exact-final-HEAD CI          REQUIRED AGAIN AFTER THIS GOVERNANCE MUTATION
-Fresh Codex exact-head       REQUIRED
-Native Assurance exact-head  REQUIRED AGAIN
-Track B acceptance           EXPLICIT AUTHORIZATION REQUIRED
-Wave 4 implementation        SEPARATE EXPLICIT AUTHORIZATION REQUIRED
+Track B decision             ACCEPTED
+Track B authorization        GRANTED
+Closure claim                FALSE / NOT AUTHORIZED
+Wave 4 implementation        NOT AUTHORIZED
 Production authority         NONE
+Production selections        NOT MADE
 Merge                        NOT AUTHORIZED
+Post-acceptance exact-head   CI + Native + fresh Codex REQUIRED
 ```
 
-Evidence completion, CI success, mergeability or reviewer cleanliness do not themselves accept `OPEN-REL-030`, authorize Wave 4, choose production topology/numerics, or authorize merge. `READY_FOR_MERGE != AUTHORIZED_TO_MERGE`.
+Track B acceptance selects the bounded C2 mechanism/profile as the accepted decision outcome. It does **not** authorize Wave 4 implementation, production deployment, production topology/numerics, closure of the OPEN, or merge.
+
+`READY_FOR_MERGE != AUTHORIZED_TO_MERGE`.

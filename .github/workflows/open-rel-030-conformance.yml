@@ -65,18 +65,46 @@ jobs:
           manifest = json.loads(Path('implementation/d2-open-rel-030/EVIDENCE_MANIFEST.json').read_text())
           assert manifest['decision'] == 'OPEN-REL-030'
           assert manifest['class'] == 'C2_bounded_spike'
-          assert manifest['evidence_state'] == 'complete_ready_for_decision_review'
+          assert manifest['evidence_state'] == 'complete'
+          assert manifest['decision_disposition'] == 'accepted_track_b'
           assert manifest['production_authority'] == 'none'
           assert manifest['product_feature_activation'] == 'none'
           assert manifest['wave4_implementation_authorization'] == 'not_granted'
           assert manifest['closure_claim'] is False
-          assert manifest['acceptance_authorization'] == 'not_granted'
+          assert manifest['acceptance_authorization'] == 'granted'
           assert manifest['production_versions_selected'] is False
           assert manifest['production_capacity_numerics_selected'] is False
           assert manifest['production_capacity_owner'] == 'OPEN-REL-020'
           assert len(manifest['completed_mandatory_vectors']) == 8
           assert manifest['mandatory_vectors_not_yet_claimed_complete'] == []
-          assert manifest['tier2_profile_classification']['mediated_shared_history_columnstore_cagg'] == 'conformant_candidate_recommended_for_c2_acceptance'
+          assert manifest['tier2_profile_classification']['mediated_shared_history_columnstore_cagg'] == 'accepted_track_b_c2_profile'
+
+          auth = manifest['acceptance_authorization_basis']
+          assert auth['authorized_from_exact_head'] == '622c094c9274a778d1c21c5976dd3b2ca7b4cedf'
+          assert auth['deterministic_assurance_run_number'] == 2273
+          assert auth['deterministic_assurance_run_id'] == 33283807517
+          assert auth['open_rel_030_conformance_run_number'] == 204
+          assert auth['open_rel_030_conformance_run_id'] == 33283807551
+          assert auth['native_assurance_review_id'] == 5059581679
+          assert auth['native_assurance_result'] == 'P0=0/P1=0/P2=0'
+          assert auth['codex_final_trigger_comment_id'] == 5465808207
+          assert auth['codex_final_response_comment_id'] == 5465822591
+          assert auth['codex_final_result'] == 'clean_no_major_issues'
+          assert auth['inline_review_threads_unresolved'] == 0
+          assert auth['pr_mergeable'] is True
+          assert auth['explicit_track_b_authorization_recorded'] is True
+          assert auth['post_acceptance_exact_head_assurance_required'] is True
+
+          boundary = manifest['acceptance_boundary']
+          assert boundary['track_b_acceptance_requires_explicit_authorization'] is True
+          assert boundary['track_b_acceptance_explicit_authorization_recorded'] is True
+          assert boundary['track_b_accepted'] is True
+          assert boundary['closure_requires_separate_explicit_authorization'] is True
+          assert boundary['closure_authorization_recorded'] is False
+          assert boundary['wave4_implementation_requires_separate_explicit_authorization'] is True
+          assert boundary['merge_requires_separate_explicit_authorization'] is True
+          assert boundary['production_identity_kms_rpc_timeout_capacity_choices_selected'] is False
+          assert boundary['ready_for_merge_is_authorized_to_merge'] is False
 
           provenance = manifest['review_provenance']
           assert provenance['material_finding_classes_documented_in_decision_review'] == 51
@@ -258,8 +286,10 @@ jobs:
 
           print(
               'evidence_manifest_guard=PASS '
-              'state=complete_ready_for_decision_review '
-              'acceptance=not_granted '
+              'state=complete '
+              'decision=accepted_track_b '
+              'acceptance=granted '
+              'closure=false '
               'material_findings=51 '
               'history_lock_order_guard=true '
               'null_finalize_guard=true '

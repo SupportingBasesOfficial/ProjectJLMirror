@@ -4,12 +4,13 @@
   "decision": "OPEN-REL-030",
   "class": "C2_bounded_spike",
   "canonical_base_sha": "5f031ae4bacc0c441eeee16f9c67d272e39d6b0b",
-  "evidence_state": "complete_ready_for_decision_review",
+  "evidence_state": "complete",
+  "decision_disposition": "accepted_track_b",
   "production_authority": "none",
   "product_feature_activation": "none",
   "wave4_implementation_authorization": "not_granted",
   "closure_claim": false,
-  "acceptance_authorization": "not_granted",
+  "acceptance_authorization": "granted",
   "dependencies_are_production_selections": false,
   "production_versions_selected": false,
   "production_capacity_numerics_selected": false,
@@ -36,6 +37,22 @@
     "history_modules_executed": 7,
     "critical_vectors": 3,
     "note": "Anchor preserves the complete prior C2 package and closes material class #51 by enforcing one explicit provider_authority -> stream_state lock order across provider mutation, sweep and finalization, with real concurrent mutation-vs-finalize and mutation-vs-sweep falsification."
+  },
+  "acceptance_authorization_basis": {
+    "authorized_from_exact_head": "622c094c9274a778d1c21c5976dd3b2ca7b4cedf",
+    "deterministic_assurance_run_number": 2273,
+    "deterministic_assurance_run_id": 33283807517,
+    "open_rel_030_conformance_run_number": 204,
+    "open_rel_030_conformance_run_id": 33283807551,
+    "native_assurance_review_id": 5059581679,
+    "native_assurance_result": "P0=0/P1=0/P2=0",
+    "codex_final_trigger_comment_id": 5465808207,
+    "codex_final_response_comment_id": 5465822591,
+    "codex_final_result": "clean_no_major_issues",
+    "inline_review_threads_unresolved": 0,
+    "pr_mergeable": true,
+    "explicit_track_b_authorization_recorded": true,
+    "post_acceptance_exact_head_assurance_required": true
   },
   "review_provenance": {
     "material_finding_classes_documented_in_decision_review": 51,
@@ -152,13 +169,17 @@
     "activated_existing_history_mutable": false
   },
   "tier2_profile_classification": {
-    "mediated_shared_history_columnstore_cagg": "conformant_candidate_recommended_for_c2_acceptance",
+    "mediated_shared_history_columnstore_cagg": "accepted_track_b_c2_profile",
     "direct_tenant_shared_raw_history": "rejected",
     "direct_rls_plus_columnstore": "ineligible_by_capability_probe",
     "direct_rls_plus_continuous_aggregate": "ineligible_by_capability_probe"
   },
   "acceptance_boundary": {
     "track_b_acceptance_requires_explicit_authorization": true,
+    "track_b_acceptance_explicit_authorization_recorded": true,
+    "track_b_accepted": true,
+    "closure_requires_separate_explicit_authorization": true,
+    "closure_authorization_recorded": false,
     "wave4_implementation_requires_separate_explicit_authorization": true,
     "merge_requires_separate_explicit_authorization": true,
     "production_identity_kms_rpc_timeout_capacity_choices_selected": false,

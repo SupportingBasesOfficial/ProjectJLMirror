@@ -2,14 +2,15 @@
 
 This directory contains the governed C2 evidence package for `OPEN-REL-030`.
 
-It is an **evidence-generating implementation decision**, not the Monitoring production implementation. It does not grant production authority, accept/close the OPEN, authorize Wave 4, select production capacity numerics, select production identity/KMS/HSM, or freeze a production cross-authority transport/database-authentication topology.
+The bounded C2 Track B mechanism/profile has now been **explicitly accepted**. This directory still does not constitute the Monitoring production implementation, production deployment authority, Wave 4 authorization, production topology selection, OPEN closure authorization, or merge authorization.
 
 ## Governed state
 
 ```text
-Evidence state              complete_ready_for_decision_review
+Evidence state              complete
+Decision disposition        accepted_track_b
+Track B acceptance          granted
 Closure claim               false
-Track B acceptance          not_granted
 Wave 4 authorization        not_granted
 Production authority        none
 Production versions         not selected
@@ -19,103 +20,70 @@ History hardening modules   7 (004–010)
 Merge                       not authorized
 ```
 
-## Exact empirical anchor
+## Acceptance basis
 
-The current mechanism anchor before the latest governance-only promotion is:
+Explicit Track B authorization was granted after this exact stationary decision-review HEAD passed every required gate:
+
+```text
+622c094c9274a778d1c21c5976dd3b2ca7b4cedf
+Deterministic Assurance #2273 — SUCCESS — run 33283807517
+OPEN-REL-030 Conformance #204 — SUCCESS — run 33283807551
+Native Assurance review 5059581679 — P0=0 / P1=0 / P2=0
+Fresh Codex comment 5465822591 — CLEAN / no major issues
+Inline review threads — 0 unresolved
+PR mergeable — true
+```
+
+Because recording acceptance changes the Git HEAD, the accepted-state commit must itself pass the same exact-head CI + Native + fresh Codex assurance cycle before merge-readiness can be asserted.
+
+## Empirical mechanism anchor
 
 ```text
 51cddbca4258a78ed8f4a3254ff54a01a332e933
-Deterministic Assurance #2261 — SUCCESS — run id 33283602526
-OPEN-REL-030 Conformance #198 — SUCCESS — run id 33283602532
+Deterministic Assurance #2261 — SUCCESS — run 33283602526
+OPEN-REL-030 Conformance #198 — SUCCESS — run 33283602532
 ```
 
-#198 verifies the exact SHA, executes all mandatory vectors, all seven history hardening modules, physical PITR/recovery, the post-enrollment clone vector, Timescale restore/jobs and Tier1↔Tier2 relocation, then ends with `open_rel_030_extended_conformance=PASS` and `closure_claim=false`.
+That anchor executes all mandatory vectors, all seven history hardening modules, physical PITR/recovery, post-enrollment clone, Timescale restore/jobs and Tier1↔Tier2 relocation, ending with `open_rel_030_extended_conformance=PASS`.
 
-## Evidence architecture
+## Accepted evidence architecture
 
-### Tier 1 transactional acceptance
+### Tier 1 / history
 
-Tier 1 proves immutable canonical observation identity/content, owner-controlled active source generation and poll authority, durable live poll claim, and current-state CAS based on platform ordering authority.
-
-### Owner-current history / late data
-
-History reconciliation is intentionally fail-closed:
-
-- coverage is contiguous from `supported_history_floor`;
-- only runs matching the exact current `authority_generation`, exact `provider_dataset_revision` and owner-required snapshot currentness count;
-- provider-visible INSERT/UPDATE advances dataset revision and invalidates current coverage atomically;
-- stable identity rewrite, DELETE and TRUNCATE fail closed;
-- accepted stable identities are checked against owner-current canonical content independently of current `became_visible_at`;
-- retained `finalized_through` is historical authority and must be revalidated under the current dataset revision before `complete` can return;
-- `try_finalize(..., NULL)` is malformed authority input and fails closed with SQLSTATE `22004`;
-- provider mutation, worker sweep and worker finalization all acquire `provider_authority → stream_state` in that order;
-- the pre-lock internal sweep/finalize entry points are owner-only and unavailable to the governed worker;
-- concurrent mutation×finalization and mutation×sweep vectors must complete without deadlock or lock abort;
-- the exact ordered module set `004–010` must be present in the extended runner and structural guard.
-
-The current ordered history chain is:
-
-```text
-004_history_reconciliation.sql
-005_history_identity_window_hardening.sql
-006_history_dataset_revision_hardening.sql
-007_history_dataset_revision_edge_hardening.sql
-008_history_visibility_correction_hardening.sql
-009_history_retained_finalized_watermark_hardening.sql
-010_history_lock_order_hardening.sql
-```
-
-### #49 — retained finalized watermark
-
-After a stream has historically finalized through T2, a later provider dataset mutation may invalidate current coverage while preserving the durable T2 watermark. The finalizer never uses a shorter T1 request to restore `complete` unless current-revision coverage again reaches T2.
-
-### #50 — NULL finalization cutoff
-
-The effective finalizer rejects a NULL requested cutoff with SQLSTATE `22004` before completeness processing, so SQL three-valued logic cannot mint `complete` with a NULL watermark.
-
-### #51 — canonical history lock order
-
-Provider mutation already used `provider_authority → stream_state`; the former finalizer used the reverse order, creating a real deadlock cycle. The final worker-facing `sweep(...)` and `try_finalize(...)` now acquire the canonical order before calling their owner-only internal implementations. Exact #198 proves:
-
-```text
-history_lock_order_wrappers_installed=PASS
-history_internal_entrypoints_not_worker_callable=PASS
-history_null_finalize_guard_preserved_after_lock_order=PASS
-history_finalization_lock_order_concurrency=PASS
-history_sweep_lock_order_concurrency=PASS
-history_authority_lock_order=provider_authority_then_stream_state=PASS
-```
-
-The same run preserves both #49 regression markers and #50 NULL rejection.
+Track B accepts immutable canonical observation identity/content, owner-controlled source/poll authority, platform-order current-state CAS, owner-current reconciliation, dataset-revision fencing, retained-watermark revalidation, NULL-cutoff rejection, and one canonical authority lock order `provider_authority → stream_state` across mutation/sweep/finalization. Worker paths cannot bypass the wrappers. Modules `004–010` remain ordered and anti-orphan guarded.
 
 ### Physical PITR / restored authority
 
-The recovery vector preserves the full recovery authority chain: effective per-instance proof outside PGDATA; same-path clone positive controls; one winner per canonical recovery boundary; authenticated surviving post-R effect; claim-at-R until verified material application; consistent locked recovery-material fetch; active-authority binding; hardened positive replay; caller-local deadlines; real TCP blackholes; and one-shot backend retirement on timeout/uncertainty.
-
-### Post-enrollment PGDATA clone
-
-The clone vector proves PGDATA copying alone cannot duplicate recovery authority even when the copied database-visible identity and external credential are reused. It exercises bounded asynchronous claim/verify, cooperative stall, a real established response blackhole, a same-path positive control, then the governed main-grant clone rejection.
+Recovery authority remains external to restored database state, effect-bound, active-authority-bound and single-winner per canonical recovery boundary. PGDATA copying alone cannot duplicate effective authority. Claim alone leaves local truth at R. Verified surviving material is required before effect/successor application. Claim/verify/fetch and post-enrollment clone paths use bounded async response semantics, real established TCP blackhole tests and one-shot session retirement without synchronous timeout cleanup.
 
 ### Timescale / Tier 2
 
-The evaluated Tier 2 candidate is the mediated shared-history profile. Tenant/application principals do not directly read shared raw history, CAGG or internal materialization. Privileged automation ownership is a separate cross-tenant trust boundary. Fresh-cluster restore reconstructs roles and reruns tenant/escalation/job attack matrices.
+The accepted Track B profile is the mediated shared-history Timescale candidate. Tenant/application principals do not directly access shared raw history, CAGGs or internal materialization. Privileged automation remains a separate cross-tenant trust boundary. Fresh-cluster restore and tenant/escalation/job matrices remain mandatory evidence.
 
 ### Relocation
 
-Relocation preserves total/injective typed canonicalization, target-originated checkpoint signing authority, verifier-without-mint separation, restricted verifier capability state, source lock-before-F, exact target completeness, authenticated sealing, atomic Tier 1 placement+activation-grant commit and target activation only after exact grant verification. The effective verifier transport has asynchronous caller-local deadlines, no synchronous timeout cleanup, one-shot session retirement and real TCP response-blackhole tests in both directions.
+Relocation preserves total/injective typed canonicalization, target-originated checkpoint authority, verifier-without-mint separation, restricted capability state, source lock-before-F, exact target completeness, atomic placement+activation-grant commitment, exact-grant target activation, caller-local response deadlines, no synchronous timeout cleanup, and real TCP blackholes in both directions.
+
+## Material findings
+
+All **51 material finding classes** remain closed/documented by the accepted mechanism. `DECISION_REVIEW.md` is the normative enumeration. The latest three are:
+
+- **#49:** retained finalized watermark requires current-revision revalidation through the retained historical bound;
+- **#50:** NULL finalization cutoff is rejected with SQLSTATE `22004`;
+- **#51:** mutation/sweep/finalization use one canonical `provider_authority → stream_state` lock order with concurrent deadlock falsification.
 
 ## Files
 
-- `STATE.md` — current governed evidence state and acceptance boundary.
-- `DECISION_REVIEW.md` — normative decision-review record and all 51 material finding classes.
-- `EVIDENCE_MANIFEST.json` — machine-readable evidence classification and guard facts.
-- `sql/d2-open-rel-030/*` — executable Tier 1 / history / Timescale evidence modules.
-- `tools/open_rel_030/*` — orchestration, recovery, clone, restore and concurrency falsification harnesses.
-- `.github/workflows/open-rel-030-conformance.yml` — exact-HEAD structural + empirical conformance gate.
+- `STATE.md` — accepted decision state and authorization boundaries.
+- `DECISION_REVIEW.md` — normative acceptance record and all 51 material findings.
+- `EVIDENCE_MANIFEST.json` — machine-readable accepted state, evidence and authorization basis.
+- `sql/d2-open-rel-030/*` — executable Tier 1/history/Timescale evidence mechanisms.
+- `tools/open_rel_030/*` — orchestration, recovery, clone, restore, relocation and concurrency falsification harnesses.
+- `.github/workflows/open-rel-030-conformance.yml` — exact-head structural + empirical conformance gate.
 
-## Final-gate rule
+## Post-acceptance gate rule
 
-The empirical anchor is provenance after a governance mutation. The **exact final governance HEAD** must independently pass:
+The accepted-state exact HEAD must independently pass:
 
 1. JLMIRROR Deterministic Assurance;
 2. JLMIRROR OPEN-REL-030 Conformance;
@@ -123,6 +91,6 @@ The empirical anchor is provenance after a governance mutation. The **exact fina
 4. a fresh adversarial Codex review on that exact stationary SHA;
 5. zero unresolved review threads.
 
-Only then may the package be presented for **explicit Track B acceptance**. Wave 4 implementation authorization is separate. Merge authorization is separate. Production selections are separate.
+Passing those gates validates the exact accepted-state commit. It still does **not** authorize Wave 4, production deployment/topology, OPEN closure, or merge.
 
 `READY_FOR_MERGE != AUTHORIZED_TO_MERGE`.

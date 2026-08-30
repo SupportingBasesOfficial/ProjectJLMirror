@@ -109,8 +109,15 @@ def validate(root: Path) -> None:
     ):
         _forbid(current_state_text, stale, "post-D2 current-state surfaces")
 
-    # Acceptance removes one C2 evidence blocker only; it must not silently grant Wave 4.
-    for key in ("transition", "blockers", "sequencing", "slice_manifest"):
+    # Acceptance removes one C2 evidence blocker only; it must not silently grant Wave 4
+    # on any current-state authority surface, including the consolidated OPEN register.
+    for key in (
+        "transition",
+        "open_register",
+        "blockers",
+        "sequencing",
+        "slice_manifest",
+    ):
         _forbid(docs[key], "wave4_implementation_authorization = granted", key)
         _forbid(docs[key], "AUTHORIZED_TO_IMPLEMENT = true", key)
 

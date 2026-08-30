@@ -39,6 +39,18 @@ def synthetic_proof(track: dict, evidence_id: str, ordinal: int) -> dict:
     }
 
 
+def pending_track(manifest: dict) -> dict:
+    try:
+        return next(
+            track
+            for track in manifest["tracks"]
+            if track.get("evidence_remaining")
+            and track.get("state") not in {"per_track_conformed", "accepted_candidate"}
+        )
+    except StopIteration as exc:
+        raise AssertionError("test fixture requires at least one nonterminal track with remaining evidence") from exc
+
+
 def complete_all_evidence(manifest: dict) -> dict:
     registry = {}
     ordinal = 1
@@ -213,16 +225,23 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
             validate(self._root(mutate))
 
     def test_proof_for_remaining_evidence_is_rejected(self):
+        registry = {}
+
         def mutate(m):
-            track = next(t for t in m["tracks"] if t["track_id"] == "D3-C")
+            track = pending_track(m)
             evidence_id = track["evidence_remaining"][0]
-            track["evidence_proofs"].append(synthetic_proof(track, evidence_id, 700))
-        with self.assertRaises(AssertionError):
-            validate(self._root(mutate))
+            proof = synthetic_proof(track, evidence_id, 700)
+            track["evidence_proofs"].append(proof)
+            registry[(track["track_id"], evidence_id)] = copy.deepcopy(proof)
+
+        root = self._root(mutate)
+        with patch.dict(APPROVED_EVIDENCE_PROOFS, registry, clear=False):
+            with self.assertRaises(AssertionError):
+                validate(root)
 
     def test_unapproved_structurally_valid_proof_is_rejected(self):
         def mutate(m):
-            track = next(t for t in m["tracks"] if t["track_id"] == "D3-C")
+            track = pending_track(m)
             evidence_id = track["evidence_remaining"].pop(0)
             track["evidence_completed"].append(evidence_id)
             track["evidence_proofs"].append(synthetic_proof(track, evidence_id, 701))

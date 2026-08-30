@@ -1,4 +1,4 @@
-name: JLMIRROR D3-B Cache Portability Exploratory Evidence
+name: JLMIRROR D3-B Cache Portability Pinned Evidence
 
 on:
   pull_request:
@@ -16,14 +16,14 @@ permissions:
 
 jobs:
   cache-portability:
-    name: PostgreSQL 18.6 + Redis 8.10 / Valkey 9.1
+    name: PostgreSQL 18.6 + Redis 8.10 / Valkey 9.1 pinned
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      POSTGRES_IMAGE: postgres:18.6
-      REDIS_IMAGE: redis:8.10.0
-      VALKEY_IMAGE: valkey/valkey:9.1.0
+      POSTGRES_IMAGE: postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+      REDIS_IMAGE: redis@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366
+      VALKEY_IMAGE: valkey/valkey@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411
     steps:
       - name: Checkout exact analyzed HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -56,20 +56,20 @@ jobs:
             exit 1
           fi
 
-      - name: Pull exploratory candidates and capture digests
-        id: images
+      - name: Pull immutable candidates and verify exact digests
         shell: bash
         run: |
           set -euo pipefail
           for image in "$POSTGRES_IMAGE" "$REDIS_IMAGE" "$VALKEY_IMAGE"; do
+            case "$image" in
+              *@sha256:*) ;;
+              *) echo "mutable D3-B image reference is forbidden: $image" >&2; exit 1 ;;
+            esac
             docker pull "$image"
-            digest="$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')"
-            test -n "$digest"
-            printf 'candidate_tag=%s candidate_digest=%s\n' "$image" "$digest"
+            resolved="$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')"
+            test "$resolved" = "$image"
+            printf 'candidate_digest=%s\n' "$resolved"
           done
-          printf 'postgres_digest=%s\n' "$(docker image inspect "$POSTGRES_IMAGE" --format '{{index .RepoDigests 0}}')" >> "$GITHUB_OUTPUT"
-          printf 'redis_digest=%s\n' "$(docker image inspect "$REDIS_IMAGE" --format '{{index .RepoDigests 0}}')" >> "$GITHUB_OUTPUT"
-          printf 'valkey_digest=%s\n' "$(docker image inspect "$VALKEY_IMAGE" --format '{{index .RepoDigests 0}}')" >> "$GITHUB_OUTPUT"
 
       - name: Start PostgreSQL authority candidate
         shell: bash
@@ -105,16 +105,16 @@ jobs:
           CACHE_CLI=valkey-cli \
             bash implementation/d3-identity-security/harness/cache_admission_probe.sh
 
-      - name: Record exploratory portability boundary
+      - name: Record pinned portability boundary
         if: success()
         shell: bash
         run: |
           set -euo pipefail
-          printf 'd3_b_cache_portability=PASS_EXPLORATORY\n'
-          printf 'postgres_digest=%s\n' '${{ steps.images.outputs.postgres_digest }}'
-          printf 'redis_digest=%s\n' '${{ steps.images.outputs.redis_digest }}'
-          printf 'valkey_digest=%s\n' '${{ steps.images.outputs.valkey_digest }}'
-          printf 'canonical_conformance=false reason=images_not_yet_digest_pinned_and_fleet_multi_replica_vectors_remaining\n'
+          printf 'd3_b_cache_portability=PASS_PINNED\n'
+          printf 'postgres_digest=%s\n' "$POSTGRES_IMAGE"
+          printf 'redis_digest=%s\n' "$REDIS_IMAGE"
+          printf 'valkey_digest=%s\n' "$VALKEY_IMAGE"
+          printf 'canonical_conformance=false reason=fleet_multi_replica_restore_failover_concurrency_and_degraded_owner_vectors_remaining\n'
           printf 'wave4=not_granted production=none d4=not_selected_not_granted\n'
 
       - name: Capture candidate logs on failure

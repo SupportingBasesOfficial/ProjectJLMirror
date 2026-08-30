@@ -34,6 +34,11 @@ EXPECTED_CANDIDATE_FIELDS = {
     "D3-B": {
         "candidate": "postgresql_18_6_session_sor_plus_redis_compatible_security_cache",
         "portability_control": "valkey_9_1",
+        "candidate_artifact_digests": {
+            "postgresql": "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+            "redis_compatible_primary": "redis@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366",
+            "portability_control": "valkey/valkey@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411",
+        },
     },
     "D3-C": {"candidate": "hmac_sha256_double_submit_versioned_keyring"},
     "D3-D": {"candidate": "spire_1_15_2"},

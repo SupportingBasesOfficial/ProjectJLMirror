@@ -239,6 +239,15 @@ _D3D_SPIRE_NON_TENANT_PROOF_COMMON = {
     "artifact_pins": [SPIRE_1_15_3_ARTIFACT],
     "result": "pass",
 }
+_D3D_SPIRE_COMPLETION_RUN_COMMON = {
+    "evidence_sha": "972b7e214fa6214e92fe354df0078ebbb57979ba",
+    "workflow_run_id": 33341227074,
+    "workflow_run_number": 24,
+    "workflow_file": ".github/workflows/d3-spire-candidate-evaluation.yml",
+    "job_name": "SPIRE 1.15.3 bounded workload-identity evaluation",
+    "artifact_pins": [SPIRE_1_15_3_ARTIFACT],
+    "result": "pass",
+}
 APPROVED_EVIDENCE_PROOFS = {
     ("D3-A", "oidc_authorization_code_pkce_bff_binding"): {
         "evidence_id": "oidc_authorization_code_pkce_bff_binding",
@@ -323,6 +332,21 @@ APPROVED_EVIDENCE_PROOFS = {
     ("D3-D", "workload_identity_non_tenant_authority"): {
         "evidence_id": "workload_identity_non_tenant_authority",
         **_D3D_SPIRE_NON_TENANT_PROOF_COMMON,
+    },
+    ("D3-D", "private_key_non_exportability_profile"): {
+        "evidence_id": "private_key_non_exportability_profile",
+        "probe": "implementation/d3-identity-security/harness/spire_private_key_profile_probe.sh",
+        **_D3D_SPIRE_COMPLETION_RUN_COMMON,
+    },
+    ("D3-D", "issuer_restore_retired_authority_nonresurrection"): {
+        "evidence_id": "issuer_restore_retired_authority_nonresurrection",
+        "probe": "implementation/d3-identity-security/harness/spire_restore_nonresurrection_probe.py",
+        **_D3D_SPIRE_COMPLETION_RUN_COMMON,
+    },
+    ("D3-D", "vendor_credential_adapter_least_privilege"): {
+        "evidence_id": "vendor_credential_adapter_least_privilege",
+        "probe": "implementation/d3-identity-security/harness/spire_vendor_credential_adapter_probe.py",
+        **_D3D_SPIRE_COMPLETION_RUN_COMMON,
     },
     ("D3-E", "tenant_scope_domain_separation"): {
         "evidence_id": "tenant_scope_domain_separation",

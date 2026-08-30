@@ -312,6 +312,47 @@ if [[ "${PREPARED_CA_ID}" == "${OLD_CA_ID}" ]]; then
   exit 1
 fi
 
+# The upstream force-rotation sequence does not activate immediately after prepare: first the
+# expanded two-authority bundle must propagate to the agent. Otherwise the Server can rotate
+# its own SVID onto the new CA before the Agent trusts it, causing a deterministic handshake
+# failure. Require both Server and Workload API views to contain exactly two authorities.
+prepared_bundle_propagated=0
+for _ in $(seq 1 30); do
+  server_prepared_bundle_json="$("${SERVER_BIN}" bundle show -socketPath "${SERVER_SOCKET}" -output json)"
+  server_prepared_bundle_count="$(BUNDLE_JSON="${server_prepared_bundle_json}" python3 - <<'PY_BUNDLE'
+import json
+import os
+payload = json.loads(os.environ["BUNDLE_JSON"])
+print(len(payload.get("x509_authorities", [])))
+PY_BUNDLE
+)"
+  if [[ "${server_prepared_bundle_count}" != "2" ]]; then
+    sleep 1
+    continue
+  fi
+
+  rm -rf "${WORK_DIR}/rotation-output"/*
+  if "${AGENT_BIN}" api fetch x509 \
+       -socketPath "${AGENT_SOCKET}" \
+       -timeout 2s \
+       -write "${WORK_DIR}/rotation-output" >/dev/null 2>&1; then
+    PREPARED_BUNDLE_SOURCE="$(find "${WORK_DIR}/rotation-output" -maxdepth 1 -type f -name 'bundle.*.pem' | sort | head -n1)"
+    if [[ -n "${PREPARED_BUNDLE_SOURCE}" ]]; then
+      PREPARED_BUNDLE_COUNT="$(grep -c -- '-----BEGIN CERTIFICATE-----' "${PREPARED_BUNDLE_SOURCE}" || true)"
+      if [[ "${PREPARED_BUNDLE_COUNT}" == "2" ]]; then
+        prepared_bundle_propagated=1
+        break
+      fi
+    fi
+  fi
+  sleep 1
+done
+if [[ "${prepared_bundle_propagated}" != "1" ]]; then
+  echo "prepared X.509 authority did not propagate to the Workload API bundle within bounded 30s" >&2
+  cat "${AGENT_LOG}" >&2 || true
+  exit 1
+fi
+
 "${SERVER_BIN}" localauthority x509 activate \
   -socketPath "${SERVER_SOCKET}" \
   -authorityID "${PREPARED_CA_ID}" \

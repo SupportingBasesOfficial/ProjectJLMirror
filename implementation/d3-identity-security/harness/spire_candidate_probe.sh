@@ -9,7 +9,6 @@ SERVER_BIN="${SPIRE_ROOT}/bin/spire-server"
 AGENT_BIN="${SPIRE_ROOT}/bin/spire-agent"
 EXPECTED_VERSION="1.15.3"
 TRUST_DOMAIN="validation.d3.jlmirror.invalid"
-NODE_ID="spiffe://${TRUST_DOMAIN}/node/validation-runner"
 CANONICAL_VALIDATION_ENV="environment.validation@1"
 CANONICAL_PRODUCTION_ENV="environment.production@1"
 CANONICAL_RUNTIME_PROFILE="runtime.api@1"
@@ -114,7 +113,9 @@ if [[ "${server_ready}" != "1" ]]; then
   exit 1
 fi
 
-token_output="$("${SERVER_BIN}" token generate -socketPath "${SERVER_SOCKET}" -spiffeID "${NODE_ID}" -ttl 120)"
+# join_token owns the backend agent identifier. Do not suggest a canonical JLMirror identity
+# here: the attested parent is discovered from SPIRE after successful node attestation.
+token_output="$("${SERVER_BIN}" token generate -socketPath "${SERVER_SOCKET}" -ttl 120)"
 JOIN_TOKEN="$(printf '%s\n' "${token_output}" | sed -n 's/^Token:[[:space:]]*//p' | head -n1)"
 if [[ -z "${JOIN_TOKEN}" ]]; then
   echo "unable to parse SPIRE join token output" >&2
@@ -175,10 +176,43 @@ if [[ "${agent_ready}" != "1" ]]; then
   exit 1
 fi
 
+# Resolve the actual backend-owned attested agent identity from the SPIRE Server API.
+# Exactly one join-token agent is permitted in this bounded probe. Its identity must stay
+# inside the backend-reserved namespace and is never promoted to canonical JLMirror identity.
+agent_json="$("${SERVER_BIN}" agent list -socketPath "${SERVER_SOCKET}" -attestationType join_token -output json)"
+ATTESTED_NODE_ID="$(AGENT_JSON="${agent_json}" TRUST_DOMAIN="${TRUST_DOMAIN}" python3 - <<'PY'
+import json
+import os
+import sys
+
+payload = json.loads(os.environ["AGENT_JSON"])
+agents = payload.get("agents", [])
+if len(agents) != 1:
+    raise SystemExit(f"expected exactly one attested join_token agent, got {len(agents)}")
+agent = agents[0]
+if agent.get("attestationType") != "join_token":
+    raise SystemExit("attested agent type drifted from join_token")
+spiffe_id = agent.get("id") or {}
+trust_domain = spiffe_id.get("trustDomain")
+path = spiffe_id.get("path")
+expected_trust_domain = os.environ["TRUST_DOMAIN"]
+if trust_domain != expected_trust_domain:
+    raise SystemExit(f"attested agent trust domain mismatch: {trust_domain!r}")
+if not isinstance(path, str) or not path.startswith("/spire/agent/join_token/"):
+    raise SystemExit(f"attested agent path is outside join_token backend namespace: {path!r}")
+print(f"spiffe://{trust_domain}{path}")
+PY
+)"
+unset agent_json
+if [[ -z "${ATTESTED_NODE_ID}" ]]; then
+  echo "unable to resolve attested SPIRE agent identity" >&2
+  exit 1
+fi
+
 # The allowed identity is selected by runtime evidence (unix uid), not by caller-supplied SPIFFE ID.
 "${SERVER_BIN}" entry create \
   -socketPath "${SERVER_SOCKET}" \
-  -parentID "${NODE_ID}" \
+  -parentID "${ATTESTED_NODE_ID}" \
   -spiffeID "${VALIDATION_ID}" \
   -selector "unix:uid:${CURRENT_UID}" \
   -x509SVIDTTL 30 >/dev/null
@@ -187,7 +221,7 @@ fi
 # the workload caller does not possess. Its mere registration must not make it fetchable.
 "${SERVER_BIN}" entry create \
   -socketPath "${SERVER_SOCKET}" \
-  -parentID "${NODE_ID}" \
+  -parentID "${ATTESTED_NODE_ID}" \
   -spiffeID "${PRODUCTION_ID}" \
   -selector "unix:uid:${FORBIDDEN_UID}" \
   -x509SVIDTTL 30 >/dev/null
@@ -228,6 +262,7 @@ printf '%s\n' "${entry_output}" | grep -F "${PRODUCTION_ID}" >/dev/null
 printf '%s\n' "${entry_output}" | grep -F "unix:uid:${FORBIDDEN_UID}" >/dev/null
 
 printf 'spire_candidate_evaluation=PASS version=%s trust_domain=%s\n' "${SPIRE_VERSION}" "${TRUST_DOMAIN}"
+printf 'backend_attested_parent=PASS parent_id=%s canonical_authority=false\n' "${ATTESTED_NODE_ID}"
 printf 'canonical_to_spiffe_adapter=PASS canonical_environment=%s canonical_runtime=%s wire_spiffe_id=%s\n' \
   "${CANONICAL_VALIDATION_ENV}" "${CANONICAL_RUNTIME_PROFILE}" "${VALIDATION_ID}"
 printf 'runtime_attestation_selector_binding=PASS caller_uid=%s authorized_id=%s forbidden_environment=%s forbidden_id_not_issued=true\n' \

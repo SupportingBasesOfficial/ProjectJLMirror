@@ -3,17 +3,18 @@
   "gate_id": "D3",
   "gate_name": "identity_security_authority_c2",
   "canonical_base": "b70d0c20873f92ca0a6040a3cbcd1dfcdace6828",
-  "gate_state": "scoped_evidence_pending",
+  "gate_state": "candidate_evidence_running",
   "canonical_product_implementation_authority": "not_granted",
   "wave4_implementation_authority": "not_granted",
   "production_authority": "none",
   "d4_transport_authority": "not_selected_not_granted",
+  "candidate_snapshot_date": "2026-08-30",
   "tracks": [
     {
       "track_id": "D3-A",
       "name": "human_idp",
       "source_decisions": ["IR-D-001-keycloak-idp", "IR-D-001"],
-      "candidate": "keycloak",
+      "candidate": "keycloak_26_7_0",
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     },
@@ -21,7 +22,8 @@
       "track_id": "D3-B",
       "name": "bff_session_security_cache",
       "source_decisions": ["OPEN-REL-031.A", "OPEN-REL-015", "OPEN-REL-008.A:security-session-profile-only"],
-      "candidate": "postgresql_session_sor_plus_redis_security_cache",
+      "candidate": "postgresql_18_6_session_sor_plus_redis_compatible_security_cache",
+      "portability_control": "valkey_9_1",
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     },
@@ -29,7 +31,7 @@
       "track_id": "D3-C",
       "name": "browser_csrf_key_rotation",
       "source_decisions": ["OPEN-API-002"],
-      "candidate": "hmac_double_submit_versioned_keyring",
+      "candidate": "hmac_sha256_double_submit_versioned_keyring",
       "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     },
@@ -37,16 +39,16 @@
       "track_id": "D3-D",
       "name": "workload_identity_issuer_attestation",
       "source_decisions": ["OPEN-PRT-008.B", "IR-D-002"],
-      "candidate": "unselected_spiffe_svid_compatible_backend",
-      "state": "candidate_evaluation_required",
+      "candidate": "spire_1_15_2",
+      "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     },
     {
       "track_id": "D3-E",
       "name": "cryptographic_replay_historical_verifier_authority",
       "source_decisions": ["OPEN-REL-016.A", "IR-D-001:private_key_jwt_replay", "OPEN-EVT-011:cryptographic_comparison_authority_only"],
-      "candidate": "hmac_hkdf_provider_neutral_key_authority_backend_unselected",
-      "state": "candidate_evaluation_required",
+      "candidate": "openbao_2_6_2_transit_behind_provider_neutral_key_authority_port",
+      "state": "candidate_selected_conformance_pending",
       "required_before_d3_acceptance": true
     }
   ],

@@ -24,6 +24,7 @@ jobs:
       SPIRE_VERSION: 1.15.3
       SPIRE_ASSET_URL: https://github.com/spiffe/spire/releases/download/v1.15.3/spire-1.15.3-linux-amd64-musl.tar.gz
       SPIRE_ASSET_SHA256: ca1a4d1155317bdd2afc7f36663828a10410c7c840e54725b90b4064b0a301c7
+      SPIRE_ARTIFACT_PIN: spire-1.15.3-linux-amd64-musl.tar.gz@sha256:ca1a4d1155317bdd2afc7f36663828a10410c7c840e54725b90b4064b0a301c7
     steps:
       - name: Checkout exact analyzed HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,27 +42,43 @@ jobs:
           printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual_sha"
           test "$actual_sha" = "$EXPECTED_SHA"
 
-      - name: Validate current D3 machine-owned state without promoting candidate
+      - name: Validate current D3 machine-owned pinned candidate state
         shell: bash
         run: |
           set -euo pipefail
           python3 tools/assurance/validate_d3_identity_security_state.py .
           python3 - <<'PY'
           import json
+          import os
           from pathlib import Path
+
           state = json.loads(Path('implementation/d3-identity-security/state-manifest.json').read_text())
           tracks = {item['track_id']: item for item in state['tracks']}
           d3d = tracks['D3-D']
-          assert d3d['candidate'] == 'spire_1_15_2'
+          expected_completed = {
+              'runtime_attestation_not_caller_identity',
+              'trust_domain_environment_runtime_binding',
+              'cross_environment_rejection',
+          }
+          expected_remaining = {
+              'short_lived_rotation_retired_bundle_rejection',
+              'workload_identity_non_tenant_authority',
+              'private_key_non_exportability_profile',
+              'issuer_restore_retired_authority_nonresurrection',
+              'vendor_credential_adapter_least_privilege',
+          }
+          assert d3d['candidate'] == 'spire_1_15_3'
+          assert d3d['candidate_artifact_digest'] == os.environ['SPIRE_ARTIFACT_PIN']
           assert d3d['state'] == 'candidate_selected_conformance_pending'
-          assert d3d['evidence_completed'] == []
-          assert len(d3d['evidence_remaining']) == len(d3d['required_evidence']) == 8
+          assert set(d3d['evidence_completed']) == expected_completed
+          assert set(d3d['evidence_remaining']) == expected_remaining
+          assert len(d3d['evidence_proofs']) == 3
           assert state['gate_state'] == 'candidate_evidence_running'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['d4_transport_authority'] == 'not_selected_not_granted'
-          print('d3_d_candidate_replacement_evaluation=AUTHORIZED_AS_EVIDENCE_ONLY current_candidate_unchanged=true')
+          print('d3_d_candidate_state=PINNED_PARTIAL_EVIDENCE completed=3 remaining=5 auto_credit=false')
           PY
 
       - name: Validate candidate probe structure
@@ -110,15 +127,15 @@ jobs:
           SPIRE_VERSION="$SPIRE_VERSION" \
             bash implementation/d3-identity-security/harness/spire_candidate_probe.sh
 
-      - name: Preserve non-authority and candidate-evaluation boundary
+      - name: Preserve partial-conformance and non-authority boundary
         if: success()
         shell: bash
         run: |
           set -euo pipefail
-          printf 'd3_d_spire_1_15_3_candidate=PASS_EVALUATION_ONLY\n'
-          printf 'candidate_release_sha256=sha256:%s\n' "$SPIRE_ASSET_SHA256"
-          printf 'canonical_candidate_promoted=false evidence_credited=false d3_d_conformed=false\n'
-          printf 'private_key_non_exportability=unproven issuer_restore_recovery=unproven vendor_adapter=unproven\n'
+          printf 'd3_d_spire_1_15_3_candidate=PASS_PINNED_CANDIDATE_EVIDENCE\n'
+          printf 'candidate_artifact_pin=%s\n' "$SPIRE_ARTIFACT_PIN"
+          printf 'canonical_candidate_promoted=true ledger_evidence_credited=3 current_run_auto_credit=false d3_d_conformed=false\n'
+          printf 'remaining_evidence=short_lived_rotation_retired_bundle_rejection,workload_identity_non_tenant_authority,private_key_non_exportability_profile,issuer_restore_retired_authority_nonresurrection,vendor_credential_adapter_least_privilege\n'
           printf 'wave4=not_granted production=none d4=not_selected_not_granted\n'
 
       - name: Capture SPIRE candidate logs on failure

@@ -29,6 +29,10 @@ EXPECTED_TRACKS = {
 POSTGRES_18_6_DIGEST = "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280"
 REDIS_8_10_DIGEST = "redis@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366"
 VALKEY_9_1_DIGEST = "valkey/valkey@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411"
+SPIRE_1_15_3_ARTIFACT = (
+    "spire-1.15.3-linux-amd64-musl.tar.gz@sha256:"
+    "ca1a4d1155317bdd2afc7f36663828a10410c7c840e54725b90b4064b0a301c7"
+)
 EXPECTED_CANDIDATE_FIELDS = {
     "D3-A": {
         "candidate": "keycloak_26_7_2",
@@ -44,7 +48,10 @@ EXPECTED_CANDIDATE_FIELDS = {
         },
     },
     "D3-C": {"candidate": "hmac_sha256_double_submit_versioned_keyring"},
-    "D3-D": {"candidate": "spire_1_15_2"},
+    "D3-D": {
+        "candidate": "spire_1_15_3",
+        "candidate_artifact_digest": SPIRE_1_15_3_ARTIFACT,
+    },
     "D3-E": {"candidate": "openbao_2_6_2_transit_behind_provider_neutral_key_authority_port"},
 }
 REQUIRED_SOURCE_ANCHORS = {
@@ -202,6 +209,16 @@ _D3C_COMPLETION_PROOF_COMMON = {
     "artifact_pins": [],
     "result": "pass",
 }
+_D3D_SPIRE_PROOF_COMMON = {
+    "evidence_sha": "3eb0615af62ad7fdec236620d248165ceff62a65",
+    "workflow_run_id": 33317304870,
+    "workflow_run_number": 7,
+    "workflow_file": ".github/workflows/d3-spire-candidate-evaluation.yml",
+    "job_name": "SPIRE 1.15.3 bounded workload-identity evaluation",
+    "probe": "implementation/d3-identity-security/harness/spire_candidate_probe.sh",
+    "artifact_pins": [SPIRE_1_15_3_ARTIFACT],
+    "result": "pass",
+}
 APPROVED_EVIDENCE_PROOFS = {
     ("D3-A", "oidc_authorization_code_pkce_bff_binding"): {
         "evidence_id": "oidc_authorization_code_pkce_bff_binding",
@@ -266,6 +283,18 @@ APPROVED_EVIDENCE_PROOFS = {
     ("D3-C", "uncertain_key_generation_fail_closed"): {
         "evidence_id": "uncertain_key_generation_fail_closed",
         **_D3_REFERENCE_PROOF_COMMON,
+    },
+    ("D3-D", "runtime_attestation_not_caller_identity"): {
+        "evidence_id": "runtime_attestation_not_caller_identity",
+        **_D3D_SPIRE_PROOF_COMMON,
+    },
+    ("D3-D", "trust_domain_environment_runtime_binding"): {
+        "evidence_id": "trust_domain_environment_runtime_binding",
+        **_D3D_SPIRE_PROOF_COMMON,
+    },
+    ("D3-D", "cross_environment_rejection"): {
+        "evidence_id": "cross_environment_rejection",
+        **_D3D_SPIRE_PROOF_COMMON,
     },
     ("D3-E", "tenant_scope_domain_separation"): {
         "evidence_id": "tenant_scope_domain_separation",
@@ -380,6 +409,12 @@ def _validate_proofs(track_id: str, track: dict, completed: set[str]) -> None:
             if set(pins) != expected_pins:
                 raise AssertionError(
                     f"{track_id}/{evidence_id}: proof does not bind the exact D3-B candidate artifact set"
+                )
+        if track_id == "D3-D":
+            expected_pin = track.get("candidate_artifact_digest")
+            if pins != [expected_pin]:
+                raise AssertionError(
+                    f"{track_id}/{evidence_id}: proof does not bind the exact SPIRE candidate artifact"
                 )
 
         if proof.get("result") != "pass":

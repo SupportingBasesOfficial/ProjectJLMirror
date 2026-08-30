@@ -34,6 +34,12 @@ jobs:
           persist-credentials: false
           allow-unsafe-pr-checkout: false
 
+      - name: Set up pinned Go toolchain
+        uses: actions/setup-go@924ae3a1f042e4d9786968e2934800bbc504e582 # v6
+        with:
+          go-version: '1.26.6'
+          cache: false
+
       - name: Verify exact commit identity
         shell: bash
         run: |
@@ -203,6 +209,16 @@ jobs:
         if: always()
         shell: bash
         run: |
+          set +e
+          for path in \
+            "$RUNNER_TEMP/jlmirror-d3-spire" \
+            "$RUNNER_TEMP/jlmirror-d3-spire-key-profile" \
+            "$RUNNER_TEMP/jlmirror-d3-spire-rotation" \
+            "$RUNNER_TEMP/spire-candidate"; do
+            if [[ -d "$path" ]]; then
+              chmod -R u+w "$path" >/dev/null 2>&1 || true
+            fi
+          done
           rm -rf \
             "$RUNNER_TEMP/jlmirror-d3-spire" \
             "$RUNNER_TEMP/jlmirror-d3-spire-key-profile" \

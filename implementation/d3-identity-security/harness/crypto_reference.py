@@ -189,6 +189,8 @@ class AtomicReplayLedger:
 
     def retire_continuity(self) -> int:
         with self._lock:
+            # Retiring a continuity generation fences stale callers; it must not erase
+            # still-relevant consumed replay identities. Retention expiry is a separate
+            # governed concern outside this bounded reference model.
             self.continuity_generation += 1
-            self._seen.clear()
             return self.continuity_generation

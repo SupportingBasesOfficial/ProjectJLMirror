@@ -155,6 +155,32 @@ class D3CryptoReferenceTests(unittest.TestCase):
                 expected_generation=1,
             )
 
+    def test_replay_consumed_identity_survives_continuity_retirement(self):
+        ledger = AtomicReplayLedger()
+        self.assertTrue(
+            ledger.create_or_observe(
+                client_principal="machine-A",
+                jti="assertion-jti-1",
+                expected_generation=1,
+            )
+        )
+        next_generation = ledger.retire_continuity()
+        self.assertEqual(2, next_generation)
+        self.assertFalse(
+            ledger.create_or_observe(
+                client_principal="machine-A",
+                jti="assertion-jti-1",
+                expected_generation=next_generation,
+            )
+        )
+        self.assertTrue(
+            ledger.create_or_observe(
+                client_principal="machine-A",
+                jti="assertion-jti-2",
+                expected_generation=next_generation,
+            )
+        )
+
     def test_replay_identity_is_scoped_to_client_principal(self):
         ledger = AtomicReplayLedger()
         self.assertTrue(ledger.create_or_observe(client_principal="A", jti="same-jti", expected_generation=1))

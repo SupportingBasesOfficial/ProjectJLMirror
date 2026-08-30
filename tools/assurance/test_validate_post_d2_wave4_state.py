@@ -242,6 +242,50 @@ class PostD2Wave4StateGuardTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self._validate()
 
+    def test_rejects_double_quoted_wave4_assignment_after_rebaseline(self) -> None:
+        self._append("open_register", 'wave4_implementation_authorization: "granted"')
+        self._rebaseline()
+        with self.assertRaises(AssertionError):
+            self._validate()
+
+    def test_rejects_single_quoted_wave4_assignment_after_rebaseline(self) -> None:
+        self._append("open_register", "wave4_implementation_authorization: 'granted'")
+        self._rebaseline()
+        with self.assertRaises(AssertionError):
+            self._validate()
+
+    def test_rejects_double_quoted_production_assignment_after_rebaseline(self) -> None:
+        self._append("blockers", 'production_authority = "granted"')
+        self._rebaseline()
+        with self.assertRaises(AssertionError):
+            self._validate()
+
+    def test_rejects_single_quoted_production_assignment_after_rebaseline(self) -> None:
+        self._append("blockers", "production_authority = 'granted'")
+        self._rebaseline()
+        with self.assertRaises(AssertionError):
+            self._validate()
+
+    def test_rejects_double_quoted_open_rel_assignment_after_rebaseline(self) -> None:
+        self._append("open_register", 'open_rel_020_production_state: "closed"')
+        self._rebaseline()
+        with self.assertRaises(AssertionError):
+            self._validate()
+
+    def test_rejects_single_quoted_open_rel_assignment_after_rebaseline(self) -> None:
+        self._append("open_register", "open_rel_020_production_state: 'closed'")
+        self._rebaseline()
+        with self.assertRaises(AssertionError):
+            self._validate()
+
+    def test_accepts_quoted_safe_machine_values_after_reviewed_rebaseline(self) -> None:
+        self._append(
+            "open_register",
+            'wave4_implementation_authorization: "not_granted"; production_authority: \'none\'; open_rel_020_production_state: "open_c3"',
+        )
+        self._rebaseline()
+        self._validate()
+
     def test_rejects_stale_customer_telemetry_blocker_even_after_rebaseline(self) -> None:
         self._append(
             "blockers",

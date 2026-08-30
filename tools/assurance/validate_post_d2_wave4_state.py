@@ -51,15 +51,18 @@ _ASSIGNMENT_RE = re.compile(r"^([a-z][a-z0-9_]*)\s*=\s*([a-z][a-z0-9_]*)$")
 
 
 def _machine_assignment_pattern(field: str) -> re.Pattern[str]:
-    """Match bare, single-quoted, or double-quoted scalar assignments.
+    """Match machine scalar assignments with bare or matched-quoted key/value.
 
-    The optional quote is captured and must close with the same delimiter. This covers
-    JSON/YAML/TOML-style scalar encodings without treating arbitrary prose as authority.
+    Key and value may independently be bare, single-quoted, or double-quoted. This
+    covers JSON/YAML/TOML-style encodings while remaining a bounded machine-syntax
+    check rather than free-form prose interpretation.
     """
 
     return re.compile(
-        rf"\b{re.escape(field)}\s*(?:=|:)\s*"
-        rf"(?P<quote>[\"']?)(?P<value>[a-z][a-z0-9_]*)(?P=quote)"
+        rf"(?<![a-z0-9_])"
+        rf"(?P<key_quote>[\"']?){re.escape(field)}(?P=key_quote)"
+        rf"(?![a-z0-9_])\s*(?:=|:)\s*"
+        rf"(?P<value_quote>[\"']?)(?P<value>[a-z][a-z0-9_]*)(?P=value_quote)"
         rf"(?![a-z0-9_])"
     )
 
@@ -312,8 +315,8 @@ def validate(
         _forbid(current_state_text, stale, "post-D2 current-state surfaces")
 
     # Machine-looking overrides remain semantically checked even after an intentional
-    # content re-baseline. Every assignment occurrence is evaluated; a safe predecessor
-    # cannot conceal a contradictory later value, including quoted scalar encodings.
+    # content re-baseline. Every assignment occurrence is evaluated; safe predecessors
+    # cannot conceal contradictory later values, including quoted key/value encodings.
     for key, text in docs.items():
         for raw in text.splitlines():
             if raw.strip():
@@ -332,7 +335,7 @@ def main(argv: list[str]) -> int:
         "post_d2_wave4_state_guard=PASS "
         "track_b=accepted telemetry_slice=eligible wave4_authorization=not_granted "
         "production_authority=none open_rel_020=open_c3 authority_state=structured "
-        "governed_surfaces=git_tree_content_addressed_v3"
+        "governed_surfaces=git_tree_content_addressed_v4"
     )
     return 0
 

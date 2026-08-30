@@ -1,4 +1,4 @@
-name: JLMIRROR D3-A Keycloak Exploratory Evidence
+name: JLMIRROR D3-A Keycloak Pinned Evidence
 
 on:
   pull_request:
@@ -16,12 +16,13 @@ permissions:
 
 jobs:
   keycloak-backchannel:
-    name: Keycloak 26.7.0 back-channel logout
+    name: Keycloak 26.7.0 pinned back-channel logout
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      KEYCLOAK_IMAGE: quay.io/keycloak/keycloak:26.7.0
+      KEYCLOAK_IMAGE: quay.io/keycloak/keycloak@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13
+      KEYCLOAK_EXPECTED_DIGEST: quay.io/keycloak/keycloak@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13
       KEYCLOAK_ADMIN_USER: admin
       KEYCLOAK_ADMIN_PASSWORD: d3-admin-password
       KEYCLOAK_BASE_URL: http://127.0.0.1:8080
@@ -46,18 +47,19 @@ jobs:
         shell: bash
         run: python3 tools/assurance/validate_d3_identity_security_state.py .
 
-      - name: Pull candidate and capture immutable repository digest
-        id: image
+      - name: Pull immutable Keycloak candidate
         shell: bash
         run: |
           set -euo pipefail
+          case "$KEYCLOAK_IMAGE" in
+            quay.io/keycloak/keycloak@sha256:*) ;;
+            *) echo 'candidate must be digest-pinned' >&2; exit 1 ;;
+          esac
+          test "$KEYCLOAK_IMAGE" = "$KEYCLOAK_EXPECTED_DIGEST"
           docker pull "$KEYCLOAK_IMAGE"
-          repo_digest="$(docker image inspect "$KEYCLOAK_IMAGE" --format '{{index .RepoDigests 0}}')"
           image_id="$(docker image inspect "$KEYCLOAK_IMAGE" --format '{{.Id}}')"
-          test -n "$repo_digest"
           test -n "$image_id"
-          printf 'keycloak_repo_digest=%s\nkeycloak_image_id=%s\n' "$repo_digest" "$image_id"
-          printf 'repo_digest=%s\n' "$repo_digest" >> "$GITHUB_OUTPUT"
+          printf 'keycloak_pinned_digest=%s\nkeycloak_image_id=%s\n' "$KEYCLOAK_IMAGE" "$image_id"
 
       - name: Start isolated Keycloak candidate
         shell: bash
@@ -79,16 +81,14 @@ jobs:
           python3 -m py_compile implementation/d3-identity-security/harness/keycloak_backchannel_probe.py
           python3 implementation/d3-identity-security/harness/keycloak_backchannel_probe.py
 
-      - name: Record exploratory evidence boundary
+      - name: Record pinned candidate evidence boundary
         if: success()
         shell: bash
         run: |
           set -euo pipefail
-          test -n '${{ steps.image.outputs.repo_digest }}'
-          printf 'd3_keycloak_candidate=PASS_EXPLORATORY\n'
-          printf 'candidate_tag=%s\n' "$KEYCLOAK_IMAGE"
-          printf 'candidate_digest=%s\n' '${{ steps.image.outputs.repo_digest }}'
-          printf 'canonical_conformance=false reason=workflow_not_yet_digest_pinned\n'
+          printf 'd3_keycloak_backchannel_candidate=PASS_PINNED\n'
+          printf 'candidate_digest=%s\n' "$KEYCLOAK_IMAGE"
+          printf 'd3_a_full_conformance=false reason=remaining_outage_currentness_and_non_authority_vectors\n'
           printf 'wave4=not_granted production=none d4=not_selected_not_granted\n'
 
       - name: Capture Keycloak logs on failure
@@ -96,7 +96,7 @@ jobs:
         shell: bash
         run: docker logs jlmirror-d3-keycloak 2>&1 || true
 
-      - name: Retire exploratory candidate container
+      - name: Retire Keycloak candidate container
         if: always()
         shell: bash
         run: docker rm -f jlmirror-d3-keycloak >/dev/null 2>&1 || true

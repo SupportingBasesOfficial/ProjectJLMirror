@@ -9,6 +9,7 @@
   "production_authority": "none",
   "product_feature_activation": "none",
   "wave4_implementation_authorization": "not_granted",
+  "merge_authorization": "not_granted",
   "closure_claim": false,
   "acceptance_authorization": "granted",
   "dependencies_are_production_selections": false,
@@ -182,6 +183,7 @@
     "closure_authorization_recorded": false,
     "wave4_implementation_requires_separate_explicit_authorization": true,
     "merge_requires_separate_explicit_authorization": true,
+    "merge_authorization_recorded": false,
     "production_identity_kms_rpc_timeout_capacity_choices_selected": false,
     "ready_for_merge_is_authorized_to_merge": false
   }

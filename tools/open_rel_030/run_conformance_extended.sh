@@ -149,5 +149,14 @@ assert manifest['acceptance_authorization'] == 'granted'
 assert manifest['closure_claim'] is False
 assert manifest['production_authority'] == 'none'
 assert manifest['wave4_implementation_authorization'] == 'not_granted'
-print('governed_decision_state=PASS decision=accepted_track_b acceptance=granted closure_claim=false production_authority=none wave4=not_granted merge=not_authorized')
+assert manifest['merge_authorization'] == 'not_granted'
+print(
+    'governed_decision_state=PASS '
+    f"decision={manifest['decision_disposition']} "
+    f"acceptance={manifest['acceptance_authorization']} "
+    f"closure_claim={str(manifest['closure_claim']).lower()} "
+    f"production_authority={manifest['production_authority']} "
+    f"wave4={manifest['wave4_implementation_authorization']} "
+    f"merge={manifest['merge_authorization']}"
+)
 PY

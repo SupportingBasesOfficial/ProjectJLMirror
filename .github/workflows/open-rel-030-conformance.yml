@@ -70,6 +70,7 @@ jobs:
           assert manifest['production_authority'] == 'none'
           assert manifest['product_feature_activation'] == 'none'
           assert manifest['wave4_implementation_authorization'] == 'not_granted'
+          assert manifest['merge_authorization'] == 'not_granted'
           assert manifest['closure_claim'] is False
           assert manifest['acceptance_authorization'] == 'granted'
           assert manifest['production_versions_selected'] is False
@@ -103,6 +104,7 @@ jobs:
           assert boundary['closure_authorization_recorded'] is False
           assert boundary['wave4_implementation_requires_separate_explicit_authorization'] is True
           assert boundary['merge_requires_separate_explicit_authorization'] is True
+          assert boundary['merge_authorization_recorded'] is False
           assert boundary['production_identity_kms_rpc_timeout_capacity_choices_selected'] is False
           assert boundary['ready_for_merge_is_authorized_to_merge'] is False
 
@@ -159,7 +161,9 @@ jobs:
           assert discovered_history == expected_history
           missing = [name for name in discovered_history if name not in runner]
           assert not missing, f'history hardening modules not wired into extended runner: {missing}'
-          assert 'governed_decision_state=PASS decision=accepted_track_b acceptance=granted closure_claim=false production_authority=none wave4=not_granted merge=not_authorized' in runner
+          assert "assert manifest['merge_authorization'] == 'not_granted'" in runner
+          assert "f\"merge={manifest['merge_authorization']}\"" in runner
+          assert 'merge=not_authorized' not in runner
           assert 'Track B acceptance still required' not in runner
 
           retained = Path('sql/d2-open-rel-030/009_history_retained_finalized_watermark_hardening.sql').read_text()
@@ -292,7 +296,9 @@ jobs:
               'decision=accepted_track_b '
               'acceptance=granted '
               'closure=false '
+              'merge=not_granted '
               'material_findings=51 '
+              'merge_authorization_guard=true '
               'history_lock_order_guard=true '
               'null_finalize_guard=true '
               'retained_finalized_watermark_guard=true '

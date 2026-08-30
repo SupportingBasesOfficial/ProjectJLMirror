@@ -8,8 +8,11 @@ import unittest
 from crypto_reference import (
     AtomicReplayLedger,
     CsrfKeyRing,
+    CsrfRotationWindow,
     ReferenceKeyAuthority,
     ReferenceKeyVersion,
+    canonicalize_bff_csrf,
+    canonicalize_ingress_csrf,
     hkdf_expand_sha256,
 )
 
@@ -125,6 +128,92 @@ class D3CryptoReferenceTests(unittest.TestCase):
         self.assertFalse(ring.verify(token=old, session_lineage_id="post-step-up"))
         new = ring.issue(session_lineage_id="post-step-up")
         self.assertTrue(ring.verify(token=new, session_lineage_id="post-step-up"))
+
+    def test_csrf_rotation_overlap_must_cover_accepted_safety_lifetime(self):
+        accepted = CsrfRotationWindow(
+            rotation_started_at=1_000,
+            previous_valid_until=1_300,
+            minimum_safety_lifetime_seconds=300,
+        )
+        self.assertTrue(accepted.previous_is_within_overlap(now_epoch_seconds=1_300))
+        self.assertFalse(accepted.previous_is_within_overlap(now_epoch_seconds=1_301))
+        with self.assertRaisesRegex(ValueError, "shorter than the accepted safety lifetime"):
+            CsrfRotationWindow(
+                rotation_started_at=1_000,
+                previous_valid_until=1_299,
+                minimum_safety_lifetime_seconds=300,
+            )
+
+    def test_csrf_previous_generation_use_is_observable_and_stale_use_is_rejected(self):
+        pre_rotation = ReferenceKeyAuthority(
+            [ReferenceKeyVersion(2, key(2), signing_enabled=True, verification_enabled=True)]
+        )
+        old_token = CsrfKeyRing(authority=pre_rotation, current=2, previous=None).issue(
+            session_lineage_id="lineage-observed"
+        )
+        window = CsrfRotationWindow(
+            rotation_started_at=2_000,
+            previous_valid_until=2_300,
+            minimum_safety_lifetime_seconds=300,
+        )
+        rotated = CsrfKeyRing(
+            authority=self.authority(),
+            current=3,
+            previous=2,
+            rotation_window=window,
+        )
+
+        within = rotated.verify_with_evidence(
+            token=old_token,
+            session_lineage_id="lineage-observed",
+            now_epoch_seconds=2_250,
+        )
+        self.assertTrue(within.accepted)
+        self.assertTrue(within.presented_previous_generation)
+        self.assertTrue(within.accepted_previous_generation)
+        self.assertEqual("accepted_previous", within.reason)
+
+        stale = rotated.verify_with_evidence(
+            token=old_token,
+            session_lineage_id="lineage-observed",
+            now_epoch_seconds=2_301,
+        )
+        self.assertFalse(stale.accepted)
+        self.assertTrue(stale.presented_previous_generation)
+        self.assertFalse(stale.accepted_previous_generation)
+        self.assertEqual("previous_overlap_expired", stale.reason)
+
+        uncertain = rotated.verify_with_evidence(
+            token=old_token,
+            session_lineage_id="lineage-observed",
+        )
+        self.assertFalse(uncertain.accepted)
+        self.assertEqual("previous_overlap_time_uncertain", uncertain.reason)
+
+    def test_csrf_ingress_and_bff_reject_duplicate_or_conflicting_presentation_identically(self):
+        cases = [
+            (["token-A", "token-A"], ["token-A"]),
+            (["token-A"], ["token-A", "token-A"]),
+            (["token-A"], ["token-B"]),
+            ([], ["token-A"]),
+            (["token-A"], []),
+        ]
+        for cookie_values, header_values in cases:
+            failures = []
+            for canonicalizer in (canonicalize_ingress_csrf, canonicalize_bff_csrf):
+                with self.assertRaises(ValueError) as raised:
+                    canonicalizer(cookie_values=cookie_values, header_values=header_values)
+                failures.append(str(raised.exception))
+            self.assertEqual(failures[0], failures[1])
+
+        self.assertEqual(
+            "token-A",
+            canonicalize_ingress_csrf(cookie_values=["token-A"], header_values=["token-A"]),
+        )
+        self.assertEqual(
+            "token-A",
+            canonicalize_bff_csrf(cookie_values=["token-A"], header_values=["token-A"]),
+        )
 
     def test_domain_separation_changes_key_by_tenant_scope_and_erasure_unit(self):
         master = key(9)

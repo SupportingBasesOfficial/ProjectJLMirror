@@ -44,6 +44,7 @@ TRUST_BUNDLE="${WORK_DIR}/run/trust-bundle.pem"
 JOIN_TOKEN_FILE="${WORK_DIR}/run/join-token"
 SERVER_LOG="${WORK_DIR}/server.log"
 AGENT_LOG="${WORK_DIR}/agent.log"
+FETCH_LOG="${WORK_DIR}/fetch.log"
 SERVER_PID=""
 AGENT_PID=""
 
@@ -225,8 +226,26 @@ fi
   -selector "unix:uid:${FORBIDDEN_UID}" \
   -x509SVIDTTL 30 >/dev/null
 
-rm -rf "${WORK_DIR}/output"/*
-"${AGENT_BIN}" api fetch x509 -socketPath "${AGENT_SOCKET}" -timeout 5s -write "${WORK_DIR}/output" >/dev/null
+# SPIRE Agent synchronizes authorized entries with the Server asynchronously (default 5s).
+# Bound the propagation wait to 15s; inability to observe the authorized identity within the
+# evidence window remains a hard failure rather than being treated as eventual success.
+fetch_ready=0
+for _ in $(seq 1 30); do
+  rm -rf "${WORK_DIR}/output"/*
+  if "${AGENT_BIN}" api fetch x509 \
+       -socketPath "${AGENT_SOCKET}" \
+       -timeout 2s \
+       -write "${WORK_DIR}/output" >"${FETCH_LOG}" 2>&1; then
+    fetch_ready=1
+    break
+  fi
+  sleep 0.5
+done
+if [[ "${fetch_ready}" != "1" ]]; then
+  echo "authorized workload SVID did not propagate within bounded 15s evidence window" >&2
+  cat "${FETCH_LOG}" >&2 || true
+  exit 1
+fi
 
 mapfile -t SVID_CERTS < <(find "${WORK_DIR}/output" -maxdepth 1 -type f -name 'svid.*.pem' ! -name '*.key' | sort)
 if [[ "${#SVID_CERTS[@]}" -ne 1 ]]; then

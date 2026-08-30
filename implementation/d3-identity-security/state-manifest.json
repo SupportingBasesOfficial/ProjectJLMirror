@@ -441,9 +441,9 @@
         },
         {
           "evidence_id": "vendor_credential_adapter_least_privilege",
-          "evidence_sha": "972b7e214fa6214e92fe354df0078ebbb57979ba",
-          "workflow_run_id": 33341227074,
-          "workflow_run_number": 24,
+          "evidence_sha": "0ed5383a49fb64ab7ade16494959a4b6237491fc",
+          "workflow_run_id": 33341773683,
+          "workflow_run_number": 31,
           "workflow_file": ".github/workflows/d3-spire-candidate-evaluation.yml",
           "job_name": "SPIRE 1.15.3 bounded workload-identity evaluation",
           "probe": "implementation/d3-identity-security/harness/spire_vendor_credential_adapter_probe.py",

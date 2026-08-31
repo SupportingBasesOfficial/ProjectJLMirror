@@ -179,6 +179,15 @@ _D3A_BROWSER_PROOF_COMMON = {
     "artifact_pins": [KEYCLOAK_26_7_2_DIGEST],
     "result": "pass",
 }
+_D3A_CONFORMANCE_PROOF_COMMON = {
+    "evidence_sha": "ec258679d1d39523eab4e6626190bb5d929138e4",
+    "workflow_run_id": 33353156710,
+    "workflow_run_number": 7,
+    "workflow_file": ".github/workflows/d3-keycloak-conformance.yml",
+    "job_name": "Keycloak 26.7.2 MFA + authority effects",
+    "artifact_pins": [KEYCLOAK_26_7_2_DIGEST],
+    "result": "pass",
+}
 _D3B_PINNED_PROOF_COMMON = {
     "evidence_sha": "a437bb46eb8695e8e48d26b8db5569ff8f12ea7b",
     "workflow_run_id": 33314980744,
@@ -265,6 +274,36 @@ APPROVED_EVIDENCE_PROOFS = {
     ("D3-A", "token_signature_issuer_audience_client_time_jwks_algorithm_validation"): {
         "evidence_id": "token_signature_issuer_audience_client_time_jwks_algorithm_validation",
         **_D3A_BROWSER_PROOF_COMMON,
+    },
+    ("D3-A", "acr_amr_mfa_step_up_context"): {
+        "evidence_id": "acr_amr_mfa_step_up_context",
+        "probe": "implementation/d3-identity-security/harness/keycloak_mfa_single_use_runner.py",
+        **_D3A_CONFORMANCE_PROOF_COMMON,
+    },
+    ("D3-A", "backchannel_logout_authenticity_replay_profile"): {
+        "evidence_id": "backchannel_logout_authenticity_replay_profile",
+        "probe": "implementation/d3-identity-security/harness/keycloak_authority_effects_probe.py",
+        **_D3A_CONFORMANCE_PROOF_COMMON,
+    },
+    ("D3-A", "provider_sid_sub_mapping_non_authority"): {
+        "evidence_id": "provider_sid_sub_mapping_non_authority",
+        "probe": "implementation/d3-identity-security/harness/keycloak_authority_effects_probe.py",
+        **_D3A_CONFORMANCE_PROOF_COMMON,
+    },
+    ("D3-A", "principal_wide_logout_generation_fence"): {
+        "evidence_id": "principal_wide_logout_generation_fence",
+        "probe": "implementation/d3-identity-security/harness/keycloak_authority_effects_probe.py",
+        **_D3A_CONFORMANCE_PROOF_COMMON,
+    },
+    ("D3-A", "idp_outage_currentness_join"): {
+        "evidence_id": "idp_outage_currentness_join",
+        "probe": "implementation/d3-identity-security/harness/keycloak_authority_effects_probe.py",
+        **_D3A_CONFORMANCE_PROOF_COMMON,
+    },
+    ("D3-A", "idp_native_roles_groups_organizations_non_authority"): {
+        "evidence_id": "idp_native_roles_groups_organizations_non_authority",
+        "probe": "implementation/d3-identity-security/harness/keycloak_authority_effects_probe.py",
+        **_D3A_CONFORMANCE_PROOF_COMMON,
     },
     ("D3-B", "cache_generation_bound_derived_only"): {
         "evidence_id": "cache_generation_bound_derived_only",

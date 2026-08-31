@@ -1,0 +1,273 @@
+name: JLMIRROR D3-A Keycloak Conformance Evidence
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keycloak-conformance:
+    name: Keycloak 26.7.2 MFA + authority effects
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      KEYCLOAK_IMAGE: quay.io/keycloak/keycloak@sha256:831330513f55695572286e521f94fcd3c7e285250ed5b848090265a33192f669
+      KEYCLOAK_EXPECTED_DIGEST: quay.io/keycloak/keycloak@sha256:831330513f55695572286e521f94fcd3c7e285250ed5b848090265a33192f669
+      KEYCLOAK_ADMIN_USER: admin
+      KEYCLOAK_ADMIN_PASSWORD: d3-admin-password
+      KEYCLOAK_BASE_URL: https://127.0.0.1:8443
+    steps:
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
+
+      - name: Validate machine-owned D3 state before evidence
+        shell: bash
+        run: python3 tools/assurance/validate_d3_identity_security_state.py .
+
+      - name: Validate new evidence probe structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            implementation/d3-identity-security/harness/keycloak_mfa_step_up_probe.py \
+            implementation/d3-identity-security/harness/keycloak_mfa_single_use_runner.py \
+            implementation/d3-identity-security/harness/keycloak_authority_effects_probe.py \
+            implementation/d3-identity-security/harness/keycloak_authority_single_winner_runner.py \
+            implementation/d3-identity-security/harness/keycloak_authority_continuity_runner.py \
+            implementation/d3-identity-security/harness/keycloak_authority_upgrade_guard_runner.py \
+            implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py \
+            implementation/d3-identity-security/harness/keycloak_callback_autonomous_drain_runner.py \
+            implementation/d3-identity-security/harness/keycloak_callback_currentness_drain_runner.py
+          grep -F 'd3_keycloak_mfa_step_up=PASS' \
+            implementation/d3-identity-security/harness/keycloak_mfa_step_up_probe.py >/dev/null
+          grep -F 'd3_keycloak_totp_single_use_freshness=PASS' \
+            implementation/d3-identity-security/harness/keycloak_mfa_single_use_runner.py >/dev/null
+          grep -F 'd3_keycloak_authority_effects=PASS' \
+            implementation/d3-identity-security/harness/keycloak_authority_effects_probe.py >/dev/null
+          grep -F 'd3_keycloak_effect_single_winner=PASS' \
+            implementation/d3-identity-security/harness/keycloak_authority_single_winner_runner.py >/dev/null
+          grep -F 'd3_keycloak_expired_token_reconciliation=PASS' \
+            implementation/d3-identity-security/harness/keycloak_authority_continuity_runner.py >/dev/null
+          grep -F 'd3_keycloak_replay_upgrade_continuity=PASS' \
+            implementation/d3-identity-security/harness/keycloak_authority_continuity_runner.py >/dev/null
+          grep -F 'd3_keycloak_recovery_continuity=PASS' \
+            implementation/d3-identity-security/harness/keycloak_authority_continuity_runner.py >/dev/null
+          grep -F 'd3_keycloak_legacy_nonterminal_upgrade=PASS' \
+            implementation/d3-identity-security/harness/keycloak_authority_upgrade_guard_runner.py >/dev/null
+          grep -F 'd3_keycloak_legacy_writer_cutover=PASS' \
+            implementation/d3-identity-security/harness/keycloak_authority_upgrade_guard_runner.py >/dev/null
+          grep -F 'd3_keycloak_authority_upgrade_guard=PASS' \
+            implementation/d3-identity-security/harness/keycloak_authority_upgrade_guard_runner.py >/dev/null
+          grep -F 'd3_keycloak_callback_durable_ack=PASS' \
+            implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py >/dev/null
+          grep -F 'd3_keycloak_logout_event_profile=PASS' \
+            implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py >/dev/null
+          grep -F 'd3_keycloak_callback_ingress=PASS' \
+            implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py >/dev/null
+          grep -F 'd3_keycloak_callback_autonomous_drain=PASS' \
+            implementation/d3-identity-security/harness/keycloak_callback_autonomous_drain_runner.py >/dev/null
+          grep -F 'd3_keycloak_callback_recovery_gate=PASS' \
+            implementation/d3-identity-security/harness/keycloak_callback_autonomous_drain_runner.py >/dev/null
+          grep -F 'd3_keycloak_callback_currentness_drain=PASS' \
+            implementation/d3-identity-security/harness/keycloak_callback_currentness_drain_runner.py >/dev/null
+          grep -F 'd3_keycloak_callback_currentness_gate=PASS' \
+            implementation/d3-identity-security/harness/keycloak_callback_currentness_drain_runner.py >/dev/null
+
+      - name: Guard Keycloak provider state from platform authorization source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE --include='*.py' \
+            'realm_access|resource_access|keycloak[^[:alnum:]_]+(role|group|organization)|\[("|'"'"')(groups|organization)("|'"'"')\]' \
+            src/jlmirror_authority; then
+            echo 'Keycloak/provider-native authorization state leaked into platform authority source' >&2
+            exit 1
+          fi
+          echo 'provider_native_authorization_source_guard=PASS'
+
+      - name: Pull immutable Keycloak candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$KEYCLOAK_IMAGE" in
+            quay.io/keycloak/keycloak@sha256:*) ;;
+            *) echo 'candidate must be digest-pinned' >&2; exit 1 ;;
+          esac
+          test "$KEYCLOAK_IMAGE" = "$KEYCLOAK_EXPECTED_DIGEST"
+          docker pull "$KEYCLOAK_IMAGE"
+          image_id="$(docker image inspect "$KEYCLOAK_IMAGE" --format '{{.Id}}')"
+          test -n "$image_id"
+          printf 'keycloak_pinned_digest=%s\nkeycloak_image_id=%s\n' "$KEYCLOAK_IMAGE" "$image_id"
+
+      - name: Generate ephemeral TLS evidence identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          tls_dir="${RUNNER_TEMP}/d3-keycloak-conformance-tls"
+          server_dir="$tls_dir/server"
+          mkdir -p "$server_dir"
+
+          openssl req -x509 -newkey rsa:2048 -nodes \
+            -keyout "$tls_dir/ca.key" \
+            -out "$tls_dir/ca.crt" \
+            -days 1 \
+            -subj '/CN=JLMirror D3-A ephemeral evidence CA' \
+            -addext 'basicConstraints=critical,CA:TRUE' \
+            -addext 'keyUsage=critical,keyCertSign,cRLSign'
+
+          openssl req -newkey rsa:2048 -nodes \
+            -keyout "$server_dir/server.key" \
+            -out "$tls_dir/server.csr" \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
+
+          cat > "$tls_dir/server.ext" <<'EOF'
+          basicConstraints=critical,CA:FALSE
+          keyUsage=critical,digitalSignature,keyEncipherment
+          extendedKeyUsage=serverAuth
+          subjectAltName=DNS:localhost,IP:127.0.0.1
+          EOF
+
+          openssl x509 -req \
+            -in "$tls_dir/server.csr" \
+            -CA "$tls_dir/ca.crt" \
+            -CAkey "$tls_dir/ca.key" \
+            -CAcreateserial \
+            -out "$server_dir/server.crt" \
+            -days 1 \
+            -sha256 \
+            -extfile "$tls_dir/server.ext"
+
+          openssl verify -CAfile "$tls_dir/ca.crt" "$server_dir/server.crt"
+          openssl x509 -in "$server_dir/server.crt" -noout -checkend 0
+
+          image_user="$(docker image inspect "$KEYCLOAK_IMAGE" --format '{{.Config.User}}')"
+          case "$image_user" in
+            ''|root|0) keycloak_uid=0 ;;
+            *:*) keycloak_uid="${image_user%%:*}" ;;
+            *) keycloak_uid="$image_user" ;;
+          esac
+          case "$keycloak_uid" in
+            ''|*[!0-9]*)
+              echo "Keycloak image declares unsupported non-numeric container user: $image_user" >&2
+              exit 1
+              ;;
+          esac
+          chmod 0400 "$tls_dir/ca.key" "$server_dir/server.key"
+          chmod 0444 "$tls_dir/ca.crt" "$server_dir/server.crt"
+          sudo chown "$keycloak_uid" "$server_dir/server.key"
+          test "$(stat -c '%u' "$server_dir/server.key")" = "$keycloak_uid"
+          test "$(stat -c '%a' "$server_dir/server.key")" = "400"
+          printf 'SSL_CERT_FILE=%s/ca.crt\n' "$tls_dir" >> "$GITHUB_ENV"
+
+      - name: Start isolated TLS Keycloak candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d \
+            --name jlmirror-d3-keycloak-conformance \
+            --add-host=host.docker.internal:host-gateway \
+            -p 127.0.0.1:8443:8443 \
+            -v "${RUNNER_TEMP}/d3-keycloak-conformance-tls/server:/opt/keycloak/conf/d3-tls:ro" \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME="$KEYCLOAK_ADMIN_USER" \
+            -e KC_BOOTSTRAP_ADMIN_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD" \
+            "$KEYCLOAK_IMAGE" \
+            start-dev \
+            --http-enabled=false \
+            --https-certificate-file=/opt/keycloak/conf/d3-tls/server.crt \
+            --https-certificate-key-file=/opt/keycloak/conf/d3-tls/server.key
+
+      - name: Wait for TLS Keycloak readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 90); do
+            state="$(docker inspect -f '{{.State.Status}}' jlmirror-d3-keycloak-conformance 2>/dev/null || true)"
+            case "$state" in
+              exited|dead)
+                echo "Keycloak exited before readiness: state=$state" >&2
+                docker logs jlmirror-d3-keycloak-conformance >&2 || true
+                exit 1
+                ;;
+              running)
+                if python3 - <<'PY'
+          import urllib.request
+          try:
+              with urllib.request.urlopen(
+                  "https://127.0.0.1:8443/realms/master/.well-known/openid-configuration",
+                  timeout=2,
+              ) as response:
+                  raise SystemExit(0 if response.status == 200 else 1)
+          except Exception:
+              raise SystemExit(1)
+          PY
+                then
+                  echo 'keycloak_tls_readiness=PASS'
+                  exit 0
+                fi
+                ;;
+              '') ;;
+              *) echo "Keycloak unexpected container state before readiness: $state" >&2 ;;
+            esac
+            sleep 1
+          done
+          echo 'Keycloak TLS readiness deadline exceeded' >&2
+          docker logs jlmirror-d3-keycloak-conformance >&2 || true
+          exit 1
+
+      - name: Exercise real Keycloak MFA and step-up context
+        shell: bash
+        run: python3 implementation/d3-identity-security/harness/keycloak_mfa_single_use_runner.py
+
+      - name: Exercise callback currentness recovery, autonomous drain, authority, and continuity
+        shell: bash
+        run: python3 implementation/d3-identity-security/harness/keycloak_callback_currentness_drain_runner.py
+
+      - name: Record evidence-only boundary
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'd3_a_candidate_conformance_probe=PASS_PINNED_TLS\n'
+          printf 'candidate_digest=%s\n' "$KEYCLOAK_IMAGE"
+          printf 'ledger_promotion=required_separate_exact_run_provenance_commit\n'
+          printf 'd3_a_manifest_credit=unchanged\n'
+          printf 'd3=not_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
+
+      - name: Capture Keycloak logs on failure
+        if: failure()
+        shell: bash
+        run: docker logs jlmirror-d3-keycloak-conformance 2>&1 || true
+
+      - name: Retire Keycloak candidate container
+        if: always()
+        shell: bash
+        run: docker rm -f jlmirror-d3-keycloak-conformance >/dev/null 2>&1 || true
+
+      - name: Remove ephemeral TLS private material
+        if: always()
+        shell: bash
+        run: rm -rf "${RUNNER_TEMP}/d3-keycloak-conformance-tls"

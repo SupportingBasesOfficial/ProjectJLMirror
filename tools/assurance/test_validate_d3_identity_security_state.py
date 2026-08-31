@@ -201,7 +201,7 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
 
     def test_missing_required_evidence_is_rejected(self):
         def mutate(m):
-            track = next(t for t in m["tracks"] if t["track_id"] == "D3-A")
+            track = pending_track(m)
             missing = track["required_evidence"].pop()
             track["evidence_remaining"].remove(missing)
         with self.assertRaises(AssertionError):

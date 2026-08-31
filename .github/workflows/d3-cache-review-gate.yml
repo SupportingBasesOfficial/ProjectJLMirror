@@ -57,7 +57,8 @@ jobs:
           review=implementation/d3-identity-security/harness/cache_authority_conformance_review_runner.py
           closure=implementation/d3-identity-security/harness/cache_authority_conformance_closure_runner.py
           integrity=implementation/d3-identity-security/harness/cache_authority_conformance_integrity_runner.py
-          python3 -m py_compile "$core" "$final" "$review" "$closure" "$integrity"
+          entry=implementation/d3-identity-security/harness/cache_authority_conformance_integrity_entrypoint.py
+          python3 -m py_compile "$core" "$final" "$review" "$closure" "$integrity" "$entry"
           for marker in d3_b_commit_permit_provenance d3_b_lease_retirement_inflight_drain d3_b_same_replica_reissue_inflight_drain d3_b_current_epoch_restore_nonresurrection d3_b_session_cache_conformance_review; do
             grep -F "$marker=PASS" "$review" >/dev/null
           done
@@ -72,6 +73,7 @@ jobs:
           grep -F 'lease.scope_key == core.scope_key(owner, resource_id)' "$integrity" >/dev/null
           grep -F 'stale_retirement_token_noop=true' "$integrity" >/dev/null
           grep -F 'live_replica_id_not_stealable=true' "$integrity" >/dev/null
+          grep -F 'final.fill_composed_positive = fill_composed_positive' "$entry" >/dev/null
           grep -F '_ISSUED_PERMITS.get(id(permit)) is not permit' "$review" >/dev/null
           grep -F 'durable_retired_ack_after_drain=true' "$review" >/dev/null
           grep -F 'readmission_rotates_epoch_again=true' "$review" >/dev/null
@@ -104,7 +106,7 @@ jobs:
         run: |
           set -euo pipefail
           docker run -d --rm --name jlmirror-d3-redis-review --network "$D3_NETWORK" "$REDIS_IMAGE" redis-server --save '' --appendonly no
-          PG_CONTAINER=jlmirror-d3-postgres-review CACHE_CONTAINER=jlmirror-d3-redis-review CACHE_LABEL=redis_8_10_0 CACHE_CLI=redis-cli CACHE_IMAGE="$REDIS_IMAGE" CACHE_SERVER=redis-server DOCKER_NETWORK="$D3_NETWORK" python3 implementation/d3-identity-security/harness/cache_authority_conformance_integrity_runner.py
+          PG_CONTAINER=jlmirror-d3-postgres-review CACHE_CONTAINER=jlmirror-d3-redis-review CACHE_LABEL=redis_8_10_0 CACHE_CLI=redis-cli CACHE_IMAGE="$REDIS_IMAGE" CACHE_SERVER=redis-server DOCKER_NETWORK="$D3_NETWORK" python3 implementation/d3-identity-security/harness/cache_authority_conformance_integrity_entrypoint.py
 
       - name: Retire Redis review containers
         if: always()
@@ -116,7 +118,7 @@ jobs:
         run: |
           set -euo pipefail
           docker run -d --rm --name jlmirror-d3-valkey-review --network "$D3_NETWORK" "$VALKEY_IMAGE" valkey-server --save '' --appendonly no
-          PG_CONTAINER=jlmirror-d3-postgres-review CACHE_CONTAINER=jlmirror-d3-valkey-review CACHE_LABEL=valkey_9_1_0 CACHE_CLI=valkey-cli CACHE_IMAGE="$VALKEY_IMAGE" CACHE_SERVER=valkey-server DOCKER_NETWORK="$D3_NETWORK" python3 implementation/d3-identity-security/harness/cache_authority_conformance_integrity_runner.py
+          PG_CONTAINER=jlmirror-d3-postgres-review CACHE_CONTAINER=jlmirror-d3-valkey-review CACHE_LABEL=valkey_9_1_0 CACHE_CLI=valkey-cli CACHE_IMAGE="$VALKEY_IMAGE" CACHE_SERVER=valkey-server DOCKER_NETWORK="$D3_NETWORK" python3 implementation/d3-identity-security/harness/cache_authority_conformance_integrity_entrypoint.py
 
       - name: Preserve bounded review result
         if: success()

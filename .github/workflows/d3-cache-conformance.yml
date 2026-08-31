@@ -89,13 +89,22 @@ jobs:
             d3_b_session_cache_conformance_gate; do
             grep -F "$marker=PASS" "$core" >/dev/null
           done
-          grep -F 'd3_b_lease_identity_rotation=PASS' "$entrypoint" >/dev/null
-          grep -F 'd3_b_session_cache_conformance_final=PASS' "$entrypoint" >/dev/null
+          for marker in \
+            d3_b_lease_identity_rotation \
+            d3_b_composed_multi_owner_admission \
+            d3_b_stale_fill_fence_cas \
+            d3_b_owner_read_fill_fail_closed \
+            d3_b_session_cache_conformance_final; do
+            grep -F "$marker=PASS" "$entrypoint" >/dev/null
+          done
           grep -F 'class CommitPermit' "$core" >/dev/null
           grep -F 'preterminal_scope_release_impossible=true' "$core" >/dev/null
           grep -F 'reconciliation_requires_exact_non_authorizing_cache_state=true' "$core" >/dev/null
           grep -F '_ACTIVE_LOCAL_LEASE' "$entrypoint" >/dev/null
           grep -F 'predecessor_raw_negative_control_allow=true' "$entrypoint" >/dev/null
+          grep -F 'COMPOSED_ADMISSION_SCRIPT' "$entrypoint" >/dev/null
+          grep -F 'FILL_POSITIVE_SCRIPT' "$entrypoint" >/dev/null
+          grep -F 'redis_fence_not_commit_eligibility=true' "$entrypoint" >/dev/null
           grep -F 'REPLICAOF' "$core" >/dev/null
           grep -F '"pause", PG_CONTAINER' "$core" >/dev/null
           grep -F 'threading.Barrier' "$core" >/dev/null

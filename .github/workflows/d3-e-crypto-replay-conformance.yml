@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/d3-e-crypto-replay-conformance.yml"
-      - "implementation/d3-identity-security/harness/crypto_replay_conformance_v2.py"
+      - "implementation/d3-identity-security/harness/crypto_replay_conformance.py"
       - "implementation/d3-identity-security/state-manifest.json"
       - "tools/assurance/validate_d3_identity_security_state.py"
       - "tools/assurance/validate_d3_identity_security_state_legacy.py"
@@ -68,23 +68,25 @@ jobs:
           print('d3_e_source_manifest_boundary=PASS')
           PY
 
-      - name: Validate strict runner structure
+      - name: Validate hardened runner structure
         shell: bash
         run: |
           set -euo pipefail
-          runner=implementation/d3-identity-security/harness/crypto_replay_conformance_v2.py
+          runner=implementation/d3-identity-security/harness/crypto_replay_conformance.py
           python3 -m py_compile "$runner"
           grep -F '"-AtqX"' "$runner" >/dev/null
           grep -F 'expected exactly one SQL scalar' "$runner" >/dev/null
+          grep -F 'parse_pg_bool' "$runner" >/dev/null
+          grep -F 'backend generation drift requires reconciliation' "$runner" >/dev/null
+          grep -F 'historical verifier grant blocks key retirement' "$runner" >/dev/null
           grep -F 'FOR UPDATE' "$runner" >/dev/null
           grep -F 'ON CONFLICT DO NOTHING' "$runner" >/dev/null
           grep -F 'soft-delete-restore' "$runner" >/dev/null
-          grep -F 'HistoricalVerifierPort' "$runner" >/dev/null
-          grep -F 'KeyAuthorityPort' "$runner" >/dev/null
           for marker in \
             d3_e_historical_verifier_relocation_recovery_continuity \
             d3_e_retired_erased_key_nonresurrection \
             d3_e_key_generation_rotation_retirement \
+            d3_e_native_generation_drift_fail_closed \
             d3_e_private_key_jwt_replay_atomic_single_winner \
             d3_e_replay_partition_fail_closed \
             d3_e_replay_consumed_identity_survives_restore_loss \
@@ -141,12 +143,13 @@ jobs:
           OPENBAO_ADDR: http://127.0.0.1:8200
         run: |
           set -euo pipefail
-          log="$RUNNER_TEMP/d3-e-v2.log"
-          python3 implementation/d3-identity-security/harness/crypto_replay_conformance_v2.py | tee "$log"
+          log="$RUNNER_TEMP/d3-e.log"
+          python3 implementation/d3-identity-security/harness/crypto_replay_conformance.py | tee "$log"
           for marker in \
             d3_e_historical_verifier_relocation_recovery_continuity \
             d3_e_retired_erased_key_nonresurrection \
             d3_e_key_generation_rotation_retirement \
+            d3_e_native_generation_drift_fail_closed \
             d3_e_private_key_jwt_replay_atomic_single_winner \
             d3_e_replay_partition_fail_closed \
             d3_e_replay_consumed_identity_survives_restore_loss \
@@ -154,7 +157,10 @@ jobs:
             d3_e_crypto_replay_conformance; do
             grep -F "$marker=PASS" "$log" >/dev/null
           done
+          grep -F 'active_historical_grant_blocks_retirement=true' "$log" >/dev/null
           grep -F 'native_restore_negative_control_usable=true' "$log" >/dev/null
+          grep -F 'trusted_erasure_state_roundtrip=true' "$log" >/dev/null
+          grep -F 'untrusted_latest_not_promoted=true' "$log" >/dev/null
           grep -F 'exactly_one_winner=true' "$log" >/dev/null
           grep -F 'actual_authority_pause=true' "$log" >/dev/null
           grep -F 'consumed_identity_not_resurrected_as_unused=true' "$log" >/dev/null
@@ -163,7 +169,7 @@ jobs:
       - name: Preserve bounded source result
         shell: bash
         run: |
-          printf 'd3_e_candidate_conformance_probe=PASS_PINNED_SOURCE_V2\n'
+          printf 'd3_e_candidate_conformance_probe=PASS_PINNED_SOURCE_HARDENED\n'
           printf 'manifest_credit=unchanged candidate_state=candidate_selected_conformance_pending\n'
           printf 'd3=not_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
 

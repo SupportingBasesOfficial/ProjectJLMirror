@@ -33,6 +33,7 @@ VENDOR_CREDENTIAL_GENERATION_PREFIX = "vendor-credential-generation-"
 INITIAL_VENDOR_CREDENTIAL_EPOCH = 7
 MAX_VENDOR_TTL = timedelta(seconds=30)
 _URI_RE = re.compile(r"URI:([^,\s]+)")
+_AUTHORITY_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$")
 
 
 def _run(*args: str) -> str:
@@ -213,22 +214,60 @@ class VendorCredentialAuthority:
         return self.current_generation
 
 
+class WorkloadCurrentnessAuthority:
+    """Live platform authority consulted for every vendor exchange/admission.
+
+    This authority is deliberately distinct from both the caller-supplied peer evidence and
+    the vendor credential authority. A SPIRE/workload credential generation can therefore
+    be revoked or rotated while the old certificate remains inside its X.509 validity window.
+    """
+
+    def __init__(self, *, trust_bundle_generation: str, workload_credential_generation: str) -> None:
+        if not _AUTHORITY_ID_RE.fullmatch(trust_bundle_generation):
+            raise ValueError("current workload trust-bundle generation is malformed")
+        if not _AUTHORITY_ID_RE.fullmatch(workload_credential_generation):
+            raise ValueError("current workload credential generation is malformed")
+        self._trust_bundle_generation = trust_bundle_generation
+        self._workload_credential_generation = workload_credential_generation
+        self.read_calls = 0
+        self.generation_advances = 0
+
+    @property
+    def current_workload_credential_generation(self) -> str:
+        return self._workload_credential_generation
+
+    def snapshot(self) -> tuple[str, str]:
+        self.read_calls += 1
+        return self._trust_bundle_generation, self._workload_credential_generation
+
+    def advance_workload_credential_generation(
+        self,
+        *,
+        expected_generation: str,
+        successor_generation: str,
+    ) -> str:
+        if expected_generation != self._workload_credential_generation:
+            raise AdmissionDenied("workload credential generation advance lost currentness race")
+        if (
+            successor_generation == expected_generation
+            or not _AUTHORITY_ID_RE.fullmatch(successor_generation)
+        ):
+            raise AdmissionDenied("successor workload credential generation is invalid")
+        self._workload_credential_generation = successor_generation
+        self.generation_advances += 1
+        return successor_generation
+
+
 class BoundedVendorCredentialAdapter:
-    """Evidence-only IR-D-002 broker/state-port exchange and currentness boundary."""
+    """Evidence-only IR-D-002 broker/state-port exchange and live-currentness boundary."""
 
     def __init__(
         self,
         *,
-        current_principal: Principal,
-        workload_not_before: datetime,
-        workload_not_after: datetime,
+        workload_currentness_authority: WorkloadCurrentnessAuthority,
         credential_authority: VendorCredentialAuthority,
     ) -> None:
-        if workload_not_after <= workload_not_before:
-            raise ValueError("workload validity interval is invalid")
-        self.current_principal = current_principal
-        self.workload_not_before = _utc(workload_not_before)
-        self.workload_not_after = _utc(workload_not_after)
+        self._workload_currentness_authority = workload_currentness_authority
         self._credential_authority = credential_authority
         self.exchange_calls = 0
         self.admission_calls = 0
@@ -237,32 +276,38 @@ class BoundedVendorCredentialAdapter:
     def current_vendor_credential_generation(self) -> str:
         return self._credential_authority.current_generation
 
-    def _require_current_workload(self, principal: Principal, *, now: datetime) -> None:
-        if principal.kind is not PrincipalKind.INTERNAL_SERVICE_PRINCIPAL:
-            raise AdmissionDenied("vendor adapter requires authenticated internal service principal")
-        if principal.active is not True or principal != self.current_principal:
-            raise AdmissionDenied("vendor adapter requires current workload principal generation")
-        current = _utc(now)
-        if current < self.workload_not_before:
-            raise AdmissionDenied("vendor adapter workload SVID is not yet valid")
-        if current >= self.workload_not_after:
-            raise AdmissionDenied("vendor adapter workload SVID is expired")
-        identity = parse_workload_identity(principal.principal_id)
-        if identity.environment_class is not EnvironmentClass.VALIDATION:
-            raise AdmissionDenied("vendor adapter workload environment is outside accepted scope")
-        if identity.runtime_profile_id != API_AUTH_BOUNDARY.runtime_profile_id:
-            raise AdmissionDenied("vendor adapter workload runtime profile is outside accepted scope")
+    @property
+    def current_workload_credential_generation(self) -> str:
+        return self._workload_currentness_authority.current_workload_credential_generation
+
+    def _admit_current_workload(self, peer: VerifiedWorkloadPeer, *, now: datetime) -> Principal:
+        current_bundle_generation, current_workload_generation = (
+            self._workload_currentness_authority.snapshot()
+        )
+        principal = admit_workload_peer(
+            peer=peer,
+            expected_trust_domain=TRUST_DOMAIN,
+            expected_environment=EnvironmentClass.VALIDATION,
+            allowed_runtime_profiles=frozenset({API_AUTH_BOUNDARY.runtime_profile_id}),
+            current_trust_bundle_generation=current_bundle_generation,
+            current_workload_credential_generation=current_workload_generation,
+            current_max_certificate_lifetime=timedelta(seconds=45),
+            now=_utc(now),
+        )
+        if principal.kind is not PrincipalKind.INTERNAL_SERVICE_PRINCIPAL or principal.active is not True:
+            raise AdmissionDenied("vendor adapter requires authenticated current internal service principal")
+        return principal
 
     def exchange(
         self,
         *,
-        principal: Principal,
+        peer: VerifiedWorkloadPeer,
         requested_scope: str,
         tenant_binding: str | None,
         now: datetime,
     ) -> VendorCredentialGrant:
         self.exchange_calls += 1
-        self._require_current_workload(principal, now=now)
+        principal = self._admit_current_workload(peer, now=now)
         if tenant_binding is not None:
             raise AdmissionDenied("vendor credential cannot encode or broaden tenant authority")
         if requested_scope != ALLOWED_SCOPE:
@@ -280,15 +325,16 @@ class BoundedVendorCredentialAdapter:
         self,
         *,
         grant: VendorCredentialGrant,
-        principal: Principal,
+        peer: VerifiedWorkloadPeer,
         now: datetime,
     ) -> None:
         self.admission_calls += 1
         if not isinstance(grant, VendorCredentialGrant):
             raise AdmissionDenied("vendor credential representation is malformed")
-        # Authenticity is established before any caller-supplied metadata is trusted.
+        # Authenticity is established before any caller-supplied grant metadata is trusted.
         self._credential_authority.authenticate(grant)
-        self._require_current_workload(principal, now=now)
+        # The peer is then re-admitted against the live workload authority on every use.
+        principal = self._admit_current_workload(peer, now=now)
         if grant.source_workload_principal_id != principal.principal_id:
             raise AdmissionDenied("vendor credential source workload principal is stale or mismatched")
         if grant.source_workload_credential_generation != principal.credential_generation:
@@ -307,6 +353,17 @@ class BoundedVendorCredentialAdapter:
 
     def advance_vendor_credential_generation(self, *, expected_generation: str) -> str:
         return self._credential_authority.advance_generation(expected_generation=expected_generation)
+
+    def advance_workload_credential_generation(
+        self,
+        *,
+        expected_generation: str,
+        successor_generation: str,
+    ) -> str:
+        return self._workload_currentness_authority.advance_workload_credential_generation(
+            expected_generation=expected_generation,
+            successor_generation=successor_generation,
+        )
 
 
 def main() -> int:
@@ -355,19 +412,21 @@ def main() -> int:
         raise AssertionError("SPIRE wire adapter changed canonical workload principal")
 
     credential_authority = VendorCredentialAuthority()
+    workload_currentness_authority = WorkloadCurrentnessAuthority(
+        trust_bundle_generation=bundle_generation,
+        workload_credential_generation=workload_generation,
+    )
     adapter = BoundedVendorCredentialAdapter(
-        current_principal=principal,
-        workload_not_before=not_before,
-        workload_not_after=not_after,
+        workload_currentness_authority=workload_currentness_authority,
         credential_authority=credential_authority,
     )
     grant = adapter.exchange(
-        principal=principal,
+        peer=peer,
         requested_scope=ALLOWED_SCOPE,
         tenant_binding=None,
         now=evaluation_now,
     )
-    adapter.admit_grant(grant=grant, principal=principal, now=evaluation_now + timedelta(seconds=1))
+    adapter.admit_grant(grant=grant, peer=peer, now=evaluation_now + timedelta(seconds=1))
     if grant.state_port_scope != ALLOWED_SCOPE:
         raise AssertionError("vendor adapter broadened requested state-port capability")
     if grant.vendor_principal_id == principal.principal_id:
@@ -385,7 +444,7 @@ def main() -> int:
         "admin_scope",
         "scope exceeds exact least-privilege",
         lambda: adapter.exchange(
-            principal=principal,
+            peer=peer,
             requested_scope=FORBIDDEN_ADMIN_SCOPE,
             tenant_binding=None,
             now=evaluation_now,
@@ -395,7 +454,7 @@ def main() -> int:
         "owner_scope",
         "scope exceeds exact least-privilege",
         lambda: adapter.exchange(
-            principal=principal,
+            peer=peer,
             requested_scope=FORBIDDEN_OWNER_SCOPE,
             tenant_binding=None,
             now=evaluation_now,
@@ -405,23 +464,19 @@ def main() -> int:
         "tenant_injection",
         "cannot encode or broaden tenant authority",
         lambda: adapter.exchange(
-            principal=principal,
+            peer=peer,
             requested_scope=ALLOWED_SCOPE,
             tenant_binding="tenant-forbidden",
             now=evaluation_now,
         ),
     )
 
-    stale_principal = Principal(
-        principal_id=principal.principal_id,
-        kind=principal.kind,
-        credential_generation="stale-workload-generation",
-    )
+    stale_peer = replace(peer, workload_credential_generation="stale-workload-generation")
     _expect_denied(
         "stale_workload_generation",
-        "current workload principal generation",
+        "workload credential generation is stale",
         lambda: adapter.exchange(
-            principal=stale_principal,
+            peer=stale_peer,
             requested_scope=ALLOWED_SCOPE,
             tenant_binding=None,
             now=evaluation_now,
@@ -429,23 +484,23 @@ def main() -> int:
     )
     _expect_denied(
         "expired_workload_exchange",
-        "workload SVID is expired",
+        "workload certificate is not current",
         lambda: adapter.exchange(
-            principal=principal,
+            peer=peer,
             requested_scope=ALLOWED_SCOPE,
             tenant_binding=None,
             now=not_after,
         ),
     )
 
-    workload_generation_before_vendor_revocation = principal.credential_generation
+    workload_generation_before_vendor_revocation = adapter.current_workload_credential_generation
     successor_vendor_generation = adapter.advance_vendor_credential_generation(
         expected_generation=grant.credential_generation
     )
     if successor_vendor_generation == grant.credential_generation:
         raise AssertionError("vendor credential authority failed to advance independently")
-    if principal.credential_generation != workload_generation_before_vendor_revocation:
-        raise AssertionError("vendor credential revocation changed workload identity generation")
+    if adapter.current_workload_credential_generation != workload_generation_before_vendor_revocation:
+        raise AssertionError("vendor credential revocation changed live workload identity generation")
 
     # Caller-constructible metadata is insufficient: every security-relevant field is MACed.
     forged_current_generation = replace(
@@ -459,7 +514,7 @@ def main() -> int:
         "vendor credential authentication failed",
         lambda: adapter.admit_grant(
             grant=forged_current_generation,
-            principal=principal,
+            peer=peer,
             now=evaluation_now + timedelta(seconds=2),
         ),
     )
@@ -469,7 +524,7 @@ def main() -> int:
         "vendor credential authentication failed",
         lambda: adapter.admit_grant(
             grant=tampered_scope,
-            principal=principal,
+            peer=peer,
             now=evaluation_now + timedelta(seconds=2),
         ),
     )
@@ -482,13 +537,13 @@ def main() -> int:
         "vendor credential generation is stale",
         lambda: adapter.admit_grant(
             grant=grant,
-            principal=principal,
+            peer=peer,
             now=stale_grant_check_time,
         ),
     )
 
     successor_grant = adapter.exchange(
-        principal=principal,
+        peer=peer,
         requested_scope=ALLOWED_SCOPE,
         tenant_binding=None,
         now=evaluation_now + timedelta(seconds=3),
@@ -499,9 +554,45 @@ def main() -> int:
         raise AssertionError("successor vendor credential lost workload-generation binding")
     adapter.admit_grant(
         grant=successor_grant,
-        principal=principal,
+        peer=peer,
         now=evaluation_now + timedelta(seconds=4),
     )
+
+    # A live workload-generation rotation/revocation must invalidate the old peer immediately,
+    # even while both its X.509 validity window and the vendor grant TTL remain open.
+    live_workload_revocation_time = evaluation_now + timedelta(seconds=5)
+    if live_workload_revocation_time >= not_after:
+        raise AssertionError("live workload-generation negative control accidentally depends on SVID expiry")
+    if live_workload_revocation_time >= successor_grant.expires_at:
+        raise AssertionError("live workload-generation negative control accidentally depends on vendor TTL")
+    successor_workload_generation = "svid:post-revocation-generation"
+    adapter.advance_workload_credential_generation(
+        expected_generation=workload_generation_before_vendor_revocation,
+        successor_generation=successor_workload_generation,
+    )
+    _expect_denied(
+        "live_workload_generation_revoked_exchange",
+        "workload credential generation is stale",
+        lambda: adapter.exchange(
+            peer=peer,
+            requested_scope=ALLOWED_SCOPE,
+            tenant_binding=None,
+            now=live_workload_revocation_time,
+        ),
+    )
+    _expect_denied(
+        "live_workload_generation_revoked_grant_admission",
+        "workload credential generation is stale",
+        lambda: adapter.admit_grant(
+            grant=successor_grant,
+            peer=peer,
+            now=live_workload_revocation_time,
+        ),
+    )
+    if workload_currentness_authority.generation_advances != 1:
+        raise AssertionError("live workload currentness authority did not record exactly one generation advance")
+    if workload_currentness_authority.read_calls < 2:
+        raise AssertionError("vendor adapter did not query live workload currentness on protected operations")
 
     try:
         parse_workload_identity(successor_grant.vendor_principal_id)
@@ -520,6 +611,10 @@ def main() -> int:
         "tampered_vendor_grant_denied=true authenticated_consumption_path=true "
         "independent_vendor_generation_advanced=true stale_vendor_grant_denied_before_expiry=true "
         "current_workload_generation_unchanged=true successor_vendor_grant_admitted=true "
+        "live_workload_currentness_authority=true re_admit_verified_peer_per_operation=true "
+        "live_workload_generation_revoked_before_svid_expiry=true "
+        "live_workload_generation_revoked_exchange_denied=true "
+        "live_workload_generation_revoked_grant_denied=true "
         "independently_revocable=true short_lived=true vendor_identity_noncanonical=true "
         "issuer_key_exported=false secret_material_exported=false"
     )

@@ -4,7 +4,8 @@ on:
   pull_request:
     paths:
       - ".github/workflows/d3-e-crypto-replay-conformance.yml"
-      - "implementation/d3-identity-security/harness/crypto_replay_conformance.py"
+      - "implementation/d3-identity-security/harness/crypto_key_authority_conformance.py"
+      - "implementation/d3-identity-security/harness/replay_authority_conformance.py"
       - "implementation/d3-identity-security/state-manifest.json"
       - "tools/assurance/validate_d3_identity_security_state.py"
       - "tools/assurance/validate_d3_identity_security_state_legacy.py"
@@ -69,32 +70,24 @@ jobs:
           print('d3_e_source_manifest_boundary=PASS')
           PY
 
-      - name: Validate hardened runner structure
+      - name: Validate split authority runners
         shell: bash
         run: |
           set -euo pipefail
-          runner=implementation/d3-identity-security/harness/crypto_replay_conformance.py
-          python3 -m py_compile "$runner"
-          grep -F '"-AtqX"' "$runner" >/dev/null
-          grep -F 'expected exactly one SQL scalar' "$runner" >/dev/null
-          grep -F 'parse_pg_bool' "$runner" >/dev/null
-          grep -F 'backend generation drift requires reconciliation' "$runner" >/dev/null
-          grep -F 'historical verifier grant blocks key retirement' "$runner" >/dev/null
-          grep -F 'FOR UPDATE' "$runner" >/dev/null
-          grep -F 'ON CONFLICT DO NOTHING' "$runner" >/dev/null
-          grep -F 'soft-delete-restore' "$runner" >/dev/null
-          for marker in \
-            d3_e_historical_verifier_relocation_recovery_continuity \
-            d3_e_retired_erased_key_nonresurrection \
-            d3_e_key_generation_rotation_retirement \
-            d3_e_native_generation_drift_fail_closed \
-            d3_e_private_key_jwt_replay_atomic_single_winner \
-            d3_e_replay_partition_fail_closed \
-            d3_e_replay_consumed_identity_survives_restore_loss \
-            d3_e_provider_neutral_runtime_boundary \
-            d3_e_crypto_replay_conformance; do
-            grep -F "$marker=PASS" "$runner" >/dev/null
-          done
+          key=implementation/d3-identity-security/harness/crypto_key_authority_conformance.py
+          replay=implementation/d3-identity-security/harness/replay_authority_conformance.py
+          python3 -m py_compile "$key" "$replay"
+          grep -F 'retirement_target' "$key" >/dev/null
+          grep -F 'FOR UPDATE' "$key" >/dev/null
+          grep -F 'new_historical_grant_blocked_during_reservation=true' "$key" >/dev/null
+          grep -F 'backend generation drift requires reconciliation' "$key" >/dev/null
+          grep -F 'soft-delete-restore' "$key" >/dev/null
+          grep -F 'PRIMARY KEY(issuer,client_id,jti)' "$replay" >/dev/null
+          grep -F 'principal_not_uniqueness_dimension=true' "$replay" >/dev/null
+          grep -F 'principal_substitution_rejected=true' "$replay" >/dev/null
+          grep -F 'json_build_array(issuer,client_id,client_principal,jti)' "$replay" >/dev/null
+          grep -F 'FOR UPDATE' "$replay" >/dev/null
+          grep -F 'ON CONFLICT(issuer,client_id,jti) DO NOTHING' "$replay" >/dev/null
 
       - name: Pull immutable candidate artifacts
         shell: bash
@@ -136,42 +129,57 @@ jobs:
           test "$ready" = true || { docker logs jlmirror-d3e-openbao >&2; exit 1; }
           docker exec jlmirror-d3e-openbao bao version | grep -F 'OpenBao v2.6.2' >/dev/null
 
-      - name: Execute D3-E source conformance
+      - name: Execute key and historical-verifier authority conformance
         shell: bash
         env:
-          PG_REPLAY_CONTAINER: jlmirror-d3e-replay
           PG_CONTROL_CONTAINER: jlmirror-d3e-control
           OPENBAO_ADDR: http://127.0.0.1:8200
         run: |
           set -euo pipefail
-          log="$RUNNER_TEMP/d3-e.log"
-          python3 implementation/d3-identity-security/harness/crypto_replay_conformance.py | tee "$log"
+          log="$RUNNER_TEMP/d3-e-key.log"
+          python3 implementation/d3-identity-security/harness/crypto_key_authority_conformance.py | tee "$log"
           for marker in \
             d3_e_historical_verifier_relocation_recovery_continuity \
+            d3_e_historical_retirement_reservation \
             d3_e_retired_erased_key_nonresurrection \
             d3_e_key_generation_rotation_retirement \
             d3_e_native_generation_drift_fail_closed \
+            d3_e_provider_neutral_key_authority_runtime \
+            d3_e_crypto_key_authority_conformance; do
+            grep -F "$marker=PASS" "$log" >/dev/null
+          done
+          grep -F 'new_historical_grant_blocked_during_reservation=true' "$log" >/dev/null
+          grep -F 'native_restore_negative_control_usable=true' "$log" >/dev/null
+          grep -F 'untrusted_latest_not_promoted=true' "$log" >/dev/null
+
+      - name: Execute replay and recovery authority conformance
+        shell: bash
+        env:
+          PG_REPLAY_CONTAINER: jlmirror-d3e-replay
+          PG_CONTROL_CONTAINER: jlmirror-d3e-control
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/d3-e-replay.log"
+          python3 implementation/d3-identity-security/harness/replay_authority_conformance.py | tee "$log"
+          for marker in \
             d3_e_private_key_jwt_replay_atomic_single_winner \
             d3_e_replay_partition_fail_closed \
             d3_e_replay_consumed_identity_survives_restore_loss \
-            d3_e_provider_neutral_runtime_boundary \
-            d3_e_crypto_replay_conformance; do
+            d3_e_replay_authority_conformance; do
             grep -F "$marker=PASS" "$log" >/dev/null
           done
-          grep -F 'active_historical_grant_blocks_retirement=true' "$log" >/dev/null
-          grep -F 'native_restore_negative_control_usable=true' "$log" >/dev/null
-          grep -F 'trusted_erasure_state_roundtrip=true' "$log" >/dev/null
-          grep -F 'untrusted_latest_not_promoted=true' "$log" >/dev/null
+          grep -F 'identity_tuple_issuer_client_jti=true' "$log" >/dev/null
+          grep -F 'principal_substitution_rejected=true' "$log" >/dev/null
           grep -F 'exactly_one_winner=true' "$log" >/dev/null
           grep -F 'actual_authority_pause=true' "$log" >/dev/null
           grep -F 'consumed_identity_not_resurrected_as_unused=true' "$log" >/dev/null
-          grep -F 'c3_numerics_topology_not_selected=true' "$log" >/dev/null
 
       - name: Preserve bounded source result
         shell: bash
         run: |
-          printf 'd3_e_candidate_conformance_probe=PASS_PINNED_SOURCE_HARDENED\n'
+          printf 'd3_e_candidate_conformance_probe=PASS_PINNED_SPLIT_AUTHORITY\n'
           printf 'manifest_credit=unchanged candidate_state=candidate_selected_conformance_pending\n'
+          printf 'c3_numerics_topology=not_selected\n'
           printf 'd3=not_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
 
       - name: Cleanup

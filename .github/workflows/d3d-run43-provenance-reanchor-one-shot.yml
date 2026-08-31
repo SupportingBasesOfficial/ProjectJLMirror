@@ -7,11 +7,10 @@ on:
 
 permissions:
   contents: write
-  actions: write
 
 jobs:
   reanchor:
-    if: github.event.head_commit.message == 'assurance(D3-D): trigger exact run-43 provenance reanchor'
+    if: "${{ github.event.head_commit.message == 'assurance(D3-D): retrigger exact run-43 provenance reanchor' }}"
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

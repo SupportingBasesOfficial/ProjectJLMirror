@@ -30,7 +30,7 @@ jobs:
           persist-credentials: false
           allow-unsafe-pr-checkout: false
 
-      - name: Verify exact commit and bounded authority state
+      - name: Verify exact commit and promoted bounded authority state
         shell: bash
         run: |
           set -euo pipefail
@@ -39,13 +39,39 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-          m=json.loads(Path('implementation/d3-identity-security/state-manifest.json').read_text())
-          t={x['track_id']:x for x in m['tracks']}['D3-B']
-          assert t['state']=='candidate_selected_conformance_pending'
-          assert m['wave4_implementation_authority']=='not_granted'
-          assert m['production_authority']=='none'
-          assert m['d4_transport_authority']=='not_selected_not_granted'
-          print('d3_b_review_manifest_boundary=PASS')
+
+          m = json.loads(Path('implementation/d3-identity-security/state-manifest.json').read_text())
+          t = {x['track_id']: x for x in m['tracks']}['D3-B']
+          assert t['state'] == 'per_track_conformed'
+          assert t['evidence_remaining'] == []
+          assert set(t['evidence_completed']) == set(t['required_evidence'])
+
+          promoted = {
+              'session_authority_owner_boundaries',
+              'revocation_partial_write_safety',
+              'prepare_fence_commit_finalize_single_winner',
+              'fleet_wide_cache_exclusion_barrier',
+              'restore_failover_positive_authority_nonresurrection',
+              'degraded_owner_read_bulkhead_fail_closed',
+          }
+          proofs = {p['evidence_id']: p for p in t['evidence_proofs']}
+          pins = set(t['candidate_artifact_digests'].values())
+          for evidence_id in promoted:
+              proof = proofs[evidence_id]
+              assert proof['evidence_sha'] == 'adff4d75c6439eb74d817fb35e7297a13e27f42b'
+              assert proof['workflow_run_id'] == 33417936325
+              assert proof['workflow_run_number'] == 27
+              assert proof['workflow_file'] == '.github/workflows/d3-cache-conformance.yml'
+              assert proof['job_name'] == 'PostgreSQL 18.6 + Redis/Valkey authority continuity'
+              assert proof['probe'] == 'implementation/d3-identity-security/harness/cache_authority_conformance_integrity_entrypoint.py'
+              assert set(proof['artifact_pins']) == pins
+              assert proof['result'] == 'pass'
+
+          assert m['gate_state'] == 'candidate_evidence_running'
+          assert m['wave4_implementation_authority'] == 'not_granted'
+          assert m['production_authority'] == 'none'
+          assert m['d4_transport_authority'] == 'not_selected_not_granted'
+          print('d3_b_review_promoted_manifest_boundary=PASS')
           PY
 
       - name: Validate tuple-integrity runner structure
@@ -102,9 +128,13 @@ jobs:
           docker network create "$D3_NETWORK"
           docker run -d --rm --name jlmirror-d3-postgres-review --network "$D3_NETWORK" -e POSTGRES_PASSWORD=d3-postgres-password -e POSTGRES_DB=d3 "$POSTGRES_IMAGE"
           for _ in $(seq 1 120); do
-            docker exec jlmirror-d3-postgres-review pg_isready -U postgres -d d3 >/dev/null 2>&1 && exit 0
+            if result="$(docker exec -e PGPASSWORD=d3-postgres-password jlmirror-d3-postgres-review \
+              psql -U postgres -d d3 -Atqc 'SELECT 1' 2>/dev/null)" && test "$result" = "1"; then
+              exit 0
+            fi
             sleep 0.5
           done
+          docker logs jlmirror-d3-postgres-review >&2 || true
           exit 1
 
       - name: Exercise Redis complete-tuple integrity gate
@@ -131,7 +161,7 @@ jobs:
         shell: bash
         run: |
           printf 'd3_b_review_gate=PASS_PINNED_TUPLE_INTEGRITY\n'
-          printf 'manifest_credit=unchanged c3_numerics=not_selected\n'
+          printf 'manifest_credit=per_track_conformed c3_numerics=not_selected\n'
           printf 'd3=not_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
 
       - name: Cleanup

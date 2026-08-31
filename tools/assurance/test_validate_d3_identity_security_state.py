@@ -202,7 +202,8 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
     def test_missing_required_evidence_is_rejected(self):
         def mutate(m):
             track = pending_track(m)
-            missing = track["required_evidence"].pop()
+            missing = track["evidence_remaining"][0]
+            track["required_evidence"].remove(missing)
             track["evidence_remaining"].remove(missing)
         with self.assertRaises(AssertionError):
             validate(self._root(mutate))
@@ -223,7 +224,7 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
 
     def test_unaccounted_required_evidence_is_rejected(self):
         def mutate(m):
-            track = next(t for t in m["tracks"] if t["track_id"] == "D3-B")
+            track = pending_track(m)
             track["evidence_remaining"].pop()
         with self.assertRaises(AssertionError):
             validate(self._root(mutate))
@@ -300,6 +301,25 @@ class D3IdentitySecurityStateTests(unittest.TestCase):
             track["state"] = "per_track_conformed"
         with self.assertRaises(AssertionError):
             validate(self._root(mutate))
+
+    def test_promoted_terminal_tracks_cannot_coherently_demote(self):
+        for track_id in ("D3-A", "D3-B", "D3-C", "D3-D"):
+            with self.subTest(track_id=track_id):
+                def mutate(m, promoted_track_id=track_id):
+                    track = next(
+                        t for t in m["tracks"] if t["track_id"] == promoted_track_id
+                    )
+                    evidence_id = track["evidence_completed"].pop()
+                    track["evidence_remaining"].append(evidence_id)
+                    track["evidence_proofs"] = [
+                        proof
+                        for proof in track["evidence_proofs"]
+                        if proof["evidence_id"] != evidence_id
+                    ]
+                    track["state"] = "candidate_selected_conformance_pending"
+
+                with self.assertRaises(AssertionError):
+                    validate(self._root(mutate))
 
     def test_missing_c3_boundary_is_rejected(self):
         def mutate(m):

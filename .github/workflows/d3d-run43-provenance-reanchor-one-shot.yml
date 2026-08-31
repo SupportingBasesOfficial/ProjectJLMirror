@@ -1,16 +1,17 @@
-name: JLMIRROR D3-D One-shot Run 43 Provenance Reanchor
+name: JLMIRROR D3-D One-shot Run 43 Provenance Normalizer
 
 on:
   push:
     branches:
       - evidence/d3-d-workload-identity-c2
+    paths:
+      - .github/workflows/d3d-run43-provenance-reanchor-one-shot.yml
 
 permissions:
   contents: write
 
 jobs:
   normalize:
-    if: "${{ github.event.head_commit.message == 'assurance(D3-D): normalize exact run-43 provenance diff' }}"
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -20,49 +21,33 @@ jobs:
           ref: evidence/d3-d-workload-identity-c2
           fetch-depth: 0
 
-      - name: Normalize reanchor to exact semantic delta
+      - name: Restore baseline formatting and apply exact run 43 provenance
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import subprocess
+          base='44cd732320b98e2d28c6027f9abd17488a6cb25a'
+          manifest='implementation/d3-identity-security/state-manifest.json'
+          validator='tools/assurance/validate_d3_identity_security_state.py'
 
-          evidence_base = '44cd732320b98e2d28c6027f9abd17488a6cb25a'
+          git checkout "$base" -- "$manifest" "$validator"
 
-          manifest_path = Path('implementation/d3-identity-security/state-manifest.json')
-          manifest = subprocess.check_output(
-              ['git', 'show', f'{evidence_base}:{manifest_path.as_posix()}'], text=True
-          )
-          old_manifest = '''          "evidence_sha": "c8ac05c4bcea367949489c94dfe876605e2f4261",
-          "workflow_run_id": 33342690140,
-          "workflow_run_number": 38,'''
-          new_manifest = '''          "evidence_sha": "44cd732320b98e2d28c6027f9abd17488a6cb25a",
-          "workflow_run_id": 33344277084,
-          "workflow_run_number": 43,'''
-          if manifest.count(old_manifest) != 2:
-              raise SystemExit('refusing normalization: baseline manifest provenance cardinality drifted')
-          manifest_path.write_text(manifest.replace(old_manifest, new_manifest), encoding='utf-8')
+          test "$(grep -c 'c8ac05c4bcea367949489c94dfe876605e2f4261' "$manifest")" -eq 2
+          test "$(grep -c '33342690140' "$manifest")" -eq 2
+          test "$(grep -c '"'"'workflow_run_number'"'": 38' "$manifest")" -eq 2
+          sed -i 's/c8ac05c4bcea367949489c94dfe876605e2f4261/44cd732320b98e2d28c6027f9abd17488a6cb25a/g' "$manifest"
+          sed -i 's/33342690140/33344277084/g' "$manifest"
+          sed -i 's/"workflow_run_number": 38/"workflow_run_number": 43/g' "$manifest"
 
-          validator_path = Path('tools/assurance/validate_d3_identity_security_state.py')
-          validator = subprocess.check_output(
-              ['git', 'show', f'{evidence_base}:{validator_path.as_posix()}'], text=True
-          )
-          old_validator = '''    "evidence_sha": "c8ac05c4bcea367949489c94dfe876605e2f4261",
-    "workflow_run_id": 33342690140,
-    "workflow_run_number": 38,'''
-          new_validator = '''    "evidence_sha": "44cd732320b98e2d28c6027f9abd17488a6cb25a",
-    "workflow_run_id": 33344277084,
-    "workflow_run_number": 43,'''
-          if validator.count(old_validator) != 1:
-              raise SystemExit('refusing normalization: baseline validator provenance cardinality drifted')
-          validator_path.write_text(validator.replace(old_validator, new_validator), encoding='utf-8')
-          PY
+          test "$(grep -c 'c8ac05c4bcea367949489c94dfe876605e2f4261' "$validator")" -eq 1
+          test "$(grep -c '33342690140' "$validator")" -eq 1
+          test "$(grep -c '"'"'workflow_run_number'"'": 38' "$validator")" -eq 1
+          sed -i 's/c8ac05c4bcea367949489c94dfe876605e2f4261/44cd732320b98e2d28c6027f9abd17488a6cb25a/g' "$validator"
+          sed -i 's/33342690140/33344277084/g' "$validator"
+          sed -i 's/"workflow_run_number": 38/"workflow_run_number": 43/g' "$validator"
 
           python3 tools/assurance/validate_d3_identity_security_state.py .
           python3 tools/assurance/test_d3d_completion_provenance.py
           git diff --check
-          git diff --exit-code -- .github/workflows/d3d-run43-provenance-reanchor-one-shot.yml
 
       - name: Commit minimal normalized provenance delta
         shell: bash

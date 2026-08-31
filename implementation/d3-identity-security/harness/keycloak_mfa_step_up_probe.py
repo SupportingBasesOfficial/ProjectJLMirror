@@ -235,9 +235,13 @@ def _expect_keycloak_form(opener, response, form_id: str) -> tuple[str, dict[str
 
 
 def _totp(secret: str, *, now: int | None = None) -> str:
-    compact = "".join(secret.split()).upper()
-    padding = "=" * ((8 - len(compact) % 8) % 8)
-    key = base64.b32decode(compact + padding, casefold=True)
+    # Keycloak's hidden `totpSecret` is the raw secret string. The Base32 form
+    # shown to authenticator apps is derived separately by TotpUtils.encode().
+    # OTPCredentialModel.createFromPolicy stores the raw value without a
+    # secretEncoding marker, so validation uses its UTF-8 bytes as the HMAC key.
+    if not isinstance(secret, str) or not secret or len(secret.encode("utf-8")) > 128:
+        raise AssertionError("Keycloak TOTP raw secret is outside bounded evidence profile")
+    key = secret.encode("utf-8")
     timestamp = int(time.time() if now is None else now)
     counter = timestamp // 30
     digest = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()

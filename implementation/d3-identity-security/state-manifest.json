@@ -69,9 +69,9 @@
         },
         {
           "evidence_id": "acr_amr_mfa_step_up_context",
-          "evidence_sha": "6ac93883164fa05e36d51c0992b1b80aeb147782",
-          "workflow_run_id": 33379286586,
-          "workflow_run_number": 26,
+          "evidence_sha": "f7b0faa2b5745b1261c6b43523c7ae8ad3750d36",
+          "workflow_run_id": 33389775478,
+          "workflow_run_number": 31,
           "workflow_file": ".github/workflows/d3-keycloak-conformance.yml",
           "job_name": "Keycloak 26.7.2 MFA + authority effects",
           "probe": "implementation/d3-identity-security/harness/keycloak_mfa_single_use_runner.py",
@@ -82,12 +82,12 @@
         },
         {
           "evidence_id": "backchannel_logout_authenticity_replay_profile",
-          "evidence_sha": "6ac93883164fa05e36d51c0992b1b80aeb147782",
-          "workflow_run_id": 33379286586,
-          "workflow_run_number": 26,
+          "evidence_sha": "f7b0faa2b5745b1261c6b43523c7ae8ad3750d36",
+          "workflow_run_id": 33389775478,
+          "workflow_run_number": 31,
           "workflow_file": ".github/workflows/d3-keycloak-conformance.yml",
           "job_name": "Keycloak 26.7.2 MFA + authority effects",
-          "probe": "implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py",
+          "probe": "implementation/d3-identity-security/harness/keycloak_callback_currentness_drain_runner.py",
           "artifact_pins": [
             "quay.io/keycloak/keycloak@sha256:831330513f55695572286e521f94fcd3c7e285250ed5b848090265a33192f669"
           ],
@@ -95,12 +95,12 @@
         },
         {
           "evidence_id": "provider_sid_sub_mapping_non_authority",
-          "evidence_sha": "6ac93883164fa05e36d51c0992b1b80aeb147782",
-          "workflow_run_id": 33379286586,
-          "workflow_run_number": 26,
+          "evidence_sha": "f7b0faa2b5745b1261c6b43523c7ae8ad3750d36",
+          "workflow_run_id": 33389775478,
+          "workflow_run_number": 31,
           "workflow_file": ".github/workflows/d3-keycloak-conformance.yml",
           "job_name": "Keycloak 26.7.2 MFA + authority effects",
-          "probe": "implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py",
+          "probe": "implementation/d3-identity-security/harness/keycloak_callback_currentness_drain_runner.py",
           "artifact_pins": [
             "quay.io/keycloak/keycloak@sha256:831330513f55695572286e521f94fcd3c7e285250ed5b848090265a33192f669"
           ],
@@ -108,12 +108,12 @@
         },
         {
           "evidence_id": "principal_wide_logout_generation_fence",
-          "evidence_sha": "6ac93883164fa05e36d51c0992b1b80aeb147782",
-          "workflow_run_id": 33379286586,
-          "workflow_run_number": 26,
+          "evidence_sha": "f7b0faa2b5745b1261c6b43523c7ae8ad3750d36",
+          "workflow_run_id": 33389775478,
+          "workflow_run_number": 31,
           "workflow_file": ".github/workflows/d3-keycloak-conformance.yml",
           "job_name": "Keycloak 26.7.2 MFA + authority effects",
-          "probe": "implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py",
+          "probe": "implementation/d3-identity-security/harness/keycloak_callback_currentness_drain_runner.py",
           "artifact_pins": [
             "quay.io/keycloak/keycloak@sha256:831330513f55695572286e521f94fcd3c7e285250ed5b848090265a33192f669"
           ],
@@ -121,12 +121,12 @@
         },
         {
           "evidence_id": "idp_outage_currentness_join",
-          "evidence_sha": "6ac93883164fa05e36d51c0992b1b80aeb147782",
-          "workflow_run_id": 33379286586,
-          "workflow_run_number": 26,
+          "evidence_sha": "f7b0faa2b5745b1261c6b43523c7ae8ad3750d36",
+          "workflow_run_id": 33389775478,
+          "workflow_run_number": 31,
           "workflow_file": ".github/workflows/d3-keycloak-conformance.yml",
           "job_name": "Keycloak 26.7.2 MFA + authority effects",
-          "probe": "implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py",
+          "probe": "implementation/d3-identity-security/harness/keycloak_callback_currentness_drain_runner.py",
           "artifact_pins": [
             "quay.io/keycloak/keycloak@sha256:831330513f55695572286e521f94fcd3c7e285250ed5b848090265a33192f669"
           ],
@@ -134,12 +134,12 @@
         },
         {
           "evidence_id": "idp_native_roles_groups_organizations_non_authority",
-          "evidence_sha": "6ac93883164fa05e36d51c0992b1b80aeb147782",
-          "workflow_run_id": 33379286586,
-          "workflow_run_number": 26,
+          "evidence_sha": "f7b0faa2b5745b1261c6b43523c7ae8ad3750d36",
+          "workflow_run_id": 33389775478,
+          "workflow_run_number": 31,
           "workflow_file": ".github/workflows/d3-keycloak-conformance.yml",
           "job_name": "Keycloak 26.7.2 MFA + authority effects",
-          "probe": "implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py",
+          "probe": "implementation/d3-identity-security/harness/keycloak_callback_currentness_drain_runner.py",
           "artifact_pins": [
             "quay.io/keycloak/keycloak@sha256:831330513f55695572286e521f94fcd3c7e285250ed5b848090265a33192f669"
           ],

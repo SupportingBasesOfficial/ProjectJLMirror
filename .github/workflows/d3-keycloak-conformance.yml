@@ -56,7 +56,8 @@ jobs:
             implementation/d3-identity-security/harness/keycloak_mfa_single_use_runner.py \
             implementation/d3-identity-security/harness/keycloak_authority_effects_probe.py \
             implementation/d3-identity-security/harness/keycloak_authority_single_winner_runner.py \
-            implementation/d3-identity-security/harness/keycloak_authority_continuity_runner.py
+            implementation/d3-identity-security/harness/keycloak_authority_continuity_runner.py \
+            implementation/d3-identity-security/harness/keycloak_authority_upgrade_guard_runner.py
           grep -F 'd3_keycloak_mfa_step_up=PASS' \
             implementation/d3-identity-security/harness/keycloak_mfa_step_up_probe.py >/dev/null
           grep -F 'd3_keycloak_totp_single_use_freshness=PASS' \
@@ -71,6 +72,10 @@ jobs:
             implementation/d3-identity-security/harness/keycloak_authority_continuity_runner.py >/dev/null
           grep -F 'd3_keycloak_recovery_continuity=PASS' \
             implementation/d3-identity-security/harness/keycloak_authority_continuity_runner.py >/dev/null
+          grep -F 'd3_keycloak_legacy_nonterminal_upgrade=PASS' \
+            implementation/d3-identity-security/harness/keycloak_authority_upgrade_guard_runner.py >/dev/null
+          grep -F 'd3_keycloak_authority_upgrade_guard=PASS' \
+            implementation/d3-identity-security/harness/keycloak_authority_upgrade_guard_runner.py >/dev/null
 
       - name: Guard Keycloak provider state from platform authorization source
         shell: bash
@@ -220,7 +225,7 @@ jobs:
 
       - name: Exercise back-channel authority and recovery continuity
         shell: bash
-        run: python3 implementation/d3-identity-security/harness/keycloak_authority_continuity_runner.py
+        run: python3 implementation/d3-identity-security/harness/keycloak_authority_upgrade_guard_runner.py
 
       - name: Record evidence-only boundary
         if: success()

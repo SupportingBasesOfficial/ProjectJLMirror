@@ -58,7 +58,8 @@ jobs:
             implementation/d3-identity-security/harness/keycloak_authority_single_winner_runner.py \
             implementation/d3-identity-security/harness/keycloak_authority_continuity_runner.py \
             implementation/d3-identity-security/harness/keycloak_authority_upgrade_guard_runner.py \
-            implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py
+            implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py \
+            implementation/d3-identity-security/harness/keycloak_callback_autonomous_drain_runner.py
           grep -F 'd3_keycloak_mfa_step_up=PASS' \
             implementation/d3-identity-security/harness/keycloak_mfa_step_up_probe.py >/dev/null
           grep -F 'd3_keycloak_totp_single_use_freshness=PASS' \
@@ -85,6 +86,10 @@ jobs:
             implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py >/dev/null
           grep -F 'd3_keycloak_callback_ingress=PASS' \
             implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py >/dev/null
+          grep -F 'd3_keycloak_callback_autonomous_drain=PASS' \
+            implementation/d3-identity-security/harness/keycloak_callback_autonomous_drain_runner.py >/dev/null
+          grep -F 'd3_keycloak_callback_recovery_gate=PASS' \
+            implementation/d3-identity-security/harness/keycloak_callback_autonomous_drain_runner.py >/dev/null
 
       - name: Guard Keycloak provider state from platform authorization source
         shell: bash
@@ -232,9 +237,9 @@ jobs:
         shell: bash
         run: python3 implementation/d3-identity-security/harness/keycloak_mfa_single_use_runner.py
 
-      - name: Exercise back-channel durable ingress, authority, and recovery continuity
+      - name: Exercise autonomous callback recovery, durable ingress, authority, and continuity
         shell: bash
-        run: python3 implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py
+        run: python3 implementation/d3-identity-security/harness/keycloak_callback_autonomous_drain_runner.py
 
       - name: Record evidence-only boundary
         if: success()

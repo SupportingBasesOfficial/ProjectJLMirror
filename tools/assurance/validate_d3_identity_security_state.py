@@ -62,8 +62,11 @@ for _evidence_id, _probe in D3A_PROBES.items():
         raise RuntimeError(f"missing governed D3-A proof slot: {_evidence_id}")
     legacy.APPROVED_EVIDENCE_PROOFS[_key] = _promoted_proof(_evidence_id, _probe)
 
-# Re-export the governed interface used by the falsification suite.
+# Re-export the governed validator contract consumed by the falsification and
+# terminal-provenance suites. Keeping these aliases explicit prevents this
+# provenance wrapper from silently becoming a second validator implementation.
 APPROVED_EVIDENCE_PROOFS = legacy.APPROVED_EVIDENCE_PROOFS
+REQUIRED_EVIDENCE = legacy.REQUIRED_EVIDENCE
 GATE_DOC = legacy.GATE_DOC
 MANIFEST = legacy.MANIFEST
 validate = legacy.validate

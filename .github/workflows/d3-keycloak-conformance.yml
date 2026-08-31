@@ -74,6 +74,8 @@ jobs:
             implementation/d3-identity-security/harness/keycloak_authority_continuity_runner.py >/dev/null
           grep -F 'd3_keycloak_legacy_nonterminal_upgrade=PASS' \
             implementation/d3-identity-security/harness/keycloak_authority_upgrade_guard_runner.py >/dev/null
+          grep -F 'd3_keycloak_legacy_writer_cutover=PASS' \
+            implementation/d3-identity-security/harness/keycloak_authority_upgrade_guard_runner.py >/dev/null
           grep -F 'd3_keycloak_authority_upgrade_guard=PASS' \
             implementation/d3-identity-security/harness/keycloak_authority_upgrade_guard_runner.py >/dev/null
 

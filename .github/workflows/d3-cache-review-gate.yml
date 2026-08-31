@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   review-gate:
-    name: Permit + lease capability + scope + issuance integrity
+    name: Permit + lease + complete tuple integrity
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -48,7 +48,7 @@ jobs:
           print('d3_b_review_manifest_boundary=PASS')
           PY
 
-      - name: Validate integrity runner structure
+      - name: Validate tuple-integrity runner structure
         shell: bash
         run: |
           set -euo pipefail
@@ -68,12 +68,18 @@ jobs:
           for marker in d3_b_lease_object_capability d3_b_lease_scope_binding d3_b_durable_lease_issuance_identity d3_b_replica_incarnation_ownership d3_b_session_cache_conformance_integrity; do
             grep -F "$marker=PASS" "$integrity" >/dev/null
           done
+          for marker in d3_b_composed_tuple_binding d3_b_integrity_entrypoint; do
+            grep -F "$marker=PASS" "$entry" >/dev/null
+          done
           grep -F '_ACTIVE_LEASE_OBJECT.get(key) is not lease' "$integrity" >/dev/null
           grep -F 'lease_instance' "$integrity" >/dev/null
           grep -F 'lease.scope_key == core.scope_key(owner, resource_id)' "$integrity" >/dev/null
           grep -F 'stale_retirement_token_noop=true' "$integrity" >/dev/null
           grep -F 'live_replica_id_not_stealable=true' "$integrity" >/dev/null
-          grep -F 'final.fill_composed_positive = fill_composed_positive' "$entry" >/dev/null
+          grep -F 'positive:composed:v2:' "$entry" >/dev/null
+          grep -F "'session_id','membership_id','authz_id','platform_id'" "$entry" >/dev/null
+          grep -F 'same_generation_alternate_tuple_denied=true' "$entry" >/dev/null
+          grep -F 'misrouted_positive_denied=true' "$entry" >/dev/null
           grep -F '_ISSUED_PERMITS.get(id(permit)) is not permit' "$review" >/dev/null
           grep -F 'durable_retired_ack_after_drain=true' "$review" >/dev/null
           grep -F 'readmission_rotates_epoch_again=true' "$review" >/dev/null
@@ -101,7 +107,7 @@ jobs:
           done
           exit 1
 
-      - name: Exercise Redis integrity gate
+      - name: Exercise Redis complete-tuple integrity gate
         shell: bash
         run: |
           set -euo pipefail
@@ -113,7 +119,7 @@ jobs:
         shell: bash
         run: docker rm -f jlmirror-d3-redis-review jlmirror-d3-redis-8-10-0-standby jlmirror-d3-redis-8-10-0-restore >/dev/null 2>&1 || true
 
-      - name: Exercise Valkey integrity gate
+      - name: Exercise Valkey complete-tuple integrity gate
         shell: bash
         run: |
           set -euo pipefail
@@ -124,7 +130,7 @@ jobs:
         if: success()
         shell: bash
         run: |
-          printf 'd3_b_review_gate=PASS_PINNED_INTEGRITY\n'
+          printf 'd3_b_review_gate=PASS_PINNED_TUPLE_INTEGRITY\n'
           printf 'manifest_credit=unchanged c3_numerics=not_selected\n'
           printf 'd3=not_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
 

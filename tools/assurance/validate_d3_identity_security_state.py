@@ -249,9 +249,9 @@ _D3D_SPIRE_COMPLETION_RUN_COMMON = {
     "result": "pass",
 }
 _D3D_SPIRE_STRENGTHENED_BOUNDARY_PROOF_COMMON = {
-    "evidence_sha": "c8ac05c4bcea367949489c94dfe876605e2f4261",
-    "workflow_run_id": 33342690140,
-    "workflow_run_number": 38,
+    "evidence_sha": "44cd732320b98e2d28c6027f9abd17488a6cb25a",
+    "workflow_run_id": 33344277084,
+    "workflow_run_number": 43,
     "workflow_file": ".github/workflows/d3-spire-candidate-evaluation.yml",
     "job_name": "SPIRE 1.15.3 bounded workload-identity evaluation",
     "artifact_pins": [SPIRE_1_15_3_ARTIFACT],

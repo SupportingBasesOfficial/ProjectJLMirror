@@ -67,24 +67,23 @@ jobs:
               'short_lived_rotation_retired_bundle_rejection',
               'cross_environment_rejection',
               'workload_identity_non_tenant_authority',
-          }
-          expected_remaining = {
               'private_key_non_exportability_profile',
               'issuer_restore_retired_authority_nonresurrection',
               'vendor_credential_adapter_least_privilege',
           }
+          expected_remaining = set()
           assert d3d['candidate'] == 'spire_1_15_3'
           assert d3d['candidate_artifact_digest'] == os.environ['SPIRE_ARTIFACT_PIN']
-          assert d3d['state'] == 'candidate_selected_conformance_pending'
+          assert d3d['state'] == 'per_track_conformed'
           assert set(d3d['evidence_completed']) == expected_completed
           assert set(d3d['evidence_remaining']) == expected_remaining
-          assert len(d3d['evidence_proofs']) == 5
+          assert len(d3d['evidence_proofs']) == 8
           assert state['gate_state'] == 'candidate_evidence_running'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['d4_transport_authority'] == 'not_selected_not_granted'
-          print('d3_d_candidate_state=PINNED_PARTIAL_EVIDENCE completed=5 remaining=3 auto_credit=false')
+          print('d3_d_candidate_state=PINNED_CONFORMED_EVIDENCE completed=8 remaining=0 auto_credit=false')
           PY
 
       - name: Validate candidate probe structure
@@ -94,7 +93,10 @@ jobs:
           bash -n implementation/d3-identity-security/harness/spire_candidate_probe.sh
           bash -n implementation/d3-identity-security/harness/spire_rotation_probe.sh
           bash -n implementation/d3-identity-security/harness/spire_private_key_profile_probe.sh
-          python3 -m py_compile implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py
+          python3 -m py_compile \
+            implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py \
+            implementation/d3-identity-security/harness/spire_restore_nonresurrection_probe.py \
+            implementation/d3-identity-security/harness/spire_vendor_credential_adapter_probe.py
           grep -F 'conformance_claim=exploratory_only' implementation/d3-identity-security/harness/spire_candidate_probe.sh >/dev/null
           grep -F 'evidence_credited=false' implementation/d3-identity-security/harness/spire_candidate_probe.sh >/dev/null
           grep -F 'rotation_retired_bundle=PASS' implementation/d3-identity-security/harness/spire_rotation_probe.sh >/dev/null
@@ -103,12 +105,18 @@ jobs:
           grep -F 'evidence_credited=false' implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py >/dev/null
           grep -F 'private_key_non_exportability_profile=PASS' implementation/d3-identity-security/harness/spire_private_key_profile_probe.sh >/dev/null
           grep -F 'evidence_credited=false' implementation/d3-identity-security/harness/spire_private_key_profile_probe.sh >/dev/null
+          grep -F 'issuer_restore_retired_authority_nonresurrection=PASS' implementation/d3-identity-security/harness/spire_restore_nonresurrection_probe.py >/dev/null
+          grep -F 'evidence_credited=false' implementation/d3-identity-security/harness/spire_restore_nonresurrection_probe.py >/dev/null
+          grep -F 'vendor_credential_adapter_least_privilege=PASS' implementation/d3-identity-security/harness/spire_vendor_credential_adapter_probe.py >/dev/null
+          grep -F 'evidence_credited=false' implementation/d3-identity-security/harness/spire_vendor_credential_adapter_probe.py >/dev/null
           if grep -F 'conformance_claim=complete' \
               implementation/d3-identity-security/harness/spire_candidate_probe.sh \
               implementation/d3-identity-security/harness/spire_rotation_probe.sh \
               implementation/d3-identity-security/harness/spire_private_key_profile_probe.sh \
-              implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py >/dev/null; then
-            echo 'SPIRE candidate evaluation attempted to claim complete D3-D conformance' >&2
+              implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py \
+              implementation/d3-identity-security/harness/spire_restore_nonresurrection_probe.py \
+              implementation/d3-identity-security/harness/spire_vendor_credential_adapter_probe.py >/dev/null; then
+            echo 'SPIRE evidence probe attempted to grant D3-D conformance directly' >&2
             exit 1
           fi
 
@@ -154,6 +162,14 @@ jobs:
           set -euo pipefail
           PYTHONPATH=src python3 implementation/d3-identity-security/harness/spire_non_tenant_authority_probe.py
 
+      - name: Exercise least-privilege vendor credential adapter boundary
+        shell: bash
+        env:
+          SPIRE_EVIDENCE_DIR: ${{ runner.temp }}/jlmirror-d3-spire/output
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src python3 implementation/d3-identity-security/harness/spire_vendor_credential_adapter_probe.py
+
       - name: Exercise non-exporting agent SVID signer boundary
         shell: bash
         env:
@@ -176,19 +192,30 @@ jobs:
           SPIRE_VERSION="$SPIRE_VERSION" \
             bash implementation/d3-identity-security/harness/spire_rotation_probe.sh
 
-      - name: Preserve partial-conformance and non-authority boundary
+      - name: Prove restored SPIRE authority cannot resurrect retired authority
+        shell: bash
+        env:
+          SPIRE_ROOT: ${{ steps.candidate.outputs.spire_root }}
+          SPIRE_ROTATION_EVIDENCE_DIR: ${{ runner.temp }}/jlmirror-d3-spire-rotation
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src python3 implementation/d3-identity-security/harness/spire_restore_nonresurrection_probe.py
+
+      - name: Preserve conformed D3-D ledger and non-authority boundary
         if: success()
         shell: bash
         run: |
           set -euo pipefail
-          printf 'd3_d_spire_1_15_3_candidate=PASS_PINNED_CANDIDATE_EVIDENCE\n'
+          printf 'd3_d_spire_1_15_3_candidate=PASS_PINNED_CONFORMED_EVIDENCE\n'
           printf 'candidate_artifact_pin=%s\n' "$SPIRE_ARTIFACT_PIN"
-          printf 'canonical_candidate_promoted=true ledger_evidence_credited=5 current_run_auto_credit=false d3_d_conformed=false\n'
+          printf 'canonical_candidate_promoted=true ledger_evidence_credited=8 current_run_auto_credit=false d3_d_conformed=true\n'
           printf 'rotation_evidence_provenance=run_12_pinned current_run_ledger_change=false\n'
           printf 'non_tenant_authority_evidence_provenance=run_15_pinned current_run_ledger_change=false\n'
-          printf 'new_private_key_profile_probe=PASS_EXPLORATORY_ONLY ledger_change=false\n'
-          printf 'remaining_evidence=private_key_non_exportability_profile,issuer_restore_retired_authority_nonresurrection,vendor_credential_adapter_least_privilege\n'
-          printf 'wave4=not_granted production=none d4=not_selected_not_granted\n'
+          printf 'private_key_profile_evidence_provenance=run_24_pinned current_run_ledger_change=false\n'
+          printf 'restore_nonresurrection_evidence_provenance=run_52_pinned current_run_ledger_change=false\n'
+          printf 'vendor_credential_adapter_evidence_provenance=run_52_pinned current_run_ledger_change=false\n'
+          printf 'remaining_evidence=none\n'
+          printf 'd3_gate=candidate_evidence_running wave4=not_granted production=none d4=not_selected_not_granted\n'
 
       - name: Capture SPIRE candidate logs on failure
         if: failure()
@@ -199,7 +226,8 @@ jobs:
               "$RUNNER_TEMP"/jlmirror-d3-spire/*.log \
               "$RUNNER_TEMP"/jlmirror-d3-spire-key-profile/*.log \
               "$RUNNER_TEMP"/jlmirror-d3-spire-key-profile/run/*.log \
-              "$RUNNER_TEMP"/jlmirror-d3-spire-rotation/*.log; do
+              "$RUNNER_TEMP"/jlmirror-d3-spire-rotation/*.log \
+              "$RUNNER_TEMP"/jlmirror-d3-spire-rotation/actual-provider-restore/*.log; do
             test -f "$log" || continue
             printf '\n===== %s =====\n' "$log"
             tail -n 250 "$log"

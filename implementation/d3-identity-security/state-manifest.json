@@ -13,7 +13,10 @@
     {
       "track_id": "D3-A",
       "name": "human_idp",
-      "source_decisions": ["IR-D-001-keycloak-idp", "IR-D-001"],
+      "source_decisions": [
+        "IR-D-001-keycloak-idp",
+        "IR-D-001"
+      ],
       "candidate": "keycloak_26_7_2",
       "candidate_image_digest": "quay.io/keycloak/keycloak@sha256:831330513f55695572286e521f94fcd3c7e285250ed5b848090265a33192f669",
       "required_evidence": [
@@ -72,7 +75,11 @@
     {
       "track_id": "D3-B",
       "name": "bff_session_security_cache",
-      "source_decisions": ["OPEN-REL-031.A", "OPEN-REL-015", "OPEN-REL-008.A:security-session-profile-only"],
+      "source_decisions": [
+        "OPEN-REL-031.A",
+        "OPEN-REL-015",
+        "OPEN-REL-008.A:security-session-profile-only"
+      ],
       "candidate": "postgresql_18_6_session_sor_plus_redis_compatible_security_cache",
       "portability_control": "valkey_9_1",
       "candidate_artifact_digests": {
@@ -191,7 +198,9 @@
     {
       "track_id": "D3-C",
       "name": "browser_csrf_key_rotation",
-      "source_decisions": ["OPEN-API-002"],
+      "source_decisions": [
+        "OPEN-API-002"
+      ],
       "candidate": "hmac_sha256_double_submit_versioned_keyring",
       "required_evidence": [
         "token_session_lineage_binding",
@@ -323,7 +332,10 @@
     {
       "track_id": "D3-D",
       "name": "workload_identity_issuer_attestation",
-      "source_decisions": ["OPEN-PRT-008.B", "IR-D-002"],
+      "source_decisions": [
+        "OPEN-PRT-008.B",
+        "IR-D-002"
+      ],
       "candidate": "spire_1_15_3",
       "candidate_artifact_digest": "spire-1.15.3-linux-amd64-musl.tar.gz@sha256:ca1a4d1155317bdd2afc7f36663828a10410c7c840e54725b90b4064b0a301c7",
       "required_evidence": [
@@ -341,13 +353,12 @@
         "trust_domain_environment_runtime_binding",
         "short_lived_rotation_retired_bundle_rejection",
         "cross_environment_rejection",
-        "workload_identity_non_tenant_authority"
-      ],
-      "evidence_remaining": [
+        "workload_identity_non_tenant_authority",
         "private_key_non_exportability_profile",
         "issuer_restore_retired_authority_nonresurrection",
         "vendor_credential_adapter_least_privilege"
       ],
+      "evidence_remaining": [],
       "evidence_proofs": [
         {
           "evidence_id": "runtime_attestation_not_caller_identity",
@@ -413,15 +424,58 @@
             "spire-1.15.3-linux-amd64-musl.tar.gz@sha256:ca1a4d1155317bdd2afc7f36663828a10410c7c840e54725b90b4064b0a301c7"
           ],
           "result": "pass"
+        },
+        {
+          "evidence_id": "private_key_non_exportability_profile",
+          "evidence_sha": "972b7e214fa6214e92fe354df0078ebbb57979ba",
+          "workflow_run_id": 33341227074,
+          "workflow_run_number": 24,
+          "workflow_file": ".github/workflows/d3-spire-candidate-evaluation.yml",
+          "job_name": "SPIRE 1.15.3 bounded workload-identity evaluation",
+          "probe": "implementation/d3-identity-security/harness/spire_private_key_profile_probe.sh",
+          "artifact_pins": [
+            "spire-1.15.3-linux-amd64-musl.tar.gz@sha256:ca1a4d1155317bdd2afc7f36663828a10410c7c840e54725b90b4064b0a301c7"
+          ],
+          "result": "pass"
+        },
+        {
+          "evidence_id": "issuer_restore_retired_authority_nonresurrection",
+          "evidence_sha": "99575c7bbe8c2614d2f7f15025aa95aa89c34722",
+          "workflow_run_id": 33345673482,
+          "workflow_run_number": 52,
+          "workflow_file": ".github/workflows/d3-spire-candidate-evaluation.yml",
+          "job_name": "SPIRE 1.15.3 bounded workload-identity evaluation",
+          "probe": "implementation/d3-identity-security/harness/spire_restore_nonresurrection_probe.py",
+          "artifact_pins": [
+            "spire-1.15.3-linux-amd64-musl.tar.gz@sha256:ca1a4d1155317bdd2afc7f36663828a10410c7c840e54725b90b4064b0a301c7"
+          ],
+          "result": "pass"
+        },
+        {
+          "evidence_id": "vendor_credential_adapter_least_privilege",
+          "evidence_sha": "99575c7bbe8c2614d2f7f15025aa95aa89c34722",
+          "workflow_run_id": 33345673482,
+          "workflow_run_number": 52,
+          "workflow_file": ".github/workflows/d3-spire-candidate-evaluation.yml",
+          "job_name": "SPIRE 1.15.3 bounded workload-identity evaluation",
+          "probe": "implementation/d3-identity-security/harness/spire_vendor_credential_adapter_probe.py",
+          "artifact_pins": [
+            "spire-1.15.3-linux-amd64-musl.tar.gz@sha256:ca1a4d1155317bdd2afc7f36663828a10410c7c840e54725b90b4064b0a301c7"
+          ],
+          "result": "pass"
         }
       ],
-      "state": "candidate_selected_conformance_pending",
+      "state": "per_track_conformed",
       "required_before_d3_acceptance": true
     },
     {
       "track_id": "D3-E",
       "name": "cryptographic_replay_historical_verifier_authority",
-      "source_decisions": ["OPEN-REL-016.A", "IR-D-001:private_key_jwt_replay", "OPEN-EVT-011:cryptographic_comparison_authority_only"],
+      "source_decisions": [
+        "OPEN-REL-016.A",
+        "IR-D-001:private_key_jwt_replay",
+        "OPEN-EVT-011:cryptographic_comparison_authority_only"
+      ],
       "candidate": "openbao_2_6_2_transit_behind_provider_neutral_key_authority_port",
       "required_evidence": [
         "tenant_scope_domain_separation",

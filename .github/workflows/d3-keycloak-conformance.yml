@@ -53,9 +53,12 @@ jobs:
           set -euo pipefail
           python3 -m py_compile \
             implementation/d3-identity-security/harness/keycloak_mfa_step_up_probe.py \
+            implementation/d3-identity-security/harness/keycloak_mfa_single_use_runner.py \
             implementation/d3-identity-security/harness/keycloak_authority_effects_probe.py
           grep -F 'd3_keycloak_mfa_step_up=PASS' \
             implementation/d3-identity-security/harness/keycloak_mfa_step_up_probe.py >/dev/null
+          grep -F 'd3_keycloak_totp_single_use_freshness=PASS' \
+            implementation/d3-identity-security/harness/keycloak_mfa_single_use_runner.py >/dev/null
           grep -F 'd3_keycloak_authority_effects=PASS' \
             implementation/d3-identity-security/harness/keycloak_authority_effects_probe.py >/dev/null
 
@@ -203,7 +206,7 @@ jobs:
 
       - name: Exercise real Keycloak MFA and step-up context
         shell: bash
-        run: python3 implementation/d3-identity-security/harness/keycloak_mfa_step_up_probe.py
+        run: python3 implementation/d3-identity-security/harness/keycloak_mfa_single_use_runner.py
 
       - name: Exercise back-channel authority and non-authority effects
         shell: bash

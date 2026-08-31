@@ -72,8 +72,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          probe=implementation/d3-identity-security/harness/cache_authority_conformance_gate_runner.py
-          python3 -m py_compile "$probe"
+          core=implementation/d3-identity-security/harness/cache_authority_conformance_gate_runner.py
+          entrypoint=implementation/d3-identity-security/harness/cache_authority_conformance_final_runner.py
+          python3 -m py_compile "$core" "$entrypoint"
           for marker in \
             d3_b_session_authority_owner_boundaries \
             d3_b_revocation_partial_write_safety \
@@ -86,15 +87,19 @@ jobs:
             d3_b_degraded_owner_read_bulkhead_fail_closed \
             d3_b_cross_owner_transition_isolation \
             d3_b_session_cache_conformance_gate; do
-            grep -F "$marker=PASS" "$probe" >/dev/null
+            grep -F "$marker=PASS" "$core" >/dev/null
           done
-          grep -F 'class CommitPermit' "$probe" >/dev/null
-          grep -F 'preterminal_scope_release_impossible=true' "$probe" >/dev/null
-          grep -F 'reconciliation_requires_exact_non_authorizing_cache_state=true' "$probe" >/dev/null
-          grep -F 'REPLICAOF' "$probe" >/dev/null
-          grep -F '"pause", PG_CONTAINER' "$probe" >/dev/null
-          grep -F 'threading.Barrier' "$probe" >/dev/null
-          if grep -Eq 'wave4.*granted|production_authority.*granted|d4_transport_authority.*granted' "$probe"; then
+          grep -F 'd3_b_lease_identity_rotation=PASS' "$entrypoint" >/dev/null
+          grep -F 'd3_b_session_cache_conformance_final=PASS' "$entrypoint" >/dev/null
+          grep -F 'class CommitPermit' "$core" >/dev/null
+          grep -F 'preterminal_scope_release_impossible=true' "$core" >/dev/null
+          grep -F 'reconciliation_requires_exact_non_authorizing_cache_state=true' "$core" >/dev/null
+          grep -F '_ACTIVE_LOCAL_LEASE' "$entrypoint" >/dev/null
+          grep -F 'predecessor_raw_negative_control_allow=true' "$entrypoint" >/dev/null
+          grep -F 'REPLICAOF' "$core" >/dev/null
+          grep -F '"pause", PG_CONTAINER' "$core" >/dev/null
+          grep -F 'threading.Barrier' "$core" >/dev/null
+          if grep -Eq 'wave4.*granted|production_authority.*granted|d4_transport_authority.*granted' "$core" "$entrypoint"; then
             echo 'D3-B evidence harness attempted to grant downstream authority' >&2
             exit 1
           fi
@@ -151,7 +156,7 @@ jobs:
           CACHE_IMAGE="$REDIS_IMAGE" \
           CACHE_SERVER=redis-server \
           DOCKER_NETWORK="$D3_NETWORK" \
-            python3 implementation/d3-identity-security/harness/cache_authority_conformance_gate_runner.py
+            python3 implementation/d3-identity-security/harness/cache_authority_conformance_final_runner.py
 
       - name: Retire Redis evidence containers before substitution control
         if: always()
@@ -178,14 +183,14 @@ jobs:
           CACHE_IMAGE="$VALKEY_IMAGE" \
           CACHE_SERVER=valkey-server \
           DOCKER_NETWORK="$D3_NETWORK" \
-            python3 implementation/d3-identity-security/harness/cache_authority_conformance_gate_runner.py
+            python3 implementation/d3-identity-security/harness/cache_authority_conformance_final_runner.py
 
       - name: Preserve bounded D3-B evidence boundary
         if: success()
         shell: bash
         run: |
           set -euo pipefail
-          printf 'd3_b_candidate_conformance_probe=PASS_PINNED_SERIALIZED_GATE\n'
+          printf 'd3_b_candidate_conformance_probe=PASS_PINNED_FINAL\n'
           printf 'postgres_digest=%s\n' "$POSTGRES_IMAGE"
           printf 'redis_digest=%s\n' "$REDIS_IMAGE"
           printf 'valkey_digest=%s\n' "$VALKEY_IMAGE"

@@ -68,13 +68,17 @@ jobs:
           print('d3_b_pre_conformance_manifest_boundary=PASS')
           PY
 
-      - name: Validate final conformance harness structure and forbidden shortcuts
+      - name: Validate strongest conformance harness structure and forbidden shortcuts
         shell: bash
         run: |
           set -euo pipefail
           core=implementation/d3-identity-security/harness/cache_authority_conformance_gate_runner.py
-          entrypoint=implementation/d3-identity-security/harness/cache_authority_conformance_final_runner.py
-          python3 -m py_compile "$core" "$entrypoint"
+          final=implementation/d3-identity-security/harness/cache_authority_conformance_final_runner.py
+          review=implementation/d3-identity-security/harness/cache_authority_conformance_review_runner.py
+          closure=implementation/d3-identity-security/harness/cache_authority_conformance_closure_runner.py
+          integrity=implementation/d3-identity-security/harness/cache_authority_conformance_integrity_runner.py
+          entry=implementation/d3-identity-security/harness/cache_authority_conformance_integrity_entrypoint.py
+          python3 -m py_compile "$core" "$final" "$review" "$closure" "$integrity" "$entry"
           for marker in \
             d3_b_session_authority_owner_boundaries \
             d3_b_revocation_partial_write_safety \
@@ -95,20 +99,32 @@ jobs:
             d3_b_stale_fill_fence_cas \
             d3_b_owner_read_fill_fail_closed \
             d3_b_session_cache_conformance_final; do
-            grep -F "$marker=PASS" "$entrypoint" >/dev/null
+            grep -F "$marker=PASS" "$final" >/dev/null
+          done
+          for marker in d3_b_commit_permit_provenance d3_b_lease_retirement_inflight_drain d3_b_same_replica_reissue_inflight_drain d3_b_current_epoch_restore_nonresurrection d3_b_session_cache_conformance_review; do
+            grep -F "$marker=PASS" "$review" >/dev/null
+          done
+          for marker in d3_b_same_replica_retire_reissue_serialization d3_b_session_cache_conformance_closure; do
+            grep -F "$marker=PASS" "$closure" >/dev/null
+          done
+          for marker in d3_b_lease_object_capability d3_b_lease_scope_binding d3_b_durable_lease_issuance_identity d3_b_replica_incarnation_ownership d3_b_session_cache_conformance_integrity; do
+            grep -F "$marker=PASS" "$integrity" >/dev/null
+          done
+          for marker in d3_b_composed_tuple_binding d3_b_integrity_entrypoint; do
+            grep -F "$marker=PASS" "$entry" >/dev/null
           done
           grep -F 'class CommitPermit' "$core" >/dev/null
           grep -F 'preterminal_scope_release_impossible=true' "$core" >/dev/null
           grep -F 'reconciliation_requires_exact_non_authorizing_cache_state=true' "$core" >/dev/null
-          grep -F '_ACTIVE_LOCAL_LEASE' "$entrypoint" >/dev/null
-          grep -F 'predecessor_raw_negative_control_allow=true' "$entrypoint" >/dev/null
-          grep -F 'COMPOSED_ADMISSION_SCRIPT' "$entrypoint" >/dev/null
-          grep -F 'FILL_POSITIVE_SCRIPT' "$entrypoint" >/dev/null
-          grep -F 'redis_fence_not_commit_eligibility=true' "$entrypoint" >/dev/null
+          grep -F '_ACTIVE_LEASE_OBJECT.get(key) is not lease' "$integrity" >/dev/null
+          grep -F 'lease_instance' "$integrity" >/dev/null
+          grep -F 'positive:composed:v2:' "$entry" >/dev/null
+          grep -F 'same_generation_alternate_tuple_denied=true' "$entry" >/dev/null
+          grep -F 'misrouted_positive_denied=true' "$entry" >/dev/null
           grep -F 'REPLICAOF' "$core" >/dev/null
           grep -F '"pause", PG_CONTAINER' "$core" >/dev/null
           grep -F 'threading.Barrier' "$core" >/dev/null
-          if grep -Eq 'wave4.*granted|production_authority.*granted|d4_transport_authority.*granted' "$core" "$entrypoint"; then
+          if grep -Eq 'wave4.*granted|production_authority.*granted|d4_transport_authority.*granted' "$core" "$final" "$review" "$closure" "$integrity" "$entry"; then
             echo 'D3-B evidence harness attempted to grant downstream authority' >&2
             exit 1
           fi
@@ -150,7 +166,7 @@ jobs:
           docker logs jlmirror-d3-postgres-conformance >&2 || true
           exit 1
 
-      - name: Exercise Redis candidate authority and recovery conformance
+      - name: Exercise Redis candidate authority and tuple-integrity conformance
         shell: bash
         run: |
           set -euo pipefail
@@ -165,7 +181,7 @@ jobs:
           CACHE_IMAGE="$REDIS_IMAGE" \
           CACHE_SERVER=redis-server \
           DOCKER_NETWORK="$D3_NETWORK" \
-            python3 implementation/d3-identity-security/harness/cache_authority_conformance_final_runner.py
+            python3 implementation/d3-identity-security/harness/cache_authority_conformance_integrity_entrypoint.py
 
       - name: Retire Redis evidence containers before substitution control
         if: always()
@@ -177,7 +193,7 @@ jobs:
             jlmirror-d3-redis-8-10-0-restore \
             >/dev/null 2>&1 || true
 
-      - name: Exercise Valkey substitution control with identical authority semantics
+      - name: Exercise Valkey substitution control with identical tuple-integrity semantics
         shell: bash
         run: |
           set -euo pipefail
@@ -192,14 +208,14 @@ jobs:
           CACHE_IMAGE="$VALKEY_IMAGE" \
           CACHE_SERVER=valkey-server \
           DOCKER_NETWORK="$D3_NETWORK" \
-            python3 implementation/d3-identity-security/harness/cache_authority_conformance_final_runner.py
+            python3 implementation/d3-identity-security/harness/cache_authority_conformance_integrity_entrypoint.py
 
       - name: Preserve bounded D3-B evidence boundary
         if: success()
         shell: bash
         run: |
           set -euo pipefail
-          printf 'd3_b_candidate_conformance_probe=PASS_PINNED_FINAL\n'
+          printf 'd3_b_candidate_conformance_probe=PASS_PINNED_TUPLE_INTEGRITY\n'
           printf 'postgres_digest=%s\n' "$POSTGRES_IMAGE"
           printf 'redis_digest=%s\n' "$REDIS_IMAGE"
           printf 'valkey_digest=%s\n' "$VALKEY_IMAGE"

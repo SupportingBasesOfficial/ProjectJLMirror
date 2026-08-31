@@ -99,49 +99,139 @@ class FormParser(HTMLParser):
         return matches[0]
 
 
-def _post_form(opener, action: str, payload: dict[str, str], *, allow_redirect: bool = True):
-    req = Request(
-        action,
-        data=urlencode(payload).encode(),
-        method="POST",
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-    target = opener if allow_redirect else build_opener(*getattr(opener, "handlers", []), NoRedirect())
+def _open_no_redirect(opener, request: Request):
     try:
-        return target.open(req, timeout=10)
+        return opener.open(request, timeout=10)
     except HTTPError as exc:
-        if not allow_redirect and exc.code in {302, 303}:
+        if exc.code in {302, 303}:
             return exc
         raise
 
 
-def _response_body(response) -> tuple[str, str, int]:
-    status = getattr(response, "status", getattr(response, "code", 0))
-    raw = response.read()
-    body = raw.decode("utf-8", errors="replace")
-    return body, response.geturl(), int(status)
+def _post_form(opener, action: str, payload: dict[str, str]):
+    return _open_no_redirect(
+        opener,
+        Request(
+            action,
+            data=urlencode(payload).encode(),
+            method="POST",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        ),
+    )
 
 
-def _expect_callback_response(response) -> tuple[str, str]:
-    status = getattr(response, "status", getattr(response, "code", 0))
-    if status not in {302, 303}:
-        body = response.read().decode("utf-8", errors="replace")
-        raise AssertionError(
-            f"authentication did not redirect to BFF callback; status={status} body_prefix={body[:240]!r}"
-        )
-    location = response.headers.get("Location")
-    if not isinstance(location, str) or not location:
-        raise AssertionError("authentication callback redirect lacked Location")
+def _response_status(response) -> int:
+    return int(getattr(response, "status", getattr(response, "code", 0)))
+
+
+def _parse_callback_location(location: str) -> tuple[str, str] | None:
     parsed = urlparse(location)
     expected = urlparse(REDIRECT_URI)
-    if (parsed.scheme, parsed.netloc, parsed.path) != (expected.scheme, expected.netloc, expected.path):
-        raise AssertionError(f"authentication escaped registered callback: {location!r}")
+    if (parsed.scheme, parsed.netloc, parsed.path) != (
+        expected.scheme,
+        expected.netloc,
+        expected.path,
+    ):
+        return None
+    if parsed.fragment:
+        raise AssertionError("BFF callback must not carry a URI fragment")
     values = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True)
     codes = values.get("code", [])
     states = values.get("state", [])
     if len(codes) != 1 or len(states) != 1 or not codes[0] or not states[0]:
         raise AssertionError(f"callback lacked exactly one code/state: {values!r}")
     return codes[0], states[0]
+
+
+def _same_keycloak_origin(url: str) -> bool:
+    candidate = urlparse(url)
+    trusted = urlparse(BASE)
+    return (
+        candidate.scheme == trusted.scheme
+        and candidate.netloc == trusted.netloc
+        and candidate.scheme == "https"
+    )
+
+
+def _navigate_bounded(
+    opener,
+    response,
+    *,
+    expected_page_form: str | None,
+    max_internal_redirects: int = 8,
+) -> tuple[str, str] | tuple[str, str, dict[str, object]]:
+    """Follow only same-origin Keycloak redirects or terminate at the exact BFF callback."""
+
+    current = response
+    for hop in range(max_internal_redirects + 1):
+        status = _response_status(current)
+        current_url = current.geturl()
+        if status in {302, 303}:
+            location = current.headers.get("Location")
+            if not isinstance(location, str) or not location:
+                raise AssertionError("authentication redirect lacked Location")
+            absolute = urljoin(current_url, unescape(location))
+            callback = _parse_callback_location(absolute)
+            if callback is not None:
+                try:
+                    current.close()
+                finally:
+                    return callback
+
+            if not _same_keycloak_origin(absolute):
+                raise AssertionError(
+                    f"authentication redirect escaped trusted Keycloak origin: {absolute!r}"
+                )
+            if hop >= max_internal_redirects:
+                raise AssertionError("authentication exceeded bounded internal redirect budget")
+            try:
+                current.close()
+            finally:
+                current = _open_no_redirect(
+                    opener,
+                    Request(absolute, method="GET"),
+                )
+            continue
+
+        if status != 200:
+            body = current.read().decode("utf-8", errors="replace")
+            raise AssertionError(
+                f"authentication navigation returned unexpected status={status} "
+                f"url={current_url!r} body_prefix={body[:240]!r}"
+            )
+
+        body = current.read().decode("utf-8", errors="replace")
+        final_url = current.geturl()
+        current.close()
+        if not _same_keycloak_origin(final_url):
+            raise AssertionError(
+                f"authentication page escaped trusted Keycloak origin: {final_url!r}"
+            )
+        if expected_page_form is None:
+            raise AssertionError(
+                f"authentication stopped on an unexpected Keycloak page: {final_url!r}"
+            )
+        parser = FormParser()
+        parser.feed(body)
+        form = parser.by_id(expected_page_form)
+        return body, final_url, form
+
+    raise AssertionError("unreachable bounded-navigation state")
+
+
+def _expect_callback_navigation(opener, response) -> tuple[str, str]:
+    result = _navigate_bounded(opener, response, expected_page_form=None)
+    if len(result) != 2:
+        raise AssertionError("authentication stopped before reaching the BFF callback")
+    return result
+
+
+def _expect_keycloak_form(opener, response, form_id: str) -> tuple[str, dict[str, object]]:
+    result = _navigate_bounded(opener, response, expected_page_form=form_id)
+    if len(result) != 3:
+        raise AssertionError(f"authentication reached BFF callback before required form {form_id!r}")
+    _, final_url, form = result
+    return final_url, form
 
 
 def _totp(secret: str, *, now: int | None = None) -> str:
@@ -340,16 +430,18 @@ def _authorization_url(*, state: str, nonce: str, code_challenge: str) -> str:
 
 
 def _open_login(opener, *, state: str, nonce: str, code_challenge: str) -> tuple[str, str]:
-    with opener.open(
-        _authorization_url(state=state, nonce=nonce, code_challenge=code_challenge),
-        timeout=10,
-    ) as response:
-        body, final_url, status = _response_body(response)
-    if status != 200:
-        raise AssertionError(f"authorization endpoint returned unexpected status {status}")
-    parser = FormParser()
-    parser.feed(body)
-    form = parser.by_id("kc-form-login")
+    response = _open_no_redirect(
+        opener,
+        Request(
+            _authorization_url(
+                state=state,
+                nonce=nonce,
+                code_challenge=code_challenge,
+            ),
+            method="GET",
+        ),
+    )
+    final_url, form = _expect_keycloak_form(opener, response, "kc-form-login")
     action = form.get("action")
     if not isinstance(action, str) or not action:
         raise AssertionError("login form lacks action")
@@ -357,37 +449,37 @@ def _open_login(opener, *, state: str, nonce: str, code_challenge: str) -> tuple
 
 
 def _submit_password(opener, action: str, username: str):
-    payload = {
-        "username": username,
-        "password": PASSWORD,
-        "credentialId": "",
-    }
-    req = Request(
+    return _post_form(
+        opener,
         action,
-        data=urlencode(payload).encode(),
-        method="POST",
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        {
+            "username": username,
+            "password": PASSWORD,
+            "credentialId": "",
+        },
     )
-    try:
-        return opener.open(req, timeout=10)
-    except HTTPError as exc:
-        if exc.code in {302, 303}:
-            return exc
-        raise
 
 
-def enroll_totp_and_get_code(*, state: str, nonce: str, code_challenge: str) -> tuple[str, str, str]:
+def enroll_totp_and_get_code(
+    *,
+    state: str,
+    nonce: str,
+    code_challenge: str,
+) -> tuple[str, str, str]:
     jar = http.cookiejar.CookieJar()
     opener = build_opener(HTTPCookieProcessor(jar), NoRedirect())
-    action, _ = _open_login(opener, state=state, nonce=nonce, code_challenge=code_challenge)
+    action, _ = _open_login(
+        opener,
+        state=state,
+        nonce=nonce,
+        code_challenge=code_challenge,
+    )
     password_response = _submit_password(opener, action, MFA_USER)
-    status = getattr(password_response, "status", getattr(password_response, "code", 0))
-    if status in {302, 303}:
-        raise AssertionError("MFA user bypassed CONFIGURE_TOTP required action")
-    body, final_url, _ = _response_body(password_response)
-    parser = FormParser()
-    parser.feed(body)
-    form = parser.by_id("kc-totp-settings-form")
+    final_url, form = _expect_keycloak_form(
+        opener,
+        password_response,
+        "kc-totp-settings-form",
+    )
     form_action = form.get("action")
     inputs = form.get("inputs")
     if not isinstance(form_action, str) or not form_action or not isinstance(inputs, dict):
@@ -395,9 +487,8 @@ def enroll_totp_and_get_code(*, state: str, nonce: str, code_challenge: str) -> 
     secret = inputs.get("totpSecret")
     if not isinstance(secret, str) or not secret:
         raise AssertionError("TOTP enrollment did not expose bounded enrollment secret")
-    code = _stable_totp(secret)
     payload = {
-        "totp": code,
+        "totp": _stable_totp(secret),
         "totpSecret": secret,
         "userLabel": "d3-evidence-device",
     }
@@ -407,9 +498,11 @@ def enroll_totp_and_get_code(*, state: str, nonce: str, code_challenge: str) -> 
         opener,
         urljoin(final_url, form_action),
         payload,
-        allow_redirect=False,
     )
-    authorization_code, returned_state = _expect_callback_response(enrollment_response)
+    authorization_code, returned_state = _expect_callback_navigation(
+        opener,
+        enrollment_response,
+    )
     return authorization_code, returned_state, secret
 
 
@@ -422,33 +515,40 @@ def login_with_totp(
 ) -> tuple[str, str]:
     jar = http.cookiejar.CookieJar()
     opener = build_opener(HTTPCookieProcessor(jar), NoRedirect())
-    action, _ = _open_login(opener, state=state, nonce=nonce, code_challenge=code_challenge)
+    action, _ = _open_login(
+        opener,
+        state=state,
+        nonce=nonce,
+        code_challenge=code_challenge,
+    )
     password_response = _submit_password(opener, action, MFA_USER)
-    status = getattr(password_response, "status", getattr(password_response, "code", 0))
-    if status in {302, 303}:
-        raise AssertionError("configured MFA user bypassed OTP form")
-    body, final_url, _ = _response_body(password_response)
-    parser = FormParser()
-    parser.feed(body)
-    form = parser.by_id("kc-otp-login-form")
+    final_url, form = _expect_keycloak_form(
+        opener,
+        password_response,
+        "kc-otp-login-form",
+    )
     form_action = form.get("action")
     if not isinstance(form_action, str) or not form_action:
         raise AssertionError("OTP login form lacks action")
     otp_response = _post_form(
         opener,
         urljoin(final_url, form_action),
-        {"otp": _stable_totp(secret), "login": "Log In"},
-        allow_redirect=False,
+        {"otp": _stable_totp(secret)},
     )
-    return _expect_callback_response(otp_response)
+    return _expect_callback_navigation(opener, otp_response)
 
 
 def login_password_only(*, state: str, nonce: str, code_challenge: str) -> tuple[str, str]:
     jar = http.cookiejar.CookieJar()
     opener = build_opener(HTTPCookieProcessor(jar), NoRedirect())
-    action, _ = _open_login(opener, state=state, nonce=nonce, code_challenge=code_challenge)
+    action, _ = _open_login(
+        opener,
+        state=state,
+        nonce=nonce,
+        code_challenge=code_challenge,
+    )
     response = _submit_password(opener, action, BASIC_USER)
-    return _expect_callback_response(response)
+    return _expect_callback_navigation(opener, response)
 
 
 def _token_form(*, code: str, verifier: str) -> dict[str, str]:

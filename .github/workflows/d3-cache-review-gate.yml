@@ -1,0 +1,122 @@
+name: JLMIRROR D3-B Cache Review Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  review-gate:
+    name: Permit provenance + admission drain + reentry rotation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      POSTGRES_IMAGE: postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+      REDIS_IMAGE: redis@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366
+      VALKEY_IMAGE: valkey/valkey@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411
+      D3_NETWORK: jlmirror-d3-cache-review
+
+    steps:
+      - name: Checkout exact reviewed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit and bounded authority state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python3 tools/assurance/validate_d3_identity_security_state.py .
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('implementation/d3-identity-security/state-manifest.json').read_text())
+          t={x['track_id']:x for x in m['tracks']}['D3-B']
+          assert t['state']=='candidate_selected_conformance_pending'
+          assert m['wave4_implementation_authority']=='not_granted'
+          assert m['production_authority']=='none'
+          assert m['d4_transport_authority']=='not_selected_not_granted'
+          print('d3_b_review_manifest_boundary=PASS')
+          PY
+
+      - name: Validate review runner structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          core=implementation/d3-identity-security/harness/cache_authority_conformance_gate_runner.py
+          final=implementation/d3-identity-security/harness/cache_authority_conformance_final_runner.py
+          review=implementation/d3-identity-security/harness/cache_authority_conformance_review_runner.py
+          python3 -m py_compile "$core" "$final" "$review"
+          for marker in d3_b_commit_permit_provenance d3_b_lease_retirement_inflight_drain d3_b_same_replica_reissue_inflight_drain d3_b_current_epoch_restore_nonresurrection d3_b_session_cache_conformance_review; do
+            grep -F "$marker=PASS" "$review" >/dev/null
+          done
+          grep -F '_ISSUED_PERMITS.get(id(permit)) is not permit' "$review" >/dev/null
+          grep -F 'durable_retired_ack_after_drain=true' "$review" >/dev/null
+          grep -F 'readmission_rotates_epoch_again=true' "$review" >/dev/null
+          grep -F 'stale_positive_carries_completed_exclusion_epoch=true' "$review" >/dev/null
+
+      - name: Pull immutable candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          for image in "$POSTGRES_IMAGE" "$REDIS_IMAGE" "$VALKEY_IMAGE"; do
+            case "$image" in *@sha256:*) ;; *) exit 1 ;; esac
+            docker pull "$image"
+            test "$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')" = "$image"
+          done
+
+      - name: Start durable owner
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker network create "$D3_NETWORK"
+          docker run -d --rm --name jlmirror-d3-postgres-review --network "$D3_NETWORK" -e POSTGRES_PASSWORD=d3-postgres-password -e POSTGRES_DB=d3 "$POSTGRES_IMAGE"
+          for _ in $(seq 1 120); do
+            docker exec jlmirror-d3-postgres-review pg_isready -U postgres -d d3 >/dev/null 2>&1 && exit 0
+            sleep 0.5
+          done
+          exit 1
+
+      - name: Exercise Redis review gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --rm --name jlmirror-d3-redis-review --network "$D3_NETWORK" "$REDIS_IMAGE" redis-server --save '' --appendonly no
+          PG_CONTAINER=jlmirror-d3-postgres-review CACHE_CONTAINER=jlmirror-d3-redis-review CACHE_LABEL=redis_8_10_0 CACHE_CLI=redis-cli CACHE_IMAGE="$REDIS_IMAGE" CACHE_SERVER=redis-server DOCKER_NETWORK="$D3_NETWORK" python3 implementation/d3-identity-security/harness/cache_authority_conformance_review_runner.py
+
+      - name: Retire Redis review containers
+        if: always()
+        shell: bash
+        run: docker rm -f jlmirror-d3-redis-review jlmirror-d3-redis-8-10-0-standby jlmirror-d3-redis-8-10-0-restore >/dev/null 2>&1 || true
+
+      - name: Exercise Valkey review gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --rm --name jlmirror-d3-valkey-review --network "$D3_NETWORK" "$VALKEY_IMAGE" valkey-server --save '' --appendonly no
+          PG_CONTAINER=jlmirror-d3-postgres-review CACHE_CONTAINER=jlmirror-d3-valkey-review CACHE_LABEL=valkey_9_1_0 CACHE_CLI=valkey-cli CACHE_IMAGE="$VALKEY_IMAGE" CACHE_SERVER=valkey-server DOCKER_NETWORK="$D3_NETWORK" python3 implementation/d3-identity-security/harness/cache_authority_conformance_review_runner.py
+
+      - name: Preserve bounded review result
+        if: success()
+        shell: bash
+        run: |
+          printf 'd3_b_review_gate=PASS_PINNED\n'
+          printf 'manifest_credit=unchanged c3_numerics=not_selected\n'
+          printf 'd3=not_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          docker unpause jlmirror-d3-postgres-review >/dev/null 2>&1 || true
+          docker rm -f jlmirror-d3-postgres-review jlmirror-d3-redis-review jlmirror-d3-valkey-review jlmirror-d3-redis-8-10-0-standby jlmirror-d3-redis-8-10-0-restore jlmirror-d3-valkey-9-1-0-standby jlmirror-d3-valkey-9-1-0-restore >/dev/null 2>&1 || true
+          docker network rm "$D3_NETWORK" >/dev/null 2>&1 || true

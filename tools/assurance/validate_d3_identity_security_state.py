@@ -15,9 +15,9 @@ import sys
 import validate_d3_identity_security_state_legacy as legacy
 
 
-D3A_CONFORMANCE_EVIDENCE_SHA = "6ac93883164fa05e36d51c0992b1b80aeb147782"
-D3A_CONFORMANCE_WORKFLOW_RUN_ID = 33379286586
-D3A_CONFORMANCE_WORKFLOW_RUN_NUMBER = 26
+D3A_CONFORMANCE_EVIDENCE_SHA = "f7b0faa2b5745b1261c6b43523c7ae8ad3750d36"
+D3A_CONFORMANCE_WORKFLOW_RUN_ID = 33389775478
+D3A_CONFORMANCE_WORKFLOW_RUN_NUMBER = 31
 D3A_CONFORMANCE_WORKFLOW_FILE = ".github/workflows/d3-keycloak-conformance.yml"
 D3A_CONFORMANCE_JOB = "Keycloak 26.7.2 MFA + authority effects"
 D3A_PROBES = {
@@ -25,19 +25,19 @@ D3A_PROBES = {
         "implementation/d3-identity-security/harness/keycloak_mfa_single_use_runner.py"
     ),
     "backchannel_logout_authenticity_replay_profile": (
-        "implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py"
+        "implementation/d3-identity-security/harness/keycloak_callback_currentness_drain_runner.py"
     ),
     "provider_sid_sub_mapping_non_authority": (
-        "implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py"
+        "implementation/d3-identity-security/harness/keycloak_callback_currentness_drain_runner.py"
     ),
     "principal_wide_logout_generation_fence": (
-        "implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py"
+        "implementation/d3-identity-security/harness/keycloak_callback_currentness_drain_runner.py"
     ),
     "idp_outage_currentness_join": (
-        "implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py"
+        "implementation/d3-identity-security/harness/keycloak_callback_currentness_drain_runner.py"
     ),
     "idp_native_roles_groups_organizations_non_authority": (
-        "implementation/d3-identity-security/harness/keycloak_callback_durable_ingress_runner.py"
+        "implementation/d3-identity-security/harness/keycloak_callback_currentness_drain_runner.py"
     ),
 }
 

@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
+import time
 
 import cache_authority_conformance_integrity_runner as integrity
 
 final = integrity.final
 core = integrity.core
 review = integrity.review
+closure = integrity.closure
 
 _ORDER = ("identity", "membership", "authz", "platform")
 _ID_FIELDS = ("session_id", "membership_id", "authz_id", "platform_id")
 _GEN_FIELDS = ("session_gen", "membership_gen", "authz_gen", "platform_gen")
+_ORIGINAL_FINALIZE_SCOPE_EXCLUSION = core.finalize_scope_exclusion
 
 
 COMPOSED_TUPLE_ADMISSION_SCRIPT = r"""
@@ -276,10 +280,198 @@ def prove_scope_binding() -> None:
     )
 
 
-def install_tuple_binding() -> None:
+def expire_local_scope_lease(lease: core.BffLease, tick: int) -> None:
+    """Publish expiry only after local invalidation and in-flight drain.
+
+    Expiration itself is not barrier-visible proof. The BFF that owns the exact
+    durable issuance must first stop new admissions and drain every admission
+    that began while the lease was valid; only then may its lease_instance be
+    retired durably. A missing/remote owner therefore remains conservatively
+    unretired and continues to block fleet exclusion.
+    """
+    if tick < lease.valid_until_tick:
+        raise RuntimeError("lease cannot publish expiry before its validity horizon")
+    integrity.retire_scope_lease(lease)
+
+
+def finalize_scope_exclusion(scope: str, transition_id: str, tick: int) -> bool:
+    """Complete exclusion only after every old issuance has a durable drain ACK."""
+    state, current_epoch, target_epoch, hold = core.scope_state(scope)
+    if state != "excluding" or target_epoch is None or hold != transition_id:
+        return False
+
+    # In this evidence process we own several BFF replica capabilities. Expired
+    # local issuances are converted to durable retirement only through the same
+    # invalidation+drain path as explicit retirement. A durable issuance that is
+    # not locally owned is never reaped here merely because its timestamp passed.
+    local_expired = [
+        lease
+        for (lease_scope, _replica), lease in list(integrity._ACTIVE_LEASE_OBJECT.items())
+        if lease_scope == scope
+        and lease.epoch == current_epoch
+        and tick >= lease.valid_until_tick
+    ]
+    for lease in local_expired:
+        expire_local_scope_lease(lease, tick)
+
+    unacked = int(
+        core.control_scalar(
+            "SELECT count(*) FROM cache_control.scope_lease "
+            f"WHERE scope_key={core.q(scope)} AND epoch={current_epoch} AND retired=false;"
+        )
+    )
+    if unacked != 0:
+        return False
+
+    # No lease can be issued while the scope row is 'excluding', so after the
+    # durable zero-unacked check there is no admission-capability creator racing
+    # the original serialized scope-row transition.
+    return _ORIGINAL_FINALIZE_SCOPE_EXCLUSION(scope, transition_id, tick)
+
+
+def prove_natural_expiry_drains_before_barrier_visible() -> None:
+    owner = "identity"
+    resource_id = "session-natural-expiry-drain"
+    scope = core.scope_key(owner, resource_id)
+    transition_id = "transition-natural-expiry-drain"
+    owner_token = "writer-natural-expiry-drain"
+
+    core.insert_resource(owner, resource_id)
+    core.set_cache_current(owner, resource_id, 1, 1)
+    lease = integrity.issue_scope_lease(scope, "bff-natural-expiry", 1, 10)
+    core.reserve_transition(
+        owner,
+        transition_id,
+        resource_id,
+        1,
+        "natural-expiry-drain:v1",
+        owner_token,
+        100,
+    )
+    core.begin_scope_exclusion(scope, transition_id)
+
+    entered_raw = threading.Event()
+    resume_raw = threading.Event()
+    decision: dict[str, str] = {}
+    finalize_result: dict[str, bool] = {}
+    errors: list[BaseException] = []
+    original_raw_admit = core.raw_admit
+
+    def sleeping_raw_admit(
+        raw_owner: str,
+        raw_resource_id: str,
+        raw_lease: core.BffLease,
+        raw_tick: int,
+        *,
+        container: str | None = None,
+        cli: str | None = None,
+    ) -> str:
+        if raw_owner == owner and raw_resource_id == resource_id and raw_lease is lease:
+            entered_raw.set()
+            if not resume_raw.wait(timeout=5.0):
+                raise RuntimeError("sleeping admission was not released")
+        return original_raw_admit(
+            raw_owner,
+            raw_resource_id,
+            raw_lease,
+            raw_tick,
+            container=container,
+            cli=cli,
+        )
+
+    def run_admission() -> None:
+        try:
+            decision["value"] = integrity.admit(owner, resource_id, lease, 9)
+        except BaseException as exc:  # surfaced to the main evidence thread below
+            errors.append(exc)
+
+    def run_finalize() -> None:
+        try:
+            finalize_result["value"] = finalize_scope_exclusion(scope, transition_id, 11)
+        except BaseException as exc:
+            errors.append(exc)
+
+    core.raw_admit = sleeping_raw_admit
+    admission_thread = threading.Thread(target=run_admission, name="d3-expiry-sleeping-admission")
+    finalize_thread = threading.Thread(target=run_finalize, name="d3-expiry-finalize")
+    try:
+        admission_thread.start()
+        if not entered_raw.wait(timeout=5.0):
+            raise RuntimeError("pre-expiry admission did not enter the protected read")
+
+        # At tick 11 the lease is expired, but its pre-expiry admission is still
+        # in flight. Finalization must invalidate the local capability and block
+        # before publishing durable retirement or the excluded state.
+        finalize_thread.start()
+        time.sleep(0.2)
+        if not finalize_thread.is_alive():
+            raise RuntimeError("natural expiry became barrier-visible before in-flight drain")
+        state, current_epoch, _target, hold = core.scope_state(scope)
+        if state != "excluding" or current_epoch != 1 or hold != transition_id:
+            raise RuntimeError("scope advanced while expired admission was still in flight")
+        durable_retired = core.control_scalar(
+            "SELECT CASE WHEN retired THEN '1' ELSE '0' END FROM cache_control.scope_lease "
+            f"WHERE scope_key={core.q(scope)} AND replica_id='bff-natural-expiry';"
+        )
+        if durable_retired != "0":
+            raise RuntimeError("expiry retirement ACK became durable before admission drain")
+        if core.commit_source(owner, transition_id, owner_token, 11):
+            raise RuntimeError("source revocation committed before expired admission drained")
+
+        # The sleeping request is allowed to finish against the old source state;
+        # only after it leaves the in-flight set may expiry publish its durable ACK
+        # and the fleet barrier become complete.
+        resume_raw.set()
+        admission_thread.join(timeout=5.0)
+        finalize_thread.join(timeout=5.0)
+        if admission_thread.is_alive() or finalize_thread.is_alive():
+            raise RuntimeError("expiry drain threads did not terminate")
+        if errors:
+            raise RuntimeError(f"expiry drain concurrency failed: {errors[0]}")
+        if decision.get("value") != "ALLOW":
+            raise RuntimeError("pre-expiry sleeping admission negative control was not genuinely authorizing")
+        if finalize_result.get("value") is not True:
+            raise RuntimeError("barrier did not complete after expired admission drained")
+        durable_retired = core.control_scalar(
+            "SELECT CASE WHEN retired THEN '1' ELSE '0' END FROM cache_control.scope_lease "
+            f"WHERE scope_key={core.q(scope)} AND replica_id='bff-natural-expiry';"
+        )
+        if durable_retired != "1":
+            raise RuntimeError("drained natural expiry did not publish durable retirement ACK")
+
+        permit = core.acquire_commit_permit(owner, transition_id)
+        if not core.commit_source(owner, transition_id, owner_token, 12, permit):
+            raise RuntimeError("source revocation could not commit after expiry drain barrier")
+
+        # A request that had captured the old start tick/cache pair would still be
+        # intrinsically authorizing at the raw cache layer. The retired exact lease
+        # capability must be the reason it can no longer re-enter protected admission.
+        if original_raw_admit(owner, resource_id, lease, 9) != "ALLOW":
+            raise RuntimeError("post-commit stale-reader negative control was not genuinely authorizing")
+        if integrity.admit(owner, resource_id, lease, 9) != "DENY":
+            raise RuntimeError("expired drained lease capability re-entered protected admission")
+
+        core.reconcile_cache_and_finalize_source(owner, transition_id)
+        core.release_scope_after_terminal(owner, transition_id)
+    finally:
+        core.raw_admit = original_raw_admit
+        resume_raw.set()
+        admission_thread.join(timeout=1.0)
+        finalize_thread.join(timeout=1.0)
+
+    print(
+        "d3_b_natural_expiry_inflight_drain=PASS "
+        "expiry_timestamp_alone_not_barrier_visible=true local_capability_invalidated_before_ack=true "
+        "pre_expiry_inflight_admission_drained=true durable_retired_ack_after_drain=true "
+        "source_commit_blocked_before_drain=true source_commit_allowed_after_drain=true "
+        "raw_stale_reader_negative_control_allow=true retired_capability_final_admission_denied=true"
+    )
+
+
+def install_tuple_binding_and_expiry_drain() -> None:
     # Patch the effective final/integrity entry surface before any scenario
-    # executes. All downstream wrappers then inherit the tuple-bound script,
-    # key, fill and admission functions.
+    # executes. All downstream wrappers then inherit the tuple-bound admission
+    # and the drain-aware fleet exclusion barrier.
     final.COMPOSED_ADMISSION_SCRIPT = COMPOSED_TUPLE_ADMISSION_SCRIPT
     final.composed_positive_key = composed_positive_key
     final.fill_composed_positive = fill_composed_positive
@@ -287,16 +479,18 @@ def install_tuple_binding() -> None:
     final.prove_composed_multi_owner_admission = prove_composed_multi_owner_admission
     integrity.composed_admit = composed_admit
     integrity.prove_scope_binding = prove_scope_binding
+    core.finalize_scope_exclusion = finalize_scope_exclusion
 
 
 def main() -> int:
-    install_tuple_binding()
+    install_tuple_binding_and_expiry_drain()
     result = integrity.main()
     if result != 0:
         return result
+    prove_natural_expiry_drains_before_barrier_visible()
     print(
         "d3_b_integrity_entrypoint=PASS complete_authority_tuple_binding=true "
-        "generation_only_tuple_substitution_rejected=true"
+        "generation_only_tuple_substitution_rejected=true natural_expiry_requires_durable_drain_ack=true"
     )
     return 0
 

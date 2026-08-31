@@ -1,0 +1,108 @@
+name: JLMIRROR D3-D One-shot Run 43 Provenance Reanchor
+
+on:
+  push:
+    branches:
+      - evidence/d3-d-workload-identity-c2
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  reanchor:
+    if: github.event.head_commit.message == 'assurance(D3-D): trigger exact run-43 provenance reanchor'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: evidence/d3-d-workload-identity-c2
+          fetch-depth: 0
+
+      - name: Reanchor only repaired D3-D provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          evidence_sha = '44cd732320b98e2d28c6027f9abd17488a6cb25a'
+          workflow_run_id = 33344277084
+          workflow_run_number = 43
+          artifact_pin = 'spire-1.15.3-linux-amd64-musl.tar.gz@sha256:ca1a4d1155317bdd2afc7f36663828a10410c7c840e54725b90b4064b0a301c7'
+          evidence_ids = {
+              'issuer_restore_retired_authority_nonresurrection': 'implementation/d3-identity-security/harness/spire_restore_nonresurrection_probe.py',
+              'vendor_credential_adapter_least_privilege': 'implementation/d3-identity-security/harness/spire_vendor_credential_adapter_probe.py',
+          }
+
+          manifest_path = Path('implementation/d3-identity-security/state-manifest.json')
+          state = json.loads(manifest_path.read_text(encoding='utf-8'))
+          tracks = {track['track_id']: track for track in state['tracks']}
+          d3d = tracks['D3-D']
+          if d3d['state'] != 'per_track_conformed' or d3d['evidence_remaining']:
+              raise SystemExit('refusing reanchor: D3-D is not the expected terminal evidence state')
+          proofs = {proof['evidence_id']: proof for proof in d3d['evidence_proofs']}
+          expected_old = {
+              'evidence_sha': 'c8ac05c4bcea367949489c94dfe876605e2f4261',
+              'workflow_run_id': 33342690140,
+              'workflow_run_number': 38,
+          }
+          for evidence_id, probe in evidence_ids.items():
+              proof = proofs[evidence_id]
+              for key, value in expected_old.items():
+                  if proof.get(key) != value:
+                      raise SystemExit(f'refusing reanchor: {evidence_id} {key} drifted: {proof.get(key)!r}')
+              if proof.get('probe') != probe:
+                  raise SystemExit(f'refusing reanchor: {evidence_id} probe drifted')
+              if proof.get('artifact_pins') != [artifact_pin]:
+                  raise SystemExit(f'refusing reanchor: {evidence_id} artifact pin drifted')
+              proof['evidence_sha'] = evidence_sha
+              proof['workflow_run_id'] = workflow_run_id
+              proof['workflow_run_number'] = workflow_run_number
+          manifest_path.write_text(json.dumps(state, indent=2) + '\n', encoding='utf-8')
+
+          validator_path = Path('tools/assurance/validate_d3_identity_security_state.py')
+          validator = validator_path.read_text(encoding='utf-8')
+          old = '''_D3D_SPIRE_STRENGTHENED_BOUNDARY_PROOF_COMMON = {
+              "evidence_sha": "c8ac05c4bcea367949489c94dfe876605e2f4261",
+              "workflow_run_id": 33342690140,
+              "workflow_run_number": 38,
+          '''
+          new = '''_D3D_SPIRE_STRENGTHENED_BOUNDARY_PROOF_COMMON = {
+              "evidence_sha": "44cd732320b98e2d28c6027f9abd17488a6cb25a",
+              "workflow_run_id": 33344277084,
+              "workflow_run_number": 43,
+          '''
+          if validator.count(old) != 1:
+              raise SystemExit('refusing reanchor: approved strengthened-boundary provenance block drifted')
+          validator_path.write_text(validator.replace(old, new, 1), encoding='utf-8')
+
+          workflow_path = Path('.github/workflows/d3-spire-candidate-evaluation.yml')
+          workflow = workflow_path.read_text(encoding='utf-8')
+          if workflow.count('run_38_pinned') != 2:
+              raise SystemExit('refusing reanchor: D3-D workflow provenance reporting drifted')
+          workflow_path.write_text(workflow.replace('run_38_pinned', 'run_43_pinned'), encoding='utf-8')
+          PY
+
+          python3 tools/assurance/validate_d3_identity_security_state.py .
+          python3 tools/assurance/test_d3d_completion_provenance.py
+          git diff --check
+          git diff --exit-code -- .github/workflows/d3d-run43-provenance-reanchor-one-shot.yml
+
+      - name: Commit governed provenance promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'SupportingBasesOfficial'
+          git config user.email 'suportingbases@gmail.com'
+          git add \
+            implementation/d3-identity-security/state-manifest.json \
+            tools/assurance/validate_d3_identity_security_state.py \
+            .github/workflows/d3-spire-candidate-evaluation.yml
+          git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l)" -eq 3
+          git commit -m 'assurance(D3-D): reanchor repaired boundary provenance'
+          git push origin HEAD:evidence/d3-d-workload-identity-c2

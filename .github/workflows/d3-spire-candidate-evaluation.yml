@@ -212,8 +212,8 @@ jobs:
           printf 'rotation_evidence_provenance=run_12_pinned current_run_ledger_change=false\n'
           printf 'non_tenant_authority_evidence_provenance=run_15_pinned current_run_ledger_change=false\n'
           printf 'private_key_profile_evidence_provenance=run_24_pinned current_run_ledger_change=false\n'
-          printf 'restore_nonresurrection_evidence_provenance=run_43_pinned current_run_ledger_change=false\n'
-          printf 'vendor_credential_adapter_evidence_provenance=run_43_pinned current_run_ledger_change=false\n'
+          printf 'restore_nonresurrection_evidence_provenance=run_52_pinned current_run_ledger_change=false\n'
+          printf 'vendor_credential_adapter_evidence_provenance=run_52_pinned current_run_ledger_change=false\n'
           printf 'remaining_evidence=none\n'
           printf 'd3_gate=candidate_evidence_running wave4=not_granted production=none d4=not_selected_not_granted\n'
 

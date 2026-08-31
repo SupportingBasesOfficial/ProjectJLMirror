@@ -68,36 +68,33 @@ jobs:
           print('d3_b_pre_conformance_manifest_boundary=PASS')
           PY
 
-      - name: Validate conformance harness structure and forbidden shortcuts
+      - name: Validate final conformance harness structure and forbidden shortcuts
         shell: bash
         run: |
           set -euo pipefail
-          base_probe=implementation/d3-identity-security/harness/cache_authority_conformance_runner.py
-          hardening_probe=implementation/d3-identity-security/harness/cache_authority_conformance_hardening_runner.py
-          python3 -m py_compile "$base_probe" "$hardening_probe"
+          probe=implementation/d3-identity-security/harness/cache_authority_conformance_gate_runner.py
+          python3 -m py_compile "$probe"
           for marker in \
             d3_b_session_authority_owner_boundaries \
             d3_b_revocation_partial_write_safety \
             d3_b_prepare_fence_commit_finalize_single_winner \
+            d3_b_lease_issue_exclusion_serialization \
+            d3_b_cleanup_takeover_actual_concurrency \
             d3_b_fleet_wide_cache_exclusion_barrier \
             d3_b_restore_failover_positive_authority_nonresurrection \
-            d3_b_degraded_owner_read_bulkhead_fail_closed; do
-            grep -F "$marker=PASS" "$base_probe" >/dev/null
-          done
-          for marker in \
-            d3_b_cleanup_takeover_actual_concurrency \
-            d3_b_precommit_fence_continuity_loss \
+            d3_b_reentry_new_mutation_serialization \
+            d3_b_degraded_owner_read_bulkhead_fail_closed \
             d3_b_cross_owner_transition_isolation \
-            d3_b_degraded_owner_bulkhead_actual_concurrency \
-            d3_b_session_cache_conformance_hardening; do
-            grep -F "$marker=PASS" "$hardening_probe" >/dev/null
+            d3_b_session_cache_conformance_gate; do
+            grep -F "$marker=PASS" "$probe" >/dev/null
           done
-          grep -F 'REPLICAOF' "$base_probe" >/dev/null
-          grep -F 'docker", "pause"' "$base_probe" >/dev/null
-          grep -F 'SAVE' "$base_probe" >/dev/null
-          grep -F 'hold_transition_id' "$hardening_probe" >/dev/null
-          grep -F 'threading.Barrier' "$hardening_probe" >/dev/null
-          if grep -Eq 'wave4.*granted|production_authority.*granted|d4_transport_authority.*granted' "$base_probe" "$hardening_probe"; then
+          grep -F 'class CommitPermit' "$probe" >/dev/null
+          grep -F 'preterminal_scope_release_impossible=true' "$probe" >/dev/null
+          grep -F 'reconciliation_requires_exact_non_authorizing_cache_state=true' "$probe" >/dev/null
+          grep -F 'REPLICAOF' "$probe" >/dev/null
+          grep -F '"pause", PG_CONTAINER' "$probe" >/dev/null
+          grep -F 'threading.Barrier' "$probe" >/dev/null
+          if grep -Eq 'wave4.*granted|production_authority.*granted|d4_transport_authority.*granted' "$probe"; then
             echo 'D3-B evidence harness attempted to grant downstream authority' >&2
             exit 1
           fi
@@ -154,7 +151,7 @@ jobs:
           CACHE_IMAGE="$REDIS_IMAGE" \
           CACHE_SERVER=redis-server \
           DOCKER_NETWORK="$D3_NETWORK" \
-            python3 implementation/d3-identity-security/harness/cache_authority_conformance_hardening_runner.py
+            python3 implementation/d3-identity-security/harness/cache_authority_conformance_gate_runner.py
 
       - name: Retire Redis evidence containers before substitution control
         if: always()
@@ -181,14 +178,14 @@ jobs:
           CACHE_IMAGE="$VALKEY_IMAGE" \
           CACHE_SERVER=valkey-server \
           DOCKER_NETWORK="$D3_NETWORK" \
-            python3 implementation/d3-identity-security/harness/cache_authority_conformance_hardening_runner.py
+            python3 implementation/d3-identity-security/harness/cache_authority_conformance_gate_runner.py
 
       - name: Preserve bounded D3-B evidence boundary
         if: success()
         shell: bash
         run: |
           set -euo pipefail
-          printf 'd3_b_candidate_conformance_probe=PASS_PINNED_HARDENED\n'
+          printf 'd3_b_candidate_conformance_probe=PASS_PINNED_SERIALIZED_GATE\n'
           printf 'postgres_digest=%s\n' "$POSTGRES_IMAGE"
           printf 'redis_digest=%s\n' "$REDIS_IMAGE"
           printf 'valkey_digest=%s\n' "$VALKEY_IMAGE"

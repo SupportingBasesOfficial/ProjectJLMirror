@@ -961,6 +961,11 @@ def main() -> int:
                 raise AssertionError("recovered mapping failed to retire mapped session")
 
             third_claims = create_provider_session()
+            # This scenario intentionally proves a *confirmed* no-active-mapping outcome.
+            # Remove the current subject link and do not register the new provider sid.
+            # Historical sid bindings from earlier sessions are already retired and must not
+            # cause the new, unknown sid to guess a platform revocation target.
+            mappings.unlink_subject(issuer=issuer, sub=third_claims["sub"])
             third_logout = trigger_admin_logout(user_id)
             authenticated_third = verifier.verify(third_logout)
             before_absent_mutations = (

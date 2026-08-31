@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   reanchor:
-    if: "${{ github.event.head_commit.message == 'assurance(D3-D): retrigger exact run-43 provenance reanchor' }}"
+    if: "${{ github.event.head_commit.message == 'assurance(D3-D): commit exact run-43 provenance reanchor' }}"
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -78,12 +78,6 @@ jobs:
           if validator.count(old) != 1:
               raise SystemExit('refusing reanchor: approved strengthened-boundary provenance block drifted')
           validator_path.write_text(validator.replace(old, new, 1), encoding='utf-8')
-
-          workflow_path = Path('.github/workflows/d3-spire-candidate-evaluation.yml')
-          workflow = workflow_path.read_text(encoding='utf-8')
-          if workflow.count('run_38_pinned') != 2:
-              raise SystemExit('refusing reanchor: D3-D workflow provenance reporting drifted')
-          workflow_path.write_text(workflow.replace('run_38_pinned', 'run_43_pinned'), encoding='utf-8')
           PY
 
           python3 tools/assurance/validate_d3_identity_security_state.py .
@@ -99,9 +93,8 @@ jobs:
           git config user.email 'suportingbases@gmail.com'
           git add \
             implementation/d3-identity-security/state-manifest.json \
-            tools/assurance/validate_d3_identity_security_state.py \
-            .github/workflows/d3-spire-candidate-evaluation.yml
+            tools/assurance/validate_d3_identity_security_state.py
           git diff --cached --check
-          test "$(git diff --cached --name-only | wc -l)" -eq 3
+          test "$(git diff --cached --name-only | wc -l)" -eq 2
           git commit -m 'assurance(D3-D): reanchor repaired boundary provenance'
           git push origin HEAD:evidence/d3-d-workload-identity-c2

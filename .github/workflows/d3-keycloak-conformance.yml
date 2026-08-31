@@ -54,13 +54,16 @@ jobs:
           python3 -m py_compile \
             implementation/d3-identity-security/harness/keycloak_mfa_step_up_probe.py \
             implementation/d3-identity-security/harness/keycloak_mfa_single_use_runner.py \
-            implementation/d3-identity-security/harness/keycloak_authority_effects_probe.py
+            implementation/d3-identity-security/harness/keycloak_authority_effects_probe.py \
+            implementation/d3-identity-security/harness/keycloak_authority_single_winner_runner.py
           grep -F 'd3_keycloak_mfa_step_up=PASS' \
             implementation/d3-identity-security/harness/keycloak_mfa_step_up_probe.py >/dev/null
           grep -F 'd3_keycloak_totp_single_use_freshness=PASS' \
             implementation/d3-identity-security/harness/keycloak_mfa_single_use_runner.py >/dev/null
           grep -F 'd3_keycloak_authority_effects=PASS' \
             implementation/d3-identity-security/harness/keycloak_authority_effects_probe.py >/dev/null
+          grep -F 'd3_keycloak_effect_single_winner=PASS' \
+            implementation/d3-identity-security/harness/keycloak_authority_single_winner_runner.py >/dev/null
 
       - name: Guard Keycloak provider state from platform authorization source
         shell: bash
@@ -210,7 +213,7 @@ jobs:
 
       - name: Exercise back-channel authority and non-authority effects
         shell: bash
-        run: python3 implementation/d3-identity-security/harness/keycloak_authority_effects_probe.py
+        run: python3 implementation/d3-identity-security/harness/keycloak_authority_single_winner_runner.py
 
       - name: Record evidence-only boundary
         if: success()

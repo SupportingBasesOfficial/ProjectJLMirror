@@ -41,7 +41,7 @@ jobs:
           printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual_sha"
           test "$actual_sha" = "$EXPECTED_SHA"
 
-      - name: Validate bounded D3-E source-evidence authority state
+      - name: Validate promoted D3-E per-track authority state
         shell: bash
         run: |
           set -euo pipefail
@@ -49,33 +49,51 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
+
           manifest = json.loads(Path('implementation/d3-identity-security/state-manifest.json').read_text())
           tracks = {track['track_id']: track for track in manifest['tracks']}
           track = tracks['D3-E']
           assert track['candidate'] == 'openbao_2_6_2_transit_behind_provider_neutral_key_authority_port'
-          assert track['state'] == 'candidate_selected_conformance_pending'
-          assert set(track['evidence_completed']) == {
-              'tenant_scope_domain_separation',
-              'erasure_granularity_key_alignment',
-              'provider_neutral_key_authority_port',
+          assert track['state'] == 'per_track_conformed'
+          required = set(track['required_evidence'])
+          assert set(track['evidence_completed']) == required
+          assert track['evidence_remaining'] == []
+          proofs = {p['evidence_id']: p for p in track['evidence_proofs']}
+          assert set(proofs) == required
+
+          promoted = {
+              'historical_verifier_relocation_recovery_continuity': 'implementation/d3-identity-security/harness/openbao_crypto_conformance_entrypoint.py',
+              'retired_erased_key_nonresurrection': 'implementation/d3-identity-security/harness/openbao_crypto_conformance_entrypoint.py',
+              'private_key_jwt_replay_atomic_single_winner': 'implementation/d3-identity-security/harness/private_key_jwt_token_boundary_conformance.py',
+              'replay_partition_fail_closed': 'implementation/d3-identity-security/harness/replay_recovery_conformance_entrypoint.py',
+              'replay_consumed_identity_survives_restore_loss': 'implementation/d3-identity-security/harness/replay_recovery_conformance_entrypoint.py',
+              'key_generation_rotation_retirement': 'implementation/d3-identity-security/harness/openbao_crypto_conformance_entrypoint.py',
           }
-          assert set(track['evidence_remaining']) == {
-              'historical_verifier_relocation_recovery_continuity',
-              'retired_erased_key_nonresurrection',
-              'private_key_jwt_replay_atomic_single_winner',
-              'replay_partition_fail_closed',
-              'replay_consumed_identity_survives_restore_loss',
-              'key_generation_rotation_retirement',
+          expected_pins = {
+              'ghcr.io/openbao/openbao@sha256:11fd73a2102cda9c55d5d881a8c3210303146a7ec1e8ac76f526e175c6d24641',
+              'postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280',
           }
-          assert {p['evidence_id'] for p in track['evidence_proofs']} == set(track['evidence_completed'])
-          for track_id in ('D3-A', 'D3-B', 'D3-C', 'D3-D'):
+          for evidence_id, probe in promoted.items():
+              proof = proofs[evidence_id]
+              assert proof['evidence_sha'] == '42722507a2eb410f81df2a77b3506432d4b6fb27'
+              assert proof['workflow_run_id'] == 33564230738
+              assert proof['workflow_run_number'] == 79
+              assert proof['workflow_file'] == '.github/workflows/d3-key-authority-conformance.yml'
+              assert proof['job_name'] == 'OpenBao 2.6.2 + PostgreSQL 18.6 crypto/replay continuity'
+              assert proof['probe'] == probe
+              assert set(proof['artifact_pins']) == expected_pins
+              assert proof['result'] == 'pass'
+
+          for track_id in ('D3-A', 'D3-B', 'D3-C', 'D3-D', 'D3-E'):
               assert tracks[track_id]['state'] == 'per_track_conformed'
-          assert manifest['gate_state'] == 'candidate_evidence_running'
+          assert manifest['gate_state'] == 'per_track_conformed'
+          assert manifest['canonical_product_implementation_authority'] == 'not_granted'
           assert manifest['wave4_implementation_authority'] == 'not_granted'
           assert manifest['production_authority'] == 'none'
           assert manifest['d4_transport_authority'] == 'not_selected_not_granted'
           assert 'OPEN-REL-016.B' in manifest['c3_remains_open']
-          print('d3_e_source_manifest_boundary=PASS')
+          assert 'separate_acceptance' in manifest['acceptance_rule']
+          print('d3_e_promoted_manifest_boundary=PASS proofs=9 downstream_authority=unchanged')
           PY
           case "$OPENBAO_IMAGE" in ghcr.io/openbao/openbao@sha256:*) ;; *) exit 1 ;; esac
           case "$POSTGRES_IMAGE" in postgres@sha256:*) ;; *) exit 1 ;; esac
@@ -285,7 +303,7 @@ jobs:
         run: |
           set -euo pipefail
           printf 'd3_e_candidate_conformance_probe=PASS_PINNED_PERSISTENT_RECOVERY_TOKEN_BOUNDARY_HARDENED\n'
-          printf 'manifest_credit=unchanged c3_numerics=not_selected topology=not_selected\n'
+          printf 'manifest_credit=promoted_per_track_conformed c3_numerics=not_selected topology=not_selected\n'
           printf 'd3=not_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
 
       - name: Cleanup

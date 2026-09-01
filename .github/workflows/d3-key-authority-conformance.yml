@@ -1,0 +1,298 @@
+name: JLMIRROR D3-E Crypto Replay Conformance Evidence
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  crypto-replay-conformance:
+    name: OpenBao 2.6.2 + PostgreSQL 18.6 crypto/replay continuity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      OPENBAO_IMAGE: ghcr.io/openbao/openbao@sha256:11fd73a2102cda9c55d5d881a8c3210303146a7ec1e8ac76f526e175c6d24641
+      POSTGRES_IMAGE: postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+      PG_CONTAINER: jlmirror-d3e-postgres
+      PG_PASSWORD: d3-postgres-password
+      D3_NETWORK: jlmirror-d3e-conformance
+      D3E_RECOVERY_WITNESS: /tmp/jlmirror-d3e-recovery-witness.json
+      D3E_CRYPTO_WITNESS: /tmp/jlmirror-d3e-crypto-witness.json
+
+    steps:
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
+
+      - name: Validate bounded D3-E source-evidence authority state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/assurance/validate_d3_identity_security_state.py .
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('implementation/d3-identity-security/state-manifest.json').read_text())
+          tracks = {track['track_id']: track for track in manifest['tracks']}
+          track = tracks['D3-E']
+          assert track['candidate'] == 'openbao_2_6_2_transit_behind_provider_neutral_key_authority_port'
+          assert track['state'] == 'candidate_selected_conformance_pending'
+          assert set(track['evidence_completed']) == {
+              'tenant_scope_domain_separation',
+              'erasure_granularity_key_alignment',
+              'provider_neutral_key_authority_port',
+          }
+          assert set(track['evidence_remaining']) == {
+              'historical_verifier_relocation_recovery_continuity',
+              'retired_erased_key_nonresurrection',
+              'private_key_jwt_replay_atomic_single_winner',
+              'replay_partition_fail_closed',
+              'replay_consumed_identity_survives_restore_loss',
+              'key_generation_rotation_retirement',
+          }
+          assert {p['evidence_id'] for p in track['evidence_proofs']} == set(track['evidence_completed'])
+          for track_id in ('D3-A', 'D3-B', 'D3-C', 'D3-D'):
+              assert tracks[track_id]['state'] == 'per_track_conformed'
+          assert manifest['gate_state'] == 'candidate_evidence_running'
+          assert manifest['wave4_implementation_authority'] == 'not_granted'
+          assert manifest['production_authority'] == 'none'
+          assert manifest['d4_transport_authority'] == 'not_selected_not_granted'
+          assert 'OPEN-REL-016.B' in manifest['c3_remains_open']
+          print('d3_e_source_manifest_boundary=PASS')
+          PY
+          case "$OPENBAO_IMAGE" in ghcr.io/openbao/openbao@sha256:*) ;; *) exit 1 ;; esac
+          case "$POSTGRES_IMAGE" in postgres@sha256:*) ;; *) exit 1 ;; esac
+          printf 'd3_e_source_candidate_pins=PASS manifest_candidate_locked=true workflow_digests_immutable=true\n'
+
+      - name: Validate layered crypto recovery and token-boundary structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir=implementation/d3-identity-security/harness
+          crypto="$dir/openbao_crypto_conformance_runner.py"
+          crypto_base="$dir/_openbao_crypto_conformance_base.py"
+          crypto_entry="$dir/openbao_crypto_conformance_entrypoint.py"
+          replay="$dir/replay_recovery_conformance_runner.py"
+          replay_entry="$dir/replay_recovery_conformance_entrypoint.py"
+          replay_strict="$dir/replay_recovery_strict_entrypoint.py"
+          replay_capability="$dir/replay_recovery_capability_binding.py"
+          replay_boundary="$dir/replay_recovery_boundary_hardening.py"
+          replay_port="$dir/replay_recovery_port_probe.py"
+          token_boundary="$dir/private_key_jwt_token_boundary_conformance.py"
+
+          python3 -m py_compile \
+            "$crypto" "$crypto_base" "$crypto_entry" \
+            "$replay" "$replay_entry" "$replay_strict" \
+            "$replay_capability" "$replay_boundary" "$replay_port" "$token_boundary"
+
+          grep -F 'd3_e_openbao_262_http_success_profile=PASS' "$crypto_base" >/dev/null
+          grep -F 'accepted.add(200)' "$crypto_base" >/dev/null
+          grep -F '_ORIGINAL_CALL(self, method, path, body' "$crypto_base" >/dev/null
+          grep -F 'path in _EXPECTED_DELETED_VERIFY_PATHS' "$crypto_base" >/dev/null
+          grep -F 'provider_generation_authority' "$crypto_base" >/dev/null
+          grep -F 'ON CONFLICT(handle_binding) DO NOTHING' "$crypto_base" >/dev/null
+          grep -F 'provider-native generation authority is immutable during ordinary issuance' "$crypto_base" >/dev/null
+
+          grep -F 'transit/keys/{base.quote(provider_ref' "$crypto_entry" >/dev/null
+          grep -F '/rotate' "$crypto_entry" >/dev/null
+          grep -F 'port.issue(handle=handle' "$crypto_entry" >/dev/null
+          grep -F 'native_openbao_rotation_exercised=true' "$crypto_entry" >/dev/null
+          grep -F 'ordinary_issue_path_exercised=true' "$crypto_entry" >/dev/null
+          grep -F 'native_rotation_cannot_self_authorize=true' "$crypto_entry" >/dev/null
+          grep -F 'trusted_generation_retained_after_rejected_issue=true' "$crypto_entry" >/dev/null
+          if grep -F 'stale_restore_cannot_self_reauthorize=true' "$crypto_entry" >/dev/null; then
+            echo 'executed entrypoint must not claim an unexercised stale-restore generation proof' >&2
+            exit 1
+          fi
+
+          grep -F 'class CrashDurableProviderState' "$replay_entry" >/dev/null
+          grep -F 'stream.flush()' "$replay_entry" >/dev/null
+          grep -F 'os.fsync(stream.fileno())' "$replay_entry" >/dev/null
+          grep -F 'os.replace(tmp, path)' "$replay_entry" >/dev/null
+          grep -F 'os.fsync(directory_fd)' "$replay_entry" >/dev/null
+          grep -F 'strict.start_provider = start_provider' "$replay_entry" >/dev/null
+          grep -F 'durable_provider_server()' "$replay_entry" >/dev/null
+
+          for marker in \
+            d3_e_historical_verifier_relocation_recovery_continuity \
+            d3_e_retired_erased_key_nonresurrection \
+            d3_e_key_generation_rotation_retirement \
+            d3_e_openbao_provider_neutral_custody \
+            d3_e_actual_domain_separation \
+            d3_e_crypto_authority_conformance; do
+            grep -F "$marker=PASS" "$crypto" >/dev/null
+          done
+          for marker in \
+            d3_e_replay_duplicate_recovery_gate_order \
+            d3_e_replay_partition_fail_closed \
+            d3_e_redrive_crash_retry_single_effect \
+            d3_e_redrive_absence_effect_race_single_winner; do
+            grep -F "$marker=PASS" "$replay" >/dev/null
+          done
+          grep -F 'd3_e_replay_port_atomic_single_winner=PASS' "$replay_port" >/dev/null
+          grep -F 'token_boundary_claim=false' "$replay_port" >/dev/null
+          grep -F 'd3_e_private_key_jwt_replay_atomic_single_winner=PASS' "$token_boundary" >/dev/null
+          grep -F 'actual_token_endpoint=true' "$token_boundary" >/dev/null
+          grep -F 'token_boundary_replicas=2' "$token_boundary" >/dev/null
+          grep -F 'rs256_signature_validated=true' "$token_boundary" >/dev/null
+          grep -F 'exactly_one_token_success=true' "$token_boundary" >/dev/null
+          grep -F 'internal_observe_not_token_issuance=true' "$token_boundary" >/dev/null
+          grep -F 'd3_e_recovery_consumer_drain_barrier=PASS' "$replay_boundary" >/dev/null
+          grep -F 'pg_advisory_xact_lock_shared' "$replay_boundary" >/dev/null
+          grep -F 'pg_advisory_xact_lock(' "$replay_boundary" >/dev/null
+          grep -F 'fence_commit_precedes_barrier_release=true' "$replay_boundary" >/dev/null
+          grep -F 'json_build_object' "$replay_boundary" >/dev/null
+          grep -F 'd3_e_replay_exact_provider_capability_binding=PASS' "$replay_capability" >/dev/null
+          grep -F 'provider_operation_id_aliasing_negative_control=true' "$replay_capability" >/dev/null
+          grep -F 'prepared restored absence-fence revision mismatch' "$replay_capability" >/dev/null
+          grep -F 'd3_e_recovery_missing_witness_fail_closed=PASS' "$replay_capability" >/dev/null
+
+          grep -F 'storage "file"' "$crypto" >/dev/null
+          grep -F 'operator", "init"' "$crypto" >/dev/null
+          grep -F 'copy_volume(SOURCE_VOLUME, TARGET_VOLUME)' "$crypto" >/dev/null
+          grep -F 'stale_encrypted_provider_storage_restored=true' "$crypto" >/dev/null
+          grep -F 'erasure_fence_before_provider_delete=true' "$crypto" >/dev/null
+          grep -F 'exportable": False' "$crypto" >/dev/null
+          grep -F 'allow_plaintext_backup": False' "$crypto" >/dev/null
+          grep -F 'auth/token/create-orphan' "$crypto" >/dev/null
+          grep -F 'root_authority_revoked=true' "$crypto" >/dev/null
+          if grep -F 'server -dev' "$crypto" >/dev/null; then
+            echo 'ephemeral OpenBao dev storage cannot prove relocation/recovery continuity' >&2
+            exit 1
+          fi
+
+          grep -F 'whole_database_dump' "$replay" >/dev/null
+          grep -F 'RecoveryWitnessPort' "$replay" >/dev/null
+          grep -F 'recovery_gate_before_duplicate_observe=true' "$replay" >/dev/null
+          grep -F 'prior.recovery_epoch<>p_expected_epoch' "$replay" >/dev/null
+          grep -F 'ThreadingHTTPServer' "$replay" >/dev/null
+          grep -F 'drop_response' "$replay" >/dev/null
+          grep -F 'provider_side_serialization=true' "$replay" >/dev/null
+          grep -F '"network", "disconnect"' "$replay" >/dev/null
+          grep -F 'attempt_token' "$replay_capability" >/dev/null
+          grep -F '_require_exact_capability' "$replay_strict" >/dev/null
+          grep -F 'DROP DATABASE d3 WITH (FORCE)' "$replay_strict" >/dev/null
+          grep -F 'CREATE DATABASE d3' "$replay_strict" >/dev/null
+          grep -F 'stale_db_cannot_self_certify=true' "$replay_strict" >/dev/null
+          if grep -F 'CREATE SCHEMA d3e_replay_control' "$replay" >/dev/null; then
+            echo 'recovery witness must not be hidden inside the same rollback database' >&2
+            exit 1
+          fi
+
+      - name: Pull immutable OpenBao and PostgreSQL candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          for image in "$OPENBAO_IMAGE" "$POSTGRES_IMAGE"; do
+            docker pull "$image"
+            docker image inspect "$image" --format '{{range .RepoDigests}}{{println .}}{{end}}' | grep -Fx "$image" >/dev/null
+          done
+
+      - name: Start pinned PostgreSQL replay authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker network create "$D3_NETWORK"
+          docker run -d --rm --name "$PG_CONTAINER" --network "$D3_NETWORK" \
+            -e POSTGRES_PASSWORD="$PG_PASSWORD" -e POSTGRES_DB=d3 "$POSTGRES_IMAGE"
+          for _ in $(seq 1 120); do
+            if result="$(docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_CONTAINER" psql -U postgres -d d3 -Atqc 'SELECT 1' 2>/dev/null)" && test "$result" = "1"; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          docker logs "$PG_CONTAINER" >&2 || true
+          exit 1
+
+      - name: Exercise persistent OpenBao relocation erasure and generation continuity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 implementation/d3-identity-security/harness/openbao_crypto_conformance_entrypoint.py | tee /tmp/d3e-crypto.log
+          for marker in \
+            d3_e_openbao_262_http_success_profile \
+            d3_e_openbao_provider_neutral_custody \
+            d3_e_actual_domain_separation \
+            d3_e_historical_verifier_relocation_recovery_continuity \
+            d3_e_retired_erased_key_nonresurrection \
+            d3_e_key_generation_rotation_retirement \
+            d3_e_crypto_authority_conformance \
+            d3_e_provider_generation_binding; do
+            grep -F "$marker=PASS" /tmp/d3e-crypto.log >/dev/null
+          done
+          grep -F 'trusted_postgresql_provider_generation_authority=true' /tmp/d3e-crypto.log >/dev/null
+          grep -F 'embedded_generation_equals_authorized_generation=true' /tmp/d3e-crypto.log >/dev/null
+          grep -F 'native_openbao_rotation_exercised=true' /tmp/d3e-crypto.log >/dev/null
+          grep -F 'ordinary_issue_path_exercised=true' /tmp/d3e-crypto.log >/dev/null
+          grep -F 'native_rotation_cannot_self_authorize=true' /tmp/d3e-crypto.log >/dev/null
+          grep -F 'trusted_generation_retained_after_rejected_issue=true' /tmp/d3e-crypto.log >/dev/null
+
+      - name: Exercise strict replay recovery and token-boundary replicas
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_CONTAINER" psql -U postgres -d d3 -v ON_ERROR_STOP=1 -c 'DROP SCHEMA IF EXISTS d3e_crypto_control CASCADE;'
+
+          python3 implementation/d3-identity-security/harness/replay_recovery_conformance_entrypoint.py | tee /tmp/d3e-replay.log
+          for marker in \
+            d3_e_replay_port_atomic_single_winner \
+            d3_e_replay_duplicate_recovery_gate_order \
+            d3_e_replay_partition_fail_closed \
+            d3_e_replay_consumed_identity_survives_restore_loss \
+            d3_e_redrive_crash_retry_single_effect \
+            d3_e_redrive_absence_effect_race_single_winner \
+            d3_e_external_provider_restart_durability \
+            d3_e_replay_redrive_conformance; do
+            grep -F "$marker=PASS" /tmp/d3e-replay.log >/dev/null
+          done
+          grep -F 'exact_provider_capability_binding=true' /tmp/d3e-replay.log >/dev/null
+
+          python3 implementation/d3-identity-security/harness/replay_recovery_capability_binding.py | tee /tmp/d3e-capability.log
+          grep -F 'd3_e_recovery_consumer_drain_barrier=PASS' /tmp/d3e-capability.log >/dev/null
+          grep -F 'fence_commit_precedes_barrier_release=true' /tmp/d3e-capability.log >/dev/null
+          grep -F 'structured_consumed_json=true' /tmp/d3e-capability.log >/dev/null
+          grep -F 'delimiter_claims_round_trip=true' /tmp/d3e-capability.log >/dev/null
+          grep -F 'd3_e_replay_exact_provider_capability_binding=PASS' /tmp/d3e-capability.log >/dev/null
+          grep -F 'd3_e_recovery_missing_witness_fail_closed=PASS' /tmp/d3e-capability.log >/dev/null
+
+          python3 implementation/d3-identity-security/harness/private_key_jwt_token_boundary_conformance.py | tee /tmp/d3e-token-boundary.log
+          grep -F 'd3_e_private_key_jwt_replay_atomic_single_winner=PASS' /tmp/d3e-token-boundary.log >/dev/null
+          grep -F 'actual_token_endpoint=true' /tmp/d3e-token-boundary.log >/dev/null
+          grep -F 'token_boundary_replicas=2' /tmp/d3e-token-boundary.log >/dev/null
+          grep -F 'exactly_one_token_success=true' /tmp/d3e-token-boundary.log >/dev/null
+          grep -F 'replayed_assertions_rejected=47' /tmp/d3e-token-boundary.log >/dev/null
+          grep -F 'internal_observe_not_token_issuance=true' /tmp/d3e-token-boundary.log >/dev/null
+
+      - name: Preserve bounded source-evidence result
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'd3_e_candidate_conformance_probe=PASS_PINNED_PERSISTENT_RECOVERY_TOKEN_BOUNDARY_HARDENED\n'
+          printf 'manifest_credit=unchanged c3_numerics=not_selected topology=not_selected\n'
+          printf 'd3=not_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f jlmirror-d3e-openbao-source jlmirror-d3e-openbao-target "$PG_CONTAINER" >/dev/null 2>&1 || true
+          docker volume rm -f jlmirror-d3e-openbao-source-data jlmirror-d3e-openbao-target-data jlmirror-d3e-openbao-stale-data >/dev/null 2>&1 || true
+          docker network rm "$D3_NETWORK" >/dev/null 2>&1 || true
+          rm -f "$D3E_RECOVERY_WITNESS" "$D3E_CRYPTO_WITNESS" /tmp/jlmirror-d3e-provider-state.json /tmp/jlmirror-d3e-provider-state.json.provisioned /tmp/jlmirror-d3e-openbao.hcl /tmp/jlmirror-d3e-private-key-jwt.pem /tmp/jlmirror-d3e-private-key-jwt.pub.pem

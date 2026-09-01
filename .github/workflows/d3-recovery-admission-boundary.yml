@@ -1,0 +1,158 @@
+name: JLMIRROR D3-E Recovery Admission Boundary Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recovery-admission-boundary:
+    name: Drain replay admissions + reject token replays
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      POSTGRES_IMAGE: postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+      PG_CONTAINER: jlmirror-d3e-boundary-postgres
+      PG_PASSWORD: d3-postgres-password
+      D3_NETWORK: jlmirror-d3e-boundary
+      D3E_RECOVERY_WITNESS: /tmp/jlmirror-d3e-boundary-witness.json
+      D3E_EFFECT_PROVIDER_STATE: /tmp/jlmirror-d3e-boundary-provider.json
+
+    steps:
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact source-only authority boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python3 tools/assurance/validate_d3_identity_security_state.py .
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('implementation/d3-identity-security/state-manifest.json').read_text())
+          track = {x['track_id']: x for x in manifest['tracks']}['D3-E']
+          assert track['state'] == 'candidate_selected_conformance_pending'
+          assert len(track['evidence_completed']) == 3
+          assert len(track['evidence_remaining']) == 6
+          assert manifest['gate_state'] == 'candidate_evidence_running'
+          assert manifest['wave4_implementation_authority'] == 'not_granted'
+          assert manifest['production_authority'] == 'none'
+          assert manifest['d4_transport_authority'] == 'not_selected_not_granted'
+          print('d3_e_boundary_manifest_authority=PASS credit=unchanged')
+          PY
+
+      - name: Falsify barrier and token-boundary structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir=implementation/d3-identity-security/harness
+          core="$dir/replay_recovery_conformance_runner.py"
+          barrier="$dir/replay_recovery_boundary_hardening.py"
+          capability="$dir/replay_recovery_capability_binding.py"
+          token="$dir/private_key_jwt_token_boundary_conformance.py"
+          strict="$dir/replay_recovery_strict_entrypoint.py"
+          python3 -m py_compile "$core" "$barrier" "$capability" "$token" "$strict"
+          grep -F 'pg_advisory_xact_lock_shared' "$barrier" >/dev/null
+          grep -F 'pg_advisory_xact_lock(' "$barrier" >/dev/null
+          grep -F 'fence_commit_precedes_barrier_release=true' "$barrier" >/dev/null
+          grep -F 'json_build_object' "$barrier" >/dev/null
+          grep -F 'validate_consumed_restore_exact' "$barrier" >/dev/null
+          grep -F 'delimiter_claims_round_trip=true' "$barrier" >/dev/null
+          grep -F 'close_admission_and_drain' "$capability" >/dev/null
+          grep -F 'attempt_generation > 0' "$capability" >/dev/null
+          grep -F 'restore_exclusive_barrier_before_prevalidation=true' "$capability" >/dev/null
+          grep -F 'exactly_one_token_success=true' "$token" >/dev/null
+          grep -F 'internal_observe_not_token_issuance=true' "$token" >/dev/null
+          grep -F 'current_admitted_epoch' "$token" >/dev/null
+          grep -F 'bootstrap_epoch_not_hardcoded=true' "$token" >/dev/null
+          grep -F 'client_assertion_type' "$token" >/dev/null
+
+      - name: Start immutable PostgreSQL replay authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull "$POSTGRES_IMAGE"
+          docker image inspect "$POSTGRES_IMAGE" --format '{{range .RepoDigests}}{{println .}}{{end}}' | grep -Fx "$POSTGRES_IMAGE" >/dev/null
+          docker network create "$D3_NETWORK"
+          docker run -d --rm --name "$PG_CONTAINER" --network "$D3_NETWORK" \
+            -e POSTGRES_PASSWORD="$PG_PASSWORD" -e POSTGRES_DB=d3 "$POSTGRES_IMAGE"
+          for _ in $(seq 1 120); do
+            if result="$(docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_CONTAINER" \
+              psql -U postgres -d d3 -Atqc 'SELECT 1' 2>/dev/null)" && test "$result" = "1"; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          docker logs "$PG_CONTAINER" >&2 || true
+          exit 1
+
+      - name: Prove drain barrier structured witness and exact capability recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 implementation/d3-identity-security/harness/replay_recovery_capability_binding.py | tee /tmp/d3e-boundary.log
+          grep -F 'd3_e_recovery_consumer_drain_barrier=PASS' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'in_flight_consumer_drained_before_witness=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'new_consumers_blocked_after_close=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'fence_commit_precedes_barrier_release=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'structured_consumed_json=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'delimiter_claims_round_trip=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'd3_e_ambiguous_capability_token_retention=PASS' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'd3_e_completed_capability_boundary_inventory=PASS' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'effect_completed_after_drain=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'caller_ops_empty=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'completed_effect_captured=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'd3_e_replay_exact_provider_capability_binding=PASS' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'restore_exclusive_barrier_before_prevalidation=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'mismatch_failure_leaves_db_closed=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'admission_remains_closed_on_mismatch=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'd3_e_recovery_missing_witness_fail_closed=PASS' /tmp/d3e-boundary.log >/dev/null
+
+      - name: Prove one successful token request across replicas and recovered epoch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 implementation/d3-identity-security/harness/private_key_jwt_token_boundary_conformance.py | tee /tmp/d3e-token.log
+          grep -F 'd3_e_private_key_jwt_replay_atomic_single_winner=PASS' /tmp/d3e-token.log >/dev/null
+          grep -F 'token_boundary_replicas=2' /tmp/d3e-token.log >/dev/null
+          grep -F 'exactly_one_token_success=true' /tmp/d3e-token.log >/dev/null
+          grep -F 'replayed_assertions_rejected=47' /tmp/d3e-token.log >/dev/null
+          grep -F 'internal_observe_not_token_issuance=true' /tmp/d3e-token.log >/dev/null
+          grep -F 'recovery_admission_barrier_installed=true' /tmp/d3e-token.log >/dev/null
+          grep -F 'current_epoch_from_witness=true' /tmp/d3e-token.log >/dev/null
+          grep -F 'recovered_epoch_token_success=true' /tmp/d3e-token.log >/dev/null
+          grep -F 'bootstrap_epoch_not_hardcoded=true' /tmp/d3e-token.log >/dev/null
+
+      - name: Preserve source-only authority boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'd3_e_recovery_admission_boundary=PASS exact_head=%s\n' "$EXPECTED_SHA"
+          printf 'manifest_credit=unchanged d3=not_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
+          docker network rm "$D3_NETWORK" >/dev/null 2>&1 || true
+          rm -f "$D3E_RECOVERY_WITNESS" "$D3E_EFFECT_PROVIDER_STATE" \
+            "${D3E_EFFECT_PROVIDER_STATE}.provisioned" /tmp/d3e-boundary.log /tmp/d3e-token.log \
+            /tmp/jlmirror-d3e-private-key-jwt.pem /tmp/jlmirror-d3e-private-key-jwt.pub.pem

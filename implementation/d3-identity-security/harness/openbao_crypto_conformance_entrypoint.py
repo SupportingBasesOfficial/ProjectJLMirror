@@ -1,483 +1,85 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-import hashlib
-import hmac
-import json
-import os
-from pathlib import Path
-from urllib.parse import quote
-
+import _openbao_crypto_conformance_base as base
 import openbao_crypto_conformance_runner as core
 
 
-_ORIGINAL_CALL = core.BaoClient.call
-_ORIGINAL_INIT_DB = core.init_db
-_WITNESS_KEY = os.environ.get(
-    "D3E_CRYPTO_WITNESS_KEY", "d3e-test-crypto-continuity-witness-key"
-).encode()
-_ANCHOR_TEXT = "jlmirror-d3e-crypto-witness-provisioned-v1\n"
-_PROVIDER_GENERATION_CHECKS = 0
-_PROVIDER_GENERATION_NEGATIVE_CONTROLS = 0
-_EXPECTED_DELETED_VERIFY_PATHS: set[str] = set()
+_ORIGINAL_INITIALIZE_SOURCE = core.initialize_source
+_ORIGINAL_ISSUE = base._issue_provider_version_bound
+_CAPTURED_ROOT_TOKEN: str | None = None
+_LAST_ISSUE: tuple[core.KeyAuthorityPort, core.LogicalKeyHandle, bytes, int] | None = None
 
 
-def _canonical_json(value: object) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+def _capture_initialize_source() -> tuple[str, str]:
+    global _CAPTURED_ROOT_TOKEN
+    unseal_key, root_token = _ORIGINAL_INITIALIZE_SOURCE()
+    _CAPTURED_ROOT_TOKEN = root_token
+    return unseal_key, root_token
 
 
-class DurableCryptoContinuityWitness:
-    """Reloadable, integrity-protected erasure continuity outside OpenBao state."""
-
-    def __init__(self, path: Path = core.CRYPTO_WITNESS_PATH):
-        self.path = Path(path)
-        self.anchor_path = Path(str(self.path) + ".provisioned")
-        self.state: dict[str, str]
-
-        if self.path.exists():
-            self.state = self._read()
-            return
-        if self.anchor_path.exists():
-            raise RuntimeError("provisioned crypto continuity witness is missing")
-
-        self._atomic_write(self.anchor_path, _ANCHOR_TEXT)
-        self.state = {}
-        self.persist()
-
-    def key(self, handle: core.LogicalKeyHandle) -> str:
-        return core.handle_binding(handle)
-
-    def _seal(self, states: dict[str, str]) -> dict:
-        payload = {"version": 1, "states": states}
-        mac = hmac.new(_WITNESS_KEY, _canonical_json(payload), hashlib.sha256).hexdigest()
-        return {"payload": payload, "mac": mac}
-
-    def _atomic_write(self, path: Path, text: str) -> None:
-        tmp = Path(str(path) + ".tmp")
-        tmp.write_text(text)
-        os.replace(tmp, path)
-
-    def _read(self) -> dict[str, str]:
-        if not self.anchor_path.exists():
-            raise RuntimeError("crypto continuity provisioning anchor unavailable")
-        if self.anchor_path.read_text() != _ANCHOR_TEXT:
-            raise RuntimeError("crypto continuity provisioning anchor invalid")
-        if not self.path.exists():
-            raise RuntimeError("crypto continuity witness unavailable")
-        try:
-            envelope = json.loads(self.path.read_text())
-            payload = envelope["payload"]
-            supplied = envelope["mac"]
-            states = payload["states"]
-        except Exception as exc:
-            raise RuntimeError("malformed crypto continuity witness") from exc
-        if payload.get("version") != 1 or not isinstance(states, dict) or not isinstance(supplied, str):
-            raise RuntimeError("malformed crypto continuity witness")
-        expected = self._seal(states)["mac"]
-        if not hmac.compare_digest(supplied, expected):
-            raise RuntimeError("crypto continuity witness integrity failure")
-        if any(
-            not isinstance(k, str) or v not in {"erasure_pending", "erased"}
-            for k, v in states.items()
-        ):
-            raise RuntimeError("invalid crypto continuity witness state")
-        return dict(states)
-
-    def persist(self) -> None:
-        envelope = self._seal(dict(self.state))
-        self._atomic_write(self.path, json.dumps(envelope, sort_keys=True))
-
-    def reserve_erasure(self, handle: core.LogicalKeyHandle) -> None:
-        self.state = self._read()
-        key = self.key(handle)
-        prior = self.state.get(key)
-        if prior == "erased":
-            raise RuntimeError("erased key generation cannot be re-reserved")
-        self.state[key] = "erasure_pending"
-        self.persist()
-
-    def finalize_erased(self, handle: core.LogicalKeyHandle) -> None:
-        self.state = self._read()
-        key = self.key(handle)
-        if self.state.get(key) != "erasure_pending":
-            raise RuntimeError("erasure was not fenced before terminalization")
-        self.state[key] = "erased"
-        self.persist()
-        self.state = {}
-
-    def state_for(self, handle: core.LogicalKeyHandle) -> str | None:
-        self.state = self._read()
-        return self.state.get(self.key(handle))
-
-
-@dataclass(frozen=True)
-class ProviderVersionBoundEvidence:
-    logical_key_id: str
-    generation: int
-    handle_binding: str
-    mac: str
-    provider_generation: int
-
-
-def _provider_generation_from_mac(mac: str) -> int:
-    parts = mac.split(":", 2)
-    if len(parts) != 3 or not parts[1].startswith("v") or not parts[1][1:].isdigit():
-        raise RuntimeError("OpenBao HMAC did not expose a parseable provider generation")
-    generation = int(parts[1][1:])
-    if generation <= 0:
-        raise RuntimeError("OpenBao HMAC provider generation is invalid")
-    return generation
-
-
-def _install_provider_generation_authority() -> None:
-    _ORIGINAL_INIT_DB()
-    core.psql_script("""
-CREATE TABLE IF NOT EXISTS d3e_crypto_control.provider_generation_authority(
-    handle_binding TEXT PRIMARY KEY,
-    provider_ref TEXT NOT NULL,
-    provider_generation BIGINT NOT NULL CHECK(provider_generation > 0)
-);
-""")
-
-
-def _record_authorized_provider_generation(
-    handle: core.LogicalKeyHandle, provider_ref: str, generation: int
-) -> None:
-    """Create-once authority binding; ordinary issuance can never rewrite it.
-
-    A provider-native generation transition is authority-changing state and must
-    therefore be performed by a separate governed rotation transition. If a
-    stale restored provider or an ungoverned native rotation returns a different
-    generation for the same logical handle, issuance fails closed instead of
-    teaching the registry to trust the newly observed value.
-    """
-    binding = core.handle_binding(handle)
-    inserted = core.psql(
-        "INSERT INTO d3e_crypto_control.provider_generation_authority("
-        "handle_binding,provider_ref,provider_generation) "
-        f"VALUES({core.lit(binding)},{core.lit(provider_ref)},{generation}) "
-        "ON CONFLICT(handle_binding) DO NOTHING "
-        "RETURNING provider_generation::text;"
-    )
-    if inserted == str(generation):
-        return
-
-    existing = core.psql(
-        "SELECT provider_ref||'|'||provider_generation::text "
-        "FROM d3e_crypto_control.provider_generation_authority "
-        f"WHERE handle_binding={core.lit(binding)};"
-    )
-    expected = f"{provider_ref}|{generation}"
-    if existing != expected:
-        raise RuntimeError(
-            "provider-native generation authority is immutable during ordinary issuance"
-        )
-
-
-def _authorized_provider_generation(handle: core.LogicalKeyHandle, provider_ref: str) -> int:
-    raw = core.psql(
-        "SELECT provider_generation::text FROM d3e_crypto_control.provider_generation_authority "
-        f"WHERE handle_binding={core.lit(core.handle_binding(handle))} "
-        f"AND provider_ref={core.lit(provider_ref)};"
-    )
-    if not raw or not raw.isdigit() or int(raw) <= 0:
-        raise core.AuthorityDenied("provider-native generation has no governed authority binding")
-    return int(raw)
-
-
-def _provider_binding_matches(
-    handle: core.LogicalKeyHandle,
-    evidence: ProviderVersionBoundEvidence,
-    authorized_provider_generation: int,
-) -> bool:
-    try:
-        embedded = _provider_generation_from_mac(evidence.mac)
-    except RuntimeError:
-        return False
-    return (
-        evidence.logical_key_id == handle.logical_key_id
-        and evidence.generation == handle.generation
-        and evidence.handle_binding == core.handle_binding(handle)
-        and evidence.provider_generation == embedded
-        and embedded == authorized_provider_generation
-    )
-
-
-def _issue_provider_version_bound(
+def _tracked_issue(
     self: core.KeyAuthorityPort, *, handle: core.LogicalKeyHandle, content: bytes
-) -> ProviderVersionBoundEvidence:
-    if self.state(handle) != "current":
-        raise core.AuthorityDenied("not current issue authority")
-    mac = self.adapter.issue_hmac(handle, content)
-    provider_generation = _provider_generation_from_mac(mac)
-    provider_ref = self.adapter.ref(handle)
-    _record_authorized_provider_generation(handle, provider_ref, provider_generation)
-    return ProviderVersionBoundEvidence(
-        logical_key_id=handle.logical_key_id,
-        generation=handle.generation,
-        handle_binding=core.handle_binding(handle),
-        mac=mac,
-        provider_generation=provider_generation,
-    )
-
-
-def _verify_historical_provider_version_bound(
-    self: core.KeyAuthorityPort,
-    *,
-    handle: core.LogicalKeyHandle,
-    content: bytes,
-    evidence: ProviderVersionBoundEvidence,
-) -> bool:
-    global _PROVIDER_GENERATION_CHECKS, _PROVIDER_GENERATION_NEGATIVE_CONTROLS
-    if self.state(handle) != "historical":
-        raise core.AuthorityDenied("not historical verifier authority")
-    if not isinstance(evidence, ProviderVersionBoundEvidence):
-        return False
-    authorized = _authorized_provider_generation(handle, self.adapter.ref(handle))
-    _PROVIDER_GENERATION_CHECKS += 1
-    if not _provider_binding_matches(handle, evidence, authorized):
-        return False
-
-    mismatched = replace(evidence, provider_generation=evidence.provider_generation + 1)
-    if _provider_binding_matches(handle, mismatched, authorized):
-        raise AssertionError("provider-generation metadata mismatch negative control was accepted")
-    if _provider_binding_matches(handle, evidence, authorized + 1):
-        raise AssertionError("stale provider generation passed trusted authority mismatch control")
-    _PROVIDER_GENERATION_NEGATIVE_CONTROLS += 1
-    return self.adapter.verify_hmac(handle, content, evidence.mac)
-
-
-def _specific_denied(fn) -> int:
-    try:
-        fn()
-    except core.AuthorityDenied:
-        return 0
-    except core.BaoError as exc:
-        if exc.status != 403:
-            raise
-        return 403
-    raise AssertionError("provider/key-authority operation unexpectedly succeeded")
-
-
-def _openbao_262_compatible_call(
-    self: core.BaoClient,
-    method: str,
-    path: str,
-    body: dict | None = None,
-    *,
-    expect: set[int] = {200, 204},
-    timeout: float = 6,
-) -> dict:
-    """Accept OpenBao 2.6.2 success profile and classify only exact state denials."""
-    accepted = set(expect)
-    if 204 in accepted:
-        accepted.add(200)
-    try:
-        result = _ORIGINAL_CALL(self, method, path, body, expect=accepted, timeout=timeout)
-    except core.BaoError as exc:
-        text = str(exc).lower()
-        if path.startswith("transit/export/hmac-key/") and exc.status == 400:
-            if "export" in text and ("not" in text or "allow" in text or "disabled" in text):
-                raise core.AuthorityDenied("configured non-exportable key denied export") from exc
-        if (
-            path in _EXPECTED_DELETED_VERIFY_PATHS
-            and exc.status == 400
-            and "encryption key not found" in text
-        ):
-            raise core.AuthorityDenied("deleted provider key denied verification") from exc
-        raise
-    if method.upper() == "DELETE" and path.startswith("transit/keys/"):
-        ref = path[len("transit/keys/"):]
-        if ref and "/" not in ref:
-            _EXPECTED_DELETED_VERIFY_PATHS.add(
-                f"transit/verify/{quote(ref, safe='')}/sha2-256"
-            )
-    return result
-
-
-def _prove_retirement_linearization_strict(
-    *, addr: str, handle: core.LogicalKeyHandle, token: str,
-    refs: dict[core.LogicalKeyHandle, str], content: bytes,
-) -> str:
-    adapter = core.OpenBaoTransitAdapter(addr, token, refs)
-
-    def issue_race() -> str:
-        try:
-            adapter.issue_hmac(handle, content)
-            return "ISSUED_BEFORE_REVOKE"
-        except core.BaoError as exc:
-            if exc.status != 403:
-                raise
-            return "DENIED_BY_REVOKE"
-
-    with core.concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-        issue_future = pool.submit(issue_race)
-        revoke_future = pool.submit(core.revoke_token, addr, token)
-        issue_outcome = issue_future.result()
-        revoke_future.result()
-
-    _specific_denied(lambda: adapter.issue_hmac(handle, content))
-    return issue_outcome
-
-
-def _orphan_token_for(root: core.BaoClient, label: str, rule: str) -> str:
-    policy = f"d3e-{label}"
-    root.call("PUT", f"sys/policies/acl/{policy}", {"policy": rule}, expect={204})
-    data = root.call(
-        "POST",
-        "auth/token/create-orphan",
-        {"policies": [policy], "ttl": "60m", "renewable": False},
-        expect={200},
-    )
-    token = data.get("auth", {}).get("client_token")
-    if not isinstance(token, str) or not token:
-        raise RuntimeError("OpenBao orphan token creation returned malformed response")
-    return token
-
-
-def _verify_orphan_token(root: core.BaoClient, label: str, ref: str) -> str:
-    return _orphan_token_for(
-        root,
-        label,
-        f'path "transit/verify/{ref}/sha2-256" {{ capabilities=["update"] }}\n',
-    )
-
-
-def _delete_orphan_token(root: core.BaoClient, label: str, ref: str) -> str:
-    return _orphan_token_for(
-        root,
-        label,
-        f'path "transit/keys/{ref}" {{ capabilities=["delete"] }}\n',
-    )
-
-
-def _copy_volume_as_root(src: str, dst: str) -> None:
-    core.remove_volume(dst)
-    core.create_volume(dst)
-    core.sh([
-        "docker", "run", "--rm", "--user", "0:0", "--entrypoint", "/bin/sh",
-        "-v", f"{src}:/from:ro", "-v", f"{dst}:/to",
-        core.OPENBAO_IMAGE, "-ec", "cp -a /from/. /to/",
-    ])
-    print(
-        "d3_e_openbao_offline_relocation_copy=PASS "
-        "source_read_only=true distinct_target_volume=true immutable_candidate_image=true "
-        "runtime_user_unchanged=true metadata_preserved=true"
-    )
-
-
-def _prove_witness_restart_and_corruption_fail_closed() -> None:
-    path = core.CRYPTO_WITNESS_PATH
-    restarted = DurableCryptoContinuityWitness(path)
-    assert "erased" in restarted.state.values()
-
-    original = path.read_bytes()
-    try:
-        path.write_text('{"payload":{"version":1,"states":{}},"mac":"forged"}')
-        try:
-            DurableCryptoContinuityWitness(path)
-        except RuntimeError:
-            pass
-        else:
-            raise AssertionError("corrupted crypto witness was accepted")
-    finally:
-        path.write_bytes(original)
-
-    saved = Path(str(path) + ".saved")
-    os.replace(path, saved)
-    try:
-        try:
-            DurableCryptoContinuityWitness(path)
-        except RuntimeError:
-            pass
-        else:
-            raise AssertionError("missing provisioned crypto witness was silently reinitialized")
-    finally:
-        os.replace(saved, path)
-
-    restarted_again = DurableCryptoContinuityWitness(path)
-    assert "erased" in restarted_again.state.values()
-    print(
-        "d3_e_crypto_continuity_witness_recovery=PASS "
-        "durable_reload_after_memory_loss=true process_reconstruction_loads_erased=true "
-        "integrity_hmac=true atomic_replace=true corrupted_witness_fail_closed=true "
-        "missing_provisioned_witness_fail_closed=true one_time_bootstrap_anchored=true"
-    )
+) -> base.ProviderVersionBoundEvidence:
+    global _LAST_ISSUE
+    evidence = _ORIGINAL_ISSUE(self, handle=handle, content=content)
+    _LAST_ISSUE = (self, handle, content, evidence.provider_generation)
+    return evidence
 
 
 def _prove_provider_generation_binding_exercised() -> None:
-    if _PROVIDER_GENERATION_CHECKS <= 0:
+    if base._PROVIDER_GENERATION_CHECKS <= 0:
         raise AssertionError("historical verification never exercised provider-generation binding")
-    if _PROVIDER_GENERATION_NEGATIVE_CONTROLS != _PROVIDER_GENERATION_CHECKS:
+    if base._PROVIDER_GENERATION_NEGATIVE_CONTROLS != base._PROVIDER_GENERATION_CHECKS:
         raise AssertionError("provider-generation mismatch negative control did not accompany verification")
+    if _CAPTURED_ROOT_TOKEN is None or _LAST_ISSUE is None:
+        raise AssertionError("real OpenBao issuance authority was not captured for native-rotation control")
 
-    row = core.psql(
-        "SELECT json_build_object('handle_binding',handle_binding,'provider_ref',provider_ref,"
-        "'provider_generation',provider_generation)::text "
-        "FROM d3e_crypto_control.provider_generation_authority ORDER BY handle_binding LIMIT 1;"
-    )
-    if not row:
-        raise AssertionError("provider-generation authority table had no exercised binding")
-    binding = json.loads(row)
-    original_generation = int(binding["provider_generation"])
-    attempted_generation = original_generation + 1
-    changed = core.psql(
-        "INSERT INTO d3e_crypto_control.provider_generation_authority("
-        "handle_binding,provider_ref,provider_generation) "
-        f"VALUES({core.lit(binding['handle_binding'])},{core.lit(binding['provider_ref'])},{attempted_generation}) "
-        "ON CONFLICT(handle_binding) DO NOTHING RETURNING provider_generation::text;"
-    )
-    if changed:
-        raise AssertionError("ordinary issuance authority unexpectedly rewrote provider generation")
-    retained = core.psql(
-        "SELECT provider_generation::text FROM d3e_crypto_control.provider_generation_authority "
-        f"WHERE handle_binding={core.lit(binding['handle_binding'])};"
-    )
-    if retained != str(original_generation):
-        raise AssertionError("provider generation authority did not remain immutable")
+    port, handle, content, authorized_generation = _LAST_ISSUE
+    if port.state(handle) != "current":
+        raise AssertionError("native-rotation control did not retain a current logical generation")
+    provider_ref = port.adapter.ref(handle)
+    trusted_before = base._authorized_provider_generation(handle, provider_ref)
+    if trusted_before != authorized_generation:
+        raise AssertionError("captured provider generation diverged from trusted authority before rotation")
+
+    root = core.BaoClient(core.SOURCE_ADDR, _CAPTURED_ROOT_TOKEN)
+    root.call("POST", f"transit/keys/{base.quote(provider_ref, safe='')}/rotate", {}, expect={200, 204})
+    metadata = root.call("GET", f"transit/keys/{base.quote(provider_ref, safe='')}", expect={200})
+    latest = metadata.get("data", {}).get("latest_version")
+    if type(latest) is not int or latest <= trusted_before:
+        raise AssertionError("real OpenBao native rotation did not advance provider generation")
+
+    try:
+        port.issue(handle=handle, content=content + b"-after-native-rotation")
+    except RuntimeError as exc:
+        if "immutable during ordinary issuance" not in str(exc):
+            raise
+    else:
+        raise AssertionError("ordinary issuance self-authorized a rotated provider generation")
+
+    retained = base._authorized_provider_generation(handle, provider_ref)
+    if retained != trusted_before:
+        raise AssertionError("failed issuance rewrote trusted provider-generation authority")
 
     print(
         "d3_e_provider_generation_binding=PASS "
         "provider_version_parsed_from_hmac=true evidence_records_provider_generation=true "
         "trusted_postgresql_provider_generation_authority=true "
         "embedded_generation_equals_authorized_generation=true stale_native_generation_rejected=true "
+        "native_openbao_rotation_exercised=true ordinary_issue_path_exercised=true "
         "ordinary_issuance_cannot_rewrite_authorized_generation=true "
-        "stale_restore_cannot_self_reauthorize=true governed_rotation_required_for_generation_change=true "
-        "mismatch_rejected_before_provider=true separate_provider_ref_per_logical_generation=true"
+        "native_rotation_cannot_self_authorize=true governed_rotation_required_for_generation_change=true "
+        "trusted_generation_retained_after_rejected_issue=true "
+        "mismatch_rejected_before_evidence_return=true separate_provider_ref_per_logical_generation=true"
     )
 
 
 def main() -> None:
-    anchor = Path(str(core.CRYPTO_WITNESS_PATH) + ".provisioned")
-    anchor.unlink(missing_ok=True)
-    Path(str(core.CRYPTO_WITNESS_PATH) + ".tmp").unlink(missing_ok=True)
-    Path(str(anchor) + ".tmp").unlink(missing_ok=True)
-    _EXPECTED_DELETED_VERIFY_PATHS.clear()
-
-    core.BaoClient.call = _openbao_262_compatible_call
-    core.copy_volume = _copy_volume_as_root
-    core.init_db = _install_provider_generation_authority
-    core.CryptoContinuityWitness = DurableCryptoContinuityWitness
-    core.Evidence = ProviderVersionBoundEvidence
-    core.KeyAuthorityPort.issue = _issue_provider_version_bound
-    core.KeyAuthorityPort.verify_historical = _verify_historical_provider_version_bound
-    core.denied = _specific_denied
-    core.prove_retirement_linearization = _prove_retirement_linearization_strict
-    core.verify_token = _verify_orphan_token
-    core.delete_token = _delete_orphan_token
-    print(
-        "d3_e_openbao_262_http_success_profile=PASS "
-        "http_200_success_retained=true http_204_success_retained=true "
-        "client_errors_not_relaxed=true generic_400_404_not_denial=true "
-        "operation_specific_state_denials=true unqualified_not_found_rejected=true "
-        "deleted_key_status_400_only=true exact_deleted_key_response=encryption_key_not_found "
-        "exact_deleted_verify_path_required=true wrong_key_same_response_propagates=true "
-        "routing_or_mount_404_propagates=true orphan_historical_capability=true"
-    )
-    core.main()
-    _prove_provider_generation_binding_exercised()
-    _prove_witness_restart_and_corruption_fail_closed()
+    core.initialize_source = _capture_initialize_source
+    base._issue_provider_version_bound = _tracked_issue
+    base._prove_provider_generation_binding_exercised = _prove_provider_generation_binding_exercised
+    base.main()
 
 
 if __name__ == "__main__":

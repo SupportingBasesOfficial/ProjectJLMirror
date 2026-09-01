@@ -24,6 +24,17 @@ def _exact_probe(op: str, generation: int, token: str) -> dict:
     return observed
 
 
+def _unique_captured_capability(status: dict) -> tuple[dict | None, str | None]:
+    effect = status.get("effect")
+    fence = status.get("fence")
+    if effect and fence:
+        raise RuntimeError("captured provider continuity contains effect and absence fence")
+    capability = effect or fence
+    if capability is None:
+        return None, None
+    return capability, "CONFIRMED" if effect else "ABSENT"
+
+
 def resolve_provider_capability_exact(op: str) -> dict:
     row = strict._redrive_row(op)
     if row is None:
@@ -35,22 +46,24 @@ def resolve_provider_capability_exact(op: str) -> dict:
             raise RuntimeError("attempting redrive lost provider capability")
         observed = _exact_probe(op, generation, token)
         core.mark_ambiguous(op, generation, "recovery_capture_exact_capability_serialization")
+        retained = strict._redrive_row(op)
+        if retained is None or retained[0] != "reconciliation_required" or retained[2] != token:
+            raise RuntimeError("ambiguous transition did not retain exact provider capability token")
         if not core.reconcile_provider(op, generation, observed):
             raise RuntimeError("exact provider capability could not be reconciled during capture")
     elif state == "reconciliation_required":
+        if not token:
+            raise RuntimeError("ambiguous redrive lost provider capability token")
         status = core.provider_status(op)
-        effect = status.get("effect")
-        fence = status.get("fence")
-        if bool(effect) == bool(fence):
+        capability, expected = _unique_captured_capability(status)
+        if capability is None or expected is None:
             raise RuntimeError("ambiguous provider state lacks a unique durable capability")
-        capability = effect or fence
-        generation_expected = int(capability["attempt_generation"])
-        if generation_expected != generation:
+        if int(capability["attempt_generation"]) != generation:
             raise RuntimeError("provider continuity generation mismatch during capture")
-        observed = _exact_probe(op, generation, capability["attempt_token"])
-        strict._require_exact_capability(
-            capability, observed, "CONFIRMED" if effect else "ABSENT"
-        )
+        if capability.get("attempt_token") != token:
+            raise RuntimeError("provider continuity token mismatch during capture")
+        observed = _exact_probe(op, generation, token)
+        strict._require_exact_capability(capability, observed, expected)
         if not core.reconcile_provider(op, generation, observed):
             raise RuntimeError("provider capability could not be reconciled during capture")
 
@@ -90,10 +103,32 @@ def capture_recovery_boundary_exact(
     )
 
 
+def _validate_restored_redrive_capabilities(witness: core.RecoveryWitnessPort) -> None:
+    payload = witness.read()
+    for op, status in payload.get("provider_outcomes", {}).items():
+        row = strict._redrive_row(op)
+        if row is None:
+            continue
+        state, generation, token = row
+        capability, _expected = _unique_captured_capability(status)
+        if state not in {"attempting", "reconciliation_required"}:
+            continue
+        if capability is None:
+            raise RuntimeError("restored unresolved attempt lacks captured provider capability")
+        if not token:
+            raise RuntimeError("restored unresolved attempt lost durable capability token")
+        if int(capability.get("attempt_generation", -1)) != generation:
+            raise RuntimeError("restored unresolved capability generation mismatch")
+        if capability.get("attempt_token") != token:
+            raise RuntimeError("restored unresolved capability token mismatch")
+
+
 def recover_from_witness_exact(witness: core.RecoveryWitnessPort) -> None:
-    # Field-by-field structured comparison closes delimiter/collision ambiguity
-    # before the legacy strict upsert path is allowed to run.
+    # Field-by-field structured comparison closes delimiter/collision ambiguity;
+    # durable attempt-token comparison closes same-operation/generation aliasing
+    # for both attempting and reconciliation_required states before mutation.
     boundary.validate_consumed_restore_exact(witness)
+    _validate_restored_redrive_capabilities(witness)
     _ORIGINAL_RECOVER(witness)
 
 
@@ -109,6 +144,8 @@ def prove_mismatched_restored_capability_rejected() -> None:
         op = "restore-capability-mismatch"
         core.prepare_redrive(op, 1)
         assert core.claim(op, "stale-worker", "stale-token", 1) == "1"
+        core.mark_ambiguous(op, 1, "persist_exact_capability")
+        assert strict._redrive_row(op) == ("reconciliation_required", 1, "stale-token")
 
         effect = core.provider_send(
             op, 1, "different-token", "mismatch-effect", "mismatch-result"
@@ -148,6 +185,7 @@ def prove_mismatched_restored_capability_rejected() -> None:
         print(
             "d3_e_replay_exact_provider_capability_binding=PASS "
             "restore_generation_bound=true restore_attempt_token_bound=true "
+            "ambiguous_attempt_token_durable=true reconciliation_required_token_compared=true "
             "capture_generation_bound=true capture_attempt_token_bound=true "
             "provider_operation_id_aliasing_negative_control=true admission_remains_closed_on_mismatch=true"
         )
@@ -186,6 +224,7 @@ def prove_missing_recovery_witness_fails_closed() -> None:
 
 def main() -> None:
     boundary.prove_recovery_consumer_barrier()
+    boundary.prove_ambiguous_capability_token_retention()
     prove_mismatched_restored_capability_rejected()
     prove_missing_recovery_witness_fails_closed()
 

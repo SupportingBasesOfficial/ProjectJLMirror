@@ -171,9 +171,6 @@ def _verify_historical_provider_version_bound(
     if not _provider_binding_matches(handle, evidence):
         return False
 
-    # Every real historical verification also falsifies caller-declared provider
-    # version substitution before provider use. The MAC is unchanged while the
-    # metadata generation is deliberately wrong, and must be rejected locally.
     mismatched = replace(evidence, provider_generation=evidence.provider_generation + 1)
     if _provider_binding_matches(handle, mismatched):
         raise AssertionError("provider-generation mismatch negative control was accepted")
@@ -211,22 +208,20 @@ def _openbao_262_compatible_call(
         return _ORIGINAL_CALL(self, method, path, body, expect=accepted, timeout=timeout)
     except core.BaoError as exc:
         text = str(exc).lower()
-        # Non-exportability is a configured key-state denial, not a generic 400.
         if path.startswith("transit/export/hmac-key/") and exc.status == 400:
             if "export" in text and ("not" in text or "allow" in text or "disabled" in text):
                 raise core.AuthorityDenied("configured non-exportable key denied export") from exc
-        # Verification after irreversible key deletion is accepted only when the
-        # provider explicitly reports missing key/version state. Malformed paths,
-        # malformed payloads and arbitrary 400/404 responses continue to fail.
+        # A deleted-key proof must identify missing key/version state. An
+        # unqualified routing/configuration "not found" is intentionally not
+        # accepted because a missing transit mount or malformed route can emit it.
         if path.startswith("transit/verify/") and exc.status in {400, 404}:
-            missing_fragments = (
+            deletion_specific_fragments = (
                 "no existing version",
                 "no key",
-                "not found",
                 "does not exist",
                 "missing key",
             )
-            if any(fragment in text for fragment in missing_fragments):
+            if any(fragment in text for fragment in deletion_specific_fragments):
                 raise core.AuthorityDenied("deleted provider key/version denied verification") from exc
         raise
 
@@ -374,7 +369,8 @@ def main() -> None:
         "d3_e_openbao_262_http_success_profile=PASS "
         "http_200_success_retained=true http_204_success_retained=true "
         "client_errors_not_relaxed=true generic_400_404_not_denial=true "
-        "operation_specific_state_denials=true orphan_historical_capability=true"
+        "operation_specific_state_denials=true unqualified_not_found_rejected=true "
+        "orphan_historical_capability=true"
     )
     core.main()
     _prove_provider_generation_binding_exercised()

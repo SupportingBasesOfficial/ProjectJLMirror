@@ -422,6 +422,17 @@ def token_for(root: BaoClient, label: str, rule: str) -> str:
     return data["auth"]["client_token"]
 
 
+def orphan_token_for(root: BaoClient, label: str, rule: str) -> str:
+    policy = f"d3e-{label}"
+    root.call("PUT", f"sys/policies/acl/{policy}", {"policy": rule}, expect={204})
+    data = root.call(
+        "POST", "auth/token/create-orphan",
+        {"policies": [policy], "ttl": "60m", "renewable": False},
+        expect={200},
+    )
+    return data["auth"]["client_token"]
+
+
 def issue_token(root: BaoClient, label: str, ref: str) -> str:
     return token_for(
         root, label,
@@ -430,14 +441,14 @@ def issue_token(root: BaoClient, label: str, ref: str) -> str:
 
 
 def verify_token(root: BaoClient, label: str, ref: str) -> str:
-    return token_for(
+    return orphan_token_for(
         root, label,
         f'path "transit/verify/{ref}/sha2-256" {{ capabilities=["update"] }}\n',
     )
 
 
 def delete_token(root: BaoClient, label: str, ref: str) -> str:
-    return token_for(
+    return orphan_token_for(
         root, label,
         f'path "transit/keys/{ref}" {{ capabilities=["delete"] }}\n',
     )
@@ -611,7 +622,8 @@ def main() -> None:
         "source_authority_stopped=true encrypted_storage_relocated_offline=true "
         "target_distinct_instance=true historical_verify_survives_recovery=true "
         "historical_verify_only=true current_generation_isolated=true exact_logical_generation_bound=true "
-        "current_issuance_credentials_revoked=true nonhistorical_keys_removed=true root_authority_revoked=true"
+        "current_issuance_credentials_revoked=true nonhistorical_keys_removed=true root_authority_revoked=true "
+        "historical_and_erasure_tokens_orphan_scoped=true"
     )
     print(
         "d3_e_key_generation_rotation_retirement=PASS "

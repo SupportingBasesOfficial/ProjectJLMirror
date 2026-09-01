@@ -1,0 +1,189 @@
+name: JLMIRROR D3-E Key Authority + Replay Conformance Evidence
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  key-replay-conformance:
+    name: OpenBao 2.6.2 Transit + PostgreSQL replay continuity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      OPENBAO_URL: https://github.com/openbao/openbao/releases/download/v2.6.2/openbao_2.6.2_linux_amd64.deb
+      OPENBAO_SHA256: bb885cc91af7d43f0da6bdde3fa75ef7c8496b92546323aa66ef6689fa25722a
+      POSTGRES_IMAGE: postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+      PG_CONTAINER: jlmirror-d3e-postgres
+      PG_PASSWORD: d3-postgres-password
+      PG_DATABASE: d3
+      PG_USER: postgres
+    steps:
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit and bounded pre-promotion state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python3 tools/assurance/validate_d3_identity_security_state.py .
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path('implementation/d3-identity-security/state-manifest.json').read_text())
+          tracks = {track['track_id']: track for track in manifest['tracks']}
+          track = tracks['D3-E']
+          remaining = {
+              'historical_verifier_relocation_recovery_continuity',
+              'retired_key_nonresurrection',
+              'late_backfill_after_current_key_rotation',
+              'replay_create_or_observe_exactly_one_owner',
+              'replay_store_unavailable_fail_closed',
+              'key_rotation_retirement_dual_read_single_write',
+          }
+          assert track['state'] == 'candidate_selected_conformance_pending'
+          assert set(track['evidence_remaining']) == remaining
+          assert len(track['evidence_completed']) == 3
+          assert manifest['gate_state'] == 'candidate_evidence_running'
+          assert manifest['wave4_implementation_authority'] == 'not_granted'
+          assert manifest['production_authority'] == 'none'
+          assert manifest['d4_transport_authority'] == 'not_selected_not_granted'
+          print('d3_e_pre_promotion_boundary=PASS')
+          PY
+
+      - name: Validate conformance runner structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          runner=implementation/d3-identity-security/harness/key_replay_conformance_runner.py
+          python3 -m py_compile "$runner"
+          for marker in \
+            d3_e_historical_verifier_relocation_recovery_continuity \
+            d3_e_retired_key_nonresurrection \
+            d3_e_late_backfill_after_current_key_rotation \
+            d3_e_replay_create_or_observe_exactly_one_owner \
+            d3_e_replay_store_unavailable_fail_closed \
+            d3_e_key_rotation_retirement_dual_read_single_write \
+            d3_e_key_replay_candidate_conformance; do
+            grep -F "$marker=PASS" "$runner" >/dev/null
+          done
+          grep -F 'PRIMARY KEY (issuer, jti)' "$runner" >/dev/null
+          grep -F 'pg_advisory_xact_lock' "$runner" >/dev/null
+          grep -F 'min_verify_version' "$runner" >/dev/null
+          grep -F 'current_write_version' "$runner" >/dev/null
+          grep -F 'stale_provider_cannot_self_certify=true' "$runner" >/dev/null
+          grep -F 'tenant_not_in_uniqueness=true' "$runner" >/dev/null
+          grep -F 'no_memory_fallback=true' "$runner" >/dev/null
+          if grep -F 'PRIMARY KEY (issuer, jti, tenant' "$runner" >/dev/null; then
+            echo 'tenant must not enter private_key_jwt replay uniqueness' >&2
+            exit 1
+          fi
+          echo 'd3_e_runner_structure=PASS'
+
+      - name: Fetch and verify immutable OpenBao 2.6.2 artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb="${RUNNER_TEMP}/openbao_2.6.2_linux_amd64.deb"
+          root="${RUNNER_TEMP}/openbao-2.6.2"
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 "$OPENBAO_URL" -o "$deb"
+          printf '%s  %s\n' "$OPENBAO_SHA256" "$deb" | sha256sum -c -
+          mkdir -p "$root"
+          dpkg-deb -x "$deb" "$root"
+          bin="$root/usr/bin/bao"
+          test -x "$bin"
+          version="$($bin version)"
+          case "$version" in
+            *2.6.2*) ;;
+            *) echo "unexpected OpenBao version: $version" >&2; exit 1 ;;
+          esac
+          printf 'OPENBAO_BIN=%s\n' "$bin" >> "$GITHUB_ENV"
+          printf 'D3E_WORK_ROOT=%s\n' "${RUNNER_TEMP}/jlmirror-d3e" >> "$GITHUB_ENV"
+          printf 'openbao_artifact_sha256=%s\nopenbao_version=%s\n' "$OPENBAO_SHA256" "$version"
+
+      - name: Start pinned PostgreSQL durable authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$POSTGRES_IMAGE" in postgres@sha256:*) ;; *) exit 1 ;; esac
+          docker pull "$POSTGRES_IMAGE"
+          test "$(docker image inspect "$POSTGRES_IMAGE" --format '{{index .RepoDigests 0}}')" = "$POSTGRES_IMAGE"
+          docker run -d --rm \
+            --name "$PG_CONTAINER" \
+            -e POSTGRES_PASSWORD="$PG_PASSWORD" \
+            -e POSTGRES_DB="$PG_DATABASE" \
+            "$POSTGRES_IMAGE"
+          for _ in $(seq 1 120); do
+            if result="$(docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_CONTAINER" \
+              psql -U "$PG_USER" -d "$PG_DATABASE" -Atqc 'SELECT 1' 2>/dev/null)" && test "$result" = '1'; then
+              echo 'd3_e_postgres_readiness=PASS'
+              exit 0
+            fi
+            sleep 0.5
+          done
+          docker logs "$PG_CONTAINER" >&2 || true
+          exit 1
+
+      - name: Exercise real OpenBao key continuity and PostgreSQL replay authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$D3E_WORK_ROOT"
+          log="${RUNNER_TEMP}/d3-e-conformance.log"
+          python3 implementation/d3-identity-security/harness/key_replay_conformance_runner.py | tee "$log"
+          for marker in \
+            d3_e_historical_verifier_relocation_recovery_continuity \
+            d3_e_retired_key_nonresurrection \
+            d3_e_late_backfill_after_current_key_rotation \
+            d3_e_replay_create_or_observe_exactly_one_owner \
+            d3_e_replay_store_unavailable_fail_closed \
+            d3_e_key_rotation_retirement_dual_read_single_write; do
+            grep -F "$marker=PASS" "$log" >/dev/null
+          done
+          grep -F 'd3_e_key_replay_candidate_conformance=PASS_PINNED_OPENBAO' "$log" >/dev/null
+
+      - name: Preserve evidence-only authority boundary
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/assurance/validate_d3_identity_security_state.py .
+          printf 'd3_e_candidate_conformance_probe=PASS_PINNED_OPENBAO\n'
+          printf 'openbao_artifact_sha256=%s\n' "$OPENBAO_SHA256"
+          printf 'postgres_candidate=%s\n' "$POSTGRES_IMAGE"
+          printf 'd3_e_manifest_credit=unchanged promotion=separate_exact_run_provenance_commit\n'
+          printf 'c3_numerics=not_selected d3=not_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
+
+      - name: Capture candidate logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          find "${RUNNER_TEMP}/jlmirror-d3e" -maxdepth 1 -name '*.log' -print -exec cat {} \;
+          docker logs "$PG_CONTAINER" 2>/dev/null || true
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          docker unpause "$PG_CONTAINER" >/dev/null 2>&1 || true
+          docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
+          pkill -f "bao server -config=${RUNNER_TEMP}/jlmirror-d3e" >/dev/null 2>&1 || true

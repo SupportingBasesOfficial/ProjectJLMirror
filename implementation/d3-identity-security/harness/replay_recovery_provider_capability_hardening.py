@@ -18,15 +18,21 @@ def _capability_bound_do_post(self) -> None:
     with self.state.lock:
         fence = self.state.fences.get(op)
         if fence:
+            fence_generation = int(fence["attempt_generation"])
             same_fence = (
-                fence["attempt_generation"] == generation
+                fence_generation == generation
                 and fence["attempt_token"] == token
             )
-            self.send_json(409, {
-                "outcome": "BLOCKED" if same_fence else "CONFLICT",
-                **fence,
-            })
-            return
+            if same_fence:
+                self.send_json(409, {"outcome": "BLOCKED", **fence})
+                return
+            if fence_generation >= generation:
+                self.send_json(409, {"outcome": "CONFLICT", **fence})
+                return
+            # A durable ABSENT fence for an older generation authorizes retry
+            # progression, not permanent operation-id denial. Generation N+1
+            # may execute with its own exact capability while generation N
+            # remains fenced forever.
 
         existing = self.state.effects.get(op)
         if existing:
@@ -72,9 +78,25 @@ def prove_observed_send_requires_exact_capability() -> None:
     mismatched = core.provider_send(op, 1, "token-b", "effect-a", "result-a")
     if mismatched.get("outcome") != "CONFLICT":
         raise RuntimeError("different attempt token observed an existing provider effect")
+
+    fenced = "observed-send-generation-progression"
+    absent = core.provider_probe(fenced, 1, "generation-one-token")
+    if absent.get("outcome") != "ABSENT":
+        raise RuntimeError("generation-one absence fence was not established")
+    blocked = core.provider_send(fenced, 1, "generation-one-token", "late", "late")
+    if blocked.get("outcome") != "BLOCKED":
+        raise RuntimeError("fenced capability was not blocked")
+    conflict = core.provider_send(fenced, 1, "different-token", "late", "late")
+    if conflict.get("outcome") != "CONFLICT":
+        raise RuntimeError("same-generation different capability did not conflict")
+    advanced = core.provider_send(fenced, 2, "generation-two-token", "effect-two", "result-two")
+    if advanced.get("outcome") != "WIN":
+        raise RuntimeError("new generation was incorrectly blocked by prior absence fence")
+
     print(
         "d3_e_provider_send_exact_capability_binding=PASS "
         "observe_requires_generation=true observe_requires_attempt_token=true "
         "observe_requires_effect_id=true observe_requires_result_ref=true "
-        "same_operation_different_token_conflicts=true"
+        "same_operation_different_token_conflicts=true "
+        "same_generation_fence_blocks=true newer_generation_progresses=true"
     )

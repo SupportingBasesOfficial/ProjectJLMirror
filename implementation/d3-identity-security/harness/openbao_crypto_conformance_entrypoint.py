@@ -7,17 +7,20 @@ import hmac
 import json
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 import openbao_crypto_conformance_runner as core
 
 
 _ORIGINAL_CALL = core.BaoClient.call
+_ORIGINAL_INIT_DB = core.init_db
 _WITNESS_KEY = os.environ.get(
     "D3E_CRYPTO_WITNESS_KEY", "d3e-test-crypto-continuity-witness-key"
 ).encode()
 _ANCHOR_TEXT = "jlmirror-d3e-crypto-witness-provisioned-v1\n"
 _PROVIDER_GENERATION_CHECKS = 0
 _PROVIDER_GENERATION_NEGATIVE_CONTROLS = 0
+_EXPECTED_DELETED_VERIFY_PATHS: set[str] = set()
 
 
 def _canonical_json(value: object) -> bytes:
@@ -127,7 +130,50 @@ def _provider_generation_from_mac(mac: str) -> int:
     return generation
 
 
-def _provider_binding_matches(handle: core.LogicalKeyHandle, evidence: ProviderVersionBoundEvidence) -> bool:
+def _install_provider_generation_authority() -> None:
+    _ORIGINAL_INIT_DB()
+    core.psql_script("""
+CREATE TABLE IF NOT EXISTS d3e_crypto_control.provider_generation_authority(
+    handle_binding TEXT PRIMARY KEY,
+    provider_ref TEXT NOT NULL,
+    provider_generation BIGINT NOT NULL CHECK(provider_generation > 0)
+);
+""")
+
+
+def _record_authorized_provider_generation(
+    handle: core.LogicalKeyHandle, provider_ref: str, generation: int
+) -> None:
+    binding = core.handle_binding(handle)
+    value = core.psql(
+        "INSERT INTO d3e_crypto_control.provider_generation_authority("
+        "handle_binding,provider_ref,provider_generation) "
+        f"VALUES({core.lit(binding)},{core.lit(provider_ref)},{generation}) "
+        "ON CONFLICT(handle_binding) DO UPDATE SET "
+        "provider_ref=EXCLUDED.provider_ref,provider_generation=EXCLUDED.provider_generation "
+        "WHERE d3e_crypto_control.provider_generation_authority.provider_ref=EXCLUDED.provider_ref "
+        "RETURNING provider_generation::text;"
+    )
+    if value != str(generation):
+        raise RuntimeError("provider-native generation authority cannot be rebound to another key reference")
+
+
+def _authorized_provider_generation(handle: core.LogicalKeyHandle, provider_ref: str) -> int:
+    raw = core.psql(
+        "SELECT provider_generation::text FROM d3e_crypto_control.provider_generation_authority "
+        f"WHERE handle_binding={core.lit(core.handle_binding(handle))} "
+        f"AND provider_ref={core.lit(provider_ref)};"
+    )
+    if not raw or not raw.isdigit() or int(raw) <= 0:
+        raise core.AuthorityDenied("provider-native generation has no governed authority binding")
+    return int(raw)
+
+
+def _provider_binding_matches(
+    handle: core.LogicalKeyHandle,
+    evidence: ProviderVersionBoundEvidence,
+    authorized_provider_generation: int,
+) -> bool:
     try:
         embedded = _provider_generation_from_mac(evidence.mac)
     except RuntimeError:
@@ -137,6 +183,7 @@ def _provider_binding_matches(handle: core.LogicalKeyHandle, evidence: ProviderV
         and evidence.generation == handle.generation
         and evidence.handle_binding == core.handle_binding(handle)
         and evidence.provider_generation == embedded
+        and embedded == authorized_provider_generation
     )
 
 
@@ -146,12 +193,15 @@ def _issue_provider_version_bound(
     if self.state(handle) != "current":
         raise core.AuthorityDenied("not current issue authority")
     mac = self.adapter.issue_hmac(handle, content)
+    provider_generation = _provider_generation_from_mac(mac)
+    provider_ref = self.adapter.ref(handle)
+    _record_authorized_provider_generation(handle, provider_ref, provider_generation)
     return ProviderVersionBoundEvidence(
         logical_key_id=handle.logical_key_id,
         generation=handle.generation,
         handle_binding=core.handle_binding(handle),
         mac=mac,
-        provider_generation=_provider_generation_from_mac(mac),
+        provider_generation=provider_generation,
     )
 
 
@@ -167,19 +217,21 @@ def _verify_historical_provider_version_bound(
         raise core.AuthorityDenied("not historical verifier authority")
     if not isinstance(evidence, ProviderVersionBoundEvidence):
         return False
+    authorized = _authorized_provider_generation(handle, self.adapter.ref(handle))
     _PROVIDER_GENERATION_CHECKS += 1
-    if not _provider_binding_matches(handle, evidence):
+    if not _provider_binding_matches(handle, evidence, authorized):
         return False
 
     mismatched = replace(evidence, provider_generation=evidence.provider_generation + 1)
-    if _provider_binding_matches(handle, mismatched):
-        raise AssertionError("provider-generation mismatch negative control was accepted")
+    if _provider_binding_matches(handle, mismatched, authorized):
+        raise AssertionError("provider-generation metadata mismatch negative control was accepted")
+    if _provider_binding_matches(handle, evidence, authorized + 1):
+        raise AssertionError("stale provider generation passed trusted authority mismatch control")
     _PROVIDER_GENERATION_NEGATIVE_CONTROLS += 1
     return self.adapter.verify_hmac(handle, content, evidence.mac)
 
 
 def _specific_denied(fn) -> int:
-    """Accept only governed denial, never generic malformed-request statuses."""
     try:
         fn()
     except core.AuthorityDenied:
@@ -205,22 +257,26 @@ def _openbao_262_compatible_call(
     if 204 in accepted:
         accepted.add(200)
     try:
-        return _ORIGINAL_CALL(self, method, path, body, expect=accepted, timeout=timeout)
+        result = _ORIGINAL_CALL(self, method, path, body, expect=accepted, timeout=timeout)
     except core.BaoError as exc:
         text = str(exc).lower()
         if path.startswith("transit/export/hmac-key/") and exc.status == 400:
             if "export" in text and ("not" in text or "allow" in text or "disabled" in text):
                 raise core.AuthorityDenied("configured non-exportable key denied export") from exc
-        # OpenBao 2.6.2's exercised deleted-key verifier response is the exact
-        # tuple HTTP 400 + "encryption key not found". Anything broader can
-        # also describe a bad mount, route, or key reference and must surface.
         if (
-            path.startswith("transit/verify/")
+            path in _EXPECTED_DELETED_VERIFY_PATHS
             and exc.status == 400
             and "encryption key not found" in text
         ):
             raise core.AuthorityDenied("deleted provider key denied verification") from exc
         raise
+    if method.upper() == "DELETE" and path.startswith("transit/keys/"):
+        ref = path[len("transit/keys/"):]
+        if ref and "/" not in ref:
+            _EXPECTED_DELETED_VERIFY_PATHS.add(
+                f"transit/verify/{quote(ref, safe='')}/sha2-256"
+            )
+    return result
 
 
 def _prove_retirement_linearization_strict(
@@ -341,8 +397,9 @@ def _prove_provider_generation_binding_exercised() -> None:
     print(
         "d3_e_provider_generation_binding=PASS "
         "provider_version_parsed_from_hmac=true evidence_records_provider_generation=true "
-        "embedded_generation_equals_recorded_generation=true mismatch_rejected_before_provider=true "
-        "separate_provider_ref_per_logical_generation=true"
+        "trusted_postgresql_provider_generation_authority=true "
+        "embedded_generation_equals_authorized_generation=true stale_native_generation_rejected=true "
+        "mismatch_rejected_before_provider=true separate_provider_ref_per_logical_generation=true"
     )
 
 
@@ -351,9 +408,11 @@ def main() -> None:
     anchor.unlink(missing_ok=True)
     Path(str(core.CRYPTO_WITNESS_PATH) + ".tmp").unlink(missing_ok=True)
     Path(str(anchor) + ".tmp").unlink(missing_ok=True)
+    _EXPECTED_DELETED_VERIFY_PATHS.clear()
 
     core.BaoClient.call = _openbao_262_compatible_call
     core.copy_volume = _copy_volume_as_root
+    core.init_db = _install_provider_generation_authority
     core.CryptoContinuityWitness = DurableCryptoContinuityWitness
     core.Evidence = ProviderVersionBoundEvidence
     core.KeyAuthorityPort.issue = _issue_provider_version_bound
@@ -368,6 +427,7 @@ def main() -> None:
         "client_errors_not_relaxed=true generic_400_404_not_denial=true "
         "operation_specific_state_denials=true unqualified_not_found_rejected=true "
         "deleted_key_status_400_only=true exact_deleted_key_response=encryption_key_not_found "
+        "exact_deleted_verify_path_required=true wrong_key_same_response_propagates=true "
         "routing_or_mount_404_propagates=true orphan_historical_capability=true"
     )
     core.main()

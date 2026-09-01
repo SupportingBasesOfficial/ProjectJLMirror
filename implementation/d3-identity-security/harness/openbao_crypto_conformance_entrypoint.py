@@ -42,9 +42,6 @@ class DurableCryptoContinuityWitness:
         if self.anchor_path.exists():
             raise RuntimeError("provisioned crypto continuity witness is missing")
 
-        # One-time provisioning. Write the anchor first so a crash cannot leave
-        # an apparently fresh system that silently forgets an established
-        # erasure boundary.
         self._atomic_write(self.anchor_path, _ANCHOR_TEXT)
         self.state = {}
         self.persist()
@@ -108,8 +105,6 @@ class DurableCryptoContinuityWitness:
             raise RuntimeError("erasure was not fenced before terminalization")
         self.state[key] = "erased"
         self.persist()
-        # Deliberately discard the in-memory copy. Later governed decisions must
-        # reload durable state, exercising process-memory loss in the same run.
         self.state = {}
 
     def state_for(self, handle: core.LogicalKeyHandle) -> str | None:
@@ -131,6 +126,44 @@ def _openbao_262_compatible_call(
     if 204 in accepted:
         accepted.add(200)
     return _ORIGINAL_CALL(self, method, path, body, expect=accepted, timeout=timeout)
+
+
+def _orphan_token_for(root: core.BaoClient, label: str, rule: str) -> str:
+    """Create a minimal orphan token that survives parent/root revocation.
+
+    Historical verification and recovery erasure authority must remain usable on
+    the relocated verifier after all issuance credentials and the copied root
+    token are revoked. They are therefore explicit orphan capabilities, each
+    constrained to one exact path and incapable of issuing current evidence.
+    """
+    policy = f"d3e-{label}"
+    root.call("PUT", f"sys/policies/acl/{policy}", {"policy": rule}, expect={204})
+    data = root.call(
+        "POST",
+        "auth/token/create-orphan",
+        {"policies": [policy], "ttl": "60m", "renewable": False},
+        expect={200},
+    )
+    token = data.get("auth", {}).get("client_token")
+    if not isinstance(token, str) or not token:
+        raise RuntimeError("OpenBao orphan token creation returned malformed response")
+    return token
+
+
+def _verify_orphan_token(root: core.BaoClient, label: str, ref: str) -> str:
+    return _orphan_token_for(
+        root,
+        label,
+        f'path "transit/verify/{ref}/sha2-256" {{ capabilities=["update"] }}\n',
+    )
+
+
+def _delete_orphan_token(root: core.BaoClient, label: str, ref: str) -> str:
+    return _orphan_token_for(
+        root,
+        label,
+        f'path "transit/keys/{ref}" {{ capabilities=["delete"] }}\n',
+    )
 
 
 def _copy_volume_as_root(src: str, dst: str) -> None:
@@ -189,8 +222,6 @@ def _prove_witness_restart_and_corruption_fail_closed() -> None:
 
 
 def main() -> None:
-    # Core removes the witness file at fixture bootstrap. Remove the provisioning
-    # anchor too only here, before the bounded test authority is first created.
     anchor = Path(str(core.CRYPTO_WITNESS_PATH) + ".provisioned")
     anchor.unlink(missing_ok=True)
     Path(str(core.CRYPTO_WITNESS_PATH) + ".tmp").unlink(missing_ok=True)
@@ -199,10 +230,12 @@ def main() -> None:
     core.BaoClient.call = _openbao_262_compatible_call
     core.copy_volume = _copy_volume_as_root
     core.CryptoContinuityWitness = DurableCryptoContinuityWitness
+    core.verify_token = _verify_orphan_token
+    core.delete_token = _delete_orphan_token
     print(
         "d3_e_openbao_262_http_success_profile=PASS "
         "http_200_success_retained=true http_204_success_retained=true "
-        "client_errors_not_relaxed=true"
+        "client_errors_not_relaxed=true orphan_historical_capability=true"
     )
     core.main()
     _prove_witness_restart_and_corruption_fail_closed()

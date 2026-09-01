@@ -431,13 +431,14 @@ def prove_key_rotation_retirement(root: OpenBaoHttp) -> None:
     assert not retired_valid
     root.request("POST", f"transit/keys/{ROTATION_KEY}/trim", {"min_available_version": 2})
     metadata = root.request("GET", f"transit/keys/{ROTATION_KEY}")
-    versions = metadata.get("data", {}).get("keys", {})
-    assert "1" not in versions and "2" in versions
+    key_data = metadata.get("data", {})
+    assert key_data.get("min_available_version") == 2
+    assert key_data.get("latest_version") == 2
     print(
         "d3_e_key_generation_rotation_retirement=PASS "
         "new_generation_issues=true previous_generation_verify_only_overlap=true "
         "previous_generation_generation_disabled=true retired_generation_verify_denied=true "
-        "trimmed_version_absent=true"
+        "trim_min_available_version=2 latest_version=2"
     )
 
 

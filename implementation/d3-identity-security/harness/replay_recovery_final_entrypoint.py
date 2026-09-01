@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import replay_recovery_capability_binding as capability
 import replay_recovery_conformance_entrypoint as base
 import replay_recovery_conformance_runner as core
 
@@ -64,13 +65,26 @@ def _rehydrate_missing_redrive_rows(witness: core.RecoveryWitnessPort) -> int:
 def recover_from_witness_with_missing_row_rehydration(
     witness: core.RecoveryWitnessPort,
 ) -> None:
+    # A whole-database rollback can restore reconciled=TRUE. Quarantine and drain
+    # that stale local admission state before any provider probe or local rebuild.
+    # The canonical exact recovery repeats this idempotently after rehydration.
+    payload = capability._enter_recovery_quarantine(witness)
+    epoch = int(payload["epoch"])
+    local_gate = core.psql(
+        "SELECT epoch::text||'|'||reconciled::text "
+        "FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
+    )
+    if local_gate != f"{epoch}|false":
+        raise RuntimeError("missing-row rehydration began without local recovery quarantine")
+
     restored = _rehydrate_missing_redrive_rows(witness)
     _ORIGINAL_RECOVER(witness)
     if restored:
         print(
             "d3_e_post_snapshot_provider_outcome_rehydration=PASS "
             f"rows_rehydrated={restored} provider_reconfirmed_before_local_rebuild=true "
-            "recovery_witness_not_effect_source_alone=true admission_closed_during_rebuild=true"
+            "recovery_witness_not_effect_source_alone=true admission_closed_during_rebuild=true "
+            "quarantine_before_provider_probe=true restored_admissions_drained_before_rebuild=true"
         )
 
 

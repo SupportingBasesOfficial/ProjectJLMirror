@@ -61,6 +61,10 @@ class BaoError(RuntimeError):
         self.status = status
 
 
+class AuthorityDenied(RuntimeError):
+    """Expected governed authority denial; never used for infrastructure failures."""
+
+
 class BaoClient:
     def __init__(self, addr: str, token: str | None = None):
         self.addr = addr.rstrip("/")
@@ -275,7 +279,7 @@ class OpenBaoTransitAdapter:
         try:
             return self.refs[handle]
         except KeyError as exc:
-            raise RuntimeError("logical key handle is not provisioned for this adapter") from exc
+            raise AuthorityDenied("logical key handle is not provisioned for this adapter") from exc
 
     def issue_hmac(self, handle: LogicalKeyHandle, content: bytes) -> str:
         data = self.client.call(
@@ -338,6 +342,8 @@ def pg_control_state(handle: LogicalKeyHandle) -> str:
         f"AND message_identity_scope={lit(handle.message_identity_scope)} "
         f"AND erasure_unit={lit(handle.erasure_unit)};"
     )
+    if value == "":
+        raise AuthorityDenied("logical key tuple has no governed authority")
     if value not in {"current", "historical", "erasure_pending", "erased"}:
         raise RuntimeError("crypto currentness unavailable")
     return value
@@ -356,7 +362,7 @@ class KeyAuthorityPort:
 
     def issue(self, *, handle: LogicalKeyHandle, content: bytes) -> Evidence:
         if self.state(handle) != "current":
-            raise RuntimeError("not current issue authority")
+            raise AuthorityDenied("not current issue authority")
         return Evidence(
             handle.logical_key_id,
             handle.generation,
@@ -368,7 +374,7 @@ class KeyAuthorityPort:
         self, *, handle: LogicalKeyHandle, content: bytes, evidence: Evidence
     ) -> bool:
         if self.state(handle) != "historical":
-            raise RuntimeError("not historical verifier authority")
+            raise AuthorityDenied("not historical verifier authority")
         if (
             evidence.logical_key_id != handle.logical_key_id
             or evidence.generation != handle.generation
@@ -388,7 +394,7 @@ class HistoricalVerifier:
 
     def generate(self, *, content: bytes) -> Evidence:
         del content
-        raise RuntimeError("historical verifier is verify-only")
+        raise AuthorityDenied("historical verifier is verify-only")
 
 
 def create_key(root: BaoClient, ref: str) -> None:
@@ -430,15 +436,22 @@ def verify_token(root: BaoClient, label: str, ref: str) -> str:
     )
 
 
+def delete_token(root: BaoClient, label: str, ref: str) -> str:
+    return token_for(
+        root, label,
+        f'path "transit/keys/{ref}" {{ capabilities=["delete"] }}\n',
+    )
+
+
 def denied(fn) -> int:
     try:
         fn()
+    except AuthorityDenied:
+        return 0
     except BaoError as exc:
         if exc.status not in {400, 403, 404}:
             raise
         return exc.status
-    except RuntimeError:
-        return 0
     raise AssertionError("provider/key-authority operation unexpectedly succeeded")
 
 
@@ -454,6 +467,10 @@ def handles() -> dict[str, LogicalKeyHandle]:
 
 def revoke_token(addr: str, token: str) -> None:
     BaoClient(addr, token).call("POST", "auth/token/revoke-self", {}, expect={204})
+
+
+def revoke_token_value(root: BaoClient, token: str) -> None:
+    root.call("POST", "auth/token/revoke", {"token": token}, expect={204})
 
 
 def prove_retirement_linearization(
@@ -566,6 +583,16 @@ def main() -> None:
     start_bao(TARGET_CONTAINER, TARGET_VOLUME, 18201)
     unseal_server(TARGET_ADDR, unseal_key)
 
+    target_root = BaoClient(TARGET_ADDR, root_token)
+    erasure_token = delete_token(target_root, "historical-g1-erasure", refs[hs["g1"]])
+    for name, token in tokens.items():
+        if name != "g1":
+            revoke_token_value(target_root, token)
+    for name, handle in hs.items():
+        if name != "g1":
+            target_root.call("DELETE", f"transit/keys/{refs[handle]}", expect={204})
+    target_root.call("POST", "auth/token/revoke-self", {}, expect={204})
+
     relocated_port = KeyAuthorityPort(
         OpenBaoTransitAdapter(TARGET_ADDR, historical_token, refs), witness
     )
@@ -573,6 +600,7 @@ def main() -> None:
     assert verifier.verify(content=immutable, evidence=old)
     denied(lambda: verifier.generate(content=immutable))
     denied(lambda: OpenBaoTransitAdapter(TARGET_ADDR, historical_token, refs).issue_hmac(hs["g1"], immutable))
+    denied(lambda: OpenBaoTransitAdapter(TARGET_ADDR, tokens["g2"], refs).issue_hmac(hs["g2"], immutable))
     denied(lambda: BaoClient(TARGET_ADDR, historical_token).call(
         "POST", f"transit/verify/{refs[hs['g2']]}/sha2-256",
         {"input": b64(immutable), "hmac": new.mac}, expect={200},
@@ -582,7 +610,8 @@ def main() -> None:
         "d3_e_historical_verifier_relocation_recovery_continuity=PASS "
         "source_authority_stopped=true encrypted_storage_relocated_offline=true "
         "target_distinct_instance=true historical_verify_survives_recovery=true "
-        "historical_verify_only=true current_generation_isolated=true exact_logical_generation_bound=true"
+        "historical_verify_only=true current_generation_isolated=true exact_logical_generation_bound=true "
+        "current_issuance_credentials_revoked=true nonhistorical_keys_removed=true root_authority_revoked=true"
     )
     print(
         "d3_e_key_generation_rotation_retirement=PASS "
@@ -602,10 +631,10 @@ def main() -> None:
     denied(lambda: KeyAuthorityPort(
         OpenBaoTransitAdapter(TARGET_ADDR, historical_token, refs), witness
     ).verify_historical(handle=hs["g1"], content=immutable, evidence=old))
-    assert raw_verify(TARGET_ADDR, root_token, refs[hs["g1"]], immutable, old.mac)
+    assert raw_verify(TARGET_ADDR, historical_token, refs[hs["g1"]], immutable, old.mac)
 
-    BaoClient(TARGET_ADDR, root_token).call("DELETE", f"transit/keys/{refs[hs['g1']]}", expect={204})
-    denied(lambda: raw_verify(TARGET_ADDR, root_token, refs[hs["g1"]], immutable, old.mac))
+    BaoClient(TARGET_ADDR, erasure_token).call("DELETE", f"transit/keys/{refs[hs['g1']]}", expect={204})
+    denied(lambda: raw_verify(TARGET_ADDR, historical_token, refs[hs["g1"]], immutable, old.mac))
     witness.finalize_erased(hs["g1"])
     set_control(hs["g1"], "erased")
 
@@ -613,7 +642,7 @@ def main() -> None:
     copy_volume(STALE_VOLUME, TARGET_VOLUME)
     start_bao(TARGET_CONTAINER, TARGET_VOLUME, 18201)
     unseal_server(TARGET_ADDR, unseal_key)
-    assert raw_verify(TARGET_ADDR, root_token, refs[hs["g1"]], immutable, old.mac)
+    assert raw_verify(TARGET_ADDR, historical_token, refs[hs["g1"]], immutable, old.mac)
 
     set_control(hs["g1"], "historical")
     stale_port = KeyAuthorityPort(
@@ -622,19 +651,22 @@ def main() -> None:
     denied(lambda: stale_port.verify_historical(handle=hs["g1"], content=immutable, evidence=old))
     denied(lambda: stale_port.issue(handle=hs["g1"], content=immutable))
 
-    BaoClient(TARGET_ADDR, root_token).call("DELETE", f"transit/keys/{refs[hs['g1']]}", expect={204})
+    BaoClient(TARGET_ADDR, erasure_token).call("DELETE", f"transit/keys/{refs[hs['g1']]}", expect={204})
     set_control(hs["g1"], "erased")
-    denied(lambda: raw_verify(TARGET_ADDR, root_token, refs[hs["g1"]], immutable, old.mac))
+    denied(lambda: raw_verify(TARGET_ADDR, historical_token, refs[hs["g1"]], immutable, old.mac))
 
-    target_g2 = KeyAuthorityPort(OpenBaoTransitAdapter(TARGET_ADDR, tokens["g2"], refs), witness)
-    target_g2.issue(handle=hs["g2"], content=b"current-still-works")
+    start_bao(SOURCE_CONTAINER, SOURCE_VOLUME, 18200)
+    unseal_server(SOURCE_ADDR, unseal_key)
+    source_g2 = KeyAuthorityPort(OpenBaoTransitAdapter(SOURCE_ADDR, tokens["g2"], refs), witness)
+    source_g2.issue(handle=hs["g2"], content=b"current-still-works-on-current-authority")
 
     print(
         "d3_e_retired_erased_key_nonresurrection=PASS "
         "erasure_fence_before_provider_delete=true provider_key_destroyed_before_erased_terminal=true "
         "stale_encrypted_provider_storage_restored=true raw_provider_negative_control_revived=true "
         "stale_currentness_restored=true governed_erasure_witness_wins=true "
-        "recovery_redeletes_resurrected_key=true unrelated_current_generation_works=true"
+        "recovery_redeletes_resurrected_key=true historical_target_cannot_issue=true "
+        "unrelated_current_generation_works_on_separate_current_authority=true"
     )
     print(
         "d3_e_crypto_authority_conformance=PASS openbao_transit=true "

@@ -192,6 +192,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # The crypto probe is complete. Remove its fixture schema so the replay
+          # snapshot/restore covers the whole remaining D3-E rollback domain.
+          docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_CONTAINER" \
+            psql -U postgres -d d3 -v ON_ERROR_STOP=1 -c 'DROP SCHEMA IF EXISTS d3e_crypto_control CASCADE;'
           python3 implementation/d3-identity-security/harness/replay_recovery_conformance_runner.py | tee /tmp/d3e-replay.log
           grep -F 'd3_e_private_key_jwt_replay_atomic_single_winner=PASS' /tmp/d3e-replay.log >/dev/null
           grep -F 'd3_e_replay_duplicate_recovery_gate_order=PASS' /tmp/d3e-replay.log >/dev/null

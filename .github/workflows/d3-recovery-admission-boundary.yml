@@ -70,7 +70,8 @@ jobs:
           strict="$dir/replay_recovery_strict_entrypoint.py"
           python3 -m py_compile "$core" "$barrier" "$capability" "$token" "$strict"
           grep -F 'pg_advisory_xact_lock_shared' "$barrier" >/dev/null
-          grep -F 'pg_advisory_lock' "$barrier" >/dev/null
+          grep -F 'pg_advisory_xact_lock(' "$barrier" >/dev/null
+          grep -F 'fence_commit_precedes_barrier_release=true' "$barrier" >/dev/null
           grep -F 'json_build_object' "$barrier" >/dev/null
           grep -F 'validate_consumed_restore_exact' "$barrier" >/dev/null
           grep -F 'delimiter_claims_round_trip=true' "$barrier" >/dev/null
@@ -110,6 +111,7 @@ jobs:
           grep -F 'd3_e_recovery_consumer_drain_barrier=PASS' /tmp/d3e-boundary.log >/dev/null
           grep -F 'in_flight_consumer_drained_before_witness=true' /tmp/d3e-boundary.log >/dev/null
           grep -F 'new_consumers_blocked_after_close=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'fence_commit_precedes_barrier_release=true' /tmp/d3e-boundary.log >/dev/null
           grep -F 'structured_consumed_json=true' /tmp/d3e-boundary.log >/dev/null
           grep -F 'delimiter_claims_round_trip=true' /tmp/d3e-boundary.log >/dev/null
           grep -F 'd3_e_ambiguous_capability_token_retention=PASS' /tmp/d3e-boundary.log >/dev/null

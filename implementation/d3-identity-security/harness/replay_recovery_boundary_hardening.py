@@ -58,9 +58,6 @@ DECLARE
     prior d3e_replay.replay_identity%ROWTYPE;
     gate_ok BOOLEAN;
 BEGIN
-    -- Every admission transaction holds the shared side until commit. Recovery
-    -- capture takes the exclusive side before closing the fence, which drains
-    -- all already-admitted consumers and prevents a post-scan commit race.
     PERFORM pg_advisory_xact_lock_shared({barrier});
     PERFORM pg_advisory_xact_lock(hashtextextended('jwt:' || p_client || E'\\x1f' || p_jti,0));
 
@@ -111,8 +108,6 @@ DECLARE
     gate_ok BOOLEAN;
     next_generation BIGINT;
 BEGIN
-    -- Redrive admission shares the same barrier: capture cannot seal while an
-    -- admitted claim is still able to create a provider capability.
     PERFORM pg_advisory_xact_lock_shared({barrier});
     PERFORM pg_advisory_xact_lock(hashtextextended('redrive:' || p_operation_id,0));
     SELECT TRUE INTO gate_ok FROM d3e_replay.recovery_fence
@@ -142,9 +137,6 @@ SECURITY INVOKER
 SET search_path = pg_catalog,d3e_replay
 AS $$
 BEGIN
-    -- The exact provider capability remains part of durable ambiguous state.
-    -- Clearing attempt_token here would make same-operation/same-generation
-    -- outcomes from a different capability indistinguishable during recovery.
     UPDATE d3e_replay.redrive
        SET state='reconciliation_required',worker_id=NULL,
            ambiguity_reason=p_reason
@@ -164,18 +156,20 @@ def hardened_init_db() -> None:
 
 
 def close_admission_and_drain() -> None:
-    """Drain old admissions, close the DB gate, then release the barrier.
+    """Drain old admissions and commit the closed fence before releasing waiters.
 
-    The session-level exclusive advisory lock conflicts with the transaction-
-    scoped shared lock held by every consume/claim. No external/provider call is
-    made while this lock is held: it exists only long enough to drain admitted
-    DB transactions and atomically close the recovery fence.
+    Every consume/claim holds the shared transaction lock until its commit. This
+    function takes the conflicting exclusive transaction lock and updates the
+    fence in that same transaction. PostgreSQL releases the exclusive lock only
+    as COMMIT completes, so a queued shared waiter cannot observe the old open
+    fence between advisory unlock and fence commit.
     """
     barrier = _barrier_expr()
     core.psql(
-        f"SELECT pg_advisory_lock({barrier}); "
+        "BEGIN; "
+        f"SELECT pg_advisory_xact_lock({barrier}); "
         "UPDATE d3e_replay.recovery_fence SET reconciled=FALSE WHERE singleton=TRUE; "
-        f"SELECT pg_advisory_unlock({barrier});"
+        "COMMIT;"
     )
     if core.psql(
         "SELECT reconciled::text FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
@@ -197,14 +191,6 @@ def _capability_identity(capability: dict, label: str) -> tuple[int, str]:
 
 
 def canonicalize_provider_outcome(status: dict) -> dict:
-    """Seal one effective recovery outcome while tolerating older provider history.
-
-    The provider intentionally retains an absence fence for an earlier attempt
-    even after a later generation commits an effect. Recovery authority is not
-    the raw history set: it is the single terminal capability at F. Therefore a
-    later effect supersedes an older fence. Same-generation effect/fence pairs,
-    or a fence newer than the effect, are contradictory and fail closed.
-    """
     if not isinstance(status, dict):
         raise RuntimeError("provider recovery status is malformed")
     effect = status.get("effect")
@@ -230,10 +216,7 @@ def canonicalize_provider_outcome(status: dict) -> dict:
 def canonicalize_provider_outcomes(provider_outcomes: dict[str, dict]) -> dict[str, dict]:
     if not isinstance(provider_outcomes, dict):
         raise RuntimeError("provider recovery outcomes are malformed")
-    return {
-        op: canonicalize_provider_outcome(status)
-        for op, status in provider_outcomes.items()
-    }
+    return {op: canonicalize_provider_outcome(status) for op, status in provider_outcomes.items()}
 
 
 def capture_boundary_structured(
@@ -242,7 +225,6 @@ def capture_boundary_structured(
     next_epoch: int,
     provider_outcomes: dict[str, dict],
 ) -> None:
-    """Serialize consumed identities and one canonical provider outcome per op."""
     if core.psql(
         "SELECT reconciled::text FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
     ) != "false":
@@ -268,7 +250,6 @@ def capture_boundary_structured(
 
 
 def validate_consumed_restore_exact(witness: core.RecoveryWitnessPort) -> None:
-    """Prevalidate restored identities field-by-field before any upsert."""
     payload = witness.read()
     for item in payload.get("consumed", []):
         raw = core.psql(
@@ -346,8 +327,6 @@ def prove_recovery_consumer_barrier() -> None:
     ) != "BLOCKED":
         raise RuntimeError("new replay admission succeeded after recovery gate closure")
 
-    # Provider history may contain an old absence fence plus a later successful
-    # generation. The recovery witness must retain only the later terminal effect.
     canonical = canonicalize_provider_outcome({
         "effect": {
             "attempt_generation": 2,
@@ -386,7 +365,8 @@ def prove_recovery_consumer_barrier() -> None:
 
     print(
         "d3_e_recovery_consumer_drain_barrier=PASS "
-        "shared_xact_admission_lock=true exclusive_capture_barrier=true "
+        "shared_xact_admission_lock=true exclusive_xact_capture_barrier=true "
+        "fence_commit_precedes_barrier_release=true "
         "in_flight_consumer_drained_before_witness=true new_consumers_blocked_after_close=true "
         "structured_consumed_json=true delimiter_claims_round_trip=true long_db_txn_over_external_call=false "
         "provider_history_canonicalized=true older_fence_superseded_by_later_effect=true "

@@ -103,6 +103,37 @@ def capture_recovery_boundary_exact(
     )
 
 
+def _enter_recovery_quarantine(witness: core.RecoveryWitnessPort) -> dict:
+    """Close local admission before any recovery validation that can fail.
+
+    A stale restored database must never remain locally admissible merely because
+    a continuity/capability prevalidation raises before the legacy recovery path
+    executes. The surviving witness is read first; once it declares recovery
+    closed, the local fence advances to that epoch and becomes unreconciled.
+    Every subsequent validation failure therefore leaves the database quarantined.
+    """
+    payload = witness.read()
+    if payload.get("admission_open") is not False:
+        raise RuntimeError("recovery witness must be closed before local quarantine")
+    try:
+        epoch = int(payload["epoch"])
+    except Exception as exc:
+        raise RuntimeError("recovery witness epoch is malformed") from exc
+    if epoch <= 0:
+        raise RuntimeError("recovery witness epoch is invalid")
+    core.psql(
+        f"UPDATE d3e_replay.recovery_fence SET epoch={epoch},reconciled=FALSE "
+        "WHERE singleton=TRUE;"
+    )
+    state = core.psql(
+        "SELECT epoch::text||'|'||reconciled::text "
+        "FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
+    )
+    if state != f"{epoch}|false":
+        raise RuntimeError("local recovery quarantine did not close admission")
+    return payload
+
+
 def _validate_restored_redrive_capabilities(witness: core.RecoveryWitnessPort) -> None:
     payload = witness.read()
     for op, status in payload.get("provider_outcomes", {}).items():
@@ -124,9 +155,9 @@ def _validate_restored_redrive_capabilities(witness: core.RecoveryWitnessPort) -
 
 
 def recover_from_witness_exact(witness: core.RecoveryWitnessPort) -> None:
-    # Field-by-field structured comparison closes delimiter/collision ambiguity;
-    # durable attempt-token comparison closes same-operation/generation aliasing
-    # for both attempting and reconciliation_required states before mutation.
+    # Enter local quarantine first. Field/capability validation comes only after
+    # the stale restored DB has lost admission, so every mismatch fails closed.
+    _enter_recovery_quarantine(witness)
     boundary.validate_consumed_restore_exact(witness)
     _validate_restored_redrive_capabilities(witness)
     _ORIGINAL_RECOVER(witness)
@@ -168,8 +199,9 @@ def prove_mismatched_restored_capability_rejected() -> None:
             raise AssertionError("mismatched restored provider capability was accepted")
         assert witness.read()["admission_open"] is False
         assert core.psql(
-            "SELECT reconciled::text FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
-        ) == "false"
+            "SELECT epoch::text||'|'||reconciled::text "
+            "FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
+        ) == "2|false"
 
         witness.initialize()
         core.psql(
@@ -186,6 +218,7 @@ def prove_mismatched_restored_capability_rejected() -> None:
             "d3_e_replay_exact_provider_capability_binding=PASS "
             "restore_generation_bound=true restore_attempt_token_bound=true "
             "ambiguous_attempt_token_durable=true reconciliation_required_token_compared=true "
+            "recovery_quarantine_before_prevalidation=true mismatch_failure_leaves_db_closed=true "
             "capture_generation_bound=true capture_attempt_token_bound=true "
             "provider_operation_id_aliasing_negative_control=true admission_remains_closed_on_mismatch=true"
         )

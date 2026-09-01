@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 25
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      OPENBAO_IMAGE: ghcr.io/openbao/openbao@sha256:65954978cfb1680ae92405a17f29e7299fb541327e351757cdf2486950ab282f
+      OPENBAO_IMAGE: ghcr.io/openbao/openbao@sha256:11fd73a2102cda9c55d5d881a8c3210303146a7ec1e8ac76f526e175c6d24641
       POSTGRES_IMAGE: postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
       PG_CONTAINER: jlmirror-d3e-postgres
       PG_PASSWORD: d3-postgres-password

@@ -35,6 +35,17 @@ def _unique_captured_capability(status: dict) -> tuple[dict | None, str | None]:
     return capability, "CONFIRMED" if effect else "ABSENT"
 
 
+def _issued_operation_ids() -> list[str]:
+    raw = core.psql(
+        "SELECT COALESCE(json_agg(operation_id ORDER BY operation_id)::text,'[]') "
+        "FROM d3e_replay.redrive WHERE attempt_generation > 0;"
+    )
+    values = json.loads(raw or "[]")
+    if not isinstance(values, list) or any(not isinstance(op, str) for op in values):
+        raise RuntimeError("issued provider capability inventory is malformed")
+    return values
+
+
 def resolve_provider_capability_exact(op: str) -> dict:
     row = strict._redrive_row(op)
     if row is None:
@@ -81,16 +92,14 @@ def resolve_provider_capability_exact(op: str) -> dict:
 def capture_recovery_boundary_exact(
     witness: core.RecoveryWitnessPort, *, next_epoch: int, ops: list[str]
 ) -> None:
-    # Exclusive recovery barrier drains all consume/claim transactions that had
-    # already entered under the old epoch, then closes admission. No provider
-    # call happens while that DB barrier is held.
+    # The exclusive barrier drains all claims admitted under the old epoch and
+    # closes admission. Once it returns, every capability already issued by the
+    # DB is durably visible via attempt_generation>0. Include all of them in the
+    # witness, even if a worker completed its external effect immediately after
+    # the drain and changed local state from attempting to completed.
     boundary.close_admission_and_drain()
-    outstanding_raw = core.psql(
-        "SELECT COALESCE(json_agg(operation_id ORDER BY operation_id)::text,'[]') "
-        "FROM d3e_replay.redrive WHERE state IN('attempting','reconciliation_required');"
-    )
-    outstanding = json.loads(outstanding_raw or "[]")
-    all_ops = sorted(set(ops) | set(outstanding))
+    issued = _issued_operation_ids()
+    all_ops = sorted(set(ops) | set(issued))
     outcomes = {op: resolve_provider_capability_exact(op) for op in all_ops}
     unresolved = core.psql(
         "SELECT count(*) FROM d3e_replay.redrive "
@@ -104,13 +113,13 @@ def capture_recovery_boundary_exact(
 
 
 def _enter_recovery_quarantine(witness: core.RecoveryWitnessPort) -> dict:
-    """Close local admission before any recovery validation that can fail.
+    """Drain restored stale admissions before any recovery prevalidation.
 
-    A stale restored database must never remain locally admissible merely because
-    a continuity/capability prevalidation raises before the legacy recovery path
-    executes. The surviving witness is read first; once it declares recovery
-    closed, the local fence advances to that epoch and becomes unreconciled.
-    Every subsequent validation failure therefore leaves the database quarantined.
+    The surviving witness is trusted first only to establish that recovery is
+    closed and to obtain its epoch. Before inspecting restored rows, acquire the
+    *same exclusive advisory barrier* used at capture. This drains any consume or
+    claim transaction that already read a rollbacked `reconciled=TRUE` fence and
+    atomically closes that local fence. Only then is the local epoch advanced.
     """
     payload = witness.read()
     if payload.get("admission_open") is not False:
@@ -121,6 +130,8 @@ def _enter_recovery_quarantine(witness: core.RecoveryWitnessPort) -> dict:
         raise RuntimeError("recovery witness epoch is malformed") from exc
     if epoch <= 0:
         raise RuntimeError("recovery witness epoch is invalid")
+
+    boundary.close_admission_and_drain()
     core.psql(
         f"UPDATE d3e_replay.recovery_fence SET epoch={epoch},reconciled=FALSE "
         "WHERE singleton=TRUE;"
@@ -136,7 +147,25 @@ def _enter_recovery_quarantine(witness: core.RecoveryWitnessPort) -> dict:
 
 def _validate_restored_redrive_capabilities(witness: core.RecoveryWitnessPort) -> None:
     payload = witness.read()
-    for op, status in payload.get("provider_outcomes", {}).items():
+    provider_outcomes = payload.get("provider_outcomes", {})
+    if not isinstance(provider_outcomes, dict):
+        raise RuntimeError("recovery witness provider outcomes are malformed")
+
+    # Any local capability issued before the restored DB was quarantined must
+    # have existed at the trusted recovery boundary. A rollbacked worker that
+    # reclaims using stale `reconciled=TRUE` after F therefore cannot silently
+    # create a new provider capability: its operation is absent from the witness
+    # and recovery stays closed.
+    issued = set(_issued_operation_ids())
+    witnessed = set(provider_outcomes)
+    escaped = sorted(issued - witnessed)
+    if escaped:
+        raise RuntimeError(
+            "restored database contains provider capability absent from recovery witness: "
+            + ",".join(escaped)
+        )
+
+    for op, status in provider_outcomes.items():
         row = strict._redrive_row(op)
         if row is None:
             continue
@@ -155,12 +184,49 @@ def _validate_restored_redrive_capabilities(witness: core.RecoveryWitnessPort) -
 
 
 def recover_from_witness_exact(witness: core.RecoveryWitnessPort) -> None:
-    # Enter local quarantine first. Field/capability validation comes only after
-    # the stale restored DB has lost admission, so every mismatch fails closed.
     _enter_recovery_quarantine(witness)
     boundary.validate_consumed_restore_exact(witness)
     _validate_restored_redrive_capabilities(witness)
     _ORIGINAL_RECOVER(witness)
+
+
+def prove_completed_capability_is_captured_without_caller_ops() -> None:
+    """A post-drain completion remains part of the boundary by capability inventory."""
+    core.WITNESS_PATH.unlink(missing_ok=True)
+    core.PROVIDER_STATE.unlink(missing_ok=True)
+    strict._provider_anchor().unlink(missing_ok=True)
+    provider = strict.start_provider()
+    try:
+        core.init_db()
+        witness = core.RecoveryWitnessPort()
+        witness.initialize()
+        op = "capture-completed-after-drain"
+        core.prepare_redrive(op, 1)
+        assert core.claim(op, "boundary-worker", "boundary-token", 1) == "1"
+
+        # Simulate the precise race: claim committed before the drain returns;
+        # provider effect and local completion happen immediately after admission
+        # is closed, before the capture inventories issued capabilities.
+        boundary.close_admission_and_drain()
+        sent = core.provider_send(op, 1, "boundary-token", "boundary-effect", "boundary-result")
+        assert sent["outcome"] == "WIN"
+        assert core.complete_provider(op, 1, "boundary-result", sent["revision"])
+
+        # The canonical capture is deliberately called with no caller-supplied op.
+        capture_recovery_boundary_exact(witness, next_epoch=2, ops=[])
+        captured = witness.read()["provider_outcomes"].get(op, {}).get("effect")
+        if not captured or captured.get("effect_id") != "boundary-effect":
+            raise RuntimeError("completed issued capability escaped recovery boundary")
+        print(
+            "d3_e_completed_capability_boundary_inventory=PASS "
+            "claim_committed_before_drain=true effect_completed_after_drain=true "
+            "caller_ops_empty=true issued_generation_inventory=true completed_effect_captured=true"
+        )
+    finally:
+        strict.stop_provider(provider)
+        core.WITNESS_PATH.unlink(missing_ok=True)
+        core.PROVIDER_STATE.unlink(missing_ok=True)
+        strict._provider_anchor().unlink(missing_ok=True)
 
 
 def prove_mismatched_restored_capability_rejected() -> None:
@@ -218,6 +284,7 @@ def prove_mismatched_restored_capability_rejected() -> None:
             "d3_e_replay_exact_provider_capability_binding=PASS "
             "restore_generation_bound=true restore_attempt_token_bound=true "
             "ambiguous_attempt_token_durable=true reconciliation_required_token_compared=true "
+            "restore_exclusive_barrier_before_prevalidation=true "
             "recovery_quarantine_before_prevalidation=true mismatch_failure_leaves_db_closed=true "
             "capture_generation_bound=true capture_attempt_token_bound=true "
             "provider_operation_id_aliasing_negative_control=true admission_remains_closed_on_mismatch=true"
@@ -258,6 +325,7 @@ def prove_missing_recovery_witness_fails_closed() -> None:
 def main() -> None:
     boundary.prove_recovery_consumer_barrier()
     boundary.prove_ambiguous_capability_token_retention()
+    prove_completed_capability_is_captured_without_caller_ops()
     prove_mismatched_restored_capability_rejected()
     prove_missing_recovery_witness_fails_closed()
 

@@ -41,7 +41,8 @@ jobs:
           from pathlib import Path
 
           m = json.loads(Path('implementation/d3-identity-security/state-manifest.json').read_text())
-          t = {x['track_id']: x for x in m['tracks']}['D3-B']
+          tracks = {x['track_id']: x for x in m['tracks']}
+          t = tracks['D3-B']
           assert t['state'] == 'per_track_conformed'
           assert t['evidence_remaining'] == []
           assert set(t['evidence_completed']) == set(t['required_evidence'])
@@ -67,11 +68,14 @@ jobs:
               assert set(proof['artifact_pins']) == pins
               assert proof['result'] == 'pass'
 
-          assert m['gate_state'] == 'candidate_evidence_running'
+          assert all(tracks[track_id]['state'] == 'per_track_conformed' for track_id in tracks)
+          assert m['gate_state'] == 'per_track_conformed'
+          assert m['canonical_product_implementation_authority'] == 'not_granted'
           assert m['wave4_implementation_authority'] == 'not_granted'
           assert m['production_authority'] == 'none'
           assert m['d4_transport_authority'] == 'not_selected_not_granted'
-          print('d3_b_review_promoted_manifest_boundary=PASS')
+          assert 'separate_acceptance' in m['acceptance_rule']
+          print('d3_b_review_promoted_manifest_boundary=PASS all_tracks=per_track_conformed')
           PY
 
       - name: Validate tuple-integrity runner structure

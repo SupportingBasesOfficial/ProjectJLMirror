@@ -2,13 +2,8 @@ name: JLMIRROR D3-E Crypto Replay Conformance Evidence
 
 on:
   pull_request:
-    branches:
-      - main
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -54,7 +49,6 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-
           manifest = json.loads(Path('implementation/d3-identity-security/state-manifest.json').read_text())
           tracks = {track['track_id']: track for track in manifest['tracks']}
           track = tracks['D3-E']
@@ -83,40 +77,61 @@ jobs:
           assert 'OPEN-REL-016.B' in manifest['c3_remains_open']
           print('d3_e_source_manifest_boundary=PASS')
           PY
-
-          case "$OPENBAO_IMAGE" in
-            ghcr.io/openbao/openbao@sha256:*) ;;
-            *) echo 'OpenBao candidate is not immutable-digest pinned' >&2; exit 1 ;;
-          esac
-          case "$POSTGRES_IMAGE" in
-            postgres@sha256:*) ;;
-            *) echo 'PostgreSQL candidate is not immutable-digest pinned' >&2; exit 1 ;;
-          esac
+          case "$OPENBAO_IMAGE" in ghcr.io/openbao/openbao@sha256:*) ;; *) exit 1 ;; esac
+          case "$POSTGRES_IMAGE" in postgres@sha256:*) ;; *) exit 1 ;; esac
           printf 'd3_e_source_candidate_pins=PASS manifest_candidate_locked=true workflow_digests_immutable=true\n'
 
-      - name: Validate final recovery token-boundary and relocation probes
+      - name: Validate layered crypto recovery and token-boundary structure
         shell: bash
         run: |
           set -euo pipefail
-          crypto=implementation/d3-identity-security/harness/openbao_crypto_conformance_runner.py
-          crypto_entry=implementation/d3-identity-security/harness/openbao_crypto_conformance_entrypoint.py
-          replay=implementation/d3-identity-security/harness/replay_recovery_conformance_runner.py
-          replay_entry=implementation/d3-identity-security/harness/replay_recovery_conformance_entrypoint.py
-          replay_strict=implementation/d3-identity-security/harness/replay_recovery_strict_entrypoint.py
-          replay_capability=implementation/d3-identity-security/harness/replay_recovery_capability_binding.py
-          replay_boundary=implementation/d3-identity-security/harness/replay_recovery_boundary_hardening.py
-          replay_port=implementation/d3-identity-security/harness/replay_recovery_port_probe.py
-          token_boundary=implementation/d3-identity-security/harness/private_key_jwt_token_boundary_conformance.py
-          python3 -m py_compile "$crypto" "$crypto_entry" "$replay" "$replay_entry" "$replay_strict" "$replay_capability" "$replay_boundary" "$replay_port" "$token_boundary"
+          dir=implementation/d3-identity-security/harness
+          crypto="$dir/openbao_crypto_conformance_runner.py"
+          crypto_base="$dir/_openbao_crypto_conformance_base.py"
+          crypto_entry="$dir/openbao_crypto_conformance_entrypoint.py"
+          replay="$dir/replay_recovery_conformance_runner.py"
+          replay_entry="$dir/replay_recovery_conformance_entrypoint.py"
+          replay_strict="$dir/replay_recovery_strict_entrypoint.py"
+          replay_capability="$dir/replay_recovery_capability_binding.py"
+          replay_boundary="$dir/replay_recovery_boundary_hardening.py"
+          replay_port="$dir/replay_recovery_port_probe.py"
+          token_boundary="$dir/private_key_jwt_token_boundary_conformance.py"
 
-          grep -F 'd3_e_openbao_262_http_success_profile=PASS' "$crypto_entry" >/dev/null
-          grep -F 'accepted.add(200)' "$crypto_entry" >/dev/null
-          grep -F '_ORIGINAL_CALL(self, method, path, body' "$crypto_entry" >/dev/null
-          grep -F 'return result' "$crypto_entry" >/dev/null
-          grep -F 'path in _EXPECTED_DELETED_VERIFY_PATHS' "$crypto_entry" >/dev/null
-          grep -F 'provider_generation_authority' "$crypto_entry" >/dev/null
-          grep -F 'embedded_generation_equals_authorized_generation=true' "$crypto_entry" >/dev/null
-          grep -F 'stale_native_generation_rejected=true' "$crypto_entry" >/dev/null
+          python3 -m py_compile \
+            "$crypto" "$crypto_base" "$crypto_entry" \
+            "$replay" "$replay_entry" "$replay_strict" \
+            "$replay_capability" "$replay_boundary" "$replay_port" "$token_boundary"
+
+          # Preserved crypto contract mechanics remain in the base implementation.
+          grep -F 'd3_e_openbao_262_http_success_profile=PASS' "$crypto_base" >/dev/null
+          grep -F 'accepted.add(200)' "$crypto_base" >/dev/null
+          grep -F '_ORIGINAL_CALL(self, method, path, body' "$crypto_base" >/dev/null
+          grep -F 'path in _EXPECTED_DELETED_VERIFY_PATHS' "$crypto_base" >/dev/null
+          grep -F 'provider_generation_authority' "$crypto_base" >/dev/null
+          grep -F 'ON CONFLICT(handle_binding) DO NOTHING' "$crypto_base" >/dev/null
+          grep -F 'provider-native generation authority is immutable during ordinary issuance' "$crypto_base" >/dev/null
+
+          # Final wrapper must exercise the actual OpenBao rotation + issue path.
+          grep -F 'transit/keys/{base.quote(provider_ref' "$crypto_entry" >/dev/null
+          grep -F '/rotate' "$crypto_entry" >/dev/null
+          grep -F 'port.issue(handle=handle' "$crypto_entry" >/dev/null
+          grep -F 'native_openbao_rotation_exercised=true' "$crypto_entry" >/dev/null
+          grep -F 'ordinary_issue_path_exercised=true' "$crypto_entry" >/dev/null
+          grep -F 'native_rotation_cannot_self_authorize=true' "$crypto_entry" >/dev/null
+          grep -F 'trusted_generation_retained_after_rejected_issue=true' "$crypto_entry" >/dev/null
+          if grep -F 'stale_restore_cannot_self_reauthorize=true' "$crypto_entry" "$crypto_base" >/dev/null; then
+            echo 'unexercised stale-restore generation claim must not be emitted' >&2
+            exit 1
+          fi
+
+          # The executed external provider child must cross a crash-durability boundary.
+          grep -F 'class CrashDurableProviderState' "$replay_entry" >/dev/null
+          grep -F 'stream.flush()' "$replay_entry" >/dev/null
+          grep -F 'os.fsync(stream.fileno())' "$replay_entry" >/dev/null
+          grep -F 'os.replace(tmp, path)' "$replay_entry" >/dev/null
+          grep -F 'os.fsync(directory_fd)' "$replay_entry" >/dev/null
+          grep -F 'strict.start_provider = start_provider' "$replay_entry" >/dev/null
+          grep -F 'durable_provider_server()' "$replay_entry" >/dev/null
 
           for marker in \
             d3_e_historical_verifier_relocation_recovery_continuity \
@@ -152,10 +167,6 @@ jobs:
           grep -F 'provider_operation_id_aliasing_negative_control=true' "$replay_capability" >/dev/null
           grep -F 'prepared restored absence-fence revision mismatch' "$replay_capability" >/dev/null
           grep -F 'd3_e_recovery_missing_witness_fail_closed=PASS' "$replay_capability" >/dev/null
-          grep -F 'd3_e_replay_consumed_identity_survives_restore_loss=PASS' "$replay_strict" >/dev/null
-          grep -F 'd3_e_replay_redrive_conformance=PASS' "$replay_strict" >/dev/null
-          grep -F 'd3_e_replay_recovery_entrypoint=PASS' "$replay_strict" >/dev/null
-          grep -F 'exact_provider_capability_binding=true' "$replay_strict" >/dev/null
 
           grep -F 'storage "file"' "$crypto" >/dev/null
           grep -F 'operator", "init"' "$crypto" >/dev/null
@@ -184,7 +195,6 @@ jobs:
           grep -F 'DROP DATABASE d3 WITH (FORCE)' "$replay_strict" >/dev/null
           grep -F 'CREATE DATABASE d3' "$replay_strict" >/dev/null
           grep -F 'stale_db_cannot_self_certify=true' "$replay_strict" >/dev/null
-
           if grep -F 'CREATE SCHEMA d3e_replay_control' "$replay" >/dev/null; then
             echo 'recovery witness must not be hidden inside the same rollback database' >&2
             exit 1
@@ -207,8 +217,7 @@ jobs:
           docker run -d --rm --name "$PG_CONTAINER" --network "$D3_NETWORK" \
             -e POSTGRES_PASSWORD="$PG_PASSWORD" -e POSTGRES_DB=d3 "$POSTGRES_IMAGE"
           for _ in $(seq 1 120); do
-            if result="$(docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_CONTAINER" \
-              psql -U postgres -d d3 -Atqc 'SELECT 1' 2>/dev/null)" && test "$result" = "1"; then
+            if result="$(docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_CONTAINER" psql -U postgres -d d3 -Atqc 'SELECT 1' 2>/dev/null)" && test "$result" = "1"; then
               exit 0
             fi
             sleep 0.5
@@ -221,33 +230,42 @@ jobs:
         run: |
           set -euo pipefail
           python3 implementation/d3-identity-security/harness/openbao_crypto_conformance_entrypoint.py | tee /tmp/d3e-crypto.log
-          grep -F 'd3_e_openbao_262_http_success_profile=PASS' /tmp/d3e-crypto.log >/dev/null
-          grep -F 'd3_e_openbao_provider_neutral_custody=PASS' /tmp/d3e-crypto.log >/dev/null
-          grep -F 'd3_e_actual_domain_separation=PASS' /tmp/d3e-crypto.log >/dev/null
-          grep -F 'd3_e_historical_verifier_relocation_recovery_continuity=PASS' /tmp/d3e-crypto.log >/dev/null
-          grep -F 'd3_e_retired_erased_key_nonresurrection=PASS' /tmp/d3e-crypto.log >/dev/null
-          grep -F 'd3_e_key_generation_rotation_retirement=PASS' /tmp/d3e-crypto.log >/dev/null
-          grep -F 'd3_e_crypto_authority_conformance=PASS' /tmp/d3e-crypto.log >/dev/null
-          grep -F 'd3_e_provider_generation_binding=PASS' /tmp/d3e-crypto.log >/dev/null
+          for marker in \
+            d3_e_openbao_262_http_success_profile \
+            d3_e_openbao_provider_neutral_custody \
+            d3_e_actual_domain_separation \
+            d3_e_historical_verifier_relocation_recovery_continuity \
+            d3_e_retired_erased_key_nonresurrection \
+            d3_e_key_generation_rotation_retirement \
+            d3_e_crypto_authority_conformance \
+            d3_e_provider_generation_binding; do
+            grep -F "$marker=PASS" /tmp/d3e-crypto.log >/dev/null
+          done
           grep -F 'trusted_postgresql_provider_generation_authority=true' /tmp/d3e-crypto.log >/dev/null
           grep -F 'embedded_generation_equals_authorized_generation=true' /tmp/d3e-crypto.log >/dev/null
-          grep -F 'stale_native_generation_rejected=true' /tmp/d3e-crypto.log >/dev/null
+          grep -F 'native_openbao_rotation_exercised=true' /tmp/d3e-crypto.log >/dev/null
+          grep -F 'ordinary_issue_path_exercised=true' /tmp/d3e-crypto.log >/dev/null
+          grep -F 'native_rotation_cannot_self_authorize=true' /tmp/d3e-crypto.log >/dev/null
+          grep -F 'trusted_generation_retained_after_rejected_issue=true' /tmp/d3e-crypto.log >/dev/null
 
       - name: Exercise strict replay recovery and token-boundary replicas
         shell: bash
         run: |
           set -euo pipefail
-          docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_CONTAINER" \
-            psql -U postgres -d d3 -v ON_ERROR_STOP=1 -c 'DROP SCHEMA IF EXISTS d3e_crypto_control CASCADE;'
+          docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_CONTAINER" psql -U postgres -d d3 -v ON_ERROR_STOP=1 -c 'DROP SCHEMA IF EXISTS d3e_crypto_control CASCADE;'
 
           python3 implementation/d3-identity-security/harness/replay_recovery_conformance_entrypoint.py | tee /tmp/d3e-replay.log
-          grep -F 'd3_e_replay_port_atomic_single_winner=PASS' /tmp/d3e-replay.log >/dev/null
-          grep -F 'd3_e_replay_duplicate_recovery_gate_order=PASS' /tmp/d3e-replay.log >/dev/null
-          grep -F 'd3_e_replay_partition_fail_closed=PASS' /tmp/d3e-replay.log >/dev/null
-          grep -F 'd3_e_replay_consumed_identity_survives_restore_loss=PASS' /tmp/d3e-replay.log >/dev/null
-          grep -F 'd3_e_redrive_crash_retry_single_effect=PASS' /tmp/d3e-replay.log >/dev/null
-          grep -F 'd3_e_redrive_absence_effect_race_single_winner=PASS' /tmp/d3e-replay.log >/dev/null
-          grep -F 'd3_e_replay_redrive_conformance=PASS' /tmp/d3e-replay.log >/dev/null
+          for marker in \
+            d3_e_replay_port_atomic_single_winner \
+            d3_e_replay_duplicate_recovery_gate_order \
+            d3_e_replay_partition_fail_closed \
+            d3_e_replay_consumed_identity_survives_restore_loss \
+            d3_e_redrive_crash_retry_single_effect \
+            d3_e_redrive_absence_effect_race_single_winner \
+            d3_e_external_provider_restart_durability \
+            d3_e_replay_redrive_conformance; do
+            grep -F "$marker=PASS" /tmp/d3e-replay.log >/dev/null
+          done
           grep -F 'exact_provider_capability_binding=true' /tmp/d3e-replay.log >/dev/null
 
           python3 implementation/d3-identity-security/harness/replay_recovery_capability_binding.py | tee /tmp/d3e-capability.log

@@ -77,8 +77,6 @@ def recover_from_witness_with_missing_row_rehydration(
 def _prove_post_snapshot_effect_row_rehydration(
     witness: core.RecoveryWitnessPort,
 ) -> None:
-    # The preceding in-flight capture leaves epoch 3 closed. Reconcile it first
-    # so this probe starts from a clean, current recovery boundary.
     core.recover_from_witness(witness)
     payload = witness.read()
     assert payload["epoch"] == 3 and payload["admission_open"] is True
@@ -91,44 +89,30 @@ def _prove_post_snapshot_effect_row_rehydration(
 
     core.prepare_redrive(op, 3)
     assert core.claim(op, "post-snapshot-worker", token, 3) == "1"
-    ambiguous = core.provider_send(
-        op, 1, token, effect_id, result_ref, drop=True
-    )
+    ambiguous = core.provider_send(op, 1, token, effect_id, result_ref, drop=True)
     assert ambiguous["outcome"] == "AMBIGUOUS"
 
-    # Capture serializes the in-flight provider capability, confirms the effect,
-    # and records it in the external recovery witness at F-4.
     core.capture_recovery_boundary(witness, next_epoch=4, ops=[op])
     witnessed = witness.read()
     assert witnessed["epoch"] == 4 and witnessed["admission_open"] is False
     effect = witnessed["provider_outcomes"][op]["effect"]
     assert effect["effect_id"] == effect_id and effect["result_ref"] == result_ref
 
-    # Roll back the entire PostgreSQL authority to a point before this operation
-    # existed. No redrive row survives locally.
     base.restore_entire_database(stale_dump)
     assert base._redrive_row(op) is None
     assert core.psql(
-        "SELECT epoch||'|'||reconciled::text FROM d3e_replay.recovery_fence "
-        "WHERE singleton=TRUE;"
+        "SELECT epoch||'|'||reconciled::text FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
     ) == "3|true"
 
-    # The recovery witness alone is not trusted as proof of effect. Recovery
-    # re-probes the durable external provider, then reconstructs a completed row
-    # before admission can reopen.
     core.recover_from_witness(witness)
     rebuilt = core.psql(
         "SELECT state||'|'||attempt_generation||'|'||provider_revision||'|'||result_ref "
         f"FROM d3e_replay.redrive WHERE operation_id={core.lit(op)};"
     )
-    assert rebuilt == (
-        f"completed|{effect['attempt_generation']}|{effect['revision']}|{result_ref}"
-    )
+    assert rebuilt == f"completed|{effect['attempt_generation']}|{effect['revision']}|{result_ref}"
     reopened = witness.read()
     assert reopened["epoch"] == 4 and reopened["admission_open"] is True
 
-    # Replaying the exact provider capability observes the already-committed
-    # effect; it cannot create a second external effect.
     observed = core.provider_send(
         op,
         int(effect["attempt_generation"]),
@@ -137,7 +121,11 @@ def _prove_post_snapshot_effect_row_rehydration(
         result_ref,
     )
     assert observed["outcome"] == "OBSERVE"
-    _require_exact_capability(effect, {"outcome": "CONFIRMED", **core.provider_status(op)["effect"]}, "CONFIRMED")
+    _require_exact_capability(
+        effect,
+        {"outcome": "CONFIRMED", **core.provider_status(op)["effect"]},
+        "CONFIRMED",
+    )
 
     print(
         "d3_e_post_snapshot_redrive_row_rehydration=PASS "
@@ -156,11 +144,13 @@ def prove_inflight_and_post_snapshot_rehydration(
 
 
 def main() -> None:
-    # base.main resolves these module globals at runtime, so the existing
-    # restart-safe provider and whole-DB recovery harness remain intact while
-    # the final recovery layer strengthens missing-row reconstruction.
+    # The canonical wrapper delegates into the strict module. Install the final
+    # strengthening at both exported and strict-module hooks so strict.main()
+    # composes these probes rather than bypassing them.
     base.recover_from_witness_strict = recover_from_witness_with_missing_row_rehydration
     base.prove_recovery_capture_fences_inflight = prove_inflight_and_post_snapshot_rehydration
+    base.strict.recover_from_witness_strict = recover_from_witness_with_missing_row_rehydration
+    base.strict.prove_recovery_capture_fences_inflight = prove_inflight_and_post_snapshot_rehydration
     base.main()
 
 

@@ -732,9 +732,62 @@ def prove_absence_effect_race() -> None:
     )
 
 
+def _redrive_row(op: str) -> tuple[str, int, str] | None:
+    raw = psql(
+        "SELECT state||'|'||attempt_generation||'|'||COALESCE(attempt_token,'') "
+        f"FROM d3e_replay.redrive WHERE operation_id={lit(op)};"
+    )
+    if not raw:
+        return None
+    state, gen_text, token = raw.split("|", 2)
+    return state, int(gen_text), token
+
+
+def _resolve_provider_capability(op: str) -> dict:
+    row = _redrive_row(op)
+    if row is None:
+        return provider_status(op)
+    state, generation, token = row
+
+    if state == "attempting":
+        if not token:
+            raise RuntimeError("attempting redrive lost provider capability")
+        outcome = provider_probe(op, generation, token)
+        mark_ambiguous(op, generation, "recovery_provider_serialization")
+        if not reconcile_provider(op, generation, outcome):
+            raise RuntimeError("attempting provider capability could not be reconciled")
+    elif state == "reconciliation_required":
+        status = provider_status(op)
+        capability = status.get("effect") or status.get("fence")
+        if not capability:
+            raise RuntimeError("ambiguous provider capability has no effect or authoritative absence fence")
+        if int(capability["attempt_generation"]) != generation:
+            raise RuntimeError("provider capability generation mismatch")
+        outcome = provider_probe(op, generation, capability["attempt_token"])
+        if not reconcile_provider(op, generation, outcome):
+            raise RuntimeError("ambiguous provider capability could not be reconciled")
+
+    final = _redrive_row(op)
+    if final and final[0] in {"attempting", "reconciliation_required"}:
+        raise RuntimeError("provider capability remained unresolved")
+    return provider_status(op)
+
+
 def capture_recovery_boundary(witness: RecoveryWitnessPort, *, next_epoch: int, ops: list[str]) -> None:
     psql("UPDATE d3e_replay.recovery_fence SET reconciled=FALSE WHERE singleton=TRUE;")
-    outcomes = {op: provider_status(op) for op in ops}
+    outstanding_raw = psql(
+        "SELECT COALESCE(json_agg(operation_id ORDER BY operation_id)::text,'[]') "
+        "FROM d3e_replay.redrive WHERE state IN('attempting','reconciliation_required');"
+    )
+    outstanding = json.loads(outstanding_raw or "[]")
+    all_ops = sorted(set(ops) | set(outstanding))
+    outcomes = {op: _resolve_provider_capability(op) for op in all_ops}
+    unresolved = psql(
+        "SELECT count(*) FROM d3e_replay.redrive "
+        "WHERE state IN('attempting','reconciliation_required');"
+    )
+    if unresolved != "0":
+        raise RuntimeError("recovery witness cannot capture unresolved provider capabilities")
     witness.capture_boundary(next_epoch=next_epoch, provider_outcomes=outcomes)
 
 
@@ -768,28 +821,67 @@ def recover_from_witness(witness: RecoveryWitnessPort) -> None:
             "ON CONFLICT(effect_id) DO NOTHING;"
         )
 
-    for op, status in payload["provider_outcomes"].items():
-        effect = status.get("effect")
-        if not effect:
+    for op, witnessed_status in payload["provider_outcomes"].items():
+        row = _redrive_row(op)
+        if row is None:
+            effect = witnessed_status.get("effect")
+            if effect:
+                raise RuntimeError("surviving provider effect has no local redrive row; recovery rehydration required")
             continue
-        row = psql(
-            f"SELECT state||'|'||attempt_generation FROM d3e_replay.redrive WHERE operation_id={lit(op)};"
-        )
-        if not row:
-            continue
-        state, gen_text = row.split("|", 1)
-        gen = int(gen_text)
-        if state == "attempting":
-            mark_ambiguous(op, gen, "restore_requires_provider_reconciliation")
-        probe = provider_probe(op, int(effect["attempt_generation"]), effect["attempt_token"])
-        if probe["outcome"] != "CONFIRMED":
-            raise RuntimeError("provider continuity did not confirm restored ambiguous effect")
-        if not reconcile_provider(op, gen, probe):
-            raise RuntimeError("restored provider outcome could not be reconciled")
 
-    unresolved = psql("SELECT count(*) FROM d3e_replay.redrive WHERE state='reconciliation_required';")
+        state, generation, token = row
+        effect = witnessed_status.get("effect")
+        fence = witnessed_status.get("fence")
+
+        if state == "attempting":
+            if not token:
+                raise RuntimeError("restored attempting row lost provider capability token")
+            probe = provider_probe(op, generation, token)
+            mark_ambiguous(op, generation, "restore_requires_provider_reconciliation")
+            expected_outcome = "CONFIRMED" if probe.get("outcome") == "CONFIRMED" else "ABSENT"
+            if probe.get("outcome") not in {"CONFIRMED", "ABSENT"}:
+                raise RuntimeError("restored attempting capability did not produce authoritative outcome")
+            if not reconcile_provider(op, generation, probe):
+                raise RuntimeError("restored attempting provider outcome could not be reconciled")
+            state = "completed" if expected_outcome == "CONFIRMED" else "prepared"
+        elif state == "reconciliation_required":
+            capability = effect or fence
+            if not capability:
+                raise RuntimeError("restored ambiguous attempt lacks captured provider continuity")
+            if int(capability["attempt_generation"]) != generation:
+                raise RuntimeError("restored provider capability generation mismatch")
+            probe = provider_probe(op, generation, capability["attempt_token"])
+            expected_outcome = "CONFIRMED" if effect else "ABSENT"
+            if probe.get("outcome") != expected_outcome:
+                raise RuntimeError("provider state diverged from captured recovery continuity")
+            if not reconcile_provider(op, generation, probe):
+                raise RuntimeError("restored provider outcome could not be reconciled")
+            state = "completed" if expected_outcome == "CONFIRMED" else "prepared"
+        elif state == "completed":
+            if not effect:
+                raise RuntimeError("completed restored attempt lacks captured provider effect")
+            probe = provider_probe(op, int(effect["attempt_generation"]), effect["attempt_token"])
+            if probe.get("outcome") != "CONFIRMED":
+                raise RuntimeError("completed provider effect was not durable across recovery")
+        elif state == "prepared":
+            if effect:
+                raise RuntimeError("prepared restored attempt has an unaccounted provider effect")
+            if fence:
+                probe = provider_probe(op, int(fence["attempt_generation"]), fence["attempt_token"])
+                if probe.get("outcome") != "ABSENT":
+                    raise RuntimeError("captured provider absence fence was not durable")
+
+        psql(
+            f"UPDATE d3e_replay.redrive SET recovery_epoch={epoch} "
+            f"WHERE operation_id={lit(op)};"
+        )
+
+    unresolved = psql(
+        "SELECT count(*) FROM d3e_replay.redrive "
+        "WHERE state IN('attempting','reconciliation_required');"
+    )
     if unresolved != "0":
-        raise RuntimeError("recovery remains ambiguous")
+        raise RuntimeError("recovery remains ambiguous or has an in-flight provider capability")
     psql(f"UPDATE d3e_replay.recovery_fence SET reconciled=TRUE WHERE singleton=TRUE AND epoch={epoch};")
     witness.open_after_reconciliation()
 

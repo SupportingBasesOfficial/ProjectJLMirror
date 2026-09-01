@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
 import hashlib
 import hmac
 import json
@@ -15,6 +16,8 @@ _WITNESS_KEY = os.environ.get(
     "D3E_CRYPTO_WITNESS_KEY", "d3e-test-crypto-continuity-witness-key"
 ).encode()
 _ANCHOR_TEXT = "jlmirror-d3e-crypto-witness-provisioned-v1\n"
+_PROVIDER_GENERATION_CHECKS = 0
+_PROVIDER_GENERATION_NEGATIVE_CONTROLS = 0
 
 
 def _canonical_json(value: object) -> bytes:
@@ -22,14 +25,7 @@ def _canonical_json(value: object) -> bytes:
 
 
 class DurableCryptoContinuityWitness:
-    """Reloadable, integrity-protected erasure continuity outside OpenBao state.
-
-    The witness file is the authority on every read; in-memory state is never
-    sufficient. A separate provisioning anchor makes a missing witness after
-    initial provisioning fail closed rather than silently reinitialize to an
-    empty state. This is bounded C2 mechanism evidence, not a production
-    topology or key-management choice for the witness itself.
-    """
+    """Reloadable, integrity-protected erasure continuity outside OpenBao state."""
 
     def __init__(self, path: Path = core.CRYPTO_WITNESS_PATH):
         self.path = Path(path)
@@ -112,6 +108,92 @@ class DurableCryptoContinuityWitness:
         return self.state.get(self.key(handle))
 
 
+@dataclass(frozen=True)
+class ProviderVersionBoundEvidence:
+    logical_key_id: str
+    generation: int
+    handle_binding: str
+    mac: str
+    provider_generation: int
+
+
+def _provider_generation_from_mac(mac: str) -> int:
+    parts = mac.split(":", 2)
+    if len(parts) != 3 or not parts[1].startswith("v") or not parts[1][1:].isdigit():
+        raise RuntimeError("OpenBao HMAC did not expose a parseable provider generation")
+    generation = int(parts[1][1:])
+    if generation <= 0:
+        raise RuntimeError("OpenBao HMAC provider generation is invalid")
+    return generation
+
+
+def _provider_binding_matches(handle: core.LogicalKeyHandle, evidence: ProviderVersionBoundEvidence) -> bool:
+    try:
+        embedded = _provider_generation_from_mac(evidence.mac)
+    except RuntimeError:
+        return False
+    return (
+        evidence.logical_key_id == handle.logical_key_id
+        and evidence.generation == handle.generation
+        and evidence.handle_binding == core.handle_binding(handle)
+        and evidence.provider_generation == embedded
+    )
+
+
+def _issue_provider_version_bound(
+    self: core.KeyAuthorityPort, *, handle: core.LogicalKeyHandle, content: bytes
+) -> ProviderVersionBoundEvidence:
+    if self.state(handle) != "current":
+        raise core.AuthorityDenied("not current issue authority")
+    mac = self.adapter.issue_hmac(handle, content)
+    return ProviderVersionBoundEvidence(
+        logical_key_id=handle.logical_key_id,
+        generation=handle.generation,
+        handle_binding=core.handle_binding(handle),
+        mac=mac,
+        provider_generation=_provider_generation_from_mac(mac),
+    )
+
+
+def _verify_historical_provider_version_bound(
+    self: core.KeyAuthorityPort,
+    *,
+    handle: core.LogicalKeyHandle,
+    content: bytes,
+    evidence: ProviderVersionBoundEvidence,
+) -> bool:
+    global _PROVIDER_GENERATION_CHECKS, _PROVIDER_GENERATION_NEGATIVE_CONTROLS
+    if self.state(handle) != "historical":
+        raise core.AuthorityDenied("not historical verifier authority")
+    if not isinstance(evidence, ProviderVersionBoundEvidence):
+        return False
+    _PROVIDER_GENERATION_CHECKS += 1
+    if not _provider_binding_matches(handle, evidence):
+        return False
+
+    # Every real historical verification also falsifies caller-declared provider
+    # version substitution before provider use. The MAC is unchanged while the
+    # metadata generation is deliberately wrong, and must be rejected locally.
+    mismatched = replace(evidence, provider_generation=evidence.provider_generation + 1)
+    if _provider_binding_matches(handle, mismatched):
+        raise AssertionError("provider-generation mismatch negative control was accepted")
+    _PROVIDER_GENERATION_NEGATIVE_CONTROLS += 1
+    return self.adapter.verify_hmac(handle, content, evidence.mac)
+
+
+def _specific_denied(fn) -> int:
+    """Accept only governed denial, never generic malformed-request statuses."""
+    try:
+        fn()
+    except core.AuthorityDenied:
+        return 0
+    except core.BaoError as exc:
+        if exc.status != 403:
+            raise
+        return 403
+    raise AssertionError("provider/key-authority operation unexpectedly succeeded")
+
+
 def _openbao_262_compatible_call(
     self: core.BaoClient,
     method: str,
@@ -121,21 +203,60 @@ def _openbao_262_compatible_call(
     expect: set[int] = {200, 204},
     timeout: float = 6,
 ) -> dict:
-    """Accept OpenBao 2.6.2 success responses with or without a response body."""
+    """Accept OpenBao 2.6.2 success profile and classify only exact state denials."""
     accepted = set(expect)
     if 204 in accepted:
         accepted.add(200)
-    return _ORIGINAL_CALL(self, method, path, body, expect=accepted, timeout=timeout)
+    try:
+        return _ORIGINAL_CALL(self, method, path, body, expect=accepted, timeout=timeout)
+    except core.BaoError as exc:
+        text = str(exc).lower()
+        # Non-exportability is a configured key-state denial, not a generic 400.
+        if path.startswith("transit/export/hmac-key/") and exc.status == 400:
+            if "export" in text and ("not" in text or "allow" in text or "disabled" in text):
+                raise core.AuthorityDenied("configured non-exportable key denied export") from exc
+        # Verification after irreversible key deletion is accepted only when the
+        # provider explicitly reports missing key/version state. Malformed paths,
+        # malformed payloads and arbitrary 400/404 responses continue to fail.
+        if path.startswith("transit/verify/") and exc.status in {400, 404}:
+            missing_fragments = (
+                "no existing version",
+                "no key",
+                "not found",
+                "does not exist",
+                "missing key",
+            )
+            if any(fragment in text for fragment in missing_fragments):
+                raise core.AuthorityDenied("deleted provider key/version denied verification") from exc
+        raise
+
+
+def _prove_retirement_linearization_strict(
+    *, addr: str, handle: core.LogicalKeyHandle, token: str,
+    refs: dict[core.LogicalKeyHandle, str], content: bytes,
+) -> str:
+    adapter = core.OpenBaoTransitAdapter(addr, token, refs)
+
+    def issue_race() -> str:
+        try:
+            adapter.issue_hmac(handle, content)
+            return "ISSUED_BEFORE_REVOKE"
+        except core.BaoError as exc:
+            if exc.status != 403:
+                raise
+            return "DENIED_BY_REVOKE"
+
+    with core.concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        issue_future = pool.submit(issue_race)
+        revoke_future = pool.submit(core.revoke_token, addr, token)
+        issue_outcome = issue_future.result()
+        revoke_future.result()
+
+    _specific_denied(lambda: adapter.issue_hmac(handle, content))
+    return issue_outcome
 
 
 def _orphan_token_for(root: core.BaoClient, label: str, rule: str) -> str:
-    """Create a minimal orphan token that survives parent/root revocation.
-
-    Historical verification and recovery erasure authority must remain usable on
-    the relocated verifier after all issuance credentials and the copied root
-    token are revoked. They are therefore explicit orphan capabilities, each
-    constrained to one exact path and incapable of issuing current evidence.
-    """
     policy = f"d3e-{label}"
     root.call("PUT", f"sys/policies/acl/{policy}", {"policy": rule}, expect={204})
     data = root.call(
@@ -167,7 +288,6 @@ def _delete_orphan_token(root: core.BaoClient, label: str, ref: str) -> str:
 
 
 def _copy_volume_as_root(src: str, dst: str) -> None:
-    """Copy a stopped OpenBao file-storage volume into a distinct volume."""
     core.remove_volume(dst)
     core.create_volume(dst)
     core.sh([
@@ -221,6 +341,19 @@ def _prove_witness_restart_and_corruption_fail_closed() -> None:
     )
 
 
+def _prove_provider_generation_binding_exercised() -> None:
+    if _PROVIDER_GENERATION_CHECKS <= 0:
+        raise AssertionError("historical verification never exercised provider-generation binding")
+    if _PROVIDER_GENERATION_NEGATIVE_CONTROLS != _PROVIDER_GENERATION_CHECKS:
+        raise AssertionError("provider-generation mismatch negative control did not accompany verification")
+    print(
+        "d3_e_provider_generation_binding=PASS "
+        "provider_version_parsed_from_hmac=true evidence_records_provider_generation=true "
+        "embedded_generation_equals_recorded_generation=true mismatch_rejected_before_provider=true "
+        "separate_provider_ref_per_logical_generation=true"
+    )
+
+
 def main() -> None:
     anchor = Path(str(core.CRYPTO_WITNESS_PATH) + ".provisioned")
     anchor.unlink(missing_ok=True)
@@ -230,14 +363,21 @@ def main() -> None:
     core.BaoClient.call = _openbao_262_compatible_call
     core.copy_volume = _copy_volume_as_root
     core.CryptoContinuityWitness = DurableCryptoContinuityWitness
+    core.Evidence = ProviderVersionBoundEvidence
+    core.KeyAuthorityPort.issue = _issue_provider_version_bound
+    core.KeyAuthorityPort.verify_historical = _verify_historical_provider_version_bound
+    core.denied = _specific_denied
+    core.prove_retirement_linearization = _prove_retirement_linearization_strict
     core.verify_token = _verify_orphan_token
     core.delete_token = _delete_orphan_token
     print(
         "d3_e_openbao_262_http_success_profile=PASS "
         "http_200_success_retained=true http_204_success_retained=true "
-        "client_errors_not_relaxed=true orphan_historical_capability=true"
+        "client_errors_not_relaxed=true generic_400_404_not_denial=true "
+        "operation_specific_state_denials=true orphan_historical_capability=true"
     )
     core.main()
+    _prove_provider_generation_binding_exercised()
     _prove_witness_restart_and_corruption_fail_closed()
 
 

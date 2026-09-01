@@ -211,19 +211,15 @@ def _openbao_262_compatible_call(
         if path.startswith("transit/export/hmac-key/") and exc.status == 400:
             if "export" in text and ("not" in text or "allow" in text or "disabled" in text):
                 raise core.AuthorityDenied("configured non-exportable key denied export") from exc
-        # OpenBao 2.6.2 returns exactly "encryption key not found" after the
-        # known transit key is deleted. Do not accept the generic substring
-        # "not found": a missing mount/route can use that broader response.
-        if path.startswith("transit/verify/") and exc.status in {400, 404}:
-            deletion_specific_fragments = (
-                "encryption key not found",
-                "no existing version",
-                "no key",
-                "does not exist",
-                "missing key",
-            )
-            if any(fragment in text for fragment in deletion_specific_fragments):
-                raise core.AuthorityDenied("deleted provider key/version denied verification") from exc
+        # OpenBao 2.6.2's exercised deleted-key verifier response is the exact
+        # tuple HTTP 400 + "encryption key not found". Anything broader can
+        # also describe a bad mount, route, or key reference and must surface.
+        if (
+            path.startswith("transit/verify/")
+            and exc.status == 400
+            and "encryption key not found" in text
+        ):
+            raise core.AuthorityDenied("deleted provider key denied verification") from exc
         raise
 
 
@@ -371,7 +367,8 @@ def main() -> None:
         "http_200_success_retained=true http_204_success_retained=true "
         "client_errors_not_relaxed=true generic_400_404_not_denial=true "
         "operation_specific_state_denials=true unqualified_not_found_rejected=true "
-        "exact_deleted_key_response=encryption_key_not_found orphan_historical_capability=true"
+        "deleted_key_status_400_only=true exact_deleted_key_response=encryption_key_not_found "
+        "routing_or_mount_404_propagates=true orphan_historical_capability=true"
     )
     core.main()
     _prove_provider_generation_binding_exercised()

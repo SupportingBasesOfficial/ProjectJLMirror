@@ -5,6 +5,7 @@ import json
 import os
 
 import replay_recovery_conformance_runner as core
+import replay_recovery_boundary_hardening as boundary
 import replay_recovery_strict_entrypoint as strict
 
 # Capture the already-hardened restore implementation before the canonical
@@ -67,7 +68,10 @@ def resolve_provider_capability_exact(op: str) -> dict:
 def capture_recovery_boundary_exact(
     witness: core.RecoveryWitnessPort, *, next_epoch: int, ops: list[str]
 ) -> None:
-    core.psql("UPDATE d3e_replay.recovery_fence SET reconciled=FALSE WHERE singleton=TRUE;")
+    # Exclusive recovery barrier drains all consume/claim transactions that had
+    # already entered under the old epoch, then closes admission. No provider
+    # call happens while that DB barrier is held.
+    boundary.close_admission_and_drain()
     outstanding_raw = core.psql(
         "SELECT COALESCE(json_agg(operation_id ORDER BY operation_id)::text,'[]') "
         "FROM d3e_replay.redrive WHERE state IN('attempting','reconciliation_required');"
@@ -81,10 +85,15 @@ def capture_recovery_boundary_exact(
     )
     if unresolved != "0":
         raise RuntimeError("recovery capture cannot seal unresolved provider capabilities")
-    witness.capture_boundary(next_epoch=next_epoch, provider_outcomes=outcomes)
+    boundary.capture_boundary_structured(
+        witness, next_epoch=next_epoch, provider_outcomes=outcomes
+    )
 
 
 def recover_from_witness_exact(witness: core.RecoveryWitnessPort) -> None:
+    # Field-by-field structured comparison closes delimiter/collision ambiguity
+    # before the legacy strict upsert path is allowed to run.
+    boundary.validate_consumed_restore_exact(witness)
     _ORIGINAL_RECOVER(witness)
 
 
@@ -101,8 +110,6 @@ def prove_mismatched_restored_capability_rejected() -> None:
         core.prepare_redrive(op, 1)
         assert core.claim(op, "stale-worker", "stale-token", 1) == "1"
 
-        # Deliberately create an external outcome for the same operation and
-        # generation but a different issued capability token.
         effect = core.provider_send(
             op, 1, "different-token", "mismatch-effect", "mismatch-result"
         )
@@ -127,7 +134,6 @@ def prove_mismatched_restored_capability_rejected() -> None:
             "SELECT reconciled::text FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
         ) == "false"
 
-        # The same provider aliasing must be rejected while capturing a boundary.
         witness.initialize()
         core.psql(
             "UPDATE d3e_replay.recovery_fence SET epoch=1,reconciled=TRUE WHERE singleton=TRUE;"
@@ -179,6 +185,7 @@ def prove_missing_recovery_witness_fails_closed() -> None:
 
 
 def main() -> None:
+    boundary.prove_recovery_consumer_barrier()
     prove_mismatched_restored_capability_rejected()
     prove_missing_recovery_witness_fails_closed()
 

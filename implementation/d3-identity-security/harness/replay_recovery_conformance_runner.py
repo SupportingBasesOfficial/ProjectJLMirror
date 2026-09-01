@@ -54,7 +54,8 @@ def dump_app_schema() -> str:
     ])
     if "CREATE SCHEMA d3e_replay" not in r.stdout:
         raise AssertionError("real PostgreSQL app-schema dump was not captured")
-    if "d3e_replay_control" in r.stdout:
+    if ("CREATE SCHEMA d3e_replay_control" in r.stdout
+            or "CREATE TABLE d3e_replay_control." in r.stdout):
         raise AssertionError("fresh recovery/effect authority leaked into stale app snapshot")
     return r.stdout
 

@@ -112,10 +112,10 @@ BEGIN
     )
     ON CONFLICT (issuer, jti) DO NOTHING;
 
-    SELECT durable_owner_token, fingerprint, tenant_context, outcome
+    SELECT r.durable_owner_token, r.fingerprint, r.tenant_context, r.outcome
       INTO STRICT v_owner, v_fingerprint, v_tenant, v_outcome
-      FROM crypto_control.replay_claim
-     WHERE issuer = p_issuer AND jti = p_jti;
+      FROM crypto_control.replay_claim AS r
+     WHERE r.issuer = p_issuer AND r.jti = p_jti;
 
     RETURN QUERY
     SELECT

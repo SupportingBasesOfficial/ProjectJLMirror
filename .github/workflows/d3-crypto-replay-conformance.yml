@@ -99,8 +99,13 @@ jobs:
         run: |
           set -euo pipefail
           crypto=implementation/d3-identity-security/harness/openbao_crypto_conformance_runner.py
+          entry=implementation/d3-identity-security/harness/openbao_crypto_conformance_entrypoint.py
           replay=implementation/d3-identity-security/harness/replay_recovery_conformance_runner.py
-          python3 -m py_compile "$crypto" "$replay"
+          python3 -m py_compile "$crypto" "$entry" "$replay"
+
+          grep -F 'd3_e_openbao_262_http_success_profile=PASS' "$entry" >/dev/null
+          grep -F 'accepted.add(200)' "$entry" >/dev/null
+          grep -F 'return _ORIGINAL_CALL' "$entry" >/dev/null
 
           for marker in \
             d3_e_historical_verifier_relocation_recovery_continuity \
@@ -139,6 +144,7 @@ jobs:
           grep -F 'whole_database_dump' "$replay" >/dev/null
           grep -F 'RecoveryWitnessPort' "$replay" >/dev/null
           grep -F 'recovery_gate_before_duplicate_observe=true' "$replay" >/dev/null
+          grep -F 'prior.recovery_epoch<>p_expected_epoch' "$replay" >/dev/null
           grep -F 'ThreadingHTTPServer' "$replay" >/dev/null
           grep -F 'drop_response' "$replay" >/dev/null
           grep -F 'provider_side_serialization=true' "$replay" >/dev/null
@@ -180,7 +186,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 implementation/d3-identity-security/harness/openbao_crypto_conformance_runner.py | tee /tmp/d3e-crypto.log
+          python3 implementation/d3-identity-security/harness/openbao_crypto_conformance_entrypoint.py | tee /tmp/d3e-crypto.log
+          grep -F 'd3_e_openbao_262_http_success_profile=PASS' /tmp/d3e-crypto.log >/dev/null
           grep -F 'd3_e_openbao_provider_neutral_custody=PASS' /tmp/d3e-crypto.log >/dev/null
           grep -F 'd3_e_actual_domain_separation=PASS' /tmp/d3e-crypto.log >/dev/null
           grep -F 'd3_e_historical_verifier_relocation_recovery_continuity=PASS' /tmp/d3e-crypto.log >/dev/null

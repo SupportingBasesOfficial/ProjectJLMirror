@@ -332,7 +332,12 @@ def create_hmac_key(root: OpenBaoHttp, name: str, *, backup: bool = False) -> No
     root.request(
         "POST",
         f"transit/keys/{name}",
-        {"type": "hmac", "exportable": False, "allow_plaintext_backup": backup},
+        {
+            "type": "hmac",
+            "key_size": 32,
+            "exportable": False,
+            "allow_plaintext_backup": backup,
+        },
     )
 
 

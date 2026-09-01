@@ -18,16 +18,16 @@ jobs:
   crypto-replay-conformance:
     name: OpenBao 2.6.2 + PostgreSQL 18.6 crypto/replay continuity
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       OPENBAO_IMAGE: ghcr.io/openbao/openbao@sha256:65954978cfb1680ae92405a17f29e7299fb541327e351757cdf2486950ab282f
       POSTGRES_IMAGE: postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
-      OPENBAO_ROOT_TOKEN: d3-root-token
-      OPENBAO_ADDR: http://127.0.0.1:18200
       PG_CONTAINER: jlmirror-d3e-postgres
       PG_PASSWORD: d3-postgres-password
       D3_NETWORK: jlmirror-d3e-conformance
+      D3E_RECOVERY_WITNESS: /tmp/jlmirror-d3e-recovery-witness.json
+      D3E_CRYPTO_WITNESS: /tmp/jlmirror-d3e-crypto-witness.json
 
     steps:
       - name: Checkout exact analyzed HEAD
@@ -58,6 +58,7 @@ jobs:
           manifest = json.loads(Path('implementation/d3-identity-security/state-manifest.json').read_text())
           tracks = {track['track_id']: track for track in manifest['tracks']}
           track = tracks['D3-E']
+          assert track['candidate'] == 'openbao_2_6_2_transit_behind_provider_neutral_key_authority_port'
           assert track['state'] == 'candidate_selected_conformance_pending'
           assert set(track['evidence_completed']) == {
               'tenant_scope_domain_separation',
@@ -72,11 +73,7 @@ jobs:
               'replay_consumed_identity_survives_restore_loss',
               'key_generation_rotation_retirement',
           }
-          pins = set(track['candidate_artifact_digests'].values())
-          assert pins == {
-              'ghcr.io/openbao/openbao@sha256:65954978cfb1680ae92405a17f29e7299fb541327e351757cdf2486950ab282f',
-              'postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280',
-          }
+          assert {p['evidence_id'] for p in track['evidence_proofs']} == set(track['evidence_completed'])
           for track_id in ('D3-A', 'D3-B', 'D3-C', 'D3-D'):
               assert tracks[track_id]['state'] == 'per_track_conformed'
           assert manifest['gate_state'] == 'candidate_evidence_running'
@@ -87,7 +84,17 @@ jobs:
           print('d3_e_source_manifest_boundary=PASS')
           PY
 
-      - name: Validate conformance probes and required negative controls
+          case "$OPENBAO_IMAGE" in
+            ghcr.io/openbao/openbao@sha256:*) ;;
+            *) echo 'OpenBao candidate is not immutable-digest pinned' >&2; exit 1 ;;
+          esac
+          case "$POSTGRES_IMAGE" in
+            postgres@sha256:*) ;;
+            *) echo 'PostgreSQL candidate is not immutable-digest pinned' >&2; exit 1 ;;
+          esac
+          printf 'd3_e_source_candidate_pins=PASS manifest_candidate_locked=true workflow_digests_immutable=true\n'
+
+      - name: Validate final recovery and relocation probes
         shell: bash
         run: |
           set -euo pipefail
@@ -104,8 +111,10 @@ jobs:
             d3_e_crypto_authority_conformance; do
             grep -F "$marker=PASS" "$crypto" >/dev/null
           done
+
           for marker in \
             d3_e_private_key_jwt_replay_atomic_single_winner \
+            d3_e_replay_duplicate_recovery_gate_order \
             d3_e_replay_partition_fail_closed \
             d3_e_replay_consumed_identity_survives_restore_loss \
             d3_e_redrive_crash_retry_single_effect \
@@ -114,29 +123,30 @@ jobs:
             grep -F "$marker=PASS" "$replay" >/dev/null
           done
 
-          grep -F 'transit/hmac/' "$crypto" >/dev/null
-          grep -F 'transit/verify/' "$crypto" >/dev/null
-          grep -F 'exportable' "$crypto" >/dev/null
-          grep -F 'allow_plaintext_backup' "$crypto" >/dev/null
-          grep -F 'handle_binding' "$crypto" >/dev/null
+          grep -F 'storage "file"' "$crypto" >/dev/null
+          grep -F 'operator", "init"' "$crypto" >/dev/null
+          grep -F 'copy_volume(SOURCE_VOLUME, TARGET_VOLUME)' "$crypto" >/dev/null
+          grep -F 'stale_encrypted_provider_storage_restored=true' "$crypto" >/dev/null
+          grep -F 'erasure_fence_before_provider_delete=true' "$crypto" >/dev/null
+          grep -F 'exportable": False' "$crypto" >/dev/null
+          grep -F 'allow_plaintext_backup": False' "$crypto" >/dev/null
           grep -F 'auth/token/revoke-self' "$crypto" >/dev/null
-          grep -F 'provider_key_destroyed_before_erasure_commit=true' "$crypto" >/dev/null
-          grep -F 'pg_dump' "$crypto" >/dev/null
-
-          grep -F 'FOR UPDATE' "$replay" >/dev/null
-          grep -F 'pg_advisory_xact_lock' "$replay" >/dev/null
-          grep -F "state='absent'" "$replay" >/dev/null
-          grep -F 'fresh_recovery_epoch_external_to_stale_snapshot=true' "$replay" >/dev/null
-          grep -F 'pg_dump' "$replay" >/dev/null
-          grep -F 'network", "disconnect' "$replay" >/dev/null
-          grep -F "reconciled=FALSE" "$replay" >/dev/null
-
-          if grep -F 'CREATE DATABASE d3_crypto_control' "$crypto" >/dev/null; then
-            echo 'crypto harness must not select separate production control database topology' >&2
+          if grep -F 'server -dev' "$crypto" >/dev/null; then
+            echo 'ephemeral OpenBao dev storage cannot prove relocation/recovery continuity' >&2
             exit 1
           fi
-          if grep -F 'CREATE DATABASE d3_replay_control' "$replay" >/dev/null; then
-            echo 'replay harness must not select separate production control database topology' >&2
+
+          grep -F 'whole_database_dump' "$replay" >/dev/null
+          grep -F 'RecoveryWitnessPort' "$replay" >/dev/null
+          grep -F 'recovery_gate_before_duplicate_observe=true' "$replay" >/dev/null
+          grep -F 'ThreadingHTTPServer' "$replay" >/dev/null
+          grep -F 'drop_response' "$replay" >/dev/null
+          grep -F 'provider_side_serialization=true' "$replay" >/dev/null
+          grep -F '"network", "disconnect"' "$replay" >/dev/null
+          grep -F 'missing_witness_fail_closed=true' "$replay" >/dev/null
+
+          if grep -F 'CREATE SCHEMA d3e_replay_control' "$replay" >/dev/null; then
+            echo 'recovery witness must not be hidden inside the same rollback database' >&2
             exit 1
           fi
 
@@ -145,12 +155,11 @@ jobs:
         run: |
           set -euo pipefail
           for image in "$OPENBAO_IMAGE" "$POSTGRES_IMAGE"; do
-            case "$image" in *@sha256:*) ;; *) exit 1 ;; esac
             docker pull "$image"
             docker image inspect "$image" --format '{{range .RepoDigests}}{{println .}}{{end}}' | grep -Fx "$image" >/dev/null
           done
 
-      - name: Start pinned PostgreSQL and OpenBao authorities
+      - name: Start pinned PostgreSQL replay authority
         shell: bash
         run: |
           set -euo pipefail
@@ -160,25 +169,14 @@ jobs:
           for _ in $(seq 1 120); do
             if result="$(docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_CONTAINER" \
               psql -U postgres -d d3 -Atqc 'SELECT 1' 2>/dev/null)" && test "$result" = "1"; then
-              break
+              exit 0
             fi
             sleep 0.5
           done
-          test "$(docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_CONTAINER" psql -U postgres -d d3 -Atqc 'SELECT 1')" = "1"
+          docker logs "$PG_CONTAINER" >&2 || true
+          exit 1
 
-          docker run -d --rm --name jlmirror-d3e-openbao --network "$D3_NETWORK" \
-            --cap-add=IPC_LOCK -p 127.0.0.1:18200:8200 "$OPENBAO_IMAGE" \
-            server -dev -dev-root-token-id="$OPENBAO_ROOT_TOKEN" -dev-listen-address=0.0.0.0:8200
-          for _ in $(seq 1 120); do
-            if curl -fsS "$OPENBAO_ADDR/v1/sys/health" >/dev/null 2>&1; then
-              break
-            fi
-            sleep 0.5
-          done
-          curl -fsS "$OPENBAO_ADDR/v1/sys/health" >/dev/null
-          docker exec jlmirror-d3e-openbao bao version | grep -F 'v2.6.2' >/dev/null
-
-      - name: Exercise OpenBao custody rotation relocation and erasure continuity
+      - name: Exercise persistent OpenBao relocation erasure and generation continuity
         shell: bash
         run: |
           set -euo pipefail
@@ -190,12 +188,13 @@ jobs:
           grep -F 'd3_e_key_generation_rotation_retirement=PASS' /tmp/d3e-crypto.log >/dev/null
           grep -F 'd3_e_crypto_authority_conformance=PASS' /tmp/d3e-crypto.log >/dev/null
 
-      - name: Exercise replay redrive partition and stale restore continuity
+      - name: Exercise whole-restore replay and actual external-effect continuity
         shell: bash
         run: |
           set -euo pipefail
           python3 implementation/d3-identity-security/harness/replay_recovery_conformance_runner.py | tee /tmp/d3e-replay.log
           grep -F 'd3_e_private_key_jwt_replay_atomic_single_winner=PASS' /tmp/d3e-replay.log >/dev/null
+          grep -F 'd3_e_replay_duplicate_recovery_gate_order=PASS' /tmp/d3e-replay.log >/dev/null
           grep -F 'd3_e_replay_partition_fail_closed=PASS' /tmp/d3e-replay.log >/dev/null
           grep -F 'd3_e_replay_consumed_identity_survives_restore_loss=PASS' /tmp/d3e-replay.log >/dev/null
           grep -F 'd3_e_redrive_crash_retry_single_effect=PASS' /tmp/d3e-replay.log >/dev/null
@@ -206,7 +205,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf 'd3_e_candidate_conformance_probe=PASS_PINNED_OPENBAO_POSTGRES\n'
+          printf 'd3_e_candidate_conformance_probe=PASS_PINNED_PERSISTENT_RECOVERY_HARDENED\n'
           printf 'manifest_credit=unchanged c3_numerics=not_selected topology=not_selected\n'
           printf 'd3=not_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
 
@@ -214,5 +213,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          docker rm -f jlmirror-d3e-openbao "$PG_CONTAINER" >/dev/null 2>&1 || true
+          docker rm -f jlmirror-d3e-openbao-source jlmirror-d3e-openbao-target "$PG_CONTAINER" >/dev/null 2>&1 || true
+          docker volume rm -f jlmirror-d3e-openbao-source-data jlmirror-d3e-openbao-target-data jlmirror-d3e-openbao-stale-data >/dev/null 2>&1 || true
           docker network rm "$D3_NETWORK" >/dev/null 2>&1 || true
+          rm -f "$D3E_RECOVERY_WITNESS" "$D3E_CRYPTO_WITNESS" /tmp/jlmirror-d3e-provider-state.json /tmp/jlmirror-d3e-openbao.hcl

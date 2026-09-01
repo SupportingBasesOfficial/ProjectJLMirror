@@ -145,6 +145,18 @@ def capture_recovery_boundary_exact(
 
 
 def _enter_recovery_quarantine(witness: core.RecoveryWitnessPort) -> dict:
+    # The restored database is rollback-subject and may claim reconciled=TRUE.
+    # Close and drain that local gate before touching the external witness, so
+    # a missing/corrupt witness cannot leave redrive admission open while
+    # recovery fails. The trusted witness may then advance the epoch, but never
+    # establishes the initial quarantine.
+    boundary.close_admission_and_drain()
+    locally_closed = core.psql(
+        "SELECT reconciled::text FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
+    )
+    if locally_closed != "false":
+        raise RuntimeError("local recovery quarantine did not close before witness validation")
+
     payload = witness.read()
     if payload.get("admission_open") is not False:
         raise RuntimeError("recovery witness must be closed before local quarantine")
@@ -155,7 +167,6 @@ def _enter_recovery_quarantine(witness: core.RecoveryWitnessPort) -> dict:
     if epoch <= 0:
         raise RuntimeError("recovery witness epoch is invalid")
 
-    boundary.close_admission_and_drain()
     core.psql(
         f"UPDATE d3e_replay.recovery_fence SET epoch={epoch},reconciled=FALSE WHERE singleton=TRUE;"
     )
@@ -163,7 +174,7 @@ def _enter_recovery_quarantine(witness: core.RecoveryWitnessPort) -> dict:
         "SELECT epoch::text||'|'||reconciled::text FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
     )
     if state != f"{epoch}|false":
-        raise RuntimeError("local recovery quarantine did not close admission")
+        raise RuntimeError("local recovery quarantine did not bind witness epoch")
     return payload
 
 
@@ -321,7 +332,7 @@ def prove_mismatched_restored_capability_rejected() -> None:
         try: capture_recovery_boundary_exact(witness, next_epoch=2, ops=[op])
         except RuntimeError as exc: assert "token" in str(exc) or "capability" in str(exc)
         else: raise AssertionError("capture accepted provider outcome from a different capability")
-        print("d3_e_replay_exact_provider_capability_binding=PASS restore_generation_bound=true restore_attempt_token_bound=true ambiguous_attempt_token_durable=true reconciliation_required_token_compared=true restore_exclusive_barrier_before_prevalidation=true recovery_quarantine_before_prevalidation=true mismatch_failure_leaves_db_closed=true capture_generation_bound=true capture_attempt_token_bound=true provider_operation_id_aliasing_negative_control=true admission_remains_closed_on_mismatch=true provider_history_canonicalized_before_uniqueness=true witness_published_before_db_admission=true")
+        print("d3_e_replay_exact_provider_capability_binding=PASS restore_generation_bound=true restore_attempt_token_bound=true ambiguous_attempt_token_durable=true reconciliation_required_token_compared=true restore_exclusive_barrier_before_prevalidation=true recovery_quarantine_before_prevalidation=true local_gate_closed_before_witness_validation=true mismatch_failure_leaves_db_closed=true capture_generation_bound=true capture_attempt_token_bound=true provider_operation_id_aliasing_negative_control=true admission_remains_closed_on_mismatch=true provider_history_canonicalized_before_uniqueness=true witness_published_before_db_admission=true")
     finally:
         strict.stop_provider(provider); core.WITNESS_PATH.unlink(missing_ok=True); core.PROVIDER_STATE.unlink(missing_ok=True); strict._provider_anchor().unlink(missing_ok=True); os.environ.pop("D3E_UNUSED", None)
 
@@ -374,8 +385,13 @@ def prove_missing_recovery_witness_fails_closed() -> None:
         try: recover_from_witness_exact(witness)
         except RuntimeError: pass
         else: raise AssertionError("recovery opened without continuity witness")
+        if core.psql("SELECT reconciled::text FROM d3e_replay.recovery_fence WHERE singleton=TRUE;") != "false":
+            raise RuntimeError("missing witness left rollback-subject database admission open")
+        core.prepare_redrive("missing-witness-redrive", 1)
+        if core.claim("missing-witness-redrive", "blocked-worker", "blocked-token", 1) != "0":
+            raise RuntimeError("redrive admission remained open after missing-witness recovery failure")
     finally: os.replace(saved, witness.path)
-    print("d3_e_recovery_missing_witness_fail_closed=PASS admission_blocked=true recovery_blocked=true missing_state_not_interpreted_as_current=true")
+    print("d3_e_recovery_missing_witness_fail_closed=PASS admission_blocked=true recovery_blocked=true local_db_gate_closed_before_witness_read=true redrive_claim_blocked=true missing_state_not_interpreted_as_current=true")
 
 
 def main() -> None:

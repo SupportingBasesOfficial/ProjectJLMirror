@@ -335,7 +335,9 @@ def create_hmac_key(root: OpenBaoHttp, name: str, *, backup: bool = False) -> No
         {
             "type": "hmac",
             "key_size": 32,
-            "exportable": False,
+            # Only the deliberately stale-restore negative-control fixture sets
+            # backup=True. Authority-candidate keys keep the default non-exportable.
+            "exportable": backup,
             "allow_plaintext_backup": backup,
         },
     )
@@ -481,7 +483,8 @@ def prove_erased_nonresurrection(root: OpenBaoHttp) -> None:
         "d3_e_retired_erased_key_nonresurrection=PASS "
         "governed_erasure_precedes_provider_destroy=true provider_trim_irreversible=true "
         "stale_restored_provider_negative_control_verifies=true external_currentness_blocks_restore=true "
-        "erased_generation_denied_before_provider_call=true backup_material_not_logged=true"
+        "erased_generation_denied_before_provider_call=true negative_control_backup_fixture_only=true "
+        "backup_material_not_logged=true"
     )
 
 

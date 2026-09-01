@@ -109,6 +109,7 @@ jobs:
             d3_e_replay_partition_fail_closed \
             d3_e_replay_consumed_identity_survives_restore_loss \
             d3_e_redrive_crash_retry_single_effect \
+            d3_e_redrive_absence_effect_race_single_winner \
             d3_e_replay_redrive_conformance; do
             grep -F "$marker=PASS" "$replay" >/dev/null
           done
@@ -117,11 +118,27 @@ jobs:
           grep -F 'transit/verify/' "$crypto" >/dev/null
           grep -F 'exportable' "$crypto" >/dev/null
           grep -F 'allow_plaintext_backup' "$crypto" >/dev/null
+          grep -F 'handle_binding' "$crypto" >/dev/null
+          grep -F 'auth/token/revoke-self' "$crypto" >/dev/null
+          grep -F 'provider_key_destroyed_before_erasure_commit=true' "$crypto" >/dev/null
           grep -F 'pg_dump' "$crypto" >/dev/null
+
           grep -F 'FOR UPDATE' "$replay" >/dev/null
+          grep -F 'pg_advisory_xact_lock' "$replay" >/dev/null
+          grep -F "state='absent'" "$replay" >/dev/null
+          grep -F 'fresh_recovery_epoch_external_to_stale_snapshot=true' "$replay" >/dev/null
           grep -F 'pg_dump' "$replay" >/dev/null
           grep -F 'network", "disconnect' "$replay" >/dev/null
           grep -F "reconciled=FALSE" "$replay" >/dev/null
+
+          if grep -F 'CREATE DATABASE d3_crypto_control' "$crypto" >/dev/null; then
+            echo 'crypto harness must not select separate production control database topology' >&2
+            exit 1
+          fi
+          if grep -F 'CREATE DATABASE d3_replay_control' "$replay" >/dev/null; then
+            echo 'replay harness must not select separate production control database topology' >&2
+            exit 1
+          fi
 
       - name: Pull immutable OpenBao and PostgreSQL candidates
         shell: bash
@@ -166,6 +183,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 implementation/d3-identity-security/harness/openbao_crypto_conformance_runner.py | tee /tmp/d3e-crypto.log
+          grep -F 'd3_e_openbao_provider_neutral_custody=PASS' /tmp/d3e-crypto.log >/dev/null
+          grep -F 'd3_e_actual_domain_separation=PASS' /tmp/d3e-crypto.log >/dev/null
           grep -F 'd3_e_historical_verifier_relocation_recovery_continuity=PASS' /tmp/d3e-crypto.log >/dev/null
           grep -F 'd3_e_retired_erased_key_nonresurrection=PASS' /tmp/d3e-crypto.log >/dev/null
           grep -F 'd3_e_key_generation_rotation_retirement=PASS' /tmp/d3e-crypto.log >/dev/null
@@ -180,6 +199,7 @@ jobs:
           grep -F 'd3_e_replay_partition_fail_closed=PASS' /tmp/d3e-replay.log >/dev/null
           grep -F 'd3_e_replay_consumed_identity_survives_restore_loss=PASS' /tmp/d3e-replay.log >/dev/null
           grep -F 'd3_e_redrive_crash_retry_single_effect=PASS' /tmp/d3e-replay.log >/dev/null
+          grep -F 'd3_e_redrive_absence_effect_race_single_winner=PASS' /tmp/d3e-replay.log >/dev/null
           grep -F 'd3_e_replay_redrive_conformance=PASS' /tmp/d3e-replay.log >/dev/null
 
       - name: Preserve bounded source-evidence result

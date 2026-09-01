@@ -144,18 +144,35 @@ CREATE TABLE IF NOT EXISTS d3e_crypto_control.provider_generation_authority(
 def _record_authorized_provider_generation(
     handle: core.LogicalKeyHandle, provider_ref: str, generation: int
 ) -> None:
+    """Create-once authority binding; ordinary issuance can never rewrite it.
+
+    A provider-native generation transition is authority-changing state and must
+    therefore be performed by a separate governed rotation transition. If a
+    stale restored provider or an ungoverned native rotation returns a different
+    generation for the same logical handle, issuance fails closed instead of
+    teaching the registry to trust the newly observed value.
+    """
     binding = core.handle_binding(handle)
-    value = core.psql(
+    inserted = core.psql(
         "INSERT INTO d3e_crypto_control.provider_generation_authority("
         "handle_binding,provider_ref,provider_generation) "
         f"VALUES({core.lit(binding)},{core.lit(provider_ref)},{generation}) "
-        "ON CONFLICT(handle_binding) DO UPDATE SET "
-        "provider_ref=EXCLUDED.provider_ref,provider_generation=EXCLUDED.provider_generation "
-        "WHERE d3e_crypto_control.provider_generation_authority.provider_ref=EXCLUDED.provider_ref "
+        "ON CONFLICT(handle_binding) DO NOTHING "
         "RETURNING provider_generation::text;"
     )
-    if value != str(generation):
-        raise RuntimeError("provider-native generation authority cannot be rebound to another key reference")
+    if inserted == str(generation):
+        return
+
+    existing = core.psql(
+        "SELECT provider_ref||'|'||provider_generation::text "
+        "FROM d3e_crypto_control.provider_generation_authority "
+        f"WHERE handle_binding={core.lit(binding)};"
+    )
+    expected = f"{provider_ref}|{generation}"
+    if existing != expected:
+        raise RuntimeError(
+            "provider-native generation authority is immutable during ordinary issuance"
+        )
 
 
 def _authorized_provider_generation(handle: core.LogicalKeyHandle, provider_ref: str) -> int:
@@ -394,11 +411,39 @@ def _prove_provider_generation_binding_exercised() -> None:
         raise AssertionError("historical verification never exercised provider-generation binding")
     if _PROVIDER_GENERATION_NEGATIVE_CONTROLS != _PROVIDER_GENERATION_CHECKS:
         raise AssertionError("provider-generation mismatch negative control did not accompany verification")
+
+    row = core.psql(
+        "SELECT json_build_object('handle_binding',handle_binding,'provider_ref',provider_ref,"
+        "'provider_generation',provider_generation)::text "
+        "FROM d3e_crypto_control.provider_generation_authority ORDER BY handle_binding LIMIT 1;"
+    )
+    if not row:
+        raise AssertionError("provider-generation authority table had no exercised binding")
+    binding = json.loads(row)
+    original_generation = int(binding["provider_generation"])
+    attempted_generation = original_generation + 1
+    changed = core.psql(
+        "INSERT INTO d3e_crypto_control.provider_generation_authority("
+        "handle_binding,provider_ref,provider_generation) "
+        f"VALUES({core.lit(binding['handle_binding'])},{core.lit(binding['provider_ref'])},{attempted_generation}) "
+        "ON CONFLICT(handle_binding) DO NOTHING RETURNING provider_generation::text;"
+    )
+    if changed:
+        raise AssertionError("ordinary issuance authority unexpectedly rewrote provider generation")
+    retained = core.psql(
+        "SELECT provider_generation::text FROM d3e_crypto_control.provider_generation_authority "
+        f"WHERE handle_binding={core.lit(binding['handle_binding'])};"
+    )
+    if retained != str(original_generation):
+        raise AssertionError("provider generation authority did not remain immutable")
+
     print(
         "d3_e_provider_generation_binding=PASS "
         "provider_version_parsed_from_hmac=true evidence_records_provider_generation=true "
         "trusted_postgresql_provider_generation_authority=true "
         "embedded_generation_equals_authorized_generation=true stale_native_generation_rejected=true "
+        "ordinary_issuance_cannot_rewrite_authorized_generation=true "
+        "stale_restore_cannot_self_reauthorize=true governed_rotation_required_for_generation_change=true "
         "mismatch_rejected_before_provider=true separate_provider_ref_per_logical_generation=true"
     )
 

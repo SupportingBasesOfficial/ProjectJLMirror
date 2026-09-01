@@ -102,7 +102,6 @@ jobs:
             "$replay" "$replay_entry" "$replay_strict" \
             "$replay_capability" "$replay_boundary" "$replay_port" "$token_boundary"
 
-          # Preserved crypto contract mechanics remain in the base implementation.
           grep -F 'd3_e_openbao_262_http_success_profile=PASS' "$crypto_base" >/dev/null
           grep -F 'accepted.add(200)' "$crypto_base" >/dev/null
           grep -F '_ORIGINAL_CALL(self, method, path, body' "$crypto_base" >/dev/null
@@ -111,7 +110,6 @@ jobs:
           grep -F 'ON CONFLICT(handle_binding) DO NOTHING' "$crypto_base" >/dev/null
           grep -F 'provider-native generation authority is immutable during ordinary issuance' "$crypto_base" >/dev/null
 
-          # Final wrapper must exercise the actual OpenBao rotation + issue path.
           grep -F 'transit/keys/{base.quote(provider_ref' "$crypto_entry" >/dev/null
           grep -F '/rotate' "$crypto_entry" >/dev/null
           grep -F 'port.issue(handle=handle' "$crypto_entry" >/dev/null
@@ -119,12 +117,11 @@ jobs:
           grep -F 'ordinary_issue_path_exercised=true' "$crypto_entry" >/dev/null
           grep -F 'native_rotation_cannot_self_authorize=true' "$crypto_entry" >/dev/null
           grep -F 'trusted_generation_retained_after_rejected_issue=true' "$crypto_entry" >/dev/null
-          if grep -F 'stale_restore_cannot_self_reauthorize=true' "$crypto_entry" "$crypto_base" >/dev/null; then
-            echo 'unexercised stale-restore generation claim must not be emitted' >&2
+          if grep -F 'stale_restore_cannot_self_reauthorize=true' "$crypto_entry" >/dev/null; then
+            echo 'executed entrypoint must not claim an unexercised stale-restore generation proof' >&2
             exit 1
           fi
 
-          # The executed external provider child must cross a crash-durability boundary.
           grep -F 'class CrashDurableProviderState' "$replay_entry" >/dev/null
           grep -F 'stream.flush()' "$replay_entry" >/dev/null
           grep -F 'os.fsync(stream.fileno())' "$replay_entry" >/dev/null
@@ -142,7 +139,6 @@ jobs:
             d3_e_crypto_authority_conformance; do
             grep -F "$marker=PASS" "$crypto" >/dev/null
           done
-
           for marker in \
             d3_e_replay_duplicate_recovery_gate_order \
             d3_e_replay_partition_fail_closed \

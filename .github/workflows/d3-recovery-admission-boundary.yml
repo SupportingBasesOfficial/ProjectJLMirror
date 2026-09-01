@@ -75,8 +75,12 @@ jobs:
           grep -F 'validate_consumed_restore_exact' "$barrier" >/dev/null
           grep -F 'delimiter_claims_round_trip=true' "$barrier" >/dev/null
           grep -F 'close_admission_and_drain' "$capability" >/dev/null
+          grep -F 'attempt_generation > 0' "$capability" >/dev/null
+          grep -F 'restore_exclusive_barrier_before_prevalidation=true' "$capability" >/dev/null
           grep -F 'exactly_one_token_success=true' "$token" >/dev/null
           grep -F 'internal_observe_not_token_issuance=true' "$token" >/dev/null
+          grep -F 'current_admitted_epoch' "$token" >/dev/null
+          grep -F 'bootstrap_epoch_not_hardcoded=true' "$token" >/dev/null
           grep -F 'client_assertion_type' "$token" >/dev/null
 
       - name: Start immutable PostgreSQL replay authority
@@ -108,10 +112,18 @@ jobs:
           grep -F 'new_consumers_blocked_after_close=true' /tmp/d3e-boundary.log >/dev/null
           grep -F 'structured_consumed_json=true' /tmp/d3e-boundary.log >/dev/null
           grep -F 'delimiter_claims_round_trip=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'd3_e_ambiguous_capability_token_retention=PASS' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'd3_e_completed_capability_boundary_inventory=PASS' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'effect_completed_after_drain=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'caller_ops_empty=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'completed_effect_captured=true' /tmp/d3e-boundary.log >/dev/null
           grep -F 'd3_e_replay_exact_provider_capability_binding=PASS' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'restore_exclusive_barrier_before_prevalidation=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'mismatch_failure_leaves_db_closed=true' /tmp/d3e-boundary.log >/dev/null
+          grep -F 'admission_remains_closed_on_mismatch=true' /tmp/d3e-boundary.log >/dev/null
           grep -F 'd3_e_recovery_missing_witness_fail_closed=PASS' /tmp/d3e-boundary.log >/dev/null
 
-      - name: Prove one successful token request across replicas
+      - name: Prove one successful token request across replicas and recovered epoch
         shell: bash
         run: |
           set -euo pipefail
@@ -122,6 +134,9 @@ jobs:
           grep -F 'replayed_assertions_rejected=47' /tmp/d3e-token.log >/dev/null
           grep -F 'internal_observe_not_token_issuance=true' /tmp/d3e-token.log >/dev/null
           grep -F 'recovery_admission_barrier_installed=true' /tmp/d3e-token.log >/dev/null
+          grep -F 'current_epoch_from_witness=true' /tmp/d3e-token.log >/dev/null
+          grep -F 'recovered_epoch_token_success=true' /tmp/d3e-token.log >/dev/null
+          grep -F 'bootstrap_epoch_not_hardcoded=true' /tmp/d3e-token.log >/dev/null
 
       - name: Preserve source-only authority boundary
         shell: bash

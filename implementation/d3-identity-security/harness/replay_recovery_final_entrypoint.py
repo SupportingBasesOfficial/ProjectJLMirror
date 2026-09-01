@@ -28,7 +28,7 @@ def _rehydrate_missing_redrive_rows(witness: core.RecoveryWitnessPort) -> int:
 
     restored = 0
     for op, status in payload["provider_outcomes"].items():
-        if base._redrive_row(op) is not None:
+        if base.strict._redrive_row(op) is not None:
             continue
         effect = status.get("effect")
         fence = status.get("fence")
@@ -98,8 +98,8 @@ def _prove_post_snapshot_effect_row_rehydration(
     effect = witnessed["provider_outcomes"][op]["effect"]
     assert effect["effect_id"] == effect_id and effect["result_ref"] == result_ref
 
-    base.restore_entire_database(stale_dump)
-    assert base._redrive_row(op) is None
+    base.strict.restore_entire_database(stale_dump)
+    assert base.strict._redrive_row(op) is None
     assert core.psql(
         "SELECT epoch||'|'||reconciled::text FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
     ) == "3|true"
@@ -144,9 +144,6 @@ def prove_inflight_and_post_snapshot_rehydration(
 
 
 def main() -> None:
-    # The canonical wrapper delegates into the strict module. Install the final
-    # strengthening at both exported and strict-module hooks so strict.main()
-    # composes these probes rather than bypassing them.
     base.recover_from_witness_strict = recover_from_witness_with_missing_row_rehydration
     base.prove_recovery_capture_fences_inflight = prove_inflight_and_post_snapshot_rehydration
     base.strict.recover_from_witness_strict = recover_from_witness_with_missing_row_rehydration

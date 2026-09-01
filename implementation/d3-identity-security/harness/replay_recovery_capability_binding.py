@@ -8,10 +8,6 @@ import replay_recovery_conformance_runner as core
 import replay_recovery_boundary_hardening as boundary
 import replay_recovery_strict_entrypoint as strict
 
-# Capture the already-hardened restore implementation before the canonical
-# entrypoint replaces the public hook with this exact-capability wrapper.
-_ORIGINAL_RECOVER = strict.recover_from_witness_strict
-
 
 def _exact_probe(op: str, generation: int, token: str) -> dict:
     observed = core.provider_probe(op, generation, token)
@@ -25,10 +21,14 @@ def _exact_probe(op: str, generation: int, token: str) -> dict:
 
 
 def _unique_captured_capability(status: dict) -> tuple[dict | None, str | None]:
-    effect = status.get("effect")
-    fence = status.get("fence")
+    # Raw provider state is historical. A prior-generation absence fence may
+    # legitimately coexist with a later terminal effect. Canonicalize that
+    # history first; only then require one effective recovery capability.
+    canonical = boundary.canonicalize_provider_outcome(status)
+    effect = canonical.get("effect")
+    fence = canonical.get("fence")
     if effect and fence:
-        raise RuntimeError("captured provider continuity contains effect and absence fence")
+        raise RuntimeError("canonical provider continuity contains contradictory capabilities")
     capability = effect or fence
     if capability is None:
         return None, None
@@ -49,7 +49,7 @@ def _issued_operation_ids() -> list[str]:
 def resolve_provider_capability_exact(op: str) -> dict:
     row = strict._redrive_row(op)
     if row is None:
-        return core.provider_status(op)
+        return boundary.canonicalize_provider_outcome(core.provider_status(op))
     state, generation, token = row
 
     if state == "attempting":
@@ -65,8 +65,7 @@ def resolve_provider_capability_exact(op: str) -> dict:
     elif state == "reconciliation_required":
         if not token:
             raise RuntimeError("ambiguous redrive lost provider capability token")
-        status = core.provider_status(op)
-        capability, expected = _unique_captured_capability(status)
+        capability, expected = _unique_captured_capability(core.provider_status(op))
         if capability is None or expected is None:
             raise RuntimeError("ambiguous provider state lacks a unique durable capability")
         if int(capability["attempt_generation"]) != generation:
@@ -81,7 +80,7 @@ def resolve_provider_capability_exact(op: str) -> dict:
     final = strict._redrive_row(op)
     if final and final[0] in {"attempting", "reconciliation_required"}:
         raise RuntimeError("provider capability remained unresolved after capture serialization")
-    status = core.provider_status(op)
+    status = boundary.canonicalize_provider_outcome(core.provider_status(op))
     if final and final[0] == "completed" and not status.get("effect"):
         raise RuntimeError("completed redrive lacks durable provider effect")
     if final and final[0] == "prepared" and status.get("effect"):
@@ -92,11 +91,8 @@ def resolve_provider_capability_exact(op: str) -> dict:
 def capture_recovery_boundary_exact(
     witness: core.RecoveryWitnessPort, *, next_epoch: int, ops: list[str]
 ) -> None:
-    # The exclusive barrier drains all claims admitted under the old epoch and
-    # closes admission. Once it returns, every capability already issued by the
-    # DB is durably visible via attempt_generation>0. Include all of them in the
-    # witness, even if a worker completed its external effect immediately after
-    # the drain and changed local state from attempting to completed.
+    # Drain old admissions before provider reconciliation. No external call is
+    # made while the exclusive DB barrier is held.
     boundary.close_admission_and_drain()
     issued = _issued_operation_ids()
     all_ops = sorted(set(ops) | set(issued))
@@ -113,14 +109,7 @@ def capture_recovery_boundary_exact(
 
 
 def _enter_recovery_quarantine(witness: core.RecoveryWitnessPort) -> dict:
-    """Drain restored stale admissions before any recovery prevalidation.
-
-    The surviving witness is trusted first only to establish that recovery is
-    closed and to obtain its epoch. Before inspecting restored rows, acquire the
-    *same exclusive advisory barrier* used at capture. This drains any consume or
-    claim transaction that already read a rollbacked `reconciled=TRUE` fence and
-    atomically closes that local fence. Only then is the local epoch advanced.
-    """
+    """Drain restored stale admissions before any recovery prevalidation."""
     payload = witness.read()
     if payload.get("admission_open") is not False:
         raise RuntimeError("recovery witness must be closed before local quarantine")
@@ -145,17 +134,11 @@ def _enter_recovery_quarantine(witness: core.RecoveryWitnessPort) -> dict:
     return payload
 
 
-def _validate_restored_redrive_capabilities(witness: core.RecoveryWitnessPort) -> None:
-    payload = witness.read()
+def _validate_restored_redrive_capabilities(payload: dict) -> None:
     provider_outcomes = payload.get("provider_outcomes", {})
     if not isinstance(provider_outcomes, dict):
         raise RuntimeError("recovery witness provider outcomes are malformed")
 
-    # Any local capability issued before the restored DB was quarantined must
-    # have existed at the trusted recovery boundary. A rollbacked worker that
-    # reclaims using stale `reconciled=TRUE` after F therefore cannot silently
-    # create a new provider capability: its operation is absent from the witness
-    # and recovery stays closed.
     issued = set(_issued_operation_ids())
     witnessed = set(provider_outcomes)
     escaped = sorted(issued - witnessed)
@@ -183,15 +166,126 @@ def _validate_restored_redrive_capabilities(witness: core.RecoveryWitnessPort) -
             raise RuntimeError("restored unresolved capability token mismatch")
 
 
+def _restore_consumed(payload: dict, epoch: int) -> None:
+    for item in payload.get("consumed", []):
+        core.psql(
+            "INSERT INTO d3e_replay.replay_identity("
+            "client_principal,jti,assertion_fingerprint,recovery_epoch,state,effect_id,result_ref) "
+            f"VALUES({core.lit(item['client'])},{core.lit(item['jti'])},{core.lit(item['fingerprint'])},"
+            f"{epoch},'consumed',{core.lit(item['effect_id'])},{core.lit(item['result_ref'])}) "
+            "ON CONFLICT(client_principal,jti) DO UPDATE SET "
+            "assertion_fingerprint=EXCLUDED.assertion_fingerprint,recovery_epoch=EXCLUDED.recovery_epoch,"
+            "state='consumed',effect_id=EXCLUDED.effect_id,result_ref=EXCLUDED.result_ref;"
+        )
+        core.psql(
+            "INSERT INTO d3e_replay.effect_ledger(effect_id,client_principal,jti,result_ref) "
+            f"VALUES({core.lit(item['effect_id'])},{core.lit(item['client'])},"
+            f"{core.lit(item['jti'])},{core.lit(item['result_ref'])}) "
+            "ON CONFLICT(effect_id) DO NOTHING;"
+        )
+
+
+def _rehydrate_missing_row(op: str, epoch: int, capability: dict, expected: str) -> None:
+    generation = int(capability["attempt_generation"])
+    token = capability["attempt_token"]
+    observed = _exact_probe(op, generation, token)
+    strict._require_exact_capability(capability, observed, expected)
+    if expected == "CONFIRMED":
+        core.psql(
+            "INSERT INTO d3e_replay.redrive("
+            "operation_id,recovery_epoch,state,attempt_generation,provider_revision,result_ref) "
+            f"VALUES({core.lit(op)},{epoch},'completed',{generation},"
+            f"{core.lit(capability['revision'])},{core.lit(capability['result_ref'])});"
+        )
+    else:
+        core.psql(
+            "INSERT INTO d3e_replay.redrive("
+            "operation_id,recovery_epoch,state,attempt_generation,provider_revision) "
+            f"VALUES({core.lit(op)},{epoch},'prepared',{generation},"
+            f"{core.lit(capability['revision'])});"
+        )
+
+
+def _restore_provider_outcomes(payload: dict, epoch: int) -> None:
+    for op, status in payload.get("provider_outcomes", {}).items():
+        capability, expected = _unique_captured_capability(status)
+        row = strict._redrive_row(op)
+        if row is None:
+            if capability is not None and expected is not None:
+                _rehydrate_missing_row(op, epoch, capability, expected)
+            continue
+
+        state, generation, restored_token = row
+        if capability and int(capability["attempt_generation"]) != generation:
+            raise RuntimeError("restored provider capability generation mismatch")
+
+        if state in {"attempting", "reconciliation_required"}:
+            if capability is None or expected is None:
+                raise RuntimeError("restored unresolved row lacks captured provider continuity")
+            if not restored_token or restored_token != capability["attempt_token"]:
+                raise RuntimeError("restored unresolved capability token mismatch")
+            observed = _exact_probe(op, generation, restored_token)
+            strict._require_exact_capability(capability, observed, expected)
+            if state == "attempting":
+                core.mark_ambiguous(op, generation, "restore_requires_provider_reconciliation")
+                retained = strict._redrive_row(op)
+                if retained is None or retained[2] != restored_token:
+                    raise RuntimeError("restore ambiguity transition lost provider capability token")
+            if not core.reconcile_provider(op, generation, observed):
+                raise RuntimeError("restored provider outcome could not be reconciled")
+        elif state == "completed":
+            if expected != "CONFIRMED" or capability is None:
+                raise RuntimeError("completed restored attempt lacks captured provider effect")
+            observed = _exact_probe(op, generation, capability["attempt_token"])
+            strict._require_exact_capability(capability, observed, "CONFIRMED")
+        elif state == "prepared":
+            if expected == "CONFIRMED":
+                raise RuntimeError("prepared restored attempt has an unaccounted provider effect")
+            if capability is not None and expected == "ABSENT":
+                observed = _exact_probe(op, generation, capability["attempt_token"])
+                strict._require_exact_capability(capability, observed, "ABSENT")
+
+        core.psql(
+            f"UPDATE d3e_replay.redrive SET recovery_epoch={epoch} "
+            f"WHERE operation_id={core.lit(op)};"
+        )
+
+
 def recover_from_witness_exact(witness: core.RecoveryWitnessPort) -> None:
-    _enter_recovery_quarantine(witness)
+    payload = _enter_recovery_quarantine(witness)
+    epoch = int(payload["epoch"])
     boundary.validate_consumed_restore_exact(witness)
-    _validate_restored_redrive_capabilities(witness)
-    _ORIGINAL_RECOVER(witness)
+    _validate_restored_redrive_capabilities(payload)
+    _restore_consumed(payload, epoch)
+    _restore_provider_outcomes(payload, epoch)
+
+    unresolved = core.psql(
+        "SELECT count(*) FROM d3e_replay.redrive "
+        "WHERE state IN('attempting','reconciliation_required');"
+    )
+    if unresolved != "0":
+        raise RuntimeError("recovery cannot reopen with unresolved provider capabilities")
+
+    # Publish the surviving external witness first. The PostgreSQL gate remains
+    # reconciled=FALSE while that durable write occurs, so a failed witness write
+    # or an intervening worker remains fail-closed. Enable DB admission last.
+    witness.open_after_reconciliation()
+    reopened = witness.read()
+    if reopened.get("epoch") != epoch or reopened.get("admission_open") is not True:
+        raise RuntimeError("recovery witness did not durably reopen")
+    core.psql(
+        f"UPDATE d3e_replay.recovery_fence SET reconciled=TRUE "
+        f"WHERE singleton=TRUE AND epoch={epoch} AND reconciled=FALSE;"
+    )
+    local = core.psql(
+        "SELECT epoch::text||'|'||reconciled::text "
+        "FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
+    )
+    if local != f"{epoch}|true":
+        raise RuntimeError("database admission did not follow durable witness publication")
 
 
 def prove_completed_capability_is_captured_without_caller_ops() -> None:
-    """A post-drain completion remains part of the boundary by capability inventory."""
     core.WITNESS_PATH.unlink(missing_ok=True)
     core.PROVIDER_STATE.unlink(missing_ok=True)
     strict._provider_anchor().unlink(missing_ok=True)
@@ -203,16 +297,10 @@ def prove_completed_capability_is_captured_without_caller_ops() -> None:
         op = "capture-completed-after-drain"
         core.prepare_redrive(op, 1)
         assert core.claim(op, "boundary-worker", "boundary-token", 1) == "1"
-
-        # Simulate the precise race: claim committed before the drain returns;
-        # provider effect and local completion happen immediately after admission
-        # is closed, before the capture inventories issued capabilities.
         boundary.close_admission_and_drain()
         sent = core.provider_send(op, 1, "boundary-token", "boundary-effect", "boundary-result")
         assert sent["outcome"] == "WIN"
         assert core.complete_provider(op, 1, "boundary-result", sent["revision"])
-
-        # The canonical capture is deliberately called with no caller-supplied op.
         capture_recovery_boundary_exact(witness, next_epoch=2, ops=[])
         captured = witness.read()["provider_outcomes"].get(op, {}).get("effect")
         if not captured or captured.get("effect_id") != "boundary-effect":
@@ -244,9 +332,7 @@ def prove_mismatched_restored_capability_rejected() -> None:
         core.mark_ambiguous(op, 1, "persist_exact_capability")
         assert strict._redrive_row(op) == ("reconciliation_required", 1, "stale-token")
 
-        effect = core.provider_send(
-            op, 1, "different-token", "mismatch-effect", "mismatch-result"
-        )
+        effect = core.provider_send(op, 1, "different-token", "mismatch-effect", "mismatch-result")
         assert effect["outcome"] == "WIN"
         witnessed_effect = core.provider_status(op)["effect"]
         witness.write({
@@ -256,7 +342,6 @@ def prove_mismatched_restored_capability_rejected() -> None:
             "consumed": [],
             "provider_outcomes": {op: {"effect": witnessed_effect, "fence": None}},
         })
-
         try:
             recover_from_witness_exact(witness)
         except RuntimeError as exc:
@@ -287,7 +372,8 @@ def prove_mismatched_restored_capability_rejected() -> None:
             "restore_exclusive_barrier_before_prevalidation=true "
             "recovery_quarantine_before_prevalidation=true mismatch_failure_leaves_db_closed=true "
             "capture_generation_bound=true capture_attempt_token_bound=true "
-            "provider_operation_id_aliasing_negative_control=true admission_remains_closed_on_mismatch=true"
+            "provider_operation_id_aliasing_negative_control=true admission_remains_closed_on_mismatch=true "
+            "provider_history_canonicalized_before_uniqueness=true witness_published_before_db_admission=true"
         )
     finally:
         strict.stop_provider(provider)
@@ -295,6 +381,62 @@ def prove_mismatched_restored_capability_rejected() -> None:
         core.PROVIDER_STATE.unlink(missing_ok=True)
         strict._provider_anchor().unlink(missing_ok=True)
         os.environ.pop("D3E_UNUSED", None)
+
+
+def prove_provider_history_canonicalization() -> None:
+    capability, expected = _unique_captured_capability({
+        "effect": {
+            "attempt_generation": 2,
+            "attempt_token": "new-token",
+            "revision": "provider-r2",
+            "effect_id": "new-effect",
+            "result_ref": "new-result",
+        },
+        "fence": {
+            "attempt_generation": 1,
+            "attempt_token": "old-token",
+            "revision": "provider-r1",
+        },
+    })
+    if expected != "CONFIRMED" or capability is None or capability["attempt_generation"] != 2:
+        raise RuntimeError("valid provider history was rejected before canonical recovery selection")
+    print(
+        "d3_e_provider_history_canonicalization=PASS "
+        "raw_effect_plus_older_fence=true canonicalize_before_uniqueness=true later_effect_selected=true"
+    )
+
+
+def prove_witness_precedes_database_reopen() -> None:
+    class OrderingWitness(core.RecoveryWitnessPort):
+        def open_after_reconciliation(self) -> None:
+            state = core.psql(
+                "SELECT reconciled::text FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
+            )
+            if state != "false":
+                raise RuntimeError("database admission opened before durable recovery witness")
+            super().open_after_reconciliation()
+
+    core.init_db()
+    witness = OrderingWitness()
+    witness.initialize()
+    witness.write({
+        "epoch": 2,
+        "admission_open": False,
+        "boundary": "F-2-ordering-control",
+        "consumed": [],
+        "provider_outcomes": {},
+    })
+    recover_from_witness_exact(witness)
+    if witness.read()["admission_open"] is not True:
+        raise RuntimeError("ordering control witness did not reopen")
+    if core.psql(
+        "SELECT epoch::text||'|'||reconciled::text FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
+    ) != "2|true":
+        raise RuntimeError("ordering control database did not reopen last")
+    print(
+        "d3_e_recovery_reopen_order=PASS "
+        "witness_durable_before_db_gate=true db_false_during_witness_write=true interrupted_write_fail_closed=true"
+    )
 
 
 def prove_missing_recovery_witness_fails_closed() -> None:
@@ -326,7 +468,9 @@ def main() -> None:
     boundary.prove_recovery_consumer_barrier()
     boundary.prove_ambiguous_capability_token_retention()
     prove_completed_capability_is_captured_without_caller_ops()
+    prove_provider_history_canonicalization()
     prove_mismatched_restored_capability_rejected()
+    prove_witness_precedes_database_reopen()
     prove_missing_recovery_witness_fails_closed()
 
 

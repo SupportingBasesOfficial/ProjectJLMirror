@@ -93,8 +93,17 @@ class RecoveryWitnessPort:
     def write(self, payload: dict) -> None:
         envelope = self._seal(payload)
         tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(envelope, sort_keys=True))
+        encoded = json.dumps(envelope, sort_keys=True)
+        with tmp.open("w", encoding="utf-8") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
         os.replace(tmp, self.path)
+        directory_fd = os.open(self.path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
 
     def read(self) -> dict:
         if not self.path.exists():
@@ -976,6 +985,7 @@ def main() -> None:
             "d3_e_replay_redrive_conformance=PASS postgres_replay_truth=true "
             "recovery_witness_recovery_only=true single_winner=true partition_fail_closed=true "
             "external_effect_network_boundary=true whole_restore_nonresurrection=true "
+            "witness_file_fsync=true witness_parent_directory_fsync=true "
             "c3_numerics_not_selected=true topology_not_selected=true"
         )
     finally:

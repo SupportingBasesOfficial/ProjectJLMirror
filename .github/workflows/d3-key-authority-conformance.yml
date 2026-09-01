@@ -111,7 +111,12 @@ jobs:
 
           grep -F 'd3_e_openbao_262_http_success_profile=PASS' "$crypto_entry" >/dev/null
           grep -F 'accepted.add(200)' "$crypto_entry" >/dev/null
-          grep -F 'return _ORIGINAL_CALL' "$crypto_entry" >/dev/null
+          grep -F '_ORIGINAL_CALL(self, method, path, body' "$crypto_entry" >/dev/null
+          grep -F 'return result' "$crypto_entry" >/dev/null
+          grep -F 'path in _EXPECTED_DELETED_VERIFY_PATHS' "$crypto_entry" >/dev/null
+          grep -F 'provider_generation_authority' "$crypto_entry" >/dev/null
+          grep -F 'embedded_generation_equals_authorized_generation=true' "$crypto_entry" >/dev/null
+          grep -F 'stale_native_generation_rejected=true' "$crypto_entry" >/dev/null
 
           for marker in \
             d3_e_historical_verifier_relocation_recovery_continuity \
@@ -140,9 +145,12 @@ jobs:
           grep -F 'internal_observe_not_token_issuance=true' "$token_boundary" >/dev/null
           grep -F 'd3_e_recovery_consumer_drain_barrier=PASS' "$replay_boundary" >/dev/null
           grep -F 'pg_advisory_xact_lock_shared' "$replay_boundary" >/dev/null
+          grep -F 'pg_advisory_xact_lock(' "$replay_boundary" >/dev/null
+          grep -F 'fence_commit_precedes_barrier_release=true' "$replay_boundary" >/dev/null
           grep -F 'json_build_object' "$replay_boundary" >/dev/null
           grep -F 'd3_e_replay_exact_provider_capability_binding=PASS' "$replay_capability" >/dev/null
           grep -F 'provider_operation_id_aliasing_negative_control=true' "$replay_capability" >/dev/null
+          grep -F 'prepared restored absence-fence revision mismatch' "$replay_capability" >/dev/null
           grep -F 'd3_e_recovery_missing_witness_fail_closed=PASS' "$replay_capability" >/dev/null
           grep -F 'd3_e_replay_consumed_identity_survives_restore_loss=PASS' "$replay_strict" >/dev/null
           grep -F 'd3_e_replay_redrive_conformance=PASS' "$replay_strict" >/dev/null
@@ -220,6 +228,10 @@ jobs:
           grep -F 'd3_e_retired_erased_key_nonresurrection=PASS' /tmp/d3e-crypto.log >/dev/null
           grep -F 'd3_e_key_generation_rotation_retirement=PASS' /tmp/d3e-crypto.log >/dev/null
           grep -F 'd3_e_crypto_authority_conformance=PASS' /tmp/d3e-crypto.log >/dev/null
+          grep -F 'd3_e_provider_generation_binding=PASS' /tmp/d3e-crypto.log >/dev/null
+          grep -F 'trusted_postgresql_provider_generation_authority=true' /tmp/d3e-crypto.log >/dev/null
+          grep -F 'embedded_generation_equals_authorized_generation=true' /tmp/d3e-crypto.log >/dev/null
+          grep -F 'stale_native_generation_rejected=true' /tmp/d3e-crypto.log >/dev/null
 
       - name: Exercise strict replay recovery and token-boundary replicas
         shell: bash
@@ -240,6 +252,7 @@ jobs:
 
           python3 implementation/d3-identity-security/harness/replay_recovery_capability_binding.py | tee /tmp/d3e-capability.log
           grep -F 'd3_e_recovery_consumer_drain_barrier=PASS' /tmp/d3e-capability.log >/dev/null
+          grep -F 'fence_commit_precedes_barrier_release=true' /tmp/d3e-capability.log >/dev/null
           grep -F 'structured_consumed_json=true' /tmp/d3e-capability.log >/dev/null
           grep -F 'delimiter_claims_round_trip=true' /tmp/d3e-capability.log >/dev/null
           grep -F 'd3_e_replay_exact_provider_capability_binding=PASS' /tmp/d3e-capability.log >/dev/null

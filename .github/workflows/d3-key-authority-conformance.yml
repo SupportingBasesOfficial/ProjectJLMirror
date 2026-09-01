@@ -104,9 +104,10 @@ jobs:
           replay_entry=implementation/d3-identity-security/harness/replay_recovery_conformance_entrypoint.py
           replay_strict=implementation/d3-identity-security/harness/replay_recovery_strict_entrypoint.py
           replay_capability=implementation/d3-identity-security/harness/replay_recovery_capability_binding.py
+          replay_boundary=implementation/d3-identity-security/harness/replay_recovery_boundary_hardening.py
           replay_port=implementation/d3-identity-security/harness/replay_recovery_port_probe.py
           token_boundary=implementation/d3-identity-security/harness/private_key_jwt_token_boundary_conformance.py
-          python3 -m py_compile "$crypto" "$crypto_entry" "$replay" "$replay_entry" "$replay_strict" "$replay_capability" "$replay_port" "$token_boundary"
+          python3 -m py_compile "$crypto" "$crypto_entry" "$replay" "$replay_entry" "$replay_strict" "$replay_capability" "$replay_boundary" "$replay_port" "$token_boundary"
 
           grep -F 'd3_e_openbao_262_http_success_profile=PASS' "$crypto_entry" >/dev/null
           grep -F 'accepted.add(200)' "$crypto_entry" >/dev/null
@@ -135,6 +136,11 @@ jobs:
           grep -F 'actual_token_endpoint=true' "$token_boundary" >/dev/null
           grep -F 'token_boundary_replicas=2' "$token_boundary" >/dev/null
           grep -F 'rs256_signature_validated=true' "$token_boundary" >/dev/null
+          grep -F 'exactly_one_token_success=true' "$token_boundary" >/dev/null
+          grep -F 'internal_observe_not_token_issuance=true' "$token_boundary" >/dev/null
+          grep -F 'd3_e_recovery_consumer_drain_barrier=PASS' "$replay_boundary" >/dev/null
+          grep -F 'pg_advisory_xact_lock_shared' "$replay_boundary" >/dev/null
+          grep -F 'json_build_object' "$replay_boundary" >/dev/null
           grep -F 'd3_e_replay_exact_provider_capability_binding=PASS' "$replay_capability" >/dev/null
           grep -F 'provider_operation_id_aliasing_negative_control=true' "$replay_capability" >/dev/null
           grep -F 'd3_e_recovery_missing_witness_fail_closed=PASS' "$replay_capability" >/dev/null
@@ -233,6 +239,9 @@ jobs:
           grep -F 'exact_provider_capability_binding=true' /tmp/d3e-replay.log >/dev/null
 
           python3 implementation/d3-identity-security/harness/replay_recovery_capability_binding.py | tee /tmp/d3e-capability.log
+          grep -F 'd3_e_recovery_consumer_drain_barrier=PASS' /tmp/d3e-capability.log >/dev/null
+          grep -F 'structured_consumed_json=true' /tmp/d3e-capability.log >/dev/null
+          grep -F 'delimiter_claims_round_trip=true' /tmp/d3e-capability.log >/dev/null
           grep -F 'd3_e_replay_exact_provider_capability_binding=PASS' /tmp/d3e-capability.log >/dev/null
           grep -F 'd3_e_recovery_missing_witness_fail_closed=PASS' /tmp/d3e-capability.log >/dev/null
 
@@ -240,7 +249,9 @@ jobs:
           grep -F 'd3_e_private_key_jwt_replay_atomic_single_winner=PASS' /tmp/d3e-token-boundary.log >/dev/null
           grep -F 'actual_token_endpoint=true' /tmp/d3e-token-boundary.log >/dev/null
           grep -F 'token_boundary_replicas=2' /tmp/d3e-token-boundary.log >/dev/null
-          grep -F 'exactly_one_win=true' /tmp/d3e-token-boundary.log >/dev/null
+          grep -F 'exactly_one_token_success=true' /tmp/d3e-token-boundary.log >/dev/null
+          grep -F 'replayed_assertions_rejected=47' /tmp/d3e-token-boundary.log >/dev/null
+          grep -F 'internal_observe_not_token_issuance=true' /tmp/d3e-token-boundary.log >/dev/null
 
       - name: Preserve bounded source-evidence result
         shell: bash

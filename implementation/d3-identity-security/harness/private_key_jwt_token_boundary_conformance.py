@@ -116,6 +116,20 @@ def verify_assertion(assertion: str) -> tuple[str, str, str]:
     return client, jti, fingerprint
 
 
+def current_admitted_epoch(witness: core.RecoveryWitnessPort) -> int:
+    """Read authority epoch from the current recovery witness, never bootstrap constants."""
+    payload = witness.read()
+    if payload.get("admission_open") is not True:
+        raise RuntimeError("token admission is closed for recovery")
+    try:
+        epoch = int(payload["epoch"])
+    except Exception as exc:
+        raise RuntimeError("token admission epoch is malformed") from exc
+    if epoch <= 0:
+        raise RuntimeError("token admission epoch is invalid")
+    return epoch
+
+
 class TokenBoundaryHandler(BaseHTTPRequestHandler):
     server_version = "JLMirrorD3ETokenBoundary/1"
 
@@ -156,6 +170,12 @@ class TokenBoundaryHandler(BaseHTTPRequestHandler):
             return
 
         witness = core.RecoveryWitnessPort()
+        try:
+            expected_epoch = current_admitted_epoch(witness)
+        except RuntimeError as exc:
+            self.send_json(503, {"outcome": "BLOCKED", "detail": str(exc), "replica": self.server.server_port})
+            return
+
         port = core.ReplayAuthorityPort(witness)
         outcome = port.consume(
             client,
@@ -163,10 +183,10 @@ class TokenBoundaryHandler(BaseHTTPRequestHandler):
             fingerprint,
             f"token-effect:{client}:{jti}",
             f"token-result:{client}:{jti}",
-            1,
+            expected_epoch,
         )
         if outcome == "WIN":
-            self.send_json(200, {"outcome": "WIN", "replica": self.server.server_port})
+            self.send_json(200, {"outcome": "WIN", "epoch": expected_epoch, "replica": self.server.server_port})
             return
         if outcome == "OBSERVE":
             # Storage create-or-observe is internal idempotency only. An already
@@ -175,11 +195,12 @@ class TokenBoundaryHandler(BaseHTTPRequestHandler):
                 "error": "invalid_client",
                 "detail": "private_key_jwt replay rejected",
                 "outcome": "OBSERVE",
+                "epoch": expected_epoch,
                 "replica": self.server.server_port,
             })
             return
         status = 409 if outcome == "CONFLICT" else 503
-        self.send_json(status, {"outcome": outcome, "replica": self.server.server_port})
+        self.send_json(status, {"outcome": outcome, "epoch": expected_epoch, "replica": self.server.server_port})
 
 
 def serve(port: int) -> None:
@@ -245,6 +266,7 @@ def main() -> None:
             if status == 401 and body.get("outcome") == "OBSERVE"
         ]
         assert len(successes) == 1 and successes[0][1]["outcome"] == "WIN"
+        assert successes[0][1]["epoch"] == 1
         assert len(observed_replays) == 47
         assert {body["replica"] for _, body in responses} == set(REPLICA_PORTS)
         assert core.psql(
@@ -269,6 +291,22 @@ def main() -> None:
         status, body = call_replica(REPLICA_PORTS[1], tampered)
         assert status == 401 and body["error"] == "invalid_client"
 
+        # Prove both live replicas follow a recovered/reopened epoch instead of
+        # hard-coding bootstrap epoch 1. Replay semantics remain single-use.
+        payload = witness.read()
+        payload["epoch"] = 2
+        payload["admission_open"] = True
+        payload["boundary"] = "test-reopened-F-2"
+        witness.write(payload)
+        core.psql(
+            "UPDATE d3e_replay.recovery_fence SET epoch=2,reconciled=TRUE WHERE singleton=TRUE;"
+        )
+        recovered = sign_assertion(client="client-token-boundary", jti="recovered-epoch-jti")
+        status, body = call_replica(REPLICA_PORTS[0], recovered)
+        assert status == 200 and body["outcome"] == "WIN" and body["epoch"] == 2
+        status, body = call_replica(REPLICA_PORTS[1], recovered)
+        assert status == 401 and body["outcome"] == "OBSERVE" and body["epoch"] == 2
+
         print(
             "d3_e_private_key_jwt_replay_atomic_single_winner=PASS "
             "actual_token_endpoint=true token_boundary_replicas=2 rs256_signature_validated=true "
@@ -276,7 +314,8 @@ def main() -> None:
             "shared_postgres_replay_authority=true concurrent_assertions=48 exactly_one_token_success=true "
             "replayed_assertions_rejected=47 internal_observe_not_token_issuance=true "
             "fingerprint_conflict_rejected=true invalid_signature_rejected=true wrong_audience_rejected=true "
-            "replica_local_fallback_absent=true recovery_admission_barrier_installed=true"
+            "replica_local_fallback_absent=true recovery_admission_barrier_installed=true "
+            "current_epoch_from_witness=true recovered_epoch_token_success=true bootstrap_epoch_not_hardcoded=true"
         )
     finally:
         for proc in replicas:

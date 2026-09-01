@@ -211,11 +211,12 @@ def _openbao_262_compatible_call(
         if path.startswith("transit/export/hmac-key/") and exc.status == 400:
             if "export" in text and ("not" in text or "allow" in text or "disabled" in text):
                 raise core.AuthorityDenied("configured non-exportable key denied export") from exc
-        # A deleted-key proof must identify missing key/version state. An
-        # unqualified routing/configuration "not found" is intentionally not
-        # accepted because a missing transit mount or malformed route can emit it.
+        # OpenBao 2.6.2 returns exactly "encryption key not found" after the
+        # known transit key is deleted. Do not accept the generic substring
+        # "not found": a missing mount/route can use that broader response.
         if path.startswith("transit/verify/") and exc.status in {400, 404}:
             deletion_specific_fragments = (
+                "encryption key not found",
                 "no existing version",
                 "no key",
                 "does not exist",
@@ -370,7 +371,7 @@ def main() -> None:
         "http_200_success_retained=true http_204_success_retained=true "
         "client_errors_not_relaxed=true generic_400_404_not_denial=true "
         "operation_specific_state_denials=true unqualified_not_found_rejected=true "
-        "orphan_historical_capability=true"
+        "exact_deleted_key_response=encryption_key_not_found orphan_historical_capability=true"
     )
     core.main()
     _prove_provider_generation_binding_exercised()

@@ -290,8 +290,10 @@ def replay_claim(*, client: str, jti: str, epoch: int, timeout: float = 10.0) ->
 
 def block_replay_after_restore_loss() -> int:
     output = pg(
+        "WITH advanced AS ("
         "UPDATE d3e.replay_continuity SET state='recovery_blocked', epoch=epoch+1 "
-        f"WHERE scope={sql_literal(REPLAY_SCOPE)} RETURNING epoch;"
+        f"WHERE scope={sql_literal(REPLAY_SCOPE)} RETURNING epoch"
+        ") SELECT epoch FROM advanced;"
     )
     if not output.isdigit():
         raise AssertionError("continuity fence did not advance")

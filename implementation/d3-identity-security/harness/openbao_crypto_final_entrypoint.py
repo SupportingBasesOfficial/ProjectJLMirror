@@ -61,7 +61,8 @@ class MonotonicLockedCryptoContinuityWitness:
 
             # Provisioning marker first: any crash before the pair is complete
             # leaves a permanently fail-closed partial bootstrap, never a fresh
-            # empty authority.
+            # empty authority. Every authority file crosses a file+directory
+            # durability boundary before this constructor can continue.
             self._atomic_write(self.provisioned_path, _PROVISIONED_TEXT)
             self._write_witness_locked({}, 1)
             self._write_anchor_locked(1)
@@ -81,9 +82,19 @@ class MonotonicLockedCryptoContinuityWitness:
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def _atomic_write(self, path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
         tmp = Path(str(path) + ".tmp")
-        tmp.write_text(text)
+        with tmp.open("w") as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
         os.replace(tmp, path)
+        directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        directory_fd = os.open(path.parent, directory_flags)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
 
     def _seal(self, payload: dict, *, anchor: bool) -> str:
         key = _ANCHOR_KEY if anchor else _WITNESS_KEY
@@ -157,14 +168,14 @@ class MonotonicLockedCryptoContinuityWitness:
     def _mutate(self, fn) -> None:
         with self._exclusive():
             states, epoch = self._load_pair_locked()
-            # Deterministic race amplifier used only by the concurrency probe.
             delay = float(os.environ.get("D3E_CRYPTO_WITNESS_TEST_DELAY", "0"))
             if delay > 0:
                 time.sleep(delay)
             fn(states)
             next_epoch = epoch + 1
-            # Witness first, anchor second. A crash between the two is detected
-            # as an epoch mismatch and therefore fails closed on reconstruction.
+            # Witness first, anchor second. Each individual publication is
+            # crash-durable; a crash between the two remains an epoch mismatch
+            # and therefore fails closed on reconstruction.
             self._write_witness_locked(states, next_epoch)
             self._write_anchor_locked(next_epoch)
             self.state, self.epoch = self._load_pair_locked()
@@ -228,15 +239,12 @@ def _prove_monotonic_witness_recovery() -> None:
     final_witness = path.read_bytes()
     final_anchor = current.anchor_path.read_bytes()
 
-    # A perfectly valid old sealed witness must still be rejected after the
-    # monotonic recovery anchor has advanced.
     path.write_bytes(_PRE_ERASURE_WITNESS)
     try:
         _expect_reconstruction_failure(path)
     finally:
         path.write_bytes(final_witness)
 
-    # Missing or corrupt pieces of an already-provisioned authority fail closed.
     saved = Path(str(path) + ".saved")
     os.replace(path, saved)
     try:
@@ -257,9 +265,6 @@ def _prove_monotonic_witness_recovery() -> None:
     finally:
         current.anchor_path.write_bytes(final_anchor)
 
-    # Two independent processes update distinct terminal handles against the
-    # same witness. The read-modify-write sequence is serialized by flock, so
-    # neither terminal entry can erase the other's update.
     race_path = Path("/tmp/jlmirror-d3e-crypto-witness-concurrency.json")
     seed = MonotonicLockedCryptoContinuityWitness(race_path)
     handles = [
@@ -304,14 +309,14 @@ def _prove_monotonic_witness_recovery() -> None:
         "missing_witness_fail_closed=true missing_anchor_fail_closed=true "
         "anchor_integrity_hmac=true witness_integrity_hmac=true interprocess_flock=true "
         "concurrent_terminal_updates_preserved=true crash_between_pair_writes_fail_closed=true "
-        "production_anchor_topology_not_selected=true"
+        "witness_file_fsync=true anchor_file_fsync=true provisioning_marker_fsync=true "
+        "parent_directory_fsync=true production_anchor_topology_not_selected=true"
     )
 
 
 def main() -> None:
     primary = MonotonicLockedCryptoContinuityWitness
     probe = primary(core.CRYPTO_WITNESS_PATH) if False else None
-    # Remove only bounded-test fixtures before the first authority is provisioned.
     anchor = Path(
         os.environ.get(
             "D3E_CRYPTO_MONOTONIC_ANCHOR",

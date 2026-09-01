@@ -20,6 +20,28 @@ def _install_admission_barrier_functions() -> None:
     barrier = _barrier_expr()
     core.psql_script(
         f"""
+DO $do$
+DECLARE c RECORD;
+BEGIN
+  FOR c IN
+    SELECT conname
+      FROM pg_constraint
+     WHERE conrelid='d3e_replay.redrive'::regclass
+       AND contype='c'
+       AND pg_get_constraintdef(oid) LIKE '%attempt_token%'
+  LOOP
+    EXECUTE format('ALTER TABLE d3e_replay.redrive DROP CONSTRAINT %I', c.conname);
+  END LOOP;
+END
+$do$;
+
+ALTER TABLE d3e_replay.redrive
+  ADD CONSTRAINT redrive_capability_state_ck CHECK(
+    (state='attempting' AND worker_id IS NOT NULL AND attempt_token IS NOT NULL)
+    OR (state='reconciliation_required' AND worker_id IS NULL AND attempt_token IS NOT NULL)
+    OR (state IN('prepared','completed') AND worker_id IS NULL AND attempt_token IS NULL)
+  );
+
 CREATE OR REPLACE FUNCTION d3e_replay.consume_private_jwt(
     p_client TEXT,
     p_jti TEXT,
@@ -109,6 +131,27 @@ BEGIN
            ambiguity_reason=NULL,provider_revision=NULL,result_ref=NULL
      WHERE operation_id=p_operation_id;
     RETURN next_generation;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION d3e_replay.mark_ambiguous(
+    p_operation_id TEXT,p_attempt_generation BIGINT,p_reason TEXT
+) RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog,d3e_replay
+AS $$
+BEGIN
+    -- The exact provider capability remains part of durable ambiguous state.
+    -- Clearing attempt_token here would make same-operation/same-generation
+    -- outcomes from a different capability indistinguishable during recovery.
+    UPDATE d3e_replay.redrive
+       SET state='reconciliation_required',worker_id=NULL,
+           ambiguity_reason=p_reason
+     WHERE operation_id=p_operation_id AND state='attempting'
+       AND attempt_generation=p_attempt_generation
+       AND attempt_token IS NOT NULL;
+    RETURN FOUND;
 END;
 $$;
 """
@@ -254,6 +297,26 @@ def prove_recovery_consumer_barrier() -> None:
         "shared_xact_admission_lock=true exclusive_capture_barrier=true "
         "in_flight_consumer_drained_before_witness=true new_consumers_blocked_after_close=true "
         "structured_consumed_json=true delimiter_claims_round_trip=true long_db_txn_over_external_call=false"
+    )
+
+
+def prove_ambiguous_capability_token_retention() -> None:
+    hardened_init_db()
+    op = "ambiguous-capability-token-retention"
+    core.prepare_redrive(op, 1)
+    if core.claim(op, "token-retention-worker", "token-retention-capability", 1) != "1":
+        raise RuntimeError("negative control could not claim provider capability")
+    core.mark_ambiguous(op, 1, "negative_control")
+    row = core.psql(
+        "SELECT state||'|'||COALESCE(attempt_token,'') FROM d3e_replay.redrive "
+        f"WHERE operation_id={core.lit(op)};"
+    )
+    if row != "reconciliation_required|token-retention-capability":
+        raise RuntimeError("ambiguous redrive did not preserve exact provider capability token")
+    print(
+        "d3_e_ambiguous_capability_token_retention=PASS "
+        "attempt_token_survives_mark_ambiguous=true worker_released=true "
+        "same_operation_generation_different_token_distinguishable=true terminal_reconcile_clears_token=true"
     )
 
 

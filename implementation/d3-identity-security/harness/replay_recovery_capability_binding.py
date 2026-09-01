@@ -46,6 +46,30 @@ def _issued_operation_ids() -> list[str]:
     return values
 
 
+def _completed_terminal_fields(op: str) -> dict:
+    raw = core.psql(
+        "SELECT json_build_object('revision',provider_revision,'result_ref',result_ref)::text "
+        f"FROM d3e_replay.redrive WHERE operation_id={core.lit(op)} AND state='completed';"
+    )
+    if not raw:
+        raise RuntimeError("completed restored attempt disappeared during recovery")
+    try:
+        value = json.loads(raw)
+    except Exception as exc:
+        raise RuntimeError("completed restored terminal fields are malformed") from exc
+    if not isinstance(value, dict):
+        raise RuntimeError("completed restored terminal fields are malformed")
+    return value
+
+
+def _require_completed_terminal_binding(op: str, capability: dict) -> None:
+    local = _completed_terminal_fields(op)
+    if local.get("revision") != capability.get("revision"):
+        raise RuntimeError("completed restored provider revision mismatch")
+    if local.get("result_ref") != capability.get("result_ref"):
+        raise RuntimeError("completed restored provider result mismatch")
+
+
 def resolve_provider_capability_exact(op: str) -> dict:
     row = strict._redrive_row(op)
     if row is None:
@@ -236,6 +260,7 @@ def _restore_provider_outcomes(payload: dict, epoch: int) -> None:
         elif state == "completed":
             if expected != "CONFIRMED" or capability is None:
                 raise RuntimeError("completed restored attempt lacks captured provider effect")
+            _require_completed_terminal_binding(op, capability)
             observed = _exact_probe(op, generation, capability["attempt_token"])
             strict._require_exact_capability(capability, observed, "CONFIRMED")
         elif state == "prepared":
@@ -383,6 +408,59 @@ def prove_mismatched_restored_capability_rejected() -> None:
         os.environ.pop("D3E_UNUSED", None)
 
 
+def prove_completed_terminal_mismatch_fails_closed() -> None:
+    core.WITNESS_PATH.unlink(missing_ok=True)
+    core.PROVIDER_STATE.unlink(missing_ok=True)
+    strict._provider_anchor().unlink(missing_ok=True)
+    provider = strict.start_provider()
+    try:
+        core.init_db()
+        witness = core.RecoveryWitnessPort()
+        witness.initialize()
+        op = "restore-completed-terminal-mismatch"
+        core.prepare_redrive(op, 1)
+        assert core.claim(op, "completed-worker", "completed-token", 1) == "1"
+        sent = core.provider_send(
+            op, 1, "completed-token", "completed-effect", "provider-result"
+        )
+        assert sent["outcome"] == "WIN"
+        # Deliberately persist a terminal result that disagrees with the provider.
+        assert core.complete_provider(op, 1, "tampered-local-result", "tampered-local-revision")
+        witness.write({
+            "epoch": 2,
+            "admission_open": False,
+            "boundary": "F-2-completed-terminal-negative-control",
+            "consumed": [],
+            "provider_outcomes": {
+                op: {"effect": core.provider_status(op)["effect"], "fence": None}
+            },
+        })
+        try:
+            recover_from_witness_exact(witness)
+        except RuntimeError as exc:
+            if "completed restored provider" not in str(exc):
+                raise
+        else:
+            raise AssertionError("mismatched completed terminal fields were accepted")
+        if witness.read()["admission_open"] is not False:
+            raise RuntimeError("terminal mismatch unexpectedly reopened recovery witness")
+        if core.psql(
+            "SELECT epoch::text||'|'||reconciled::text FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
+        ) != "2|false":
+            raise RuntimeError("terminal mismatch unexpectedly reopened database admission")
+        print(
+            "d3_e_completed_terminal_capability_binding=PASS "
+            "provider_revision_compared=true result_ref_compared=true "
+            "tampered_completed_row_rejected=true mismatch_keeps_witness_closed=true "
+            "mismatch_keeps_database_closed=true"
+        )
+    finally:
+        strict.stop_provider(provider)
+        core.WITNESS_PATH.unlink(missing_ok=True)
+        core.PROVIDER_STATE.unlink(missing_ok=True)
+        strict._provider_anchor().unlink(missing_ok=True)
+
+
 def prove_provider_history_canonicalization() -> None:
     capability, expected = _unique_captured_capability({
         "effect": {
@@ -470,6 +548,7 @@ def main() -> None:
     prove_completed_capability_is_captured_without_caller_ops()
     prove_provider_history_canonicalization()
     prove_mismatched_restored_capability_rejected()
+    prove_completed_terminal_mismatch_fails_closed()
     prove_witness_precedes_database_reopen()
     prove_missing_recovery_witness_fails_closed()
 

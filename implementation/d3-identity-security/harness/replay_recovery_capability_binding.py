@@ -7,6 +7,10 @@ import os
 import replay_recovery_conformance_runner as core
 import replay_recovery_strict_entrypoint as strict
 
+# Capture the already-hardened restore implementation before the canonical
+# entrypoint replaces the public hook with this exact-capability wrapper.
+_ORIGINAL_RECOVER = strict.recover_from_witness_strict
+
 
 def _exact_probe(op: str, generation: int, token: str) -> dict:
     observed = core.provider_probe(op, generation, token)
@@ -81,7 +85,7 @@ def capture_recovery_boundary_exact(
 
 
 def recover_from_witness_exact(witness: core.RecoveryWitnessPort) -> None:
-    strict.recover_from_witness_strict(witness)
+    _ORIGINAL_RECOVER(witness)
 
 
 def prove_mismatched_restored_capability_rejected() -> None:
@@ -97,9 +101,8 @@ def prove_mismatched_restored_capability_rejected() -> None:
         core.prepare_redrive(op, 1)
         assert core.claim(op, "stale-worker", "stale-token", 1) == "1"
 
-        # The external provider has an outcome for the same operation/generation,
-        # but from a different capability. A provider implementation that keys
-        # only by operation_id would otherwise return this outcome to any probe.
+        # Deliberately create an external outcome for the same operation and
+        # generation but a different issued capability token.
         effect = core.provider_send(
             op, 1, "different-token", "mismatch-effect", "mismatch-result"
         )
@@ -124,8 +127,7 @@ def prove_mismatched_restored_capability_rejected() -> None:
             "SELECT reconciled::text FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
         ) == "false"
 
-        # The same mismatch must also fail at capture before a witness can be
-        # sealed from a provider outcome belonging to another capability.
+        # The same provider aliasing must be rejected while capturing a boundary.
         witness.initialize()
         core.psql(
             "UPDATE d3e_replay.recovery_fence SET epoch=1,reconciled=TRUE WHERE singleton=TRUE;"

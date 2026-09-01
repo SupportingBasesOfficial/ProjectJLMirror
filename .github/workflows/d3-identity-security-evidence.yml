@@ -61,25 +61,23 @@ jobs:
           import json
           from pathlib import Path
           state = json.loads(Path('implementation/d3-identity-security/state-manifest.json').read_text())
-          assert state['gate_state'] == 'candidate_evidence_running'
+          assert state['gate_state'] == 'per_track_conformed'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['d4_transport_authority'] == 'not_selected_not_granted'
+          assert 'separate_acceptance' in state['acceptance_rule']
           tracks = {item['track_id']: item for item in state['tracks']}
 
-          d3c = tracks['D3-C']
-          assert d3c['state'] == 'per_track_conformed'
-          assert set(d3c['evidence_completed']) == set(d3c['required_evidence'])
-          assert d3c['evidence_remaining'] == []
-          assert len(d3c['evidence_proofs']) == len(d3c['required_evidence'])
-
-          d3e = tracks['D3-E']
-          assert d3e['state'] == 'candidate_selected_conformance_pending'
-          assert d3e['evidence_remaining']
+          for track_id in ('D3-A', 'D3-B', 'D3-C', 'D3-D', 'D3-E'):
+              track = tracks[track_id]
+              assert track['state'] == 'per_track_conformed'
+              assert set(track['evidence_completed']) == set(track['required_evidence'])
+              assert track['evidence_remaining'] == []
+              assert {proof['evidence_id'] for proof in track['evidence_proofs']} == set(track['required_evidence'])
 
           print(
               'd3_reference_evidence=PASS authority=unchanged '
-              'd3_c=per_track_conformed d3_e=partial_only'
+              'all_tracks=per_track_conformed d3_global=not_accepted'
           )
           PY

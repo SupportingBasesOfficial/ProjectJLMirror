@@ -10,6 +10,12 @@ _ORIGINAL_ISSUE = base._issue_provider_version_bound
 _CAPTURED_ROOT_TOKEN: str | None = None
 _LAST_ISSUE: tuple[core.KeyAuthorityPort, core.LogicalKeyHandle, bytes, int] | None = None
 
+# These aliases are intentionally overridable by the final hardening layer.
+# main() copies their current values into the preserved implementation before
+# execution so monkey-patched monotonic continuity evidence remains effective.
+DurableCryptoContinuityWitness = base.DurableCryptoContinuityWitness
+_prove_witness_restart_and_corruption_fail_closed = base._prove_witness_restart_and_corruption_fail_closed
+
 
 def _capture_initialize_source() -> tuple[str, str]:
     global _CAPTURED_ROOT_TOKEN
@@ -76,6 +82,12 @@ def _prove_provider_generation_binding_exercised() -> None:
 
 
 def main() -> None:
+    # Preserve overrides installed by openbao_crypto_final_entrypoint.py instead
+    # of bypassing them when delegating into the preserved implementation.
+    base.DurableCryptoContinuityWitness = DurableCryptoContinuityWitness
+    base._prove_witness_restart_and_corruption_fail_closed = (
+        _prove_witness_restart_and_corruption_fail_closed
+    )
     core.initialize_source = _capture_initialize_source
     base._issue_provider_version_bound = _tracked_issue
     base._prove_provider_generation_binding_exercised = _prove_provider_generation_binding_exercised

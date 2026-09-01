@@ -15,11 +15,13 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import replay_recovery_conformance_runner as core
+import replay_recovery_boundary_hardening as boundary  # installs canonical DB admission barrier
 
 AUDIENCE = "https://jlmirror.invalid/oauth2/token"
 PRIVATE_KEY = Path("/tmp/jlmirror-d3e-private-key-jwt.pem")
 PUBLIC_KEY = Path("/tmp/jlmirror-d3e-private-key-jwt.pub.pem")
 REPLICA_PORTS = (18082, 18083)
+ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 
 
 def b64url(raw: bytes) -> str:
@@ -143,6 +145,8 @@ class TokenBoundaryHandler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length) or b"{}")
             if payload.get("grant_type") != "client_credentials":
                 raise ValueError("unsupported grant")
+            if payload.get("client_assertion_type") != ASSERTION_TYPE:
+                raise ValueError("unsupported client_assertion_type")
             assertion = payload.get("client_assertion")
             if not isinstance(assertion, str):
                 raise ValueError("missing client_assertion")
@@ -150,6 +154,7 @@ class TokenBoundaryHandler(BaseHTTPRequestHandler):
         except ValueError as exc:
             self.send_json(401, {"error": "invalid_client", "detail": str(exc)})
             return
+
         witness = core.RecoveryWitnessPort()
         port = core.ReplayAuthorityPort(witness)
         outcome = port.consume(
@@ -160,7 +165,20 @@ class TokenBoundaryHandler(BaseHTTPRequestHandler):
             f"token-result:{client}:{jti}",
             1,
         )
-        status = 200 if outcome in {"WIN", "OBSERVE"} else 409
+        if outcome == "WIN":
+            self.send_json(200, {"outcome": "WIN", "replica": self.server.server_port})
+            return
+        if outcome == "OBSERVE":
+            # Storage create-or-observe is internal idempotency only. An already
+            # consumed private_key_jwt can never be turned into token issuance.
+            self.send_json(401, {
+                "error": "invalid_client",
+                "detail": "private_key_jwt replay rejected",
+                "outcome": "OBSERVE",
+                "replica": self.server.server_port,
+            })
+            return
+        status = 409 if outcome == "CONFLICT" else 503
         self.send_json(status, {"outcome": outcome, "replica": self.server.server_port})
 
 
@@ -173,7 +191,7 @@ def call_replica(port: int, assertion: str) -> tuple[int, dict]:
     try:
         body = json.dumps({
             "grant_type": "client_credentials",
-            "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            "client_assertion_type": ASSERTION_TYPE,
             "client_assertion": assertion,
         }, separators=(",", ":"))
         conn.request("POST", "/oauth2/token", body=body, headers={"content-type": "application/json"})
@@ -220,10 +238,15 @@ def main() -> None:
                 for i in range(48)
             ]
             responses = [future.result() for future in futures]
-        outcomes = [body["outcome"] for status, body in responses if status == 200]
-        assert outcomes.count("WIN") == 1
-        assert outcomes.count("OBSERVE") == 47
-        assert {body["replica"] for status, body in responses if status == 200} == set(REPLICA_PORTS)
+
+        successes = [(status, body) for status, body in responses if status == 200]
+        observed_replays = [
+            (status, body) for status, body in responses
+            if status == 401 and body.get("outcome") == "OBSERVE"
+        ]
+        assert len(successes) == 1 and successes[0][1]["outcome"] == "WIN"
+        assert len(observed_replays) == 47
+        assert {body["replica"] for _, body in responses} == set(REPLICA_PORTS)
         assert core.psql(
             "SELECT count(*) FROM d3e_replay.effect_ledger "
             "WHERE effect_id='token-effect:client-token-boundary:shared-jti';"
@@ -249,10 +272,11 @@ def main() -> None:
         print(
             "d3_e_private_key_jwt_replay_atomic_single_winner=PASS "
             "actual_token_endpoint=true token_boundary_replicas=2 rs256_signature_validated=true "
-            "issuer_subject_audience_jti_freshness_validated=true shared_postgres_replay_authority=true "
-            "concurrent_assertions=48 exactly_one_win=true duplicates_observe=true "
+            "issuer_subject_audience_jti_freshness_validated=true assertion_type_validated=true "
+            "shared_postgres_replay_authority=true concurrent_assertions=48 exactly_one_token_success=true "
+            "replayed_assertions_rejected=47 internal_observe_not_token_issuance=true "
             "fingerprint_conflict_rejected=true invalid_signature_rejected=true wrong_audience_rejected=true "
-            "replica_local_fallback_absent=true"
+            "replica_local_fallback_absent=true recovery_admission_barrier_installed=true"
         )
     finally:
         for proc in replicas:

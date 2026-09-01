@@ -6,6 +6,18 @@ import os
 import replay_recovery_conformance_runner as core
 
 
+def restore_entire_database(stale_dump: str) -> None:
+    """Replace the entire PostgreSQL database with the captured stale image.
+
+    The recovery witness and external effect provider deliberately live outside
+    this rollback domain. No PostgreSQL-local fence, replay identity, redrive
+    state, or helper schema is allowed to survive by construction.
+    """
+    core.psql("DROP DATABASE d3 WITH (FORCE);", db="postgres")
+    core.psql("CREATE DATABASE d3;", db="postgres")
+    core.psql_script(stale_dump, db="d3")
+
+
 def prove_whole_restore_strict(
     port: core.ReplayAuthorityPort,
     witness: core.RecoveryWitnessPort,
@@ -56,7 +68,7 @@ def prove_whole_restore_strict(
         1,
     ) == "BLOCKED"
 
-    core.restore_whole_database(stale_dump)
+    restore_entire_database(stale_dump)
 
     # The rollback really removed the post-snapshot consumed identity and rolled
     # the DB-local fence back. Do not rely on psql's abbreviated t/f display:
@@ -141,8 +153,8 @@ def prove_whole_restore_strict(
 
     print(
         "d3_e_replay_consumed_identity_survives_restore_loss=PASS "
-        "whole_database_restore=true rollback_includes_local_control=true "
-        "rollback_local_epoch=1 surviving_external_epoch=2 "
+        "whole_database_restore=true entire_database_recreated=true "
+        "rollback_includes_local_control=true rollback_local_epoch=1 surviving_external_epoch=2 "
         "surviving_recovery_witness_external_to_snapshot=true stale_epoch_callers_fenced=true "
         "missing_witness_fail_closed=true consumed_identity_rehydrated=true "
         "ambiguous_external_effect_reconciled=true confirmed_effect_not_repeated=true"

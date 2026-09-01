@@ -388,7 +388,7 @@ def prove_missing_recovery_witness_fails_closed() -> None:
         if core.psql("SELECT reconciled::text FROM d3e_replay.recovery_fence WHERE singleton=TRUE;") != "false":
             raise RuntimeError("missing witness left rollback-subject database admission open")
         core.prepare_redrive("missing-witness-redrive", 1)
-        if core.claim("missing-witness-redrive", "blocked-worker", "blocked-token", 1) != "0":
+        if core.claim("missing-witness-redrive", "blocked-worker", "blocked-token", 1) != "BLOCKED":
             raise RuntimeError("redrive admission remained open after missing-witness recovery failure")
     finally: os.replace(saved, witness.path)
     print("d3_e_recovery_missing_witness_fail_closed=PASS admission_blocked=true recovery_blocked=true local_db_gate_closed_before_witness_read=true redrive_claim_blocked=true missing_state_not_interpreted_as_current=true")

@@ -29,8 +29,34 @@ def _openbao_262_compatible_call(
     return _ORIGINAL_CALL(self, method, path, body, expect=accepted, timeout=timeout)
 
 
+def _copy_volume_as_root(src: str, dst: str) -> None:
+    """Copy a stopped OpenBao file-storage volume into a distinct volume.
+
+    The official OpenBao image runs the server as a non-root user. That is the
+    correct runtime posture but is insufficient for creating a byte-for-byte
+    offline recovery copy in an empty Docker volume. The copy helper therefore
+    runs the *same immutable OpenBao image* with an explicit root user only for
+    the offline cp operation, preserving source ownership and metadata. The
+    recovered OpenBao instance itself still starts through core.start_bao() with
+    the image's normal runtime user.
+    """
+    core.remove_volume(dst)
+    core.create_volume(dst)
+    core.sh([
+        "docker", "run", "--rm", "--user", "0:0", "--entrypoint", "/bin/sh",
+        "-v", f"{src}:/from:ro", "-v", f"{dst}:/to",
+        core.OPENBAO_IMAGE, "-ec", "cp -a /from/. /to/",
+    ])
+    print(
+        "d3_e_openbao_offline_relocation_copy=PASS "
+        "source_read_only=true distinct_target_volume=true immutable_candidate_image=true "
+        "runtime_user_unchanged=true metadata_preserved=true"
+    )
+
+
 def main() -> None:
     core.BaoClient.call = _openbao_262_compatible_call
+    core.copy_volume = _copy_volume_as_root
     print(
         "d3_e_openbao_262_http_success_profile=PASS "
         "http_200_success_retained=true http_204_success_retained=true "

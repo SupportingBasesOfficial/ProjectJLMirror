@@ -59,13 +59,21 @@ core.prove_single_winner = prove_port_single_winner
 strict.capture_recovery_boundary_strict = capture_recovery_boundary_exact
 strict.recover_from_witness_strict = recover_from_witness_exact
 
-# The final executed provider path supersedes the weaker orderly-restart-only
-# state publisher in the underlying strict layer. Child processes execute this
-# entrypoint too, so every provider /send and /probe persists through fsync(file)
-# + atomic rename + fsync(parent directory) before a response can be emitted.
+# Make crash durability canonical for every harness path, including standalone
+# capability probes that import the strict layer directly. The child provider
+# process executes this entrypoint and persists /send and /probe mutations via
+# fsync(file) + atomic rename + fsync(parent directory) before responding.
 strict.DurableProviderState = CrashDurableProviderState
 strict.durable_provider_server = durable_provider_server
 strict.start_provider = start_provider
+
+# Capability-binding probes historically start the strict provider directly.
+# Rebind that module too so no workflow can accidentally execute the weaker
+# orderly-restart-only publisher.
+import replay_recovery_capability_binding as capability  # noqa: E402
+capability.strict.DurableProviderState = CrashDurableProviderState
+capability.strict.durable_provider_server = durable_provider_server
+capability.strict.start_provider = start_provider
 
 from replay_recovery_strict_entrypoint import *  # noqa: E402,F401,F403
 

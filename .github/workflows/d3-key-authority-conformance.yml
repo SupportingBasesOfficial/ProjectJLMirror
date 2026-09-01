@@ -1,0 +1,204 @@
+name: JLMIRROR D3-E Key Authority Conformance Evidence
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  key-authority-conformance:
+    name: OpenBao 2.6.2 Transit + PostgreSQL replay continuity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      OPENBAO_IMAGE: openbao/openbao@sha256:11fd73a2102cda9c55d5d881a8c3210303146a7ec1e8ac76f526e175c6d24641
+      POSTGRES_IMAGE: postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+      OPENBAO_CONTAINER: jlmirror-d3e-openbao
+      PG_CONTAINER: jlmirror-d3e-postgres
+      D3_NETWORK: jlmirror-d3e-key-authority
+      OPENBAO_ADDR: http://127.0.0.1:18200
+      OPENBAO_ROOT_TOKEN: d3-e-evidence-root-only
+      PG_PASSWORD: d3-e-postgres-evidence-only
+    steps:
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit and bounded pending authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python3 tools/assurance/validate_d3_identity_security_state.py .
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          state = json.loads(Path('implementation/d3-identity-security/state-manifest.json').read_text())
+          tracks = {item['track_id']: item for item in state['tracks']}
+          d3e = tracks['D3-E']
+          expected_completed = {
+              'tenant_scope_domain_separation',
+              'erasure_granularity_key_alignment',
+              'provider_neutral_key_authority_port',
+          }
+          expected_remaining = {
+              'historical_verifier_relocation_recovery_continuity',
+              'retired_erased_key_nonresurrection',
+              'private_key_jwt_replay_atomic_single_winner',
+              'replay_partition_fail_closed',
+              'replay_consumed_identity_survives_restore_loss',
+              'key_generation_rotation_retirement',
+          }
+          assert d3e['candidate'] == 'openbao_2_6_2_transit_behind_provider_neutral_key_authority_port'
+          assert d3e['state'] == 'candidate_selected_conformance_pending'
+          assert set(d3e['evidence_completed']) == expected_completed
+          assert set(d3e['evidence_remaining']) == expected_remaining
+          assert len(d3e['evidence_proofs']) == 3
+          assert state['gate_state'] == 'candidate_evidence_running'
+          assert state['canonical_product_implementation_authority'] == 'not_granted'
+          assert state['wave4_implementation_authority'] == 'not_granted'
+          assert state['production_authority'] == 'none'
+          assert state['d4_transport_authority'] == 'not_selected_not_granted'
+          print('d3_e_candidate_state=PENDING_CONFORMANCE completed=3 remaining=6 manifest_credit=unchanged')
+          PY
+
+      - name: Validate conformance runner structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          runner=implementation/d3-identity-security/harness/openbao_key_authority_conformance_runner.py
+          python3 -m py_compile "$runner"
+          for marker in \
+            d3_e_historical_verifier_relocation_recovery_continuity \
+            d3_e_retired_erased_key_nonresurrection \
+            d3_e_private_key_jwt_replay_atomic_single_winner \
+            d3_e_replay_partition_fail_closed \
+            d3_e_replay_consumed_identity_survives_restore_loss \
+            d3_e_key_generation_rotation_retirement \
+            d3_e_key_authority_conformance; do
+            grep -F "$marker=PASS" "$runner" >/dev/null
+          done
+          grep -F 'HistoricalOpenBaoVerifier' "$runner" >/dev/null
+          grep -F 'RegistryGuardedHistoricalVerifier' "$runner" >/dev/null
+          grep -F 'FOR SHARE' "$runner" >/dev/null
+          grep -F 'ON CONFLICT DO NOTHING' "$runner" >/dev/null
+          grep -F 'docker", "pause"' "$runner" >/dev/null
+          grep -F 'trusted_recovery_fence_precedes_rollback_restore=true' "$runner" >/dev/null
+          grep -F 'backup_material_not_logged=true' "$runner" >/dev/null
+          grep -F 'evidence_credited=false' "$runner" >/dev/null
+          if grep -E 'c3_numerics=(selected|accepted)|d3_global=accepted|wave4=granted|production=(granted|eligible)|d4=(selected|granted)' "$runner"; then
+            echo 'D3-E source runner attempted to overclaim downstream authority' >&2
+            exit 1
+          fi
+
+      - name: Pull immutable candidate artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for image in "$OPENBAO_IMAGE" "$POSTGRES_IMAGE"; do
+            case "$image" in *@sha256:*) ;; *) exit 1 ;; esac
+            docker pull "$image"
+            docker image inspect "$image" >/dev/null
+          done
+          printf 'openbao_candidate_pin=%s\n' "$OPENBAO_IMAGE"
+          printf 'postgres_replay_pin=%s\n' "$POSTGRES_IMAGE"
+
+      - name: Start pinned PostgreSQL replay authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker network create "$D3_NETWORK"
+          docker run -d --rm \
+            --name "$PG_CONTAINER" \
+            --network "$D3_NETWORK" \
+            -e POSTGRES_PASSWORD="$PG_PASSWORD" \
+            -e POSTGRES_DB=d3 \
+            "$POSTGRES_IMAGE"
+          for _ in $(seq 1 120); do
+            if result="$(docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_CONTAINER" \
+              psql -U postgres -d d3 -Atqc 'SELECT 1' 2>/dev/null)" && test "$result" = "1"; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          exit 1
+
+      - name: Start pinned OpenBao Transit candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --rm \
+            --name "$OPENBAO_CONTAINER" \
+            --network "$D3_NETWORK" \
+            -p 127.0.0.1:18200:8200 \
+            -e BAO_DEV_ROOT_TOKEN_ID="$OPENBAO_ROOT_TOKEN" \
+            -e BAO_DEV_LISTEN_ADDRESS=0.0.0.0:8200 \
+            "$OPENBAO_IMAGE" server -dev
+          for _ in $(seq 1 120); do
+            code="$(curl --silent --output /dev/null --write-out '%{http_code}' "$OPENBAO_ADDR/v1/sys/health" || true)"
+            if [[ "$code" == 200 || "$code" == 429 || "$code" == 472 || "$code" == 473 ]]; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          exit 1
+
+      - name: Exercise OpenBao key authority and PostgreSQL replay continuity
+        shell: bash
+        run: |
+          set -euo pipefail
+          OPENBAO_ADDR="$OPENBAO_ADDR" \
+          OPENBAO_ROOT_TOKEN="$OPENBAO_ROOT_TOKEN" \
+          PG_CONTAINER="$PG_CONTAINER" \
+          PG_PASSWORD="$PG_PASSWORD" \
+            python3 implementation/d3-identity-security/harness/openbao_key_authority_conformance_runner.py \
+            | tee "$RUNNER_TEMP/d3-e-conformance.log"
+
+          log="$RUNNER_TEMP/d3-e-conformance.log"
+          grep -F 'd3_e_historical_verifier_relocation_recovery_continuity=PASS' "$log" >/dev/null
+          grep -F 'd3_e_retired_erased_key_nonresurrection=PASS' "$log" >/dev/null
+          grep -F 'd3_e_private_key_jwt_replay_atomic_single_winner=PASS' "$log" >/dev/null
+          grep -F 'd3_e_replay_partition_fail_closed=PASS' "$log" >/dev/null
+          grep -F 'd3_e_replay_consumed_identity_survives_restore_loss=PASS' "$log" >/dev/null
+          grep -F 'd3_e_key_generation_rotation_retirement=PASS' "$log" >/dev/null
+          grep -F 'd3_e_key_authority_conformance=PASS_PINNED_CANDIDATE' "$log" >/dev/null
+          if grep -Ei 'backup[=:][[:space:]]*[A-Za-z0-9+/]{40,}' "$log"; then
+            echo 'OpenBao backup material leaked to ordinary evidence log' >&2
+            exit 1
+          fi
+
+      - name: Preserve bounded source-evidence result without ledger credit
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'd3_e_candidate_conformance_probe=PASS_PINNED_SOURCE_ONLY\n'
+          printf 'candidate_openbao=%s\n' "$OPENBAO_IMAGE"
+          printf 'replay_authority=%s\n' "$POSTGRES_IMAGE"
+          printf 'manifest_credit=unchanged d3_e_state=candidate_selected_conformance_pending\n'
+          printf 'c3_numerics=not_selected d3=not_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
+
+      - name: Cleanup ephemeral candidate state
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          docker unpause "$PG_CONTAINER" >/dev/null 2>&1 || true
+          docker rm -f "$OPENBAO_CONTAINER" "$PG_CONTAINER" >/dev/null 2>&1 || true
+          docker network rm "$D3_NETWORK" >/dev/null 2>&1 || true
+          rm -f "$RUNNER_TEMP/d3-e-conformance.log"

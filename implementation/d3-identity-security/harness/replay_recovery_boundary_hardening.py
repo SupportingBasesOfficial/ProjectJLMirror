@@ -183,13 +183,66 @@ def close_admission_and_drain() -> None:
         raise RuntimeError("recovery admission barrier did not close the gate")
 
 
+def _capability_identity(capability: dict, label: str) -> tuple[int, str]:
+    if not isinstance(capability, dict):
+        raise RuntimeError(f"provider {label} capability is malformed")
+    try:
+        generation = int(capability["attempt_generation"])
+    except Exception as exc:
+        raise RuntimeError(f"provider {label} generation is malformed") from exc
+    token = capability.get("attempt_token")
+    if generation <= 0 or not isinstance(token, str) or not token:
+        raise RuntimeError(f"provider {label} capability identity is invalid")
+    return generation, token
+
+
+def canonicalize_provider_outcome(status: dict) -> dict:
+    """Seal one effective recovery outcome while tolerating older provider history.
+
+    The provider intentionally retains an absence fence for an earlier attempt
+    even after a later generation commits an effect. Recovery authority is not
+    the raw history set: it is the single terminal capability at F. Therefore a
+    later effect supersedes an older fence. Same-generation effect/fence pairs,
+    or a fence newer than the effect, are contradictory and fail closed.
+    """
+    if not isinstance(status, dict):
+        raise RuntimeError("provider recovery status is malformed")
+    effect = status.get("effect")
+    fence = status.get("fence")
+    if effect is None and fence is None:
+        return {"effect": None, "fence": None}
+    if effect is None:
+        _capability_identity(fence, "fence")
+        return {"effect": None, "fence": fence}
+    if fence is None:
+        _capability_identity(effect, "effect")
+        return {"effect": effect, "fence": None}
+
+    effect_generation, _effect_token = _capability_identity(effect, "effect")
+    fence_generation, _fence_token = _capability_identity(fence, "fence")
+    if effect_generation <= fence_generation:
+        raise RuntimeError(
+            "provider recovery history is contradictory: effect does not supersede absence fence"
+        )
+    return {"effect": effect, "fence": None}
+
+
+def canonicalize_provider_outcomes(provider_outcomes: dict[str, dict]) -> dict[str, dict]:
+    if not isinstance(provider_outcomes, dict):
+        raise RuntimeError("provider recovery outcomes are malformed")
+    return {
+        op: canonicalize_provider_outcome(status)
+        for op, status in provider_outcomes.items()
+    }
+
+
 def capture_boundary_structured(
     self: core.RecoveryWitnessPort,
     *,
     next_epoch: int,
     provider_outcomes: dict[str, dict],
 ) -> None:
-    """Serialize consumed identities as structured JSON, never delimiters."""
+    """Serialize consumed identities and one canonical provider outcome per op."""
     if core.psql(
         "SELECT reconciled::text FROM d3e_replay.recovery_fence WHERE singleton=TRUE;"
     ) != "false":
@@ -204,12 +257,13 @@ def capture_boundary_structured(
     consumed = json.loads(raw or "[]")
     if not isinstance(consumed, list) or any(not isinstance(item, dict) for item in consumed):
         raise RuntimeError("structured replay witness capture returned malformed rows")
+    canonical_outcomes = canonicalize_provider_outcomes(provider_outcomes)
     self.write({
         "epoch": next_epoch,
         "admission_open": False,
         "boundary": f"F-{next_epoch}",
         "consumed": consumed,
-        "provider_outcomes": provider_outcomes,
+        "provider_outcomes": canonical_outcomes,
     })
 
 
@@ -292,11 +346,51 @@ def prove_recovery_consumer_barrier() -> None:
     ) != "BLOCKED":
         raise RuntimeError("new replay admission succeeded after recovery gate closure")
 
+    # Provider history may contain an old absence fence plus a later successful
+    # generation. The recovery witness must retain only the later terminal effect.
+    canonical = canonicalize_provider_outcome({
+        "effect": {
+            "attempt_generation": 2,
+            "attempt_token": "generation-2-token",
+            "revision": "provider-r2",
+            "effect_id": "canonical-effect",
+            "result_ref": "canonical-result",
+        },
+        "fence": {
+            "attempt_generation": 1,
+            "attempt_token": "generation-1-token",
+            "revision": "provider-r1",
+        },
+    })
+    if canonical.get("effect", {}).get("attempt_generation") != 2 or canonical.get("fence") is not None:
+        raise RuntimeError("older absence fence was not superseded by later effect")
+    try:
+        canonicalize_provider_outcome({
+            "effect": {
+                "attempt_generation": 2,
+                "attempt_token": "same-generation-effect",
+                "revision": "provider-r3",
+                "effect_id": "contradiction",
+                "result_ref": "contradiction",
+            },
+            "fence": {
+                "attempt_generation": 2,
+                "attempt_token": "same-generation-fence",
+                "revision": "provider-r2",
+            },
+        })
+    except RuntimeError:
+        pass
+    else:
+        raise RuntimeError("same-generation effect/fence contradiction was accepted")
+
     print(
         "d3_e_recovery_consumer_drain_barrier=PASS "
         "shared_xact_admission_lock=true exclusive_capture_barrier=true "
         "in_flight_consumer_drained_before_witness=true new_consumers_blocked_after_close=true "
-        "structured_consumed_json=true delimiter_claims_round_trip=true long_db_txn_over_external_call=false"
+        "structured_consumed_json=true delimiter_claims_round_trip=true long_db_txn_over_external_call=false "
+        "provider_history_canonicalized=true older_fence_superseded_by_later_effect=true "
+        "same_generation_effect_fence_fail_closed=true"
     )
 
 

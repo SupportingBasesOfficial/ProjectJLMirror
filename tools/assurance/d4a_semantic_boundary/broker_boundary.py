@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Protocol
@@ -24,10 +25,23 @@ class LogicalReceipt:
     accepted: bool
 
 
+def logical_semantic_digest(message: LogicalMessage) -> str:
+    material = f"{message.contract_name}|{message.contract_version}|{message.payload}"
+    return sha256(material.encode("utf-8")).hexdigest()
+
+
 class BrokerPort(Protocol):
     def publish(self, message: LogicalMessage) -> LogicalReceipt: ...
     def receive(self, consumer_contract: str) -> LogicalMessage: ...
-    def acknowledge(self, consumer_contract: str, message_identity_scope: str, message_id: str) -> None: ...
+    def acknowledge(
+        self,
+        consumer_contract: str,
+        message_identity_scope: str,
+        message_id: str,
+        contract_name: str,
+        contract_version: str,
+        semantic_digest: str,
+    ) -> None: ...
 
 
 class DurableResponsibilityVerifier(Protocol):
@@ -100,7 +114,15 @@ class KafkaCandidateAdapter:
         self.physical_trace.append({"consumer_group": f"evidence.{consumer_contract}"})
         return self._decode(self._queue[0])
 
-    def acknowledge(self, consumer_contract: str, message_identity_scope: str, message_id: str) -> None:
+    def acknowledge(
+        self,
+        consumer_contract: str,
+        message_identity_scope: str,
+        message_id: str,
+        contract_name: str,
+        contract_version: str,
+        semantic_digest: str,
+    ) -> None:
         if not self._queue:
             raise ValueError("acknowledgement has no current logical message")
         if self._delivery_consumer != consumer_contract:
@@ -108,6 +130,10 @@ class KafkaCandidateAdapter:
         current = self._decode(self._queue[0])
         if (current.tenant_scope, current.message_id) != (message_identity_scope, message_id):
             raise ValueError("acknowledgement does not match current scoped logical message")
+        if (current.contract_name, current.contract_version) != (contract_name, contract_version):
+            raise ValueError("acknowledgement contract semantics do not match current delivery")
+        if logical_semantic_digest(current) != semantic_digest:
+            raise ValueError("acknowledgement semantic digest does not match current delivery")
         self._queue.pop(0)
         self._delivery_consumer = None
         self.physical_trace.append({"consumer_group": f"evidence.{consumer_contract}", "ack": True})
@@ -134,7 +160,15 @@ class AlternateStubTransport:
         self.physical_trace.append({"subscription": consumer_contract})
         return self._queue[0]
 
-    def acknowledge(self, consumer_contract: str, message_identity_scope: str, message_id: str) -> None:
+    def acknowledge(
+        self,
+        consumer_contract: str,
+        message_identity_scope: str,
+        message_id: str,
+        contract_name: str,
+        contract_version: str,
+        semantic_digest: str,
+    ) -> None:
         if not self._queue:
             raise ValueError("acknowledgement has no current logical message")
         if self._delivery_consumer != consumer_contract:
@@ -142,6 +176,10 @@ class AlternateStubTransport:
         current = self._queue[0]
         if (current.tenant_scope, current.message_id) != (message_identity_scope, message_id):
             raise ValueError("acknowledgement does not match current scoped logical message")
+        if (current.contract_name, current.contract_version) != (contract_name, contract_version):
+            raise ValueError("acknowledgement contract semantics do not match current delivery")
+        if logical_semantic_digest(current) != semantic_digest:
+            raise ValueError("acknowledgement semantic digest does not match current delivery")
         self._queue.pop(0)
         self._delivery_consumer = None
         self.physical_trace.append({"subscription": consumer_contract, "ack": True})
@@ -174,7 +212,14 @@ class InboxAcknowledgePath(BrokerFacingPath):
 
     def acknowledge_after_durable_responsibility(self, receipt: DurableResponsibilityReceipt) -> None:
         self._verifier.assert_durable(receipt)
-        self._broker.acknowledge(receipt.consumer_contract, receipt.message_identity_scope, receipt.message_id)
+        self._broker.acknowledge(
+            receipt.consumer_contract,
+            receipt.message_identity_scope,
+            receipt.message_id,
+            receipt.contract_name,
+            receipt.contract_version,
+            receipt.semantic_digest,
+        )
 
 
 class ReplayDispatchPath(BrokerFacingPath):

@@ -19,6 +19,7 @@ EXPECTED_TRACK_SOURCES = {
         "OPEN-EVT-013",
         "OPEN-EVT-014",
         "OPEN-EVT-015",
+        "OPEN-EVT-025",
     },
     "D4-D": {"OPEN-EVT-016", "OPEN-EVT-017", "OPEN-EVT-018"},
 }
@@ -47,7 +48,6 @@ EXPECTED_LATER_EXCLUSIONS = {
     "OPEN-EVT-022",
     "OPEN-EVT-023",
     "OPEN-EVT-024",
-    "OPEN-EVT-025",
     "wave4_monitoring_product_implementation",
     "production_deployment",
 }

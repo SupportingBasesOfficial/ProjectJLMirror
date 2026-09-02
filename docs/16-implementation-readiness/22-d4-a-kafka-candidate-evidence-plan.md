@@ -51,7 +51,13 @@ A fake alternate path that bypasses the real logical port is invalid evidence.
 
 Prove the default profile rejects `sensitive_or_regulated` raw record-value bytes and uses an opaque governed reference when per-record erasure is required. Include a negative control that intentionally attempts raw regulated payload leakage and must be rejected.
 
-Any exception that proposes raw regulated Kafka payloads requires its own reviewed isolation/retention profile and cannot be invented by this source-evidence plan.
+The default remains reference-based erasure. If a later contract proposes an exception that places raw regulated content in Kafka record-value bytes, that exception is valid only when **all** binding controls from the Kafka decision record are satisfied together:
+
+- the affected traffic uses a per-tenant topic or partition assignment that provides the required isolation granularity;
+- a maximum Kafka segment-retention ceiling is explicitly bounded tightly enough to satisfy the accepted governed-erasure SLA for that data class;
+- the exception receives explicit sign-off from the governance authority that owns the erasure-fencing model.
+
+A generic “reviewed isolation/retention profile” is insufficient. Missing any one of those three controls keeps the raw-payload exception prohibited.
 
 ### D4-A4 — Exactly-once guardrail
 
@@ -77,6 +83,12 @@ Under real candidate outage/recovery, prove committed outbox backlog survives, b
 
 Bounded test lag/drain values are evidence, not production lag/retention policy.
 
+## Evidence-kind authority
+
+Each of the seven evidence IDs has one exact allowed `evidence_kind` pinned by assurance tooling. A source PR cannot downgrade a real-candidate benchmark/recovery requirement to a synthetic probe, documentation-only check, or arbitrary substitute kind and remain conformant.
+
+In particular, capacity, ordering/partition/concurrency, and outage/backlog/recovery claims require their declared real-candidate evidence classes. Unit/synthetic evidence may supplement them but cannot replace the source evidence kind owned by the plan.
+
 ## Evidence ordering
 
 The preferred execution order is:
@@ -90,15 +102,18 @@ Parallel execution is allowed only where evidence independence is explicit; shar
 
 ## Machine-owned plan
 
-`implementation/d4-eventing-async/d4-a-evidence-plan.json` is the machine-owned source-evidence plan. `tools/assurance/validate_d4a_evidence_plan.py` independently pins all seven evidence IDs and binding proof assertions. Negative controls reject inventory collapse, premature selection, auto-credit, production numeric escalation, loss of tenant-cohort fallback, loss of backlog-drain protection and entry-ledger pre-credit.
+`implementation/d4-eventing-async/d4-a-evidence-plan.json` is the machine-owned source-evidence plan. `tools/assurance/validate_d4a_evidence_plan.py` independently pins all seven evidence IDs, **every declared `must_prove` assertion**, and the exact allowed evidence kind for each ID. Removing, substituting, duplicating, or weakening any declared assertion or evidence kind is invalid.
+
+Negative controls reject inventory collapse, arbitrary/synthetic evidence-kind substitution, premature selection, auto-credit, production numeric escalation, loss of trusted-identity ordering, loss of tenant-cohort fallback, loss of topology pre-authorization, weakening of regulated-payload exception controls, loss of backlog-drain protection, treating broker progress as business-effect truth, and entry-ledger pre-credit.
 
 ## Exit from planning
 
 This planning PR is complete only when exact-HEAD CI and adversarial review prove that the plan:
 
 - covers exactly the seven D4-A evidence IDs already owned by the D4 entry ledger;
-- preserves all binding Kafka closure conditions;
-- makes real candidate evidence mandatory where the claim is about broker behavior/capacity/recovery;
+- preserves every declared binding proof assertion and all binding Kafka closure conditions;
+- allow-lists the exact evidence kind for every proof package;
+- makes real candidate evidence mandatory where the claim is about broker behavior/capacity/ordering/recovery;
 - contains negative controls against the dangerous weakening modes;
 - leaves D4-A evidence at 0/7 and Kafka unselected;
 - grants no D4/Wave4/Product/production/C3 authority.

@@ -11,6 +11,7 @@ from pathlib import Path
 import validate_d3_identity_security_state as validator
 
 ROOT = Path(__file__).resolve().parents[2]
+TERMINAL_D3_TRACK_STATES = frozenset({"per_track_conformed", "accepted_candidate"})
 
 
 def _baseline() -> dict:
@@ -58,7 +59,7 @@ def main() -> int:
 
     d3d = {track["track_id"]: track for track in baseline["tracks"]}["D3-D"]
     expected_completed = validator.REQUIRED_EVIDENCE["D3-D"]
-    if d3d["state"] not in validator.TERMINAL_TRACK_STATES:
+    if d3d["state"] not in TERMINAL_D3_TRACK_STATES:
         raise AssertionError(f"D3-D is not terminal: {d3d['state']!r}")
     if set(d3d["evidence_completed"]) != expected_completed or d3d["evidence_remaining"]:
         raise AssertionError("D3-D terminal state is not backed by exactly all required evidence")

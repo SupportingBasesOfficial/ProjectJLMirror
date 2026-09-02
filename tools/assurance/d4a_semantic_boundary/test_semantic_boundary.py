@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -16,11 +17,18 @@ from broker_boundary import (
 )
 from consumer_registration_gate import (
     RecordingRegistrar,
+    RegistrationPermit,
     discover_consumer_manifests,
     register_consumer,
+    validate_discovered_consumers,
 )
 from effect_protection import DurableResponsibilityReceipt, SQLiteAtomicInboxEffectGuard
-from validate_repository_boundary import dependency_calls
+from validate_repository_boundary import (
+    KAFKA_TEXT_MARKERS,
+    dependency_calls,
+    discover_broker_path_declarations,
+    scan_nonpython_for_direct_kafka,
+)
 
 
 VALID = {
@@ -84,6 +92,8 @@ class BadPath:
     alternate_semantics = semantic_transcript(alternate)
     assert kafka_semantics == alternate_semantics, "logical semantics changed across transport swap"
     assert kafka.physical_trace != alternate.physical_trace, "test did not exercise distinct physical adapters"
+    assert dict(kafka_semantics)["published_accepted"] is True
+    assert dict(kafka_semantics)["replay_accepted"] is True
     assert dict(kafka_semantics)["durable_effect_apply_count"] == 1
     assert dict(kafka_semantics)["durable_effect_scope"] == "tenant-evidence-a"
     assert dict(kafka_semantics)["durable_responsibility_receipt"] == dict(kafka_semantics)["replay_durable_responsibility_receipt"]
@@ -108,7 +118,21 @@ class BadPath:
     except TypeError:
         pass
     else:
-        raise AssertionError("registrar accepted registration without validated permit")
+        raise AssertionError("registrar accepted registration without typed permit")
+
+    forged_typed_permit = RegistrationPermit(
+        consumer_contract="bypass",
+        topic="topic",
+        effect_profile="atomic_local",
+        effect_contract="sqlite_atomic_inbox_effect_v1",
+        issuance_id="forged-not-issued",
+    )
+    try:
+        valid_registrar.register_validated(forged_typed_permit)
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("registrar accepted typed permit not issued by validation")
 
     no_inbox = deepcopy(VALID)
     no_inbox["inbox"]["durable"] = False
@@ -134,8 +158,47 @@ class BadPath:
         root = Path(tmp)
         nested = root / "alternate/location"
         nested.mkdir(parents=True)
-        (nested / "consumer.json").write_text(__import__("json").dumps(VALID), encoding="utf-8")
-        assert discover_consumer_manifests(root) == [nested / "consumer.json"]
+        valid_path = nested / "consumer.json"
+        valid_path.write_text(json.dumps(VALID), encoding="utf-8")
+        assert discover_consumer_manifests(root) == [valid_path]
+
+        partial = {
+            "transport_candidate": "kafka",
+            "topic": "partial.kafka.topic",
+            "inbox": {"durable": True},
+        }
+        partial_path = nested / "partial-consumer.json"
+        partial_path.write_text(json.dumps(partial), encoding="utf-8")
+        discovered_manifests = discover_consumer_manifests(root)
+        assert partial_path in discovered_manifests, "partial Kafka consumer declaration escaped discovery"
+        try:
+            validate_discovered_consumers(root)
+        except ValueError as exc:
+            assert "consumer_contract is required" in str(exc)
+        else:
+            raise AssertionError("partial consumer declaration escaped validation")
+
+        external_path = root / "external_broker_path.py"
+        external_path.write_text(
+            "from broker_boundary import BrokerFacingPath as BFP\n"
+            "class EscapingPath(BFP):\n"
+            "    def run(self):\n"
+            "        return self._port.publish('x')\n",
+            encoding="utf-8",
+        )
+        external = discover_broker_path_declarations([external_path])
+        assert list(external.values()) == ["EscapingPath"], "external BrokerFacingPath subclass escaped static discovery"
+
+        csharp = root / "DirectKafka.cs"
+        csharp.write_text("using Confluent.Kafka;", encoding="utf-8")
+        assert "confluent.kafka" in scan_nonpython_for_direct_kafka(csharp)
+        node = root / "direct.js"
+        node.write_text("require('node-rdkafka')", encoding="utf-8")
+        assert "node-rdkafka" in scan_nonpython_for_direct_kafka(node)
+        rust = root / "direct.rs"
+        rust.write_text("use rdkafka::consumer::Consumer;", encoding="utf-8")
+        assert "rdkafka" in scan_nonpython_for_direct_kafka(rust)
+        assert all(marker in KAFKA_TEXT_MARKERS for marker in ("confluent.kafka", "node-rdkafka", "rdkafka"))
 
         guard = SQLiteAtomicInboxEffectGuard(root / "durable.db")
         first = guard.record_and_apply(
@@ -174,12 +237,27 @@ class BadPath:
             raise AssertionError("broker acknowledgement accepted forged/non-durable responsibility")
         assert adapter.receive("evidence.consumer.v1").message_id == "forged-msg", "failed ack removed broker message"
 
-    print("d4a_broker_path_discovery=PASS paths=4 constructors=checked")
+        scoped_adapter = AlternateStubTransport()
+        scoped_ack = InboxAcknowledgePath(scoped_adapter, guard)
+        scoped_adapter.publish(LogicalMessage("c", "same-id", "tenant-b", "payload-b"))
+        try:
+            scoped_ack.acknowledge_after_durable_responsibility(first)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("cross-scope durable receipt acknowledged another scope's message")
+        remaining = scoped_adapter.receive("evidence.consumer.v1")
+        assert (remaining.tenant_scope, remaining.message_id) == ("tenant-b", "same-id")
+
+    print("d4a_broker_path_discovery=PASS paths=4 external_subclass=detected constructors=checked")
+    print("d4a_kafka_sdk_marker_negative_controls=PASS csharp+node+rust")
     print("d4a_semantic_payload_corruption_negative_control=PASS")
     print("d4a_effect_protection_binding=PASS fake_label=blocked kafka_eos_only=blocked")
     print("d4a_inbox_identity_scope=PASS cross_scope_same_message_id=independent")
+    print("d4a_scoped_ack_identity=PASS cross_scope_receipt=blocked message_preserved=true")
     print("d4a_durable_ack_boundary=PASS forged_receipt=blocked message_preserved=true")
-    print("d4a_consumer_manifest_discovery=PASS nested_location_detected=true")
+    print("d4a_registration_permit_provenance=PASS forged_typed_permit=blocked")
+    print("d4a_consumer_manifest_discovery=PASS nested+partial_declarations_detected=true")
     print("d4a_transport_swap=PASS adapters=2 durable_effect_observed=true replay_apply_count=1")
     return 0
 

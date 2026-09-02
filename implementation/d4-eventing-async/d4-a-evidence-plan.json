@@ -35,7 +35,10 @@
       "must_prove": [
         "sensitive_or_regulated_raw_value_bytes_are_rejected_by_default",
         "opaque_reference_profile_supports_governed_per_record_erasure",
-        "negative_control_detects_raw_regulated_payload_leak"
+        "negative_control_detects_raw_regulated_payload_leak",
+        "raw_payload_exception_requires_per_tenant_topic_or_partition_assignment",
+        "raw_payload_exception_requires_maximum_segment_retention_ceiling_meeting_governed_erasure_sla",
+        "raw_payload_exception_requires_signoff_by_erasure_governance_authority"
       ]
     },
     {

@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+from uuid import uuid4
 
 from effect_protection import EffectProtectionGuard, SQLiteAtomicInboxEffectGuard
 
@@ -19,6 +20,7 @@ class RegistrationPermit:
     topic: str
     effect_profile: str
     effect_contract: str
+    issuance_id: str
     validation_profile: str = "d4a-inbox-effect-v2"
 
 
@@ -99,6 +101,7 @@ def issue_registration_permit(manifest: dict) -> RegistrationPermit:
         topic=manifest["topic"],
         effect_profile=profile,
         effect_contract=contract,
+        issuance_id=uuid4().hex,
     )
     _ISSUED_PERMITS.add(permit)
     return permit

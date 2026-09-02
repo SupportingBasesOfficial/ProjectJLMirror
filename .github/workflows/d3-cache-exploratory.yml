@@ -114,7 +114,8 @@ jobs:
           printf 'postgres_digest=%s\n' "$POSTGRES_IMAGE"
           printf 'redis_digest=%s\n' "$REDIS_IMAGE"
           printf 'valkey_digest=%s\n' "$VALKEY_IMAGE"
-          printf 'canonical_conformance=false reason=fleet_multi_replica_restore_failover_concurrency_and_degraded_owner_vectors_remaining\n'
+          printf 'probe_scope=historical_partial_only current_run_auto_credit=false\n'
+          printf 'd3_b_current_state=accepted_candidate d3=separately_accepted\n'
           printf 'wave4=not_granted production=none d4=not_selected_not_granted\n'
 
       - name: Capture candidate logs on failure

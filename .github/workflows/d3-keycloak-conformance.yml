@@ -253,9 +253,9 @@ jobs:
           set -euo pipefail
           printf 'd3_a_candidate_conformance_probe=PASS_PINNED_TLS\n'
           printf 'candidate_digest=%s\n' "$KEYCLOAK_IMAGE"
-          printf 'ledger_promotion=required_separate_exact_run_provenance_commit\n'
-          printf 'd3_a_manifest_credit=unchanged\n'
-          printf 'd3=not_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
+          printf 'current_run_auto_credit=false\n'
+          printf 'd3_a_current_state=accepted_candidate\n'
+          printf 'd3=separately_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
 
       - name: Capture Keycloak logs on failure
         if: failure()

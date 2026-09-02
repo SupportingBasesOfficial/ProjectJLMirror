@@ -41,7 +41,7 @@ jobs:
           printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual_sha"
           test "$actual_sha" = "$EXPECTED_SHA"
 
-      - name: Validate promoted D3-E per-track authority state
+      - name: Validate accepted D3-E authority state
         shell: bash
         run: |
           set -euo pipefail
@@ -54,7 +54,7 @@ jobs:
           tracks = {track['track_id']: track for track in manifest['tracks']}
           track = tracks['D3-E']
           assert track['candidate'] == 'openbao_2_6_2_transit_behind_provider_neutral_key_authority_port'
-          assert track['state'] == 'per_track_conformed'
+          assert track['state'] == 'accepted_candidate'
           required = set(track['required_evidence'])
           assert set(track['evidence_completed']) == required
           assert track['evidence_remaining'] == []
@@ -85,15 +85,15 @@ jobs:
               assert proof['result'] == 'pass'
 
           for track_id in ('D3-A', 'D3-B', 'D3-C', 'D3-D', 'D3-E'):
-              assert tracks[track_id]['state'] == 'per_track_conformed'
-          assert manifest['gate_state'] == 'per_track_conformed'
+              assert tracks[track_id]['state'] == 'accepted_candidate'
+          assert manifest['gate_state'] == 'separately_accepted'
           assert manifest['canonical_product_implementation_authority'] == 'not_granted'
           assert manifest['wave4_implementation_authority'] == 'not_granted'
           assert manifest['production_authority'] == 'none'
           assert manifest['d4_transport_authority'] == 'not_selected_not_granted'
           assert 'OPEN-REL-016.B' in manifest['c3_remains_open']
           assert 'separate_acceptance' in manifest['acceptance_rule']
-          print('d3_e_promoted_manifest_boundary=PASS proofs=9 downstream_authority=unchanged')
+          print('d3_e_accepted_manifest_boundary=PASS proofs=9 downstream_authority=unchanged')
           PY
           case "$OPENBAO_IMAGE" in ghcr.io/openbao/openbao@sha256:*) ;; *) exit 1 ;; esac
           case "$POSTGRES_IMAGE" in postgres@sha256:*) ;; *) exit 1 ;; esac
@@ -303,8 +303,8 @@ jobs:
         run: |
           set -euo pipefail
           printf 'd3_e_candidate_conformance_probe=PASS_PINNED_PERSISTENT_RECOVERY_TOKEN_BOUNDARY_HARDENED\n'
-          printf 'manifest_credit=promoted_per_track_conformed c3_numerics=not_selected topology=not_selected\n'
-          printf 'd3=not_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
+          printf 'manifest_state=accepted_candidate c3_numerics=not_selected topology=not_selected\n'
+          printf 'd3=separately_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
 
       - name: Cleanup
         if: always()

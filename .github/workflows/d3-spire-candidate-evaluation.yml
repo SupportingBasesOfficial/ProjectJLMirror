@@ -48,7 +48,7 @@ jobs:
           printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual_sha"
           test "$actual_sha" = "$EXPECTED_SHA"
 
-      - name: Validate current D3 machine-owned pinned candidate state
+      - name: Validate accepted D3 machine-owned pinned candidate state
         shell: bash
         run: |
           set -euo pipefail
@@ -74,18 +74,18 @@ jobs:
           expected_remaining = set()
           assert d3d['candidate'] == 'spire_1_15_3'
           assert d3d['candidate_artifact_digest'] == os.environ['SPIRE_ARTIFACT_PIN']
-          assert d3d['state'] == 'per_track_conformed'
+          assert d3d['state'] == 'accepted_candidate'
           assert set(d3d['evidence_completed']) == expected_completed
           assert set(d3d['evidence_remaining']) == expected_remaining
           assert len(d3d['evidence_proofs']) == 8
-          assert all(tracks[track_id]['state'] == 'per_track_conformed' for track_id in tracks)
-          assert state['gate_state'] == 'per_track_conformed'
+          assert all(tracks[track_id]['state'] == 'accepted_candidate' for track_id in tracks)
+          assert state['gate_state'] == 'separately_accepted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['d4_transport_authority'] == 'not_selected_not_granted'
           assert 'separate_acceptance' in state['acceptance_rule']
-          print('d3_d_candidate_state=PINNED_CONFORMED_EVIDENCE completed=8 remaining=0 current_run_auto_credit=false')
+          print('d3_d_candidate_state=PINNED_ACCEPTED_CANDIDATE completed=8 remaining=0 current_run_auto_credit=false')
           PY
 
       - name: Validate candidate probe structure
@@ -203,21 +203,21 @@ jobs:
           set -euo pipefail
           PYTHONPATH=src python3 implementation/d3-identity-security/harness/spire_restore_nonresurrection_probe.py
 
-      - name: Preserve conformed D3-D ledger and non-authority boundary
+      - name: Preserve accepted D3-D ledger and non-authority boundary
         if: success()
         shell: bash
         run: |
           set -euo pipefail
           printf 'd3_d_spire_1_15_3_candidate=PASS_PINNED_CONFORMED_EVIDENCE\n'
           printf 'candidate_artifact_pin=%s\n' "$SPIRE_ARTIFACT_PIN"
-          printf 'canonical_candidate_promoted=true ledger_evidence_credited=8 current_run_auto_credit=false d3_d_conformed=true\n'
+          printf 'canonical_candidate_accepted=true ledger_evidence_credited=8 current_run_auto_credit=false d3_d_accepted=true\n'
           printf 'rotation_evidence_provenance=run_12_pinned current_run_ledger_change=false\n'
           printf 'non_tenant_authority_evidence_provenance=run_15_pinned current_run_ledger_change=false\n'
           printf 'private_key_profile_evidence_provenance=run_24_pinned current_run_ledger_change=false\n'
           printf 'restore_nonresurrection_evidence_provenance=run_52_pinned current_run_ledger_change=false\n'
           printf 'vendor_credential_adapter_evidence_provenance=run_52_pinned current_run_ledger_change=false\n'
           printf 'remaining_evidence=none\n'
-          printf 'd3_gate=per_track_conformed d3_global=not_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
+          printf 'd3_gate=separately_accepted d3_global=accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
 
       - name: Capture SPIRE candidate logs on failure
         if: failure()

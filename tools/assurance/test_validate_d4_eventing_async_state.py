@@ -29,6 +29,14 @@ def collapse_evidence(state: dict) -> None:
         track["evidence_remaining"] = ["documentation"]
 
 
+def weaken_kafka_ordering_evidence(state: dict) -> None:
+    track = state["tracks"][0]
+    strong = "ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency"
+    weak = "ordering_scope_partition_mapping_and_key_level_concurrency"
+    track["required_evidence"] = [weak if item == strong else item for item in track["required_evidence"]]
+    track["evidence_remaining"] = [weak if item == strong else item for item in track["evidence_remaining"]]
+
+
 def main() -> int:
     state = baseline()
     errors = validator.validate_manifest(state)
@@ -52,12 +60,13 @@ def main() -> int:
     must_fail(lambda s: s["explicit_c3_exclusions"].remove("OPEN-EVT-006"), "C3 exclusion set drift")
     must_fail(lambda s: s["explicit_product_or_later_gate_exclusions"].remove("OPEN-EVT-021"), "Product/later-gate exclusion set drift")
     must_fail(collapse_evidence, "required evidence inventory drift")
+    must_fail(weaken_kafka_ordering_evidence, "required evidence inventory drift")
 
     print(
         "d4_entry_state_falsification=PASS "
         "premature_acceptance=blocked authority_escalation=blocked precredit=blocked "
         "candidate_leak=blocked c3_scope_leak=blocked recovery_scope_omission=blocked "
-        "evidence_inventory_collapse=blocked total_required=26"
+        "evidence_inventory_collapse=blocked kafka_partition_fallback_weakening=blocked total_required=26"
     )
     return 0
 

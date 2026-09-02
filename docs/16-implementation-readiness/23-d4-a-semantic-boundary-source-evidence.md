@@ -16,9 +16,9 @@ It does **not** claim a live Kafka broker run, capacity, ordering/partition, out
 
 The proof is explicitly bounded to the **currently governed D4 implementation namespace**. Product/runtime transport authority does not yet exist.
 
-`boundary-inventory.json` independently pins the four expected broker-facing paths, D4 code roots, consumer-discovery root and registration entrypoint. `validate_repository_boundary.py` independently pins those values again, mechanically discovers every `BrokerFacingPath` subclass across governed Python sources, requires exact inventory equality/multiplicity, scans governed implementation code for direct Kafka SDK/native bypass, and pins the exact dependency call graph of every logical path.
+`boundary-inventory.json` independently pins the four expected broker-facing paths, D4 code roots, consumer-discovery root and registration entrypoint. `validate_repository_boundary.py` independently pins those values again, mechanically discovers every direct **and indirect** `BrokerFacingPath` descendant across governed Python sources, requires exact inventory equality/multiplicity, scans governed implementation code for direct Kafka SDK/native bypass, and pins the exact dependency call graph of every logical path. A subclass of an existing broker-facing path is therefore still part of the governed broker surface and cannot escape discovery merely because its immediate base is not `BrokerFacingPath`.
 
-The no-Kafka-business-authority scan also includes the executable assurance dependencies reached by that boundary, including the durable effect verifier and consumer-registration guard. A native Kafka SDK or transaction dependency introduced into the durable verifier therefore fails the same repository gate instead of escaping because it lives under `tools/assurance` rather than `implementation`/`src`.
+The no-Kafka-business-authority scan walks the local assurance dependency closure **transitively** from the durable effect verifier and consumer-registration guard. Any newly imported local helper under the D4-A assurance package is included automatically rather than depending on a fixed file allow-list. Native Kafka SDK usage and Kafka transaction APIs such as begin/commit/abort/send-offsets-to-transaction are rejected across that scanned closure, so business-effect authority cannot migrate into a helper while the gate remains green.
 
 The logical path call graph is deliberately narrow:
 
@@ -75,4 +75,4 @@ That record is persisted as a GitHub Actions artifact using a SHA-pinned `action
 
 ## Exit condition
 
-The package is source-evidence-ready only after exact-HEAD CI and fresh adversarial review prove current-namespace discovery, call-graph closure, canonical versioned record reconstruction, durable effect/ack boundary, executable registration binding, semantic payload/effect equivalence and resolved source-run provenance. Merge of this PR still credits **0/7** D4-A evidence.
+The package is source-evidence-ready only after exact-HEAD CI and fresh adversarial review prove current-namespace discovery, transitive assurance closure, indirect broker-path inheritance discovery, Kafka transaction-API rejection, exact logical call-graph closure, canonical versioned record reconstruction, durable effect/ack boundary, executable registration binding, semantic payload/effect equivalence and resolved source-run provenance. Merge of this PR still credits **0/7** D4-A evidence.

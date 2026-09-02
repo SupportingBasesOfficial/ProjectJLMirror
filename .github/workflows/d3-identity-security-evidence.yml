@@ -53,7 +53,7 @@ jobs:
           PYTHONPATH=implementation/d3-identity-security/harness \
             python3 implementation/d3-identity-security/harness/test_crypto_reference.py
 
-      - name: Preserve authority boundary
+      - name: Preserve accepted D3 authority boundary
         shell: bash
         run: |
           set -euo pipefail
@@ -61,7 +61,7 @@ jobs:
           import json
           from pathlib import Path
           state = json.loads(Path('implementation/d3-identity-security/state-manifest.json').read_text())
-          assert state['gate_state'] == 'per_track_conformed'
+          assert state['gate_state'] == 'separately_accepted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
@@ -71,13 +71,14 @@ jobs:
 
           for track_id in ('D3-A', 'D3-B', 'D3-C', 'D3-D', 'D3-E'):
               track = tracks[track_id]
-              assert track['state'] == 'per_track_conformed'
+              assert track['state'] == 'accepted_candidate'
               assert set(track['evidence_completed']) == set(track['required_evidence'])
               assert track['evidence_remaining'] == []
               assert {proof['evidence_id'] for proof in track['evidence_proofs']} == set(track['required_evidence'])
 
           print(
-              'd3_reference_evidence=PASS authority=unchanged '
-              'all_tracks=per_track_conformed d3_global=not_accepted'
+              'd3_reference_evidence=PASS authority=bounded '
+              'all_tracks=accepted_candidate d3_global=separately_accepted '
+              'wave4=not_granted production=none d4=not_selected_not_granted'
           )
           PY

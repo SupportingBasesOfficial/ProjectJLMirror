@@ -172,13 +172,21 @@ def _looks_like_consumer_declaration(value: dict) -> bool:
     return len(keys & CONSUMER_DECLARATION_MARKERS) >= 3
 
 
+def _read_governed_json(path: Path) -> object:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"governed JSON is not valid UTF-8: {path}") from exc
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"governed JSON is malformed: {path}: {exc.msg}") from exc
+
+
 def discover_consumer_manifests(implementation_root: Path) -> list[Path]:
     discovered: list[Path] = []
     for path in sorted(implementation_root.rglob("*.json")):
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            continue
+        value = _read_governed_json(path)
         if isinstance(value, dict) and _looks_like_consumer_declaration(value):
             discovered.append(path)
     return discovered
@@ -190,7 +198,10 @@ def validate_discovered_consumers(implementation_root: Path) -> RecordingRegistr
         raise SystemExit("no consumer manifests discovered in governed implementation namespace")
     registrar = RecordingRegistrar()
     for path in manifests:
-        register_consumer(json.loads(path.read_text(encoding="utf-8")), registrar)
+        value = _read_governed_json(path)
+        if not isinstance(value, dict):
+            raise ValueError(f"discovered consumer manifest must be a JSON object: {path}")
+        register_consumer(value, registrar)
     print(f"consumer_registration_gate=PASS discovered={len(manifests)} registrations={len(registrar.registrations)}")
     return registrar
 

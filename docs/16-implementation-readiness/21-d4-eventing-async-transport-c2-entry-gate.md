@@ -64,7 +64,7 @@ D4-A SHALL prove:
 2. **Broker-neutral anti-corruption layer:** outbox/inbox/consumer code depends only on platform logical ports; a stub/alternate transport swap proves Kafka offsets, consumer groups and transactional APIs do not leak into canonical semantics.
 3. **Erasure granularity:** `sensitive_or_regulated` payload fields are not retained as raw shared Kafka record-value bytes unless a separately reviewed isolation/retention profile proves governed erasure; the default is opaque reference to governed per-record cryptographic-erasure storage.
 4. **Exactly-once guardrail:** tooling rejects consumer registration without real inbox/dedup/effect protection even if Kafka producer idempotence/transactions are enabled.
-5. **Ordering/partition mapping:** every logical ordering-scope class has a trusted partition-key strategy, bounded partition-count evidence and a named key-level consumer concurrency mechanism so physical partition cardinality does not become logical ordering authority or broker-wide head-of-line blocking.
+5. **Ordering/partition ceiling/fallback:** every logical ordering-scope class has a trusted partition-key strategy validated against tenant/device cardinality tiers; a named consumer-side key-level concurrency mechanism serializes only the required logical key scope; evidence benchmarks the maximum practical partition-count ceiling per topic/cluster tier and documents the required tenant-cohort topic-sharding fallback when that ceiling would otherwise be exceeded. The benchmarked ceiling is candidate-conformance evidence, not production partition-count authority.
 6. **Physical naming/routing/topology mapping:** concrete topic/subject/queue naming, routing and per-cell/global transport placement are selected behind the adapter boundary, preserve logical contract identity and tenant authorization, and can be replaced without consumer semantic rewrite. Production partition/replica/count numerics remain C3.
 7. **Broker-integrated outbox/backlog drain:** the selected broker/outbox/drain mechanism proves priority-preserving, bounded backlog recovery/drain behavior under broker outage/recovery and cannot starve protected/current work or reinterpret broker progress as business-effect truth. Benchmarks use bounded evidence profiles only and do not grant production lag/retention/partition numerics.
 
@@ -207,7 +207,7 @@ The entry manifest intentionally credits **zero of 26** evidence slots. It exist
 - silent candidate selection in D4-B/C/D;
 - evidence pre-credit at entry;
 - omission of internal `OPEN-EVT-025` recovery/reconciliation authority from D4-C;
-- omission, substitution or collapse of any named required-evidence slot;
+- omission, substitution or collapse of any named required-evidence slot, including Kafka partition-ceiling/fallback evidence;
 - C3/later-gate scope leakage;
 - predecessor drift away from the separately accepted D3 canonical commit.
 
@@ -229,7 +229,7 @@ D4 can be proposed for separate acceptance only when:
 
 1. every D4-A..D track has a reviewed terminal C2 disposition;
 2. all 26 required evidence slots have exact provenance and no unresolved remainder;
-3. Kafka, if retained, satisfies all binding closure conditions from `OPEN-EVT-001-kafka-decision-record.md` plus the claimed `OPEN-EVT-005` physical mapping and `OPEN-REL-012.A` outbox/drain mechanism evidence;
+3. Kafka, if retained, satisfies all binding closure conditions from `OPEN-EVT-001-kafka-decision-record.md`, including benchmarked partition ceilings and tenant-cohort topic-sharding fallback, plus the claimed `OPEN-EVT-005` physical mapping and `OPEN-REL-012.A` outbox/drain mechanism evidence;
 4. all broker/serialization/delivery/security/recovery mechanisms remain behind broker-neutral/platform-neutral authority boundaries;
 5. deterministic assurance and all applicable D4 conformance workflows are green on the exact final HEAD;
 6. all P0/P1/P2 review findings are resolved on that exact final HEAD;

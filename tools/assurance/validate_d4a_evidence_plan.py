@@ -35,7 +35,8 @@ REQUIRED_ASSERTIONS = {
         "bounded_test_values_do_not_become_production_numerics",
     },
     "broker_neutral_anti_corruption_stub_swap": {
-        "same_logical_port_is_exercised_by_kafka_and_alternate_stub",
+        "every_actual_broker_facing_outbox_inbox_dispatch_and_consumer_path_uses_shared_logical_port_or_is_statically_proven_unable_to_bypass_it",
+        "same_shared_logical_ports_are_exercised_by_kafka_and_alternate_stub",
         "canonical_message_identity_has_no_topic_partition_offset_or_group_dependency",
         "kafka_transactions_are_not_business_effect_authority",
     },
@@ -48,12 +49,13 @@ REQUIRED_ASSERTIONS = {
         "raw_payload_exception_requires_signoff_by_erasure_governance_authority",
     },
     "exactly_once_guardrail_consumer_inbox_enforcement": {
-        "consumer_without_inbox_dedup_effect_protection_is_rejected",
-        "kafka_idempotence_or_transactions_do_not_bypass_rejection",
-        "valid_consumer_with_real_effect_protection_is_accepted",
+        "actual_consumer_registration_ci_gate_rejects_consumer_without_inbox_dedup_effect_protection_before_kafka_topic_registration",
+        "actual_consumer_registration_ci_gate_accepts_valid_consumer_with_real_effect_protection",
+        "kafka_idempotence_or_transactions_do_not_bypass_actual_registration_gate_rejection",
     },
     "ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency": {
-        "logical_ordering_scope_maps_from_trusted_identity",
+        "every_declared_ordering_scope_class_has_documented_mapping_from_trusted_logical_identity_to_partition_key_strategy",
+        "named_and_cited_consumer_side_key_level_concurrency_component_is_exercised",
         "key_level_serialization_does_not_require_global_or_tenant_wide_serialization",
         "practical_partition_ceiling_is_benchmarked_per_test_tier",
         "tenant_cohort_topic_sharding_fallback_is_exercised",

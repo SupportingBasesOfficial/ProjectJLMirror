@@ -42,7 +42,7 @@ jobs:
           printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual_sha"
           test "$actual_sha" = "$EXPECTED_SHA"
 
-      - name: Validate promoted D3-B machine-owned authority state
+      - name: Validate accepted D3-B machine-owned authority state
         shell: bash
         run: |
           set -euo pipefail
@@ -54,7 +54,7 @@ jobs:
           manifest = json.loads(Path('implementation/d3-identity-security/state-manifest.json').read_text())
           tracks = {track['track_id']: track for track in manifest['tracks']}
           track = tracks['D3-B']
-          assert track['state'] == 'per_track_conformed'
+          assert track['state'] == 'accepted_candidate'
           assert track['evidence_remaining'] == []
           assert set(track['evidence_completed']) == set(track['required_evidence'])
 
@@ -79,14 +79,14 @@ jobs:
               assert set(proof['artifact_pins']) == pins
               assert proof['result'] == 'pass'
 
-          assert all(tracks[track_id]['state'] == 'per_track_conformed' for track_id in tracks)
-          assert manifest['gate_state'] == 'per_track_conformed'
+          assert all(tracks[track_id]['state'] == 'accepted_candidate' for track_id in tracks)
+          assert manifest['gate_state'] == 'separately_accepted'
           assert manifest['canonical_product_implementation_authority'] == 'not_granted'
           assert manifest['wave4_implementation_authority'] == 'not_granted'
           assert manifest['production_authority'] == 'none'
           assert manifest['d4_transport_authority'] == 'not_selected_not_granted'
           assert 'separate_acceptance' in manifest['acceptance_rule']
-          print('d3_b_promoted_manifest_boundary=PASS all_tracks=per_track_conformed')
+          print('d3_b_accepted_manifest_boundary=PASS all_tracks=accepted_candidate')
           PY
 
       - name: Validate strongest conformance harness structure and forbidden shortcuts
@@ -239,9 +239,9 @@ jobs:
           printf 'postgres_digest=%s\n' "$POSTGRES_IMAGE"
           printf 'redis_digest=%s\n' "$REDIS_IMAGE"
           printf 'valkey_digest=%s\n' "$VALKEY_IMAGE"
-          printf 'd3_b_manifest_credit=per_track_conformed\n'
+          printf 'd3_b_manifest_state=accepted_candidate\n'
           printf 'c3_numerics=not_selected\n'
-          printf 'd3=not_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
+          printf 'd3=separately_accepted wave4=not_granted production=none d4=not_selected_not_granted\n'
 
       - name: Capture conformance logs on failure
         if: failure()

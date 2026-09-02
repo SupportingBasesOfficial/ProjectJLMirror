@@ -49,14 +49,20 @@ jobs:
             tools/assurance/d4a_semantic_boundary/broker_boundary.py \
             tools/assurance/d4a_semantic_boundary/consumer_registration_gate.py \
             tools/assurance/d4a_semantic_boundary/test_semantic_boundary.py \
+            tools/assurance/d4a_semantic_boundary/validate_repository_boundary.py \
             tools/assurance/d4a_semantic_boundary/validate_source_evidence.py
 
-      - name: Run actual consumer-registration CI gate
+      - name: Discover and validate complete governed broker/consumer boundary
+        shell: bash
+        working-directory: tools/assurance/d4a_semantic_boundary
+        run: python3 validate_repository_boundary.py
+
+      - name: Run governed consumer-registration CI gate
         shell: bash
         run: |
           set -euo pipefail
           python3 tools/assurance/d4a_semantic_boundary/consumer_registration_gate.py \
-            --registry implementation/d4-eventing-async/source-evidence/semantic-boundary/consumer-registry
+            --implementation-root implementation/d4-eventing-async
 
       - name: Run transport-swap and registration negative controls
         shell: bash

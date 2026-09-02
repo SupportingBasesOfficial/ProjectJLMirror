@@ -12,58 +12,45 @@ This package implements the first executable D4-A source-evidence harness for ex
 
 It intentionally does **not** claim live Kafka broker evidence. Capacity, ordering/partition and outage/recovery claims remain reserved for later real-candidate evidence packages.
 
-## Anti-corruption evidence boundary
+## Complete current D4 broker-boundary discovery
 
-`tools/assurance/d4a_semantic_boundary/broker_boundary.py` defines one logical `BrokerPort` and four currently actual broker-facing paths in this evidence namespace:
+The proof is bounded to the **currently governed D4 implementation namespace**, because product/runtime transport authority has not been granted yet. Within that namespace, coverage is no longer self-declared by the broker module.
 
-- outbox dispatch;
-- consumer receive;
-- inbox acknowledgement after durable responsibility;
-- replay dispatch preserving original message identity.
+`boundary-inventory.json` independently pins the expected broker-facing path IDs/classes, implementation code roots, consumer-discovery root and registration entrypoint. `validate_repository_boundary.py` then mechanically:
 
-The harness requires every registered path class to remain free of Kafka-native topic/partition/offset/group/rebalance/transaction coupling. Kafka-shaped physical metadata exists only inside `KafkaCandidateAdapter`; the alternate stub uses different physical concepts. Both adapters run the same semantic transcript through the same logical path classes and must produce identical logical results.
+- discovers every subclass of `BrokerFacingPath` and requires the discovered set to equal the independently pinned four-path inventory;
+- rejects Kafka-native primitives inside every discovered logical path;
+- scans governed D4 implementation code for direct Kafka SDK/native bypass outside the evidence adapter boundary;
+- recursively discovers every JSON consumer declaration anywhere under `implementation/d4-eventing-async`, rather than trusting one fixture directory;
+- requires the canonical registration entrypoint and validated-permit path to exist.
 
-The negative control injects Kafka-native primitive text into a synthetic path source and proves the mechanical leak detector rejects it.
+Therefore a new governed D4 path or consumer cannot remain invisible merely because it was omitted from a hand-maintained list or placed in another nested directory. When future product/runtime eventing code is authorized outside this namespace, its code root must be added to the independently pinned inventory before this evidence can be promoted/relied upon for that expanded surface.
 
-This is a source boundary proof, not evidence that Kafka itself has met capacity, partition-count, recovery or backlog requirements.
+## Anti-corruption semantic swap
 
-## Consumer registration gate
+`broker_boundary.py` defines one logical `BrokerPort`. Kafka-shaped physical metadata exists only in `KafkaCandidateAdapter`; the alternate stub uses different physical concepts. Both adapters execute the same discovered logical path classes.
 
-`tools/assurance/d4a_semantic_boundary/consumer_registration_gate.py` is the actual CI command used before manifests in the D4-A evidence consumer registry can be treated as Kafka-topic registrations.
+The semantic transcript compares contract, message identity, tenant scope **and payload** for original delivery and replay. A corrupting alternate transport is a negative control and must produce a different transcript. Replay keeps the original message identity, and broker progress/transactions never become business-effect authority.
 
-The gate requires:
+This remains a semantic source proof, not evidence that Kafka itself has met capacity, partition-count, recovery or backlog requirements.
 
-- a stable consumer contract;
-- Kafka candidate context and a target topic;
+## Governed consumer-registration gate
+
+`consumer_registration_gate.py` recursively discovers every consumer declaration under the governed D4 implementation root. Every discovered declaration must traverse `register_consumer`, which first mints a `RegistrationPermit` only after validating:
+
+- stable consumer contract and candidate topic declaration;
 - durable inbox ownership;
 - trusted dedup identity `(consumer_contract, message_identity_scope, message_id)`;
 - a real protected-effect profile: atomic local effect or externally reconciled effect.
 
-The same production-shaped gate path is used for positive and negative controls. Invalid manifests never reach the registrar. Kafka idempotent-producer or transaction flags do not bypass the inbox/effect rejection.
+The registration sink accepts only a typed validated permit. Negative controls prove direct unvalidated registration is rejected, nested/alternate consumer-manifest locations are still discovered, missing inbox/effect protection is blocked, and Kafka idempotence/transactions cannot bypass rejection.
+
+Because no production Kafka transport authority exists yet, the sink is an evidence sink rather than a live broker administrator. The source claim is that the governed registration boundary is mechanically unavoidable inside the current D4 namespace—not that production topic creation has occurred.
 
 ## Source-run / ledger separation
 
-`source-evidence-manifest.json` records the source package and exact evidence kinds while keeping:
-
-- `current_run_auto_credit=false`;
-- `ledger_credit=[]`;
-- Kafka `not_selected`;
-- D4 transport authority ungranted;
-- Product/Wave4/production/C3 authority ungranted/unselected.
-
-A green run is only source evidence suitable for later review. Crediting either D4-A slot requires a separate ledger-promotion PR after the exact source run is reviewed.
-
-## Falsification requirements
-
-The workflow fails if:
-
-- any registered logical broker path contains Kafka-native primitive coupling;
-- Kafka and alternate adapters do not preserve the same logical transcript;
-- invalid/no-inbox/no-effect consumers reach topic registration;
-- Kafka EOS/transactions bypass the registration gate;
-- the source manifest claims live Kafka evidence, benchmark evidence, ledger credit, selection or authority;
-- canonical D4-A ledger state is mutated away from 0/7 by this source package.
+`source-evidence-manifest.json` records the source package while keeping `current_run_auto_credit=false`, `ledger_credit=[]`, Kafka unselected and all D4/Product/Wave4/production/C3 authorities ungranted. A green run is source evidence only; credit requires a separate ledger-promotion PR after exact-run review.
 
 ## Exit condition
 
-This PR may be considered source-evidence-ready only after exact-HEAD CI, panoramic review and fresh adversarial review establish that the harness proves the two declared semantic obligations without overclaiming real Kafka evidence or granting authority. Merge of this source package still does not credit either evidence slot.
+This PR is source-evidence-ready only after exact-HEAD CI and adversarial review establish complete current-namespace discovery, semantic payload preservation, registration non-bypass and non-authority. Merge still does not credit either evidence slot.

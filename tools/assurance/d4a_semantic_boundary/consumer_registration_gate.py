@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 
 class TopicRegistrar(Protocol):
-    def register(self, *, consumer_contract: str, topic: str) -> None: ...
+    def register_validated(self, permit: "RegistrationPermit") -> None: ...
+
+
+@dataclass(frozen=True)
+class RegistrationPermit:
+    consumer_contract: str
+    topic: str
+    validation_profile: str = "d4a-inbox-effect-v1"
 
 
 REQUIRED_EFFECT_PROFILES = {"atomic_local", "reconcile_external"}
@@ -31,48 +39,73 @@ def validate_manifest(manifest: dict) -> list[str]:
         errors.append("real effect protection profile is required")
 
     kafka = manifest.get("kafka_features", {})
-    if kafka.get("idempotent_producer") or kafka.get("transactions"):
-        # These features are permitted as transport optimizations only. They never
-        # substitute for the inbox/effect requirements above.
-        if errors:
-            errors.append("kafka idempotence/transactions cannot bypass inbox/effect rejection")
+    if (kafka.get("idempotent_producer") or kafka.get("transactions")) and errors:
+        errors.append("kafka idempotence/transactions cannot bypass inbox/effect rejection")
     return errors
 
 
-def register_consumer(manifest: dict, registrar: TopicRegistrar) -> None:
+def issue_registration_permit(manifest: dict) -> RegistrationPermit:
     errors = validate_manifest(manifest)
     if errors:
         raise ValueError("; ".join(errors))
-    registrar.register(
+    return RegistrationPermit(
         consumer_contract=manifest["consumer_contract"],
         topic=manifest["topic"],
     )
 
 
+def register_consumer(manifest: dict, registrar: TopicRegistrar) -> None:
+    """Only governed entrypoint from a discovered consumer manifest to topic registration."""
+    registrar.register_validated(issue_registration_permit(manifest))
+
+
 class RecordingRegistrar:
+    """Evidence sink for the governed registration boundary; accepts permits only."""
+
     def __init__(self) -> None:
-        self.registrations: list[tuple[str, str]] = []
+        self.registrations: list[tuple[str, str, str]] = []
 
-    def register(self, *, consumer_contract: str, topic: str) -> None:
-        self.registrations.append((consumer_contract, topic))
+    def register_validated(self, permit: RegistrationPermit) -> None:
+        if not isinstance(permit, RegistrationPermit):
+            raise TypeError("topic registration requires a validated RegistrationPermit")
+        self.registrations.append(
+            (permit.consumer_contract, permit.topic, permit.validation_profile)
+        )
 
 
-def validate_registry(registry: Path) -> None:
-    manifests = sorted(registry.glob("*.json"))
+def discover_consumer_manifests(implementation_root: Path) -> list[Path]:
+    """Discover every JSON consumer declaration in the governed D4 namespace."""
+    discovered: list[Path] = []
+    for path in sorted(implementation_root.rglob("*.json")):
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if isinstance(value, dict) and "consumer_contract" in value:
+            discovered.append(path)
+    return discovered
+
+
+def validate_discovered_consumers(implementation_root: Path) -> RecordingRegistrar:
+    manifests = discover_consumer_manifests(implementation_root)
     if not manifests:
-        raise SystemExit("consumer registry is empty")
+        raise SystemExit("no consumer manifests discovered in governed D4 namespace")
     registrar = RecordingRegistrar()
     for path in manifests:
         manifest = json.loads(path.read_text(encoding="utf-8"))
         register_consumer(manifest, registrar)
-    print(f"consumer_registration_gate=PASS manifests={len(manifests)} registrations={len(registrar.registrations)}")
+    print(
+        "consumer_registration_gate=PASS "
+        f"discovered={len(manifests)} registrations={len(registrar.registrations)}"
+    )
+    return registrar
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="D4-A actual CI consumer-registration gate")
-    parser.add_argument("--registry", required=True, type=Path)
+    parser = argparse.ArgumentParser(description="D4-A governed consumer-registration CI gate")
+    parser.add_argument("--implementation-root", required=True, type=Path)
     args = parser.parse_args()
-    validate_registry(args.registry)
+    validate_discovered_consumers(args.implementation_root)
     return 0
 
 

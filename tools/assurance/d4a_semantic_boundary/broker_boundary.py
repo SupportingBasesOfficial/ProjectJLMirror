@@ -82,7 +82,11 @@ class AlternateStubTransport:
         self.physical_trace.append({"subscription": consumer_contract, "ack": True})
 
 
-class OutboxDispatchPath:
+class BrokerFacingPath:
+    """Marker base used for mechanical discovery of every governed logical broker path."""
+
+
+class OutboxDispatchPath(BrokerFacingPath):
     def __init__(self, broker: BrokerPort) -> None:
         self._broker = broker
 
@@ -90,7 +94,7 @@ class OutboxDispatchPath:
         return self._broker.publish(message)
 
 
-class ConsumerReceivePath:
+class ConsumerReceivePath(BrokerFacingPath):
     def __init__(self, broker: BrokerPort) -> None:
         self._broker = broker
 
@@ -98,7 +102,7 @@ class ConsumerReceivePath:
         return self._broker.receive(consumer_contract)
 
 
-class InboxAcknowledgePath:
+class InboxAcknowledgePath(BrokerFacingPath):
     def __init__(self, broker: BrokerPort) -> None:
         self._broker = broker
 
@@ -110,20 +114,13 @@ class InboxAcknowledgePath:
         self._broker.acknowledge(consumer_contract, message_id)
 
 
-class ReplayDispatchPath:
+class ReplayDispatchPath(BrokerFacingPath):
     def __init__(self, broker: BrokerPort) -> None:
         self._broker = broker
 
     def dispatch_original_identity(self, message: LogicalMessage) -> LogicalReceipt:
         return self._broker.publish(message)
 
-
-BROKER_FACING_PATHS = {
-    "outbox_dispatch": OutboxDispatchPath,
-    "consumer_receive": ConsumerReceivePath,
-    "inbox_acknowledge": InboxAcknowledgePath,
-    "replay_dispatch": ReplayDispatchPath,
-}
 
 FORBIDDEN_KAFKA_PRIMITIVES = (
     "topic",
@@ -136,17 +133,27 @@ FORBIDDEN_KAFKA_PRIMITIVES = (
 )
 
 
+def discover_broker_facing_paths() -> dict[str, type[BrokerFacingPath]]:
+    discovered: dict[str, type[BrokerFacingPath]] = {}
+    for name, value in globals().items():
+        if not inspect.isclass(value) or value is BrokerFacingPath:
+            continue
+        if issubclass(value, BrokerFacingPath):
+            discovered[name] = value
+    return discovered
+
+
 def forbidden_kafka_tokens(source: str) -> list[str]:
     lowered = source.lower()
     return sorted(token for token in FORBIDDEN_KAFKA_PRIMITIVES if token in lowered)
 
 
-def assert_broker_facing_paths_do_not_leak_kafka_primitives() -> None:
-    """Mechanically reject physical Kafka coupling in every registered logical path."""
-    for path_name, path_type in BROKER_FACING_PATHS.items():
+def assert_discovered_paths_do_not_leak_kafka_primitives() -> None:
+    """Mechanically reject physical Kafka coupling in every discovered logical path."""
+    for path_type in discover_broker_facing_paths().values():
         leaks = forbidden_kafka_tokens(inspect.getsource(path_type))
         if leaks:
-            raise AssertionError(f"{path_name} leaks Kafka primitives: {leaks}")
+            raise AssertionError(f"{path_type.__name__} leaks Kafka primitives: {leaks}")
 
 
 def semantic_transcript(port: BrokerPort) -> list[tuple[str, object]]:
@@ -174,7 +181,11 @@ def semantic_transcript(port: BrokerPort) -> list[tuple[str, object]]:
         ("delivered_contract", delivered.contract_name),
         ("delivered_id", delivered.message_id),
         ("delivered_scope", delivered.tenant_scope),
+        ("delivered_payload", delivered.payload),
         ("replay_id", replay_receipt.message_id),
+        ("replayed_contract", replayed.contract_name),
         ("replayed_id", replayed.message_id),
+        ("replayed_scope", replayed.tenant_scope),
+        ("replayed_payload", replayed.payload),
         ("business_effect_authority", "consumer_inbox_effect_guard"),
     ]

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "governed_namespace": "D4 current broker-facing source evidence",
+  "broker_boundary_module": "tools/assurance/d4a_semantic_boundary/broker_boundary.py",
+  "broker_facing_path_base_class": "BrokerFacingPath",
+  "broker_facing_paths": [
+    {"path_id": "outbox_dispatch", "class_name": "OutboxDispatchPath"},
+    {"path_id": "consumer_receive", "class_name": "ConsumerReceivePath"},
+    {"path_id": "inbox_acknowledge", "class_name": "InboxAcknowledgePath"},
+    {"path_id": "replay_dispatch", "class_name": "ReplayDispatchPath"}
+  ],
+  "physical_adapter_classes": ["KafkaCandidateAdapter", "AlternateStubTransport"],
+  "implementation_code_roots": ["implementation/d4-eventing-async"],
+  "consumer_manifest_discovery_root": "implementation/d4-eventing-async",
+  "consumer_registration_entrypoint": "tools/assurance/d4a_semantic_boundary/consumer_registration_gate.py",
+  "consumer_registration_function": "register_consumer",
+  "rule": "discovery_must_equal_independently_pinned_inventory_and_all_discovered_consumers_must_traverse_registration_gate"
+}

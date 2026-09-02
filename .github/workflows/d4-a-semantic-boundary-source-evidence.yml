@@ -6,6 +6,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'implementation/**'
+      - 'src/**'
       - 'tools/assurance/d4a_semantic_boundary/**'
       - 'tools/assurance/validate_d4_eventing_async_state.py'
       - 'tools/assurance/test_validate_d4_eventing_async_state.py'
@@ -55,7 +56,7 @@ jobs:
             tools/assurance/d4a_semantic_boundary/validate_source_evidence.py \
             tools/assurance/d4a_semantic_boundary/emit_source_provenance.py
 
-      - name: Discover and validate complete governed broker/consumer boundary
+      - name: Discover and validate complete repository broker/consumer boundary
         shell: bash
         working-directory: tools/assurance/d4a_semantic_boundary
         run: python3 validate_repository_boundary.py
@@ -65,7 +66,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/assurance/d4a_semantic_boundary/consumer_registration_gate.py \
-            --implementation-root implementation/d4-eventing-async
+            --implementation-root implementation
 
       - name: Run transport-swap durable-effect and registration negative controls
         shell: bash

@@ -20,6 +20,7 @@ from consumer_registration_gate import (
     register_consumer,
 )
 from effect_protection import DurableResponsibilityReceipt, SQLiteAtomicInboxEffectGuard
+from validate_repository_boundary import dependency_calls
 
 
 VALID = {
@@ -67,6 +68,16 @@ def main() -> int:
     assert forbidden_kafka_tokens("class BadPath: offset = broker.offset") == ["offset"]
     assert forbidden_kafka_tokens("class BadPath: consumer_group = 'x'") == ["consumer_group"]
 
+    constructor_bypass = """
+class BadPath:
+    def __init__(self, broker):
+        helper(broker)
+        self._broker = broker
+    def run(self, message):
+        return self._broker.publish(message)
+"""
+    assert dependency_calls(constructor_bypass) == {"helper", "_broker.publish"}
+
     kafka = KafkaCandidateAdapter()
     alternate = AlternateStubTransport()
     kafka_semantics = semantic_transcript(kafka)
@@ -74,6 +85,7 @@ def main() -> int:
     assert kafka_semantics == alternate_semantics, "logical semantics changed across transport swap"
     assert kafka.physical_trace != alternate.physical_trace, "test did not exercise distinct physical adapters"
     assert dict(kafka_semantics)["durable_effect_apply_count"] == 1
+    assert dict(kafka_semantics)["durable_effect_scope"] == "tenant-evidence-a"
     assert dict(kafka_semantics)["durable_responsibility_receipt"] == dict(kafka_semantics)["replay_durable_responsibility_receipt"]
 
     corrupting = CorruptingAlternateTransport()
@@ -126,10 +138,34 @@ def main() -> int:
         assert discover_consumer_manifests(root) == [nested / "consumer.json"]
 
         guard = SQLiteAtomicInboxEffectGuard(root / "durable.db")
+        first = guard.record_and_apply(
+            consumer_contract="evidence.consumer.v1",
+            message_identity_scope="tenant-a",
+            message_id="same-id",
+            payload="payload-a",
+        )
+        second = guard.record_and_apply(
+            consumer_contract="evidence.consumer.v1",
+            message_identity_scope="tenant-b",
+            message_id="same-id",
+            payload="payload-b",
+        )
+        assert first.effect_key != second.effect_key
+        assert first.receipt_id != second.receipt_id
+        assert guard.observe_effect(first.effect_key)["message_identity_scope"] == "tenant-a"
+        assert guard.observe_effect(second.effect_key)["message_identity_scope"] == "tenant-b"
+
         adapter = AlternateStubTransport()
         ack = InboxAcknowledgePath(adapter, guard)
-        adapter.publish(LogicalMessage("c", "forged-msg", "t", "payload"))
-        forged = DurableResponsibilityReceipt("evidence.consumer.v1", "forged-msg", "forged", "bad", "effect")
+        adapter.publish(LogicalMessage("c", "forged-msg", "tenant-a", "payload"))
+        forged = DurableResponsibilityReceipt(
+            "evidence.consumer.v1",
+            "tenant-a",
+            "forged-msg",
+            "forged",
+            "bad",
+            "effect",
+        )
         try:
             ack.acknowledge_after_durable_responsibility(forged)
         except PermissionError:
@@ -138,9 +174,10 @@ def main() -> int:
             raise AssertionError("broker acknowledgement accepted forged/non-durable responsibility")
         assert adapter.receive("evidence.consumer.v1").message_id == "forged-msg", "failed ack removed broker message"
 
-    print("d4a_broker_path_discovery=PASS paths=4")
+    print("d4a_broker_path_discovery=PASS paths=4 constructors=checked")
     print("d4a_semantic_payload_corruption_negative_control=PASS")
     print("d4a_effect_protection_binding=PASS fake_label=blocked kafka_eos_only=blocked")
+    print("d4a_inbox_identity_scope=PASS cross_scope_same_message_id=independent")
     print("d4a_durable_ack_boundary=PASS forged_receipt=blocked message_preserved=true")
     print("d4a_consumer_manifest_discovery=PASS nested_location_detected=true")
     print("d4a_transport_swap=PASS adapters=2 durable_effect_observed=true replay_apply_count=1")

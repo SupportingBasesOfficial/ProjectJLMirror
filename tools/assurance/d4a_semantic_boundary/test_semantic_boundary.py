@@ -16,8 +16,8 @@ from consumer_registration_gate import (
 )
 from effect_protection import DurableResponsibilityReceipt, SQLiteAtomicInboxEffectGuard
 from validate_repository_boundary import (
-    KAFKA_TEXT_MARKERS, dependency_calls, discover_broker_path_declarations,
-    scan_nonpython_for_direct_kafka,
+    ASSURANCE_DEPENDENCY_SOURCES, KAFKA_TEXT_MARKERS, dependency_calls,
+    discover_broker_path_declarations, scan_nonpython_for_direct_kafka,
 )
 
 VALID = {
@@ -67,6 +67,7 @@ def main() -> int:
     assert set(discovered) == {"OutboxDispatchPath", "ConsumerReceivePath", "InboxAcknowledgePath", "ReplayDispatchPath"}
     assert_discovered_paths_do_not_leak_kafka_primitives()
     assert forbidden_kafka_tokens("class BadPath: offset = broker.offset") == ["offset"]
+    assert any(path.name == "effect_protection.py" for path in ASSURANCE_DEPENDENCY_SOURCES)
 
     constructor_bypass = """class BadPath:\n    def __init__(self, broker):\n        helper(broker)\n        self._broker = broker\n    def run(self, message):\n        return self._broker.publish(message)\n"""
     assert dependency_calls(constructor_bypass) == {"helper", "_broker.publish"}
@@ -130,6 +131,17 @@ def main() -> int:
         except ValueError as exc: assert "canonical async contract-name rules" in str(exc)
         else: raise AssertionError("partial manifest escaped validation")
 
+        malformed_root = root / "malformed"; malformed_root.mkdir()
+        (malformed_root / "valid.json").write_text(json.dumps(VALID), encoding="utf-8")
+        malformed = malformed_root / "consumer-broken.json"
+        malformed.write_text('{"transport_candidate":"kafka",', encoding="utf-8")
+        try:
+            discover_consumer_manifests(malformed_root)
+        except ValueError as exc:
+            assert "governed JSON is malformed" in str(exc) and "consumer-broken.json" in str(exc)
+        else:
+            raise AssertionError("malformed governed consumer JSON was silently skipped")
+
         external_path = root / "external_broker_path.py"
         external_path.write_text("from broker_boundary import BrokerFacingPath as BFP\nclass EscapingPath(BFP):\n    def run(self):\n        return self._port.publish('x')\n", encoding="utf-8")
         assert list(discover_broker_path_declarations([external_path]).values()) == ["EscapingPath"]
@@ -183,7 +195,19 @@ def main() -> int:
         remaining = consumer_bound.receive("evidence.consumer.other.v1")
         assert remaining.message_id == "same-id"
 
-    print("d4a_fresh_review_hardening=PASS immutable_contract_semantics+consumer_bound_ack+spring_kafka+canonical_contract_names")
+        semantic_bound = AlternateStubTransport(); semantic_bound_ack = InboxAcknowledgePath(semantic_bound, guard)
+        semantic_bound.publish(LogicalMessage("evidence.contract", "v2", "same-id", "tenant-a", "payload-a"))
+        semantic_bound.receive("evidence.consumer.v1")
+        try:
+            semantic_bound_ack.acknowledge_after_durable_responsibility(first)
+        except ValueError as exc:
+            assert "contract semantics" in str(exc) or "semantic digest" in str(exc)
+        else:
+            raise AssertionError("old durable receipt acknowledged changed immutable delivery semantics")
+        remaining_semantic = semantic_bound.receive("evidence.consumer.v1")
+        assert remaining_semantic.contract_version == "v2"
+
+    print("d4a_fresh_review_hardening=PASS immutable_ack+durable_authority_closure+malformed_json_fail_closed")
     print("d4a_transport_swap=PASS adapters=2 durable_effect_observed=true replay_apply_count=1")
     return 0
 

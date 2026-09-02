@@ -5,7 +5,11 @@
   "inbox": {
     "durable": true,
     "dedup_identity": "consumer_contract+message_identity_scope+message_id",
-    "effect_protection": "atomic_local"
+    "effect_protection": {
+      "profile": "atomic_local",
+      "implementation": "SQLiteAtomicInboxEffectGuard",
+      "contract": "sqlite_atomic_inbox_effect_v1"
+    }
   },
   "kafka_features": {
     "idempotent_producer": true,

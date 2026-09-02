@@ -1,43 +1,72 @@
 from __future__ import annotations
 
 import ast
+import inspect
 import json
+import textwrap
 from pathlib import Path
 
-from broker_boundary import (
-    BrokerFacingPath,
-    discover_broker_facing_paths,
-    forbidden_kafka_tokens,
-)
+from broker_boundary import BrokerFacingPath, discover_broker_facing_paths, forbidden_kafka_tokens
 from consumer_registration_gate import discover_consumer_manifests
 
 ROOT = Path(__file__).resolve().parents[3]
 INVENTORY = ROOT / "implementation/d4-eventing-async/source-evidence/semantic-boundary/boundary-inventory.json"
 
-EXPECTED_PATH_CLASSES = {
-    "OutboxDispatchPath",
-    "ConsumerReceivePath",
-    "InboxAcknowledgePath",
-    "ReplayDispatchPath",
-}
-EXPECTED_PATH_IDS = {
-    "outbox_dispatch",
-    "consumer_receive",
-    "inbox_acknowledge",
-    "replay_dispatch",
-}
+EXPECTED_PATH_CLASSES = {"OutboxDispatchPath", "ConsumerReceivePath", "InboxAcknowledgePath", "ReplayDispatchPath"}
+EXPECTED_PATH_IDS = {"outbox_dispatch", "consumer_receive", "inbox_acknowledge", "replay_dispatch"}
 EXPECTED_IMPLEMENTATION_ROOTS = ["implementation/d4-eventing-async"]
 EXPECTED_CONSUMER_DISCOVERY_ROOT = "implementation/d4-eventing-async"
 EXPECTED_REGISTRATION_ENTRYPOINT = "tools/assurance/d4a_semantic_boundary/consumer_registration_gate.py"
 EXPECTED_REGISTRATION_FUNCTION = "register_consumer"
+EXPECTED_DEPENDENCY_CALLS = {
+    "OutboxDispatchPath": {"_broker.publish"},
+    "ConsumerReceivePath": {"_broker.receive"},
+    "InboxAcknowledgePath": {"_verifier.assert_durable", "_broker.acknowledge"},
+    "ReplayDispatchPath": {"_broker.publish"},
+}
 KAFKA_IMPORT_PREFIXES = ("kafka", "aiokafka", "confluent_kafka")
 KAFKA_NATIVE_NAMES = {"offset", "partition", "consumer_group", "rebalance", "transactional_id"}
 CODE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".mjs", ".cjs", ".go", ".rs", ".java", ".kt", ".cs"}
 
 
+def _call_target(node: ast.Call) -> str:
+    func = node.func
+    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Attribute):
+        owner = func.value
+        if isinstance(owner.value, ast.Name) and owner.value.id == "self":
+            return f"{owner.attr}.{func.attr}"
+    if isinstance(func, ast.Name):
+        return func.id
+    return ast.unparse(func)
+
+
+def dependency_calls(source: str) -> set[str]:
+    tree = ast.parse(textwrap.dedent(source))
+    calls: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            target = _call_target(node)
+            # Ignore constructors in __init__: path closure concerns runtime broker-facing methods.
+            parent_function = next((p for p in ast.walk(tree) if isinstance(p, (ast.FunctionDef, ast.AsyncFunctionDef)) and node in list(ast.walk(p))), None)
+            if isinstance(parent_function, (ast.FunctionDef, ast.AsyncFunctionDef)) and parent_function.name == "__init__":
+                continue
+            calls.add(target)
+    return calls
+
+
+def dependency_attributes(source: str) -> set[str]:
+    tree = ast.parse(textwrap.dedent(source))
+    accesses: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Attribute):
+            owner = node.value
+            if isinstance(owner.value, ast.Name) and owner.value.id == "self" and owner.attr in {"_broker", "_verifier"}:
+                accesses.add(f"{owner.attr}.{node.attr}")
+    return accesses
+
+
 def scan_python_for_direct_kafka(path: Path) -> list[str]:
-    source = path.read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=str(path))
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     findings: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -55,15 +84,7 @@ def scan_python_for_direct_kafka(path: Path) -> list[str]:
 
 def scan_nonpython_for_direct_kafka(path: Path) -> list[str]:
     text = path.read_text(encoding="utf-8", errors="ignore").lower()
-    markers = (
-        "confluent_kafka",
-        "confluent-kafka",
-        "aiokafka",
-        "kafkajs",
-        "org.apache.kafka",
-        "segmentio/kafka-go",
-        "sarama",
-    )
+    markers = ("confluent_kafka", "confluent-kafka", "aiokafka", "kafkajs", "org.apache.kafka", "segmentio/kafka-go", "sarama")
     return sorted(marker for marker in markers if marker in text)
 
 
@@ -76,8 +97,7 @@ def scan_governed_implementation(inventory: dict) -> list[str]:
                 continue
             rel = path.relative_to(ROOT).as_posix()
             direct = scan_python_for_direct_kafka(path) if path.suffix == ".py" else scan_nonpython_for_direct_kafka(path)
-            for item in direct:
-                findings.append(f"{rel}:{item}")
+            findings.extend(f"{rel}:{item}" for item in direct)
     return sorted(findings)
 
 
@@ -93,34 +113,45 @@ def main() -> int:
     assert inventory["consumer_registration_function"] == EXPECTED_REGISTRATION_FUNCTION
 
     discovered = discover_broker_facing_paths()
-    assert set(discovered) == EXPECTED_PATH_CLASSES, (
-        f"broker-facing discovery/inventory mismatch: discovered={sorted(discovered)} expected={sorted(EXPECTED_PATH_CLASSES)}"
-    )
+    assert set(discovered) == EXPECTED_PATH_CLASSES
     for class_name, path_type in discovered.items():
         assert issubclass(path_type, BrokerFacingPath)
-        source = __import__("inspect").getsource(path_type)
+        source = inspect.getsource(path_type)
         leaks = forbidden_kafka_tokens(source)
         assert not leaks, f"{class_name} leaks physical Kafka primitives: {leaks}"
+        calls = dependency_calls(source)
+        attrs = dependency_attributes(source)
+        assert calls == EXPECTED_DEPENDENCY_CALLS[class_name], f"{class_name} call-graph drift: {sorted(calls)}"
+        assert attrs <= EXPECTED_DEPENDENCY_CALLS[class_name], f"{class_name} dependency attribute bypass: {sorted(attrs)}"
 
     direct_kafka = scan_governed_implementation(inventory)
     assert direct_kafka == [], f"governed D4 implementation contains direct Kafka bypass: {direct_kafka}"
 
-    implementation_root = ROOT / EXPECTED_CONSUMER_DISCOVERY_ROOT
-    consumers = discover_consumer_manifests(implementation_root)
-    assert consumers, "no consumer manifests discovered"
-    assert len(consumers) == len(set(consumers)), "consumer manifest discovery contains duplicates"
+    consumers = discover_consumer_manifests(ROOT / EXPECTED_CONSUMER_DISCOVERY_ROOT)
+    assert consumers and len(consumers) == len(set(consumers))
 
     entrypoint = ROOT / EXPECTED_REGISTRATION_ENTRYPOINT
-    assert entrypoint.exists(), "canonical consumer registration entrypoint missing"
     source = entrypoint.read_text(encoding="utf-8")
     assert f"def {EXPECTED_REGISTRATION_FUNCTION}(" in source
     assert "issue_registration_permit(manifest)" in source
     assert "register_validated" in source
+    assert "SUPPORTED_EFFECT_BINDINGS" in source
 
-    print(
-        "d4a_repository_boundary=PASS "
-        f"broker_paths={len(discovered)} consumers={len(consumers)} direct_kafka_bypass=0"
-    )
+    # Negative closure vectors: aliases/helpers cannot be added to a logical path without failing exact call-graph pins.
+    helper_source = """
+class BadPath:
+    def run(self, message):
+        return helper(self._broker)
+"""
+    alias_source = """
+class BadPath:
+    def run(self):
+        return self._broker.record_position
+"""
+    assert dependency_calls(helper_source) == {"helper"}
+    assert dependency_attributes(alias_source) == {"_broker.record_position"}
+
+    print(f"d4a_repository_boundary=PASS broker_paths={len(discovered)} consumers={len(consumers)} direct_kafka_bypass=0 call_graph=exact")
     return 0
 
 

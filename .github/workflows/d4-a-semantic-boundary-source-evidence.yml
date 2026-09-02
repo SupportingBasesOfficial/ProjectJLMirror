@@ -16,6 +16,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   semantic-boundary-source:
@@ -46,11 +47,13 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile \
+            tools/assurance/d4a_semantic_boundary/effect_protection.py \
             tools/assurance/d4a_semantic_boundary/broker_boundary.py \
             tools/assurance/d4a_semantic_boundary/consumer_registration_gate.py \
             tools/assurance/d4a_semantic_boundary/test_semantic_boundary.py \
             tools/assurance/d4a_semantic_boundary/validate_repository_boundary.py \
-            tools/assurance/d4a_semantic_boundary/validate_source_evidence.py
+            tools/assurance/d4a_semantic_boundary/validate_source_evidence.py \
+            tools/assurance/d4a_semantic_boundary/emit_source_provenance.py
 
       - name: Discover and validate complete governed broker/consumer boundary
         shell: bash
@@ -64,7 +67,7 @@ jobs:
           python3 tools/assurance/d4a_semantic_boundary/consumer_registration_gate.py \
             --implementation-root implementation/d4-eventing-async
 
-      - name: Run transport-swap and registration negative controls
+      - name: Run transport-swap durable-effect and registration negative controls
         shell: bash
         working-directory: tools/assurance/d4a_semantic_boundary
         run: python3 test_semantic_boundary.py
@@ -102,6 +105,7 @@ jobs:
           assert source['current_run_auto_credit'] is False
           assert source['ledger_credit'] == []
           assert source['live_kafka_broker_claimed'] is False
+          assert source['source_run_provenance']['mode'] == 'runtime_resolved_artifact_required'
           assert d4a['evidence_completed'] == []
           assert state['d4_transport_authority'] == 'not_selected_not_granted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
@@ -110,3 +114,42 @@ jobs:
           assert state['c3_numeric_topology_authority'] == 'not_selected'
           print('d4a_source_nonpromotion=PASS ledger_credit=0 kafka=not_selected authorities=not_granted')
           PY
+
+      - name: Resolve exact workflow job identity and emit immutable provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+            -o runtime-evidence/jobs.json
+          job_id="$(python3 - <<'PY'
+          import json
+          jobs = json.load(open('runtime-evidence/jobs.json', encoding='utf-8'))['jobs']
+          matches = [job for job in jobs if job['name'] == 'D4-A semantic boundary source evidence']
+          if len(matches) != 1:
+              raise SystemExit(f'expected exactly one current evidence job, got {len(matches)}')
+          print(matches[0]['id'])
+          PY
+          )"
+          python3 tools/assurance/d4a_semantic_boundary/emit_source_provenance.py \
+            --repository-sha "$EXPECTED_SHA" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --workflow-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --job-id "$job_id" \
+            --job-name "D4-A semantic boundary source evidence" \
+            --output runtime-evidence/resolved-source-run-provenance.json
+          rm runtime-evidence/jobs.json
+
+      - name: Persist resolved source-run provenance artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: d4-a-semantic-boundary-source-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime-evidence/resolved-source-run-provenance.json
+          if-no-files-found: error
+          retention-days: 90

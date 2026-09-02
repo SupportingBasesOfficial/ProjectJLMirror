@@ -25,10 +25,23 @@
   "production_authority": "none",
   "c3_numeric_topology_authority": "not_selected",
   "source_run_provenance": {
-    "repository_sha": "resolved_by_exact_head_ci",
-    "workflow_run_id": "resolved_by_github_actions",
-    "job_id": "resolved_by_github_actions",
-    "probe": "tools/assurance/d4a_semantic_boundary/test_semantic_boundary.py"
+    "mode": "runtime_resolved_artifact_required",
+    "artifact_schema": "d4a-source-run-provenance-v1",
+    "artifact_name_prefix": "d4-a-semantic-boundary-source",
+    "required_fields": [
+      "repository_sha",
+      "workflow_run_id",
+      "workflow_run_attempt",
+      "job_id",
+      "job_name",
+      "probe",
+      "source_manifest_sha256",
+      "evidence_ids",
+      "evidence_kinds",
+      "current_run_auto_credit",
+      "ledger_credit",
+      "promotion_rule"
+    ]
   },
   "promotion_rule": "source_run_review_then_separate_ledger_promotion"
 }

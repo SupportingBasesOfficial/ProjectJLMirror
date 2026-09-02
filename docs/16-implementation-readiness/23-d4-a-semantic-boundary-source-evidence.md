@@ -5,52 +5,62 @@
 
 ## Scope
 
-This package implements the first executable D4-A source-evidence harness for exactly two planned evidence IDs:
+This package implements the first executable D4-A source-evidence harness for exactly:
 
 - `broker_neutral_anti_corruption_stub_swap`
 - `exactly_once_guardrail_consumer_inbox_enforcement`
 
-It intentionally does **not** claim live Kafka broker evidence. Capacity, ordering/partition and outage/recovery claims remain reserved for later real-candidate evidence packages.
+It does **not** claim a live Kafka broker run, capacity, ordering/partition, outage/recovery, ledger credit, candidate selection, or implementation/production authority.
 
 ## Complete current D4 broker-boundary discovery
 
-The proof is bounded to the **currently governed D4 implementation namespace**, because product/runtime transport authority has not been granted yet. Within that namespace, coverage is no longer self-declared by the broker module.
+The proof is explicitly bounded to the **currently governed D4 implementation namespace**. Product/runtime transport authority does not yet exist.
 
-`boundary-inventory.json` independently pins the expected broker-facing path IDs/classes, implementation code roots, consumer-discovery root and registration entrypoint. `validate_repository_boundary.py` then mechanically:
+`boundary-inventory.json` independently pins the four expected broker-facing paths, D4 code roots, consumer-discovery root and registration entrypoint. `validate_repository_boundary.py` independently pins those values again, mechanically discovers every `BrokerFacingPath` subclass, requires exact inventory equality/multiplicity, scans governed D4 implementation code for direct Kafka SDK/native bypass, and pins the exact dependency call graph of every logical path.
 
-- discovers every subclass of `BrokerFacingPath` and requires the discovered set to equal the independently pinned four-path inventory;
-- rejects Kafka-native primitives inside every discovered logical path;
-- scans governed D4 implementation code for direct Kafka SDK/native bypass outside the evidence adapter boundary;
-- recursively discovers every JSON consumer declaration anywhere under `implementation/d4-eventing-async`, rather than trusting one fixture directory;
-- requires the canonical registration entrypoint and validated-permit path to exist.
+The logical path call graph is deliberately narrow:
 
-Therefore a new governed D4 path or consumer cannot remain invisible merely because it was omitted from a hand-maintained list or placed in another nested directory. When future product/runtime eventing code is authorized outside this namespace, its code root must be added to the independently pinned inventory before this evidence can be promoted/relied upon for that expanded surface.
+- outbox -> `BrokerPort.publish`;
+- consumer receive -> `BrokerPort.receive`;
+- inbox acknowledgement -> durable verifier, then `BrokerPort.acknowledge`;
+- replay -> `BrokerPort.publish`.
 
-## Anti-corruption semantic swap
+A logical path cannot call an imported helper, physical-metadata alias, or extra dependency without violating the exact call-graph proof. This closes the earlier substring-only dependency escape.
 
-`broker_boundary.py` defines one logical `BrokerPort`. Kafka-shaped physical metadata exists only in `KafkaCandidateAdapter`; the alternate stub uses different physical concepts. Both adapters execute the same discovered logical path classes.
+## Durable business-effect authority
 
-The semantic transcript compares contract, message identity, tenant scope **and payload** for original delivery and replay. A corrupting alternate transport is a negative control and must produce a different transcript. Replay keeps the original message identity, and broker progress/transactions never become business-effect authority.
+`effect_protection.py` implements `SQLiteAtomicInboxEffectGuard`, an executable atomic-local guard. In one durable SQLite transaction it records trusted inbox identity and applies the protected business effect. It returns a `DurableResponsibilityReceipt` only after commit.
 
-This remains a semantic source proof, not evidence that Kafka itself has met capacity, partition-count, recovery or backlog requirements.
+Broker acknowledgement no longer accepts a caller boolean. `InboxAcknowledgePath` requires a receipt and asks the durable guard to re-open/verify committed inbox + effect + receipt state before acknowledging the broker. A forged receipt is rejected and the broker message remains available.
 
-## Governed consumer-registration gate
+The semantic transport-swap transcript now performs and observes this real protected effect. It compares delivery/replay contract, message identity, tenant scope, payload, durable effect payload/digest, effect application count and durable receipts. Replay of the same logical identity is deduplicated: the protected effect remains applied exactly once. Kafka-shaped transport progress or transactions are therefore not used as business-effect truth.
 
-`consumer_registration_gate.py` recursively discovers every consumer declaration under the governed D4 implementation root. Every discovered declaration must traverse `register_consumer`, which first mints a `RegistrationPermit` only after validating:
+A corrupting alternate adapter is a negative control and must diverge from the Kafka-shaped logical transcript.
 
-- stable consumer contract and candidate topic declaration;
-- durable inbox ownership;
-- trusted dedup identity `(consumer_contract, message_identity_scope, message_id)`;
-- a real protected-effect profile: atomic local effect or externally reconciled effect.
+## Executable consumer-registration binding
 
-The registration sink accepts only a typed validated permit. Negative controls prove direct unvalidated registration is rejected, nested/alternate consumer-manifest locations are still discovered, missing inbox/effect protection is blocked, and Kafka idempotence/transactions cannot bypass rejection.
+Every JSON consumer declaration anywhere under `implementation/d4-eventing-async` is recursively discovered. Every discovered consumer must traverse `register_consumer -> issue_registration_permit -> register_validated`.
 
-Because no production Kafka transport authority exists yet, the sink is an evidence sink rather than a live broker administrator. The source claim is that the governed registration boundary is mechanically unavoidable inside the current D4 namespace—not that production topic creation has occurred.
+The manifest cannot merely claim `atomic_local`. Its effect-protection declaration must bind exactly to the executable `SQLiteAtomicInboxEffectGuard` and its `sqlite_atomic_inbox_effect_v1` contract. Unknown/fake implementations and Kafka-EOS-only bindings are rejected. The registration sink accepts only a typed validated permit.
 
-## Source-run / ledger separation
+This remains an evidence registration sink because production Kafka authority is absent. The claim is that the current governed D4 registration surface is mechanically gated, not that production topics have been created.
 
-`source-evidence-manifest.json` records the source package while keeping `current_run_auto_credit=false`, `ledger_credit=[]`, Kafka unselected and all D4/Product/Wave4/production/C3 authorities ungranted. A green run is source evidence only; credit requires a separate ledger-promotion PR after exact-run review.
+## Exact source-run provenance
+
+The repository manifest no longer accepts SHA/run/job placeholders as evidence provenance. It declares `runtime_resolved_artifact_required` and an exact required-field schema.
+
+After all source probes, Phase 10 regressions and non-promotion checks pass, the workflow queries GitHub Actions for the current numeric job ID and emits a resolved provenance record containing:
+
+- exact 40-hex analyzed repository SHA;
+- workflow run ID and run attempt;
+- numeric job ID and job name;
+- exact probe path;
+- SHA-256 of the source-evidence manifest;
+- exact evidence IDs/kinds;
+- non-credit and promotion-rule boundary.
+
+That record is persisted as a GitHub Actions artifact using a SHA-pinned `actions/upload-artifact` action. A later ledger-promotion PR must cite/review this exact source run; a green current run still cannot credit itself.
 
 ## Exit condition
 
-This PR is source-evidence-ready only after exact-HEAD CI and adversarial review establish complete current-namespace discovery, semantic payload preservation, registration non-bypass and non-authority. Merge still does not credit either evidence slot.
+The package is source-evidence-ready only after exact-HEAD CI and fresh adversarial review prove the current-namespace discovery, call-graph closure, durable effect/ack boundary, executable registration binding, semantic payload/effect equivalence and resolved source-run provenance. Merge of this PR still credits **0/7** D4-A evidence.

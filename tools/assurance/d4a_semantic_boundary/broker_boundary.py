@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Protocol
 import inspect
+
+from effect_protection import DurableResponsibilityReceipt, SQLiteAtomicInboxEffectGuard
 
 
 @dataclass(frozen=True)
@@ -25,12 +29,12 @@ class BrokerPort(Protocol):
     def acknowledge(self, consumer_contract: str, message_id: str) -> None: ...
 
 
-class KafkaCandidateAdapter:
-    """Evidence adapter with Kafka-specific physical metadata contained here only.
+class DurableResponsibilityVerifier(Protocol):
+    def assert_durable(self, receipt: DurableResponsibilityReceipt) -> None: ...
 
-    This adapter is intentionally evidence-only. It proves logical/physical separation;
-    it does not claim a live Kafka broker, capacity, ordering, or recovery evidence run.
-    """
+
+class KafkaCandidateAdapter:
+    """Evidence adapter with Kafka-specific physical metadata contained here only."""
 
     def __init__(self) -> None:
         self._queue: list[LogicalMessage] = []
@@ -38,12 +42,7 @@ class KafkaCandidateAdapter:
 
     def publish(self, message: LogicalMessage) -> LogicalReceipt:
         self._queue.append(message)
-        self.physical_trace.append({
-            "topic": f"evidence.{message.contract_name}",
-            "partition": 0,
-            "offset": len(self._queue) - 1,
-            "transactional": False,
-        })
+        self.physical_trace.append({"topic": f"evidence.{message.contract_name}", "partition": 0, "offset": len(self._queue) - 1, "transactional": False})
         return LogicalReceipt(message_id=message.message_id, accepted=True)
 
     def receive(self, consumer_contract: str) -> LogicalMessage:
@@ -103,15 +102,13 @@ class ConsumerReceivePath(BrokerFacingPath):
 
 
 class InboxAcknowledgePath(BrokerFacingPath):
-    def __init__(self, broker: BrokerPort) -> None:
+    def __init__(self, broker: BrokerPort, verifier: DurableResponsibilityVerifier) -> None:
         self._broker = broker
+        self._verifier = verifier
 
-    def acknowledge_after_durable_responsibility(
-        self, consumer_contract: str, message_id: str, *, durable_responsibility: bool
-    ) -> None:
-        if not durable_responsibility:
-            raise PermissionError("broker ack prohibited before durable responsibility")
-        self._broker.acknowledge(consumer_contract, message_id)
+    def acknowledge_after_durable_responsibility(self, receipt: DurableResponsibilityReceipt) -> None:
+        self._verifier.assert_durable(receipt)
+        self._broker.acknowledge(receipt.consumer_contract, receipt.message_id)
 
 
 class ReplayDispatchPath(BrokerFacingPath):
@@ -122,23 +119,13 @@ class ReplayDispatchPath(BrokerFacingPath):
         return self._broker.publish(message)
 
 
-FORBIDDEN_KAFKA_PRIMITIVES = (
-    "topic",
-    "partition",
-    "offset",
-    "consumer_group",
-    "rebalance",
-    "transactional",
-    "kafka",
-)
+FORBIDDEN_KAFKA_PRIMITIVES = ("topic", "partition", "offset", "consumer_group", "rebalance", "transactional", "kafka")
 
 
 def discover_broker_facing_paths() -> dict[str, type[BrokerFacingPath]]:
     discovered: dict[str, type[BrokerFacingPath]] = {}
     for name, value in globals().items():
-        if not inspect.isclass(value) or value is BrokerFacingPath:
-            continue
-        if issubclass(value, BrokerFacingPath):
+        if inspect.isclass(value) and value is not BrokerFacingPath and issubclass(value, BrokerFacingPath):
             discovered[name] = value
     return discovered
 
@@ -149,7 +136,6 @@ def forbidden_kafka_tokens(source: str) -> list[str]:
 
 
 def assert_discovered_paths_do_not_leak_kafka_primitives() -> None:
-    """Mechanically reject physical Kafka coupling in every discovered logical path."""
     for path_type in discover_broker_facing_paths().values():
         leaks = forbidden_kafka_tokens(inspect.getsource(path_type))
         if leaks:
@@ -163,29 +149,50 @@ def semantic_transcript(port: BrokerPort) -> list[tuple[str, object]]:
         tenant_scope="tenant-evidence-a",
         payload='{"device":"canonical-device-1","state":"up"}',
     )
-    outbox = OutboxDispatchPath(port)
-    consumer = ConsumerReceivePath(port)
-    inbox = InboxAcknowledgePath(port)
-    replay = ReplayDispatchPath(port)
+    with TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "effect.db"
+        guard = SQLiteAtomicInboxEffectGuard(db_path)
+        outbox = OutboxDispatchPath(port)
+        consumer = ConsumerReceivePath(port)
+        inbox = InboxAcknowledgePath(port, guard)
+        replay = ReplayDispatchPath(port)
 
-    first_receipt = outbox.dispatch(original)
-    delivered = consumer.receive("evidence.consumer.v1")
-    inbox.acknowledge_after_durable_responsibility(
-        "evidence.consumer.v1", delivered.message_id, durable_responsibility=True
-    )
-    replay_receipt = replay.dispatch_original_identity(original)
-    replayed = consumer.receive("evidence.consumer.v1")
+        first_receipt = outbox.dispatch(original)
+        delivered = consumer.receive("evidence.consumer.v1")
+        durable = guard.record_and_apply(
+            consumer_contract="evidence.consumer.v1",
+            message_id=delivered.message_id,
+            payload=delivered.payload,
+        )
+        # Re-open durable authority before broker acknowledgement to prove committed state survives connection lifecycle.
+        reopened_guard = SQLiteAtomicInboxEffectGuard(db_path)
+        inbox = InboxAcknowledgePath(port, reopened_guard)
+        inbox.acknowledge_after_durable_responsibility(durable)
 
-    return [
-        ("published_id", first_receipt.message_id),
-        ("delivered_contract", delivered.contract_name),
-        ("delivered_id", delivered.message_id),
-        ("delivered_scope", delivered.tenant_scope),
-        ("delivered_payload", delivered.payload),
-        ("replay_id", replay_receipt.message_id),
-        ("replayed_contract", replayed.contract_name),
-        ("replayed_id", replayed.message_id),
-        ("replayed_scope", replayed.tenant_scope),
-        ("replayed_payload", replayed.payload),
-        ("business_effect_authority", "consumer_inbox_effect_guard"),
-    ]
+        replay_receipt = replay.dispatch_original_identity(original)
+        replayed = consumer.receive("evidence.consumer.v1")
+        replay_durable = reopened_guard.record_and_apply(
+            consumer_contract="evidence.consumer.v1",
+            message_id=replayed.message_id,
+            payload=replayed.payload,
+        )
+        inbox.acknowledge_after_durable_responsibility(replay_durable)
+        observed_effect = reopened_guard.observe_effect(durable.effect_key)
+
+        return [
+            ("published_id", first_receipt.message_id),
+            ("delivered_contract", delivered.contract_name),
+            ("delivered_id", delivered.message_id),
+            ("delivered_scope", delivered.tenant_scope),
+            ("delivered_payload", delivered.payload),
+            ("replay_id", replay_receipt.message_id),
+            ("replayed_contract", replayed.contract_name),
+            ("replayed_id", replayed.message_id),
+            ("replayed_scope", replayed.tenant_scope),
+            ("replayed_payload", replayed.payload),
+            ("durable_effect_payload", observed_effect["payload"]),
+            ("durable_effect_payload_digest", observed_effect["payload_digest"]),
+            ("durable_effect_apply_count", observed_effect["apply_count"]),
+            ("durable_responsibility_receipt", durable.receipt_id),
+            ("replay_durable_responsibility_receipt", replay_durable.receipt_id),
+        ]

@@ -161,10 +161,10 @@ def semantic_transcript(port: BrokerPort) -> list[tuple[str, object]]:
         delivered = consumer.receive("evidence.consumer.v1")
         durable = guard.record_and_apply(
             consumer_contract="evidence.consumer.v1",
+            message_identity_scope=delivered.tenant_scope,
             message_id=delivered.message_id,
             payload=delivered.payload,
         )
-        # Re-open durable authority before broker acknowledgement to prove committed state survives connection lifecycle.
         reopened_guard = SQLiteAtomicInboxEffectGuard(db_path)
         inbox = InboxAcknowledgePath(port, reopened_guard)
         inbox.acknowledge_after_durable_responsibility(durable)
@@ -173,6 +173,7 @@ def semantic_transcript(port: BrokerPort) -> list[tuple[str, object]]:
         replayed = consumer.receive("evidence.consumer.v1")
         replay_durable = reopened_guard.record_and_apply(
             consumer_contract="evidence.consumer.v1",
+            message_identity_scope=replayed.tenant_scope,
             message_id=replayed.message_id,
             payload=replayed.payload,
         )
@@ -190,6 +191,8 @@ def semantic_transcript(port: BrokerPort) -> list[tuple[str, object]]:
             ("replayed_id", replayed.message_id),
             ("replayed_scope", replayed.tenant_scope),
             ("replayed_payload", replayed.payload),
+            ("durable_effect_scope", observed_effect["message_identity_scope"]),
+            ("durable_effect_message_id", observed_effect["message_id"]),
             ("durable_effect_payload", observed_effect["payload"]),
             ("durable_effect_payload_digest", observed_effect["payload_digest"]),
             ("durable_effect_apply_count", observed_effect["apply_count"]),

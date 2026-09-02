@@ -203,7 +203,8 @@ jobs:
           printf 'd3_keycloak_browser_candidate=PASS_PINNED_TLS\n'
           printf 'd3_keycloak_backchannel_candidate=PASS_PINNED_TLS\n'
           printf 'candidate_digest=%s\n' "$KEYCLOAK_IMAGE"
-          printf 'd3_a_full_conformance=false reason=remaining_mfa_replay_mapping_outage_and_non_authority_vectors\n'
+          printf 'probe_scope=historical_partial_only current_run_auto_credit=false\n'
+          printf 'd3_a_current_state=accepted_candidate d3=separately_accepted\n'
           printf 'wave4=not_granted production=none d4=not_selected_not_granted\n'
 
       - name: Capture Keycloak logs on failure

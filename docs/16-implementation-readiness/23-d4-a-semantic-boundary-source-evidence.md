@@ -18,6 +18,8 @@ The proof is explicitly bounded to the **currently governed D4 implementation na
 
 `boundary-inventory.json` independently pins the four expected broker-facing paths, D4 code roots, consumer-discovery root and registration entrypoint. `validate_repository_boundary.py` independently pins those values again, mechanically discovers every `BrokerFacingPath` subclass across governed Python sources, requires exact inventory equality/multiplicity, scans governed implementation code for direct Kafka SDK/native bypass, and pins the exact dependency call graph of every logical path.
 
+The no-Kafka-business-authority scan also includes the executable assurance dependencies reached by that boundary, including the durable effect verifier and consumer-registration guard. A native Kafka SDK or transaction dependency introduced into the durable verifier therefore fails the same repository gate instead of escaping because it lives under `tools/assurance` rather than `implementation`/`src`.
+
 The logical path call graph is deliberately narrow:
 
 - outbox -> `BrokerPort.publish`;
@@ -39,7 +41,9 @@ Topic/partition/offset/group data remain physical adapter metadata; they are not
 
 `effect_protection.py` implements `SQLiteAtomicInboxEffectGuard`, an executable atomic-local guard. In one durable SQLite transaction it records trusted inbox identity and applies the protected business effect. It returns a `DurableResponsibilityReceipt` only after commit.
 
-Broker acknowledgement no longer accepts a caller boolean. `InboxAcknowledgePath` requires a receipt and asks the durable guard to re-open/verify committed inbox + effect + receipt state before acknowledging the broker. The acknowledgement identity includes the trusted message scope and message ID, so a valid receipt from one scope cannot remove a same-ID delivery from another scope. A forged receipt is rejected and the broker message remains available.
+The replay-equivalence surface is immutable across `(consumer_contract, message_identity_scope, message_id)`: the retained durable state also binds `contract_name`, `contract_version` and a digest over contract name, version and payload. Reuse of the same scoped identity with changed contract metadata or payload fails closed instead of being treated as an ordinary duplicate.
+
+Broker acknowledgement no longer accepts a caller boolean. `InboxAcknowledgePath` requires a receipt and asks the durable guard to re-open/verify committed inbox + effect + receipt state before acknowledging the broker. The broker acknowledgement then independently binds the receipt to the **currently delivered immutable semantics**: consumer contract, trusted scope, message ID, contract name, contract version and semantic digest must all match the queued delivery. A genuine historical receipt therefore cannot remove a later same-identity delivery whose contract version or payload changed. Cross-consumer and cross-scope receipts are likewise rejected, and the unmatched broker message remains available.
 
 The semantic transport-swap transcript performs and observes this real protected effect. It compares delivery/replay contract and version, message identity, tenant scope, payload, publication acceptance, durable effect payload/digest, effect application count and durable receipts. Replay of the same logical identity is deduplicated: the protected effect remains applied exactly once. Kafka-shaped transport progress or transactions are therefore not used as business-effect truth.
 
@@ -47,9 +51,9 @@ A corrupting alternate adapter is a negative control and must diverge from the K
 
 ## Executable consumer-registration binding
 
-Every JSON consumer declaration anywhere under the governed `implementation` discovery root is recursively discovered, including partial Kafka-shaped declarations that omit `consumer_contract`. Every discovered consumer must traverse `register_consumer -> issue_registration_permit -> register_validated`.
+Every JSON consumer declaration anywhere under the governed `implementation` discovery root is recursively discovered, including partial Kafka-shaped declarations that omit `consumer_contract`. Governed JSON is parsed **fail closed**: malformed syntax or invalid UTF-8 raises a gate failure instead of being silently skipped as a non-consumer. Every discovered consumer must traverse `register_consumer -> issue_registration_permit -> register_validated`.
 
-The manifest cannot merely claim `atomic_local`. Its effect-protection declaration must bind exactly to the executable `SQLiteAtomicInboxEffectGuard` and its `sqlite_atomic_inbox_effect_v1` contract. Unknown/fake implementations and Kafka-EOS-only bindings are rejected. `consumer_contract` and `topic` must be stable nonempty string identifiers rather than merely truthy JSON values.
+The manifest cannot merely claim `atomic_local`. Its effect-protection declaration must bind exactly to the executable `SQLiteAtomicInboxEffectGuard` and its `sqlite_atomic_inbox_effect_v1` contract. Unknown/fake implementations and Kafka-EOS-only bindings are rejected. `consumer_contract` is validated with the canonical async contract-name grammar, while `topic` must satisfy its separate stable Kafka-compatible identifier grammar.
 
 The registration sink accepts only a typed permit whose unique issuance is recorded by successful validation; directly constructed typed permits are rejected. This remains an evidence registration sink because production Kafka authority is absent. The claim is that the current governed D4 registration surface is mechanically gated, not that production topics have been created.
 

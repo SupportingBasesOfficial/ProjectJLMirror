@@ -90,9 +90,9 @@ def _base_leaf_name(base: ast.expr) -> str | None:
 
 
 def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
-    """Discover direct and indirect BrokerFacingPath descendants across governed Python sources."""
+    """Discover descendants through inheritance and imported aliases across governed sources."""
     classes: list[tuple[Path, str, set[str]]] = []
-    broker_aliases = {"BrokerFacingPath"}
+    imported_aliases: list[tuple[str, str]] = []
     for path in paths:
         if not path.exists() or path.suffix != ".py":
             continue
@@ -100,25 +100,28 @@ def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 for alias in node.names:
-                    if alias.name == "BrokerFacingPath":
-                        broker_aliases.add(alias.asname or alias.name)
+                    imported_aliases.append((alias.asname or alias.name, alias.name))
         for node in tree.body:
             if isinstance(node, ast.ClassDef):
                 bases = {name for base in node.bases if (name := _base_leaf_name(base)) is not None}
                 classes.append((path, node.name, bases))
 
-    descendant_names = set(broker_aliases)
+    descendant_symbols = {"BrokerFacingPath"}
     changed = True
     while changed:
         changed = False
+        for local_name, imported_name in imported_aliases:
+            if imported_name in descendant_symbols and local_name not in descendant_symbols:
+                descendant_symbols.add(local_name)
+                changed = True
         for _, class_name, bases in classes:
-            if class_name not in descendant_names and bases & descendant_names:
-                descendant_names.add(class_name)
+            if class_name not in descendant_symbols and bases & descendant_symbols:
+                descendant_symbols.add(class_name)
                 changed = True
 
     discovered: dict[str, str] = {}
     for path, class_name, bases in classes:
-        if class_name != "BrokerFacingPath" and class_name in descendant_names and bases:
+        if class_name != "BrokerFacingPath" and class_name in descendant_symbols and bases:
             discovered[f"{_display_path(path)}:{class_name}"] = class_name
     return discovered
 
@@ -132,28 +135,57 @@ def governed_python_sources(inventory: dict) -> list[Path]:
     return list(dict.fromkeys(paths))
 
 
+def _candidate_local_modules(base: Path, module: str) -> list[Path]:
+    module_path = Path(*module.split(".")) if module else Path()
+    target = base / module_path
+    return [target.with_suffix(".py"), target / "__init__.py"]
+
+
 def _local_import_targets(path: Path, assurance_dir: Path) -> list[Path]:
+    """Resolve complete local module paths, including nested and relative package imports."""
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     targets: list[Path] = []
+    assurance_root = assurance_dir.resolve()
+
+    def add_candidate(candidate: Path) -> None:
+        try:
+            candidate.resolve().relative_to(assurance_root)
+        except ValueError:
+            return
+        if candidate.exists() and candidate.is_file() and candidate.suffix == ".py" and candidate != path:
+            targets.append(candidate)
+
     for node in ast.walk(tree):
-        modules: list[str] = []
         if isinstance(node, ast.Import):
-            modules.extend(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            modules.append(node.module)
-        for module in modules:
-            leaf = module.split(".")[-1]
-            candidate = assurance_dir / f"{leaf}.py"
-            if candidate.exists() and candidate != path:
-                targets.append(candidate)
-    return targets
+            for alias in node.names:
+                for candidate in _candidate_local_modules(assurance_dir, alias.name):
+                    add_candidate(candidate)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                base = path.parent
+                for _ in range(node.level - 1):
+                    base = base.parent
+            else:
+                base = assurance_dir
+            module = node.module or ""
+            module_candidates = _candidate_local_modules(base, module)
+            for candidate in module_candidates:
+                add_candidate(candidate)
+            module_dir = base / Path(*module.split(".")) if module else base
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                for candidate in _candidate_local_modules(module_dir, alias.name):
+                    add_candidate(candidate)
+
+    return list(dict.fromkeys(targets))
 
 
 def discover_assurance_dependency_sources(
     entry_sources: list[Path] | None = None,
     assurance_dir: Path = ASSURANCE_DIR,
 ) -> list[Path]:
-    """Walk local assurance imports transitively; no helper may escape scanning."""
+    """Walk local assurance imports transitively; nested helpers cannot escape scanning."""
     pending = list(entry_sources or ASSURANCE_ENTRY_SOURCES)
     discovered: list[Path] = []
     seen: set[Path] = set()
@@ -171,10 +203,7 @@ def discover_assurance_dependency_sources(
 
 
 def _transaction_api_finding(node: ast.Attribute) -> str | None:
-    if node.attr not in KAFKA_TRANSACTION_METHODS:
-        return None
-    owner = ast.unparse(node.value).lower()
-    if "kafka" in owner or "producer" in owner or node.attr == "send_offsets_to_transaction":
+    if node.attr in KAFKA_TRANSACTION_METHODS:
         return f"transaction_api:{node.attr}"
     return None
 
@@ -285,8 +314,8 @@ def main() -> int:
 
     print(
         f"d4a_repository_boundary=PASS broker_paths={len(runtime_discovered)} consumers={len(consumers)} "
-        "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=transitive_exact call_graph=exact "
-        f"roots=implementation+src assurance_dependency_closure={len(assurance_closure)} transaction_apis=scanned"
+        "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=alias_transitive_exact call_graph=exact "
+        f"roots=implementation+src assurance_dependency_closure={len(assurance_closure)} nested_imports=scanned transaction_apis=owner_independent"
     )
     return 0
 

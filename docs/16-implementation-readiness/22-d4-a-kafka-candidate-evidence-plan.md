@@ -43,9 +43,11 @@ The benchmark values are evidence inputs. They do not become production partitio
 
 ### D4-A2 — Broker-neutral anti-corruption swap
 
-Exercise one logical producer/consumer port against Kafka and an alternate/stub transport implementation. The same contract test must prove that canonical message identity and business semantics do not depend on Kafka topic, partition, offset, consumer group, rebalance or transaction identity.
+The broker-neutrality proof SHALL cover **every actual broker-facing outbox, inbox, dispatch and consumer path**. Each such path must either traverse the shared platform logical port that is exercised against both Kafka and the alternate/stub transport, or be statically/mechanically proven unable to bypass that port.
 
-A fake alternate path that bypasses the real logical port is invalid evidence.
+A single demonstration producer/consumer path is insufficient. Evidence fails if another real dispatch or consumption path can directly depend on Kafka offsets, consumer groups, rebalance semantics or transactional APIs outside the shared boundary.
+
+Across the complete broker-facing path set, canonical message identity and business semantics must remain independent of Kafka topic, partition, offset, consumer group, rebalance and transaction identity. A fake alternate path that bypasses the real logical ports is invalid evidence.
 
 ### D4-A3 — Regulated-payload erasure boundary
 
@@ -61,13 +63,17 @@ A generic “reviewed isolation/retention profile” is insufficient. Missing an
 
 ### D4-A4 — Exactly-once guardrail
 
-Prove consumer registration fails without real inbox/dedup/effect protection even when Kafka idempotent producer or transactional settings are enabled. A valid protected consumer must pass the same registration path.
+The negative and positive controls SHALL traverse the **actual automated consumer-registration contract-conformance gate used by CI before a consumer can register against a Kafka topic**. A purpose-built test-local registration function is not evidence.
+
+That actual gate must reject a consumer lacking real inbox/dedup/effect protection, accept a valid consumer carrying the required protection, and continue rejecting the unprotected consumer even when Kafka idempotent-producer or transactional settings are enabled.
 
 Kafka transactions may optimize Kafka-to-Kafka relay behavior but never satisfy business-effect exactly-once by themselves.
 
 ### D4-A5 — Ordering, partition ceiling and fallback
 
-Map logical ordering scopes from trusted identity to partition keys and exercise a named key-level concurrency mechanism so unrelated logical scopes are not serialized globally or tenant-wide.
+Evidence SHALL enumerate **every declared logical ordering-scope class** and document its mapping from trusted logical identity to partition-key strategy. Sampling one scope class is insufficient.
+
+The proof must adopt and cite a **deliberately named consumer-side key-level concurrency component/pattern** and exercise that component so unrelated logical scopes are not serialized globally or tenant-wide. An ad hoc test lock that merely produces serialized output is insufficient.
 
 Benchmark a practical maximum partition ceiling for each bounded test tier and execute the tenant-cohort topic-sharding fallback when the modeled scope cardinality would exceed that ceiling. These are candidate-conformance values only; production partition counts remain C3.
 
@@ -104,7 +110,7 @@ Parallel execution is allowed only where evidence independence is explicit; shar
 
 `implementation/d4-eventing-async/d4-a-evidence-plan.json` is the machine-owned source-evidence plan. `tools/assurance/validate_d4a_evidence_plan.py` independently pins all seven evidence IDs, **every declared `must_prove` assertion**, and the exact allowed evidence kind for each ID. Removing, substituting, duplicating, or weakening any declared assertion or evidence kind is invalid.
 
-Negative controls reject inventory collapse, arbitrary/synthetic evidence-kind substitution, premature selection, auto-credit, production numeric escalation, loss of trusted-identity ordering, loss of tenant-cohort fallback, loss of topology pre-authorization, weakening of regulated-payload exception controls, loss of backlog-drain protection, treating broker progress as business-effect truth, and entry-ledger pre-credit.
+Negative controls reject inventory collapse, arbitrary/synthetic evidence-kind substitution, premature selection, auto-credit, production numeric escalation, incomplete broker-facing path coverage, test-local consumer-registration substitution, loss of named/cited ordering component or complete ordering-scope mapping, loss of tenant-cohort fallback, weakening of regulated-payload exception controls, loss of topology pre-authorization, loss of backlog-drain protection, treating broker progress as business-effect truth, and entry-ledger pre-credit.
 
 ## Exit from planning
 
@@ -114,6 +120,9 @@ This planning PR is complete only when exact-HEAD CI and adversarial review prov
 - preserves every declared binding proof assertion and all binding Kafka closure conditions;
 - allow-lists the exact evidence kind for every proof package;
 - makes real candidate evidence mandatory where the claim is about broker behavior/capacity/ordering/recovery;
+- proves all real broker-facing paths remain behind the shared logical boundary;
+- requires the actual CI consumer-registration gate, not a test-local substitute;
+- requires every ordering-scope class plus a named/cited key-level concurrency component;
 - contains negative controls against the dangerous weakening modes;
 - leaves D4-A evidence at 0/7 and Kafka unselected;
 - grants no D4/Wave4/Product/production/C3 authority.

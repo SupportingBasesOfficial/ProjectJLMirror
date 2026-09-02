@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "scope": "d4a_semantic_boundary_source",
+  "logical_port": "BrokerPort",
+  "broker_facing_paths": [
+    "ConsumerReceivePath",
+    "InboxAcknowledgePath",
+    "OutboxDispatchPath",
+    "ReplayDispatchPath"
+  ],
+  "native_transport_allowlist": [
+    "tools/assurance/d4a_semantic_boundary/broker_boundary.py:KafkaCandidateAdapter"
+  ],
+  "rule": "discovered_paths_must_equal_inventory_and_native_kafka_dependencies_are_forbidden_outside_allowlist"
+}

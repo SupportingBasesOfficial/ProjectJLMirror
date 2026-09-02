@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[3]
+SOURCE = ROOT / "implementation/d4-eventing-async/source-evidence/semantic-boundary/source-evidence-manifest.json"
+STATE = ROOT / "implementation/d4-eventing-async/state-manifest.json"
+PLAN = ROOT / "implementation/d4-eventing-async/d4-a-evidence-plan.json"
+EXPECTED_IDS = {
+    "broker_neutral_anti_corruption_stub_swap",
+    "exactly_once_guardrail_consumer_inbox_enforcement",
+}
+EXPECTED_KINDS = {
+    "broker_neutral_anti_corruption_stub_swap": "candidate_plus_alternate_transport_conformance",
+    "exactly_once_guardrail_consumer_inbox_enforcement": "contract_registration_negative_control",
+}
+
+
+def main() -> int:
+    source = json.loads(SOURCE.read_text(encoding="utf-8"))
+    state = json.loads(STATE.read_text(encoding="utf-8"))
+    plan = json.loads(PLAN.read_text(encoding="utf-8"))
+
+    assert set(source["evidence_ids"]) == EXPECTED_IDS
+    assert len(source["evidence_ids"]) == 2
+    assert source["evidence_kinds"] == EXPECTED_KINDS
+    assert source["scope"] == "source_evidence_harness_only"
+    assert source["live_kafka_broker_claimed"] is False
+    assert source["capacity_benchmark_claimed"] is False
+    assert source["ordering_benchmark_claimed"] is False
+    assert source["recovery_benchmark_claimed"] is False
+    assert source["current_run_auto_credit"] is False
+    assert source["ledger_credit"] == []
+    assert source["kafka_selection_state"] == "not_selected"
+    assert source["d4_transport_authority"] == "not_selected_not_granted"
+    assert source["canonical_product_implementation_authority"] == "not_granted"
+    assert source["wave4_implementation_authority"] == "not_granted"
+    assert source["production_authority"] == "none"
+    assert source["c3_numeric_topology_authority"] == "not_selected"
+    assert source["promotion_rule"] == "source_run_review_then_separate_ledger_promotion"
+
+    plan_items = {item["evidence_id"]: item for item in plan["required_evidence"]}
+    for evidence_id, kind in EXPECTED_KINDS.items():
+        assert plan_items[evidence_id]["evidence_kind"] == kind
+
+    d4a = next(track for track in state["tracks"] if track["track_id"] == "D4-A")
+    assert d4a["evidence_completed"] == []
+    assert state["gate_state"] == "scoped"
+    assert state["d4_transport_authority"] == "not_selected_not_granted"
+    assert state["canonical_product_implementation_authority"] == "not_granted"
+    assert state["wave4_implementation_authority"] == "not_granted"
+    assert state["production_authority"] == "none"
+    assert state["c3_numeric_topology_authority"] == "not_selected"
+
+    print("d4a_semantic_source_manifest=PASS evidence_ids=2 ledger_credit=0 live_kafka_claim=false")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

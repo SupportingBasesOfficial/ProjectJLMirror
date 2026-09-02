@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "package_id": "d4-a-semantic-boundary-source-v1",
+  "canonical_base_commit": "c4613a30050b6a3a987a73af39f224e152b72fa5",
+  "track": "D4-A",
+  "evidence_ids": [
+    "broker_neutral_anti_corruption_stub_swap",
+    "exactly_once_guardrail_consumer_inbox_enforcement"
+  ],
+  "evidence_kinds": {
+    "broker_neutral_anti_corruption_stub_swap": "candidate_plus_alternate_transport_conformance",
+    "exactly_once_guardrail_consumer_inbox_enforcement": "contract_registration_negative_control"
+  },
+  "scope": "source_evidence_harness_only",
+  "live_kafka_broker_claimed": false,
+  "capacity_benchmark_claimed": false,
+  "ordering_benchmark_claimed": false,
+  "recovery_benchmark_claimed": false,
+  "current_run_auto_credit": false,
+  "ledger_credit": [],
+  "kafka_selection_state": "not_selected",
+  "d4_transport_authority": "not_selected_not_granted",
+  "canonical_product_implementation_authority": "not_granted",
+  "wave4_implementation_authority": "not_granted",
+  "production_authority": "none",
+  "c3_numeric_topology_authority": "not_selected",
+  "source_run_provenance": {
+    "repository_sha": "resolved_by_exact_head_ci",
+    "workflow_run_id": "resolved_by_github_actions",
+    "job_id": "resolved_by_github_actions",
+    "probe": "tools/assurance/d4a_semantic_boundary/test_semantic_boundary.py"
+  },
+  "promotion_rule": "source_run_review_then_separate_ledger_promotion"
+}

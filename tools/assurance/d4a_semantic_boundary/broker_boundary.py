@@ -26,7 +26,7 @@ class LogicalReceipt:
 class BrokerPort(Protocol):
     def publish(self, message: LogicalMessage) -> LogicalReceipt: ...
     def receive(self, consumer_contract: str) -> LogicalMessage: ...
-    def acknowledge(self, consumer_contract: str, message_id: str) -> None: ...
+    def acknowledge(self, consumer_contract: str, message_identity_scope: str, message_id: str) -> None: ...
 
 
 class DurableResponsibilityVerifier(Protocol):
@@ -51,9 +51,12 @@ class KafkaCandidateAdapter:
         self.physical_trace.append({"consumer_group": f"evidence.{consumer_contract}"})
         return self._queue[0]
 
-    def acknowledge(self, consumer_contract: str, message_id: str) -> None:
-        if not self._queue or self._queue[0].message_id != message_id:
-            raise ValueError("acknowledgement does not match current logical message")
+    def acknowledge(self, consumer_contract: str, message_identity_scope: str, message_id: str) -> None:
+        if not self._queue:
+            raise ValueError("acknowledgement has no current logical message")
+        current = self._queue[0]
+        if (current.tenant_scope, current.message_id) != (message_identity_scope, message_id):
+            raise ValueError("acknowledgement does not match current scoped logical message")
         self._queue.pop(0)
         self.physical_trace.append({"consumer_group": f"evidence.{consumer_contract}", "ack": True})
 
@@ -74,9 +77,12 @@ class AlternateStubTransport:
         self.physical_trace.append({"subscription": consumer_contract})
         return self._queue[0]
 
-    def acknowledge(self, consumer_contract: str, message_id: str) -> None:
-        if not self._queue or self._queue[0].message_id != message_id:
-            raise ValueError("acknowledgement does not match current logical message")
+    def acknowledge(self, consumer_contract: str, message_identity_scope: str, message_id: str) -> None:
+        if not self._queue:
+            raise ValueError("acknowledgement has no current logical message")
+        current = self._queue[0]
+        if (current.tenant_scope, current.message_id) != (message_identity_scope, message_id):
+            raise ValueError("acknowledgement does not match current scoped logical message")
         self._queue.pop(0)
         self.physical_trace.append({"subscription": consumer_contract, "ack": True})
 
@@ -108,7 +114,7 @@ class InboxAcknowledgePath(BrokerFacingPath):
 
     def acknowledge_after_durable_responsibility(self, receipt: DurableResponsibilityReceipt) -> None:
         self._verifier.assert_durable(receipt)
-        self._broker.acknowledge(receipt.consumer_contract, receipt.message_id)
+        self._broker.acknowledge(receipt.consumer_contract, receipt.message_identity_scope, receipt.message_id)
 
 
 class ReplayDispatchPath(BrokerFacingPath):
@@ -182,11 +188,13 @@ def semantic_transcript(port: BrokerPort) -> list[tuple[str, object]]:
 
         return [
             ("published_id", first_receipt.message_id),
+            ("published_accepted", first_receipt.accepted),
             ("delivered_contract", delivered.contract_name),
             ("delivered_id", delivered.message_id),
             ("delivered_scope", delivered.tenant_scope),
             ("delivered_payload", delivered.payload),
             ("replay_id", replay_receipt.message_id),
+            ("replay_accepted", replay_receipt.accepted),
             ("replayed_contract", replayed.contract_name),
             ("replayed_id", replayed.message_id),
             ("replayed_scope", replayed.tenant_scope),

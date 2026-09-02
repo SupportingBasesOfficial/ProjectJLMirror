@@ -42,16 +42,7 @@ def _call_target(node: ast.Call) -> str:
 
 def dependency_calls(source: str) -> set[str]:
     tree = ast.parse(textwrap.dedent(source))
-    calls: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            target = _call_target(node)
-            # Ignore constructors in __init__: path closure concerns runtime broker-facing methods.
-            parent_function = next((p for p in ast.walk(tree) if isinstance(p, (ast.FunctionDef, ast.AsyncFunctionDef)) and node in list(ast.walk(p))), None)
-            if isinstance(parent_function, (ast.FunctionDef, ast.AsyncFunctionDef)) and parent_function.name == "__init__":
-                continue
-            calls.add(target)
-    return calls
+    return {_call_target(node) for node in ast.walk(tree) if isinstance(node, ast.Call)}
 
 
 def dependency_attributes(source: str) -> set[str]:
@@ -137,11 +128,18 @@ def main() -> int:
     assert "register_validated" in source
     assert "SUPPORTED_EFFECT_BINDINGS" in source
 
-    # Negative closure vectors: aliases/helpers cannot be added to a logical path without failing exact call-graph pins.
     helper_source = """
 class BadPath:
     def run(self, message):
         return helper(self._broker)
+"""
+    constructor_bypass = """
+class BadPath:
+    def __init__(self, broker):
+        helper(broker)
+        self._broker = broker
+    def run(self, message):
+        return self._broker.publish(message)
 """
     alias_source = """
 class BadPath:
@@ -149,9 +147,10 @@ class BadPath:
         return self._broker.record_position
 """
     assert dependency_calls(helper_source) == {"helper"}
+    assert dependency_calls(constructor_bypass) == {"helper", "_broker.publish"}
     assert dependency_attributes(alias_source) == {"_broker.record_position"}
 
-    print(f"d4a_repository_boundary=PASS broker_paths={len(discovered)} consumers={len(consumers)} direct_kafka_bypass=0 call_graph=exact")
+    print(f"d4a_repository_boundary=PASS broker_paths={len(discovered)} consumers={len(consumers)} direct_kafka_bypass=0 call_graph=exact constructors=checked")
     return 0
 
 

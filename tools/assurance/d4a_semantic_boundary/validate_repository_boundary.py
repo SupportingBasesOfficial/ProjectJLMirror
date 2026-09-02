@@ -11,10 +11,11 @@ from consumer_registration_gate import discover_consumer_manifests
 
 ROOT = Path(__file__).resolve().parents[3]
 INVENTORY = ROOT / "implementation/d4-eventing-async/source-evidence/semantic-boundary/boundary-inventory.json"
-BOUNDARY_SOURCE = ROOT / "tools/assurance/d4a_semantic_boundary/broker_boundary.py"
-EFFECT_PROTECTION_SOURCE = ROOT / "tools/assurance/d4a_semantic_boundary/effect_protection.py"
-REGISTRATION_SOURCE = ROOT / "tools/assurance/d4a_semantic_boundary/consumer_registration_gate.py"
-ASSURANCE_DEPENDENCY_SOURCES = [EFFECT_PROTECTION_SOURCE, REGISTRATION_SOURCE]
+ASSURANCE_DIR = ROOT / "tools/assurance/d4a_semantic_boundary"
+BOUNDARY_SOURCE = ASSURANCE_DIR / "broker_boundary.py"
+EFFECT_PROTECTION_SOURCE = ASSURANCE_DIR / "effect_protection.py"
+REGISTRATION_SOURCE = ASSURANCE_DIR / "consumer_registration_gate.py"
+ASSURANCE_ENTRY_SOURCES = [EFFECT_PROTECTION_SOURCE, REGISTRATION_SOURCE]
 
 EXPECTED_PATH_CLASSES = {"OutboxDispatchPath", "ConsumerReceivePath", "InboxAcknowledgePath", "ReplayDispatchPath"}
 EXPECTED_PATH_IDS = {"outbox_dispatch", "consumer_receive", "inbox_acknowledge", "replay_dispatch"}
@@ -30,6 +31,12 @@ EXPECTED_DEPENDENCY_CALLS = {
 }
 KAFKA_IMPORT_PREFIXES = ("kafka", "aiokafka", "confluent_kafka")
 KAFKA_NATIVE_NAMES = {"offset", "partition", "consumer_group", "rebalance", "transactional_id"}
+KAFKA_TRANSACTION_METHODS = {
+    "begin_transaction",
+    "commit_transaction",
+    "abort_transaction",
+    "send_offsets_to_transaction",
+}
 CODE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".mjs", ".cjs", ".go", ".rs", ".java", ".kt", ".cs"}
 KAFKA_TEXT_MARKERS = (
     "confluent_kafka", "confluent-kafka", "confluent.kafka", "aiokafka", "kafkajs",
@@ -67,16 +74,6 @@ def dependency_attributes(source: str) -> set[str]:
     return accesses
 
 
-def _broker_base_aliases(tree: ast.AST) -> set[str]:
-    aliases = {"BrokerFacingPath"}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
-            for alias in node.names:
-                if alias.name == "BrokerFacingPath":
-                    aliases.add(alias.asname or alias.name)
-    return aliases
-
-
 def _display_path(path: Path) -> str:
     try:
         return path.relative_to(ROOT).as_posix()
@@ -84,26 +81,45 @@ def _display_path(path: Path) -> str:
         return path.as_posix()
 
 
+def _base_leaf_name(base: ast.expr) -> str | None:
+    if isinstance(base, ast.Name):
+        return base.id
+    if isinstance(base, ast.Attribute):
+        return base.attr
+    return None
+
+
 def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
-    discovered: dict[str, str] = {}
+    """Discover direct and indirect BrokerFacingPath descendants across governed Python sources."""
+    classes: list[tuple[Path, str, set[str]]] = []
+    broker_aliases = {"BrokerFacingPath"}
     for path in paths:
         if not path.exists() or path.suffix != ".py":
             continue
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        except (SyntaxError, UnicodeDecodeError):
-            continue
-        aliases = _broker_base_aliases(tree)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    if alias.name == "BrokerFacingPath":
+                        broker_aliases.add(alias.asname or alias.name)
         for node in tree.body:
-            if not isinstance(node, ast.ClassDef):
-                continue
-            base_names = {
-                base.id if isinstance(base, ast.Name) else base.attr
-                for base in node.bases
-                if isinstance(base, (ast.Name, ast.Attribute))
-            }
-            if base_names & aliases:
-                discovered[f"{_display_path(path)}:{node.name}"] = node.name
+            if isinstance(node, ast.ClassDef):
+                bases = {name for base in node.bases if (name := _base_leaf_name(base)) is not None}
+                classes.append((path, node.name, bases))
+
+    descendant_names = set(broker_aliases)
+    changed = True
+    while changed:
+        changed = False
+        for _, class_name, bases in classes:
+            if class_name not in descendant_names and bases & descendant_names:
+                descendant_names.add(class_name)
+                changed = True
+
+    discovered: dict[str, str] = {}
+    for path, class_name, bases in classes:
+        if class_name != "BrokerFacingPath" and class_name in descendant_names and bases:
+            discovered[f"{_display_path(path)}:{class_name}"] = class_name
     return discovered
 
 
@@ -114,6 +130,53 @@ def governed_python_sources(inventory: dict) -> list[Path]:
         if root.exists():
             paths.extend(sorted(root.rglob("*.py")))
     return list(dict.fromkeys(paths))
+
+
+def _local_import_targets(path: Path, assurance_dir: Path) -> list[Path]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    targets: list[Path] = []
+    for node in ast.walk(tree):
+        modules: list[str] = []
+        if isinstance(node, ast.Import):
+            modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules.append(node.module)
+        for module in modules:
+            leaf = module.split(".")[-1]
+            candidate = assurance_dir / f"{leaf}.py"
+            if candidate.exists() and candidate != path:
+                targets.append(candidate)
+    return targets
+
+
+def discover_assurance_dependency_sources(
+    entry_sources: list[Path] | None = None,
+    assurance_dir: Path = ASSURANCE_DIR,
+) -> list[Path]:
+    """Walk local assurance imports transitively; no helper may escape scanning."""
+    pending = list(entry_sources or ASSURANCE_ENTRY_SOURCES)
+    discovered: list[Path] = []
+    seen: set[Path] = set()
+    while pending:
+        path = pending.pop()
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        if not path.exists() or path.suffix != ".py":
+            raise AssertionError(f"assurance dependency is missing or non-Python: {path}")
+        seen.add(resolved)
+        discovered.append(path)
+        pending.extend(_local_import_targets(path, assurance_dir))
+    return sorted(discovered)
+
+
+def _transaction_api_finding(node: ast.Attribute) -> str | None:
+    if node.attr not in KAFKA_TRANSACTION_METHODS:
+        return None
+    owner = ast.unparse(node.value).lower()
+    if "kafka" in owner or "producer" in owner or node.attr == "send_offsets_to_transaction":
+        return f"transaction_api:{node.attr}"
+    return None
 
 
 def scan_python_for_direct_kafka(path: Path) -> list[str]:
@@ -128,8 +191,12 @@ def scan_python_for_direct_kafka(path: Path) -> list[str]:
             module = node.module or ""
             if module.startswith(KAFKA_IMPORT_PREFIXES):
                 findings.add(f"import:{module}")
-        elif isinstance(node, ast.Attribute) and node.attr in KAFKA_NATIVE_NAMES:
-            findings.add(f"attribute:{node.attr}")
+        elif isinstance(node, ast.Attribute):
+            if node.attr in KAFKA_NATIVE_NAMES:
+                findings.add(f"attribute:{node.attr}")
+            transaction_finding = _transaction_api_finding(node)
+            if transaction_finding:
+                findings.add(transaction_finding)
     text = path.read_text(encoding="utf-8", errors="ignore").lower()
     findings.update(f"marker:{marker}" for marker in KAFKA_TEXT_MARKERS if marker in text)
     return sorted(findings)
@@ -153,10 +220,10 @@ def scan_governed_implementation(inventory: dict) -> tuple[list[str], list[str]]
             path for path in root.rglob("*")
             if path.is_file() and path.suffix.lower() in CODE_SUFFIXES
         )
-    scanned_paths.extend(ASSURANCE_DEPENDENCY_SOURCES)
+    scanned_paths.extend(discover_assurance_dependency_sources())
 
     for path in dict.fromkeys(scanned_paths):
-        rel = path.relative_to(ROOT).as_posix()
+        rel = _display_path(path)
         direct = scan_python_for_direct_kafka(path) if path.suffix == ".py" else scan_nonpython_for_direct_kafka(path)
         kafka_findings.extend(f"{rel}:{item}" for item in direct)
         text = path.read_text(encoding="utf-8", errors="ignore")
@@ -175,7 +242,9 @@ def main() -> int:
     assert inventory["consumer_manifest_discovery_root"] == EXPECTED_CONSUMER_DISCOVERY_ROOT
     assert inventory["consumer_registration_entrypoint"] == EXPECTED_REGISTRATION_ENTRYPOINT
     assert inventory["consumer_registration_function"] == EXPECTED_REGISTRATION_FUNCTION
-    assert all(path.exists() for path in ASSURANCE_DEPENDENCY_SOURCES)
+
+    assurance_closure = discover_assurance_dependency_sources()
+    assert EFFECT_PROTECTION_SOURCE in assurance_closure and REGISTRATION_SOURCE in assurance_closure
 
     runtime_discovered = discover_broker_facing_paths()
     assert set(runtime_discovered) == EXPECTED_PATH_CLASSES
@@ -216,8 +285,8 @@ def main() -> int:
 
     print(
         f"d4a_repository_boundary=PASS broker_paths={len(runtime_discovered)} consumers={len(consumers)} "
-        "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=exact call_graph=exact "
-        "roots=implementation+src durable_authority_closure=scanned"
+        "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=transitive_exact call_graph=exact "
+        f"roots=implementation+src assurance_dependency_closure={len(assurance_closure)} transaction_apis=scanned"
     )
     return 0
 

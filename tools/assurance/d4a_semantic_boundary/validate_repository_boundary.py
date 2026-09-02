@@ -85,6 +85,13 @@ def _broker_base_aliases(tree: ast.AST) -> set[str]:
     return aliases
 
 
+def _display_path(path: Path) -> str:
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
     discovered: dict[str, str] = {}
     for path in paths:
@@ -105,8 +112,7 @@ def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
                 elif isinstance(base, ast.Attribute):
                     base_names.add(base.attr)
             if base_names & aliases:
-                rel = path.relative_to(ROOT).as_posix()
-                key = f"{rel}:{node.name}"
+                key = f"{_display_path(path)}:{node.name}"
                 discovered[key] = node.name
     return discovered
 
@@ -230,8 +236,9 @@ class BadPath:
     assert dependency_attributes(alias_source) == {"_broker.record_position"}
 
     marker_fixture = "using Confluent.Kafka; // node-rdkafka rdkafka"
-    assert "confluent.kafka" in marker_fixture.lower()
-    assert "confluent.kafka" in KAFKA_TEXT_MARKERS and "node-rdkafka" in KAFKA_TEXT_MARKERS and "rdkafka" in KAFKA_TEXT_MARKERS
+    lowered_marker_fixture = marker_fixture.lower()
+    assert all(marker in lowered_marker_fixture for marker in ("confluent.kafka", "node-rdkafka", "rdkafka"))
+    assert all(marker in KAFKA_TEXT_MARKERS for marker in ("confluent.kafka", "node-rdkafka", "rdkafka"))
 
     print(
         f"d4a_repository_boundary=PASS broker_paths={len(runtime_discovered)} consumers={len(consumers)} "

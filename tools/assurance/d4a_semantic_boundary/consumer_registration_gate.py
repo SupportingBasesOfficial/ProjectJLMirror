@@ -3,11 +3,18 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
+ROOT = Path(__file__).resolve().parents[3]
+SRC_ROOT = ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from jlmirror_async.model import contract_name as canonical_contract_name
 from effect_protection import EffectProtectionGuard, SQLiteAtomicInboxEffectGuard
 
 
@@ -43,11 +50,21 @@ CONSUMER_DECLARATION_MARKERS = {
     "kafka_features",
 }
 
-IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,248}[A-Za-z0-9]$|^[A-Za-z0-9]$")
+TOPIC_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,248}[A-Za-z0-9]$|^[A-Za-z0-9]$")
 
 
-def _valid_identifier(value: object) -> bool:
-    return isinstance(value, str) and bool(value) and IDENTIFIER_RE.fullmatch(value) is not None
+def _valid_topic_identifier(value: object) -> bool:
+    return isinstance(value, str) and bool(value) and TOPIC_IDENTIFIER_RE.fullmatch(value) is not None
+
+
+def _valid_consumer_contract(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        canonical_contract_name(value, "consumer_contract")
+    except ValueError:
+        return False
+    return True
 
 
 def _effect_binding(manifest: dict) -> tuple[str | None, str | None, str | None]:
@@ -64,10 +81,10 @@ def validate_manifest(manifest: dict) -> list[str]:
     errors: list[str] = []
     if manifest.get("transport_candidate") != "kafka":
         errors.append("transport_candidate must be kafka for this D4-A source gate")
-    if not _valid_identifier(manifest.get("consumer_contract")):
-        errors.append("consumer_contract must be a stable nonempty string identifier")
-    if not _valid_identifier(manifest.get("topic")):
-        errors.append("topic must be a stable nonempty string identifier")
+    if not _valid_consumer_contract(manifest.get("consumer_contract")):
+        errors.append("consumer_contract must satisfy canonical async contract-name rules")
+    if not _valid_topic_identifier(manifest.get("topic")):
+        errors.append("topic must be a stable nonempty Kafka-compatible identifier")
 
     inbox = manifest.get("inbox", {})
     if not isinstance(inbox, dict):

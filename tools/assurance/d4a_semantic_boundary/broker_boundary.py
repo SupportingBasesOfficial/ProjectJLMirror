@@ -12,6 +12,7 @@ from effect_protection import DurableResponsibilityReceipt, SQLiteAtomicInboxEff
 @dataclass(frozen=True)
 class LogicalMessage:
     contract_name: str
+    contract_version: str
     message_id: str
     tenant_scope: str
     payload: str
@@ -34,27 +35,70 @@ class DurableResponsibilityVerifier(Protocol):
 
 
 class KafkaCandidateAdapter:
-    """Evidence adapter with Kafka-specific physical metadata contained here only."""
+    """Evidence adapter whose logical boundary is reconstructed from a Kafka-shaped physical record."""
 
     def __init__(self) -> None:
-        self._queue: list[LogicalMessage] = []
+        self._queue: list[dict[str, object]] = []
         self.physical_trace: list[dict[str, object]] = []
 
+    @staticmethod
+    def _encode(message: LogicalMessage) -> dict[str, object]:
+        return {
+            "topic": f"evidence.{message.contract_name}.{message.contract_version}",
+            "partition": 0,
+            "offset": None,
+            "headers": {
+                "contract_name": message.contract_name,
+                "contract_version": message.contract_version,
+                "message_id": message.message_id,
+                "tenant_scope": message.tenant_scope,
+            },
+            "value": message.payload,
+        }
+
+    @staticmethod
+    def _decode(record: dict[str, object]) -> LogicalMessage:
+        headers = record.get("headers")
+        if not isinstance(headers, dict):
+            raise ValueError("physical record headers are required")
+        required = ("contract_name", "contract_version", "message_id", "tenant_scope")
+        if any(not isinstance(headers.get(key), str) or not headers[key] for key in required):
+            raise ValueError("physical record lost canonical logical headers")
+        payload = record.get("value")
+        if not isinstance(payload, str):
+            raise ValueError("physical record payload must reconstruct as string")
+        return LogicalMessage(
+            contract_name=headers["contract_name"],
+            contract_version=headers["contract_version"],
+            message_id=headers["message_id"],
+            tenant_scope=headers["tenant_scope"],
+            payload=payload,
+        )
+
     def publish(self, message: LogicalMessage) -> LogicalReceipt:
-        self._queue.append(message)
-        self.physical_trace.append({"topic": f"evidence.{message.contract_name}", "partition": 0, "offset": len(self._queue) - 1, "transactional": False})
+        record = self._encode(message)
+        record["offset"] = len(self._queue)
+        self._queue.append(record)
+        self.physical_trace.append(
+            {
+                "topic": record["topic"],
+                "partition": record["partition"],
+                "offset": record["offset"],
+                "transactional": False,
+            }
+        )
         return LogicalReceipt(message_id=message.message_id, accepted=True)
 
     def receive(self, consumer_contract: str) -> LogicalMessage:
         if not self._queue:
             raise LookupError("no logical message available")
         self.physical_trace.append({"consumer_group": f"evidence.{consumer_contract}"})
-        return self._queue[0]
+        return self._decode(self._queue[0])
 
     def acknowledge(self, consumer_contract: str, message_identity_scope: str, message_id: str) -> None:
         if not self._queue:
             raise ValueError("acknowledgement has no current logical message")
-        current = self._queue[0]
+        current = self._decode(self._queue[0])
         if (current.tenant_scope, current.message_id) != (message_identity_scope, message_id):
             raise ValueError("acknowledgement does not match current scoped logical message")
         self._queue.pop(0)
@@ -68,7 +112,7 @@ class AlternateStubTransport:
 
     def publish(self, message: LogicalMessage) -> LogicalReceipt:
         self._queue.append(message)
-        self.physical_trace.append({"mailbox": message.contract_name})
+        self.physical_trace.append({"mailbox": f"{message.contract_name}:{message.contract_version}"})
         return LogicalReceipt(message_id=message.message_id, accepted=True)
 
     def receive(self, consumer_contract: str) -> LogicalMessage:
@@ -150,7 +194,8 @@ def assert_discovered_paths_do_not_leak_kafka_primitives() -> None:
 
 def semantic_transcript(port: BrokerPort) -> list[tuple[str, object]]:
     original = LogicalMessage(
-        contract_name="evidence.device-state.changed.v1",
+        contract_name="evidence.device-state.changed",
+        contract_version="v1",
         message_id="msg-evidence-0001",
         tenant_scope="tenant-evidence-a",
         payload='{"device":"canonical-device-1","state":"up"}',
@@ -190,12 +235,14 @@ def semantic_transcript(port: BrokerPort) -> list[tuple[str, object]]:
             ("published_id", first_receipt.message_id),
             ("published_accepted", first_receipt.accepted),
             ("delivered_contract", delivered.contract_name),
+            ("delivered_contract_version", delivered.contract_version),
             ("delivered_id", delivered.message_id),
             ("delivered_scope", delivered.tenant_scope),
             ("delivered_payload", delivered.payload),
             ("replay_id", replay_receipt.message_id),
             ("replay_accepted", replay_receipt.accepted),
             ("replayed_contract", replayed.contract_name),
+            ("replayed_contract_version", replayed.contract_version),
             ("replayed_id", replayed.message_id),
             ("replayed_scope", replayed.tenant_scope),
             ("replayed_payload", replayed.payload),

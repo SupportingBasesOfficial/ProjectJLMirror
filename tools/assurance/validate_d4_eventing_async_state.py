@@ -29,7 +29,7 @@ EXPECTED_REQUIRED_EVIDENCE = {
         "broker_neutral_anti_corruption_stub_swap",
         "regulated_payload_erasure_granularity",
         "exactly_once_guardrail_consumer_inbox_enforcement",
-        "ordering_scope_partition_mapping_and_key_level_concurrency",
+        "ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency",
         "physical_naming_routing_and_cell_topology_adapter_mapping",
         "broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark",
     },

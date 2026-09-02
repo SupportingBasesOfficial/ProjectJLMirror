@@ -23,6 +23,43 @@ EXPECTED_TRACK_SOURCES = {
     },
     "D4-D": {"OPEN-EVT-016", "OPEN-EVT-017", "OPEN-EVT-018"},
 }
+EXPECTED_REQUIRED_EVIDENCE = {
+    "D4-A": {
+        "capacity_envelope_baseline_growth_stress",
+        "broker_neutral_anti_corruption_stub_swap",
+        "regulated_payload_erasure_granularity",
+        "exactly_once_guardrail_consumer_inbox_enforcement",
+        "ordering_scope_partition_mapping_and_key_level_concurrency",
+        "physical_naming_routing_and_cell_topology_adapter_mapping",
+        "broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark",
+    },
+    "D4-B": {
+        "canonical_bounded_serialization_profile",
+        "parser_ambiguity_and_duplicate_field_negative_vectors",
+        "schema_catalog_semantic_manifest_compatibility_ci",
+        "historical_reader_and_equivalence_profile_continuity",
+        "contract_version_representation_and_breaking_change_vectors",
+    },
+    "D4-C": {
+        "ack_after_durable_responsibility_and_lease_ambiguity",
+        "quarantine_redrive_current_authority_and_dedup_preservation",
+        "bounded_message_batch_compression_and_parser_limits",
+        "scoped_content_equivalence_confidentiality_and_conflict_rejection",
+        "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
+        "producer_generation_nonresurrection_across_failover_restore",
+        "privileged_bounded_replay_with_original_identity_and_effect_safety",
+        "historical_reader_upcaster_semantic_and_equivalence_continuity",
+        "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
+    },
+    "D4-D": {
+        "workload_identity_to_broker_credential_adapter_least_privilege",
+        "tenant_and_contract_scoped_producer_consumer_authorization",
+        "message_protection_key_authority_and_historical_verifier_continuity",
+        "secret_credential_payload_exclusion_and_erasure_boundary",
+        "trace_context_observability_only_validation_and_redaction",
+    },
+}
+EXPECTED_TOTAL_EVIDENCE = sum(len(items) for items in EXPECTED_REQUIRED_EVIDENCE.values())
 EXPECTED_ENTRY_STATES = {
     "D4-A": "candidate_leading_closure_pending",
     "D4-B": "candidate_selection_open",
@@ -100,16 +137,21 @@ def validate_manifest(state: dict) -> list[str]:
         require(set(by_id) == set(EXPECTED_TRACK_SOURCES), "D4 track set drift")
         for track_id, expected_sources in EXPECTED_TRACK_SOURCES.items():
             track = by_id.get(track_id, {})
+            expected_evidence = EXPECTED_REQUIRED_EVIDENCE[track_id]
             require(set(track.get("source_decisions", [])) == expected_sources, f"{track_id} source decision drift")
             require(track.get("state") == EXPECTED_ENTRY_STATES[track_id], f"{track_id} entry state drift")
             required = track.get("required_evidence", [])
             completed = track.get("evidence_completed", [])
             remaining = track.get("evidence_remaining", [])
-            require(isinstance(required, list) and len(required) > 0, f"{track_id} must declare required evidence")
-            require(len(required) == len(set(required)), f"{track_id} required evidence contains duplicates")
+            require(isinstance(required, list), f"{track_id} required evidence must be a list")
+            require(set(required) == expected_evidence, f"{track_id} required evidence inventory drift")
+            require(len(required) == len(expected_evidence), f"{track_id} required evidence multiplicity drift")
             require(completed == [], f"{track_id} entry gate may not pre-credit evidence")
-            require(set(remaining) == set(required), f"{track_id} remaining evidence must equal required evidence at entry")
-            require(len(remaining) == len(required), f"{track_id} remaining evidence multiplicity drift")
+            require(set(remaining) == expected_evidence, f"{track_id} remaining evidence must equal expected evidence at entry")
+            require(len(remaining) == len(expected_evidence), f"{track_id} remaining evidence multiplicity drift")
+
+        total_required = sum(len(track.get("required_evidence", [])) for track in by_id.values())
+        require(total_required == EXPECTED_TOTAL_EVIDENCE, "D4 total required evidence inventory drift")
 
         d4a = by_id.get("D4-A", {})
         require(d4a.get("candidate") == "kafka", "D4-A leading candidate must remain Kafka at entry")
@@ -146,11 +188,10 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4_STATE_ERROR: {error}", file=sys.stderr)
         return 1
-    required = sum(len(track["required_evidence"]) for track in state["tracks"])
     print(
         "d4_eventing_async_state=PASS "
         f"gate_state={state['gate_state']} tracks={len(state['tracks'])} "
-        f"evidence_required={required} evidence_credited=0 transport_authority=not_granted"
+        f"evidence_required={EXPECTED_TOTAL_EVIDENCE} evidence_credited=0 transport_authority=not_granted"
     )
     return 0
 

@@ -39,13 +39,14 @@ def main() -> int:
     must_fail(lambda s: s["tracks"][2]["evidence_completed"].append(s["tracks"][2]["required_evidence"][0]), "may not pre-credit evidence")
     must_fail(lambda s: s["tracks"][0]["evidence_remaining"].pop(), "remaining evidence must equal required evidence")
     must_fail(lambda s: s["tracks"][0]["source_decisions"].append("OPEN-EVT-006"), "source decision drift")
+    must_fail(lambda s: s["tracks"][2]["source_decisions"].remove("OPEN-EVT-025"), "source decision drift")
     must_fail(lambda s: s["explicit_c3_exclusions"].remove("OPEN-EVT-006"), "C3 exclusion set drift")
     must_fail(lambda s: s["explicit_product_or_later_gate_exclusions"].remove("OPEN-EVT-021"), "Product/later-gate exclusion set drift")
 
     print(
         "d4_entry_state_falsification=PASS "
         "premature_acceptance=blocked authority_escalation=blocked precredit=blocked "
-        "candidate_leak=blocked c3_scope_leak=blocked"
+        "candidate_leak=blocked c3_scope_leak=blocked recovery_scope_omission=blocked"
     )
     return 0
 

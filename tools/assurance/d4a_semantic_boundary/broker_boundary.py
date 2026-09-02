@@ -39,6 +39,7 @@ class KafkaCandidateAdapter:
 
     def __init__(self) -> None:
         self._queue: list[dict[str, object]] = []
+        self._delivery_consumer: str | None = None
         self.physical_trace: list[dict[str, object]] = []
 
     @staticmethod
@@ -92,22 +93,30 @@ class KafkaCandidateAdapter:
     def receive(self, consumer_contract: str) -> LogicalMessage:
         if not self._queue:
             raise LookupError("no logical message available")
+        if self._delivery_consumer is None:
+            self._delivery_consumer = consumer_contract
+        elif self._delivery_consumer != consumer_contract:
+            raise PermissionError("current delivery is already bound to another consumer contract")
         self.physical_trace.append({"consumer_group": f"evidence.{consumer_contract}"})
         return self._decode(self._queue[0])
 
     def acknowledge(self, consumer_contract: str, message_identity_scope: str, message_id: str) -> None:
         if not self._queue:
             raise ValueError("acknowledgement has no current logical message")
+        if self._delivery_consumer != consumer_contract:
+            raise ValueError("acknowledgement consumer contract does not match current delivery")
         current = self._decode(self._queue[0])
         if (current.tenant_scope, current.message_id) != (message_identity_scope, message_id):
             raise ValueError("acknowledgement does not match current scoped logical message")
         self._queue.pop(0)
+        self._delivery_consumer = None
         self.physical_trace.append({"consumer_group": f"evidence.{consumer_contract}", "ack": True})
 
 
 class AlternateStubTransport:
     def __init__(self) -> None:
         self._queue: list[LogicalMessage] = []
+        self._delivery_consumer: str | None = None
         self.physical_trace: list[dict[str, object]] = []
 
     def publish(self, message: LogicalMessage) -> LogicalReceipt:
@@ -118,16 +127,23 @@ class AlternateStubTransport:
     def receive(self, consumer_contract: str) -> LogicalMessage:
         if not self._queue:
             raise LookupError("no logical message available")
+        if self._delivery_consumer is None:
+            self._delivery_consumer = consumer_contract
+        elif self._delivery_consumer != consumer_contract:
+            raise PermissionError("current delivery is already bound to another consumer contract")
         self.physical_trace.append({"subscription": consumer_contract})
         return self._queue[0]
 
     def acknowledge(self, consumer_contract: str, message_identity_scope: str, message_id: str) -> None:
         if not self._queue:
             raise ValueError("acknowledgement has no current logical message")
+        if self._delivery_consumer != consumer_contract:
+            raise ValueError("acknowledgement consumer contract does not match current delivery")
         current = self._queue[0]
         if (current.tenant_scope, current.message_id) != (message_identity_scope, message_id):
             raise ValueError("acknowledgement does not match current scoped logical message")
         self._queue.pop(0)
+        self._delivery_consumer = None
         self.physical_trace.append({"subscription": consumer_contract, "ack": True})
 
 
@@ -214,6 +230,8 @@ def semantic_transcript(port: BrokerPort) -> list[tuple[str, object]]:
             consumer_contract="evidence.consumer.v1",
             message_identity_scope=delivered.tenant_scope,
             message_id=delivered.message_id,
+            contract_name=delivered.contract_name,
+            contract_version=delivered.contract_version,
             payload=delivered.payload,
         )
         reopened_guard = SQLiteAtomicInboxEffectGuard(db_path)
@@ -226,6 +244,8 @@ def semantic_transcript(port: BrokerPort) -> list[tuple[str, object]]:
             consumer_contract="evidence.consumer.v1",
             message_identity_scope=replayed.tenant_scope,
             message_id=replayed.message_id,
+            contract_name=replayed.contract_name,
+            contract_version=replayed.contract_version,
             payload=replayed.payload,
         )
         inbox.acknowledge_after_durable_responsibility(replay_durable)
@@ -246,10 +266,12 @@ def semantic_transcript(port: BrokerPort) -> list[tuple[str, object]]:
             ("replayed_id", replayed.message_id),
             ("replayed_scope", replayed.tenant_scope),
             ("replayed_payload", replayed.payload),
+            ("durable_effect_contract", observed_effect["contract_name"]),
+            ("durable_effect_contract_version", observed_effect["contract_version"]),
             ("durable_effect_scope", observed_effect["message_identity_scope"]),
             ("durable_effect_message_id", observed_effect["message_id"]),
             ("durable_effect_payload", observed_effect["payload"]),
-            ("durable_effect_payload_digest", observed_effect["payload_digest"]),
+            ("durable_effect_semantic_digest", observed_effect["semantic_digest"]),
             ("durable_effect_apply_count", observed_effect["apply_count"]),
             ("durable_responsibility_receipt", durable.receipt_id),
             ("replay_durable_responsibility_receipt", replay_durable.receipt_id),

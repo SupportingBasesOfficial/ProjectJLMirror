@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
-import json
 from pathlib import Path
 import sqlite3
 
@@ -10,6 +9,7 @@ import sqlite3
 @dataclass(frozen=True)
 class DurableResponsibilityReceipt:
     consumer_contract: str
+    message_identity_scope: str
     message_id: str
     receipt_id: str
     payload_digest: str
@@ -45,18 +45,23 @@ class SQLiteAtomicInboxEffectGuard(EffectProtectionGuard):
                 """
                 CREATE TABLE IF NOT EXISTS inbox (
                     consumer_contract TEXT NOT NULL,
+                    message_identity_scope TEXT NOT NULL,
                     message_id TEXT NOT NULL,
                     payload_digest TEXT NOT NULL,
-                    PRIMARY KEY (consumer_contract, message_id)
+                    PRIMARY KEY (consumer_contract, message_identity_scope, message_id)
                 );
                 CREATE TABLE IF NOT EXISTS business_effect (
                     effect_key TEXT PRIMARY KEY,
+                    consumer_contract TEXT NOT NULL,
+                    message_identity_scope TEXT NOT NULL,
+                    message_id TEXT NOT NULL,
                     payload TEXT NOT NULL,
                     apply_count INTEGER NOT NULL CHECK (apply_count = 1)
                 );
                 CREATE TABLE IF NOT EXISTS durable_receipt (
                     receipt_id TEXT PRIMARY KEY,
                     consumer_contract TEXT NOT NULL,
+                    message_identity_scope TEXT NOT NULL,
                     message_id TEXT NOT NULL,
                     payload_digest TEXT NOT NULL,
                     effect_key TEXT NOT NULL
@@ -69,37 +74,51 @@ class SQLiteAtomicInboxEffectGuard(EffectProtectionGuard):
         return sha256(payload.encode("utf-8")).hexdigest()
 
     @staticmethod
-    def _receipt_id(consumer_contract: str, message_id: str, payload_digest: str) -> str:
-        material = f"{consumer_contract}|{message_id}|{payload_digest}|d4a-responsibility-v1"
+    def _receipt_id(consumer_contract: str, message_identity_scope: str, message_id: str, payload_digest: str) -> str:
+        material = f"{consumer_contract}|{message_identity_scope}|{message_id}|{payload_digest}|d4a-responsibility-v1"
         return sha256(material.encode("utf-8")).hexdigest()
 
-    def record_and_apply(self, *, consumer_contract: str, message_id: str, payload: str) -> DurableResponsibilityReceipt:
+    @staticmethod
+    def _effect_key(consumer_contract: str, message_identity_scope: str, message_id: str) -> str:
+        material = f"{consumer_contract}|{message_identity_scope}|{message_id}|d4a-effect-v1"
+        return sha256(material.encode("utf-8")).hexdigest()
+
+    def record_and_apply(
+        self,
+        *,
+        consumer_contract: str,
+        message_identity_scope: str,
+        message_id: str,
+        payload: str,
+    ) -> DurableResponsibilityReceipt:
+        if not message_identity_scope:
+            raise ValueError("trusted message identity scope is required")
         payload_digest = self._digest(payload)
-        effect_key = f"{consumer_contract}:{message_id}"
-        receipt_id = self._receipt_id(consumer_contract, message_id, payload_digest)
+        effect_key = self._effect_key(consumer_contract, message_identity_scope, message_id)
+        receipt_id = self._receipt_id(consumer_contract, message_identity_scope, message_id, payload_digest)
 
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
-                "SELECT payload_digest FROM inbox WHERE consumer_contract=? AND message_id=?",
-                (consumer_contract, message_id),
+                "SELECT payload_digest FROM inbox WHERE consumer_contract=? AND message_identity_scope=? AND message_id=?",
+                (consumer_contract, message_identity_scope, message_id),
             ).fetchone()
             if existing is None:
                 connection.execute(
-                    "INSERT INTO inbox(consumer_contract,message_id,payload_digest) VALUES(?,?,?)",
-                    (consumer_contract, message_id, payload_digest),
+                    "INSERT INTO inbox(consumer_contract,message_identity_scope,message_id,payload_digest) VALUES(?,?,?,?)",
+                    (consumer_contract, message_identity_scope, message_id, payload_digest),
                 )
                 connection.execute(
-                    "INSERT INTO business_effect(effect_key,payload,apply_count) VALUES(?,?,1)",
-                    (effect_key, payload),
+                    "INSERT INTO business_effect(effect_key,consumer_contract,message_identity_scope,message_id,payload,apply_count) VALUES(?,?,?,?,?,1)",
+                    (effect_key, consumer_contract, message_identity_scope, message_id, payload),
                 )
             elif existing[0] != payload_digest:
-                raise ValueError("replayed message identity has conflicting payload")
+                raise ValueError("replayed scoped message identity has conflicting payload")
 
             connection.execute(
-                "INSERT OR IGNORE INTO durable_receipt(receipt_id,consumer_contract,message_id,payload_digest,effect_key) VALUES(?,?,?,?,?)",
-                (receipt_id, consumer_contract, message_id, payload_digest, effect_key),
+                "INSERT OR IGNORE INTO durable_receipt(receipt_id,consumer_contract,message_identity_scope,message_id,payload_digest,effect_key) VALUES(?,?,?,?,?,?)",
+                (receipt_id, consumer_contract, message_identity_scope, message_id, payload_digest, effect_key),
             )
             connection.commit()
         except Exception:
@@ -110,6 +129,7 @@ class SQLiteAtomicInboxEffectGuard(EffectProtectionGuard):
 
         receipt = DurableResponsibilityReceipt(
             consumer_contract=consumer_contract,
+            message_identity_scope=message_identity_scope,
             message_id=message_id,
             receipt_id=receipt_id,
             payload_digest=payload_digest,
@@ -124,31 +144,58 @@ class SQLiteAtomicInboxEffectGuard(EffectProtectionGuard):
         with self._connect() as connection:
             row = connection.execute(
                 """
-                SELECT r.payload_digest, i.payload_digest, e.payload, e.apply_count
+                SELECT r.payload_digest, i.payload_digest, e.payload, e.apply_count,
+                       e.consumer_contract, e.message_identity_scope, e.message_id
                 FROM durable_receipt r
-                JOIN inbox i ON i.consumer_contract=r.consumer_contract AND i.message_id=r.message_id
+                JOIN inbox i
+                  ON i.consumer_contract=r.consumer_contract
+                 AND i.message_identity_scope=r.message_identity_scope
+                 AND i.message_id=r.message_id
                 JOIN business_effect e ON e.effect_key=r.effect_key
-                WHERE r.receipt_id=? AND r.consumer_contract=? AND r.message_id=? AND r.effect_key=?
+                WHERE r.receipt_id=?
+                  AND r.consumer_contract=?
+                  AND r.message_identity_scope=?
+                  AND r.message_id=?
+                  AND r.effect_key=?
                 """,
-                (receipt.receipt_id, receipt.consumer_contract, receipt.message_id, receipt.effect_key),
+                (
+                    receipt.receipt_id,
+                    receipt.consumer_contract,
+                    receipt.message_identity_scope,
+                    receipt.message_id,
+                    receipt.effect_key,
+                ),
             ).fetchone()
         if row is None:
-            raise PermissionError("durable responsibility receipt is not backed by committed state")
-        receipt_digest, inbox_digest, payload, apply_count = row
+            raise PermissionError("durable responsibility receipt is not backed by committed scoped state")
+        receipt_digest, inbox_digest, payload, apply_count, effect_consumer, effect_scope, effect_message_id = row
         if receipt_digest != receipt.payload_digest or inbox_digest != receipt.payload_digest:
             raise PermissionError("durable responsibility digest mismatch")
+        if (effect_consumer, effect_scope, effect_message_id) != (
+            receipt.consumer_contract,
+            receipt.message_identity_scope,
+            receipt.message_id,
+        ):
+            raise PermissionError("protected business effect scoped identity mismatch")
         if self._digest(payload) != receipt.payload_digest or apply_count != 1:
             raise PermissionError("protected business effect is not durably consistent")
 
     def observe_effect(self, effect_key: str) -> dict[str, object]:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT payload, apply_count FROM business_effect WHERE effect_key=?",
+                "SELECT consumer_contract,message_identity_scope,message_id,payload,apply_count FROM business_effect WHERE effect_key=?",
                 (effect_key,),
             ).fetchone()
         if row is None:
             raise LookupError("protected business effect missing")
-        return {"payload": row[0], "apply_count": row[1], "payload_digest": self._digest(row[0])}
+        return {
+            "consumer_contract": row[0],
+            "message_identity_scope": row[1],
+            "message_id": row[2],
+            "payload": row[3],
+            "apply_count": row[4],
+            "payload_digest": self._digest(row[3]),
+        }
 
     @classmethod
     def binding_descriptor(cls) -> dict[str, str]:

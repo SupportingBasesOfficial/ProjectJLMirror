@@ -61,13 +61,42 @@ D3B_PROBES = {
     "degraded_owner_read_bulkhead_fail_closed": D3B_CONFORMANCE_PROBE,
 }
 
-# D3-A/C/D were already conformed on the canonical base before this D3-B
-# promotion; D3-B becomes conformed in this promotion. D3-E is intentionally
-# excluded because its evidence is still legitimately incomplete. A later D3
-# acceptance may advance these tracks from per_track_conformed to
-# accepted_candidate, hence the invariant is terminal monotonicity rather than
-# an exact-state freeze.
-PROMOTED_TERMINAL_TRACKS = frozenset({"D3-A", "D3-B", "D3-C", "D3-D"})
+D3E_CONFORMANCE_EVIDENCE_SHA = "42722507a2eb410f81df2a77b3506432d4b6fb27"
+D3E_CONFORMANCE_WORKFLOW_RUN_ID = 33564230738
+D3E_CONFORMANCE_WORKFLOW_RUN_NUMBER = 79
+D3E_CONFORMANCE_WORKFLOW_FILE = ".github/workflows/d3-key-authority-conformance.yml"
+D3E_CONFORMANCE_JOB = "OpenBao 2.6.2 + PostgreSQL 18.6 crypto/replay continuity"
+D3E_OPENBAO_DIGEST = (
+    "ghcr.io/openbao/openbao@sha256:"
+    "11fd73a2102cda9c55d5d881a8c3210303146a7ec1e8ac76f526e175c6d24641"
+)
+D3E_PROBES = {
+    "historical_verifier_relocation_recovery_continuity": (
+        "implementation/d3-identity-security/harness/openbao_crypto_conformance_entrypoint.py"
+    ),
+    "retired_erased_key_nonresurrection": (
+        "implementation/d3-identity-security/harness/openbao_crypto_conformance_entrypoint.py"
+    ),
+    "private_key_jwt_replay_atomic_single_winner": (
+        "implementation/d3-identity-security/harness/private_key_jwt_token_boundary_conformance.py"
+    ),
+    "replay_partition_fail_closed": (
+        "implementation/d3-identity-security/harness/replay_recovery_conformance_entrypoint.py"
+    ),
+    "replay_consumed_identity_survives_restore_loss": (
+        "implementation/d3-identity-security/harness/replay_recovery_conformance_entrypoint.py"
+    ),
+    "key_generation_rotation_retirement": (
+        "implementation/d3-identity-security/harness/openbao_crypto_conformance_entrypoint.py"
+    ),
+}
+
+# D3-A/C/D were already conformed before the D3-B promotion. D3-B then became
+# conformed, and the exact-reviewed D3-E source evidence merged through PR #49
+# is now eligible for ledger promotion. Once credited, all five tracks are
+# terminal-monotonic. A later, separately governed D3 acceptance may advance
+# them from per_track_conformed to accepted_candidate; this promotion does not.
+PROMOTED_TERMINAL_TRACKS = frozenset({"D3-A", "D3-B", "D3-C", "D3-D", "D3-E"})
 
 
 def _promoted_d3a_proof(evidence_id: str, probe: str) -> dict:
@@ -102,6 +131,20 @@ def _promoted_d3b_proof(evidence_id: str, probe: str) -> dict:
     }
 
 
+def _promoted_d3e_proof(evidence_id: str, probe: str) -> dict:
+    return {
+        "evidence_id": evidence_id,
+        "evidence_sha": D3E_CONFORMANCE_EVIDENCE_SHA,
+        "workflow_run_id": D3E_CONFORMANCE_WORKFLOW_RUN_ID,
+        "workflow_run_number": D3E_CONFORMANCE_WORKFLOW_RUN_NUMBER,
+        "workflow_file": D3E_CONFORMANCE_WORKFLOW_FILE,
+        "job_name": D3E_CONFORMANCE_JOB,
+        "probe": probe,
+        "artifact_pins": [D3E_OPENBAO_DIGEST, legacy.POSTGRES_18_6_DIGEST],
+        "result": "pass",
+    }
+
+
 for _evidence_id, _probe in D3A_PROBES.items():
     _key = ("D3-A", _evidence_id)
     if _key not in legacy.APPROVED_EVIDENCE_PROOFS:
@@ -113,6 +156,14 @@ for _evidence_id, _probe in D3B_PROBES.items():
     if _evidence_id not in legacy.REQUIRED_EVIDENCE["D3-B"]:
         raise RuntimeError(f"unknown governed D3-B proof slot: {_evidence_id}")
     legacy.APPROVED_EVIDENCE_PROOFS[_key] = _promoted_d3b_proof(_evidence_id, _probe)
+
+for _evidence_id, _probe in D3E_PROBES.items():
+    _key = ("D3-E", _evidence_id)
+    if _evidence_id not in legacy.REQUIRED_EVIDENCE["D3-E"]:
+        raise RuntimeError(f"unknown governed D3-E proof slot: {_evidence_id}")
+    if _key in legacy.APPROVED_EVIDENCE_PROOFS:
+        raise RuntimeError(f"D3-E promotion attempted to overwrite an existing proof slot: {_evidence_id}")
+    legacy.APPROVED_EVIDENCE_PROOFS[_key] = _promoted_d3e_proof(_evidence_id, _probe)
 
 
 # Re-export the governed validator contract consumed by falsification and

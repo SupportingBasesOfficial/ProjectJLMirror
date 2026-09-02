@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -42,9 +43,18 @@ CONSUMER_DECLARATION_MARKERS = {
     "kafka_features",
 }
 
+IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,248}[A-Za-z0-9]$|^[A-Za-z0-9]$")
+
+
+def _valid_identifier(value: object) -> bool:
+    return isinstance(value, str) and bool(value) and IDENTIFIER_RE.fullmatch(value) is not None
+
 
 def _effect_binding(manifest: dict) -> tuple[str | None, str | None, str | None]:
-    value = manifest.get("inbox", {}).get("effect_protection")
+    inbox = manifest.get("inbox")
+    if not isinstance(inbox, dict):
+        return None, None, None
+    value = inbox.get("effect_protection")
     if not isinstance(value, dict):
         return None, None, None
     return value.get("profile"), value.get("implementation"), value.get("contract")
@@ -54,10 +64,10 @@ def validate_manifest(manifest: dict) -> list[str]:
     errors: list[str] = []
     if manifest.get("transport_candidate") != "kafka":
         errors.append("transport_candidate must be kafka for this D4-A source gate")
-    if not manifest.get("consumer_contract"):
-        errors.append("consumer_contract is required")
-    if not manifest.get("topic"):
-        errors.append("topic is required")
+    if not _valid_identifier(manifest.get("consumer_contract")):
+        errors.append("consumer_contract must be a stable nonempty string identifier")
+    if not _valid_identifier(manifest.get("topic")):
+        errors.append("topic must be a stable nonempty string identifier")
 
     inbox = manifest.get("inbox", {})
     if not isinstance(inbox, dict):

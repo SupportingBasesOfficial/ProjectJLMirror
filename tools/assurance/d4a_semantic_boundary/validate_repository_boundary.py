@@ -11,6 +11,7 @@ from consumer_registration_gate import discover_consumer_manifests
 
 ROOT = Path(__file__).resolve().parents[3]
 INVENTORY = ROOT / "implementation/d4-eventing-async/source-evidence/semantic-boundary/boundary-inventory.json"
+BOUNDARY_SOURCE = ROOT / "tools/assurance/d4a_semantic_boundary/broker_boundary.py"
 
 EXPECTED_PATH_CLASSES = {"OutboxDispatchPath", "ConsumerReceivePath", "InboxAcknowledgePath", "ReplayDispatchPath"}
 EXPECTED_PATH_IDS = {"outbox_dispatch", "consumer_receive", "inbox_acknowledge", "replay_dispatch"}
@@ -27,6 +28,23 @@ EXPECTED_DEPENDENCY_CALLS = {
 KAFKA_IMPORT_PREFIXES = ("kafka", "aiokafka", "confluent_kafka")
 KAFKA_NATIVE_NAMES = {"offset", "partition", "consumer_group", "rebalance", "transactional_id"}
 CODE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".mjs", ".cjs", ".go", ".rs", ".java", ".kt", ".cs"}
+KAFKA_TEXT_MARKERS = (
+    "confluent_kafka",
+    "confluent-kafka",
+    "confluent.kafka",
+    "aiokafka",
+    "kafkajs",
+    "node-rdkafka",
+    "rdkafka",
+    "librdkafka",
+    "@confluentinc/kafka-javascript",
+    "org.apache.kafka",
+    "segmentio/kafka-go",
+    "shopify/sarama",
+    "ibm/sarama",
+    "twmb/franz-go",
+    "rust-rdkafka",
+)
 GENERIC_BROKER_MARKERS = ("BrokerPort", "_broker.publish", "_broker.receive", "_broker.acknowledge")
 
 
@@ -57,6 +75,51 @@ def dependency_attributes(source: str) -> set[str]:
     return accesses
 
 
+def _broker_base_aliases(tree: ast.AST) -> set[str]:
+    aliases = {"BrokerFacingPath"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == "BrokerFacingPath":
+                    aliases.add(alias.asname or alias.name)
+    return aliases
+
+
+def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
+    discovered: dict[str, str] = {}
+    for path in paths:
+        if not path.exists() or path.suffix != ".py":
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        aliases = _broker_base_aliases(tree)
+        for node in tree.body:
+            if not isinstance(node, ast.ClassDef):
+                continue
+            base_names: set[str] = set()
+            for base in node.bases:
+                if isinstance(base, ast.Name):
+                    base_names.add(base.id)
+                elif isinstance(base, ast.Attribute):
+                    base_names.add(base.attr)
+            if base_names & aliases:
+                rel = path.relative_to(ROOT).as_posix()
+                key = f"{rel}:{node.name}"
+                discovered[key] = node.name
+    return discovered
+
+
+def governed_python_sources(inventory: dict) -> list[Path]:
+    paths = [BOUNDARY_SOURCE]
+    for root_value in inventory["implementation_code_roots"]:
+        root = ROOT / root_value
+        if root.exists():
+            paths.extend(sorted(root.rglob("*.py")))
+    return list(dict.fromkeys(paths))
+
+
 def scan_python_for_direct_kafka(path: Path) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     findings: set[str] = set()
@@ -71,13 +134,14 @@ def scan_python_for_direct_kafka(path: Path) -> list[str]:
                 findings.add(f"import:{module}")
         elif isinstance(node, ast.Attribute) and node.attr in KAFKA_NATIVE_NAMES:
             findings.add(f"attribute:{node.attr}")
+    text = path.read_text(encoding="utf-8", errors="ignore").lower()
+    findings.update(f"marker:{marker}" for marker in KAFKA_TEXT_MARKERS if marker in text)
     return sorted(findings)
 
 
 def scan_nonpython_for_direct_kafka(path: Path) -> list[str]:
     text = path.read_text(encoding="utf-8", errors="ignore").lower()
-    markers = ("confluent_kafka", "confluent-kafka", "aiokafka", "kafkajs", "org.apache.kafka", "segmentio/kafka-go", "sarama")
-    return sorted(marker for marker in markers if marker in text)
+    return sorted(marker for marker in KAFKA_TEXT_MARKERS if marker in text)
 
 
 def scan_governed_implementation(inventory: dict) -> tuple[list[str], list[str]]:
@@ -112,9 +176,13 @@ def main() -> int:
     assert inventory["consumer_registration_entrypoint"] == EXPECTED_REGISTRATION_ENTRYPOINT
     assert inventory["consumer_registration_function"] == EXPECTED_REGISTRATION_FUNCTION
 
-    discovered = discover_broker_facing_paths()
-    assert set(discovered) == EXPECTED_PATH_CLASSES
-    for class_name, path_type in discovered.items():
+    runtime_discovered = discover_broker_facing_paths()
+    assert set(runtime_discovered) == EXPECTED_PATH_CLASSES
+    static_discovered = discover_broker_path_declarations(governed_python_sources(inventory))
+    assert set(static_discovered.values()) == EXPECTED_PATH_CLASSES, f"repository BrokerFacingPath declaration drift: {static_discovered}"
+    assert len(static_discovered) == len(EXPECTED_PATH_CLASSES), f"duplicate/extra BrokerFacingPath declarations: {static_discovered}"
+
+    for class_name, path_type in runtime_discovered.items():
         assert issubclass(path_type, BrokerFacingPath)
         source = inspect.getsource(path_type)
         leaks = forbidden_kafka_tokens(source)
@@ -137,6 +205,7 @@ def main() -> int:
     assert "issue_registration_permit(manifest)" in source
     assert "register_validated" in source
     assert "SUPPORTED_EFFECT_BINDINGS" in source
+    assert "_ISSUED_PERMITS" in source
 
     helper_source = """
 class BadPath:
@@ -160,9 +229,13 @@ class BadPath:
     assert dependency_calls(constructor_bypass) == {"helper", "_broker.publish"}
     assert dependency_attributes(alias_source) == {"_broker.record_position"}
 
+    marker_fixture = "using Confluent.Kafka; // node-rdkafka rdkafka"
+    assert "confluent.kafka" in marker_fixture.lower()
+    assert "confluent.kafka" in KAFKA_TEXT_MARKERS and "node-rdkafka" in KAFKA_TEXT_MARKERS and "rdkafka" in KAFKA_TEXT_MARKERS
+
     print(
-        f"d4a_repository_boundary=PASS broker_paths={len(discovered)} consumers={len(consumers)} "
-        "direct_kafka_bypass=0 generic_broker_bypass=0 call_graph=exact roots=implementation+src"
+        f"d4a_repository_boundary=PASS broker_paths={len(runtime_discovered)} consumers={len(consumers)} "
+        "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=exact call_graph=exact roots=implementation+src"
     )
     return 0
 

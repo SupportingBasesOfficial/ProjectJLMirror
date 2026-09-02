@@ -85,9 +85,9 @@ D4-B SHALL select only after evidence proves:
 
 A serializer or registry SDK cannot close D4-B merely because it generates code successfully.
 
-### D4-C — Delivery, acknowledgement, quarantine, equivalence, outbox, replay and historical-reader mechanisms
+### D4-C — Delivery, acknowledgement, quarantine, equivalence, outbox, replay, historical-reader and recovery mechanisms
 
-**Source decisions:** `OPEN-EVT-008..015`.  
+**Source decisions:** `OPEN-EVT-008..015`, `OPEN-EVT-025`.  
 **Entry candidate:** none as a combined transport profile.  
 **Entry state:** `candidate_selection_open`.
 
@@ -102,7 +102,10 @@ D4-C SHALL prove:
 - outbox claim/dispatch/retry preserves one immutable logical message through broker-ack ambiguity and recovery;
 - producer/source generation cannot resurrect across failover/restore/relocation;
 - replay preserves original identity/meaning and cannot repeat irreversible effects by disabling dedup;
-- historical readers/upcasters preserve semantic meaning and equivalence-profile continuity.
+- historical readers/upcasters preserve semantic meaning and equivalence-profile continuity;
+- recovery generation/epoch encoding, `(R,F]` inventory/reconciliation tooling and activation gates preserve broker/history/inbox/equivalence authority, treat restored missing evidence as uncertainty rather than absence, and cannot revive stale producer/replay/verifier authority.
+
+`OPEN-EVT-025` is included here because its canonical question explicitly covers broker/history/inbox/equivalence-profile recovery and reconciliation, not only webhook recovery. Future webhook activation must reuse the accepted recovery-generation mechanism while adding the Product-specific destination/snapshot authority required by the webhook contracts.
 
 ### D4-D — Broker authentication, message protection and trace-context adaptation
 
@@ -135,16 +138,17 @@ D4 may use bounded non-production values to execute falsification. Those values 
 
 ## Product-gated / later-gate decisions
 
-`OPEN-EVT-020..025` are not silently waived. They are deliberately outside this internal D4 package because realtime resume and outbound webhook mechanisms depend on later/deferred capability or Product applicability gates.
+`OPEN-EVT-020..024` are not silently waived. They are deliberately outside this internal D4 package because realtime resume and outbound webhook mechanisms depend on later/deferred capability or Product applicability gates.
 
 In particular:
 
 - `OPEN-EVT-021` first requires Product authority establishing which outbound webhook capability/families exist;
-- `OPEN-EVT-022`, `024` and `025` remain C2 once that applicability exists, but do not block this internal eventing transport gate when the Product surface itself is not yet authorized;
+- `OPEN-EVT-022` and `OPEN-EVT-024` remain C2 once that webhook applicability exists, but do not block this internal eventing transport gate when the Product surface itself is not yet authorized;
 - `OPEN-EVT-023` is Product-specific behavior and therefore cannot be invented by D4;
-- `OPEN-EVT-020` remains coupled to an authorized realtime-resume slice.
+- `OPEN-EVT-020` remains coupled to an authorized realtime-resume slice;
+- `OPEN-EVT-025` is **not deferred**: its internal broker/history/inbox/equivalence recovery mechanism belongs to D4-C. A later webhook slice adds destination-generation/snapshot-specific recovery obligations without replacing the accepted internal recovery authority.
 
-Any later activation of these surfaces requires its own exact mechanism/evidence gate and cannot inherit D4 acceptance by implication.
+Any later activation of the deferred surfaces requires its own exact mechanism/evidence gate and cannot inherit D4 acceptance by implication.
 
 ## D4 state machine
 
@@ -197,6 +201,7 @@ The entry manifest intentionally credits **zero** evidence. It exists to make sc
 - Kafka being represented as already selected;
 - silent candidate selection in D4-B/C/D;
 - evidence pre-credit at entry;
+- omission of internal `OPEN-EVT-025` recovery/reconciliation authority from D4-C;
 - C3/later-gate scope leakage;
 - predecessor drift away from the separately accepted D3 canonical commit.
 
@@ -219,7 +224,7 @@ D4 can be proposed for separate acceptance only when:
 1. every D4-A..D track has a reviewed terminal C2 disposition;
 2. every required evidence slot has exact provenance and no unresolved remainder;
 3. Kafka, if retained, satisfies all binding closure conditions from `OPEN-EVT-001-kafka-decision-record.md`;
-4. all broker/serialization/delivery/security mechanisms remain behind broker-neutral/platform-neutral authority boundaries;
+4. all broker/serialization/delivery/security/recovery mechanisms remain behind broker-neutral/platform-neutral authority boundaries;
 5. deterministic assurance and all applicable D4 conformance workflows are green on the exact final HEAD;
 6. all P0/P1/P2 review findings are resolved on that exact final HEAD;
 7. fresh adversarial Codex review is clean on the same HEAD;

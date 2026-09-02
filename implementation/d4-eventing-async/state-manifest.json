@@ -1,0 +1,163 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "gate_name": "eventing_async_transport_c2",
+  "canonical_base": "ee8775fc5e7a25b1c4e166a8bb48b53438f6bd42",
+  "predecessor": {
+    "gate_id": "D3",
+    "state": "separately_accepted",
+    "canonical_commit": "ee8775fc5e7a25b1c4e166a8bb48b53438f6bd42"
+  },
+  "gate_state": "scoped",
+  "canonical_product_implementation_authority": "not_granted",
+  "wave4_implementation_authority": "not_granted",
+  "production_authority": "none",
+  "d4_transport_authority": "not_selected_not_granted",
+  "c3_numeric_topology_authority": "not_selected",
+  "tracks": [
+    {
+      "track_id": "D4-A",
+      "name": "broker_transport_topology_anti_corruption",
+      "source_decisions": [
+        "OPEN-EVT-001",
+        "OPEN-EVT-005",
+        "OPEN-REL-012.A"
+      ],
+      "candidate": "kafka",
+      "candidate_status": "leading_candidate_closure_pending",
+      "state": "candidate_leading_closure_pending",
+      "required_evidence": [
+        "capacity_envelope_baseline_growth_stress",
+        "broker_neutral_anti_corruption_stub_swap",
+        "regulated_payload_erasure_granularity",
+        "exactly_once_guardrail_consumer_inbox_enforcement",
+        "ordering_scope_partition_mapping_and_key_level_concurrency"
+      ],
+      "evidence_completed": [],
+      "evidence_remaining": [
+        "capacity_envelope_baseline_growth_stress",
+        "broker_neutral_anti_corruption_stub_swap",
+        "regulated_payload_erasure_granularity",
+        "exactly_once_guardrail_consumer_inbox_enforcement",
+        "ordering_scope_partition_mapping_and_key_level_concurrency"
+      ]
+    },
+    {
+      "track_id": "D4-B",
+      "name": "serialization_schema_catalog_and_contract_versioning",
+      "source_decisions": [
+        "OPEN-EVT-002",
+        "OPEN-EVT-003",
+        "OPEN-EVT-004"
+      ],
+      "candidate": null,
+      "candidate_status": "not_selected",
+      "state": "candidate_selection_open",
+      "required_evidence": [
+        "canonical_bounded_serialization_profile",
+        "parser_ambiguity_and_duplicate_field_negative_vectors",
+        "schema_catalog_semantic_manifest_compatibility_ci",
+        "historical_reader_and_equivalence_profile_continuity",
+        "contract_version_representation_and_breaking_change_vectors"
+      ],
+      "evidence_completed": [],
+      "evidence_remaining": [
+        "canonical_bounded_serialization_profile",
+        "parser_ambiguity_and_duplicate_field_negative_vectors",
+        "schema_catalog_semantic_manifest_compatibility_ci",
+        "historical_reader_and_equivalence_profile_continuity",
+        "contract_version_representation_and_breaking_change_vectors"
+      ]
+    },
+    {
+      "track_id": "D4-C",
+      "name": "delivery_ack_quarantine_equivalence_outbox_replay_history",
+      "source_decisions": [
+        "OPEN-EVT-008",
+        "OPEN-EVT-009",
+        "OPEN-EVT-010",
+        "OPEN-EVT-011",
+        "OPEN-EVT-012",
+        "OPEN-EVT-013",
+        "OPEN-EVT-014",
+        "OPEN-EVT-015"
+      ],
+      "candidate": null,
+      "candidate_status": "not_selected",
+      "state": "candidate_selection_open",
+      "required_evidence": [
+        "ack_after_durable_responsibility_and_lease_ambiguity",
+        "quarantine_redrive_current_authority_and_dedup_preservation",
+        "bounded_message_batch_compression_and_parser_limits",
+        "scoped_content_equivalence_confidentiality_and_conflict_rejection",
+        "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
+        "producer_generation_nonresurrection_across_failover_restore",
+        "privileged_bounded_replay_with_original_identity_and_effect_safety",
+        "historical_reader_upcaster_semantic_and_equivalence_continuity"
+      ],
+      "evidence_completed": [],
+      "evidence_remaining": [
+        "ack_after_durable_responsibility_and_lease_ambiguity",
+        "quarantine_redrive_current_authority_and_dedup_preservation",
+        "bounded_message_batch_compression_and_parser_limits",
+        "scoped_content_equivalence_confidentiality_and_conflict_rejection",
+        "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
+        "producer_generation_nonresurrection_across_failover_restore",
+        "privileged_bounded_replay_with_original_identity_and_effect_safety",
+        "historical_reader_upcaster_semantic_and_equivalence_continuity"
+      ]
+    },
+    {
+      "track_id": "D4-D",
+      "name": "broker_auth_message_protection_and_trace_context",
+      "source_decisions": [
+        "OPEN-EVT-016",
+        "OPEN-EVT-017",
+        "OPEN-EVT-018"
+      ],
+      "candidate": null,
+      "candidate_status": "not_selected",
+      "state": "candidate_selection_open",
+      "required_evidence": [
+        "workload_identity_to_broker_credential_adapter_least_privilege",
+        "tenant_and_contract_scoped_producer_consumer_authorization",
+        "message_protection_key_authority_and_historical_verifier_continuity",
+        "secret_credential_payload_exclusion_and_erasure_boundary",
+        "trace_context_observability_only_validation_and_redaction"
+      ],
+      "evidence_completed": [],
+      "evidence_remaining": [
+        "workload_identity_to_broker_credential_adapter_least_privilege",
+        "tenant_and_contract_scoped_producer_consumer_authorization",
+        "message_protection_key_authority_and_historical_verifier_continuity",
+        "secret_credential_payload_exclusion_and_erasure_boundary",
+        "trace_context_observability_only_validation_and_redaction"
+      ]
+    }
+  ],
+  "explicit_c3_exclusions": [
+    "OPEN-EVT-006",
+    "OPEN-EVT-007",
+    "OPEN-EVT-019",
+    "OPEN-EVT-026",
+    "OPEN-EVT-027",
+    "OPEN-EVT-028",
+    "OPEN-REL-012.B",
+    "production_partition_counts",
+    "production_retry_backoff_jitter_numerics",
+    "production_retention_lag_replay_quarantine_horizons",
+    "production_realtime_buffer_session_numerics"
+  ],
+  "explicit_product_or_later_gate_exclusions": [
+    "OPEN-EVT-020",
+    "OPEN-EVT-021",
+    "OPEN-EVT-022",
+    "OPEN-EVT-023",
+    "OPEN-EVT-024",
+    "OPEN-EVT-025",
+    "wave4_monitoring_product_implementation",
+    "production_deployment"
+  ],
+  "acceptance_rule": "all_d4_tracks_have_reviewed_terminal_c2_disposition_all_required_evidence_completed_and_exact_head_assurance_clean_then_separate_acceptance",
+  "merge_rule": "separate_explicit_user_authorization_after_final_exact_head_clean_gate"
+}

@@ -71,7 +71,7 @@
     },
     {
       "track_id": "D4-C",
-      "name": "delivery_ack_quarantine_equivalence_outbox_replay_history",
+      "name": "delivery_ack_quarantine_equivalence_outbox_replay_history_recovery",
       "source_decisions": [
         "OPEN-EVT-008",
         "OPEN-EVT-009",
@@ -80,7 +80,8 @@
         "OPEN-EVT-012",
         "OPEN-EVT-013",
         "OPEN-EVT-014",
-        "OPEN-EVT-015"
+        "OPEN-EVT-015",
+        "OPEN-EVT-025"
       ],
       "candidate": null,
       "candidate_status": "not_selected",
@@ -93,7 +94,8 @@
         "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
         "producer_generation_nonresurrection_across_failover_restore",
         "privileged_bounded_replay_with_original_identity_and_effect_safety",
-        "historical_reader_upcaster_semantic_and_equivalence_continuity"
+        "historical_reader_upcaster_semantic_and_equivalence_continuity",
+        "recovery_generation_rf_inventory_reconciliation_and_activation_gates"
       ],
       "evidence_completed": [],
       "evidence_remaining": [
@@ -104,7 +106,8 @@
         "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
         "producer_generation_nonresurrection_across_failover_restore",
         "privileged_bounded_replay_with_original_identity_and_effect_safety",
-        "historical_reader_upcaster_semantic_and_equivalence_continuity"
+        "historical_reader_upcaster_semantic_and_equivalence_continuity",
+        "recovery_generation_rf_inventory_reconciliation_and_activation_gates"
       ]
     },
     {
@@ -154,7 +157,6 @@
     "OPEN-EVT-022",
     "OPEN-EVT-023",
     "OPEN-EVT-024",
-    "OPEN-EVT-025",
     "wave4_monitoring_product_implementation",
     "production_deployment"
   ],

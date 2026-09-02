@@ -81,7 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           for test_file in tools/contracts/tests/test_*.py; do
-            python3 "$test_file"
+            PYTHONPATH=. python3 "$test_file"
           done
 
       - name: Assert source run cannot self-promote

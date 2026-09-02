@@ -65,8 +65,10 @@ D4-A SHALL prove:
 3. **Erasure granularity:** `sensitive_or_regulated` payload fields are not retained as raw shared Kafka record-value bytes unless a separately reviewed isolation/retention profile proves governed erasure; the default is opaque reference to governed per-record cryptographic-erasure storage.
 4. **Exactly-once guardrail:** tooling rejects consumer registration without real inbox/dedup/effect protection even if Kafka producer idempotence/transactions are enabled.
 5. **Ordering/partition mapping:** every logical ordering-scope class has a trusted partition-key strategy, bounded partition-count evidence and a named key-level consumer concurrency mechanism so physical partition cardinality does not become logical ordering authority or broker-wide head-of-line blocking.
+6. **Physical naming/routing/topology mapping:** concrete topic/subject/queue naming, routing and per-cell/global transport placement are selected behind the adapter boundary, preserve logical contract identity and tenant authorization, and can be replaced without consumer semantic rewrite. Production partition/replica/count numerics remain C3.
+7. **Broker-integrated outbox/backlog drain:** the selected broker/outbox/drain mechanism proves priority-preserving, bounded backlog recovery/drain behavior under broker outage/recovery and cannot starve protected/current work or reinterpret broker progress as business-effect truth. Benchmarks use bounded evidence profiles only and do not grant production lag/retention/partition numerics.
 
-Kafka selection is prohibited until all five evidence slots are credited by exact-run provenance and separately accepted.
+Kafka selection is prohibited until all seven D4-A evidence slots are credited by exact-run provenance and separately accepted.
 
 ### D4-B — Serialization, schema/catalog tooling and contract version representation
 
@@ -167,6 +169,8 @@ D4-A = candidate_leading_closure_pending
 D4-B = candidate_selection_open
 D4-C = candidate_selection_open
 D4-D = candidate_selection_open
+required_evidence = 26
+credited_evidence = 0
 transport_authority = not_selected_not_granted
 wave4_implementation_authority = not_granted
 production_authority = none
@@ -178,6 +182,7 @@ No track may enter `per_track_conformed` from documentation, SDK compatibility o
 
 - every concrete product/version/image/toolchain used as candidate evidence is immutable/pinned where the ecosystem permits;
 - evidence is attached to exact source SHA + workflow run/job/probe + artifact pins where applicable;
+- the exact required-evidence inventory is independently pinned by assurance tooling; replacing named proof obligations with generic/documentation placeholders is invalid;
 - no workflow may auto-credit its own current run into the machine ledger;
 - source evidence and ledger promotion remain separate governance actions;
 - synthetic/unit tests complement but never replace real broker/parser/recovery/concurrency evidence where a closure condition is about those mechanisms;
@@ -192,7 +197,7 @@ No track may enter `per_track_conformed` from documentation, SDK compatibility o
 
 `implementation/d4-eventing-async/state-manifest.json` is the machine-owned D4 entry state for this gate.
 
-The entry manifest intentionally credits **zero** evidence. It exists to make scope, candidate state, exclusions and future proof accounting mechanically falsifiable before implementation/evidence work starts.
+The entry manifest intentionally credits **zero of 26** evidence slots. It exists to make scope, candidate state, exclusions and future proof accounting mechanically falsifiable before implementation/evidence work starts.
 
 `tools/assurance/validate_d4_eventing_async_state.py` SHALL reject at minimum:
 
@@ -202,6 +207,7 @@ The entry manifest intentionally credits **zero** evidence. It exists to make sc
 - silent candidate selection in D4-B/C/D;
 - evidence pre-credit at entry;
 - omission of internal `OPEN-EVT-025` recovery/reconciliation authority from D4-C;
+- omission, substitution or collapse of any named required-evidence slot;
 - C3/later-gate scope leakage;
 - predecessor drift away from the separately accepted D3 canonical commit.
 
@@ -222,8 +228,8 @@ This gate does not authorize:
 D4 can be proposed for separate acceptance only when:
 
 1. every D4-A..D track has a reviewed terminal C2 disposition;
-2. every required evidence slot has exact provenance and no unresolved remainder;
-3. Kafka, if retained, satisfies all binding closure conditions from `OPEN-EVT-001-kafka-decision-record.md`;
+2. all 26 required evidence slots have exact provenance and no unresolved remainder;
+3. Kafka, if retained, satisfies all binding closure conditions from `OPEN-EVT-001-kafka-decision-record.md` plus the claimed `OPEN-EVT-005` physical mapping and `OPEN-REL-012.A` outbox/drain mechanism evidence;
 4. all broker/serialization/delivery/security/recovery mechanisms remain behind broker-neutral/platform-neutral authority boundaries;
 5. deterministic assurance and all applicable D4 conformance workflows are green on the exact final HEAD;
 6. all P0/P1/P2 review findings are resolved on that exact final HEAD;

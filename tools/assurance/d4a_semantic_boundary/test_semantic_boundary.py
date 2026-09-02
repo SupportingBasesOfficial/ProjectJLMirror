@@ -16,8 +16,9 @@ from consumer_registration_gate import (
 )
 from effect_protection import DurableResponsibilityReceipt, SQLiteAtomicInboxEffectGuard
 from validate_repository_boundary import (
-    ASSURANCE_DEPENDENCY_SOURCES, KAFKA_TEXT_MARKERS, dependency_calls,
+    KAFKA_TEXT_MARKERS, dependency_calls, discover_assurance_dependency_sources,
     discover_broker_path_declarations, scan_nonpython_for_direct_kafka,
+    scan_python_for_direct_kafka,
 )
 
 VALID = {
@@ -67,7 +68,6 @@ def main() -> int:
     assert set(discovered) == {"OutboxDispatchPath", "ConsumerReceivePath", "InboxAcknowledgePath", "ReplayDispatchPath"}
     assert_discovered_paths_do_not_leak_kafka_primitives()
     assert forbidden_kafka_tokens("class BadPath: offset = broker.offset") == ["offset"]
-    assert any(path.name == "effect_protection.py" for path in ASSURANCE_DEPENDENCY_SOURCES)
 
     constructor_bypass = """class BadPath:\n    def __init__(self, broker):\n        helper(broker)\n        self._broker = broker\n    def run(self, message):\n        return self._broker.publish(message)\n"""
     assert dependency_calls(constructor_bypass) == {"helper", "_broker.publish"}
@@ -146,6 +146,32 @@ def main() -> int:
         external_path.write_text("from broker_boundary import BrokerFacingPath as BFP\nclass EscapingPath(BFP):\n    def run(self):\n        return self._port.publish('x')\n", encoding="utf-8")
         assert list(discover_broker_path_declarations([external_path]).values()) == ["EscapingPath"]
 
+        inheritance_root = root / "inheritance"; inheritance_root.mkdir()
+        parent = inheritance_root / "parent.py"
+        parent.write_text("from broker_boundary import BrokerFacingPath\nclass ParentPath(BrokerFacingPath):\n    pass\n", encoding="utf-8")
+        child = inheritance_root / "child.py"
+        child.write_text("from parent import ParentPath\nclass EscapingChild(ParentPath):\n    def dispatch(self, message):\n        return self._transport.send(message)\n", encoding="utf-8")
+        descendants = set(discover_broker_path_declarations([parent, child]).values())
+        assert descendants == {"ParentPath", "EscapingChild"}
+
+        assurance_root = root / "assurance"; assurance_root.mkdir()
+        entry = assurance_root / "entry.py"
+        helper = assurance_root / "helper.py"
+        nested_helper = assurance_root / "nested_helper.py"
+        entry.write_text("from helper import run\n", encoding="utf-8")
+        helper.write_text("from nested_helper import execute\ndef run(): return execute()\n", encoding="utf-8")
+        nested_helper.write_text("def execute(): return 'ok'\n", encoding="utf-8")
+        closure = {path.name for path in discover_assurance_dependency_sources([entry], assurance_root)}
+        assert closure == {"entry.py", "helper.py", "nested_helper.py"}
+
+        for name, source, expected in (
+            ("commit.py", "def f(self): self.kafka_client.commit_transaction()\n", "transaction_api:commit_transaction"),
+            ("offsets.py", "def f(self): self._producer.send_offsets_to_transaction({})\n", "transaction_api:send_offsets_to_transaction"),
+            ("begin.py", "def f(): KafkaProducer().begin_transaction()\n", "transaction_api:begin_transaction"),
+        ):
+            p = root / name; p.write_text(source, encoding="utf-8")
+            assert expected in scan_python_for_direct_kafka(p)
+
         for name, text, marker in (
             ("DirectKafka.cs", "using Confluent.Kafka;", "confluent.kafka"),
             ("SpringKafka.java", "import org.springframework.kafka.core.KafkaTemplate;", "org.springframework.kafka"),
@@ -207,7 +233,7 @@ def main() -> int:
         remaining_semantic = semantic_bound.receive("evidence.consumer.v1")
         assert remaining_semantic.contract_version == "v2"
 
-    print("d4a_fresh_review_hardening=PASS immutable_ack+durable_authority_closure+malformed_json_fail_closed")
+    print("d4a_fresh_review_hardening=PASS transitive_assurance_closure+kafka_transaction_apis+indirect_broker_inheritance")
     print("d4a_transport_swap=PASS adapters=2 durable_effect_observed=true replay_apply_count=1")
     return 0
 

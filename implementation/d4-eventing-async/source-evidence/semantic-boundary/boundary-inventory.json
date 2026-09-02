@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "governed_namespace": "D4 current broker-facing source evidence",
+  "governed_namespace": "repository current broker-facing implementation surface",
   "broker_boundary_module": "tools/assurance/d4a_semantic_boundary/broker_boundary.py",
   "broker_facing_path_base_class": "BrokerFacingPath",
   "broker_facing_paths": [
@@ -10,9 +10,9 @@
     {"path_id": "replay_dispatch", "class_name": "ReplayDispatchPath"}
   ],
   "physical_adapter_classes": ["KafkaCandidateAdapter", "AlternateStubTransport"],
-  "implementation_code_roots": ["implementation/d4-eventing-async"],
-  "consumer_manifest_discovery_root": "implementation/d4-eventing-async",
+  "implementation_code_roots": ["implementation", "src"],
+  "consumer_manifest_discovery_root": "implementation",
   "consumer_registration_entrypoint": "tools/assurance/d4a_semantic_boundary/consumer_registration_gate.py",
   "consumer_registration_function": "register_consumer",
-  "rule": "discovery_must_equal_independently_pinned_inventory_and_all_discovered_consumers_must_traverse_registration_gate"
+  "rule": "mechanical discovery spans all current implementation code roots; discovery must equal independently pinned logical-path inventory; direct Kafka implementation is forbidden outside the evidence adapter; every discovered consumer manifest must traverse the registration gate"
 }

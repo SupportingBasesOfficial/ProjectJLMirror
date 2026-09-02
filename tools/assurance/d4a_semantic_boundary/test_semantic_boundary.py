@@ -16,7 +16,7 @@ from consumer_registration_gate import (
 )
 from effect_protection import DurableResponsibilityReceipt, SQLiteAtomicInboxEffectGuard
 from validate_repository_boundary import (
-    KAFKA_TEXT_MARKERS, dependency_calls, discover_assurance_dependency_sources,
+    BOUNDARY_SOURCE, KAFKA_TEXT_MARKERS, dependency_calls, discover_assurance_dependency_sources,
     discover_broker_path_declarations, scan_nonpython_for_direct_kafka,
     scan_python_for_direct_kafka,
 )
@@ -154,20 +154,34 @@ def main() -> int:
         descendants = set(discover_broker_path_declarations([parent, child]).values())
         assert descendants == {"ParentPath", "EscapingChild"}
 
+        concrete_alias = inheritance_root / "concrete_alias.py"
+        concrete_alias.write_text(
+            "from broker_boundary import OutboxDispatchPath as Base\n"
+            "class AliasEscapingPath(Base):\n"
+            "    def dispatch(self, message):\n"
+            "        return self._transport.send(message)\n",
+            encoding="utf-8",
+        )
+        alias_descendants = set(discover_broker_path_declarations([BOUNDARY_SOURCE, concrete_alias]).values())
+        assert "AliasEscapingPath" in alias_descendants
+
         assurance_root = root / "assurance"; assurance_root.mkdir()
+        helpers = assurance_root / "helpers"; helpers.mkdir()
+        deeper = helpers / "deeper"; deeper.mkdir()
         entry = assurance_root / "entry.py"
-        helper = assurance_root / "helper.py"
-        nested_helper = assurance_root / "nested_helper.py"
-        entry.write_text("from helper import run\n", encoding="utf-8")
-        helper.write_text("from nested_helper import execute\ndef run(): return execute()\n", encoding="utf-8")
+        helper = helpers / "guard.py"
+        nested_helper = deeper / "more.py"
+        entry.write_text("from helpers.guard import run\n", encoding="utf-8")
+        helper.write_text("from helpers.deeper.more import execute\ndef run(): return execute()\n", encoding="utf-8")
         nested_helper.write_text("def execute(): return 'ok'\n", encoding="utf-8")
-        closure = {path.name for path in discover_assurance_dependency_sources([entry], assurance_root)}
-        assert closure == {"entry.py", "helper.py", "nested_helper.py"}
+        closure = {path.relative_to(assurance_root).as_posix() for path in discover_assurance_dependency_sources([entry], assurance_root)}
+        assert closure == {"entry.py", "helpers/guard.py", "helpers/deeper/more.py"}
 
         for name, source, expected in (
-            ("commit.py", "def f(self): self.kafka_client.commit_transaction()\n", "transaction_api:commit_transaction"),
-            ("offsets.py", "def f(self): self._producer.send_offsets_to_transaction({})\n", "transaction_api:send_offsets_to_transaction"),
-            ("begin.py", "def f(): KafkaProducer().begin_transaction()\n", "transaction_api:begin_transaction"),
+            ("commit.py", "def f(self): self.client.commit_transaction()\n", "transaction_api:commit_transaction"),
+            ("abort.py", "def f(self): self.transport.abort_transaction()\n", "transaction_api:abort_transaction"),
+            ("offsets.py", "def f(self): self.session.send_offsets_to_transaction({})\n", "transaction_api:send_offsets_to_transaction"),
+            ("begin.py", "def f(self): self.transport.begin_transaction()\n", "transaction_api:begin_transaction"),
         ):
             p = root / name; p.write_text(source, encoding="utf-8")
             assert expected in scan_python_for_direct_kafka(p)
@@ -233,7 +247,7 @@ def main() -> int:
         remaining_semantic = semantic_bound.receive("evidence.consumer.v1")
         assert remaining_semantic.contract_version == "v2"
 
-    print("d4a_fresh_review_hardening=PASS transitive_assurance_closure+kafka_transaction_apis+indirect_broker_inheritance")
+    print("d4a_fresh_review_hardening=PASS nested_import_closure+owner_independent_transactions+concrete_base_aliases")
     print("d4a_transport_swap=PASS adapters=2 durable_effect_observed=true replay_apply_count=1")
     return 0
 

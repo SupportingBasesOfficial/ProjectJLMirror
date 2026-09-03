@@ -247,6 +247,61 @@ def benchmark_partition_ceiling(tier: dict) -> tuple[list[dict[str, object]], in
     return probes, max(passing)
 
 
+def exercise_device_cardinality(tier: dict, tier_name: str, *, partitions: int) -> dict[str, object]:
+    tenant_weights = tier["tenant_weights"]
+    expected_devices = tier["device_cardinality_by_tenant"]
+    records: list[tuple[str, str]] = []
+    expected_messages_by_tenant: dict[str, int] = {}
+
+    for tenant, weight in tenant_weights.items():
+        tenant_messages = tier["message_count"] * weight // 100
+        if tenant_messages * 100 != tier["message_count"] * weight:
+            raise AssertionError(f"{tier_name} tenant allocation must be integral for {tenant}")
+        device_count = expected_devices[tenant]
+        if tenant_messages < device_count:
+            raise AssertionError(
+                f"{tier_name} cannot exercise {device_count} devices for {tenant} with only {tenant_messages} messages"
+            )
+        expected_messages_by_tenant[tenant] = tenant_messages
+        for event_index in range(tenant_messages):
+            device_index = event_index % device_count
+            logical_key = f"{tenant}:device-{device_index:04d}"
+            records.append((logical_key, f"{tier_name}-event-{event_index:06d}"))
+
+    if len(records) != tier["message_count"]:
+        raise AssertionError(f"{tier_name} device workload count mismatch: {len(records)} != {tier['message_count']}")
+
+    observed = keyed_roundtrip(f"d4a-device-cardinality-{tier_name}", records, partitions=partitions)
+    observed_messages_by_tenant: dict[str, int] = {}
+    observed_device_sets: dict[str, set[str]] = {tenant: set() for tenant in tenant_weights}
+    for logical_key, _ in observed:
+        tenant, separator, device = logical_key.partition(":device-")
+        if separator != ":device-" or tenant not in tenant_weights or not device.isdigit():
+            raise AssertionError(f"unexpected device logical key: {logical_key!r}")
+        observed_messages_by_tenant[tenant] = observed_messages_by_tenant.get(tenant, 0) + 1
+        observed_device_sets[tenant].add(device)
+
+    observed_devices = {tenant: len(devices) for tenant, devices in observed_device_sets.items()}
+    if observed_messages_by_tenant != expected_messages_by_tenant:
+        raise AssertionError(
+            f"{tier_name} tenant event distribution mismatch: expected={expected_messages_by_tenant} observed={observed_messages_by_tenant}"
+        )
+    if observed_devices != expected_devices:
+        raise AssertionError(
+            f"{tier_name} device cardinality mismatch: expected={expected_devices} observed={observed_devices}"
+        )
+
+    return {
+        "tenant_skew_observed_counts": observed_messages_by_tenant,
+        "tenant_skew_observed": max(observed_messages_by_tenant.values()) > sum(observed_messages_by_tenant.values()) / len(observed_messages_by_tenant),
+        "device_cardinality_expected_by_tenant": expected_devices,
+        "device_cardinality_observed_by_tenant": observed_devices,
+        "distinct_device_scopes_observed_total": sum(observed_devices.values()),
+        "device_cardinality_exercised": True,
+        "broker_exercised": True,
+    }
+
+
 def exercise_ordering_profiles(profile: dict) -> list[dict[str, object]]:
     exercised: list[dict[str, object]] = []
     for scope, mapping in profile["ordering_scope_mappings"].items():
@@ -304,7 +359,8 @@ def main() -> None:
     for tier in profile["tiers"]:
         name = tier["name"].lower()
         perf_topic = f"d4a-capacity-{name}"
-        topic(perf_topic, max(tier["partition_probe_counts"]))
+        partitions = max(tier["partition_probe_counts"])
+        topic(perf_topic, partitions)
         producer = producer_perf(perf_topic, tier["message_count"], tier["record_size_bytes"], tier["target_messages_per_second"])
         time.sleep(tier["backlog_pause_seconds"])
         backlog_before = measured_topic_messages(perf_topic)
@@ -312,17 +368,7 @@ def main() -> None:
             raise AssertionError(f"measured backlog mismatch for {tier['name']}: {backlog_before}")
         consumer = consumer_perf(perf_topic, tier["message_count"], f"d4a-{name}-drain")
         partition_probes, ceiling = benchmark_partition_ceiling(tier)
-
-        weighted_records: list[tuple[str, str]] = []
-        total_weight = sum(tier["tenant_weights"].values())
-        sample_count = max(100, len(tier["tenant_weights"]) * 20)
-        for tenant, weight in tier["tenant_weights"].items():
-            n = max(1, round(sample_count * weight / total_weight))
-            weighted_records.extend((tenant, f"{name}-event-{i}") for i in range(n))
-        skew_roundtrip = keyed_roundtrip(f"d4a-skew-{name}", weighted_records)
-        observed_skew: dict[str, int] = {}
-        for tenant, _ in skew_roundtrip:
-            observed_skew[tenant] = observed_skew.get(tenant, 0) + 1
+        cardinality = exercise_device_cardinality(tier, name, partitions=partitions)
 
         results["tiers"].append({
             "name": tier["name"],
@@ -337,8 +383,7 @@ def main() -> None:
             "tested_partition_ceiling": ceiling,
             "partition_ceiling_authority": "bounded_test_only_not_production",
             "tenant_skew_expected_weights": tier["tenant_weights"],
-            "tenant_skew_observed_counts": observed_skew,
-            "tenant_skew_observed": max(observed_skew.values()) > sum(observed_skew.values()) / len(observed_skew),
+            **cardinality,
         })
 
     degradation = profile["degradation_probe"]
@@ -429,8 +474,11 @@ def main() -> None:
 
     if not all(tier["tenant_skew_observed"] for tier in results["tiers"]):
         raise AssertionError("all tiers must exercise observable tenant skew")
+    device_totals = [int(tier["distinct_device_scopes_observed_total"]) for tier in results["tiers"]]
+    if device_totals != sorted(device_totals) or len(set(device_totals)) != len(device_totals):
+        raise AssertionError(f"device cardinality pressure must strictly increase across tiers: {device_totals}")
     Path(args.output).write_text(json.dumps(results, indent=2, sort_keys=True) + "\n")
-    print("d4a_live_kafka_capacity_ordering=PASS tiers=3 skew=exercised backlog=measured quota_degradation=observed partition_ceiling=tier_target_bound ordering_profiles=6 key_serial=PASS cohort_fallback=actual_over_ceiling numerics=test_only")
+    print("d4a_live_kafka_capacity_ordering=PASS tiers=3 tenant_device_event_rate=exercised backlog=measured quota_degradation=observed partition_ceiling=tier_target_bound ordering_profiles=6 key_serial=PASS cohort_fallback=actual_over_ceiling numerics=test_only")
 
 
 if __name__ == "__main__":

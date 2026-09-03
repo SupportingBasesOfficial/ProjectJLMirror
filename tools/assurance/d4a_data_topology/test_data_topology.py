@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from policy_boundary import (
     DataClassification,
+    ErasureGovernanceApproval,
     GovernedOpaqueStore,
     LogicalDelivery,
     OpaqueReference,
+    PerTenantRawAssignment,
     PhysicalRoute,
     PolicyViolation,
     PublicationPolicy,
@@ -28,7 +30,6 @@ def main() -> int:
     tenant = "tenant-a"
     ref = OpaqueReference(tenant_id=tenant, record_id="record-7", reference_id="opaque-ref-7")
 
-    # Default regulated profile is reference-only and supports record-level erasure by reference.
     PublicationPolicy.validate(
         PublicationProjection(
             classification=DataClassification.SENSITIVE_OR_REGULATED,
@@ -90,12 +91,21 @@ def main() -> int:
         ),
     )
 
-    # Raw-regulated exception is conjunctive: every binding control is required.
+    assignment = PerTenantRawAssignment(
+        tenant_id=tenant,
+        assignment_kind="partition",
+        assignment_id="tenant-a-partition-7",
+    )
+    approval = ErasureGovernanceApproval(
+        tenant_id=tenant,
+        authority_id="erasure-governance-authority",
+        approval_id="approval-17",
+    )
     good_exception = RawRegulatedException(
-        per_tenant_assignment=True,
+        per_tenant_assignment=assignment,
         segment_retention_ceiling_seconds=600,
         governed_erasure_sla_seconds=900,
-        erasure_governance_signoff=True,
+        erasure_governance_approval=approval,
     )
     PublicationPolicy.validate(
         PublicationProjection(
@@ -105,12 +115,62 @@ def main() -> int:
         ),
         trusted_tenant_id=tenant,
     )
-    for name, exception in (
-        ("missing per-tenant assignment", RawRegulatedException(False, 600, 900, True)),
-        ("missing retention ceiling", RawRegulatedException(True, None, 900, True)),
-        ("retention exceeds erasure sla", RawRegulatedException(True, 901, 900, True)),
-        ("missing erasure governance signoff", RawRegulatedException(True, 600, 900, False)),
-    ):
+
+    bad_exceptions = (
+        (
+            "missing per-tenant assignment",
+            RawRegulatedException(None, 600, 900, approval),
+        ),
+        (
+            "cross-tenant assignment",
+            RawRegulatedException(
+                PerTenantRawAssignment("tenant-b", "partition", "tenant-b-partition-3"),
+                600,
+                900,
+                approval,
+            ),
+        ),
+        (
+            "invalid assignment kind",
+            RawRegulatedException(
+                PerTenantRawAssignment(tenant, "shared-cluster", "shared-1"),
+                600,
+                900,
+                approval,
+            ),
+        ),
+        (
+            "missing retention ceiling",
+            RawRegulatedException(assignment, None, 900, approval),
+        ),
+        (
+            "retention exceeds erasure sla",
+            RawRegulatedException(assignment, 901, 900, approval),
+        ),
+        (
+            "missing erasure governance approval",
+            RawRegulatedException(assignment, 600, 900, None),
+        ),
+        (
+            "wrong governance authority",
+            RawRegulatedException(
+                assignment,
+                600,
+                900,
+                ErasureGovernanceApproval(tenant, "ordinary-service", "approval-17"),
+            ),
+        ),
+        (
+            "cross-tenant governance approval",
+            RawRegulatedException(
+                assignment,
+                600,
+                900,
+                ErasureGovernanceApproval("tenant-b", "erasure-governance-authority", "approval-17"),
+            ),
+        ),
+    )
+    for name, exception in bad_exceptions:
         must_reject(
             name,
             lambda exception=exception: PublicationPolicy.validate(
@@ -181,7 +241,6 @@ def main() -> int:
         ),
     )
 
-    # Physical values in an unrelated payload dictionary cannot override trusted mapping.
     hostile_payload = {
         "topic": "attacker.topic",
         "consumer_group": "attacker.group",
@@ -198,8 +257,8 @@ def main() -> int:
     print(
         "d4a_data_topology=PASS "
         "regulated_default=opaque_reference per_record_erasure=isolated raw_leak=blocked "
-        "exception_controls=conjunctive tenant_auth=before_mapping physical_identity=nonsemantic "
-        "replacement_mapping=semantic_stable"
+        "exception_assignment=tenant_bound exception_governance=authority_bound retention_ceiling=bounded "
+        "tenant_auth=before_mapping physical_identity=nonsemantic replacement_mapping=semantic_stable"
     )
     return 0
 

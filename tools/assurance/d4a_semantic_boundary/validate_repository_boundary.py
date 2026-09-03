@@ -38,6 +38,9 @@ KAFKA_TRANSACTION_METHODS = {
     "abort_transaction",
     "send_offsets_to_transaction",
 }
+KAFKA_TRANSACTION_IDENTIFIERS = {
+    method: method.replace("_", "") for method in KAFKA_TRANSACTION_METHODS
+}
 CODE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".mjs", ".cjs", ".go", ".rs", ".java", ".kt", ".cs"}
 KAFKA_TEXT_MARKERS = (
     "confluent_kafka", "confluent-kafka", "confluent.kafka", "aiokafka", "kafkajs",
@@ -90,10 +93,22 @@ def _base_leaf_name(base: ast.expr) -> str | None:
     return None
 
 
+def _assignment_alias(node: ast.stmt) -> tuple[str, str] | None:
+    if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+        source = _base_leaf_name(node.value)
+        if source is not None:
+            return node.targets[0].id, source
+    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
+        source = _base_leaf_name(node.value)
+        if source is not None:
+            return node.target.id, source
+    return None
+
+
 def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
-    """Discover descendants through inheritance and imported aliases across governed sources."""
+    """Discover descendants through inheritance plus import/assignment aliases across governed sources."""
     classes: list[tuple[Path, str, set[str]]] = []
-    imported_aliases: list[tuple[str, str]] = []
+    aliases: list[tuple[str, str]] = []
     for path in paths:
         if not path.exists() or path.suffix != ".py":
             continue
@@ -101,8 +116,11 @@ def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 for alias in node.names:
-                    imported_aliases.append((alias.asname or alias.name, alias.name))
+                    aliases.append((alias.asname or alias.name, alias.name))
         for node in tree.body:
+            assignment = _assignment_alias(node)
+            if assignment is not None:
+                aliases.append(assignment)
             if isinstance(node, ast.ClassDef):
                 bases = {name for base in node.bases if (name := _base_leaf_name(base)) is not None}
                 classes.append((path, node.name, bases))
@@ -111,8 +129,8 @@ def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
     changed = True
     while changed:
         changed = False
-        for local_name, imported_name in imported_aliases:
-            if imported_name in descendant_symbols and local_name not in descendant_symbols:
+        for local_name, source_name in aliases:
+            if source_name in descendant_symbols and local_name not in descendant_symbols:
                 descendant_symbols.add(local_name)
                 changed = True
         for _, class_name, bases in classes:
@@ -189,8 +207,7 @@ def _local_import_targets(path: Path, assurance_dir: Path) -> list[Path]:
             else:
                 base = assurance_dir
             module = node.module or ""
-            module_candidates = _candidate_local_modules(base, module)
-            for candidate in module_candidates:
+            for candidate in _candidate_local_modules(base, module):
                 add_candidate(candidate)
             module_dir = base / Path(*module.split(".")) if module else base
             for alias in node.names:
@@ -253,11 +270,14 @@ def scan_python_for_direct_kafka(path: Path) -> list[str]:
 
 
 def scan_nonpython_for_direct_kafka(path: Path) -> list[str]:
-    text = path.read_text(encoding="utf-8", errors="ignore").lower()
-    findings: set[str] = {f"marker:{marker}" for marker in KAFKA_TEXT_MARKERS if marker in text}
-    for method in KAFKA_TRANSACTION_METHODS:
-        if re.search(rf"\.\s*{re.escape(method)}\s*\(", text):
-            findings.add(f"transaction_api:{method}")
+    raw = path.read_text(encoding="utf-8", errors="ignore")
+    lowered = raw.lower()
+    findings: set[str] = {f"marker:{marker}" for marker in KAFKA_TEXT_MARKERS if marker in lowered}
+    for match in re.finditer(r"\.\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(", raw):
+        normalized_identifier = match.group(1).lower().replace("_", "")
+        for canonical_method, normalized_method in KAFKA_TRANSACTION_IDENTIFIERS.items():
+            if normalized_identifier == normalized_method:
+                findings.add(f"transaction_api:{canonical_method}")
     return sorted(findings)
 
 
@@ -339,9 +359,9 @@ def main() -> int:
 
     print(
         f"d4a_repository_boundary=PASS broker_paths={len(runtime_discovered)} consumers={len(consumers)} "
-        "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=alias_transitive_exact call_graph=exact "
+        "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=import+assignment_alias_transitive_exact call_graph=exact "
         f"roots=implementation+src assurance_dependency_closure={len(assurance_closure)} package_initializers=scanned "
-        "transaction_apis=owner_independent_polyglot"
+        "transaction_apis=owner_independent_polyglot_case_normalized"
     )
     return 0
 

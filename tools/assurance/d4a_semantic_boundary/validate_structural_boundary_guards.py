@@ -59,8 +59,27 @@ def _python_tree_findings(tree: ast.AST, raw: str) -> set[str]:
     return findings
 
 
+def _nested_lexical_declarations(allowed: ast.ClassDef) -> list[ast.AST]:
+    """Return lexical declarations nested below the allowlisted class's direct method/class boundary."""
+    nested: list[ast.AST] = []
+    direct_declarations = {
+        id(node)
+        for node in allowed.body
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    for node in ast.walk(allowed):
+        if node is allowed or id(node) in direct_declarations:
+            continue
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            nested.append(node)
+    # Direct nested classes are independent declarations too. Direct methods are the adapter's
+    # allowlisted implementation surface, but anything declared lexically inside them is not.
+    nested.extend(node for node in allowed.body if isinstance(node, ast.ClassDef))
+    return nested
+
+
 def boundary_non_allowlisted_findings(raw: str, allowlisted_class: str) -> list[str]:
-    """Exempt exactly one top-level lexical declaration and scan every other class subtree."""
+    """Exempt one top-level adapter declaration while scanning every other lexical declaration."""
     tree = ast.parse(raw)
     all_matching = [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef) and node.name == allowlisted_class]
     top_level_matching = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == allowlisted_class]
@@ -71,15 +90,21 @@ def boundary_non_allowlisted_findings(raw: str, allowlisted_class: str) -> list[
     allowed = top_level_matching[0]
     findings: set[str] = set()
 
+    # Decorators and bases execute outside the adapter's method-body exception and may replace or
+    # wrap the declaration, so they stay governed.
+    for decorator in allowed.decorator_list:
+        findings.update(_python_tree_findings(decorator, raw))
+    for base in allowed.bases:
+        findings.update(_python_tree_findings(base, raw))
+    for keyword in allowed.keywords:
+        findings.update(_python_tree_findings(keyword.value, raw))
+
     for node in tree.body:
         if node is not allowed:
             findings.update(_python_tree_findings(node, raw))
-            continue
-        # The native adapter body is exempt, but nested classes are independent lexical declarations
-        # and therefore remain prohibited from acquiring native/transaction authority.
-        for nested in ast.walk(allowed):
-            if isinstance(nested, ast.ClassDef) and nested is not allowed:
-                findings.update(_python_tree_findings(nested, raw))
+
+    for nested in _nested_lexical_declarations(allowed):
+        findings.update(_python_tree_findings(nested, raw))
     return sorted(findings)
 
 
@@ -96,19 +121,25 @@ def _call_target(statement: ast.stmt) -> str | None:
 
 
 def assert_ack_verification_dominates(raw: str) -> None:
-    """Require a linear two-statement ack path: durable verification, then broker acknowledgement."""
+    """Require an undecorated linear ack entrypoint: durable verification, then broker acknowledgement."""
     tree = ast.parse(raw)
     classes = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "InboxAcknowledgePath"]
     if len(classes) != 1:
         raise AssertionError("expected exactly one top-level InboxAcknowledgePath declaration")
+    path_class = classes[0]
+    if path_class.decorator_list:
+        raise AssertionError("InboxAcknowledgePath must not be decorated or replaceable before analysis")
     methods = [
-        node for node in classes[0].body
+        node for node in path_class.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and node.name == "acknowledge_after_durable_responsibility"
     ]
     if len(methods) != 1:
         raise AssertionError("expected exactly one acknowledgement entrypoint")
-    body = methods[0].body
+    method = methods[0]
+    if method.decorator_list:
+        raise AssertionError("acknowledgement entrypoint must not be decorated or replaced by a wrapper")
+    body = method.body
     if len(body) != 2:
         raise AssertionError("acknowledgement entrypoint must be a linear two-statement verify-then-ack path")
     targets = [_call_target(statement) for statement in body]
@@ -133,14 +164,46 @@ class KafkaCandidateAdapter:
     else:
         raise AssertionError("duplicate allowlisted declaration escaped lexical uniqueness guard")
 
-    nested = """
+    nested_class = """
 class KafkaCandidateAdapter:
     class AlternateStubTransport:
         def run(self, client):
             client.commitTransaction()
 """
     assert "transaction_api:commit_transaction" in boundary_non_allowlisted_findings(
-        nested, "KafkaCandidateAdapter"
+        nested_class, "KafkaCandidateAdapter"
+    )
+
+    nested_helper = """
+class KafkaCandidateAdapter:
+    def publish(self, client):
+        def hidden_helper():
+            client.commitTransaction()
+        return hidden_helper()
+"""
+    assert "transaction_api:commit_transaction" in boundary_non_allowlisted_findings(
+        nested_helper, "KafkaCandidateAdapter"
+    )
+
+    nested_async_helper = """
+class KafkaCandidateAdapter:
+    async def publish(self, client):
+        async def hidden_helper():
+            client.commitTransaction()
+        return await hidden_helper()
+"""
+    assert "transaction_api:commit_transaction" in boundary_non_allowlisted_findings(
+        nested_async_helper, "KafkaCandidateAdapter"
+    )
+
+    nested_lambda = """
+class KafkaCandidateAdapter:
+    def publish(self, client):
+        hidden = lambda: client.commitTransaction()
+        return hidden()
+"""
+    assert "transaction_api:commit_transaction" in boundary_non_allowlisted_findings(
+        nested_lambda, "KafkaCandidateAdapter"
     )
 
     conditional_verify = """
@@ -170,6 +233,38 @@ class InboxAcknowledgePath:
     else:
         raise AssertionError("broker-first acknowledgement escaped dominance guard")
 
+    decorated_method = """
+def bypass_wrapper(fn):
+    return fn
+class InboxAcknowledgePath:
+    @bypass_wrapper
+    def acknowledge_after_durable_responsibility(self, receipt):
+        self._verifier.assert_durable(receipt)
+        self._broker.acknowledge(receipt)
+"""
+    try:
+        assert_ack_verification_dominates(decorated_method)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("decorated acknowledgement entrypoint escaped replacement guard")
+
+    decorated_class = """
+def replace_class(cls):
+    return cls
+@replace_class
+class InboxAcknowledgePath:
+    def acknowledge_after_durable_responsibility(self, receipt):
+        self._verifier.assert_durable(receipt)
+        self._broker.acknowledge(receipt)
+"""
+    try:
+        assert_ack_verification_dominates(decorated_class)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("decorated acknowledgement class escaped replacement guard")
+
 
 def main() -> int:
     inventory = json.loads(INVENTORY.read_text(encoding="utf-8"))
@@ -185,8 +280,9 @@ def main() -> int:
     run_negative_controls()
     print(
         "d4a_structural_boundary_guards=PASS "
-        "native_allowlist=single_top_level_lexical_declaration nested_classes=scanned "
-        "ack_dominance=linear_unconditional_verify_then_ack negative_controls=duplicate+nested+conditional+broker_first"
+        "native_allowlist=single_top_level_lexical_declaration nested_lexical_declarations=scanned "
+        "ack_dominance=undecorated_linear_unconditional_verify_then_ack "
+        "negative_controls=duplicate+nested_class+nested_def+nested_async_def+nested_lambda+conditional+broker_first+decorated_method+decorated_class"
     )
     return 0
 

@@ -1,0 +1,18 @@
+{
+  "consumer_contract": "evidence.consumer.protected.v1",
+  "transport_candidate": "kafka",
+  "topic": "evidence.protected.v1",
+  "inbox": {
+    "durable": true,
+    "dedup_identity": "consumer_contract+message_identity_scope+message_id",
+    "effect_protection": {
+      "profile": "atomic_local",
+      "implementation": "SQLiteAtomicInboxEffectGuard",
+      "contract": "sqlite_atomic_inbox_effect_v1"
+    }
+  },
+  "kafka_features": {
+    "idempotent_producer": true,
+    "transactions": true
+  }
+}

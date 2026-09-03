@@ -49,6 +49,7 @@ CONSUMER_DECLARATION_MARKERS = {
     "inbox",
     "kafka_features",
 }
+GOVERNED_CONSUMER_REGISTRY_DIR_NAMES = {"consumer-registry", "consumer_registry"}
 
 TOPIC_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,248}[A-Za-z0-9]$|^[A-Za-z0-9]$")
 
@@ -172,6 +173,14 @@ def _looks_like_consumer_declaration(value: dict) -> bool:
     return len(keys & CONSUMER_DECLARATION_MARKERS) >= 3
 
 
+def _is_governed_consumer_registry_path(path: Path, implementation_root: Path) -> bool:
+    try:
+        relative = path.relative_to(implementation_root)
+    except ValueError:
+        return False
+    return any(part in GOVERNED_CONSUMER_REGISTRY_DIR_NAMES for part in relative.parts[:-1])
+
+
 def _read_governed_json(path: Path) -> object:
     try:
         text = path.read_text(encoding="utf-8")
@@ -187,6 +196,9 @@ def discover_consumer_manifests(implementation_root: Path) -> list[Path]:
     discovered: list[Path] = []
     for path in sorted(implementation_root.rglob("*.json")):
         value = _read_governed_json(path)
+        if _is_governed_consumer_registry_path(path, implementation_root):
+            discovered.append(path)
+            continue
         if isinstance(value, dict) and _looks_like_consumer_declaration(value):
             discovered.append(path)
     return discovered

@@ -115,6 +115,29 @@ def main() -> int:
         ),
         trusted_tenant_id=tenant,
     )
+    must_reject(
+        "mixed raw and opaque regulated representation",
+        lambda: PublicationPolicy.validate(
+            PublicationProjection(
+                classification=DataClassification.SENSITIVE_OR_REGULATED,
+                raw_value=b"bounded-exception-value",
+                opaque_reference=ref,
+                raw_regulated_exception=good_exception,
+            ),
+            trusted_tenant_id=tenant,
+        ),
+    )
+    must_reject(
+        "dangling regulated exception metadata",
+        lambda: PublicationPolicy.validate(
+            PublicationProjection(
+                classification=DataClassification.SENSITIVE_OR_REGULATED,
+                opaque_reference=ref,
+                raw_regulated_exception=good_exception,
+            ),
+            trusted_tenant_id=tenant,
+        ),
+    )
 
     bad_exceptions = (
         (
@@ -257,8 +280,9 @@ def main() -> int:
     print(
         "d4a_data_topology=PASS "
         "regulated_default=opaque_reference per_record_erasure=isolated raw_leak=blocked "
-        "exception_assignment=tenant_bound exception_governance=authority_bound retention_ceiling=bounded "
-        "tenant_auth=before_mapping physical_identity=nonsemantic replacement_mapping=semantic_stable"
+        "regulated_representation=unambiguous exception_assignment=tenant_bound "
+        "exception_governance=authority_bound retention_ceiling=bounded tenant_auth=before_mapping "
+        "physical_identity=nonsemantic replacement_mapping=semantic_stable"
     )
     return 0
 

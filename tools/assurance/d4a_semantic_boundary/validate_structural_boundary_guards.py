@@ -100,7 +100,7 @@ def _is_reflective_mapping(node: ast.AST) -> bool:
 
 def _python_tree_findings(tree: ast.AST, raw: str) -> set[str]:
     findings: set[str] = set()
-    reflective_aliases = _reflective_aliases(tree)
+    reflective_aliases = _reflective_aliases(ast.parse(raw))
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:

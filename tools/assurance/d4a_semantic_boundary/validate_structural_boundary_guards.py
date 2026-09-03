@@ -37,6 +37,9 @@ REPLACEMENT_SPECIALS = {
     "__getattribute__", "__getattr__", "__setattr__", "__get__", "__set__",
     "__init_subclass__", "__class_getitem__",
 }
+ACK_AUTHORITY_CLASSES = {"BrokerFacingPath", "InboxAcknowledgePath"}
+ACK_AUTHORITY_NAMES = REPLACEMENT_SPECIALS | {"acknowledge_after_durable_responsibility"}
+REFLECTIVE_MEMBER_BUILTINS = {"getattr", "hasattr", "setattr", "delattr"}
 
 
 def _normalized_transaction_method(identifier: str) -> str | None:
@@ -47,14 +50,57 @@ def _normalized_transaction_method(identifier: str) -> str | None:
     return None
 
 
-def _dynamic_transaction_name(node: ast.AST) -> str | None:
+def _constant_string_value(node: ast.AST) -> str | None:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return _normalized_transaction_method(node.value)
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _constant_string_value(node.left)
+        right = _constant_string_value(node.right)
+        if left is not None and right is not None:
+            return left + right
+    if isinstance(node, ast.JoinedStr):
+        parts: list[str] = []
+        for value in node.values:
+            if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+                return None
+            parts.append(value.value)
+        return "".join(parts)
     return None
+
+
+def _dynamic_transaction_name(node: ast.AST) -> str | None:
+    value = _constant_string_value(node)
+    return _normalized_transaction_method(value) if value is not None else None
+
+
+def _reflective_aliases(tree: ast.AST) -> set[str]:
+    aliases = set(REFLECTIVE_MEMBER_BUILTINS)
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+                continue
+            value = node.value
+            if not isinstance(value, ast.Name) or value.id not in aliases:
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id not in aliases:
+                    aliases.add(target.id)
+                    changed = True
+    return aliases
+
+
+def _is_reflective_mapping(node: ast.AST) -> bool:
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "vars":
+        return True
+    return isinstance(node, ast.Attribute) and node.attr == "__dict__"
 
 
 def _python_tree_findings(tree: ast.AST, raw: str) -> set[str]:
     findings: set[str] = set()
+    reflective_aliases = _reflective_aliases(tree)
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -71,19 +117,18 @@ def _python_tree_findings(tree: ast.AST, raw: str) -> set[str]:
             if transaction is not None:
                 findings.add(f"transaction_api:{transaction}")
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            # Builtin dynamic attribute resolution is executable authority too.  Detect the
-            # prohibited transaction member when it is supplied as a literal name instead of
-            # appearing as an Attribute node.
-            if node.func.id in {"getattr", "hasattr", "setattr", "delattr"} and len(node.args) >= 2:
+            if node.func.id in reflective_aliases and len(node.args) >= 2:
                 transaction = _dynamic_transaction_name(node.args[1])
                 if transaction is not None:
                     findings.add(f"dynamic_transaction_api:{transaction}")
-        elif isinstance(node, ast.Subscript):
-            # Common reflective maps such as vars(client)["commitTransaction"] or
-            # obj.__dict__["commitTransaction"] must not evade construction-surface scanning.
+                elif _constant_string_value(node.args[1]) is None:
+                    findings.add("dynamic_transaction_api:unresolved_reflective_member")
+        elif isinstance(node, ast.Subscript) and _is_reflective_mapping(node.value):
             transaction = _dynamic_transaction_name(node.slice)
             if transaction is not None:
                 findings.add(f"dynamic_transaction_api:{transaction}")
+            elif _constant_string_value(node.slice) is None:
+                findings.add("dynamic_transaction_api:unresolved_reflective_member")
     segment = ast.get_source_segment(raw, tree) or raw
     lowered = segment.lower()
     findings.update(f"marker:{marker}" for marker in KAFKA_TEXT_MARKERS if marker in lowered)
@@ -229,18 +274,33 @@ def _leaf_name(node: ast.AST) -> str | None:
     return None
 
 
+def _expand_static_sequence(value: ast.AST) -> list[ast.AST] | None:
+    if not isinstance(value, (ast.Tuple, ast.List)):
+        return None
+    expanded: list[ast.AST] = []
+    for item in value.elts:
+        if isinstance(item, ast.Starred):
+            nested = _expand_static_sequence(item.value)
+            if nested is None:
+                return None
+            expanded.extend(nested)
+        else:
+            expanded.append(item)
+    return expanded
+
+
 def _binding_pairs(target: ast.AST, value: ast.AST) -> list[tuple[str, str]]:
-    """Resolve Python assignment aliases, including variable-length starred unpacking."""
+    """Resolve Python assignment aliases, including target- and value-side starred unpacking."""
     if isinstance(target, ast.Name):
         source = _leaf_name(value)
         return [(target.id, source)] if source is not None else []
     if isinstance(target, ast.Starred):
-        # A starred target receives a sequence, not one source symbol. Descendant propagation is
-        # instead derived from the fixed-prefix/fixed-suffix bindings around it.
         return []
-    if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
+    if isinstance(target, (ast.Tuple, ast.List)):
+        values = _expand_static_sequence(value)
+        if values is None:
+            return []
         targets = target.elts
-        values = value.elts
         starred_indexes = [i for i, item in enumerate(targets) if isinstance(item, ast.Starred)]
         if len(starred_indexes) > 1:
             return []
@@ -324,6 +384,75 @@ def governed_python_sources(inventory: dict) -> list[Path]:
     return list(dict.fromkeys(paths))
 
 
+def _authority_mutation_sources(inventory: dict) -> list[Path]:
+    paths = governed_python_sources(inventory)
+    paths.extend(sorted(ASSURANCE_DIR.rglob("*.py")))
+    return list(dict.fromkeys(paths))
+
+
+def _class_symbol_aliases(tree: ast.AST) -> set[str]:
+    aliases = set(ACK_AUTHORITY_CLASSES)
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                for imported in node.names:
+                    if imported.name in ACK_AUTHORITY_CLASSES:
+                        aliases.add(imported.asname or imported.name)
+            elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+                value = node.value
+                source = _leaf_name(value) if value is not None else None
+                if source not in aliases:
+                    continue
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                for target in targets:
+                    if isinstance(target, ast.Name) and target.id not in aliases:
+                        aliases.add(target.id)
+                        changed = True
+    return aliases
+
+
+def _is_authority_class_ref(node: ast.AST, aliases: set[str]) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in aliases
+    if isinstance(node, ast.Attribute):
+        return node.attr in ACK_AUTHORITY_CLASSES
+    return False
+
+
+def _attribute_mutates_authority(target: ast.AST, aliases: set[str]) -> bool:
+    return (
+        isinstance(target, ast.Attribute)
+        and target.attr in ACK_AUTHORITY_NAMES
+        and _is_authority_class_ref(target.value, aliases)
+    )
+
+
+def assert_no_post_declaration_ack_replacement(paths: list[Path]) -> None:
+    """Reject monkey-patching/rebinding of the governed ack lookup classes after declaration."""
+    for path in paths:
+        if not path.exists() or path.suffix != ".py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        aliases = _class_symbol_aliases(tree)
+        for node in ast.walk(tree):
+            targets: list[ast.AST] = []
+            if isinstance(node, ast.Assign):
+                targets.extend(node.targets)
+            elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+                targets.append(node.target)
+            elif isinstance(node, ast.Delete):
+                targets.extend(node.targets)
+            if any(_attribute_mutates_authority(target, aliases) for target in targets):
+                raise AssertionError(f"post-declaration acknowledgement authority mutation is forbidden: {path}")
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {"setattr", "delattr"}:
+                if len(node.args) >= 2 and _is_authority_class_ref(node.args[0], aliases):
+                    name = _constant_string_value(node.args[1])
+                    if name is None or name in ACK_AUTHORITY_NAMES:
+                        raise AssertionError(f"dynamic post-declaration acknowledgement authority mutation is forbidden: {path}")
+
+
 def assert_complete_broker_path_inventory(inventory: dict) -> None:
     discovered = discover_broker_path_declarations(governed_python_sources(inventory))
     names = list(discovered.values())
@@ -405,15 +534,32 @@ class KafkaCandidateAdapter:
 class KafkaCandidateAdapter:
     authority = getattr(client, 'commitTransaction')()
 """,
+        "computed_getattr": """
+class KafkaCandidateAdapter:
+    authority = getattr(client, 'commit' + 'Transaction')()
+""",
+        "aliased_getattr": """
+resolver = getattr
+class KafkaCandidateAdapter:
+    authority = resolver(client, 'commit' + 'Transaction')()
+""",
         "dynamic_subscript": """
 class KafkaCandidateAdapter:
-    authority = vars(client)['commit_transaction']()
+    authority = vars(client)['commit_' + 'transaction']()
 """,
     }
     for label, source in adapter_cases.items():
         findings = boundary_non_allowlisted_findings(source, "KafkaCandidateAdapter")
         if not any(item.endswith(":commit_transaction") for item in findings):
             raise AssertionError(f"{label} escaped adapter construction/lexical guard")
+
+    unresolved_reflection = """
+class KafkaCandidateAdapter:
+    authority = getattr(client, transaction_name)()
+"""
+    findings = boundary_non_allowlisted_findings(unresolved_reflection, "KafkaCandidateAdapter")
+    if "dynamic_transaction_api:unresolved_reflective_member" not in findings:
+        raise AssertionError("unresolved reflective member construction escaped fail-closed guard")
 
     inert_base = "class BrokerFacingPath:\n    pass\n"
     ack_cases = {
@@ -499,6 +645,9 @@ class InboxAcknowledgePath(BrokerFacingPath):
     starred_suffix = ast.parse("(*rest, Base) = (OutboxDispatchPath,)").body[0]
     if ("Base", "OutboxDispatchPath") not in _assignment_aliases(starred_suffix):
         raise AssertionError("starred-suffix broker-path alias escaped structural alias discovery")
+    starred_rhs = ast.parse("Base, *rest = *[OutboxDispatchPath],").body[0]
+    if ("Base", "OutboxDispatchPath") not in _assignment_aliases(starred_rhs):
+        raise AssertionError("starred-RHS broker-path alias escaped structural alias discovery")
 
 
 def main() -> int:
@@ -512,14 +661,15 @@ def main() -> int:
     if findings:
         raise AssertionError(f"non-allowlisted boundary execution gained native Kafka authority: {findings}")
     assert_ack_verification_dominates(raw)
+    assert_no_post_declaration_ack_replacement(_authority_mutation_sources(inventory))
     assert_complete_broker_path_inventory(inventory)
     run_negative_controls()
     print(
         "d4a_structural_boundary_guards=PASS "
-        "native_allowlist=direct_method_bodies_only construction_surfaces=dynamic_resolution_scanned "
-        "ack_dominance=complete_inert_lookup_hierarchy+linear_unconditional_verify_then_ack "
-        "broker_path_discovery=nested+assignment+destructuring+starred_alias_aware "
-        "negative_controls=adapter_dynamic_resolution+lookup_hierarchy+starred_unpacking"
+        "native_allowlist=direct_method_bodies_only construction_surfaces=computed_dynamic_resolution_fail_closed "
+        "ack_dominance=complete_inert_lookup_hierarchy+post_declaration_mutation_rejected+linear_unconditional_verify_then_ack "
+        "broker_path_discovery=nested+assignment+destructuring+target_and_rhs_starred_alias_aware "
+        "negative_controls=computed_reflection+lookup_hierarchy+namespace_mutation+starred_rhs_unpacking"
     )
     return 0
 

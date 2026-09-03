@@ -62,14 +62,46 @@ class GovernedOpaqueStore:
 
 
 @dataclass(frozen=True)
+class PerTenantRawAssignment:
+    tenant_id: str
+    assignment_kind: str
+    assignment_id: str
+
+    def valid_for(self, trusted_tenant_id: str) -> bool:
+        return (
+            self.tenant_id == trusted_tenant_id
+            and self.assignment_kind in {"topic", "partition"}
+            and bool(self.assignment_id)
+            and self.assignment_id.strip() == self.assignment_id
+        )
+
+
+@dataclass(frozen=True)
+class ErasureGovernanceApproval:
+    tenant_id: str
+    authority_id: str
+    approval_id: str
+
+    def valid_for(self, trusted_tenant_id: str) -> bool:
+        return (
+            self.tenant_id == trusted_tenant_id
+            and self.authority_id == "erasure-governance-authority"
+            and bool(self.approval_id)
+            and self.approval_id.strip() == self.approval_id
+        )
+
+
+@dataclass(frozen=True)
 class RawRegulatedException:
-    per_tenant_assignment: bool
+    per_tenant_assignment: PerTenantRawAssignment | None
     segment_retention_ceiling_seconds: int | None
     governed_erasure_sla_seconds: int | None
-    erasure_governance_signoff: bool
+    erasure_governance_approval: ErasureGovernanceApproval | None
 
-    def is_fully_authorized(self) -> bool:
-        if not self.per_tenant_assignment or not self.erasure_governance_signoff:
+    def is_fully_authorized(self, *, trusted_tenant_id: str) -> bool:
+        if self.per_tenant_assignment is None or not self.per_tenant_assignment.valid_for(trusted_tenant_id):
+            return False
+        if self.erasure_governance_approval is None or not self.erasure_governance_approval.valid_for(trusted_tenant_id):
             return False
         if self.segment_retention_ceiling_seconds is None or self.governed_erasure_sla_seconds is None:
             return False
@@ -107,7 +139,7 @@ class PublicationPolicy:
         if projection.classification is DataClassification.SENSITIVE_OR_REGULATED:
             if projection.raw_value is not None:
                 exception = projection.raw_regulated_exception
-                if exception is None or not exception.is_fully_authorized():
+                if exception is None or not exception.is_fully_authorized(trusted_tenant_id=trusted_tenant_id):
                     raise PolicyViolation("raw sensitive_or_regulated value rejected by default")
             else:
                 if ref is None:

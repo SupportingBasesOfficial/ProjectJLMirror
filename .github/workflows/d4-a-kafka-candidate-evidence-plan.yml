@@ -99,20 +99,23 @@ jobs:
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" \
             -o /tmp/artifact.json
           python3 - <<'PY'
-          import json, os
+          import json
+          from pathlib import Path
+          p = json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-a-semantic-boundary-promotion-v1.json').read_text())
+          w = p['source_workflow']
           run = json.load(open('/tmp/run.json'))
           job = json.load(open('/tmp/job.json'))
           artifact = json.load(open('/tmp/artifact.json'))
-          assert run['id'] == int(os.environ['RUN_ID'])
-          assert run['head_sha'] == os.environ['SOURCE_HEAD']
+          assert run['id'] == w['run_id']
+          assert run['head_sha'] == p['source_reviewed_head']
           assert run['status'] == 'completed' and run['conclusion'] == 'success'
-          assert job['id'] == int(os.environ['JOB_ID'])
-          assert job['run_id'] == int(os.environ['RUN_ID'])
-          assert job['name'] == 'D4-A semantic boundary source evidence'
+          assert job['id'] == w['job_id']
+          assert job['run_id'] == w['run_id']
+          assert job['name'] == w['job_name']
           assert job['status'] == 'completed' and job['conclusion'] == 'success'
-          assert artifact['id'] == int(os.environ['ARTIFACT_ID'])
-          assert artifact['name'] == os.environ['ARTIFACT_NAME']
-          assert artifact['digest'] == os.environ['ARTIFACT_DIGEST']
+          assert artifact['id'] == w['artifact_id']
+          assert artifact['name'] == w['artifact_name']
+          assert artifact['digest'] == w['artifact_digest']
           assert artifact['expired'] is False
           print('d4a_promotion_external_provenance=PASS source_run=success artifact=exact_digest')
           PY

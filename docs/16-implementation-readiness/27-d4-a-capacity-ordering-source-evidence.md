@@ -48,10 +48,11 @@ For each tier the live-broker harness records:
 - drain messages/second;
 - per-tenant/event-rate skew exercised through real keyed Kafka records;
 - a real producer-performance probe for every bounded partition count in the tier;
-- whether each partition probe satisfies the tier's bounded throughput/latency admission;
+- the target messages/second for that same tier and the observed fraction of that target achieved by each probe;
+- whether each partition probe satisfies the tier-specific target-relative throughput admission and maximum average-latency admission;
 - the highest tested partition count satisfying that bounded admission.
 
-The partition ceiling is therefore not inferred from successful topic creation. It is the highest **tested** partition count for that tier at which the real producer-performance probe satisfies the bounded source-test admission. It is not an absolute Kafka limit and cannot become a production partition count.
+The partition ceiling is therefore not inferred from successful topic creation or a fixed low throughput floor. Every partition-count probe executes the **full message count for its tier** and must sustain at least **70% of that same tier's configured target messages/second**, while also satisfying the bounded latency admission. The highest admitted tested count is source evidence for this ephemeral environment only; it is not an absolute Kafka limit and cannot become a production partition count.
 
 ### Real degradation/failure-boundary probe
 
@@ -102,11 +103,11 @@ A deterministic negative-control suite additionally blocks a one-worker/global-s
 
 ## Partition ceiling and tenant-cohort fallback
 
-Every bounded tier probes multiple partition counts against the real Kafka candidate and runs producer-performance work at each count. A probe is admitted only when it satisfies the tier's bounded minimum throughput and maximum average-latency conditions. The highest admitted tested count is persisted as the **bounded test partition ceiling** for that source environment.
+Every bounded tier probes multiple partition counts against the real Kafka candidate and runs producer-performance work at each count. A probe is admitted only when it satisfies the **same tier's** bounded target-relative throughput and maximum average-latency conditions. The highest admitted tested count is persisted as the **bounded test partition ceiling** for that source environment.
 
-The fallback exercise is explicitly triggered with modeled ordering-scope cardinality greater than the Stress tier's tested single-topic ceiling. Trusted tenant identity is mapped by stable SHA-256 into exactly two test cohorts, and each cohort is exercised through a real Kafka topic whose partition count remains at or below that bounded test ceiling.
+The tenant-cohort fallback is not allowed to claim success from a fabricated `ceiling + 1` scalar. After the Stress tested ceiling is known, the harness creates **more distinct trusted logical scopes than that ceiling**, routes every one of those scopes through the stable tenant-to-cohort mapping, and sends the records through real Kafka cohort topics. The evidence fails unless the number of distinct scopes actually observed after round-trip remains greater than the single-topic test ceiling and at least two cohort topics are exercised.
 
-The physical cohort changes transport placement only. Logical contract identity remains unchanged, and tenant/cohort/topic identity does not become consumer semantic identity.
+Each cohort topic remains at or below the bounded single-topic test ceiling. The physical cohort changes transport placement only; logical contract identity remains unchanged, and tenant/cohort/topic identity does not become consumer semantic identity.
 
 ## Machine-owned package
 
@@ -127,7 +128,7 @@ Assurance tooling:
 - `tools/assurance/d4a_capacity_ordering/test_validate_source_evidence.py`;
 - `tools/assurance/d4a_capacity_ordering/emit_source_provenance.py`.
 
-The source-validator negative controls fail on mutable Kafka pins, physical ordering-key leakage, missing ordering-profile coverage, global serialization, synthetic degradation substitution, missing partition admissions, semantic identity changes in fallback, source auto-credit, an unauthorized fifth global credit, and D4-A7 recovery overclaim.
+The source-validator negative controls fail on mutable Kafka pins, physical ordering-key leakage, missing ordering-profile coverage, global serialization, synthetic degradation substitution, weakened/non-tier-relative partition admission, partition-ceiling policy detached from the same-tier target, fake model-only fallback triggers, fallback that does not route an actual over-ceiling workload, semantic identity changes in fallback, source auto-credit, an unauthorized fifth global credit, and D4-A7 recovery overclaim.
 
 CI workflow:
 
@@ -173,11 +174,12 @@ This source PR is eligible for final review only when the exact HEAD proves:
 - tenant skew exercised;
 - throughput/latency and broker-observed backlog/drain measurements persisted;
 - a real Kafka quota produces the declared bounded degradation boundary;
-- partition producer-performance probes run with bounded admission at every declared test count and produce a tested ceiling per tier;
+- every partition producer-performance probe is tied to the same tier's target and admitted only after satisfying the pinned 70% target fraction plus latency bound;
+- the tested partition ceiling per tier is derived only from admitted real-load probes;
 - all six ordering classes are individually exercised through Kafka;
 - every ordered profile uses the canonical `JLMIRROR KeySerialExecutor`, preserving same-key order while independent keys overlap;
-- source negative controls reject physical-key, profile-loss, quota-weakening and source-credit escapes;
-- tenant-cohort fallback is triggered above the bounded single-topic test ceiling and exercised through real cohort topics without semantic identity change;
+- source negative controls reject physical-key, profile-loss, quota-weakening, tier-admission weakening, fake fallback and source-credit escapes;
+- tenant-cohort fallback routes an actually exercised number of distinct logical scopes greater than the bounded single-topic test ceiling through real cohort topics without semantic identity change;
 - Phase 10 and D4 validators remain green;
 - D4-A remains 4/7 and this run grants zero ledger credit;
 - Kafka remains not selected and all authorities remain ungranted/unselected.

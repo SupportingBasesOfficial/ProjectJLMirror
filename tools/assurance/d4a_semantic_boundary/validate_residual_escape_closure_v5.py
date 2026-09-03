@@ -144,7 +144,10 @@ def all_tree_broker_descendants(source: str) -> list[str]:
         elif isinstance(node, ast.ClassDef):
             bases = {name for base in node.bases if not isinstance(base, ast.Starred) if (name := simple_base_name(base)) is not None}
             classes.append((node.name, bases))
-    descendants = {"BrokerFacingPath"}
+    # Canonical broker-path classes are already proven descendants by the v4 gate.
+    # Seed them here so an imported canonical path used as a base inside a loop/with
+    # is recognized without weakening computed/starred-base fail-closed behavior.
+    descendants = {"BrokerFacingPath", *EXPECTED_PATHS}
     changed = True
     while changed:
         changed = False

@@ -178,6 +178,21 @@ def main() -> int:
         assignment_descendants = set(discover_broker_path_declarations([BOUNDARY_SOURCE, assigned_alias]).values())
         assert "AssignmentEscapingPath" in assignment_descendants
 
+        conditional_path = inheritance_root / "conditional_path.py"
+        conditional_path.write_text(
+            "from broker_boundary import OutboxDispatchPath\n"
+            "enabled = True\n"
+            "if enabled:\n"
+            "    Base = OutboxDispatchPath\n"
+            "    Alias2: object = Base\n"
+            "    class ConditionalEscapingPath(Alias2):\n"
+            "        def dispatch(self, message):\n"
+            "            return self._transport.send(message)\n",
+            encoding="utf-8",
+        )
+        conditional_descendants = set(discover_broker_path_declarations([BOUNDARY_SOURCE, conditional_path]).values())
+        assert "ConditionalEscapingPath" in conditional_descendants
+
         assurance_root = root / "assurance"; assurance_root.mkdir()
         helpers = assurance_root / "helpers"; helpers.mkdir()
         deeper = helpers / "deeper"; deeper.mkdir()
@@ -204,6 +219,8 @@ def main() -> int:
             ("abort.py", "def f(self): self.transport.abort_transaction()\n", "transaction_api:abort_transaction"),
             ("offsets.py", "def f(self): self.session.send_offsets_to_transaction({})\n", "transaction_api:send_offsets_to_transaction"),
             ("begin.py", "def f(self): self.transport.begin_transaction()\n", "transaction_api:begin_transaction"),
+            ("commit_camel.py", "def f(self): self.client.commitTransaction()\n", "transaction_api:commit_transaction"),
+            ("offsets_pascal.py", "def f(self): self.transport.SendOffsetsToTransaction({})\n", "transaction_api:send_offsets_to_transaction"),
         ):
             p = root / name; p.write_text(source, encoding="utf-8")
             assert expected in scan_python_for_direct_kafka(p)
@@ -280,7 +297,7 @@ def main() -> int:
         remaining_semantic = semantic_bound.receive("evidence.consumer.v1")
         assert remaining_semantic.contract_version == "v2"
 
-    print("d4a_fresh_review_hardening=PASS assignment_aliases+polyglot_case_normalization+package_initializers+nested_imports")
+    print("d4a_fresh_review_hardening=PASS nested_declarations+python_case_normalization+assignment_aliases+polyglot_case_normalization+package_initializers+nested_imports")
     print("d4a_transport_swap=PASS adapters=2 durable_effect_observed=true replay_apply_count=1")
     return 0
 

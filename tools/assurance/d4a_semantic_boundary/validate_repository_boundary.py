@@ -108,38 +108,128 @@ def _base_leaf_name(base: ast.expr) -> str | None:
     return None
 
 
+def _expand_static_sequence(value: ast.AST) -> list[ast.AST] | None:
+    if not isinstance(value, (ast.Tuple, ast.List)):
+        return None
+    expanded: list[ast.AST] = []
+    for item in value.elts:
+        if isinstance(item, ast.Starred):
+            nested = _expand_static_sequence(item.value)
+            if nested is None:
+                return None
+            expanded.extend(nested)
+        else:
+            expanded.append(item)
+    return expanded
+
+
+def _binding_pairs(target: ast.AST, value: ast.AST) -> list[tuple[str, str]]:
+    if isinstance(target, ast.Name):
+        source = _base_leaf_name(value)
+        return [(target.id, source)] if source is not None else []
+    if isinstance(target, ast.Starred):
+        return []
+    if isinstance(target, (ast.Tuple, ast.List)):
+        values = _expand_static_sequence(value)
+        if values is None:
+            return []
+        targets = target.elts
+        starred_indexes = [i for i, item in enumerate(targets) if isinstance(item, ast.Starred)]
+        if len(starred_indexes) > 1:
+            return []
+        pairs: list[tuple[str, str]] = []
+        if not starred_indexes:
+            if len(targets) != len(values):
+                return []
+            for target_item, value_item in zip(targets, values):
+                pairs.extend(_binding_pairs(target_item, value_item))
+            return pairs
+        star = starred_indexes[0]
+        prefix = targets[:star]
+        suffix = targets[star + 1:]
+        if len(values) < len(prefix) + len(suffix):
+            return []
+        for target_item, value_item in zip(prefix, values[:len(prefix)]):
+            pairs.extend(_binding_pairs(target_item, value_item))
+        if suffix:
+            for target_item, value_item in zip(suffix, values[-len(suffix):]):
+                pairs.extend(_binding_pairs(target_item, value_item))
+        return pairs
+    return []
+
+
 def _assignment_aliases(node: ast.stmt) -> list[tuple[str, str]]:
     aliases: list[tuple[str, str]] = []
     if isinstance(node, ast.Assign):
-        source = _base_leaf_name(node.value)
-        if source is not None:
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    aliases.append((target.id, source))
-    elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
-        source = _base_leaf_name(node.value)
-        if source is not None:
-            aliases.append((node.target.id, source))
+        for target in node.targets:
+            aliases.extend(_binding_pairs(target, node.value))
+    elif isinstance(node, ast.AnnAssign) and node.value is not None:
+        aliases.extend(_binding_pairs(node.target, node.value))
     return aliases
 
 
+def _starred_sequence_aliases(node: ast.stmt) -> dict[str, tuple[str, ...]]:
+    assignments: list[tuple[ast.AST, ast.AST]] = []
+    if isinstance(node, ast.Assign):
+        assignments.extend((target, node.value) for target in node.targets)
+    elif isinstance(node, ast.AnnAssign) and node.value is not None:
+        assignments.append((node.target, node.value))
+    captured: dict[str, tuple[str, ...]] = {}
+    for target, value in assignments:
+        if not isinstance(target, (ast.Tuple, ast.List)):
+            continue
+        values = _expand_static_sequence(value)
+        if values is None:
+            continue
+        stars = [i for i, item in enumerate(target.elts) if isinstance(item, ast.Starred)]
+        if len(stars) != 1:
+            continue
+        star = stars[0]
+        prefix_count = star
+        suffix_count = len(target.elts) - star - 1
+        if len(values) < prefix_count + suffix_count:
+            continue
+        starred_target = target.elts[star]
+        if not isinstance(starred_target, ast.Starred) or not isinstance(starred_target.value, ast.Name):
+            continue
+        end = len(values) - suffix_count if suffix_count else len(values)
+        names = tuple(name for item in values[prefix_count:end] if (name := _base_leaf_name(item)) is not None)
+        if len(names) == end - prefix_count:
+            captured[starred_target.value.id] = names
+    return captured
+
+
+def _class_base_names(node: ast.ClassDef, sequence_aliases: dict[str, tuple[str, ...]]) -> set[str]:
+    bases: set[str] = set()
+    for base in node.bases:
+        if isinstance(base, ast.Starred) and isinstance(base.value, ast.Name):
+            bases.update(sequence_aliases.get(base.value.id, ()))
+            continue
+        name = _base_leaf_name(base)
+        if name is not None:
+            bases.add(name)
+    return bases
+
+
 def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
-    """Discover descendants without collapsing same-name declarations in distinct executable scopes."""
+    """Discover descendants without collapsing same-name declarations or starred sequence bases."""
     classes: list[tuple[Path, int, str, set[str]]] = []
     aliases: list[tuple[str, str]] = []
     for path in paths:
         if not path.exists() or path.suffix != ".py":
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        sequence_aliases: dict[str, tuple[str, ...]] = {}
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 for alias in node.names:
                     aliases.append((alias.asname or alias.name, alias.name))
             if isinstance(node, ast.stmt):
                 aliases.extend(_assignment_aliases(node))
+                sequence_aliases.update(_starred_sequence_aliases(node))
+        for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef):
-                bases = {name for base in node.bases if (name := _base_leaf_name(base)) is not None}
-                classes.append((path, node.lineno, node.name, bases))
+                classes.append((path, node.lineno, node.name, _class_base_names(node, sequence_aliases)))
 
     descendant_symbols = {"BrokerFacingPath"}
     changed = True
@@ -156,7 +246,7 @@ def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
 
     discovered: dict[str, str] = {}
     for path, lineno, class_name, bases in classes:
-        if class_name != "BrokerFacingPath" and class_name in descendant_symbols and bases:
+        if class_name != "BrokerFacingPath" and class_name in descendant_symbols and bases & descendant_symbols:
             declaration_id = f"{_display_path(path)}:{class_name}@L{lineno}"
             discovered[declaration_id] = class_name
     return discovered
@@ -283,8 +373,18 @@ def _constant_string_value(node: ast.AST) -> str | None:
     return None
 
 
-def _reflective_aliases(tree: ast.AST) -> set[str]:
-    aliases = set(REFLECTIVE_MEMBER_BUILTINS)
+def _reflective_aliases(tree: ast.AST) -> tuple[set[str], set[str]]:
+    call_aliases = set(REFLECTIVE_MEMBER_BUILTINS)
+    module_aliases = {"builtins"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "builtins":
+            for imported in node.names:
+                if imported.name in REFLECTIVE_MEMBER_BUILTINS:
+                    call_aliases.add(imported.asname or imported.name)
+        elif isinstance(node, ast.Import):
+            for imported in node.names:
+                if imported.name == "builtins":
+                    module_aliases.add(imported.asname or imported.name)
     changed = True
     while changed:
         changed = False
@@ -292,14 +392,37 @@ def _reflective_aliases(tree: ast.AST) -> set[str]:
             if not isinstance(node, (ast.Assign, ast.AnnAssign)):
                 continue
             value = node.value
-            if not isinstance(value, ast.Name) or value.id not in aliases:
+            source: str | None = None
+            if isinstance(value, ast.Name) and value.id in call_aliases:
+                source = value.id
+            elif (
+                isinstance(value, ast.Attribute)
+                and value.attr in REFLECTIVE_MEMBER_BUILTINS
+                and isinstance(value.value, ast.Name)
+                and value.value.id in module_aliases
+            ):
+                source = value.attr
+            if source is None:
                 continue
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             for target in targets:
-                if isinstance(target, ast.Name) and target.id not in aliases:
-                    aliases.add(target.id)
+                if isinstance(target, ast.Name) and target.id not in call_aliases:
+                    call_aliases.add(target.id)
                     changed = True
-    return aliases
+    return call_aliases, module_aliases
+
+
+def _reflective_callable(node: ast.AST, call_aliases: set[str], module_aliases: set[str]) -> str | None:
+    if isinstance(node, ast.Name) and node.id in call_aliases:
+        return node.id
+    if (
+        isinstance(node, ast.Attribute)
+        and node.attr in REFLECTIVE_MEMBER_BUILTINS
+        and isinstance(node.value, ast.Name)
+        and node.value.id in module_aliases
+    ):
+        return node.attr
+    return None
 
 
 def _dynamic_transaction_method(node: ast.AST) -> str | None:
@@ -307,9 +430,15 @@ def _dynamic_transaction_method(node: ast.AST) -> str | None:
     return _normalized_transaction_method(value) if value is not None else None
 
 
+def _is_reflective_mapping(node: ast.AST) -> bool:
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "vars":
+        return True
+    return isinstance(node, ast.Attribute) and node.attr == "__dict__"
+
+
 def _python_tree_findings(tree: ast.AST) -> set[str]:
     findings: set[str] = set()
-    reflective_aliases = _reflective_aliases(tree)
+    call_aliases, module_aliases = _reflective_aliases(tree)
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -325,15 +454,20 @@ def _python_tree_findings(tree: ast.AST) -> set[str]:
             canonical_method = _normalized_transaction_method(node.attr)
             if canonical_method is not None:
                 findings.add(f"transaction_api:{canonical_method}")
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            if node.func.id in reflective_aliases and len(node.args) >= 2:
+        elif isinstance(node, ast.Call):
+            reflective = _reflective_callable(node.func, call_aliases, module_aliases)
+            if reflective is not None and len(node.args) >= 2:
                 canonical_method = _dynamic_transaction_method(node.args[1])
                 if canonical_method is not None:
                     findings.add(f"dynamic_transaction_api:{canonical_method}")
-        elif isinstance(node, ast.Subscript):
+                elif _constant_string_value(node.args[1]) is None:
+                    findings.add("dynamic_transaction_api:unresolved_reflective_member")
+        if isinstance(node, ast.Subscript) and _is_reflective_mapping(node.value):
             canonical_method = _dynamic_transaction_method(node.slice)
             if canonical_method is not None:
                 findings.add(f"dynamic_transaction_api:{canonical_method}")
+            elif _constant_string_value(node.slice) is None:
+                findings.add("dynamic_transaction_api:unresolved_reflective_member")
     return findings
 
 
@@ -460,13 +594,24 @@ def main() -> int:
     dynamic_tree = ast.parse("resolver = getattr\nresolver(client, 'commit' + 'Transaction')()\nvars(client)['commit_' + 'transaction']()")
     dynamic_findings = _python_tree_findings(dynamic_tree)
     assert "dynamic_transaction_api:commit_transaction" in dynamic_findings
+    unresolved_tree = ast.parse("getattr(client, transaction_name)()")
+    assert "dynamic_transaction_api:unresolved_reflective_member" in _python_tree_findings(unresolved_tree)
+    imported_alias_tree = ast.parse("from builtins import getattr as resolve\nresolve(client, 'commitTransaction')()")
+    assert "dynamic_transaction_api:commit_transaction" in _python_tree_findings(imported_alias_tree)
+    starred_base_tree = ast.parse("*Bases, = (OutboxDispatchPath,)\nclass EscapingPath(*Bases):\n    pass")
+    sequence_aliases: dict[str, tuple[str, ...]] = {}
+    for statement in starred_base_tree.body:
+        if isinstance(statement, ast.stmt):
+            sequence_aliases.update(_starred_sequence_aliases(statement))
+    escaping = next(node for node in starred_base_tree.body if isinstance(node, ast.ClassDef))
+    assert "OutboxDispatchPath" in _class_base_names(escaping, sequence_aliases)
 
     print(
         f"d4a_repository_boundary=PASS broker_paths={len(runtime_discovered)} consumers={len(consumers)} "
-        "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=distinct_nested_declarations+multi_assignment_alias_transitive_exact "
+        "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=distinct_nested_declarations+starred_sequence_base_transitive_exact "
         "call_graph=ordered_exact verifier_before_ack=true "
         f"roots=implementation+src assurance_dependency_closure={len(assurance_closure)} boundary_module=class_scoped_native_allowlist package_initializers=scanned "
-        "transaction_apis=owner_independent+dynamic_reflection_polyglot_case_and_generic_syntax_normalized"
+        "transaction_apis=owner_independent+import_qualified_dynamic_reflection_fail_closed+polyglot_case_and_generic_syntax_normalized"
     )
     return 0
 

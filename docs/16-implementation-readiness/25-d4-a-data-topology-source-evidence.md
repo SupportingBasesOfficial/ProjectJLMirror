@@ -40,13 +40,15 @@ The negative control intentionally attempts raw regulated payload publication wi
 
 ### Raw regulated exception
 
-The source boundary models the exception only to prove that its controls are conjunctive. Raw regulated bytes are eligible only if all of these are true together:
+The source boundary models the exception only to prove that its controls are conjunctive and authority-bound. Raw regulated bytes are eligible only if all of these are true together:
 
-1. per-tenant topic or partition assignment is explicitly present;
+1. a per-tenant topic or partition assignment is **issued by the supplied `TenantRawAssignmentAuthority`**, matches the trusted tenant, and carries a valid assignment identity;
 2. a positive maximum segment-retention ceiling is present and is no longer than the governed erasure SLA used by the bounded test;
-3. erasure-governance sign-off is explicitly present.
+3. an erasure-governance approval is **issued by the supplied `ErasureGovernanceAuthority`**, matches the trusted tenant, and carries a valid approval identity.
 
-Negative controls independently remove each control and require rejection.
+The implementation uses authority-local opaque seals so constructing an object with authority-looking strings is not sufficient. Negative controls reject missing authorities, forged assignment/approval objects, tokens issued by a different authority instance, cross-tenant tokens, invalid assignment kinds, boolean/non-positive numeric confusion, and retention ceilings beyond the bounded erasure SLA.
+
+The regulated representation is also unambiguous: a record cannot simultaneously carry raw regulated bytes and an opaque reference, and exception metadata cannot remain attached to the ordinary reference-only representation.
 
 The bounded test values are not production retention numerics and do not grant C3 authority.
 
@@ -59,6 +61,7 @@ The executable proof establishes:
 - tenant + contract authorization is checked before route lookup;
 - an unauthorized tenant cannot obtain a valid physical mapping even when that tenant/contract has a route entry elsewhere;
 - arbitrary payload fields named `topic`, `consumer_group`, `cell` or `tenant_id` cannot override trusted mapping;
+- runtime type confusion at the evidence boundary fails closed rather than bypassing canonical enum/identity checks;
 - replacing the physical mapping changes topic/group/cell while leaving the logical delivery identity unchanged;
 - consumer semantics therefore do not require rewrite merely because physical placement changes.
 
@@ -119,8 +122,8 @@ This source package does not claim:
 This source PR is eligible for merge only after:
 
 1. exact-HEAD CI is fully green;
-2. the regulated-payload negative controls prove default raw-value rejection, isolated per-record erasure and conjunctive exception controls;
-3. topology controls prove authorization-before-mapping and semantic stability across a physically different replacement mapping;
+2. the regulated-payload negative controls prove default raw-value rejection, isolated per-record erasure, authority-issued tenant-bound exception controls, anti-forgery, and unambiguous representation;
+3. topology controls prove authorization-before-mapping, runtime type safety and semantic stability across a physically different replacement mapping;
 4. the source manifest and runtime provenance are exact-HEAD reviewed;
 5. the existing 2/7 D4-A ledger remains unchanged by this source run;
 6. panoramic adversarial review is CLEAN on the exact HEAD;

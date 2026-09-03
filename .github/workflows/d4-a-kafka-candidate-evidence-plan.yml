@@ -124,7 +124,8 @@ jobs:
           assert artifact['expired'] is False
           assert artifact_run['id'] == w['run_id']
           assert artifact_run['head_sha'] == p['source_reviewed_head']
-          assert provenance['schema'] == 'd4a-source-run-provenance-v1'
+          assert provenance['artifact_schema'] == 'd4a-source-run-provenance-v1'
+          assert provenance['probe'] == 'd4-a-data-topology-source-v1'
           assert provenance['repository_sha'] == p['source_reviewed_head']
           assert provenance['workflow_run_id'] == w['run_id']
           assert provenance['workflow_run_attempt'] == w['run_attempt']
@@ -144,7 +145,7 @@ jobs:
           assert fresh.get('commit_id') == p['source_reviewed_head']
           assert independent.get('commit_id') == p['source_reviewed_head']
           assert any(comment.get('id') == g['final_gate_comment_id'] for comment in comments)
-          print('d4a_promotion_external_provenance=PASS source_run=success artifact_metadata=exact artifact_content=exact source_manifest_link=exact review_nodes=exact exact_head_reviews=verified final_gate_comment=present')
+          print('d4a_promotion_external_provenance=PASS source_run=success artifact_metadata=exact artifact_content=exact source_manifest_link=exact probe=exact review_nodes=exact exact_head_reviews=verified final_gate_comment=present')
           PY
 
       - name: Assert four-of-seven partial credit does not escalate authority

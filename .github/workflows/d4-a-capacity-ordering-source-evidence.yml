@@ -1,0 +1,256 @@
+name: JLMIRROR D4-A Capacity Ordering Source Evidence
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'implementation/d4-eventing-async/**'
+      - 'tools/assurance/d4a_capacity_ordering/**'
+      - 'tools/assurance/validate_d4_eventing_async_state.py'
+      - 'tools/assurance/test_validate_d4_eventing_async_state.py'
+      - 'tools/assurance/validate_d4a_evidence_plan.py'
+      - 'tools/assurance/test_validate_d4a_evidence_plan.py'
+      - 'docs/04-quality/capacity-envelope.md'
+      - 'docs/10-event-contracts/OPEN-EVT-001-kafka-decision-record.md'
+      - 'docs/10-event-contracts/ordering-sequencing-and-replay.md'
+      - 'docs/16-implementation-readiness/27-d4-a-capacity-ordering-source-evidence.md'
+      - '.github/workflows/d4-a-capacity-ordering-source-evidence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  capacity-ordering-source:
+    name: D4-A capacity ordering source evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      KAFKA_IMAGE: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
+      KAFKA_INDEX_DIGEST: sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
+      KAFKA_AMD64_DIGEST: sha256:ccd1314e47ec76909e01f86308b4dcf2064f19f7c89759234322314b0e319e26
+    steps:
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual_sha"
+          test "$actual_sha" = "$EXPECTED_SHA"
+
+      - name: Compile validate and falsify bounded source package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            tools/assurance/d4a_capacity_ordering/key_serial_executor.py \
+            tools/assurance/d4a_capacity_ordering/test_key_serial_executor.py \
+            tools/assurance/d4a_capacity_ordering/run_live_kafka_benchmark.py \
+            tools/assurance/d4a_capacity_ordering/validate_source_evidence.py \
+            tools/assurance/d4a_capacity_ordering/test_validate_source_evidence.py \
+            tools/assurance/d4a_capacity_ordering/emit_source_provenance.py
+          python3 tools/assurance/d4a_capacity_ordering/validate_source_evidence.py
+          (cd tools/assurance/d4a_capacity_ordering && python3 test_validate_source_evidence.py)
+          (cd tools/assurance/d4a_capacity_ordering && python3 test_key_serial_executor.py)
+
+      - name: Preserve D4 four-of-seven ledger boundary before source run
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/assurance/validate_d4_eventing_async_state.py .
+          python3 tools/assurance/test_validate_d4_eventing_async_state.py
+          python3 tools/assurance/validate_d4a_evidence_plan.py .
+          (cd tools/assurance && python3 test_validate_d4a_evidence_plan.py)
+
+      - name: Pull and verify immutable Kafka candidate platform pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull "$KAFKA_IMAGE"
+          python3 - <<'PY'
+          import json, os, subprocess
+          image = os.environ['KAFKA_IMAGE']
+          expected_index = os.environ['KAFKA_INDEX_DIGEST']
+          expected_amd64 = os.environ['KAFKA_AMD64_DIGEST']
+          raw = subprocess.check_output(['docker', 'buildx', 'imagetools', 'inspect', image, '--raw'], text=True)
+          index = json.loads(raw)
+          manifests = index.get('manifests', [])
+          matches = [m for m in manifests if m.get('platform', {}).get('os') == 'linux' and m.get('platform', {}).get('architecture') == 'amd64']
+          if len(matches) != 1:
+              raise SystemExit(f'expected exactly one linux/amd64 manifest, got {len(matches)}')
+          actual_amd64 = matches[0]['digest']
+          if actual_amd64 != expected_amd64:
+              raise SystemExit(f'amd64 manifest digest mismatch: {actual_amd64} != {expected_amd64}')
+          if '@' not in image or image.rsplit('@', 1)[1] != expected_index:
+              raise SystemExit('image reference is not pinned to expected index digest')
+          print(f'kafka_pin=PASS index={expected_index} linux_amd64={actual_amd64}')
+          PY
+          printf '%s\n' "$KAFKA_INDEX_DIGEST" > /tmp/kafka-index-digest.txt
+          printf '%s\n' "$KAFKA_AMD64_DIGEST" > /tmp/kafka-amd64-digest.txt
+
+      - name: Start real Kafka candidate broker
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name d4a-kafka -p 9092:9092 "$KAFKA_IMAGE"
+          for attempt in $(seq 1 60); do
+            if docker exec d4a-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1; then
+              echo "kafka_ready_attempt=$attempt"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs d4a-kafka
+          exit 1
+
+      - name: Run live Kafka Baseline Growth Stress and ordering probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          PYTHONPATH=tools/assurance/d4a_capacity_ordering \
+            python3 tools/assurance/d4a_capacity_ordering/run_live_kafka_benchmark.py \
+            --output runtime-evidence/benchmark-results.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('runtime-evidence/benchmark-results.json').read_text())
+          assert result['numeric_authority'] == 'test_values_only_not_production'
+          assert [tier['name'] for tier in result['tiers']] == ['Baseline', 'Growth', 'Stress']
+          assert all(tier['backlog_messages_before_drain'] == tier['test_message_count'] for tier in result['tiers'])
+          assert all(tier['backlog_drain_seconds'] > 0 for tier in result['tiers'])
+          assert all(tier['recovery_messages_per_second'] > 0 for tier in result['tiers'])
+          assert all(tier['tenant_skew_observed'] is True for tier in result['tiers'])
+          assert all(tier['device_cardinality_exercised'] is True for tier in result['tiers'])
+          assert all(tier['broker_exercised'] is True for tier in result['tiers'])
+          device_totals = []
+          for tier in result['tiers']:
+              assert tier['device_cardinality_observed_by_tenant'] == tier['device_cardinality_expected_by_tenant']
+              expected_total = sum(tier['device_cardinality_expected_by_tenant'].values())
+              assert tier['distinct_device_scopes_observed_total'] == expected_total
+              assert sum(tier['tenant_skew_observed_counts'].values()) == tier['test_message_count']
+              device_totals.append(tier['distinct_device_scopes_observed_total'])
+          assert device_totals[0] < device_totals[1] < device_totals[2]
+          assert all(tier['tested_partition_ceiling'] > 0 for tier in result['tiers'])
+          for tier in result['tiers']:
+              passing = [probe for probe in tier['partition_probes'] if probe['admission_passed']]
+              assert passing
+              for probe in passing:
+                  assert probe['target_messages_per_second'] == tier['target_messages_per_second']
+                  assert probe['minimum_target_throughput_fraction'] == 0.70
+                  assert probe['observed_target_throughput_fraction'] >= probe['minimum_target_throughput_fraction']
+                  assert probe['producer']['messages_per_second'] >= probe['minimum_required_messages_per_second']
+          assert result['degradation_probe']['mechanism'] == 'real_kafka_client_producer_byte_rate_quota'
+          assert result['degradation_probe']['degradation_boundary_observed'] is True
+          assert result['degradation_probe']['throughput_drop_fraction'] > 0
+          assert len(result['ordering_profiles']) == 6
+          assert {item['scope'] for item in result['ordering_profiles']} == set(result['ordering_scope_mappings'])
+          assert all(item['broker_exercised'] is True for item in result['ordering_profiles'])
+          assert result['ordering_component']['same_key_order_preserved'] is True
+          assert result['ordering_component']['independent_keys_overlap_observed'] is True
+          assert result['ordering_component']['global_or_tenant_wide_serialization'] is False
+          fallback = result['tenant_cohort_fallback']
+          assert fallback['exercised'] is True
+          assert fallback['exercised_logical_scope_count'] == fallback['triggered_by_modeled_scope_cardinality']
+          assert fallback['exercised_logical_scope_count'] > fallback['single_topic_test_ceiling']
+          assert len(fallback['logical_scope_to_cohort']) == fallback['exercised_logical_scope_count']
+          assert len(set(fallback['logical_scope_to_cohort'].values())) >= 2
+          assert fallback['logical_contract_identity_changes'] is False
+          print('d4a_capacity_ordering_result_gate=PASS tiers=3 tenant_device_event_rate=exercised backlog=measured quota_degradation=observed partition_ceiling=tier_target_bound ordering_profiles=6 cohort_fallback=actual_over_ceiling numerics=test_only')
+          PY
+
+      - name: Re-run Phase 10 contract suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test_file in tools/contracts/tests/test_*.py; do
+            PYTHONPATH=. python3 "$test_file"
+          done
+
+      - name: Assert current source run cannot add ledger credit or select Kafka
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          source = json.loads(Path('implementation/d4-eventing-async/source-evidence/capacity-ordering/source-evidence-manifest.json').read_text())
+          plan = json.loads(Path('implementation/d4-eventing-async/d4-a-evidence-plan.json').read_text())
+          state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
+          d4a = next(t for t in state['tracks'] if t['track_id'] == 'D4-A')
+          source_ids = set(source['evidence_ids'])
+          promoted = set(plan['credited_evidence'])
+          assert source['current_run_auto_credit'] is False
+          assert source['ledger_credit'] == []
+          assert source['kafka_selection_state'] == 'not_selected'
+          assert source_ids.isdisjoint(promoted)
+          assert source_ids.issubset(set(d4a['evidence_remaining']))
+          assert len(promoted) == 4
+          assert state['gate_state'] == 'scoped'
+          assert state['d4_transport_authority'] == 'not_selected_not_granted'
+          assert state['canonical_product_implementation_authority'] == 'not_granted'
+          assert state['wave4_implementation_authority'] == 'not_granted'
+          assert state['production_authority'] == 'none'
+          assert state['c3_numeric_topology_authority'] == 'not_selected'
+          print('d4a_capacity_ordering_nonpromotion=PASS source_credit=0 global_credit=4 kafka=not_selected authorities=not_granted')
+          PY
+
+      - name: Resolve exact workflow job identity and emit immutable provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+            -o runtime-evidence/jobs.json
+          job_id="$(python3 - <<'PY'
+          import json
+          jobs = json.load(open('runtime-evidence/jobs.json', encoding='utf-8'))['jobs']
+          matches = [job for job in jobs if job['name'] == 'D4-A capacity ordering source evidence']
+          if len(matches) != 1:
+              raise SystemExit(f'expected exactly one current evidence job, got {len(matches)}')
+          print(matches[0]['id'])
+          PY
+          )"
+          index_digest="$(cat /tmp/kafka-index-digest.txt)"
+          amd64_digest="$(cat /tmp/kafka-amd64-digest.txt)"
+          python3 tools/assurance/d4a_capacity_ordering/emit_source_provenance.py \
+            --repository-sha "$EXPECTED_SHA" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --workflow-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --job-id "$job_id" \
+            --job-name "D4-A capacity ordering source evidence" \
+            --kafka-image-index-digest "$index_digest" \
+            --kafka-linux-amd64-manifest-digest "$amd64_digest" \
+            --benchmark-results runtime-evidence/benchmark-results.json \
+            --output runtime-evidence/resolved-source-run-provenance.json
+          rm runtime-evidence/jobs.json
+
+      - name: Persist source-run provenance and benchmark evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: d4-a-capacity-ordering-source-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            runtime-evidence/resolved-source-run-provenance.json
+            runtime-evidence/benchmark-results.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Stop Kafka candidate broker
+        if: always()
+        shell: bash
+        run: docker rm -f d4a-kafka >/dev/null 2>&1 || true

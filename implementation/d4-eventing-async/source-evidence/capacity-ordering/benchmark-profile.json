@@ -12,7 +12,7 @@
       "tenant_weights": {"tenant-a": 80, "tenant-b": 20},
       "partition_probe_counts": [1, 2, 4],
       "backlog_pause_seconds": 1,
-      "admission": {"minimum_records_per_second": 25, "maximum_avg_latency_ms": 1500}
+      "admission": {"minimum_target_throughput_fraction": 0.70, "maximum_avg_latency_ms": 1500}
     },
     {
       "name": "Growth",
@@ -22,7 +22,7 @@
       "tenant_weights": {"tenant-a": 70, "tenant-b": 15, "tenant-c": 10, "tenant-d": 5},
       "partition_probe_counts": [2, 4, 8],
       "backlog_pause_seconds": 2,
-      "admission": {"minimum_records_per_second": 25, "maximum_avg_latency_ms": 1500}
+      "admission": {"minimum_target_throughput_fraction": 0.70, "maximum_avg_latency_ms": 1500}
     },
     {
       "name": "Stress",
@@ -32,7 +32,7 @@
       "tenant_weights": {"tenant-a": 60, "tenant-b": 15, "tenant-c": 10, "tenant-d": 5, "tenant-e": 4, "tenant-f": 3, "tenant-g": 2, "tenant-h": 1},
       "partition_probe_counts": [4, 8, 16],
       "backlog_pause_seconds": 3,
-      "admission": {"minimum_records_per_second": 25, "maximum_avg_latency_ms": 1500}
+      "admission": {"minimum_target_throughput_fraction": 0.70, "maximum_avg_latency_ms": 1500}
     }
   ],
   "degradation_probe": {
@@ -43,7 +43,8 @@
     "meaning": "bounded_candidate_throttling_boundary_not_production_limit"
   },
   "partition_ceiling_policy": {
-    "definition": "highest_tested_partition_count_meeting_bounded_tier_admission",
+    "definition": "highest_tested_partition_count_sustaining_at_least_the_tier_specific_target_fraction_and_latency_admission",
+    "minimum_target_throughput_fraction_meaning": "candidate_probe_must_sustain_at_least_this_fraction_of_that_same_tier_target_messages_per_second",
     "not_claimed": "absolute_cluster_or_production_partition_limit"
   },
   "ordering_scope_mappings": {
@@ -55,10 +56,10 @@
     "custom_bounded_order": {"partition_key": "trusted_contract_declared_scope", "serialization": "key_serial"}
   },
   "tenant_cohort_fallback": {
-    "trigger": "modeled_ordering_scope_cardinality_exceeds_test_partition_ceiling",
+    "trigger": "exercised_logical_scope_cardinality_exceeds_single_topic_test_partition_ceiling",
     "cohort_count": 2,
     "mapping": "stable_sha256_of_trusted_tenant_identity_mod_cohort_count",
-    "exercise": "real_kafka_cohort_topics_with_each_topic_at_or_below_bounded_test_ceiling",
+    "exercise": "generate_and_route_more_distinct_trusted_logical_scopes_than_the_stress_single_topic_test_ceiling_through_real_kafka_cohort_topics",
     "logical_contract_identity_changes": false
   },
   "required_measurements": [
@@ -70,10 +71,12 @@
     "recovery_messages_per_second",
     "partition_probe_elapsed_seconds",
     "tested_partition_ceiling",
+    "partition_probe_target_throughput_fraction",
     "tenant_skew_observed",
     "degradation_boundary_observed",
     "key_serial_same_key_order_preserved",
     "independent_keys_overlap_observed",
-    "tenant_cohort_fallback_exercised"
+    "tenant_cohort_fallback_exercised",
+    "tenant_cohort_exercised_logical_scope_count"
   ]
 }

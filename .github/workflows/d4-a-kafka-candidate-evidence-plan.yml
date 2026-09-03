@@ -71,6 +71,7 @@ jobs:
           w = p['source_workflow']
           for key, value in {
               'RUN_ID': w['run_id'],
+              'RUN_ATTEMPT': w['run_attempt'],
               'JOB_ID': w['job_id'],
               'ARTIFACT_ID': w['artifact_id'],
               'ARTIFACT_NAME': w['artifact_name'],
@@ -106,18 +107,23 @@ jobs:
           run = json.load(open('/tmp/run.json'))
           job = json.load(open('/tmp/job.json'))
           artifact = json.load(open('/tmp/artifact.json'))
+          artifact_run = artifact.get('workflow_run') or {}
           assert run['id'] == w['run_id']
+          assert run['run_attempt'] == w['run_attempt']
           assert run['head_sha'] == p['source_reviewed_head']
           assert run['status'] == 'completed' and run['conclusion'] == 'success'
           assert job['id'] == w['job_id']
           assert job['run_id'] == w['run_id']
+          assert job['run_attempt'] == w['run_attempt']
           assert job['name'] == w['job_name']
           assert job['status'] == 'completed' and job['conclusion'] == 'success'
           assert artifact['id'] == w['artifact_id']
           assert artifact['name'] == w['artifact_name']
           assert artifact['digest'] == w['artifact_digest']
           assert artifact['expired'] is False
-          print('d4a_promotion_external_provenance=PASS source_run=success artifact=exact_digest')
+          assert artifact_run['id'] == w['run_id']
+          assert artifact_run['head_sha'] == p['source_reviewed_head']
+          print('d4a_promotion_external_provenance=PASS source_run=success run_attempt=exact artifact=exact_digest artifact_source_run=exact')
           PY
 
       - name: Assert partial credit does not escalate authority

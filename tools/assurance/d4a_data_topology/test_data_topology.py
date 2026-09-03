@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from policy_boundary import (
     DataClassification,
+    GovernedOpaqueStore,
     LogicalDelivery,
     OpaqueReference,
     PhysicalRoute,
@@ -34,6 +35,19 @@ def main() -> int:
             opaque_reference=ref,
         ),
         trusted_tenant_id=tenant,
+    )
+    neighbor = OpaqueReference(tenant_id=tenant, record_id="record-8", reference_id="opaque-ref-8")
+    store = GovernedOpaqueStore()
+    store.put(ref, b"regulated-record-7", trusted_tenant_id=tenant)
+    store.put(neighbor, b"regulated-record-8", trusted_tenant_id=tenant)
+    assert store.exists(ref, trusted_tenant_id=tenant)
+    assert store.exists(neighbor, trusted_tenant_id=tenant)
+    store.erase_record(ref, trusted_tenant_id=tenant)
+    assert not store.exists(ref, trusted_tenant_id=tenant)
+    assert store.exists(neighbor, trusted_tenant_id=tenant)
+    must_reject(
+        "cross-tenant opaque erasure",
+        lambda: store.erase_record(neighbor, trusted_tenant_id="tenant-b"),
     )
 
     must_reject(
@@ -92,22 +106,10 @@ def main() -> int:
         trusted_tenant_id=tenant,
     )
     for name, exception in (
-        (
-            "missing per-tenant assignment",
-            RawRegulatedException(False, 600, 900, True),
-        ),
-        (
-            "missing retention ceiling",
-            RawRegulatedException(True, None, 900, True),
-        ),
-        (
-            "retention exceeds erasure sla",
-            RawRegulatedException(True, 901, 900, True),
-        ),
-        (
-            "missing erasure governance signoff",
-            RawRegulatedException(True, 600, 900, False),
-        ),
+        ("missing per-tenant assignment", RawRegulatedException(False, 600, 900, True)),
+        ("missing retention ceiling", RawRegulatedException(True, None, 900, True)),
+        ("retention exceeds erasure sla", RawRegulatedException(True, 901, 900, True)),
+        ("missing erasure governance signoff", RawRegulatedException(True, 600, 900, False)),
     ):
         must_reject(
             name,
@@ -188,16 +190,16 @@ def main() -> int:
     }
     resolved = first.map_authorized(delivery, auth)
     assert resolved == route_v1
-    assert all(hostile_payload[key] != getattr(resolved, attr) for key, attr in (
-        ("topic", "topic"),
-        ("consumer_group", "consumer_group"),
-        ("cell", "cell"),
-    ))
+    assert all(
+        hostile_payload[key] != getattr(resolved, attr)
+        for key, attr in (("topic", "topic"), ("consumer_group", "consumer_group"), ("cell", "cell"))
+    )
 
     print(
         "d4a_data_topology=PASS "
-        "regulated_default=opaque_reference raw_leak=blocked exception_controls=conjunctive "
-        "tenant_auth=before_mapping physical_identity=nonsemantic replacement_mapping=semantic_stable"
+        "regulated_default=opaque_reference per_record_erasure=isolated raw_leak=blocked "
+        "exception_controls=conjunctive tenant_auth=before_mapping physical_identity=nonsemantic "
+        "replacement_mapping=semantic_stable"
     )
     return 0
 

@@ -21,7 +21,8 @@ def main() -> None:
     parser.add_argument("--workflow-run-attempt", required=True, type=int)
     parser.add_argument("--job-id", required=True, type=int)
     parser.add_argument("--job-name", required=True)
-    parser.add_argument("--kafka-image-digest", required=True)
+    parser.add_argument("--kafka-image-index-digest", required=True)
+    parser.add_argument("--kafka-linux-amd64-manifest-digest", required=True)
     parser.add_argument("--benchmark-results", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
@@ -30,6 +31,8 @@ def main() -> None:
     results_path = Path(args.benchmark_results)
     results = json.loads(results_path.read_text())
     assert results["numeric_authority"] == "test_values_only_not_production"
+    assert args.kafka_image_index_digest == source["candidate_image_index_digest"]
+    assert args.kafka_linux_amd64_manifest_digest == source["candidate_linux_amd64_manifest_digest"]
 
     out = {
         "schema": "d4a-capacity-ordering-source-run-provenance-v1",
@@ -40,8 +43,11 @@ def main() -> None:
         "job_name": args.job_name,
         "probe": "d4a_live_kafka_capacity_ordering",
         "candidate": source["candidate"],
+        "candidate_version": source["candidate_version"],
         "candidate_image": source["candidate_image"],
-        "candidate_image_digest": args.kafka_image_digest,
+        "candidate_image_index_digest": args.kafka_image_index_digest,
+        "candidate_linux_amd64_manifest_digest": args.kafka_linux_amd64_manifest_digest,
+        "candidate_pin_authority": source["candidate_pin_authority"],
         "source_manifest_sha256": digest(MANIFEST),
         "benchmark_profile_sha256": digest(PROFILE),
         "benchmark_results_sha256": digest(results_path),
@@ -59,7 +65,12 @@ def main() -> None:
         "numeric_authority": results["numeric_authority"],
     }
     Path(args.output).write_text(json.dumps(out, indent=2, sort_keys=True) + "\n")
-    print(f"d4a_capacity_ordering_provenance=PASS sha={args.repository_sha} run={args.workflow_run_id} attempt={args.workflow_run_attempt} job={args.job_id} image_digest={args.kafka_image_digest}")
+    print(
+        "d4a_capacity_ordering_provenance=PASS "
+        f"sha={args.repository_sha} run={args.workflow_run_id} attempt={args.workflow_run_attempt} "
+        f"job={args.job_id} index_digest={args.kafka_image_index_digest} "
+        f"amd64_digest={args.kafka_linux_amd64_manifest_digest}"
+    )
 
 
 if __name__ == "__main__":

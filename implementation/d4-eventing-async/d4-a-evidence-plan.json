@@ -84,13 +84,15 @@
       ]
     }
   ],
-  "source_evidence_state": "reviewed_source_run_available",
-  "ledger_credit_state": "two_of_seven",
+  "source_evidence_state": "reviewed_source_runs_available",
+  "ledger_credit_state": "four_of_seven",
   "credited_evidence": [
     "broker_neutral_anti_corruption_stub_swap",
-    "exactly_once_guardrail_consumer_inbox_enforcement"
+    "regulated_payload_erasure_granularity",
+    "exactly_once_guardrail_consumer_inbox_enforcement",
+    "physical_naming_routing_and_cell_topology_adapter_mapping"
   ],
-  "latest_promotion_record": "implementation/d4-eventing-async/ledger-promotions/d4-a-semantic-boundary-promotion-v1.json",
+  "latest_promotion_record": "implementation/d4-eventing-async/ledger-promotions/d4-a-data-topology-promotion-v1.json",
   "selection_state": "not_selected",
   "acceptance_state": "not_eligible"
 }

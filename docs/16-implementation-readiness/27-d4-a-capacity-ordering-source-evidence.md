@@ -38,7 +38,20 @@ This package treats Kafka only as the current leading candidate. Passing this be
 - **Growth**;
 - **Stress**.
 
-For each tier the live-broker harness records:
+The Kafka candidate decision record requires the capacity evidence to cover **tenant, monitored-resource/device cardinality and event-rate dimensions**. These dimensions are therefore part of the executable source evidence, not documentation-only metadata.
+
+Each tier declares both tenant/event-rate skew and an explicit `device_cardinality_by_tenant`. The bounded source-test profile currently exercises 60 distinct devices at Baseline, 180 at Growth and 600 at Stress, distributed across the declared tenant mix. These are test values only; they are not production tenant/device limits or C3 numerics.
+
+For each tenant, the full tier event allocation is generated across all of that tenant's configured device identities. Events use trusted logical keys shaped as `tenant:device-N` and are round-tripped through the real Kafka candidate. The run fails unless:
+
+- the total observed events equal the tier's declared `message_count`;
+- every configured tenant is observed;
+- the observed event count per tenant matches the declared tenant weighting;
+- every configured device identity for every tenant is observed after Kafka round-trip;
+- observed device cardinality exactly equals the declared cardinality by tenant;
+- total distinct observed device scopes strictly increase Baseline → Growth → Stress.
+
+For each tier the live-broker harness also records:
 
 - producer messages/second;
 - average producer latency;
@@ -46,7 +59,9 @@ For each tier the live-broker harness records:
 - **broker-observed backlog from Kafka end offsets** before consumer drain;
 - backlog drain duration;
 - drain messages/second;
-- per-tenant/event-rate skew exercised through real keyed Kafka records;
+- per-tenant/event-rate skew from the full device-aware workload;
+- expected and observed device cardinality by tenant;
+- total distinct device scopes observed;
 - a real producer-performance probe for every bounded partition count in the tier;
 - the target messages/second for that same tier and the observed fraction of that target achieved by each probe;
 - whether each partition probe satisfies the tier-specific target-relative throughput admission and maximum average-latency admission;
@@ -128,7 +143,7 @@ Assurance tooling:
 - `tools/assurance/d4a_capacity_ordering/test_validate_source_evidence.py`;
 - `tools/assurance/d4a_capacity_ordering/emit_source_provenance.py`.
 
-The source-validator negative controls fail on mutable Kafka pins, physical ordering-key leakage, missing ordering-profile coverage, global serialization, synthetic degradation substitution, weakened/non-tier-relative partition admission, partition-ceiling policy detached from the same-tier target, fake model-only fallback triggers, fallback that does not route an actual over-ceiling workload, semantic identity changes in fallback, source auto-credit, an unauthorized fifth global credit, and D4-A7 recovery overclaim.
+The source-validator negative controls fail on mutable Kafka pins, physical ordering-key leakage, missing ordering-profile coverage, global serialization, synthetic degradation substitution, weakened/non-tier-relative partition admission, partition-ceiling policy detached from the same-tier target, missing/mismatched/impossible device cardinality, non-growing device pressure across tiers, fake model-only fallback triggers, fallback that does not route an actual over-ceiling workload, semantic identity changes in fallback, source auto-credit, an unauthorized fifth global credit, and D4-A7 recovery overclaim.
 
 CI workflow:
 
@@ -154,6 +169,7 @@ A later promotion PR may credit these IDs only after the exact source HEAD/run/j
 
 This package does not claim:
 
+- production tenant/device/event-rate limits;
 - production performance or SLO numerics;
 - production partition/topic/cluster topology;
 - an absolute Kafka partition ceiling;
@@ -171,14 +187,16 @@ This source PR is eligible for final review only when the exact HEAD proves:
 
 - real Kafka candidate execution from the exact index-pinned image and exact Linux/amd64 child manifest;
 - all Baseline/Growth/Stress tiers executed;
-- tenant skew exercised;
+- tenant skew, device/resource cardinality and event-rate pressure exercised together through real Kafka;
+- every configured device identity per tenant is observed and exact expected/observed device cardinalities match;
+- distinct device-scope totals strictly increase across B/G/S;
 - throughput/latency and broker-observed backlog/drain measurements persisted;
 - a real Kafka quota produces the declared bounded degradation boundary;
 - every partition producer-performance probe is tied to the same tier's target and admitted only after satisfying the pinned 70% target fraction plus latency bound;
 - the tested partition ceiling per tier is derived only from admitted real-load probes;
 - all six ordering classes are individually exercised through Kafka;
 - every ordered profile uses the canonical `JLMIRROR KeySerialExecutor`, preserving same-key order while independent keys overlap;
-- source negative controls reject physical-key, profile-loss, quota-weakening, tier-admission weakening, fake fallback and source-credit escapes;
+- source negative controls reject physical-key, profile-loss, quota-weakening, tier-admission weakening, device-cardinality weakening, fake fallback and source-credit escapes;
 - tenant-cohort fallback routes an actually exercised number of distinct logical scopes greater than the bounded single-topic test ceiling through real cohort topics without semantic identity change;
 - Phase 10 and D4 validators remain green;
 - D4-A remains 4/7 and this run grants zero ledger credit;

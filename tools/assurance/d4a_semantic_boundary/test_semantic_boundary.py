@@ -169,13 +169,22 @@ def main() -> int:
         helpers = assurance_root / "helpers"; helpers.mkdir()
         deeper = helpers / "deeper"; deeper.mkdir()
         entry = assurance_root / "entry.py"
+        helpers_init = helpers / "__init__.py"
+        deeper_init = deeper / "__init__.py"
         helper = helpers / "guard.py"
         nested_helper = deeper / "more.py"
         entry.write_text("from helpers.guard import run\n", encoding="utf-8")
+        helpers_init.write_text("PACKAGE_GUARD = 'loaded'\n", encoding="utf-8")
+        deeper_init.write_text("DEEP_PACKAGE_GUARD = 'loaded'\n", encoding="utf-8")
         helper.write_text("from helpers.deeper.more import execute\ndef run(): return execute()\n", encoding="utf-8")
         nested_helper.write_text("def execute(): return 'ok'\n", encoding="utf-8")
         closure = {path.relative_to(assurance_root).as_posix() for path in discover_assurance_dependency_sources([entry], assurance_root)}
-        assert closure == {"entry.py", "helpers/guard.py", "helpers/deeper/more.py"}
+        assert closure == {"entry.py", "helpers/__init__.py", "helpers/guard.py", "helpers/deeper/__init__.py", "helpers/deeper/more.py"}
+
+        helpers_init.write_text("def load(client): return client.commit_transaction()\n", encoding="utf-8")
+        closure_with_init = discover_assurance_dependency_sources([entry], assurance_root)
+        assert helpers_init in closure_with_init
+        assert "transaction_api:commit_transaction" in scan_python_for_direct_kafka(helpers_init)
 
         for name, source, expected in (
             ("commit.py", "def f(self): self.client.commit_transaction()\n", "transaction_api:commit_transaction"),
@@ -187,13 +196,22 @@ def main() -> int:
             assert expected in scan_python_for_direct_kafka(p)
 
         for name, text, marker in (
-            ("DirectKafka.cs", "using Confluent.Kafka;", "confluent.kafka"),
-            ("SpringKafka.java", "import org.springframework.kafka.core.KafkaTemplate;", "org.springframework.kafka"),
-            ("direct.js", "require('node-rdkafka')", "node-rdkafka"),
-            ("direct.rs", "use rdkafka::consumer::Consumer;", "rdkafka"),
+            ("DirectKafka.cs", "using Confluent.Kafka;", "marker:confluent.kafka"),
+            ("SpringKafka.java", "import org.springframework.kafka.core.KafkaTemplate;", "marker:org.springframework.kafka"),
+            ("direct.js", "require('node-rdkafka')", "marker:node-rdkafka"),
+            ("direct.rs", "use rdkafka::consumer::Consumer;", "marker:rdkafka"),
         ):
             p = root / name; p.write_text(text, encoding="utf-8"); assert marker in scan_nonpython_for_direct_kafka(p)
         assert "org.springframework.kafka" in KAFKA_TEXT_MARKERS
+
+        for name, text, expected in (
+            ("tx.rs", "fn apply(client: &impl TransactionPort) { client.commit_transaction(); }", "transaction_api:commit_transaction"),
+            ("tx.go", "func apply(client TransactionPort) { client.begin_transaction() }", "transaction_api:begin_transaction"),
+            ("tx.cs", "void Apply(ITransport client) { client.abort_transaction(); }", "transaction_api:abort_transaction"),
+            ("tx.ts", "client.send_offsets_to_transaction({});", "transaction_api:send_offsets_to_transaction"),
+        ):
+            p = root / name; p.write_text(text, encoding="utf-8")
+            assert expected in scan_nonpython_for_direct_kafka(p)
 
         guard = SQLiteAtomicInboxEffectGuard(root / "durable.db")
         first = guard.record_and_apply(
@@ -247,7 +265,7 @@ def main() -> int:
         remaining_semantic = semantic_bound.receive("evidence.consumer.v1")
         assert remaining_semantic.contract_version == "v2"
 
-    print("d4a_fresh_review_hardening=PASS nested_import_closure+owner_independent_transactions+concrete_base_aliases")
+    print("d4a_fresh_review_hardening=PASS package_initializers+polyglot_transactions+nested_imports+concrete_base_aliases")
     print("d4a_transport_swap=PASS adapters=2 durable_effect_observed=true replay_apply_count=1")
     return 0
 

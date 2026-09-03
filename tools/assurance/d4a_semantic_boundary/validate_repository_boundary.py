@@ -57,6 +57,7 @@ KAFKA_TEXT_MARKERS = (
     "ibm/sarama", "twmb/franz-go", "rust-rdkafka",
 )
 GENERIC_BROKER_MARKERS = ("BrokerPort", "_broker.publish", "_broker.receive", "_broker.acknowledge")
+REFLECTIVE_MEMBER_BUILTINS = {"getattr", "hasattr", "setattr", "delattr"}
 
 
 def _call_target(node: ast.Call) -> str:
@@ -264,8 +265,51 @@ def _normalized_transaction_method(identifier: str) -> str | None:
     return None
 
 
+def _constant_string_value(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _constant_string_value(node.left)
+        right = _constant_string_value(node.right)
+        if left is not None and right is not None:
+            return left + right
+    if isinstance(node, ast.JoinedStr):
+        parts: list[str] = []
+        for value in node.values:
+            if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+                return None
+            parts.append(value.value)
+        return "".join(parts)
+    return None
+
+
+def _reflective_aliases(tree: ast.AST) -> set[str]:
+    aliases = set(REFLECTIVE_MEMBER_BUILTINS)
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+                continue
+            value = node.value
+            if not isinstance(value, ast.Name) or value.id not in aliases:
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id not in aliases:
+                    aliases.add(target.id)
+                    changed = True
+    return aliases
+
+
+def _dynamic_transaction_method(node: ast.AST) -> str | None:
+    value = _constant_string_value(node)
+    return _normalized_transaction_method(value) if value is not None else None
+
+
 def _python_tree_findings(tree: ast.AST) -> set[str]:
     findings: set[str] = set()
+    reflective_aliases = _reflective_aliases(tree)
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -281,6 +325,15 @@ def _python_tree_findings(tree: ast.AST) -> set[str]:
             canonical_method = _normalized_transaction_method(node.attr)
             if canonical_method is not None:
                 findings.add(f"transaction_api:{canonical_method}")
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in reflective_aliases and len(node.args) >= 2:
+                canonical_method = _dynamic_transaction_method(node.args[1])
+                if canonical_method is not None:
+                    findings.add(f"dynamic_transaction_api:{canonical_method}")
+        elif isinstance(node, ast.Subscript):
+            canonical_method = _dynamic_transaction_method(node.slice)
+            if canonical_method is not None:
+                findings.add(f"dynamic_transaction_api:{canonical_method}")
     return findings
 
 
@@ -404,13 +457,16 @@ def main() -> int:
     lowered = marker_fixture.lower()
     assert all(marker in lowered for marker in ("confluent.kafka", "org.springframework.kafka", "node-rdkafka", "rdkafka"))
     assert all(marker in KAFKA_TEXT_MARKERS for marker in ("confluent.kafka", "org.springframework.kafka", "node-rdkafka", "rdkafka"))
+    dynamic_tree = ast.parse("resolver = getattr\nresolver(client, 'commit' + 'Transaction')()\nvars(client)['commit_' + 'transaction']()")
+    dynamic_findings = _python_tree_findings(dynamic_tree)
+    assert "dynamic_transaction_api:commit_transaction" in dynamic_findings
 
     print(
         f"d4a_repository_boundary=PASS broker_paths={len(runtime_discovered)} consumers={len(consumers)} "
         "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=distinct_nested_declarations+multi_assignment_alias_transitive_exact "
         "call_graph=ordered_exact verifier_before_ack=true "
         f"roots=implementation+src assurance_dependency_closure={len(assurance_closure)} boundary_module=class_scoped_native_allowlist package_initializers=scanned "
-        "transaction_apis=owner_independent_polyglot_case_and_generic_syntax_normalized"
+        "transaction_apis=owner_independent+dynamic_reflection_polyglot_case_and_generic_syntax_normalized"
     )
     return 0
 

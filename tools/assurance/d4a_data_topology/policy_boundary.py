@@ -9,6 +9,14 @@ class PolicyViolation(ValueError):
     pass
 
 
+def _valid_token(value: object) -> bool:
+    return isinstance(value, str) and bool(value) and value.strip() == value
+
+
+def _positive_plain_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
 class DataClassification(str, Enum):
     PUBLIC = "public"
     INTERNAL = "internal"
@@ -29,7 +37,7 @@ class OpaqueReference:
             ("record_id", self.record_id),
             ("reference_id", self.reference_id),
         ):
-            if not value or value.strip() != value:
+            if not _valid_token(value):
                 raise PolicyViolation(f"invalid opaque reference {name}")
 
 
@@ -43,21 +51,26 @@ class GovernedOpaqueStore:
     def _key(reference: OpaqueReference) -> tuple[str, str, str]:
         return (reference.tenant_id, reference.record_id, reference.reference_id)
 
-    def put(self, reference: OpaqueReference, value: bytes, *, trusted_tenant_id: str) -> None:
-        if reference.tenant_id != trusted_tenant_id:
+    @staticmethod
+    def _authorize_reference(reference: object, trusted_tenant_id: object) -> OpaqueReference:
+        if not isinstance(reference, OpaqueReference):
+            raise PolicyViolation("opaque store requires governed opaque reference")
+        if not _valid_token(trusted_tenant_id) or reference.tenant_id != trusted_tenant_id:
             raise PolicyViolation("opaque store tenant mismatch")
-        if not value:
-            raise PolicyViolation("opaque store requires non-empty value")
-        self._records[self._key(reference)] = bytes(value)
+        return reference
+
+    def put(self, reference: OpaqueReference, value: bytes, *, trusted_tenant_id: str) -> None:
+        reference = self._authorize_reference(reference, trusted_tenant_id)
+        if not isinstance(value, bytes) or not value:
+            raise PolicyViolation("opaque store requires non-empty bytes")
+        self._records[self._key(reference)] = value
 
     def exists(self, reference: OpaqueReference, *, trusted_tenant_id: str) -> bool:
-        if reference.tenant_id != trusted_tenant_id:
-            raise PolicyViolation("opaque store tenant mismatch")
+        reference = self._authorize_reference(reference, trusted_tenant_id)
         return self._key(reference) in self._records
 
     def erase_record(self, reference: OpaqueReference, *, trusted_tenant_id: str) -> None:
-        if reference.tenant_id != trusted_tenant_id:
-            raise PolicyViolation("opaque store tenant mismatch")
+        reference = self._authorize_reference(reference, trusted_tenant_id)
         self._records.pop(self._key(reference), None)
 
 
@@ -69,10 +82,12 @@ class PerTenantRawAssignment:
 
     def valid_for(self, trusted_tenant_id: str) -> bool:
         return (
-            self.tenant_id == trusted_tenant_id
+            _valid_token(trusted_tenant_id)
+            and _valid_token(self.tenant_id)
+            and self.tenant_id == trusted_tenant_id
+            and isinstance(self.assignment_kind, str)
             and self.assignment_kind in {"topic", "partition"}
-            and bool(self.assignment_id)
-            and self.assignment_id.strip() == self.assignment_id
+            and _valid_token(self.assignment_id)
         )
 
 
@@ -84,10 +99,11 @@ class ErasureGovernanceApproval:
 
     def valid_for(self, trusted_tenant_id: str) -> bool:
         return (
-            self.tenant_id == trusted_tenant_id
+            _valid_token(trusted_tenant_id)
+            and _valid_token(self.tenant_id)
+            and self.tenant_id == trusted_tenant_id
             and self.authority_id == "erasure-governance-authority"
-            and bool(self.approval_id)
-            and self.approval_id.strip() == self.approval_id
+            and _valid_token(self.approval_id)
         )
 
 
@@ -99,13 +115,17 @@ class RawRegulatedException:
     erasure_governance_approval: ErasureGovernanceApproval | None
 
     def is_fully_authorized(self, *, trusted_tenant_id: str) -> bool:
-        if self.per_tenant_assignment is None or not self.per_tenant_assignment.valid_for(trusted_tenant_id):
+        if not isinstance(self.per_tenant_assignment, PerTenantRawAssignment):
             return False
-        if self.erasure_governance_approval is None or not self.erasure_governance_approval.valid_for(trusted_tenant_id):
+        if not self.per_tenant_assignment.valid_for(trusted_tenant_id):
             return False
-        if self.segment_retention_ceiling_seconds is None or self.governed_erasure_sla_seconds is None:
+        if not isinstance(self.erasure_governance_approval, ErasureGovernanceApproval):
             return False
-        if self.segment_retention_ceiling_seconds <= 0 or self.governed_erasure_sla_seconds <= 0:
+        if not self.erasure_governance_approval.valid_for(trusted_tenant_id):
+            return False
+        if not _positive_plain_int(self.segment_retention_ceiling_seconds):
+            return False
+        if not _positive_plain_int(self.governed_erasure_sla_seconds):
             return False
         return self.segment_retention_ceiling_seconds <= self.governed_erasure_sla_seconds
 
@@ -126,8 +146,20 @@ class PublicationPolicy:
 
     @staticmethod
     def validate(projection: PublicationProjection, *, trusted_tenant_id: str) -> None:
-        if not trusted_tenant_id or trusted_tenant_id.strip() != trusted_tenant_id:
+        if not isinstance(projection, PublicationProjection):
+            raise PolicyViolation("publication projection type required")
+        if not _valid_token(trusted_tenant_id):
             raise PolicyViolation("trusted tenant id required")
+        if not isinstance(projection.classification, DataClassification):
+            raise PolicyViolation("data classification must be canonical enum value")
+        if projection.raw_value is not None and not isinstance(projection.raw_value, bytes):
+            raise PolicyViolation("raw async value must be bytes")
+        if projection.opaque_reference is not None and not isinstance(projection.opaque_reference, OpaqueReference):
+            raise PolicyViolation("opaque reference type required")
+        if projection.raw_regulated_exception is not None and not isinstance(
+            projection.raw_regulated_exception, RawRegulatedException
+        ):
+            raise PolicyViolation("raw regulated exception type required")
 
         if projection.classification is DataClassification.SECRET_OR_CREDENTIAL:
             raise PolicyViolation("secret_or_credential is prohibited in ordinary async payloads")
@@ -162,6 +194,18 @@ class LogicalDelivery:
     message_identity_scope: str
     message_id: str
 
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("tenant_id", self.tenant_id),
+            ("contract_name", self.contract_name),
+            ("message_identity_scope", self.message_identity_scope),
+            ("message_id", self.message_id),
+        ):
+            if not _valid_token(value):
+                raise PolicyViolation(f"invalid logical delivery {name}")
+        if not _positive_plain_int(self.contract_version):
+            raise PolicyViolation("contract_version must be positive integer")
+
     def semantic_identity(self) -> tuple[str, str, int, str, str]:
         return (
             self.tenant_id,
@@ -178,11 +222,24 @@ class PhysicalRoute:
     consumer_group: str
     cell: str
 
+    def __post_init__(self) -> None:
+        for name, value in (("topic", self.topic), ("consumer_group", self.consumer_group), ("cell", self.cell)):
+            if not _valid_token(value):
+                raise PolicyViolation(f"invalid physical route {name}")
+
 
 @dataclass(frozen=True)
 class TenantAuthorization:
     tenant_id: str
     allowed_contracts: frozenset[str]
+
+    def __post_init__(self) -> None:
+        if not _valid_token(self.tenant_id):
+            raise PolicyViolation("authorization tenant invalid")
+        if not isinstance(self.allowed_contracts, frozenset) or any(
+            not _valid_token(contract) for contract in self.allowed_contracts
+        ):
+            raise PolicyViolation("authorization contracts invalid")
 
     def authorizes(self, delivery: LogicalDelivery) -> bool:
         return self.tenant_id == delivery.tenant_id and delivery.contract_name in self.allowed_contracts
@@ -192,9 +249,24 @@ class TopologyAdapter:
     """Maps trusted logical delivery identity into replaceable physical placement."""
 
     def __init__(self, routes: Mapping[tuple[str, str], PhysicalRoute]) -> None:
-        self._routes = dict(routes)
+        if not isinstance(routes, Mapping):
+            raise PolicyViolation("topology routes mapping required")
+        normalized: dict[tuple[str, str], PhysicalRoute] = {}
+        for key, route in routes.items():
+            if (
+                not isinstance(key, tuple)
+                or len(key) != 2
+                or not _valid_token(key[0])
+                or not _valid_token(key[1])
+                or not isinstance(route, PhysicalRoute)
+            ):
+                raise PolicyViolation("invalid topology route entry")
+            normalized[(key[0], key[1])] = route
+        self._routes = normalized
 
     def map_authorized(self, delivery: LogicalDelivery, authorization: TenantAuthorization) -> PhysicalRoute:
+        if not isinstance(delivery, LogicalDelivery) or not isinstance(authorization, TenantAuthorization):
+            raise PolicyViolation("typed logical delivery and authorization required")
         # Authorization intentionally occurs before any physical route lookup.
         if not authorization.authorizes(delivery):
             raise PolicyViolation("tenant/contract authorization denied before transport mapping")

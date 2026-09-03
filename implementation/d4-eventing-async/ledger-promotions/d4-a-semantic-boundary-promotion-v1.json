@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "promotion_id": "d4-a-semantic-boundary-promotion-v1",
+  "track": "D4-A",
+  "promotion_base_main_commit": "8863f66a0fb6457ad05b72286ef983eb4e8a1c5e",
+  "source_pr": 54,
+  "source_reviewed_head": "d6872579dca7d4f08c9ded82e34b94f8e87ec1e9",
+  "source_merge_commit": "8863f66a0fb6457ad05b72286ef983eb4e8a1c5e",
+  "source_manifest_path": "implementation/d4-eventing-async/source-evidence/semantic-boundary/source-evidence-manifest.json",
+  "source_manifest_sha256": "690cdc59af819e27a7922cd2eea04d537c20dcd0e005ce4dbd4dac977eb525a1",
+  "source_workflow": {
+    "run_id": 33790608658,
+    "run_attempt": 1,
+    "job_id": 100766024114,
+    "job_name": "D4-A semantic boundary source evidence",
+    "artifact_id": 9907159265,
+    "artifact_name": "d4-a-semantic-boundary-source-d6872579dca7d4f08c9ded82e34b94f8e87ec1e9-33790608658-1",
+    "artifact_digest": "sha256:8b4c4031270479ff3cb0912ae5469df575459f8afaf9e3ff226fb3b73e18ae6a"
+  },
+  "review_gate": {
+    "exact_head_ci_success_count": 15,
+    "independent_adversarial_review_node_id": "PRR_kwDOT7x07M8AAAABMFEmUQ",
+    "final_gate_comment_id": 5530884189,
+    "fresh_codex_unavailable_due_usage_limit": true,
+    "older_codex_review_reused_as_clean": false
+  },
+  "credited_evidence": [
+    {
+      "evidence_id": "broker_neutral_anti_corruption_stub_swap",
+      "evidence_kind": "candidate_plus_alternate_transport_conformance"
+    },
+    {
+      "evidence_id": "exactly_once_guardrail_consumer_inbox_enforcement",
+      "evidence_kind": "contract_registration_negative_control"
+    }
+  ],
+  "source_scope": "source_evidence_harness_only",
+  "live_kafka_broker_claimed": false,
+  "capacity_benchmark_claimed": false,
+  "ordering_benchmark_claimed": false,
+  "recovery_benchmark_claimed": false,
+  "kafka_selection_state": "not_selected",
+  "d4_transport_authority": "not_selected_not_granted",
+  "canonical_product_implementation_authority": "not_granted",
+  "wave4_implementation_authority": "not_granted",
+  "production_authority": "none",
+  "c3_numeric_topology_authority": "not_selected",
+  "promotion_rule": "reviewed_source_run_to_ledger_credit_only"
+}

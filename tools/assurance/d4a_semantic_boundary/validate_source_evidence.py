@@ -36,6 +36,7 @@ def main() -> int:
     assert source["scope"] == "source_evidence_harness_only"
     for key in ("live_kafka_broker_claimed", "capacity_benchmark_claimed", "ordering_benchmark_claimed", "recovery_benchmark_claimed", "current_run_auto_credit"):
         assert source[key] is False
+    # The source package itself remains immutable and never carries ledger credit.
     assert source["ledger_credit"] == []
     assert source["kafka_selection_state"] == "not_selected"
     assert source["d4_transport_authority"] == "not_selected_not_granted"
@@ -62,8 +63,14 @@ def main() -> int:
     for evidence_id, kind in EXPECTED_KINDS.items():
         assert plan_items[evidence_id]["evidence_kind"] == kind
 
+    # A later, separate promotion may credit the already-reviewed source run. A new
+    # execution of this source workflow still cannot create additional credit itself.
+    assert set(plan["credited_evidence"]) == EXPECTED_IDS
+    assert plan["ledger_credit_state"] == "two_of_seven"
+    assert plan["current_run_auto_credit"] is False
     d4a = next(track for track in state["tracks"] if track["track_id"] == "D4-A")
-    assert d4a["evidence_completed"] == []
+    assert set(d4a["evidence_completed"]) == EXPECTED_IDS
+    assert len(d4a["evidence_remaining"]) == 5
     assert state["gate_state"] == "scoped"
     assert state["d4_transport_authority"] == "not_selected_not_granted"
     assert state["canonical_product_implementation_authority"] == "not_granted"
@@ -71,7 +78,7 @@ def main() -> int:
     assert state["production_authority"] == "none"
     assert state["c3_numeric_topology_authority"] == "not_selected"
 
-    print("d4a_semantic_source_manifest=PASS evidence_ids=2 ledger_credit=0 live_kafka_claim=false provenance=runtime_artifact_required effect_guard=executable")
+    print("d4a_semantic_source_manifest=PASS evidence_ids=2 source_ledger_credit=0 promoted_ledger_credit=2 live_kafka_claim=false provenance=runtime_artifact_required effect_guard=executable")
     return 0
 
 

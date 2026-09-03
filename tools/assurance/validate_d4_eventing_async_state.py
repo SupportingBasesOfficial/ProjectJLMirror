@@ -59,7 +59,17 @@ EXPECTED_REQUIRED_EVIDENCE = {
         "trace_context_observability_only_validation_and_redaction",
     },
 }
+EXPECTED_COMPLETED = {
+    "D4-A": {
+        "broker_neutral_anti_corruption_stub_swap",
+        "exactly_once_guardrail_consumer_inbox_enforcement",
+    },
+    "D4-B": set(),
+    "D4-C": set(),
+    "D4-D": set(),
+}
 EXPECTED_TOTAL_EVIDENCE = sum(len(items) for items in EXPECTED_REQUIRED_EVIDENCE.values())
+EXPECTED_TOTAL_CREDITED = sum(len(items) for items in EXPECTED_COMPLETED.values())
 EXPECTED_ENTRY_STATES = {
     "D4-A": "candidate_leading_closure_pending",
     "D4-B": "candidate_selection_open",
@@ -111,24 +121,12 @@ def validate_manifest(state: dict) -> list[str]:
     require(predecessor.get("state") == "separately_accepted", "D3 predecessor is not separately accepted")
     require(predecessor.get("canonical_commit") == EXPECTED_BASE, "D3 predecessor commit drift")
 
-    require(state.get("gate_state") == "scoped", "D4 entry PR must remain scoped")
-    require(
-        state.get("canonical_product_implementation_authority") == "not_granted",
-        "D4 entry must not grant canonical Product implementation authority",
-    )
-    require(
-        state.get("wave4_implementation_authority") == "not_granted",
-        "D4 entry must not grant Wave 4 implementation authority",
-    )
-    require(state.get("production_authority") == "none", "D4 entry must not grant production authority")
-    require(
-        state.get("d4_transport_authority") == "not_selected_not_granted",
-        "D4 transport authority must remain unselected/ungranted at entry",
-    )
-    require(
-        state.get("c3_numeric_topology_authority") == "not_selected",
-        "D4 entry must not select C3 numeric/topology authority",
-    )
+    require(state.get("gate_state") == "scoped", "D4 must remain scoped until separate full acceptance")
+    require(state.get("canonical_product_implementation_authority") == "not_granted", "D4 must not grant canonical Product implementation authority")
+    require(state.get("wave4_implementation_authority") == "not_granted", "D4 must not grant Wave 4 implementation authority")
+    require(state.get("production_authority") == "none", "D4 must not grant production authority")
+    require(state.get("d4_transport_authority") == "not_selected_not_granted", "D4 transport authority must remain unselected/ungranted")
+    require(state.get("c3_numeric_topology_authority") == "not_selected", "D4 must not select C3 numeric/topology authority")
 
     tracks = state.get("tracks")
     require(isinstance(tracks, list), "tracks must be a list")
@@ -138,45 +136,40 @@ def validate_manifest(state: dict) -> list[str]:
         for track_id, expected_sources in EXPECTED_TRACK_SOURCES.items():
             track = by_id.get(track_id, {})
             expected_evidence = EXPECTED_REQUIRED_EVIDENCE[track_id]
+            expected_completed = EXPECTED_COMPLETED[track_id]
+            expected_remaining = expected_evidence - expected_completed
             require(set(track.get("source_decisions", [])) == expected_sources, f"{track_id} source decision drift")
-            require(track.get("state") == EXPECTED_ENTRY_STATES[track_id], f"{track_id} entry state drift")
+            require(track.get("state") == EXPECTED_ENTRY_STATES[track_id], f"{track_id} scoped state drift")
             required = track.get("required_evidence", [])
             completed = track.get("evidence_completed", [])
             remaining = track.get("evidence_remaining", [])
             require(isinstance(required, list), f"{track_id} required evidence must be a list")
             require(set(required) == expected_evidence, f"{track_id} required evidence inventory drift")
             require(len(required) == len(expected_evidence), f"{track_id} required evidence multiplicity drift")
-            require(completed == [], f"{track_id} entry gate may not pre-credit evidence")
-            require(set(remaining) == expected_evidence, f"{track_id} remaining evidence must equal expected evidence at entry")
-            require(len(remaining) == len(expected_evidence), f"{track_id} remaining evidence multiplicity drift")
+            require(set(completed) == expected_completed, f"{track_id} completed evidence drift")
+            require(len(completed) == len(expected_completed), f"{track_id} completed evidence multiplicity drift")
+            require(set(remaining) == expected_remaining, f"{track_id} remaining evidence drift")
+            require(len(remaining) == len(expected_remaining), f"{track_id} remaining evidence multiplicity drift")
+            require(set(completed).isdisjoint(remaining), f"{track_id} completed/remaining overlap")
+            require(set(completed) | set(remaining) == expected_evidence, f"{track_id} evidence partition drift")
 
         total_required = sum(len(track.get("required_evidence", [])) for track in by_id.values())
+        total_completed = sum(len(track.get("evidence_completed", [])) for track in by_id.values())
         require(total_required == EXPECTED_TOTAL_EVIDENCE, "D4 total required evidence inventory drift")
+        require(total_completed == EXPECTED_TOTAL_CREDITED, "D4 total credited evidence drift")
 
         d4a = by_id.get("D4-A", {})
-        require(d4a.get("candidate") == "kafka", "D4-A leading candidate must remain Kafka at entry")
-        require(
-            d4a.get("candidate_status") == "leading_candidate_closure_pending",
-            "D4-A Kafka candidate must remain closure-pending",
-        )
+        require(d4a.get("candidate") == "kafka", "D4-A leading candidate must remain Kafka")
+        require(d4a.get("candidate_status") == "leading_candidate_closure_pending", "D4-A Kafka candidate must remain closure-pending")
         for track_id in ("D4-B", "D4-C", "D4-D"):
             track = by_id.get(track_id, {})
             require(track.get("candidate") is None, f"{track_id} must not silently select a candidate")
             require(track.get("candidate_status") == "not_selected", f"{track_id} candidate status must remain not_selected")
 
-    require(
-        set(state.get("explicit_c3_exclusions", [])) == EXPECTED_C3_EXCLUSIONS,
-        "D4 C3 exclusion set drift",
-    )
-    require(
-        set(state.get("explicit_product_or_later_gate_exclusions", [])) == EXPECTED_LATER_EXCLUSIONS,
-        "D4 Product/later-gate exclusion set drift",
-    )
+    require(set(state.get("explicit_c3_exclusions", [])) == EXPECTED_C3_EXCLUSIONS, "D4 C3 exclusion set drift")
+    require(set(state.get("explicit_product_or_later_gate_exclusions", [])) == EXPECTED_LATER_EXCLUSIONS, "D4 Product/later-gate exclusion set drift")
     require("separate_acceptance" in state.get("acceptance_rule", ""), "D4 acceptance must remain a separate action")
-    require(
-        "separate_explicit_user_authorization" in state.get("merge_rule", ""),
-        "D4 merge rule must require separate explicit user authorization",
-    )
+    require("separate_explicit_user_authorization" in state.get("merge_rule", ""), "D4 merge rule must require separate explicit user authorization")
     return errors
 
 
@@ -191,7 +184,8 @@ def main(argv: list[str]) -> int:
     print(
         "d4_eventing_async_state=PASS "
         f"gate_state={state['gate_state']} tracks={len(state['tracks'])} "
-        f"evidence_required={EXPECTED_TOTAL_EVIDENCE} evidence_credited=0 transport_authority=not_granted"
+        f"evidence_required={EXPECTED_TOTAL_EVIDENCE} evidence_credited={EXPECTED_TOTAL_CREDITED} "
+        "transport_authority=not_granted kafka=not_selected"
     )
     return 0
 

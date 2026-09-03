@@ -3,6 +3,11 @@
   "promotion_id": "d4-a-data-topology-promotion-v1",
   "track": "D4-A",
   "promotion_base_main_commit": "8d493f6f6b5ced5fb56bcbd4968e01e557ab808d",
+  "previous_promotion": {
+    "path": "implementation/d4-eventing-async/ledger-promotions/d4-a-semantic-boundary-promotion-v1.json",
+    "promotion_id": "d4-a-semantic-boundary-promotion-v1",
+    "sha256": "cb0fe5b74075638d0804b47ad78e8249359ad3a0df72444f82444094c7eea18b"
+  },
   "source_pr": 56,
   "source_reviewed_head": "b8dce5c87803a20cdf8776429f76a0b6c2cb1d96",
   "source_merge_commit": "8d493f6f6b5ced5fb56bcbd4968e01e557ab808d",

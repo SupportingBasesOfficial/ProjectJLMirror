@@ -165,6 +165,19 @@ def main() -> int:
         alias_descendants = set(discover_broker_path_declarations([BOUNDARY_SOURCE, concrete_alias]).values())
         assert "AliasEscapingPath" in alias_descendants
 
+        assigned_alias = inheritance_root / "assigned_alias.py"
+        assigned_alias.write_text(
+            "from broker_boundary import OutboxDispatchPath\n"
+            "Base = OutboxDispatchPath\n"
+            "Alias2: object = Base\n"
+            "class AssignmentEscapingPath(Alias2):\n"
+            "    def dispatch(self, message):\n"
+            "        return self._transport.send(message)\n",
+            encoding="utf-8",
+        )
+        assignment_descendants = set(discover_broker_path_declarations([BOUNDARY_SOURCE, assigned_alias]).values())
+        assert "AssignmentEscapingPath" in assignment_descendants
+
         assurance_root = root / "assurance"; assurance_root.mkdir()
         helpers = assurance_root / "helpers"; helpers.mkdir()
         deeper = helpers / "deeper"; deeper.mkdir()
@@ -206,9 +219,11 @@ def main() -> int:
 
         for name, text, expected in (
             ("tx.rs", "fn apply(client: &impl TransactionPort) { client.commit_transaction(); }", "transaction_api:commit_transaction"),
-            ("tx.go", "func apply(client TransactionPort) { client.begin_transaction() }", "transaction_api:begin_transaction"),
-            ("tx.cs", "void Apply(ITransport client) { client.abort_transaction(); }", "transaction_api:abort_transaction"),
-            ("tx.ts", "client.send_offsets_to_transaction({});", "transaction_api:send_offsets_to_transaction"),
+            ("tx.go", "func apply(client TransactionPort) { client.BeginTransaction() }", "transaction_api:begin_transaction"),
+            ("tx.cs", "void Apply(ITransport client) { client.AbortTransaction(); }", "transaction_api:abort_transaction"),
+            ("tx.ts", "client.sendOffsetsToTransaction({});", "transaction_api:send_offsets_to_transaction"),
+            ("tx.java", "client.commitTransaction();", "transaction_api:commit_transaction"),
+            ("tx.kt", "client.abortTransaction()", "transaction_api:abort_transaction"),
         ):
             p = root / name; p.write_text(text, encoding="utf-8")
             assert expected in scan_nonpython_for_direct_kafka(p)
@@ -265,7 +280,7 @@ def main() -> int:
         remaining_semantic = semantic_bound.receive("evidence.consumer.v1")
         assert remaining_semantic.contract_version == "v2"
 
-    print("d4a_fresh_review_hardening=PASS package_initializers+polyglot_transactions+nested_imports+concrete_base_aliases")
+    print("d4a_fresh_review_hardening=PASS assignment_aliases+polyglot_case_normalization+package_initializers+nested_imports")
     print("d4a_transport_swap=PASS adapters=2 durable_effect_observed=true replay_apply_count=1")
     return 0
 

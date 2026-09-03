@@ -138,7 +138,10 @@ def main() -> int:
         try:
             validate_discovered_consumers(root)
         except ValueError as exc:
-            assert "transport_candidate must be kafka" in str(exc) and "canonical async contract-name rules" in str(exc)
+            error_text = str(exc)
+            assert "canonical async contract-name rules" in error_text
+            assert "trusted inbox dedup identity is required" in error_text
+            assert "effect protection must bind to an executable supported guard contract" in error_text
         else:
             raise AssertionError("partial consumer-registry entry escaped required-field validation")
 
@@ -325,7 +328,7 @@ def main() -> int:
         remaining_semantic = semantic_bound.receive("evidence.consumer.v1")
         assert remaining_semantic.contract_version == "v2"
 
-    print("d4a_fresh_review_hardening=PASS registry_path_fail_closed+chained_aliases+transaction_init+generic_syntax+nested_declarations+python_case_normalization+package_initializers+nested_imports")
+    print("d4a_fresh_review_hardening=PASS nested_declarations+multi_assignment_aliases+python_case_normalization+polyglot_generic_syntax+init_transactions+registry_namespace+package_initializers+nested_imports")
     print("d4a_transport_swap=PASS adapters=2 durable_effect_observed=true replay_apply_count=1")
     return 0
 

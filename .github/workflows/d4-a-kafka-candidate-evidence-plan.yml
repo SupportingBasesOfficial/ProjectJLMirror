@@ -8,10 +8,11 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   d4a-plan:
-    name: D4-A source-evidence planning boundary
+    name: D4-A evidence ledger boundary
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
@@ -41,23 +42,82 @@ jobs:
             tools/assurance/validate_d4a_evidence_plan.py \
             tools/assurance/test_validate_d4a_evidence_plan.py
 
-      - name: Falsify D4-A evidence-plan weakening
+      - name: Falsify D4-A evidence-ledger weakening
         shell: bash
         working-directory: tools/assurance
         run: python3 test_validate_d4a_evidence_plan.py
 
-      - name: Validate D4-A evidence plan
+      - name: Validate D4-A evidence plan and promotion provenance
         shell: bash
         run: python3 tools/assurance/validate_d4a_evidence_plan.py .
 
-      - name: Preserve D4 entry boundary
+      - name: Preserve D4 scoped boundary
         shell: bash
         run: |
           set -euo pipefail
           python3 tools/assurance/validate_d4_eventing_async_state.py .
           python3 tools/assurance/test_validate_d4_eventing_async_state.py
 
-      - name: Assert no source evidence or authority is credited
+      - name: Verify promoted source run and artifact still match pinned provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/d4a_promotion.env
+          import json
+          from pathlib import Path
+          p = json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-a-semantic-boundary-promotion-v1.json').read_text())
+          w = p['source_workflow']
+          for key, value in {
+              'RUN_ID': w['run_id'],
+              'JOB_ID': w['job_id'],
+              'ARTIFACT_ID': w['artifact_id'],
+              'ARTIFACT_NAME': w['artifact_name'],
+              'ARTIFACT_DIGEST': w['artifact_digest'],
+              'SOURCE_HEAD': p['source_reviewed_head'],
+          }.items():
+              print(f'{key}={value}')
+          PY
+          source /tmp/d4a_promotion.env
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" \
+            -o /tmp/run.json
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/jobs/$JOB_ID" \
+            -o /tmp/job.json
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" \
+            -o /tmp/artifact.json
+          python3 - <<'PY'
+          import json, os
+          run = json.load(open('/tmp/run.json'))
+          job = json.load(open('/tmp/job.json'))
+          artifact = json.load(open('/tmp/artifact.json'))
+          assert run['id'] == int(os.environ['RUN_ID'])
+          assert run['head_sha'] == os.environ['SOURCE_HEAD']
+          assert run['status'] == 'completed' and run['conclusion'] == 'success'
+          assert job['id'] == int(os.environ['JOB_ID'])
+          assert job['run_id'] == int(os.environ['RUN_ID'])
+          assert job['name'] == 'D4-A semantic boundary source evidence'
+          assert job['status'] == 'completed' and job['conclusion'] == 'success'
+          assert artifact['id'] == int(os.environ['ARTIFACT_ID'])
+          assert artifact['name'] == os.environ['ARTIFACT_NAME']
+          assert artifact['digest'] == os.environ['ARTIFACT_DIGEST']
+          assert artifact['expired'] is False
+          print('d4a_promotion_external_provenance=PASS source_run=success artifact=exact_digest')
+          PY
+
+      - name: Assert partial credit does not escalate authority
         shell: bash
         run: |
           python3 - <<'PY'
@@ -66,16 +126,22 @@ jobs:
           plan = json.loads(Path('implementation/d4-eventing-async/d4-a-evidence-plan.json').read_text())
           state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
           d4a = next(t for t in state['tracks'] if t['track_id'] == 'D4-A')
-          assert plan['source_evidence_state'] == 'not_run'
-          assert plan['ledger_credit_state'] == 'zero_of_seven'
+          expected = {
+              'broker_neutral_anti_corruption_stub_swap',
+              'exactly_once_guardrail_consumer_inbox_enforcement',
+          }
+          assert plan['source_evidence_state'] == 'reviewed_source_run_available'
+          assert plan['ledger_credit_state'] == 'two_of_seven'
+          assert set(plan['credited_evidence']) == expected
           assert plan['selection_state'] == 'not_selected'
           assert plan['current_run_auto_credit'] is False
-          assert d4a['evidence_completed'] == []
+          assert set(d4a['evidence_completed']) == expected
+          assert len(d4a['evidence_remaining']) == 5
           assert state['gate_state'] == 'scoped'
           assert state['d4_transport_authority'] == 'not_selected_not_granted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['c3_numeric_topology_authority'] == 'not_selected'
-          print('d4a_plan_boundary=PASS source_evidence=not_run credited=0 kafka=not_selected authorities=not_granted')
+          print('d4a_ledger_boundary=PASS credited=2 remaining=5 kafka=not_selected authorities=not_granted')
           PY

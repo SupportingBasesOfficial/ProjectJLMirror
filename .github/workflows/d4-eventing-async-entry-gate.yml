@@ -72,7 +72,14 @@ jobs:
           d4a = next(track for track in state['tracks'] if track['track_id'] == 'D4-A')
           expected_d4a_credit = {
               'broker_neutral_anti_corruption_stub_swap',
+              'regulated_payload_erasure_granularity',
               'exactly_once_guardrail_consumer_inbox_enforcement',
+              'physical_naming_routing_and_cell_topology_adapter_mapping',
+          }
+          expected_d4a_remaining = {
+              'capacity_envelope_baseline_growth_stress',
+              'ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency',
+              'broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark',
           }
           assert state['gate_state'] == 'scoped'
           assert state['d4_transport_authority'] == 'not_selected_not_granted'
@@ -83,12 +90,12 @@ jobs:
           assert d4a['candidate'] == 'kafka'
           assert d4a['candidate_status'] == 'leading_candidate_closure_pending'
           assert set(d4a['evidence_completed']) == expected_d4a_credit
-          assert len(d4a['evidence_remaining']) == 5
+          assert set(d4a['evidence_remaining']) == expected_d4a_remaining
           assert all(track['evidence_completed'] == [] for track in state['tracks'] if track['track_id'] != 'D4-A')
-          assert sum(len(track['evidence_completed']) for track in state['tracks']) == 2
+          assert sum(len(track['evidence_completed']) for track in state['tracks']) == 4
           print(
               'd4_scoped_boundary=PASS '
-              'kafka=leading_candidate_closure_pending evidence_credited=2 '
+              'kafka=leading_candidate_closure_pending evidence_credited=4 remaining=3 '
               'transport=not_granted wave4=not_granted production=none c3=not_selected'
           )
           PY

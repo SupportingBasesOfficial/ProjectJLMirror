@@ -132,6 +132,16 @@ jobs:
           assert all(tier['backlog_drain_seconds'] > 0 for tier in result['tiers'])
           assert all(tier['recovery_messages_per_second'] > 0 for tier in result['tiers'])
           assert all(tier['tenant_skew_observed'] is True for tier in result['tiers'])
+          assert all(tier['device_cardinality_exercised'] is True for tier in result['tiers'])
+          assert all(tier['broker_exercised'] is True for tier in result['tiers'])
+          device_totals = []
+          for tier in result['tiers']:
+              assert tier['device_cardinality_observed_by_tenant'] == tier['device_cardinality_expected_by_tenant']
+              expected_total = sum(tier['device_cardinality_expected_by_tenant'].values())
+              assert tier['distinct_device_scopes_observed_total'] == expected_total
+              assert sum(tier['tenant_skew_observed_counts'].values()) == tier['test_message_count']
+              device_totals.append(tier['distinct_device_scopes_observed_total'])
+          assert device_totals[0] < device_totals[1] < device_totals[2]
           assert all(tier['tested_partition_ceiling'] > 0 for tier in result['tiers'])
           for tier in result['tiers']:
               passing = [probe for probe in tier['partition_probes'] if probe['admission_passed']]
@@ -157,7 +167,7 @@ jobs:
           assert len(fallback['logical_scope_to_cohort']) == fallback['exercised_logical_scope_count']
           assert len(set(fallback['logical_scope_to_cohort'].values())) >= 2
           assert fallback['logical_contract_identity_changes'] is False
-          print('d4a_capacity_ordering_result_gate=PASS tiers=3 backlog=measured quota_degradation=observed partition_ceiling=tier_target_bound ordering_profiles=6 cohort_fallback=actual_over_ceiling numerics=test_only')
+          print('d4a_capacity_ordering_result_gate=PASS tiers=3 tenant_device_event_rate=exercised backlog=measured quota_degradation=observed partition_ceiling=tier_target_bound ordering_profiles=6 cohort_fallback=actual_over_ceiling numerics=test_only')
           PY
 
       - name: Re-run Phase 10 contract suite

@@ -58,7 +58,7 @@ jobs:
           python3 tools/assurance/validate_d4_eventing_async_state.py .
           python3 tools/assurance/test_validate_d4_eventing_async_state.py
 
-      - name: Verify promoted source run artifact and review identities still match pinned provenance
+      - name: Verify promoted source run artifact content and review identities match pinned provenance
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -85,6 +85,13 @@ jobs:
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/jobs/$JOB_ID" -o /tmp/job.json
           curl --fail --silent --show-error "${headers[@]}" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" -o /tmp/artifact.json
+          curl --fail --silent --show-error --location "${headers[@]}" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" -o /tmp/source-artifact.zip
+          rm -rf /tmp/source-artifact
+          mkdir -p /tmp/source-artifact
+          test "$(unzip -Z1 /tmp/source-artifact.zip | wc -l)" -eq 1
+          test "$(unzip -Z1 /tmp/source-artifact.zip)" = "resolved-source-run-provenance.json"
+          unzip -q /tmp/source-artifact.zip -d /tmp/source-artifact
           curl --fail --silent --show-error "${headers[@]}" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$SOURCE_PR/reviews?per_page=100" -o /tmp/reviews.json
           curl --fail --silent --show-error "${headers[@]}" \
@@ -98,6 +105,7 @@ jobs:
           run = json.load(open('/tmp/run.json'))
           job = json.load(open('/tmp/job.json'))
           artifact = json.load(open('/tmp/artifact.json'))
+          provenance = json.load(open('/tmp/source-artifact/resolved-source-run-provenance.json'))
           reviews = json.load(open('/tmp/reviews.json'))
           comments = json.load(open('/tmp/comments.json'))
           artifact_run = artifact.get('workflow_run') or {}
@@ -116,6 +124,18 @@ jobs:
           assert artifact['expired'] is False
           assert artifact_run['id'] == w['run_id']
           assert artifact_run['head_sha'] == p['source_reviewed_head']
+          assert provenance['schema'] == 'd4a-source-run-provenance-v1'
+          assert provenance['repository_sha'] == p['source_reviewed_head']
+          assert provenance['workflow_run_id'] == w['run_id']
+          assert provenance['workflow_run_attempt'] == w['run_attempt']
+          assert provenance['job_id'] == w['job_id']
+          assert provenance['job_name'] == w['job_name']
+          assert provenance['source_manifest_sha256'] == p['source_manifest_sha256']
+          assert set(provenance['evidence_ids']) == {item['evidence_id'] for item in p['credited_evidence']}
+          assert provenance['evidence_kinds'] == {item['evidence_id']: item['evidence_kind'] for item in p['credited_evidence']}
+          assert provenance['current_run_auto_credit'] is False
+          assert provenance['ledger_credit'] == []
+          assert provenance['promotion_rule'] == 'source_run_review_then_separate_ledger_promotion'
           by_node = {review.get('node_id'): review for review in reviews}
           for node_key in ('initial_codex_review_node_id', 'independent_adversarial_review_node_id', 'fresh_codex_exact_head_review_node_id'):
               assert g[node_key] in by_node, f'missing pinned review: {node_key}'
@@ -124,7 +144,7 @@ jobs:
           assert fresh.get('commit_id') == p['source_reviewed_head']
           assert independent.get('commit_id') == p['source_reviewed_head']
           assert any(comment.get('id') == g['final_gate_comment_id'] for comment in comments)
-          print('d4a_promotion_external_provenance=PASS source_run=success artifact=exact review_nodes=exact exact_head_reviews=verified final_gate_comment=present')
+          print('d4a_promotion_external_provenance=PASS source_run=success artifact_metadata=exact artifact_content=exact source_manifest_link=exact review_nodes=exact exact_head_reviews=verified final_gate_comment=present')
           PY
 
       - name: Assert four-of-seven partial credit does not escalate authority

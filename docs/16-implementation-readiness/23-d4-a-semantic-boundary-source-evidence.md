@@ -18,27 +18,37 @@ The proof is explicitly bounded to the **currently governed D4 implementation na
 
 `boundary-inventory.json` independently pins the four expected broker-facing paths, D4 code roots, consumer-discovery root, registration entrypoint and the only native-transport allowlisted class: `KafkaCandidateAdapter`. `validate_repository_boundary.py` mechanically discovers direct and indirect `BrokerFacingPath` descendants across governed Python sources. `validate_structural_boundary_guards.py` independently rechecks lexical native-adapter boundaries, acknowledgement authority and historical alias/destructuring escape classes.
 
-A third independent guard, `validate_lexical_reflection_and_hierarchy.py`, now owns the declaration-time/lexical closure that cannot safely be represented by a final file-wide alias map. It evaluates statically known base/sequence bindings in source order and at each class declaration. Therefore a later reassignment cannot rewrite the evidence for an earlier class. Ordinary sequence assignments such as `Bases = (OutboxDispatchPath,)`, copied aliases such as `Alias = Bases`, target-side starred capture such as `*Bases, = (OutboxDispatchPath,)`, and their later expansion in `class EscapingPath(*Bases)` / `class EscapingPath(*Alias)` are resolved at the declaration where Python consumes them. These descendants increase inventory multiplicity and fail the exact four-path gate.
+The current authoritative lexical/control-flow closure is layered. `validate_controlflow_authority_and_bracket_calls_v4_entry.py` first applies the stable imported-base identity patch used by the v4 gate. `validate_controlflow_authority_and_bracket_calls_v4.py` then enforces control-flow-aware reflective authority, definition-time defaults/lambdas, walrus propagation, feasible `try`/`match` state, lexical shadowing, class-base sequence invalidation and non-Python bracket transaction-member checks. Finally, `validate_residual_escape_closure_v5.py` runs **over the patched v4 gate** and closes the residual escape classes found by later adversarial reviews.
 
-If a starred class base cannot be established statically — for example `Bases = choose_bases(); class EscapingPath(*Bases)` — the source-evidence proof fails closed. It does not silently assume that the unresolved sequence is outside the governed broker hierarchy.
+Historical guards remain defense-in-depth and regression context, but the workflow does not treat an older lexical guard as the final authority once v4/v5 have superseded its residual surface.
 
-Declaration discovery retains source-location identity and walks nested executable scopes. Same-name descendants in distinct scopes remain distinct records. Exact inventory equality **and declaration multiplicity** are required.
+If a starred or computed class base cannot be established safely by the authoritative layered guards, the source-evidence proof fails closed. It does not silently assume an unresolved sequence or expression is outside the governed broker hierarchy.
 
-The no-Kafka-business-authority scan walks the local assurance dependency closure **transitively** from the broker boundary, durable effect verifier and consumer-registration guard. Complete local module paths are resolved, including nested subpackages, relative imports and executable parent-package `__init__.py` files.
+Declaration discovery retains source-location/lexical evidence across the layered checks and walks nested executable scopes. Exact inventory equality and declaration multiplicity are required; an additional real broker-facing descendant must make the gate fail.
 
-`broker_boundary.py` is protected by layered checks. The native exception must bind to exactly one top-level lexical declaration named `KafkaCandidateAdapter`. Only direct executable bodies of its direct methods may contain candidate-native mechanics; class-body execution, decorators, defaults, annotations, bases, keywords, type-parameter expressions and nested lexical declarations remain governed.
+The no-Kafka-business-authority scan walks the local assurance dependency closure transitively from the broker boundary, durable effect verifier and consumer-registration guard. Complete local module paths are resolved, including nested subpackages, relative imports and executable parent-package `__init__.py` files.
+
+`broker_boundary.py` is protected by layered checks. The native exception must bind to exactly one top-level lexical declaration named `KafkaCandidateAdapter`. Only direct executable bodies of its direct methods may contain candidate-native mechanics; class-body execution, decorators, defaults, annotations, bases, keywords and nested lexical declarations remain governed.
 
 ## Lexical reflection and native transaction authority
 
-Dynamic transaction-member resolution is treated as an executable authority surface, but ordinary reflection is not prohibited merely because it exists. The guards detect direct attributes and constant/computed reflective transaction names, imported or qualified builtin access, and aliases that preserve reflective authority.
+Dynamic transaction-member resolution is treated as executable authority, but ordinary reflection is not prohibited merely because it exists. The guards detect direct attributes, constant/computed reflective transaction names, imported/qualified builtin access and aliases that preserve reflective authority.
 
-The lexical guard additionally propagates **reflected callable results**. Thus `transaction = getattr(client, transaction_name); transaction()` is rejected even though the reflective lookup and invocation occur in separate statements. Equivalent namespace-map forms are covered through literal, imported, qualified and assigned `vars` surfaces, including `builtins.vars(client)[transaction_name]()`, `from builtins import vars as namespace; namespace(client)[transaction_name]()` and `namespace = vars(client); namespace[transaction_name]()`.
+The v4 control-flow gate carries potential authority across feasible branches rather than dropping it merely because one continuation shadows a builtin. It handles definition-time defaults and lambda captures, walrus expressions, `try`/handler/else/finally flow, `match` cases, function-parameter invalidation of inherited base sequences, and branch-sensitive base-sequence state.
 
-Fail-closed handling applies when an unresolved reflected member is actually consumed as callable authority. A benign read such as `value = getattr(record, field_name)` is not automatically classified as a Kafka transaction. Conversely, unresolved reflected call-through remains forbidden because the source proof cannot establish that the runtime member is not `commitTransaction` or another prohibited transaction API.
+The v5 residual closure additionally proves, with executable negative controls, that:
 
-Reflective builtin identity is lexical and order-aware in the independent guard. Function parameters, local definitions, imports and rebinding can shadow spellings such as `getattr`; a locally defined non-builtin `getattr` is not permanently treated as Python's reflective builtin. This prevents the fail-closed control from turning ordinary application helpers into false Kafka findings while preserving the actual builtin/alias attack surface.
+- aliases of `type.__setattr__` / `type.__delattr__` remain protected through further call-through aliases;
+- starred destructuring cannot hide `vars(...)` authority behind walrus expressions or deterministic tuple/list/dict selections;
+- definition-time reflective builtin capture remains visible through deterministic tuple/list/dict keyed selections;
+- broker-facing descendants declared in loop/context bodies are inventoried, including statically known `for`/`async for` target aliases;
+- computed non-Python bracket transaction members remain detectable when assembled from string fragments, including balanced parenthesized grouping.
 
-Native Kafka SDK usage and Kafka transaction APIs including initialization, begin, commit, abort and send-offsets-to-transaction remain rejected across the governed closure and every source language in `CODE_SUFFIXES`. Transaction matching remains owner-name independent and normalized across snake/camel/Pascal spellings and supported generic/turbofish call syntax.
+Fail-closed handling applies when unresolved reflected member authority is actually consumed as callable authority. A benign ordinary read is not automatically classified as a Kafka transaction, while an unresolved callable path that may select a prohibited transaction API is rejected.
+
+Reflective builtin identity is lexical and order-aware. Function parameters, local definitions, imports and rebinding can shadow spellings such as `getattr`; the protected declaration identity is preserved without making an ordinary local spelling permanently privileged.
+
+Native Kafka SDK usage and Kafka transaction APIs including initialization, begin, commit, abort and send-offsets-to-transaction remain rejected across the governed closure and every source language in `CODE_SUFFIXES`. Transaction matching remains owner-name independent and normalized across snake/camel/Pascal spellings and supported generic/turbofish/bracket call syntax.
 
 ## Acknowledgement authority and hierarchy immutability
 
@@ -51,7 +61,7 @@ The logical path call graph remains deliberately narrow:
 
 `InboxAcknowledgePath.acknowledge_after_durable_responsibility` must remain a synchronous, undecorated, linear two-statement authority path with unconditional durable verification before broker acknowledgement. The complete lookup hierarchy is constrained: `InboxAcknowledgePath` inherits directly and only from inert `BrokerFacingPath`, and replacement-capable decorators, metaclasses, descriptors, lookup hooks and class-body rebinding are rejected.
 
-Post-declaration namespace mutation is also governed. Direct attribute assignment/deletion, aliases/imported/qualified `setattr`/`delattr`, class-symbol aliases and `type.__setattr__`/`type.__delattr__` cannot replace the acknowledgement entrypoint or protected lookup hooks. **`__bases__` is explicitly part of the protected authority surface**: direct or reflective base replacement fails closed, so a later `EvilBase` cannot inject a replacement `__getattribute__` while leaving the reviewed verify-before-ack method text unchanged.
+Post-declaration namespace mutation is governed. Direct attribute assignment/deletion, aliases/imported/qualified `setattr`/`delattr`, class-symbol aliases and `type.__setattr__`/`type.__delattr__` cannot replace the acknowledgement entrypoint or protected lookup hooks. `__bases__` is explicitly part of the protected authority surface, so a later hierarchy replacement cannot inject an acknowledgement lookup bypass while leaving the reviewed verify-before-ack method text unchanged.
 
 Negative controls cover conditional/broker-first ack paths, decorated or metaclass-replaced entrypoints, inherited lookup hooks, post-declaration mutation and base replacement. A matching-semantics forged-receipt runtime control separately proves that a receipt absent from durable state cannot remove the queued delivery.
 
@@ -69,7 +79,7 @@ Topic/partition/offset/group data remain physical adapter metadata; they are not
 
 The immutable replay-equivalence surface is `(consumer_contract, message_identity_scope, message_id)` plus retained `contract_name`, `contract_version` and semantic digest. Reuse with changed contract metadata or payload fails closed.
 
-Broker acknowledgement requires a durable receipt and then independently binds that receipt to the currently delivered consumer contract, trusted scope, message ID, contract name/version and semantic digest. Historical, cross-consumer, cross-scope or semantically conflicting receipts cannot remove the current delivery.
+Broker acknowledgement requires a durable receipt and independently binds that receipt to the currently delivered consumer contract, trusted scope, message ID, contract name/version and semantic digest. Historical, cross-consumer, cross-scope or semantically conflicting receipts cannot remove the current delivery.
 
 The semantic transport-swap transcript performs and observes the protected effect and proves duplicate replay applies the business effect once. Kafka-shaped transport progress or transactions are not business-effect truth.
 
@@ -87,8 +97,14 @@ The source manifest requires runtime-resolved provenance. After source probes, r
 
 A later ledger-promotion PR must cite/review that exact source run. A green source run cannot credit itself.
 
+## Review substitution under tooling unavailability
+
+Fresh adversarial Codex review remains the preferred automated adversarial reviewer when available. If the configured Codex reviewer cannot execute because its usage limit or service availability is exhausted, the gate may be substituted only by an explicitly documented **independent adversarial panoramic review on the exact HEAD**. That substitute must inspect the full PR delta, the authoritative v4-entry/v4/v5 chain, workflow wiring, evidence documentation, recent unresolved findings, non-claims and authority boundaries. It does not permit reuse of an older clean review or resolution of material threads without demonstrating that the exact current HEAD supersedes them.
+
+The substitution is availability-specific; it does not weaken exact-HEAD CI, zero-material-thread, non-promotion or explicit merge-authorization requirements.
+
 ## Exit condition
 
-The package is source-evidence-ready only after exact-HEAD CI and fresh adversarial review prove: complete current-namespace broker-path discovery; declaration-time, order/scoped static sequence and starred-base resolution with ordinary/copy aliases and unresolved-starred fail-closed behavior; a single lexical native-adapter exception limited to direct method bodies; executable transitive assurance closure; owner-independent native transaction rejection; lexical/order-aware reflection with callable-result and `vars`-mapping alias propagation but correct builtin shadowing; complete non-replaceable acknowledgement lookup hierarchy including post-declaration **`__bases__`** protection; canonical versioned record reconstruction; durable effect/ack binding; fail-closed governed consumer registration; semantic payload/effect equivalence; and resolved source-run provenance.
+The package is source-evidence-ready only after exact-HEAD CI and an exact-HEAD adversarial review (fresh Codex when available, otherwise the documented independent substitution above) establish: complete current-namespace broker-path discovery; control-flow/lexical reflective authority closure; patched-v4 plus v5 residual escape closure; a single lexical native-adapter exception limited to direct method bodies; executable transitive assurance closure; owner-independent native transaction rejection; complete non-replaceable acknowledgement lookup hierarchy including post-declaration `__bases__` protection; canonical versioned record reconstruction; durable effect/ack binding; fail-closed governed consumer registration; semantic payload/effect equivalence; and resolved source-run provenance.
 
 Merge of this PR still credits **0/7** D4-A evidence. Kafka remains unselected, and D4 transport/Product/Wave 4/production/C3 authority remains ungranted/unselected.

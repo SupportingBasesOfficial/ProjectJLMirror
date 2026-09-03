@@ -1,13 +1,27 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from hashlib import sha256
 import json
 import sys
 from pathlib import Path
 
 PLAN = Path("implementation/d4-eventing-async/d4-a-evidence-plan.json")
 ENTRY = Path("implementation/d4-eventing-async/state-manifest.json")
+PROMOTION = Path("implementation/d4-eventing-async/ledger-promotions/d4-a-semantic-boundary-promotion-v1.json")
+SOURCE_MANIFEST = Path("implementation/d4-eventing-async/source-evidence/semantic-boundary/source-evidence-manifest.json")
 EXPECTED_ENTRY_COMMIT = "b385e1b68162b2cf9bf4379011554a9cc4c2d5c4"
+EXPECTED_PROMOTION_BASE = "8863f66a0fb6457ad05b72286ef983eb4e8a1c5e"
+EXPECTED_SOURCE_HEAD = "d6872579dca7d4f08c9ded82e34b94f8e87ec1e9"
+EXPECTED_SOURCE_RUN = 33790608658
+EXPECTED_SOURCE_JOB = 100766024114
+EXPECTED_ARTIFACT_ID = 9907159265
+EXPECTED_ARTIFACT_DIGEST = "sha256:8b4c4031270479ff3cb0912ae5469df575459f8afaf9e3ff226fb3b73e18ae6a"
+EXPECTED_SOURCE_MANIFEST_SHA256 = "690cdc59af819e27a7922cd2eea04d537c20dcd0e005ce4dbd4dac977eb525a1"
+EXPECTED_CREDITED = {
+    "broker_neutral_anti_corruption_stub_swap",
+    "exactly_once_guardrail_consumer_inbox_enforcement",
+}
 EXPECTED_EVIDENCE = {
     "capacity_envelope_baseline_growth_stress",
     "broker_neutral_anti_corruption_stub_swap",
@@ -76,13 +90,14 @@ REQUIRED_ASSERTIONS = {
 }
 
 
-def load(root: Path) -> tuple[dict, dict]:
+def load(root: Path) -> tuple[dict, dict, dict]:
     plan = json.loads((root / PLAN).read_text(encoding="utf-8"))
     entry = json.loads((root / ENTRY).read_text(encoding="utf-8"))
-    return plan, entry
+    promotion = json.loads((root / PROMOTION).read_text(encoding="utf-8"))
+    return plan, entry, promotion
 
 
-def validate_objects(plan: dict, entry: dict) -> list[str]:
+def validate_objects(plan: dict, entry: dict, promotion: dict) -> list[str]:
     errors: list[str] = []
 
     def require(ok: bool, message: str) -> None:
@@ -97,10 +112,13 @@ def validate_objects(plan: dict, entry: dict) -> list[str]:
     require(plan.get("evidence_credit_policy") == "source_runs_first_ledger_promotion_separate", "source/ledger separation drift")
     require(plan.get("current_run_auto_credit") is False, "current run must never auto-credit evidence")
     require(plan.get("production_numeric_authority") == "not_granted", "evidence plan must not grant production numerics")
-    require(plan.get("source_evidence_state") == "not_run", "planning PR must not claim source evidence")
-    require(plan.get("ledger_credit_state") == "zero_of_seven", "planning PR must keep ledger at zero")
-    require(plan.get("selection_state") == "not_selected", "planning PR must not select Kafka")
-    require(plan.get("acceptance_state") == "not_eligible", "planning PR must not claim acceptance eligibility")
+    require(plan.get("source_evidence_state") == "reviewed_source_run_available", "reviewed source-run state drift")
+    require(plan.get("ledger_credit_state") == "two_of_seven", "ledger must credit exactly two of seven")
+    require(set(plan.get("credited_evidence", [])) == EXPECTED_CREDITED, "credited evidence set drift")
+    require(len(plan.get("credited_evidence", [])) == len(EXPECTED_CREDITED), "credited evidence multiplicity drift")
+    require(plan.get("latest_promotion_record") == PROMOTION.as_posix(), "promotion record path drift")
+    require(plan.get("selection_state") == "not_selected", "ledger promotion must not select Kafka")
+    require(plan.get("acceptance_state") == "not_eligible", "partial ledger promotion must not claim acceptance eligibility")
 
     items = plan.get("required_evidence", [])
     require(isinstance(items, list), "required_evidence must be a list")
@@ -117,18 +135,61 @@ def validate_objects(plan: dict, entry: dict) -> list[str]:
 
     entry_d4a = next((t for t in entry.get("tracks", []) if t.get("track_id") == "D4-A"), {})
     require(set(entry_d4a.get("required_evidence", [])) == EXPECTED_EVIDENCE, "plan no longer matches machine-owned D4-A inventory")
-    require(entry_d4a.get("evidence_completed") == [], "planning PR must not mutate D4-A evidence credit")
-    require(entry.get("gate_state") == "scoped", "planning PR must leave D4 scoped")
-    require(entry.get("d4_transport_authority") == "not_selected_not_granted", "planning PR must leave D4 authority ungranted")
-    require(entry.get("canonical_product_implementation_authority") == "not_granted", "planning PR must leave Product authority ungranted")
-    require(entry.get("wave4_implementation_authority") == "not_granted", "planning PR must leave Wave 4 authority ungranted")
-    require(entry.get("production_authority") == "none", "planning PR must leave production authority none")
-    require(entry.get("c3_numeric_topology_authority") == "not_selected", "planning PR must leave C3 authority unselected")
+    require(set(entry_d4a.get("evidence_completed", [])) == EXPECTED_CREDITED, "D4-A completed evidence must equal reviewed promotion")
+    require(len(entry_d4a.get("evidence_completed", [])) == len(EXPECTED_CREDITED), "D4-A completed evidence multiplicity drift")
+    require(set(entry_d4a.get("evidence_remaining", [])) == EXPECTED_EVIDENCE - EXPECTED_CREDITED, "D4-A remaining evidence drift")
+    require(len(entry_d4a.get("evidence_remaining", [])) == len(EXPECTED_EVIDENCE - EXPECTED_CREDITED), "D4-A remaining evidence multiplicity drift")
+    require(entry.get("gate_state") == "scoped", "partial promotion must leave D4 scoped")
+    require(entry.get("d4_transport_authority") == "not_selected_not_granted", "promotion must leave D4 authority ungranted")
+    require(entry.get("canonical_product_implementation_authority") == "not_granted", "promotion must leave Product authority ungranted")
+    require(entry.get("wave4_implementation_authority") == "not_granted", "promotion must leave Wave 4 authority ungranted")
+    require(entry.get("production_authority") == "none", "promotion must leave production authority none")
+    require(entry.get("c3_numeric_topology_authority") == "not_selected", "promotion must leave C3 authority unselected")
+
+    require(promotion.get("schema_version") == 1, "promotion schema drift")
+    require(promotion.get("promotion_id") == "d4-a-semantic-boundary-promotion-v1", "promotion identity drift")
+    require(promotion.get("track") == "D4-A", "promotion track drift")
+    require(promotion.get("promotion_base_main_commit") == EXPECTED_PROMOTION_BASE, "promotion base drift")
+    require(promotion.get("source_pr") == 54, "source PR drift")
+    require(promotion.get("source_reviewed_head") == EXPECTED_SOURCE_HEAD, "source reviewed HEAD drift")
+    require(promotion.get("source_merge_commit") == EXPECTED_PROMOTION_BASE, "source merge commit drift")
+    require(promotion.get("source_manifest_path") == SOURCE_MANIFEST.as_posix(), "source manifest path drift")
+    require(promotion.get("source_manifest_sha256") == EXPECTED_SOURCE_MANIFEST_SHA256, "source manifest digest drift")
+    source_workflow = promotion.get("source_workflow", {})
+    require(source_workflow.get("run_id") == EXPECTED_SOURCE_RUN, "source workflow run drift")
+    require(source_workflow.get("run_attempt") == 1, "source workflow attempt drift")
+    require(source_workflow.get("job_id") == EXPECTED_SOURCE_JOB, "source workflow job drift")
+    require(source_workflow.get("job_name") == "D4-A semantic boundary source evidence", "source workflow job name drift")
+    require(source_workflow.get("artifact_id") == EXPECTED_ARTIFACT_ID, "source artifact id drift")
+    require(source_workflow.get("artifact_digest") == EXPECTED_ARTIFACT_DIGEST, "source artifact digest drift")
+    credited = promotion.get("credited_evidence", [])
+    require(isinstance(credited, list), "promotion credited_evidence must be a list")
+    credited_by_id = {item.get("evidence_id"): item for item in credited if isinstance(item, dict)}
+    require(set(credited_by_id) == EXPECTED_CREDITED, "promotion credited evidence set drift")
+    require(len(credited) == len(EXPECTED_CREDITED), "promotion credited evidence multiplicity drift")
+    for evidence_id in EXPECTED_CREDITED:
+        require(credited_by_id.get(evidence_id, {}).get("evidence_kind") == EXPECTED_KINDS[evidence_id], f"promotion evidence kind drift: {evidence_id}")
+    require(promotion.get("source_scope") == "source_evidence_harness_only", "source scope drift")
+    for claim in ("live_kafka_broker_claimed", "capacity_benchmark_claimed", "ordering_benchmark_claimed", "recovery_benchmark_claimed"):
+        require(promotion.get(claim) is False, f"promotion must not escalate claim: {claim}")
+    require(promotion.get("kafka_selection_state") == "not_selected", "promotion must not select Kafka")
+    require(promotion.get("d4_transport_authority") == "not_selected_not_granted", "promotion must not grant D4 transport authority")
+    require(promotion.get("canonical_product_implementation_authority") == "not_granted", "promotion must not grant Product authority")
+    require(promotion.get("wave4_implementation_authority") == "not_granted", "promotion must not grant Wave 4 authority")
+    require(promotion.get("production_authority") == "none", "promotion must not grant production authority")
+    require(promotion.get("c3_numeric_topology_authority") == "not_selected", "promotion must not grant C3 authority")
+    require(promotion.get("promotion_rule") == "reviewed_source_run_to_ledger_credit_only", "promotion rule drift")
     return errors
 
 
 def validate(root: Path) -> list[str]:
-    return validate_objects(*load(root))
+    plan, entry, promotion = load(root)
+    errors = validate_objects(plan, entry, promotion)
+    source_bytes = (root / SOURCE_MANIFEST).read_bytes()
+    actual_source_digest = sha256(source_bytes).hexdigest()
+    if actual_source_digest != EXPECTED_SOURCE_MANIFEST_SHA256:
+        errors.append("source manifest bytes no longer match promoted digest")
+    return errors
 
 
 def main(argv: list[str]) -> int:
@@ -138,7 +199,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4A_PLAN_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4a_evidence_plan=PASS evidence=7 credited=0 kafka=not_selected production_numerics=not_granted")
+    print("d4a_evidence_plan=PASS evidence=7 credited=2 remaining=5 kafka=not_selected production_numerics=not_granted provenance=pinned")
     return 0
 
 

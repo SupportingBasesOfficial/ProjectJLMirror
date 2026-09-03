@@ -30,6 +30,7 @@ EXPECTED_PRIOR_CREDIT = {
 EXPECTED_IMAGE_INDEX = "sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837"
 EXPECTED_AMD64_MANIFEST = "sha256:ccd1314e47ec76909e01f86308b4dcf2064f19f7c89759234322314b0e319e26"
 EXPECTED_IMAGE = f"apache/kafka:4.3.1@{EXPECTED_IMAGE_INDEX}"
+EXPECTED_MINIMUM_TARGET_FRACTION = 0.70
 FORBIDDEN_PHYSICAL_KEY_TOKENS = ("topic", "partition", "offset", "consumer_group", "group_id", "cell")
 
 
@@ -105,7 +106,8 @@ def validate_objects(source: dict, profile: dict, plan: dict, state: dict) -> li
         require(isinstance(probes, list) and len(probes) >= 3 and probes == sorted(set(probes)) and all(type(v) is int and v > 0 for v in probes), f"{name} partition probes invalid")
         require(tier.get("backlog_pause_seconds", 0) > 0, f"{name} backlog pause invalid")
         admission = tier.get("admission", {})
-        require(admission.get("minimum_records_per_second", 0) > 0, f"{name} minimum throughput admission invalid")
+        fraction = admission.get("minimum_target_throughput_fraction")
+        require(type(fraction) in (int, float) and fraction == EXPECTED_MINIMUM_TARGET_FRACTION, f"{name} target-relative throughput admission drift")
         require(admission.get("maximum_avg_latency_ms", 0) > 0, f"{name} max latency admission invalid")
 
     degradation = profile.get("degradation_probe", {})
@@ -114,7 +116,12 @@ def validate_objects(source: dict, profile: dict, plan: dict, state: dict) -> li
     require(type(degradation.get("producer_byte_rate")) is int and degradation.get("producer_byte_rate", 0) > 0, "degradation byte-rate invalid")
     drop = degradation.get("minimum_throughput_drop_fraction")
     require(type(drop) in (int, float) and 0 < drop < 1, "degradation drop threshold invalid")
-    require(profile.get("partition_ceiling_policy", {}).get("definition") == "highest_tested_partition_count_meeting_bounded_tier_admission", "partition ceiling policy drift")
+    ceiling_policy = profile.get("partition_ceiling_policy", {})
+    require(
+        ceiling_policy.get("definition") == "highest_tested_partition_count_sustaining_at_least_the_tier_specific_target_fraction_and_latency_admission",
+        "partition ceiling policy drift",
+    )
+    require("same_tier_target_messages_per_second" in str(ceiling_policy.get("minimum_target_throughput_fraction_meaning", "")), "partition admission must be tied to same-tier target")
 
     mappings = profile.get("ordering_scope_mappings", {})
     require(set(mappings) == EXPECTED_SCOPES, "ordering scope coverage drift")
@@ -129,8 +136,16 @@ def validate_objects(source: dict, profile: dict, plan: dict, state: dict) -> li
     fallback = profile.get("tenant_cohort_fallback", {})
     require(fallback.get("cohort_count") == 2, "bounded fallback must exercise exactly two cohorts")
     require("trusted_tenant_identity" in str(fallback.get("mapping", "")), "fallback mapping must derive from trusted tenant identity")
-    require(fallback.get("exercise") == "real_kafka_cohort_topics_with_each_topic_at_or_below_bounded_test_ceiling", "fallback must exercise real cohort topics")
+    require(fallback.get("trigger") == "exercised_logical_scope_cardinality_exceeds_single_topic_test_partition_ceiling", "fallback trigger must be based on actually exercised over-ceiling scopes")
+    require(
+        fallback.get("exercise") == "generate_and_route_more_distinct_trusted_logical_scopes_than_the_stress_single_topic_test_ceiling_through_real_kafka_cohort_topics",
+        "fallback must route an actual over-ceiling logical-scope workload",
+    )
     require(fallback.get("logical_contract_identity_changes") is False, "fallback must not change logical contract identity")
+
+    required_measurements = set(profile.get("required_measurements", []))
+    require("partition_probe_target_throughput_fraction" in required_measurements, "target-relative partition measurement missing")
+    require("tenant_cohort_exercised_logical_scope_count" in required_measurements, "exercised fallback scope-count measurement missing")
 
     require(set(plan.get("credited_evidence", [])) == EXPECTED_PRIOR_CREDIT, "existing four-of-seven credit drift")
     require(EXPECTED_IDS.isdisjoint(set(plan.get("credited_evidence", []))), "source evidence already credited")
@@ -150,7 +165,7 @@ def main() -> None:
     errors = validate_objects(*load_objects())
     if errors:
         raise AssertionError("; ".join(errors))
-    print("d4a_capacity_ordering_source_manifest=PASS evidence=2 ledger_credit=0 live_kafka=required immutable_pin=PASS tiers=3 ordering_scopes=6 quota=required kafka=not_selected authorities=not_granted")
+    print("d4a_capacity_ordering_source_manifest=PASS evidence=2 ledger_credit=0 live_kafka=required immutable_pin=PASS tiers=3 tier_target_admission=PASS ordering_scopes=6 actual_over_ceiling_fallback=required quota=required kafka=not_selected authorities=not_granted")
 
 
 if __name__ == "__main__":

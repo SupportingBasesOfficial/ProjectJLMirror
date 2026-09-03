@@ -62,6 +62,26 @@ def main() -> int:
         ),
     )
     must_reject(
+        "string classification bypass",
+        lambda: PublicationPolicy.validate(
+            PublicationProjection(
+                classification="sensitive_or_regulated",  # type: ignore[arg-type]
+                raw_value=b"regulated-raw-value",
+            ),
+            trusted_tenant_id=tenant,
+        ),
+    )
+    must_reject(
+        "non-bytes raw value",
+        lambda: PublicationPolicy.validate(
+            PublicationProjection(
+                classification=DataClassification.SENSITIVE_OR_REGULATED,
+                raw_value="regulated-raw-value",  # type: ignore[arg-type]
+            ),
+            trusted_tenant_id=tenant,
+        ),
+    )
+    must_reject(
         "regulated projection without opaque reference",
         lambda: PublicationPolicy.validate(
             PublicationProjection(classification=DataClassification.SENSITIVE_OR_REGULATED),
@@ -140,47 +160,28 @@ def main() -> int:
     )
 
     bad_exceptions = (
-        (
-            "missing per-tenant assignment",
-            RawRegulatedException(None, 600, 900, approval),
-        ),
+        ("missing per-tenant assignment", RawRegulatedException(None, 600, 900, approval)),
         (
             "cross-tenant assignment",
             RawRegulatedException(
-                PerTenantRawAssignment("tenant-b", "partition", "tenant-b-partition-3"),
-                600,
-                900,
-                approval,
+                PerTenantRawAssignment("tenant-b", "partition", "tenant-b-partition-3"), 600, 900, approval
             ),
         ),
         (
             "invalid assignment kind",
             RawRegulatedException(
-                PerTenantRawAssignment(tenant, "shared-cluster", "shared-1"),
-                600,
-                900,
-                approval,
+                PerTenantRawAssignment(tenant, "shared-cluster", "shared-1"), 600, 900, approval
             ),
         ),
-        (
-            "missing retention ceiling",
-            RawRegulatedException(assignment, None, 900, approval),
-        ),
-        (
-            "retention exceeds erasure sla",
-            RawRegulatedException(assignment, 901, 900, approval),
-        ),
-        (
-            "missing erasure governance approval",
-            RawRegulatedException(assignment, 600, 900, None),
-        ),
+        ("missing retention ceiling", RawRegulatedException(assignment, None, 900, approval)),
+        ("boolean retention ceiling", RawRegulatedException(assignment, True, 900, approval)),
+        ("boolean erasure sla", RawRegulatedException(assignment, 600, True, approval)),
+        ("retention exceeds erasure sla", RawRegulatedException(assignment, 901, 900, approval)),
+        ("missing erasure governance approval", RawRegulatedException(assignment, 600, 900, None)),
         (
             "wrong governance authority",
             RawRegulatedException(
-                assignment,
-                600,
-                900,
-                ErasureGovernanceApproval(tenant, "ordinary-service", "approval-17"),
+                assignment, 600, 900, ErasureGovernanceApproval(tenant, "ordinary-service", "approval-17")
             ),
         ),
         (
@@ -213,20 +214,13 @@ def main() -> int:
         message_identity_scope="monitoring-observation",
         message_id="msg-0007",
     )
-    auth = TenantAuthorization(
-        tenant_id=tenant,
-        allowed_contracts=frozenset({delivery.contract_name}),
-    )
+    auth = TenantAuthorization(tenant_id=tenant, allowed_contracts=frozenset({delivery.contract_name}))
     route_v1 = PhysicalRoute(
         topic="cell-a.monitoring.observation.v1",
         consumer_group="cell-a.monitoring-projection",
         cell="cell-a",
     )
-    route_v2 = PhysicalRoute(
-        topic="cohort-17.events",
-        consumer_group="projection-v2",
-        cell="cell-c",
-    )
+    route_v2 = PhysicalRoute(topic="cohort-17.events", consumer_group="projection-v2", cell="cell-c")
     first = TopologyAdapter({(tenant, delivery.contract_name): route_v1})
     replacement = TopologyAdapter({(tenant, delivery.contract_name): route_v2})
 
@@ -263,6 +257,16 @@ def main() -> int:
             TenantAuthorization(tenant_id=tenant, allowed_contracts=frozenset()),
         ),
     )
+    must_reject(
+        "boolean logical contract version",
+        lambda: LogicalDelivery(
+            tenant_id=tenant,
+            contract_name=delivery.contract_name,
+            contract_version=True,  # type: ignore[arg-type]
+            message_identity_scope=delivery.message_identity_scope,
+            message_id="msg-bad",
+        ),
+    )
 
     hostile_payload = {
         "topic": "attacker.topic",
@@ -280,9 +284,9 @@ def main() -> int:
     print(
         "d4a_data_topology=PASS "
         "regulated_default=opaque_reference per_record_erasure=isolated raw_leak=blocked "
-        "regulated_representation=unambiguous exception_assignment=tenant_bound "
-        "exception_governance=authority_bound retention_ceiling=bounded tenant_auth=before_mapping "
-        "physical_identity=nonsemantic replacement_mapping=semantic_stable"
+        "runtime_type_confusion=blocked regulated_representation=unambiguous "
+        "exception_assignment=tenant_bound exception_governance=authority_bound retention_ceiling=bounded "
+        "tenant_auth=before_mapping physical_identity=nonsemantic replacement_mapping=semantic_stable"
     )
     return 0
 

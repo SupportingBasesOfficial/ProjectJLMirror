@@ -6,6 +6,7 @@ from policy_boundary import (
     ErasureGovernanceAuthority,
     GovernedOpaqueStore,
     LogicalDelivery,
+    LogicalProjectionConsumer,
     OpaqueReference,
     PerTenantRawAssignment,
     PhysicalRoute,
@@ -13,6 +14,7 @@ from policy_boundary import (
     PublicationPolicy,
     PublicationProjection,
     RawRegulatedException,
+    RouteCoupledProbeConsumer,
     TenantAuthorization,
     TenantRawAssignmentAuthority,
     TopologyAdapter,
@@ -26,6 +28,14 @@ def must_reject(name: str, fn) -> None:
     except PolicyViolation:
         return
     raise AssertionError(f"negative control unexpectedly passed: {name}")
+
+
+def must_assert_fail(name: str, fn) -> None:
+    try:
+        fn()
+    except AssertionError:
+        return
+    raise AssertionError(f"semantic negative control unexpectedly passed: {name}")
 
 
 def main() -> int:
@@ -244,10 +254,17 @@ def main() -> int:
     first = TopologyAdapter({(tenant, delivery.contract_name): route_v1})
     replacement = TopologyAdapter({(tenant, delivery.contract_name): route_v2})
 
-    before, after = assert_replacement_mapping_semantics(delivery, auth, first, replacement)
-    assert before.topic != after.topic
-    assert before.consumer_group != after.consumer_group
-    assert before.cell != after.cell
+    consumer = LogicalProjectionConsumer()
+    before_route, after_route, before_result, after_result = assert_replacement_mapping_semantics(
+        delivery, auth, first, replacement, consumer
+    )
+    assert before_route.topic != after_route.topic
+    assert before_route.consumer_group != after_route.consumer_group
+    assert before_route.cell != after_route.cell
+    assert before_result == after_result
+    assert before_result.effect_key == (
+        "tenant-a|monitoring.observation.recorded|monitoring-observation|msg-0007"
+    )
     assert delivery.semantic_identity() == (
         tenant,
         "monitoring.observation.recorded",
@@ -256,8 +273,25 @@ def main() -> int:
         "msg-0007",
     )
     assert all(
-        physical not in repr(delivery.semantic_identity())
-        for physical in (before.topic, before.consumer_group, before.cell, after.topic, after.consumer_group, after.cell)
+        physical not in repr(before_result)
+        for physical in (
+            before_route.topic,
+            before_route.consumer_group,
+            before_route.cell,
+            after_route.topic,
+            after_route.consumer_group,
+            after_route.cell,
+        )
+    )
+    must_assert_fail(
+        "route-coupled consumer semantics",
+        lambda: assert_replacement_mapping_semantics(
+            delivery,
+            auth,
+            first,
+            replacement,
+            RouteCoupledProbeConsumer(),
+        ),
     )
 
     must_reject(
@@ -307,6 +341,7 @@ def main() -> int:
         "runtime_type_confusion=blocked regulated_representation=unambiguous "
         "exception_assignment=authority_issued_tenant_bound exception_governance=authority_issued_tenant_bound "
         "forged_exception_authority=blocked retention_ceiling=bounded tenant_auth=before_mapping "
+        "consumer_operation=executed_both_mappings route_coupled_consumer=detected "
         "physical_identity=nonsemantic replacement_mapping=semantic_stable"
     )
     return 0

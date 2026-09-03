@@ -55,6 +55,26 @@ def main() -> int:
         "same-tier target",
     )
     must_fail(
+        "missing device cardinality",
+        lambda s, p, l, st: p["tiers"][0].pop("device_cardinality_by_tenant"),
+        "device cardinality tenant coverage drift",
+    )
+    must_fail(
+        "device cardinality tenant mismatch",
+        lambda s, p, l, st: p["tiers"][1]["device_cardinality_by_tenant"].pop("tenant-d"),
+        "device cardinality tenant coverage drift",
+    )
+    must_fail(
+        "device cardinality exceeds event allocation",
+        lambda s, p, l, st: p["tiers"][0]["device_cardinality_by_tenant"].__setitem__("tenant-b", 81),
+        "device cardinality exceeds exercised event allocation",
+    )
+    must_fail(
+        "device pressure fails to grow",
+        lambda s, p, l, st: p["tiers"][1].__setitem__("device_cardinality_by_tenant", {"tenant-a": 30, "tenant-b": 10, "tenant-c": 8, "tenant-d": 4}),
+        "device cardinality pressure not increasing",
+    )
+    must_fail(
         "fallback uses fabricated model-only trigger",
         lambda s, p, l, st: p["tenant_cohort_fallback"].__setitem__("trigger", "modeled_ceiling_plus_one_without_exercised_scopes"),
         "actually exercised over-ceiling scopes",
@@ -84,7 +104,7 @@ def main() -> int:
         lambda s, p, l, st: s.__setitem__("outage_recovery_benchmark_claimed", True),
         "D4-A7 outage recovery overclaim",
     )
-    print("d4a_capacity_ordering_negative_controls=PASS pin=blocked physical_key=blocked profile_loss=blocked quota_weakening=blocked tier_target_admission=blocked fake_fallback=blocked auto_credit=blocked authority_scope=preserved")
+    print("d4a_capacity_ordering_negative_controls=PASS pin=blocked physical_key=blocked profile_loss=blocked quota_weakening=blocked tier_target_admission=blocked device_cardinality=blocked fake_fallback=blocked auto_credit=blocked authority_scope=preserved")
     return 0
 
 

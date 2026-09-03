@@ -46,11 +46,11 @@ jobs:
             tools/assurance/validate_d4_eventing_async_state.py \
             tools/assurance/test_validate_d4_eventing_async_state.py
 
-      - name: Falsify D4 entry-state governance
+      - name: Falsify D4 scoped-state governance
         shell: bash
         run: python3 tools/assurance/test_validate_d4_eventing_async_state.py
 
-      - name: Validate machine-owned D4 entry state
+      - name: Validate machine-owned D4 scoped state
         shell: bash
         run: python3 tools/assurance/validate_d4_eventing_async_state.py .
 
@@ -69,18 +69,26 @@ jobs:
           from pathlib import Path
 
           state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
+          d4a = next(track for track in state['tracks'] if track['track_id'] == 'D4-A')
+          expected_d4a_credit = {
+              'broker_neutral_anti_corruption_stub_swap',
+              'exactly_once_guardrail_consumer_inbox_enforcement',
+          }
           assert state['gate_state'] == 'scoped'
           assert state['d4_transport_authority'] == 'not_selected_not_granted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['c3_numeric_topology_authority'] == 'not_selected'
-          assert state['tracks'][0]['candidate'] == 'kafka'
-          assert state['tracks'][0]['candidate_status'] == 'leading_candidate_closure_pending'
-          assert all(track['evidence_completed'] == [] for track in state['tracks'])
+          assert d4a['candidate'] == 'kafka'
+          assert d4a['candidate_status'] == 'leading_candidate_closure_pending'
+          assert set(d4a['evidence_completed']) == expected_d4a_credit
+          assert len(d4a['evidence_remaining']) == 5
+          assert all(track['evidence_completed'] == [] for track in state['tracks'] if track['track_id'] != 'D4-A')
+          assert sum(len(track['evidence_completed']) for track in state['tracks']) == 2
           print(
-              'd4_entry_boundary=PASS '
-              'kafka=leading_candidate_closure_pending evidence_credited=0 '
+              'd4_scoped_boundary=PASS '
+              'kafka=leading_candidate_closure_pending evidence_credited=2 '
               'transport=not_granted wave4=not_granted production=none c3=not_selected'
           )
           PY

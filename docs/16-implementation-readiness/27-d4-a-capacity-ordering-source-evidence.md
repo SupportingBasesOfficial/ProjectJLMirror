@@ -19,6 +19,7 @@ TEST NUMERICS != C3 PRODUCTION NUMERICS
 GREEN SOURCE RUN != LEDGER CREDIT
 PARTITION TEST CEILING != PRODUCTION PARTITION COUNT
 BACKLOG DRAIN UNDER LOAD != BROKER OUTAGE/RECOVERY PROOF
+QUOTA THROTTLING BOUNDARY != PRODUCTION CAPACITY LIMIT
 ```
 
 ## Candidate runtime
@@ -42,15 +43,35 @@ For each tier the live-broker harness records:
 - producer messages/second;
 - average producer latency;
 - maximum producer latency;
-- bounded backlog before drain;
+- **broker-observed backlog from Kafka end offsets** before consumer drain;
 - backlog drain duration;
-- recovery/drain messages/second;
-- topic creation elapsed time across a bounded partition-count probe set;
-- explicit per-tenant/event-rate skew exercised through keyed Kafka records.
+- drain messages/second;
+- per-tenant/event-rate skew exercised through real keyed Kafka records;
+- a real producer-performance probe for every bounded partition count in the tier;
+- whether each partition probe satisfies the tier's bounded throughput/latency admission;
+- the highest tested partition count satisfying that bounded admission.
 
-The Stress tier is deliberately run with a longer consumer pause so backlog degradation is observed rather than reporting only a happy-path throughput number. Recovery here means bounded backlog drain while the broker remains available; it is **not** the later outage/restart/ack-ambiguity proof owned by D4-A7.
+The partition ceiling is therefore not inferred from successful topic creation. It is the highest **tested** partition count for that tier at which the real producer-performance probe satisfies the bounded source-test admission. It is not an absolute Kafka limit and cannot become a production partition count.
 
-All counts, rates, record sizes, pauses and partition values are marked `test_values_only_not_production`. They do not grant retention, lag, partition, replica, topology, capacity or scaling authority.
+### Real degradation/failure-boundary probe
+
+Backlog existence alone is not treated as evidence of a degradation boundary. After the B/G/S runs, the harness executes a dedicated real Kafka throttling experiment using Kafka's client producer-byte-rate quota for a dedicated `client.id`.
+
+The same stress-sized producer probe runs first without that quota and then with a bounded source-test quota. The evidence fails unless the throttled run exhibits at least the declared minimum throughput-drop fraction. The quota is removed immediately after the probe.
+
+This deliberately creates a controlled, observable broker-side degradation mechanism instead of labeling an ordinary consumer pause as degradation. The quota byte-rate and observed threshold remain source-test values only and grant no production/C3 authority.
+
+### Backlog drain scope
+
+The B/G/S backlog drain proves only that a measured committed broker backlog can be consumed and its drain rate/duration observed while Kafka remains available. It does **not** claim:
+
+- broker outage survival;
+- broker restart recovery;
+- outbox survival while Kafka is unavailable;
+- acknowledgement ambiguity handling;
+- priority-preserving recovery under simultaneous protected/current work.
+
+Those remain exclusively D4-A7.
 
 ## Ordering-scope coverage
 
@@ -63,27 +84,29 @@ The benchmark profile enumerates every ordering class accepted by Phase 10:
 - `per_source_ordered`;
 - `custom_bounded_order`.
 
-Each class has an explicit mapping from trusted logical identity to partition-key strategy. Broker partition IDs remain physical implementation details rather than canonical ordering identity.
+Each class has an explicit mapping from trusted logical identity to partition-key strategy. The source validator fails if a mapping uses physical `topic`, `partition`, `offset`, consumer-group or cell identity as the logical partition-key authority.
+
+The live benchmark does not merely inspect these mappings. It runs a broker exercise for **all six profiles**. `unordered` and `causal_only` prove ordinary broker passage without claiming key serialization. Every ordered profile uses real keyed Kafka records and then passes the consumed work through the canonical named consumer-side component.
 
 ## Named consumer-side concurrency component
 
-The source package names and implements **JLMIRROR KeySerialExecutor** at `tools/assurance/d4a_capacity_ordering/key_serial_executor.py`, following the consumer-side key-level virtual sequencing / bounded per-key concurrency pattern required by the Kafka candidate decision record. The live Kafka probe consumes records carrying several independent trusted logical keys and passes every record through this same component.
+The source package names and implements **JLMIRROR KeySerialExecutor** at `tools/assurance/d4a_capacity_ordering/key_serial_executor.py`, following the consumer-side key-level virtual sequencing / bounded per-key concurrency pattern required by the Kafka candidate decision record.
 
-The evidence fails unless:
+For every ordered Phase 10 profile, the live source probe exercises the same implementation. The evidence fails unless:
 
 - same-key sequence is preserved;
 - independent keys overlap in processing time;
 - serialization is not global or tenant-wide.
 
-This is deliberately a platform-owned logical component rather than reliance on Kafka partition-wide head-of-line blocking.
+A deterministic negative-control suite additionally blocks a one-worker/global-serialization substitute. This is deliberately a platform-owned logical component rather than reliance on Kafka partition-wide head-of-line blocking.
 
 ## Partition ceiling and tenant-cohort fallback
 
-Every bounded tier probes multiple partition counts against a real broker and records elapsed topic-creation evidence. The highest successful count in that tier is persisted only as a **bounded test partition ceiling**.
+Every bounded tier probes multiple partition counts against the real Kafka candidate and runs producer-performance work at each count. A probe is admitted only when it satisfies the tier's bounded minimum throughput and maximum average-latency conditions. The highest admitted tested count is persisted as the **bounded test partition ceiling** for that source environment.
 
-The harness separately exercises tenant-cohort sharding using a stable hash of trusted tenant identity across two test cohorts. The physical cohort changes transport placement only; logical contract identity remains unchanged.
+The fallback exercise is explicitly triggered with modeled ordering-scope cardinality greater than the Stress tier's tested single-topic ceiling. Trusted tenant identity is mapped by stable SHA-256 into exactly two test cohorts, and each cohort is exercised through a real Kafka topic whose partition count remains at or below that bounded test ceiling.
 
-This fallback is evidence that physical sharding can be introduced when modeled ordering-scope cardinality exceeds a bounded test ceiling without converting tenant cohort/topic identity into consumer semantics.
+The physical cohort changes transport placement only. Logical contract identity remains unchanged, and tenant/cohort/topic identity does not become consumer semantic identity.
 
 ## Machine-owned package
 
@@ -98,9 +121,13 @@ Benchmark profile:
 Assurance tooling:
 
 - `tools/assurance/d4a_capacity_ordering/key_serial_executor.py`;
+- `tools/assurance/d4a_capacity_ordering/test_key_serial_executor.py`;
 - `tools/assurance/d4a_capacity_ordering/run_live_kafka_benchmark.py`;
 - `tools/assurance/d4a_capacity_ordering/validate_source_evidence.py`;
+- `tools/assurance/d4a_capacity_ordering/test_validate_source_evidence.py`;
 - `tools/assurance/d4a_capacity_ordering/emit_source_provenance.py`.
+
+The source-validator negative controls fail on mutable Kafka pins, physical ordering-key leakage, missing ordering-profile coverage, global serialization, synthetic degradation substitution, missing partition admissions, semantic identity changes in fallback, source auto-credit, an unauthorized fifth global credit, and D4-A7 recovery overclaim.
 
 CI workflow:
 
@@ -128,6 +155,7 @@ This package does not claim:
 
 - production performance or SLO numerics;
 - production partition/topic/cluster topology;
+- an absolute Kafka partition ceiling;
 - production Kafka image/version selection;
 - Kafka selection/acceptance;
 - broker outage/restart recovery;
@@ -143,12 +171,13 @@ This source PR is eligible for final review only when the exact HEAD proves:
 - real Kafka candidate execution from the exact index-pinned image and exact Linux/amd64 child manifest;
 - all Baseline/Growth/Stress tiers executed;
 - tenant skew exercised;
-- throughput/latency/backlog/drain measurements persisted;
-- bounded degradation/recovery observed in every tier;
-- all six ordering classes mapped;
-- the canonical `JLMIRROR KeySerialExecutor` preserves same-key order while independent keys overlap;
-- bounded partition probes executed per tier;
-- tenant-cohort fallback exercised without semantic identity change;
+- throughput/latency and broker-observed backlog/drain measurements persisted;
+- a real Kafka quota produces the declared bounded degradation boundary;
+- partition producer-performance probes run with bounded admission at every declared test count and produce a tested ceiling per tier;
+- all six ordering classes are individually exercised through Kafka;
+- every ordered profile uses the canonical `JLMIRROR KeySerialExecutor`, preserving same-key order while independent keys overlap;
+- source negative controls reject physical-key, profile-loss, quota-weakening and source-credit escapes;
+- tenant-cohort fallback is triggered above the bounded single-topic test ceiling and exercised through real cohort topics without semantic identity change;
 - Phase 10 and D4 validators remain green;
 - D4-A remains 4/7 and this run grants zero ledger credit;
 - Kafka remains not selected and all authorities remain ungranted/unselected.

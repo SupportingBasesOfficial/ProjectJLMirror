@@ -215,24 +215,35 @@ def exercise_key_serial(records: list[tuple[str, int]]) -> tuple[dict[str, list[
 def benchmark_partition_ceiling(tier: dict) -> tuple[list[dict[str, object]], int]:
     probes: list[dict[str, object]] = []
     admission = tier["admission"]
+    target_rps = float(tier["target_messages_per_second"])
+    minimum_fraction = float(admission["minimum_target_throughput_fraction"])
+    minimum_rps = target_rps * minimum_fraction
     for partitions in tier["partition_probe_counts"]:
         probe_topic = f"d4a-partition-{tier['name'].lower()}-{partitions}"
         topic(probe_topic, partitions)
-        probe_count = max(300, min(tier["message_count"], partitions * 100))
         perf = producer_perf(
             probe_topic,
-            probe_count,
+            tier["message_count"],
             tier["record_size_bytes"],
             tier["target_messages_per_second"],
         )
+        observed_fraction = perf["messages_per_second"] / target_rps
         accepted = (
-            perf["messages_per_second"] >= admission["minimum_records_per_second"]
+            observed_fraction >= minimum_fraction
             and perf["avg_latency_ms"] <= admission["maximum_avg_latency_ms"]
         )
-        probes.append({"partitions": partitions, "producer": perf, "admission_passed": accepted})
+        probes.append({
+            "partitions": partitions,
+            "target_messages_per_second": target_rps,
+            "minimum_target_throughput_fraction": minimum_fraction,
+            "minimum_required_messages_per_second": minimum_rps,
+            "observed_target_throughput_fraction": observed_fraction,
+            "producer": perf,
+            "admission_passed": accepted,
+        })
     passing = [int(probe["partitions"]) for probe in probes if probe["admission_passed"]]
     if not passing:
-        raise AssertionError(f"no partition probe passed bounded admission for {tier['name']}")
+        raise AssertionError(f"no partition probe sustained the tier-specific target admission for {tier['name']}")
     return probes, max(passing)
 
 
@@ -317,6 +328,7 @@ def main() -> None:
             "name": tier["name"],
             "test_message_count": tier["message_count"],
             "test_record_size_bytes": tier["record_size_bytes"],
+            "target_messages_per_second": tier["target_messages_per_second"],
             "producer": producer,
             "backlog_messages_before_drain": backlog_before,
             "backlog_drain_seconds": consumer["elapsed_seconds"],
@@ -375,31 +387,42 @@ def main() -> None:
     }
 
     stress_ceiling = int(results["tiers"][-1]["tested_partition_ceiling"])
-    modeled_scope_cardinality = stress_ceiling + 1
-    if modeled_scope_cardinality <= stress_ceiling:
-        raise AssertionError("fallback trigger was not exceeded")
-    cohort_count = profile["tenant_cohort_fallback"]["cohort_count"]
+    cohort_count = int(profile["tenant_cohort_fallback"]["cohort_count"])
+    exercised_scope_count = stress_ceiling + max(2, cohort_count)
+    logical_scopes = [f"tenant-fallback-{index:03d}" for index in range(exercised_scope_count)]
+    if len(set(logical_scopes)) <= stress_ceiling:
+        raise AssertionError("fallback workload does not actually exceed the single-topic test ceiling")
+
     cohort_records: dict[int, list[tuple[str, str]]] = {i: [] for i in range(cohort_count)}
-    tenants = ["tenant-a", "tenant-b", "tenant-c", "tenant-d", "tenant-e", "tenant-f"]
-    for tenant in tenants:
-        cohort = stable_cohort(tenant, cohort_count)
-        cohort_records[cohort].append((tenant, "fallback-probe"))
+    for scope in logical_scopes:
+        cohort = stable_cohort(scope, cohort_count)
+        cohort_records[cohort].append((scope, f"fallback-probe-{scope}"))
+
     cohort_observed: dict[str, int] = {}
     for cohort, records in cohort_records.items():
         if not records:
             continue
         roundtrip = keyed_roundtrip(f"d4a-cohort-{cohort}", records, partitions=stress_ceiling)
-        for tenant, _ in roundtrip:
-            cohort_observed[tenant] = cohort
-    if len(cohort_observed) != len(tenants) or len(set(cohort_observed.values())) < 2:
-        raise AssertionError(f"tenant cohort fallback not exercised across cohorts: {cohort_observed}")
+        for scope, _ in roundtrip:
+            cohort_observed[scope] = cohort
+
+    if len(cohort_observed) != exercised_scope_count:
+        raise AssertionError(
+            f"fallback did not route every exercised logical scope: expected={exercised_scope_count} observed={len(cohort_observed)}"
+        )
+    if len(set(cohort_observed.values())) < 2:
+        raise AssertionError(f"tenant cohort fallback did not exercise multiple cohort topics: {cohort_observed}")
+    if len(cohort_observed) <= stress_ceiling:
+        raise AssertionError("observed fallback workload did not exceed the single-topic test ceiling")
+
     results["tenant_cohort_fallback"] = {
         "exercised": True,
-        "triggered_by_modeled_scope_cardinality": modeled_scope_cardinality,
+        "triggered_by_modeled_scope_cardinality": exercised_scope_count,
+        "exercised_logical_scope_count": len(cohort_observed),
         "single_topic_test_ceiling": stress_ceiling,
         "cohort_count_test_value": cohort_count,
         "cohort_topics_each_partitions": stress_ceiling,
-        "tenant_to_cohort": cohort_observed,
+        "logical_scope_to_cohort": cohort_observed,
         "logical_contract_identity_changes": False,
         "numeric_authority": "bounded_test_only_not_production",
     }
@@ -407,7 +430,7 @@ def main() -> None:
     if not all(tier["tenant_skew_observed"] for tier in results["tiers"]):
         raise AssertionError("all tiers must exercise observable tenant skew")
     Path(args.output).write_text(json.dumps(results, indent=2, sort_keys=True) + "\n")
-    print("d4a_live_kafka_capacity_ordering=PASS tiers=3 skew=exercised backlog=measured quota_degradation=observed partition_ceiling=benchmarked ordering_profiles=6 key_serial=PASS cohort_fallback=PASS numerics=test_only")
+    print("d4a_live_kafka_capacity_ordering=PASS tiers=3 skew=exercised backlog=measured quota_degradation=observed partition_ceiling=tier_target_bound ordering_profiles=6 key_serial=PASS cohort_fallback=actual_over_ceiling numerics=test_only")
 
 
 if __name__ == "__main__":

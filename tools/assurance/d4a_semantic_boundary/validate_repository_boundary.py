@@ -106,7 +106,7 @@ def _assignment_alias(node: ast.stmt) -> tuple[str, str] | None:
 
 
 def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
-    """Discover descendants through inheritance plus import/assignment aliases across governed sources."""
+    """Discover descendants through inheritance plus import/assignment aliases across all executable AST scopes."""
     classes: list[tuple[Path, str, set[str]]] = []
     aliases: list[tuple[str, str]] = []
     for path in paths:
@@ -117,10 +117,10 @@ def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
             if isinstance(node, ast.ImportFrom):
                 for alias in node.names:
                     aliases.append((alias.asname or alias.name, alias.name))
-        for node in tree.body:
-            assignment = _assignment_alias(node)
-            if assignment is not None:
-                aliases.append(assignment)
+            if isinstance(node, ast.stmt):
+                assignment = _assignment_alias(node)
+                if assignment is not None:
+                    aliases.append(assignment)
             if isinstance(node, ast.ClassDef):
                 bases = {name for base in node.bases if (name := _base_leaf_name(base)) is not None}
                 classes.append((path, node.name, bases))
@@ -240,9 +240,18 @@ def discover_assurance_dependency_sources(
     return sorted(discovered)
 
 
+def _normalized_transaction_method(identifier: str) -> str | None:
+    normalized_identifier = identifier.lower().replace("_", "")
+    for canonical_method, normalized_method in KAFKA_TRANSACTION_IDENTIFIERS.items():
+        if normalized_identifier == normalized_method:
+            return canonical_method
+    return None
+
+
 def _transaction_api_finding(node: ast.Attribute) -> str | None:
-    if node.attr in KAFKA_TRANSACTION_METHODS:
-        return f"transaction_api:{node.attr}"
+    canonical_method = _normalized_transaction_method(node.attr)
+    if canonical_method is not None:
+        return f"transaction_api:{canonical_method}"
     return None
 
 
@@ -274,10 +283,9 @@ def scan_nonpython_for_direct_kafka(path: Path) -> list[str]:
     lowered = raw.lower()
     findings: set[str] = {f"marker:{marker}" for marker in KAFKA_TEXT_MARKERS if marker in lowered}
     for match in re.finditer(r"\.\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(", raw):
-        normalized_identifier = match.group(1).lower().replace("_", "")
-        for canonical_method, normalized_method in KAFKA_TRANSACTION_IDENTIFIERS.items():
-            if normalized_identifier == normalized_method:
-                findings.add(f"transaction_api:{canonical_method}")
+        canonical_method = _normalized_transaction_method(match.group(1))
+        if canonical_method is not None:
+            findings.add(f"transaction_api:{canonical_method}")
     return sorted(findings)
 
 
@@ -359,7 +367,7 @@ def main() -> int:
 
     print(
         f"d4a_repository_boundary=PASS broker_paths={len(runtime_discovered)} consumers={len(consumers)} "
-        "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=import+assignment_alias_transitive_exact call_graph=exact "
+        "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=nested_import+assignment_alias_transitive_exact call_graph=exact "
         f"roots=implementation+src assurance_dependency_closure={len(assurance_closure)} package_initializers=scanned "
         "transaction_apis=owner_independent_polyglot_case_normalized"
     )

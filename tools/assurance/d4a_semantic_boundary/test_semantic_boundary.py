@@ -131,6 +131,17 @@ def main() -> int:
         except ValueError as exc: assert "canonical async contract-name rules" in str(exc)
         else: raise AssertionError("partial manifest escaped validation")
 
+        registry_root = root / "consumer-registry"; registry_root.mkdir()
+        registry_partial = registry_root / "partial.json"
+        registry_partial.write_text(json.dumps({"topic": "unprotected"}), encoding="utf-8")
+        assert registry_partial in discover_consumer_manifests(root)
+        try:
+            validate_discovered_consumers(root)
+        except ValueError as exc:
+            assert "transport_candidate must be kafka" in str(exc) and "canonical async contract-name rules" in str(exc)
+        else:
+            raise AssertionError("partial consumer-registry entry escaped required-field validation")
+
         malformed_root = root / "malformed"; malformed_root.mkdir()
         (malformed_root / "valid.json").write_text(json.dumps(VALID), encoding="utf-8")
         malformed = malformed_root / "consumer-broken.json"
@@ -193,6 +204,18 @@ def main() -> int:
         conditional_descendants = set(discover_broker_path_declarations([BOUNDARY_SOURCE, conditional_path]).values())
         assert "ConditionalEscapingPath" in conditional_descendants
 
+        chained_alias = inheritance_root / "chained_alias.py"
+        chained_alias.write_text(
+            "from broker_boundary import OutboxDispatchPath\n"
+            "Base = Alias = OutboxDispatchPath\n"
+            "class ChainedAliasEscapingPath(Base):\n"
+            "    def dispatch(self, message):\n"
+            "        return self._transport.send(message)\n",
+            encoding="utf-8",
+        )
+        chained_descendants = set(discover_broker_path_declarations([BOUNDARY_SOURCE, chained_alias]).values())
+        assert "ChainedAliasEscapingPath" in chained_descendants
+
         assurance_root = root / "assurance"; assurance_root.mkdir()
         helpers = assurance_root / "helpers"; helpers.mkdir()
         deeper = helpers / "deeper"; deeper.mkdir()
@@ -219,7 +242,9 @@ def main() -> int:
             ("abort.py", "def f(self): self.transport.abort_transaction()\n", "transaction_api:abort_transaction"),
             ("offsets.py", "def f(self): self.session.send_offsets_to_transaction({})\n", "transaction_api:send_offsets_to_transaction"),
             ("begin.py", "def f(self): self.transport.begin_transaction()\n", "transaction_api:begin_transaction"),
+            ("init.py", "def f(self): self.client.init_transactions()\n", "transaction_api:init_transactions"),
             ("commit_camel.py", "def f(self): self.client.commitTransaction()\n", "transaction_api:commit_transaction"),
+            ("init_camel.py", "def f(self): self.client.initTransactions()\n", "transaction_api:init_transactions"),
             ("offsets_pascal.py", "def f(self): self.transport.SendOffsetsToTransaction({})\n", "transaction_api:send_offsets_to_transaction"),
         ):
             p = root / name; p.write_text(source, encoding="utf-8")
@@ -236,9 +261,12 @@ def main() -> int:
 
         for name, text, expected in (
             ("tx.rs", "fn apply(client: &impl TransactionPort) { client.commit_transaction(); }", "transaction_api:commit_transaction"),
+            ("tx_turbofish.rs", "fn apply(client: &impl TransactionPort) { client.commit_transaction::<()>(); }", "transaction_api:commit_transaction"),
             ("tx.go", "func apply(client TransactionPort) { client.BeginTransaction() }", "transaction_api:begin_transaction"),
             ("tx.cs", "void Apply(ITransport client) { client.AbortTransaction(); }", "transaction_api:abort_transaction"),
             ("tx.ts", "client.sendOffsetsToTransaction({});", "transaction_api:send_offsets_to_transaction"),
+            ("tx_generic.ts", "client.commitTransaction<Result>();", "transaction_api:commit_transaction"),
+            ("tx_init.ts", "client.initTransactions<Result>();", "transaction_api:init_transactions"),
             ("tx.java", "client.commitTransaction();", "transaction_api:commit_transaction"),
             ("tx.kt", "client.abortTransaction()", "transaction_api:abort_transaction"),
         ):
@@ -297,7 +325,7 @@ def main() -> int:
         remaining_semantic = semantic_bound.receive("evidence.consumer.v1")
         assert remaining_semantic.contract_version == "v2"
 
-    print("d4a_fresh_review_hardening=PASS nested_declarations+python_case_normalization+assignment_aliases+polyglot_case_normalization+package_initializers+nested_imports")
+    print("d4a_fresh_review_hardening=PASS registry_path_fail_closed+chained_aliases+transaction_init+generic_syntax+nested_declarations+python_case_normalization+package_initializers+nested_imports")
     print("d4a_transport_swap=PASS adapters=2 durable_effect_observed=true replay_apply_count=1")
     return 0
 

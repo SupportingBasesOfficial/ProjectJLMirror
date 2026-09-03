@@ -439,6 +439,11 @@ def _is_reflective_mapping(node: ast.AST) -> bool:
 def _python_tree_findings(tree: ast.AST) -> set[str]:
     findings: set[str] = set()
     call_aliases, module_aliases = _reflective_aliases(tree)
+    executable_dynamic_members = {
+        id(node.func)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, (ast.Call, ast.Subscript))
+    }
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -460,13 +465,13 @@ def _python_tree_findings(tree: ast.AST) -> set[str]:
                 canonical_method = _dynamic_transaction_method(node.args[1])
                 if canonical_method is not None:
                     findings.add(f"dynamic_transaction_api:{canonical_method}")
-                elif _constant_string_value(node.args[1]) is None:
+                elif _constant_string_value(node.args[1]) is None and id(node) in executable_dynamic_members:
                     findings.add("dynamic_transaction_api:unresolved_reflective_member")
         if isinstance(node, ast.Subscript) and _is_reflective_mapping(node.value):
             canonical_method = _dynamic_transaction_method(node.slice)
             if canonical_method is not None:
                 findings.add(f"dynamic_transaction_api:{canonical_method}")
-            elif _constant_string_value(node.slice) is None:
+            elif _constant_string_value(node.slice) is None and id(node) in executable_dynamic_members:
                 findings.add("dynamic_transaction_api:unresolved_reflective_member")
     return findings
 
@@ -596,6 +601,8 @@ def main() -> int:
     assert "dynamic_transaction_api:commit_transaction" in dynamic_findings
     unresolved_tree = ast.parse("getattr(client, transaction_name)()")
     assert "dynamic_transaction_api:unresolved_reflective_member" in _python_tree_findings(unresolved_tree)
+    benign_reflection_tree = ast.parse("value = getattr(record, field_name)")
+    assert "dynamic_transaction_api:unresolved_reflective_member" not in _python_tree_findings(benign_reflection_tree)
     imported_alias_tree = ast.parse("from builtins import getattr as resolve\nresolve(client, 'commitTransaction')()")
     assert "dynamic_transaction_api:commit_transaction" in _python_tree_findings(imported_alias_tree)
     starred_base_tree = ast.parse("*Bases, = (OutboxDispatchPath,)\nclass EscapingPath(*Bases):\n    pass")
@@ -611,7 +618,7 @@ def main() -> int:
         "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=distinct_nested_declarations+starred_sequence_base_transitive_exact "
         "call_graph=ordered_exact verifier_before_ack=true "
         f"roots=implementation+src assurance_dependency_closure={len(assurance_closure)} boundary_module=class_scoped_native_allowlist package_initializers=scanned "
-        "transaction_apis=owner_independent+import_qualified_dynamic_reflection_fail_closed+polyglot_case_and_generic_syntax_normalized"
+        "transaction_apis=owner_independent+import_qualified_dynamic_reflection_callable_fail_closed+polyglot_case_and_generic_syntax_normalized"
     )
     return 0
 

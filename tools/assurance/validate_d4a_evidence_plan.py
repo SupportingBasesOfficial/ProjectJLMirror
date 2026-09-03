@@ -16,8 +16,11 @@ EXPECTED_SOURCE_HEAD = "d6872579dca7d4f08c9ded82e34b94f8e87ec1e9"
 EXPECTED_SOURCE_RUN = 33790608658
 EXPECTED_SOURCE_JOB = 100766024114
 EXPECTED_ARTIFACT_ID = 9907159265
+EXPECTED_ARTIFACT_NAME = "d4-a-semantic-boundary-source-d6872579dca7d4f08c9ded82e34b94f8e87ec1e9-33790608658-1"
 EXPECTED_ARTIFACT_DIGEST = "sha256:8b4c4031270479ff3cb0912ae5469df575459f8afaf9e3ff226fb3b73e18ae6a"
 EXPECTED_SOURCE_MANIFEST_SHA256 = "690cdc59af819e27a7922cd2eea04d537c20dcd0e005ce4dbd4dac977eb525a1"
+EXPECTED_REVIEW_NODE = "PRR_kwDOT7x07M8AAAABMFEmUQ"
+EXPECTED_FINAL_GATE_COMMENT = 5530884189
 EXPECTED_CREDITED = {
     "broker_neutral_anti_corruption_stub_swap",
     "exactly_once_guardrail_consumer_inbox_enforcement",
@@ -161,7 +164,14 @@ def validate_objects(plan: dict, entry: dict, promotion: dict) -> list[str]:
     require(source_workflow.get("job_id") == EXPECTED_SOURCE_JOB, "source workflow job drift")
     require(source_workflow.get("job_name") == "D4-A semantic boundary source evidence", "source workflow job name drift")
     require(source_workflow.get("artifact_id") == EXPECTED_ARTIFACT_ID, "source artifact id drift")
+    require(source_workflow.get("artifact_name") == EXPECTED_ARTIFACT_NAME, "source artifact name drift")
     require(source_workflow.get("artifact_digest") == EXPECTED_ARTIFACT_DIGEST, "source artifact digest drift")
+    review_gate = promotion.get("review_gate", {})
+    require(review_gate.get("exact_head_ci_success_count") == 15, "source exact-HEAD CI count drift")
+    require(review_gate.get("independent_adversarial_review_node_id") == EXPECTED_REVIEW_NODE, "source adversarial review identity drift")
+    require(review_gate.get("final_gate_comment_id") == EXPECTED_FINAL_GATE_COMMENT, "source final gate comment drift")
+    require(review_gate.get("fresh_codex_unavailable_due_usage_limit") is True, "source Codex availability record drift")
+    require(review_gate.get("older_codex_review_reused_as_clean") is False, "older Codex review must not be reused as clean")
     credited = promotion.get("credited_evidence", [])
     require(isinstance(credited, list), "promotion credited_evidence must be a list")
     credited_by_id = {item.get("evidence_id"): item for item in credited if isinstance(item, dict)}
@@ -199,7 +209,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4A_PLAN_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4a_evidence_plan=PASS evidence=7 credited=2 remaining=5 kafka=not_selected production_numerics=not_granted provenance=pinned")
+    print("d4a_evidence_plan=PASS evidence=7 credited=2 remaining=5 kafka=not_selected production_numerics=not_granted provenance=pinned review_gate=pinned")
     return 0
 
 

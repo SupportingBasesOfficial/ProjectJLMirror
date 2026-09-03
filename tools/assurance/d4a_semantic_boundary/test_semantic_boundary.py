@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 from broker_boundary import (
     AlternateStubTransport, InboxAcknowledgePath, KafkaCandidateAdapter, LogicalMessage,
     assert_discovered_paths_do_not_leak_kafka_primitives, discover_broker_facing_paths,
-    forbidden_kafka_tokens, semantic_transcript,
+    forbidden_kafka_tokens, logical_semantic_digest, semantic_transcript,
 )
 from consumer_registration_gate import (
     RecordingRegistrar, RegistrationPermit, discover_consumer_manifests,
@@ -16,8 +16,9 @@ from consumer_registration_gate import (
 )
 from effect_protection import DurableResponsibilityReceipt, SQLiteAtomicInboxEffectGuard
 from validate_repository_boundary import (
-    BOUNDARY_SOURCE, KAFKA_TEXT_MARKERS, dependency_calls, discover_assurance_dependency_sources,
-    discover_broker_path_declarations, scan_nonpython_for_direct_kafka,
+    BOUNDARY_SOURCE, KAFKA_TEXT_MARKERS, dependency_call_sequence, dependency_calls,
+    discover_assurance_dependency_sources, discover_broker_path_declarations,
+    scan_boundary_module_for_direct_kafka, scan_nonpython_for_direct_kafka,
     scan_python_for_direct_kafka,
 )
 
@@ -71,6 +72,11 @@ def main() -> int:
 
     constructor_bypass = """class BadPath:\n    def __init__(self, broker):\n        helper(broker)\n        self._broker = broker\n    def run(self, message):\n        return self._broker.publish(message)\n"""
     assert dependency_calls(constructor_bypass) == {"helper", "_broker.publish"}
+    assert dependency_call_sequence(constructor_bypass) == ["helper", "_broker.publish"]
+
+    broker_first = """class InboxAcknowledgePath:\n    def run(self, receipt):\n        self._broker.acknowledge(receipt)\n        self._verifier.assert_durable(receipt)\n"""
+    assert dependency_calls(broker_first) == {"_broker.acknowledge", "_verifier.assert_durable"}
+    assert dependency_call_sequence(broker_first) == ["_broker.acknowledge", "_verifier.assert_durable"]
 
     kafka = KafkaCandidateAdapter(); alternate = AlternateStubTransport()
     kafka_semantics = semantic_transcript(kafka); alternate_semantics = semantic_transcript(alternate)
@@ -219,6 +225,21 @@ def main() -> int:
         chained_descendants = set(discover_broker_path_declarations([BOUNDARY_SOURCE, chained_alias]).values())
         assert "ChainedAliasEscapingPath" in chained_descendants
 
+        duplicate_names = inheritance_root / "duplicate_names.py"
+        duplicate_names.write_text(
+            "from broker_boundary import OutboxDispatchPath\n"
+            "if True:\n"
+            "    class OutboxDispatchPath(OutboxDispatchPath):\n"
+            "        pass\n"
+            "if False:\n"
+            "    class OutboxDispatchPath(OutboxDispatchPath):\n"
+            "        pass\n",
+            encoding="utf-8",
+        )
+        duplicate_declarations = discover_broker_path_declarations([BOUNDARY_SOURCE, duplicate_names])
+        duplicate_ids = [key for key, value in duplicate_declarations.items() if value == "OutboxDispatchPath"]
+        assert len(duplicate_ids) == 3 and len(set(duplicate_ids)) == 3
+
         assurance_root = root / "assurance"; assurance_root.mkdir()
         helpers = assurance_root / "helpers"; helpers.mkdir()
         deeper = helpers / "deeper"; deeper.mkdir()
@@ -252,6 +273,24 @@ def main() -> int:
         ):
             p = root / name; p.write_text(source, encoding="utf-8")
             assert expected in scan_python_for_direct_kafka(p)
+
+        boundary_probe = root / "boundary_probe.py"
+        boundary_probe.write_text(
+            "class KafkaCandidateAdapter:\n"
+            "    def allowed(self, client): return client.commitTransaction()\n"
+            "class AlternateStubTransport:\n"
+            "    def forbidden(self, client): return client.commitTransaction()\n",
+            encoding="utf-8",
+        )
+        assert scan_boundary_module_for_direct_kafka(boundary_probe, {"KafkaCandidateAdapter"}) == ["transaction_api:commit_transaction"]
+        boundary_probe.write_text(
+            "class KafkaCandidateAdapter:\n"
+            "    def allowed(self, client): return client.commitTransaction()\n"
+            "class AlternateStubTransport:\n"
+            "    def safe(self): return 'safe'\n",
+            encoding="utf-8",
+        )
+        assert scan_boundary_module_for_direct_kafka(boundary_probe, {"KafkaCandidateAdapter"}) == []
 
         for name, text, marker in (
             ("DirectKafka.cs", "using Confluent.Kafka;", "marker:confluent.kafka"),
@@ -307,6 +346,23 @@ def main() -> int:
         except PermissionError: pass
         else: raise AssertionError("forged durable receipt acknowledged message")
 
+        matching_message = LogicalMessage("evidence.contract", "v1", "matching-forged", "tenant-a", "payload")
+        matching_adapter = AlternateStubTransport(); matching_ack = InboxAcknowledgePath(matching_adapter, guard)
+        matching_adapter.publish(matching_message)
+        matching_adapter.receive("evidence.consumer.v1")
+        matching_forged_receipt = DurableResponsibilityReceipt(
+            "evidence.consumer.v1", "tenant-a", "matching-forged", "evidence.contract", "v1",
+            "not-durable", logical_semantic_digest(matching_message), "not-durable-effect"
+        )
+        try:
+            matching_ack.acknowledge_after_durable_responsibility(matching_forged_receipt)
+        except PermissionError:
+            pass
+        else:
+            raise AssertionError("matching-semantics non-durable receipt acknowledged message")
+        matching_remaining = matching_adapter.receive("evidence.consumer.v1")
+        assert matching_remaining == matching_message
+
         consumer_bound = AlternateStubTransport(); consumer_bound_ack = InboxAcknowledgePath(consumer_bound, guard)
         consumer_bound.publish(LogicalMessage("evidence.contract", "v1", "same-id", "tenant-a", "payload-a"))
         consumer_bound.receive("evidence.consumer.other.v1")
@@ -328,7 +384,7 @@ def main() -> int:
         remaining_semantic = semantic_bound.receive("evidence.consumer.v1")
         assert remaining_semantic.contract_version == "v2"
 
-    print("d4a_fresh_review_hardening=PASS nested_declarations+multi_assignment_aliases+python_case_normalization+polyglot_generic_syntax+init_transactions+registry_namespace+package_initializers+nested_imports")
+    print("d4a_fresh_review_hardening=PASS boundary_class_allowlist+distinct_nested_declarations+ordered_verify_before_ack+multi_assignment_aliases+polyglot_generic_syntax+init_transactions+registry_namespace+package_initializers+nested_imports")
     print("d4a_transport_swap=PASS adapters=2 durable_effect_observed=true replay_apply_count=1")
     return 0
 

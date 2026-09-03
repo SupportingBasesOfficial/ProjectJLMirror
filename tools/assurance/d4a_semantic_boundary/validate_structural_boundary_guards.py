@@ -73,8 +73,18 @@ def _dynamic_transaction_name(node: ast.AST) -> str | None:
     return _normalized_transaction_method(value) if value is not None else None
 
 
-def _reflective_aliases(tree: ast.AST) -> set[str]:
-    aliases = set(REFLECTIVE_MEMBER_BUILTINS)
+def _reflective_aliases(tree: ast.AST) -> tuple[set[str], set[str]]:
+    call_aliases = set(REFLECTIVE_MEMBER_BUILTINS)
+    module_aliases = {"builtins"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "builtins":
+            for imported in node.names:
+                if imported.name in REFLECTIVE_MEMBER_BUILTINS:
+                    call_aliases.add(imported.asname or imported.name)
+        elif isinstance(node, ast.Import):
+            for imported in node.names:
+                if imported.name == "builtins":
+                    module_aliases.add(imported.asname or imported.name)
     changed = True
     while changed:
         changed = False
@@ -82,14 +92,34 @@ def _reflective_aliases(tree: ast.AST) -> set[str]:
             if not isinstance(node, (ast.Assign, ast.AnnAssign)):
                 continue
             value = node.value
-            if not isinstance(value, ast.Name) or value.id not in aliases:
+            source_is_reflective = isinstance(value, ast.Name) and value.id in call_aliases
+            source_is_qualified = (
+                isinstance(value, ast.Attribute)
+                and value.attr in REFLECTIVE_MEMBER_BUILTINS
+                and isinstance(value.value, ast.Name)
+                and value.value.id in module_aliases
+            )
+            if not source_is_reflective and not source_is_qualified:
                 continue
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             for target in targets:
-                if isinstance(target, ast.Name) and target.id not in aliases:
-                    aliases.add(target.id)
+                if isinstance(target, ast.Name) and target.id not in call_aliases:
+                    call_aliases.add(target.id)
                     changed = True
-    return aliases
+    return call_aliases, module_aliases
+
+
+def _reflective_callable(node: ast.AST, call_aliases: set[str], module_aliases: set[str]) -> str | None:
+    if isinstance(node, ast.Name) and node.id in call_aliases:
+        return node.id
+    if (
+        isinstance(node, ast.Attribute)
+        and node.attr in REFLECTIVE_MEMBER_BUILTINS
+        and isinstance(node.value, ast.Name)
+        and node.value.id in module_aliases
+    ):
+        return node.attr
+    return None
 
 
 def _is_reflective_mapping(node: ast.AST) -> bool:
@@ -100,7 +130,8 @@ def _is_reflective_mapping(node: ast.AST) -> bool:
 
 def _python_tree_findings(tree: ast.AST, raw: str) -> set[str]:
     findings: set[str] = set()
-    reflective_aliases = _reflective_aliases(ast.parse(raw))
+    full_tree = ast.parse(raw)
+    call_aliases, module_aliases = _reflective_aliases(full_tree)
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -116,14 +147,15 @@ def _python_tree_findings(tree: ast.AST, raw: str) -> set[str]:
             transaction = _normalized_transaction_method(node.attr)
             if transaction is not None:
                 findings.add(f"transaction_api:{transaction}")
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            if node.func.id in reflective_aliases and len(node.args) >= 2:
+        elif isinstance(node, ast.Call):
+            reflective = _reflective_callable(node.func, call_aliases, module_aliases)
+            if reflective is not None and len(node.args) >= 2:
                 transaction = _dynamic_transaction_name(node.args[1])
                 if transaction is not None:
                     findings.add(f"dynamic_transaction_api:{transaction}")
                 elif _constant_string_value(node.args[1]) is None:
                     findings.add("dynamic_transaction_api:unresolved_reflective_member")
-        elif isinstance(node, ast.Subscript) and _is_reflective_mapping(node.value):
+        if isinstance(node, ast.Subscript) and _is_reflective_mapping(node.value):
             transaction = _dynamic_transaction_name(node.slice)
             if transaction is not None:
                 findings.add(f"dynamic_transaction_api:{transaction}")
@@ -311,7 +343,6 @@ def _binding_pairs(target: ast.AST, value: ast.AST) -> list[tuple[str, str]]:
             for target_item, value_item in zip(targets, values):
                 pairs.extend(_binding_pairs(target_item, value_item))
             return pairs
-
         star = starred_indexes[0]
         prefix = targets[:star]
         suffix = targets[star + 1:]
@@ -336,23 +367,68 @@ def _assignment_aliases(node: ast.stmt) -> list[tuple[str, str]]:
     return aliases
 
 
+def _starred_sequence_aliases(node: ast.stmt) -> dict[str, tuple[str, ...]]:
+    assignments: list[tuple[ast.AST, ast.AST]] = []
+    if isinstance(node, ast.Assign):
+        assignments.extend((target, node.value) for target in node.targets)
+    elif isinstance(node, ast.AnnAssign) and node.value is not None:
+        assignments.append((node.target, node.value))
+    captured: dict[str, tuple[str, ...]] = {}
+    for target, value in assignments:
+        if not isinstance(target, (ast.Tuple, ast.List)):
+            continue
+        values = _expand_static_sequence(value)
+        if values is None:
+            continue
+        stars = [i for i, item in enumerate(target.elts) if isinstance(item, ast.Starred)]
+        if len(stars) != 1:
+            continue
+        star = stars[0]
+        prefix_count = star
+        suffix_count = len(target.elts) - star - 1
+        if len(values) < prefix_count + suffix_count:
+            continue
+        starred_target = target.elts[star]
+        if not isinstance(starred_target, ast.Starred) or not isinstance(starred_target.value, ast.Name):
+            continue
+        end = len(values) - suffix_count if suffix_count else len(values)
+        names = tuple(name for item in values[prefix_count:end] if (name := _leaf_name(item)) is not None)
+        if len(names) == end - prefix_count:
+            captured[starred_target.value.id] = names
+    return captured
+
+
+def _class_base_names(node: ast.ClassDef, sequence_aliases: dict[str, tuple[str, ...]]) -> set[str]:
+    bases: set[str] = set()
+    for base in node.bases:
+        if isinstance(base, ast.Starred) and isinstance(base.value, ast.Name):
+            bases.update(sequence_aliases.get(base.value.id, ()))
+            continue
+        name = _leaf_name(base)
+        if name is not None:
+            bases.add(name)
+    return bases
+
+
 def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
-    """Independent descendant discovery including nested scopes and destructuring aliases."""
+    """Independent descendant discovery including nested scopes, destructuring, and starred base sequences."""
     classes: list[tuple[Path, int, str, set[str]]] = []
     aliases: list[tuple[str, str]] = []
     for path in paths:
         if not path.exists() or path.suffix != ".py":
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        sequence_aliases: dict[str, tuple[str, ...]] = {}
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 for alias in node.names:
                     aliases.append((alias.asname or alias.name, alias.name))
             if isinstance(node, ast.stmt):
                 aliases.extend(_assignment_aliases(node))
+                sequence_aliases.update(_starred_sequence_aliases(node))
+        for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef):
-                bases = {name for base in node.bases if (name := _leaf_name(base)) is not None}
-                classes.append((path, node.lineno, node.name, bases))
+                classes.append((path, node.lineno, node.name, _class_base_names(node, sequence_aliases)))
 
     descendant_symbols = {"BrokerFacingPath"}
     changed = True
@@ -429,13 +505,51 @@ def _attribute_mutates_authority(target: ast.AST, aliases: set[str]) -> bool:
     )
 
 
+def _mutation_callable(node: ast.AST, call_aliases: set[str], module_aliases: set[str]) -> str | None:
+    reflective = _reflective_callable(node, call_aliases, module_aliases)
+    if reflective in {"setattr", "delattr"} or (isinstance(node, ast.Name) and node.id in {"setattr", "delattr"}):
+        return reflective or node.id
+    if (
+        isinstance(node, ast.Attribute)
+        and node.attr in {"__setattr__", "__delattr__"}
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "type"
+    ):
+        return node.attr
+    return None
+
+
+def _mutation_aliases(tree: ast.AST, call_aliases: set[str], module_aliases: set[str]) -> set[str]:
+    aliases = {name for name in call_aliases if name not in {"getattr", "hasattr"}}
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+                continue
+            value = node.value
+            if value is None:
+                continue
+            source = _mutation_callable(value, call_aliases | aliases, module_aliases)
+            if source is None and not (isinstance(value, ast.Name) and value.id in aliases):
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id not in aliases:
+                    aliases.add(target.id)
+                    changed = True
+    return aliases
+
+
 def assert_no_post_declaration_ack_replacement(paths: list[Path]) -> None:
-    """Reject monkey-patching/rebinding of the governed ack lookup classes after declaration."""
+    """Reject direct, aliased, imported, or type-level monkey-patching of governed ack lookup classes."""
     for path in paths:
         if not path.exists() or path.suffix != ".py":
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         aliases = _class_symbol_aliases(tree)
+        call_aliases, module_aliases = _reflective_aliases(tree)
+        mutation_aliases = _mutation_aliases(tree, call_aliases, module_aliases)
         for node in ast.walk(tree):
             targets: list[ast.AST] = []
             if isinstance(node, ast.Assign):
@@ -446,11 +560,16 @@ def assert_no_post_declaration_ack_replacement(paths: list[Path]) -> None:
                 targets.extend(node.targets)
             if any(_attribute_mutates_authority(target, aliases) for target in targets):
                 raise AssertionError(f"post-declaration acknowledgement authority mutation is forbidden: {path}")
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {"setattr", "delattr"}:
-                if len(node.args) >= 2 and _is_authority_class_ref(node.args[0], aliases):
-                    name = _constant_string_value(node.args[1])
-                    if name is None or name in ACK_AUTHORITY_NAMES:
-                        raise AssertionError(f"dynamic post-declaration acknowledgement authority mutation is forbidden: {path}")
+            if not isinstance(node, ast.Call):
+                continue
+            mutation = _mutation_callable(node.func, call_aliases | mutation_aliases, module_aliases)
+            if mutation is None and isinstance(node.func, ast.Name) and node.func.id in mutation_aliases:
+                mutation = node.func.id
+            if mutation is None or len(node.args) < 2 or not _is_authority_class_ref(node.args[0], aliases):
+                continue
+            name = _constant_string_value(node.args[1])
+            if name is None or name in ACK_AUTHORITY_NAMES:
+                raise AssertionError(f"dynamic post-declaration acknowledgement authority mutation is forbidden: {path}")
 
 
 def assert_complete_broker_path_inventory(inventory: dict) -> None:
@@ -466,6 +585,24 @@ def _must_fail_ack(source: str, label: str) -> None:
     except AssertionError:
         return
     raise AssertionError(f"{label} escaped acknowledgement structural guard")
+
+
+def _must_fail_mutation(source: str, label: str) -> None:
+    tree = ast.parse(source)
+    aliases = _class_symbol_aliases(tree)
+    call_aliases, module_aliases = _reflective_aliases(tree)
+    mutation_aliases = _mutation_aliases(tree, call_aliases, module_aliases)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        mutation = _mutation_callable(node.func, call_aliases | mutation_aliases, module_aliases)
+        if mutation is None and isinstance(node.func, ast.Name) and node.func.id in mutation_aliases:
+            mutation = node.func.id
+        if mutation is not None and len(node.args) >= 2 and _is_authority_class_ref(node.args[0], aliases):
+            name = _constant_string_value(node.args[1])
+            if name is None or name in ACK_AUTHORITY_NAMES:
+                return
+    raise AssertionError(f"{label} escaped post-declaration mutation guard")
 
 
 def run_negative_controls() -> None:
@@ -542,6 +679,16 @@ class KafkaCandidateAdapter:
 resolver = getattr
 class KafkaCandidateAdapter:
     authority = resolver(client, 'commit' + 'Transaction')()
+""",
+        "imported_getattr": """
+from builtins import getattr as resolve
+class KafkaCandidateAdapter:
+    authority = resolve(client, 'commitTransaction')()
+""",
+        "qualified_getattr": """
+import builtins as bi
+class KafkaCandidateAdapter:
+    authority = bi.getattr(client, 'commitTransaction')()
 """,
         "dynamic_subscript": """
 class KafkaCandidateAdapter:
@@ -636,6 +783,34 @@ class InboxAcknowledgePath(BrokerFacingPath):
     for label, source in ack_cases.items():
         _must_fail_ack(source, label)
 
+    mutation_cases = {
+        "assigned_setattr": """
+class BrokerFacingPath: pass
+class InboxAcknowledgePath(BrokerFacingPath): pass
+mutate = setattr
+mutate(InboxAcknowledgePath, 'acknowledge_after_durable_responsibility', external_hook)
+""",
+        "imported_setattr": """
+from builtins import setattr as mutate
+class BrokerFacingPath: pass
+class InboxAcknowledgePath(BrokerFacingPath): pass
+mutate(InboxAcknowledgePath, 'acknowledge_after_durable_responsibility', external_hook)
+""",
+        "qualified_setattr": """
+import builtins as bi
+class BrokerFacingPath: pass
+class InboxAcknowledgePath(BrokerFacingPath): pass
+bi.setattr(BrokerFacingPath, '__getattribute__', external_hook)
+""",
+        "type_setattr": """
+class BrokerFacingPath: pass
+class InboxAcknowledgePath(BrokerFacingPath): pass
+type.__setattr__(InboxAcknowledgePath, 'acknowledge_after_durable_responsibility', external_hook)
+""",
+    }
+    for label, source in mutation_cases.items():
+        _must_fail_mutation(source, label)
+
     destructuring = ast.parse("(Base,) = (OutboxDispatchPath,)").body[0]
     if ("Base", "OutboxDispatchPath") not in _assignment_aliases(destructuring):
         raise AssertionError("destructuring broker-path alias escaped structural alias discovery")
@@ -648,6 +823,12 @@ class InboxAcknowledgePath(BrokerFacingPath):
     starred_rhs = ast.parse("Base, *rest = *[OutboxDispatchPath],").body[0]
     if ("Base", "OutboxDispatchPath") not in _assignment_aliases(starred_rhs):
         raise AssertionError("starred-RHS broker-path alias escaped structural alias discovery")
+    captured = _starred_sequence_aliases(ast.parse("*Bases, = (OutboxDispatchPath,)").body[0])
+    if captured.get("Bases") != ("OutboxDispatchPath",):
+        raise AssertionError("starred target sequence alias escaped structural discovery")
+    expanded_class = ast.parse("class EscapingPath(*Bases):\n    pass").body[0]
+    if not isinstance(expanded_class, ast.ClassDef) or "OutboxDispatchPath" not in _class_base_names(expanded_class, captured):
+        raise AssertionError("starred sequence class base escaped structural discovery")
 
 
 def main() -> int:
@@ -666,10 +847,10 @@ def main() -> int:
     run_negative_controls()
     print(
         "d4a_structural_boundary_guards=PASS "
-        "native_allowlist=direct_method_bodies_only construction_surfaces=computed_dynamic_resolution_fail_closed "
-        "ack_dominance=complete_inert_lookup_hierarchy+post_declaration_mutation_rejected+linear_unconditional_verify_then_ack "
-        "broker_path_discovery=nested+assignment+destructuring+target_and_rhs_starred_alias_aware "
-        "negative_controls=computed_reflection+lookup_hierarchy+namespace_mutation+starred_rhs_unpacking"
+        "native_allowlist=direct_method_bodies_only construction_surfaces=import_qualified_computed_dynamic_resolution_fail_closed "
+        "ack_dominance=complete_inert_lookup_hierarchy+aliased_post_declaration_mutation_rejected+linear_unconditional_verify_then_ack "
+        "broker_path_discovery=nested+assignment+destructuring+target_rhs_and_sequence_starred_alias_aware "
+        "negative_controls=import_qualified_reflection+lookup_hierarchy+aliased_namespace_mutation+starred_sequence_bases"
     )
     return 0
 

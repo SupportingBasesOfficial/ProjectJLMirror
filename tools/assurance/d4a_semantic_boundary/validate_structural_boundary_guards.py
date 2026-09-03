@@ -33,6 +33,10 @@ KAFKA_TEXT_MARKERS = (
     "org.apache.kafka", "org.springframework.kafka", "segmentio/kafka-go", "shopify/sarama",
     "ibm/sarama", "twmb/franz-go", "rust-rdkafka",
 )
+REPLACEMENT_SPECIALS = {
+    "__getattribute__", "__getattr__", "__setattr__", "__get__", "__set__",
+    "__init_subclass__", "__class_getitem__",
+}
 
 
 def _normalized_transaction_method(identifier: str) -> str | None:
@@ -40,6 +44,12 @@ def _normalized_transaction_method(identifier: str) -> str | None:
     for canonical, expected in KAFKA_TRANSACTION_IDENTIFIERS.items():
         if normalized == expected:
             return canonical
+    return None
+
+
+def _dynamic_transaction_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return _normalized_transaction_method(node.value)
     return None
 
 
@@ -60,6 +70,20 @@ def _python_tree_findings(tree: ast.AST, raw: str) -> set[str]:
             transaction = _normalized_transaction_method(node.attr)
             if transaction is not None:
                 findings.add(f"transaction_api:{transaction}")
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            # Builtin dynamic attribute resolution is executable authority too.  Detect the
+            # prohibited transaction member when it is supplied as a literal name instead of
+            # appearing as an Attribute node.
+            if node.func.id in {"getattr", "hasattr", "setattr", "delattr"} and len(node.args) >= 2:
+                transaction = _dynamic_transaction_name(node.args[1])
+                if transaction is not None:
+                    findings.add(f"dynamic_transaction_api:{transaction}")
+        elif isinstance(node, ast.Subscript):
+            # Common reflective maps such as vars(client)["commitTransaction"] or
+            # obj.__dict__["commitTransaction"] must not evade construction-surface scanning.
+            transaction = _dynamic_transaction_name(node.slice)
+            if transaction is not None:
+                findings.add(f"dynamic_transaction_api:{transaction}")
     segment = ast.get_source_segment(raw, tree) or raw
     lowered = segment.lower()
     findings.update(f"marker:{marker}" for marker in KAFKA_TEXT_MARKERS if marker in lowered)
@@ -102,7 +126,6 @@ def _adapter_nonexempt_nodes(allowed: ast.ClassDef) -> list[ast.AST]:
                 if isinstance(descendant, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
                     governed.append(descendant)
             continue
-        # Class-body statements and direct nested classes execute outside the method-body exception.
         governed.append(node)
     return governed
 
@@ -124,7 +147,6 @@ def boundary_non_allowlisted_findings(raw: str, allowlisted_class: str) -> list[
         )
     allowed = top_level_matching[0]
     findings: set[str] = set()
-
     for node in tree.body:
         if node is not allowed:
             findings.update(_python_tree_findings(node, raw))
@@ -145,32 +167,37 @@ def _call_target(statement: ast.stmt) -> str | None:
     return None
 
 
-def assert_ack_verification_dominates(raw: str) -> None:
-    """Require a non-replaceable linear ack entrypoint: durable verification, then broker acknowledgement."""
-    tree = ast.parse(raw)
-    classes = [
-        node for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "InboxAcknowledgePath"
-    ]
+def _top_level_class(tree: ast.Module, name: str) -> ast.ClassDef:
+    classes = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == name]
     if len(classes) != 1:
-        raise AssertionError("expected exactly one top-level InboxAcknowledgePath declaration")
-    path_class = classes[0]
-    if path_class.decorator_list:
-        raise AssertionError("InboxAcknowledgePath must not be decorated")
-    if path_class.keywords:
-        raise AssertionError("InboxAcknowledgePath must not use metaclass or class keyword replacement hooks")
-    if len(path_class.bases) != 1 or not isinstance(path_class.bases[0], ast.Name) or path_class.bases[0].id != "BrokerFacingPath":
-        raise AssertionError("InboxAcknowledgePath must inherit directly and only from BrokerFacingPath")
+        raise AssertionError(f"expected exactly one top-level {name} declaration")
+    return classes[0]
 
-    replacement_specials = {
-        "__getattribute__", "__getattr__", "__setattr__", "__get__", "__set__",
-        "__init_subclass__", "__class_getitem__",
-    }
+
+def _assert_lookup_class_is_inert(path_class: ast.ClassDef, label: str, *, require_plain_object_base: bool) -> None:
+    if path_class.decorator_list:
+        raise AssertionError(f"{label} must not be decorated")
+    if path_class.keywords:
+        raise AssertionError(f"{label} must not use metaclass or class keyword replacement hooks")
+    if require_plain_object_base and path_class.bases:
+        raise AssertionError(f"{label} must remain a plain marker base with no inherited lookup hierarchy")
     for node in path_class.body:
         if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
-            raise AssertionError("InboxAcknowledgePath class body must not rebind authority entrypoints")
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in replacement_specials:
-            raise AssertionError(f"replacement-capable special method is forbidden on InboxAcknowledgePath: {node.name}")
+            raise AssertionError(f"{label} class body must not rebind authority lookup")
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in REPLACEMENT_SPECIALS:
+            raise AssertionError(f"replacement-capable special method is forbidden on {label}: {node.name}")
+
+
+def assert_ack_verification_dominates(raw: str) -> None:
+    """Require a non-replaceable linear ack entrypoint across the complete governed lookup hierarchy."""
+    tree = ast.parse(raw)
+    base_class = _top_level_class(tree, "BrokerFacingPath")
+    _assert_lookup_class_is_inert(base_class, "BrokerFacingPath", require_plain_object_base=True)
+
+    path_class = _top_level_class(tree, "InboxAcknowledgePath")
+    if len(path_class.bases) != 1 or not isinstance(path_class.bases[0], ast.Name) or path_class.bases[0].id != "BrokerFacingPath":
+        raise AssertionError("InboxAcknowledgePath must inherit directly and only from BrokerFacingPath")
+    _assert_lookup_class_is_inert(path_class, "InboxAcknowledgePath", require_plain_object_base=False)
 
     methods = [
         node for node in path_class.body
@@ -203,19 +230,39 @@ def _leaf_name(node: ast.AST) -> str | None:
 
 
 def _binding_pairs(target: ast.AST, value: ast.AST) -> list[tuple[str, str]]:
-    """Resolve simple and destructuring aliases without silently dropping tuple/list bindings."""
+    """Resolve Python assignment aliases, including variable-length starred unpacking."""
     if isinstance(target, ast.Name):
         source = _leaf_name(value)
         return [(target.id, source)] if source is not None else []
+    if isinstance(target, ast.Starred):
+        # A starred target receives a sequence, not one source symbol. Descendant propagation is
+        # instead derived from the fixed-prefix/fixed-suffix bindings around it.
+        return []
     if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)):
-        if len(target.elts) != len(value.elts):
+        targets = target.elts
+        values = value.elts
+        starred_indexes = [i for i, item in enumerate(targets) if isinstance(item, ast.Starred)]
+        if len(starred_indexes) > 1:
             return []
         pairs: list[tuple[str, str]] = []
-        for target_item, value_item in zip(target.elts, value.elts):
+        if not starred_indexes:
+            if len(targets) != len(values):
+                return []
+            for target_item, value_item in zip(targets, values):
+                pairs.extend(_binding_pairs(target_item, value_item))
+            return pairs
+
+        star = starred_indexes[0]
+        prefix = targets[:star]
+        suffix = targets[star + 1:]
+        if len(values) < len(prefix) + len(suffix):
+            return []
+        for target_item, value_item in zip(prefix, values[:len(prefix)]):
             pairs.extend(_binding_pairs(target_item, value_item))
+        if suffix:
+            for target_item, value_item in zip(suffix, values[-len(suffix):]):
+                pairs.extend(_binding_pairs(target_item, value_item))
         return pairs
-    if isinstance(target, ast.Starred):
-        return _binding_pairs(target.value, value)
     return []
 
 
@@ -354,27 +401,36 @@ class KafkaCandidateAdapter:
     def publish(self, value: client.commitTransaction()):
         return value
 """,
+        "dynamic_getattr": """
+class KafkaCandidateAdapter:
+    authority = getattr(client, 'commitTransaction')()
+""",
+        "dynamic_subscript": """
+class KafkaCandidateAdapter:
+    authority = vars(client)['commit_transaction']()
+""",
     }
     for label, source in adapter_cases.items():
         findings = boundary_non_allowlisted_findings(source, "KafkaCandidateAdapter")
-        if "transaction_api:commit_transaction" not in findings:
+        if not any(item.endswith(":commit_transaction") for item in findings):
             raise AssertionError(f"{label} escaped adapter construction/lexical guard")
 
+    inert_base = "class BrokerFacingPath:\n    pass\n"
     ack_cases = {
-        "conditional": """
+        "conditional": inert_base + """
 class InboxAcknowledgePath(BrokerFacingPath):
     def acknowledge_after_durable_responsibility(self, receipt):
         if receipt.receipt_id != 'escape':
             self._verifier.assert_durable(receipt)
         self._broker.acknowledge(receipt)
 """,
-        "broker_first": """
+        "broker_first": inert_base + """
 class InboxAcknowledgePath(BrokerFacingPath):
     def acknowledge_after_durable_responsibility(self, receipt):
         self._broker.acknowledge(receipt)
         self._verifier.assert_durable(receipt)
 """,
-        "decorated_method": """
+        "decorated_method": inert_base + """
 def bypass_wrapper(fn):
     return fn
 class InboxAcknowledgePath(BrokerFacingPath):
@@ -383,7 +439,7 @@ class InboxAcknowledgePath(BrokerFacingPath):
         self._verifier.assert_durable(receipt)
         self._broker.acknowledge(receipt)
 """,
-        "decorated_class": """
+        "decorated_class": inert_base + """
 def replace_class(cls):
     return cls
 @replace_class
@@ -392,23 +448,40 @@ class InboxAcknowledgePath(BrokerFacingPath):
         self._verifier.assert_durable(receipt)
         self._broker.acknowledge(receipt)
 """,
-        "metaclass": """
+        "metaclass": inert_base + """
 class InboxAcknowledgePath(BrokerFacingPath, metaclass=ReplaceAck):
     def acknowledge_after_durable_responsibility(self, receipt):
         self._verifier.assert_durable(receipt)
         self._broker.acknowledge(receipt)
 """,
-        "entrypoint_rebind": """
+        "entrypoint_rebind": inert_base + """
 class InboxAcknowledgePath(BrokerFacingPath):
     def acknowledge_after_durable_responsibility(self, receipt):
         self._verifier.assert_durable(receipt)
         self._broker.acknowledge(receipt)
     acknowledge_after_durable_responsibility = external_hook
 """,
-        "getattribute_override": """
+        "getattribute_override": inert_base + """
 class InboxAcknowledgePath(BrokerFacingPath):
     def __getattribute__(self, name):
         return external_hook
+    def acknowledge_after_durable_responsibility(self, receipt):
+        self._verifier.assert_durable(receipt)
+        self._broker.acknowledge(receipt)
+""",
+        "inherited_getattribute": """
+class BrokerFacingPath:
+    def __getattribute__(self, name):
+        return external_hook
+class InboxAcknowledgePath(BrokerFacingPath):
+    def acknowledge_after_durable_responsibility(self, receipt):
+        self._verifier.assert_durable(receipt)
+        self._broker.acknowledge(receipt)
+""",
+        "base_metaclass": """
+class BrokerFacingPath(metaclass=ReplaceAck):
+    pass
+class InboxAcknowledgePath(BrokerFacingPath):
     def acknowledge_after_durable_responsibility(self, receipt):
         self._verifier.assert_durable(receipt)
         self._broker.acknowledge(receipt)
@@ -420,6 +493,12 @@ class InboxAcknowledgePath(BrokerFacingPath):
     destructuring = ast.parse("(Base,) = (OutboxDispatchPath,)").body[0]
     if ("Base", "OutboxDispatchPath") not in _assignment_aliases(destructuring):
         raise AssertionError("destructuring broker-path alias escaped structural alias discovery")
+    starred_prefix = ast.parse("(Base, *rest) = (OutboxDispatchPath,)").body[0]
+    if ("Base", "OutboxDispatchPath") not in _assignment_aliases(starred_prefix):
+        raise AssertionError("starred-prefix broker-path alias escaped structural alias discovery")
+    starred_suffix = ast.parse("(*rest, Base) = (OutboxDispatchPath,)").body[0]
+    if ("Base", "OutboxDispatchPath") not in _assignment_aliases(starred_suffix):
+        raise AssertionError("starred-suffix broker-path alias escaped structural alias discovery")
 
 
 def main() -> int:
@@ -437,10 +516,10 @@ def main() -> int:
     run_negative_controls()
     print(
         "d4a_structural_boundary_guards=PASS "
-        "native_allowlist=direct_method_bodies_only construction_surfaces=scanned "
-        "ack_dominance=nonreplaceable_linear_unconditional_verify_then_ack "
-        "broker_path_discovery=nested+assignment+destructuring_alias_aware "
-        "negative_controls=adapter_construction+lexical+ack_replacement+destructuring"
+        "native_allowlist=direct_method_bodies_only construction_surfaces=dynamic_resolution_scanned "
+        "ack_dominance=complete_inert_lookup_hierarchy+linear_unconditional_verify_then_ack "
+        "broker_path_discovery=nested+assignment+destructuring+starred_alias_aware "
+        "negative_controls=adapter_dynamic_resolution+lookup_hierarchy+starred_unpacking"
     )
     return 0
 

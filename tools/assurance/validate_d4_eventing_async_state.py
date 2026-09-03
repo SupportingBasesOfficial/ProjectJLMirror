@@ -11,15 +11,8 @@ EXPECTED_TRACK_SOURCES = {
     "D4-A": {"OPEN-EVT-001", "OPEN-EVT-005", "OPEN-REL-012.A"},
     "D4-B": {"OPEN-EVT-002", "OPEN-EVT-003", "OPEN-EVT-004"},
     "D4-C": {
-        "OPEN-EVT-008",
-        "OPEN-EVT-009",
-        "OPEN-EVT-010",
-        "OPEN-EVT-011",
-        "OPEN-EVT-012",
-        "OPEN-EVT-013",
-        "OPEN-EVT-014",
-        "OPEN-EVT-015",
-        "OPEN-EVT-025",
+        "OPEN-EVT-008", "OPEN-EVT-009", "OPEN-EVT-010", "OPEN-EVT-011", "OPEN-EVT-012",
+        "OPEN-EVT-013", "OPEN-EVT-014", "OPEN-EVT-015", "OPEN-EVT-025",
     },
     "D4-D": {"OPEN-EVT-016", "OPEN-EVT-017", "OPEN-EVT-018"},
 }
@@ -62,7 +55,9 @@ EXPECTED_REQUIRED_EVIDENCE = {
 EXPECTED_COMPLETED = {
     "D4-A": {
         "broker_neutral_anti_corruption_stub_swap",
+        "regulated_payload_erasure_granularity",
         "exactly_once_guardrail_consumer_inbox_enforcement",
+        "physical_naming_routing_and_cell_topology_adapter_mapping",
     },
     "D4-B": set(),
     "D4-C": set(),
@@ -77,26 +72,13 @@ EXPECTED_ENTRY_STATES = {
     "D4-D": "candidate_selection_open",
 }
 EXPECTED_C3_EXCLUSIONS = {
-    "OPEN-EVT-006",
-    "OPEN-EVT-007",
-    "OPEN-EVT-019",
-    "OPEN-EVT-026",
-    "OPEN-EVT-027",
-    "OPEN-EVT-028",
-    "OPEN-REL-012.B",
-    "production_partition_counts",
-    "production_retry_backoff_jitter_numerics",
-    "production_retention_lag_replay_quarantine_horizons",
-    "production_realtime_buffer_session_numerics",
+    "OPEN-EVT-006", "OPEN-EVT-007", "OPEN-EVT-019", "OPEN-EVT-026", "OPEN-EVT-027", "OPEN-EVT-028",
+    "OPEN-REL-012.B", "production_partition_counts", "production_retry_backoff_jitter_numerics",
+    "production_retention_lag_replay_quarantine_horizons", "production_realtime_buffer_session_numerics",
 }
 EXPECTED_LATER_EXCLUSIONS = {
-    "OPEN-EVT-020",
-    "OPEN-EVT-021",
-    "OPEN-EVT-022",
-    "OPEN-EVT-023",
-    "OPEN-EVT-024",
-    "wave4_monitoring_product_implementation",
-    "production_deployment",
+    "OPEN-EVT-020", "OPEN-EVT-021", "OPEN-EVT-022", "OPEN-EVT-023", "OPEN-EVT-024",
+    "wave4_monitoring_product_implementation", "production_deployment",
 }
 
 
@@ -115,12 +97,10 @@ def validate_manifest(state: dict) -> list[str]:
     require(state.get("gate_id") == "D4", "gate_id must be D4")
     require(state.get("gate_name") == "eventing_async_transport_c2", "unexpected D4 gate_name")
     require(state.get("canonical_base") == EXPECTED_BASE, "D4 canonical_base drift")
-
     predecessor = state.get("predecessor", {})
     require(predecessor.get("gate_id") == "D3", "D4 predecessor must be D3")
     require(predecessor.get("state") == "separately_accepted", "D3 predecessor is not separately accepted")
     require(predecessor.get("canonical_commit") == EXPECTED_BASE, "D3 predecessor commit drift")
-
     require(state.get("gate_state") == "scoped", "D4 must remain scoped until separate full acceptance")
     require(state.get("canonical_product_implementation_authority") == "not_granted", "D4 must not grant canonical Product implementation authority")
     require(state.get("wave4_implementation_authority") == "not_granted", "D4 must not grant Wave 4 implementation authority")

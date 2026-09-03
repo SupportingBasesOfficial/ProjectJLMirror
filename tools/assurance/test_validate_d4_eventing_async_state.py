@@ -46,7 +46,7 @@ def main() -> int:
 
     if validator.EXPECTED_TOTAL_EVIDENCE != 26:
         raise AssertionError(f"unexpected D4 evidence inventory size: {validator.EXPECTED_TOTAL_EVIDENCE}")
-    if validator.EXPECTED_TOTAL_CREDITED != 2:
+    if validator.EXPECTED_TOTAL_CREDITED != 4:
         raise AssertionError(f"unexpected D4 credited evidence count: {validator.EXPECTED_TOTAL_CREDITED}")
 
     must_fail(lambda s: s.__setitem__("gate_state", "separately_accepted"), "must remain scoped")
@@ -59,7 +59,7 @@ def main() -> int:
     must_fail(lambda s: s["tracks"][2]["evidence_completed"].append(s["tracks"][2]["required_evidence"][0]), "completed evidence drift")
     must_fail(lambda s: s["tracks"][0]["evidence_completed"].append("capacity_envelope_baseline_growth_stress"), "completed evidence drift")
     must_fail(lambda s: s["tracks"][0]["evidence_completed"].pop(), "completed evidence drift")
-    must_fail(lambda s: s["tracks"][0]["evidence_remaining"].append("broker_neutral_anti_corruption_stub_swap"), "remaining evidence drift")
+    must_fail(lambda s: s["tracks"][0]["evidence_remaining"].append("regulated_payload_erasure_granularity"), "remaining evidence drift")
     must_fail(lambda s: s["tracks"][0]["evidence_remaining"].pop(), "remaining evidence drift")
     must_fail(lambda s: s["tracks"][0]["source_decisions"].append("OPEN-EVT-006"), "source decision drift")
     must_fail(lambda s: s["tracks"][2]["source_decisions"].remove("OPEN-EVT-025"), "source decision drift")
@@ -70,10 +70,10 @@ def main() -> int:
 
     print(
         "d4_state_falsification=PASS "
-        "premature_acceptance=blocked authority_escalation=blocked unauthorized_credit=blocked "
+        "premature_acceptance=blocked authority_escalation=blocked unauthorized_fifth_credit=blocked "
         "credit_removal=blocked candidate_leak=blocked c3_scope_leak=blocked "
         "evidence_inventory_collapse=blocked kafka_partition_fallback_weakening=blocked "
-        "total_required=26 total_credited=2"
+        "total_required=26 total_credited=4"
     )
     return 0
 

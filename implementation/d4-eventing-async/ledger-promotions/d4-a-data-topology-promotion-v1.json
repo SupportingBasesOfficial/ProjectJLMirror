@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "promotion_id": "d4-a-data-topology-promotion-v1",
+  "track": "D4-A",
+  "promotion_base_main_commit": "8d493f6f6b5ced5fb56bcbd4968e01e557ab808d",
+  "previous_promotion": {
+    "path": "implementation/d4-eventing-async/ledger-promotions/d4-a-semantic-boundary-promotion-v1.json",
+    "promotion_id": "d4-a-semantic-boundary-promotion-v1",
+    "sha256": "cb0fe5b74075638d0804b47ad78e8249359ad3a0df72444f82444094c7eea18b"
+  },
+  "source_pr": 56,
+  "source_reviewed_head": "b8dce5c87803a20cdf8776429f76a0b6c2cb1d96",
+  "source_merge_commit": "8d493f6f6b5ced5fb56bcbd4968e01e557ab808d",
+  "source_manifest_path": "implementation/d4-eventing-async/source-evidence/data-topology/source-evidence-manifest.json",
+  "source_manifest_sha256": "269394b6e7baadd9e2c5e6410289dc5d026f99d03167a1ea212d51c5b7995093",
+  "source_workflow": {
+    "run_id": 33811864261,
+    "run_attempt": 1,
+    "job_id": 100835274740,
+    "job_name": "D4-A data topology source evidence",
+    "artifact_id": 9915088812,
+    "artifact_name": "d4-a-data-topology-source-b8dce5c87803a20cdf8776429f76a0b6c2cb1d96-33811864261-1",
+    "artifact_digest": "sha256:c9037f1bd15185a2a58063306efb92485e325611d18a11ad50fa5678393df4d6"
+  },
+  "review_gate": {
+    "exact_head_ci_success_count": 16,
+    "initial_codex_review_node_id": "PRR_kwDOT7x07M8AAAABMGjwng",
+    "independent_adversarial_review_node_id": "PRR_kwDOT7x07M8AAAABMGvj3Q",
+    "fresh_codex_exact_head_review_node_id": "PRR_kwDOT7x07M8AAAABMGwL3Q",
+    "fresh_codex_reviewed_head": "b8dce5c87803a20cdf8776429f76a0b6c2cb1d96",
+    "prior_material_findings_resolved": [
+      "bind_raw_payload_exceptions_to_trusted_policy_state",
+      "exercise_consumer_semantics_across_both_mappings"
+    ],
+    "unresolved_material_review_threads": 0,
+    "final_gate_comment_id": 5532846276,
+    "older_review_reused_as_clean": false
+  },
+  "prior_credited_evidence": [
+    "broker_neutral_anti_corruption_stub_swap",
+    "exactly_once_guardrail_consumer_inbox_enforcement"
+  ],
+  "credited_evidence": [
+    {
+      "evidence_id": "regulated_payload_erasure_granularity",
+      "evidence_kind": "contract_policy_and_negative_runtime_probe"
+    },
+    {
+      "evidence_id": "physical_naming_routing_and_cell_topology_adapter_mapping",
+      "evidence_kind": "topology_adapter_conformance"
+    }
+  ],
+  "resulting_credited_evidence_count": 4,
+  "source_scope": "source_evidence_harness_only",
+  "live_kafka_broker_claimed": false,
+  "capacity_benchmark_claimed": false,
+  "ordering_benchmark_claimed": false,
+  "recovery_benchmark_claimed": false,
+  "kafka_selection_state": "not_selected",
+  "d4_transport_authority": "not_selected_not_granted",
+  "canonical_product_implementation_authority": "not_granted",
+  "wave4_implementation_authority": "not_granted",
+  "production_authority": "none",
+  "c3_numeric_topology_authority": "not_selected",
+  "promotion_rule": "reviewed_source_run_to_ledger_credit_only"
+}

@@ -133,7 +133,14 @@ jobs:
           assert all(tier['recovery_messages_per_second'] > 0 for tier in result['tiers'])
           assert all(tier['tenant_skew_observed'] is True for tier in result['tiers'])
           assert all(tier['tested_partition_ceiling'] > 0 for tier in result['tiers'])
-          assert all(any(probe['admission_passed'] for probe in tier['partition_probes']) for tier in result['tiers'])
+          for tier in result['tiers']:
+              passing = [probe for probe in tier['partition_probes'] if probe['admission_passed']]
+              assert passing
+              for probe in passing:
+                  assert probe['target_messages_per_second'] == tier['target_messages_per_second']
+                  assert probe['minimum_target_throughput_fraction'] == 0.70
+                  assert probe['observed_target_throughput_fraction'] >= probe['minimum_target_throughput_fraction']
+                  assert probe['producer']['messages_per_second'] >= probe['minimum_required_messages_per_second']
           assert result['degradation_probe']['mechanism'] == 'real_kafka_client_producer_byte_rate_quota'
           assert result['degradation_probe']['degradation_boundary_observed'] is True
           assert result['degradation_probe']['throughput_drop_fraction'] > 0
@@ -143,10 +150,14 @@ jobs:
           assert result['ordering_component']['same_key_order_preserved'] is True
           assert result['ordering_component']['independent_keys_overlap_observed'] is True
           assert result['ordering_component']['global_or_tenant_wide_serialization'] is False
-          assert result['tenant_cohort_fallback']['exercised'] is True
-          assert result['tenant_cohort_fallback']['triggered_by_modeled_scope_cardinality'] > result['tenant_cohort_fallback']['single_topic_test_ceiling']
-          assert result['tenant_cohort_fallback']['logical_contract_identity_changes'] is False
-          print('d4a_capacity_ordering_result_gate=PASS tiers=3 backlog=measured quota_degradation=observed partition_ceiling=benchmarked ordering_profiles=6 cohort_fallback=PASS numerics=test_only')
+          fallback = result['tenant_cohort_fallback']
+          assert fallback['exercised'] is True
+          assert fallback['exercised_logical_scope_count'] == fallback['triggered_by_modeled_scope_cardinality']
+          assert fallback['exercised_logical_scope_count'] > fallback['single_topic_test_ceiling']
+          assert len(fallback['logical_scope_to_cohort']) == fallback['exercised_logical_scope_count']
+          assert len(set(fallback['logical_scope_to_cohort'].values())) >= 2
+          assert fallback['logical_contract_identity_changes'] is False
+          print('d4a_capacity_ordering_result_gate=PASS tiers=3 backlog=measured quota_degradation=observed partition_ceiling=tier_target_bound ordering_profiles=6 cohort_fallback=actual_over_ceiling numerics=test_only')
           PY
 
       - name: Re-run Phase 10 contract suite

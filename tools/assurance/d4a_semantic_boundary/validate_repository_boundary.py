@@ -16,11 +16,12 @@ ASSURANCE_DIR = ROOT / "tools/assurance/d4a_semantic_boundary"
 BOUNDARY_SOURCE = ASSURANCE_DIR / "broker_boundary.py"
 EFFECT_PROTECTION_SOURCE = ASSURANCE_DIR / "effect_protection.py"
 REGISTRATION_SOURCE = ASSURANCE_DIR / "consumer_registration_gate.py"
-ASSURANCE_ENTRY_SOURCES = [EFFECT_PROTECTION_SOURCE, REGISTRATION_SOURCE]
+ASSURANCE_ENTRY_SOURCES = [BOUNDARY_SOURCE, EFFECT_PROTECTION_SOURCE, REGISTRATION_SOURCE]
 
 EXPECTED_PATH_CLASSES = {"OutboxDispatchPath", "ConsumerReceivePath", "InboxAcknowledgePath", "ReplayDispatchPath"}
 EXPECTED_PATH_IDS = {"outbox_dispatch", "consumer_receive", "inbox_acknowledge", "replay_dispatch"}
 EXPECTED_IMPLEMENTATION_ROOTS = ["implementation", "src"]
+EXPECTED_NATIVE_TRANSPORT_ALLOWLIST = ["KafkaCandidateAdapter"]
 EXPECTED_CONSUMER_DISCOVERY_ROOT = "implementation"
 EXPECTED_REGISTRATION_ENTRYPOINT = "tools/assurance/d4a_semantic_boundary/consumer_registration_gate.py"
 EXPECTED_REGISTRATION_FUNCTION = "register_consumer"
@@ -29,6 +30,12 @@ EXPECTED_DEPENDENCY_CALLS = {
     "ConsumerReceivePath": {"_broker.receive"},
     "InboxAcknowledgePath": {"_verifier.assert_durable", "_broker.acknowledge"},
     "ReplayDispatchPath": {"_broker.publish"},
+}
+EXPECTED_DEPENDENCY_CALL_SEQUENCES = {
+    "OutboxDispatchPath": ["_broker.publish"],
+    "ConsumerReceivePath": ["_broker.receive"],
+    "InboxAcknowledgePath": ["_verifier.assert_durable", "_broker.acknowledge"],
+    "ReplayDispatchPath": ["_broker.publish"],
 }
 KAFKA_IMPORT_PREFIXES = ("kafka", "aiokafka", "confluent_kafka")
 KAFKA_NATIVE_NAMES = {"offset", "partition", "consumer_group", "rebalance", "transactional_id"}
@@ -63,9 +70,15 @@ def _call_target(node: ast.Call) -> str:
     return ast.unparse(func)
 
 
-def dependency_calls(source: str) -> set[str]:
+def dependency_call_sequence(source: str) -> list[str]:
     tree = ast.parse(textwrap.dedent(source))
-    return {_call_target(node) for node in ast.walk(tree) if isinstance(node, ast.Call)}
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+    calls.sort(key=lambda node: (getattr(node, "lineno", -1), getattr(node, "col_offset", -1)))
+    return [_call_target(node) for node in calls]
+
+
+def dependency_calls(source: str) -> set[str]:
+    return set(dependency_call_sequence(source))
 
 
 def dependency_attributes(source: str) -> set[str]:
@@ -110,8 +123,8 @@ def _assignment_aliases(node: ast.stmt) -> list[tuple[str, str]]:
 
 
 def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
-    """Discover descendants through inheritance plus import/assignment aliases across all executable AST scopes."""
-    classes: list[tuple[Path, str, set[str]]] = []
+    """Discover descendants without collapsing same-name declarations in distinct executable scopes."""
+    classes: list[tuple[Path, int, str, set[str]]] = []
     aliases: list[tuple[str, str]] = []
     for path in paths:
         if not path.exists() or path.suffix != ".py":
@@ -125,7 +138,7 @@ def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
                 aliases.extend(_assignment_aliases(node))
             if isinstance(node, ast.ClassDef):
                 bases = {name for base in node.bases if (name := _base_leaf_name(base)) is not None}
-                classes.append((path, node.name, bases))
+                classes.append((path, node.lineno, node.name, bases))
 
     descendant_symbols = {"BrokerFacingPath"}
     changed = True
@@ -135,15 +148,16 @@ def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
             if source_name in descendant_symbols and local_name not in descendant_symbols:
                 descendant_symbols.add(local_name)
                 changed = True
-        for _, class_name, bases in classes:
+        for _, _, class_name, bases in classes:
             if class_name not in descendant_symbols and bases & descendant_symbols:
                 descendant_symbols.add(class_name)
                 changed = True
 
     discovered: dict[str, str] = {}
-    for path, class_name, bases in classes:
+    for path, lineno, class_name, bases in classes:
         if class_name != "BrokerFacingPath" and class_name in descendant_symbols and bases:
-            discovered[f"{_display_path(path)}:{class_name}"] = class_name
+            declaration_id = f"{_display_path(path)}:{class_name}@L{lineno}"
+            discovered[declaration_id] = class_name
     return discovered
 
 
@@ -250,15 +264,7 @@ def _normalized_transaction_method(identifier: str) -> str | None:
     return None
 
 
-def _transaction_api_finding(node: ast.Attribute) -> str | None:
-    canonical_method = _normalized_transaction_method(node.attr)
-    if canonical_method is not None:
-        return f"transaction_api:{canonical_method}"
-    return None
-
-
-def scan_python_for_direct_kafka(path: Path) -> list[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+def _python_tree_findings(tree: ast.AST) -> set[str]:
     findings: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -272,11 +278,33 @@ def scan_python_for_direct_kafka(path: Path) -> list[str]:
         elif isinstance(node, ast.Attribute):
             if node.attr in KAFKA_NATIVE_NAMES:
                 findings.add(f"attribute:{node.attr}")
-            transaction_finding = _transaction_api_finding(node)
-            if transaction_finding:
-                findings.add(transaction_finding)
-    text = path.read_text(encoding="utf-8", errors="ignore").lower()
-    findings.update(f"marker:{marker}" for marker in KAFKA_TEXT_MARKERS if marker in text)
+            canonical_method = _normalized_transaction_method(node.attr)
+            if canonical_method is not None:
+                findings.add(f"transaction_api:{canonical_method}")
+    return findings
+
+
+def scan_python_for_direct_kafka(path: Path) -> list[str]:
+    raw = path.read_text(encoding="utf-8")
+    tree = ast.parse(raw, filename=str(path))
+    findings = _python_tree_findings(tree)
+    lowered = raw.lower()
+    findings.update(f"marker:{marker}" for marker in KAFKA_TEXT_MARKERS if marker in lowered)
+    return sorted(findings)
+
+
+def scan_boundary_module_for_direct_kafka(path: Path, allowlisted_classes: set[str]) -> list[str]:
+    """Scan the broker boundary and exempt only explicitly pinned native adapter class bodies."""
+    raw = path.read_text(encoding="utf-8")
+    tree = ast.parse(raw, filename=str(path))
+    findings: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name in allowlisted_classes:
+            continue
+        findings.update(_python_tree_findings(node))
+        segment = ast.get_source_segment(raw, node) or ""
+        lowered = segment.lower()
+        findings.update(f"marker:{marker}" for marker in KAFKA_TEXT_MARKERS if marker in lowered)
     return sorted(findings)
 
 
@@ -284,7 +312,6 @@ def scan_nonpython_for_direct_kafka(path: Path) -> list[str]:
     raw = path.read_text(encoding="utf-8", errors="ignore")
     lowered = raw.lower()
     findings: set[str] = {f"marker:{marker}" for marker in KAFKA_TEXT_MARKERS if marker in lowered}
-    # Fail closed on prohibited member identifiers regardless of language-specific generic/turbofish call syntax.
     for match in re.finditer(r"\.\s*([A-Za-z_][A-Za-z0-9_]*)", raw):
         canonical_method = _normalized_transaction_method(match.group(1))
         if canonical_method is not None:
@@ -296,6 +323,7 @@ def scan_governed_implementation(inventory: dict) -> tuple[list[str], list[str]]
     kafka_findings: list[str] = []
     broker_marker_findings: list[str] = []
     boundary_module = inventory["broker_boundary_module"]
+    native_allowlist = set(inventory["native_transport_allowlist"])
     scanned_paths: list[Path] = []
     for root_value in inventory["implementation_code_roots"]:
         root = ROOT / root_value
@@ -309,7 +337,10 @@ def scan_governed_implementation(inventory: dict) -> tuple[list[str], list[str]]
 
     for path in dict.fromkeys(scanned_paths):
         rel = _display_path(path)
-        direct = scan_python_for_direct_kafka(path) if path.suffix == ".py" else scan_nonpython_for_direct_kafka(path)
+        if path.resolve() == BOUNDARY_SOURCE.resolve():
+            direct = scan_boundary_module_for_direct_kafka(path, native_allowlist)
+        else:
+            direct = scan_python_for_direct_kafka(path) if path.suffix == ".py" else scan_nonpython_for_direct_kafka(path)
         kafka_findings.extend(f"{rel}:{item}" for item in direct)
         text = path.read_text(encoding="utf-8", errors="ignore")
         for marker in GENERIC_BROKER_MARKERS:
@@ -324,11 +355,13 @@ def main() -> int:
     assert {i["class_name"] for i in inventory_paths} == EXPECTED_PATH_CLASSES
     assert {i["path_id"] for i in inventory_paths} == EXPECTED_PATH_IDS and len(inventory_paths) == 4
     assert inventory["implementation_code_roots"] == EXPECTED_IMPLEMENTATION_ROOTS
+    assert inventory["native_transport_allowlist"] == EXPECTED_NATIVE_TRANSPORT_ALLOWLIST
     assert inventory["consumer_manifest_discovery_root"] == EXPECTED_CONSUMER_DISCOVERY_ROOT
     assert inventory["consumer_registration_entrypoint"] == EXPECTED_REGISTRATION_ENTRYPOINT
     assert inventory["consumer_registration_function"] == EXPECTED_REGISTRATION_FUNCTION
 
     assurance_closure = discover_assurance_dependency_sources()
+    assert BOUNDARY_SOURCE in assurance_closure
     assert EFFECT_PROTECTION_SOURCE in assurance_closure and REGISTRATION_SOURCE in assurance_closure
 
     runtime_discovered = discover_broker_facing_paths()
@@ -339,8 +372,10 @@ def main() -> int:
         source = inspect.getsource(path_type)
         assert not forbidden_kafka_tokens(source)
         calls = dependency_calls(source)
+        call_sequence = dependency_call_sequence(source)
         attrs = dependency_attributes(source)
         assert calls == EXPECTED_DEPENDENCY_CALLS[class_name]
+        assert call_sequence == EXPECTED_DEPENDENCY_CALL_SEQUENCES[class_name]
         assert attrs <= EXPECTED_DEPENDENCY_CALLS[class_name]
 
     direct_kafka, generic_broker_bypass = scan_governed_implementation(inventory)
@@ -364,6 +399,7 @@ def main() -> int:
 
     constructor_bypass = """class BadPath:\n    def __init__(self, broker):\n        helper(broker)\n        self._broker = broker\n    def run(self, message):\n        return self._broker.publish(message)\n"""
     assert dependency_calls(constructor_bypass) == {"helper", "_broker.publish"}
+    assert dependency_call_sequence(constructor_bypass) == ["helper", "_broker.publish"]
     marker_fixture = "using Confluent.Kafka; import org.springframework.kafka.core.KafkaTemplate; // node-rdkafka rdkafka"
     lowered = marker_fixture.lower()
     assert all(marker in lowered for marker in ("confluent.kafka", "org.springframework.kafka", "node-rdkafka", "rdkafka"))
@@ -371,8 +407,9 @@ def main() -> int:
 
     print(
         f"d4a_repository_boundary=PASS broker_paths={len(runtime_discovered)} consumers={len(consumers)} "
-        "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=nested_import+multi_assignment_alias_transitive_exact call_graph=exact "
-        f"roots=implementation+src assurance_dependency_closure={len(assurance_closure)} package_initializers=scanned "
+        "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=distinct_nested_declarations+multi_assignment_alias_transitive_exact "
+        "call_graph=ordered_exact verifier_before_ack=true "
+        f"roots=implementation+src assurance_dependency_closure={len(assurance_closure)} boundary_module=class_scoped_native_allowlist package_initializers=scanned "
         "transaction_apis=owner_independent_polyglot_case_and_generic_syntax_normalized"
     )
     return 0

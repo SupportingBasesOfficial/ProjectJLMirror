@@ -10,6 +10,7 @@
       "record_size_bytes": 256,
       "target_messages_per_second": 200,
       "tenant_weights": {"tenant-a": 80, "tenant-b": 20},
+      "device_cardinality_by_tenant": {"tenant-a": 48, "tenant-b": 12},
       "partition_probe_counts": [1, 2, 4],
       "backlog_pause_seconds": 1,
       "admission": {"minimum_target_throughput_fraction": 0.70, "maximum_avg_latency_ms": 1500}
@@ -20,6 +21,7 @@
       "record_size_bytes": 512,
       "target_messages_per_second": 600,
       "tenant_weights": {"tenant-a": 70, "tenant-b": 15, "tenant-c": 10, "tenant-d": 5},
+      "device_cardinality_by_tenant": {"tenant-a": 120, "tenant-b": 30, "tenant-c": 20, "tenant-d": 10},
       "partition_probe_counts": [2, 4, 8],
       "backlog_pause_seconds": 2,
       "admission": {"minimum_target_throughput_fraction": 0.70, "maximum_avg_latency_ms": 1500}
@@ -30,6 +32,7 @@
       "record_size_bytes": 768,
       "target_messages_per_second": 1500,
       "tenant_weights": {"tenant-a": 60, "tenant-b": 15, "tenant-c": 10, "tenant-d": 5, "tenant-e": 4, "tenant-f": 3, "tenant-g": 2, "tenant-h": 1},
+      "device_cardinality_by_tenant": {"tenant-a": 360, "tenant-b": 90, "tenant-c": 60, "tenant-d": 30, "tenant-e": 24, "tenant-f": 18, "tenant-g": 12, "tenant-h": 6},
       "partition_probe_counts": [4, 8, 16],
       "backlog_pause_seconds": 3,
       "admission": {"minimum_target_throughput_fraction": 0.70, "maximum_avg_latency_ms": 1500}
@@ -73,6 +76,8 @@
     "tested_partition_ceiling",
     "partition_probe_target_throughput_fraction",
     "tenant_skew_observed",
+    "device_cardinality_observed_by_tenant",
+    "distinct_device_scopes_observed_total",
     "degradation_boundary_observed",
     "key_serial_same_key_order_preserved",
     "independent_keys_overlap_observed",

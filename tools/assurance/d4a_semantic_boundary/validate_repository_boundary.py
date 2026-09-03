@@ -33,6 +33,7 @@ EXPECTED_DEPENDENCY_CALLS = {
 KAFKA_IMPORT_PREFIXES = ("kafka", "aiokafka", "confluent_kafka")
 KAFKA_NATIVE_NAMES = {"offset", "partition", "consumer_group", "rebalance", "transactional_id"}
 KAFKA_TRANSACTION_METHODS = {
+    "init_transactions",
     "begin_transaction",
     "commit_transaction",
     "abort_transaction",
@@ -93,16 +94,19 @@ def _base_leaf_name(base: ast.expr) -> str | None:
     return None
 
 
-def _assignment_alias(node: ast.stmt) -> tuple[str, str] | None:
-    if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+def _assignment_aliases(node: ast.stmt) -> list[tuple[str, str]]:
+    aliases: list[tuple[str, str]] = []
+    if isinstance(node, ast.Assign):
         source = _base_leaf_name(node.value)
         if source is not None:
-            return node.targets[0].id, source
-    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    aliases.append((target.id, source))
+    elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
         source = _base_leaf_name(node.value)
         if source is not None:
-            return node.target.id, source
-    return None
+            aliases.append((node.target.id, source))
+    return aliases
 
 
 def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
@@ -118,9 +122,7 @@ def discover_broker_path_declarations(paths: list[Path]) -> dict[str, str]:
                 for alias in node.names:
                     aliases.append((alias.asname or alias.name, alias.name))
             if isinstance(node, ast.stmt):
-                assignment = _assignment_alias(node)
-                if assignment is not None:
-                    aliases.append(assignment)
+                aliases.extend(_assignment_aliases(node))
             if isinstance(node, ast.ClassDef):
                 bases = {name for base in node.bases if (name := _base_leaf_name(base)) is not None}
                 classes.append((path, node.name, bases))
@@ -282,7 +284,8 @@ def scan_nonpython_for_direct_kafka(path: Path) -> list[str]:
     raw = path.read_text(encoding="utf-8", errors="ignore")
     lowered = raw.lower()
     findings: set[str] = {f"marker:{marker}" for marker in KAFKA_TEXT_MARKERS if marker in lowered}
-    for match in re.finditer(r"\.\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(", raw):
+    # Fail closed on prohibited member identifiers regardless of language-specific generic/turbofish call syntax.
+    for match in re.finditer(r"\.\s*([A-Za-z_][A-Za-z0-9_]*)", raw):
         canonical_method = _normalized_transaction_method(match.group(1))
         if canonical_method is not None:
             findings.add(f"transaction_api:{canonical_method}")
@@ -355,6 +358,7 @@ def main() -> int:
         "SUPPORTED_EFFECT_BINDINGS",
         "_ISSUED_PERMITS",
         "governed JSON is malformed",
+        "consumer-registry",
     ):
         assert marker in source
 
@@ -367,9 +371,9 @@ def main() -> int:
 
     print(
         f"d4a_repository_boundary=PASS broker_paths={len(runtime_discovered)} consumers={len(consumers)} "
-        "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=nested_import+assignment_alias_transitive_exact call_graph=exact "
+        "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=nested_import+multi_assignment_alias_transitive_exact call_graph=exact "
         f"roots=implementation+src assurance_dependency_closure={len(assurance_closure)} package_initializers=scanned "
-        "transaction_apis=owner_independent_polyglot_case_normalized"
+        "transaction_apis=owner_independent_polyglot_case_and_generic_syntax_normalized"
     )
     return 0
 

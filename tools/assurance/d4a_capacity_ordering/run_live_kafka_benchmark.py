@@ -6,8 +6,9 @@ import json
 import re
 import subprocess
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+from key_serial_executor import KeySerialExecutor
 
 ROOT = Path(__file__).resolve().parents[3]
 PROFILE_PATH = ROOT / "implementation/d4-eventing-async/source-evidence/capacity-ordering/benchmark-profile.json"
@@ -115,37 +116,6 @@ def keyed_roundtrip(topic_name: str, records: list[tuple[str, str]]) -> list[tup
     return out
 
 
-class KeySerialExecutor:
-    """Named consumer-side component: serial per trusted logical key, parallel across independent keys."""
-
-    def __init__(self, max_workers: int = 8) -> None:
-        self.max_workers = max_workers
-
-    def execute(self, records: list[tuple[str, int]]) -> tuple[dict[str, list[int]], list[tuple[str, float, float]]]:
-        grouped: dict[str, list[int]] = {}
-        for key, sequence in records:
-            grouped.setdefault(key, []).append(sequence)
-        observed: dict[str, list[int]] = {}
-        intervals: list[tuple[str, float, float]] = []
-
-        def worker(key: str, seqs: list[int]) -> tuple[str, list[int], float, float]:
-            started = time.monotonic()
-            local: list[int] = []
-            for seq in seqs:
-                time.sleep(0.004)
-                local.append(seq)
-            ended = time.monotonic()
-            return key, local, started, ended
-
-        with ThreadPoolExecutor(max_workers=min(self.max_workers, max(1, len(grouped)))) as pool:
-            futures = [pool.submit(worker, key, seqs) for key, seqs in grouped.items()]
-            for future in futures:
-                key, local, started, ended = future.result()
-                observed[key] = local
-                intervals.append((key, started, ended))
-        return observed, intervals
-
-
 def stable_cohort(tenant: str, count: int) -> int:
     return int(hashlib.sha256(tenant.encode()).hexdigest(), 16) % count
 
@@ -156,6 +126,32 @@ def assert_overlap(intervals: list[tuple[str, float, float]]) -> None:
             if key_a != key_b and max(start_a, start_b) < min(end_a, end_b):
                 return
     raise AssertionError("independent ordering keys did not overlap")
+
+
+def exercise_key_serial(records: list[tuple[str, int]]) -> tuple[dict[str, list[int]], list[tuple[str, float, float]]]:
+    executor = KeySerialExecutor(max_workers=8)
+    futures = []
+
+    def task(key: str, sequence: int) -> tuple[str, int, float, float]:
+        started = time.monotonic()
+        time.sleep(0.004)
+        ended = time.monotonic()
+        return key, sequence, started, ended
+
+    try:
+        for key, sequence in records:
+            futures.append(executor.submit(key, lambda key=key, sequence=sequence: task(key, sequence)))
+        completed = [future.result(timeout=30) for future in futures]
+    finally:
+        executor.shutdown(wait=True)
+
+    observed: dict[str, list[tuple[float, int]]] = {}
+    intervals: list[tuple[str, float, float]] = []
+    for key, sequence, started, ended in completed:
+        observed.setdefault(key, []).append((started, sequence))
+        intervals.append((key, started, ended))
+    ordered = {key: [seq for _, seq in sorted(items)] for key, items in observed.items()}
+    return ordered, intervals
 
 
 def main() -> None:
@@ -220,8 +216,7 @@ def main() -> None:
             ordering_records.append((key, str(seq)))
     consumed = keyed_roundtrip("d4a-ordering-component", ordering_records)
     numeric_records = [(key, int(value)) for key, value in consumed]
-    executor = KeySerialExecutor(max_workers=8)
-    observed, intervals = executor.execute(numeric_records)
+    observed, intervals = exercise_key_serial(numeric_records)
     for key, seqs in observed.items():
         if seqs != sorted(seqs):
             raise AssertionError(f"same-key order violated for {key}: {seqs}")
@@ -244,6 +239,7 @@ def main() -> None:
 
     results["ordering_component"] = {
         "name": "JLMIRROR KeySerialExecutor",
+        "implementation_path": "tools/assurance/d4a_capacity_ordering/key_serial_executor.py",
         "same_key_order_preserved": True,
         "independent_keys_overlap_observed": True,
         "global_or_tenant_wide_serialization": False,

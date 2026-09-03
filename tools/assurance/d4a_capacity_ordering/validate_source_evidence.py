@@ -88,7 +88,7 @@ def validate_objects(source: dict, profile: dict, plan: dict, state: dict) -> li
     require(profile.get("environment_scope") == "ephemeral_single_node_kraft_github_runner", "benchmark environment drift")
     tiers = profile.get("tiers", [])
     require([tier.get("name") for tier in tiers] == ["Baseline", "Growth", "Stress"], "tier inventory/order drift")
-    previous_messages = previous_rate = 0
+    previous_messages = previous_rate = previous_devices = 0
     for tier in tiers:
         name = str(tier.get("name", "?"))
         message_count = tier.get("message_count")
@@ -98,10 +98,25 @@ def validate_objects(source: dict, profile: dict, plan: dict, state: dict) -> li
         previous_messages = message_count if type(message_count) is int else previous_messages
         previous_rate = target_rate if type(target_rate) is int else previous_rate
         require(type(tier.get("record_size_bytes")) is int and tier.get("record_size_bytes", 0) > 0, f"{name} record size invalid")
+
         weights = tier.get("tenant_weights", {})
         require(isinstance(weights, dict) and len(weights) >= 2 and sum(weights.values()) == 100, f"{name} tenant weights invalid")
         if isinstance(weights, dict) and weights:
             require(max(weights.values()) > 100 / len(weights), f"{name} tenant skew missing")
+
+        devices = tier.get("device_cardinality_by_tenant", {})
+        require(isinstance(devices, dict) and set(devices) == set(weights), f"{name} device cardinality tenant coverage drift")
+        require(all(type(value) is int and value > 0 for value in devices.values()), f"{name} device cardinality invalid")
+        total_devices = sum(devices.values()) if isinstance(devices, dict) else 0
+        require(total_devices > previous_devices, f"{name} device cardinality pressure not increasing")
+        previous_devices = total_devices
+        if type(message_count) is int and isinstance(weights, dict) and isinstance(devices, dict):
+            for tenant, weight in weights.items():
+                allocated_numerator = message_count * weight
+                require(allocated_numerator % 100 == 0, f"{name} tenant event allocation must be integral for {tenant}")
+                allocated_messages = allocated_numerator // 100
+                require(allocated_messages >= devices.get(tenant, allocated_messages + 1), f"{name} device cardinality exceeds exercised event allocation for {tenant}")
+
         probes = tier.get("partition_probe_counts", [])
         require(isinstance(probes, list) and len(probes) >= 3 and probes == sorted(set(probes)) and all(type(v) is int and v > 0 for v in probes), f"{name} partition probes invalid")
         require(tier.get("backlog_pause_seconds", 0) > 0, f"{name} backlog pause invalid")
@@ -146,6 +161,8 @@ def validate_objects(source: dict, profile: dict, plan: dict, state: dict) -> li
     required_measurements = set(profile.get("required_measurements", []))
     require("partition_probe_target_throughput_fraction" in required_measurements, "target-relative partition measurement missing")
     require("tenant_cohort_exercised_logical_scope_count" in required_measurements, "exercised fallback scope-count measurement missing")
+    require("device_cardinality_observed_by_tenant" in required_measurements, "device cardinality measurement missing")
+    require("distinct_device_scopes_observed_total" in required_measurements, "distinct device scope measurement missing")
 
     require(set(plan.get("credited_evidence", [])) == EXPECTED_PRIOR_CREDIT, "existing four-of-seven credit drift")
     require(EXPECTED_IDS.isdisjoint(set(plan.get("credited_evidence", []))), "source evidence already credited")
@@ -165,7 +182,7 @@ def main() -> None:
     errors = validate_objects(*load_objects())
     if errors:
         raise AssertionError("; ".join(errors))
-    print("d4a_capacity_ordering_source_manifest=PASS evidence=2 ledger_credit=0 live_kafka=required immutable_pin=PASS tiers=3 tier_target_admission=PASS ordering_scopes=6 actual_over_ceiling_fallback=required quota=required kafka=not_selected authorities=not_granted")
+    print("d4a_capacity_ordering_source_manifest=PASS evidence=2 ledger_credit=0 live_kafka=required immutable_pin=PASS tiers=3 tenant_device_event_rate=required tier_target_admission=PASS ordering_scopes=6 actual_over_ceiling_fallback=required quota=required kafka=not_selected authorities=not_granted")
 
 
 if __name__ == "__main__":

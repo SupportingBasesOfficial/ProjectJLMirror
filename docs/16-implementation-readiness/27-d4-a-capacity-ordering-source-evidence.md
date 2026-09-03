@@ -23,7 +23,9 @@ BACKLOG DRAIN UNDER LOAD != BROKER OUTAGE/RECOVERY PROOF
 
 ## Candidate runtime
 
-The workflow uses the official JVM Kafka image `apache/kafka:4.3.1`. The source manifest pins that tag and requires the exact immutable image digest to be resolved and persisted at runtime. The run artifact therefore identifies both the repository SHA and the exact container bytes used by the evidence run.
+The source package uses Kafka 4.3.1 through an immutable multi-architecture image reference pinned to index digest `sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837`. The Linux/amd64 child manifest is independently pinned to `sha256:ccd1314e47ec76909e01f86308b4dcf2064f19f7c89759234322314b0e319e26`.
+
+The workflow pulls the digest-qualified image and mechanically verifies that the index contains exactly the expected Linux/amd64 manifest before starting the broker. Both digests are persisted in immutable source-run provenance. These pins authorize only this bounded C2 candidate test; they do not select Kafka or create a production image/version authority.
 
 This package treats Kafka only as the current leading candidate. Passing this benchmark does not select Kafka because one D4-A source obligation remains open and separate ledger promotion/acceptance gates still apply.
 
@@ -65,7 +67,7 @@ Each class has an explicit mapping from trusted logical identity to partition-ke
 
 ## Named consumer-side concurrency component
 
-The source package names the component **JLMIRROR KeySerialExecutor**, implementing the key-level virtual sequencing pattern required by the Kafka candidate decision record. The live Kafka probe consumes records carrying several independent trusted logical keys and passes them through this component.
+The source package names and implements **JLMIRROR KeySerialExecutor** at `tools/assurance/d4a_capacity_ordering/key_serial_executor.py`, following the consumer-side key-level virtual sequencing / bounded per-key concurrency pattern required by the Kafka candidate decision record. The live Kafka probe consumes records carrying several independent trusted logical keys and passes every record through this same component.
 
 The evidence fails unless:
 
@@ -95,6 +97,7 @@ Benchmark profile:
 
 Assurance tooling:
 
+- `tools/assurance/d4a_capacity_ordering/key_serial_executor.py`;
 - `tools/assurance/d4a_capacity_ordering/run_live_kafka_benchmark.py`;
 - `tools/assurance/d4a_capacity_ordering/validate_source_evidence.py`;
 - `tools/assurance/d4a_capacity_ordering/emit_source_provenance.py`.
@@ -103,7 +106,7 @@ CI workflow:
 
 `.github/workflows/d4-a-capacity-ordering-source-evidence.yml`
 
-The artifact contains both `benchmark-results.json` and immutable source-run provenance with exact HEAD SHA, run/attempt, job ID/name, Kafka image tag+digest and SHA-256 digests for source manifest, benchmark profile and benchmark results.
+The artifact contains both `benchmark-results.json` and immutable source-run provenance with exact HEAD SHA, run/attempt, job ID/name, Kafka version, immutable index digest, Linux/amd64 manifest digest, and SHA-256 digests for source manifest, benchmark profile and benchmark results.
 
 ## Source/ledger separation
 
@@ -125,6 +128,7 @@ This package does not claim:
 
 - production performance or SLO numerics;
 - production partition/topic/cluster topology;
+- production Kafka image/version selection;
 - Kafka selection/acceptance;
 - broker outage/restart recovery;
 - outbox survival across broker outage;
@@ -136,13 +140,13 @@ This package does not claim:
 
 This source PR is eligible for final review only when the exact HEAD proves:
 
-- real Kafka candidate execution against the pinned tag and runtime-resolved immutable digest;
+- real Kafka candidate execution from the exact index-pinned image and exact Linux/amd64 child manifest;
 - all Baseline/Growth/Stress tiers executed;
 - tenant skew exercised;
 - throughput/latency/backlog/drain measurements persisted;
 - bounded degradation/recovery observed in every tier;
 - all six ordering classes mapped;
-- `JLMIRROR KeySerialExecutor` preserves same-key order while independent keys overlap;
+- the canonical `JLMIRROR KeySerialExecutor` preserves same-key order while independent keys overlap;
 - bounded partition probes executed per tier;
 - tenant-cohort fallback exercised without semantic identity change;
 - Phase 10 and D4 validators remain green;

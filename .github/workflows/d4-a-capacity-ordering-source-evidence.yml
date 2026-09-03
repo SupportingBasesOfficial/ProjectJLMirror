@@ -29,7 +29,9 @@ jobs:
     timeout-minutes: 20
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      KAFKA_IMAGE: apache/kafka:4.3.1
+      KAFKA_IMAGE: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
+      KAFKA_INDEX_DIGEST: sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
+      KAFKA_AMD64_DIGEST: sha256:ccd1314e47ec76909e01f86308b4dcf2064f19f7c89759234322314b0e319e26
     steps:
       - name: Checkout exact analyzed HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -52,6 +54,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile \
+            tools/assurance/d4a_capacity_ordering/key_serial_executor.py \
             tools/assurance/d4a_capacity_ordering/run_live_kafka_benchmark.py \
             tools/assurance/d4a_capacity_ordering/validate_source_evidence.py \
             tools/assurance/d4a_capacity_ordering/emit_source_provenance.py
@@ -66,15 +69,32 @@ jobs:
           python3 tools/assurance/validate_d4a_evidence_plan.py .
           (cd tools/assurance && python3 test_validate_d4a_evidence_plan.py)
 
-      - name: Pull pinned Kafka candidate image and resolve immutable digest
+      - name: Pull and verify immutable Kafka candidate platform pin
         shell: bash
         run: |
           set -euo pipefail
           docker pull "$KAFKA_IMAGE"
-          digest="$(docker image inspect "$KAFKA_IMAGE" --format '{{index .RepoDigests 0}}')"
-          test -n "$digest"
-          printf '%s\n' "$digest" > /tmp/kafka-image-digest.txt
-          printf 'kafka_image=%s\nkafka_image_digest=%s\n' "$KAFKA_IMAGE" "$digest"
+          python3 - <<'PY'
+          import json, os, subprocess
+          image = os.environ['KAFKA_IMAGE']
+          expected_index = os.environ['KAFKA_INDEX_DIGEST']
+          expected_amd64 = os.environ['KAFKA_AMD64_DIGEST']
+
+          raw = subprocess.check_output(['docker', 'buildx', 'imagetools', 'inspect', image, '--raw'], text=True)
+          index = json.loads(raw)
+          manifests = index.get('manifests', [])
+          matches = [m for m in manifests if m.get('platform', {}).get('os') == 'linux' and m.get('platform', {}).get('architecture') == 'amd64']
+          if len(matches) != 1:
+              raise SystemExit(f'expected exactly one linux/amd64 manifest, got {len(matches)}')
+          actual_amd64 = matches[0]['digest']
+          if actual_amd64 != expected_amd64:
+              raise SystemExit(f'amd64 manifest digest mismatch: {actual_amd64} != {expected_amd64}')
+          if '@' not in image or image.rsplit('@', 1)[1] != expected_index:
+              raise SystemExit('image reference is not pinned to expected index digest')
+          print(f'kafka_pin=PASS index={expected_index} linux_amd64={actual_amd64}')
+          PY
+          printf '%s\n' "$KAFKA_INDEX_DIGEST" > /tmp/kafka-index-digest.txt
+          printf '%s\n' "$KAFKA_AMD64_DIGEST" > /tmp/kafka-amd64-digest.txt
 
       - name: Start real Kafka candidate broker
         shell: bash
@@ -96,7 +116,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p runtime-evidence
-          python3 tools/assurance/d4a_capacity_ordering/run_live_kafka_benchmark.py \
+          PYTHONPATH=tools/assurance/d4a_capacity_ordering \
+            python3 tools/assurance/d4a_capacity_ordering/run_live_kafka_benchmark.py \
             --output runtime-evidence/benchmark-results.json
           python3 - <<'PY'
           import json
@@ -170,14 +191,16 @@ jobs:
           print(matches[0]['id'])
           PY
           )"
-          image_digest="$(cat /tmp/kafka-image-digest.txt)"
+          index_digest="$(cat /tmp/kafka-index-digest.txt)"
+          amd64_digest="$(cat /tmp/kafka-amd64-digest.txt)"
           python3 tools/assurance/d4a_capacity_ordering/emit_source_provenance.py \
             --repository-sha "$EXPECTED_SHA" \
             --workflow-run-id "$GITHUB_RUN_ID" \
             --workflow-run-attempt "$GITHUB_RUN_ATTEMPT" \
             --job-id "$job_id" \
             --job-name "D4-A capacity ordering source evidence" \
-            --kafka-image-digest "$image_digest" \
+            --kafka-image-index-digest "$index_digest" \
+            --kafka-linux-amd64-manifest-digest "$amd64_digest" \
             --benchmark-results runtime-evidence/benchmark-results.json \
             --output runtime-evidence/resolved-source-run-provenance.json
           rm runtime-evidence/jobs.json

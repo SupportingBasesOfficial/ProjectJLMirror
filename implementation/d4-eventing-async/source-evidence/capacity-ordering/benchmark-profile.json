@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "profile_id": "d4-a-capacity-ordering-bounded-v1",
+  "numeric_authority": "test_values_only_not_production",
+  "tiers": [
+    {
+      "name": "Baseline",
+      "message_count": 400,
+      "record_size_bytes": 256,
+      "target_messages_per_second": 200,
+      "tenant_weights": {"tenant-a": 80, "tenant-b": 20},
+      "partition_probe_counts": [1, 2, 4],
+      "backlog_pause_seconds": 1
+    },
+    {
+      "name": "Growth",
+      "message_count": 1200,
+      "record_size_bytes": 512,
+      "target_messages_per_second": 600,
+      "tenant_weights": {"tenant-a": 70, "tenant-b": 15, "tenant-c": 10, "tenant-d": 5},
+      "partition_probe_counts": [2, 4, 8],
+      "backlog_pause_seconds": 2
+    },
+    {
+      "name": "Stress",
+      "message_count": 3000,
+      "record_size_bytes": 768,
+      "target_messages_per_second": 1500,
+      "tenant_weights": {"tenant-a": 60, "tenant-b": 15, "tenant-c": 10, "tenant-d": 5, "tenant-e": 4, "tenant-f": 3, "tenant-g": 2, "tenant-h": 1},
+      "partition_probe_counts": [4, 8, 16],
+      "backlog_pause_seconds": 3
+    }
+  ],
+  "ordering_scope_mappings": {
+    "unordered": {"partition_key": "none", "serialization": "none"},
+    "causal_only": {"partition_key": "correlation_scope_when_optimization_only", "serialization": "none"},
+    "per_subject_ordered": {"partition_key": "tenant_id+subject_id", "serialization": "key_serial"},
+    "per_process_ordered": {"partition_key": "tenant_id+operation_id", "serialization": "key_serial"},
+    "per_source_ordered": {"partition_key": "source_identity+source_generation", "serialization": "key_serial"},
+    "custom_bounded_order": {"partition_key": "trusted_contract_declared_scope", "serialization": "key_serial"}
+  },
+  "tenant_cohort_fallback": {
+    "trigger": "modeled_ordering_scope_cardinality_exceeds_test_partition_ceiling",
+    "cohort_count": 2,
+    "mapping": "stable_hash_of_trusted_tenant_identity_mod_cohort_count",
+    "logical_contract_identity_changes": false
+  },
+  "required_measurements": [
+    "producer_throughput_messages_per_second",
+    "producer_avg_latency_ms",
+    "producer_max_latency_ms",
+    "backlog_messages_before_drain",
+    "backlog_drain_seconds",
+    "recovery_messages_per_second",
+    "partition_probe_elapsed_seconds",
+    "tenant_skew_observed",
+    "key_serial_same_key_order_preserved",
+    "independent_keys_overlap_observed",
+    "tenant_cohort_fallback_exercised"
+  ]
+}

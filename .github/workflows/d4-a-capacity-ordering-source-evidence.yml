@@ -55,10 +55,12 @@ jobs:
           set -euo pipefail
           python3 -m py_compile \
             tools/assurance/d4a_capacity_ordering/key_serial_executor.py \
+            tools/assurance/d4a_capacity_ordering/test_key_serial_executor.py \
             tools/assurance/d4a_capacity_ordering/run_live_kafka_benchmark.py \
             tools/assurance/d4a_capacity_ordering/validate_source_evidence.py \
             tools/assurance/d4a_capacity_ordering/emit_source_provenance.py
           python3 tools/assurance/d4a_capacity_ordering/validate_source_evidence.py
+          (cd tools/assurance/d4a_capacity_ordering && python3 test_key_serial_executor.py)
 
       - name: Preserve D4 four-of-seven ledger boundary before source run
         shell: bash
@@ -79,7 +81,6 @@ jobs:
           image = os.environ['KAFKA_IMAGE']
           expected_index = os.environ['KAFKA_INDEX_DIGEST']
           expected_amd64 = os.environ['KAFKA_AMD64_DIGEST']
-
           raw = subprocess.check_output(['docker', 'buildx', 'imagetools', 'inspect', image, '--raw'], text=True)
           index = json.loads(raw)
           manifests = index.get('manifests', [])
@@ -125,14 +126,25 @@ jobs:
           result = json.loads(Path('runtime-evidence/benchmark-results.json').read_text())
           assert result['numeric_authority'] == 'test_values_only_not_production'
           assert [tier['name'] for tier in result['tiers']] == ['Baseline', 'Growth', 'Stress']
-          assert all(tier['degradation_boundary_observed'] for tier in result['tiers'])
-          assert all(tier['backlog_messages_before_drain'] > 0 for tier in result['tiers'])
+          assert all(tier['backlog_messages_before_drain'] == tier['test_message_count'] for tier in result['tiers'])
+          assert all(tier['backlog_drain_seconds'] > 0 for tier in result['tiers'])
+          assert all(tier['recovery_messages_per_second'] > 0 for tier in result['tiers'])
+          assert all(tier['tenant_skew_observed'] is True for tier in result['tiers'])
+          assert all(tier['tested_partition_ceiling'] > 0 for tier in result['tiers'])
+          assert all(any(probe['admission_passed'] for probe in tier['partition_probes']) for tier in result['tiers'])
+          assert result['degradation_probe']['mechanism'] == 'real_kafka_client_producer_byte_rate_quota'
+          assert result['degradation_probe']['degradation_boundary_observed'] is True
+          assert result['degradation_probe']['throughput_drop_fraction'] > 0
+          assert len(result['ordering_profiles']) == 6
+          assert {item['scope'] for item in result['ordering_profiles']} == set(result['ordering_scope_mappings'])
+          assert all(item['broker_exercised'] is True for item in result['ordering_profiles'])
           assert result['ordering_component']['same_key_order_preserved'] is True
           assert result['ordering_component']['independent_keys_overlap_observed'] is True
           assert result['ordering_component']['global_or_tenant_wide_serialization'] is False
           assert result['tenant_cohort_fallback']['exercised'] is True
+          assert result['tenant_cohort_fallback']['triggered_by_modeled_scope_cardinality'] > result['tenant_cohort_fallback']['single_topic_test_ceiling']
           assert result['tenant_cohort_fallback']['logical_contract_identity_changes'] is False
-          print('d4a_capacity_ordering_result_gate=PASS tiers=3 degradation=observed ordering=PASS cohort_fallback=PASS numerics=test_only')
+          print('d4a_capacity_ordering_result_gate=PASS tiers=3 backlog=measured quota_degradation=observed partition_ceiling=benchmarked ordering_profiles=6 cohort_fallback=PASS numerics=test_only')
           PY
 
       - name: Re-run Phase 10 contract suite

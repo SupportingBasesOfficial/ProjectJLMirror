@@ -3,6 +3,7 @@ from __future__ import annotations
 from policy_boundary import (
     DataClassification,
     ErasureGovernanceApproval,
+    ErasureGovernanceAuthority,
     GovernedOpaqueStore,
     LogicalDelivery,
     OpaqueReference,
@@ -13,6 +14,7 @@ from policy_boundary import (
     PublicationProjection,
     RawRegulatedException,
     TenantAuthorization,
+    TenantRawAssignmentAuthority,
     TopologyAdapter,
     assert_replacement_mapping_semantics,
 )
@@ -111,29 +113,46 @@ def main() -> int:
         ),
     )
 
-    assignment = PerTenantRawAssignment(
+    assignment_authority = TenantRawAssignmentAuthority()
+    governance_authority = ErasureGovernanceAuthority()
+    assignment = assignment_authority.issue(
         tenant_id=tenant,
         assignment_kind="partition",
         assignment_id="tenant-a-partition-7",
     )
-    approval = ErasureGovernanceApproval(
-        tenant_id=tenant,
-        authority_id="erasure-governance-authority",
-        approval_id="approval-17",
-    )
+    approval = governance_authority.approve(tenant_id=tenant, approval_id="approval-17")
     good_exception = RawRegulatedException(
         per_tenant_assignment=assignment,
         segment_retention_ceiling_seconds=600,
         governed_erasure_sla_seconds=900,
         erasure_governance_approval=approval,
     )
-    PublicationPolicy.validate(
-        PublicationProjection(
-            classification=DataClassification.SENSITIVE_OR_REGULATED,
-            raw_value=b"bounded-exception-value",
-            raw_regulated_exception=good_exception,
+
+    def validate_raw(exception: RawRegulatedException, **authority_overrides) -> None:
+        PublicationPolicy.validate(
+            PublicationProjection(
+                classification=DataClassification.SENSITIVE_OR_REGULATED,
+                raw_value=b"bounded-exception-value",
+                raw_regulated_exception=exception,
+            ),
+            trusted_tenant_id=tenant,
+            assignment_authority=authority_overrides.get("assignment_authority", assignment_authority),
+            erasure_governance_authority=authority_overrides.get(
+                "erasure_governance_authority", governance_authority
+            ),
+        )
+
+    validate_raw(good_exception)
+    must_reject(
+        "exception without supplied authorities",
+        lambda: PublicationPolicy.validate(
+            PublicationProjection(
+                classification=DataClassification.SENSITIVE_OR_REGULATED,
+                raw_value=b"bounded-exception-value",
+                raw_regulated_exception=good_exception,
+            ),
+            trusted_tenant_id=tenant,
         ),
-        trusted_tenant_id=tenant,
     )
     must_reject(
         "mixed raw and opaque regulated representation",
@@ -145,6 +164,8 @@ def main() -> int:
                 raw_regulated_exception=good_exception,
             ),
             trusted_tenant_id=tenant,
+            assignment_authority=assignment_authority,
+            erasure_governance_authority=governance_authority,
         ),
     )
     must_reject(
@@ -156,56 +177,55 @@ def main() -> int:
                 raw_regulated_exception=good_exception,
             ),
             trusted_tenant_id=tenant,
+            assignment_authority=assignment_authority,
+            erasure_governance_authority=governance_authority,
         ),
     )
 
+    foreign_assignment_authority = TenantRawAssignmentAuthority()
+    foreign_governance_authority = ErasureGovernanceAuthority()
+    forged_assignment = PerTenantRawAssignment(tenant, "partition", "tenant-a-partition-7", object())
+    forged_approval = ErasureGovernanceApproval(tenant, "approval-17", object())
+    foreign_assignment = foreign_assignment_authority.issue(
+        tenant_id=tenant, assignment_kind="partition", assignment_id="tenant-a-partition-7"
+    )
+    foreign_approval = foreign_governance_authority.approve(tenant_id=tenant, approval_id="approval-17")
+    cross_tenant_assignment = assignment_authority.issue(
+        tenant_id="tenant-b", assignment_kind="partition", assignment_id="tenant-b-partition-3"
+    )
+    cross_tenant_approval = governance_authority.approve(tenant_id="tenant-b", approval_id="approval-17")
+
     bad_exceptions = (
         ("missing per-tenant assignment", RawRegulatedException(None, 600, 900, approval)),
-        (
-            "cross-tenant assignment",
-            RawRegulatedException(
-                PerTenantRawAssignment("tenant-b", "partition", "tenant-b-partition-3"), 600, 900, approval
-            ),
-        ),
-        (
-            "invalid assignment kind",
-            RawRegulatedException(
-                PerTenantRawAssignment(tenant, "shared-cluster", "shared-1"), 600, 900, approval
-            ),
-        ),
+        ("forged assignment", RawRegulatedException(forged_assignment, 600, 900, approval)),
+        ("foreign-authority assignment", RawRegulatedException(foreign_assignment, 600, 900, approval)),
+        ("cross-tenant assignment", RawRegulatedException(cross_tenant_assignment, 600, 900, approval)),
         ("missing retention ceiling", RawRegulatedException(assignment, None, 900, approval)),
         ("boolean retention ceiling", RawRegulatedException(assignment, True, 900, approval)),
         ("boolean erasure sla", RawRegulatedException(assignment, 600, True, approval)),
         ("retention exceeds erasure sla", RawRegulatedException(assignment, 901, 900, approval)),
         ("missing erasure governance approval", RawRegulatedException(assignment, 600, 900, None)),
-        (
-            "wrong governance authority",
-            RawRegulatedException(
-                assignment, 600, 900, ErasureGovernanceApproval(tenant, "ordinary-service", "approval-17")
-            ),
-        ),
-        (
-            "cross-tenant governance approval",
-            RawRegulatedException(
-                assignment,
-                600,
-                900,
-                ErasureGovernanceApproval("tenant-b", "erasure-governance-authority", "approval-17"),
-            ),
-        ),
+        ("forged governance approval", RawRegulatedException(assignment, 600, 900, forged_approval)),
+        ("foreign-authority approval", RawRegulatedException(assignment, 600, 900, foreign_approval)),
+        ("cross-tenant governance approval", RawRegulatedException(assignment, 600, 900, cross_tenant_approval)),
     )
     for name, exception in bad_exceptions:
-        must_reject(
-            name,
-            lambda exception=exception: PublicationPolicy.validate(
-                PublicationProjection(
-                    classification=DataClassification.SENSITIVE_OR_REGULATED,
-                    raw_value=b"regulated-raw-value",
-                    raw_regulated_exception=exception,
-                ),
-                trusted_tenant_id=tenant,
-            ),
-        )
+        must_reject(name, lambda exception=exception: validate_raw(exception))
+
+    must_reject(
+        "wrong assignment authority supplied",
+        lambda: validate_raw(good_exception, assignment_authority=foreign_assignment_authority),
+    )
+    must_reject(
+        "wrong governance authority supplied",
+        lambda: validate_raw(good_exception, erasure_governance_authority=foreign_governance_authority),
+    )
+    must_reject(
+        "invalid assignment kind issuance",
+        lambda: assignment_authority.issue(
+            tenant_id=tenant, assignment_kind="shared-cluster", assignment_id="shared-1"
+        ),
+    )
 
     delivery = LogicalDelivery(
         tenant_id=tenant,
@@ -285,8 +305,9 @@ def main() -> int:
         "d4a_data_topology=PASS "
         "regulated_default=opaque_reference per_record_erasure=isolated raw_leak=blocked "
         "runtime_type_confusion=blocked regulated_representation=unambiguous "
-        "exception_assignment=tenant_bound exception_governance=authority_bound retention_ceiling=bounded "
-        "tenant_auth=before_mapping physical_identity=nonsemantic replacement_mapping=semantic_stable"
+        "exception_assignment=authority_issued_tenant_bound exception_governance=authority_issued_tenant_bound "
+        "forged_exception_authority=blocked retention_ceiling=bounded tenant_auth=before_mapping "
+        "physical_identity=nonsemantic replacement_mapping=semantic_stable"
     )
     return 0
 

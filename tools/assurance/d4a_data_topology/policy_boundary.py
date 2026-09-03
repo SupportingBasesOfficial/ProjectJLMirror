@@ -79,31 +79,64 @@ class PerTenantRawAssignment:
     tenant_id: str
     assignment_kind: str
     assignment_id: str
+    _authority_seal: object
 
-    def valid_for(self, trusted_tenant_id: str) -> bool:
+
+class TenantRawAssignmentAuthority:
+    """Evidence authority that exclusively issues tenant-bound raw placement permits."""
+
+    def __init__(self) -> None:
+        self._seal = object()
+
+    def issue(self, *, tenant_id: str, assignment_kind: str, assignment_id: str) -> PerTenantRawAssignment:
+        if not _valid_token(tenant_id):
+            raise PolicyViolation("assignment tenant invalid")
+        if assignment_kind not in {"topic", "partition"}:
+            raise PolicyViolation("assignment kind must be topic or partition")
+        if not _valid_token(assignment_id):
+            raise PolicyViolation("assignment id invalid")
+        return PerTenantRawAssignment(tenant_id, assignment_kind, assignment_id, self._seal)
+
+    def verifies(self, assignment: object, *, trusted_tenant_id: str) -> bool:
         return (
-            _valid_token(trusted_tenant_id)
-            and _valid_token(self.tenant_id)
-            and self.tenant_id == trusted_tenant_id
-            and isinstance(self.assignment_kind, str)
-            and self.assignment_kind in {"topic", "partition"}
-            and _valid_token(self.assignment_id)
+            isinstance(assignment, PerTenantRawAssignment)
+            and assignment._authority_seal is self._seal
+            and _valid_token(trusted_tenant_id)
+            and assignment.tenant_id == trusted_tenant_id
+            and assignment.assignment_kind in {"topic", "partition"}
+            and _valid_token(assignment.assignment_id)
         )
 
 
 @dataclass(frozen=True)
 class ErasureGovernanceApproval:
     tenant_id: str
-    authority_id: str
     approval_id: str
+    _authority_seal: object
 
-    def valid_for(self, trusted_tenant_id: str) -> bool:
+
+class ErasureGovernanceAuthority:
+    """Evidence authority that exclusively issues erasure-governance approvals."""
+
+    authority_id = "erasure-governance-authority"
+
+    def __init__(self) -> None:
+        self._seal = object()
+
+    def approve(self, *, tenant_id: str, approval_id: str) -> ErasureGovernanceApproval:
+        if not _valid_token(tenant_id):
+            raise PolicyViolation("approval tenant invalid")
+        if not _valid_token(approval_id):
+            raise PolicyViolation("approval id invalid")
+        return ErasureGovernanceApproval(tenant_id, approval_id, self._seal)
+
+    def verifies(self, approval: object, *, trusted_tenant_id: str) -> bool:
         return (
-            _valid_token(trusted_tenant_id)
-            and _valid_token(self.tenant_id)
-            and self.tenant_id == trusted_tenant_id
-            and self.authority_id == "erasure-governance-authority"
-            and _valid_token(self.approval_id)
+            isinstance(approval, ErasureGovernanceApproval)
+            and approval._authority_seal is self._seal
+            and _valid_token(trusted_tenant_id)
+            and approval.tenant_id == trusted_tenant_id
+            and _valid_token(approval.approval_id)
         )
 
 
@@ -114,14 +147,22 @@ class RawRegulatedException:
     governed_erasure_sla_seconds: int | None
     erasure_governance_approval: ErasureGovernanceApproval | None
 
-    def is_fully_authorized(self, *, trusted_tenant_id: str) -> bool:
-        if not isinstance(self.per_tenant_assignment, PerTenantRawAssignment):
+    def is_fully_authorized(
+        self,
+        *,
+        trusted_tenant_id: str,
+        assignment_authority: TenantRawAssignmentAuthority | None,
+        erasure_governance_authority: ErasureGovernanceAuthority | None,
+    ) -> bool:
+        if not isinstance(assignment_authority, TenantRawAssignmentAuthority):
             return False
-        if not self.per_tenant_assignment.valid_for(trusted_tenant_id):
+        if not assignment_authority.verifies(self.per_tenant_assignment, trusted_tenant_id=trusted_tenant_id):
             return False
-        if not isinstance(self.erasure_governance_approval, ErasureGovernanceApproval):
+        if not isinstance(erasure_governance_authority, ErasureGovernanceAuthority):
             return False
-        if not self.erasure_governance_approval.valid_for(trusted_tenant_id):
+        if not erasure_governance_authority.verifies(
+            self.erasure_governance_approval, trusted_tenant_id=trusted_tenant_id
+        ):
             return False
         if not _positive_plain_int(self.segment_retention_ceiling_seconds):
             return False
@@ -145,7 +186,13 @@ class PublicationPolicy:
     """
 
     @staticmethod
-    def validate(projection: PublicationProjection, *, trusted_tenant_id: str) -> None:
+    def validate(
+        projection: PublicationProjection,
+        *,
+        trusted_tenant_id: str,
+        assignment_authority: TenantRawAssignmentAuthority | None = None,
+        erasure_governance_authority: ErasureGovernanceAuthority | None = None,
+    ) -> None:
         if not isinstance(projection, PublicationProjection):
             raise PolicyViolation("publication projection type required")
         if not _valid_token(trusted_tenant_id):
@@ -173,7 +220,11 @@ class PublicationPolicy:
                 if ref is not None:
                     raise PolicyViolation("regulated projection cannot mix raw value and opaque reference")
                 exception = projection.raw_regulated_exception
-                if exception is None or not exception.is_fully_authorized(trusted_tenant_id=trusted_tenant_id):
+                if exception is None or not exception.is_fully_authorized(
+                    trusted_tenant_id=trusted_tenant_id,
+                    assignment_authority=assignment_authority,
+                    erasure_governance_authority=erasure_governance_authority,
+                ):
                     raise PolicyViolation("raw sensitive_or_regulated value rejected by default")
             else:
                 if projection.raw_regulated_exception is not None:

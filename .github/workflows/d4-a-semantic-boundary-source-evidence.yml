@@ -54,7 +54,7 @@ jobs:
             tools/assurance/d4a_semantic_boundary/test_semantic_boundary.py \
             tools/assurance/d4a_semantic_boundary/validate_repository_boundary.py \
             tools/assurance/d4a_semantic_boundary/validate_structural_boundary_guards.py \
-            tools/assurance/d4a_semantic_boundary/validate_lexical_reflection_and_hierarchy_v3.py \
+            tools/assurance/d4a_semantic_boundary/validate_controlflow_authority_and_bracket_calls_v4.py \
             tools/assurance/d4a_semantic_boundary/validate_source_evidence.py \
             tools/assurance/d4a_semantic_boundary/emit_source_provenance.py
 
@@ -68,10 +68,10 @@ jobs:
         working-directory: tools/assurance/d4a_semantic_boundary
         run: python3 validate_repository_boundary.py
 
-      - name: Enforce flow-sensitive lexical reflection and hierarchy closure
+      - name: Enforce path-aware reflection, authority, hierarchy and bracket-call closure
         shell: bash
         working-directory: tools/assurance/d4a_semantic_boundary
-        run: python3 validate_lexical_reflection_and_hierarchy_v3.py
+        run: python3 validate_controlflow_authority_and_bracket_calls_v4.py
 
       - name: Run governed consumer-registration CI gate
         shell: bash

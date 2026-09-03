@@ -33,6 +33,34 @@ class OpaqueReference:
                 raise PolicyViolation(f"invalid opaque reference {name}")
 
 
+class GovernedOpaqueStore:
+    """Minimal evidence store proving erasure can target one governed record."""
+
+    def __init__(self) -> None:
+        self._records: dict[tuple[str, str, str], bytes] = {}
+
+    @staticmethod
+    def _key(reference: OpaqueReference) -> tuple[str, str, str]:
+        return (reference.tenant_id, reference.record_id, reference.reference_id)
+
+    def put(self, reference: OpaqueReference, value: bytes, *, trusted_tenant_id: str) -> None:
+        if reference.tenant_id != trusted_tenant_id:
+            raise PolicyViolation("opaque store tenant mismatch")
+        if not value:
+            raise PolicyViolation("opaque store requires non-empty value")
+        self._records[self._key(reference)] = bytes(value)
+
+    def exists(self, reference: OpaqueReference, *, trusted_tenant_id: str) -> bool:
+        if reference.tenant_id != trusted_tenant_id:
+            raise PolicyViolation("opaque store tenant mismatch")
+        return self._key(reference) in self._records
+
+    def erase_record(self, reference: OpaqueReference, *, trusted_tenant_id: str) -> None:
+        if reference.tenant_id != trusted_tenant_id:
+            raise PolicyViolation("opaque store tenant mismatch")
+        self._records.pop(self._key(reference), None)
+
+
 @dataclass(frozen=True)
 class RawRegulatedException:
     per_tenant_assignment: bool

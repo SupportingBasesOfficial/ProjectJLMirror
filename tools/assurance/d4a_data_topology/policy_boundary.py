@@ -138,10 +138,14 @@ class PublicationPolicy:
 
         if projection.classification is DataClassification.SENSITIVE_OR_REGULATED:
             if projection.raw_value is not None:
+                if ref is not None:
+                    raise PolicyViolation("regulated projection cannot mix raw value and opaque reference")
                 exception = projection.raw_regulated_exception
                 if exception is None or not exception.is_fully_authorized(trusted_tenant_id=trusted_tenant_id):
                     raise PolicyViolation("raw sensitive_or_regulated value rejected by default")
             else:
+                if projection.raw_regulated_exception is not None:
+                    raise PolicyViolation("regulated exception metadata requires raw regulated value")
                 if ref is None:
                     raise PolicyViolation("sensitive_or_regulated projection requires governed opaque reference")
             return

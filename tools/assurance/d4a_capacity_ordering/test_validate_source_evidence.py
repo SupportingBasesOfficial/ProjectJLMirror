@@ -42,7 +42,27 @@ def main() -> int:
     must_fail(
         "remove partition admission",
         lambda s, p, l, st: p["tiers"][0].__setitem__("admission", {}),
-        "minimum throughput admission invalid",
+        "target-relative throughput admission drift",
+    )
+    must_fail(
+        "weaken partition admission to tiny fixed fraction",
+        lambda s, p, l, st: p["tiers"][2]["admission"].__setitem__("minimum_target_throughput_fraction", 0.01),
+        "target-relative throughput admission drift",
+    )
+    must_fail(
+        "partition ceiling policy loses same-tier binding",
+        lambda s, p, l, st: p["partition_ceiling_policy"].__setitem__("minimum_target_throughput_fraction_meaning", "arbitrary_fixed_floor"),
+        "same-tier target",
+    )
+    must_fail(
+        "fallback uses fabricated model-only trigger",
+        lambda s, p, l, st: p["tenant_cohort_fallback"].__setitem__("trigger", "modeled_ceiling_plus_one_without_exercised_scopes"),
+        "actually exercised over-ceiling scopes",
+    )
+    must_fail(
+        "fallback does not route over-ceiling workload",
+        lambda s, p, l, st: p["tenant_cohort_fallback"].__setitem__("exercise", "six_static_tenants"),
+        "actual over-ceiling logical-scope workload",
     )
     must_fail(
         "fallback changes logical identity",
@@ -64,7 +84,7 @@ def main() -> int:
         lambda s, p, l, st: s.__setitem__("outage_recovery_benchmark_claimed", True),
         "D4-A7 outage recovery overclaim",
     )
-    print("d4a_capacity_ordering_negative_controls=PASS pin=blocked physical_key=blocked profile_loss=blocked quota_weakening=blocked auto_credit=blocked authority_scope=preserved")
+    print("d4a_capacity_ordering_negative_controls=PASS pin=blocked physical_key=blocked profile_loss=blocked quota_weakening=blocked tier_target_admission=blocked fake_fallback=blocked auto_credit=blocked authority_scope=preserved")
     return 0
 
 

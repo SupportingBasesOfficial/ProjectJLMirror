@@ -180,10 +180,7 @@ class PublicationProjection:
 
 
 class PublicationPolicy:
-    """Evidence boundary for ordinary async record-value eligibility.
-
-    This is a source-evidence reference boundary, not production transport authority.
-    """
+    """Evidence boundary for ordinary async record-value eligibility."""
 
     @staticmethod
     def validate(
@@ -318,7 +315,6 @@ class TopologyAdapter:
     def map_authorized(self, delivery: LogicalDelivery, authorization: TenantAuthorization) -> PhysicalRoute:
         if not isinstance(delivery, LogicalDelivery) or not isinstance(authorization, TenantAuthorization):
             raise PolicyViolation("typed logical delivery and authorization required")
-        # Authorization intentionally occurs before any physical route lookup.
         if not authorization.authorizes(delivery):
             raise PolicyViolation("tenant/contract authorization denied before transport mapping")
         key = (delivery.tenant_id, delivery.contract_name)
@@ -328,18 +324,62 @@ class TopologyAdapter:
             raise PolicyViolation("no physical mapping for authorized logical delivery") from exc
 
 
+@dataclass(frozen=True)
+class ConsumerLogicalResult:
+    tenant_id: str
+    contract_name: str
+    contract_version: int
+    message_identity_scope: str
+    message_id: str
+    effect_key: str
+
+
+class LogicalProjectionConsumer:
+    """Reference consumer whose business result is intentionally route-neutral."""
+
+    def execute(
+        self,
+        delivery: LogicalDelivery,
+        authorization: TenantAuthorization,
+        topology: TopologyAdapter,
+    ) -> ConsumerLogicalResult:
+        topology.map_authorized(delivery, authorization)
+        return ConsumerLogicalResult(
+            tenant_id=delivery.tenant_id,
+            contract_name=delivery.contract_name,
+            contract_version=delivery.contract_version,
+            message_identity_scope=delivery.message_identity_scope,
+            message_id=delivery.message_id,
+            effect_key=f"{delivery.tenant_id}|{delivery.contract_name}|{delivery.message_identity_scope}|{delivery.message_id}",
+        )
+
+
+class RouteCoupledProbeConsumer(LogicalProjectionConsumer):
+    """Negative control: deliberately leaks physical topic into consumer semantics."""
+
+    def execute(self, delivery, authorization, topology):
+        route = topology.map_authorized(delivery, authorization)
+        logical = super().execute(delivery, authorization, topology)
+        return (logical, route.topic)
+
+
 def assert_replacement_mapping_semantics(
     delivery: LogicalDelivery,
     authorization: TenantAuthorization,
     first: TopologyAdapter,
     replacement: TopologyAdapter,
-) -> tuple[PhysicalRoute, PhysicalRoute]:
-    before = delivery.semantic_identity()
+    consumer: LogicalProjectionConsumer,
+) -> tuple[PhysicalRoute, PhysicalRoute, ConsumerLogicalResult, ConsumerLogicalResult]:
+    if not isinstance(consumer, LogicalProjectionConsumer):
+        raise PolicyViolation("consumer-facing operation required")
     first_route = first.map_authorized(delivery, authorization)
     replacement_route = replacement.map_authorized(delivery, authorization)
-    after = delivery.semantic_identity()
-    if before != after:
-        raise AssertionError("physical mapping changed logical delivery identity")
     if first_route == replacement_route:
         raise AssertionError("replacement mapping evidence requires physically distinct routes")
-    return first_route, replacement_route
+    before = consumer.execute(delivery, authorization, first)
+    after = consumer.execute(delivery, authorization, replacement)
+    if before != after:
+        raise AssertionError("consumer semantics changed across physical mapping replacement")
+    if not isinstance(before, ConsumerLogicalResult) or not isinstance(after, ConsumerLogicalResult):
+        raise AssertionError("consumer-facing operation must return route-neutral logical result")
+    return first_route, replacement_route, before, after

@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import inspect
 import json
+import re
 import textwrap
 from pathlib import Path
 
@@ -141,8 +142,27 @@ def _candidate_local_modules(base: Path, module: str) -> list[Path]:
     return [target.with_suffix(".py"), target / "__init__.py"]
 
 
+def _package_initializers(candidate: Path, assurance_root: Path) -> list[Path]:
+    """Return existing package initializers Python executes before a nested local module."""
+    initializers: list[Path] = []
+    current = candidate.parent
+    root = assurance_root.resolve()
+    while True:
+        try:
+            current.resolve().relative_to(root)
+        except ValueError:
+            break
+        init = current / "__init__.py"
+        if init.exists() and init.is_file() and init != candidate:
+            initializers.append(init)
+        if current.resolve() == root:
+            break
+        current = current.parent
+    return initializers
+
+
 def _local_import_targets(path: Path, assurance_dir: Path) -> list[Path]:
-    """Resolve complete local module paths, including nested and relative package imports."""
+    """Resolve nested/relative modules and every executable parent-package initializer."""
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     targets: list[Path] = []
     assurance_root = assurance_dir.resolve()
@@ -153,6 +173,7 @@ def _local_import_targets(path: Path, assurance_dir: Path) -> list[Path]:
         except ValueError:
             return
         if candidate.exists() and candidate.is_file() and candidate.suffix == ".py" and candidate != path:
+            targets.extend(_package_initializers(candidate, assurance_dir))
             targets.append(candidate)
 
     for node in ast.walk(tree):
@@ -185,7 +206,7 @@ def discover_assurance_dependency_sources(
     entry_sources: list[Path] | None = None,
     assurance_dir: Path = ASSURANCE_DIR,
 ) -> list[Path]:
-    """Walk local assurance imports transitively; nested helpers cannot escape scanning."""
+    """Walk executable local assurance import closure transitively, including package initializers."""
     pending = list(entry_sources or ASSURANCE_ENTRY_SOURCES)
     discovered: list[Path] = []
     seen: set[Path] = set()
@@ -233,7 +254,11 @@ def scan_python_for_direct_kafka(path: Path) -> list[str]:
 
 def scan_nonpython_for_direct_kafka(path: Path) -> list[str]:
     text = path.read_text(encoding="utf-8", errors="ignore").lower()
-    return sorted(marker for marker in KAFKA_TEXT_MARKERS if marker in text)
+    findings: set[str] = {f"marker:{marker}" for marker in KAFKA_TEXT_MARKERS if marker in text}
+    for method in KAFKA_TRANSACTION_METHODS:
+        if re.search(rf"\.\s*{re.escape(method)}\s*\(", text):
+            findings.add(f"transaction_api:{method}")
+    return sorted(findings)
 
 
 def scan_governed_implementation(inventory: dict) -> tuple[list[str], list[str]]:
@@ -315,7 +340,8 @@ def main() -> int:
     print(
         f"d4a_repository_boundary=PASS broker_paths={len(runtime_discovered)} consumers={len(consumers)} "
         "direct_kafka_bypass=0 generic_broker_bypass=0 static_subclasses=alias_transitive_exact call_graph=exact "
-        f"roots=implementation+src assurance_dependency_closure={len(assurance_closure)} nested_imports=scanned transaction_apis=owner_independent"
+        f"roots=implementation+src assurance_dependency_closure={len(assurance_closure)} package_initializers=scanned "
+        "transaction_apis=owner_independent_polyglot"
     )
     return 0
 

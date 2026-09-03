@@ -10,9 +10,10 @@
     {"path_id": "replay_dispatch", "class_name": "ReplayDispatchPath"}
   ],
   "physical_adapter_classes": ["KafkaCandidateAdapter", "AlternateStubTransport"],
+  "native_transport_allowlist": ["KafkaCandidateAdapter"],
   "implementation_code_roots": ["implementation", "src"],
   "consumer_manifest_discovery_root": "implementation",
   "consumer_registration_entrypoint": "tools/assurance/d4a_semantic_boundary/consumer_registration_gate.py",
   "consumer_registration_function": "register_consumer",
-  "rule": "mechanical discovery spans all current implementation code roots; discovery must equal independently pinned logical-path inventory; direct Kafka implementation is forbidden outside the evidence adapter; every discovered consumer manifest must traverse the registration gate"
+  "rule": "mechanical discovery spans all current implementation code roots plus the broker boundary dependency closure; discovery must equal independently pinned logical-path inventory; direct Kafka implementation is forbidden outside the explicitly allowlisted evidence adapter; every discovered consumer manifest must traverse the registration gate"
 }

@@ -49,7 +49,7 @@ jobs:
           printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual_sha"
           test "$actual_sha" = "$EXPECTED_SHA"
 
-      - name: Compile and validate bounded source package
+      - name: Compile validate and falsify bounded source package
         shell: bash
         run: |
           set -euo pipefail
@@ -58,8 +58,10 @@ jobs:
             tools/assurance/d4a_capacity_ordering/test_key_serial_executor.py \
             tools/assurance/d4a_capacity_ordering/run_live_kafka_benchmark.py \
             tools/assurance/d4a_capacity_ordering/validate_source_evidence.py \
+            tools/assurance/d4a_capacity_ordering/test_validate_source_evidence.py \
             tools/assurance/d4a_capacity_ordering/emit_source_provenance.py
           python3 tools/assurance/d4a_capacity_ordering/validate_source_evidence.py
+          (cd tools/assurance/d4a_capacity_ordering && python3 test_validate_source_evidence.py)
           (cd tools/assurance/d4a_capacity_ordering && python3 test_key_serial_executor.py)
 
       - name: Preserve D4 four-of-seven ledger boundary before source run

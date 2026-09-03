@@ -5,6 +5,9 @@ import json
 import re
 from pathlib import Path
 
+# Import the patched v4 entry first so Protocol -> Protocol and equivalent
+# stable lexical identities are installed before v4.main() is invoked.
+import validate_controlflow_authority_and_bracket_calls_v4_entry  # noqa: F401
 import validate_controlflow_authority_and_bracket_calls_v4 as v4
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -147,10 +150,12 @@ def all_tree_broker_descendants(source: str) -> list[str]:
         changed = False
         for local, source_name in list(aliases.items()):
             if source_name in descendants and local not in descendants:
-                descendants.add(local); changed = True
+                descendants.add(local)
+                changed = True
         for name, bases in classes:
             if bases & descendants and name not in descendants:
-                descendants.add(name); changed = True
+                descendants.add(name)
+                changed = True
     return [name for name, bases in classes if name != "BrokerFacingPath" and bases & descendants]
 
 
@@ -205,7 +210,7 @@ def assert_negative_controls() -> None:
 
 
 def main() -> int:
-    # Preserve all v4 guarantees first.
+    # Preserve all patched v4 guarantees first.
     v4.main()
     inventory = json.loads(INVENTORY.read_text(encoding="utf-8"))
     findings: list[str] = []

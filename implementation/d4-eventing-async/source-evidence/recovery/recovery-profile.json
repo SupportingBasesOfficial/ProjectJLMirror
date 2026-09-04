@@ -10,7 +10,6 @@
   "normal_priority": 10,
   "protected_priority": 100,
   "max_backlog_dispatches_before_protected": 3,
-  "dispatcher_batch_limit": 4,
   "ack_ambiguity": {
     "enabled": true,
     "logical_message_id": "d4a-recovery-ambiguous-0001",

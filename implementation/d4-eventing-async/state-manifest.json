@@ -24,8 +24,8 @@
         "OPEN-REL-012.A"
       ],
       "candidate": "kafka",
-      "candidate_status": "leading_candidate_closure_pending",
-      "state": "candidate_leading_closure_pending",
+      "candidate_status": "leading_candidate_evidence_complete_selection_pending",
+      "state": "evidence_complete_selection_pending",
       "required_evidence": [
         "capacity_envelope_baseline_growth_stress",
         "broker_neutral_anti_corruption_stub_swap",
@@ -41,11 +41,10 @@
         "regulated_payload_erasure_granularity",
         "exactly_once_guardrail_consumer_inbox_enforcement",
         "ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency",
-        "physical_naming_routing_and_cell_topology_adapter_mapping"
-      ],
-      "evidence_remaining": [
+        "physical_naming_routing_and_cell_topology_adapter_mapping",
         "broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark"
-      ]
+      ],
+      "evidence_remaining": []
     },
     {
       "track_id": "D4-B",

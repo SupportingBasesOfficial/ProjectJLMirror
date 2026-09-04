@@ -28,21 +28,19 @@ EXPECTED_REQUIRED_EVIDENCE = {
     "D4-D": {"workload_identity_to_broker_credential_adapter_least_privilege", "tenant_and_contract_scoped_producer_consumer_authorization", "message_protection_key_authority_and_historical_verifier_continuity", "secret_credential_payload_exclusion_and_erasure_boundary", "trace_context_observability_only_validation_and_redaction"},
 }
 EXPECTED_COMPLETED = {
-    "D4-A": {
-        "capacity_envelope_baseline_growth_stress",
-        "broker_neutral_anti_corruption_stub_swap",
-        "regulated_payload_erasure_granularity",
-        "exactly_once_guardrail_consumer_inbox_enforcement",
-        "ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency",
-        "physical_naming_routing_and_cell_topology_adapter_mapping",
-    },
+    "D4-A": set(EXPECTED_REQUIRED_EVIDENCE["D4-A"]),
     "D4-B": set(),
     "D4-C": set(),
     "D4-D": set(),
 }
 EXPECTED_TOTAL_EVIDENCE = sum(len(items) for items in EXPECTED_REQUIRED_EVIDENCE.values())
 EXPECTED_TOTAL_CREDITED = sum(len(items) for items in EXPECTED_COMPLETED.values())
-EXPECTED_ENTRY_STATES = {"D4-A": "candidate_leading_closure_pending", "D4-B": "candidate_selection_open", "D4-C": "candidate_selection_open", "D4-D": "candidate_selection_open"}
+EXPECTED_ENTRY_STATES = {
+    "D4-A": "evidence_complete_selection_pending",
+    "D4-B": "candidate_selection_open",
+    "D4-C": "candidate_selection_open",
+    "D4-D": "candidate_selection_open",
+}
 EXPECTED_C3_EXCLUSIONS = {"OPEN-EVT-006", "OPEN-EVT-007", "OPEN-EVT-019", "OPEN-EVT-026", "OPEN-EVT-027", "OPEN-EVT-028", "OPEN-REL-012.B", "production_partition_counts", "production_retry_backoff_jitter_numerics", "production_retention_lag_replay_quarantine_horizons", "production_realtime_buffer_session_numerics"}
 EXPECTED_LATER_EXCLUSIONS = {"OPEN-EVT-020", "OPEN-EVT-021", "OPEN-EVT-022", "OPEN-EVT-023", "OPEN-EVT-024", "wave4_monitoring_product_implementation", "production_deployment"}
 
@@ -53,6 +51,7 @@ def load_manifest(root: Path) -> dict:
 
 def validate_manifest(state: dict) -> list[str]:
     errors: list[str] = []
+
     def require(condition: bool, message: str) -> None:
         if not condition:
             errors.append(message)
@@ -100,7 +99,8 @@ def validate_manifest(state: dict) -> list[str]:
         require(sum(len(track.get("evidence_completed", [])) for track in by_id.values()) == EXPECTED_TOTAL_CREDITED, "D4 total credited evidence drift")
         d4a = by_id.get("D4-A", {})
         require(d4a.get("candidate") == "kafka", "D4-A leading candidate must remain Kafka")
-        require(d4a.get("candidate_status") == "leading_candidate_closure_pending", "D4-A Kafka candidate must remain closure-pending")
+        require(d4a.get("candidate_status") == "leading_candidate_evidence_complete_selection_pending", "D4-A Kafka candidate must remain evidence-complete but unselected")
+        require(d4a.get("evidence_remaining") == [], "D4-A evidence-complete state must have no remaining evidence")
         for track_id in ("D4-B", "D4-C", "D4-D"):
             track = by_id.get(track_id, {})
             require(track.get("candidate") is None, f"{track_id} must not silently select a candidate")
@@ -121,7 +121,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4_STATE_ERROR: {error}", file=sys.stderr)
         return 1
-    print(f"d4_eventing_async_state=PASS gate_state={state['gate_state']} tracks={len(state['tracks'])} evidence_required={EXPECTED_TOTAL_EVIDENCE} evidence_credited={EXPECTED_TOTAL_CREDITED} transport_authority=not_granted kafka=not_selected")
+    print(f"d4_eventing_async_state=PASS gate_state={state['gate_state']} tracks={len(state['tracks'])} evidence_required={EXPECTED_TOTAL_EVIDENCE} evidence_credited={EXPECTED_TOTAL_CREDITED} d4a_evidence=complete transport_authority=not_granted kafka=not_selected")
     return 0
 
 

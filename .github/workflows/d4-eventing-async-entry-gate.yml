@@ -34,17 +34,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          actual_sha="$(git rev-parse HEAD)"
-          printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual_sha"
-          test "$actual_sha" = "$EXPECTED_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
       - name: Compile D4 assurance tooling
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile \
-            tools/assurance/validate_d4_eventing_async_state.py \
-            tools/assurance/test_validate_d4_eventing_async_state.py
+          python3 -m py_compile tools/assurance/validate_d4_eventing_async_state.py tools/assurance/test_validate_d4_eventing_async_state.py
 
       - name: Falsify D4 scoped-state governance
         shell: bash
@@ -56,9 +52,7 @@ jobs:
 
       - name: Preserve accepted Phase 10 contract tooling
         shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
+        run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
 
       - name: Preserve D4 non-authority boundary
         shell: bash
@@ -67,20 +61,17 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-
           state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
           d4a = next(track for track in state['tracks'] if track['track_id'] == 'D4-A')
-          expected_d4a_credit = {
+          expected_credit = {
+              'capacity_envelope_baseline_growth_stress',
               'broker_neutral_anti_corruption_stub_swap',
               'regulated_payload_erasure_granularity',
               'exactly_once_guardrail_consumer_inbox_enforcement',
+              'ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency',
               'physical_naming_routing_and_cell_topology_adapter_mapping',
           }
-          expected_d4a_remaining = {
-              'capacity_envelope_baseline_growth_stress',
-              'ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency',
-              'broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark',
-          }
+          expected_remaining = {'broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark'}
           assert state['gate_state'] == 'scoped'
           assert state['d4_transport_authority'] == 'not_selected_not_granted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
@@ -89,13 +80,9 @@ jobs:
           assert state['c3_numeric_topology_authority'] == 'not_selected'
           assert d4a['candidate'] == 'kafka'
           assert d4a['candidate_status'] == 'leading_candidate_closure_pending'
-          assert set(d4a['evidence_completed']) == expected_d4a_credit
-          assert set(d4a['evidence_remaining']) == expected_d4a_remaining
+          assert set(d4a['evidence_completed']) == expected_credit
+          assert set(d4a['evidence_remaining']) == expected_remaining
           assert all(track['evidence_completed'] == [] for track in state['tracks'] if track['track_id'] != 'D4-A')
-          assert sum(len(track['evidence_completed']) for track in state['tracks']) == 4
-          print(
-              'd4_scoped_boundary=PASS '
-              'kafka=leading_candidate_closure_pending evidence_credited=4 remaining=3 '
-              'transport=not_granted wave4=not_granted production=none c3=not_selected'
-          )
+          assert sum(len(track['evidence_completed']) for track in state['tracks']) == 6
+          print('d4_scoped_boundary=PASS kafka=leading_candidate_closure_pending evidence_credited=6 remaining=1 transport=not_granted wave4=not_granted production=none c3=not_selected')
           PY

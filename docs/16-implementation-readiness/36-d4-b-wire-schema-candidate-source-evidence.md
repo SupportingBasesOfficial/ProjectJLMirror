@@ -27,33 +27,62 @@ D4-B RESULT != D4 ACCEPTANCE
 
 ## Official source facts used by the evidence
 
-The source package is grounded in format specifications/documentation, not in one language runtime:
+The package is grounded in format specifications/documentation, not one language runtime:
 
 - Protocol Buffers encoding guide: `https://protobuf.dev/programming-guides/encoding/`
   - singular duplicate fields are accepted with last-one-wins behavior;
   - field serialization order is not guaranteed;
-  - raw serialized bytes therefore cannot be treated as stable cross-runtime contract equivalence.
+  - raw serialized bytes therefore cannot be stable cross-runtime contract-equivalence authority.
 - Protocol Buffers editions guide: `https://protobuf.dev/programming-guides/editions/`
   - unknown binary fields are preserved by binary message handling;
   - some nonbinary conversion/copy paths can lose them.
 - Apache Avro 1.11.2 specification: `https://avro.apache.org/docs/1.11.2/specification/`
-  - historical interpretation uses the writer schema plus reader schema;
-  - reader-only fields require a default or resolution fails;
-  - writer-only fields may be ignored by a reader that does not define them.
+  - historical interpretation uses writer schema plus reader schema;
+  - reader-only fields require a default or resolution fails.
 - JSON Schema Draft 2020-12 validation vocabulary: `https://json-schema.org/draft/2020-12/json-schema-validation`
-  - JSON numeric instances are not inherently bounded by JSON Schema.
+  - JSON numeric instances are not inherently platform-bounded by JSON Schema.
 - JSON Schema object reference: `https://json-schema.org/understanding-json-schema/reference/object`
   - additional object properties are allowed unless a profile explicitly restricts them.
 
-These facts are pinned in the machine-owned manifest so they cannot silently disappear from the evidence rationale.
+These source facts are pinned in the machine-owned manifest and cannot silently disappear from the evidence rationale.
 
 ## Candidate result interpretation
 
 All three concrete candidates currently reach only `eligible_for_evidence_execution`.
 
-That means a reviewed JLMirror guard profile can satisfy the Axis A invariants exercised here. It does **not** mean any raw/default implementation behavior is accepted, preferred, canonical, production-ready or implementation-authorized.
+That means a reviewed JLMirror guard profile can satisfy the exercised Axis A contract. It does **not** mean raw/default format behavior is accepted, preferred, canonical, production-ready or implementation-authorized.
 
-### Bounded JSON + JSON Schema profile
+## Common source-profile boundary
+
+### Static reviewed schema authority
+
+The harness uses a finite reviewed schema-reference set for every concrete candidate. Schema/descriptor/writer-reader selection is configuration authority, not message authority.
+
+Untrusted message content cannot provide a URL, descriptor, schema body or executable object that becomes authoritative. The harness explicitly attempts such message-driven selection and requires fail-closed behavior.
+
+This source PR does not choose the future catalog/registry implementation. Axis B remains independent.
+
+### Historical interpretation
+
+Historical evidence binds:
+
+- candidate/profile identity;
+- reviewed schema identity;
+- original payload bytes.
+
+Re-reading with the same profile/schema preserves the exact historical bytes. Attempting to reinterpret those bytes through another candidate/profile or schema fails closed.
+
+Axis A therefore proves the profile/schema binding requirement. Axis B remains responsible for the later catalog/provenance mechanism that makes reviewed schema content durably recoverable.
+
+### Compression boundary
+
+No compression algorithm/profile is selected here. The source harness therefore accepts only identity transport and rejects compressed input.
+
+That is deliberate: with compression unselected, decompression work is exactly zero and bounded. A future compressed profile must separately prove a compressed-input bound, an output/decompression-work bound and fail-closed behavior before schema processing.
+
+The fixture message-size numbers in this source package are evidence bounds only and do not select production C3 numerics.
+
+## Bounded JSON + JSON Schema profile
 
 The evidence profile adds requirements beyond base JSON Schema validation:
 
@@ -61,59 +90,67 @@ The evidence profile adds requirements beyond base JSON Schema validation:
 - duplicate-member rejection before object materialization;
 - protected alias-group collision rejection (`tenant_id`/`tenantId`, etc.);
 - explicit required/type/null/enum/additional-property semantics;
-- platform numeric, message-size and nesting bounds;
-- deterministic semantic normalization for content equivalence;
+- platform message-size, nesting, numeric magnitude, precision and scale bounds;
+- bounded Decimal parsing instead of binary-float-dependent authoritative mapping;
+- canonical numeric semantics (`1.0` and `1e0` are equivalent; signed zero normalizes to zero);
+- deterministic recursive semantic normalization for content equivalence;
+- historical profile/schema binding;
 - no schema/code loading selected by untrusted message content.
 
-This matters because JSON Schema alone does not provide the platform resource bounds JLMirror requires and additional properties are not denied by default.
+This matters because JSON Schema alone does not supply all platform resource bounds JLMirror requires and additional properties are not denied by default.
 
-### Protobuf profile
+The specific numeric limits exercised here are test-profile bounds, not selected production thresholds.
 
-The raw Protobuf wire behavior is intentionally **not** accepted as sufficient for protected fields.
+## Protobuf profile
 
-The JLMirror evidence profile therefore requires a bounded wire predecoder before generated bindings. That predecoder:
+Raw Protobuf wire behavior is intentionally **not** accepted as sufficient for protected fields.
 
-- rejects duplicate protected singular field numbers before Protobuf's normal last-one-wins behavior can collapse them;
+The JLMirror evidence profile requires a bounded wire predecoder before generated bindings. It:
+
+- rejects non-minimal varints, including alternate byte encodings of the same value;
+- rejects varints above the `uint64` domain;
+- rejects invalid/reserved field numbers;
+- rejects duplicate protected singular field numbers before normal last-one-wins behavior can collapse them;
 - rejects protected oneof collisions before generated binding resolution;
-- preserves unknown binary field bytes where forward compatibility requires it;
-- treats field-order-independent semantic normalization, not raw serializer bytes, as equivalence authority;
-- preserves occurrence order inside each repeated field number during semantic normalization;
-- forbids descriptor/dynamic-message loading from untrusted message content.
+- establishes required-field presence for the fixture's protected tenant/event fields;
+- makes optional severity semantics explicit: accepted enum values are explicit and null is represented by absence in this profile;
+- preserves unknown binary field bytes when forward compatibility requires it;
+- treats semantic normalization, not raw serializer bytes, as equivalence authority;
+- preserves occurrence order inside each repeated field number;
+- binds historical payloads to reviewed Protobuf profile/schema identity;
+- forbids descriptor/dynamic-message loading selected by untrusted message content.
 
-The normalization rule is deliberately asymmetric: occurrences belonging to **different field numbers** may be regrouped because wire serialization order is not contract authority; occurrences belonging to the **same repeated field number** retain their original order because repeated-value order can carry application semantics. A normalizer that globally sorts every field occurrence would therefore be invalid even if it produced deterministic bytes.
+The normalization rule is asymmetric by design: occurrences belonging to **different field numbers** may be regrouped because wire serialization order is not contract authority; occurrences belonging to the **same repeated field number** retain their original order because repeated-value order may be semantic. A global sort would therefore be invalid even if deterministic.
 
-This preserves Protobuf as a candidate without weakening JLMirror's fail-closed or semantic-equivalence invariants.
+The varint hardening also prevents a superficially bounded parser from admitting values outside the Protobuf `uint64` scalar domain through a ten-byte over-range representation.
 
-### Avro profile
+## Avro profile
 
-Avro's evolution model is made explicit rather than implicit:
+Avro evolution is made explicit rather than implicit:
 
-- the original writer schema identity/content must remain recoverable for historical data;
+- original writer schema identity/content must remain recoverable for historical interpretation;
 - reader-schema resolution is explicit;
 - reader-only fields require defaults or resolution fails;
-- field aliases are reviewed and collisions fail closed;
-- equivalence is computed after explicit writer→reader resolution;
+- required tenant/event fixture semantics are explicit after resolution;
+- nullable severity and its accepted enum values are explicit after resolution;
+- field aliases are reviewed and ambiguous aliases fail closed;
+- equivalence is computed after explicit writer→reader resolution, not from raw schema text;
+- historical payloads are bound to Avro profile/writer-schema identity;
 - message payloads cannot choose arbitrary writer/reader schema content.
 
-The harness uses a small record-resolution model to exercise those invariants without selecting a particular Avro runtime or registry product.
+The harness uses a small specification-level record-resolution model to exercise these invariants without selecting a particular Avro runtime or registry product.
 
 ## Runtime-independence boundary
 
-The source harness deliberately does not declare one SDK's generated-object behavior to be authoritative.
+The source harness deliberately does not declare one SDK's generated-object behavior authoritative.
 
 It exercises:
 
-- JSON bytes and object semantics;
-- Protobuf wire tags/lengths/unknown segments before generated bindings;
+- JSON bytes plus bounded Decimal/object semantics;
+- Protobuf wire tags/lengths/varints/unknown segments before generated bindings;
 - Avro writer/reader resolution semantics.
 
-A later implementation may use Java, Go, Python, Rust or another runtime only if the same normative behavior survives. Language-specific mapping convenience cannot redefine canonical JLMirror contract semantics.
-
-## Bounded parser / decompression boundary
-
-This source PR proves explicit message-size, nesting and wire-length bounds in its fixture harness. It does not select production numeric thresholds and it does not grant a decompression algorithm/profile.
-
-Any later compressed transport profile must apply a hard compressed-input bound plus a hard post-decompression/output-work bound before schema processing. Those numerics remain outside this source-only decision.
+A later Java, Go, Python, Rust or other implementation remains eligible only if these authoritative semantics survive. Runtime convenience cannot redefine canonical JLMirror contract meaning.
 
 ## Cross-axis independence
 
@@ -122,9 +159,9 @@ Axis A does not select:
 - reviewed Git catalog vs registry-backed catalog vs hybrid catalog (`OPEN-EVT-003`);
 - `contract_version` representation (`OPEN-EVT-004`).
 
-Likewise, a future catalog product cannot select JSON/Protobuf/Avro by implication.
+Likewise, a future catalog/registry product cannot select JSON, Protobuf or Avro by implication.
 
-The accepted surface policy remains: internal broker and external webhook profiles may differ only when conversion to canonical domain semantics and historical interpretation are explicit.
+The accepted surface rule remains: internal broker and external webhook profiles may differ only when conversion to canonical domain semantics and historical interpretation are explicit.
 
 ## Negative controls
 
@@ -135,15 +172,16 @@ The falsification suite blocks:
 - source-run auto-credit or non-empty ledger credit;
 - candidate promotion to `selected`;
 - pretending an unevaluated equivalent candidate is eligible;
-- removal of any Axis A must-prove invariant;
-- removal of candidate-specific guard requirements;
+- removal of any Axis A must-prove invariant or candidate-specific guard requirement;
 - removal/rewrite of official source-fact inventory;
-- JSON protected duplicates/aliases and excessive nesting;
-- Protobuf protected last-one-wins collapse;
-- Protobuf oneof collision and raw-byte-order authority;
+- compressed input without a selected decompression profile;
+- schema/descriptor selection by untrusted message content;
+- historical cross-profile reinterpretation;
+- JSON protected duplicates/aliases, excessive nesting and runtime-dependent numeric spellings;
+- Protobuf non-minimal varints, `uint64` overflow, protected last-one-wins collapse and presence/enum weakening;
+- Protobuf raw-byte-order authority and repeated-order loss;
 - loss of required Protobuf unknown binary fields;
-- loss/reordering of same-field repeated occurrence semantics during normalization;
-- Avro alias ambiguity and reader-only fields without defaults;
+- Avro alias ambiguity, missing reader defaults and nullable-semantic loss;
 - D4-B ledger selection;
 - D4/Product/Wave4/production/C3 authority escalation.
 
@@ -163,6 +201,6 @@ This package does not modify accepted ledger/state:
 
 ## Exit condition
 
-This PR may be accepted only after exact-HEAD CI, panoramic/adversarial review and zero unresolved material threads prove that all three candidate profiles remain bounded, source-only and non-selecting.
+This PR may be accepted only after exact-HEAD CI, adversarial/panoramic review and zero unresolved material threads prove that all three candidate profiles remain bounded, source-only and non-selecting.
 
-Acceptance of this source PR still does not authorize a D4-B selection transition. Axis B catalog/registry evidence remains separately required before a later cross-axis selection decision.
+Acceptance of this source PR still does not authorize D4-B selection. Axis B catalog/registry evidence remains separately required before a later cross-axis selection decision.

@@ -12,6 +12,10 @@
     "material_threads_unresolved": 0
   },
   "source_workflow": {
+    "workflow_id": 349837736,
+    "workflow_path": ".github/workflows/d4-b-schema-contract-source-evidence.yml",
+    "workflow_event": "pull_request",
+    "source_head_branch": "evidence/d4-b-schema-contract-source",
     "run_id": 33832558443,
     "run_attempt": 1,
     "job_id": 100898421033,

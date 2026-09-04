@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import struct
@@ -43,6 +44,7 @@ class HistoricalEnvelope:
     candidate: str
     schema_ref: str
     original_bytes: bytes
+    schema_content_sha256: str | None = None
 
 
 def admit_transport_payload(raw: bytes, compression: str = "identity") -> bytes:
@@ -62,10 +64,20 @@ def resolve_reviewed_schema(candidate: str, configured_ref: str, untrusted_messa
     return configured_ref
 
 
+def make_historical_envelope(candidate: str, schema_ref: str, payload: bytes) -> HistoricalEnvelope:
+    resolve_reviewed_schema(candidate, schema_ref)
+    digest = _reviewed_avro_schema_content_digest(schema_ref) if candidate == "avro_profile" else None
+    return HistoricalEnvelope(candidate, schema_ref, bytes(payload), digest)
+
+
 def read_historical_envelope(envelope: HistoricalEnvelope, candidate: str, schema_ref: str) -> bytes:
     if envelope.candidate != candidate or envelope.schema_ref != schema_ref:
         raise EvidenceViolation("historical profile/schema reinterpretation is forbidden")
     resolve_reviewed_schema(candidate, schema_ref)
+    if candidate == "avro_profile":
+        expected = _reviewed_avro_schema_content_digest(schema_ref)
+        if envelope.schema_content_sha256 != expected:
+            raise EvidenceViolation("historical Avro schema content digest mismatch")
     return bytes(envelope.original_bytes)
 
 
@@ -332,6 +344,43 @@ REVIEWED_AVRO_EVENT_V2 = AvroRecordSchema("Event", (
 REVIEWED_AVRO_SCHEMAS = {"avro:event:v1": REVIEWED_AVRO_EVENT_V1, "avro:event:v2": REVIEWED_AVRO_EVENT_V2}
 
 
+def _schema_digest_value(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise EvidenceViolation("non-finite Avro schema default cannot be digested")
+        return {"float_hex": value.hex()}
+    if isinstance(value, bytes):
+        return {"bytes_hex": value.hex()}
+    raise EvidenceViolation("unsupported Avro schema default for content digest")
+
+
+def _avro_schema_content_digest(schema: AvroRecordSchema) -> str:
+    structural = {
+        "name": schema.name,
+        "fields": [
+            {
+                "name": field.name,
+                "avro_types": list(field.avro_types),
+                "aliases": list(field.aliases),
+                "default_present": field.default_present,
+                "default": _schema_digest_value(field.default) if field.default_present else None,
+            }
+            for field in schema.fields
+        ],
+    }
+    canonical = json.dumps(structural, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _reviewed_avro_schema_content_digest(schema_ref: str) -> str:
+    schema = REVIEWED_AVRO_SCHEMAS.get(schema_ref)
+    if schema is None:
+        raise EvidenceViolation("reviewed Avro schema ref has no structural content")
+    return _avro_schema_content_digest(schema)
+
+
 def _bounded_avro_name(value: str, label: str) -> None:
     if not isinstance(value, str) or not value or len(value.encode("utf-8")) > MAX_AVRO_NAME_BYTES:
         raise EvidenceViolation(f"Avro {label} exceeds evidence bound")
@@ -461,17 +510,22 @@ def resolve_avro_record(writer: AvroRecordSchema, reader: AvroRecordSchema, datu
     writer_fields = {f.name: f for f in writer.fields}; datum_names = set(datum)
     if datum_names - set(writer_fields): raise EvidenceViolation("datum contains unknown writer field")
     if set(writer_fields) - datum_names: raise EvidenceViolation("datum omits writer-declared field")
+    writer_materialized: dict[str, tuple[str, Any]] = {}
+    for name, field in writer_fields.items():
+        writer_type = _avro_effective_writer_type(datum[name], field.avro_types)
+        writer_materialized[name] = (writer_type, _materialize_avro_type(datum[name], writer_type))
     resolved: dict[str, tuple[str, Any]] = {}
     for target in reader.fields:
         source_names = (target.name,) + target.aliases
         writer_matches = [n for n in source_names if n in writer_fields]
         if len(writer_matches) > 1: raise EvidenceViolation("Avro alias collision in writer schema")
         if writer_matches:
-            source = writer_fields[writer_matches[0]]; value = datum[writer_matches[0]]
+            source_name = writer_matches[0]
+            source = writer_fields[source_name]
             if not _avro_types_compatible(source.avro_types, target.avro_types): raise EvidenceViolation("Avro type incompatibility")
-            writer_type = _avro_effective_writer_type(value, source.avro_types)
+            writer_type, writer_value = writer_materialized[source_name]
             reader_type = _avro_reader_type_for_writer(writer_type, target.avro_types)
-            promoted = _promote_avro_value(value, writer_type, reader_type)
+            promoted = _promote_avro_value(writer_value, writer_type, reader_type)
             resolved[target.name] = (reader_type, _materialize_avro_type(promoted, reader_type))
         elif target.default_present:
             resolved[target.name] = (target.avro_types[0], _materialize_avro_type(target.default, target.avro_types[0]))
@@ -507,7 +561,7 @@ def prove_static_schema_and_history(candidate: str, schema_ref: str, payload: by
     try: resolve_reviewed_schema(candidate, schema_ref, untrusted_message_ref="https://attacker.invalid/schema")
     except EvidenceViolation: pass
     else: raise AssertionError("dynamic schema selection accepted")
-    envelope = HistoricalEnvelope(candidate, schema_ref, payload)
+    envelope = make_historical_envelope(candidate, schema_ref, payload)
     if read_historical_envelope(envelope, candidate, schema_ref) != payload: raise AssertionError("historical bytes changed")
     other = "protobuf_profile" if candidate != "protobuf_profile" else "avro_profile"; other_ref = next(iter(REVIEWED_SCHEMA_REFS[other]))
     try: read_historical_envelope(envelope, other, other_ref)
@@ -559,6 +613,16 @@ def prove_avro_profile() -> None:
     prove_static_schema_and_history("avro_profile", "avro:event:v1", b"historical-avro"); admit_transport_payload(b"avro")
     writer_v1, reader_v2 = REVIEWED_AVRO_EVENT_V1, REVIEWED_AVRO_EVENT_V2
     resolve_reviewed_avro_schema("avro:event:v1", writer_v1); resolve_reviewed_avro_schema("avro:event:v2", reader_v2)
+    historical = make_historical_envelope("avro_profile", "avro:event:v1", b"historical-avro")
+    rebound = AvroRecordSchema("Event", writer_v1.fields + (AvroFieldSpec("rebound", ("string",), default_present=True, default="x"),))
+    original_schema = REVIEWED_AVRO_SCHEMAS["avro:event:v1"]
+    try:
+        REVIEWED_AVRO_SCHEMAS["avro:event:v1"] = rebound
+        try: read_historical_envelope(historical, "avro_profile", "avro:event:v1")
+        except EvidenceViolation: pass
+        else: raise AssertionError("historical Avro envelope accepted same-ref schema-content rebind")
+    finally:
+        REVIEWED_AVRO_SCHEMAS["avro:event:v1"] = original_schema
     mutated = AvroRecordSchema("Event", writer_v1.fields+(AvroFieldSpec("injected",("string",),default_present=True,default="x"),))
     try: resolve_reviewed_avro_schema("avro:event:v1", mutated)
     except EvidenceViolation: pass
@@ -569,6 +633,12 @@ def prove_avro_profile() -> None:
     try: reviewed_avro_semantic_equivalence("avro:event:v2",reader_v2,"avro:event:v2",reader_v2,datum)
     except EvidenceViolation: pass
     else: raise AssertionError("writer field omission fabricated by reader default")
+    writer_projection = AvroRecordSchema("Projection", (AvroFieldSpec("kept", ("string",)), AvroFieldSpec("writer_only", ("string",))))
+    reader_projection = AvroRecordSchema("Projection", (AvroFieldSpec("kept", ("string",)),))
+    for invalid_writer_only in ("x" * (MAX_AVRO_SCALAR_BYTES + 1), object()):
+        try: avro_semantic_equivalence(writer_projection, reader_projection, {"kept":"ok", "writer_only":invalid_writer_only})
+        except EvidenceViolation: pass
+        else: raise AssertionError("writer-only Avro datum bypassed writer type/bound validation")
     nullable = AvroRecordSchema("Event",(AvroFieldSpec("tenant_id",("string",)),AvroFieldSpec("event_type",("string",)),AvroFieldSpec("severity",("null","string"),default_present=True,default=None)))
     if ("severity",("null",None)) not in avro_semantic_equivalence(nullable,nullable,{"tenant_id":"t1","event_type":"alarm","severity":None}): raise AssertionError("nullable semantics lost")
     invalid_event = AvroRecordSchema("Event",(AvroFieldSpec("value",("string",)),))
@@ -617,7 +687,7 @@ def evaluate() -> dict[str, str]:
 
 def main() -> int:
     results = evaluate()
-    print("d4b_wire_schema_candidate_source=PASS candidates=3 concrete_eligible=3 identity_only_transport=bounded dynamic_schema_selection=blocked historical_profile_reinterpretation=blocked json_duplicates=blocked json_alias_collision=blocked json_numeric_mapping=context_independent json_distinct_decimals=preserved json_bounds=proven protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked protobuf_protected_duplicates=blocked protobuf_oneof_duplicate=blocked protobuf_presence_enum=explicit protobuf_unknown_bytes=preserved protobuf_byte_order=noncanonical protobuf_repeated_order=preserved avro_schema_ref_content=binding_exact avro_writer_fields=required avro_float_overflow=fail_closed avro_float_width=ieee754_binary32 avro_float_runtime_mapping=type_strict avro_writer_reader_resolution=explicit avro_type_compatibility=checked avro_promotions=reader_canonicalized avro_event_contract=scoped avro_datum_bounds=proven avro_nullable_enum=explicit avro_alias_ambiguity=blocked selection=not_selected ledger_credit=0")
+    print("d4b_wire_schema_candidate_source=PASS candidates=3 concrete_eligible=3 identity_only_transport=bounded dynamic_schema_selection=blocked historical_profile_reinterpretation=blocked json_duplicates=blocked json_alias_collision=blocked json_numeric_mapping=context_independent json_distinct_decimals=preserved json_bounds=proven protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked protobuf_protected_duplicates=blocked protobuf_oneof_duplicate=blocked protobuf_presence_enum=explicit protobuf_unknown_bytes=preserved protobuf_byte_order=noncanonical protobuf_repeated_order=preserved avro_schema_ref_content=binding_exact avro_historical_schema_digest=sha256_bound avro_writer_fields=required avro_writer_only_fields=validated avro_float_overflow=fail_closed avro_float_width=ieee754_binary32 avro_float_runtime_mapping=type_strict avro_writer_reader_resolution=explicit avro_type_compatibility=checked avro_promotions=reader_canonicalized avro_event_contract=scoped avro_datum_bounds=proven avro_nullable_enum=explicit avro_alias_ambiguity=blocked selection=not_selected ledger_credit=0")
     for candidate, result in sorted(results.items()): print(f"candidate={candidate} result={result}")
     return 0
 

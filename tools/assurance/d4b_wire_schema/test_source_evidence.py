@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import decimal
 import json
 import sys
 from pathlib import Path
@@ -96,8 +97,16 @@ def prove_behavior_falsifications() -> None:
 
     if evaluator.canonical_json_equivalence(b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":1.0}}') != evaluator.canonical_json_equivalence(b'{"event_type":"alarm","payload":{"x":1e0},"tenant_id":"t1"}'):
         raise AssertionError("JSON numeric spelling changed canonical semantics")
-    if evaluator.canonical_json_equivalence(b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":9007199254740992.0}}') == evaluator.canonical_json_equivalence(b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":9007199254740993.0}}'):
+    distinct_a = b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":9007199254740992.0}}'
+    distinct_b = b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":9007199254740993.0}}'
+    if evaluator.canonical_json_equivalence(distinct_a) == evaluator.canonical_json_equivalence(distinct_b):
         raise AssertionError("distinct bounded JSON decimals collapsed")
+    with decimal.localcontext() as ctx:
+        ctx.prec = 10
+        if evaluator.canonical_json_equivalence(distinct_a) == evaluator.canonical_json_equivalence(distinct_b):
+            raise AssertionError("ambient Decimal context collapsed distinct bounded decimals")
+        if evaluator.canonical_json_equivalence(b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":1.2300}}') != evaluator.canonical_json_equivalence(b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":1.23}}'):
+            raise AssertionError("ambient Decimal context changed exact canonical spelling")
 
     tenant = evaluator.proto_field(1, b"t1")
     event = evaluator.proto_field(2, b"alarm")
@@ -198,6 +207,22 @@ def prove_behavior_falsifications() -> None:
     else:
         raise AssertionError("Avro incompatible field types accepted")
 
+    int_writer = evaluator.AvroRecordSchema("Metric", (evaluator.AvroFieldSpec("value", ("int",)),))
+    double_reader = evaluator.AvroRecordSchema("Metric", (evaluator.AvroFieldSpec("value", ("double",)),))
+    double_writer = evaluator.AvroRecordSchema("Metric", (evaluator.AvroFieldSpec("value", ("double",)),))
+    if evaluator.avro_semantic_equivalence(int_writer, double_reader, {"value": 1}) != evaluator.avro_semantic_equivalence(double_writer, double_reader, {"value": 1.0}):
+        raise AssertionError("Avro numeric promotion failed to materialize reader representation")
+    bytes_writer = evaluator.AvroRecordSchema("Text", (evaluator.AvroFieldSpec("value", ("bytes",)),))
+    text_reader = evaluator.AvroRecordSchema("Text", (evaluator.AvroFieldSpec("value", ("string",)),))
+    if evaluator.avro_semantic_equivalence(bytes_writer, text_reader, {"value": b"hello"}) != (("value", ("string", "hello")),):
+        raise AssertionError("Avro bytes-to-string promotion failed to materialize reader representation")
+    try:
+        evaluator.avro_semantic_equivalence(bytes_writer, text_reader, {"value": b"\xff"})
+    except evaluator.EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("Avro invalid UTF-8 bytes-to-string promotion accepted")
+
     try:
         evaluator.resolve_avro_record(writer, string_reader, {"tenant_id": "x" * (evaluator.MAX_AVRO_SCALAR_BYTES + 1), "event_type": "alarm"})
     except evaluator.EvidenceViolation:
@@ -242,10 +267,14 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_results"].__setitem__("protobuf_profile", "selected"), "concrete candidate result inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST).__setitem__("equivalent_reviewed_profile", "eligible_for_evidence_execution"), "equivalent candidate class must remain unevaluated")
     must_fail(lambda d: obj(d, validator.MANIFEST)["required_proofs"].pop(), "required proof inventory drift")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["bounded_json_plus_json_schema_profile"].remove("decimal_canonicalization_is_context_independent_and_constructed_from_exact_decimal_tuple"), "candidate requirement drift for bounded_json_plus_json_schema_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["protobuf_profile"].remove("protected_oneof_duplicate_occurrences_and_cross_member_collisions_fail_closed_before_generated_binding_resolution"), "candidate requirement drift for protobuf_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("writer_reader_field_type_compatibility_and_allowed_promotions_are_checked_before_value_resolution"), "candidate requirement drift for avro_profile")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("allowed_writer_reader_promotions_are_applied_to_reader_representation_before_equivalence"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("datum_processing_is_bounded_and_canonicalized_structurally_without_unrestricted_recursive_json_serialization"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["official_source_facts"].pop(), "official source fact inventory drift")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("json_numeric_normalization_is_bounded_decimal_context_independent_and_runtime_independent_within_the_evidence_profile"), "source assertion inventory drift")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_allowed_promotions_materialize_reader_representation_before_semantic_equivalence"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_schema_and_datum_resource_bounds_are_enforced_before_structural_equivalence"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.LEDGER).__setitem__("candidate", "protobuf_profile"), "D4-B ledger selection drift")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("gate_state", "accepted"), "D4 gate escalation")
@@ -259,12 +288,13 @@ def main() -> int:
         "d4b_wire_schema_source_falsification=PASS duplicate_json=blocked hidden_selection=blocked "
         "auto_credit=blocked candidate_promotion=blocked proof_weakening=blocked source_fact_drift=blocked "
         "compression_without_profile=blocked dynamic_schema_selection=blocked historical_cross_profile=blocked "
-        "json_bounds=blocked json_numeric_runtime_drift=blocked protobuf_nonminimal_varint=blocked "
-        "protobuf_uint64_overflow=blocked protobuf_last_wins_override=blocked protobuf_oneof_same_member_duplicate=blocked "
-        "protobuf_presence_enum_weakening=blocked protobuf_unknown_preservation=proven protobuf_byte_order_authority=blocked "
-        "protobuf_repeated_order_loss=blocked avro_alias_ambiguity=blocked avro_missing_default=blocked "
-        "avro_type_incompatibility=blocked avro_scalar_bound=blocked avro_schema_width_bound=blocked "
-        "avro_nullable_semantics=proven ledger_selection=blocked d4_authority_escalation=blocked"
+        "json_bounds=blocked json_numeric_runtime_drift=blocked json_decimal_context_drift=blocked "
+        "protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked protobuf_last_wins_override=blocked "
+        "protobuf_oneof_same_member_duplicate=blocked protobuf_presence_enum_weakening=blocked "
+        "protobuf_unknown_preservation=proven protobuf_byte_order_authority=blocked protobuf_repeated_order_loss=blocked "
+        "avro_alias_ambiguity=blocked avro_missing_default=blocked avro_type_incompatibility=blocked "
+        "avro_promotion_representation=proven avro_invalid_utf8_promotion=blocked avro_scalar_bound=blocked "
+        "avro_schema_width_bound=blocked avro_nullable_semantics=proven ledger_selection=blocked d4_authority_escalation=blocked"
     )
     return 0
 

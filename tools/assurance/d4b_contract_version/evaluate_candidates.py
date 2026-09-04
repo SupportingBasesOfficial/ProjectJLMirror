@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import base64
+import hashlib
 import re
 from dataclasses import dataclass
 
@@ -60,6 +62,24 @@ class OpaqueMonotonicToken(CandidateAdapter):
         return ParsedVersion(self.candidate, raw)
 
 
+class OpaqueMonotonicIssuer:
+    """Evidence-only issuer: monotonic issuance is internal; tokens stay externally opaque."""
+
+    def __init__(self) -> None:
+        self._last_sequence = 0
+
+    def issue(self, sequence: int) -> str:
+        if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence <= 0:
+            raise ValueError("issuance sequence must be a positive integer")
+        if sequence <= self._last_sequence:
+            raise ValueError("issuance sequence must increase strictly")
+        material = b"d4b-axis-c-evidence-only\x00" + sequence.to_bytes(8, "big", signed=False)
+        token_body = base64.b32encode(hashlib.blake2s(material, digest_size=10).digest()).decode("ascii").rstrip("=")
+        token = f"cv_{token_body}"
+        self._last_sequence = sequence
+        return token
+
+
 ADAPTERS: tuple[CandidateAdapter, ...] = (
     PositiveIntegerRevision(),
     SemanticVersionLike(),
@@ -101,6 +121,24 @@ def preserve_historical_version(original: bytes) -> bytes:
     return bytes(original)
 
 
+def prove_opaque_monotonic_issuance(adapter: CandidateAdapter) -> tuple[str, str]:
+    issuer = OpaqueMonotonicIssuer()
+    first = issuer.issue(1)
+    second = issuer.issue(2)
+    adapter.parse(first)
+    adapter.parse(second)
+    if first == second:
+        raise AssertionError("monotonic issuer produced duplicate opaque token")
+    for invalid in (2, 1, 0):
+        try:
+            issuer.issue(invalid)
+        except ValueError:
+            continue
+        raise AssertionError(f"monotonic issuer accepted non-increasing sequence {invalid}")
+    assert_ordering_absent(adapter, first, second)
+    return first, second
+
+
 def evaluate() -> dict[str, str]:
     positive = ADAPTERS[0]
     semver = ADAPTERS[1]
@@ -121,8 +159,10 @@ def evaluate() -> dict[str, str]:
     opaque.parse("cv_ABCDEFG2")
     opaque.parse("cv_234567ABCDEFGHJK")
     assert_rejected(opaque, ("cv_abcdefg2", "CV_ABCDEFG2", "cv_ABC", "cv_ABCDEFG0", " cv_ABCDEFG2", "cv_ABCDEFG2 "))
-    assert_ordering_absent(opaque, "cv_ABCDEFG2", "cv_ABCDEFG3")
-    assert_no_authority_fields(opaque, "cv_ABCDEFG2")
+    first_opaque, second_opaque = prove_opaque_monotonic_issuance(opaque)
+    assert_no_authority_fields(opaque, first_opaque)
+    if opaque.equal(first_opaque, second_opaque):
+        raise AssertionError("distinct monotonic issues compared equal")
 
     namespaces = {
         "deployment_version": "1.0.0",
@@ -153,7 +193,7 @@ def main() -> int:
     results = evaluate()
     print(
         "d4b_contract_version_candidate_source=PASS "
-        "candidates=3 concrete_eligible=3 ordering_authority=absent "
+        "candidates=3 concrete_eligible=3 opaque_monotonic_issuance=proven ordering_authority=absent "
         "namespace_substitution=blocked breaking_reuse=blocked historical_bytes=preserved "
         "canonical_syntax_selection=false ledger_credit=0"
     )

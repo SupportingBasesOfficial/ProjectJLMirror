@@ -13,6 +13,15 @@ EXPECTED_IDS = {
     "historical_reader_and_equivalence_profile_continuity",
     "contract_version_representation_and_breaking_change_vectors",
 }
+EXPECTED_D4A_IDS = {
+    "capacity_envelope_baseline_growth_stress",
+    "broker_neutral_anti_corruption_stub_swap",
+    "regulated_payload_erasure_granularity",
+    "exactly_once_guardrail_consumer_inbox_enforcement",
+    "ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency",
+    "physical_naming_routing_and_cell_topology_adapter_mapping",
+    "broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark",
+}
 EXPECTED_KINDS = {
     "canonical_bounded_serialization_profile": "deterministic_reference_profile_and_negative_vectors",
     "parser_ambiguity_and_duplicate_field_negative_vectors": "parser_falsification_vectors",
@@ -63,7 +72,9 @@ def main() -> int:
     assert set(tracks) == {"D4-A", "D4-B", "D4-C", "D4-D"}
     d4a, d4b, d4c, d4d = tracks["D4-A"], tracks["D4-B"], tracks["D4-C"], tracks["D4-D"]
     assert d4a["candidate"] == "kafka" and d4a["candidate_status"] == "selected_c2_candidate"
-    assert d4a["state"] == "selected_candidate" and len(d4a["evidence_completed"]) == 7
+    assert d4a["state"] == "selected_candidate"
+    assert set(d4a["evidence_completed"]) == EXPECTED_D4A_IDS and len(d4a["evidence_completed"]) == 7
+    assert d4a["evidence_remaining"] == []
     assert d4b["candidate"] is None and d4b["candidate_status"] == "not_selected"
     assert d4b["state"] == "evidence_complete_selection_pending"
     assert set(d4b["required_evidence"]) == EXPECTED_IDS and len(d4b["required_evidence"]) == 5
@@ -81,7 +92,8 @@ def main() -> int:
 
     print(
         "d4b_schema_contract_source_manifest=PASS evidence_ids=5 evidence_kinds=exact reference_properties=exact "
-        "source_credit=0 prior_promoted_credit=5 candidate=not_selected d4a=kafka_selected d4b=selection_pending d4c_d=open authorities=not_granted"
+        "source_credit=0 prior_promoted_credit=5 candidate=not_selected d4a=exact_7_of_7_kafka_selected "
+        "d4b=selection_pending d4c_d=open authorities=not_granted"
     )
     return 0
 

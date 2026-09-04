@@ -77,9 +77,12 @@ The JLMirror evidence profile therefore requires a bounded wire predecoder befor
 - rejects protected oneof collisions before generated binding resolution;
 - preserves unknown binary field bytes where forward compatibility requires it;
 - treats field-order-independent semantic normalization, not raw serializer bytes, as equivalence authority;
+- preserves occurrence order inside each repeated field number during semantic normalization;
 - forbids descriptor/dynamic-message loading from untrusted message content.
 
-This preserves Protobuf as a candidate without weakening JLMirror's fail-closed invariant.
+The normalization rule is deliberately asymmetric: occurrences belonging to **different field numbers** may be regrouped because wire serialization order is not contract authority; occurrences belonging to the **same repeated field number** retain their original order because repeated-value order can carry application semantics. A normalizer that globally sorts every field occurrence would therefore be invalid even if it produced deterministic bytes.
+
+This preserves Protobuf as a candidate without weakening JLMirror's fail-closed or semantic-equivalence invariants.
 
 ### Avro profile
 
@@ -139,6 +142,7 @@ The falsification suite blocks:
 - Protobuf protected last-one-wins collapse;
 - Protobuf oneof collision and raw-byte-order authority;
 - loss of required Protobuf unknown binary fields;
+- loss/reordering of same-field repeated occurrence semantics during normalization;
 - Avro alias ambiguity and reader-only fields without defaults;
 - D4-B ledger selection;
 - D4/Product/Wave4/production/C3 authority escalation.

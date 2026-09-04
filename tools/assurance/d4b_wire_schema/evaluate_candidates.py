@@ -753,7 +753,7 @@ def prove_avro_profile() -> None:
     if avro_semantic_equivalence(int_writer,float_reader,{"value":16777217}) != (("value",("float",expected_f32)),): raise AssertionError("Avro float not single precision")
     long_writer = AvroRecordSchema("Metric", (AvroFieldSpec("value", ("long",)),))
     double_round_vector = 4611686293305294849
-    expected_direct = 4611686568183267328.0
+    expected_direct = 4611686568183201792.0
     if avro_semantic_equivalence(long_writer, float_reader, {"value": double_round_vector}) != (("value", ("float", expected_direct)),): raise AssertionError("Avro long-to-float double rounding drift")
     union_writer = AvroRecordSchema("UnionMetric", (AvroFieldSpec("value", ("float", "double")),))
     union_reader = AvroRecordSchema("UnionMetric", (AvroFieldSpec("value", ("double",)),))

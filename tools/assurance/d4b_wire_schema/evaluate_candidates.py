@@ -485,7 +485,8 @@ def validate_avro_contract(value: dict[str, tuple[str, Any]]) -> None:
 
 def avro_semantic_equivalence(writer: AvroRecordSchema, reader: AvroRecordSchema, datum: dict[str, Any]) -> tuple[tuple[str, tuple[str, Any]], ...]:
     resolved = resolve_avro_record(writer, reader, datum)
-    validate_avro_contract(resolved)
+    if reader.name == "Event":
+        validate_avro_contract(resolved)
     return tuple((name, resolved[name]) for name in sorted(resolved))
 
 
@@ -631,6 +632,13 @@ def prove_avro_profile() -> None:
     nullable_equivalence = avro_semantic_equivalence(nullable_schema, nullable_schema, {"tenant_id": "t1", "event_type": "alarm", "severity": None})
     if ("severity", ("null", None)) not in nullable_equivalence:
         raise AssertionError("Avro nullable enum semantics were not preserved")
+    event_without_required = AvroRecordSchema("Event", (AvroFieldSpec("value", ("string",)),))
+    try:
+        avro_semantic_equivalence(event_without_required, event_without_required, {"value": "x"})
+    except EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("Avro Event record bypassed tenant/event contract invariants")
     incompatible_writer = AvroRecordSchema(
         "Event",
         (
@@ -708,8 +716,9 @@ def main() -> int:
         "json_bounds=proven protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked "
         "protobuf_protected_duplicates=blocked protobuf_oneof_duplicate=blocked protobuf_presence_enum=explicit "
         "protobuf_unknown_bytes=preserved protobuf_byte_order=noncanonical protobuf_repeated_order=preserved "
-        "avro_writer_reader_resolution=explicit avro_type_compatibility=checked avro_promotions=reader_canonicalized avro_datum_bounds=proven "
-        "avro_nullable_enum=explicit avro_alias_ambiguity=blocked selection=not_selected ledger_credit=0"
+        "avro_writer_reader_resolution=explicit avro_type_compatibility=checked avro_promotions=reader_canonicalized "
+        "avro_event_contract=scoped avro_datum_bounds=proven avro_nullable_enum=explicit avro_alias_ambiguity=blocked "
+        "selection=not_selected ledger_credit=0"
     )
     for candidate, result in sorted(results.items()):
         print(f"candidate={candidate} result={result}")

@@ -22,6 +22,16 @@ def must_fail(mutator, expected_fragment: str) -> None:
         raise AssertionError(f"expected failure containing {expected_fragment!r}, got {errors!r}")
 
 
+def duplicate_rogue_d4c(state: dict) -> None:
+    rogue = copy.deepcopy(next(t for t in state["tracks"] if t["track_id"] == "D4-C"))
+    rogue["candidate"] = "rogue-selected"
+    rogue["candidate_status"] = "selected"
+    rogue["state"] = "selected_candidate"
+    rogue["evidence_completed"] = [rogue["required_evidence"][0]]
+    rogue["evidence_remaining"] = rogue["required_evidence"][1:]
+    state["tracks"].insert(0, rogue)
+
+
 def main() -> int:
     state = baseline()
     errors = validator.validate_manifest(state)
@@ -49,9 +59,10 @@ def main() -> int:
     must_fail(lambda s: d4b(s)["evidence_remaining"].append("canonical_bounded_serialization_profile"), "remaining evidence drift")
     must_fail(lambda s: d4b(s).__setitem__("state", "selected_candidate"), "scoped state drift")
     must_fail(lambda s: s["tracks"][2]["evidence_completed"].append(s["tracks"][2]["required_evidence"][0]), "completed evidence drift")
+    must_fail(duplicate_rogue_d4c, "D4 track identity multiplicity drift")
     must_fail(lambda s: s["explicit_c3_exclusions"].remove("OPEN-EVT-006"), "C3 exclusion set drift")
     must_fail(lambda s: s["explicit_product_or_later_gate_exclusions"].remove("OPEN-EVT-021"), "Product/later-gate exclusion set drift")
-    print("d4_state_falsification=PASS full_d4_acceptance=blocked transport_grant=blocked d4a_selection_rollback=blocked d4b_selection=blocked evidence_regression=blocked sibling_credit=blocked product_wave4_production=blocked c3_scope_leak=blocked total_required=26 total_credited=12")
+    print("d4_state_falsification=PASS full_d4_acceptance=blocked transport_grant=blocked d4a_selection_rollback=blocked d4b_selection=blocked evidence_regression=blocked duplicate_track_identity=blocked sibling_credit=blocked product_wave4_production=blocked c3_scope_leak=blocked total_required=26 total_credited=12")
     return 0
 
 

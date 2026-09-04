@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 
 class EvidenceViolation(RuntimeError):
@@ -128,12 +128,9 @@ class ReviewedHistory:
 
     def read(self, principal: Principal, identity: LogicalContractIdentity, revision: str) -> ContractRevision:
         require_role(principal, READER_ROLE)
-        try:
-            return self._history[identity.canonical()][revision]
-        except KeyError as exc:
-            raise EvidenceViolation("reviewed contract revision not found") from exc
+        return self.get_committed(identity, revision)
 
-    def get_without_access_side_effect(self, identity: LogicalContractIdentity, revision: str) -> ContractRevision:
+    def get_committed(self, identity: LogicalContractIdentity, revision: str) -> ContractRevision:
         try:
             return self._history[identity.canonical()][revision]
         except KeyError as exc:
@@ -141,8 +138,9 @@ class ReviewedHistory:
 
 
 class RegistryMirror:
-    def __init__(self, product: str) -> None:
+    def __init__(self, product: str, reviewed_authority: ReviewedHistory) -> None:
         self.product = product
+        self.reviewed_authority = reviewed_authority
         self.available = True
         self._mappings: Dict[Tuple[str, str], ProductMapping] = {}
 
@@ -159,6 +157,9 @@ class RegistryMirror:
             raise EvidenceViolation("registry unavailable")
         if not subject or not vendor_version or not vendor_id:
             raise EvidenceViolation("invalid registry mapping metadata")
+        committed = self.reviewed_authority.get_committed(reviewed.identity, reviewed.revision)
+        if committed.reviewed_content_sha256 != reviewed.reviewed_content_sha256:
+            raise EvidenceViolation("registry publish requires exact preexisting reviewed authority")
         key = (reviewed.identity.canonical(), reviewed.revision)
         mapping = ProductMapping(
             product=self.product,
@@ -199,8 +200,6 @@ class CatalogProfile:
             mapping = self.registry.mapping(principal, reviewed)
             if mapping.reviewed_content_sha256 != reviewed.reviewed_content_sha256:
                 raise EvidenceViolation("registry mapping content drift")
-        # Registry outage never changes canonical meaning: the durable reviewed
-        # contract remains authority. The product is a distribution/index surface.
         return reviewed
 
 
@@ -245,7 +244,7 @@ def candidate_fixture(candidate: str) -> Tuple[CatalogProfile, Principal, Princi
     history = ReviewedHistory()
     history.commit(reviewer, v1)
     history.commit(reviewer, v2)
-    registry = None if candidate == "reviewed_git_catalog" else RegistryMirror("registry-fixture-a")
+    registry = None if candidate == "reviewed_git_catalog" else RegistryMirror("registry-fixture-a", history)
     profile = CatalogProfile(candidate, history, registry)
     if registry:
         registry.publish(reviewer, v1, "event-created", "17", "vendor-abc")
@@ -255,18 +254,14 @@ def candidate_fixture(candidate: str) -> Tuple[CatalogProfile, Principal, Princi
 
 def exercise_candidate(candidate: str) -> None:
     profile, reviewer, reader, v1, v2 = candidate_fixture(candidate)
-
-    # Canonical authority + history/provenance.
     assert profile.resolve(reader, v1.identity, v1.revision).reviewed_content_sha256 == v1.reviewed_content_sha256
     assert profile.resolve(reader, v2.identity, v2.revision).reviewed_provenance == "git:fixture-commit-b"
     assert_metadata_recoverable(v1)
     assert_metadata_recoverable(v2)
 
-    # Same payload schema, different protected semantic manifest must not pass as equivalent.
     assert v1.payload_schema_sha256 == v2.payload_schema_sha256
     assert compatibility(v1, v2) == "semantic_review_required_breaking_until_proven_otherwise"
 
-    # Immutable reviewed history.
     rebound = ContractRevision(
         identity=v1.identity,
         revision=v1.revision,
@@ -282,7 +277,6 @@ def exercise_candidate(candidate: str) -> None:
     else:
         raise AssertionError("reviewed history overwrite was not blocked")
 
-    # Authn/authz fail closed.
     for principal in (Principal("", (), authenticated=False), Principal("reader-no-role", ())):
         try:
             profile.resolve(principal, v1.identity, v1.revision)
@@ -292,15 +286,29 @@ def exercise_candidate(candidate: str) -> None:
             raise AssertionError("unauthorized catalog read was not blocked")
 
     if profile.registry:
-        # Outage cannot reinterpret committed history.
+        # An arbitrary unreviewed object cannot be made authoritative by registry publish.
+        unreviewed = ContractRevision(
+            identity=v1.identity,
+            revision="fixture-unreviewed",
+            payload_schema=v1.payload_schema,
+            semantic_manifest=v1.semantic_manifest,
+            historical_metadata=v1.historical_metadata,
+            reviewed_provenance="git:not-committed",
+        )
+        try:
+            profile.registry.publish(reviewer, unreviewed, "event-created", "19", "vendor-unreviewed")
+        except EvidenceViolation:
+            pass
+        else:
+            raise AssertionError("registry accepted unreviewed contract authority")
+
         before = profile.resolve(reader, v1.identity, v1.revision).reviewed_content_sha256
         profile.registry.available = False
         during = profile.resolve(reader, v1.identity, v1.revision).reviewed_content_sha256
         assert before == during == v1.reviewed_content_sha256
         profile.registry.available = True
 
-        # Product replacement changes physical mapping only.
-        replacement = RegistryMirror("registry-fixture-b")
+        replacement = RegistryMirror("registry-fixture-b", profile.history)
         replacement.publish(reviewer, v1, "renamed-subject", "1", "other-vendor-001")
         old_map = profile.registry.mapping(reader, v1)
         new_map = replacement.mapping(reader, v1)
@@ -320,7 +328,7 @@ def main() -> None:
         exercise_candidate(candidate)
     print(
         "d4b_catalog_tooling_candidate_source=PASS "
-        "candidates=3 reviewed_authority=proven history=append_only semantic_manifest=compared "
+        "candidates=3 reviewed_authority=preexisting history=append_only semantic_manifest=compared "
         "historical_metadata=recoverable authz=fail_closed outage=meaning_stable "
         "product_identity=non_authoritative selection=not_selected ledger_credit=0"
     )

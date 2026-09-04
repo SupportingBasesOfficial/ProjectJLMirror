@@ -46,6 +46,7 @@ EXPECTED_REQUIREMENTS = {
         "protected_oneof_collisions_fail_closed_before_generated_binding_resolution",
         "unknown_binary_fields_are_preserved_for_forward_compatibility_when_required",
         "protobuf_serialized_byte_order_is_not_contract_equivalence_authority",
+        "repeated_field_occurrence_order_is_preserved_within_each_field_number_during_semantic_normalization",
         "descriptor_or_dynamic_message_loading_from_untrusted_message_content_is_forbidden",
     },
     "avro_profile": {
@@ -69,6 +70,7 @@ EXPECTED_ASSERTIONS = {
     "all_three_concrete_candidates_can_reach_eligible_for_evidence_execution_under_explicit_guard_profiles",
     "protobuf_last_one_wins_default_is_not_accepted_for_protected_fields",
     "protobuf_raw_serialized_bytes_are_not_content_equivalence_authority",
+    "protobuf_repeated_field_occurrence_order_remains_semantic_during_normalization",
     "avro_historical_interpretation_requires_writer_schema_continuity",
     "json_schema_requires_explicit_platform_bounds_beyond_base_validation_vocabulary",
     "no_candidate_profile_loads_schema_or_executable_content_from_untrusted_message_payload",
@@ -198,7 +200,7 @@ def main(argv: list[str]) -> int:
         return 1
     print(
         "d4b_wire_schema_source_manifest=PASS axis=OPEN-EVT-002 concrete_candidates=3 eligible=3 "
-        "equivalent=insufficient_evidence selection=not_selected ledger_credit=0 d4=scoped authorities=not_granted"
+        "protobuf_repeated_order=required equivalent=insufficient_evidence selection=not_selected ledger_credit=0 d4=scoped authorities=not_granted"
     )
     return 0
 

@@ -36,6 +36,7 @@ The fixture profiles intentionally prove:
 
 - one deterministic bounded parse per candidate;
 - rejection of ambiguous/noncanonical alternatives;
+- the opaque-monotonic candidate uses a strictly increasing internal issuance sequence while emitting externally opaque tokens;
 - equality-only comparison surface;
 - no ordering authority;
 - no tenant, authorization, routing or message-identity authority emitted from version parsing;
@@ -43,11 +44,22 @@ The fixture profiles intentionally prove:
 - breaking semantic change cannot reuse the same `contract_version` in the harness;
 - historical version bytes remain unchanged.
 
-Merging this package therefore does **not** select integer syntax, semantic-version syntax, opaque-token syntax, widths, prefixes, separators, ordering rules or production storage representation.
+Merging this package therefore does **not** select integer syntax, semantic-version syntax, opaque-token syntax, widths, prefixes, separators, ordering rules, issuance implementation or production storage representation.
+
+## Opaque monotonicity without public ordering
+
+The opaque candidate has two distinct properties and the harness now tests both:
+
+1. its **issuance authority** receives an internal sequence that must increase strictly; replaying, repeating or decreasing that sequence is rejected;
+2. the resulting external token is treated as opaque and supports equality only.
+
+The test issuer derives opaque fixture bytes from the internal evidence sequence solely to exercise this separation. The internal sequence is not emitted as canonical message semantics and the external token does not gain `<`, `>`, range, routing or upgrade authority.
+
+This closes the gap where a candidate named “monotonic” could otherwise have been marked eligible while only its parser/opaceness had been exercised.
 
 ## Why ordering is deliberately absent
 
-All three candidate classes are exercised through equality semantics only. Even when a test value looks numeric, semantic-version-like or monotonic, the source profile exposes no `<`, `>`, range, upgrade or routing authority.
+All three candidate classes are exercised through equality semantics only. Even when a test value looks numeric, semantic-version-like or is produced by monotonic issuance, the source profile exposes no `<`, `>`, range, upgrade or routing authority.
 
 That is deliberate because the accepted Axis C invariant says ordering is not assumed unless a later selected profile explicitly grants and governs it. A convenient lexical/numeric interpretation must not silently become canonical contract semantics.
 
@@ -62,7 +74,8 @@ The source falsification suite rejects:
 - source-run auto-credit or non-empty `ledger_credit`;
 - promoting a candidate result to `selected`;
 - pretending an unevaluated equivalent class is eligible;
-- removing required proofs or source assertions;
+- removing required proofs or the opaque-monotonic issuance assertion;
+- non-increasing/replayed opaque issuance sequence;
 - D4-B ledger selection mutation;
 - full-D4/Product/Wave4/production/C3 authority escalation;
 - ordering authority or non-version authority fields exposed by a candidate adapter.

@@ -22,6 +22,7 @@ on:
 permissions:
   contents: read
   actions: read
+  pull-requests: read
 
 jobs:
   d4b-ledger-promotion:
@@ -161,6 +162,8 @@ jobs:
               'ARTIFACT_ID': w['artifact_id'],
               'ARTIFACT_NAME': w['artifact_name'],
               'ARTIFACT_DIGEST': w['artifact_digest'],
+              'SOURCE_PR': p['source_pr'],
+              'SOURCE_REVIEW_ID': p['source_review']['review_id'],
               'SOURCE_HEAD': p['source_reviewed_head'],
           }.items():
               print(f'{key}={value}')
@@ -176,6 +179,12 @@ jobs:
           curl --fail --silent --show-error "${headers[@]}" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" \
             -o /tmp/artifact.json
+          curl --fail --silent --show-error "${headers[@]}" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$SOURCE_PR" \
+            -o /tmp/source-pr.json
+          curl --fail --silent --show-error "${headers[@]}" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$SOURCE_PR/reviews/$SOURCE_REVIEW_ID" \
+            -o /tmp/source-review.json
           curl --fail --silent --show-error --location "${headers[@]}" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" \
             -o /tmp/source-artifact.zip
@@ -188,9 +197,12 @@ jobs:
           plan = json.loads(Path('implementation/d4-eventing-async/d4-b-evidence-plan.json').read_text())
           source = json.loads(Path('implementation/d4-eventing-async/source-evidence/schema-contract/source-evidence-manifest.json').read_text())
           w = p['source_workflow']
+          review_pin = p['source_review']
           run = json.load(open('/tmp/run.json'))
           job = json.load(open('/tmp/job.json'))
           artifact = json.load(open('/tmp/artifact.json'))
+          source_pr = json.load(open('/tmp/source-pr.json'))
+          source_review = json.load(open('/tmp/source-review.json'))
           artifact_run = artifact.get('workflow_run') or {}
           root = Path('/tmp/source-artifact')
           files = {item.name for item in root.iterdir() if item.is_file()}
@@ -198,6 +210,17 @@ jobs:
           provenance = json.loads((root / 'resolved-source-run-provenance.json').read_text())
           expected_evidence = set(plan['required_evidence'])
           assert len(expected_evidence) == 5
+          assert source_pr['number'] == p['source_pr']
+          assert source_pr['head']['sha'] == p['source_reviewed_head']
+          assert source_pr['state'] == 'closed' and source_pr.get('merged_at') is not None
+          assert source_review['id'] == review_pin['review_id']
+          assert source_review['commit_id'] == p['source_reviewed_head']
+          assert source_review['state'] == 'COMMENTED'
+          assert source_review.get('user', {}).get('login') == 'SupportingBasesOfficial'
+          review_body = source_review.get('body') or ''
+          assert review_body.startswith('INDEPENDENT EXACT-HEAD ADVERSARIAL REVIEW — CLEAN')
+          assert f"Reviewed commit: `{p['source_reviewed_head']}` only." in review_body
+          assert f"Conclusion: CLEAN for exact HEAD `{p['source_reviewed_head']}`." in review_body
           assert run['id'] == w['run_id']
           assert run['run_attempt'] == w['run_attempt']
           assert run['head_sha'] == p['source_reviewed_head']
@@ -232,7 +255,7 @@ jobs:
           assert provenance['production_authority'] == 'none'
           assert provenance['c3_numeric_topology_authority'] == 'not_selected'
           assert provenance['promotion_rule'] == 'source_run_review_then_separate_ledger_promotion'
-          print('d4b_promotion_live_admission=PASS source_run=success run_attempt=exact job=exact artifact=exact_digest artifact_payload=exact source_manifest=exact source_credit=0 selection=not_selected')
+          print('d4b_promotion_live_admission=PASS source_pr=merged source_review=exact_head_clean source_run=success run_attempt=exact job=exact artifact=exact_digest artifact_payload=exact source_manifest=exact source_credit=0 selection=not_selected')
           PY
 
       - name: Validate steady-state durable D4-B promotion provenance

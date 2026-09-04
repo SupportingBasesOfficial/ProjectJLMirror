@@ -91,11 +91,34 @@ def canonical_semantic_bytes(value: Any) -> bytes:
 
 
 def equivalence_fingerprint(value: Any, *, profile: str) -> str:
+    if not isinstance(profile, str) or not profile:
+        raise ContractError("comparison profile must be a non-empty string")
     payload = profile.encode("utf-8") + b"\x00" + canonical_semantic_bytes(value)
     return hashlib.sha256(payload).hexdigest()
 
 
+def _required_string(container: dict[str, Any], key: str) -> str:
+    value = container.get(key)
+    if not isinstance(value, str) or not value:
+        raise ContractError(f"{key} must be a non-empty string")
+    return value
+
+
+def _strict_bool(container: dict[str, Any], key: str, default: bool = False) -> bool:
+    if key not in container:
+        return default
+    value = container[key]
+    if not isinstance(value, bool):
+        raise ContractError(f"{key} must be boolean")
+    return value
+
+
 def semantic_manifest(contract: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(contract, dict):
+        raise ContractError("contract must be an object")
+    contract_family = _required_string(contract, "contract_family")
+    comparison_profile = _required_string(contract, "comparison_profile")
+    historical_reader = _required_string(contract, "historical_reader")
     fields = contract.get("fields")
     if not isinstance(fields, list):
         raise ContractError("fields must be a list")
@@ -111,26 +134,37 @@ def semantic_manifest(contract: dict[str, Any]) -> dict[str, Any]:
             raise ContractError("field names must be unique non-empty strings")
         if not isinstance(field_type, str) or not field_type:
             raise ContractError(f"field type must be a non-empty string: {name}")
+        required = _strict_bool(field, "required")
+        nullable = _strict_bool(field, "nullable")
+        immutable_for_equivalence = _strict_bool(field, "immutable_for_equivalence")
         if enum is not None:
             if not isinstance(enum, list) or not enum:
                 raise ContractError(f"enum must be a non-empty list when present: {name}")
-            if len(set(map(repr, enum))) != len(enum):
+            canonical_enum = [canonical_semantic_bytes(item) for item in enum]
+            if len(set(canonical_enum)) != len(canonical_enum):
                 raise ContractError(f"enum values must be unique: {name}")
+            enum = [item for _, item in sorted(zip(canonical_enum, enum), key=lambda pair: pair[0])]
         names.add(name)
         normalized.append({
             "name": name,
             "type": field_type,
-            "required": bool(field.get("required", False)),
-            "nullable": bool(field.get("nullable", False)),
-            "enum": sorted(enum, key=repr) if enum is not None else None,
-            "immutable_for_equivalence": bool(field.get("immutable_for_equivalence", False)),
+            "required": required,
+            "nullable": nullable,
+            "enum": enum,
+            "immutable_for_equivalence": immutable_for_equivalence,
         })
     return {
-        "contract_family": contract.get("contract_family"),
+        "contract_family": contract_family,
         "fields": sorted(normalized, key=lambda item: item["name"]),
-        "comparison_profile": contract.get("comparison_profile"),
-        "historical_reader": contract.get("historical_reader"),
+        "comparison_profile": comparison_profile,
+        "historical_reader": historical_reader,
     }
+
+
+def _enum_set(values: list[Any] | None) -> set[bytes] | None:
+    if values is None:
+        return None
+    return {canonical_semantic_bytes(value) for value in values}
 
 
 def compatibility(old: dict[str, Any], new: dict[str, Any]) -> tuple[bool, list[str]]:
@@ -154,15 +188,12 @@ def compatibility(old: dict[str, Any], new: dict[str, Any]) -> tuple[bool, list[
             reasons.append(f"required_tightened:{name}")
         if old_field["nullable"] and not new_field["nullable"]:
             reasons.append(f"nullable_narrowed:{name}")
-        old_enum = old_field["enum"]
-        new_enum = new_field["enum"]
+        old_enum = _enum_set(old_field["enum"])
+        new_enum = _enum_set(new_field["enum"])
         if old_enum is None and new_enum is not None:
             reasons.append(f"enum_introduced:{name}")
-        elif old_enum is not None:
-            if new_enum is None:
-                pass
-            elif not set(old_enum).issubset(set(new_enum)):
-                reasons.append(f"enum_narrowed:{name}")
+        elif old_enum is not None and new_enum is not None and not old_enum.issubset(new_enum):
+            reasons.append(f"enum_narrowed:{name}")
         if old_field["immutable_for_equivalence"] != new_field["immutable_for_equivalence"]:
             reasons.append(f"equivalence_scope_change:{name}")
 
@@ -172,10 +203,6 @@ def compatibility(old: dict[str, Any], new: dict[str, Any]) -> tuple[bool, list[
 
     if old_manifest["comparison_profile"] != new_manifest["comparison_profile"]:
         reasons.append("comparison_profile_change")
-    if not old_manifest["historical_reader"]:
-        reasons.append("old_historical_reader_missing")
-    if not new_manifest["historical_reader"]:
-        reasons.append("new_historical_reader_missing")
 
     return not reasons, reasons
 

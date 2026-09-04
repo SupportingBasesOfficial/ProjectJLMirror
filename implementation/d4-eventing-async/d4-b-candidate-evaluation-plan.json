@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-B",
+  "canonical_base": "9aefb026d8b8a80abc72f1be5c853059718f5ae2",
+  "mode": "candidate_evaluation_only",
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "separate_selection_required": true,
+  "separate_d4_acceptance_required": true,
+  "source_decisions": [
+    "OPEN-EVT-002",
+    "OPEN-EVT-003",
+    "OPEN-EVT-004"
+  ],
+  "axes": {
+    "wire_serialization_and_schema_language": {
+      "decision": "OPEN-EVT-002",
+      "candidate_classes": [
+        "bounded_json_plus_json_schema_profile",
+        "protobuf_profile",
+        "avro_profile",
+        "equivalent_reviewed_profile"
+      ],
+      "surface_policy": "internal_broker_and_external_webhook_profiles_may_differ_only_when_canonical_semantics_conversion_and_historical_interpretation_are_explicit",
+      "must_prove": [
+        "one_canonical_bounded_structured_interpretation",
+        "duplicate_and_alias_protected_fields_fail_closed",
+        "required_optional_null_and_enum_semantics_are_explicit",
+        "historical_contract_meaning_remains_interpretable",
+        "duplicate_sensitive_content_equivalence_is_deterministic_and_reproducible",
+        "unknown_field_and_forward_compatibility_behavior_is_explicit",
+        "parser_and_decompression_work_are_bounded",
+        "no_dynamic_untrusted_schema_or_code_loading",
+        "language_runtime_mapping_does_not_change_authoritative_contract_semantics"
+      ]
+    },
+    "schema_registry_catalog_and_tooling": {
+      "decision": "OPEN-EVT-003",
+      "candidate_classes": [
+        "reviewed_git_catalog",
+        "registry_backed_catalog",
+        "hybrid_reviewed_git_plus_registry_catalog",
+        "equivalent_reviewed_catalog"
+      ],
+      "must_prove": [
+        "reviewed_contract_is_canonical_authority",
+        "version_provenance_and_history_are_retained",
+        "semantic_manifest_is_compared_in_addition_to_payload_schema",
+        "historical_reader_upcaster_and_comparison_profile_metadata_are_recoverable",
+        "registry_or_catalog_access_is_authenticated_and_authorized",
+        "tooling_outage_does_not_rewrite_or_silently_reinterpret_committed_historical_contracts",
+        "compatibility_ci_detects_semantic_breaks_not_only_syntactic_schema_changes",
+        "catalog_product_identity_does_not_become_contract_identity"
+      ]
+    },
+    "contract_version_representation": {
+      "decision": "OPEN-EVT-004",
+      "candidate_classes": [
+        "positive_integer_family_revision",
+        "semantic_version_like_contract_revision",
+        "opaque_monotonic_contract_token",
+        "equivalent_reviewed_representation"
+      ],
+      "must_prove": [
+        "contract_version_is_distinct_from_deployment_api_provider_realtime_and_registry_versions",
+        "breaking_semantic_change_requires_new_incompatible_contract_version_or_accepted_migration",
+        "historical_messages_retain_original_version_semantics",
+        "representation_has_one_canonical_parse_and_comparison_rule",
+        "version_ordering_is_not_assumed_unless_the_selected_profile_explicitly_grants_it",
+        "version_value_is_not_authorization_tenant_routing_or_message_identity_authority"
+      ]
+    }
+  },
+  "cross_axis_invariants": [
+    "wire_schema_catalog_and_contract_version_choices_are_independently_selectable",
+    "a_catalog_or_registry_product_cannot_select_wire_serialization_by_implication",
+    "a_wire_serialization_choice_cannot_select_catalog_or_contract_version_syntax_by_implication",
+    "internal_and_external_surfaces_may_use_different reviewed_profiles_without_changing_canonical_domain_semantics",
+    "historical_source_and_ledger_records_remain_immutable",
+    "d4b_existing_five_of_five_evidence_credit_is_preserved_without_new_auto_credit",
+    "d4a_kafka_bounded_c2_selection_and_exact_seven_of_seven_evidence_are_preserved",
+    "d4c_and_d4d_remain_open_unselected_and_uncredited",
+    "d4_gate_remains_scoped",
+    "product_wave4_production_and_c3_authorities_remain_ungranted"
+  ],
+  "evaluation_output_states": [
+    "eligible_for_evidence_execution",
+    "ineligible_by_contract",
+    "insufficient_evidence"
+  ],
+  "forbidden_outputs": [
+    "selected",
+    "preferred_without_evidence",
+    "production_ready",
+    "authority_granted"
+  ]
+}

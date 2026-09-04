@@ -66,6 +66,7 @@ EXPECTED_REQUIREMENTS = {
 EXPECTED_ASSERTIONS = {
     'all_three_concrete_catalog_classes_can_reach_eligible_for_evidence_execution_without_selecting_a_product',
     'reviewed_contract_content_is_authority_and_registry_registration_is_never_authority_by_itself',
+    'reviewed_provenance_is_bound_into_reviewed_content_digest_and_registry_publish_requires_exact_committed_revision',
     'payload_schema_compatibility_alone_is_insufficient_when_semantic_manifest_changes_break_authoritative_meaning',
     'contract_revision_history_is_append_only_and_old_revision_content_cannot_be_overwritten',
     'historical_reader_upcaster_and_comparison_profile_metadata_are_bound_to_each_reviewed_revision',
@@ -165,7 +166,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f'ERROR: {error}', file=sys.stderr)
         return 1
-    print('d4b_catalog_tooling_source_manifest=PASS candidates=3 proofs=8 selection=not_selected ledger_credit=0 d4=12/26')
+    print('d4b_catalog_tooling_source_manifest=PASS candidates=3 proofs=8 provenance=content_bound selection=not_selected ledger_credit=0 d4=12/26')
     return 0
 
 if __name__ == '__main__':

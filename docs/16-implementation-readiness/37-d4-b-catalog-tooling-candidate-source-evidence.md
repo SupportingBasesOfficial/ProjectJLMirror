@@ -28,7 +28,7 @@ A registry-backed or hybrid profile is eligible only if publish is downstream of
 Logical identity in the evidence fixture is carried independently as domain/name/family. Each reviewed revision binds:
 
 - payload-schema digest;
-- semantic-manifest digest;
+- canonical semantic-manifest digest;
 - reader reference;
 - upcaster reference;
 - comparison-profile reference;
@@ -37,6 +37,12 @@ Logical identity in the evidence fixture is carried independently as domain/name
 The deterministic reviewed-content digest includes the reviewed provenance as well as the semantic/schema/history metadata. Registry publish requires exact equality with the committed reviewed revision, so a caller cannot reuse a valid logical revision while substituting forged provenance.
 
 Revision history is append-only. Reusing an existing logical revision token with different reviewed content fails closed. Historical reader/upcaster/comparison metadata remains attached to the reviewed revision rather than being reconstructed from a vendor registry ID.
+
+## Canonical semantic-manifest representation
+
+Semantic-manifest compatibility is evaluated over a deterministic canonical structured representation rather than raw JSON text formatting. Object member order and insignificant whitespace therefore cannot create a false compatibility break. Duplicate semantic-manifest members are rejected rather than collapsed by parser behavior.
+
+This aligns Axis B with the already accepted D4-B requirement for a deterministic semantic manifest: formatting syntax is not semantic authority.
 
 ## Semantic compatibility, not syntax-only compatibility
 
@@ -55,6 +61,12 @@ The evidence distinguishes:
 Anonymous reads fail closed. Authenticated principals without the required role fail closed. A reader cannot publish registry mappings merely because the contract is readable.
 
 This is evidence-profile behavior only; it does not select an IAM product, protocol or concrete policy engine.
+
+## Registry mapping history
+
+Within one registry-product fixture, the physical mapping for a given logical contract identity + reviewed revision is immutable. Repeating the exact same publish is idempotent; changing subject, vendor version or vendor ID in place fails closed.
+
+This preserves physical provenance/history without making those vendor identifiers authoritative contract identity. Moving to a different reviewed registry product is modeled as a separate mapping surface rather than rewriting the old one.
 
 ## Tool outage and historical meaning
 
@@ -86,7 +98,7 @@ The allowed result of this source-evidence stage is only:
 1. all three concrete candidate results;
 2. the exact eight Axis B `must_prove` obligations;
 3. candidate-specific guard profiles;
-4. source assertions, including provenance/content binding;
+4. source assertions, including provenance/content binding, canonical semantic-manifest digest and immutable registry mapping history;
 5. `selection_state=not_selected`;
 6. `selection_authority=not_granted`;
 7. `current_run_auto_credit=false`;
@@ -94,7 +106,7 @@ The allowed result of this source-evidence stage is only:
 9. independent Axis A and Axis C selection state;
 10. unchanged global D4 authority state.
 
-Negative controls must reject hidden selection, candidate promotion, proof removal, provenance-assertion removal, auto-credit, ledger credit, Product authority escalation, wire-format coupling and `contract_version` coupling.
+Negative controls must reject hidden selection, candidate promotion, proof removal, provenance/canonical-semantic/mapping-history assertion removal, auto-credit, ledger credit, Product authority escalation, wire-format coupling and `contract_version` coupling.
 
 ## Preserved canonical state
 

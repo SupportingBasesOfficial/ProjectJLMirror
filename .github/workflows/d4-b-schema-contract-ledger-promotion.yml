@@ -91,6 +91,11 @@ jobs:
             echo "d4b_promotion_delta=steady_state reason=no_pull_request_base"
             exit 0
           fi
+          if ! git cat-file -e "$BASE_SHA:implementation/d4-eventing-async/d4-b-evidence-plan.json" 2>/dev/null; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "d4b_promotion_delta=changed reason=initial_promotion_base_plan_absent"
+            exit 0
+          fi
           python3 - <<'PY'
           import json
           import os
@@ -118,7 +123,7 @@ jobs:
 
           base_plan_bytes = git_show(plan_path)
           if base_plan_bytes is None:
-              raise SystemExit('base D4-B evidence plan is missing')
+              raise SystemExit('base D4-B evidence plan disappeared after existence check')
           base_plan = json.loads(base_plan_bytes)
           head_plan = json.loads(Path(plan_path).read_text(encoding='utf-8'))
 

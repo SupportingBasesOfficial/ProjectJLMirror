@@ -29,7 +29,7 @@ EXPECTED_REQUIRED_EVIDENCE = {
 }
 EXPECTED_COMPLETED = {
     "D4-A": set(EXPECTED_REQUIRED_EVIDENCE["D4-A"]),
-    "D4-B": set(),
+    "D4-B": set(EXPECTED_REQUIRED_EVIDENCE["D4-B"]),
     "D4-C": set(),
     "D4-D": set(),
 }
@@ -37,7 +37,7 @@ EXPECTED_TOTAL_EVIDENCE = sum(len(items) for items in EXPECTED_REQUIRED_EVIDENCE
 EXPECTED_TOTAL_CREDITED = sum(len(items) for items in EXPECTED_COMPLETED.values())
 EXPECTED_ENTRY_STATES = {
     "D4-A": "selected_candidate",
-    "D4-B": "candidate_selection_open",
+    "D4-B": "evidence_complete_selection_pending",
     "D4-C": "candidate_selection_open",
     "D4-D": "candidate_selection_open",
 }
@@ -74,37 +74,45 @@ def validate_manifest(state: dict) -> list[str]:
     tracks = state.get("tracks")
     require(isinstance(tracks, list), "tracks must be a list")
     if isinstance(tracks, list):
-        by_id = {track.get("track_id"): track for track in tracks if isinstance(track, dict)}
-        require(set(by_id) == set(EXPECTED_TRACK_SOURCES), "D4 track set drift")
-        for track_id, expected_sources in EXPECTED_TRACK_SOURCES.items():
-            track = by_id.get(track_id, {})
-            expected_evidence = EXPECTED_REQUIRED_EVIDENCE[track_id]
-            expected_completed = EXPECTED_COMPLETED[track_id]
-            expected_remaining = expected_evidence - expected_completed
-            require(set(track.get("source_decisions", [])) == expected_sources, f"{track_id} source decision drift")
-            require(track.get("state") == EXPECTED_ENTRY_STATES[track_id], f"{track_id} scoped state drift")
-            required = track.get("required_evidence", [])
-            completed = track.get("evidence_completed", [])
-            remaining = track.get("evidence_remaining", [])
-            require(isinstance(required, list), f"{track_id} required evidence must be a list")
-            require(set(required) == expected_evidence, f"{track_id} required evidence inventory drift")
-            require(len(required) == len(expected_evidence), f"{track_id} required evidence multiplicity drift")
-            require(set(completed) == expected_completed, f"{track_id} completed evidence drift")
-            require(len(completed) == len(expected_completed), f"{track_id} completed evidence multiplicity drift")
-            require(set(remaining) == expected_remaining, f"{track_id} remaining evidence drift")
-            require(len(remaining) == len(expected_remaining), f"{track_id} remaining evidence multiplicity drift")
-            require(set(completed).isdisjoint(remaining), f"{track_id} completed/remaining overlap")
-            require(set(completed) | set(remaining) == expected_evidence, f"{track_id} evidence partition drift")
-        require(sum(len(track.get("required_evidence", [])) for track in by_id.values()) == EXPECTED_TOTAL_EVIDENCE, "D4 total required evidence inventory drift")
-        require(sum(len(track.get("evidence_completed", [])) for track in by_id.values()) == EXPECTED_TOTAL_CREDITED, "D4 total credited evidence drift")
-        d4a = by_id.get("D4-A", {})
-        require(d4a.get("candidate") == "kafka", "D4-A selected candidate must remain Kafka")
-        require(d4a.get("candidate_status") == "selected_c2_candidate", "D4-A Kafka candidate must remain selected at bounded C2 scope")
-        require(d4a.get("evidence_remaining") == [], "D4-A selected state must retain complete evidence")
-        for track_id in ("D4-B", "D4-C", "D4-D"):
-            track = by_id.get(track_id, {})
-            require(track.get("candidate") is None, f"{track_id} must not silently select a candidate")
-            require(track.get("candidate_status") == "not_selected", f"{track_id} candidate status must remain not_selected")
+        valid_track_objects = all(isinstance(track, dict) for track in tracks)
+        require(valid_track_objects, "every D4 track must be an object")
+        if valid_track_objects:
+            track_ids = [track.get("track_id") for track in tracks]
+            require(len(tracks) == len(EXPECTED_TRACK_SOURCES), "D4 track identity multiplicity drift")
+            require(len(track_ids) == len(set(track_ids)), "D4 duplicate track_id is forbidden")
+            by_id = {track.get("track_id"): track for track in tracks}
+            require(set(by_id) == set(EXPECTED_TRACK_SOURCES), "D4 track set drift")
+            for track_id, expected_sources in EXPECTED_TRACK_SOURCES.items():
+                track = by_id.get(track_id, {})
+                expected_evidence = EXPECTED_REQUIRED_EVIDENCE[track_id]
+                expected_completed = EXPECTED_COMPLETED[track_id]
+                expected_remaining = expected_evidence - expected_completed
+                require(set(track.get("source_decisions", [])) == expected_sources, f"{track_id} source decision drift")
+                require(track.get("state") == EXPECTED_ENTRY_STATES[track_id], f"{track_id} scoped state drift")
+                required = track.get("required_evidence", [])
+                completed = track.get("evidence_completed", [])
+                remaining = track.get("evidence_remaining", [])
+                require(isinstance(required, list), f"{track_id} required evidence must be a list")
+                require(set(required) == expected_evidence, f"{track_id} required evidence inventory drift")
+                require(len(required) == len(expected_evidence), f"{track_id} required evidence multiplicity drift")
+                require(set(completed) == expected_completed, f"{track_id} completed evidence drift")
+                require(len(completed) == len(expected_completed), f"{track_id} completed evidence multiplicity drift")
+                require(set(remaining) == expected_remaining, f"{track_id} remaining evidence drift")
+                require(len(remaining) == len(expected_remaining), f"{track_id} remaining evidence multiplicity drift")
+                require(set(completed).isdisjoint(remaining), f"{track_id} completed/remaining overlap")
+                require(set(completed) | set(remaining) == expected_evidence, f"{track_id} evidence partition drift")
+            require(sum(len(track.get("required_evidence", [])) for track in by_id.values()) == EXPECTED_TOTAL_EVIDENCE, "D4 total required evidence inventory drift")
+            require(sum(len(track.get("evidence_completed", [])) for track in by_id.values()) == EXPECTED_TOTAL_CREDITED, "D4 total credited evidence drift")
+            d4a = by_id.get("D4-A", {})
+            require(d4a.get("candidate") == "kafka", "D4-A selected candidate must remain Kafka")
+            require(d4a.get("candidate_status") == "selected_c2_candidate", "D4-A Kafka candidate must remain selected at bounded C2 scope")
+            require(d4a.get("evidence_remaining") == [], "D4-A selected state must retain complete evidence")
+            d4b = by_id.get("D4-B", {})
+            require(d4b.get("evidence_remaining") == [], "D4-B promoted state must retain complete evidence")
+            for track_id in ("D4-B", "D4-C", "D4-D"):
+                track = by_id.get(track_id, {})
+                require(track.get("candidate") is None, f"{track_id} must not silently select a candidate")
+                require(track.get("candidate_status") == "not_selected", f"{track_id} candidate status must remain not_selected")
 
     require(set(state.get("explicit_c3_exclusions", [])) == EXPECTED_C3_EXCLUSIONS, "D4 C3 exclusion set drift")
     require(set(state.get("explicit_product_or_later_gate_exclusions", [])) == EXPECTED_LATER_EXCLUSIONS, "D4 Product/later-gate exclusion set drift")
@@ -121,7 +129,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4_STATE_ERROR: {error}", file=sys.stderr)
         return 1
-    print(f"d4_eventing_async_state=PASS gate_state={state['gate_state']} tracks={len(state['tracks'])} evidence_required={EXPECTED_TOTAL_EVIDENCE} evidence_credited={EXPECTED_TOTAL_CREDITED} d4a_candidate=kafka d4a_selection=selected transport_authority=not_granted d4_bc_d=open")
+    print(f"d4_eventing_async_state=PASS gate_state={state['gate_state']} tracks={len(state['tracks'])} unique_tracks=true evidence_required={EXPECTED_TOTAL_EVIDENCE} evidence_credited={EXPECTED_TOTAL_CREDITED} d4a_candidate=kafka d4a_selection=selected d4b=5_of_5_selection_pending d4c_d=open transport_authority=not_granted")
     return 0
 
 

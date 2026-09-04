@@ -7,9 +7,13 @@ on:
     paths:
       - 'implementation/d4-eventing-async/**'
       - 'tools/assurance/d4b_schema_contract/**'
+      - 'tools/assurance/validate_d4b_evidence_plan.py'
+      - 'tools/assurance/test_validate_d4b_evidence_plan.py'
       - 'docs/10-event-contracts/**'
       - 'docs/16-implementation-readiness/32-d4-b-schema-contract-source-evidence.md'
+      - 'docs/16-implementation-readiness/33-d4-b-schema-contract-ledger-promotion.md'
       - '.github/workflows/d4-b-schema-contract-source-evidence.yml'
+      - '.github/workflows/d4-b-schema-contract-ledger-promotion.yml'
   workflow_dispatch:
 
 permissions:
@@ -65,7 +69,7 @@ jobs:
             PYTHONPATH=. python3 "$test_file"
           done
 
-      - name: Assert source run does not select or promote D4-B
+      - name: Assert source run cannot add ledger credit after separate promotion
         shell: bash
         run: |
           python3 - <<'PY'
@@ -74,12 +78,22 @@ jobs:
           source = json.loads(Path('implementation/d4-eventing-async/source-evidence/schema-contract/source-evidence-manifest.json').read_text())
           state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
           tracks = {t['track_id']: t for t in state['tracks']}
+          expected = {
+              'canonical_bounded_serialization_profile',
+              'parser_ambiguity_and_duplicate_field_negative_vectors',
+              'schema_catalog_semantic_manifest_compatibility_ci',
+              'historical_reader_and_equivalence_profile_continuity',
+              'contract_version_representation_and_breaking_change_vectors',
+          }
           assert source['current_run_auto_credit'] is False and source['ledger_credit'] == []
           assert source['candidate'] is None and source['candidate_status'] == 'not_selected'
           assert source['serialization_selection_state'] == 'not_selected'
           assert source['schema_catalog_selection_state'] == 'not_selected'
           assert source['contract_version_syntax_selection_state'] == 'not_selected'
-          assert tracks['D4-B']['candidate'] is None and tracks['D4-B']['evidence_completed'] == []
+          assert tracks['D4-B']['candidate'] is None and tracks['D4-B']['candidate_status'] == 'not_selected'
+          assert tracks['D4-B']['state'] == 'evidence_complete_selection_pending'
+          assert set(tracks['D4-B']['evidence_completed']) == expected
+          assert tracks['D4-B']['evidence_remaining'] == []
           assert tracks['D4-C']['candidate'] is None and tracks['D4-C']['evidence_completed'] == []
           assert tracks['D4-D']['candidate'] is None and tracks['D4-D']['evidence_completed'] == []
           assert state['gate_state'] == 'scoped'
@@ -88,7 +102,7 @@ jobs:
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['c3_numeric_topology_authority'] == 'not_selected'
-          print('d4b_source_nonpromotion=PASS evidence_source=5 ledger_credit=0 candidate=not_selected d4=scoped authorities=not_granted')
+          print('d4b_source_nonpromotion=PASS source_credit=0 prior_promoted_credit=5 candidate=not_selected d4=scoped authorities=not_granted')
           PY
 
       - name: Resolve exact workflow job identity and emit provenance

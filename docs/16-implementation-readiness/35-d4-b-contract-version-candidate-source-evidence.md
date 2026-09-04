@@ -37,6 +37,7 @@ The fixture profiles intentionally prove:
 - one deterministic bounded parse per candidate;
 - rejection of ambiguous/noncanonical alternatives;
 - the opaque-monotonic candidate uses a strictly increasing and explicitly bounded internal issuance sequence while emitting externally opaque tokens;
+- the opaque fixture mapping is a deterministic bijection across the bounded uint64 evidence domain, so distinct issuance sequences cannot collide inside the fixture;
 - equality-only comparison surface;
 - no ordering authority;
 - no tenant, authorization, routing or message-identity authority emitted from version parsing;
@@ -54,9 +55,9 @@ The opaque candidate has two distinct properties and the harness tests both:
 1. its **issuance authority** receives an internal sequence that must increase strictly, stay inside the bounded evidence range and reject replay/repeat/decrement/overflow;
 2. the resulting external token is treated as opaque and supports equality only.
 
-The test issuer derives opaque fixture bytes from the internal evidence sequence solely to exercise this separation. The internal sequence is not emitted as canonical message semantics and the external token does not gain `<`, `>`, range, routing or upgrade authority.
+For the evidence fixture, the bounded internal uint64 sequence is transformed through an affine permutation with an odd multiplier, which is bijective modulo `2^64`, and then encoded as an opaque test token. This removes probabilistic collision assumptions from the harness. It is not a production token-generation selection, cryptographic security claim or public ordering profile.
 
-This closes the gap where a candidate named “monotonic” could otherwise have been marked eligible while only its parser/opaceness had been exercised.
+The internal sequence is not emitted as canonical message semantics and the external token does not gain `<`, `>`, range, routing or upgrade authority.
 
 ## Historical meaning is family-bound
 
@@ -86,7 +87,7 @@ The source falsification suite rejects:
 - source-run auto-credit or non-empty `ledger_credit`;
 - promoting a candidate result to `selected`;
 - pretending an unevaluated equivalent class is eligible;
-- removing required proofs, the opaque-monotonic issuance assertion or the historical-family continuity assertion;
+- removing required proofs, the opaque-monotonic issuance assertion, the collision-free fixture assertion or the historical-family continuity assertion;
 - non-increasing/replayed/overflow opaque issuance sequence;
 - cross-family historical reinterpretation;
 - D4-B ledger selection mutation;

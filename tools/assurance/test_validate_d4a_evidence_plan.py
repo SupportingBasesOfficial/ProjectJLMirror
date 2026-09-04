@@ -2,14 +2,18 @@
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
 from pathlib import Path
 
-from validate_d4a_evidence_plan import validate_objects
+from validate_d4a_evidence_plan import validate, validate_objects
 
 ROOT = Path(__file__).resolve().parents[2]
 PLAN_PATH = ROOT / "implementation/d4-eventing-async/d4-a-evidence-plan.json"
 ENTRY_PATH = ROOT / "implementation/d4-eventing-async/state-manifest.json"
 PROMOTION_PATH = ROOT / "implementation/d4-eventing-async/ledger-promotions/d4-a-capacity-ordering-promotion-v1.json"
+SEMANTIC_PROMOTION_REL = Path("implementation/d4-eventing-async/ledger-promotions/d4-a-semantic-boundary-promotion-v1.json")
+DATA_SOURCE_REL = Path("implementation/d4-eventing-async/source-evidence/data-topology/source-evidence-manifest.json")
 
 
 def must_fail(name: str, mutate) -> None:
@@ -19,6 +23,17 @@ def must_fail(name: str, mutate) -> None:
     mutate(plan, entry, promotion)
     if not validate_objects(plan, entry, promotion):
         raise AssertionError(f"negative control unexpectedly passed: {name}")
+
+
+def must_fail_bytes(name: str, relative_path: Path, mutate_bytes) -> None:
+    with tempfile.TemporaryDirectory(prefix="d4a-chain-") as tmp:
+        tmp_root = Path(tmp)
+        shutil.copytree(ROOT / "implementation", tmp_root / "implementation")
+        target = tmp_root / relative_path
+        target.write_bytes(mutate_bytes(target.read_bytes()))
+        errors = validate(tmp_root)
+        if not errors:
+            raise AssertionError(f"byte-level negative control unexpectedly passed: {name}")
 
 
 def d4a(entry: dict) -> dict:
@@ -33,6 +48,12 @@ def remove_assertion(evidence_id: str, assertion: str):
     def mutate(plan: dict, entry: dict, promotion: dict) -> None:
         item(plan, evidence_id)["must_prove"].remove(assertion)
     return mutate
+
+
+def flip_first_byte(data: bytes) -> bytes:
+    if not data:
+        raise AssertionError("cannot mutate empty evidence file")
+    return bytes([data[0] ^ 1]) + data[1:]
 
 
 def main() -> int:
@@ -76,7 +97,9 @@ def main() -> int:
     must_fail("promotion removes live Kafka source fact", lambda p,e,r: r.update(live_kafka_broker_claimed=False))
     must_fail("promotion claims recovery", lambda p,e,r: r.update(recovery_benchmark_claimed=True))
     must_fail("promotion grants transport", lambda p,e,r: r.update(d4_transport_authority="granted"))
-    print("d4a_evidence_plan_negative_controls=PASS ledger_credit=6 remaining=1 exact_proof_assertions=blocked provenance_chain_tamper=blocked review_tamper=blocked seventh_credit=blocked recovery_overclaim=blocked authority_escalation=blocked")
+    must_fail_bytes("tamper semantic-boundary promotion record", SEMANTIC_PROMOTION_REL, flip_first_byte)
+    must_fail_bytes("tamper data-topology source manifest", DATA_SOURCE_REL, flip_first_byte)
+    print("d4a_evidence_plan_negative_controls=PASS ledger_credit=6 remaining=1 exact_proof_assertions=blocked provenance_full_chain_tamper=blocked review_tamper=blocked seventh_credit=blocked recovery_overclaim=blocked authority_escalation=blocked")
     return 0
 
 

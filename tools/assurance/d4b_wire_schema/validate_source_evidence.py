@@ -56,10 +56,13 @@ EXPECTED_REQUIREMENTS = {
         "descriptor_or_dynamic_message_loading_from_untrusted_message_content_is_forbidden",
     },
     "avro_profile": {
+        "reviewed_avro_schema_reference_is_bound_to_exact_reviewed_schema_content_before_resolution",
         "original_writer_schema_identity_and_content_are_pinned_for_historical_interpretation",
+        "writer_declared_fields_must_be_present_in_datum_and_reader_defaults_apply_only_when_field_is_absent_from_writer_schema",
         "reader_schema_resolution_is_explicit_and_missing_fields_require_defaults_or_failure",
         "writer_reader_field_type_compatibility_and_allowed_promotions_are_checked_before_value_resolution",
         "allowed_writer_reader_promotions_are_applied_to_reader_representation_before_equivalence",
+        "float_double_admission_and_promotion_overflow_fail_closed_as_evidence_violation",
         "schema_field_alias_and_scalar_sizes_are_bounded_before_datum_resolution",
         "datum_processing_is_bounded_and_canonicalized_structurally_without_unrestricted_recursive_json_serialization",
         "required_nullable_and_enum_semantics_are_explicit_after_writer_reader_resolution",
@@ -90,6 +93,9 @@ EXPECTED_ASSERTIONS = {
     "protobuf_required_optional_absence_and_enum_semantics_are_explicit",
     "protobuf_raw_serialized_bytes_are_not_content_equivalence_authority",
     "protobuf_repeated_field_occurrence_order_remains_semantic_during_normalization",
+    "avro_reviewed_schema_reference_is_structurally_bound_to_exact_reviewed_schema_content",
+    "avro_writer_declared_fields_cannot_be_fabricated_from_reader_defaults",
+    "avro_float_double_overflow_is_caught_and_fails_closed",
     "avro_historical_interpretation_requires_writer_schema_continuity",
     "avro_writer_reader_type_compatibility_is_explicit_and_incompatible_types_fail_closed",
     "avro_allowed_promotions_materialize_reader_representation_before_semantic_equivalence",
@@ -224,7 +230,8 @@ def main(argv: list[str]) -> int:
     print(
         "d4b_wire_schema_source_manifest=PASS axis=OPEN-EVT-002 concrete_candidates=3 eligible=3 "
         "decimal_canonicalization=context_independent canonical_varints=required uint64_varints=bounded "
-        "protobuf_oneof_duplicates=blocked avro_type_resolution=required avro_promotions=reader_canonicalized "
+        "protobuf_oneof_duplicates=blocked avro_schema_ref_content=bound avro_writer_fields=required "
+        "avro_float_overflow=fail_closed avro_type_resolution=required avro_promotions=reader_canonicalized "
         "avro_datum_bounds=required runtime_mapping=bounded historical_binding=required decompression=identity_only "
         "equivalent=insufficient_evidence selection=not_selected ledger_credit=0 d4=scoped authorities=not_granted"
     )

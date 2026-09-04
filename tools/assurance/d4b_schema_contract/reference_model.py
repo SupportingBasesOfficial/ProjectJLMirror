@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -32,6 +33,10 @@ def _pairs_no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _reject_nonstandard_constant(value: str) -> None:
+    raise ContractError(f"non-standard numeric constant rejected: {value}")
+
+
 def _validate_bounds(value: Any, bounds: Bounds, depth: int = 0) -> None:
     if depth > bounds.max_depth:
         raise ContractError("maximum depth exceeded")
@@ -50,13 +55,19 @@ def _validate_bounds(value: Any, bounds: Bounds, depth: int = 0) -> None:
     elif isinstance(value, str):
         if len(value) > bounds.max_string_chars:
             raise ContractError("string length exceeded")
+    elif isinstance(value, float) and not math.isfinite(value):
+        raise ContractError("non-finite number rejected")
 
 
 def parse_bounded_structured(raw: bytes, bounds: Bounds = Bounds()) -> Any:
     if len(raw) > bounds.max_wire_bytes:
         raise ContractError("wire bound exceeded")
     try:
-        parsed = json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs_no_duplicates)
+        parsed = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_pairs_no_duplicates,
+            parse_constant=_reject_nonstandard_constant,
+        )
     except UnicodeDecodeError as exc:
         raise ContractError("invalid utf-8") from exc
     except json.JSONDecodeError as exc:
@@ -66,7 +77,17 @@ def parse_bounded_structured(raw: bytes, bounds: Bounds = Bounds()) -> Any:
 
 
 def canonical_semantic_bytes(value: Any) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    _validate_bounds(value, Bounds(max_depth=64, max_members=65536, max_array_items=65536, max_string_chars=1_000_000, max_wire_bytes=2**31 - 1))
+    try:
+        return json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ContractError("value cannot be canonically serialized") from exc
 
 
 def equivalence_fingerprint(value: Any, *, profile: str) -> str:
@@ -139,7 +160,7 @@ def compatibility(old: dict[str, Any], new: dict[str, Any]) -> tuple[bool, list[
             reasons.append(f"enum_introduced:{name}")
         elif old_enum is not None:
             if new_enum is None:
-                pass  # widening is backward-compatible for the reference profile
+                pass
             elif not set(old_enum).issubset(set(new_enum)):
                 reasons.append(f"enum_narrowed:{name}")
         if old_field["immutable_for_equivalence"] != new_field["immutable_for_equivalence"]:
@@ -168,6 +189,5 @@ def require_breaking_change_disposition(old: dict[str, Any], new: dict[str, Any]
 
 
 def validate_reference_version_token(token: Any) -> None:
-    # Reference-only bound. This deliberately does not select the canonical OPEN-EVT-004 syntax.
     if not isinstance(token, str) or not token or len(token) > 64:
         raise ContractError("reference version token must be a non-empty bounded string")

@@ -20,7 +20,7 @@ def main() -> int:
     must_fail("source auto credit", lambda s,p,l,st: s.__setitem__("ledger_credit", [EVIDENCE_ID]), "source package self-promotion")
     must_fail("rewrite historical prior credit", lambda s,p,l,st: s["prior_promoted_ledger_credit"].append(EVIDENCE_ID), "source historical prior credit drift")
     must_fail("remove promoted global recovery credit", lambda s,p,l,st: l["credited_evidence"].remove(EVIDENCE_ID), "global promoted seven-of-seven credit drift")
-    must_fail("duplicate eighth global credit", lambda s,p,l,st: l["credited_evidence"].append(EVIDENCE_ID), "global promoted seven-of-seven credit drift")
+    must_fail("duplicate eighth global credit", lambda s,p,l,st: l["credited_evidence"].append(EVIDENCE_ID), "global promoted seven-of-seven credit multiplicity drift")
     must_fail("state loses recovery credit", lambda s,p,l,st: d4a(st)["evidence_completed"].remove(EVIDENCE_ID), "state completed seven-of-seven evidence drift")
     must_fail("state reopens recovery", lambda s,p,l,st: d4a(st)["evidence_remaining"].append(EVIDENCE_ID), "no D4-A evidence remaining")
     must_fail("state silently selects", lambda s,p,l,st: d4a(st).__setitem__("state", "candidate_selected"), "evidence-complete selection-pending")

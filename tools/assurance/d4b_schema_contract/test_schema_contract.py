@@ -59,13 +59,18 @@ def main() -> int:
     compatible, reasons = compatibility(BASE, additive)
     assert compatible and reasons == []
 
-    breaking_cases = []
+    breaking_cases: list[dict] = []
     removed = copy.deepcopy(BASE); removed["fields"] = [f for f in removed["fields"] if f["name"] != "status"]; breaking_cases.append(removed)
     changed_type = copy.deepcopy(BASE); next(f for f in changed_type["fields"] if f["name"] == "status")["type"] = "integer"; breaking_cases.append(changed_type)
     required_add = copy.deepcopy(BASE); required_add["fields"].append({"name": "must", "type": "string", "required": True}); breaking_cases.append(required_add)
+    optional_to_required = copy.deepcopy(BASE); next(f for f in optional_to_required["fields"] if f["name"] == "note")["required"] = True; breaking_cases.append(optional_to_required)
+    nullable_narrow = copy.deepcopy(BASE); next(f for f in nullable_narrow["fields"] if f["name"] == "note")["nullable"] = False; breaking_cases.append(nullable_narrow)
     enum_narrow = copy.deepcopy(BASE); next(f for f in enum_narrow["fields"] if f["name"] == "status")["enum"] = ["active"]; breaking_cases.append(enum_narrow)
+    enum_introduced = copy.deepcopy(BASE); next(f for f in enum_introduced["fields"] if f["name"] == "note")["enum"] = ["operator", "system"]; breaking_cases.append(enum_introduced)
     eq_scope = copy.deepcopy(BASE); next(f for f in eq_scope["fields"] if f["name"] == "note")["immutable_for_equivalence"] = True; breaking_cases.append(eq_scope)
     comparison = copy.deepcopy(BASE); comparison["comparison_profile"] = "immutable-content-v2"; breaking_cases.append(comparison)
+    family = copy.deepcopy(BASE); family["contract_family"] = "inventory.item.updated"; breaking_cases.append(family)
+    new_reader_missing = copy.deepcopy(BASE); new_reader_missing["historical_reader"] = None; breaking_cases.append(new_reader_missing)
 
     for changed in breaking_cases:
         compatible, reasons = compatibility(BASE, changed)
@@ -77,6 +82,11 @@ def main() -> int:
     compatible, reasons = compatibility(no_reader, additive)
     assert not compatible and "old_historical_reader_missing" in reasons
 
+    malformed_field = copy.deepcopy(BASE); malformed_field["fields"].append({"name": "broken", "type": None})
+    expect_failure(lambda: semantic_manifest(malformed_field), ContractError)
+    duplicate_enum = copy.deepcopy(BASE); next(f for f in duplicate_enum["fields"] if f["name"] == "status")["enum"] = ["active", "active"]
+    expect_failure(lambda: semantic_manifest(duplicate_enum), ContractError)
+
     validate_reference_version_token("v-reference-1")
     expect_failure(lambda: validate_reference_version_token(""), ContractError)
     expect_failure(lambda: validate_reference_version_token(1), ContractError)
@@ -84,7 +94,7 @@ def main() -> int:
 
     print(
         "d4b_schema_contract=PASS canonical_semantics=deterministic duplicates=blocked bounds=blocked "
-        "semantic_manifest=stable compatibility=semantic historical_reader=required equivalence_profile=versioned "
+        "semantic_manifest=stable compatibility=semantic_narrowing_closed historical_reader=required equivalence_profile=versioned "
         "breaking_changes=governed version_syntax=reference_only_not_selected"
     )
     return 0

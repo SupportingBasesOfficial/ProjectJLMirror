@@ -13,6 +13,7 @@ EXPECTED_IDS = {
     "capacity_envelope_baseline_growth_stress",
     "ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency",
 }
+FINAL_RECOVERY_ID = "broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark"
 EXPECTED_KINDS = {
     "capacity_envelope_baseline_growth_stress": "real_candidate_benchmark",
     "ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency": "real_candidate_benchmark_and_concurrency_probe",
@@ -25,7 +26,8 @@ SOURCE_PRIOR_CREDIT = {
     "exactly_once_guardrail_consumer_inbox_enforcement",
     "physical_naming_routing_and_cell_topology_adapter_mapping",
 }
-EXPECTED_GLOBAL_CREDIT = SOURCE_PRIOR_CREDIT | EXPECTED_IDS
+SOURCE_RESULTING_CREDIT = SOURCE_PRIOR_CREDIT | EXPECTED_IDS
+EXPECTED_GLOBAL_CREDIT = SOURCE_RESULTING_CREDIT | {FINAL_RECOVERY_ID}
 EXPECTED_IMAGE_INDEX = "sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837"
 EXPECTED_AMD64_MANIFEST = "sha256:ccd1314e47ec76909e01f86308b4dcf2064f19f7c89759234322314b0e319e26"
 EXPECTED_IMAGE = f"apache/kafka:4.3.1@{EXPECTED_IMAGE_INDEX}"
@@ -45,7 +47,7 @@ def validate_objects(source: dict, profile: dict, plan: dict, state: dict) -> li
             errors.append(message)
 
     require(source.get("canonical_base_commit") == "32a35e9d9d695e9a37ed4ea3499b5598b0005a1e", "canonical base drift")
-    require(source.get("candidate") == "kafka" and source.get("candidate_status") == "leading_candidate_closure_pending", "candidate state drift")
+    require(source.get("candidate") == "kafka" and source.get("candidate_status") == "leading_candidate_closure_pending", "historical source candidate state drift")
     require(source.get("candidate_version") == "4.3.1", "candidate version drift")
     require(source.get("candidate_image") == EXPECTED_IMAGE, "Kafka image pin drift")
     require(source.get("candidate_image_index_digest") == EXPECTED_IMAGE_INDEX, "Kafka index digest drift")
@@ -58,7 +60,7 @@ def validate_objects(source: dict, profile: dict, plan: dict, state: dict) -> li
     require(source.get("live_kafka_broker_claimed") is True, "live Kafka claim missing")
     require(source.get("capacity_benchmark_claimed") is True, "capacity benchmark claim missing")
     require(source.get("ordering_benchmark_claimed") is True, "ordering benchmark claim missing")
-    require(source.get("outage_recovery_benchmark_claimed") is False, "D4-A7 outage recovery overclaim")
+    require(source.get("outage_recovery_benchmark_claimed") is False, "historical source D4-A7 outage recovery overclaim")
     require(source.get("current_run_auto_credit") is False and source.get("ledger_credit") == [], "source package self-promotion")
     require(source.get("kafka_selection_state") == "not_selected", "premature Kafka selection")
     require(source.get("d4_transport_authority") == "not_selected_not_granted", "transport authority escalation")
@@ -145,11 +147,13 @@ def validate_objects(source: dict, profile: dict, plan: dict, state: dict) -> li
     require("device_cardinality_observed_by_tenant" in required_measurements, "device cardinality measurement missing")
     require("distinct_device_scopes_observed_total" in required_measurements, "distinct device scope measurement missing")
 
-    require(set(plan.get("credited_evidence", [])) == EXPECTED_GLOBAL_CREDIT, "global promoted six-of-seven credit drift")
-    require(plan.get("ledger_credit_state") == "six_of_seven", "global ledger must be six_of_seven after separate promotion")
+    require(set(plan.get("credited_evidence", [])) == EXPECTED_GLOBAL_CREDIT, "global promoted seven-of-seven credit drift")
+    require(plan.get("ledger_credit_state") == "seven_of_seven", "global ledger must be seven_of_seven after final separate promotion")
     require(plan.get("selection_state") == "not_selected", "plan must not select Kafka")
-    require(set(d4a.get("evidence_completed", [])) == EXPECTED_GLOBAL_CREDIT, "D4-A completed six-of-seven evidence drift")
-    require(set(d4a.get("evidence_remaining", [])) == {"broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark"}, "D4-A remaining recovery evidence drift")
+    require(plan.get("acceptance_state") == "evidence_complete_separate_acceptance_required", "plan must require separate acceptance")
+    require(set(d4a.get("evidence_completed", [])) == EXPECTED_GLOBAL_CREDIT, "D4-A completed seven-of-seven evidence drift")
+    require(d4a.get("evidence_remaining") == [], "D4-A must have no remaining evidence after final promotion")
+    require(d4a.get("state") == "evidence_complete_selection_pending", "D4-A must remain evidence-complete selection-pending")
     require(state.get("gate_state") == "scoped", "D4 gate must remain scoped")
     require(state.get("d4_transport_authority") == "not_selected_not_granted", "state transport authority escalation")
     require(state.get("canonical_product_implementation_authority") == "not_granted", "state product authority escalation")
@@ -163,7 +167,7 @@ def main() -> None:
     errors = validate_objects(*load_objects())
     if errors:
         raise AssertionError("; ".join(errors))
-    print("d4a_capacity_ordering_source_manifest=PASS evidence=2 source_credit=0 global_credit=6 live_kafka=historically_proven immutable_pin=PASS tiers=3 tenant_device_event_rate=proven ordering_scopes=6 kafka=not_selected authorities=not_granted")
+    print("d4a_capacity_ordering_source_manifest=PASS evidence=2 source_credit=0 historical_result=6 global_credit=7 live_kafka=historically_proven immutable_pin=PASS tiers=3 tenant_device_event_rate=proven ordering_scopes=6 kafka=not_selected acceptance=separate_required authorities=not_granted")
 
 
 if __name__ == "__main__":

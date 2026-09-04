@@ -16,6 +16,12 @@ class ParsedVersion:
     canonical: str
 
 
+@dataclass(frozen=True)
+class HistoricalVersionEvidence:
+    candidate: str
+    original_bytes: bytes
+
+
 class CandidateAdapter:
     candidate: str
 
@@ -31,6 +37,19 @@ class CandidateAdapter:
     def authority_projection(self, raw: str) -> dict[str, str]:
         parsed = self.parse(raw)
         return {"contract_version": parsed.canonical}
+
+    def retain_historical(self, raw: str) -> HistoricalVersionEvidence:
+        parsed = self.parse(raw)
+        return HistoricalVersionEvidence(candidate=self.candidate, original_bytes=parsed.canonical.encode("ascii"))
+
+    def restore_historical(self, evidence: HistoricalVersionEvidence) -> ParsedVersion:
+        if evidence.candidate != self.candidate:
+            raise ValueError("historical version candidate family mismatch")
+        raw = evidence.original_bytes.decode("ascii", errors="strict")
+        parsed = self.parse(raw)
+        if parsed.canonical.encode("ascii") != evidence.original_bytes:
+            raise ValueError("historical version bytes were reinterpreted")
+        return parsed
 
 
 class PositiveIntegerRevision(CandidateAdapter):
@@ -115,13 +134,25 @@ def assert_no_authority_fields(adapter: CandidateAdapter, vector: str) -> None:
         raise AssertionError(f"{adapter.candidate} leaked authority fields: {sorted(projected)}")
 
 
-def assert_breaking_change_requires_transition(before_version: str, after_version: str, semantic_change: str) -> None:
-    if semantic_change == "breaking" and before_version == after_version:
+def assert_breaking_change_requires_transition(adapter: CandidateAdapter, before_version: str, after_version: str) -> None:
+    before = adapter.parse(before_version)
+    after = adapter.parse(after_version)
+    if before.canonical == after.canonical:
         raise ValueError("breaking semantic change cannot reuse the same contract_version")
 
 
-def preserve_historical_version(original: bytes) -> bytes:
-    return bytes(original)
+def assert_historical_continuity(adapter: CandidateAdapter, raw: str, other_adapter: CandidateAdapter) -> None:
+    evidence = adapter.retain_historical(raw)
+    restored = adapter.restore_historical(evidence)
+    if restored.canonical != raw or evidence.original_bytes != raw.encode("ascii"):
+        raise AssertionError("historical contract-version meaning changed")
+    try:
+        other_adapter.restore_historical(evidence)
+    except ValueError as exc:
+        if "candidate family mismatch" not in str(exc):
+            raise
+    else:
+        raise AssertionError("historical version was reinterpreted by a different candidate family")
 
 
 def prove_opaque_monotonic_issuance(adapter: CandidateAdapter) -> tuple[str, str]:
@@ -152,12 +183,28 @@ def evaluate() -> dict[str, str]:
     assert_rejected(positive, ("0", "01", "+1", "-1", "1 ", " 1", "1.0"))
     assert_ordering_absent(positive, "1", "2")
     assert_no_authority_fields(positive, "1")
+    try:
+        assert_breaking_change_requires_transition(positive, "1", "1")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("positive integer candidate allowed breaking-version reuse")
+    assert_breaking_change_requires_transition(positive, "1", "2")
+    assert_historical_continuity(positive, "1", semver)
 
     semver.parse("0.0.1")
     semver.parse("12.34.56")
     assert_rejected(semver, ("01.0.0", "1.0", "1.0.0-alpha", "1.0.0+build", "1.00.0", " 1.0.0"))
     assert_ordering_absent(semver, "1.0.0", "2.0.0")
     assert_no_authority_fields(semver, "1.0.0")
+    try:
+        assert_breaking_change_requires_transition(semver, "1.0.0", "1.0.0")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("semantic-version-like candidate allowed breaking-version reuse")
+    assert_breaking_change_requires_transition(semver, "1.0.0", "2.0.0")
+    assert_historical_continuity(semver, "1.0.0", opaque)
 
     opaque.parse("cv_ABCDEFG2")
     opaque.parse("cv_234567ABCDEFGHJK")
@@ -166,6 +213,14 @@ def evaluate() -> dict[str, str]:
     assert_no_authority_fields(opaque, first_opaque)
     if opaque.equal(first_opaque, second_opaque):
         raise AssertionError("distinct monotonic issues compared equal")
+    try:
+        assert_breaking_change_requires_transition(opaque, first_opaque, first_opaque)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("opaque candidate allowed breaking-version reuse")
+    assert_breaking_change_requires_transition(opaque, first_opaque, second_opaque)
+    assert_historical_continuity(opaque, first_opaque, positive)
 
     namespaces = {
         "deployment_version": "1.0.0",
@@ -177,18 +232,6 @@ def evaluate() -> dict[str, str]:
     if "contract_version" in namespaces:
         raise AssertionError("unrelated namespace map unexpectedly contains contract_version")
 
-    try:
-        assert_breaking_change_requires_transition("1", "1", "breaking")
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("breaking change reused identical contract_version")
-    assert_breaking_change_requires_transition("1", "2", "breaking")
-
-    historical = b"contract-version-original-bytes"
-    if preserve_historical_version(historical) != historical:
-        raise AssertionError("historical contract version bytes changed")
-
     return {adapter.candidate: ELIGIBLE for adapter in ADAPTERS}
 
 
@@ -196,8 +239,9 @@ def main() -> int:
     results = evaluate()
     print(
         "d4b_contract_version_candidate_source=PASS "
-        "candidates=3 concrete_eligible=3 opaque_monotonic_issuance=proven bounded_issuance=true ordering_authority=absent "
-        "namespace_substitution=blocked breaking_reuse=blocked historical_bytes=preserved "
+        "candidates=3 concrete_eligible=3 opaque_monotonic_issuance=proven bounded_issuance=true "
+        "ordering_authority=absent namespace_substitution=blocked breaking_reuse=blocked "
+        "historical_family_reinterpretation=blocked historical_bytes=preserved "
         "canonical_syntax_selection=false ledger_credit=0"
     )
     for candidate, result in sorted(results.items()):

@@ -157,6 +157,23 @@ def prove_behavior_falsifications() -> None:
     if evaluator.protobuf_semantic_equivalence(tenant + event + repeated_a + repeated_b) == evaluator.protobuf_semantic_equivalence(tenant + event + repeated_b + repeated_a):
         raise AssertionError("protobuf repeated occurrence order was erased")
 
+    historical_avro = evaluator.make_historical_envelope("avro_profile", "avro:event:v1", b"old-avro")
+    rebound = evaluator.AvroRecordSchema(
+        "Event",
+        evaluator.REVIEWED_AVRO_EVENT_V1.fields + (evaluator.AvroFieldSpec("rebound", ("string",), default_present=True, default="x"),),
+    )
+    original_schema = evaluator.REVIEWED_AVRO_SCHEMAS["avro:event:v1"]
+    try:
+        evaluator.REVIEWED_AVRO_SCHEMAS["avro:event:v1"] = rebound
+        try:
+            evaluator.read_historical_envelope(historical_avro, "avro_profile", "avro:event:v1")
+        except evaluator.EvidenceViolation:
+            pass
+        else:
+            raise AssertionError("historical Avro envelope accepted same-ref schema-content rebind")
+    finally:
+        evaluator.REVIEWED_AVRO_SCHEMAS["avro:event:v1"] = original_schema
+
     mutated_reviewed = evaluator.AvroRecordSchema(
         "Event",
         evaluator.REVIEWED_AVRO_EVENT_V1.fields + (evaluator.AvroFieldSpec("injected", ("string",), default_present=True, default="x"),),
@@ -180,6 +197,22 @@ def prove_behavior_falsifications() -> None:
         pass
     else:
         raise AssertionError("reader default fabricated a writer-declared Avro field")
+
+    writer_projection = evaluator.AvroRecordSchema(
+        "Projection",
+        (
+            evaluator.AvroFieldSpec("kept", ("string",)),
+            evaluator.AvroFieldSpec("writer_only", ("string",)),
+        ),
+    )
+    reader_projection = evaluator.AvroRecordSchema("Projection", (evaluator.AvroFieldSpec("kept", ("string",)),))
+    for invalid_writer_only in ("x" * (evaluator.MAX_AVRO_SCALAR_BYTES + 1), object()):
+        try:
+            evaluator.avro_semantic_equivalence(writer_projection, reader_projection, {"kept": "ok", "writer_only": invalid_writer_only})
+        except evaluator.EvidenceViolation:
+            pass
+        else:
+            raise AssertionError("writer-only Avro datum bypassed writer type/bound validation")
 
     writer = evaluator.AvroRecordSchema(
         "Event",
@@ -318,7 +351,9 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["bounded_json_plus_json_schema_profile"].remove("decimal_canonicalization_is_context_independent_and_constructed_from_exact_decimal_tuple"), "candidate requirement drift for bounded_json_plus_json_schema_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["protobuf_profile"].remove("protected_oneof_duplicate_occurrences_and_cross_member_collisions_fail_closed_before_generated_binding_resolution"), "candidate requirement drift for protobuf_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("reviewed_avro_schema_reference_is_bound_to_exact_reviewed_schema_content_before_resolution"), "candidate requirement drift for avro_profile")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("historical_avro_envelope_persists_and_verifies_schema_content_sha256_before_reinterpretation"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("writer_declared_fields_must_be_present_in_datum_and_reader_defaults_apply_only_when_field_is_absent_from_writer_schema"), "candidate requirement drift for avro_profile")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("all_writer_declared_datum_values_are_validated_against_writer_types_and_bounds_before_reader_projection"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("avro_float_writer_and_reader_values_are_materialized_at_ieee754_binary32_width_before_equivalence"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("float_double_runtime_mapping_rejects_boolean_and_string_coercion_before_width_materialization"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("float_double_admission_and_promotion_overflow_fail_closed_as_evidence_violation"), "candidate requirement drift for avro_profile")
@@ -326,7 +361,9 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("datum_processing_is_bounded_and_canonicalized_structurally_without_unrestricted_recursive_json_serialization"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["official_source_facts"].pop(), "official source fact inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_reviewed_schema_reference_is_structurally_bound_to_exact_reviewed_schema_content"), "source assertion inventory drift")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_historical_envelope_rejects_same_ref_schema_content_rebind_by_sha256"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_writer_declared_fields_cannot_be_fabricated_from_reader_defaults"), "source assertion inventory drift")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_writer_only_fields_cannot_bypass_writer_type_and_bound_validation"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_float_reader_and_writer_semantics_are_canonicalized_at_ieee754_binary32_width"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_float_double_runtime_mapping_rejects_boolean_and_string_coercion"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_float_double_overflow_is_caught_and_fails_closed"), "source assertion inventory drift")
@@ -349,11 +386,12 @@ def main() -> int:
         "protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked protobuf_last_wins_override=blocked "
         "protobuf_oneof_same_member_duplicate=blocked protobuf_presence_enum_weakening=blocked "
         "protobuf_unknown_preservation=proven protobuf_byte_order_authority=blocked protobuf_repeated_order_loss=blocked "
-        "avro_schema_ref_content_swap=blocked avro_writer_field_omission=blocked avro_float_width=binary32 "
-        "avro_float_runtime_mapping=type_strict avro_float_overflow=blocked avro_alias_ambiguity=blocked "
-        "avro_missing_default=blocked avro_type_incompatibility=blocked avro_promotion_representation=proven "
-        "avro_invalid_utf8_promotion=blocked avro_scalar_bound=blocked avro_schema_width_bound=blocked "
-        "avro_nullable_semantics=proven ledger_selection=blocked d4_authority_escalation=blocked"
+        "avro_schema_ref_content_swap=blocked avro_historical_schema_rebind=blocked avro_writer_field_omission=blocked "
+        "avro_writer_only_fields=validated avro_float_width=binary32 avro_float_runtime_mapping=type_strict "
+        "avro_float_overflow=blocked avro_alias_ambiguity=blocked avro_missing_default=blocked "
+        "avro_type_incompatibility=blocked avro_promotion_representation=proven avro_invalid_utf8_promotion=blocked "
+        "avro_scalar_bound=blocked avro_schema_width_bound=blocked avro_nullable_semantics=proven "
+        "ledger_selection=blocked d4_authority_escalation=blocked"
     )
     return 0
 

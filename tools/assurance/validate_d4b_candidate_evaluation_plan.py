@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+PLAN = Path("implementation/d4-eventing-async/d4-b-candidate-evaluation-plan.json")
+STATE = Path("implementation/d4-eventing-async/state-manifest.json")
+D4B_LEDGER = Path("implementation/d4-eventing-async/d4-b-evidence-plan.json")
+
+EXPECTED_AXES = {
+    "wire_serialization_and_schema_language": "OPEN-EVT-002",
+    "schema_registry_catalog_and_tooling": "OPEN-EVT-003",
+    "contract_version_representation": "OPEN-EVT-004",
+}
+EXPECTED_WIRE = {
+    "bounded_json_plus_json_schema_profile",
+    "protobuf_profile",
+    "avro_profile",
+    "equivalent_reviewed_profile",
+}
+EXPECTED_CATALOG = {
+    "reviewed_git_catalog",
+    "registry_backed_catalog",
+    "hybrid_reviewed_git_plus_registry_catalog",
+    "equivalent_reviewed_catalog",
+}
+EXPECTED_VERSION = {
+    "positive_integer_family_revision",
+    "semantic_version_like_contract_revision",
+    "opaque_monotonic_contract_token",
+    "equivalent_reviewed_representation",
+}
+EXPECTED_OUTPUTS = {
+    "eligible_for_evidence_execution",
+    "ineligible_by_contract",
+    "insufficient_evidence",
+}
+EXPECTED_FORBIDDEN = {"selected", "preferred_without_evidence", "production_ready", "authority_granted"}
+EXPECTED_D4B_EVIDENCE = {
+    "canonical_bounded_serialization_profile",
+    "parser_ambiguity_and_duplicate_field_negative_vectors",
+    "schema_catalog_semantic_manifest_compatibility_ci",
+    "historical_reader_and_equivalence_profile_continuity",
+    "contract_version_representation_and_breaking_change_vectors",
+}
+EXPECTED_D4A_EVIDENCE = {
+    "capacity_envelope_baseline_growth_stress",
+    "broker_neutral_anti_corruption_stub_swap",
+    "regulated_payload_erasure_granularity",
+    "exactly_once_guardrail_consumer_inbox_enforcement",
+    "ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency",
+    "physical_naming_routing_and_cell_topology_adapter_mapping",
+    "broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark",
+}
+
+
+def load(root: Path, path: Path) -> dict:
+    value = json.loads((root / path).read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must be a JSON object")
+    return value
+
+
+def validate(root: Path) -> list[str]:
+    errors: list[str] = []
+    def req(ok: bool, msg: str) -> None:
+        if not ok:
+            errors.append(msg)
+
+    plan = load(root, PLAN)
+    state = load(root, STATE)
+    ledger = load(root, D4B_LEDGER)
+
+    req(plan.get("schema_version") == 1, "evaluation plan schema drift")
+    req(plan.get("gate_id") == "D4" and plan.get("track_id") == "D4-B", "evaluation plan identity drift")
+    req(plan.get("canonical_base") == "9aefb026d8b8a80abc72f1be5c853059718f5ae2", "evaluation canonical base drift")
+    req(plan.get("mode") == "candidate_evaluation_only", "evaluation mode must remain non-selecting")
+    req(plan.get("selection_state") == "not_selected", "evaluation plan must not select D4-B")
+    req(plan.get("selection_authority") == "not_granted", "evaluation selection authority must remain ungranted")
+    req(plan.get("separate_selection_required") is True and plan.get("separate_d4_acceptance_required") is True, "selection and D4 acceptance must remain separate")
+    req(set(plan.get("source_decisions", [])) == set(EXPECTED_AXES.values()), "source decision inventory drift")
+
+    axes = plan.get("axes")
+    req(isinstance(axes, dict) and set(axes) == set(EXPECTED_AXES), "exact three-axis evaluation inventory drift")
+    if isinstance(axes, dict) and set(axes) == set(EXPECTED_AXES):
+        for name, decision in EXPECTED_AXES.items():
+            req(axes[name].get("decision") == decision, f"{name} decision binding drift")
+            req(isinstance(axes[name].get("must_prove"), list) and len(axes[name]["must_prove"]) >= 6, f"{name} proof inventory weakened")
+        req(set(axes["wire_serialization_and_schema_language"].get("candidate_classes", [])) == EXPECTED_WIRE, "wire candidate class inventory drift")
+        req(set(axes["schema_registry_catalog_and_tooling"].get("candidate_classes", [])) == EXPECTED_CATALOG, "catalog candidate class inventory drift")
+        req(set(axes["contract_version_representation"].get("candidate_classes", [])) == EXPECTED_VERSION, "contract-version candidate class inventory drift")
+        req("may_differ" in axes["wire_serialization_and_schema_language"].get("surface_policy", ""), "internal/external surface independence weakened")
+
+    cross = set(plan.get("cross_axis_invariants", []))
+    required_cross = {
+        "wire_schema_catalog_and_contract_version_choices_are_independently_selectable",
+        "a_catalog_or_registry_product_cannot_select_wire_serialization_by_implication",
+        "a_wire_serialization_choice_cannot_select_catalog_or_contract_version_syntax_by_implication",
+        "historical_source_and_ledger_records_remain_immutable",
+        "d4b_existing_five_of_five_evidence_credit_is_preserved_without_new_auto_credit",
+        "d4a_kafka_bounded_c2_selection_and_exact_seven_of_seven_evidence_are_preserved",
+        "d4c_and_d4d_remain_open_unselected_and_uncredited",
+        "d4_gate_remains_scoped",
+        "product_wave4_production_and_c3_authorities_remain_ungranted",
+    }
+    req(required_cross.issubset(cross), "cross-axis anti-coupling or authority invariant missing")
+    req(set(plan.get("evaluation_output_states", [])) == EXPECTED_OUTPUTS, "evaluation output state inventory drift")
+    req(set(plan.get("forbidden_outputs", [])) == EXPECTED_FORBIDDEN, "forbidden output inventory drift")
+
+    req(ledger.get("selection_state") == "not_selected" and ledger.get("candidate") is None, "D4-B ledger candidate neutrality drift")
+    req(set(ledger.get("credited_evidence", [])) == EXPECTED_D4B_EVIDENCE and ledger.get("remaining_evidence") == [], "D4-B 5/5 ledger drift")
+
+    tracks = state.get("tracks", [])
+    req(isinstance(tracks, list) and len(tracks) == 4 and all(isinstance(t, dict) for t in tracks), "D4 track structure drift")
+    if isinstance(tracks, list) and all(isinstance(t, dict) for t in tracks):
+        ids = [t.get("track_id") for t in tracks]
+        req(len(ids) == len(set(ids)) and set(ids) == {"D4-A", "D4-B", "D4-C", "D4-D"}, "D4 track identity drift")
+        by_id = {t["track_id"]: t for t in tracks if t.get("track_id") in {"D4-A", "D4-B", "D4-C", "D4-D"}}
+        if len(by_id) == 4:
+            d4a, d4b, d4c, d4d = by_id["D4-A"], by_id["D4-B"], by_id["D4-C"], by_id["D4-D"]
+            req(d4a.get("candidate") == "kafka" and set(d4a.get("evidence_completed", [])) == EXPECTED_D4A_EVIDENCE, "D4-A Kafka 7/7 regression")
+            req(d4b.get("candidate") is None and d4b.get("candidate_status") == "not_selected", "D4-B premature selection")
+            req(d4b.get("state") == "evidence_complete_selection_pending" and set(d4b.get("evidence_completed", [])) == EXPECTED_D4B_EVIDENCE, "D4-B state/credit drift")
+            for sibling in (d4c, d4d):
+                req(sibling.get("candidate") is None and sibling.get("evidence_completed") == [], "D4-C/D must remain open and uncredited")
+
+    req(state.get("gate_state") == "scoped", "D4 gate must remain scoped")
+    req(state.get("d4_transport_authority") == "selected_not_granted", "transport authority drift")
+    req(state.get("canonical_product_implementation_authority") == "not_granted", "Product authority escalation")
+    req(state.get("wave4_implementation_authority") == "not_granted", "Wave4 authority escalation")
+    req(state.get("production_authority") == "none", "production authority escalation")
+    req(state.get("c3_numeric_topology_authority") == "not_selected", "C3 authority escalation")
+    return errors
+
+
+def main(argv: list[str]) -> int:
+    root = Path(argv[1]).resolve() if len(argv) > 1 else Path.cwd()
+    errors = validate(root)
+    if errors:
+        for error in errors:
+            print(f"D4B_EVAL_ERROR: {error}", file=sys.stderr)
+        return 1
+    print("d4b_candidate_evaluation_plan=PASS axes=3 selection=not_selected d4b=5_of_5 d4a=kafka_7_of_7 d4=scoped authorities=not_granted")
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

@@ -4,7 +4,7 @@
   "track_id": "D4-A",
   "canonical_entry_commit": "b385e1b68162b2cf9bf4379011554a9cc4c2d5c4",
   "candidate": "kafka",
-  "candidate_status": "leading_candidate_closure_pending",
+  "candidate_status": "leading_candidate_evidence_complete_selection_pending",
   "evidence_credit_policy": "source_runs_first_ledger_promotion_separate",
   "current_run_auto_credit": false,
   "production_numeric_authority": "not_granted",
@@ -85,16 +85,17 @@
     }
   ],
   "source_evidence_state": "reviewed_source_runs_available",
-  "ledger_credit_state": "six_of_seven",
+  "ledger_credit_state": "seven_of_seven",
   "credited_evidence": [
     "capacity_envelope_baseline_growth_stress",
     "broker_neutral_anti_corruption_stub_swap",
     "regulated_payload_erasure_granularity",
     "exactly_once_guardrail_consumer_inbox_enforcement",
     "ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency",
-    "physical_naming_routing_and_cell_topology_adapter_mapping"
+    "physical_naming_routing_and_cell_topology_adapter_mapping",
+    "broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark"
   ],
-  "latest_promotion_record": "implementation/d4-eventing-async/ledger-promotions/d4-a-capacity-ordering-promotion-v1.json",
+  "latest_promotion_record": "implementation/d4-eventing-async/ledger-promotions/d4-a-recovery-promotion-v1.json",
   "selection_state": "not_selected",
-  "acceptance_state": "not_eligible"
+  "acceptance_state": "evidence_complete_separate_acceptance_required"
 }

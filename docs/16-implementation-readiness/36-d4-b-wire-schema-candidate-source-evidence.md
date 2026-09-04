@@ -142,6 +142,7 @@ The profile requires:
 - writer `float` → reader `double` first materializes the writer's binary32 value and only then widens that resolved value to the reader's binary64 representation;
 - the evidence vector `16777217` promoted from writer `int` to reader `float` must canonicalize to `16777216.0`, exactly matching a native Avro `float` carrying that same single-precision value;
 - Python's host binary64 `float` representation is therefore never allowed to silently redefine Avro single-precision contract semantics;
+- Avro `float`/`double` runtime admission is type-strict: only numeric `int`/`float` inputs are admitted, with `bool` explicitly excluded; strings such as `"1.0"` and booleans such as `true` cannot be coerced into numeric contract values;
 - `bytes` → `string` promotion requires strict UTF-8 and produces a bounded reader string; invalid UTF-8 fails closed;
 - `string` → `bytes` promotion produces bounded UTF-8 bytes;
 - float/double admission and numeric promotion catch conversion overflow and convert it to `EvidenceViolation`; adversarial huge integer input cannot escape the fail-closed evidence boundary through raw `OverflowError`;
@@ -166,9 +167,9 @@ The harness remains a specification-level evidence model, not a substitute for a
 
 ## Runtime-independence boundary
 
-The source harness deliberately does not declare one SDK's generated-object behavior authoritative. It exercises JSON bytes plus bounded/context-independent Decimal object semantics, Protobuf wire semantics before generated bindings, and bounded Avro writer/reader type resolution with exact reviewed schema binding, declared-width float materialization and explicit reader-side promotion.
+The source harness deliberately does not declare one SDK's generated-object behavior authoritative. It exercises JSON bytes plus bounded/context-independent Decimal object semantics, Protobuf wire semantics before generated bindings, and bounded Avro writer/reader type resolution with exact reviewed schema binding, declared-width float materialization, strict runtime type admission and explicit reader-side promotion.
 
-A later Java, Go, Python, Rust or other implementation remains eligible only if these authoritative semantics survive. Runtime convenience cannot redefine canonical JLMirror contract meaning.
+A later Java, Go, Python, Rust or other implementation remains eligible only if these authoritative semantics survive. Runtime convenience or implicit language coercion cannot redefine canonical JLMirror contract meaning.
 
 ## Cross-axis independence
 
@@ -197,6 +198,7 @@ The falsification suite blocks:
 - Avro reviewed-ref / schema-content substitution under the same label;
 - omission of a writer-declared Avro field followed by illegitimate reader-default fabrication;
 - Avro `float` semantic drift caused by leaving a declared single-precision value in the host runtime's binary64 representation;
+- Avro `float`/`double` coercion of boolean or string runtime values into numeric contract values;
 - uncaught float/double conversion overflow escaping the fail-closed validation path;
 - Avro alias ambiguity, missing legitimate reader defaults, incompatible writer/reader types and nullable-semantic loss;
 - Avro allowed-promotion validation without reader-side materialization, including numeric representation drift and invalid UTF-8 `bytes` → `string` conversion;

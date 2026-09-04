@@ -29,7 +29,7 @@ EXPECTED_REQUIRED_EVIDENCE = {
 }
 EXPECTED_COMPLETED = {
     "D4-A": set(EXPECTED_REQUIRED_EVIDENCE["D4-A"]),
-    "D4-B": set(),
+    "D4-B": set(EXPECTED_REQUIRED_EVIDENCE["D4-B"]),
     "D4-C": set(),
     "D4-D": set(),
 }
@@ -37,7 +37,7 @@ EXPECTED_TOTAL_EVIDENCE = sum(len(items) for items in EXPECTED_REQUIRED_EVIDENCE
 EXPECTED_TOTAL_CREDITED = sum(len(items) for items in EXPECTED_COMPLETED.values())
 EXPECTED_ENTRY_STATES = {
     "D4-A": "selected_candidate",
-    "D4-B": "candidate_selection_open",
+    "D4-B": "evidence_complete_selection_pending",
     "D4-C": "candidate_selection_open",
     "D4-D": "candidate_selection_open",
 }
@@ -101,6 +101,8 @@ def validate_manifest(state: dict) -> list[str]:
         require(d4a.get("candidate") == "kafka", "D4-A selected candidate must remain Kafka")
         require(d4a.get("candidate_status") == "selected_c2_candidate", "D4-A Kafka candidate must remain selected at bounded C2 scope")
         require(d4a.get("evidence_remaining") == [], "D4-A selected state must retain complete evidence")
+        d4b = by_id.get("D4-B", {})
+        require(d4b.get("evidence_remaining") == [], "D4-B promoted state must retain complete evidence")
         for track_id in ("D4-B", "D4-C", "D4-D"):
             track = by_id.get(track_id, {})
             require(track.get("candidate") is None, f"{track_id} must not silently select a candidate")
@@ -121,7 +123,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4_STATE_ERROR: {error}", file=sys.stderr)
         return 1
-    print(f"d4_eventing_async_state=PASS gate_state={state['gate_state']} tracks={len(state['tracks'])} evidence_required={EXPECTED_TOTAL_EVIDENCE} evidence_credited={EXPECTED_TOTAL_CREDITED} d4a_candidate=kafka d4a_selection=selected transport_authority=not_granted d4_bc_d=open")
+    print(f"d4_eventing_async_state=PASS gate_state={state['gate_state']} tracks={len(state['tracks'])} evidence_required={EXPECTED_TOTAL_EVIDENCE} evidence_credited={EXPECTED_TOTAL_CREDITED} d4a_candidate=kafka d4a_selection=selected d4b=5_of_5_selection_pending d4c_d=open transport_authority=not_granted")
     return 0
 
 

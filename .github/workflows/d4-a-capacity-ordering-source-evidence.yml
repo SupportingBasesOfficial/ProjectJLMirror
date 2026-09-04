@@ -64,7 +64,7 @@ jobs:
           (cd tools/assurance/d4a_capacity_ordering && python3 test_validate_source_evidence.py)
           (cd tools/assurance/d4a_capacity_ordering && python3 test_key_serial_executor.py)
 
-      - name: Preserve D4 four-of-seven ledger boundary before source run
+      - name: Preserve D4 six-of-seven ledger boundary
         shell: bash
         run: |
           set -euo pipefail
@@ -85,8 +85,7 @@ jobs:
           expected_amd64 = os.environ['KAFKA_AMD64_DIGEST']
           raw = subprocess.check_output(['docker', 'buildx', 'imagetools', 'inspect', image, '--raw'], text=True)
           index = json.loads(raw)
-          manifests = index.get('manifests', [])
-          matches = [m for m in manifests if m.get('platform', {}).get('os') == 'linux' and m.get('platform', {}).get('architecture') == 'amd64']
+          matches = [m for m in index.get('manifests', []) if m.get('platform', {}).get('os') == 'linux' and m.get('platform', {}).get('architecture') == 'amd64']
           if len(matches) != 1:
               raise SystemExit(f'expected exactly one linux/amd64 manifest, got {len(matches)}')
           actual_amd64 = matches[0]['digest']
@@ -141,9 +140,7 @@ jobs:
               assert tier['distinct_device_scopes_observed_total'] == expected_total
               assert sum(tier['tenant_skew_observed_counts'].values()) == tier['test_message_count']
               device_totals.append(tier['distinct_device_scopes_observed_total'])
-          assert device_totals[0] < device_totals[1] < device_totals[2]
-          assert all(tier['tested_partition_ceiling'] > 0 for tier in result['tiers'])
-          for tier in result['tiers']:
+              assert tier['tested_partition_ceiling'] > 0
               passing = [probe for probe in tier['partition_probes'] if probe['admission_passed']]
               assert passing
               for probe in passing:
@@ -151,6 +148,7 @@ jobs:
                   assert probe['minimum_target_throughput_fraction'] == 0.70
                   assert probe['observed_target_throughput_fraction'] >= probe['minimum_target_throughput_fraction']
                   assert probe['producer']['messages_per_second'] >= probe['minimum_required_messages_per_second']
+          assert device_totals[0] < device_totals[1] < device_totals[2]
           assert result['degradation_probe']['mechanism'] == 'real_kafka_client_producer_byte_rate_quota'
           assert result['degradation_probe']['degradation_boundary_observed'] is True
           assert result['degradation_probe']['throughput_drop_fraction'] > 0
@@ -178,7 +176,7 @@ jobs:
             PYTHONPATH=. python3 "$test_file"
           done
 
-      - name: Assert current source run cannot add ledger credit or select Kafka
+      - name: Assert immutable source package and separate promoted ledger
         shell: bash
         run: |
           python3 - <<'PY'
@@ -189,20 +187,23 @@ jobs:
           state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
           d4a = next(t for t in state['tracks'] if t['track_id'] == 'D4-A')
           source_ids = set(source['evidence_ids'])
+          historical_prior = set(source['prior_promoted_ledger_credit'])
           promoted = set(plan['credited_evidence'])
           assert source['current_run_auto_credit'] is False
           assert source['ledger_credit'] == []
           assert source['kafka_selection_state'] == 'not_selected'
-          assert source_ids.isdisjoint(promoted)
-          assert source_ids.issubset(set(d4a['evidence_remaining']))
-          assert len(promoted) == 4
+          assert len(historical_prior) == 4
+          assert promoted == historical_prior | source_ids
+          assert set(d4a['evidence_completed']) == promoted
+          assert set(d4a['evidence_remaining']) == {'broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark'}
+          assert plan['ledger_credit_state'] == 'six_of_seven'
           assert state['gate_state'] == 'scoped'
           assert state['d4_transport_authority'] == 'not_selected_not_granted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['c3_numeric_topology_authority'] == 'not_selected'
-          print('d4a_capacity_ordering_nonpromotion=PASS source_credit=0 global_credit=4 kafka=not_selected authorities=not_granted')
+          print('d4a_capacity_ordering_source_immutability=PASS source_credit=0 historical_prior=4 global_credit=6 recovery_remaining=1 kafka=not_selected authorities=not_granted')
           PY
 
       - name: Resolve exact workflow job identity and emit immutable provenance

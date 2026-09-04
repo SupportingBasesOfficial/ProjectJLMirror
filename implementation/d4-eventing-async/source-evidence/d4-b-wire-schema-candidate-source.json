@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-B",
+  "axis": "wire_serialization_and_schema_language",
+  "source_decision": "OPEN-EVT-002",
+  "canonical_base": "9cfe67915b6081af015670d7f1edb7ecf11ffdf2",
+  "mode": "candidate_source_evidence_only",
+  "test_profile_only": true,
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "current_run_auto_credit": false,
+  "ledger_credit": [],
+  "candidate_results": {
+    "bounded_json_plus_json_schema_profile": "eligible_for_evidence_execution",
+    "protobuf_profile": "eligible_for_evidence_execution",
+    "avro_profile": "eligible_for_evidence_execution"
+  },
+  "equivalent_reviewed_profile": "insufficient_evidence",
+  "required_proofs": [
+    "one_canonical_bounded_structured_interpretation",
+    "duplicate_and_alias_protected_fields_fail_closed",
+    "required_optional_null_and_enum_semantics_are_explicit",
+    "historical_contract_meaning_remains_interpretable",
+    "duplicate_sensitive_content_equivalence_is_deterministic_and_reproducible",
+    "unknown_field_and_forward_compatibility_behavior_is_explicit",
+    "parser_and_decompression_work_are_bounded",
+    "no_dynamic_untrusted_schema_or_code_loading",
+    "language_runtime_mapping_does_not_change_authoritative_contract_semantics"
+  ],
+  "candidate_profile_requirements": {
+    "bounded_json_plus_json_schema_profile": [
+      "strict_utf8_json_parser_rejects_duplicate_members_before_object_materialization",
+      "protected_alias_groups_are_checked_before_contract_validation",
+      "additional_properties_required_null_enum_numeric_depth_and_message_size_rules_are_explicit",
+      "content_equivalence_uses_canonical_semantic_normalization_not_input_member_order",
+      "schema_resolution_must_not_fetch_or_execute_untrusted_dynamic_content"
+    ],
+    "protobuf_profile": [
+      "bounded_wire_predecoder_rejects_duplicate_protected_singular_fields_before_generated_binding_last_wins_behavior",
+      "protected_oneof_collisions_fail_closed_before_generated_binding_resolution",
+      "unknown_binary_fields_are_preserved_for_forward_compatibility_when_required",
+      "protobuf_serialized_byte_order_is_not_contract_equivalence_authority",
+      "descriptor_or_dynamic_message_loading_from_untrusted_message_content_is_forbidden"
+    ],
+    "avro_profile": [
+      "original_writer_schema_identity_and_content_are_pinned_for_historical_interpretation",
+      "reader_schema_resolution_is_explicit_and_missing_fields_require_defaults_or_failure",
+      "field_aliases_are reviewed_and_ambiguous_aliases_fail_closed",
+      "semantic_equivalence_is_computed_after_explicit_writer_reader_resolution_not_from_raw_schema_text",
+      "writer_reader_schema_loading_is bounded_to_reviewed_content_and_not_selected_by_message_payload"
+    ]
+  },
+  "official_source_facts": [
+    {
+      "source": "https://protobuf.dev/programming-guides/encoding/",
+      "fact": "protobuf_singular_duplicate_wire_values_are_normally_last_one_wins_and_serialization_order_is_not_guaranteed"
+    },
+    {
+      "source": "https://protobuf.dev/programming-guides/editions/",
+      "fact": "protobuf_binary_unknown_fields_are_preserved_but_some_nonbinary_conversion_paths_can_lose_them"
+    },
+    {
+      "source": "https://avro.apache.org/docs/1.11.2/specification/",
+      "fact": "avro_schema_resolution_uses_original_writer_schema_plus_reader_schema_with_defaults_or_failure_for_reader_only_fields"
+    },
+    {
+      "source": "https://json-schema.org/draft/2020-12/json-schema-validation",
+      "fact": "json_schema_validation_does_not_itself_bound_arbitrary_precision_json_numbers"
+    },
+    {
+      "source": "https://json-schema.org/understanding-json-schema/reference/object",
+      "fact": "json_schema_additional_properties_are_allowed_by_default_unless_profile_restricts_them"
+    }
+  ],
+  "source_assertions": [
+    "raw_candidate_defaults_are_not_automatically_equivalent_to_jlmirror_contract_requirements",
+    "candidate_specific_guard_profiles_may_strengthen_default_parser_behavior_without_selecting_a_candidate",
+    "all_three_concrete_candidates_can_reach_eligible_for_evidence_execution_under_explicit_guard_profiles",
+    "protobuf_last_one_wins_default_is_not_accepted_for_protected_fields",
+    "protobuf_raw_serialized_bytes_are_not_content_equivalence_authority",
+    "avro_historical_interpretation_requires_writer_schema_continuity",
+    "json_schema_requires_explicit_platform_bounds_beyond_base_validation_vocabulary",
+    "no_candidate_profile_loads_schema_or_executable_content_from_untrusted_message_payload",
+    "internal_broker_and_external_webhook_profiles_remain_independently_selectable_under_one_canonical_domain_semantics"
+  ],
+  "non_authority": {
+    "d4b_wire_selection": "not_selected",
+    "d4b_catalog_selection": "not_selected",
+    "d4b_contract_version_selection": "not_selected",
+    "d4_gate": "scoped",
+    "d4_transport_authority": "selected_not_granted",
+    "canonical_product_implementation_authority": "not_granted",
+    "wave4_implementation_authority": "not_granted",
+    "production_authority": "none",
+    "c3_numeric_topology_authority": "not_selected"
+  }
+}

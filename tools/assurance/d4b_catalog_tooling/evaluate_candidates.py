@@ -171,9 +171,6 @@ class ReviewedHistory:
 
     def read(self, principal: Principal, identity: LogicalContractIdentity, revision: str) -> ContractRevision:
         require_role(principal, READER_ROLE)
-        return self._get_committed(identity, revision)
-
-    def _get_committed(self, identity: LogicalContractIdentity, revision: str) -> ContractRevision:
         try:
             return self._history[identity.canonical()][revision]
         except KeyError as exc:
@@ -203,7 +200,7 @@ class RegistryMirror:
         for value in (subject, vendor_version, vendor_id):
             if not value or len(value) > 256:
                 raise EvidenceViolation("invalid registry mapping metadata")
-        committed = self.reviewed_authority._get_committed(reviewed.identity, reviewed.revision)
+        committed = self.reviewed_authority.read(principal, reviewed.identity, reviewed.revision)
         if committed != reviewed or committed.reviewed_content_sha256 != reviewed.reviewed_content_sha256:
             raise EvidenceViolation("registry publish requires exact preexisting reviewed authority")
         key = (reviewed.identity.canonical(), reviewed.revision)
@@ -226,7 +223,7 @@ class RegistryMirror:
         require_role(principal, READER_ROLE)
         if not self.available:
             raise EvidenceViolation("registry unavailable")
-        committed = self.reviewed_authority._get_committed(reviewed.identity, reviewed.revision)
+        committed = self.reviewed_authority.read(principal, reviewed.identity, reviewed.revision)
         if committed != reviewed:
             raise EvidenceViolation("registry mapping lookup requires exact reviewed revision")
         try:
@@ -311,7 +308,6 @@ def exercise_candidate(candidate: str) -> None:
     assert_metadata_recoverable(v1)
     assert_metadata_recoverable(v2)
 
-    # Canonical semantic representation is independent of JSON member order/whitespace.
     v1_reformatted = ContractRevision(
         identity=v1.identity,
         revision="fixture-r1-reformatted",
@@ -341,6 +337,12 @@ def exercise_candidate(candidate: str) -> None:
         raise AssertionError("reviewed history overwrite was not blocked")
 
     for principal in (Principal("", (), authenticated=False), Principal("reader-no-role", ())):
+        try:
+            profile.history.read(principal, v1.identity, v1.revision)
+        except EvidenceViolation:
+            pass
+        else:
+            raise AssertionError("unauthorized direct history read was not blocked")
         try:
             profile.resolve(principal, v1.identity, v1.revision)
         except EvidenceViolation:
@@ -379,7 +381,6 @@ def exercise_candidate(candidate: str) -> None:
         else:
             raise AssertionError("registry accepted forged reviewed provenance")
 
-        # Idempotent retry is allowed; remapping the same reviewed revision is not.
         original_mapping = profile.registry.publish(reviewer, v1, "event-created", "17", "vendor-abc")
         assert original_mapping == profile.registry.mapping(reader, v1)
         try:
@@ -417,7 +418,7 @@ def main() -> None:
         "d4b_catalog_tooling_candidate_source=PASS "
         "candidates=3 reviewed_authority=preexisting provenance=content_bound history=append_only "
         "semantic_manifest=canonical_and_compared mapping_history=immutable historical_metadata=recoverable "
-        "authz=fail_closed outage=meaning_stable product_identity=non_authoritative "
+        "authz=all_reads_fail_closed outage=meaning_stable product_identity=non_authoritative "
         "selection=not_selected ledger_credit=0"
     )
 

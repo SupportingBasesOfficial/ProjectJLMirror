@@ -69,9 +69,11 @@ This source PR does not choose the future catalog/registry implementation. Axis 
 
 Historical evidence binds candidate/profile identity, reviewed schema identity and original payload bytes. Re-reading with the same profile/schema preserves the exact historical bytes. Attempting to reinterpret those bytes through another candidate/profile or schema fails closed.
 
-For Avro, the reviewed schema reference must resolve to the exact reviewed schema object before the writer/reader pair can participate in reviewed equivalence. This closes the gap where a historical string label could otherwise survive while the schema content silently changed.
+For Avro, the historical envelope additionally persists a SHA-256 digest of the exact reviewed structural writer-schema content. Reading an old envelope recomputes the currently reviewed content digest for the bound `schema_ref` and fails closed if it differs. Therefore a future release cannot silently rebind `avro:event:v1` to different content and reinterpret historical bytes while preserving only the old string label.
 
-Axis A therefore proves the profile/schema binding requirement. Axis B remains responsible for the later catalog/provenance mechanism that makes reviewed schema content durably recoverable.
+The digest is derived deterministically from record identity, ordered field inventory, declared primitive/union types, aliases, default-presence state and deterministic default representation. It is historical interpretation evidence, not a catalog-product selection or cryptographic authority grant.
+
+Axis A therefore proves the profile/schema/content binding requirement. Axis B remains responsible for the later catalog/provenance mechanism that makes reviewed schema content durably recoverable.
 
 ### Compression boundary
 
@@ -129,8 +131,11 @@ Avro evolution is made explicit rather than implicit. The evidence model include
 The profile requires:
 
 - reviewed `avro:event:v1` / `avro:event:v2` references are bound to exact reviewed structural schema content before resolution;
+- historical Avro envelopes persist and verify a SHA-256 digest of that exact structural schema content before reinterpretation;
 - original writer schema identity/content remains recoverable for historical interpretation;
 - every field declared by the writer schema must be present in the writer datum;
+- **every writer-declared datum value is validated against its writer type and bounds before reader projection**, including fields that the reader schema does not retain;
+- writer-only fields therefore cannot smuggle malformed objects, oversized strings/bytes or invalid numeric mappings through a projection that later discards them;
 - a reader default is applied only when the field is **absent from the writer schema**, never to fabricate a writer-declared field omitted by malformed input;
 - reader-schema resolution is explicit;
 - reader-only fields require defaults or resolution fails;
@@ -158,7 +163,7 @@ The profile requires:
 - canonical equivalence is structural and type-tagged **after reader-side promotion and bounded writer→reader resolution**, rather than using unrestricted recursive JSON serialization;
 - generic reviewed record resolution and `Event` domain invariants are separate concerns: generic fixtures may prove promotion behavior, while a record named `Event` still cannot bypass required `tenant_id`/`event_type` semantics;
 - field aliases are reviewed and ambiguous aliases fail closed;
-- historical payloads are bound to Avro profile/writer-schema identity and exact reviewed schema content;
+- historical payloads are bound to Avro profile/writer-schema identity, exact reviewed schema content and persisted content digest;
 - message payloads cannot choose arbitrary writer/reader schema content.
 
 These are evidence-profile limits, not selected production C3 numerics. A future concrete Avro runtime/profile may broaden the admitted schema subset only through separately reviewed bounded evidence; this PR does not imply arbitrary nested Avro datum processing is acceptable.
@@ -167,7 +172,7 @@ The harness remains a specification-level evidence model, not a substitute for a
 
 ## Runtime-independence boundary
 
-The source harness deliberately does not declare one SDK's generated-object behavior authoritative. It exercises JSON bytes plus bounded/context-independent Decimal object semantics, Protobuf wire semantics before generated bindings, and bounded Avro writer/reader type resolution with exact reviewed schema binding, declared-width float materialization, strict runtime type admission and explicit reader-side promotion.
+The source harness deliberately does not declare one SDK's generated-object behavior authoritative. It exercises JSON bytes plus bounded/context-independent Decimal object semantics, Protobuf wire semantics before generated bindings, and bounded Avro writer/reader type resolution with exact reviewed schema binding, historical schema-content digest, pre-projection writer validation, declared-width float materialization, strict runtime type admission and explicit reader-side promotion.
 
 A later Java, Go, Python, Rust or other implementation remains eligible only if these authoritative semantics survive. Runtime convenience or implicit language coercion cannot redefine canonical JLMirror contract meaning.
 
@@ -196,7 +201,9 @@ The falsification suite blocks:
 - Protobuf raw-byte-order authority and repeated-order loss;
 - loss of required Protobuf unknown binary fields;
 - Avro reviewed-ref / schema-content substitution under the same label;
+- historical Avro same-reference content rebind when the persisted envelope digest no longer matches;
 - omission of a writer-declared Avro field followed by illegitimate reader-default fabrication;
+- malformed or oversized writer-only Avro fields being silently discarded before writer validation;
 - Avro `float` semantic drift caused by leaving a declared single-precision value in the host runtime's binary64 representation;
 - Avro `float`/`double` coercion of boolean or string runtime values into numeric contract values;
 - uncaught float/double conversion overflow escaping the fail-closed validation path;

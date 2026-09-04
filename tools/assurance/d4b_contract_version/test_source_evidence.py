@@ -52,6 +52,24 @@ def inject_duplicate_selection(data: dict[Path, object]) -> None:
     data[validator.MANIFEST] = raw.replace(needle, b'  "selection_state": "selected",\n' + needle, 1)
 
 
+def assert_monotonic_issuer_rejects_regression() -> None:
+    adapter = evaluator.OpaqueMonotonicToken()
+    issuer = evaluator.OpaqueMonotonicIssuer()
+    first = issuer.issue(10)
+    second = issuer.issue(11)
+    adapter.parse(first)
+    adapter.parse(second)
+    if first == second:
+        raise AssertionError("opaque monotonic issuer duplicated token")
+    for sequence in (11, 10, 9, 0, -1):
+        try:
+            issuer.issue(sequence)
+        except ValueError:
+            continue
+        raise AssertionError(f"issuer accepted non-increasing sequence {sequence}")
+    evaluator.assert_ordering_absent(adapter, first, second)
+
+
 def main() -> int:
     results = evaluator.evaluate()
     if results != validator.EXPECTED_RESULTS:
@@ -70,7 +88,7 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_results"].__setitem__("positive_integer_family_revision", "selected"), "concrete candidate result inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST).__setitem__("equivalent_reviewed_representation", "eligible_for_evidence_execution"), "equivalent candidate class must remain unevaluated")
     must_fail(lambda d: obj(d, validator.MANIFEST)["required_proofs"].pop(), "required proof inventory drift")
-    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].pop(), "source assertion inventory drift")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("opaque_monotonic_candidate_requires_strictly_increasing_internal_issuance_sequence_while_external_tokens_remain_opaque"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.LEDGER).__setitem__("candidate", "positive_integer_family_revision"), "D4-B ledger selection drift")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("gate_state", "accepted"), "D4 gate escalation")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("canonical_product_implementation_authority", "granted"), "Product authority escalation")
@@ -87,7 +105,9 @@ def main() -> int:
         evaluator.assert_ordering_absent(adapter, *valid)
         evaluator.assert_no_authority_fields(adapter, valid[0])
 
-    print("d4b_contract_version_source_falsification=PASS duplicate_json=blocked hidden_selection=blocked syntax_selection=blocked auto_credit=blocked candidate_promotion=blocked proof_weakening=blocked ordering_authority=blocked authority_fields=blocked ledger_selection=blocked d4_authority_escalation=blocked")
+    assert_monotonic_issuer_rejects_regression()
+
+    print("d4b_contract_version_source_falsification=PASS duplicate_json=blocked hidden_selection=blocked syntax_selection=blocked auto_credit=blocked candidate_promotion=blocked proof_weakening=blocked opaque_monotonic_regression=blocked ordering_authority=blocked authority_fields=blocked ledger_selection=blocked d4_authority_escalation=blocked")
     return 0
 
 

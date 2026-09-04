@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-B",
+  "axis": "schema_registry_catalog_and_tooling",
+  "source_decision": "OPEN-EVT-003",
+  "canonical_base": "df62898b6d9fc36f2a10c0c3713679d2cbe05da8",
+  "mode": "candidate_source_evidence_only",
+  "test_profile_only": true,
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "current_run_auto_credit": false,
+  "ledger_credit": [],
+  "candidate_results": {
+    "reviewed_git_catalog": "eligible_for_evidence_execution",
+    "registry_backed_catalog": "eligible_for_evidence_execution",
+    "hybrid_reviewed_git_plus_registry_catalog": "eligible_for_evidence_execution"
+  },
+  "equivalent_reviewed_catalog": "insufficient_evidence",
+  "required_proofs": [
+    "reviewed_contract_is_canonical_authority",
+    "version_provenance_and_history_are_retained",
+    "semantic_manifest_is_compared_in_addition_to_payload_schema",
+    "historical_reader_upcaster_and_comparison_profile_metadata_are_recoverable",
+    "registry_or_catalog_access_is_authenticated_and_authorized",
+    "tooling_outage_does_not_rewrite_or_silently_reinterpret_committed_historical_contracts",
+    "compatibility_ci_detects_semantic_breaks_not_only_syntactic_schema_changes",
+    "catalog_product_identity_does_not_become_contract_identity"
+  ],
+  "candidate_profile_requirements": {
+    "reviewed_git_catalog": [
+      "reviewed_commit_content_is_the_only_write_authority",
+      "history_is_append_only_and_revision_content_is_immutable",
+      "semantic_manifest_digest_and_payload_schema_digest_are_both_reviewed",
+      "historical_reader_upcaster_and_comparison_profile_refs_are_versioned_with_contract_revision",
+      "authenticated_reader_and_reviewer_roles_are_distinct",
+      "catalog_read_outage_cannot_mutate_or_rebind_committed_history",
+      "compatibility_ci_rejects_semantic_breaks_even_when_payload_schema_is_unchanged",
+      "git_commit_or_blob_identity_is_provenance_not_logical_contract_identity"
+    ],
+    "registry_backed_catalog": [
+      "registry_registration_requires_preexisting_reviewed_contract_authority",
+      "registry_subject_version_or_vendor_id_is_mapping_metadata_not_contract_identity",
+      "reviewed_revision_history_and_semantic_manifest_remain_recoverable_without_registry_mutation_authority",
+      "historical_reader_upcaster_and_comparison_profile_refs_are_not_derived_from_registry_product_ids",
+      "registry_access_requires_authenticated_authorized_principal",
+      "registry_outage_or_rebind_attempt_cannot_rewrite_durable_reviewed_contract_history",
+      "compatibility_ci_uses_reviewed_semantic_manifest_in_addition_to_registry_schema_compatibility",
+      "registry_product_replacement_preserves_logical_contract_identity"
+    ],
+    "hybrid_reviewed_git_plus_registry_catalog": [
+      "reviewed_git_contract_is_authority_and_registry_is_a_derived_distribution_index",
+      "git_and_registry_provenance_are_both retained_without_conflating_their_identifiers",
+      "semantic_manifest_is_reviewed_in_git_and_mirrored_without_becoming_registry_defined",
+      "historical_reader_upcaster_and_comparison_profile_metadata_remain_recoverable_from_reviewed_history",
+      "both_review_and_registry_surfaces_require_authenticated_authorized_access",
+      "registry_outage_falls_back_to_durable_reviewed_history_without_silent_reinterpretation",
+      "compatibility_ci_rejects_semantic_breaks_before_registry_publish",
+      "registry_replacement_changes_mapping_metadata_only_not_logical_contract_identity"
+    ]
+  },
+  "source_assertions": [
+    "all_three_concrete_catalog_classes_can_reach_eligible_for_evidence_execution_without_selecting_a_product",
+    "reviewed_contract_content_is_authority_and_registry_registration_is_never_authority_by_itself",
+    "payload_schema_compatibility_alone_is_insufficient_when_semantic_manifest_changes_break_authoritative_meaning",
+    "contract_revision_history_is_append_only_and_old_revision_content_cannot_be_overwritten",
+    "historical_reader_upcaster_and_comparison_profile_metadata_are_bound_to_each_reviewed_revision",
+    "anonymous_or_unauthorized_catalog_access_fails_closed",
+    "registry_outage_does_not_change_the_meaning_of_committed_historical_contracts",
+    "registry_subject_version_vendor_id_git_sha_and_storage_location_are_provenance_or_mapping_metadata_not_contract_identity",
+    "registry_product_replacement_preserves_logical_contract_identity_and_reviewed_content_digest",
+    "wire_serialization_and_contract_version_axes_remain_independently_selectable"
+  ],
+  "non_authority": {
+    "d4b_wire_selection": "not_selected",
+    "d4b_catalog_selection": "not_selected",
+    "d4b_contract_version_selection": "not_selected",
+    "d4_gate": "scoped",
+    "d4_transport_authority": "selected_not_granted",
+    "canonical_product_implementation_authority": "not_granted",
+    "wave4_implementation_authority": "not_granted",
+    "production_authority": "none",
+    "c3_numeric_topology_authority": "not_selected"
+  }
+}

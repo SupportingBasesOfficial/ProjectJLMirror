@@ -217,13 +217,82 @@ def validate_objects(plan: dict, entry: dict, promotion: dict) -> list[str]:
     return errors
 
 
+def _safe_repo_path(value: object) -> Path | None:
+    if not isinstance(value, str) or not value:
+        return None
+    candidate = Path(value)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        return None
+    return candidate
+
+
+def validate_promotion_chain(root: Path, latest: dict) -> list[str]:
+    errors: list[str] = []
+    current = latest
+    seen_paths: set[str] = set()
+
+    while True:
+        promotion_id = current.get("promotion_id") or "<unknown-promotion>"
+        manifest_path = _safe_repo_path(current.get("source_manifest_path"))
+        expected_manifest_digest = current.get("source_manifest_sha256")
+        if manifest_path is None:
+            errors.append(f"{promotion_id} source manifest path invalid")
+        elif not isinstance(expected_manifest_digest, str) or len(expected_manifest_digest) != 64:
+            errors.append(f"{promotion_id} source manifest digest invalid")
+        else:
+            full_manifest = root / manifest_path
+            if not full_manifest.is_file():
+                errors.append(f"{promotion_id} source manifest missing: {manifest_path}")
+            elif sha256(full_manifest.read_bytes()).hexdigest() != expected_manifest_digest:
+                errors.append(f"{promotion_id} source manifest bytes no longer match promoted digest")
+
+        previous = current.get("previous_promotion")
+        if previous is None:
+            break
+        if not isinstance(previous, dict):
+            errors.append(f"{promotion_id} previous promotion link invalid")
+            break
+
+        previous_path = _safe_repo_path(previous.get("path"))
+        expected_previous_id = previous.get("promotion_id")
+        expected_previous_digest = previous.get("sha256")
+        if previous_path is None:
+            errors.append(f"{promotion_id} previous promotion path invalid")
+            break
+        path_key = previous_path.as_posix()
+        if path_key in seen_paths:
+            errors.append(f"promotion chain cycle detected at {path_key}")
+            break
+        seen_paths.add(path_key)
+
+        full_previous = root / previous_path
+        if not full_previous.is_file():
+            errors.append(f"{promotion_id} previous promotion missing: {previous_path}")
+            break
+        previous_bytes = full_previous.read_bytes()
+        if not isinstance(expected_previous_digest, str) or sha256(previous_bytes).hexdigest() != expected_previous_digest:
+            errors.append(f"{promotion_id} previous promotion bytes no longer match chained digest")
+            break
+        try:
+            previous_object = json.loads(previous_bytes)
+        except json.JSONDecodeError:
+            errors.append(f"{promotion_id} previous promotion is not valid JSON")
+            break
+        if previous_object.get("promotion_id") != expected_previous_id:
+            errors.append(f"{promotion_id} previous promotion identity mismatch")
+            break
+        if previous_object.get("track") != "D4-A":
+            errors.append(f"{promotion_id} previous promotion track drift")
+            break
+        current = previous_object
+
+    return errors
+
+
 def validate(root: Path) -> list[str]:
     plan, entry, promotion = load(root)
     errors = validate_objects(plan, entry, promotion)
-    if sha256((root / SOURCE_MANIFEST).read_bytes()).hexdigest() != EXPECTED_SOURCE_MANIFEST_SHA256:
-        errors.append("source manifest bytes no longer match promoted digest")
-    if sha256((root / PREVIOUS_PROMOTION).read_bytes()).hexdigest() != EXPECTED_PREVIOUS_PROMOTION_SHA256:
-        errors.append("previous promotion bytes no longer match chained digest")
+    errors.extend(validate_promotion_chain(root, promotion))
     return errors
 
 
@@ -234,7 +303,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4A_PLAN_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4a_evidence_plan=PASS evidence=7 credited=6 remaining=1 exact_assertions=preserved kafka=not_selected production_numerics=not_granted provenance=chained review_gate=pinned")
+    print("d4a_evidence_plan=PASS evidence=7 credited=6 remaining=1 exact_assertions=preserved kafka=not_selected production_numerics=not_granted provenance=full_chain review_gate=pinned")
     return 0
 
 

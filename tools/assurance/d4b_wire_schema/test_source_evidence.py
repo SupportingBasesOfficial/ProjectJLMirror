@@ -61,11 +61,7 @@ def prove_behavior_falsifications() -> None:
         raise AssertionError("compressed input accepted without selected decompression profile")
 
     try:
-        evaluator.resolve_reviewed_schema(
-            "protobuf_profile",
-            "proto:event:v1",
-            untrusted_message_ref="https://attacker.invalid/schema",
-        )
+        evaluator.resolve_reviewed_schema("protobuf_profile", "proto:event:v1", untrusted_message_ref="https://attacker.invalid/schema")
     except evaluator.EvidenceViolation:
         pass
     else:
@@ -117,6 +113,14 @@ def prove_behavior_falsifications() -> None:
         pass
     else:
         raise AssertionError("protobuf non-minimal tag varint accepted")
+
+    overflow_scalar = evaluator._encode_varint(7 << 3) + (bytes([0x80]) * 9) + bytes([0x02])
+    try:
+        evaluator.scan_bounded_protobuf(overflow_scalar)
+    except evaluator.EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("protobuf uint64-overflow varint accepted")
 
     for invalid in (event, tenant + event + evaluator.proto_field(6, b"invalid")):
         try:
@@ -195,8 +199,9 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_results"].__setitem__("protobuf_profile", "selected"), "concrete candidate result inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST).__setitem__("equivalent_reviewed_profile", "eligible_for_evidence_execution"), "equivalent candidate class must remain unevaluated")
     must_fail(lambda d: obj(d, validator.MANIFEST)["required_proofs"].pop(), "required proof inventory drift")
-    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["protobuf_profile"].remove("bounded_wire_predecoder_rejects_nonminimal_varints_and_reserved_field_numbers"), "candidate requirement drift for protobuf_profile")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["protobuf_profile"].remove("bounded_wire_predecoder_rejects_nonminimal_varints_uint64_overflow_and_reserved_field_numbers"), "candidate requirement drift for protobuf_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["protobuf_profile"].remove("repeated_field_occurrence_order_is_preserved_within_each_field_number_during_semantic_normalization"), "candidate requirement drift for protobuf_profile")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("field_aliases_are_reviewed_and_ambiguous_aliases_fail_closed"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["official_source_facts"].pop(), "official source fact inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("historical_payload_profile_and_schema_binding_prevents_cross_profile_reinterpretation"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("unselected_compression_is_rejected_so_decompression_work_is_zero_and_bounded"), "source assertion inventory drift")
@@ -213,8 +218,8 @@ def main() -> int:
         "auto_credit=blocked candidate_promotion=blocked proof_weakening=blocked source_fact_drift=blocked "
         "compression_without_profile=blocked dynamic_schema_selection=blocked historical_cross_profile=blocked "
         "json_bounds=blocked json_numeric_runtime_drift=blocked protobuf_nonminimal_varint=blocked "
-        "protobuf_last_wins_override=blocked protobuf_presence_enum_weakening=blocked protobuf_unknown_preservation=proven "
-        "protobuf_byte_order_authority=blocked protobuf_repeated_order_loss=blocked "
+        "protobuf_uint64_overflow=blocked protobuf_last_wins_override=blocked protobuf_presence_enum_weakening=blocked "
+        "protobuf_unknown_preservation=proven protobuf_byte_order_authority=blocked protobuf_repeated_order_loss=blocked "
         "avro_alias_ambiguity=blocked avro_missing_default=blocked avro_nullable_semantics=proven "
         "ledger_selection=blocked d4_authority_escalation=blocked"
     )

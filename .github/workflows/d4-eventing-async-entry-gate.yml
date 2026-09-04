@@ -54,7 +54,7 @@ jobs:
         shell: bash
         run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
 
-      - name: Preserve D4 non-authority boundary after D4-A Kafka selection
+      - name: Preserve D4 non-authority boundary after D4-A selection and D4-B evidence promotion
         shell: bash
         run: |
           set -euo pipefail
@@ -63,8 +63,10 @@ jobs:
           from pathlib import Path
           state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
           selection = json.loads(Path('implementation/d4-eventing-async/d4-a-selection-record.json').read_text())
-          d4a = next(track for track in state['tracks'] if track['track_id'] == 'D4-A')
-          expected_credit = {
+          tracks = {track['track_id']: track for track in state['tracks']}
+          d4a = tracks['D4-A']
+          d4b = tracks['D4-B']
+          expected_d4a = {
               'capacity_envelope_baseline_growth_stress',
               'broker_neutral_anti_corruption_stub_swap',
               'regulated_payload_erasure_granularity',
@@ -72,6 +74,13 @@ jobs:
               'ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency',
               'physical_naming_routing_and_cell_topology_adapter_mapping',
               'broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark',
+          }
+          expected_d4b = {
+              'canonical_bounded_serialization_profile',
+              'parser_ambiguity_and_duplicate_field_negative_vectors',
+              'schema_catalog_semantic_manifest_compatibility_ci',
+              'historical_reader_and_equivalence_profile_continuity',
+              'contract_version_representation_and_breaking_change_vectors',
           }
           assert state['gate_state'] == 'scoped'
           assert state['d4_transport_authority'] == 'selected_not_granted'
@@ -82,13 +91,17 @@ jobs:
           assert d4a['candidate'] == 'kafka'
           assert d4a['candidate_status'] == 'selected_c2_candidate'
           assert d4a['state'] == 'selected_candidate'
-          assert set(d4a['evidence_completed']) == expected_credit
+          assert set(d4a['evidence_completed']) == expected_d4a
           assert d4a['evidence_remaining'] == []
           assert selection['selection_state'] == 'selected'
           assert selection['selection_scope'] == 'bounded_c2_mechanism_selection_only'
           assert selection['separate_d4_acceptance_required'] is True
-          assert all(track['evidence_completed'] == [] for track in state['tracks'] if track['track_id'] != 'D4-A')
-          assert all(track['candidate'] is None and track['candidate_status'] == 'not_selected' for track in state['tracks'] if track['track_id'] != 'D4-A')
-          assert sum(len(track['evidence_completed']) for track in state['tracks']) == 7
-          print('d4_scoped_boundary=PASS d4a_candidate=kafka selection=selected bounded_c2=true evidence_credited=7 transport_authority=not_granted wave4=not_granted production=none c3=not_selected other_tracks=open')
+          assert d4b['candidate'] is None and d4b['candidate_status'] == 'not_selected'
+          assert d4b['state'] == 'evidence_complete_selection_pending'
+          assert set(d4b['evidence_completed']) == expected_d4b
+          assert d4b['evidence_remaining'] == []
+          assert all(tracks[track_id]['evidence_completed'] == [] for track_id in ('D4-C', 'D4-D'))
+          assert all(tracks[track_id]['candidate'] is None and tracks[track_id]['candidate_status'] == 'not_selected' for track_id in ('D4-C', 'D4-D'))
+          assert sum(len(track['evidence_completed']) for track in state['tracks']) == 12
+          print('d4_scoped_boundary=PASS d4a=kafka_selected_7_of_7 d4b=5_of_5_selection_pending candidate=not_selected evidence_credited=12 transport_authority=not_granted wave4=not_granted production=none c3=not_selected d4c_d=open')
           PY

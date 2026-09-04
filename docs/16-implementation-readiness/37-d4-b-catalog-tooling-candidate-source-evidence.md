@@ -34,6 +34,8 @@ Logical identity in the evidence fixture is carried independently as domain/name
 - comparison-profile reference;
 - reviewed provenance.
 
+The deterministic reviewed-content digest includes the reviewed provenance as well as the semantic/schema/history metadata. Registry publish requires exact equality with the committed reviewed revision, so a caller cannot reuse a valid logical revision while substituting forged provenance.
+
 Revision history is append-only. Reusing an existing logical revision token with different reviewed content fails closed. Historical reader/upcaster/comparison metadata remains attached to the reviewed revision rather than being reconstructed from a vendor registry ID.
 
 ## Semantic compatibility, not syntax-only compatibility
@@ -84,7 +86,7 @@ The allowed result of this source-evidence stage is only:
 1. all three concrete candidate results;
 2. the exact eight Axis B `must_prove` obligations;
 3. candidate-specific guard profiles;
-4. source assertions;
+4. source assertions, including provenance/content binding;
 5. `selection_state=not_selected`;
 6. `selection_authority=not_granted`;
 7. `current_run_auto_credit=false`;
@@ -92,7 +94,7 @@ The allowed result of this source-evidence stage is only:
 9. independent Axis A and Axis C selection state;
 10. unchanged global D4 authority state.
 
-Negative controls must reject hidden selection, candidate promotion, proof removal, auto-credit, ledger credit, Product authority escalation, wire-format coupling and `contract_version` coupling.
+Negative controls must reject hidden selection, candidate promotion, proof removal, provenance-assertion removal, auto-credit, ledger credit, Product authority escalation, wire-format coupling and `contract_version` coupling.
 
 ## Preserved canonical state
 

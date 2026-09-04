@@ -65,6 +65,7 @@ class ContractRevision:
                 self.historical_metadata.reader_ref,
                 self.historical_metadata.upcaster_ref,
                 self.historical_metadata.comparison_profile_ref,
+                self.reviewed_provenance,
             ]
         )
         return sha256(payload.encode("utf-8")).hexdigest()
@@ -120,7 +121,7 @@ class ReviewedHistory:
         family = self._history.setdefault(key, {})
         if revision.revision in family:
             existing = family[revision.revision]
-            if existing.reviewed_content_sha256 != revision.reviewed_content_sha256:
+            if existing != revision:
                 raise EvidenceViolation("reviewed revision history is immutable")
             return existing
         family[revision.revision] = revision
@@ -158,7 +159,7 @@ class RegistryMirror:
         if not subject or not vendor_version or not vendor_id:
             raise EvidenceViolation("invalid registry mapping metadata")
         committed = self.reviewed_authority.get_committed(reviewed.identity, reviewed.revision)
-        if committed.reviewed_content_sha256 != reviewed.reviewed_content_sha256:
+        if committed != reviewed or committed.reviewed_content_sha256 != reviewed.reviewed_content_sha256:
             raise EvidenceViolation("registry publish requires exact preexisting reviewed authority")
         key = (reviewed.identity.canonical(), reviewed.revision)
         mapping = ProductMapping(
@@ -286,7 +287,6 @@ def exercise_candidate(candidate: str) -> None:
             raise AssertionError("unauthorized catalog read was not blocked")
 
     if profile.registry:
-        # An arbitrary unreviewed object cannot be made authoritative by registry publish.
         unreviewed = ContractRevision(
             identity=v1.identity,
             revision="fixture-unreviewed",
@@ -301,6 +301,21 @@ def exercise_candidate(candidate: str) -> None:
             pass
         else:
             raise AssertionError("registry accepted unreviewed contract authority")
+
+        fake_provenance = ContractRevision(
+            identity=v1.identity,
+            revision=v1.revision,
+            payload_schema=v1.payload_schema,
+            semantic_manifest=v1.semantic_manifest,
+            historical_metadata=v1.historical_metadata,
+            reviewed_provenance="git:forged-provenance",
+        )
+        try:
+            profile.registry.publish(reviewer, fake_provenance, "event-created", "20", "vendor-forged")
+        except EvidenceViolation:
+            pass
+        else:
+            raise AssertionError("registry accepted forged reviewed provenance")
 
         before = profile.resolve(reader, v1.identity, v1.revision).reviewed_content_sha256
         profile.registry.available = False
@@ -328,9 +343,9 @@ def main() -> None:
         exercise_candidate(candidate)
     print(
         "d4b_catalog_tooling_candidate_source=PASS "
-        "candidates=3 reviewed_authority=preexisting history=append_only semantic_manifest=compared "
-        "historical_metadata=recoverable authz=fail_closed outage=meaning_stable "
-        "product_identity=non_authoritative selection=not_selected ledger_credit=0"
+        "candidates=3 reviewed_authority=preexisting provenance=content_bound history=append_only "
+        "semantic_manifest=compared historical_metadata=recoverable authz=fail_closed "
+        "outage=meaning_stable product_identity=non_authoritative selection=not_selected ledger_credit=0"
     )
 
 

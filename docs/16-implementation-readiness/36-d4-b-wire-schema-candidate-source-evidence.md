@@ -61,11 +61,15 @@ The harness uses a finite reviewed schema-reference set for every concrete candi
 
 Untrusted message content cannot provide a URL, descriptor, schema body or executable object that becomes authoritative. The harness explicitly attempts such message-driven selection and requires fail-closed behavior.
 
+For the Avro evidence profile, a reviewed reference is additionally bound to the **exact reviewed structural schema content**. `avro:event:v1` and `avro:event:v2` are not free-form labels: passing a different same-name schema under either reviewed reference fails closed before resolution.
+
 This source PR does not choose the future catalog/registry implementation. Axis B remains independent.
 
 ### Historical interpretation
 
 Historical evidence binds candidate/profile identity, reviewed schema identity and original payload bytes. Re-reading with the same profile/schema preserves the exact historical bytes. Attempting to reinterpret those bytes through another candidate/profile or schema fails closed.
+
+For Avro, the reviewed schema reference must resolve to the exact reviewed schema object before the writer/reader pair can participate in reviewed equivalence. This closes the gap where a historical string label could otherwise survive while the schema content silently changed.
 
 Axis A therefore proves the profile/schema binding requirement. Axis B remains responsible for the later catalog/provenance mechanism that makes reviewed schema content durably recoverable.
 
@@ -124,7 +128,10 @@ Avro evolution is made explicit rather than implicit. The evidence model include
 
 The profile requires:
 
+- reviewed `avro:event:v1` / `avro:event:v2` references are bound to exact reviewed structural schema content before resolution;
 - original writer schema identity/content remains recoverable for historical interpretation;
+- every field declared by the writer schema must be present in the writer datum;
+- a reader default is applied only when the field is **absent from the writer schema**, never to fabricate a writer-declared field omitted by malformed input;
 - reader-schema resolution is explicit;
 - reader-only fields require defaults or resolution fails;
 - writer/reader field types must be compatible under the reviewed Avro promotion rules;
@@ -133,6 +140,7 @@ The profile requires:
 - numeric promotion such as writer `int` → reader `double` canonicalizes to the same reader representation as a native writer `double` datum with the same reader value;
 - `bytes` → `string` promotion requires strict UTF-8 and produces a bounded reader string; invalid UTF-8 fails closed;
 - `string` → `bytes` promotion produces bounded UTF-8 bytes;
+- float/double admission and numeric promotion catch conversion overflow and convert it to `EvidenceViolation`; adversarial huge integer input cannot escape the fail-closed evidence boundary through raw `OverflowError`;
 - defaults must match the first declared reader type in the evidence model;
 - required tenant/event fixture semantics are explicit after resolution;
 - nullable severity and its accepted enum values are explicit after resolution;
@@ -143,8 +151,9 @@ The profile requires:
 - float/double fixture values must be finite;
 - the source evidence intentionally models only a reviewed bounded primitive/union subset; nested complex Avro types are not silently accepted by this fixture;
 - canonical equivalence is structural and type-tagged **after reader-side promotion and bounded writer→reader resolution**, rather than using unrestricted recursive JSON serialization;
+- generic reviewed record resolution and `Event` domain invariants are separate concerns: generic fixtures may prove promotion behavior, while a record named `Event` still cannot bypass required `tenant_id`/`event_type` semantics;
 - field aliases are reviewed and ambiguous aliases fail closed;
-- historical payloads are bound to Avro profile/writer-schema identity;
+- historical payloads are bound to Avro profile/writer-schema identity and exact reviewed schema content;
 - message payloads cannot choose arbitrary writer/reader schema content.
 
 These are evidence-profile limits, not selected production C3 numerics. A future concrete Avro runtime/profile may broaden the admitted schema subset only through separately reviewed bounded evidence; this PR does not imply arbitrary nested Avro datum processing is acceptable.
@@ -153,7 +162,7 @@ The harness remains a specification-level evidence model, not a substitute for a
 
 ## Runtime-independence boundary
 
-The source harness deliberately does not declare one SDK's generated-object behavior authoritative. It exercises JSON bytes plus bounded/context-independent Decimal object semantics, Protobuf wire semantics before generated bindings, and bounded Avro writer/reader type resolution with explicit reader-side promotion.
+The source harness deliberately does not declare one SDK's generated-object behavior authoritative. It exercises JSON bytes plus bounded/context-independent Decimal object semantics, Protobuf wire semantics before generated bindings, and bounded Avro writer/reader type resolution with exact reviewed schema binding and explicit reader-side promotion.
 
 A later Java, Go, Python, Rust or other implementation remains eligible only if these authoritative semantics survive. Runtime convenience cannot redefine canonical JLMirror contract meaning.
 
@@ -181,7 +190,10 @@ The falsification suite blocks:
 - Protobuf non-minimal varints, `uint64` overflow, protected last-one-wins collapse, same-member oneof duplication, cross-member oneof collision and presence/enum weakening;
 - Protobuf raw-byte-order authority and repeated-order loss;
 - loss of required Protobuf unknown binary fields;
-- Avro alias ambiguity, missing reader defaults, incompatible writer/reader types and nullable-semantic loss;
+- Avro reviewed-ref / schema-content substitution under the same label;
+- omission of a writer-declared Avro field followed by illegitimate reader-default fabrication;
+- uncaught float/double conversion overflow escaping the fail-closed validation path;
+- Avro alias ambiguity, missing legitimate reader defaults, incompatible writer/reader types and nullable-semantic loss;
 - Avro allowed-promotion validation without reader-side materialization, including numeric representation drift and invalid UTF-8 `bytes` → `string` conversion;
 - Avro schema/datum cardinality overflow, overlong names/aliases/scalars, out-of-range numeric values and unrestricted nested datum acceptance;
 - D4-B ledger selection;

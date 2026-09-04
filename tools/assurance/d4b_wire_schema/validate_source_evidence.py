@@ -38,22 +38,29 @@ EXPECTED_REQUIREMENTS = {
         "strict_utf8_json_parser_rejects_duplicate_members_before_object_materialization",
         "protected_alias_groups_are_checked_before_contract_validation",
         "additional_properties_required_null_enum_numeric_depth_and_message_size_rules_are_explicit",
+        "json_numbers_use_bounded_decimal_semantics_and_canonical_normalization_instead_of_binary_float_runtime_mapping",
         "content_equivalence_uses_canonical_semantic_normalization_not_input_member_order",
+        "historical_payload_is_bound_to_reviewed_json_profile_and_schema_identity",
         "schema_resolution_must_not_fetch_or_execute_untrusted_dynamic_content",
     },
     "protobuf_profile": {
+        "bounded_wire_predecoder_rejects_nonminimal_varints_and_reserved_field_numbers",
         "bounded_wire_predecoder_rejects_duplicate_protected_singular_fields_before_generated_binding_last_wins_behavior",
         "protected_oneof_collisions_fail_closed_before_generated_binding_resolution",
+        "required_optional_absence_and_enum_semantics_are_explicit_before_generated_runtime_mapping",
         "unknown_binary_fields_are_preserved_for_forward_compatibility_when_required",
         "protobuf_serialized_byte_order_is_not_contract_equivalence_authority",
         "repeated_field_occurrence_order_is_preserved_within_each_field_number_during_semantic_normalization",
+        "historical_payload_is_bound_to_reviewed_protobuf_profile_and_schema_identity",
         "descriptor_or_dynamic_message_loading_from_untrusted_message_content_is_forbidden",
     },
     "avro_profile": {
         "original_writer_schema_identity_and_content_are_pinned_for_historical_interpretation",
         "reader_schema_resolution_is_explicit_and_missing_fields_require_defaults_or_failure",
+        "required_nullable_and_enum_semantics_are_explicit_after_writer_reader_resolution",
         "field_aliases_are reviewed_and_ambiguous_aliases_fail_closed",
         "semantic_equivalence_is_computed_after_explicit_writer_reader_resolution_not_from_raw_schema_text",
+        "historical_payload_is_bound_to_reviewed_avro_profile_and_writer_schema_identity",
         "writer_reader_schema_loading_is bounded_to_reviewed_content_and_not_selected_by_message_payload",
     },
 }
@@ -68,10 +75,17 @@ EXPECTED_ASSERTIONS = {
     "raw_candidate_defaults_are_not_automatically_equivalent_to_jlmirror_contract_requirements",
     "candidate_specific_guard_profiles_may_strengthen_default_parser_behavior_without_selecting_a_candidate",
     "all_three_concrete_candidates_can_reach_eligible_for_evidence_execution_under_explicit_guard_profiles",
+    "unselected_compression_is_rejected_so_decompression_work_is_zero_and_bounded",
+    "untrusted_message_content_cannot_select_schema_descriptor_or_executable_code",
+    "historical_payload_profile_and_schema_binding_prevents_cross_profile_reinterpretation",
+    "json_numeric_normalization_is_bounded_decimal_and_runtime_independent_within_the_evidence_profile",
+    "protobuf_nonminimal_varints_and_reserved_field_numbers_fail_closed",
     "protobuf_last_one_wins_default_is_not_accepted_for_protected_fields",
+    "protobuf_required_optional_absence_and_enum_semantics_are_explicit",
     "protobuf_raw_serialized_bytes_are_not_content_equivalence_authority",
     "protobuf_repeated_field_occurrence_order_remains_semantic_during_normalization",
     "avro_historical_interpretation_requires_writer_schema_continuity",
+    "avro_required_nullable_and_enum_semantics_are_explicit_after_resolution",
     "json_schema_requires_explicit_platform_bounds_beyond_base_validation_vocabulary",
     "no_candidate_profile_loads_schema_or_executable_content_from_untrusted_message_payload",
     "internal_broker_and_external_webhook_profiles_remain_independently_selectable_under_one_canonical_domain_semantics",
@@ -200,7 +214,8 @@ def main(argv: list[str]) -> int:
         return 1
     print(
         "d4b_wire_schema_source_manifest=PASS axis=OPEN-EVT-002 concrete_candidates=3 eligible=3 "
-        "protobuf_repeated_order=required equivalent=insufficient_evidence selection=not_selected ledger_credit=0 d4=scoped authorities=not_granted"
+        "canonical_varints=required runtime_mapping=bounded historical_binding=required decompression=identity_only "
+        "equivalent=insufficient_evidence selection=not_selected ledger_credit=0 d4=scoped authorities=not_granted"
     )
     return 0
 

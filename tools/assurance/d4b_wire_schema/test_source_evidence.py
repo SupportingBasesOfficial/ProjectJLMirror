@@ -53,6 +53,32 @@ def inject_duplicate_selection(data: dict[Path, object]) -> None:
 
 
 def prove_behavior_falsifications() -> None:
+    try:
+        evaluator.admit_transport_payload(b"compressed", compression="gzip")
+    except evaluator.EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("compressed input accepted without selected decompression profile")
+
+    try:
+        evaluator.resolve_reviewed_schema(
+            "protobuf_profile",
+            "proto:event:v1",
+            untrusted_message_ref="https://attacker.invalid/schema",
+        )
+    except evaluator.EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("untrusted message schema selection accepted")
+
+    historical = evaluator.HistoricalEnvelope("bounded_json_plus_json_schema_profile", "json:event:v1", b"old")
+    try:
+        evaluator.read_historical_envelope(historical, "protobuf_profile", "proto:event:v1")
+    except evaluator.EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("historical cross-profile reinterpretation accepted")
+
     for raw in (
         b'{"tenant_id":"t1","tenant_id":"t2","event_type":"alarm"}',
         b'{"tenant_id":"t1","tenantId":"t1","event_type":"alarm"}',
@@ -72,6 +98,9 @@ def prove_behavior_falsifications() -> None:
     else:
         raise AssertionError("JSON excessive nesting accepted")
 
+    if evaluator.canonical_json_equivalence(b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":1.0}}') != evaluator.canonical_json_equivalence(b'{"event_type":"alarm","payload":{"x":1e0},"tenant_id":"t1"}'):
+        raise AssertionError("JSON numeric spelling changed canonical semantics")
+
     tenant = evaluator.proto_field(1, b"t1")
     event = evaluator.proto_field(2, b"alarm")
     try:
@@ -80,6 +109,22 @@ def prove_behavior_falsifications() -> None:
         pass
     else:
         raise AssertionError("protobuf protected duplicate accepted")
+
+    nonminimal_tag = bytes([0x8A, 0x00, 0x02]) + b"t1" + event
+    try:
+        evaluator.validate_protobuf_profile(nonminimal_tag)
+    except evaluator.EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("protobuf non-minimal tag varint accepted")
+
+    for invalid in (event, tenant + event + evaluator.proto_field(6, b"invalid")):
+        try:
+            evaluator.validate_protobuf_profile(invalid)
+        except evaluator.EvidenceViolation:
+            pass
+        else:
+            raise AssertionError("protobuf required/enum semantics weakened")
 
     unknown = evaluator.proto_field(123, b"future")
     _, preserved = evaluator.validate_protobuf_profile(tenant + event + unknown)
@@ -117,6 +162,22 @@ def prove_behavior_falsifications() -> None:
     else:
         raise AssertionError("Avro reader-only field without default accepted")
 
+    nullable_schema = evaluator.AvroRecordSchema(
+        "Event",
+        (
+            evaluator.AvroFieldSpec("tenant_id"),
+            evaluator.AvroFieldSpec("event_type"),
+            evaluator.AvroFieldSpec("severity", default_present=True, default=None),
+        ),
+    )
+    encoded = evaluator.avro_semantic_equivalence(
+        nullable_schema,
+        nullable_schema,
+        {"tenant_id": "t1", "event_type": "alarm", "severity": None},
+    )
+    if b'"severity":null' not in encoded:
+        raise AssertionError("Avro nullable enum semantics lost")
+
 
 def main() -> int:
     if evaluator.evaluate() != validator.EXPECTED_RESULTS:
@@ -134,9 +195,11 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_results"].__setitem__("protobuf_profile", "selected"), "concrete candidate result inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST).__setitem__("equivalent_reviewed_profile", "eligible_for_evidence_execution"), "equivalent candidate class must remain unevaluated")
     must_fail(lambda d: obj(d, validator.MANIFEST)["required_proofs"].pop(), "required proof inventory drift")
-    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["protobuf_profile"].remove("bounded_wire_predecoder_rejects_duplicate_protected_singular_fields_before_generated_binding_last_wins_behavior"), "candidate requirement drift for protobuf_profile")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["protobuf_profile"].remove("bounded_wire_predecoder_rejects_nonminimal_varints_and_reserved_field_numbers"), "candidate requirement drift for protobuf_profile")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["protobuf_profile"].remove("repeated_field_occurrence_order_is_preserved_within_each_field_number_during_semantic_normalization"), "candidate requirement drift for protobuf_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["official_source_facts"].pop(), "official source fact inventory drift")
-    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("protobuf_raw_serialized_bytes_are_not_content_equivalence_authority"), "source assertion inventory drift")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("historical_payload_profile_and_schema_binding_prevents_cross_profile_reinterpretation"), "source assertion inventory drift")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("unselected_compression_is_rejected_so_decompression_work_is_zero_and_bounded"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.LEDGER).__setitem__("candidate", "protobuf_profile"), "D4-B ledger selection drift")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("gate_state", "accepted"), "D4 gate escalation")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("canonical_product_implementation_authority", "granted"), "Product authority escalation")
@@ -148,9 +211,12 @@ def main() -> int:
     print(
         "d4b_wire_schema_source_falsification=PASS duplicate_json=blocked hidden_selection=blocked "
         "auto_credit=blocked candidate_promotion=blocked proof_weakening=blocked source_fact_drift=blocked "
-        "json_bounds=blocked protobuf_last_wins_override=blocked protobuf_unknown_preservation=proven "
+        "compression_without_profile=blocked dynamic_schema_selection=blocked historical_cross_profile=blocked "
+        "json_bounds=blocked json_numeric_runtime_drift=blocked protobuf_nonminimal_varint=blocked "
+        "protobuf_last_wins_override=blocked protobuf_presence_enum_weakening=blocked protobuf_unknown_preservation=proven "
         "protobuf_byte_order_authority=blocked protobuf_repeated_order_loss=blocked "
-        "avro_alias_ambiguity=blocked avro_missing_default=blocked ledger_selection=blocked d4_authority_escalation=blocked"
+        "avro_alias_ambiguity=blocked avro_missing_default=blocked avro_nullable_semantics=proven "
+        "ledger_selection=blocked d4_authority_escalation=blocked"
     )
     return 0
 

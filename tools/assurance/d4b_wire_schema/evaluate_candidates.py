@@ -540,12 +540,12 @@ def prove_avro_profile() -> None:
     incompatible_writer = AvroRecordSchema(
         "Event",
         (
-            AvroFieldSpec("tenant_id", ("bytes",)),
+            AvroFieldSpec("tenant_id", ("boolean",)),
             AvroFieldSpec("event_type", ("string",)),
         ),
     )
     try:
-        resolve_avro_record(incompatible_writer, reader_v2, {"tenant_id": b"t1", "event_type": "alarm"})
+        resolve_avro_record(incompatible_writer, reader_v2, {"tenant_id": True, "event_type": "alarm"})
     except EvidenceViolation:
         pass
     else:

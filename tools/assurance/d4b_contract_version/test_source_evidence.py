@@ -61,12 +61,12 @@ def assert_monotonic_issuer_rejects_regression() -> None:
     adapter.parse(second)
     if first == second:
         raise AssertionError("opaque monotonic issuer duplicated token")
-    for sequence in (11, 10, 9, 0, -1):
+    for sequence in (11, 10, 9, 0, -1, evaluator.MAX_ISSUANCE_SEQUENCE + 1):
         try:
             issuer.issue(sequence)
         except ValueError:
             continue
-        raise AssertionError(f"issuer accepted non-increasing sequence {sequence}")
+        raise AssertionError(f"issuer accepted invalid sequence {sequence}")
     evaluator.assert_ordering_absent(adapter, first, second)
 
 
@@ -107,7 +107,7 @@ def main() -> int:
 
     assert_monotonic_issuer_rejects_regression()
 
-    print("d4b_contract_version_source_falsification=PASS duplicate_json=blocked hidden_selection=blocked syntax_selection=blocked auto_credit=blocked candidate_promotion=blocked proof_weakening=blocked opaque_monotonic_regression=blocked ordering_authority=blocked authority_fields=blocked ledger_selection=blocked d4_authority_escalation=blocked")
+    print("d4b_contract_version_source_falsification=PASS duplicate_json=blocked hidden_selection=blocked syntax_selection=blocked auto_credit=blocked candidate_promotion=blocked proof_weakening=blocked opaque_monotonic_regression=blocked opaque_issuance_overflow=blocked ordering_authority=blocked authority_fields=blocked ledger_selection=blocked d4_authority_escalation=blocked")
     return 0
 
 

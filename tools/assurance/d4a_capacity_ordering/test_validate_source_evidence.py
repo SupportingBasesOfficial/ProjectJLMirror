@@ -32,14 +32,17 @@ def main() -> int:
     must_fail("fallback changes logical identity", lambda s,p,l,st: p["tenant_cohort_fallback"].__setitem__("logical_contract_identity_changes", True), "must not change logical contract identity")
     must_fail("source auto credit", lambda s,p,l,st: s.__setitem__("ledger_credit", ["capacity_envelope_baseline_growth_stress"]), "source package self-promotion")
     must_fail("source historical prior credit rewrite", lambda s,p,l,st: s["prior_promoted_ledger_credit"].append("capacity_envelope_baseline_growth_stress"), "source historical prior promoted credit drift")
+    must_fail("historical source selection rewrite", lambda s,p,l,st: s.__setitem__("kafka_selection_state", "selected"), "premature Kafka selection")
     must_fail("remove final recovery global credit", lambda s,p,l,st: l["credited_evidence"].remove(FINAL_RECOVERY_ID), "global promoted seven-of-seven credit drift")
     must_fail("duplicate eighth global credit", lambda s,p,l,st: l["credited_evidence"].append(FINAL_RECOVERY_ID), "global promoted seven-of-seven credit multiplicity drift")
     must_fail("state loses final recovery credit", lambda s,p,l,st: d4a(st)["evidence_completed"].remove(FINAL_RECOVERY_ID), "completed seven-of-seven evidence drift")
     must_fail("state reopens recovery", lambda s,p,l,st: d4a(st)["evidence_remaining"].append(FINAL_RECOVERY_ID), "no remaining evidence")
     must_fail("historical outage recovery overclaim", lambda s,p,l,st: s.__setitem__("outage_recovery_benchmark_claimed", True), "historical source D4-A7 outage recovery overclaim")
-    must_fail("global Kafka selection", lambda s,p,l,st: l.__setitem__("selection_state", "selected"), "plan must not select Kafka")
-    must_fail("skip separate acceptance", lambda s,p,l,st: l.__setitem__("acceptance_state", "accepted"), "require separate acceptance")
-    print("d4a_capacity_ordering_negative_controls=PASS source_immutability=blocked historical_result=6 global_seven_of_seven=exact evidence_reopen=blocked pin=blocked device_cardinality=blocked fake_fallback=blocked silent_selection=blocked authority_scope=preserved")
+    must_fail("global Kafka selection rollback", lambda s,p,l,st: l.__setitem__("selection_state", "not_selected"), "plan must keep Kafka selected")
+    must_fail("global candidate-status rollback", lambda s,p,l,st: l.__setitem__("candidate_status", "leading_candidate_evidence_complete_selection_pending"), "selected C2 candidate")
+    must_fail("skip separate D4 acceptance", lambda s,p,l,st: l.__setitem__("acceptance_state", "accepted"), "separate D4 acceptance")
+    must_fail("transport authority grant", lambda s,p,l,st: st.__setitem__("d4_transport_authority", "granted"), "selected but ungranted")
+    print("d4a_capacity_ordering_negative_controls=PASS source_history=immutable historical_result=6 global_seven_of_seven=exact kafka_selected_current=true selection_rollback=blocked transport_grant=blocked device_cardinality=blocked fake_fallback=blocked")
     return 0
 
 

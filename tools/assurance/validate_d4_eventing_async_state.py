@@ -36,7 +36,7 @@ EXPECTED_COMPLETED = {
 EXPECTED_TOTAL_EVIDENCE = sum(len(items) for items in EXPECTED_REQUIRED_EVIDENCE.values())
 EXPECTED_TOTAL_CREDITED = sum(len(items) for items in EXPECTED_COMPLETED.values())
 EXPECTED_ENTRY_STATES = {
-    "D4-A": "evidence_complete_selection_pending",
+    "D4-A": "selected_candidate",
     "D4-B": "candidate_selection_open",
     "D4-C": "candidate_selection_open",
     "D4-D": "candidate_selection_open",
@@ -68,7 +68,7 @@ def validate_manifest(state: dict) -> list[str]:
     require(state.get("canonical_product_implementation_authority") == "not_granted", "D4 must not grant canonical Product implementation authority")
     require(state.get("wave4_implementation_authority") == "not_granted", "D4 must not grant Wave 4 implementation authority")
     require(state.get("production_authority") == "none", "D4 must not grant production authority")
-    require(state.get("d4_transport_authority") == "not_selected_not_granted", "D4 transport authority must remain unselected/ungranted")
+    require(state.get("d4_transport_authority") == "selected_not_granted", "D4 transport must be selected but authority must remain ungranted")
     require(state.get("c3_numeric_topology_authority") == "not_selected", "D4 must not select C3 numeric/topology authority")
 
     tracks = state.get("tracks")
@@ -98,9 +98,9 @@ def validate_manifest(state: dict) -> list[str]:
         require(sum(len(track.get("required_evidence", [])) for track in by_id.values()) == EXPECTED_TOTAL_EVIDENCE, "D4 total required evidence inventory drift")
         require(sum(len(track.get("evidence_completed", [])) for track in by_id.values()) == EXPECTED_TOTAL_CREDITED, "D4 total credited evidence drift")
         d4a = by_id.get("D4-A", {})
-        require(d4a.get("candidate") == "kafka", "D4-A leading candidate must remain Kafka")
-        require(d4a.get("candidate_status") == "leading_candidate_evidence_complete_selection_pending", "D4-A Kafka candidate must remain evidence-complete but unselected")
-        require(d4a.get("evidence_remaining") == [], "D4-A evidence-complete state must have no remaining evidence")
+        require(d4a.get("candidate") == "kafka", "D4-A selected candidate must remain Kafka")
+        require(d4a.get("candidate_status") == "selected_c2_candidate", "D4-A Kafka candidate must remain selected at bounded C2 scope")
+        require(d4a.get("evidence_remaining") == [], "D4-A selected state must retain complete evidence")
         for track_id in ("D4-B", "D4-C", "D4-D"):
             track = by_id.get(track_id, {})
             require(track.get("candidate") is None, f"{track_id} must not silently select a candidate")
@@ -121,7 +121,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4_STATE_ERROR: {error}", file=sys.stderr)
         return 1
-    print(f"d4_eventing_async_state=PASS gate_state={state['gate_state']} tracks={len(state['tracks'])} evidence_required={EXPECTED_TOTAL_EVIDENCE} evidence_credited={EXPECTED_TOTAL_CREDITED} d4a_evidence=complete transport_authority=not_granted kafka=not_selected")
+    print(f"d4_eventing_async_state=PASS gate_state={state['gate_state']} tracks={len(state['tracks'])} evidence_required={EXPECTED_TOTAL_EVIDENCE} evidence_credited={EXPECTED_TOTAL_CREDITED} d4a_candidate=kafka d4a_selection=selected transport_authority=not_granted d4_bc_d=open")
     return 0
 
 

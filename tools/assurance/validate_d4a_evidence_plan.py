@@ -8,11 +8,13 @@ from pathlib import Path
 
 PLAN = Path("implementation/d4-eventing-async/d4-a-evidence-plan.json")
 ENTRY = Path("implementation/d4-eventing-async/state-manifest.json")
+SELECTION = Path("implementation/d4-eventing-async/d4-a-selection-record.json")
 PROMOTION = Path("implementation/d4-eventing-async/ledger-promotions/d4-a-recovery-promotion-v1.json")
 PREVIOUS_PROMOTION = Path("implementation/d4-eventing-async/ledger-promotions/d4-a-capacity-ordering-promotion-v1.json")
 SOURCE_MANIFEST = Path("implementation/d4-eventing-async/source-evidence/recovery/source-evidence-manifest.json")
 
 EXPECTED_ENTRY_COMMIT = "b385e1b68162b2cf9bf4379011554a9cc4c2d5c4"
+EXPECTED_SELECTION_BASE = "9763e8b01b7a9bf4e5fda4be2c05abb04e8532e8"
 EXPECTED_PROMOTION_BASE = "9fdf02dd7841ac9f4f28610759af751096057264"
 EXPECTED_SOURCE_HEAD = "40820f543c064c976b0e1443a227120a5577d36b"
 EXPECTED_SOURCE_RUN = 33824087573
@@ -26,6 +28,9 @@ EXPECTED_INDEPENDENT_REVIEW = "PRR_kwDOT7x07M8AAAABMHlhng"
 EXPECTED_FRESH_CODEX_REVIEW = "PRR_kwDOT7x07M8AAAABMHl-Kw"
 EXPECTED_FINAL_GATE_COMMENT = 5534198183
 EXPECTED_FINDINGS = {"align_declared_drain_control_with_executed_bound"}
+EXPECTED_KAFKA_IMAGE = "apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837"
+EXPECTED_KAFKA_INDEX = "sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837"
+EXPECTED_KAFKA_AMD64 = "sha256:ccd1314e47ec76909e01f86308b4dcf2064f19f7c89759234322314b0e319e26"
 
 EXPECTED_EVIDENCE = {
     "capacity_envelope_baseline_growth_stress",
@@ -97,15 +102,16 @@ REQUIRED_ASSERTIONS = {
 }
 
 
-def load(root: Path) -> tuple[dict, dict, dict]:
+def load(root: Path) -> tuple[dict, dict, dict, dict]:
     return (
         json.loads((root / PLAN).read_text(encoding="utf-8")),
         json.loads((root / ENTRY).read_text(encoding="utf-8")),
         json.loads((root / PROMOTION).read_text(encoding="utf-8")),
+        json.loads((root / SELECTION).read_text(encoding="utf-8")),
     )
 
 
-def validate_objects(plan: dict, entry: dict, promotion: dict) -> list[str]:
+def validate_objects(plan: dict, entry: dict, promotion: dict, selection: dict) -> list[str]:
     errors: list[str] = []
 
     def require(ok: bool, message: str) -> None:
@@ -115,18 +121,19 @@ def validate_objects(plan: dict, entry: dict, promotion: dict) -> list[str]:
     require(plan.get("schema_version") == 1, "plan schema_version drift")
     require(plan.get("gate_id") == "D4" and plan.get("track_id") == "D4-A", "plan identity drift")
     require(plan.get("canonical_entry_commit") == EXPECTED_ENTRY_COMMIT, "canonical entry commit drift")
-    require(plan.get("candidate") == "kafka", "D4-A leading candidate must remain Kafka")
-    require(plan.get("candidate_status") == "leading_candidate_evidence_complete_selection_pending", "Kafka evidence-complete selection-pending state drift")
+    require(plan.get("candidate") == "kafka", "D4-A selected candidate must remain Kafka")
+    require(plan.get("candidate_status") == "selected_c2_candidate", "Kafka bounded C2 selected state drift")
     require(plan.get("evidence_credit_policy") == "source_runs_first_ledger_promotion_separate", "source/ledger separation drift")
     require(plan.get("current_run_auto_credit") is False, "current run must never auto-credit evidence")
     require(plan.get("production_numeric_authority") == "not_granted", "production numeric authority escalation")
     require(plan.get("source_evidence_state") == "reviewed_source_runs_available", "reviewed source state drift")
     require(plan.get("ledger_credit_state") == "seven_of_seven", "ledger must credit exactly seven of seven")
     require(set(plan.get("credited_evidence", [])) == EXPECTED_EVIDENCE, "credited evidence set drift")
-    require(len(plan.get("credited_evidence", [])) == 7, "credited evidence multiplicity drift")
+    require(len(plan.get("credited_evidence", [])) == len(EXPECTED_EVIDENCE), "credited evidence multiplicity drift")
     require(plan.get("latest_promotion_record") == PROMOTION.as_posix(), "promotion record path drift")
-    require(plan.get("selection_state") == "not_selected", "evidence completion must not select Kafka")
-    require(plan.get("acceptance_state") == "evidence_complete_separate_acceptance_required", "evidence completion must require separate acceptance")
+    require(plan.get("selection_record") == SELECTION.as_posix(), "selection record path drift")
+    require(plan.get("selection_state") == "selected", "Kafka bounded C2 selection must remain selected")
+    require(plan.get("acceptance_state") == "track_selected_separate_d4_acceptance_required", "D4-A selection must not imply full D4 acceptance")
 
     items = plan.get("required_evidence", [])
     require(isinstance(items, list), "required_evidence must be a list")
@@ -143,18 +150,26 @@ def validate_objects(plan: dict, entry: dict, promotion: dict) -> list[str]:
 
     d4a = next((t for t in entry.get("tracks", []) if t.get("track_id") == "D4-A"), {})
     require(set(d4a.get("required_evidence", [])) == EXPECTED_EVIDENCE, "state D4-A inventory drift")
+    require(len(d4a.get("required_evidence", [])) == len(EXPECTED_EVIDENCE), "state D4-A required evidence multiplicity drift")
     require(set(d4a.get("evidence_completed", [])) == EXPECTED_EVIDENCE, "state completed seven-of-seven evidence drift")
+    require(len(d4a.get("evidence_completed", [])) == len(EXPECTED_EVIDENCE), "state completed evidence multiplicity drift")
     require(d4a.get("evidence_remaining") == [], "state D4-A evidence_remaining must be empty")
-    require(d4a.get("state") == "evidence_complete_selection_pending", "state D4-A evidence-complete selection-pending drift")
-    require(d4a.get("candidate") == "kafka", "state D4-A leading candidate drift")
-    require(d4a.get("candidate_status") == "leading_candidate_evidence_complete_selection_pending", "state D4-A candidate status drift")
+    require(d4a.get("state") == "selected_candidate", "state D4-A selected-candidate drift")
+    require(d4a.get("candidate") == "kafka", "state D4-A selected candidate drift")
+    require(d4a.get("candidate_status") == "selected_c2_candidate", "state D4-A candidate status drift")
     require(entry.get("gate_state") == "scoped", "D4 must remain scoped")
-    require(entry.get("d4_transport_authority") == "not_selected_not_granted", "D4 transport authority escalation")
+    require(entry.get("d4_transport_authority") == "selected_not_granted", "D4 transport selection/authority boundary drift")
     require(entry.get("canonical_product_implementation_authority") == "not_granted", "Product authority escalation")
     require(entry.get("wave4_implementation_authority") == "not_granted", "Wave4 authority escalation")
     require(entry.get("production_authority") == "none", "production authority escalation")
     require(entry.get("c3_numeric_topology_authority") == "not_selected", "C3 authority escalation")
+    for track_id in ("D4-B", "D4-C", "D4-D"):
+        sibling = next((t for t in entry.get("tracks", []) if t.get("track_id") == track_id), {})
+        require(sibling.get("candidate") is None, f"{track_id} candidate must remain unselected")
+        require(sibling.get("candidate_status") == "not_selected", f"{track_id} candidate status drift")
+        require(sibling.get("evidence_completed") == [], f"{track_id} must not inherit D4-A evidence credit")
 
+    # Historical promotion truth is immutable: it was created before selection.
     require(promotion.get("schema_version") == 1, "promotion schema drift")
     require(promotion.get("promotion_id") == "d4-a-recovery-promotion-v1", "promotion identity drift")
     require(promotion.get("track") == "D4-A", "promotion track drift")
@@ -199,14 +214,45 @@ def validate_objects(plan: dict, entry: dict, promotion: dict) -> list[str]:
     require(promotion.get("source_scope") == "source_evidence_harness_only", "source scope drift")
     require(promotion.get("live_kafka_broker_claimed") is True, "historical live Kafka source claim missing")
     require(promotion.get("recovery_benchmark_claimed") is True, "historical recovery source claim missing")
-    require(promotion.get("kafka_selection_state") == "not_selected", "promotion selects Kafka")
-    require(promotion.get("d4a_evidence_state") == "complete_selection_pending", "promotion evidence-complete state drift")
-    require(promotion.get("d4_transport_authority") == "not_selected_not_granted", "promotion grants D4 transport authority")
+    require(promotion.get("kafka_selection_state") == "not_selected", "historical promotion selection fact rewritten")
+    require(promotion.get("d4a_evidence_state") == "complete_selection_pending", "historical promotion evidence state rewritten")
+    require(promotion.get("d4_transport_authority") == "not_selected_not_granted", "historical promotion transport boundary rewritten")
     require(promotion.get("canonical_product_implementation_authority") == "not_granted", "promotion grants Product authority")
     require(promotion.get("wave4_implementation_authority") == "not_granted", "promotion grants Wave4 authority")
     require(promotion.get("production_authority") == "none", "promotion grants production authority")
     require(promotion.get("c3_numeric_topology_authority") == "not_selected", "promotion grants C3 authority")
     require(promotion.get("promotion_rule") == "reviewed_source_run_to_ledger_credit_only", "promotion rule drift")
+
+    # Current selection record is the only object allowed to make the selection transition.
+    require(selection.get("schema_version") == 1, "selection schema drift")
+    require(selection.get("selection_id") == "d4-a-kafka-selection-v1", "selection identity drift")
+    require(selection.get("gate_id") == "D4" and selection.get("track_id") == "D4-A", "selection track identity drift")
+    require(selection.get("selection_base_main_commit") == EXPECTED_SELECTION_BASE, "selection base drift")
+    require(set(selection.get("source_decisions", [])) == {"OPEN-EVT-001", "OPEN-EVT-005", "OPEN-REL-012.A"}, "selection source decision drift")
+    require(len(selection.get("source_decisions", [])) == 3, "selection source decision multiplicity drift")
+    require(selection.get("candidate_family") == "kafka", "selection candidate family drift")
+    require(selection.get("candidate_version") == "4.3.1", "selection candidate version drift")
+    require(selection.get("candidate_conformance_image") == EXPECTED_KAFKA_IMAGE, "selection Kafka image pin drift")
+    require(selection.get("candidate_oci_index_digest") == EXPECTED_KAFKA_INDEX, "selection Kafka OCI digest drift")
+    require(selection.get("candidate_linux_amd64_manifest_digest") == EXPECTED_KAFKA_AMD64, "selection Kafka amd64 digest drift")
+    require(selection.get("evidence_completion_commit") == EXPECTED_SELECTION_BASE, "selection evidence completion commit drift")
+    require(selection.get("evidence_plan_path") == PLAN.as_posix(), "selection evidence-plan path drift")
+    require(selection.get("latest_promotion_record") == PROMOTION.as_posix(), "selection promotion path drift")
+    require(selection.get("required_evidence_count") == 7 and selection.get("credited_evidence_count") == 7, "selection evidence count drift")
+    require(selection.get("selection_state") == "selected", "selection record must select Kafka")
+    require(selection.get("selection_scope") == "bounded_c2_mechanism_selection_only", "selection scope drift")
+    require(selection.get("track_state") == "selected_candidate", "selection track state drift")
+    require(selection.get("d4_gate_state") == "scoped", "selection record must not accept D4")
+    require(selection.get("d4_transport_authority") == "selected_not_granted", "selection record transport authority drift")
+    require(selection.get("canonical_product_implementation_authority") == "not_granted", "selection grants Product authority")
+    require(selection.get("wave4_implementation_authority") == "not_granted", "selection grants Wave4 authority")
+    require(selection.get("production_authority") == "none", "selection grants production authority")
+    require(selection.get("c3_numeric_topology_authority") == "not_selected", "selection grants C3 authority")
+    require(selection.get("d4_bc_d_completion_required") is True, "selection must preserve D4-B/C/D completion requirement")
+    require(selection.get("separate_d4_acceptance_required") is True, "selection must preserve separate D4 acceptance")
+    require("replacement" in selection.get("replacement_rule", "").lower(), "selection replacement governance missing")
+    require("not a permanent production-version freeze" in selection.get("version_rule", ""), "selection version governance drift")
+    require("does not authorize" in selection.get("non_authority_rule", ""), "selection non-authority rule drift")
     return errors
 
 
@@ -223,7 +269,6 @@ def validate_promotion_chain(root: Path, latest: dict) -> list[str]:
     errors: list[str] = []
     current = latest
     seen_paths: set[str] = set()
-
     while True:
         promotion_id = current.get("promotion_id") or "<unknown-promotion>"
         manifest_path = _safe_repo_path(current.get("source_manifest_path"))
@@ -238,7 +283,6 @@ def validate_promotion_chain(root: Path, latest: dict) -> list[str]:
                 errors.append(f"{promotion_id} source manifest missing: {manifest_path}")
             elif sha256(full_manifest.read_bytes()).hexdigest() != expected_manifest_digest:
                 errors.append(f"{promotion_id} source manifest bytes no longer match promoted digest")
-
         previous = current.get("previous_promotion")
         if previous is None:
             break
@@ -280,8 +324,8 @@ def validate_promotion_chain(root: Path, latest: dict) -> list[str]:
 
 
 def validate(root: Path) -> list[str]:
-    plan, entry, promotion = load(root)
-    errors = validate_objects(plan, entry, promotion)
+    plan, entry, promotion, selection = load(root)
+    errors = validate_objects(plan, entry, promotion, selection)
     errors.extend(validate_promotion_chain(root, promotion))
     return errors
 
@@ -293,7 +337,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4A_PLAN_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4a_evidence_plan=PASS evidence=7 credited=7 remaining=0 exact_assertions=preserved kafka=not_selected acceptance=separate_required production_numerics=not_granted provenance=full_chain review_gate=pinned")
+    print("d4a_evidence_plan=PASS evidence=7 credited=7 exact_assertions=preserved kafka=selected selection_scope=bounded_c2 transport_authority=not_granted d4=scoped d4_bc_d=open production_numerics=not_granted provenance=full_chain")
     return 0
 
 

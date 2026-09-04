@@ -85,14 +85,16 @@
     }
   ],
   "source_evidence_state": "reviewed_source_runs_available",
-  "ledger_credit_state": "four_of_seven",
+  "ledger_credit_state": "six_of_seven",
   "credited_evidence": [
+    "capacity_envelope_baseline_growth_stress",
     "broker_neutral_anti_corruption_stub_swap",
     "regulated_payload_erasure_granularity",
     "exactly_once_guardrail_consumer_inbox_enforcement",
+    "ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency",
     "physical_naming_routing_and_cell_topology_adapter_mapping"
   ],
-  "latest_promotion_record": "implementation/d4-eventing-async/ledger-promotions/d4-a-data-topology-promotion-v1.json",
+  "latest_promotion_record": "implementation/d4-eventing-async/ledger-promotions/d4-a-capacity-ordering-promotion-v1.json",
   "selection_state": "not_selected",
   "acceptance_state": "not_eligible"
 }

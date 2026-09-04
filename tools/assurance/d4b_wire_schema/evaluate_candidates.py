@@ -100,7 +100,7 @@ def _bounded_decimal(raw: str) -> Decimal:
     _, digits, exponent = value.as_tuple()
     if len(digits) > MAX_JSON_NUMBER_DIGITS or abs(exponent) > MAX_JSON_SCALE:
         raise EvidenceViolation("JSON number exceeds evidence precision/scale bound")
-    if abs(value) > MAX_JSON_MAGNITUDE:
+    if value.copy_abs() > MAX_JSON_MAGNITUDE:
         raise EvidenceViolation("JSON number exceeds evidence magnitude bound")
     return value
 
@@ -336,6 +336,12 @@ class AvroRecordSchema:
     fields: tuple[AvroFieldSpec, ...]
 
 
+@dataclass(frozen=True)
+class AvroUnionDatum:
+    branch_index: int
+    value: Any
+
+
 REVIEWED_AVRO_EVENT_V1 = AvroRecordSchema("Event", (AvroFieldSpec("tenant_id", ("string",)), AvroFieldSpec("event_type", ("string",))))
 REVIEWED_AVRO_EVENT_V2 = AvroRecordSchema("Event", (
     AvroFieldSpec("tenant_id", ("string",)), AvroFieldSpec("event_type", ("string",)),
@@ -442,11 +448,25 @@ def _avro_types_compatible(writer_types: tuple[str, ...], reader_types: tuple[st
     return all(any(r in AVRO_PROMOTIONS[w] for r in reader_types) for w in writer_types)
 
 
+def _resolve_avro_writer_value(value: Any, writer_types: tuple[str, ...]) -> tuple[str, Any]:
+    if isinstance(value, AvroUnionDatum):
+        if len(writer_types) <= 1:
+            raise EvidenceViolation("Avro union branch marker supplied for non-union field")
+        if not isinstance(value.branch_index, int) or isinstance(value.branch_index, bool) or not (0 <= value.branch_index < len(writer_types)):
+            raise EvidenceViolation("Avro union branch index invalid")
+        writer_type = writer_types[value.branch_index]
+        return writer_type, _materialize_avro_type(value.value, writer_type)
+    matches = [writer_type for writer_type in writer_types if _avro_value_matches_type(value, writer_type)]
+    if not matches:
+        raise EvidenceViolation("Avro datum does not match writer type")
+    if len(matches) > 1:
+        raise EvidenceViolation("Avro union branch is ambiguous without decoded branch index")
+    writer_type = matches[0]
+    return writer_type, _materialize_avro_type(value, writer_type)
+
+
 def _avro_effective_writer_type(value: Any, writer_types: tuple[str, ...]) -> str:
-    for writer_type in writer_types:
-        if _avro_value_matches_type(value, writer_type):
-            return writer_type
-    raise EvidenceViolation("Avro datum does not match writer type")
+    return _resolve_avro_writer_value(value, writer_types)[0]
 
 
 def _avro_reader_type_for_writer(writer_type: str, reader_types: tuple[str, ...]) -> str:
@@ -512,8 +532,7 @@ def resolve_avro_record(writer: AvroRecordSchema, reader: AvroRecordSchema, datu
     if set(writer_fields) - datum_names: raise EvidenceViolation("datum omits writer-declared field")
     writer_materialized: dict[str, tuple[str, Any]] = {}
     for name, field in writer_fields.items():
-        writer_type = _avro_effective_writer_type(datum[name], field.avro_types)
-        writer_materialized[name] = (writer_type, _materialize_avro_type(datum[name], writer_type))
+        writer_materialized[name] = _resolve_avro_writer_value(datum[name], field.avro_types)
     resolved: dict[str, tuple[str, Any]] = {}
     for target in reader.fields:
         source_names = (target.name,) + target.aliases
@@ -655,6 +674,16 @@ def prove_avro_profile() -> None:
     if avro_semantic_equivalence(int_writer,float_reader,{"value":16777217}) != avro_semantic_equivalence(float_writer,float_reader,{"value":16777217.0}): raise AssertionError("float32 promotion width drift")
     expected_f32 = struct.unpack(">f", struct.pack(">f", 16777217.0))[0]
     if avro_semantic_equivalence(int_writer,float_reader,{"value":16777217}) != (("value",("float",expected_f32)),): raise AssertionError("Avro float not single precision")
+    union_writer = AvroRecordSchema("UnionMetric", (AvroFieldSpec("value", ("float", "double")),))
+    union_reader = AvroRecordSchema("UnionMetric", (AvroFieldSpec("value", ("double",)),))
+    try: avro_semantic_equivalence(union_writer, union_reader, {"value": 16777217.0})
+    except EvidenceViolation: pass
+    else: raise AssertionError("ambiguous Avro union inferred branch from Python runtime value")
+    union_float = avro_semantic_equivalence(union_writer, union_reader, {"value": AvroUnionDatum(0, 16777217.0)})
+    union_double = avro_semantic_equivalence(union_writer, union_reader, {"value": AvroUnionDatum(1, 16777217.0)})
+    if union_float != (("value", ("double", 16777216.0)),): raise AssertionError("Avro float union branch was not preserved before widening")
+    if union_double != (("value", ("double", 16777217.0)),): raise AssertionError("Avro double union branch was not preserved")
+    if union_float == union_double: raise AssertionError("distinct Avro union branches collapsed")
     for invalid_float in (True, "1.0"):
         try: avro_semantic_equivalence(float_writer,float_reader,{"value":invalid_float})
         except EvidenceViolation: pass
@@ -687,7 +716,7 @@ def evaluate() -> dict[str, str]:
 
 def main() -> int:
     results = evaluate()
-    print("d4b_wire_schema_candidate_source=PASS candidates=3 concrete_eligible=3 identity_only_transport=bounded dynamic_schema_selection=blocked historical_profile_reinterpretation=blocked json_duplicates=blocked json_alias_collision=blocked json_numeric_mapping=context_independent json_distinct_decimals=preserved json_bounds=proven protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked protobuf_protected_duplicates=blocked protobuf_oneof_duplicate=blocked protobuf_presence_enum=explicit protobuf_unknown_bytes=preserved protobuf_byte_order=noncanonical protobuf_repeated_order=preserved avro_schema_ref_content=binding_exact avro_historical_schema_digest=sha256_bound avro_writer_fields=required avro_writer_only_fields=validated avro_float_overflow=fail_closed avro_float_width=ieee754_binary32 avro_float_runtime_mapping=type_strict avro_writer_reader_resolution=explicit avro_type_compatibility=checked avro_promotions=reader_canonicalized avro_event_contract=scoped avro_datum_bounds=proven avro_nullable_enum=explicit avro_alias_ambiguity=blocked selection=not_selected ledger_credit=0")
+    print("d4b_wire_schema_candidate_source=PASS candidates=3 concrete_eligible=3 identity_only_transport=bounded dynamic_schema_selection=blocked historical_profile_reinterpretation=blocked json_duplicates=blocked json_alias_collision=blocked json_numeric_mapping=context_independent json_magnitude=context_independent json_distinct_decimals=preserved json_bounds=proven protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked protobuf_protected_duplicates=blocked protobuf_oneof_duplicate=blocked protobuf_presence_enum=explicit protobuf_unknown_bytes=preserved protobuf_byte_order=noncanonical protobuf_repeated_order=preserved avro_schema_ref_content=binding_exact avro_historical_schema_digest=sha256_bound avro_writer_fields=required avro_writer_only_fields=validated avro_union_branch=explicit avro_float_overflow=fail_closed avro_float_width=ieee754_binary32 avro_float_runtime_mapping=type_strict avro_writer_reader_resolution=explicit avro_type_compatibility=checked avro_promotions=reader_canonicalized avro_event_contract=scoped avro_datum_bounds=proven avro_nullable_enum=explicit avro_alias_ambiguity=blocked selection=not_selected ledger_credit=0")
     for candidate, result in sorted(results.items()): print(f"candidate={candidate} result={result}")
     return 0
 

@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "package_id": "d4-b-schema-contract-source-v1",
+  "canonical_base_commit": "790f967446bf039ba4d5f618c9f30494c720ee7c",
+  "gate_id": "D4",
+  "track": "D4-B",
+  "scope": "source_evidence_harness_only",
+  "source_decisions": ["OPEN-EVT-002", "OPEN-EVT-003", "OPEN-EVT-004"],
+  "candidate": null,
+  "candidate_status": "not_selected",
+  "current_run_auto_credit": false,
+  "ledger_credit": [],
+  "evidence_ids": [
+    "canonical_bounded_serialization_profile",
+    "parser_ambiguity_and_duplicate_field_negative_vectors",
+    "schema_catalog_semantic_manifest_compatibility_ci",
+    "historical_reader_and_equivalence_profile_continuity",
+    "contract_version_representation_and_breaking_change_vectors"
+  ],
+  "evidence_kinds": {
+    "canonical_bounded_serialization_profile": "deterministic_reference_profile_and_negative_vectors",
+    "parser_ambiguity_and_duplicate_field_negative_vectors": "parser_falsification_vectors",
+    "schema_catalog_semantic_manifest_compatibility_ci": "machine_readable_catalog_compatibility_gate",
+    "historical_reader_and_equivalence_profile_continuity": "historical_reader_equivalence_continuity_probe",
+    "contract_version_representation_and_breaking_change_vectors": "version_representation_breaking_change_vectors"
+  },
+  "serialization_selection_state": "not_selected",
+  "schema_catalog_selection_state": "not_selected",
+  "contract_version_syntax_selection_state": "not_selected",
+  "d4_transport_authority": "selected_not_granted",
+  "canonical_product_implementation_authority": "not_granted",
+  "wave4_implementation_authority": "not_granted",
+  "production_authority": "none",
+  "c3_numeric_topology_authority": "not_selected",
+  "promotion_rule": "source_run_review_then_separate_ledger_promotion",
+  "selection_rule": "source_evidence_does_not_select_serialization_registry_or_version_syntax",
+  "reference_profile": {
+    "name": "bounded_logical_structured_message_v1",
+    "authority": "test_reference_only_not_wire_selection",
+    "properties": [
+      "single_structured_interpretation",
+      "duplicate_member_rejection",
+      "explicit_required_optional_null_enum_semantics",
+      "bounded_depth_members_strings_arrays_and_bytes",
+      "deterministic_semantic_manifest",
+      "historical_reader_and_equivalence_profile_preservation"
+    ]
+  }
+}

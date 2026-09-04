@@ -30,6 +30,7 @@
     "all_three_concrete_candidate_classes_have_bounded_deterministic_test_parsers",
     "all_three_concrete_candidate_classes_reject_noncanonical_or_ambiguous_test_vectors",
     "opaque_monotonic_candidate_requires_strictly_increasing_internal_issuance_sequence_while_external_tokens_remain_opaque",
+    "opaque_fixture_mapping_is_collision_free_over_the_bounded_uint64_test_domain_via_bijective_permutation",
     "comparison_surface_is_equality_only_and_exposes_no_ordering_authority",
     "unrelated_version_namespaces_cannot_substitute_for_contract_version",
     "breaking_semantic_change_transition_is_validated_within_each_candidate_family",

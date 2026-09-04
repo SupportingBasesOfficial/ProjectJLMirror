@@ -46,7 +46,7 @@ EXPECTED_REQUIREMENTS = {
     "protobuf_profile": {
         "bounded_wire_predecoder_rejects_nonminimal_varints_uint64_overflow_and_reserved_field_numbers",
         "bounded_wire_predecoder_rejects_duplicate_protected_singular_fields_before_generated_binding_last_wins_behavior",
-        "protected_oneof_collisions_fail_closed_before_generated_binding_resolution",
+        "protected_oneof_duplicate_occurrences_and_cross_member_collisions_fail_closed_before_generated_binding_resolution",
         "required_optional_absence_and_enum_semantics_are_explicit_before_generated_runtime_mapping",
         "unknown_binary_fields_are_preserved_for_forward_compatibility_when_required",
         "protobuf_serialized_byte_order_is_not_contract_equivalence_authority",
@@ -57,6 +57,7 @@ EXPECTED_REQUIREMENTS = {
     "avro_profile": {
         "original_writer_schema_identity_and_content_are_pinned_for_historical_interpretation",
         "reader_schema_resolution_is_explicit_and_missing_fields_require_defaults_or_failure",
+        "writer_reader_field_type_compatibility_and_allowed_promotions_are_checked_before_value_resolution",
         "required_nullable_and_enum_semantics_are_explicit_after_writer_reader_resolution",
         "field_aliases_are_reviewed_and_ambiguous_aliases_fail_closed",
         "semantic_equivalence_is_computed_after_explicit_writer_reader_resolution_not_from_raw_schema_text",
@@ -81,10 +82,12 @@ EXPECTED_ASSERTIONS = {
     "json_numeric_normalization_is_bounded_decimal_and_runtime_independent_within_the_evidence_profile",
     "protobuf_nonminimal_varints_uint64_overflow_and_reserved_field_numbers_fail_closed",
     "protobuf_last_one_wins_default_is_not_accepted_for_protected_fields",
+    "protobuf_same_oneof_member_duplicates_and_cross_member_collisions_fail_closed",
     "protobuf_required_optional_absence_and_enum_semantics_are_explicit",
     "protobuf_raw_serialized_bytes_are_not_content_equivalence_authority",
     "protobuf_repeated_field_occurrence_order_remains_semantic_during_normalization",
     "avro_historical_interpretation_requires_writer_schema_continuity",
+    "avro_writer_reader_type_compatibility_is_explicit_and_incompatible_types_fail_closed",
     "avro_required_nullable_and_enum_semantics_are_explicit_after_resolution",
     "json_schema_requires_explicit_platform_bounds_beyond_base_validation_vocabulary",
     "no_candidate_profile_loads_schema_or_executable_content_from_untrusted_message_payload",
@@ -214,9 +217,9 @@ def main(argv: list[str]) -> int:
         return 1
     print(
         "d4b_wire_schema_source_manifest=PASS axis=OPEN-EVT-002 concrete_candidates=3 eligible=3 "
-        "canonical_varints=required uint64_varints=bounded runtime_mapping=bounded historical_binding=required "
-        "decompression=identity_only equivalent=insufficient_evidence selection=not_selected ledger_credit=0 "
-        "d4=scoped authorities=not_granted"
+        "canonical_varints=required uint64_varints=bounded protobuf_oneof_duplicates=blocked "
+        "avro_type_resolution=required runtime_mapping=bounded historical_binding=required decompression=identity_only "
+        "equivalent=insufficient_evidence selection=not_selected ledger_credit=0 d4=scoped authorities=not_granted"
     )
     return 0
 

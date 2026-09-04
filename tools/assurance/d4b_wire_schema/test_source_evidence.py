@@ -101,12 +101,11 @@ def prove_behavior_falsifications() -> None:
 
     tenant = evaluator.proto_field(1, b"t1")
     event = evaluator.proto_field(2, b"alarm")
-    invalid_proto = (
+    for vector in (
         tenant + tenant + event,
         tenant + event + evaluator.proto_field(3, b"a") + evaluator.proto_field(3, b"b"),
         tenant + event + evaluator.proto_field(3, b"a") + evaluator.proto_field(4, b"b"),
-    )
-    for vector in invalid_proto:
+    ):
         try:
             evaluator.validate_protobuf_profile(vector)
         except evaluator.EvidenceViolation:
@@ -199,6 +198,21 @@ def prove_behavior_falsifications() -> None:
     else:
         raise AssertionError("Avro incompatible field types accepted")
 
+    try:
+        evaluator.resolve_avro_record(writer, string_reader, {"tenant_id": "x" * (evaluator.MAX_AVRO_SCALAR_BYTES + 1), "event_type": "alarm"})
+    except evaluator.EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("Avro oversized scalar accepted")
+
+    too_many_fields = tuple(evaluator.AvroFieldSpec(f"f{i}", ("string",)) for i in range(evaluator.MAX_AVRO_FIELDS + 1))
+    try:
+        evaluator.validate_avro_schema(evaluator.AvroRecordSchema("TooWide", too_many_fields))
+    except evaluator.EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("Avro oversized schema field inventory accepted")
+
     nullable_schema = evaluator.AvroRecordSchema(
         "Event",
         (
@@ -208,7 +222,7 @@ def prove_behavior_falsifications() -> None:
         ),
     )
     encoded = evaluator.avro_semantic_equivalence(nullable_schema, nullable_schema, {"tenant_id": "t1", "event_type": "alarm", "severity": None})
-    if b'"severity":null' not in encoded:
+    if ("severity", ("null", None)) not in encoded:
         raise AssertionError("Avro nullable enum semantics lost")
 
 
@@ -228,12 +242,11 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_results"].__setitem__("protobuf_profile", "selected"), "concrete candidate result inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST).__setitem__("equivalent_reviewed_profile", "eligible_for_evidence_execution"), "equivalent candidate class must remain unevaluated")
     must_fail(lambda d: obj(d, validator.MANIFEST)["required_proofs"].pop(), "required proof inventory drift")
-    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["protobuf_profile"].remove("bounded_wire_predecoder_rejects_nonminimal_varints_uint64_overflow_and_reserved_field_numbers"), "candidate requirement drift for protobuf_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["protobuf_profile"].remove("protected_oneof_duplicate_occurrences_and_cross_member_collisions_fail_closed_before_generated_binding_resolution"), "candidate requirement drift for protobuf_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("writer_reader_field_type_compatibility_and_allowed_promotions_are_checked_before_value_resolution"), "candidate requirement drift for avro_profile")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("datum_processing_is_bounded_and_canonicalized_structurally_without_unrestricted_recursive_json_serialization"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["official_source_facts"].pop(), "official source fact inventory drift")
-    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("historical_payload_profile_and_schema_binding_prevents_cross_profile_reinterpretation"), "source assertion inventory drift")
-    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("unselected_compression_is_rejected_so_decompression_work_is_zero_and_bounded"), "source assertion inventory drift")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_schema_and_datum_resource_bounds_are_enforced_before_structural_equivalence"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.LEDGER).__setitem__("candidate", "protobuf_profile"), "D4-B ledger selection drift")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("gate_state", "accepted"), "D4 gate escalation")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("canonical_product_implementation_authority", "granted"), "Product authority escalation")
@@ -250,7 +263,8 @@ def main() -> int:
         "protobuf_uint64_overflow=blocked protobuf_last_wins_override=blocked protobuf_oneof_same_member_duplicate=blocked "
         "protobuf_presence_enum_weakening=blocked protobuf_unknown_preservation=proven protobuf_byte_order_authority=blocked "
         "protobuf_repeated_order_loss=blocked avro_alias_ambiguity=blocked avro_missing_default=blocked "
-        "avro_type_incompatibility=blocked avro_nullable_semantics=proven ledger_selection=blocked d4_authority_escalation=blocked"
+        "avro_type_incompatibility=blocked avro_scalar_bound=blocked avro_schema_width_bound=blocked "
+        "avro_nullable_semantics=proven ledger_selection=blocked d4_authority_escalation=blocked"
     )
     return 0
 

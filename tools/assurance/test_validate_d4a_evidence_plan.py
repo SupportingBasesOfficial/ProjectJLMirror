@@ -25,10 +25,30 @@ def d4a(entry: dict) -> dict:
     return next(t for t in entry["tracks"] if t["track_id"] == "D4-A")
 
 
+def item(plan: dict, evidence_id: str) -> dict:
+    return next(i for i in plan["required_evidence"] if i["evidence_id"] == evidence_id)
+
+
+def remove_assertion(evidence_id: str, assertion: str):
+    def mutate(plan: dict, entry: dict, promotion: dict) -> None:
+        item(plan, evidence_id)["must_prove"].remove(assertion)
+    return mutate
+
+
 def main() -> int:
     must_fail("auto credit", lambda p,e,r: p.update(current_run_auto_credit=True))
     must_fail("premature Kafka selection", lambda p,e,r: p.update(selection_state="selected"))
     must_fail("production numeric escalation", lambda p,e,r: p.update(production_numeric_authority="granted"))
+    must_fail("collapse evidence inventory", lambda p,e,r: p.update(required_evidence=[{"evidence_id":"documentation","evidence_kind":"documentation_only","must_prove":["something"]}]))
+    must_fail("weaken capacity kind", lambda p,e,r: item(p,"capacity_envelope_baseline_growth_stress").update(evidence_kind="documentation_only"))
+    must_fail("remove capacity measurement proof", remove_assertion("capacity_envelope_baseline_growth_stress", "throughput_latency_backlog_and_recovery_are_measured"))
+    must_fail("remove degradation proof", remove_assertion("capacity_envelope_baseline_growth_stress", "failure_or_degradation_boundary_is_observed"))
+    must_fail("remove ordering component proof", remove_assertion("ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency", "named_and_cited_consumer_side_key_level_concurrency_component_is_exercised"))
+    must_fail("remove cohort fallback proof", remove_assertion("ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency", "tenant_cohort_topic_sharding_fallback_is_exercised"))
+    must_fail("remove recovery outbox survival proof", remove_assertion("broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark", "committed_outbox_backlog_survives_broker_outage"))
+    must_fail("remove recovery anti-starvation proof", remove_assertion("broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark", "recovery_drains_backlog_without_starving_current_protected_work"))
+    must_fail("remove regulated governance proof", remove_assertion("regulated_payload_erasure_granularity", "raw_payload_exception_requires_signoff_by_erasure_governance_authority"))
+    must_fail("remove topology tenant-auth proof", remove_assertion("physical_naming_routing_and_cell_topology_adapter_mapping", "tenant_authorization_is_enforced_before_transport_mapping"))
     must_fail("remove promoted credit", lambda p,e,r: p["credited_evidence"].pop())
     must_fail("unauthorized seventh credit", lambda p,e,r: p["credited_evidence"].append("broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark"))
     must_fail("state grants recovery early", lambda p,e,r: d4a(e)["evidence_completed"].append("broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark"))
@@ -56,7 +76,7 @@ def main() -> int:
     must_fail("promotion removes live Kafka source fact", lambda p,e,r: r.update(live_kafka_broker_claimed=False))
     must_fail("promotion claims recovery", lambda p,e,r: r.update(recovery_benchmark_claimed=True))
     must_fail("promotion grants transport", lambda p,e,r: r.update(d4_transport_authority="granted"))
-    print("d4a_evidence_plan_negative_controls=PASS ledger_credit=6 remaining=1 provenance_chain_tamper=blocked review_tamper=blocked seventh_credit=blocked recovery_overclaim=blocked authority_escalation=blocked")
+    print("d4a_evidence_plan_negative_controls=PASS ledger_credit=6 remaining=1 exact_proof_assertions=blocked provenance_chain_tamper=blocked review_tamper=blocked seventh_credit=blocked recovery_overclaim=blocked authority_escalation=blocked")
     return 0
 
 

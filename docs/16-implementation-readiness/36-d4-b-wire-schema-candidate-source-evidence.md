@@ -87,11 +87,13 @@ The evidence profile adds requirements beyond base JSON Schema validation:
 - bounded Decimal parsing instead of binary-float-dependent authoritative mapping;
 - canonical numeric semantics (`1.0` and `1e0` are equivalent; signed zero normalizes to zero);
 - distinct bounded decimal values remain distinct even above the exact-integer range of IEEE-754 binary64;
+- decimal canonicalization is constructed directly from the exact `Decimal.as_tuple()` representation and does **not** call context-sensitive `Decimal.normalize()`;
+- lowering or otherwise mutating the ambient thread-local Decimal context cannot change canonical equivalence;
 - deterministic recursive semantic normalization for content equivalence;
 - historical profile/schema binding;
 - no schema/code loading selected by untrusted message content.
 
-The specific numeric limits exercised here are test-profile bounds, not selected production thresholds.
+The specific numeric limits exercised here are test-profile bounds, not selected production thresholds. The context-independence rule is normative: authoritative equivalence cannot depend on caller-local Decimal precision.
 
 ## Protobuf profile
 
@@ -127,6 +129,10 @@ The profile requires:
 - reader-only fields require defaults or resolution fails;
 - writer/reader field types must be compatible under the reviewed Avro promotion rules;
 - an incompatible type pair such as writer `boolean` → reader `string` fails closed;
+- an allowed promotion is not merely *validated*: the writer-side datum is converted/materialized into the selected reader representation before equivalence;
+- numeric promotion such as writer `int` → reader `double` canonicalizes to the same reader representation as a native writer `double` datum with the same reader value;
+- `bytes` → `string` promotion requires strict UTF-8 and produces a bounded reader string; invalid UTF-8 fails closed;
+- `string` → `bytes` promotion produces bounded UTF-8 bytes;
 - defaults must match the first declared reader type in the evidence model;
 - required tenant/event fixture semantics are explicit after resolution;
 - nullable severity and its accepted enum values are explicit after resolution;
@@ -136,7 +142,7 @@ The profile requires:
 - `int`/`long` values are constrained to their declared Avro ranges;
 - float/double fixture values must be finite;
 - the source evidence intentionally models only a reviewed bounded primitive/union subset; nested complex Avro types are not silently accepted by this fixture;
-- canonical equivalence is structural and type-tagged after bounded writer→reader resolution, rather than using unrestricted recursive JSON serialization;
+- canonical equivalence is structural and type-tagged **after reader-side promotion and bounded writer→reader resolution**, rather than using unrestricted recursive JSON serialization;
 - field aliases are reviewed and ambiguous aliases fail closed;
 - historical payloads are bound to Avro profile/writer-schema identity;
 - message payloads cannot choose arbitrary writer/reader schema content.
@@ -147,7 +153,7 @@ The harness remains a specification-level evidence model, not a substitute for a
 
 ## Runtime-independence boundary
 
-The source harness deliberately does not declare one SDK's generated-object behavior authoritative. It exercises JSON bytes plus bounded Decimal/object semantics, Protobuf wire semantics before generated bindings, and bounded Avro writer/reader type resolution.
+The source harness deliberately does not declare one SDK's generated-object behavior authoritative. It exercises JSON bytes plus bounded/context-independent Decimal object semantics, Protobuf wire semantics before generated bindings, and bounded Avro writer/reader type resolution with explicit reader-side promotion.
 
 A later Java, Go, Python, Rust or other implementation remains eligible only if these authoritative semantics survive. Runtime convenience cannot redefine canonical JLMirror contract meaning.
 
@@ -171,11 +177,12 @@ The falsification suite blocks:
 - compressed input without a selected decompression profile;
 - schema/descriptor selection by untrusted message content;
 - historical cross-profile reinterpretation;
-- JSON protected duplicates/aliases, excessive nesting, lossy binary-float normalization and collapse of distinct bounded decimals;
+- JSON protected duplicates/aliases, excessive nesting, lossy binary-float normalization, collapse of distinct bounded decimals and ambient-Decimal-context drift;
 - Protobuf non-minimal varints, `uint64` overflow, protected last-one-wins collapse, same-member oneof duplication, cross-member oneof collision and presence/enum weakening;
 - Protobuf raw-byte-order authority and repeated-order loss;
 - loss of required Protobuf unknown binary fields;
 - Avro alias ambiguity, missing reader defaults, incompatible writer/reader types and nullable-semantic loss;
+- Avro allowed-promotion validation without reader-side materialization, including numeric representation drift and invalid UTF-8 `bytes` → `string` conversion;
 - Avro schema/datum cardinality overflow, overlong names/aliases/scalars, out-of-range numeric values and unrestricted nested datum acceptance;
 - D4-B ledger selection;
 - D4/Product/Wave4/production/C3 authority escalation.

@@ -65,10 +65,10 @@ def main() -> int:
     assert d4a["candidate"] == "kafka" and d4a["candidate_status"] == "selected_c2_candidate"
     assert d4a["state"] == "selected_candidate" and len(d4a["evidence_completed"]) == 7
     assert d4b["candidate"] is None and d4b["candidate_status"] == "not_selected"
-    assert d4b["state"] == "candidate_selection_open"
+    assert d4b["state"] == "evidence_complete_selection_pending"
     assert set(d4b["required_evidence"]) == EXPECTED_IDS and len(d4b["required_evidence"]) == 5
-    assert d4b["evidence_completed"] == [] and set(d4b["evidence_remaining"]) == EXPECTED_IDS
-    assert len(d4b["evidence_remaining"]) == 5
+    assert set(d4b["evidence_completed"]) == EXPECTED_IDS and len(d4b["evidence_completed"]) == 5
+    assert d4b["evidence_remaining"] == []
     for sibling in (d4c, d4d):
         assert sibling["candidate"] is None and sibling["candidate_status"] == "not_selected"
         assert sibling["evidence_completed"] == []
@@ -81,7 +81,7 @@ def main() -> int:
 
     print(
         "d4b_schema_contract_source_manifest=PASS evidence_ids=5 evidence_kinds=exact reference_properties=exact "
-        "source_credit=0 candidate=not_selected d4a=kafka_selected d4b=open d4c_d=open authorities=not_granted"
+        "source_credit=0 prior_promoted_credit=5 candidate=not_selected d4a=kafka_selected d4b=selection_pending d4c_d=open authorities=not_granted"
     )
     return 0
 

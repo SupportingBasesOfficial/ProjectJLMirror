@@ -32,8 +32,8 @@
     "opaque_monotonic_candidate_requires_strictly_increasing_internal_issuance_sequence_while_external_tokens_remain_opaque",
     "comparison_surface_is_equality_only_and_exposes_no_ordering_authority",
     "unrelated_version_namespaces_cannot_substitute_for_contract_version",
-    "breaking_semantic_change_cannot_reuse_the_same_contract_version_in_the_test_harness",
-    "historical_message_version_bytes_are_preserved_without_reinterpretation",
+    "breaking_semantic_change_transition_is_validated_within_each_candidate_family",
+    "historical_candidate_family_and_original_version_bytes_are_preserved_and_cross_family_reinterpretation_fails_closed",
     "candidate_adapter_output_contains_no_tenant_authorization_routing_or_message_identity_authority",
     "test_vector_encodings_are_noncanonical_evidence_fixtures_and_do_not_select_production_syntax"
   ],

@@ -61,6 +61,8 @@ def assert_monotonic_issuer_rejects_regression() -> None:
     adapter.parse(second)
     if first == second:
         raise AssertionError("opaque monotonic issuer duplicated token")
+    if evaluator.OpaqueMonotonicIssuer._opaque_fixture_body(10) == evaluator.OpaqueMonotonicIssuer._opaque_fixture_body(11):
+        raise AssertionError("bijective opaque fixture mapping collapsed distinct sequences")
     for sequence in (11, 10, 9, 0, -1, evaluator.MAX_ISSUANCE_SEQUENCE + 1):
         try:
             issuer.issue(sequence)
@@ -105,6 +107,7 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.MANIFEST).__setitem__("equivalent_reviewed_representation", "eligible_for_evidence_execution"), "equivalent candidate class must remain unevaluated")
     must_fail(lambda d: obj(d, validator.MANIFEST)["required_proofs"].pop(), "required proof inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("opaque_monotonic_candidate_requires_strictly_increasing_internal_issuance_sequence_while_external_tokens_remain_opaque"), "source assertion inventory drift")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("opaque_fixture_mapping_is_collision_free_over_the_bounded_uint64_test_domain_via_bijective_permutation"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("historical_candidate_family_and_original_version_bytes_are_preserved_and_cross_family_reinterpretation_fails_closed"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.LEDGER).__setitem__("candidate", "positive_integer_family_revision"), "D4-B ledger selection drift")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("gate_state", "accepted"), "D4 gate escalation")
@@ -125,7 +128,7 @@ def main() -> int:
     assert_monotonic_issuer_rejects_regression()
     assert_historical_cross_family_reinterpretation_blocked()
 
-    print("d4b_contract_version_source_falsification=PASS duplicate_json=blocked hidden_selection=blocked syntax_selection=blocked auto_credit=blocked candidate_promotion=blocked proof_weakening=blocked opaque_monotonic_regression=blocked opaque_issuance_overflow=blocked historical_cross_family_reinterpretation=blocked ordering_authority=blocked authority_fields=blocked ledger_selection=blocked d4_authority_escalation=blocked")
+    print("d4b_contract_version_source_falsification=PASS duplicate_json=blocked hidden_selection=blocked syntax_selection=blocked auto_credit=blocked candidate_promotion=blocked proof_weakening=blocked opaque_monotonic_regression=blocked opaque_issuance_overflow=blocked opaque_fixture_collision=blocked historical_cross_family_reinterpretation=blocked ordering_authority=blocked authority_fields=blocked ledger_selection=blocked d4_authority_escalation=blocked")
     return 0
 
 

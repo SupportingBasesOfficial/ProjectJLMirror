@@ -65,6 +65,26 @@ def behavior_falsification() -> None:
         'forged reviewed provenance',
     )
 
+    # JSON formatting cannot become semantic compatibility authority.
+    reformatted = evaluator.ContractRevision(
+        identity=v1.identity,
+        revision='format-only',
+        payload_schema=v1.payload_schema,
+        semantic_manifest='{ "delivery": "at_least_once", "tenant_authority": "tenant_id", "event_identity": "message_id" }',
+        historical_metadata=v1.historical_metadata,
+        reviewed_provenance='git:format-only',
+    )
+    assert reformatted.semantic_manifest_sha256 == v1.semantic_manifest_sha256
+    duplicate_manifest = evaluator.ContractRevision(
+        identity=v1.identity,
+        revision='duplicate-semantic',
+        payload_schema=v1.payload_schema,
+        semantic_manifest='{"tenant_authority":"tenant_id","tenant_authority":"other"}',
+        historical_metadata=v1.historical_metadata,
+        reviewed_provenance='git:duplicate-semantic',
+    )
+    expect_violation(lambda: profile.history.commit(reviewer, duplicate_manifest), 'duplicate semantic manifest member')
+
     assert v1.payload_schema_sha256 == v2.payload_schema_sha256
     assert evaluator.compatibility(v1, v2) == 'semantic_review_required_breaking_until_proven_otherwise'
 
@@ -85,6 +105,14 @@ def behavior_falsification() -> None:
     expect_violation(
         lambda: profile.registry.publish(reader, v1, 'subject', '20', 'vendor-20'),
         'reader registry publish',
+    )
+
+    # Exact retry is idempotent; physical provenance remap is forbidden in-place.
+    original = profile.registry.publish(reviewer, v1, 'event-created', '17', 'vendor-abc')
+    assert original == profile.registry.mapping(reader, v1)
+    expect_violation(
+        lambda: profile.registry.publish(reviewer, v1, 'changed-subject', '99', 'changed-vendor'),
+        'registry mapping provenance overwrite',
     )
 
     before = profile.resolve(reader, v1.identity, v1.revision).reviewed_content_sha256
@@ -127,6 +155,8 @@ def validator_falsification() -> None:
         ('candidate promotion', lambda m: m['candidate_results'].__setitem__('reviewed_git_catalog', 'selected')),
         ('proof weakening', lambda m: m.__setitem__('required_proofs', m['required_proofs'][:-1])),
         ('provenance assertion weakening', lambda m: m.__setitem__('source_assertions', [x for x in m['source_assertions'] if not x.startswith('reviewed_provenance_is_bound_')])),
+        ('semantic canonical assertion weakening', lambda m: m.__setitem__('source_assertions', [x for x in m['source_assertions'] if not x.startswith('semantic_manifest_digest_uses_')])),
+        ('mapping history assertion weakening', lambda m: m.__setitem__('source_assertions', [x for x in m['source_assertions'] if not x.startswith('registry_mapping_metadata_is_')])),
         ('product authority', lambda m: m['non_authority'].__setitem__('canonical_product_implementation_authority', 'granted')),
         ('wire coupling', lambda m: m['non_authority'].__setitem__('d4b_wire_selection', 'protobuf_profile')),
         ('contract-version coupling', lambda m: m['non_authority'].__setitem__('d4b_contract_version_selection', 'semantic_version_like_contract_revision')),
@@ -145,8 +175,9 @@ def main() -> None:
     validator_falsification()
     print(
         'd4b_catalog_tooling_falsification=PASS '
-        'unreviewed_publish=blocked forged_provenance=blocked semantic_only_break=detected '
-        'history_rebind=blocked authz=blocked outage_reinterpretation=blocked '
+        'unreviewed_publish=blocked forged_provenance=blocked semantic_formatting=canonical '
+        'duplicate_semantic_member=blocked semantic_only_break=detected history_rebind=blocked '
+        'mapping_rebind=blocked authz=blocked outage_reinterpretation=blocked '
         'product_identity_coupling=blocked selection_credit_authority_coupling=blocked'
     )
 

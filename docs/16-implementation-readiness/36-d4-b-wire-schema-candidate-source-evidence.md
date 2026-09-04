@@ -38,7 +38,8 @@ The package is grounded in format specifications/documentation, not one language
   - some nonbinary conversion/copy paths can lose them.
 - Apache Avro 1.11.2 specification: `https://avro.apache.org/docs/1.11.2/specification/`
   - historical interpretation uses writer schema plus reader schema;
-  - reader-only fields require a default or resolution fails.
+  - reader-only fields require a default or resolution fails;
+  - writer/reader field types must resolve according to Avro compatibility/promotion rules.
 - JSON Schema Draft 2020-12 validation vocabulary: `https://json-schema.org/draft/2020-12/json-schema-validation`
   - JSON numeric instances are not inherently platform-bounded by JSON Schema.
 - JSON Schema object reference: `https://json-schema.org/understanding-json-schema/reference/object`
@@ -64,23 +65,15 @@ This source PR does not choose the future catalog/registry implementation. Axis 
 
 ### Historical interpretation
 
-Historical evidence binds:
-
-- candidate/profile identity;
-- reviewed schema identity;
-- original payload bytes.
-
-Re-reading with the same profile/schema preserves the exact historical bytes. Attempting to reinterpret those bytes through another candidate/profile or schema fails closed.
+Historical evidence binds candidate/profile identity, reviewed schema identity and original payload bytes. Re-reading with the same profile/schema preserves the exact historical bytes. Attempting to reinterpret those bytes through another candidate/profile or schema fails closed.
 
 Axis A therefore proves the profile/schema binding requirement. Axis B remains responsible for the later catalog/provenance mechanism that makes reviewed schema content durably recoverable.
 
 ### Compression boundary
 
-No compression algorithm/profile is selected here. The source harness therefore accepts only identity transport and rejects compressed input.
+No compression algorithm/profile is selected here. The source harness therefore accepts only identity transport and rejects compressed input. With compression unselected, decompression work is exactly zero and bounded.
 
-That is deliberate: with compression unselected, decompression work is exactly zero and bounded. A future compressed profile must separately prove a compressed-input bound, an output/decompression-work bound and fail-closed behavior before schema processing.
-
-The fixture message-size numbers in this source package are evidence bounds only and do not select production C3 numerics.
+A future compressed profile must separately prove a compressed-input bound, an output/decompression-work bound and fail-closed behavior before schema processing. Fixture message-size numbers remain source-evidence bounds, not selected production C3 numerics.
 
 ## Bounded JSON + JSON Schema profile
 
@@ -93,11 +86,10 @@ The evidence profile adds requirements beyond base JSON Schema validation:
 - platform message-size, nesting, numeric magnitude, precision and scale bounds;
 - bounded Decimal parsing instead of binary-float-dependent authoritative mapping;
 - canonical numeric semantics (`1.0` and `1e0` are equivalent; signed zero normalizes to zero);
+- distinct bounded decimal values remain distinct even above the exact-integer range of IEEE-754 binary64;
 - deterministic recursive semantic normalization for content equivalence;
 - historical profile/schema binding;
 - no schema/code loading selected by untrusted message content.
-
-This matters because JSON Schema alone does not supply all platform resource bounds JLMirror requires and additional properties are not denied by default.
 
 The specific numeric limits exercised here are test-profile bounds, not selected production thresholds.
 
@@ -111,7 +103,7 @@ The JLMirror evidence profile requires a bounded wire predecoder before generate
 - rejects varints above the `uint64` domain;
 - rejects invalid/reserved field numbers;
 - rejects duplicate protected singular field numbers before normal last-one-wins behavior can collapse them;
-- rejects protected oneof collisions before generated binding resolution;
+- rejects **repeated occurrences of the same protected oneof member** as well as collisions between different oneof members;
 - establishes required-field presence for the fixture's protected tenant/event fields;
 - makes optional severity semantics explicit: accepted enum values are explicit and null is represented by absence in this profile;
 - preserves unknown binary field bytes when forward compatibility requires it;
@@ -122,15 +114,20 @@ The JLMirror evidence profile requires a bounded wire predecoder before generate
 
 The normalization rule is asymmetric by design: occurrences belonging to **different field numbers** may be regrouped because wire serialization order is not contract authority; occurrences belonging to the **same repeated field number** retain their original order because repeated-value order may be semantic. A global sort would therefore be invalid even if deterministic.
 
-The varint hardening also prevents a superficially bounded parser from admitting values outside the Protobuf `uint64` scalar domain through a ten-byte over-range representation.
+The same-oneof-member rule closes a separate ambiguity: `field 3=a, field 3=b` must not reach a generated binding that could collapse it with last-one-wins semantics merely because no *different* oneof member was present.
 
 ## Avro profile
 
-Avro evolution is made explicit rather than implicit:
+Avro evolution is made explicit rather than implicit. The evidence model now includes primitive/union type declarations and checks writer→reader compatibility before resolving values.
 
-- original writer schema identity/content must remain recoverable for historical interpretation;
+The profile requires:
+
+- original writer schema identity/content remains recoverable for historical interpretation;
 - reader-schema resolution is explicit;
 - reader-only fields require defaults or resolution fails;
+- writer/reader field types must be compatible under the reviewed Avro promotion rules;
+- an incompatible type pair such as writer `boolean` → reader `string` fails closed;
+- defaults must match the first declared reader type in the evidence model;
 - required tenant/event fixture semantics are explicit after resolution;
 - nullable severity and its accepted enum values are explicit after resolution;
 - field aliases are reviewed and ambiguous aliases fail closed;
@@ -138,28 +135,17 @@ Avro evolution is made explicit rather than implicit:
 - historical payloads are bound to Avro profile/writer-schema identity;
 - message payloads cannot choose arbitrary writer/reader schema content.
 
-The harness uses a small specification-level record-resolution model to exercise these invariants without selecting a particular Avro runtime or registry product.
+The harness remains a specification-level evidence model, not a substitute for a future pinned Avro runtime/registry conformance run.
 
 ## Runtime-independence boundary
 
-The source harness deliberately does not declare one SDK's generated-object behavior authoritative.
-
-It exercises:
-
-- JSON bytes plus bounded Decimal/object semantics;
-- Protobuf wire tags/lengths/varints/unknown segments before generated bindings;
-- Avro writer/reader resolution semantics.
+The source harness deliberately does not declare one SDK's generated-object behavior authoritative. It exercises JSON bytes plus bounded Decimal/object semantics, Protobuf wire semantics before generated bindings, and Avro writer/reader type resolution.
 
 A later Java, Go, Python, Rust or other implementation remains eligible only if these authoritative semantics survive. Runtime convenience cannot redefine canonical JLMirror contract meaning.
 
 ## Cross-axis independence
 
-Axis A does not select:
-
-- reviewed Git catalog vs registry-backed catalog vs hybrid catalog (`OPEN-EVT-003`);
-- `contract_version` representation (`OPEN-EVT-004`).
-
-Likewise, a future catalog/registry product cannot select JSON, Protobuf or Avro by implication.
+Axis A does not select reviewed Git catalog vs registry-backed catalog vs hybrid catalog (`OPEN-EVT-003`), nor `contract_version` representation (`OPEN-EVT-004`). A future catalog/registry product cannot select JSON, Protobuf or Avro by implication.
 
 The accepted surface rule remains: internal broker and external webhook profiles may differ only when conversion to canonical domain semantics and historical interpretation are explicit.
 
@@ -177,11 +163,11 @@ The falsification suite blocks:
 - compressed input without a selected decompression profile;
 - schema/descriptor selection by untrusted message content;
 - historical cross-profile reinterpretation;
-- JSON protected duplicates/aliases, excessive nesting and runtime-dependent numeric spellings;
-- Protobuf non-minimal varints, `uint64` overflow, protected last-one-wins collapse and presence/enum weakening;
+- JSON protected duplicates/aliases, excessive nesting, lossy binary-float normalization and collapse of distinct bounded decimals;
+- Protobuf non-minimal varints, `uint64` overflow, protected last-one-wins collapse, same-member oneof duplication, cross-member oneof collision and presence/enum weakening;
 - Protobuf raw-byte-order authority and repeated-order loss;
 - loss of required Protobuf unknown binary fields;
-- Avro alias ambiguity, missing reader defaults and nullable-semantic loss;
+- Avro alias ambiguity, missing reader defaults, incompatible writer/reader types and nullable-semantic loss;
 - D4-B ledger selection;
 - D4/Product/Wave4/production/C3 authority escalation.
 

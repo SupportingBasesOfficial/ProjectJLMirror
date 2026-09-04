@@ -42,6 +42,7 @@ EXPECTED_REQUIREMENTS = {
         "decimal_canonicalization_is_context_independent_and_constructed_from_exact_decimal_tuple",
         "decimal_magnitude_comparison_is_context_independent_and_uses_exact_decimal_magnitude",
         "json_parser_and_depth_traversal_translate_recursion_exhaustion_to_fail_closed_evidence_violation",
+        "decoded_json_keys_and_string_values_must_be_unicode_scalar_sequences_without_unpaired_surrogates",
         "content_equivalence_uses_canonical_semantic_normalization_not_input_member_order",
         "historical_payload_is_bound_to_reviewed_json_profile_and_schema_identity",
         "schema_resolution_must_not_fetch_or_execute_untrusted_dynamic_content",
@@ -64,10 +65,12 @@ EXPECTED_REQUIREMENTS = {
         "writer_declared_fields_must_be_present_in_datum_and_reader_defaults_apply_only_when_field_is_absent_from_writer_schema",
         "all_writer_declared_datum_values_are_validated_against_writer_types_and_bounds_before_reader_projection",
         "decoded_avro_union_branch_index_is_preserved_and_ambiguous_runtime_branch_inference_fails_closed",
+        "writer_reader_compatibility_is_evaluated_for_the_selected_writer_union_branch_not_unselected_branches",
         "reader_schema_resolution_is_explicit_and_missing_fields_require_defaults_or_failure",
         "writer_reader_field_type_compatibility_and_allowed_promotions_are_checked_before_value_resolution",
         "allowed_writer_reader_promotions_are_applied_to_reader_representation_before_equivalence",
         "avro_float_writer_and_reader_values_are_materialized_at_ieee754_binary32_width_before_equivalence",
+        "integer_to_avro_float_promotion_rounds_directly_from_exact_integer_to_binary32_without_binary64_double_rounding",
         "float_double_runtime_mapping_rejects_boolean_and_string_coercion_before_width_materialization",
         "float_double_admission_and_promotion_overflow_fail_closed_as_evidence_violation",
         "avro_string_name_and_schema_digest_utf8_encoding_errors_fail_closed_as_evidence_violation",
@@ -97,6 +100,7 @@ EXPECTED_ASSERTIONS = {
     "json_numeric_normalization_is_bounded_decimal_context_independent_and_runtime_independent_within_the_evidence_profile",
     "json_decimal_magnitude_admission_is_context_independent",
     "json_depth_recursion_exhaustion_fails_closed_as_evidence_violation",
+    "json_unpaired_surrogates_in_decoded_keys_or_string_values_fail_closed",
     "protobuf_nonminimal_varints_uint64_overflow_and_reserved_field_numbers_fail_closed",
     "protobuf_last_one_wins_default_is_not_accepted_for_protected_fields",
     "protobuf_same_oneof_member_duplicates_and_cross_member_collisions_fail_closed",
@@ -108,7 +112,9 @@ EXPECTED_ASSERTIONS = {
     "avro_writer_declared_fields_cannot_be_fabricated_from_reader_defaults",
     "avro_writer_only_fields_cannot_bypass_writer_type_and_bound_validation",
     "avro_decoded_union_branch_identity_is_preserved_and_not_inferred_from_python_runtime_type_order",
+    "avro_selected_writer_union_branch_is_the_compatibility_authority_for_that_datum",
     "avro_float_reader_and_writer_semantics_are_canonicalized_at_ieee754_binary32_width",
+    "avro_integer_to_float_promotion_avoids_binary64_double_rounding",
     "avro_float_double_runtime_mapping_rejects_boolean_and_string_coercion",
     "avro_float_double_overflow_is_caught_and_fails_closed",
     "avro_invalid_utf8_string_name_and_digest_encoding_fails_closed",
@@ -220,7 +226,7 @@ def main(argv: list[str]) -> int:
     if errors:
         for error in errors: print(f"D4B_WIRE_SCHEMA_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_wire_schema_source_manifest=PASS axis=OPEN-EVT-002 concrete_candidates=3 eligible=3 decimal_canonicalization=context_independent decimal_magnitude=context_independent json_depth_recursion=fail_closed canonical_varints=required uint64_varints=bounded protobuf_oneof_duplicates=blocked avro_schema_ref_content=bound avro_historical_schema_digest=sha256_bound avro_writer_fields=required avro_writer_only_fields=validated avro_union_branch=explicit avro_string_utf8=fail_closed avro_float_width=ieee754_binary32 avro_float_runtime_mapping=type_strict avro_float_overflow=fail_closed avro_type_resolution=required avro_promotions=reader_canonicalized avro_datum_bounds=required runtime_mapping=bounded historical_binding=required decompression=identity_only equivalent=insufficient_evidence selection=not_selected ledger_credit=0 d4=scoped authorities=not_granted")
+    print("d4b_wire_schema_source_manifest=PASS axis=OPEN-EVT-002 concrete_candidates=3 eligible=3 decimal_canonicalization=context_independent decimal_magnitude=context_independent json_depth_recursion=fail_closed json_unicode_scalars=fail_closed canonical_varints=required uint64_varints=bounded protobuf_oneof_duplicates=blocked avro_schema_ref_content=bound avro_historical_schema_digest=sha256_bound avro_writer_fields=required avro_writer_only_fields=validated avro_union_branch=explicit avro_selected_union_branch=authoritative avro_float_width=ieee754_binary32 avro_long_to_float=direct_round_to_binary32 avro_string_utf8=fail_closed avro_float_runtime_mapping=type_strict avro_float_overflow=fail_closed avro_type_resolution=required avro_promotions=reader_canonicalized avro_datum_bounds=required runtime_mapping=bounded historical_binding=required decompression=identity_only equivalent=insufficient_evidence selection=not_selected ledger_credit=0 d4=scoped authorities=not_granted")
     return 0
 
 

@@ -113,6 +113,26 @@ def _strict_bool(container: dict[str, Any], key: str, default: bool = False) -> 
     return value
 
 
+def _enum_value_matches_field_type(value: Any, field_type: str, nullable: bool) -> bool:
+    if value is None:
+        return nullable
+    if field_type == "string":
+        return isinstance(value, str)
+    if field_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if field_type == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and not (
+            isinstance(value, float) and not math.isfinite(value)
+        )
+    if field_type == "boolean":
+        return isinstance(value, bool)
+    if field_type == "object":
+        return isinstance(value, dict)
+    if field_type == "array":
+        return isinstance(value, list)
+    raise ContractError(f"enum-bearing field type is not supported by the reference profile: {field_type}")
+
+
 def semantic_manifest(contract: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(contract, dict):
         raise ContractError("contract must be an object")
@@ -140,6 +160,9 @@ def semantic_manifest(contract: dict[str, Any]) -> dict[str, Any]:
         if enum is not None:
             if not isinstance(enum, list) or not enum:
                 raise ContractError(f"enum must be a non-empty list when present: {name}")
+            for item in enum:
+                if not _enum_value_matches_field_type(item, field_type, nullable):
+                    raise ContractError(f"enum value contradicts declared field type: {name}")
             canonical_enum = [canonical_semantic_bytes(item) for item in enum]
             if len(set(canonical_enum)) != len(canonical_enum):
                 raise ContractError(f"enum values must be unique: {name}")

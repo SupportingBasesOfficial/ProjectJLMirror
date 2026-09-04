@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import math
 
 from reference_model import (
     Bounds,
@@ -48,6 +49,13 @@ def main() -> int:
     expect_failure(lambda: parse_bounded_structured(b'[[[1]]]', Bounds(max_depth=2)), ContractError)
     expect_failure(lambda: parse_bounded_structured(b'[1,2,3]', Bounds(max_array_items=2)), ContractError)
     expect_failure(lambda: parse_bounded_structured(b'{"a":1,"b":2}', Bounds(max_members=1)), ContractError)
+    expect_failure(lambda: parse_bounded_structured(b'{"a":1}', Bounds(max_wire_bytes=3)), ContractError)
+    expect_failure(lambda: parse_bounded_structured(b'"\xff"'), ContractError)
+    expect_failure(lambda: parse_bounded_structured(b'NaN'), ContractError)
+    expect_failure(lambda: parse_bounded_structured(b'Infinity'), ContractError)
+    expect_failure(lambda: parse_bounded_structured(b'-Infinity'), ContractError)
+    expect_failure(lambda: parse_bounded_structured(b'1e9999'), ContractError)
+    expect_failure(lambda: canonical_semantic_bytes(math.nan), ContractError)
 
     manifest_a = semantic_manifest(BASE)
     reordered = copy.deepcopy(BASE)
@@ -94,8 +102,8 @@ def main() -> int:
 
     print(
         "d4b_schema_contract=PASS canonical_semantics=deterministic duplicates=blocked bounds=blocked "
-        "semantic_manifest=stable compatibility=semantic_narrowing_closed historical_reader=required equivalence_profile=versioned "
-        "breaking_changes=governed version_syntax=reference_only_not_selected"
+        "noncanonical_numeric=blocked utf8=blocked semantic_manifest=stable compatibility=semantic_narrowing_closed "
+        "historical_reader=required equivalence_profile=versioned breaking_changes=governed version_syntax=reference_only_not_selected"
     )
     return 0
 

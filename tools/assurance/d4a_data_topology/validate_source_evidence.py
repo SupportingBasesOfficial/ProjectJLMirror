@@ -59,6 +59,7 @@ def main() -> int:
         "recovery_benchmark_claimed",
     ):
         assert source[key] is False
+    # Historical source truth remains pre-selection.
     assert source["kafka_selection_state"] == "not_selected"
     assert source["d4_transport_authority"] == "not_selected_not_granted"
     assert source["canonical_product_implementation_authority"] == "not_granted"
@@ -81,14 +82,18 @@ def main() -> int:
     promoted = set(plan["credited_evidence"])
     assert EXPECTED_PRIOR_CREDIT.issubset(promoted)
     assert EXPECTED_IDS.issubset(promoted)
-    assert plan["selection_state"] == "not_selected"
+    assert plan["selection_state"] == "selected"
+    assert plan["candidate_status"] == "selected_c2_candidate"
+    assert plan["acceptance_state"] == "track_selected_separate_d4_acceptance_required"
     assert plan["current_run_auto_credit"] is False
 
     d4a = next(track for track in state["tracks"] if track["track_id"] == "D4-A")
     assert set(d4a["evidence_completed"]) == promoted
     assert set(d4a["evidence_completed"]).isdisjoint(d4a["evidence_remaining"])
+    assert d4a["state"] == "selected_candidate"
+    assert d4a["candidate_status"] == "selected_c2_candidate"
     assert state["gate_state"] == "scoped"
-    assert state["d4_transport_authority"] == "not_selected_not_granted"
+    assert state["d4_transport_authority"] == "selected_not_granted"
     assert state["canonical_product_implementation_authority"] == "not_granted"
     assert state["wave4_implementation_authority"] == "not_granted"
     assert state["production_authority"] == "none"
@@ -96,8 +101,8 @@ def main() -> int:
 
     print(
         "d4a_data_topology_source_manifest=PASS evidence_ids=2 source_credit=0 prior_credit=2 "
-        f"global_promoted_credit={len(promoted)} kafka=not_selected authorities=not_granted "
-        "provenance=runtime_artifact_required"
+        f"global_promoted_credit={len(promoted)} historical_kafka_selection=not_selected current_kafka_selection=selected "
+        "transport_authority=not_granted provenance=runtime_artifact_required"
     )
     return 0
 

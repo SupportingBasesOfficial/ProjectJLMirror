@@ -43,6 +43,7 @@ def main() -> int:
     assert canonical_semantic_bytes(parsed) == b'{"a":1,"b":2}'
     assert equivalence_fingerprint(parsed, profile="p1") == equivalence_fingerprint({"a": 1, "b": 2}, profile="p1")
     assert equivalence_fingerprint(parsed, profile="p1") != equivalence_fingerprint(parsed, profile="p2")
+    expect_failure(lambda: equivalence_fingerprint(parsed, profile=""), ContractError)
 
     expect_failure(lambda: parse_bounded_structured(b'{"tenant_id":"a","tenant_id":"b"}'), DuplicateMemberError)
     expect_failure(lambda: parse_bounded_structured(b'"abcdef"', Bounds(max_string_chars=3)), ContractError)
@@ -78,7 +79,6 @@ def main() -> int:
     eq_scope = copy.deepcopy(BASE); next(f for f in eq_scope["fields"] if f["name"] == "note")["immutable_for_equivalence"] = True; breaking_cases.append(eq_scope)
     comparison = copy.deepcopy(BASE); comparison["comparison_profile"] = "immutable-content-v2"; breaking_cases.append(comparison)
     family = copy.deepcopy(BASE); family["contract_family"] = "inventory.item.updated"; breaking_cases.append(family)
-    new_reader_missing = copy.deepcopy(BASE); new_reader_missing["historical_reader"] = None; breaking_cases.append(new_reader_missing)
 
     for changed in breaking_cases:
         compatible, reasons = compatibility(BASE, changed)
@@ -86,14 +86,23 @@ def main() -> int:
         expect_failure(lambda changed=changed: require_breaking_change_disposition(BASE, changed, None), ContractError)
         require_breaking_change_disposition(BASE, changed, "new_incompatible_contract_version_or_family")
 
-    no_reader = copy.deepcopy(BASE); no_reader["historical_reader"] = None
-    compatible, reasons = compatibility(no_reader, additive)
-    assert not compatible and "old_historical_reader_missing" in reasons
+    missing_family = copy.deepcopy(BASE); missing_family["contract_family"] = None
+    missing_profile = copy.deepcopy(BASE); missing_profile["comparison_profile"] = ""
+    missing_reader = copy.deepcopy(BASE); missing_reader["historical_reader"] = None
+    expect_failure(lambda: semantic_manifest(missing_family), ContractError)
+    expect_failure(lambda: semantic_manifest(missing_profile), ContractError)
+    expect_failure(lambda: semantic_manifest(missing_reader), ContractError)
 
     malformed_field = copy.deepcopy(BASE); malformed_field["fields"].append({"name": "broken", "type": None})
     expect_failure(lambda: semantic_manifest(malformed_field), ContractError)
+    string_boolean = copy.deepcopy(BASE); next(f for f in string_boolean["fields"] if f["name"] == "note")["required"] = "false"
+    expect_failure(lambda: semantic_manifest(string_boolean), ContractError)
+    numeric_boolean = copy.deepcopy(BASE); next(f for f in numeric_boolean["fields"] if f["name"] == "note")["nullable"] = 1
+    expect_failure(lambda: semantic_manifest(numeric_boolean), ContractError)
     duplicate_enum = copy.deepcopy(BASE); next(f for f in duplicate_enum["fields"] if f["name"] == "status")["enum"] = ["active", "active"]
     expect_failure(lambda: semantic_manifest(duplicate_enum), ContractError)
+    structured_enum = copy.deepcopy(BASE); next(f for f in structured_enum["fields"] if f["name"] == "status")["enum"] = [{"z": 1}, {"a": 2}]
+    assert semantic_manifest(structured_enum)["fields"]
 
     validate_reference_version_token("v-reference-1")
     expect_failure(lambda: validate_reference_version_token(""), ContractError)
@@ -102,7 +111,7 @@ def main() -> int:
 
     print(
         "d4b_schema_contract=PASS canonical_semantics=deterministic duplicates=blocked bounds=blocked "
-        "noncanonical_numeric=blocked utf8=blocked semantic_manifest=stable compatibility=semantic_narrowing_closed "
+        "noncanonical_numeric=blocked utf8=blocked semantic_manifest=strict_typed compatibility=semantic_narrowing_closed "
         "historical_reader=required equivalence_profile=versioned breaking_changes=governed version_syntax=reference_only_not_selected"
     )
     return 0

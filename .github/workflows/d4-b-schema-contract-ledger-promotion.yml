@@ -156,6 +156,10 @@ jobs:
           p = json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-b-schema-contract-promotion-v1.json').read_text())
           w = p['source_workflow']
           for key, value in {
+              'WORKFLOW_ID': w['workflow_id'],
+              'WORKFLOW_PATH': w['workflow_path'],
+              'WORKFLOW_EVENT': w['workflow_event'],
+              'SOURCE_HEAD_BRANCH': w['source_head_branch'],
               'RUN_ID': w['run_id'],
               'RUN_ATTEMPT': w['run_attempt'],
               'JOB_ID': w['job_id'],
@@ -192,6 +196,7 @@ jobs:
           unzip -q /tmp/source-artifact.zip -d /tmp/source-artifact
           python3 - <<'PY'
           import json
+          import os
           from pathlib import Path
           p = json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-b-schema-contract-promotion-v1.json').read_text())
           plan = json.loads(Path('implementation/d4-eventing-async/d4-b-evidence-plan.json').read_text())
@@ -212,6 +217,7 @@ jobs:
           assert len(expected_evidence) == 5
           assert source_pr['number'] == p['source_pr']
           assert source_pr['head']['sha'] == p['source_reviewed_head']
+          assert source_pr['head']['ref'] == w['source_head_branch']
           assert source_pr['state'] == 'closed' and source_pr.get('merged_at') is not None
           assert source_review['id'] == review_pin['review_id']
           assert source_review['commit_id'] == p['source_reviewed_head']
@@ -222,8 +228,13 @@ jobs:
           assert f"Reviewed commit: `{p['source_reviewed_head']}` only." in review_body
           assert f"Conclusion: CLEAN for exact HEAD `{p['source_reviewed_head']}`." in review_body
           assert run['id'] == w['run_id']
+          assert run['workflow_id'] == w['workflow_id']
+          assert run['path'] == w['workflow_path']
+          assert run['event'] == w['workflow_event'] == 'pull_request'
+          assert run['head_branch'] == w['source_head_branch'] == source_pr['head']['ref']
           assert run['run_attempt'] == w['run_attempt']
-          assert run['head_sha'] == p['source_reviewed_head']
+          assert run['head_sha'] == p['source_reviewed_head'] == source_pr['head']['sha']
+          assert run['repository']['full_name'] == os.environ['GITHUB_REPOSITORY']
           assert run['status'] == 'completed' and run['conclusion'] == 'success'
           assert job['id'] == w['job_id']
           assert job['run_id'] == w['run_id']
@@ -255,7 +266,7 @@ jobs:
           assert provenance['production_authority'] == 'none'
           assert provenance['c3_numeric_topology_authority'] == 'not_selected'
           assert provenance['promotion_rule'] == 'source_run_review_then_separate_ledger_promotion'
-          print('d4b_promotion_live_admission=PASS source_pr=merged source_review=exact_head_clean source_run=success run_attempt=exact job=exact artifact=exact_digest artifact_payload=exact source_manifest=exact source_credit=0 selection=not_selected')
+          print('d4b_promotion_live_admission=PASS source_pr=merged source_review=exact_head_clean source_workflow=exact_pull_request_run source_run=success run_attempt=exact job=exact artifact=exact_digest artifact_payload=exact source_manifest=exact source_credit=0 selection=not_selected')
           PY
 
       - name: Validate steady-state durable D4-B promotion provenance

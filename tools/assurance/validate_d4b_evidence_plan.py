@@ -17,6 +17,15 @@ EXPECTED_IDS = {
     "historical_reader_and_equivalence_profile_continuity",
     "contract_version_representation_and_breaking_change_vectors",
 }
+EXPECTED_D4A_IDS = {
+    "capacity_envelope_baseline_growth_stress",
+    "broker_neutral_anti_corruption_stub_swap",
+    "regulated_payload_erasure_granularity",
+    "exactly_once_guardrail_consumer_inbox_enforcement",
+    "ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency",
+    "physical_naming_routing_and_cell_topology_adapter_mapping",
+    "broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark",
+}
 EXPECTED_SOURCE_HEAD = "0a5509442d4b55f6d4de989af9bb62a088198ab4"
 EXPECTED_MANIFEST_SHA256 = "2b442fd7b8733105ba004cf7ae982dd3a64a7731d11187b1e0409270f1da118a"
 EXPECTED_REVIEW_MODE = "independent_exact_head_adversarial_clean_with_fresh_codex_no_findings_reaction"
@@ -106,7 +115,9 @@ def validate(root: Path) -> list[str]:
     req(d4b.get("evidence_remaining") == [], "D4-B state remaining evidence must be empty")
     d4a = tracks["D4-A"]
     req(d4a.get("candidate") == "kafka" and d4a.get("candidate_status") == "selected_c2_candidate", "D4-A selected candidate drift")
-    req(d4a.get("state") == "selected_candidate" and len(d4a.get("evidence_completed", [])) == 7 and d4a.get("evidence_remaining") == [], "D4-A selected 7/7 state drift")
+    req(d4a.get("state") == "selected_candidate", "D4-A selected state drift")
+    req(set(d4a.get("evidence_completed", [])) == EXPECTED_D4A_IDS and len(d4a.get("evidence_completed", [])) == 7, "D4-A exact 7/7 evidence membership drift")
+    req(d4a.get("evidence_remaining") == [], "D4-A evidence_remaining drift")
     for track_id in ("D4-C", "D4-D"):
         sibling = tracks[track_id]
         req(sibling.get("candidate") is None and sibling.get("candidate_status") == "not_selected", f"{track_id} candidate must remain unselected")
@@ -128,7 +139,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_LEDGER_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_ledger_promotion=PASS credited=5/5 candidate=not_selected selection=separate source_immutable=true promotion_record=fully_pinned d4=scoped authorities=not_granted")
+    print("d4b_ledger_promotion=PASS credited=5/5 candidate=not_selected selection=separate source_immutable=true promotion_record=fully_pinned d4a=exact_7_of_7 d4=scoped authorities=not_granted")
     return 0
 
 

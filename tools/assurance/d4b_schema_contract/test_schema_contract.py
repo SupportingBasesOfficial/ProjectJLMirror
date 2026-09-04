@@ -102,7 +102,15 @@ def main() -> int:
     duplicate_enum = copy.deepcopy(BASE); next(f for f in duplicate_enum["fields"] if f["name"] == "status")["enum"] = ["active", "active"]
     expect_failure(lambda: semantic_manifest(duplicate_enum), ContractError)
     structured_enum = copy.deepcopy(BASE); next(f for f in structured_enum["fields"] if f["name"] == "status")["enum"] = [{"z": 1}, {"a": 2}]
-    assert semantic_manifest(structured_enum)["fields"]
+    expect_failure(lambda: semantic_manifest(structured_enum), ContractError)
+    numeric_enum_for_string = copy.deepcopy(BASE); next(f for f in numeric_enum_for_string["fields"] if f["name"] == "status")["enum"] = [1, 2]
+    expect_failure(lambda: semantic_manifest(numeric_enum_for_string), ContractError)
+    bool_enum_for_integer = copy.deepcopy(BASE); next(f for f in bool_enum_for_integer["fields"] if f["name"] == "status")["type"] = "integer"; next(f for f in bool_enum_for_integer["fields"] if f["name"] == "status")["enum"] = [True]
+    expect_failure(lambda: semantic_manifest(bool_enum_for_integer), ContractError)
+    null_enum_nonnullable = copy.deepcopy(BASE); next(f for f in null_enum_nonnullable["fields"] if f["name"] == "status")["enum"] = [None, "active"]
+    expect_failure(lambda: semantic_manifest(null_enum_nonnullable), ContractError)
+    null_enum_nullable = copy.deepcopy(BASE); note = next(f for f in null_enum_nullable["fields"] if f["name"] == "note"); note["enum"] = [None, "operator"]
+    assert semantic_manifest(null_enum_nullable)["fields"]
 
     validate_reference_version_token("v-reference-1")
     expect_failure(lambda: validate_reference_version_token(""), ContractError)
@@ -111,8 +119,9 @@ def main() -> int:
 
     print(
         "d4b_schema_contract=PASS canonical_semantics=deterministic duplicates=blocked bounds=blocked "
-        "noncanonical_numeric=blocked utf8=blocked semantic_manifest=strict_typed compatibility=semantic_narrowing_closed "
-        "historical_reader=required equivalence_profile=versioned breaking_changes=governed version_syntax=reference_only_not_selected"
+        "noncanonical_numeric=blocked utf8=blocked semantic_manifest=strict_typed enum_type_consistency=blocked "
+        "compatibility=semantic_narrowing_closed historical_reader=required equivalence_profile=versioned "
+        "breaking_changes=governed version_syntax=reference_only_not_selected"
     )
     return 0
 

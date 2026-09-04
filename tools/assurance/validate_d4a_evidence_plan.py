@@ -41,6 +41,13 @@ EXPECTED_EVIDENCE = {
     "physical_naming_routing_and_cell_topology_adapter_mapping",
     "broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark",
 }
+EXPECTED_D4B_EVIDENCE = {
+    "canonical_bounded_serialization_profile",
+    "parser_ambiguity_and_duplicate_field_negative_vectors",
+    "schema_catalog_semantic_manifest_compatibility_ci",
+    "historical_reader_and_equivalence_profile_continuity",
+    "contract_version_representation_and_breaking_change_vectors",
+}
 EXPECTED_PRIOR_CREDIT = EXPECTED_EVIDENCE - {"broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark"}
 EXPECTED_NEW_CREDIT = {"broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark"}
 EXPECTED_KINDS = {
@@ -148,7 +155,8 @@ def validate_objects(plan: dict, entry: dict, promotion: dict, selection: dict) 
         require(set(assertions) == REQUIRED_ASSERTIONS[evidence_id], f"{evidence_id} proof assertion set drift")
         require(len(assertions) == len(REQUIRED_ASSERTIONS[evidence_id]), f"{evidence_id} proof assertion multiplicity drift")
 
-    d4a = next((t for t in entry.get("tracks", []) if t.get("track_id") == "D4-A"), {})
+    tracks = {t.get("track_id"): t for t in entry.get("tracks", []) if isinstance(t, dict)}
+    d4a = tracks.get("D4-A", {})
     require(set(d4a.get("required_evidence", [])) == EXPECTED_EVIDENCE, "state D4-A inventory drift")
     require(len(d4a.get("required_evidence", [])) == len(EXPECTED_EVIDENCE), "state D4-A required evidence multiplicity drift")
     require(set(d4a.get("evidence_completed", [])) == EXPECTED_EVIDENCE, "state completed seven-of-seven evidence drift")
@@ -163,11 +171,19 @@ def validate_objects(plan: dict, entry: dict, promotion: dict, selection: dict) 
     require(entry.get("wave4_implementation_authority") == "not_granted", "Wave4 authority escalation")
     require(entry.get("production_authority") == "none", "production authority escalation")
     require(entry.get("c3_numeric_topology_authority") == "not_selected", "C3 authority escalation")
-    for track_id in ("D4-B", "D4-C", "D4-D"):
-        sibling = next((t for t in entry.get("tracks", []) if t.get("track_id") == track_id), {})
+
+    d4b = tracks.get("D4-B", {})
+    require(d4b.get("candidate") is None, "D4-B candidate must remain unselected")
+    require(d4b.get("candidate_status") == "not_selected", "D4-B candidate status drift")
+    require(d4b.get("state") == "evidence_complete_selection_pending", "D4-B evidence-complete selection-pending state drift")
+    require(set(d4b.get("evidence_completed", [])) == EXPECTED_D4B_EVIDENCE, "D4-B reviewed evidence credit drift")
+    require(len(d4b.get("evidence_completed", [])) == len(EXPECTED_D4B_EVIDENCE), "D4-B evidence multiplicity drift")
+    require(d4b.get("evidence_remaining") == [], "D4-B evidence_remaining must be empty after reviewed promotion")
+    for track_id in ("D4-C", "D4-D"):
+        sibling = tracks.get(track_id, {})
         require(sibling.get("candidate") is None, f"{track_id} candidate must remain unselected")
         require(sibling.get("candidate_status") == "not_selected", f"{track_id} candidate status drift")
-        require(sibling.get("evidence_completed") == [], f"{track_id} must not inherit D4-A evidence credit")
+        require(sibling.get("evidence_completed") == [], f"{track_id} must remain uncredited")
 
     # Historical promotion truth is immutable: it was created before selection.
     require(promotion.get("schema_version") == 1, "promotion schema drift")
@@ -337,7 +353,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4A_PLAN_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4a_evidence_plan=PASS evidence=7 credited=7 exact_assertions=preserved kafka=selected selection_scope=bounded_c2 transport_authority=not_granted d4=scoped d4_bc_d=open production_numerics=not_granted provenance=full_chain")
+    print("d4a_evidence_plan=PASS evidence=7 credited=7 exact_assertions=preserved kafka=selected selection_scope=bounded_c2 transport_authority=not_granted d4=scoped d4b=5_of_5_selection_pending d4c_d=open production_numerics=not_granted provenance=full_chain")
     return 0
 
 

@@ -65,7 +65,6 @@ def behavior_falsification() -> None:
         'forged reviewed provenance',
     )
 
-    # JSON formatting cannot become semantic compatibility authority.
     reformatted = evaluator.ContractRevision(
         identity=v1.identity,
         revision='format-only',
@@ -98,16 +97,16 @@ def behavior_falsification() -> None:
     )
     expect_violation(lambda: profile.history.commit(reviewer, rebound), 'history overwrite')
 
-    expect_violation(
-        lambda: profile.resolve(evaluator.Principal('', (), authenticated=False), v1.identity, v1.revision),
-        'anonymous read',
-    )
+    anonymous = evaluator.Principal('', (), authenticated=False)
+    no_role = evaluator.Principal('reader-no-role', ())
+    expect_violation(lambda: profile.history.read(anonymous, v1.identity, v1.revision), 'anonymous direct history read')
+    expect_violation(lambda: profile.history.read(no_role, v1.identity, v1.revision), 'unauthorized direct history read')
+    expect_violation(lambda: profile.resolve(anonymous, v1.identity, v1.revision), 'anonymous catalog read')
     expect_violation(
         lambda: profile.registry.publish(reader, v1, 'subject', '20', 'vendor-20'),
         'reader registry publish',
     )
 
-    # Exact retry is idempotent; physical provenance remap is forbidden in-place.
     original = profile.registry.publish(reviewer, v1, 'event-created', '17', 'vendor-abc')
     assert original == profile.registry.mapping(reader, v1)
     expect_violation(
@@ -177,7 +176,7 @@ def main() -> None:
         'd4b_catalog_tooling_falsification=PASS '
         'unreviewed_publish=blocked forged_provenance=blocked semantic_formatting=canonical '
         'duplicate_semantic_member=blocked semantic_only_break=detected history_rebind=blocked '
-        'mapping_rebind=blocked authz=blocked outage_reinterpretation=blocked '
+        'direct_history_authz=blocked mapping_rebind=blocked outage_reinterpretation=blocked '
         'product_identity_coupling=blocked selection_credit_authority_coupling=blocked'
     )
 

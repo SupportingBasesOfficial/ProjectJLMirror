@@ -70,7 +70,7 @@ def main() -> int:
 
     breaking_cases: list[dict] = []
     removed = copy.deepcopy(BASE); removed["fields"] = [f for f in removed["fields"] if f["name"] != "status"]; breaking_cases.append(removed)
-    changed_type = copy.deepcopy(BASE); next(f for f in changed_type["fields"] if f["name"] == "status")["type"] = "integer"; breaking_cases.append(changed_type)
+    changed_type = copy.deepcopy(BASE); changed_type_status = next(f for f in changed_type["fields"] if f["name"] == "status"); changed_type_status["type"] = "integer"; changed_type_status["enum"] = [1, 2]; breaking_cases.append(changed_type)
     required_add = copy.deepcopy(BASE); required_add["fields"].append({"name": "must", "type": "string", "required": True}); breaking_cases.append(required_add)
     optional_to_required = copy.deepcopy(BASE); next(f for f in optional_to_required["fields"] if f["name"] == "note")["required"] = True; breaking_cases.append(optional_to_required)
     nullable_narrow = copy.deepcopy(BASE); next(f for f in nullable_narrow["fields"] if f["name"] == "note")["nullable"] = False; breaking_cases.append(nullable_narrow)

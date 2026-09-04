@@ -81,16 +81,27 @@ def semantic_manifest(contract: dict[str, Any]) -> dict[str, Any]:
     normalized = []
     names: set[str] = set()
     for field in fields:
+        if not isinstance(field, dict):
+            raise ContractError("each field must be an object")
         name = field.get("name")
+        field_type = field.get("type")
+        enum = field.get("enum")
         if not isinstance(name, str) or not name or name in names:
             raise ContractError("field names must be unique non-empty strings")
+        if not isinstance(field_type, str) or not field_type:
+            raise ContractError(f"field type must be a non-empty string: {name}")
+        if enum is not None:
+            if not isinstance(enum, list) or not enum:
+                raise ContractError(f"enum must be a non-empty list when present: {name}")
+            if len(set(map(repr, enum))) != len(enum):
+                raise ContractError(f"enum values must be unique: {name}")
         names.add(name)
         normalized.append({
             "name": name,
-            "type": field.get("type"),
+            "type": field_type,
             "required": bool(field.get("required", False)),
             "nullable": bool(field.get("nullable", False)),
-            "enum": sorted(field.get("enum", [])) if field.get("enum") is not None else None,
+            "enum": sorted(enum, key=repr) if enum is not None else None,
             "immutable_for_equivalence": bool(field.get("immutable_for_equivalence", False)),
         })
     return {
@@ -108,6 +119,9 @@ def compatibility(old: dict[str, Any], new: dict[str, Any]) -> tuple[bool, list[
     new_fields = {item["name"]: item for item in new_manifest["fields"]}
     reasons: list[str] = []
 
+    if old_manifest["contract_family"] != new_manifest["contract_family"]:
+        reasons.append("contract_family_change")
+
     for name, old_field in old_fields.items():
         new_field = new_fields.get(name)
         if new_field is None:
@@ -115,12 +129,19 @@ def compatibility(old: dict[str, Any], new: dict[str, Any]) -> tuple[bool, list[
             continue
         if new_field["type"] != old_field["type"]:
             reasons.append(f"type_change:{name}")
+        if not old_field["required"] and new_field["required"]:
+            reasons.append(f"required_tightened:{name}")
         if old_field["nullable"] and not new_field["nullable"]:
             reasons.append(f"nullable_narrowed:{name}")
-        old_enum = set(old_field["enum"] or [])
-        new_enum = set(new_field["enum"] or [])
-        if old_enum and not old_enum.issubset(new_enum):
-            reasons.append(f"enum_narrowed:{name}")
+        old_enum = old_field["enum"]
+        new_enum = new_field["enum"]
+        if old_enum is None and new_enum is not None:
+            reasons.append(f"enum_introduced:{name}")
+        elif old_enum is not None:
+            if new_enum is None:
+                pass  # widening is backward-compatible for the reference profile
+            elif not set(old_enum).issubset(set(new_enum)):
+                reasons.append(f"enum_narrowed:{name}")
         if old_field["immutable_for_equivalence"] != new_field["immutable_for_equivalence"]:
             reasons.append(f"equivalence_scope_change:{name}")
 
@@ -132,6 +153,8 @@ def compatibility(old: dict[str, Any], new: dict[str, Any]) -> tuple[bool, list[
         reasons.append("comparison_profile_change")
     if not old_manifest["historical_reader"]:
         reasons.append("old_historical_reader_missing")
+    if not new_manifest["historical_reader"]:
+        reasons.append("new_historical_reader_missing")
 
     return not reasons, reasons
 

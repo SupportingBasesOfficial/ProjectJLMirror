@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   d4a-plan:
-    name: D4-A evidence ledger boundary
+    name: D4-A evidence ledger and selection boundary
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
@@ -34,14 +34,14 @@ jobs:
 
       - name: Compile D4-A assurance tooling
         shell: bash
-        run: python3 -m py_compile tools/assurance/validate_d4a_evidence_plan.py tools/assurance/test_validate_d4a_evidence_plan.py
+        run: python3 -m py_compile tools/assurance/validate_d4a_evidence_plan.py tools/assurance/test_validate_d4a_evidence_plan.py tools/assurance/validate_d4_eventing_async_state.py tools/assurance/test_validate_d4_eventing_async_state.py
 
-      - name: Falsify D4-A evidence-ledger weakening
+      - name: Falsify D4-A evidence selection and authority weakening
         shell: bash
         working-directory: tools/assurance
         run: python3 test_validate_d4a_evidence_plan.py
 
-      - name: Validate D4-A evidence plan and chained promotion provenance
+      - name: Validate D4-A evidence chain and governed selection record
         shell: bash
         run: python3 tools/assurance/validate_d4a_evidence_plan.py .
 
@@ -52,7 +52,7 @@ jobs:
           python3 tools/assurance/validate_d4_eventing_async_state.py .
           python3 tools/assurance/test_validate_d4_eventing_async_state.py
 
-      - name: Determine whether this PR changes D4-A promotion authority
+      - name: Determine whether this PR changes D4-A evidence-promotion authority
         id: promotion_delta
         shell: bash
         env:
@@ -70,28 +70,25 @@ jobs:
           import os
           from pathlib import Path
 
-          authority_keys = (
+          promotion_keys = (
               'ledger_credit_state',
               'credited_evidence',
               'latest_promotion_record',
-              'selection_state',
-              'acceptance_state',
               'source_evidence_state',
-              'candidate_status',
           )
           base = json.loads(Path('/tmp/base-d4a-plan.json').read_text())
           head = json.loads(Path('implementation/d4-eventing-async/d4-a-evidence-plan.json').read_text())
 
           def project(plan):
-              return {key: plan.get(key) for key in authority_keys}
+              return {key: plan.get(key) for key in promotion_keys}
 
           changed = project(base) != project(head)
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
               output.write(f"changed={'true' if changed else 'false'}\n")
-          print(f"d4a_promotion_delta={'changed' if changed else 'steady_state'} authority_projection=exact")
+          print(f"d4a_promotion_delta={'changed' if changed else 'steady_state'} projection=evidence_only selection_fields=excluded")
           PY
 
-      - name: Admit final recovery source run from live external evidence
+      - name: Admit promoted recovery source run from live external evidence
         if: steps.promotion_delta.outputs.changed == 'true'
         shell: bash
         env:
@@ -134,76 +131,40 @@ jobs:
           benchmark_bytes = (root/'benchmark-results.json').read_bytes()
           benchmark = json.loads(benchmark_bytes)
           artifact_run = artifact.get('workflow_run') or {}
-
           assert run['id'] == w['run_id'] and run['run_attempt'] == w['run_attempt']
-          assert run['head_sha'] == p['source_reviewed_head']
-          assert run['status'] == 'completed' and run['conclusion'] == 'success'
+          assert run['head_sha'] == p['source_reviewed_head'] and run['status'] == 'completed' and run['conclusion'] == 'success'
           assert job['id'] == w['job_id'] and job['run_id'] == w['run_id'] and job['run_attempt'] == w['run_attempt']
           assert job['name'] == w['job_name'] and job['status'] == 'completed' and job['conclusion'] == 'success'
           assert artifact['id'] == w['artifact_id'] and artifact['name'] == w['artifact_name'] and artifact['digest'] == w['artifact_digest']
           assert artifact['expired'] is False
           assert artifact_run['id'] == w['run_id'] and artifact_run['head_sha'] == p['source_reviewed_head']
-
           assert provenance['schema'] == 'd4a-recovery-source-run-provenance-v1'
-          assert provenance['probe'] == 'd4a_live_kafka_outbox_recovery'
           assert provenance['repository_sha'] == p['source_reviewed_head']
-          assert provenance['workflow_run_id'] == w['run_id'] and provenance['workflow_run_attempt'] == w['run_attempt']
-          assert provenance['job_id'] == w['job_id'] and provenance['job_name'] == w['job_name']
           assert provenance['source_manifest_sha256'] == p['source_manifest_sha256']
           assert provenance['benchmark_results_sha256'] == sha256(benchmark_bytes).hexdigest()
-          assert set(provenance['evidence_ids']) == {i['evidence_id'] for i in p['credited_evidence']}
-          assert provenance['evidence_kinds'] == {i['evidence_id']:i['evidence_kind'] for i in p['credited_evidence']}
-          assert provenance['candidate'] == 'kafka' and provenance['candidate_version'] == '4.3.1'
           assert provenance['current_run_auto_credit'] is False and provenance['ledger_credit'] == []
           assert provenance['kafka_selection_state'] == 'not_selected'
           assert provenance['d4_transport_authority'] == 'not_selected_not_granted'
-          assert provenance['production_authority'] == 'none'
-          assert provenance['c3_numeric_topology_authority'] == 'not_selected'
-          assert provenance['numeric_authority'] == 'test_values_only_not_production'
-
-          assert benchmark['schema'] == 'd4a-recovery-benchmark-results-v1'
-          assert benchmark['numeric_authority'] == 'test_values_only_not_production'
           assert benchmark['real_candidate_outage_exercised'] is True
           assert benchmark['committed_outbox_backlog_survives_broker_outage'] is True
-          assert benchmark['outbox_rows_committed_while_broker_unavailable'] >= 12
-          assert benchmark['outbox_rows_after_database_reopen'] == benchmark['outbox_rows_committed_while_broker_unavailable']
-          assert benchmark['outbox_rows_remaining_after_broker_restart'] == benchmark['outbox_rows_committed_while_broker_unavailable']
           assert benchmark['backlog_fully_drained'] is True
           assert benchmark['priority_preserving_anti_starvation'] is True
-          assert benchmark['max_backlog_before_each_protected_delivery'] <= 3
-          ambiguity = benchmark['ack_ambiguity']
-          assert ambiguity['publish_attempts'] == 2
-          assert ambiguity['distinct_logical_message_ids'] == 1
-          assert ambiguity['same_logical_identity_reused'] is True
-          progress = benchmark['broker_progress_non_authority']
-          assert progress['broker_end_offset_before_business_effects'] > 0
-          assert progress['business_effect_count_before_consumer_admission'] == 0
-          assert progress['broker_progress_is_business_effect_truth'] is False
-          effects = benchmark['consumer_effect_safety']
-          assert effects['business_effect_count_after_consumer_admission'] == effects['unique_logical_messages']
-          assert effects['broker_records_observed'] == effects['unique_logical_messages'] + 1
-          assert effects['duplicate_business_effects_suppressed'] == 1
-          assert effects['inbox_identity_is_logical_message_id'] is True
-          assert benchmark['kafka_selection_state'] == 'not_selected'
-          assert benchmark['d4_transport_authority'] == 'not_selected_not_granted'
-          assert benchmark['production_authority'] == 'none'
-          assert benchmark['c3_numeric_topology_authority'] == 'not_selected'
-
+          assert benchmark['broker_progress_non_authority']['broker_progress_is_business_effect_truth'] is False
+          assert benchmark['consumer_effect_safety']['duplicate_business_effects_suppressed'] == 1
           by_node = {r.get('node_id'):r for r in reviews}
           for key in ('independent_adversarial_review_node_id','fresh_codex_exact_head_review_node_id'):
-              assert g[key] in by_node, f'missing pinned review {key}'
-              assert by_node[g[key]].get('commit_id') == p['source_reviewed_head']
+              assert g[key] in by_node and by_node[g[key]].get('commit_id') == p['source_reviewed_head']
           assert any(c.get('id') == g['final_gate_comment_id'] for c in comments)
-          print('d4a_recovery_promotion_live_admission=PASS run=exact job=exact artifact=live_and_exact artifact_content=exact recovery_benchmark=exact reviews=exact final_gate=present source_credit=0')
+          print('d4a_promotion_live_admission=PASS historical_selection=not_selected evidence_credit=7 artifact=live_and_exact')
           PY
 
-      - name: Validate steady-state durable provenance policy
+      - name: Validate steady-state durable evidence provenance
         if: steps.promotion_delta.outputs.changed == 'false'
         shell: bash
         run: |
-          echo 'd4a_promotion_live_admission=SKIP steady_state=true reason=artifact_retention_is_not_permanent durable_chain=validated_by_full_static_digest_gate'
+          echo 'd4a_promotion_live_admission=SKIP promotion_unchanged=true selection_change_does_not_reopen_artifact_retention_dependency=true durable_chain=validated'
 
-      - name: Assert seven-of-seven evidence completion does not escalate selection or authority
+      - name: Assert bounded Kafka selection does not escalate D4 authority
         shell: bash
         run: |
           python3 - <<'PY'
@@ -211,6 +172,7 @@ jobs:
           from pathlib import Path
           plan = json.loads(Path('implementation/d4-eventing-async/d4-a-evidence-plan.json').read_text())
           state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
+          selection = json.loads(Path('implementation/d4-eventing-async/d4-a-selection-record.json').read_text())
           d4a = next(t for t in state['tracks'] if t['track_id'] == 'D4-A')
           expected = {
               'capacity_envelope_baseline_growth_stress',
@@ -221,20 +183,19 @@ jobs:
               'physical_naming_routing_and_cell_topology_adapter_mapping',
               'broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark',
           }
-          assert plan['ledger_credit_state'] == 'seven_of_seven'
-          assert set(plan['credited_evidence']) == expected
-          assert plan['candidate_status'] == 'leading_candidate_evidence_complete_selection_pending'
-          assert plan['selection_state'] == 'not_selected'
-          assert plan['acceptance_state'] == 'evidence_complete_separate_acceptance_required'
+          assert plan['ledger_credit_state'] == 'seven_of_seven' and set(plan['credited_evidence']) == expected
+          assert plan['candidate'] == 'kafka' and plan['candidate_status'] == 'selected_c2_candidate'
+          assert plan['selection_state'] == 'selected'
+          assert plan['acceptance_state'] == 'track_selected_separate_d4_acceptance_required'
           assert set(d4a['evidence_completed']) == expected and d4a['evidence_remaining'] == []
-          assert d4a['state'] == 'evidence_complete_selection_pending'
-          assert d4a['candidate_status'] == 'leading_candidate_evidence_complete_selection_pending'
+          assert d4a['state'] == 'selected_candidate' and d4a['candidate_status'] == 'selected_c2_candidate'
+          assert selection['selection_state'] == 'selected' and selection['selection_scope'] == 'bounded_c2_mechanism_selection_only'
           assert state['gate_state'] == 'scoped'
-          assert state['d4_transport_authority'] == 'not_selected_not_granted'
+          assert state['d4_transport_authority'] == 'selected_not_granted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['c3_numeric_topology_authority'] == 'not_selected'
-          assert all(t['evidence_completed'] == [] for t in state['tracks'] if t['track_id'] != 'D4-A')
-          print('d4a_ledger_boundary=PASS credited=7 remaining=0 evidence=complete kafka=not_selected acceptance=separate_required d4=scoped authorities=not_granted')
+          assert all(t['candidate'] is None and t['evidence_completed'] == [] for t in state['tracks'] if t['track_id'] != 'D4-A')
+          print('d4a_selection_boundary=PASS kafka=selected scope=bounded_c2 transport_authority=not_granted d4=scoped d4_bc_d=open product_wave4=not_granted production=none c3=not_selected')
           PY

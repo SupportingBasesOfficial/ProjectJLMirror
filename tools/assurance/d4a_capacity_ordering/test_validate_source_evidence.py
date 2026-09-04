@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 
-from validate_source_evidence import load_objects, validate_objects
+from validate_source_evidence import load_objects, validate_objects, FINAL_RECOVERY_ID
 
 
 def must_fail(name: str, mutate, expected: str) -> None:
@@ -14,6 +14,7 @@ def must_fail(name: str, mutate, expected: str) -> None:
 
 
 def main() -> int:
+    d4a = lambda st: next(t for t in st["tracks"] if t["track_id"] == "D4-A")
     must_fail("mutable Kafka tag", lambda s,p,l,st: s.__setitem__("candidate_image", "apache/kafka:4.3.1"), "Kafka image pin drift")
     must_fail("physical partition key", lambda s,p,l,st: p["ordering_scope_mappings"]["per_subject_ordered"].__setitem__("partition_key", "topic+partition"), "physical transport identity")
     must_fail("missing ordering profile", lambda s,p,l,st: p["ordering_scope_mappings"].pop("per_source_ordered"), "ordering scope coverage drift")
@@ -31,9 +32,14 @@ def main() -> int:
     must_fail("fallback changes logical identity", lambda s,p,l,st: p["tenant_cohort_fallback"].__setitem__("logical_contract_identity_changes", True), "must not change logical contract identity")
     must_fail("source auto credit", lambda s,p,l,st: s.__setitem__("ledger_credit", ["capacity_envelope_baseline_growth_stress"]), "source package self-promotion")
     must_fail("source historical prior credit rewrite", lambda s,p,l,st: s["prior_promoted_ledger_credit"].append("capacity_envelope_baseline_growth_stress"), "source historical prior promoted credit drift")
-    must_fail("unauthorized seventh global credit", lambda s,p,l,st: l["credited_evidence"].append("broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark"), "global promoted six-of-seven credit drift")
-    must_fail("outage recovery overclaim", lambda s,p,l,st: s.__setitem__("outage_recovery_benchmark_claimed", True), "D4-A7 outage recovery overclaim")
-    print("d4a_capacity_ordering_negative_controls=PASS source_immutability=blocked global_six_of_seven=exact seventh_credit=blocked pin=blocked device_cardinality=blocked fake_fallback=blocked authority_scope=preserved")
+    must_fail("remove final recovery global credit", lambda s,p,l,st: l["credited_evidence"].remove(FINAL_RECOVERY_ID), "global promoted seven-of-seven credit drift")
+    must_fail("duplicate eighth global credit", lambda s,p,l,st: l["credited_evidence"].append(FINAL_RECOVERY_ID), "global promoted seven-of-seven credit multiplicity drift")
+    must_fail("state loses final recovery credit", lambda s,p,l,st: d4a(st)["evidence_completed"].remove(FINAL_RECOVERY_ID), "completed seven-of-seven evidence drift")
+    must_fail("state reopens recovery", lambda s,p,l,st: d4a(st)["evidence_remaining"].append(FINAL_RECOVERY_ID), "no remaining evidence")
+    must_fail("historical outage recovery overclaim", lambda s,p,l,st: s.__setitem__("outage_recovery_benchmark_claimed", True), "historical source D4-A7 outage recovery overclaim")
+    must_fail("global Kafka selection", lambda s,p,l,st: l.__setitem__("selection_state", "selected"), "plan must not select Kafka")
+    must_fail("skip separate acceptance", lambda s,p,l,st: l.__setitem__("acceptance_state", "accepted"), "require separate acceptance")
+    print("d4a_capacity_ordering_negative_controls=PASS source_immutability=blocked historical_result=6 global_seven_of_seven=exact evidence_reopen=blocked pin=blocked device_cardinality=blocked fake_fallback=blocked silent_selection=blocked authority_scope=preserved")
     return 0
 
 

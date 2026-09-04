@@ -19,6 +19,7 @@ PRIOR_CREDIT = {
     "ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency",
     "physical_naming_routing_and_cell_topology_adapter_mapping",
 }
+EXPECTED_GLOBAL_CREDIT = PRIOR_CREDIT | {EVIDENCE_ID}
 EXPECTED_IMAGE_INDEX = "sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837"
 EXPECTED_AMD64 = "sha256:ccd1314e47ec76909e01f86308b4dcf2064f19f7c89759234322314b0e319e26"
 EXPECTED_IMAGE = f"apache/kafka:4.3.1@{EXPECTED_IMAGE_INDEX}"
@@ -52,7 +53,7 @@ def validate_objects(source: dict, profile: dict, plan: dict, state: dict) -> li
     require(source.get("package_id") == "d4-a-recovery-source-v1", "source package identity drift")
     require(source.get("canonical_base_commit") == "3f517258cdade3adc55765435cc087f9a8e90c3a", "source canonical base drift")
     require(source.get("track") == "D4-A", "source track drift")
-    require(source.get("candidate") == "kafka" and source.get("candidate_status") == "leading_candidate_closure_pending", "candidate state drift")
+    require(source.get("candidate") == "kafka" and source.get("candidate_status") == "leading_candidate_closure_pending", "historical source candidate state drift")
     require(source.get("candidate_version") == "4.3.1", "candidate version drift")
     require(source.get("candidate_image") == EXPECTED_IMAGE, "Kafka image pin drift")
     require(source.get("candidate_image_index_digest") == EXPECTED_IMAGE_INDEX, "Kafka index digest drift")
@@ -96,13 +97,19 @@ def validate_objects(source: dict, profile: dict, plan: dict, state: dict) -> li
     require(invariants.get("protected_current_work_must_not_starve") is True, "protected anti-starvation invariant drift")
     require(invariants.get("backlog_must_eventually_drain") is True, "backlog drain invariant drift")
 
-    require(plan.get("ledger_credit_state") == "six_of_seven", "global ledger must remain six_of_seven in source PR")
-    require(set(plan.get("credited_evidence", [])) == PRIOR_CREDIT, "global promoted six-of-seven credit drift")
-    require(EVIDENCE_ID not in set(plan.get("credited_evidence", [])), "recovery source auto-credited in plan")
-    require(plan.get("selection_state") == "not_selected" and plan.get("acceptance_state") == "not_eligible", "plan authority escalation")
+    plan_credit = plan.get("credited_evidence", [])
+    require(plan.get("ledger_credit_state") == "seven_of_seven", "global ledger must be seven_of_seven after separate promotion")
+    require(set(plan_credit) == EXPECTED_GLOBAL_CREDIT, "global promoted seven-of-seven credit drift")
+    require(len(plan_credit) == len(EXPECTED_GLOBAL_CREDIT), "global promoted seven-of-seven credit multiplicity drift")
+    require(plan.get("selection_state") == "not_selected", "plan must not select Kafka")
+    require(plan.get("acceptance_state") == "evidence_complete_separate_acceptance_required", "plan must require separate acceptance")
     d4a = next((track for track in state.get("tracks", []) if track.get("track_id") == "D4-A"), {})
-    require(set(d4a.get("evidence_completed", [])) == PRIOR_CREDIT, "state completed six-of-seven evidence drift")
-    require(set(d4a.get("evidence_remaining", [])) == {EVIDENCE_ID}, "state must leave recovery evidence pending")
+    completed = d4a.get("evidence_completed", [])
+    remaining = d4a.get("evidence_remaining", [])
+    require(set(completed) == EXPECTED_GLOBAL_CREDIT, "state completed seven-of-seven evidence drift")
+    require(len(completed) == len(EXPECTED_GLOBAL_CREDIT), "state completed seven-of-seven evidence multiplicity drift")
+    require(remaining == [], "state must have no D4-A evidence remaining after promotion")
+    require(d4a.get("state") == "evidence_complete_selection_pending", "state must remain evidence-complete selection-pending")
     require(state.get("gate_state") == "scoped", "D4 must remain scoped")
     require(state.get("d4_transport_authority") == "not_selected_not_granted", "D4 transport authority escalation")
     require(state.get("canonical_product_implementation_authority") == "not_granted", "Product authority escalation")
@@ -116,7 +123,7 @@ def main() -> None:
     errors = validate_objects(*load_objects())
     if errors:
         raise AssertionError("; ".join(errors))
-    print("d4a_recovery_source_manifest=PASS source_credit=0 global_credit=6 recovery_pending=1 live_kafka_outage=required ack_ambiguity=same_identity priority_drain=bounded broker_progress_business_truth=false numerics=test_only authorities=not_granted")
+    print("d4a_recovery_source_manifest=PASS evidence=1 source_credit=0 historical_prior=6 global_credit=7 recovery_promoted=1 live_kafka_outage=historically_proven ack_ambiguity=same_identity priority_drain=bounded broker_progress_business_truth=false kafka=not_selected acceptance=separate_required authorities=not_granted")
 
 
 if __name__ == "__main__":

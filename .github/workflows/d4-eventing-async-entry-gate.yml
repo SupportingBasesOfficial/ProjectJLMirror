@@ -54,7 +54,7 @@ jobs:
         shell: bash
         run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
 
-      - name: Preserve D4 non-authority boundary
+      - name: Preserve D4 non-authority boundary after D4-A evidence completion
         shell: bash
         run: |
           set -euo pipefail
@@ -70,8 +70,8 @@ jobs:
               'exactly_once_guardrail_consumer_inbox_enforcement',
               'ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency',
               'physical_naming_routing_and_cell_topology_adapter_mapping',
+              'broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark',
           }
-          expected_remaining = {'broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark'}
           assert state['gate_state'] == 'scoped'
           assert state['d4_transport_authority'] == 'not_selected_not_granted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
@@ -79,10 +79,12 @@ jobs:
           assert state['production_authority'] == 'none'
           assert state['c3_numeric_topology_authority'] == 'not_selected'
           assert d4a['candidate'] == 'kafka'
-          assert d4a['candidate_status'] == 'leading_candidate_closure_pending'
+          assert d4a['candidate_status'] == 'leading_candidate_evidence_complete_selection_pending'
+          assert d4a['state'] == 'evidence_complete_selection_pending'
           assert set(d4a['evidence_completed']) == expected_credit
-          assert set(d4a['evidence_remaining']) == expected_remaining
+          assert d4a['evidence_remaining'] == []
           assert all(track['evidence_completed'] == [] for track in state['tracks'] if track['track_id'] != 'D4-A')
-          assert sum(len(track['evidence_completed']) for track in state['tracks']) == 6
-          print('d4_scoped_boundary=PASS kafka=leading_candidate_closure_pending evidence_credited=6 remaining=1 transport=not_granted wave4=not_granted production=none c3=not_selected')
+          assert all(track['candidate'] is None and track['candidate_status'] == 'not_selected' for track in state['tracks'] if track['track_id'] != 'D4-A')
+          assert sum(len(track['evidence_completed']) for track in state['tracks']) == 7
+          print('d4_scoped_boundary=PASS d4a_evidence=complete kafka=not_selected evidence_credited=7 remaining=0 transport=not_granted wave4=not_granted production=none c3=not_selected other_tracks=open')
           PY

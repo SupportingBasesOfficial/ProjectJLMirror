@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -15,6 +16,10 @@ MAX_JSON_MAGNITUDE = Decimal((1 << 63) - 1)
 MAX_PROTO_FIELD_NUMBER = (1 << 29) - 1
 MAX_PROTO_VARINT_VALUE = (1 << 64) - 1
 PROTO_RESERVED_FIELD_RANGE = range(19000, 20000)
+MAX_AVRO_FIELDS = 64
+MAX_AVRO_NAME_BYTES = 128
+MAX_AVRO_ALIASES_PER_FIELD = 16
+MAX_AVRO_SCALAR_BYTES = MAX_MESSAGE_BYTES
 
 
 class EvidenceViolation(ValueError):
@@ -312,6 +317,11 @@ class AvroRecordSchema:
     fields: tuple[AvroFieldSpec, ...]
 
 
+def _bounded_avro_name(value: str, label: str) -> None:
+    if not isinstance(value, str) or not value or len(value.encode("utf-8")) > MAX_AVRO_NAME_BYTES:
+        raise EvidenceViolation(f"Avro {label} exceeds evidence name bound")
+
+
 def _avro_value_matches_type(value: Any, avro_type: str) -> bool:
     if avro_type == "null":
         return value is None
@@ -322,11 +332,11 @@ def _avro_value_matches_type(value: Any, avro_type: str) -> bool:
     if avro_type == "long":
         return isinstance(value, int) and not isinstance(value, bool) and -(1 << 63) <= value <= (1 << 63) - 1
     if avro_type in {"float", "double"}:
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
     if avro_type == "bytes":
-        return isinstance(value, bytes)
+        return isinstance(value, bytes) and len(value) <= MAX_AVRO_SCALAR_BYTES
     if avro_type == "string":
-        return isinstance(value, str)
+        return isinstance(value, str) and len(value.encode("utf-8")) <= MAX_AVRO_SCALAR_BYTES
     return False
 
 
@@ -335,17 +345,24 @@ def _avro_types_compatible(writer_types: tuple[str, ...], reader_types: tuple[st
 
 
 def validate_avro_schema(schema: AvroRecordSchema) -> None:
+    _bounded_avro_name(schema.name, "record name")
+    if len(schema.fields) > MAX_AVRO_FIELDS:
+        raise EvidenceViolation("Avro field count exceeds evidence bound")
     names: set[str] = set()
     aliases: dict[str, str] = {}
     for field in schema.fields:
+        _bounded_avro_name(field.name, "field name")
         if field.name in names:
             raise EvidenceViolation(f"duplicate Avro field name {field.name}")
         names.add(field.name)
         if not field.avro_types or len(set(field.avro_types)) != len(field.avro_types) or any(t not in AVRO_PRIMITIVES for t in field.avro_types):
             raise EvidenceViolation(f"invalid Avro type declaration for {field.name}")
         if field.default_present and not _avro_value_matches_type(field.default, field.avro_types[0]):
-            raise EvidenceViolation(f"Avro default for {field.name} must match first declared type")
+            raise EvidenceViolation(f"Avro default for {field.name} must match first declared type and evidence bounds")
+        if len(field.aliases) > MAX_AVRO_ALIASES_PER_FIELD:
+            raise EvidenceViolation(f"Avro alias count exceeds evidence bound for {field.name}")
         for alias in field.aliases:
+            _bounded_avro_name(alias, "field alias")
             if alias == field.name:
                 raise EvidenceViolation("Avro field alias cannot duplicate its canonical name in evidence profile")
             owner = aliases.get(alias)
@@ -361,6 +378,8 @@ def resolve_avro_record(writer: AvroRecordSchema, reader: AvroRecordSchema, datu
     validate_avro_schema(reader)
     if writer.name != reader.name:
         raise EvidenceViolation("Avro writer/reader record identity mismatch")
+    if not isinstance(datum, dict) or len(datum) > MAX_AVRO_FIELDS:
+        raise EvidenceViolation("Avro datum field count exceeds evidence bound")
     writer_fields = {field.name: field for field in writer.fields}
     if set(datum) - set(writer_fields):
         raise EvidenceViolation("datum contains field absent from pinned Avro writer schema")
@@ -377,7 +396,7 @@ def resolve_avro_record(writer: AvroRecordSchema, reader: AvroRecordSchema, datu
                 raise EvidenceViolation(f"Avro writer/reader type incompatibility for {target.name}")
             value = datum[source_name]
             if not any(_avro_value_matches_type(value, avro_type) for avro_type in source.avro_types):
-                raise EvidenceViolation(f"Avro datum type violates writer schema for {source_name}")
+                raise EvidenceViolation(f"Avro datum type or size violates writer schema for {source_name}")
             resolved[target.name] = value
         elif target.default_present:
             resolved[target.name] = target.default
@@ -394,10 +413,18 @@ def validate_avro_contract(value: dict[str, Any]) -> None:
         raise EvidenceViolation("Avro nullable enum semantics violated")
 
 
-def avro_semantic_equivalence(writer: AvroRecordSchema, reader: AvroRecordSchema, datum: dict[str, Any]) -> bytes:
+def _canonical_avro_value(value: Any, reader_types: tuple[str, ...]) -> tuple[str, Any]:
+    for avro_type in reader_types:
+        if _avro_value_matches_type(value, avro_type):
+            return (avro_type, value)
+    raise EvidenceViolation("Avro resolved value does not match bounded reader type")
+
+
+def avro_semantic_equivalence(writer: AvroRecordSchema, reader: AvroRecordSchema, datum: dict[str, Any]) -> tuple[tuple[str, tuple[str, Any]], ...]:
     resolved = resolve_avro_record(writer, reader, datum)
     validate_avro_contract(resolved)
-    return json.dumps(resolved, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    reader_fields = {field.name: field for field in reader.fields}
+    return tuple((name, _canonical_avro_value(resolved[name], reader_fields[name].avro_types)) for name in sorted(resolved))
 
 
 def prove_static_schema_and_history(candidate: str, schema_ref: str, payload: bytes) -> None:
@@ -524,7 +551,11 @@ def prove_avro_profile() -> None:
         ),
     )
     datum = {"tenant_id": "t1", "event_type": "alarm"}
-    expected = b'{"event_type":"alarm","severity":"info","tenant_id":"t1"}'
+    expected = (
+        ("event_type", ("string", "alarm")),
+        ("severity", ("string", "info")),
+        ("tenant_id", ("string", "t1")),
+    )
     if avro_semantic_equivalence(writer_v1, reader_v2, datum) != expected:
         raise AssertionError("Avro writer-reader resolution is not deterministic")
     nullable_schema = AvroRecordSchema(
@@ -535,7 +566,8 @@ def prove_avro_profile() -> None:
             AvroFieldSpec("severity", ("null", "string"), default_present=True, default=None),
         ),
     )
-    if b'"severity":null' not in avro_semantic_equivalence(nullable_schema, nullable_schema, {"tenant_id": "t1", "event_type": "alarm", "severity": None}):
+    nullable_equivalence = avro_semantic_equivalence(nullable_schema, nullable_schema, {"tenant_id": "t1", "event_type": "alarm", "severity": None})
+    if ("severity", ("null", None)) not in nullable_equivalence:
         raise AssertionError("Avro nullable enum semantics were not preserved")
     incompatible_writer = AvroRecordSchema(
         "Event",
@@ -550,6 +582,12 @@ def prove_avro_profile() -> None:
         pass
     else:
         raise AssertionError("Avro incompatible writer/reader field types were accepted")
+    try:
+        resolve_avro_record(writer_v1, reader_v2, {"tenant_id": "x" * (MAX_AVRO_SCALAR_BYTES + 1), "event_type": "alarm"})
+    except EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("Avro oversized scalar was accepted")
     missing_required_reader = AvroRecordSchema("Event", reader_v2.fields + (AvroFieldSpec("region", ("string",)),))
     try:
         resolve_avro_record(writer_v1, missing_required_reader, datum)
@@ -593,8 +631,8 @@ def main() -> int:
         "json_bounds=proven protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked "
         "protobuf_protected_duplicates=blocked protobuf_oneof_duplicate=blocked protobuf_presence_enum=explicit "
         "protobuf_unknown_bytes=preserved protobuf_byte_order=noncanonical protobuf_repeated_order=preserved "
-        "avro_writer_reader_resolution=explicit avro_type_compatibility=checked avro_nullable_enum=explicit "
-        "avro_alias_ambiguity=blocked selection=not_selected ledger_credit=0"
+        "avro_writer_reader_resolution=explicit avro_type_compatibility=checked avro_datum_bounds=proven "
+        "avro_nullable_enum=explicit avro_alias_ambiguity=blocked selection=not_selected ledger_credit=0"
     )
     for candidate, result in sorted(results.items()):
         print(f"candidate={candidate} result={result}")

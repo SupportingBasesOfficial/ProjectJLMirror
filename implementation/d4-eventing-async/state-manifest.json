@@ -52,7 +52,7 @@
       "source_decisions": ["OPEN-EVT-002", "OPEN-EVT-003", "OPEN-EVT-004"],
       "candidate": null,
       "candidate_status": "not_selected",
-      "state": "candidate_selection_open",
+      "state": "evidence_complete_selection_pending",
       "required_evidence": [
         "canonical_bounded_serialization_profile",
         "parser_ambiguity_and_duplicate_field_negative_vectors",
@@ -60,14 +60,14 @@
         "historical_reader_and_equivalence_profile_continuity",
         "contract_version_representation_and_breaking_change_vectors"
       ],
-      "evidence_completed": [],
-      "evidence_remaining": [
+      "evidence_completed": [
         "canonical_bounded_serialization_profile",
         "parser_ambiguity_and_duplicate_field_negative_vectors",
         "schema_catalog_semantic_manifest_compatibility_ci",
         "historical_reader_and_equivalence_profile_continuity",
         "contract_version_representation_and_breaking_change_vectors"
-      ]
+      ],
+      "evidence_remaining": []
     },
     {
       "track_id": "D4-C",

@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import re
 from dataclasses import dataclass
 
 ELIGIBLE = "eligible_for_evidence_execution"
 MAX_ISSUANCE_SEQUENCE = (1 << 64) - 1
+_UINT64_MASK = MAX_ISSUANCE_SEQUENCE
+_PERMUTE_MULTIPLIER = 0x9E3779B185EBCA87  # odd => bijective modulo 2^64
+_PERMUTE_OFFSET = 0xD4B0C0DE5A17E11D
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,12 @@ class OpaqueMonotonicIssuer:
     def __init__(self) -> None:
         self._last_sequence = 0
 
+    @staticmethod
+    def _opaque_fixture_body(sequence: int) -> str:
+        # Affine permutation over uint64: collision-free for the bounded fixture domain.
+        permuted = (sequence * _PERMUTE_MULTIPLIER + _PERMUTE_OFFSET) & _UINT64_MASK
+        return base64.b32encode(permuted.to_bytes(8, "big", signed=False)).decode("ascii").rstrip("=")
+
     def issue(self, sequence: int) -> str:
         if not isinstance(sequence, int) or isinstance(sequence, bool):
             raise ValueError("issuance sequence must be an integer")
@@ -95,9 +103,7 @@ class OpaqueMonotonicIssuer:
             raise ValueError("issuance sequence outside bounded positive range")
         if sequence <= self._last_sequence:
             raise ValueError("issuance sequence must increase strictly")
-        material = b"d4b-axis-c-evidence-only\x00" + sequence.to_bytes(8, "big", signed=False)
-        token_body = base64.b32encode(hashlib.blake2s(material, digest_size=10).digest()).decode("ascii").rstrip("=")
-        token = f"cv_{token_body}"
+        token = f"cv_{self._opaque_fixture_body(sequence)}"
         self._last_sequence = sequence
         return token
 
@@ -163,6 +169,8 @@ def prove_opaque_monotonic_issuance(adapter: CandidateAdapter) -> tuple[str, str
     adapter.parse(second)
     if first == second:
         raise AssertionError("monotonic issuer produced duplicate opaque token")
+    if OpaqueMonotonicIssuer._opaque_fixture_body(1) == OpaqueMonotonicIssuer._opaque_fixture_body(2):
+        raise AssertionError("bijective fixture mapping collapsed distinct sequences")
     for invalid in (2, 1, 0, -1, MAX_ISSUANCE_SEQUENCE + 1):
         try:
             issuer.issue(invalid)
@@ -240,8 +248,8 @@ def main() -> int:
     print(
         "d4b_contract_version_candidate_source=PASS "
         "candidates=3 concrete_eligible=3 opaque_monotonic_issuance=proven bounded_issuance=true "
-        "ordering_authority=absent namespace_substitution=blocked breaking_reuse=blocked "
-        "historical_family_reinterpretation=blocked historical_bytes=preserved "
+        "opaque_fixture_uniqueness=deterministic_bijection ordering_authority=absent namespace_substitution=blocked "
+        "breaking_reuse=blocked historical_family_reinterpretation=blocked historical_bytes=preserved "
         "canonical_syntax_selection=false ledger_credit=0"
     )
     for candidate, result in sorted(results.items()):

@@ -364,6 +364,7 @@ def _materialize_avro_type(value: Any, avro_type: str) -> Any:
         if not isinstance(value, int) or isinstance(value, bool) or not (-(1 << 63) <= value <= (1 << 63) - 1): raise EvidenceViolation("Avro long mismatch")
         return value
     if avro_type == "float":
+        if not isinstance(value, (int, float)) or isinstance(value, bool): raise EvidenceViolation("Avro float mismatch")
         return _quantize_f32(value)
     if avro_type == "double":
         if not isinstance(value, (int, float)) or isinstance(value, bool): raise EvidenceViolation("Avro double mismatch")
@@ -584,6 +585,10 @@ def prove_avro_profile() -> None:
     if avro_semantic_equivalence(int_writer,float_reader,{"value":16777217}) != avro_semantic_equivalence(float_writer,float_reader,{"value":16777217.0}): raise AssertionError("float32 promotion width drift")
     expected_f32 = struct.unpack(">f", struct.pack(">f", 16777217.0))[0]
     if avro_semantic_equivalence(int_writer,float_reader,{"value":16777217}) != (("value",("float",expected_f32)),): raise AssertionError("Avro float not single precision")
+    for invalid_float in (True, "1.0"):
+        try: avro_semantic_equivalence(float_writer,float_reader,{"value":invalid_float})
+        except EvidenceViolation: pass
+        else: raise AssertionError("Avro float accepted non-numeric runtime mapping")
     try: avro_semantic_equivalence(double_writer,double_reader,{"value":10**10000})
     except EvidenceViolation: pass
     else: raise AssertionError("Avro double overflow not fail-closed")
@@ -612,7 +617,7 @@ def evaluate() -> dict[str, str]:
 
 def main() -> int:
     results = evaluate()
-    print("d4b_wire_schema_candidate_source=PASS candidates=3 concrete_eligible=3 identity_only_transport=bounded dynamic_schema_selection=blocked historical_profile_reinterpretation=blocked json_duplicates=blocked json_alias_collision=blocked json_numeric_mapping=context_independent json_distinct_decimals=preserved json_bounds=proven protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked protobuf_protected_duplicates=blocked protobuf_oneof_duplicate=blocked protobuf_presence_enum=explicit protobuf_unknown_bytes=preserved protobuf_byte_order=noncanonical protobuf_repeated_order=preserved avro_schema_ref_content=binding_exact avro_writer_fields=required avro_float_overflow=fail_closed avro_float_width=ieee754_binary32 avro_writer_reader_resolution=explicit avro_type_compatibility=checked avro_promotions=reader_canonicalized avro_event_contract=scoped avro_datum_bounds=proven avro_nullable_enum=explicit avro_alias_ambiguity=blocked selection=not_selected ledger_credit=0")
+    print("d4b_wire_schema_candidate_source=PASS candidates=3 concrete_eligible=3 identity_only_transport=bounded dynamic_schema_selection=blocked historical_profile_reinterpretation=blocked json_duplicates=blocked json_alias_collision=blocked json_numeric_mapping=context_independent json_distinct_decimals=preserved json_bounds=proven protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked protobuf_protected_duplicates=blocked protobuf_oneof_duplicate=blocked protobuf_presence_enum=explicit protobuf_unknown_bytes=preserved protobuf_byte_order=noncanonical protobuf_repeated_order=preserved avro_schema_ref_content=binding_exact avro_writer_fields=required avro_float_overflow=fail_closed avro_float_width=ieee754_binary32 avro_float_runtime_mapping=type_strict avro_writer_reader_resolution=explicit avro_type_compatibility=checked avro_promotions=reader_canonicalized avro_event_contract=scoped avro_datum_bounds=proven avro_nullable_enum=explicit avro_alias_ambiguity=blocked selection=not_selected ledger_credit=0")
     for candidate, result in sorted(results.items()): print(f"candidate={candidate} result={result}")
     return 0
 

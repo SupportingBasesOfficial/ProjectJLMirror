@@ -94,12 +94,13 @@ The evidence profile adds requirements beyond base JSON Schema validation:
 - canonical numeric semantics (`1.0` and `1e0` are equivalent; signed zero normalizes to zero);
 - distinct bounded decimal values remain distinct even above the exact-integer range of IEEE-754 binary64;
 - decimal canonicalization is constructed directly from the exact `Decimal.as_tuple()` representation and does **not** call context-sensitive `Decimal.normalize()`;
-- lowering or otherwise mutating the ambient thread-local Decimal context cannot change canonical equivalence;
+- numeric-magnitude admission uses a context-free absolute-value operation (`Decimal.copy_abs()` semantics) rather than arithmetic `abs()`, so lowering caller-local Decimal precision cannot round an out-of-bound value back into the admitted range;
+- lowering or otherwise mutating the ambient thread-local Decimal context cannot change canonical equivalence **or numeric-bound admission**;
 - deterministic recursive semantic normalization for content equivalence;
 - historical profile/schema binding;
 - no schema/code loading selected by untrusted message content.
 
-The specific numeric limits exercised here are test-profile bounds, not selected production thresholds. The context-independence rule is normative: authoritative equivalence cannot depend on caller-local Decimal precision.
+The specific numeric limits exercised here are test-profile bounds, not selected production thresholds. The context-independence rule is normative: authoritative equivalence and admission cannot depend on caller-local Decimal precision.
 
 ## Protobuf profile
 
@@ -141,6 +142,8 @@ The profile requires:
 - reader-only fields require defaults or resolution fails;
 - writer/reader field types must be compatible under the reviewed Avro promotion rules;
 - an incompatible type pair such as writer `boolean` → reader `string` fails closed;
+- **Avro union resolution preserves the writer branch selected on the wire**. When multiple union branches can map to the same host-language runtime type, the decoded datum must carry an explicit branch index; the harness fails closed rather than infer the branch from Python type or tuple order;
+- for a writer union such as `("float", "double")`, branch 0 and branch 1 remain semantically distinct even when both surface as Python `float`; the branch-0 value is materialized at binary32 before reader resolution while branch 1 preserves the double representation;
 - an allowed promotion is not merely *validated*: the writer-side datum is converted/materialized into the selected reader representation before equivalence;
 - numeric promotion such as writer `int` → reader `double` canonicalizes to the same reader representation as a native writer `double` datum with the same reader value;
 - **Avro `float` is materialized at its declared IEEE-754 binary32 width before equivalence**, both when the writer type is `float` and when a value is promoted into a reader `float`;
@@ -172,9 +175,9 @@ The harness remains a specification-level evidence model, not a substitute for a
 
 ## Runtime-independence boundary
 
-The source harness deliberately does not declare one SDK's generated-object behavior authoritative. It exercises JSON bytes plus bounded/context-independent Decimal object semantics, Protobuf wire semantics before generated bindings, and bounded Avro writer/reader type resolution with exact reviewed schema binding, historical schema-content digest, pre-projection writer validation, declared-width float materialization, strict runtime type admission and explicit reader-side promotion.
+The source harness deliberately does not declare one SDK's generated-object behavior authoritative. It exercises JSON bytes plus bounded/context-independent Decimal object semantics, Protobuf wire semantics before generated bindings, and bounded Avro writer/reader type resolution with exact reviewed schema binding, historical schema-content digest, pre-projection writer validation, explicit writer-union branch identity, declared-width float materialization, strict runtime type admission and explicit reader-side promotion.
 
-A later Java, Go, Python, Rust or other implementation remains eligible only if these authoritative semantics survive. Runtime convenience or implicit language coercion cannot redefine canonical JLMirror contract meaning.
+A later Java, Go, Python, Rust or other implementation remains eligible only if these authoritative semantics survive. Runtime convenience, tuple order, implicit union inference or language coercion cannot redefine canonical JLMirror contract meaning.
 
 ## Cross-axis independence
 
@@ -196,7 +199,7 @@ The falsification suite blocks:
 - compressed input without a selected decompression profile;
 - schema/descriptor selection by untrusted message content;
 - historical cross-profile reinterpretation;
-- JSON protected duplicates/aliases, excessive nesting, lossy binary-float normalization, collapse of distinct bounded decimals and ambient-Decimal-context drift;
+- JSON protected duplicates/aliases, excessive nesting, lossy binary-float normalization, collapse of distinct bounded decimals, ambient-Decimal-context drift in canonicalization and ambient-context rounding that could weaken the numeric-magnitude bound;
 - Protobuf non-minimal varints, `uint64` overflow, protected last-one-wins collapse, same-member oneof duplication, cross-member oneof collision and presence/enum weakening;
 - Protobuf raw-byte-order authority and repeated-order loss;
 - loss of required Protobuf unknown binary fields;
@@ -204,6 +207,7 @@ The falsification suite blocks:
 - historical Avro same-reference content rebind when the persisted envelope digest no longer matches;
 - omission of a writer-declared Avro field followed by illegitimate reader-default fabrication;
 - malformed or oversized writer-only Avro fields being silently discarded before writer validation;
+- ambiguous Avro union branch inference from host-language type or schema tuple order, including `("float", "double")` values whose exact writer branch changes authoritative width semantics;
 - Avro `float` semantic drift caused by leaving a declared single-precision value in the host runtime's binary64 representation;
 - Avro `float`/`double` coercion of boolean or string runtime values into numeric contract values;
 - uncaught float/double conversion overflow escaping the fail-closed validation path;

@@ -50,7 +50,7 @@
     ],
     "hybrid_reviewed_git_plus_registry_catalog": [
       "reviewed_git_contract_is_authority_and_registry_is_a_derived_distribution_index",
-      "git_and_registry_provenance_are_both retained_without_conflating_their_identifiers",
+      "git_and_registry_provenance_are_both_retained_without_conflating_their_identifiers",
       "semantic_manifest_is_reviewed_in_git_and_mirrored_without_becoming_registry_defined",
       "historical_reader_upcaster_and_comparison_profile_metadata_remain_recoverable_from_reviewed_history",
       "both_review_and_registry_surfaces_require_authenticated_authorized_access",

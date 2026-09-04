@@ -33,7 +33,7 @@ def main() -> int:
     must_fail("source auto credit", lambda s,p,l,st: s.__setitem__("ledger_credit", ["capacity_envelope_baseline_growth_stress"]), "source package self-promotion")
     must_fail("source historical prior credit rewrite", lambda s,p,l,st: s["prior_promoted_ledger_credit"].append("capacity_envelope_baseline_growth_stress"), "source historical prior promoted credit drift")
     must_fail("remove final recovery global credit", lambda s,p,l,st: l["credited_evidence"].remove(FINAL_RECOVERY_ID), "global promoted seven-of-seven credit drift")
-    must_fail("duplicate eighth global credit", lambda s,p,l,st: l["credited_evidence"].append(FINAL_RECOVERY_ID), "global promoted seven-of-seven credit drift")
+    must_fail("duplicate eighth global credit", lambda s,p,l,st: l["credited_evidence"].append(FINAL_RECOVERY_ID), "global promoted seven-of-seven credit multiplicity drift")
     must_fail("state loses final recovery credit", lambda s,p,l,st: d4a(st)["evidence_completed"].remove(FINAL_RECOVERY_ID), "completed seven-of-seven evidence drift")
     must_fail("state reopens recovery", lambda s,p,l,st: d4a(st)["evidence_remaining"].append(FINAL_RECOVERY_ID), "no remaining evidence")
     must_fail("historical outage recovery overclaim", lambda s,p,l,st: s.__setitem__("outage_recovery_benchmark_claimed", True), "historical source D4-A7 outage recovery overclaim")

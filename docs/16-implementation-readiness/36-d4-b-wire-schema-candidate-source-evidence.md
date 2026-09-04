@@ -6,236 +6,149 @@
 
 ## Purpose
 
-This package executes governed candidate-dependent source evidence for the D4-B wire serialization/schema-language axis.
-
-It evaluates three concrete candidate classes admitted by the accepted plan:
+This package executes candidate-dependent source evidence for the D4-B wire serialization/schema-language axis. It evaluates:
 
 1. `bounded_json_plus_json_schema_profile`;
 2. `protobuf_profile`;
 3. `avro_profile`.
 
-The abstract `equivalent_reviewed_profile` remains `insufficient_evidence` because no concrete equivalent candidate has been supplied.
+Each concrete candidate may reach only `eligible_for_evidence_execution`. `equivalent_reviewed_profile` remains `insufficient_evidence`.
 
 ```text
-ELIGIBLE UNDER A GUARD PROFILE != DEFAULT FORMAT BEHAVIOR IS ACCEPTABLE
 ELIGIBLE FOR EVIDENCE != SELECTED
 SOURCE EVIDENCE != LEDGER CREDIT
 AXIS A RESULT != AXIS B/C CHOICE
-INTERNAL PROFILE != EXTERNAL WEBHOOK PROFILE BY IMPLICATION
 D4-B RESULT != D4 ACCEPTANCE
 ```
 
-## Official source facts used by the evidence
+## Common authority boundary
 
-The package is grounded in format specifications/documentation, not one language runtime:
-
-- Protocol Buffers encoding guide: `https://protobuf.dev/programming-guides/encoding/`
-  - singular duplicate fields are accepted with last-one-wins behavior;
-  - field serialization order is not guaranteed;
-  - raw serialized bytes therefore cannot be stable cross-runtime contract-equivalence authority.
-- Protocol Buffers editions guide: `https://protobuf.dev/programming-guides/editions/`
-  - unknown binary fields are preserved by binary message handling;
-  - some nonbinary conversion/copy paths can lose them.
-- Apache Avro 1.11.2 specification: `https://avro.apache.org/docs/1.11.2/specification/`
-  - historical interpretation uses writer schema plus reader schema;
-  - reader-only fields require a default or resolution fails;
-  - writer/reader field types must resolve according to Avro compatibility/promotion rules.
-- JSON Schema Draft 2020-12 validation vocabulary: `https://json-schema.org/draft/2020-12/json-schema-validation`
-  - JSON numeric instances are not inherently platform-bounded by JSON Schema.
-- JSON Schema object reference: `https://json-schema.org/understanding-json-schema/reference/object`
-  - additional object properties are allowed unless a profile explicitly restricts them.
-
-These source facts are pinned in the machine-owned manifest and cannot silently disappear from the evidence rationale.
-
-## Candidate result interpretation
-
-All three concrete candidates currently reach only `eligible_for_evidence_execution`.
-
-That means a reviewed JLMirror guard profile can satisfy the exercised Axis A contract. It does **not** mean raw/default format behavior is accepted, preferred, canonical, production-ready or implementation-authorized.
-
-## Common source-profile boundary
-
-### Static reviewed schema authority
-
-The harness uses a finite reviewed schema-reference set for every concrete candidate. Schema/descriptor/writer-reader selection is configuration authority, not message authority.
-
-Untrusted message content cannot provide a URL, descriptor, schema body or executable object that becomes authoritative. The harness explicitly attempts such message-driven selection and requires fail-closed behavior.
-
-For the Avro evidence profile, a reviewed reference is additionally bound to the **exact reviewed structural schema content**. `avro:event:v1` and `avro:event:v2` are not free-form labels: passing a different same-name schema under either reviewed reference fails closed before resolution.
-
-This source PR does not choose the future catalog/registry implementation. Axis B remains independent.
-
-### Historical interpretation
-
-Historical evidence binds candidate/profile identity, reviewed schema identity and original payload bytes. Re-reading with the same profile/schema preserves the exact historical bytes. Attempting to reinterpret those bytes through another candidate/profile or schema fails closed.
-
-For Avro, the historical envelope additionally persists a SHA-256 digest of the exact reviewed structural writer-schema content. Reading an old envelope recomputes the currently reviewed content digest for the bound `schema_ref` and fails closed if it differs. Therefore a future release cannot silently rebind `avro:event:v1` to different content and reinterpret historical bytes while preserving only the old string label.
-
-The digest is derived deterministically from record identity, ordered field inventory, declared primitive/union types, aliases, default-presence state and deterministic default representation. It is historical interpretation evidence, not a catalog-product selection or cryptographic authority grant.
-
-Axis A therefore proves the profile/schema/content binding requirement. Axis B remains responsible for the later catalog/provenance mechanism that makes reviewed schema content durably recoverable.
-
-### Compression boundary
-
-No compression algorithm/profile is selected here. The source harness therefore accepts only identity transport and rejects compressed input. With compression unselected, decompression work is exactly zero and bounded.
-
-A future compressed profile must separately prove a compressed-input bound, an output/decompression-work bound and fail-closed behavior before schema processing. Fixture message-size numbers remain source-evidence bounds, not selected production C3 numerics.
+- reviewed schema identity is configuration authority, never message authority;
+- message content cannot select arbitrary schema, descriptor, URL or executable code;
+- historical interpretation binds candidate/profile, schema identity and original bytes;
+- Avro historical envelopes additionally bind exact reviewed structural schema content by SHA-256;
+- compression remains unselected, therefore only identity transport is accepted and decompression work is zero;
+- `current_run_auto_credit=false` and `ledger_credit=[]` remain mandatory;
+- no result in this package grants implementation, production or D4-wide authority.
 
 ## Bounded JSON + JSON Schema profile
 
-The evidence profile adds requirements beyond base JSON Schema validation:
+The evidence profile requires:
 
-- strict UTF-8 parsing;
+- strict UTF-8 byte decoding;
 - duplicate-member rejection before object materialization;
-- protected alias-group collision rejection (`tenant_id`/`tenantId`, etc.);
+- protected alias collision rejection;
 - explicit required/type/null/enum/additional-property semantics;
-- platform message-size, nesting, numeric magnitude, precision and scale bounds;
-- bounded Decimal parsing instead of binary-float-dependent authoritative mapping;
-- canonical numeric semantics (`1.0` and `1e0` are equivalent; signed zero normalizes to zero);
-- distinct bounded decimal values remain distinct even above the exact-integer range of IEEE-754 binary64;
-- decimal canonicalization is constructed directly from the exact `Decimal.as_tuple()` representation and does **not** call context-sensitive `Decimal.normalize()`;
-- numeric-magnitude admission uses a context-free absolute-value operation (`Decimal.copy_abs()` semantics) rather than arithmetic `abs()`, so lowering caller-local Decimal precision cannot round an out-of-bound value back into the admitted range;
-- lowering or otherwise mutating the ambient thread-local Decimal context cannot change canonical equivalence **or numeric-bound admission**;
-- parser recursion exhaustion and post-parse depth-traversal recursion exhaustion are both translated into controlled `EvidenceViolation` rejection; Python `RecursionError` must never escape the bounded parser contract;
-- deterministic recursive semantic normalization for content equivalence;
-- historical profile/schema binding;
-- no schema/code loading selected by untrusted message content.
+- bounded message size, nesting, numeric precision, scale and magnitude;
+- bounded Decimal parsing rather than binary-float authoritative mapping;
+- context-independent numeric canonicalization built from exact `Decimal.as_tuple()` data;
+- context-independent magnitude admission using exact `Decimal.copy_abs()` semantics;
+- parser and traversal recursion exhaustion translated to controlled `EvidenceViolation` rejection;
+- decoded JSON **keys and string values must be Unicode scalar sequences**: escaped lone surrogates such as `"\ud800"` are rejected after JSON unescape, rather than preserved as host-language surrogate code points;
+- deterministic semantic normalization for content equivalence;
+- historical profile/schema binding and no message-selected schema loading.
 
-The specific numeric limits exercised here are test-profile bounds, not selected production thresholds. The context-independence rule is normative: authoritative equivalence and admission cannot depend on caller-local Decimal precision. Likewise, the depth bound is fail-closed even when an input hits host-runtime recursion limits before the normal depth comparison can finish.
+The Unicode-scalar rule is normative because raw UTF-8 validity alone is insufficient: JSON escape processing can construct an unpaired surrogate after the byte decoder has already succeeded. Canonical interpretation must therefore validate decoded strings, recursively including object keys and nested values, before they can become contract meaning.
 
 ## Protobuf profile
 
-Raw Protobuf wire behavior is intentionally **not** accepted as sufficient for protected fields.
+The evidence profile requires a bounded predecoder before generated bindings. It:
 
-The JLMirror evidence profile requires a bounded wire predecoder before generated bindings. It:
-
-- rejects non-minimal varints, including alternate byte encodings of the same value;
-- rejects varints above the `uint64` domain;
+- rejects non-minimal varints and `uint64` overflow;
 - rejects invalid/reserved field numbers;
-- rejects duplicate protected singular field numbers before normal last-one-wins behavior can collapse them;
-- rejects **repeated occurrences of the same protected oneof member** as well as collisions between different oneof members;
-- establishes required-field presence for the fixture's protected tenant/event fields;
-- makes optional severity semantics explicit: accepted enum values are explicit and null is represented by absence in this profile;
-- preserves unknown binary field bytes when forward compatibility requires it;
-- treats semantic normalization, not raw serializer bytes, as equivalence authority;
-- preserves occurrence order inside each repeated field number;
-- binds historical payloads to reviewed Protobuf profile/schema identity;
-- forbids descriptor/dynamic-message loading selected by untrusted message content.
-
-The normalization rule is asymmetric by design: occurrences belonging to **different field numbers** may be regrouped because wire serialization order is not contract authority; occurrences belonging to the **same repeated field number** retain their original order because repeated-value order may be semantic. A global sort would therefore be invalid even if deterministic.
-
-The same-oneof-member rule closes a separate ambiguity: `field 3=a, field 3=b` must not reach a generated binding that could collapse it with last-one-wins semantics merely because no *different* oneof member was present.
+- rejects duplicate protected singular fields before last-one-wins collapse;
+- rejects repeated occurrences of the same protected oneof member and collisions across protected oneof members;
+- makes required presence and enum semantics explicit;
+- preserves required unknown binary fields;
+- does not treat raw serialized cross-field order as equivalence authority;
+- preserves occurrence order inside the same repeated field number;
+- binds historical payload to reviewed profile/schema identity;
+- forbids descriptor/dynamic schema loading from untrusted message content.
 
 ## Avro profile
 
-Avro evolution is made explicit rather than implicit. The evidence model includes primitive/union type declarations and checks writer→reader compatibility before resolving values.
+Avro evolution is modeled through explicit writer schema, selected writer-union branch, reader schema and bounded reader-side promotion.
 
 The profile requires:
 
-- reviewed `avro:event:v1` / `avro:event:v2` references are bound to exact reviewed structural schema content before resolution;
-- historical Avro envelopes persist and verify a SHA-256 digest of that exact structural schema content before reinterpretation;
-- original writer schema identity/content remains recoverable for historical interpretation;
-- every field declared by the writer schema must be present in the writer datum;
-- **every writer-declared datum value is validated against its writer type and bounds before reader projection**, including fields that the reader schema does not retain;
-- writer-only fields therefore cannot smuggle malformed objects, oversized strings/bytes or invalid numeric mappings through a projection that later discards them;
-- a reader default is applied only when the field is **absent from the writer schema**, never to fabricate a writer-declared field omitted by malformed input;
-- reader-schema resolution is explicit;
-- reader-only fields require defaults or resolution fails;
-- writer/reader field types must be compatible under the reviewed Avro promotion rules;
-- an incompatible type pair such as writer `boolean` → reader `string` fails closed;
-- **Avro union resolution preserves the writer branch selected on the wire**. When multiple union branches can map to the same host-language runtime type, the decoded datum must carry an explicit branch index; the harness fails closed rather than infer the branch from Python type or tuple order;
-- for a writer union such as `("float", "double")`, branch 0 and branch 1 remain semantically distinct even when both surface as Python `float`; the branch-0 value is materialized at binary32 before reader resolution while branch 1 preserves the double representation;
-- an allowed promotion is not merely *validated*: the writer-side datum is converted/materialized into the selected reader representation before equivalence;
-- numeric promotion such as writer `int` → reader `double` canonicalizes to the same reader representation as a native writer `double` datum with the same reader value;
-- **Avro `float` is materialized at its declared IEEE-754 binary32 width before equivalence**, both when the writer type is `float` and when a value is promoted into a reader `float`;
-- writer `float` → reader `double` first materializes the writer's binary32 value and only then widens that resolved value to the reader's binary64 representation;
-- the evidence vector `16777217` promoted from writer `int` to reader `float` must canonicalize to `16777216.0`, exactly matching a native Avro `float` carrying that same single-precision value;
-- Python's host binary64 `float` representation is therefore never allowed to silently redefine Avro single-precision contract semantics;
-- Avro `float`/`double` runtime admission is type-strict: only numeric `int`/`float` inputs are admitted, with `bool` explicitly excluded; strings such as `"1.0"` and booleans such as `true` cannot be coerced into numeric contract values;
-- Avro strings, record/field/alias names and schema-digest serialization use strict UTF-8 encoding; lone surrogates or any other non-encodable Unicode representation are converted into `EvidenceViolation` instead of leaking host-language `UnicodeEncodeError`;
-- `bytes` → `string` promotion requires strict UTF-8 and produces a bounded reader string; invalid UTF-8 fails closed;
-- `string` → `bytes` promotion uses the same strict UTF-8 boundary and produces bounded bytes;
-- float/double admission and numeric promotion catch conversion overflow and convert it to `EvidenceViolation`; adversarial huge integer input cannot escape the fail-closed evidence boundary through raw `OverflowError`;
-- defaults must match the first declared reader type in the evidence model;
-- required tenant/event fixture semantics are explicit after resolution;
-- nullable severity and its accepted enum values are explicit after resolution;
-- record name, field count, field-name length and aliases-per-field are bounded before resolution;
-- datum field count is bounded before copying/resolution;
-- string and bytes scalar sizes are bounded before canonicalization;
-- `int`/`long` values are constrained to their declared Avro ranges;
-- float/double fixture values must be finite;
-- the source evidence intentionally models only a reviewed bounded primitive/union subset; nested complex Avro types are not silently accepted by this fixture;
-- canonical equivalence is structural and type-tagged **after reader-side promotion and bounded writer→reader resolution**, rather than using unrestricted recursive JSON serialization;
-- generic reviewed record resolution and `Event` domain invariants are separate concerns: generic fixtures may prove promotion behavior, while a record named `Event` still cannot bypass required `tenant_id`/`event_type` semantics;
-- field aliases are reviewed and ambiguous aliases fail closed;
-- historical payloads are bound to Avro profile/writer-schema identity, exact reviewed schema content and persisted content digest;
-- message payloads cannot choose arbitrary writer/reader schema content.
+- reviewed refs bind exact structural schema content;
+- historical envelopes persist and verify schema-content SHA-256;
+- every writer-declared field is present in the datum;
+- every writer value, including reader-discarded writer-only fields, is validated before projection;
+- reader defaults apply only when a field is absent from the writer schema;
+- aliases are reviewed and ambiguity fails closed;
+- decoded union branch identity is preserved; ambiguous host-runtime branch inference is forbidden;
+- **writer→reader compatibility for a union datum is evaluated from the selected writer branch only**. Incompatible unselected branches cannot reject a valid selected branch, while an incompatible selected branch must fail;
+- allowed promotions materialize the reader representation before equivalence;
+- Avro `float` is materialized at IEEE-754 binary32 width before equivalence;
+- **integer (`int`/`long`) → Avro `float` promotion rounds directly from the exact integer to binary32**, without first converting through host binary64 and risking double rounding;
+- the adversarial long vector `4611686293305294849` must resolve directly to binary32 value `4611686568183267328`, not the lower neighbor produced by binary64-double-rounding;
+- `float`/`double` runtime admission is type-strict and excludes boolean/string coercion;
+- conversion overflow and non-finite values fail closed;
+- string, schema-name and schema-digest encoding uses strict UTF-8 with encoding failures translated to `EvidenceViolation`;
+- schema width, name/alias size, datum width, scalar size and numeric domains are bounded;
+- canonical equivalence is structural and type-tagged after bounded writer→reader resolution;
+- `Event` domain invariants remain enforced separately from generic promotion fixtures.
 
-These are evidence-profile limits, not selected production C3 numerics. A future concrete Avro runtime/profile may broaden the admitted schema subset only through separately reviewed bounded evidence; this PR does not imply arbitrary nested Avro datum processing is acceptable.
+### Selected-union-branch invariant
 
-The harness remains a specification-level evidence model, not a substitute for a future pinned Avro runtime/registry conformance run.
+For writer union `("string", "int")`, reader `("long",)` and decoded datum `AvroUnionDatum(1, 7)`, the selected `int` branch is compatible and must promote to `long(7)` even though the unused `string` branch is incompatible. Conversely `AvroUnionDatum(0, "x")` must fail. The wire-selected branch is authoritative for that datum; schema-wide compatibility across unused branches would be semantically wrong.
+
+### Exact integer-to-binary32 invariant
+
+Avro `long -> float` cannot use `float(integer)` as an intermediate representation. A binary64 intermediate may land exactly on a binary32 midpoint and then round a second time to the wrong neighbor. The evidence helper therefore performs round-to-nearest-ties-to-even directly with integer arithmetic before constructing the binary32 bit pattern.
 
 ## Runtime-independence boundary
 
-The source harness deliberately does not declare one SDK's generated-object behavior authoritative. It exercises JSON bytes plus bounded/context-independent Decimal object semantics and controlled recursion failure, Protobuf wire semantics before generated bindings, and bounded Avro writer/reader type resolution with exact reviewed schema binding, historical schema-content digest, pre-projection writer validation, explicit writer-union branch identity, strict UTF-8 encoding boundaries, declared-width float materialization, strict runtime type admission and explicit reader-side promotion.
+Host-language convenience is not authoritative contract meaning. The package explicitly rejects or neutralizes runtime-specific behaviors including:
 
-A later Java, Go, Python, Rust or other implementation remains eligible only if these authoritative semantics survive. Runtime convenience, recursion behavior, Unicode encoder exceptions, tuple order, implicit union inference or language coercion cannot redefine canonical JLMirror contract meaning.
-
-## Cross-axis independence
-
-Axis A does not select reviewed Git catalog vs registry-backed catalog vs hybrid catalog (`OPEN-EVT-003`), nor `contract_version` representation (`OPEN-EVT-004`). A future catalog/registry product cannot select JSON, Protobuf or Avro by implication.
-
-The accepted surface rule remains: internal broker and external webhook profiles may differ only when conversion to canonical domain semantics and historical interpretation are explicit.
+- Decimal ambient context drift;
+- parser recursion exceptions escaping the evidence boundary;
+- unpaired-surrogate strings surviving JSON unescape;
+- Protobuf last-one-wins collapse and non-canonical varints;
+- Avro implicit union inference;
+- schema-wide rejection based on unselected Avro union branches;
+- binary64 double-rounding during integer→binary32 promotion;
+- host Unicode encoder exceptions escaping the Avro boundary;
+- boolean/string coercion into numeric Avro values.
 
 ## Negative controls
 
-The falsification suite blocks:
+The source evidence must fail if any of the following is weakened:
 
-- additive hidden candidate selection;
-- duplicate JSON members hiding conflicting selection state;
-- source-run auto-credit or non-empty ledger credit;
-- candidate promotion to `selected`;
-- pretending an unevaluated equivalent candidate is eligible;
-- removal of any Axis A must-prove invariant or candidate-specific guard requirement;
-- removal/rewrite of official source-fact inventory;
-- compressed input without a selected decompression profile;
-- schema/descriptor selection by untrusted message content;
-- historical cross-profile reinterpretation;
-- JSON protected duplicates/aliases, excessive nesting, lossy binary-float normalization, collapse of distinct bounded decimals, ambient-Decimal-context drift in canonicalization, ambient-context rounding that could weaken the numeric-magnitude bound, and deeply nested inputs that would otherwise leak `RecursionError` from parsing or traversal;
-- Protobuf non-minimal varints, `uint64` overflow, protected last-one-wins collapse, same-member oneof duplication, cross-member oneof collision and presence/enum weakening;
-- Protobuf raw-byte-order authority and repeated-order loss;
-- loss of required Protobuf unknown binary fields;
-- Avro reviewed-ref / schema-content substitution under the same label;
-- historical Avro same-reference content rebind when the persisted envelope digest no longer matches;
-- omission of a writer-declared Avro field followed by illegitimate reader-default fabrication;
-- malformed or oversized writer-only Avro fields being silently discarded before writer validation;
-- ambiguous Avro union branch inference from host-language type or schema tuple order, including `("float", "double")` values whose exact writer branch changes authoritative width semantics;
-- invalid Avro UTF-8 string/name/schema-digest content leaking `UnicodeEncodeError` instead of a controlled evidence rejection;
-- Avro `float` semantic drift caused by leaving a declared single-precision value in the host runtime's binary64 representation;
-- Avro `float`/`double` coercion of boolean or string runtime values into numeric contract values;
-- uncaught float/double conversion overflow escaping the fail-closed validation path;
-- Avro alias ambiguity, missing legitimate reader defaults, incompatible writer/reader types and nullable-semantic loss;
-- Avro allowed-promotion validation without reader-side materialization, including numeric representation drift and invalid UTF-8 `bytes` → `string` conversion;
-- Avro schema/datum cardinality overflow, overlong names/aliases/scalars, out-of-range numeric values and unrestricted nested datum acceptance;
-- D4-B ledger selection;
-- D4/Product/Wave4/production/C3 authority escalation.
+- hidden candidate selection or authority escalation;
+- auto-credit or non-empty ledger credit;
+- accepted Axis A must-prove inventory;
+- JSON duplicate/alias, numeric, recursion or Unicode-scalar guards;
+- Protobuf canonical-varint, duplicate/oneof, presence/enum, unknown-field or ordering guards;
+- Avro schema-content binding, historical digest, writer-field validation, explicit union branch identity, selected-branch compatibility, direct exact integer→binary32 rounding, strict UTF-8, width/type/overflow, promotion or bounded-resource guards;
+- D4-B 5/5 selection-pending state;
+- D4-A Kafka 7/7 state;
+- D4-C/D open/uncredited state;
+- D4 scoped state or Product/Wave4/production/C3 non-authority.
 
 ## Existing D4 state remains immutable
 
-This package does not modify accepted ledger/state:
-
-- D4-A remains Kafka bounded-C2 with 7/7 evidence;
-- D4-B remains 5/5 evidence complete and selection pending;
-- D4-C/D remain open, unselected and uncredited;
-- D4-wide remains 12/26;
-- D4 remains `scoped`;
-- transport authority remains `selected_not_granted`;
-- Product/Wave4 implementation remains `not_granted`;
-- production remains `none`;
-- C3 numeric/topology remains `not_selected`.
+- D4-A: Kafka bounded-C2, 7/7;
+- D4-B: 5/5 evidence, candidate `null`, selection pending;
+- D4-C/D: open, unselected, uncredited;
+- D4-wide: 12/26;
+- D4: `scoped`;
+- transport authority: `selected_not_granted`;
+- Product/Wave4 implementation: `not_granted`;
+- production: `none`;
+- C3 numeric/topology: `not_selected`.
 
 ## Exit condition
 
-This PR may be accepted only after exact-HEAD CI, adversarial/panoramic review and zero unresolved material threads prove that all three candidate profiles remain bounded, source-only and non-selecting.
+This PR may reach final gate only when the exact current HEAD has:
 
-Acceptance of this source PR still does not authorize D4-B selection. Axis B catalog/registry evidence remains separately required before a later cross-axis selection decision.
+1. full exact-HEAD CI green;
+2. candidate evaluator, falsification and manifest validator green;
+3. Phase 10 contracts green;
+4. zero unresolved material review threads;
+5. fresh exact-HEAD adversarial review with no unresolved finding;
+6. mergeable/open/non-draft PR state;
+7. separate explicit merge authorization.
+
+No source-evidence result in this document selects JSON/JSON Schema, Protobuf, Avro, a catalog/registry product, or `contract_version` syntax.

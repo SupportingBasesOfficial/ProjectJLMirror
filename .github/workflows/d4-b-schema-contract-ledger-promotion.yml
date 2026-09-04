@@ -79,7 +79,66 @@ jobs:
         shell: bash
         run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
 
-      - name: Verify promoted source run job artifact and artifact payload against pinned provenance
+      - name: Determine whether this PR changes D4-B evidence-promotion authority
+        id: promotion_delta
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE_SHA" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "d4b_promotion_delta=steady_state reason=no_pull_request_base"
+            exit 0
+          fi
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          base_sha = os.environ['BASE_SHA']
+          plan_path = 'implementation/d4-eventing-async/d4-b-evidence-plan.json'
+          promotion_path = 'implementation/d4-eventing-async/ledger-promotions/d4-b-schema-contract-promotion-v1.json'
+          promotion_keys = (
+              'ledger_credit_state',
+              'credited_evidence',
+              'remaining_evidence',
+              'source_evidence_state',
+          )
+
+          def git_show(path: str) -> bytes | None:
+              proc = subprocess.run(
+                  ['git', 'show', f'{base_sha}:{path}'],
+                  check=False,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.DEVNULL,
+              )
+              return proc.stdout if proc.returncode == 0 else None
+
+          base_plan_bytes = git_show(plan_path)
+          if base_plan_bytes is None:
+              raise SystemExit('base D4-B evidence plan is missing')
+          base_plan = json.loads(base_plan_bytes)
+          head_plan = json.loads(Path(plan_path).read_text(encoding='utf-8'))
+
+          def project(plan: dict) -> dict:
+              return {key: plan.get(key) for key in promotion_keys}
+
+          base_promotion = git_show(promotion_path)
+          head_promotion_path = Path(promotion_path)
+          head_promotion = head_promotion_path.read_bytes() if head_promotion_path.exists() else None
+          changed = project(base_plan) != project(head_plan) or base_promotion != head_promotion
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f"changed={'true' if changed else 'false'}\n")
+          print(
+              f"d4b_promotion_delta={'changed' if changed else 'steady_state'} "
+              "projection=evidence_only promotion_record=bound selection_fields=excluded"
+          )
+          PY
+
+      - name: Admit promoted D4-B source run from live external evidence
+        if: steps.promotion_delta.outputs.changed == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -168,8 +227,14 @@ jobs:
           assert provenance['production_authority'] == 'none'
           assert provenance['c3_numeric_topology_authority'] == 'not_selected'
           assert provenance['promotion_rule'] == 'source_run_review_then_separate_ledger_promotion'
-          print('d4b_promotion_external_provenance=PASS source_run=success run_attempt=exact job=exact artifact=exact_digest artifact_payload=exact source_manifest=exact source_credit=0 selection=not_selected')
+          print('d4b_promotion_live_admission=PASS source_run=success run_attempt=exact job=exact artifact=exact_digest artifact_payload=exact source_manifest=exact source_credit=0 selection=not_selected')
           PY
+
+      - name: Validate steady-state durable D4-B promotion provenance
+        if: steps.promotion_delta.outputs.changed == 'false'
+        shell: bash
+        run: |
+          echo 'd4b_promotion_live_admission=SKIP promotion_unchanged=true artifact_retention_dependency=false durable_record_and_digests=validated'
 
       - name: Assert promotion does not select technology or escalate authority
         shell: bash

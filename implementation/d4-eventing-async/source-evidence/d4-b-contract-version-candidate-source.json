@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-B",
+  "axis": "contract_version_representation",
+  "source_decision": "OPEN-EVT-004",
+  "canonical_base": "a871ac9c0ce7f33cf06fb70246bb902aff82900f",
+  "mode": "candidate_source_evidence_only",
+  "test_vector_profile_only": true,
+  "canonical_contract_version_syntax_selected": false,
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "current_run_auto_credit": false,
+  "ledger_credit": [],
+  "candidate_results": {
+    "positive_integer_family_revision": "eligible_for_evidence_execution",
+    "semantic_version_like_contract_revision": "eligible_for_evidence_execution",
+    "opaque_monotonic_contract_token": "eligible_for_evidence_execution"
+  },
+  "equivalent_reviewed_representation": "insufficient_evidence",
+  "required_proofs": [
+    "contract_version_is_distinct_from_deployment_api_provider_realtime_and_registry_versions",
+    "breaking_semantic_change_requires_new_incompatible_contract_version_or_accepted_migration",
+    "historical_messages_retain_original_version_semantics",
+    "representation_has_one_canonical_parse_and_comparison_rule",
+    "version_ordering_is_not_assumed_unless_the_selected_profile_explicitly_grants_it",
+    "version_value_is_not_authorization_tenant_routing_or_message_identity_authority"
+  ],
+  "source_assertions": [
+    "all_three_concrete_candidate_classes_have_bounded_deterministic_test_parsers",
+    "all_three_concrete_candidate_classes_reject_noncanonical_or_ambiguous_test_vectors",
+    "opaque_monotonic_candidate_requires_strictly_increasing_internal_issuance_sequence_while_external_tokens_remain_opaque",
+    "opaque_fixture_mapping_is_collision_free_over_the_bounded_uint64_test_domain_via_bijective_permutation",
+    "comparison_surface_is_equality_only_and_exposes_no_ordering_authority",
+    "unrelated_version_namespaces_cannot_substitute_for_contract_version",
+    "breaking_semantic_change_transition_is_validated_within_each_candidate_family",
+    "historical_candidate_family_and_original_version_bytes_are_preserved_and_cross_family_reinterpretation_fails_closed",
+    "candidate_adapter_output_contains_no_tenant_authorization_routing_or_message_identity_authority",
+    "test_vector_encodings_are_noncanonical_evidence_fixtures_and_do_not_select_production_syntax"
+  ],
+  "non_authority": {
+    "d4b_mechanism_selection": "not_selected",
+    "d4_gate": "scoped",
+    "d4_transport_authority": "selected_not_granted",
+    "canonical_product_implementation_authority": "not_granted",
+    "wave4_implementation_authority": "not_granted",
+    "production_authority": "none",
+    "c3_numeric_topology_authority": "not_selected"
+  }
+}

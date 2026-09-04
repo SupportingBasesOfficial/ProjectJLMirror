@@ -4,7 +4,7 @@
   "track_id": "D4-A",
   "canonical_entry_commit": "b385e1b68162b2cf9bf4379011554a9cc4c2d5c4",
   "candidate": "kafka",
-  "candidate_status": "leading_candidate_evidence_complete_selection_pending",
+  "candidate_status": "selected_c2_candidate",
   "evidence_credit_policy": "source_runs_first_ledger_promotion_separate",
   "current_run_auto_credit": false,
   "production_numeric_authority": "not_granted",
@@ -96,6 +96,7 @@
     "broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark"
   ],
   "latest_promotion_record": "implementation/d4-eventing-async/ledger-promotions/d4-a-recovery-promotion-v1.json",
-  "selection_state": "not_selected",
-  "acceptance_state": "evidence_complete_separate_acceptance_required"
+  "selection_record": "implementation/d4-eventing-async/d4-a-selection-record.json",
+  "selection_state": "selected",
+  "acceptance_state": "track_selected_separate_d4_acceptance_required"
 }

@@ -13,6 +13,7 @@ MAX_JSON_NUMBER_DIGITS = 20
 MAX_JSON_SCALE = 18
 MAX_JSON_MAGNITUDE = Decimal((1 << 63) - 1)
 MAX_PROTO_FIELD_NUMBER = (1 << 29) - 1
+MAX_PROTO_VARINT_VALUE = (1 << 64) - 1
 PROTO_RESERVED_FIELD_RANGE = range(19000, 20000)
 
 
@@ -150,10 +151,7 @@ def _canonical_json_value(value: Any) -> tuple[Any, ...]:
     if isinstance(value, str):
         return ("string", value)
     if isinstance(value, Decimal):
-        if value == 0:
-            number = "0"
-        else:
-            number = format(value.normalize(), "f")
+        number = "0" if value == 0 else format(value.normalize(), "f")
         return ("number", number)
     if isinstance(value, list):
         return ("array", tuple(_canonical_json_value(item) for item in value))
@@ -177,8 +175,8 @@ class ProtoField:
 
 
 def _encode_varint(value: int) -> bytes:
-    if value < 0:
-        raise ValueError("varint evidence helper requires non-negative value")
+    if value < 0 or value > MAX_PROTO_VARINT_VALUE:
+        raise ValueError("varint evidence helper requires uint64 value")
     out = bytearray()
     while True:
         byte = value & 0x7F
@@ -198,6 +196,8 @@ def _read_varint(raw: bytes, offset: int) -> tuple[int, int]:
         byte = raw[offset]
         offset += 1
         value |= (byte & 0x7F) << shift
+        if value > MAX_PROTO_VARINT_VALUE:
+            raise EvidenceViolation("protobuf varint exceeds uint64 bound")
         if not (byte & 0x80):
             encoded = raw[start:offset]
             if encoded != _encode_varint(value):
@@ -331,7 +331,6 @@ def resolve_avro_record(writer: AvroRecordSchema, reader: AvroRecordSchema, datu
     writer_names = {field.name for field in writer.fields}
     if set(datum) - writer_names:
         raise EvidenceViolation("datum contains field absent from pinned Avro writer schema")
-
     resolved: dict[str, Any] = {}
     for target in reader.fields:
         source_names = (target.name,) + target.aliases
@@ -369,7 +368,6 @@ def prove_static_schema_and_history(candidate: str, schema_ref: str, payload: by
         pass
     else:
         raise AssertionError(f"{candidate} accepted untrusted dynamic schema selection")
-
     envelope = HistoricalEnvelope(candidate, schema_ref, payload)
     if read_historical_envelope(envelope, candidate, schema_ref) != payload:
         raise AssertionError(f"{candidate} historical bytes changed")
@@ -447,8 +445,6 @@ def prove_protobuf_profile() -> None:
         except EvidenceViolation:
             continue
         raise AssertionError("protobuf profile accepted invalid protected field semantics")
-
-    # Non-minimal tag varint for field 1 (canonical 0x0a encoded as 0x8a 0x00) must fail.
     nonminimal_tag = bytes([0x8A, 0x00, 0x02]) + b"t1" + event
     try:
         validate_protobuf_profile(nonminimal_tag)
@@ -456,6 +452,13 @@ def prove_protobuf_profile() -> None:
         pass
     else:
         raise AssertionError("protobuf non-minimal varint was accepted")
+    overflow_scalar = _encode_varint(7 << 3) + (bytes([0x80]) * 9) + bytes([0x02])
+    try:
+        scan_bounded_protobuf(overflow_scalar)
+    except EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("protobuf uint64-overflow varint was accepted")
 
 
 def prove_avro_profile() -> None:
@@ -474,12 +477,10 @@ def prove_avro_profile() -> None:
     expected = b'{"event_type":"alarm","severity":"info","tenant_id":"t1"}'
     if avro_semantic_equivalence(writer_v1, reader_v2, datum) != expected:
         raise AssertionError("Avro writer-reader resolution is not deterministic")
-
     writer_v2 = reader_v2
     nullable = {"tenant_id": "t1", "event_type": "alarm", "severity": None}
     if b'"severity":null' not in avro_semantic_equivalence(writer_v2, reader_v2, nullable):
         raise AssertionError("Avro nullable enum semantics were not preserved")
-
     missing_required_reader = AvroRecordSchema("Event", reader_v2.fields + (AvroFieldSpec("region"),))
     try:
         resolve_avro_record(writer_v1, missing_required_reader, datum)
@@ -487,7 +488,6 @@ def prove_avro_profile() -> None:
         pass
     else:
         raise AssertionError("Avro reader accepted missing field without default")
-
     ambiguous_reader = AvroRecordSchema(
         "Event",
         (
@@ -521,10 +521,10 @@ def main() -> int:
         "d4b_wire_schema_candidate_source=PASS candidates=3 concrete_eligible=3 "
         "identity_only_transport=bounded dynamic_schema_selection=blocked historical_profile_reinterpretation=blocked "
         "json_duplicates=blocked json_alias_collision=blocked json_numeric_mapping=canonical json_bounds=proven "
-        "protobuf_nonminimal_varint=blocked protobuf_protected_duplicates=blocked protobuf_presence_enum=explicit "
-        "protobuf_unknown_bytes=preserved protobuf_byte_order=noncanonical protobuf_repeated_order=preserved "
-        "avro_writer_reader_resolution=explicit avro_nullable_enum=explicit avro_alias_ambiguity=blocked "
-        "selection=not_selected ledger_credit=0"
+        "protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked protobuf_protected_duplicates=blocked "
+        "protobuf_presence_enum=explicit protobuf_unknown_bytes=preserved protobuf_byte_order=noncanonical "
+        "protobuf_repeated_order=preserved avro_writer_reader_resolution=explicit avro_nullable_enum=explicit "
+        "avro_alias_ambiguity=blocked selection=not_selected ledger_credit=0"
     )
     for candidate, result in sorted(results.items()):
         print(f"candidate={candidate} result={result}")

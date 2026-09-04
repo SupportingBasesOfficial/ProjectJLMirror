@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Dict, Optional, Tuple
@@ -8,6 +9,38 @@ from typing import Dict, Optional, Tuple
 
 class EvidenceViolation(RuntimeError):
     pass
+
+
+class DuplicateMemberError(ValueError):
+    pass
+
+
+def _reject_duplicate_members(pairs):
+    out = {}
+    for key, value in pairs:
+        if key in out:
+            raise DuplicateMemberError(f"duplicate semantic manifest member: {key}")
+        out[key] = value
+    return out
+
+
+def _canonical_semantic_manifest_bytes(raw: str) -> bytes:
+    try:
+        value = json.loads(raw, object_pairs_hook=_reject_duplicate_members)
+    except (json.JSONDecodeError, DuplicateMemberError) as exc:
+        raise EvidenceViolation("semantic manifest must be strict canonicalizable JSON") from exc
+    if not isinstance(value, dict):
+        raise EvidenceViolation("semantic manifest must be an object")
+    try:
+        return json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError, UnicodeEncodeError) as exc:
+        raise EvidenceViolation("semantic manifest cannot be canonically encoded") from exc
 
 
 @dataclass(frozen=True)
@@ -52,7 +85,7 @@ class ContractRevision:
 
     @property
     def semantic_manifest_sha256(self) -> str:
-        return sha256(self.semantic_manifest.encode("utf-8")).hexdigest()
+        return sha256(_canonical_semantic_manifest_bytes(self.semantic_manifest)).hexdigest()
 
     @property
     def reviewed_content_sha256(self) -> str:
@@ -96,10 +129,19 @@ def _validate_revision(revision: ContractRevision) -> None:
     revision.identity.canonical()
     if not revision.revision or len(revision.revision) > 64:
         raise EvidenceViolation("invalid evidence revision token")
-    if not revision.payload_schema or len(revision.payload_schema.encode("utf-8")) > 16_384:
+    try:
+        payload_schema_bytes = revision.payload_schema.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise EvidenceViolation("payload schema must be strict utf-8") from exc
+    if not revision.payload_schema or len(payload_schema_bytes) > 16_384:
         raise EvidenceViolation("payload schema outside evidence bound")
-    if not revision.semantic_manifest or len(revision.semantic_manifest.encode("utf-8")) > 16_384:
+    try:
+        semantic_raw = revision.semantic_manifest.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise EvidenceViolation("semantic manifest must be strict utf-8") from exc
+    if not revision.semantic_manifest or len(semantic_raw) > 16_384:
         raise EvidenceViolation("semantic manifest outside evidence bound")
+    _canonical_semantic_manifest_bytes(revision.semantic_manifest)
     for ref in (
         revision.historical_metadata.reader_ref,
         revision.historical_metadata.upcaster_ref,
@@ -129,9 +171,9 @@ class ReviewedHistory:
 
     def read(self, principal: Principal, identity: LogicalContractIdentity, revision: str) -> ContractRevision:
         require_role(principal, READER_ROLE)
-        return self.get_committed(identity, revision)
+        return self._get_committed(identity, revision)
 
-    def get_committed(self, identity: LogicalContractIdentity, revision: str) -> ContractRevision:
+    def _get_committed(self, identity: LogicalContractIdentity, revision: str) -> ContractRevision:
         try:
             return self._history[identity.canonical()][revision]
         except KeyError as exc:
@@ -140,6 +182,8 @@ class ReviewedHistory:
 
 class RegistryMirror:
     def __init__(self, product: str, reviewed_authority: ReviewedHistory) -> None:
+        if not product or len(product) > 128:
+            raise EvidenceViolation("invalid registry product label")
         self.product = product
         self.reviewed_authority = reviewed_authority
         self.available = True
@@ -156,9 +200,10 @@ class RegistryMirror:
         require_role(principal, REGISTRY_PUBLISHER_ROLE)
         if not self.available:
             raise EvidenceViolation("registry unavailable")
-        if not subject or not vendor_version or not vendor_id:
-            raise EvidenceViolation("invalid registry mapping metadata")
-        committed = self.reviewed_authority.get_committed(reviewed.identity, reviewed.revision)
+        for value in (subject, vendor_version, vendor_id):
+            if not value or len(value) > 256:
+                raise EvidenceViolation("invalid registry mapping metadata")
+        committed = self.reviewed_authority._get_committed(reviewed.identity, reviewed.revision)
         if committed != reviewed or committed.reviewed_content_sha256 != reviewed.reviewed_content_sha256:
             raise EvidenceViolation("registry publish requires exact preexisting reviewed authority")
         key = (reviewed.identity.canonical(), reviewed.revision)
@@ -170,8 +215,10 @@ class RegistryMirror:
             reviewed_content_sha256=reviewed.reviewed_content_sha256,
         )
         existing = self._mappings.get(key)
-        if existing and existing.reviewed_content_sha256 != mapping.reviewed_content_sha256:
-            raise EvidenceViolation("registry mapping cannot rebind reviewed contract content")
+        if existing is not None:
+            if existing != mapping:
+                raise EvidenceViolation("registry mapping history is immutable for a reviewed revision")
+            return existing
         self._mappings[key] = mapping
         return mapping
 
@@ -179,10 +226,16 @@ class RegistryMirror:
         require_role(principal, READER_ROLE)
         if not self.available:
             raise EvidenceViolation("registry unavailable")
+        committed = self.reviewed_authority._get_committed(reviewed.identity, reviewed.revision)
+        if committed != reviewed:
+            raise EvidenceViolation("registry mapping lookup requires exact reviewed revision")
         try:
-            return self._mappings[(reviewed.identity.canonical(), reviewed.revision)]
+            mapping = self._mappings[(reviewed.identity.canonical(), reviewed.revision)]
         except KeyError as exc:
             raise EvidenceViolation("registry mapping missing") from exc
+        if mapping.reviewed_content_sha256 != reviewed.reviewed_content_sha256:
+            raise EvidenceViolation("registry mapping content drift")
+        return mapping
 
 
 class CatalogProfile:
@@ -198,9 +251,7 @@ class CatalogProfile:
         if self.registry is None:
             raise EvidenceViolation("registry-backed candidate missing registry surface")
         if self.registry.available:
-            mapping = self.registry.mapping(principal, reviewed)
-            if mapping.reviewed_content_sha256 != reviewed.reviewed_content_sha256:
-                raise EvidenceViolation("registry mapping content drift")
+            self.registry.mapping(principal, reviewed)
         return reviewed
 
 
@@ -260,6 +311,17 @@ def exercise_candidate(candidate: str) -> None:
     assert_metadata_recoverable(v1)
     assert_metadata_recoverable(v2)
 
+    # Canonical semantic representation is independent of JSON member order/whitespace.
+    v1_reformatted = ContractRevision(
+        identity=v1.identity,
+        revision="fixture-r1-reformatted",
+        payload_schema=v1.payload_schema,
+        semantic_manifest='{ "delivery": "at_least_once", "event_identity": "message_id", "tenant_authority": "tenant_id" }',
+        historical_metadata=v1.historical_metadata,
+        reviewed_provenance="git:fixture-commit-reformatted",
+    )
+    assert v1.semantic_manifest_sha256 == v1_reformatted.semantic_manifest_sha256
+
     assert v1.payload_schema_sha256 == v2.payload_schema_sha256
     assert compatibility(v1, v2) == "semantic_review_required_breaking_until_proven_otherwise"
 
@@ -317,6 +379,16 @@ def exercise_candidate(candidate: str) -> None:
         else:
             raise AssertionError("registry accepted forged reviewed provenance")
 
+        # Idempotent retry is allowed; remapping the same reviewed revision is not.
+        original_mapping = profile.registry.publish(reviewer, v1, "event-created", "17", "vendor-abc")
+        assert original_mapping == profile.registry.mapping(reader, v1)
+        try:
+            profile.registry.publish(reviewer, v1, "renamed-in-place", "99", "vendor-rebind")
+        except EvidenceViolation:
+            pass
+        else:
+            raise AssertionError("registry mapping provenance overwrite was not blocked")
+
         before = profile.resolve(reader, v1.identity, v1.revision).reviewed_content_sha256
         profile.registry.available = False
         during = profile.resolve(reader, v1.identity, v1.revision).reviewed_content_sha256
@@ -344,8 +416,9 @@ def main() -> None:
     print(
         "d4b_catalog_tooling_candidate_source=PASS "
         "candidates=3 reviewed_authority=preexisting provenance=content_bound history=append_only "
-        "semantic_manifest=compared historical_metadata=recoverable authz=fail_closed "
-        "outage=meaning_stable product_identity=non_authoritative selection=not_selected ledger_credit=0"
+        "semantic_manifest=canonical_and_compared mapping_history=immutable historical_metadata=recoverable "
+        "authz=fail_closed outage=meaning_stable product_identity=non_authoritative "
+        "selection=not_selected ledger_credit=0"
     )
 
 

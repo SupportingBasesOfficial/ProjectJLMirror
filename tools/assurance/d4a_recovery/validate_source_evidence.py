@@ -97,21 +97,24 @@ def validate_objects(source: dict, profile: dict, plan: dict, state: dict) -> li
     require(invariants.get("protected_current_work_must_not_starve") is True, "protected anti-starvation invariant drift")
     require(invariants.get("backlog_must_eventually_drain") is True, "backlog drain invariant drift")
 
+    # Current global selection is separate from the immutable historical source run.
     plan_credit = plan.get("credited_evidence", [])
     require(plan.get("ledger_credit_state") == "seven_of_seven", "global ledger must be seven_of_seven after separate promotion")
     require(set(plan_credit) == EXPECTED_GLOBAL_CREDIT, "global promoted seven-of-seven credit drift")
     require(len(plan_credit) == len(EXPECTED_GLOBAL_CREDIT), "global promoted seven-of-seven credit multiplicity drift")
-    require(plan.get("selection_state") == "not_selected", "plan must not select Kafka")
-    require(plan.get("acceptance_state") == "evidence_complete_separate_acceptance_required", "plan must require separate acceptance")
+    require(plan.get("selection_state") == "selected", "plan must keep Kafka selected")
+    require(plan.get("candidate_status") == "selected_c2_candidate", "plan must keep Kafka as selected C2 candidate")
+    require(plan.get("acceptance_state") == "track_selected_separate_d4_acceptance_required", "plan must require separate D4 acceptance")
     d4a = next((track for track in state.get("tracks", []) if track.get("track_id") == "D4-A"), {})
     completed = d4a.get("evidence_completed", [])
     remaining = d4a.get("evidence_remaining", [])
     require(set(completed) == EXPECTED_GLOBAL_CREDIT, "state completed seven-of-seven evidence drift")
     require(len(completed) == len(EXPECTED_GLOBAL_CREDIT), "state completed seven-of-seven evidence multiplicity drift")
     require(remaining == [], "state must have no D4-A evidence remaining after promotion")
-    require(d4a.get("state") == "evidence_complete_selection_pending", "state must remain evidence-complete selection-pending")
+    require(d4a.get("state") == "selected_candidate", "state must keep D4-A selected candidate")
+    require(d4a.get("candidate_status") == "selected_c2_candidate", "state D4-A selected candidate status drift")
     require(state.get("gate_state") == "scoped", "D4 must remain scoped")
-    require(state.get("d4_transport_authority") == "not_selected_not_granted", "D4 transport authority escalation")
+    require(state.get("d4_transport_authority") == "selected_not_granted", "D4 transport must remain selected but ungranted")
     require(state.get("canonical_product_implementation_authority") == "not_granted", "Product authority escalation")
     require(state.get("wave4_implementation_authority") == "not_granted", "Wave4 authority escalation")
     require(state.get("production_authority") == "none", "production authority escalation")
@@ -123,7 +126,7 @@ def main() -> None:
     errors = validate_objects(*load_objects())
     if errors:
         raise AssertionError("; ".join(errors))
-    print("d4a_recovery_source_manifest=PASS evidence=1 source_credit=0 historical_prior=6 global_credit=7 recovery_promoted=1 live_kafka_outage=historically_proven ack_ambiguity=same_identity priority_drain=bounded broker_progress_business_truth=false kafka=not_selected acceptance=separate_required authorities=not_granted")
+    print("d4a_recovery_source_manifest=PASS evidence=1 source_credit=0 historical_selection=not_selected historical_prior=6 global_credit=7 current_kafka_selection=selected transport_authority=not_granted recovery_promoted=1 live_kafka_outage=historically_proven ack_ambiguity=same_identity priority_drain=bounded broker_progress_business_truth=false")
 
 
 if __name__ == "__main__":

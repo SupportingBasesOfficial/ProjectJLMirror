@@ -63,6 +63,7 @@ EXPECTED_REQUIREMENTS = {
         "writer_reader_field_type_compatibility_and_allowed_promotions_are_checked_before_value_resolution",
         "allowed_writer_reader_promotions_are_applied_to_reader_representation_before_equivalence",
         "avro_float_writer_and_reader_values_are_materialized_at_ieee754_binary32_width_before_equivalence",
+        "float_double_runtime_mapping_rejects_boolean_and_string_coercion_before_width_materialization",
         "float_double_admission_and_promotion_overflow_fail_closed_as_evidence_violation",
         "schema_field_alias_and_scalar_sizes_are_bounded_before_datum_resolution",
         "datum_processing_is_bounded_and_canonicalized_structurally_without_unrestricted_recursive_json_serialization",
@@ -97,6 +98,7 @@ EXPECTED_ASSERTIONS = {
     "avro_reviewed_schema_reference_is_structurally_bound_to_exact_reviewed_schema_content",
     "avro_writer_declared_fields_cannot_be_fabricated_from_reader_defaults",
     "avro_float_reader_and_writer_semantics_are_canonicalized_at_ieee754_binary32_width",
+    "avro_float_double_runtime_mapping_rejects_boolean_and_string_coercion",
     "avro_float_double_overflow_is_caught_and_fails_closed",
     "avro_historical_interpretation_requires_writer_schema_continuity",
     "avro_writer_reader_type_compatibility_is_explicit_and_incompatible_types_fail_closed",
@@ -206,7 +208,7 @@ def main(argv: list[str]) -> int:
     if errors:
         for error in errors: print(f"D4B_WIRE_SCHEMA_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_wire_schema_source_manifest=PASS axis=OPEN-EVT-002 concrete_candidates=3 eligible=3 decimal_canonicalization=context_independent canonical_varints=required uint64_varints=bounded protobuf_oneof_duplicates=blocked avro_schema_ref_content=bound avro_writer_fields=required avro_float_width=ieee754_binary32 avro_float_overflow=fail_closed avro_type_resolution=required avro_promotions=reader_canonicalized avro_datum_bounds=required runtime_mapping=bounded historical_binding=required decompression=identity_only equivalent=insufficient_evidence selection=not_selected ledger_credit=0 d4=scoped authorities=not_granted")
+    print("d4b_wire_schema_source_manifest=PASS axis=OPEN-EVT-002 concrete_candidates=3 eligible=3 decimal_canonicalization=context_independent canonical_varints=required uint64_varints=bounded protobuf_oneof_duplicates=blocked avro_schema_ref_content=bound avro_writer_fields=required avro_float_width=ieee754_binary32 avro_float_runtime_mapping=type_strict avro_float_overflow=fail_closed avro_type_resolution=required avro_promotions=reader_canonicalized avro_datum_bounds=required runtime_mapping=bounded historical_binding=required decompression=identity_only equivalent=insufficient_evidence selection=not_selected ledger_credit=0 d4=scoped authorities=not_granted")
     return 0
 
 

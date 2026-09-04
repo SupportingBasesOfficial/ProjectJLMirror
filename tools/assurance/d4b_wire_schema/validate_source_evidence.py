@@ -41,6 +41,7 @@ EXPECTED_REQUIREMENTS = {
         "json_numbers_use_bounded_decimal_semantics_and_canonical_normalization_instead_of_binary_float_runtime_mapping",
         "decimal_canonicalization_is_context_independent_and_constructed_from_exact_decimal_tuple",
         "decimal_magnitude_comparison_is_context_independent_and_uses_exact_decimal_magnitude",
+        "json_parser_and_depth_traversal_translate_recursion_exhaustion_to_fail_closed_evidence_violation",
         "content_equivalence_uses_canonical_semantic_normalization_not_input_member_order",
         "historical_payload_is_bound_to_reviewed_json_profile_and_schema_identity",
         "schema_resolution_must_not_fetch_or_execute_untrusted_dynamic_content",
@@ -69,6 +70,7 @@ EXPECTED_REQUIREMENTS = {
         "avro_float_writer_and_reader_values_are_materialized_at_ieee754_binary32_width_before_equivalence",
         "float_double_runtime_mapping_rejects_boolean_and_string_coercion_before_width_materialization",
         "float_double_admission_and_promotion_overflow_fail_closed_as_evidence_violation",
+        "avro_string_name_and_schema_digest_utf8_encoding_errors_fail_closed_as_evidence_violation",
         "schema_field_alias_and_scalar_sizes_are_bounded_before_datum_resolution",
         "datum_processing_is_bounded_and_canonicalized_structurally_without_unrestricted_recursive_json_serialization",
         "required_nullable_and_enum_semantics_are_explicit_after_writer_reader_resolution",
@@ -94,6 +96,7 @@ EXPECTED_ASSERTIONS = {
     "historical_payload_profile_and_schema_binding_prevents_cross_profile_reinterpretation",
     "json_numeric_normalization_is_bounded_decimal_context_independent_and_runtime_independent_within_the_evidence_profile",
     "json_decimal_magnitude_admission_is_context_independent",
+    "json_depth_recursion_exhaustion_fails_closed_as_evidence_violation",
     "protobuf_nonminimal_varints_uint64_overflow_and_reserved_field_numbers_fail_closed",
     "protobuf_last_one_wins_default_is_not_accepted_for_protected_fields",
     "protobuf_same_oneof_member_duplicates_and_cross_member_collisions_fail_closed",
@@ -108,6 +111,7 @@ EXPECTED_ASSERTIONS = {
     "avro_float_reader_and_writer_semantics_are_canonicalized_at_ieee754_binary32_width",
     "avro_float_double_runtime_mapping_rejects_boolean_and_string_coercion",
     "avro_float_double_overflow_is_caught_and_fails_closed",
+    "avro_invalid_utf8_string_name_and_digest_encoding_fails_closed",
     "avro_historical_interpretation_requires_writer_schema_continuity",
     "avro_writer_reader_type_compatibility_is_explicit_and_incompatible_types_fail_closed",
     "avro_allowed_promotions_materialize_reader_representation_before_semantic_equivalence",
@@ -216,7 +220,7 @@ def main(argv: list[str]) -> int:
     if errors:
         for error in errors: print(f"D4B_WIRE_SCHEMA_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_wire_schema_source_manifest=PASS axis=OPEN-EVT-002 concrete_candidates=3 eligible=3 decimal_canonicalization=context_independent decimal_magnitude=context_independent canonical_varints=required uint64_varints=bounded protobuf_oneof_duplicates=blocked avro_schema_ref_content=bound avro_historical_schema_digest=sha256_bound avro_writer_fields=required avro_writer_only_fields=validated avro_union_branch=explicit avro_float_width=ieee754_binary32 avro_float_runtime_mapping=type_strict avro_float_overflow=fail_closed avro_type_resolution=required avro_promotions=reader_canonicalized avro_datum_bounds=required runtime_mapping=bounded historical_binding=required decompression=identity_only equivalent=insufficient_evidence selection=not_selected ledger_credit=0 d4=scoped authorities=not_granted")
+    print("d4b_wire_schema_source_manifest=PASS axis=OPEN-EVT-002 concrete_candidates=3 eligible=3 decimal_canonicalization=context_independent decimal_magnitude=context_independent json_depth_recursion=fail_closed canonical_varints=required uint64_varints=bounded protobuf_oneof_duplicates=blocked avro_schema_ref_content=bound avro_historical_schema_digest=sha256_bound avro_writer_fields=required avro_writer_only_fields=validated avro_union_branch=explicit avro_string_utf8=fail_closed avro_float_width=ieee754_binary32 avro_float_runtime_mapping=type_strict avro_float_overflow=fail_closed avro_type_resolution=required avro_promotions=reader_canonicalized avro_datum_bounds=required runtime_mapping=bounded historical_binding=required decompression=identity_only equivalent=insufficient_evidence selection=not_selected ledger_credit=0 d4=scoped authorities=not_granted")
     return 0
 
 

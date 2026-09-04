@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "profile_id": "d4-a-recovery-bounded-v1",
+  "environment_scope": "ci_single_node_real_kafka_candidate",
+  "numeric_authority": "test_values_only_not_production",
+  "topic": "d4a-recovery-v1",
+  "partitions": 4,
+  "committed_backlog_messages": 24,
+  "protected_current_messages": 6,
+  "normal_priority": 10,
+  "protected_priority": 100,
+  "max_backlog_dispatches_before_protected": 3,
+  "dispatcher_batch_limit": 4,
+  "ack_ambiguity": {
+    "enabled": true,
+    "logical_message_id": "d4a-recovery-ambiguous-0001",
+    "retry_same_logical_identity": true
+  },
+  "required_measurements": [
+    "outbox_rows_committed_while_broker_unavailable",
+    "outbox_rows_remaining_after_broker_restart",
+    "backlog_drain_seconds",
+    "protected_delivery_positions",
+    "max_backlog_before_each_protected_delivery",
+    "ambiguous_publish_attempts",
+    "ambiguous_distinct_logical_message_ids",
+    "broker_end_offset_before_business_effects",
+    "business_effect_count_before_consumer_admission",
+    "business_effect_count_after_consumer_admission",
+    "duplicate_business_effects_suppressed"
+  ],
+  "fixed_invariants": {
+    "committed_outbox_is_business_truth": true,
+    "broker_progress_is_business_effect_truth": false,
+    "same_fact_retry_reuses_message_id": true,
+    "protected_current_work_must_not_starve": true,
+    "backlog_must_eventually_drain": true
+  }
+}

@@ -82,7 +82,7 @@ The profile requires:
 - allowed promotions materialize the reader representation before equivalence;
 - Avro `float` is materialized at IEEE-754 binary32 width before equivalence;
 - **integer (`int`/`long`) → Avro `float` promotion rounds directly from the exact integer to binary32**, without first converting through host binary64 and risking double rounding;
-- the adversarial long vector `4611686293305294849` must resolve directly to binary32 value `4611686568183267328`, not the lower neighbor produced by binary64-double-rounding;
+- the adversarial long vector `4611686293305294849` must resolve directly to the actual adjacent binary32 value `4611686568183201792`, not the lower neighbor produced by binary64 double-rounding;
 - `float`/`double` runtime admission is type-strict and excludes boolean/string coercion;
 - conversion overflow and non-finite values fail closed;
 - string, schema-name and schema-digest encoding uses strict UTF-8 with encoding failures translated to `EvidenceViolation`;
@@ -96,7 +96,7 @@ For writer union `("string", "int")`, reader `("long",)` and decoded datum `Avro
 
 ### Exact integer-to-binary32 invariant
 
-Avro `long -> float` cannot use `float(integer)` as an intermediate representation. A binary64 intermediate may land exactly on a binary32 midpoint and then round a second time to the wrong neighbor. The evidence helper therefore performs round-to-nearest-ties-to-even directly with integer arithmetic before constructing the binary32 bit pattern.
+Avro `long -> float` cannot use `float(integer)` as an intermediate representation. A binary64 intermediate may land exactly on a binary32 midpoint and then round a second time to the wrong neighbor. The evidence helper therefore performs round-to-nearest-ties-to-even directly with integer arithmetic before constructing the binary32 bit pattern. For the adversarial vector above, the exact midpoint is `4611686293305294848`; the test value is midpoint + 1 and therefore rounds upward to `4611686568183201792`.
 
 ## Runtime-independence boundary
 

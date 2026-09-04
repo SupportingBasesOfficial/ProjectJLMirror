@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import copy
 import json
 import sys
 from pathlib import Path
@@ -51,6 +52,18 @@ def track(data: dict[Path, object], track_id: str) -> dict:
 def substitute_d4a_with_d4b_evidence(data: dict[Path, object]) -> None:
     completed = track(data, "D4-A")["evidence_completed"]
     completed[0] = "canonical_bounded_serialization_profile"
+
+
+def inject_duplicate_rogue_d4c(data: dict[Path, object]) -> None:
+    state = data[validator.STATE]
+    assert isinstance(state, dict)
+    rogue = copy.deepcopy(next(t for t in state["tracks"] if t["track_id"] == "D4-C"))
+    rogue["candidate"] = "rogue-selected"
+    rogue["candidate_status"] = "selected"
+    rogue["state"] = "selected_candidate"
+    rogue["evidence_completed"] = [rogue["required_evidence"][0]]
+    rogue["evidence_remaining"] = rogue["required_evidence"][1:]
+    state["tracks"].insert(0, rogue)
 
 
 def inject_candidate_fields(data: dict[Path, object]) -> None:
@@ -129,6 +142,7 @@ def main() -> int:
     must_fail(lambda d: track(d, "D4-A").__setitem__("candidate", "rabbitmq"), "D4-A selected candidate drift")
     must_fail(lambda d: track(d, "D4-A")["evidence_completed"].pop(), "D4-A exact 7/7 evidence membership drift")
     must_fail(substitute_d4a_with_d4b_evidence, "D4-A exact 7/7 evidence membership drift")
+    must_fail(inject_duplicate_rogue_d4c, "D4 track identities must be exactly")
     must_fail(lambda d: track(d, "D4-C")["evidence_completed"].append(track(d, "D4-C")["required_evidence"][0]), "D4-C must remain uncredited")
     must_fail(lambda d: track(d, "D4-D").__setitem__("candidate", "candidate-x"), "D4-D candidate must remain unselected")
     must_fail(lambda d: d[validator.STATE].__setitem__("gate_state", "separately_accepted"), "D4 must remain scoped")
@@ -136,7 +150,7 @@ def main() -> int:
 
     print(
         "d4b_ledger_falsification=PASS exact_credit=locked exact_promotion_schema=locked duplicate_json_members=blocked "
-        "candidate_injection=blocked selection=blocked promotion_record_selection=blocked promotion_record_authority=blocked "
+        "duplicate_track_identity=blocked candidate_injection=blocked selection=blocked promotion_record_selection=blocked promotion_record_authority=blocked "
         "provenance_tamper=blocked source_mutation=blocked d4a_exact_membership=blocked cross_track_substitution=blocked "
         "d4c_d_leak=blocked full_d4_acceptance=blocked"
     )

@@ -95,6 +95,18 @@ def prove_behavior_falsifications() -> None:
     else:
         raise AssertionError("JSON excessive nesting accepted")
 
+    recursion_vector = b'{"tenant_id":"t1","event_type":"alarm","payload":' + (b'[' * 900) + b'0' + (b']' * 900) + b'}'
+    if len(recursion_vector) > evaluator.MAX_MESSAGE_BYTES:
+        raise AssertionError("JSON recursion vector exceeds transport fixture bound")
+    try:
+        evaluator.canonical_json_equivalence(recursion_vector)
+    except evaluator.EvidenceViolation:
+        pass
+    except RecursionError as exc:
+        raise AssertionError("JSON recursion escaped fail-closed evidence boundary") from exc
+    else:
+        raise AssertionError("JSON recursion vector accepted")
+
     if evaluator.canonical_json_equivalence(b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":1.0}}') != evaluator.canonical_json_equivalence(b'{"event_type":"alarm","payload":{"x":1e0},"tenant_id":"t1"}'):
         raise AssertionError("JSON numeric spelling changed canonical semantics")
     distinct_a = b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":9007199254740992.0}}'
@@ -312,6 +324,25 @@ def prove_behavior_falsifications() -> None:
         else:
             raise AssertionError("Avro float accepted boolean/string runtime coercion")
 
+    string_writer = evaluator.AvroRecordSchema("Text", (evaluator.AvroFieldSpec("value", ("string",)),))
+    try:
+        evaluator.avro_semantic_equivalence(string_writer, string_writer, {"value": "\ud800"})
+    except evaluator.EvidenceViolation:
+        pass
+    except UnicodeEncodeError as exc:
+        raise AssertionError("Avro invalid UTF-8 string escaped fail-closed boundary") from exc
+    else:
+        raise AssertionError("Avro invalid UTF-8 string accepted")
+
+    try:
+        evaluator.validate_avro_schema(evaluator.AvroRecordSchema("\ud800", (evaluator.AvroFieldSpec("value", ("string",)),)))
+    except evaluator.EvidenceViolation:
+        pass
+    except UnicodeEncodeError as exc:
+        raise AssertionError("Avro invalid UTF-8 schema name escaped fail-closed boundary") from exc
+    else:
+        raise AssertionError("Avro invalid UTF-8 schema name accepted")
+
     try:
         evaluator.avro_semantic_equivalence(double_writer, double_reader, {"value": 10**10000})
     except evaluator.EvidenceViolation:
@@ -376,6 +407,7 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.MANIFEST)["required_proofs"].pop(), "required proof inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["bounded_json_plus_json_schema_profile"].remove("decimal_canonicalization_is_context_independent_and_constructed_from_exact_decimal_tuple"), "candidate requirement drift for bounded_json_plus_json_schema_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["bounded_json_plus_json_schema_profile"].remove("decimal_magnitude_comparison_is_context_independent_and_uses_exact_decimal_magnitude"), "candidate requirement drift for bounded_json_plus_json_schema_profile")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["bounded_json_plus_json_schema_profile"].remove("json_parser_and_depth_traversal_translate_recursion_exhaustion_to_fail_closed_evidence_violation"), "candidate requirement drift for bounded_json_plus_json_schema_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["protobuf_profile"].remove("protected_oneof_duplicate_occurrences_and_cross_member_collisions_fail_closed_before_generated_binding_resolution"), "candidate requirement drift for protobuf_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("reviewed_avro_schema_reference_is_bound_to_exact_reviewed_schema_content_before_resolution"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("historical_avro_envelope_persists_and_verifies_schema_content_sha256_before_reinterpretation"), "candidate requirement drift for avro_profile")
@@ -385,10 +417,12 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("avro_float_writer_and_reader_values_are_materialized_at_ieee754_binary32_width_before_equivalence"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("float_double_runtime_mapping_rejects_boolean_and_string_coercion_before_width_materialization"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("float_double_admission_and_promotion_overflow_fail_closed_as_evidence_violation"), "candidate requirement drift for avro_profile")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("avro_string_name_and_schema_digest_utf8_encoding_errors_fail_closed_as_evidence_violation"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("allowed_writer_reader_promotions_are_applied_to_reader_representation_before_equivalence"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("datum_processing_is_bounded_and_canonicalized_structurally_without_unrestricted_recursive_json_serialization"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["official_source_facts"].pop(), "official source fact inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("json_decimal_magnitude_admission_is_context_independent"), "source assertion inventory drift")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("json_depth_recursion_exhaustion_fails_closed_as_evidence_violation"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_reviewed_schema_reference_is_structurally_bound_to_exact_reviewed_schema_content"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_historical_envelope_rejects_same_ref_schema_content_rebind_by_sha256"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_writer_declared_fields_cannot_be_fabricated_from_reader_defaults"), "source assertion inventory drift")
@@ -397,6 +431,7 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_float_reader_and_writer_semantics_are_canonicalized_at_ieee754_binary32_width"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_float_double_runtime_mapping_rejects_boolean_and_string_coercion"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_float_double_overflow_is_caught_and_fails_closed"), "source assertion inventory drift")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_invalid_utf8_string_name_and_digest_encoding_fails_closed"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("json_numeric_normalization_is_bounded_decimal_context_independent_and_runtime_independent_within_the_evidence_profile"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_allowed_promotions_materialize_reader_representation_before_semantic_equivalence"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_schema_and_datum_resource_bounds_are_enforced_before_structural_equivalence"), "source assertion inventory drift")
@@ -413,15 +448,16 @@ def main() -> int:
         "auto_credit=blocked candidate_promotion=blocked proof_weakening=blocked source_fact_drift=blocked "
         "compression_without_profile=blocked dynamic_schema_selection=blocked historical_cross_profile=blocked "
         "json_bounds=blocked json_numeric_runtime_drift=blocked json_decimal_context_drift=blocked "
-        "json_magnitude_context_drift=blocked protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked "
-        "protobuf_last_wins_override=blocked protobuf_oneof_same_member_duplicate=blocked protobuf_presence_enum_weakening=blocked "
-        "protobuf_unknown_preservation=proven protobuf_byte_order_authority=blocked protobuf_repeated_order_loss=blocked "
-        "avro_schema_ref_content_swap=blocked avro_historical_schema_rebind=blocked avro_writer_field_omission=blocked "
-        "avro_writer_only_fields=validated avro_union_branch=explicit avro_float_width=binary32 "
-        "avro_float_runtime_mapping=type_strict avro_float_overflow=blocked avro_alias_ambiguity=blocked "
-        "avro_missing_default=blocked avro_type_incompatibility=blocked avro_promotion_representation=proven "
-        "avro_invalid_utf8_promotion=blocked avro_scalar_bound=blocked avro_schema_width_bound=blocked "
-        "avro_nullable_semantics=proven ledger_selection=blocked d4_authority_escalation=blocked"
+        "json_magnitude_context_drift=blocked json_depth_recursion=fail_closed protobuf_nonminimal_varint=blocked "
+        "protobuf_uint64_overflow=blocked protobuf_last_wins_override=blocked protobuf_oneof_same_member_duplicate=blocked "
+        "protobuf_presence_enum_weakening=blocked protobuf_unknown_preservation=proven protobuf_byte_order_authority=blocked "
+        "protobuf_repeated_order_loss=blocked avro_schema_ref_content_swap=blocked avro_historical_schema_rebind=blocked "
+        "avro_writer_field_omission=blocked avro_writer_only_fields=validated avro_union_branch=explicit "
+        "avro_string_utf8=fail_closed avro_float_width=binary32 avro_float_runtime_mapping=type_strict "
+        "avro_float_overflow=blocked avro_alias_ambiguity=blocked avro_missing_default=blocked "
+        "avro_type_incompatibility=blocked avro_promotion_representation=proven avro_invalid_utf8_promotion=blocked "
+        "avro_scalar_bound=blocked avro_schema_width_bound=blocked avro_nullable_semantics=proven "
+        "ledger_selection=blocked d4_authority_escalation=blocked"
     )
     return 0
 

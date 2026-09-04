@@ -107,6 +107,14 @@ def prove_behavior_falsifications() -> None:
             raise AssertionError("ambient Decimal context collapsed distinct bounded decimals")
         if evaluator.canonical_json_equivalence(b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":1.2300}}') != evaluator.canonical_json_equivalence(b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":1.23}}'):
             raise AssertionError("ambient Decimal context changed exact canonical spelling")
+    with decimal.localcontext() as ctx:
+        ctx.prec = 2
+        try:
+            evaluator.canonical_json_equivalence(b'{"tenant_id":"t1","event_type":"alarm","payload":9223372036854775808}')
+        except evaluator.EvidenceViolation:
+            pass
+        else:
+            raise AssertionError("ambient Decimal context weakened JSON magnitude admission")
 
     tenant = evaluator.proto_field(1, b"t1")
     event = evaluator.proto_field(2, b"alarm")
@@ -278,6 +286,24 @@ def prove_behavior_falsifications() -> None:
         raise AssertionError("Avro float equivalence did not materialize IEEE-754 binary32 reader width")
     if evaluator.avro_semantic_equivalence(float_writer, float_reader, {"value": 16777217.0}) != native_float:
         raise AssertionError("Avro writer float was not quantized to IEEE-754 binary32 before equivalence")
+
+    union_writer = evaluator.AvroRecordSchema("UnionMetric", (evaluator.AvroFieldSpec("value", ("float", "double")),))
+    union_reader = evaluator.AvroRecordSchema("UnionMetric", (evaluator.AvroFieldSpec("value", ("double",)),))
+    try:
+        evaluator.avro_semantic_equivalence(union_writer, union_reader, {"value": 16777217.0})
+    except evaluator.EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("Avro union inferred an ambiguous branch from Python runtime type")
+    union_float = evaluator.avro_semantic_equivalence(union_writer, union_reader, {"value": evaluator.AvroUnionDatum(0, 16777217.0)})
+    union_double = evaluator.avro_semantic_equivalence(union_writer, union_reader, {"value": evaluator.AvroUnionDatum(1, 16777217.0)})
+    if union_float != (("value", ("double", 16777216.0)),):
+        raise AssertionError("Avro float union branch was not preserved before widening")
+    if union_double != (("value", ("double", 16777217.0)),):
+        raise AssertionError("Avro double union branch was not preserved")
+    if union_float == union_double:
+        raise AssertionError("Avro union branch identity collapsed")
+
     for invalid_float in (True, "1.0"):
         try:
             evaluator.avro_semantic_equivalence(float_writer, float_reader, {"value": invalid_float})
@@ -349,21 +375,25 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.MANIFEST).__setitem__("equivalent_reviewed_profile", "eligible_for_evidence_execution"), "equivalent candidate class must remain unevaluated")
     must_fail(lambda d: obj(d, validator.MANIFEST)["required_proofs"].pop(), "required proof inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["bounded_json_plus_json_schema_profile"].remove("decimal_canonicalization_is_context_independent_and_constructed_from_exact_decimal_tuple"), "candidate requirement drift for bounded_json_plus_json_schema_profile")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["bounded_json_plus_json_schema_profile"].remove("decimal_magnitude_comparison_is_context_independent_and_uses_exact_decimal_magnitude"), "candidate requirement drift for bounded_json_plus_json_schema_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["protobuf_profile"].remove("protected_oneof_duplicate_occurrences_and_cross_member_collisions_fail_closed_before_generated_binding_resolution"), "candidate requirement drift for protobuf_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("reviewed_avro_schema_reference_is_bound_to_exact_reviewed_schema_content_before_resolution"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("historical_avro_envelope_persists_and_verifies_schema_content_sha256_before_reinterpretation"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("writer_declared_fields_must_be_present_in_datum_and_reader_defaults_apply_only_when_field_is_absent_from_writer_schema"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("all_writer_declared_datum_values_are_validated_against_writer_types_and_bounds_before_reader_projection"), "candidate requirement drift for avro_profile")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("decoded_avro_union_branch_index_is_preserved_and_ambiguous_runtime_branch_inference_fails_closed"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("avro_float_writer_and_reader_values_are_materialized_at_ieee754_binary32_width_before_equivalence"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("float_double_runtime_mapping_rejects_boolean_and_string_coercion_before_width_materialization"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("float_double_admission_and_promotion_overflow_fail_closed_as_evidence_violation"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("allowed_writer_reader_promotions_are_applied_to_reader_representation_before_equivalence"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("datum_processing_is_bounded_and_canonicalized_structurally_without_unrestricted_recursive_json_serialization"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["official_source_facts"].pop(), "official source fact inventory drift")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("json_decimal_magnitude_admission_is_context_independent"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_reviewed_schema_reference_is_structurally_bound_to_exact_reviewed_schema_content"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_historical_envelope_rejects_same_ref_schema_content_rebind_by_sha256"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_writer_declared_fields_cannot_be_fabricated_from_reader_defaults"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_writer_only_fields_cannot_bypass_writer_type_and_bound_validation"), "source assertion inventory drift")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_decoded_union_branch_identity_is_preserved_and_not_inferred_from_python_runtime_type_order"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_float_reader_and_writer_semantics_are_canonicalized_at_ieee754_binary32_width"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_float_double_runtime_mapping_rejects_boolean_and_string_coercion"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_float_double_overflow_is_caught_and_fails_closed"), "source assertion inventory drift")
@@ -383,15 +413,15 @@ def main() -> int:
         "auto_credit=blocked candidate_promotion=blocked proof_weakening=blocked source_fact_drift=blocked "
         "compression_without_profile=blocked dynamic_schema_selection=blocked historical_cross_profile=blocked "
         "json_bounds=blocked json_numeric_runtime_drift=blocked json_decimal_context_drift=blocked "
-        "protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked protobuf_last_wins_override=blocked "
-        "protobuf_oneof_same_member_duplicate=blocked protobuf_presence_enum_weakening=blocked "
+        "json_magnitude_context_drift=blocked protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked "
+        "protobuf_last_wins_override=blocked protobuf_oneof_same_member_duplicate=blocked protobuf_presence_enum_weakening=blocked "
         "protobuf_unknown_preservation=proven protobuf_byte_order_authority=blocked protobuf_repeated_order_loss=blocked "
         "avro_schema_ref_content_swap=blocked avro_historical_schema_rebind=blocked avro_writer_field_omission=blocked "
-        "avro_writer_only_fields=validated avro_float_width=binary32 avro_float_runtime_mapping=type_strict "
-        "avro_float_overflow=blocked avro_alias_ambiguity=blocked avro_missing_default=blocked "
-        "avro_type_incompatibility=blocked avro_promotion_representation=proven avro_invalid_utf8_promotion=blocked "
-        "avro_scalar_bound=blocked avro_schema_width_bound=blocked avro_nullable_semantics=proven "
-        "ledger_selection=blocked d4_authority_escalation=blocked"
+        "avro_writer_only_fields=validated avro_union_branch=explicit avro_float_width=binary32 "
+        "avro_float_runtime_mapping=type_strict avro_float_overflow=blocked avro_alias_ambiguity=blocked "
+        "avro_missing_default=blocked avro_type_incompatibility=blocked avro_promotion_representation=proven "
+        "avro_invalid_utf8_promotion=blocked avro_scalar_bound=blocked avro_schema_width_bound=blocked "
+        "avro_nullable_semantics=proven ledger_selection=blocked d4_authority_escalation=blocked"
     )
     return 0
 

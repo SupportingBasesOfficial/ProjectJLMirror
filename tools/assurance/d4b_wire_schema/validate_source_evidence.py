@@ -58,6 +58,8 @@ EXPECTED_REQUIREMENTS = {
         "original_writer_schema_identity_and_content_are_pinned_for_historical_interpretation",
         "reader_schema_resolution_is_explicit_and_missing_fields_require_defaults_or_failure",
         "writer_reader_field_type_compatibility_and_allowed_promotions_are_checked_before_value_resolution",
+        "schema_field_alias_and_scalar_sizes_are_bounded_before_datum_resolution",
+        "datum_processing_is_bounded_and_canonicalized_structurally_without_unrestricted_recursive_json_serialization",
         "required_nullable_and_enum_semantics_are_explicit_after_writer_reader_resolution",
         "field_aliases_are_reviewed_and_ambiguous_aliases_fail_closed",
         "semantic_equivalence_is_computed_after_explicit_writer_reader_resolution_not_from_raw_schema_text",
@@ -88,6 +90,7 @@ EXPECTED_ASSERTIONS = {
     "protobuf_repeated_field_occurrence_order_remains_semantic_during_normalization",
     "avro_historical_interpretation_requires_writer_schema_continuity",
     "avro_writer_reader_type_compatibility_is_explicit_and_incompatible_types_fail_closed",
+    "avro_schema_and_datum_resource_bounds_are_enforced_before_structural_equivalence",
     "avro_required_nullable_and_enum_semantics_are_explicit_after_resolution",
     "json_schema_requires_explicit_platform_bounds_beyond_base_validation_vocabulary",
     "no_candidate_profile_loads_schema_or_executable_content_from_untrusted_message_payload",
@@ -218,8 +221,9 @@ def main(argv: list[str]) -> int:
     print(
         "d4b_wire_schema_source_manifest=PASS axis=OPEN-EVT-002 concrete_candidates=3 eligible=3 "
         "canonical_varints=required uint64_varints=bounded protobuf_oneof_duplicates=blocked "
-        "avro_type_resolution=required runtime_mapping=bounded historical_binding=required decompression=identity_only "
-        "equivalent=insufficient_evidence selection=not_selected ledger_credit=0 d4=scoped authorities=not_granted"
+        "avro_type_resolution=required avro_datum_bounds=required runtime_mapping=bounded historical_binding=required "
+        "decompression=identity_only equivalent=insufficient_evidence selection=not_selected ledger_credit=0 "
+        "d4=scoped authorities=not_granted"
     )
     return 0
 

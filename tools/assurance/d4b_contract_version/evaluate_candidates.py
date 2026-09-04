@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 
 ELIGIBLE = "eligible_for_evidence_execution"
+MAX_ISSUANCE_SEQUENCE = (1 << 64) - 1
 
 
 @dataclass(frozen=True)
@@ -69,8 +70,10 @@ class OpaqueMonotonicIssuer:
         self._last_sequence = 0
 
     def issue(self, sequence: int) -> str:
-        if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence <= 0:
-            raise ValueError("issuance sequence must be a positive integer")
+        if not isinstance(sequence, int) or isinstance(sequence, bool):
+            raise ValueError("issuance sequence must be an integer")
+        if sequence <= 0 or sequence > MAX_ISSUANCE_SEQUENCE:
+            raise ValueError("issuance sequence outside bounded positive range")
         if sequence <= self._last_sequence:
             raise ValueError("issuance sequence must increase strictly")
         material = b"d4b-axis-c-evidence-only\x00" + sequence.to_bytes(8, "big", signed=False)
@@ -129,12 +132,12 @@ def prove_opaque_monotonic_issuance(adapter: CandidateAdapter) -> tuple[str, str
     adapter.parse(second)
     if first == second:
         raise AssertionError("monotonic issuer produced duplicate opaque token")
-    for invalid in (2, 1, 0):
+    for invalid in (2, 1, 0, -1, MAX_ISSUANCE_SEQUENCE + 1):
         try:
             issuer.issue(invalid)
         except ValueError:
             continue
-        raise AssertionError(f"monotonic issuer accepted non-increasing sequence {invalid}")
+        raise AssertionError(f"monotonic issuer accepted invalid sequence {invalid}")
     assert_ordering_absent(adapter, first, second)
     return first, second
 
@@ -193,7 +196,7 @@ def main() -> int:
     results = evaluate()
     print(
         "d4b_contract_version_candidate_source=PASS "
-        "candidates=3 concrete_eligible=3 opaque_monotonic_issuance=proven ordering_authority=absent "
+        "candidates=3 concrete_eligible=3 opaque_monotonic_issuance=proven bounded_issuance=true ordering_authority=absent "
         "namespace_substitution=blocked breaking_reuse=blocked historical_bytes=preserved "
         "canonical_syntax_selection=false ledger_credit=0"
     )

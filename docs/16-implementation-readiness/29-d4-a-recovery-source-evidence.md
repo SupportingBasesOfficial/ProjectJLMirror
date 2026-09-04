@@ -45,8 +45,7 @@ The recovery profile defines:
 
 - normal recovery-backlog priority;
 - higher protected/current-work priority;
-- a bounded maximum number of backlog dispatches allowed before newly arriving protected work is admitted;
-- finite dispatcher batch controls.
+- a bounded maximum number of backlog dispatches allowed before newly arriving protected work is admitted.
 
 Protected current work is inserted during recovery drain rather than being preloaded before recovery. The harness records the observed backlog-dispatch count before every protected delivery and fails if the configured bound is exceeded. It also requires the complete historical backlog to drain, so protecting new work cannot starve recovery work indefinitely.
 

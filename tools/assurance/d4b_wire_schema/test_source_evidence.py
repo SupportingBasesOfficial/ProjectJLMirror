@@ -96,15 +96,22 @@ def prove_behavior_falsifications() -> None:
 
     if evaluator.canonical_json_equivalence(b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":1.0}}') != evaluator.canonical_json_equivalence(b'{"event_type":"alarm","payload":{"x":1e0},"tenant_id":"t1"}'):
         raise AssertionError("JSON numeric spelling changed canonical semantics")
+    if evaluator.canonical_json_equivalence(b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":9007199254740992.0}}') == evaluator.canonical_json_equivalence(b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":9007199254740993.0}}'):
+        raise AssertionError("distinct bounded JSON decimals collapsed")
 
     tenant = evaluator.proto_field(1, b"t1")
     event = evaluator.proto_field(2, b"alarm")
-    try:
-        evaluator.validate_protobuf_profile(tenant + tenant + event)
-    except evaluator.EvidenceViolation:
-        pass
-    else:
-        raise AssertionError("protobuf protected duplicate accepted")
+    invalid_proto = (
+        tenant + tenant + event,
+        tenant + event + evaluator.proto_field(3, b"a") + evaluator.proto_field(3, b"b"),
+        tenant + event + evaluator.proto_field(3, b"a") + evaluator.proto_field(4, b"b"),
+    )
+    for vector in invalid_proto:
+        try:
+            evaluator.validate_protobuf_profile(vector)
+        except evaluator.EvidenceViolation:
+            continue
+        raise AssertionError("protobuf duplicate/oneof ambiguity accepted")
 
     nonminimal_tag = bytes([0x8A, 0x00, 0x02]) + b"t1" + event
     try:
@@ -134,7 +141,6 @@ def prove_behavior_falsifications() -> None:
     _, preserved = evaluator.validate_protobuf_profile(tenant + event + unknown)
     if preserved != unknown:
         raise AssertionError("protobuf unknown bytes changed")
-
     if evaluator.protobuf_semantic_equivalence(tenant + event + unknown) != evaluator.protobuf_semantic_equivalence(unknown + event + tenant):
         raise AssertionError("protobuf semantic equivalence depends on distinct-field order")
 
@@ -143,12 +149,18 @@ def prove_behavior_falsifications() -> None:
     if evaluator.protobuf_semantic_equivalence(tenant + event + repeated_a + repeated_b) == evaluator.protobuf_semantic_equivalence(tenant + event + repeated_b + repeated_a):
         raise AssertionError("protobuf repeated occurrence order was erased")
 
-    writer = evaluator.AvroRecordSchema("Event", (evaluator.AvroFieldSpec("tenant_id"), evaluator.AvroFieldSpec("event_type")))
+    writer = evaluator.AvroRecordSchema(
+        "Event",
+        (
+            evaluator.AvroFieldSpec("tenant_id", ("string",)),
+            evaluator.AvroFieldSpec("event_type", ("string",)),
+        ),
+    )
     ambiguous = evaluator.AvroRecordSchema(
         "Event",
         (
-            evaluator.AvroFieldSpec("tenant_id", aliases=("legacy",)),
-            evaluator.AvroFieldSpec("event_type", aliases=("legacy",)),
+            evaluator.AvroFieldSpec("tenant_id", ("string",), aliases=("legacy",)),
+            evaluator.AvroFieldSpec("event_type", ("string",), aliases=("legacy",)),
         ),
     )
     try:
@@ -158,7 +170,7 @@ def prove_behavior_falsifications() -> None:
     else:
         raise AssertionError("Avro ambiguous alias accepted")
 
-    reader = evaluator.AvroRecordSchema("Event", writer.fields + (evaluator.AvroFieldSpec("region"),))
+    reader = evaluator.AvroRecordSchema("Event", writer.fields + (evaluator.AvroFieldSpec("region", ("string",)),))
     try:
         evaluator.resolve_avro_record(writer, reader, {"tenant_id": "t1", "event_type": "alarm"})
     except evaluator.EvidenceViolation:
@@ -166,19 +178,36 @@ def prove_behavior_falsifications() -> None:
     else:
         raise AssertionError("Avro reader-only field without default accepted")
 
+    string_reader = evaluator.AvroRecordSchema(
+        "Event",
+        (
+            evaluator.AvroFieldSpec("tenant_id", ("string",)),
+            evaluator.AvroFieldSpec("event_type", ("string",)),
+        ),
+    )
+    boolean_writer = evaluator.AvroRecordSchema(
+        "Event",
+        (
+            evaluator.AvroFieldSpec("tenant_id", ("boolean",)),
+            evaluator.AvroFieldSpec("event_type", ("string",)),
+        ),
+    )
+    try:
+        evaluator.resolve_avro_record(boolean_writer, string_reader, {"tenant_id": True, "event_type": "alarm"})
+    except evaluator.EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("Avro incompatible field types accepted")
+
     nullable_schema = evaluator.AvroRecordSchema(
         "Event",
         (
-            evaluator.AvroFieldSpec("tenant_id"),
-            evaluator.AvroFieldSpec("event_type"),
-            evaluator.AvroFieldSpec("severity", default_present=True, default=None),
+            evaluator.AvroFieldSpec("tenant_id", ("string",)),
+            evaluator.AvroFieldSpec("event_type", ("string",)),
+            evaluator.AvroFieldSpec("severity", ("null", "string"), default_present=True, default=None),
         ),
     )
-    encoded = evaluator.avro_semantic_equivalence(
-        nullable_schema,
-        nullable_schema,
-        {"tenant_id": "t1", "event_type": "alarm", "severity": None},
-    )
+    encoded = evaluator.avro_semantic_equivalence(nullable_schema, nullable_schema, {"tenant_id": "t1", "event_type": "alarm", "severity": None})
     if b'"severity":null' not in encoded:
         raise AssertionError("Avro nullable enum semantics lost")
 
@@ -200,8 +229,8 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.MANIFEST).__setitem__("equivalent_reviewed_profile", "eligible_for_evidence_execution"), "equivalent candidate class must remain unevaluated")
     must_fail(lambda d: obj(d, validator.MANIFEST)["required_proofs"].pop(), "required proof inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["protobuf_profile"].remove("bounded_wire_predecoder_rejects_nonminimal_varints_uint64_overflow_and_reserved_field_numbers"), "candidate requirement drift for protobuf_profile")
-    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["protobuf_profile"].remove("repeated_field_occurrence_order_is_preserved_within_each_field_number_during_semantic_normalization"), "candidate requirement drift for protobuf_profile")
-    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("field_aliases_are_reviewed_and_ambiguous_aliases_fail_closed"), "candidate requirement drift for avro_profile")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["protobuf_profile"].remove("protected_oneof_duplicate_occurrences_and_cross_member_collisions_fail_closed_before_generated_binding_resolution"), "candidate requirement drift for protobuf_profile")
+    must_fail(lambda d: obj(d, validator.MANIFEST)["candidate_profile_requirements"]["avro_profile"].remove("writer_reader_field_type_compatibility_and_allowed_promotions_are_checked_before_value_resolution"), "candidate requirement drift for avro_profile")
     must_fail(lambda d: obj(d, validator.MANIFEST)["official_source_facts"].pop(), "official source fact inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("historical_payload_profile_and_schema_binding_prevents_cross_profile_reinterpretation"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("unselected_compression_is_rejected_so_decompression_work_is_zero_and_bounded"), "source assertion inventory drift")
@@ -218,10 +247,10 @@ def main() -> int:
         "auto_credit=blocked candidate_promotion=blocked proof_weakening=blocked source_fact_drift=blocked "
         "compression_without_profile=blocked dynamic_schema_selection=blocked historical_cross_profile=blocked "
         "json_bounds=blocked json_numeric_runtime_drift=blocked protobuf_nonminimal_varint=blocked "
-        "protobuf_uint64_overflow=blocked protobuf_last_wins_override=blocked protobuf_presence_enum_weakening=blocked "
-        "protobuf_unknown_preservation=proven protobuf_byte_order_authority=blocked protobuf_repeated_order_loss=blocked "
-        "avro_alias_ambiguity=blocked avro_missing_default=blocked avro_nullable_semantics=proven "
-        "ledger_selection=blocked d4_authority_escalation=blocked"
+        "protobuf_uint64_overflow=blocked protobuf_last_wins_override=blocked protobuf_oneof_same_member_duplicate=blocked "
+        "protobuf_presence_enum_weakening=blocked protobuf_unknown_preservation=proven protobuf_byte_order_authority=blocked "
+        "protobuf_repeated_order_loss=blocked avro_alias_ambiguity=blocked avro_missing_default=blocked "
+        "avro_type_incompatibility=blocked avro_nullable_semantics=proven ledger_selection=blocked d4_authority_escalation=blocked"
     )
     return 0
 

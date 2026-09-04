@@ -79,8 +79,7 @@ def _bounded_decimal(raw: str) -> Decimal:
         raise EvidenceViolation("invalid JSON number") from exc
     if not value.is_finite():
         raise EvidenceViolation("non-finite JSON number")
-    sign, digits, exponent = value.as_tuple()
-    del sign
+    _, digits, exponent = value.as_tuple()
     if len(digits) > MAX_JSON_NUMBER_DIGITS or abs(exponent) > MAX_JSON_SCALE:
         raise EvidenceViolation("JSON number exceeds evidence precision/scale bound")
     if abs(value) > MAX_JSON_MAGNITUDE:
@@ -90,13 +89,9 @@ def _bounded_decimal(raw: str) -> Decimal:
 
 def _depth(value: Any, current: int = 0) -> int:
     if isinstance(value, dict):
-        if not value:
-            return current + 1
-        return max(_depth(v, current + 1) for v in value.values())
+        return current + 1 if not value else max(_depth(v, current + 1) for v in value.values())
     if isinstance(value, list):
-        if not value:
-            return current + 1
-        return max(_depth(v, current + 1) for v in value)
+        return current + 1 if not value else max(_depth(v, current + 1) for v in value)
     return current
 
 
@@ -109,9 +104,8 @@ JSON_ALIAS_GROUPS = (
 def parse_bounded_json(raw: bytes) -> dict[str, Any]:
     raw = admit_transport_payload(raw)
     try:
-        text = raw.decode("utf-8", "strict")
         value = json.loads(
-            text,
+            raw.decode("utf-8", "strict"),
             object_pairs_hook=_reject_duplicate_members,
             parse_int=_bounded_decimal,
             parse_float=_bounded_decimal,
@@ -135,10 +129,8 @@ def validate_json_contract(value: dict[str, Any]) -> None:
     if set(value) - permitted:
         raise EvidenceViolation("JSON additional properties forbidden by evidence profile")
     for required in ("tenant_id", "event_type"):
-        if required not in value:
-            raise EvidenceViolation(f"missing required JSON field {required}")
-        if not isinstance(value[required], str) or value[required] == "":
-            raise EvidenceViolation(f"JSON field {required} must be non-empty string")
+        if required not in value or not isinstance(value[required], str) or value[required] == "":
+            raise EvidenceViolation(f"JSON field {required} must be present non-empty string")
     if "severity" in value and value["severity"] not in ("info", "warning", "critical", None):
         raise EvidenceViolation("JSON enum/null semantics violated")
 
@@ -151,8 +143,7 @@ def _canonical_json_value(value: Any) -> tuple[Any, ...]:
     if isinstance(value, str):
         return ("string", value)
     if isinstance(value, Decimal):
-        number = "0" if value == 0 else format(value.normalize(), "f")
-        return ("number", number)
+        return ("number", "0" if value == 0 else format(value.normalize(), "f"))
     if isinstance(value, list):
         return ("array", tuple(_canonical_json_value(item) for item in value))
     if isinstance(value, dict):
@@ -199,8 +190,7 @@ def _read_varint(raw: bytes, offset: int) -> tuple[int, int]:
         if value > MAX_PROTO_VARINT_VALUE:
             raise EvidenceViolation("protobuf varint exceeds uint64 bound")
         if not (byte & 0x80):
-            encoded = raw[start:offset]
-            if encoded != _encode_varint(value):
+            if raw[start:offset] != _encode_varint(value):
                 raise EvidenceViolation("non-minimal protobuf varint is forbidden by canonical evidence profile")
             return value, offset
         shift += 7
@@ -268,6 +258,9 @@ def validate_protobuf_profile(raw: bytes) -> tuple[list[ProtoField], bytes]:
     duplicates = sorted(number for number in PROTO_PROTECTED_SINGULAR if counts.get(number, 0) > 1)
     if duplicates:
         raise EvidenceViolation(f"protected protobuf singular field duplicated: {duplicates}")
+    duplicate_oneof = sorted(number for number in PROTO_PROTECTED_ONEOF if counts.get(number, 0) > 1)
+    if duplicate_oneof:
+        raise EvidenceViolation(f"protected protobuf oneof member duplicated: {duplicate_oneof}")
     oneof_present = sorted(number for number in PROTO_PROTECTED_ONEOF if counts.get(number, 0) > 0)
     if len(oneof_present) > 1:
         raise EvidenceViolation(f"protected protobuf oneof collision: {oneof_present}")
@@ -291,9 +284,23 @@ def protobuf_semantic_equivalence(raw: bytes) -> tuple[tuple[int, tuple[tuple[in
     return tuple((number, tuple(grouped[number])) for number in sorted(grouped))
 
 
+AVRO_PRIMITIVES = frozenset({"null", "boolean", "int", "long", "float", "double", "bytes", "string"})
+AVRO_PROMOTIONS: dict[str, frozenset[str]] = {
+    "null": frozenset({"null"}),
+    "boolean": frozenset({"boolean"}),
+    "int": frozenset({"int", "long", "float", "double"}),
+    "long": frozenset({"long", "float", "double"}),
+    "float": frozenset({"float", "double"}),
+    "double": frozenset({"double"}),
+    "bytes": frozenset({"bytes", "string"}),
+    "string": frozenset({"string", "bytes"}),
+}
+
+
 @dataclass(frozen=True)
 class AvroFieldSpec:
     name: str
+    avro_types: tuple[str, ...] = ("string",)
     aliases: tuple[str, ...] = ()
     default_present: bool = False
     default: Any = None
@@ -305,6 +312,28 @@ class AvroRecordSchema:
     fields: tuple[AvroFieldSpec, ...]
 
 
+def _avro_value_matches_type(value: Any, avro_type: str) -> bool:
+    if avro_type == "null":
+        return value is None
+    if avro_type == "boolean":
+        return isinstance(value, bool)
+    if avro_type == "int":
+        return isinstance(value, int) and not isinstance(value, bool) and -(1 << 31) <= value <= (1 << 31) - 1
+    if avro_type == "long":
+        return isinstance(value, int) and not isinstance(value, bool) and -(1 << 63) <= value <= (1 << 63) - 1
+    if avro_type in {"float", "double"}:
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if avro_type == "bytes":
+        return isinstance(value, bytes)
+    if avro_type == "string":
+        return isinstance(value, str)
+    return False
+
+
+def _avro_types_compatible(writer_types: tuple[str, ...], reader_types: tuple[str, ...]) -> bool:
+    return all(any(reader in AVRO_PROMOTIONS[writer] for reader in reader_types) for writer in writer_types)
+
+
 def validate_avro_schema(schema: AvroRecordSchema) -> None:
     names: set[str] = set()
     aliases: dict[str, str] = {}
@@ -312,6 +341,10 @@ def validate_avro_schema(schema: AvroRecordSchema) -> None:
         if field.name in names:
             raise EvidenceViolation(f"duplicate Avro field name {field.name}")
         names.add(field.name)
+        if not field.avro_types or len(set(field.avro_types)) != len(field.avro_types) or any(t not in AVRO_PRIMITIVES for t in field.avro_types):
+            raise EvidenceViolation(f"invalid Avro type declaration for {field.name}")
+        if field.default_present and not _avro_value_matches_type(field.default, field.avro_types[0]):
+            raise EvidenceViolation(f"Avro default for {field.name} must match first declared type")
         for alias in field.aliases:
             if alias == field.name:
                 raise EvidenceViolation("Avro field alias cannot duplicate its canonical name in evidence profile")
@@ -328,17 +361,24 @@ def resolve_avro_record(writer: AvroRecordSchema, reader: AvroRecordSchema, datu
     validate_avro_schema(reader)
     if writer.name != reader.name:
         raise EvidenceViolation("Avro writer/reader record identity mismatch")
-    writer_names = {field.name for field in writer.fields}
-    if set(datum) - writer_names:
+    writer_fields = {field.name: field for field in writer.fields}
+    if set(datum) - set(writer_fields):
         raise EvidenceViolation("datum contains field absent from pinned Avro writer schema")
     resolved: dict[str, Any] = {}
     for target in reader.fields:
         source_names = (target.name,) + target.aliases
-        present = [name for name in source_names if name in datum and name in writer_names]
+        present = [name for name in source_names if name in datum and name in writer_fields]
         if len(present) > 1:
             raise EvidenceViolation(f"Avro protected alias collision in datum for {target.name}")
         if present:
-            resolved[target.name] = datum[present[0]]
+            source_name = present[0]
+            source = writer_fields[source_name]
+            if not _avro_types_compatible(source.avro_types, target.avro_types):
+                raise EvidenceViolation(f"Avro writer/reader type incompatibility for {target.name}")
+            value = datum[source_name]
+            if not any(_avro_value_matches_type(value, avro_type) for avro_type in source.avro_types):
+                raise EvidenceViolation(f"Avro datum type violates writer schema for {source_name}")
+            resolved[target.name] = value
         elif target.default_present:
             resolved[target.name] = target.default
         else:
@@ -397,10 +437,12 @@ def prove_json_profile() -> None:
     good_b = b'{"payload":{"x":1e0},"event_type":"alarm","tenant_id":"t1","severity":null}'
     if canonical_json_equivalence(good_a) != canonical_json_equivalence(good_b):
         raise AssertionError("JSON semantic equivalence is not deterministic across numeric spellings")
-    negative_zero = b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":-0.0}}'
-    positive_zero = b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":0}}'
-    if canonical_json_equivalence(negative_zero) != canonical_json_equivalence(positive_zero):
+    if canonical_json_equivalence(b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":-0.0}}') != canonical_json_equivalence(b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":0}}'):
         raise AssertionError("JSON numeric zero semantics vary by runtime spelling")
+    distinct_a = b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":9007199254740992.0}}'
+    distinct_b = b'{"tenant_id":"t1","event_type":"alarm","payload":{"x":9007199254740993.0}}'
+    if canonical_json_equivalence(distinct_a) == canonical_json_equivalence(distinct_b):
+        raise AssertionError("distinct bounded JSON decimals collapsed during normalization")
     forbidden = (
         b'{"tenant_id":"t1","tenant_id":"t2","event_type":"alarm"}',
         b'{"tenant_id":"t1","tenantId":"t1","event_type":"alarm"}',
@@ -434,12 +476,14 @@ def prove_protobuf_profile() -> None:
         raise AssertionError("protobuf semantic equivalence depends on distinct-field serialization order")
     if protobuf_semantic_equivalence(tenant + event + repeated_a + repeated_b) == protobuf_semantic_equivalence(tenant + event + repeated_b + repeated_a):
         raise AssertionError("protobuf repeated-field order was erased by semantic normalization")
-    for vector in (
+    invalid_vectors = (
         tenant + tenant + event,
+        tenant + event + proto_field(3, b"a") + proto_field(3, b"b"),
         tenant + event + proto_field(3, b"a") + proto_field(4, b"b"),
         tenant + event + proto_field(6, b"unknown"),
         event,
-    ):
+    )
+    for vector in invalid_vectors:
         try:
             validate_protobuf_profile(vector)
         except EvidenceViolation:
@@ -464,24 +508,49 @@ def prove_protobuf_profile() -> None:
 def prove_avro_profile() -> None:
     prove_static_schema_and_history("avro_profile", "avro:event:v1", b"historical-avro")
     admit_transport_payload(b"avro-binary-fixture")
-    writer_v1 = AvroRecordSchema("Event", (AvroFieldSpec("tenant_id"), AvroFieldSpec("event_type")))
+    writer_v1 = AvroRecordSchema(
+        "Event",
+        (
+            AvroFieldSpec("tenant_id", ("string",)),
+            AvroFieldSpec("event_type", ("string",)),
+        ),
+    )
     reader_v2 = AvroRecordSchema(
         "Event",
         (
-            AvroFieldSpec("tenant_id"),
-            AvroFieldSpec("event_type"),
-            AvroFieldSpec("severity", default_present=True, default="info"),
+            AvroFieldSpec("tenant_id", ("string",)),
+            AvroFieldSpec("event_type", ("string",)),
+            AvroFieldSpec("severity", ("string", "null"), default_present=True, default="info"),
         ),
     )
     datum = {"tenant_id": "t1", "event_type": "alarm"}
     expected = b'{"event_type":"alarm","severity":"info","tenant_id":"t1"}'
     if avro_semantic_equivalence(writer_v1, reader_v2, datum) != expected:
         raise AssertionError("Avro writer-reader resolution is not deterministic")
-    writer_v2 = reader_v2
-    nullable = {"tenant_id": "t1", "event_type": "alarm", "severity": None}
-    if b'"severity":null' not in avro_semantic_equivalence(writer_v2, reader_v2, nullable):
+    nullable_schema = AvroRecordSchema(
+        "Event",
+        (
+            AvroFieldSpec("tenant_id", ("string",)),
+            AvroFieldSpec("event_type", ("string",)),
+            AvroFieldSpec("severity", ("null", "string"), default_present=True, default=None),
+        ),
+    )
+    if b'"severity":null' not in avro_semantic_equivalence(nullable_schema, nullable_schema, {"tenant_id": "t1", "event_type": "alarm", "severity": None}):
         raise AssertionError("Avro nullable enum semantics were not preserved")
-    missing_required_reader = AvroRecordSchema("Event", reader_v2.fields + (AvroFieldSpec("region"),))
+    incompatible_writer = AvroRecordSchema(
+        "Event",
+        (
+            AvroFieldSpec("tenant_id", ("bytes",)),
+            AvroFieldSpec("event_type", ("string",)),
+        ),
+    )
+    try:
+        resolve_avro_record(incompatible_writer, reader_v2, {"tenant_id": b"t1", "event_type": "alarm"})
+    except EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("Avro incompatible writer/reader field types were accepted")
+    missing_required_reader = AvroRecordSchema("Event", reader_v2.fields + (AvroFieldSpec("region", ("string",)),))
     try:
         resolve_avro_record(writer_v1, missing_required_reader, datum)
     except EvidenceViolation:
@@ -491,8 +560,8 @@ def prove_avro_profile() -> None:
     ambiguous_reader = AvroRecordSchema(
         "Event",
         (
-            AvroFieldSpec("tenant_id", aliases=("tenant",)),
-            AvroFieldSpec("event_type", aliases=("tenant",)),
+            AvroFieldSpec("tenant_id", ("string",), aliases=("tenant",)),
+            AvroFieldSpec("event_type", ("string",), aliases=("tenant",)),
         ),
     )
     try:
@@ -520,10 +589,11 @@ def main() -> int:
     print(
         "d4b_wire_schema_candidate_source=PASS candidates=3 concrete_eligible=3 "
         "identity_only_transport=bounded dynamic_schema_selection=blocked historical_profile_reinterpretation=blocked "
-        "json_duplicates=blocked json_alias_collision=blocked json_numeric_mapping=canonical json_bounds=proven "
-        "protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked protobuf_protected_duplicates=blocked "
-        "protobuf_presence_enum=explicit protobuf_unknown_bytes=preserved protobuf_byte_order=noncanonical "
-        "protobuf_repeated_order=preserved avro_writer_reader_resolution=explicit avro_nullable_enum=explicit "
+        "json_duplicates=blocked json_alias_collision=blocked json_numeric_mapping=canonical json_distinct_decimals=preserved "
+        "json_bounds=proven protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked "
+        "protobuf_protected_duplicates=blocked protobuf_oneof_duplicate=blocked protobuf_presence_enum=explicit "
+        "protobuf_unknown_bytes=preserved protobuf_byte_order=noncanonical protobuf_repeated_order=preserved "
+        "avro_writer_reader_resolution=explicit avro_type_compatibility=checked avro_nullable_enum=explicit "
         "avro_alias_ambiguity=blocked selection=not_selected ledger_credit=0"
     )
     for candidate, result in sorted(results.items()):

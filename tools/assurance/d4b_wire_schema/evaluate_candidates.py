@@ -337,6 +337,27 @@ class AvroRecordSchema:
     fields: tuple[AvroFieldSpec, ...]
 
 
+REVIEWED_AVRO_EVENT_V1 = AvroRecordSchema(
+    "Event",
+    (
+        AvroFieldSpec("tenant_id", ("string",)),
+        AvroFieldSpec("event_type", ("string",)),
+    ),
+)
+REVIEWED_AVRO_EVENT_V2 = AvroRecordSchema(
+    "Event",
+    (
+        AvroFieldSpec("tenant_id", ("string",)),
+        AvroFieldSpec("event_type", ("string",)),
+        AvroFieldSpec("severity", ("string", "null"), default_present=True, default="info"),
+    ),
+)
+REVIEWED_AVRO_SCHEMAS: dict[str, AvroRecordSchema] = {
+    "avro:event:v1": REVIEWED_AVRO_EVENT_V1,
+    "avro:event:v2": REVIEWED_AVRO_EVENT_V2,
+}
+
+
 def _bounded_avro_name(value: str, label: str) -> None:
     if not isinstance(value, str) or not value or len(value.encode("utf-8")) > MAX_AVRO_NAME_BYTES:
         raise EvidenceViolation(f"Avro {label} exceeds evidence name bound")
@@ -352,7 +373,13 @@ def _avro_value_matches_type(value: Any, avro_type: str) -> bool:
     if avro_type == "long":
         return isinstance(value, int) and not isinstance(value, bool) and -(1 << 63) <= value <= (1 << 63) - 1
     if avro_type in {"float", "double"}:
-        return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            return False
+        try:
+            converted = float(value)
+        except (OverflowError, ValueError):
+            return False
+        return math.isfinite(converted)
     if avro_type == "bytes":
         return isinstance(value, bytes) and len(value) <= MAX_AVRO_SCALAR_BYTES
     if avro_type == "string":
@@ -382,7 +409,10 @@ def _promote_avro_value(value: Any, writer_type: str, reader_type: str) -> Any:
     if writer_type == reader_type or (writer_type == "int" and reader_type == "long"):
         return value
     if writer_type in {"int", "long", "float"} and reader_type in {"float", "double"}:
-        promoted = float(value)
+        try:
+            promoted = float(value)
+        except (OverflowError, ValueError) as exc:
+            raise EvidenceViolation("Avro numeric promotion exceeded bounded reader representation") from exc
         if not math.isfinite(promoted):
             raise EvidenceViolation("Avro numeric promotion produced non-finite reader value")
         return promoted
@@ -431,6 +461,15 @@ def validate_avro_schema(schema: AvroRecordSchema) -> None:
         raise EvidenceViolation("Avro canonical field/alias collision")
 
 
+def resolve_reviewed_avro_schema(schema_ref: str, schema: AvroRecordSchema) -> AvroRecordSchema:
+    resolve_reviewed_schema("avro_profile", schema_ref)
+    expected = REVIEWED_AVRO_SCHEMAS.get(schema_ref)
+    if expected is None or schema != expected:
+        raise EvidenceViolation("Avro schema reference does not match exact reviewed schema content")
+    validate_avro_schema(schema)
+    return schema
+
+
 def resolve_avro_record(writer: AvroRecordSchema, reader: AvroRecordSchema, datum: dict[str, Any]) -> dict[str, tuple[str, Any]]:
     validate_avro_schema(writer)
     validate_avro_schema(reader)
@@ -439,16 +478,20 @@ def resolve_avro_record(writer: AvroRecordSchema, reader: AvroRecordSchema, datu
     if not isinstance(datum, dict) or len(datum) > MAX_AVRO_FIELDS:
         raise EvidenceViolation("Avro datum field count exceeds evidence bound")
     writer_fields = {field.name: field for field in writer.fields}
-    if set(datum) - set(writer_fields):
+    datum_names = set(datum)
+    if datum_names - set(writer_fields):
         raise EvidenceViolation("datum contains field absent from pinned Avro writer schema")
+    missing_writer_fields = set(writer_fields) - datum_names
+    if missing_writer_fields:
+        raise EvidenceViolation(f"datum omits writer-declared Avro fields: {sorted(missing_writer_fields)}")
     resolved: dict[str, tuple[str, Any]] = {}
     for target in reader.fields:
         source_names = (target.name,) + target.aliases
-        present = [name for name in source_names if name in datum and name in writer_fields]
-        if len(present) > 1:
-            raise EvidenceViolation(f"Avro protected alias collision in datum for {target.name}")
-        if present:
-            source_name = present[0]
+        writer_matches = [name for name in source_names if name in writer_fields]
+        if len(writer_matches) > 1:
+            raise EvidenceViolation(f"Avro protected alias collision in writer schema for {target.name}")
+        if writer_matches:
+            source_name = writer_matches[0]
             source = writer_fields[source_name]
             if not _avro_types_compatible(source.avro_types, target.avro_types):
                 raise EvidenceViolation(f"Avro writer/reader type incompatibility for {target.name}")
@@ -488,6 +531,18 @@ def avro_semantic_equivalence(writer: AvroRecordSchema, reader: AvroRecordSchema
     if reader.name == "Event":
         validate_avro_contract(resolved)
     return tuple((name, resolved[name]) for name in sorted(resolved))
+
+
+def reviewed_avro_semantic_equivalence(
+    writer_ref: str,
+    writer: AvroRecordSchema,
+    reader_ref: str,
+    reader: AvroRecordSchema,
+    datum: dict[str, Any],
+) -> tuple[tuple[str, tuple[str, Any]], ...]:
+    resolve_reviewed_avro_schema(writer_ref, writer)
+    resolve_reviewed_avro_schema(reader_ref, reader)
+    return avro_semantic_equivalence(writer, reader, datum)
 
 
 def prove_static_schema_and_history(candidate: str, schema_ref: str, payload: bytes) -> None:
@@ -598,29 +653,31 @@ def prove_protobuf_profile() -> None:
 def prove_avro_profile() -> None:
     prove_static_schema_and_history("avro_profile", "avro:event:v1", b"historical-avro")
     admit_transport_payload(b"avro-binary-fixture")
-    writer_v1 = AvroRecordSchema(
-        "Event",
-        (
-            AvroFieldSpec("tenant_id", ("string",)),
-            AvroFieldSpec("event_type", ("string",)),
-        ),
-    )
-    reader_v2 = AvroRecordSchema(
-        "Event",
-        (
-            AvroFieldSpec("tenant_id", ("string",)),
-            AvroFieldSpec("event_type", ("string",)),
-            AvroFieldSpec("severity", ("string", "null"), default_present=True, default="info"),
-        ),
-    )
+    writer_v1 = REVIEWED_AVRO_EVENT_V1
+    reader_v2 = REVIEWED_AVRO_EVENT_V2
+    resolve_reviewed_avro_schema("avro:event:v1", writer_v1)
+    resolve_reviewed_avro_schema("avro:event:v2", reader_v2)
+    mutated_v1 = AvroRecordSchema("Event", writer_v1.fields + (AvroFieldSpec("injected", ("string",), default_present=True, default="x"),))
+    try:
+        resolve_reviewed_avro_schema("avro:event:v1", mutated_v1)
+    except EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("Avro reviewed schema ref accepted different same-name schema content")
     datum = {"tenant_id": "t1", "event_type": "alarm"}
     expected = (
         ("event_type", ("string", "alarm")),
         ("severity", ("string", "info")),
         ("tenant_id", ("string", "t1")),
     )
-    if avro_semantic_equivalence(writer_v1, reader_v2, datum) != expected:
-        raise AssertionError("Avro writer-reader resolution is not deterministic")
+    if reviewed_avro_semantic_equivalence("avro:event:v1", writer_v1, "avro:event:v2", reader_v2, datum) != expected:
+        raise AssertionError("reviewed Avro writer-reader resolution is not deterministic")
+    try:
+        reviewed_avro_semantic_equivalence("avro:event:v2", reader_v2, "avro:event:v2", reader_v2, datum)
+    except EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("Avro datum omitted writer-declared severity but reader default fabricated it")
     nullable_schema = AvroRecordSchema(
         "Event",
         (
@@ -657,6 +714,12 @@ def prove_avro_profile() -> None:
     double_writer = AvroRecordSchema("Metric", (AvroFieldSpec("value", ("double",)),))
     if avro_semantic_equivalence(int_writer, double_reader, {"value": 1}) != avro_semantic_equivalence(double_writer, double_reader, {"value": 1.0}):
         raise AssertionError("Avro numeric promotion did not canonicalize to reader representation")
+    try:
+        avro_semantic_equivalence(double_writer, double_reader, {"value": 10**10000})
+    except EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("Avro oversized float/double input did not fail closed")
     bytes_writer = AvroRecordSchema("Text", (AvroFieldSpec("value", ("bytes",)),))
     string_reader = AvroRecordSchema("Text", (AvroFieldSpec("value", ("string",)),))
     if avro_semantic_equivalence(bytes_writer, string_reader, {"value": b"hello"}) != (("value", ("string", "hello")),):
@@ -716,6 +779,7 @@ def main() -> int:
         "json_bounds=proven protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked "
         "protobuf_protected_duplicates=blocked protobuf_oneof_duplicate=blocked protobuf_presence_enum=explicit "
         "protobuf_unknown_bytes=preserved protobuf_byte_order=noncanonical protobuf_repeated_order=preserved "
+        "avro_schema_ref_content=binding_exact avro_writer_fields=required avro_float_overflow=fail_closed "
         "avro_writer_reader_resolution=explicit avro_type_compatibility=checked avro_promotions=reader_canonicalized "
         "avro_event_contract=scoped avro_datum_bounds=proven avro_nullable_enum=explicit avro_alias_ambiguity=blocked "
         "selection=not_selected ledger_credit=0"

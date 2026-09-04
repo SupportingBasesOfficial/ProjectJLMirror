@@ -36,7 +36,6 @@ def behavior_falsification() -> None:
     profile, reviewer, reader, v1, v2 = evaluator.candidate_fixture('registry_backed_catalog')
     assert profile.registry is not None
 
-    # Registry cannot manufacture authority for an unreviewed revision.
     unreviewed = evaluator.ContractRevision(
         identity=v1.identity,
         revision='unreviewed-r9',
@@ -50,11 +49,23 @@ def behavior_falsification() -> None:
         'unreviewed registry authority',
     )
 
-    # Same payload syntax cannot hide a protected semantic break.
+    forged_provenance = evaluator.ContractRevision(
+        identity=v1.identity,
+        revision=v1.revision,
+        payload_schema=v1.payload_schema,
+        semantic_manifest=v1.semantic_manifest,
+        historical_metadata=v1.historical_metadata,
+        reviewed_provenance='git:forged-provenance',
+    )
+    assert forged_provenance.reviewed_content_sha256 != v1.reviewed_content_sha256
+    expect_violation(
+        lambda: profile.registry.publish(reviewer, forged_provenance, 'subject', '10', 'vendor-forged'),
+        'forged reviewed provenance',
+    )
+
     assert v1.payload_schema_sha256 == v2.payload_schema_sha256
     assert evaluator.compatibility(v1, v2) == 'semantic_review_required_breaking_until_proven_otherwise'
 
-    # Existing reviewed revision cannot be rebound to different content.
     rebound = evaluator.ContractRevision(
         identity=v1.identity,
         revision=v1.revision,
@@ -65,7 +76,6 @@ def behavior_falsification() -> None:
     )
     expect_violation(lambda: profile.history.commit(reviewer, rebound), 'history overwrite')
 
-    # Authentication and authorization remain independent gates.
     expect_violation(
         lambda: profile.resolve(evaluator.Principal('', (), authenticated=False), v1.identity, v1.revision),
         'anonymous read',
@@ -75,14 +85,12 @@ def behavior_falsification() -> None:
         'reader registry publish',
     )
 
-    # Tool outage cannot reinterpret committed content.
     before = profile.resolve(reader, v1.identity, v1.revision).reviewed_content_sha256
     profile.registry.available = False
     during = profile.resolve(reader, v1.identity, v1.revision).reviewed_content_sha256
     assert before == during == v1.reviewed_content_sha256
     profile.registry.available = True
 
-    # Product replacement changes physical IDs only.
     replacement = evaluator.RegistryMirror('registry-fixture-replacement', profile.history)
     replacement.publish(reviewer, v1, 'other-subject', '1', 'other-vendor')
     old = profile.registry.mapping(reader, v1)
@@ -116,6 +124,7 @@ def validator_falsification() -> None:
         ('ledger credit', lambda m: m.__setitem__('ledger_credit', ['catalog_tooling'])),
         ('candidate promotion', lambda m: m['candidate_results'].__setitem__('reviewed_git_catalog', 'selected')),
         ('proof weakening', lambda m: m.__setitem__('required_proofs', m['required_proofs'][:-1])),
+        ('provenance assertion weakening', lambda m: m.__setitem__('source_assertions', [x for x in m['source_assertions'] if not x.startswith('reviewed_provenance_is_bound_')])),
         ('product authority', lambda m: m['non_authority'].__setitem__('canonical_product_implementation_authority', 'granted')),
         ('wire coupling', lambda m: m['non_authority'].__setitem__('d4b_wire_selection', 'protobuf_profile')),
         ('contract-version coupling', lambda m: m['non_authority'].__setitem__('d4b_contract_version_selection', 'semantic_version_like_contract_revision')),
@@ -134,9 +143,9 @@ def main() -> None:
     validator_falsification()
     print(
         'd4b_catalog_tooling_falsification=PASS '
-        'unreviewed_publish=blocked semantic_only_break=detected history_rebind=blocked '
-        'authz=blocked outage_reinterpretation=blocked product_identity_coupling=blocked '
-        'selection_credit_authority_coupling=blocked'
+        'unreviewed_publish=blocked forged_provenance=blocked semantic_only_break=detected '
+        'history_rebind=blocked authz=blocked outage_reinterpretation=blocked '
+        'product_identity_coupling=blocked selection_credit_authority_coupling=blocked'
     )
 
 

@@ -193,7 +193,8 @@ def scan_bounded_protobuf(raw: bytes) -> list[ProtoField]:
 
 PROTO_PROTECTED_SINGULAR = frozenset({1, 2})
 PROTO_PROTECTED_ONEOF = frozenset({3, 4})
-PROTO_KNOWN_FIELDS = frozenset({1, 2, 3, 4})
+PROTO_REPEATED_FIELDS = frozenset({5})
+PROTO_KNOWN_FIELDS = PROTO_PROTECTED_SINGULAR | PROTO_PROTECTED_ONEOF | PROTO_REPEATED_FIELDS
 
 
 def validate_protobuf_profile(raw: bytes) -> tuple[list[ProtoField], bytes]:
@@ -211,11 +212,14 @@ def validate_protobuf_profile(raw: bytes) -> tuple[list[ProtoField], bytes]:
     return fields, unknown
 
 
-def protobuf_semantic_equivalence(raw: bytes) -> tuple[tuple[int, int, bytes], ...]:
+def protobuf_semantic_equivalence(raw: bytes) -> tuple[tuple[int, tuple[tuple[int, bytes], ...]], ...]:
     fields, _ = validate_protobuf_profile(raw)
-    # Raw protobuf byte order is not canonical. Evidence equivalence therefore normalizes
-    # by semantic field tuple, never by serializer byte stability.
-    return tuple(sorted((field.number, field.wire_type, field.raw_value) for field in fields))
+    # Normalize order across distinct field numbers, because protobuf serialization order is not canonical.
+    # Preserve occurrence order within the same field number, because repeated-field order is semantic.
+    grouped: dict[int, list[tuple[int, bytes]]] = {}
+    for field in fields:
+        grouped.setdefault(field.number, []).append((field.wire_type, field.raw_value))
+    return tuple((number, tuple(grouped[number])) for number in sorted(grouped))
 
 
 @dataclass(frozen=True)
@@ -306,14 +310,18 @@ def prove_json_profile() -> None:
 def prove_protobuf_profile() -> None:
     tenant = proto_field(1, b"t1")
     event = proto_field(2, b"alarm")
+    repeated_a = proto_field(5, b"a")
+    repeated_b = proto_field(5, b"b")
     unknown = proto_field(100, b"future")
-    raw_a = tenant + event + unknown
-    raw_b = unknown + event + tenant
+    raw_a = tenant + event + repeated_a + repeated_b + unknown
+    raw_b = unknown + event + tenant + repeated_a + repeated_b
     fields, preserved_unknown = validate_protobuf_profile(raw_a)
     if not fields or preserved_unknown != unknown:
         raise AssertionError("protobuf unknown field bytes were not preserved")
     if protobuf_semantic_equivalence(raw_a) != protobuf_semantic_equivalence(raw_b):
-        raise AssertionError("protobuf semantic equivalence depends on field order")
+        raise AssertionError("protobuf semantic equivalence depends on distinct-field serialization order")
+    if protobuf_semantic_equivalence(tenant + event + repeated_a + repeated_b) == protobuf_semantic_equivalence(tenant + event + repeated_b + repeated_a):
+        raise AssertionError("protobuf repeated-field order was erased by semantic normalization")
     for vector in (tenant + tenant + event, tenant + event + proto_field(3, b"a") + proto_field(4, b"b")):
         try:
             validate_protobuf_profile(vector)
@@ -386,7 +394,7 @@ def main() -> int:
         "d4b_wire_schema_candidate_source=PASS candidates=3 concrete_eligible=3 "
         "json_duplicates=blocked json_alias_collision=blocked json_bounds=proven "
         "protobuf_protected_duplicates=blocked protobuf_unknown_bytes=preserved protobuf_byte_order=noncanonical "
-        "avro_writer_reader_resolution=explicit avro_alias_ambiguity=blocked "
+        "protobuf_repeated_order=preserved avro_writer_reader_resolution=explicit avro_alias_ambiguity=blocked "
         "dynamic_untrusted_schema_loading=not_required_by_harness selection=not_selected ledger_credit=0"
     )
     for candidate, result in sorted(results.items()):

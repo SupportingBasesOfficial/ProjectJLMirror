@@ -96,11 +96,12 @@ The evidence profile adds requirements beyond base JSON Schema validation:
 - decimal canonicalization is constructed directly from the exact `Decimal.as_tuple()` representation and does **not** call context-sensitive `Decimal.normalize()`;
 - numeric-magnitude admission uses a context-free absolute-value operation (`Decimal.copy_abs()` semantics) rather than arithmetic `abs()`, so lowering caller-local Decimal precision cannot round an out-of-bound value back into the admitted range;
 - lowering or otherwise mutating the ambient thread-local Decimal context cannot change canonical equivalence **or numeric-bound admission**;
+- parser recursion exhaustion and post-parse depth-traversal recursion exhaustion are both translated into controlled `EvidenceViolation` rejection; Python `RecursionError` must never escape the bounded parser contract;
 - deterministic recursive semantic normalization for content equivalence;
 - historical profile/schema binding;
 - no schema/code loading selected by untrusted message content.
 
-The specific numeric limits exercised here are test-profile bounds, not selected production thresholds. The context-independence rule is normative: authoritative equivalence and admission cannot depend on caller-local Decimal precision.
+The specific numeric limits exercised here are test-profile bounds, not selected production thresholds. The context-independence rule is normative: authoritative equivalence and admission cannot depend on caller-local Decimal precision. Likewise, the depth bound is fail-closed even when an input hits host-runtime recursion limits before the normal depth comparison can finish.
 
 ## Protobuf profile
 
@@ -151,8 +152,9 @@ The profile requires:
 - the evidence vector `16777217` promoted from writer `int` to reader `float` must canonicalize to `16777216.0`, exactly matching a native Avro `float` carrying that same single-precision value;
 - Python's host binary64 `float` representation is therefore never allowed to silently redefine Avro single-precision contract semantics;
 - Avro `float`/`double` runtime admission is type-strict: only numeric `int`/`float` inputs are admitted, with `bool` explicitly excluded; strings such as `"1.0"` and booleans such as `true` cannot be coerced into numeric contract values;
+- Avro strings, record/field/alias names and schema-digest serialization use strict UTF-8 encoding; lone surrogates or any other non-encodable Unicode representation are converted into `EvidenceViolation` instead of leaking host-language `UnicodeEncodeError`;
 - `bytes` → `string` promotion requires strict UTF-8 and produces a bounded reader string; invalid UTF-8 fails closed;
-- `string` → `bytes` promotion produces bounded UTF-8 bytes;
+- `string` → `bytes` promotion uses the same strict UTF-8 boundary and produces bounded bytes;
 - float/double admission and numeric promotion catch conversion overflow and convert it to `EvidenceViolation`; adversarial huge integer input cannot escape the fail-closed evidence boundary through raw `OverflowError`;
 - defaults must match the first declared reader type in the evidence model;
 - required tenant/event fixture semantics are explicit after resolution;
@@ -175,9 +177,9 @@ The harness remains a specification-level evidence model, not a substitute for a
 
 ## Runtime-independence boundary
 
-The source harness deliberately does not declare one SDK's generated-object behavior authoritative. It exercises JSON bytes plus bounded/context-independent Decimal object semantics, Protobuf wire semantics before generated bindings, and bounded Avro writer/reader type resolution with exact reviewed schema binding, historical schema-content digest, pre-projection writer validation, explicit writer-union branch identity, declared-width float materialization, strict runtime type admission and explicit reader-side promotion.
+The source harness deliberately does not declare one SDK's generated-object behavior authoritative. It exercises JSON bytes plus bounded/context-independent Decimal object semantics and controlled recursion failure, Protobuf wire semantics before generated bindings, and bounded Avro writer/reader type resolution with exact reviewed schema binding, historical schema-content digest, pre-projection writer validation, explicit writer-union branch identity, strict UTF-8 encoding boundaries, declared-width float materialization, strict runtime type admission and explicit reader-side promotion.
 
-A later Java, Go, Python, Rust or other implementation remains eligible only if these authoritative semantics survive. Runtime convenience, tuple order, implicit union inference or language coercion cannot redefine canonical JLMirror contract meaning.
+A later Java, Go, Python, Rust or other implementation remains eligible only if these authoritative semantics survive. Runtime convenience, recursion behavior, Unicode encoder exceptions, tuple order, implicit union inference or language coercion cannot redefine canonical JLMirror contract meaning.
 
 ## Cross-axis independence
 
@@ -199,7 +201,7 @@ The falsification suite blocks:
 - compressed input without a selected decompression profile;
 - schema/descriptor selection by untrusted message content;
 - historical cross-profile reinterpretation;
-- JSON protected duplicates/aliases, excessive nesting, lossy binary-float normalization, collapse of distinct bounded decimals, ambient-Decimal-context drift in canonicalization and ambient-context rounding that could weaken the numeric-magnitude bound;
+- JSON protected duplicates/aliases, excessive nesting, lossy binary-float normalization, collapse of distinct bounded decimals, ambient-Decimal-context drift in canonicalization, ambient-context rounding that could weaken the numeric-magnitude bound, and deeply nested inputs that would otherwise leak `RecursionError` from parsing or traversal;
 - Protobuf non-minimal varints, `uint64` overflow, protected last-one-wins collapse, same-member oneof duplication, cross-member oneof collision and presence/enum weakening;
 - Protobuf raw-byte-order authority and repeated-order loss;
 - loss of required Protobuf unknown binary fields;
@@ -208,6 +210,7 @@ The falsification suite blocks:
 - omission of a writer-declared Avro field followed by illegitimate reader-default fabrication;
 - malformed or oversized writer-only Avro fields being silently discarded before writer validation;
 - ambiguous Avro union branch inference from host-language type or schema tuple order, including `("float", "double")` values whose exact writer branch changes authoritative width semantics;
+- invalid Avro UTF-8 string/name/schema-digest content leaking `UnicodeEncodeError` instead of a controlled evidence rejection;
 - Avro `float` semantic drift caused by leaving a declared single-precision value in the host runtime's binary64 representation;
 - Avro `float`/`double` coercion of boolean or string runtime values into numeric contract values;
 - uncaught float/double conversion overflow escaping the fail-closed validation path;

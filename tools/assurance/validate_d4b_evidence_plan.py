@@ -26,6 +26,43 @@ EXPECTED_D4A_IDS = {
     "physical_naming_routing_and_cell_topology_adapter_mapping",
     "broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark",
 }
+EXPECTED_PROMOTION_KEYS = {
+    "schema_version",
+    "promotion_id",
+    "gate_id",
+    "track_id",
+    "promotion_base",
+    "source_pr",
+    "source_reviewed_head",
+    "source_review",
+    "source_workflow",
+    "source_manifest",
+    "credited_evidence",
+    "credit_count",
+    "selection_state",
+    "serialization_selection_state",
+    "schema_catalog_selection_state",
+    "contract_version_syntax_selection_state",
+    "d4_gate_state",
+    "d4_transport_authority",
+    "canonical_product_implementation_authority",
+    "wave4_implementation_authority",
+    "production_authority",
+    "c3_numeric_topology_authority",
+    "separate_selection_required",
+    "separate_d4_acceptance_required",
+}
+EXPECTED_SOURCE_REVIEW_KEYS = {"review_id", "review_mode", "material_threads_unresolved"}
+EXPECTED_SOURCE_WORKFLOW_KEYS = {
+    "run_id",
+    "run_attempt",
+    "job_id",
+    "job_name",
+    "artifact_id",
+    "artifact_name",
+    "artifact_digest",
+}
+EXPECTED_SOURCE_MANIFEST_KEYS = {"path", "sha256"}
 EXPECTED_SOURCE_HEAD = "0a5509442d4b55f6d4de989af9bb62a088198ab4"
 EXPECTED_MANIFEST_SHA256 = "2b442fd7b8733105ba004cf7ae982dd3a64a7731d11187b1e0409270f1da118a"
 EXPECTED_REVIEW_MODE = "independent_exact_head_adversarial_clean_with_fresh_codex_no_findings_reaction"
@@ -70,22 +107,26 @@ def validate(root: Path) -> list[str]:
     req(plan.get("production_authority") == "none", "D4-B plan production authority drift")
     req(plan.get("c3_numeric_topology_authority") == "not_selected", "D4-B plan C3 authority drift")
 
+    req(set(promotion) == EXPECTED_PROMOTION_KEYS, "promotion exact key schema drift")
     req(promotion.get("schema_version") == 1 and promotion.get("gate_id") == "D4" and promotion.get("track_id") == "D4-B", "promotion identity envelope drift")
     req(promotion.get("promotion_id") == "d4-b-schema-contract-promotion-v1", "promotion identity drift")
     req(promotion.get("promotion_base") == "4c80d4bf79d9b16d499cfd2f5e723b6dc8a93609", "promotion base drift")
     req(promotion.get("source_pr") == 64, "source PR drift")
     req(promotion.get("source_reviewed_head") == EXPECTED_SOURCE_HEAD, "source reviewed HEAD drift")
     review = promotion.get("source_review", {})
+    req(isinstance(review, dict) and set(review) == EXPECTED_SOURCE_REVIEW_KEYS, "source review exact key schema drift")
     req(review.get("review_id") == 5108877160, "source review provenance drift")
     req(review.get("review_mode") == EXPECTED_REVIEW_MODE, "source review mode drift")
     req(review.get("material_threads_unresolved") == 0, "source review must have zero unresolved material threads")
     workflow = promotion.get("source_workflow", {})
+    req(isinstance(workflow, dict) and set(workflow) == EXPECTED_SOURCE_WORKFLOW_KEYS, "source workflow exact key schema drift")
     req(workflow.get("run_id") == 33832558443 and workflow.get("run_attempt") == 1, "source workflow run provenance drift")
     req(workflow.get("job_id") == 100898421033 and workflow.get("job_name") == "D4-B schema contract source evidence", "source job provenance drift")
     req(workflow.get("artifact_id") == 9922185873, "source artifact id drift")
     req(workflow.get("artifact_name") == "d4-b-schema-contract-source-0a5509442d4b55f6d4de989af9bb62a088198ab4-33832558443-1", "source artifact name drift")
     req(workflow.get("artifact_digest") == "sha256:3d8f585ea3e594edc40179a0232c2d00d5133fb652961fa60337dae48b4313dc", "source artifact digest drift")
     source_manifest = promotion.get("source_manifest", {})
+    req(isinstance(source_manifest, dict) and set(source_manifest) == EXPECTED_SOURCE_MANIFEST_KEYS, "source manifest exact key schema drift")
     req(source_manifest.get("path") == SOURCE.as_posix(), "promotion source-manifest path drift")
     req(source_manifest.get("sha256") == EXPECTED_MANIFEST_SHA256, "promotion source-manifest digest drift")
     req(set(promotion.get("credited_evidence", [])) == EXPECTED_IDS and len(promotion.get("credited_evidence", [])) == 5 and promotion.get("credit_count") == 5, "promotion credit set drift")
@@ -139,7 +180,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_LEDGER_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_ledger_promotion=PASS credited=5/5 candidate=not_selected selection=separate source_immutable=true promotion_record=fully_pinned d4a=exact_7_of_7 d4=scoped authorities=not_granted")
+    print("d4b_ledger_promotion=PASS credited=5/5 candidate=not_selected selection=separate source_immutable=true promotion_record=exact_schema_pinned d4a=exact_7_of_7 d4=scoped authorities=not_granted")
     return 0
 
 

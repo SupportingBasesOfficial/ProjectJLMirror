@@ -131,9 +131,15 @@ def parse_bounded_json(raw: bytes) -> dict[str, Any]:
         )
     except UnicodeDecodeError as exc:
         raise EvidenceViolation("JSON must be UTF-8") from exc
+    except RecursionError as exc:
+        raise EvidenceViolation("JSON nesting exceeds parser recursion safety bound") from exc
     if not isinstance(value, dict):
         raise EvidenceViolation("JSON top level must be object")
-    if _depth(value) > MAX_JSON_DEPTH:
+    try:
+        depth = _depth(value)
+    except RecursionError as exc:
+        raise EvidenceViolation("JSON nesting exceeds traversal recursion safety bound") from exc
+    if depth > MAX_JSON_DEPTH:
         raise EvidenceViolation("JSON nesting exceeds evidence depth bound")
     for aliases in JSON_ALIAS_GROUPS:
         if len(aliases.intersection(value)) > 1:
@@ -362,6 +368,13 @@ def _schema_digest_value(value: Any) -> Any:
     raise EvidenceViolation("unsupported Avro schema default for content digest")
 
 
+def _utf8_bytes(value: str, label: str) -> bytes:
+    try:
+        return value.encode("utf-8", "strict")
+    except UnicodeEncodeError as exc:
+        raise EvidenceViolation(f"Avro {label} must be valid UTF-8") from exc
+
+
 def _avro_schema_content_digest(schema: AvroRecordSchema) -> str:
     structural = {
         "name": schema.name,
@@ -376,8 +389,8 @@ def _avro_schema_content_digest(schema: AvroRecordSchema) -> str:
             for field in schema.fields
         ],
     }
-    canonical = json.dumps(structural, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
+    serialized = json.dumps(structural, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(_utf8_bytes(serialized, "schema digest content")).hexdigest()
 
 
 def _reviewed_avro_schema_content_digest(schema_ref: str) -> str:
@@ -388,7 +401,7 @@ def _reviewed_avro_schema_content_digest(schema_ref: str) -> str:
 
 
 def _bounded_avro_name(value: str, label: str) -> None:
-    if not isinstance(value, str) or not value or len(value.encode("utf-8")) > MAX_AVRO_NAME_BYTES:
+    if not isinstance(value, str) or not value or len(_utf8_bytes(value, label)) > MAX_AVRO_NAME_BYTES:
         raise EvidenceViolation(f"Avro {label} exceeds evidence bound")
 
 
@@ -431,7 +444,8 @@ def _materialize_avro_type(value: Any, avro_type: str) -> Any:
         if not isinstance(value, bytes) or len(value) > MAX_AVRO_SCALAR_BYTES: raise EvidenceViolation("Avro bytes mismatch")
         return value
     if avro_type == "string":
-        if not isinstance(value, str) or len(value.encode("utf-8")) > MAX_AVRO_SCALAR_BYTES: raise EvidenceViolation("Avro string mismatch")
+        if not isinstance(value, str): raise EvidenceViolation("Avro string mismatch")
+        if len(_utf8_bytes(value, "string datum")) > MAX_AVRO_SCALAR_BYTES: raise EvidenceViolation("Avro string mismatch")
         return value
     raise EvidenceViolation("unsupported Avro primitive")
 
@@ -494,7 +508,7 @@ def _promote_avro_value(value: Any, writer_type: str, reader_type: str) -> Any:
         except UnicodeDecodeError as exc: raise EvidenceViolation("Avro bytes-to-string requires UTF-8") from exc
         return _materialize_avro_type(promoted, "string")
     if writer_type == "string" and reader_type == "bytes":
-        return _materialize_avro_type(writer_value.encode("utf-8"), "bytes")
+        return _materialize_avro_type(_utf8_bytes(writer_value, "string promotion"), "bytes")
     raise EvidenceViolation(f"unsupported Avro promotion {writer_type}->{reader_type}")
 
 
@@ -606,6 +620,12 @@ def prove_json_profile() -> None:
         try: canonical_json_equivalence(vector)
         except EvidenceViolation: continue
         raise AssertionError("JSON forbidden vector accepted")
+    deeply_nested = b'{"tenant_id":"t1","event_type":"alarm","payload":' + (b'[' * 900) + b'0' + (b']' * 900) + b'}'
+    if len(deeply_nested) > MAX_MESSAGE_BYTES: raise AssertionError("deep JSON falsification vector exceeds transport fixture bound")
+    try: canonical_json_equivalence(deeply_nested)
+    except EvidenceViolation: pass
+    except RecursionError as exc: raise AssertionError("JSON recursion escaped fail-closed boundary") from exc
+    else: raise AssertionError("deep JSON recursion vector accepted")
 
 
 def prove_protobuf_profile() -> None:
@@ -688,6 +708,11 @@ def prove_avro_profile() -> None:
         try: avro_semantic_equivalence(float_writer,float_reader,{"value":invalid_float})
         except EvidenceViolation: pass
         else: raise AssertionError("Avro float accepted non-numeric runtime mapping")
+    string_writer = AvroRecordSchema("Text", (AvroFieldSpec("value", ("string",)),))
+    try: avro_semantic_equivalence(string_writer, string_writer, {"value": "\ud800"})
+    except EvidenceViolation: pass
+    except UnicodeEncodeError as exc: raise AssertionError("Avro invalid UTF-8 string escaped fail-closed boundary") from exc
+    else: raise AssertionError("Avro invalid UTF-8 string accepted")
     try: avro_semantic_equivalence(double_writer,double_reader,{"value":10**10000})
     except EvidenceViolation: pass
     else: raise AssertionError("Avro double overflow not fail-closed")
@@ -716,7 +741,7 @@ def evaluate() -> dict[str, str]:
 
 def main() -> int:
     results = evaluate()
-    print("d4b_wire_schema_candidate_source=PASS candidates=3 concrete_eligible=3 identity_only_transport=bounded dynamic_schema_selection=blocked historical_profile_reinterpretation=blocked json_duplicates=blocked json_alias_collision=blocked json_numeric_mapping=context_independent json_magnitude=context_independent json_distinct_decimals=preserved json_bounds=proven protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked protobuf_protected_duplicates=blocked protobuf_oneof_duplicate=blocked protobuf_presence_enum=explicit protobuf_unknown_bytes=preserved protobuf_byte_order=noncanonical protobuf_repeated_order=preserved avro_schema_ref_content=binding_exact avro_historical_schema_digest=sha256_bound avro_writer_fields=required avro_writer_only_fields=validated avro_union_branch=explicit avro_float_overflow=fail_closed avro_float_width=ieee754_binary32 avro_float_runtime_mapping=type_strict avro_writer_reader_resolution=explicit avro_type_compatibility=checked avro_promotions=reader_canonicalized avro_event_contract=scoped avro_datum_bounds=proven avro_nullable_enum=explicit avro_alias_ambiguity=blocked selection=not_selected ledger_credit=0")
+    print("d4b_wire_schema_candidate_source=PASS candidates=3 concrete_eligible=3 identity_only_transport=bounded dynamic_schema_selection=blocked historical_profile_reinterpretation=blocked json_duplicates=blocked json_alias_collision=blocked json_numeric_mapping=context_independent json_magnitude=context_independent json_depth_recursion=fail_closed json_distinct_decimals=preserved json_bounds=proven protobuf_nonminimal_varint=blocked protobuf_uint64_overflow=blocked protobuf_protected_duplicates=blocked protobuf_oneof_duplicate=blocked protobuf_presence_enum=explicit protobuf_unknown_bytes=preserved protobuf_byte_order=noncanonical protobuf_repeated_order=preserved avro_schema_ref_content=binding_exact avro_historical_schema_digest=sha256_bound avro_writer_fields=required avro_writer_only_fields=validated avro_union_branch=explicit avro_string_utf8=fail_closed avro_float_overflow=fail_closed avro_float_width=ieee754_binary32 avro_float_runtime_mapping=type_strict avro_writer_reader_resolution=explicit avro_type_compatibility=checked avro_promotions=reader_canonicalized avro_event_contract=scoped avro_datum_bounds=proven avro_nullable_enum=explicit avro_alias_ambiguity=blocked selection=not_selected ledger_credit=0")
     for candidate, result in sorted(results.items()): print(f"candidate={candidate} result={result}")
     return 0
 

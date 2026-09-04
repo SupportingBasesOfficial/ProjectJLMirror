@@ -36,26 +36,38 @@ The fixture profiles intentionally prove:
 
 - one deterministic bounded parse per candidate;
 - rejection of ambiguous/noncanonical alternatives;
-- the opaque-monotonic candidate uses a strictly increasing internal issuance sequence while emitting externally opaque tokens;
+- the opaque-monotonic candidate uses a strictly increasing and explicitly bounded internal issuance sequence while emitting externally opaque tokens;
 - equality-only comparison surface;
 - no ordering authority;
 - no tenant, authorization, routing or message-identity authority emitted from version parsing;
 - separation from deployment/API/provider/realtime/registry version namespaces;
-- breaking semantic change cannot reuse the same `contract_version` in the harness;
-- historical version bytes remain unchanged.
+- breaking semantic change cannot reuse the same version **within each candidate family**;
+- historical evidence retains both the original candidate family and original version bytes;
+- a historical value cannot be reinterpreted through a different candidate-family adapter.
 
 Merging this package therefore does **not** select integer syntax, semantic-version syntax, opaque-token syntax, widths, prefixes, separators, ordering rules, issuance implementation or production storage representation.
 
 ## Opaque monotonicity without public ordering
 
-The opaque candidate has two distinct properties and the harness now tests both:
+The opaque candidate has two distinct properties and the harness tests both:
 
-1. its **issuance authority** receives an internal sequence that must increase strictly; replaying, repeating or decreasing that sequence is rejected;
+1. its **issuance authority** receives an internal sequence that must increase strictly, stay inside the bounded evidence range and reject replay/repeat/decrement/overflow;
 2. the resulting external token is treated as opaque and supports equality only.
 
 The test issuer derives opaque fixture bytes from the internal evidence sequence solely to exercise this separation. The internal sequence is not emitted as canonical message semantics and the external token does not gain `<`, `>`, range, routing or upgrade authority.
 
 This closes the gap where a candidate named “monotonic” could otherwise have been marked eligible while only its parser/opaceness had been exercised.
+
+## Historical meaning is family-bound
+
+Historical continuity is not represented by a byte copy alone. The evidence record binds:
+
+- candidate-family identity;
+- original version bytes.
+
+The original adapter must reproduce the exact historical value, while an attempt to restore that historical value through another candidate-family adapter fails closed. This prevents a retained value such as `1`, `1.0.0` or an opaque token from silently acquiring new meaning merely because a later runtime uses another representation family.
+
+The breaking-change guard is also exercised independently inside all three candidate families: reusing the same canonical version for a breaking semantic change fails; transitioning to another valid value succeeds. This remains an evidence rule, not a selected production migration policy.
 
 ## Why ordering is deliberately absent
 
@@ -74,8 +86,9 @@ The source falsification suite rejects:
 - source-run auto-credit or non-empty `ledger_credit`;
 - promoting a candidate result to `selected`;
 - pretending an unevaluated equivalent class is eligible;
-- removing required proofs or the opaque-monotonic issuance assertion;
-- non-increasing/replayed opaque issuance sequence;
+- removing required proofs, the opaque-monotonic issuance assertion or the historical-family continuity assertion;
+- non-increasing/replayed/overflow opaque issuance sequence;
+- cross-family historical reinterpretation;
 - D4-B ledger selection mutation;
 - full-D4/Product/Wave4/production/C3 authority escalation;
 - ordering authority or non-version authority fields exposed by a candidate adapter.

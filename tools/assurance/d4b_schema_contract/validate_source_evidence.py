@@ -13,6 +13,21 @@ EXPECTED_IDS = {
     "historical_reader_and_equivalence_profile_continuity",
     "contract_version_representation_and_breaking_change_vectors",
 }
+EXPECTED_KINDS = {
+    "canonical_bounded_serialization_profile": "deterministic_reference_profile_and_negative_vectors",
+    "parser_ambiguity_and_duplicate_field_negative_vectors": "parser_falsification_vectors",
+    "schema_catalog_semantic_manifest_compatibility_ci": "machine_readable_catalog_compatibility_gate",
+    "historical_reader_and_equivalence_profile_continuity": "historical_reader_equivalence_continuity_probe",
+    "contract_version_representation_and_breaking_change_vectors": "version_representation_breaking_change_vectors",
+}
+EXPECTED_REFERENCE_PROPERTIES = {
+    "single_structured_interpretation",
+    "duplicate_member_rejection",
+    "explicit_required_optional_null_enum_semantics",
+    "bounded_depth_members_strings_arrays_and_bytes",
+    "deterministic_semantic_manifest",
+    "historical_reader_and_equivalence_profile_preservation",
+}
 
 
 def main() -> int:
@@ -21,15 +36,23 @@ def main() -> int:
     assert source["schema_version"] == 1
     assert source["package_id"] == "d4-b-schema-contract-source-v1"
     assert source["canonical_base_commit"] == "790f967446bf039ba4d5f618c9f30494c720ee7c"
-    assert source["track"] == "D4-B"
+    assert source["gate_id"] == "D4" and source["track"] == "D4-B"
+    assert source["scope"] == "source_evidence_harness_only"
     assert set(source["source_decisions"]) == {"OPEN-EVT-002", "OPEN-EVT-003", "OPEN-EVT-004"}
+    assert len(source["source_decisions"]) == 3
     assert set(source["evidence_ids"]) == EXPECTED_IDS and len(source["evidence_ids"]) == 5
+    assert source["evidence_kinds"] == EXPECTED_KINDS
     assert source["candidate"] is None and source["candidate_status"] == "not_selected"
     assert source["current_run_auto_credit"] is False and source["ledger_credit"] == []
     assert source["serialization_selection_state"] == "not_selected"
     assert source["schema_catalog_selection_state"] == "not_selected"
     assert source["contract_version_syntax_selection_state"] == "not_selected"
-    assert source["reference_profile"]["authority"] == "test_reference_only_not_wire_selection"
+    profile = source["reference_profile"]
+    assert profile["name"] == "bounded_logical_structured_message_v1"
+    assert profile["authority"] == "test_reference_only_not_wire_selection"
+    assert set(profile["properties"]) == EXPECTED_REFERENCE_PROPERTIES and len(profile["properties"]) == 6
+    assert source["promotion_rule"] == "source_run_review_then_separate_ledger_promotion"
+    assert source["selection_rule"] == "source_evidence_does_not_select_serialization_registry_or_version_syntax"
     assert source["d4_transport_authority"] == "selected_not_granted"
     assert source["canonical_product_implementation_authority"] == "not_granted"
     assert source["wave4_implementation_authority"] == "not_granted"
@@ -37,13 +60,15 @@ def main() -> int:
     assert source["c3_numeric_topology_authority"] == "not_selected"
 
     tracks = {track["track_id"]: track for track in state["tracks"]}
+    assert set(tracks) == {"D4-A", "D4-B", "D4-C", "D4-D"}
     d4a, d4b, d4c, d4d = tracks["D4-A"], tracks["D4-B"], tracks["D4-C"], tracks["D4-D"]
     assert d4a["candidate"] == "kafka" and d4a["candidate_status"] == "selected_c2_candidate"
     assert d4a["state"] == "selected_candidate" and len(d4a["evidence_completed"]) == 7
     assert d4b["candidate"] is None and d4b["candidate_status"] == "not_selected"
     assert d4b["state"] == "candidate_selection_open"
-    assert set(d4b["required_evidence"]) == EXPECTED_IDS
+    assert set(d4b["required_evidence"]) == EXPECTED_IDS and len(d4b["required_evidence"]) == 5
     assert d4b["evidence_completed"] == [] and set(d4b["evidence_remaining"]) == EXPECTED_IDS
+    assert len(d4b["evidence_remaining"]) == 5
     for sibling in (d4c, d4d):
         assert sibling["candidate"] is None and sibling["candidate_status"] == "not_selected"
         assert sibling["evidence_completed"] == []
@@ -55,8 +80,8 @@ def main() -> int:
     assert state["c3_numeric_topology_authority"] == "not_selected"
 
     print(
-        "d4b_schema_contract_source_manifest=PASS evidence_ids=5 source_credit=0 candidate=not_selected "
-        "d4a=kafka_selected d4b=open d4c_d=open authorities=not_granted reference_profile=test_only"
+        "d4b_schema_contract_source_manifest=PASS evidence_ids=5 evidence_kinds=exact reference_properties=exact "
+        "source_credit=0 candidate=not_selected d4a=kafka_selected d4b=open d4c_d=open authorities=not_granted"
     )
     return 0
 

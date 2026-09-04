@@ -62,6 +62,7 @@ EXPECTED_REQUIREMENTS = {
         "reader_schema_resolution_is_explicit_and_missing_fields_require_defaults_or_failure",
         "writer_reader_field_type_compatibility_and_allowed_promotions_are_checked_before_value_resolution",
         "allowed_writer_reader_promotions_are_applied_to_reader_representation_before_equivalence",
+        "avro_float_writer_and_reader_values_are_materialized_at_ieee754_binary32_width_before_equivalence",
         "float_double_admission_and_promotion_overflow_fail_closed_as_evidence_violation",
         "schema_field_alias_and_scalar_sizes_are_bounded_before_datum_resolution",
         "datum_processing_is_bounded_and_canonicalized_structurally_without_unrestricted_recursive_json_serialization",
@@ -95,6 +96,7 @@ EXPECTED_ASSERTIONS = {
     "protobuf_repeated_field_occurrence_order_remains_semantic_during_normalization",
     "avro_reviewed_schema_reference_is_structurally_bound_to_exact_reviewed_schema_content",
     "avro_writer_declared_fields_cannot_be_fabricated_from_reader_defaults",
+    "avro_float_reader_and_writer_semantics_are_canonicalized_at_ieee754_binary32_width",
     "avro_float_double_overflow_is_caught_and_fails_closed",
     "avro_historical_interpretation_requires_writer_schema_continuity",
     "avro_writer_reader_type_compatibility_is_explicit_and_incompatible_types_fail_closed",
@@ -106,14 +108,10 @@ EXPECTED_ASSERTIONS = {
     "internal_broker_and_external_webhook_profiles_remain_independently_selectable_under_one_canonical_domain_semantics",
 }
 EXPECTED_NON_AUTHORITY = {
-    "d4b_wire_selection": "not_selected",
-    "d4b_catalog_selection": "not_selected",
-    "d4b_contract_version_selection": "not_selected",
-    "d4_gate": "scoped",
-    "d4_transport_authority": "selected_not_granted",
-    "canonical_product_implementation_authority": "not_granted",
-    "wave4_implementation_authority": "not_granted",
-    "production_authority": "none",
+    "d4b_wire_selection": "not_selected", "d4b_catalog_selection": "not_selected",
+    "d4b_contract_version_selection": "not_selected", "d4_gate": "scoped",
+    "d4_transport_authority": "selected_not_granted", "canonical_product_implementation_authority": "not_granted",
+    "wave4_implementation_authority": "not_granted", "production_authority": "none",
     "c3_numeric_topology_authority": "not_selected",
 }
 
@@ -138,61 +136,44 @@ def load(root: Path, path: Path) -> dict:
     return value
 
 
-def _exact_string_set(value: object, expected: set[str]) -> bool:
+def exact_list(value: object, expected: set[str]) -> bool:
     return isinstance(value, list) and len(value) == len(expected) and set(value) == expected
 
 
 def validate(root: Path) -> list[str]:
     errors: list[str] = []
-
     def req(ok: bool, message: str) -> None:
-        if not ok:
-            errors.append(message)
-
+        if not ok: errors.append(message)
     try:
-        manifest = load(root, MANIFEST)
-        plan = load(root, PLAN)
-        ledger = load(root, LEDGER)
-        state = load(root, STATE)
+        manifest, plan, ledger, state = (load(root, p) for p in (MANIFEST, PLAN, LEDGER, STATE))
     except (json.JSONDecodeError, DuplicateMemberError, ValueError) as exc:
         return [f"strict JSON parse failure: {exc}"]
 
     req(set(manifest) == EXPECTED_MANIFEST_KEYS, "source manifest exact key schema drift")
-    req(manifest.get("schema_version") == 1, "source schema drift")
-    req(manifest.get("gate_id") == "D4" and manifest.get("track_id") == "D4-B", "source identity drift")
-    req(manifest.get("axis") == "wire_serialization_and_schema_language", "source axis drift")
-    req(manifest.get("source_decision") == "OPEN-EVT-002", "source decision drift")
+    req(manifest.get("schema_version") == 1 and manifest.get("gate_id") == "D4" and manifest.get("track_id") == "D4-B", "source identity drift")
+    req(manifest.get("axis") == "wire_serialization_and_schema_language" and manifest.get("source_decision") == "OPEN-EVT-002", "source axis/decision drift")
     req(manifest.get("canonical_base") == "9cfe67915b6081af015670d7f1edb7ecf11ffdf2", "source canonical base drift")
-    req(manifest.get("mode") == "candidate_source_evidence_only", "source mode drift")
-    req(manifest.get("test_profile_only") is True, "candidate profiles must remain evidence-only")
-    req(manifest.get("selection_state") == "not_selected", "source evidence must not select D4-B wire profile")
-    req(manifest.get("selection_authority") == "not_granted", "source selection authority escalation")
+    req(manifest.get("mode") == "candidate_source_evidence_only" and manifest.get("test_profile_only") is True, "source mode/profile drift")
+    req(manifest.get("selection_state") == "not_selected" and manifest.get("selection_authority") == "not_granted", "source selection authority escalation")
     req(manifest.get("current_run_auto_credit") is False and manifest.get("ledger_credit") == [], "source evidence must not auto-credit ledger")
     req(manifest.get("candidate_results") == EXPECTED_RESULTS, "concrete candidate result inventory drift")
     req(manifest.get("equivalent_reviewed_profile") == "insufficient_evidence", "equivalent candidate class must remain unevaluated")
-    req(_exact_string_set(manifest.get("required_proofs"), EXPECTED_PROOFS), "required proof inventory drift")
-
+    req(exact_list(manifest.get("required_proofs"), EXPECTED_PROOFS), "required proof inventory drift")
     requirements = manifest.get("candidate_profile_requirements")
     req(isinstance(requirements, dict) and set(requirements) == set(EXPECTED_REQUIREMENTS), "candidate requirement key inventory drift")
-    if isinstance(requirements, dict) and set(requirements) == set(EXPECTED_REQUIREMENTS):
+    if isinstance(requirements, dict):
         for candidate, expected in EXPECTED_REQUIREMENTS.items():
-            req(_exact_string_set(requirements.get(candidate), expected), f"candidate requirement drift for {candidate}")
-
+            req(exact_list(requirements.get(candidate), expected), f"candidate requirement drift for {candidate}")
     facts = manifest.get("official_source_facts")
-    fact_pairs: set[tuple[str, str]] = set()
-    if isinstance(facts, list):
-        for item in facts:
-            if isinstance(item, dict) and set(item) == {"source", "fact"} and isinstance(item.get("source"), str) and isinstance(item.get("fact"), str):
-                fact_pairs.add((item["source"], item["fact"]))
-    req(isinstance(facts, list) and len(facts) == len(EXPECTED_SOURCE_FACTS) and fact_pairs == EXPECTED_SOURCE_FACTS, "official source fact inventory drift")
-    req(_exact_string_set(manifest.get("source_assertions"), EXPECTED_ASSERTIONS), "source assertion inventory drift")
+    pairs = {(x.get("source"), x.get("fact")) for x in facts if isinstance(x, dict) and set(x) == {"source", "fact"}} if isinstance(facts, list) else set()
+    req(isinstance(facts, list) and len(facts) == len(EXPECTED_SOURCE_FACTS) and pairs == EXPECTED_SOURCE_FACTS, "official source fact inventory drift")
+    req(exact_list(manifest.get("source_assertions"), EXPECTED_ASSERTIONS), "source assertion inventory drift")
     req(manifest.get("non_authority") == EXPECTED_NON_AUTHORITY, "non-authority boundary drift")
 
     axis = plan.get("axes", {}).get("wire_serialization_and_schema_language", {})
     req(axis.get("decision") == "OPEN-EVT-002", "accepted Axis A decision binding drift")
-    candidates = axis.get("candidate_classes", [])
-    req(isinstance(candidates, list) and set(candidates) == set(EXPECTED_RESULTS) | {"equivalent_reviewed_profile"}, "accepted Axis A candidate inventory drift")
-    req(_exact_string_set(axis.get("must_prove"), EXPECTED_PROOFS), "accepted Axis A proof contract drift")
+    req(set(axis.get("candidate_classes", [])) == set(EXPECTED_RESULTS) | {"equivalent_reviewed_profile"}, "accepted Axis A candidate inventory drift")
+    req(exact_list(axis.get("must_prove"), EXPECTED_PROOFS), "accepted Axis A proof contract drift")
     req(plan.get("selection_state") == "not_selected" and plan.get("selection_authority") == "not_granted", "accepted plan selection drift")
     req(plan.get("separate_selection_required") is True and plan.get("separate_d4_acceptance_required") is True, "accepted separation guard drift")
 
@@ -202,15 +183,13 @@ def validate(root: Path) -> list[str]:
     tracks = state.get("tracks", [])
     req(isinstance(tracks, list) and len(tracks) == 4, "D4 track inventory drift")
     if isinstance(tracks, list) and len(tracks) == 4:
-        ids = [track.get("track_id") for track in tracks if isinstance(track, dict)]
+        ids = [t.get("track_id") for t in tracks if isinstance(t, dict)]
         req(len(ids) == 4 and len(set(ids)) == 4 and set(ids) == {"D4-A", "D4-B", "D4-C", "D4-D"}, "D4 track identity drift")
-        if len(ids) == 4 and len(set(ids)) == 4:
-            by_id = {track["track_id"]: track for track in tracks}
-            req(by_id["D4-A"].get("candidate") == "kafka" and len(by_id["D4-A"].get("evidence_completed", [])) == 7, "D4-A Kafka 7/7 regression")
-            req(by_id["D4-B"].get("candidate") is None and by_id["D4-B"].get("state") == "evidence_complete_selection_pending" and len(by_id["D4-B"].get("evidence_completed", [])) == 5, "D4-B current-state drift")
-            for sibling in (by_id["D4-C"], by_id["D4-D"]):
-                req(sibling.get("candidate") is None and sibling.get("evidence_completed") == [], "D4-C/D sibling leak")
-
+        if len(set(ids)) == 4:
+            by = {t["track_id"]: t for t in tracks}
+            req(by["D4-A"].get("candidate") == "kafka" and len(by["D4-A"].get("evidence_completed", [])) == 7, "D4-A Kafka 7/7 regression")
+            req(by["D4-B"].get("candidate") is None and by["D4-B"].get("state") == "evidence_complete_selection_pending" and len(by["D4-B"].get("evidence_completed", [])) == 5, "D4-B current-state drift")
+            for sibling in (by["D4-C"], by["D4-D"]): req(sibling.get("candidate") is None and sibling.get("evidence_completed") == [], "D4-C/D sibling leak")
     req(state.get("gate_state") == "scoped", "D4 gate escalation")
     req(state.get("d4_transport_authority") == "selected_not_granted", "transport authority drift")
     req(state.get("canonical_product_implementation_authority") == "not_granted", "Product authority escalation")
@@ -224,19 +203,10 @@ def main(argv: list[str]) -> int:
     root = Path(argv[1]).resolve() if len(argv) > 1 else ROOT
     errors = validate(root)
     if errors:
-        for error in errors:
-            print(f"D4B_WIRE_SCHEMA_SOURCE_ERROR: {error}", file=sys.stderr)
+        for error in errors: print(f"D4B_WIRE_SCHEMA_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print(
-        "d4b_wire_schema_source_manifest=PASS axis=OPEN-EVT-002 concrete_candidates=3 eligible=3 "
-        "decimal_canonicalization=context_independent canonical_varints=required uint64_varints=bounded "
-        "protobuf_oneof_duplicates=blocked avro_schema_ref_content=bound avro_writer_fields=required "
-        "avro_float_overflow=fail_closed avro_type_resolution=required avro_promotions=reader_canonicalized "
-        "avro_datum_bounds=required runtime_mapping=bounded historical_binding=required decompression=identity_only "
-        "equivalent=insufficient_evidence selection=not_selected ledger_credit=0 d4=scoped authorities=not_granted"
-    )
+    print("d4b_wire_schema_source_manifest=PASS axis=OPEN-EVT-002 concrete_candidates=3 eligible=3 decimal_canonicalization=context_independent canonical_varints=required uint64_varints=bounded protobuf_oneof_duplicates=blocked avro_schema_ref_content=bound avro_writer_fields=required avro_float_width=ieee754_binary32 avro_float_overflow=fail_closed avro_type_resolution=required avro_promotions=reader_canonicalized avro_datum_bounds=required runtime_mapping=bounded historical_binding=required decompression=identity_only equivalent=insufficient_evidence selection=not_selected ledger_credit=0 d4=scoped authorities=not_granted")
     return 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+if __name__ == "__main__": raise SystemExit(main(sys.argv))

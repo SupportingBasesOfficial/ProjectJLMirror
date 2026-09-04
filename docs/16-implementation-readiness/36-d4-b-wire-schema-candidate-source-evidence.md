@@ -118,7 +118,7 @@ The same-oneof-member rule closes a separate ambiguity: `field 3=a, field 3=b` m
 
 ## Avro profile
 
-Avro evolution is made explicit rather than implicit. The evidence model now includes primitive/union type declarations and checks writer→reader compatibility before resolving values.
+Avro evolution is made explicit rather than implicit. The evidence model includes primitive/union type declarations and checks writer→reader compatibility before resolving values.
 
 The profile requires:
 
@@ -130,16 +130,24 @@ The profile requires:
 - defaults must match the first declared reader type in the evidence model;
 - required tenant/event fixture semantics are explicit after resolution;
 - nullable severity and its accepted enum values are explicit after resolution;
+- record name, field count, field-name length and aliases-per-field are bounded before resolution;
+- datum field count is bounded before copying/resolution;
+- string and bytes scalar sizes are bounded before canonicalization;
+- `int`/`long` values are constrained to their declared Avro ranges;
+- float/double fixture values must be finite;
+- the source evidence intentionally models only a reviewed bounded primitive/union subset; nested complex Avro types are not silently accepted by this fixture;
+- canonical equivalence is structural and type-tagged after bounded writer→reader resolution, rather than using unrestricted recursive JSON serialization;
 - field aliases are reviewed and ambiguous aliases fail closed;
-- equivalence is computed after explicit writer→reader resolution, not from raw schema text;
 - historical payloads are bound to Avro profile/writer-schema identity;
 - message payloads cannot choose arbitrary writer/reader schema content.
+
+These are evidence-profile limits, not selected production C3 numerics. A future concrete Avro runtime/profile may broaden the admitted schema subset only through separately reviewed bounded evidence; this PR does not imply arbitrary nested Avro datum processing is acceptable.
 
 The harness remains a specification-level evidence model, not a substitute for a future pinned Avro runtime/registry conformance run.
 
 ## Runtime-independence boundary
 
-The source harness deliberately does not declare one SDK's generated-object behavior authoritative. It exercises JSON bytes plus bounded Decimal/object semantics, Protobuf wire semantics before generated bindings, and Avro writer/reader type resolution.
+The source harness deliberately does not declare one SDK's generated-object behavior authoritative. It exercises JSON bytes plus bounded Decimal/object semantics, Protobuf wire semantics before generated bindings, and bounded Avro writer/reader type resolution.
 
 A later Java, Go, Python, Rust or other implementation remains eligible only if these authoritative semantics survive. Runtime convenience cannot redefine canonical JLMirror contract meaning.
 
@@ -168,6 +176,7 @@ The falsification suite blocks:
 - Protobuf raw-byte-order authority and repeated-order loss;
 - loss of required Protobuf unknown binary fields;
 - Avro alias ambiguity, missing reader defaults, incompatible writer/reader types and nullable-semantic loss;
+- Avro schema/datum cardinality overflow, overlong names/aliases/scalars, out-of-range numeric values and unrestricted nested datum acceptance;
 - D4-B ledger selection;
 - D4/Product/Wave4/production/C3 authority escalation.
 

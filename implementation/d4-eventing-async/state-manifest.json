@@ -12,7 +12,7 @@
   "canonical_product_implementation_authority": "not_granted",
   "wave4_implementation_authority": "not_granted",
   "production_authority": "none",
-  "d4_transport_authority": "not_selected_not_granted",
+  "d4_transport_authority": "selected_not_granted",
   "c3_numeric_topology_authority": "not_selected",
   "tracks": [
     {
@@ -24,8 +24,8 @@
         "OPEN-REL-012.A"
       ],
       "candidate": "kafka",
-      "candidate_status": "leading_candidate_evidence_complete_selection_pending",
-      "state": "evidence_complete_selection_pending",
+      "candidate_status": "selected_c2_candidate",
+      "state": "selected_candidate",
       "required_evidence": [
         "capacity_envelope_baseline_growth_stress",
         "broker_neutral_anti_corruption_stub_swap",

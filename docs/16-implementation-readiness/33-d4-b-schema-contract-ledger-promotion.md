@@ -25,8 +25,12 @@ The promoted source is pinned by `implementation/d4-eventing-async/ledger-promot
 
 - source PR: `#64`;
 - reviewed source HEAD: `0a5509442d4b55f6d4de989af9bb62a088198ab4`;
+- source branch: `evidence/d4-b-schema-contract-source`;
 - independent exact-HEAD adversarial CLEAN review: `5108877160`;
 - unresolved material review threads at source closure: `0`;
+- workflow ID: `349837736`;
+- workflow path: `.github/workflows/d4-b-schema-contract-source-evidence.yml`;
+- workflow trigger: `pull_request`;
 - workflow run: `33832558443`, attempt `1`;
 - workflow job: `100898421033` — `D4-B schema contract source evidence`;
 - source artifact ID: `9922185873`;
@@ -51,24 +55,31 @@ The source package remains immutable in meaning and remains explicitly nonpromot
 That source manifest does not rewrite itself after review. The separate promotion introduces the reviewed ledger state and requires four representations to remain consistent:
 
 1. immutable source manifest bytes;
-2. exact source run/job/artifact/review provenance;
+2. exact source PR/review/workflow/run/job/artifact provenance;
 3. D4-B evidence-plan ledger state;
 4. machine-owned D4 track state.
 
-Any provenance mismatch, source-manifest byte drift, missing or extra credited evidence, candidate selection, or authority escalation fails the promotion assurance gate.
+Any provenance mismatch, source-manifest byte drift, missing or extra credited evidence, duplicate/ambiguous track identity, candidate selection, or authority escalation fails the promotion assurance gate.
 
 ## External provenance revalidation
 
-The D4-B promotion workflow uses read-only GitHub Actions authority to re-read the pinned source run, job and artifact during the promotion PR. It requires:
+The D4-B promotion workflow uses read-only GitHub Actions and Pull Request authority during the promotion PR. Live admission is required only while evidence-promotion authority changes; later steady-state eventing changes validate the durable pinned record/digests without depending on the source artifact's finite retention window.
 
+During live admission it requires:
+
+- source PR `#64` is the merged PR whose exact head is the reviewed source SHA and whose branch is the pinned source branch;
+- exact independent review ID exists on source PR `#64`, is bound to the reviewed source SHA, and records the exact-HEAD CLEAN conclusion;
+- exact workflow ID `349837736` and path `.github/workflows/d4-b-schema-contract-source-evidence.yml`;
+- source run event is `pull_request` and its head branch/SHA match source PR `#64`;
 - exact source run ID, attempt and source HEAD;
 - source run `completed/success`;
 - exact source job ID/name/run/attempt and `completed/success`;
 - exact artifact ID/name/digest;
-- artifact not expired;
-- artifact bound to the exact source run and source HEAD.
+- artifact not expired during the promotion admission;
+- artifact bound to the exact source run and source HEAD;
+- artifact payload provenance bound to the same source manifest, evidence IDs and nonpromotion state.
 
-Repository-side validators independently pin the same provenance and source-manifest digest. Workflow metadata alone therefore cannot redirect ledger credit to another source run.
+Repository-side validators independently pin the same review/workflow/run provenance and source-manifest digest. A different workflow at the same SHA, a fabricated review claim, duplicate D4 track identity, or matching artifact names emitted outside the governed source workflow cannot authorize ledger credit.
 
 ## Selection boundary
 
@@ -106,9 +117,9 @@ After this ledger promotion is separately reviewed and merged, D4-B may proceed 
 This promotion may merge only after:
 
 - exact-HEAD CI is clean;
-- source run/job/artifact provenance revalidation is clean;
+- source PR/review/workflow/run/job/artifact provenance revalidation is clean;
 - source manifest immutability/nonpromotion is clean;
-- D4-B credit is exactly 5/5 and no other track is over-credited;
+- D4-B credit is exactly 5/5 and no other track is over-credited or duplicated;
 - panoramic review confirms no selection or authority escalation;
 - adversarial review on the exact promotion HEAD is clean, using the documented independent substitution only if Codex is unavailable;
 - zero unresolved material review threads remain;

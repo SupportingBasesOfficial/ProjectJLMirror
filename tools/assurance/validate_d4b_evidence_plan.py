@@ -68,8 +68,28 @@ EXPECTED_MANIFEST_SHA256 = "2b442fd7b8733105ba004cf7ae982dd3a64a7731d11187b1e040
 EXPECTED_REVIEW_MODE = "independent_exact_head_adversarial_clean_with_fresh_codex_no_findings_reaction"
 
 
+class DuplicateMemberError(ValueError):
+    pass
+
+
+def reject_duplicate_members(pairs: list[tuple[str, object]]) -> dict:
+    result: dict = {}
+    for key, value in pairs:
+        if key in result:
+            raise DuplicateMemberError(f"duplicate JSON member {key!r}")
+        result[key] = value
+    return result
+
+
+def parse_strict_json(raw: bytes | str) -> object:
+    return json.loads(raw, object_pairs_hook=reject_duplicate_members)
+
+
 def load(root: Path, path: Path) -> dict:
-    return json.loads((root / path).read_text(encoding="utf-8"))
+    value = parse_strict_json((root / path).read_bytes())
+    if not isinstance(value, dict):
+        raise ValueError(f"{path.as_posix()} top-level JSON value must be an object")
+    return value
 
 
 def validate(root: Path) -> list[str]:
@@ -79,12 +99,19 @@ def validate(root: Path) -> list[str]:
         if not cond:
             errors.append(msg)
 
-    plan = load(root, PLAN)
-    state = load(root, STATE)
-    promotion = load(root, PROMOTION)
-    source_path = root / SOURCE
-    source_bytes = source_path.read_bytes()
-    source = json.loads(source_bytes)
+    try:
+        plan = load(root, PLAN)
+        state = load(root, STATE)
+        promotion = load(root, PROMOTION)
+        source_path = root / SOURCE
+        source_bytes = source_path.read_bytes()
+        source_value = parse_strict_json(source_bytes)
+        if not isinstance(source_value, dict):
+            raise ValueError(f"{SOURCE.as_posix()} top-level JSON value must be an object")
+        source = source_value
+    except (json.JSONDecodeError, DuplicateMemberError, ValueError) as exc:
+        return [f"strict JSON parse failure: {exc}"]
+
     tracks = {t["track_id"]: t for t in state["tracks"]}
     d4b = tracks["D4-B"]
 
@@ -180,7 +207,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_LEDGER_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_ledger_promotion=PASS credited=5/5 candidate=not_selected selection=separate source_immutable=true promotion_record=exact_schema_pinned d4a=exact_7_of_7 d4=scoped authorities=not_granted")
+    print("d4b_ledger_promotion=PASS credited=5/5 candidate=not_selected selection=separate source_immutable=true strict_json=true promotion_record=exact_schema_pinned d4a=exact_7_of_7 d4=scoped authorities=not_granted")
     return 0
 
 

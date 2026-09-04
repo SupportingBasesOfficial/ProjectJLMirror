@@ -55,6 +55,10 @@ EXPECTED_PROMOTION_KEYS = {
 }
 EXPECTED_SOURCE_REVIEW_KEYS = {"review_id", "review_mode", "material_threads_unresolved"}
 EXPECTED_SOURCE_WORKFLOW_KEYS = {
+    "workflow_id",
+    "workflow_path",
+    "workflow_event",
+    "source_head_branch",
     "run_id",
     "run_attempt",
     "job_id",
@@ -67,6 +71,9 @@ EXPECTED_SOURCE_MANIFEST_KEYS = {"path", "sha256"}
 EXPECTED_SOURCE_HEAD = "0a5509442d4b55f6d4de989af9bb62a088198ab4"
 EXPECTED_MANIFEST_SHA256 = "2b442fd7b8733105ba004cf7ae982dd3a64a7731d11187b1e0409270f1da118a"
 EXPECTED_REVIEW_MODE = "independent_exact_head_adversarial_clean_with_fresh_codex_no_findings_reaction"
+EXPECTED_SOURCE_WORKFLOW_ID = 349837736
+EXPECTED_SOURCE_WORKFLOW_PATH = ".github/workflows/d4-b-schema-contract-source-evidence.yml"
+EXPECTED_SOURCE_HEAD_BRANCH = "evidence/d4-b-schema-contract-source"
 
 
 class DuplicateMemberError(ValueError):
@@ -154,6 +161,10 @@ def validate(root: Path) -> list[str]:
     req(review.get("material_threads_unresolved") == 0, "source review must have zero unresolved material threads")
     workflow = promotion.get("source_workflow", {})
     req(isinstance(workflow, dict) and set(workflow) == EXPECTED_SOURCE_WORKFLOW_KEYS, "source workflow exact key schema drift")
+    req(workflow.get("workflow_id") == EXPECTED_SOURCE_WORKFLOW_ID, "source workflow id provenance drift")
+    req(workflow.get("workflow_path") == EXPECTED_SOURCE_WORKFLOW_PATH, "source workflow path provenance drift")
+    req(workflow.get("workflow_event") == "pull_request", "source workflow event provenance drift")
+    req(workflow.get("source_head_branch") == EXPECTED_SOURCE_HEAD_BRANCH, "source workflow branch provenance drift")
     req(workflow.get("run_id") == 33832558443 and workflow.get("run_attempt") == 1, "source workflow run provenance drift")
     req(workflow.get("job_id") == 100898421033 and workflow.get("job_name") == "D4-B schema contract source evidence", "source job provenance drift")
     req(workflow.get("artifact_id") == 9922185873, "source artifact id drift")
@@ -214,7 +225,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_LEDGER_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_ledger_promotion=PASS credited=5/5 candidate=not_selected selection=separate source_immutable=true strict_json=true unique_tracks=true promotion_record=exact_schema_pinned d4a=exact_7_of_7 d4=scoped authorities=not_granted")
+    print("d4b_ledger_promotion=PASS credited=5/5 candidate=not_selected selection=separate source_immutable=true strict_json=true unique_tracks=true source_workflow=exact promotion_record=exact_schema_pinned d4a=exact_7_of_7 d4=scoped authorities=not_granted")
     return 0
 
 

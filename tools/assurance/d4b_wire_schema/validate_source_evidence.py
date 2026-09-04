@@ -44,7 +44,7 @@ EXPECTED_REQUIREMENTS = {
         "schema_resolution_must_not_fetch_or_execute_untrusted_dynamic_content",
     },
     "protobuf_profile": {
-        "bounded_wire_predecoder_rejects_nonminimal_varints_and_reserved_field_numbers",
+        "bounded_wire_predecoder_rejects_nonminimal_varints_uint64_overflow_and_reserved_field_numbers",
         "bounded_wire_predecoder_rejects_duplicate_protected_singular_fields_before_generated_binding_last_wins_behavior",
         "protected_oneof_collisions_fail_closed_before_generated_binding_resolution",
         "required_optional_absence_and_enum_semantics_are_explicit_before_generated_runtime_mapping",
@@ -58,10 +58,10 @@ EXPECTED_REQUIREMENTS = {
         "original_writer_schema_identity_and_content_are_pinned_for_historical_interpretation",
         "reader_schema_resolution_is_explicit_and_missing_fields_require_defaults_or_failure",
         "required_nullable_and_enum_semantics_are_explicit_after_writer_reader_resolution",
-        "field_aliases_are reviewed_and_ambiguous_aliases_fail_closed",
+        "field_aliases_are_reviewed_and_ambiguous_aliases_fail_closed",
         "semantic_equivalence_is_computed_after_explicit_writer_reader_resolution_not_from_raw_schema_text",
         "historical_payload_is_bound_to_reviewed_avro_profile_and_writer_schema_identity",
-        "writer_reader_schema_loading_is bounded_to_reviewed_content_and_not_selected_by_message_payload",
+        "writer_reader_schema_loading_is_bounded_to_reviewed_content_and_not_selected_by_message_payload",
     },
 }
 EXPECTED_SOURCE_FACTS = {
@@ -79,7 +79,7 @@ EXPECTED_ASSERTIONS = {
     "untrusted_message_content_cannot_select_schema_descriptor_or_executable_code",
     "historical_payload_profile_and_schema_binding_prevents_cross_profile_reinterpretation",
     "json_numeric_normalization_is_bounded_decimal_and_runtime_independent_within_the_evidence_profile",
-    "protobuf_nonminimal_varints_and_reserved_field_numbers_fail_closed",
+    "protobuf_nonminimal_varints_uint64_overflow_and_reserved_field_numbers_fail_closed",
     "protobuf_last_one_wins_default_is_not_accepted_for_protected_fields",
     "protobuf_required_optional_absence_and_enum_semantics_are_explicit",
     "protobuf_raw_serialized_bytes_are_not_content_equivalence_authority",
@@ -214,8 +214,9 @@ def main(argv: list[str]) -> int:
         return 1
     print(
         "d4b_wire_schema_source_manifest=PASS axis=OPEN-EVT-002 concrete_candidates=3 eligible=3 "
-        "canonical_varints=required runtime_mapping=bounded historical_binding=required decompression=identity_only "
-        "equivalent=insufficient_evidence selection=not_selected ledger_credit=0 d4=scoped authorities=not_granted"
+        "canonical_varints=required uint64_varints=bounded runtime_mapping=bounded historical_binding=required "
+        "decompression=identity_only equivalent=insufficient_evidence selection=not_selected ledger_credit=0 "
+        "d4=scoped authorities=not_granted"
     )
     return 0
 

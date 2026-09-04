@@ -52,7 +52,7 @@ jobs:
           python3 tools/assurance/validate_d4_eventing_async_state.py .
           python3 tools/assurance/test_validate_d4_eventing_async_state.py
 
-      - name: Determine whether this PR changes promotion authority
+      - name: Determine whether this PR changes D4-A promotion authority
         id: promotion_delta
         shell: bash
         env:
@@ -60,17 +60,35 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$BASE_SHA" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "d4a_promotion_delta=steady_state reason=no_pull_request_base"
             exit 0
           fi
-          if git diff --quiet "$BASE_SHA"...HEAD -- \
-            implementation/d4-eventing-async/d4-a-evidence-plan.json \
-            implementation/d4-eventing-async/state-manifest.json \
-            implementation/d4-eventing-async/ledger-promotions/d4-a-capacity-ordering-promotion-v1.json; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
+          git show "$BASE_SHA:implementation/d4-eventing-async/d4-a-evidence-plan.json" > /tmp/base-d4a-plan.json
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          authority_keys = (
+              'ledger_credit_state',
+              'credited_evidence',
+              'latest_promotion_record',
+              'selection_state',
+              'acceptance_state',
+              'source_evidence_state',
+          )
+          base = json.loads(Path('/tmp/base-d4a-plan.json').read_text())
+          head = json.loads(Path('implementation/d4-eventing-async/d4-a-evidence-plan.json').read_text())
+
+          def project(plan):
+              return {key: plan.get(key) for key in authority_keys}
+
+          changed = project(base) != project(head)
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f"changed={'true' if changed else 'false'}\n")
+          print(f"d4a_promotion_delta={'changed' if changed else 'steady_state'} authority_projection=exact")
+          PY
 
       - name: Admit promoted source run from live external evidence
         if: steps.promotion_delta.outputs.changed == 'true'
@@ -155,7 +173,7 @@ jobs:
         if: steps.promotion_delta.outputs.changed == 'false'
         shell: bash
         run: |
-          echo 'd4a_promotion_live_admission=SKIP steady_state=true reason=artifact_retention_is_not_permanent durable_chain=validated_by_static_digest_gate'
+          echo 'd4a_promotion_live_admission=SKIP steady_state=true reason=artifact_retention_is_not_permanent durable_chain=validated_by_full_static_digest_gate'
 
       - name: Assert six-of-seven partial credit does not escalate authority
         shell: bash

@@ -59,6 +59,28 @@ def inject_candidate_fields(data: dict[Path, object]) -> None:
     promotion["candidate_status"] = "selected"
 
 
+def raw_promotion_bytes() -> bytes:
+    return (ROOT / validator.PROMOTION).read_bytes()
+
+
+def inject_duplicate_top_level_selection(data: dict[Path, object]) -> None:
+    raw = raw_promotion_bytes()
+    needle = b'  "selection_state": "not_selected",\n'
+    replacement = b'  "selection_state": "selected",\n' + needle
+    if raw.count(needle) != 1:
+        raise AssertionError("canonical promotion selection_state line not uniquely located")
+    data[validator.PROMOTION] = raw.replace(needle, replacement, 1)
+
+
+def inject_duplicate_nested_review_mode(data: dict[Path, object]) -> None:
+    raw = raw_promotion_bytes()
+    needle = b'    "review_mode": "independent_exact_head_adversarial_clean_with_fresh_codex_no_findings_reaction",\n'
+    replacement = b'    "review_mode": "tampered_first_value",\n' + needle
+    if raw.count(needle) != 1:
+        raise AssertionError("canonical promotion review_mode line not uniquely located")
+    data[validator.PROMOTION] = raw.replace(needle, replacement, 1)
+
+
 def main() -> int:
     errors = validator.validate(ROOT)
     if errors:
@@ -70,13 +92,15 @@ def main() -> int:
     must_fail(lambda d: d[validator.PLAN].__setitem__("selection_state", "selected"), "selection must remain not_selected")
     must_fail(lambda d: d[validator.PLAN].__setitem__("d4_transport_authority", "granted"), "plan transport authority drift")
 
-    # Promotion identity, exact schema, review and provenance must be immutable.
+    # Promotion identity, exact schema, strict JSON meaning, review and provenance must be immutable.
     must_fail(lambda d: d[validator.PROMOTION].__setitem__("gate_id", "D3"), "promotion identity envelope drift")
     must_fail(inject_candidate_fields, "promotion exact key schema drift")
     must_fail(lambda d: d[validator.PROMOTION].__setitem__("unexpected_field", "smuggled"), "promotion exact key schema drift")
     must_fail(lambda d: d[validator.PROMOTION]["source_review"].__setitem__("unexpected_field", "smuggled"), "source review exact key schema drift")
     must_fail(lambda d: d[validator.PROMOTION]["source_workflow"].__setitem__("unexpected_field", "smuggled"), "source workflow exact key schema drift")
     must_fail(lambda d: d[validator.PROMOTION]["source_manifest"].__setitem__("unexpected_field", "smuggled"), "source manifest exact key schema drift")
+    must_fail(inject_duplicate_top_level_selection, "duplicate JSON member 'selection_state'")
+    must_fail(inject_duplicate_nested_review_mode, "duplicate JSON member 'review_mode'")
     must_fail(lambda d: d[validator.PROMOTION]["source_review"].__setitem__("review_mode", "older_review_reused"), "source review mode drift")
     must_fail(lambda d: d[validator.PROMOTION]["source_review"].__setitem__("material_threads_unresolved", 1), "zero unresolved material threads")
     must_fail(lambda d: d[validator.PROMOTION].__setitem__("source_reviewed_head", "0" * 40), "source reviewed HEAD drift")
@@ -111,9 +135,10 @@ def main() -> int:
     must_fail(lambda d: d[validator.STATE].__setitem__("production_authority", "granted"), "production authority must remain none")
 
     print(
-        "d4b_ledger_falsification=PASS exact_credit=locked exact_promotion_schema=locked candidate_injection=blocked "
-        "selection=blocked promotion_record_selection=blocked promotion_record_authority=blocked provenance_tamper=blocked "
-        "source_mutation=blocked d4a_exact_membership=blocked cross_track_substitution=blocked d4c_d_leak=blocked full_d4_acceptance=blocked"
+        "d4b_ledger_falsification=PASS exact_credit=locked exact_promotion_schema=locked duplicate_json_members=blocked "
+        "candidate_injection=blocked selection=blocked promotion_record_selection=blocked promotion_record_authority=blocked "
+        "provenance_tamper=blocked source_mutation=blocked d4a_exact_membership=blocked cross_track_substitution=blocked "
+        "d4c_d_leak=blocked full_d4_acceptance=blocked"
     )
     return 0
 

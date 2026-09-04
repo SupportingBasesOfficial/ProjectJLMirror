@@ -36,8 +36,8 @@ EXPECTED_ASSERTIONS = {
     "opaque_monotonic_candidate_requires_strictly_increasing_internal_issuance_sequence_while_external_tokens_remain_opaque",
     "comparison_surface_is_equality_only_and_exposes_no_ordering_authority",
     "unrelated_version_namespaces_cannot_substitute_for_contract_version",
-    "breaking_semantic_change_cannot_reuse_the_same_contract_version_in_the_test_harness",
-    "historical_message_version_bytes_are_preserved_without_reinterpretation",
+    "breaking_semantic_change_transition_is_validated_within_each_candidate_family",
+    "historical_candidate_family_and_original_version_bytes_are_preserved_and_cross_family_reinterpretation_fails_closed",
     "candidate_adapter_output_contains_no_tenant_authorization_routing_or_message_identity_authority",
     "test_vector_encodings_are_noncanonical_evidence_fixtures_and_do_not_select_production_syntax",
 }
@@ -146,7 +146,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_CONTRACT_VERSION_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_contract_version_source_manifest=PASS axis=OPEN-EVT-004 concrete_candidates=3 eligible=3 opaque_monotonic_issuance=required equivalent=insufficient_evidence selection=not_selected syntax_selected=false ledger_credit=0 d4=scoped authorities=not_granted")
+    print("d4b_contract_version_source_manifest=PASS axis=OPEN-EVT-004 concrete_candidates=3 eligible=3 opaque_monotonic_issuance=required historical_family_continuity=required equivalent=insufficient_evidence selection=not_selected syntax_selected=false ledger_credit=0 d4=scoped authorities=not_granted")
     return 0
 
 

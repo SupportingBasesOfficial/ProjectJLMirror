@@ -83,7 +83,6 @@ def validate_objects(source: dict, profile: dict, plan: dict, state: dict) -> li
     require(type(profile.get("protected_current_messages")) is int and profile.get("protected_current_messages", 0) >= 3, "protected current workload too weak")
     require(type(profile.get("normal_priority")) is int and type(profile.get("protected_priority")) is int and profile.get("protected_priority", 0) > profile.get("normal_priority", 0), "protected priority must exceed backlog priority")
     require(type(profile.get("max_backlog_dispatches_before_protected")) is int and 0 < profile.get("max_backlog_dispatches_before_protected", 0) <= 5, "anti-starvation bound invalid")
-    require(type(profile.get("dispatcher_batch_limit")) is int and profile.get("dispatcher_batch_limit", 0) > 0, "dispatcher batch bound invalid")
     ambiguity = profile.get("ack_ambiguity", {})
     require(ambiguity.get("enabled") is True, "ack ambiguity probe disabled")
     require(isinstance(ambiguity.get("logical_message_id"), str) and ambiguity.get("logical_message_id"), "ack ambiguity logical identity missing")

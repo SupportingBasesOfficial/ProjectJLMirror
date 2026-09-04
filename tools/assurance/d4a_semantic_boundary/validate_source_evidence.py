@@ -37,6 +37,7 @@ def main() -> int:
     for key in ("live_kafka_broker_claimed", "capacity_benchmark_claimed", "ordering_benchmark_claimed", "recovery_benchmark_claimed", "current_run_auto_credit"):
         assert source[key] is False
     assert source["ledger_credit"] == []
+    # Historical source truth remains pre-selection.
     assert source["kafka_selection_state"] == "not_selected"
     assert source["d4_transport_authority"] == "not_selected_not_granted"
     assert source["canonical_product_implementation_authority"] == "not_granted"
@@ -65,11 +66,16 @@ def main() -> int:
     promoted = set(plan["credited_evidence"])
     assert EXPECTED_IDS.issubset(promoted)
     assert plan["current_run_auto_credit"] is False
+    assert plan["selection_state"] == "selected"
+    assert plan["candidate_status"] == "selected_c2_candidate"
+    assert plan["acceptance_state"] == "track_selected_separate_d4_acceptance_required"
     d4a = next(track for track in state["tracks"] if track["track_id"] == "D4-A")
     assert set(d4a["evidence_completed"]) == promoted
     assert set(d4a["evidence_completed"]).isdisjoint(d4a["evidence_remaining"])
+    assert d4a["state"] == "selected_candidate"
+    assert d4a["candidate_status"] == "selected_c2_candidate"
     assert state["gate_state"] == "scoped"
-    assert state["d4_transport_authority"] == "not_selected_not_granted"
+    assert state["d4_transport_authority"] == "selected_not_granted"
     assert state["canonical_product_implementation_authority"] == "not_granted"
     assert state["wave4_implementation_authority"] == "not_granted"
     assert state["production_authority"] == "none"
@@ -77,8 +83,8 @@ def main() -> int:
 
     print(
         "d4a_semantic_source_manifest=PASS evidence_ids=2 source_ledger_credit=0 "
-        f"promoted_ledger_credit={len(promoted)} live_kafka_claim=false "
-        "provenance=runtime_artifact_required effect_guard=executable"
+        f"promoted_ledger_credit={len(promoted)} historical_kafka_selection=not_selected current_kafka_selection=selected "
+        "transport_authority=not_granted provenance=runtime_artifact_required effect_guard=executable"
     )
     return 0
 

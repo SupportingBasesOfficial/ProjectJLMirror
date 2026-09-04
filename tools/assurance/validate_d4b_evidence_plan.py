@@ -26,6 +26,7 @@ EXPECTED_D4A_IDS = {
     "physical_naming_routing_and_cell_topology_adapter_mapping",
     "broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark",
 }
+EXPECTED_TRACK_IDS = {"D4-A", "D4-B", "D4-C", "D4-D"}
 EXPECTED_PROMOTION_KEYS = {
     "schema_version",
     "promotion_id",
@@ -112,7 +113,13 @@ def validate(root: Path) -> list[str]:
     except (json.JSONDecodeError, DuplicateMemberError, ValueError) as exc:
         return [f"strict JSON parse failure: {exc}"]
 
-    tracks = {t["track_id"]: t for t in state["tracks"]}
+    state_tracks = state.get("tracks")
+    if not isinstance(state_tracks, list) or not all(isinstance(track, dict) for track in state_tracks):
+        return ["D4 tracks must be exactly four objects with unique identities"]
+    track_ids = [track.get("track_id") for track in state_tracks]
+    if len(state_tracks) != 4 or len(track_ids) != len(set(track_ids)) or set(track_ids) != EXPECTED_TRACK_IDS:
+        return ["D4 track identities must be exactly D4-A/D4-B/D4-C/D4-D with no duplicates"]
+    tracks = {track["track_id"]: track for track in state_tracks}
     d4b = tracks["D4-B"]
 
     req(plan.get("schema_version") == 1 and plan.get("gate_id") == "D4" and plan.get("track_id") == "D4-B", "D4-B plan identity drift")
@@ -207,7 +214,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_LEDGER_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_ledger_promotion=PASS credited=5/5 candidate=not_selected selection=separate source_immutable=true strict_json=true promotion_record=exact_schema_pinned d4a=exact_7_of_7 d4=scoped authorities=not_granted")
+    print("d4b_ledger_promotion=PASS credited=5/5 candidate=not_selected selection=separate source_immutable=true strict_json=true unique_tracks=true promotion_record=exact_schema_pinned d4a=exact_7_of_7 d4=scoped authorities=not_granted")
     return 0
 
 

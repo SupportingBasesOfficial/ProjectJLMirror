@@ -33,6 +33,7 @@ EXPECTED_PROOFS = {
 EXPECTED_ASSERTIONS = {
     "all_three_concrete_candidate_classes_have_bounded_deterministic_test_parsers",
     "all_three_concrete_candidate_classes_reject_noncanonical_or_ambiguous_test_vectors",
+    "opaque_monotonic_candidate_requires_strictly_increasing_internal_issuance_sequence_while_external_tokens_remain_opaque",
     "comparison_surface_is_equality_only_and_exposes_no_ordering_authority",
     "unrelated_version_namespaces_cannot_substitute_for_contract_version",
     "breaking_semantic_change_cannot_reuse_the_same_contract_version_in_the_test_harness",
@@ -145,7 +146,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_CONTRACT_VERSION_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_contract_version_source_manifest=PASS axis=OPEN-EVT-004 concrete_candidates=3 eligible=3 equivalent=insufficient_evidence selection=not_selected syntax_selected=false ledger_credit=0 d4=scoped authorities=not_granted")
+    print("d4b_contract_version_source_manifest=PASS axis=OPEN-EVT-004 concrete_candidates=3 eligible=3 opaque_monotonic_issuance=required equivalent=insufficient_evidence selection=not_selected syntax_selected=false ledger_credit=0 d4=scoped authorities=not_granted")
     return 0
 
 

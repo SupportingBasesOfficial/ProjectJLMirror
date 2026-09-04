@@ -117,6 +117,10 @@ def main() -> int:
     must_fail(lambda d: d[validator.PROMOTION]["source_review"].__setitem__("review_mode", "older_review_reused"), "source review mode drift")
     must_fail(lambda d: d[validator.PROMOTION]["source_review"].__setitem__("material_threads_unresolved", 1), "zero unresolved material threads")
     must_fail(lambda d: d[validator.PROMOTION].__setitem__("source_reviewed_head", "0" * 40), "source reviewed HEAD drift")
+    must_fail(lambda d: d[validator.PROMOTION]["source_workflow"].__setitem__("workflow_id", 1), "source workflow id provenance drift")
+    must_fail(lambda d: d[validator.PROMOTION]["source_workflow"].__setitem__("workflow_path", ".github/workflows/other.yml"), "source workflow path provenance drift")
+    must_fail(lambda d: d[validator.PROMOTION]["source_workflow"].__setitem__("workflow_event", "workflow_dispatch"), "source workflow event provenance drift")
+    must_fail(lambda d: d[validator.PROMOTION]["source_workflow"].__setitem__("source_head_branch", "rogue/source"), "source workflow branch provenance drift")
     must_fail(lambda d: d[validator.PROMOTION]["source_workflow"].__setitem__("artifact_digest", "sha256:deadbeef"), "artifact digest drift")
     must_fail(lambda d: d[validator.PROMOTION]["source_manifest"].__setitem__("path", "implementation/other.json"), "source-manifest path drift")
     must_fail(lambda d: d[validator.PROMOTION]["credited_evidence"].append("canonical_bounded_serialization_profile"), "promotion credit set drift")
@@ -150,9 +154,9 @@ def main() -> int:
 
     print(
         "d4b_ledger_falsification=PASS exact_credit=locked exact_promotion_schema=locked duplicate_json_members=blocked "
-        "duplicate_track_identity=blocked candidate_injection=blocked selection=blocked promotion_record_selection=blocked promotion_record_authority=blocked "
-        "provenance_tamper=blocked source_mutation=blocked d4a_exact_membership=blocked cross_track_substitution=blocked "
-        "d4c_d_leak=blocked full_d4_acceptance=blocked"
+        "duplicate_track_identity=blocked source_workflow_identity=blocked candidate_injection=blocked selection=blocked "
+        "promotion_record_selection=blocked promotion_record_authority=blocked provenance_tamper=blocked source_mutation=blocked "
+        "d4a_exact_membership=blocked cross_track_substitution=blocked d4c_d_leak=blocked full_d4_acceptance=blocked"
     )
     return 0
 

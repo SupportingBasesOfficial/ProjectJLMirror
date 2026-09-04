@@ -29,10 +29,11 @@ def main() -> int:
         raise AssertionError(f"canonical D4 selected-track state failed validation: {errors!r}")
     if validator.EXPECTED_TOTAL_EVIDENCE != 26:
         raise AssertionError(f"unexpected D4 evidence inventory size: {validator.EXPECTED_TOTAL_EVIDENCE}")
-    if validator.EXPECTED_TOTAL_CREDITED != 7:
+    if validator.EXPECTED_TOTAL_CREDITED != 12:
         raise AssertionError(f"unexpected D4 credited evidence count: {validator.EXPECTED_TOTAL_CREDITED}")
 
     d4a = lambda s: next(t for t in s["tracks"] if t["track_id"] == "D4-A")
+    d4b = lambda s: next(t for t in s["tracks"] if t["track_id"] == "D4-B")
     must_fail(lambda s: s.__setitem__("gate_state", "separately_accepted"), "must remain scoped")
     must_fail(lambda s: s.__setitem__("d4_transport_authority", "granted"), "selected but authority must remain ungranted")
     must_fail(lambda s: s.__setitem__("d4_transport_authority", "not_selected_not_granted"), "selected but authority must remain ungranted")
@@ -43,11 +44,14 @@ def main() -> int:
     must_fail(lambda s: d4a(s).__setitem__("state", "evidence_complete_selection_pending"), "scoped state drift")
     must_fail(lambda s: d4a(s).__setitem__("candidate_status", "leading_candidate_evidence_complete_selection_pending"), "selected at bounded C2 scope")
     must_fail(lambda s: d4a(s).__setitem__("candidate", "rabbitmq"), "selected candidate must remain Kafka")
-    must_fail(lambda s: s["tracks"][1].__setitem__("candidate", "protobuf"), "must not silently select a candidate")
+    must_fail(lambda s: d4b(s).__setitem__("candidate", "protobuf"), "must not silently select a candidate")
+    must_fail(lambda s: d4b(s)["evidence_completed"].pop(), "completed evidence drift")
+    must_fail(lambda s: d4b(s)["evidence_remaining"].append("canonical_bounded_serialization_profile"), "remaining evidence drift")
+    must_fail(lambda s: d4b(s).__setitem__("state", "selected_candidate"), "scoped state drift")
     must_fail(lambda s: s["tracks"][2]["evidence_completed"].append(s["tracks"][2]["required_evidence"][0]), "completed evidence drift")
     must_fail(lambda s: s["explicit_c3_exclusions"].remove("OPEN-EVT-006"), "C3 exclusion set drift")
     must_fail(lambda s: s["explicit_product_or_later_gate_exclusions"].remove("OPEN-EVT-021"), "Product/later-gate exclusion set drift")
-    print("d4_state_falsification=PASS full_d4_acceptance=blocked transport_grant=blocked selection_rollback=blocked evidence_regression=blocked sibling_selection=blocked product_wave4_production=blocked c3_scope_leak=blocked total_required=26 total_credited=7")
+    print("d4_state_falsification=PASS full_d4_acceptance=blocked transport_grant=blocked d4a_selection_rollback=blocked d4b_selection=blocked evidence_regression=blocked sibling_credit=blocked product_wave4_production=blocked c3_scope_leak=blocked total_required=26 total_credited=12")
     return 0
 
 

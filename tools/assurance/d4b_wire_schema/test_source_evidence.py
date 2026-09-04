@@ -53,7 +53,6 @@ def inject_duplicate_selection(data: dict[Path, object]) -> None:
 
 
 def prove_behavior_falsifications() -> None:
-    # JSON duplicate exact member and protected alias collision must fail closed.
     for raw in (
         b'{"tenant_id":"t1","tenant_id":"t2","event_type":"alarm"}',
         b'{"tenant_id":"t1","tenantId":"t1","event_type":"alarm"}',
@@ -65,7 +64,6 @@ def prove_behavior_falsifications() -> None:
         else:
             raise AssertionError("JSON ambiguity accepted")
 
-    # JSON parser bounds are platform additions, not inherited from JSON Schema.
     too_deep = b'{"tenant_id":"t1","event_type":"alarm","payload":{"a":{"b":{"c":{"d":{"e":{"f":{"g":{"h":1}}}}}}}}}'
     try:
         evaluator.canonical_json_equivalence(too_deep)
@@ -74,7 +72,6 @@ def prove_behavior_falsifications() -> None:
     else:
         raise AssertionError("JSON excessive nesting accepted")
 
-    # Protobuf defaults permit last-one-wins, so our predecoder must reject before binding.
     tenant = evaluator.proto_field(1, b"t1")
     event = evaluator.proto_field(2, b"alarm")
     try:
@@ -84,17 +81,19 @@ def prove_behavior_falsifications() -> None:
     else:
         raise AssertionError("protobuf protected duplicate accepted")
 
-    # Unknown binary data must survive exactly in the source profile.
     unknown = evaluator.proto_field(123, b"future")
     _, preserved = evaluator.validate_protobuf_profile(tenant + event + unknown)
     if preserved != unknown:
         raise AssertionError("protobuf unknown bytes changed")
 
-    # Raw protobuf byte order cannot become equivalence authority.
     if evaluator.protobuf_semantic_equivalence(tenant + event + unknown) != evaluator.protobuf_semantic_equivalence(unknown + event + tenant):
-        raise AssertionError("protobuf semantic equivalence depends on field order")
+        raise AssertionError("protobuf semantic equivalence depends on distinct-field order")
 
-    # Avro aliases must not create multiple meanings and missing reader fields without defaults fail.
+    repeated_a = evaluator.proto_field(5, b"a")
+    repeated_b = evaluator.proto_field(5, b"b")
+    if evaluator.protobuf_semantic_equivalence(tenant + event + repeated_a + repeated_b) == evaluator.protobuf_semantic_equivalence(tenant + event + repeated_b + repeated_a):
+        raise AssertionError("protobuf repeated occurrence order was erased")
+
     writer = evaluator.AvroRecordSchema("Event", (evaluator.AvroFieldSpec("tenant_id"), evaluator.AvroFieldSpec("event_type")))
     ambiguous = evaluator.AvroRecordSchema(
         "Event",
@@ -150,8 +149,8 @@ def main() -> int:
         "d4b_wire_schema_source_falsification=PASS duplicate_json=blocked hidden_selection=blocked "
         "auto_credit=blocked candidate_promotion=blocked proof_weakening=blocked source_fact_drift=blocked "
         "json_bounds=blocked protobuf_last_wins_override=blocked protobuf_unknown_preservation=proven "
-        "protobuf_byte_order_authority=blocked avro_alias_ambiguity=blocked avro_missing_default=blocked "
-        "ledger_selection=blocked d4_authority_escalation=blocked"
+        "protobuf_byte_order_authority=blocked protobuf_repeated_order_loss=blocked "
+        "avro_alias_ambiguity=blocked avro_missing_default=blocked ledger_selection=blocked d4_authority_escalation=blocked"
     )
     return 0
 

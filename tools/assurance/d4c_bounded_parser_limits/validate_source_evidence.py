@@ -36,9 +36,10 @@ EXPECTED_ASSERTIONS = [
     "batch_item_count_is_bounded_before_per_item_semantic_admission",
     "nesting_string_collection_and_total_field_counts_are_explicitly_bounded",
     "gzip_output_is_incrementally_bounded_and_decompression_bombs_fail_closed",
+    "json_nesting_is_prescanned_before_recursive_parser_entry",
     "structured_validation_is_iterative_and_bounded_after_wire_and_decompression_limits",
     "transport_configuration_can_be_stricter_but_cannot_relax_the_contract_limit",
-    "artifact_and_raw_telemetry_payload_classes_require_references_to_specialized_planes",
+    "artifact_and_raw_telemetry_payload_classes_require_references_to_specialized_planes_at_any_depth",
     "limit_rejections_emit_stable_machine_codes_and_are_marked_non_retryable",
     "repeating_the_same_invalid_input_does_not_create_retry_amplification_authority",
     "numeric_limit_values_are_evidence_fixtures_only_and_do_not_select_production_limits",
@@ -148,6 +149,27 @@ def validate(root: Path) -> list[str]:
     checks = runtime.get("checks")
     if not isinstance(checks, dict) or set(checks) != set(CANDIDATES) or not all(all(v.values()) for v in checks.values()):
         errors.append("runtime proof checks incomplete")
+    else:
+        required_runtime_checks = {
+            "declared_oversize_rejected_before_stream_consumption",
+            "unknown_length_stream_remains_bounded",
+            "batch_size_bound",
+            "parser_nesting_prechecked_before_json_decode",
+            "collection_size_bound",
+            "string_bound",
+            "field_count_bound",
+            "decompression_output_bound",
+            "compressed_trailing_member_rejected",
+            "artifact_reference_required_at_any_depth",
+            "raw_telemetry_reference_supported_at_any_depth",
+            "transport_cannot_weaken_contract_limit",
+            "limit_failures_deterministic",
+            "limit_failures_non_retryable",
+            "fixture_profile_is_noncanonical",
+        }
+        for candidate, candidate_checks in checks.items():
+            if not required_runtime_checks.issubset(candidate_checks):
+                errors.append(f"runtime proof inventory incomplete for {candidate}")
 
     tracks_raw = state.get("tracks") if isinstance(state, dict) else None
     if not isinstance(tracks_raw, list) or len(tracks_raw) != 4:
@@ -194,7 +216,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_010_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_open_evt_010_source=PASS candidates=3 proofs=7 bounded_before_allocation=true decompression_bomb=blocked parser_amplification=blocked specialized_planes=referenced deterministic_nonretryable=true fixture_limits_noncanonical=true source_auto_credit=false current_d4c=2_of_9 open_evt_010_uncredited=true d4wide=14_of_26 selection=not_selected")
+    print("d4c_open_evt_010_source=PASS candidates=3 proofs=7 bounded_before_allocation=true decompression_bomb=blocked parser_nesting_prechecked=true specialized_planes=referenced_at_any_depth deterministic_nonretryable=true fixture_limits_noncanonical=true source_auto_credit=false current_d4c=2_of_9 open_evt_010_uncredited=true d4wide=14_of_26 selection=not_selected")
     return 0
 
 

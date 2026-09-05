@@ -9,14 +9,16 @@ from pathlib import Path
 PLAN = Path("implementation/d4-eventing-async/d4-c-evidence-plan.json")
 PROMOTION_008 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-008-promotion-v1.json")
 PROMOTION_009 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-009-promotion-v1.json")
+PROMOTION_010 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-010-promotion-v1.json")
 SOURCE_008 = Path("implementation/d4-eventing-async/source-evidence/d4-c-ack-lease-checkpoint-source.json")
 SOURCE_009 = Path("implementation/d4-eventing-async/source-evidence/d4-c-quarantine-redrive-source.json")
+SOURCE_010 = Path("implementation/d4-eventing-async/source-evidence/d4-c-bounded-parser-limits-source.json")
 STATE = Path("implementation/d4-eventing-async/state-manifest.json")
 CREDIT_008 = "ack_after_durable_responsibility_and_lease_ambiguity"
 CREDIT_009 = "quarantine_redrive_current_authority_and_dedup_preservation"
-EXPECTED_CREDITS = [CREDIT_008, CREDIT_009]
+CREDIT_010 = "bounded_message_batch_compression_and_parser_limits"
+EXPECTED_CREDITS = [CREDIT_008, CREDIT_009, CREDIT_010]
 EXPECTED_REMAINING = [
-    "bounded_message_batch_compression_and_parser_limits",
     "scoped_content_equivalence_confidentiality_and_conflict_rejection",
     "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
     "producer_generation_nonresurrection_across_failover_restore",
@@ -102,6 +104,32 @@ PROMOTIONS = (
             "artifact_digest": "sha256:680d0d965b965c7f44b4474a7725b3e6c23e143af8ed34f41aa37a0bbbdabaa1",
         },
         "source_sha256": "2e03e9a7ade9f6c379953b44ce7778846272948c30cd27336cb0c06f18483ddc",
+    },
+    {
+        "path": PROMOTION_010,
+        "source": SOURCE_010,
+        "promotion_id": "d4-c-open-evt-010-promotion-v1",
+        "promotion_base": "0266d406b91906587dbcb6ab7e96c2ce2802384c",
+        "source_pr": 76,
+        "source_head": "08a2d3c1fb34d8ff5fbe164f7c9315615f6aab22",
+        "source_merge": "0266d406b91906587dbcb6ab7e96c2ce2802384c",
+        "review_id": 5123374309,
+        "decision": "OPEN-EVT-010",
+        "evidence": CREDIT_010,
+        "workflow": {
+            "workflow_id": 351206153,
+            "workflow_path": ".github/workflows/d4-c-bounded-parser-limits-source-evidence.yml",
+            "workflow_event": "pull_request",
+            "source_head_branch": "evidence/d4-c-bounded-parser-limits-source",
+            "run_id": 33997326798,
+            "run_attempt": 1,
+            "job_id": 101390021787,
+            "job_name": "D4-C OPEN-EVT-010 source evidence",
+            "artifact_id": 9978515069,
+            "artifact_name": "d4-c-bounded-parser-source-08a2d3c1fb34d8ff5fbe164f7c9315615f6aab22-33997326798-1",
+            "artifact_digest": "sha256:d4b58eba717323689cef2849428636ed5cff62df13cad154fddf9c38d202703e",
+        },
+        "source_sha256": "a81715abe1c3e705d31d1949d0c98bc73605ab5c5f8453a28e2a63beb88959f1",
     },
 )
 
@@ -215,7 +243,7 @@ def validate(root: Path) -> list[str]:
         "schema_version": 1, "gate_id": "D4", "track_id": "D4-C",
         "name": "delivery_ack_quarantine_equivalence_outbox_replay_history_recovery",
         "candidate": None, "candidate_status": "not_selected",
-        "source_evidence_state": "reviewed_source_run_available", "ledger_credit_state": "two_of_nine",
+        "source_evidence_state": "reviewed_source_run_available", "ledger_credit_state": "three_of_nine",
         "current_run_auto_credit": False, "selection_state": "not_selected", "selection_authority": "not_granted",
         "separate_selection_required": True, "separate_d4_acceptance_required": True,
         "d4_transport_authority": "selected_not_granted", "canonical_product_implementation_authority": "not_granted",
@@ -228,7 +256,7 @@ def validate(root: Path) -> list[str]:
     if plan.get("source_decisions") != EXPECTED_SOURCE_DECISIONS:
         errors.append("D4-C source decision inventory drift")
     if plan.get("credited_evidence") != EXPECTED_CREDITS:
-        errors.append("D4-C credited evidence must be exactly OPEN-EVT-008 plus OPEN-EVT-009 obligations")
+        errors.append("D4-C credited evidence must be exactly OPEN-EVT-008, OPEN-EVT-009 and OPEN-EVT-010 obligations")
     if plan.get("remaining_evidence") != EXPECTED_REMAINING:
         errors.append("D4-C remaining evidence inventory drift")
     if plan.get("required_evidence") != [*EXPECTED_CREDITS, *EXPECTED_REMAINING]:
@@ -259,8 +287,8 @@ def validate(root: Path) -> list[str]:
         errors.append("D4-C state remaining evidence drift")
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("evidence_completed") != []:
         errors.append("D4-D state/credit leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 14:
-        errors.append("D4-wide credited evidence must be exactly 14/26")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 15:
+        errors.append("D4-wide credited evidence must be exactly 15/26")
     for key, expected in {
         "gate_state": "scoped", "d4_transport_authority": "selected_not_granted",
         "canonical_product_implementation_authority": "not_granted", "wave4_implementation_authority": "not_granted",
@@ -278,7 +306,7 @@ def main() -> int:
         for error in errors:
             print(f"D4C_PROMOTION_ERROR: {error}")
         return 1
-    print("d4c_open_evt_009_promotion=PASS promotion_records=2 immutable_history=true d4c=2_of_9 d4wide=14_of_26 selection=not_selected authorities=unchanged")
+    print("d4c_open_evt_010_promotion=PASS promotion_records=3 immutable_history=true d4c=3_of_9 d4wide=15_of_26 selection=not_selected authorities=unchanged")
     return 0
 
 

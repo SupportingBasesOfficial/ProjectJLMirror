@@ -55,15 +55,25 @@ class RuntimeSemanticsTests(unittest.TestCase):
         with self.assertRaises(Uncertainty):
             store.claim(identity, payload, "w2", 2)
 
-    def test_takeover_fences_stale_owner(self):
+    def test_takeover_requires_strictly_new_epoch_and_fences_stale_owner(self):
         store = DurableConsumerAuthority()
         identity: Identity = ("consumer.a", "tenant:t1/resource:r1", "m1")
         payload = {"value": 1}
         store.claim(identity, payload, "w1", 1)
         store.expire_lease(identity, "w1", 1)
+        with self.assertRaises(FenceViolation):
+            store.claim(identity, payload, "w2", 1)
         store.claim(identity, payload, "w2", 2)
         with self.assertRaises(FenceViolation):
             store.complete_effect(identity, "w1", 1)
+
+    def test_higher_epoch_cannot_steal_unexpired_claim(self):
+        store = DurableConsumerAuthority()
+        identity: Identity = ("consumer.a", "tenant:t1/resource:r1", "m1")
+        payload = {"value": 1}
+        store.claim(identity, payload, "w1", 1)
+        with self.assertRaises(FenceViolation):
+            store.claim(identity, payload, "w2", 2)
 
     def test_progress_before_responsibility_is_rejected(self):
         store = DurableConsumerAuthority()
@@ -72,6 +82,39 @@ class RuntimeSemanticsTests(unittest.TestCase):
             store.ack(identity, "w1", 1)
         with self.assertRaises(PrematureProgress):
             store.checkpoint(identity, "w1", 1)
+
+    def test_durable_receipt_and_effect_survive_close_reopen(self):
+        identity: Identity = ("consumer.a", "tenant:t1/resource:r1", "m1")
+        payload = {"value": 1}
+        with tempfile.TemporaryDirectory(prefix="d4c-restart-") as td:
+            db = Path(td) / "authority.sqlite3"
+            first = DurableConsumerAuthority(db)
+            first.claim(identity, payload, "w1", 1)
+            first.complete_effect(identity, "w1", 1)
+            first.close()
+
+            restarted = DurableConsumerAuthority(db)
+            self.assertTrue(restarted.business_effect_truth(identity))
+            self.assertEqual(restarted.effect_count(identity), 1)
+            restarted.expire_lease(identity, "w1", 1)
+            restarted.claim(identity, payload, "w2", 2)
+            self.assertEqual(restarted.complete_effect(identity, "w2", 2), "duplicate_noop")
+            self.assertEqual(restarted.effect_count(identity), 1)
+            restarted.close()
+
+    def test_equivalence_uncertainty_survives_close_reopen(self):
+        identity: Identity = ("consumer.a", "tenant:t1/resource:r1", "m1")
+        payload = {"value": 1}
+        with tempfile.TemporaryDirectory(prefix="d4c-equivalence-restart-") as td:
+            db = Path(td) / "authority.sqlite3"
+            first = DurableConsumerAuthority(db)
+            first.claim(identity, payload, "w1", 1)
+            first.remove_equivalence_authority(identity)
+            first.close()
+            restarted = DurableConsumerAuthority(db)
+            with self.assertRaises(Uncertainty):
+                restarted.claim(identity, payload, "w1", 1)
+            restarted.close()
 
 
 class ValidatorFalsificationTests(unittest.TestCase):
@@ -111,6 +154,20 @@ class ValidatorFalsificationTests(unittest.TestCase):
             source["required_proofs"][0] = "weakened_placeholder"
             self._write(root, SOURCE_PATH, source)
         self._assert_rejected(mutate, "exact required proof inventory drift")
+
+    def test_missing_source_assertion_is_rejected(self):
+        def mutate(root):
+            source = self._read(root, SOURCE_PATH)
+            source["source_assertions"].pop()
+            self._write(root, SOURCE_PATH, source)
+        self._assert_rejected(mutate, "exact source assertion inventory drift")
+
+    def test_same_count_source_assertion_substitution_is_rejected(self):
+        def mutate(root):
+            source = self._read(root, SOURCE_PATH)
+            source["source_assertions"][0] = "weakened_placeholder"
+            self._write(root, SOURCE_PATH, source)
+        self._assert_rejected(mutate, "exact source assertion inventory drift")
 
     def test_hidden_selection_is_rejected(self):
         def mutate(root):

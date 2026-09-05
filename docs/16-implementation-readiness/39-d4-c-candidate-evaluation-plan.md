@@ -47,7 +47,7 @@ Candidate classes:
 - hybrid platform quarantine plus broker DLQ;
 - equivalent reviewed profile.
 
-Broker DLQ semantics are never canonical process truth. Redrive remains privileged, audited, currently authorized and subject to the same dedup/equivalence/reconciliation rules as ordinary delivery.
+Broker DLQ semantics are never canonical process truth. Redrive remains privileged, audited, currently authorized and subject to the same dedup/equivalence/reconciliation rules as ordinary delivery. Confidential payload and derived equivalence evidence access is classification-scoped, and retention of that material must also obey data classification; this plan does not select any numeric retention horizon.
 
 ### 3. Bounded message / payload / batch / compression
 
@@ -70,7 +70,7 @@ Candidate classes:
 - hybrid equivalence authority;
 - equivalent reviewed profile.
 
-The selected future profile must cover all immutable semantic fields for the scoped message identity while avoiding cross-tenant/cross-consumer equality oracles. Missing/unverifiable evidence is uncertainty, never benign duplicate success.
+The selected future profile must cover all immutable semantic fields for the scoped message identity while avoiding cross-tenant/cross-consumer equality oracles. Comparison evidence must use the same canonical structured interpretation as protected contract validation. Co-resident inbox/effect completion is atomic, while cross-authority effects use stable operation/result reconciliation. Missing/unverifiable evidence is uncertainty, never benign duplicate success.
 
 ### 5. Outbox claim / dispatch / ack ambiguity
 
@@ -81,7 +81,7 @@ Candidate classes:
 - notification-assisted polling claim;
 - equivalent reviewed profile.
 
-The authoritative mutation and required outbox fact remain atomic; claim takeover is fenced; broker-ack ambiguity retries the same identity and meaning; outage preserves committed backlog.
+The authoritative mutation and required outbox fact remain atomic; claim takeover is fenced; broker-ack ambiguity retries the same identity and meaning; outage preserves committed backlog. Dispatcher restart and recovery must preserve both stable message identity and semantic content, not identity alone.
 
 ### 6. Producer/source generation
 

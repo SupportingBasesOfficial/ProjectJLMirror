@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-C",
+  "canonical_base": "70a7256b23c43cbd64eb9c02cdcd9091b847204e",
+  "mode": "candidate_evaluation_only",
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "separate_selection_required": true,
+  "separate_d4_acceptance_required": true,
+  "source_decisions": [
+    "OPEN-EVT-008",
+    "OPEN-EVT-009",
+    "OPEN-EVT-010",
+    "OPEN-EVT-011",
+    "OPEN-EVT-012",
+    "OPEN-EVT-013",
+    "OPEN-EVT-014",
+    "OPEN-EVT-015",
+    "OPEN-EVT-025"
+  ],
+  "axes": {
+    "ack_visibility_lease_and_checkpoint": {
+      "decision": "OPEN-EVT-008",
+      "evidence_id": "ack_after_durable_responsibility_and_lease_ambiguity",
+      "candidate_classes": [
+        "durable_inbox_claim_then_broker_ack_profile",
+        "broker_visibility_lease_plus_durable_receipt_profile",
+        "database_owned_work_claim_plus_broker_checkpoint_profile",
+        "equivalent_reviewed_profile"
+      ],
+      "must_prove": [
+        "ack_or_checkpoint_never_precedes_durable_consumer_responsibility",
+        "lease_or_visibility_expiry_is_treated_as_ambiguity_not_effect_absence",
+        "broker_progress_is_never_business_effect_truth",
+        "redelivery_or_offset_rewind_remains_safe_through_inbox_effect_idempotency",
+        "same_scoped_identity_with_conflicting_immutable_content_fails_closed",
+        "claim_ownership_and_takeover_are_fenced_against_concurrent_effect_execution",
+        "crash_between_effect_responsibility_and_broker_ack_recovers_without_semantic_loss"
+      ]
+    },
+    "quarantine_and_redrive": {
+      "decision": "OPEN-EVT-009",
+      "evidence_id": "quarantine_redrive_current_authority_and_dedup_preservation",
+      "candidate_classes": [
+        "durable_platform_quarantine_store_with_broker_dlq_adapter",
+        "broker_native_dlq_with_canonical_platform_quarantine_index",
+        "hybrid_platform_quarantine_store_plus_broker_dlq",
+        "equivalent_reviewed_profile"
+      ],
+      "must_prove": [
+        "platform_quarantine_meaning_does_not_depend_on_broker_native_dlq_semantics",
+        "bounded_retry_exhaustion_reaches_governed_quarantine",
+        "redrive_requires_current_privileged_authority_and_is_audited",
+        "redrive_cannot_bypass_inbox_dedup_equivalence_or_reconciliation",
+        "same_identity_different_content_is_integrity_failure_not_benign_duplicate",
+        "confidential_payload_and_equivalence_evidence_access_is_classification_scoped",
+        "broker_replacement_does_not_rewrite_quarantine_process_truth"
+      ]
+    },
+    "bounded_message_payload_batch_and_compression": {
+      "decision": "OPEN-EVT-010",
+      "evidence_id": "bounded_message_batch_compression_and_parser_limits",
+      "candidate_classes": [
+        "contract_bound_application_limits_with_transport_precheck",
+        "bounded_envelope_codec_profile",
+        "layered_transport_and_application_bounds_profile",
+        "equivalent_reviewed_profile"
+      ],
+      "must_prove": [
+        "message_payload_and_batch_sizes_are_bounded_before_unbounded_allocation",
+        "nesting_string_collection_and_field_counts_are_bounded",
+        "decompression_work_and_output_are_bounded",
+        "parser_recursion_and_cpu_amplification_fail_closed",
+        "large_artifacts_and_raw_telemetry_are_referenced_or_routed_to_specialized_planes",
+        "transport_limits_cannot_silently_weaken_contract_limits",
+        "limit_failures_are_deterministic_observable_and_non_retry_amplifying"
+      ]
+    },
+    "scoped_content_equivalence_authority": {
+      "decision": "OPEN-EVT-011",
+      "evidence_id": "scoped_content_equivalence_confidentiality_and_conflict_rejection",
+      "candidate_classes": [
+        "canonical_collision_resistant_fingerprint_profile",
+        "keyed_authenticated_digest_profile",
+        "protected_retained_immutable_original_profile",
+        "hybrid_equivalence_authority_profile",
+        "equivalent_reviewed_profile"
+      ],
+      "must_prove": [
+        "equivalence_is_evaluated_only_after_trusted_consumer_contract_and_message_scope_identity",
+        "every_immutable_semantic_field_required_for_same_id_meaning_is_covered",
+        "same_scoped_id_with_different_immutable_content_fails_closed",
+        "comparison_profile_and_version_are_stable_and_historically_recoverable",
+        "low_entropy_confidential_values_do_not_create_dictionary_or_cross_scope_equality_oracles",
+        "comparison_evidence_is_never_authorization_routing_ordering_or_bearer_authority",
+        "payload_erasure_cannot_remove_last_required_equivalence_authority_within_supported_horizon",
+        "missing_or_unverifiable_equivalence_evidence_is_uncertainty_not_duplicate_success",
+        "verification_work_is_bounded_and_access_controlled"
+      ]
+    },
+    "outbox_claim_dispatch_and_ack_ambiguity": {
+      "decision": "OPEN-EVT-012",
+      "evidence_id": "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
+      "candidate_classes": [
+        "database_skip_locked_polling_claim_profile",
+        "compare_and_swap_lease_claim_profile",
+        "notification_assisted_polling_claim_profile",
+        "equivalent_reviewed_profile"
+      ],
+      "must_prove": [
+        "authoritative_mutation_and_required_outbox_fact_commit_atomically",
+        "claim_takeover_is_fenced_and_does_not_create_concurrent_semantic_owners",
+        "retry_workers_do_not_rewrite_immutable_fact_meaning",
+        "broker_ack_ambiguity_retries_same_message_identity_and_semantic_content",
+        "broker_outage_preserves_committed_backlog_without_loss",
+        "dispatcher_restart_and_recovery_preserve_stable_message_identity",
+        "cleanup_never_removes_the_last_recovery_authority_before_safe_horizon"
+      ]
+    },
+    "producer_source_generation": {
+      "decision": "OPEN-EVT-013",
+      "evidence_id": "producer_generation_nonresurrection_across_failover_restore",
+      "candidate_classes": [
+        "positive_integer_fenced_generation",
+        "opaque_fenced_generation_token",
+        "authority_issued_epoch_generation",
+        "equivalent_reviewed_profile"
+      ],
+      "must_prove": [
+        "current_source_generation_is_explicitly_validated_at_effectful_admission",
+        "retired_generation_cannot_regain_current_authority",
+        "restore_or_failover_cannot_resurrect_retired_source_authority",
+        "historical_fact_identity_remains_distinct_from_current_source_authority",
+        "tenant_logical_identity_is_independent_of_generation_and_placement",
+        "generation_comparison_rule_is_unambiguous_and_does_not_infer_ungranted_ordering_semantics",
+        "provider_or_broker_generation_is_not_platform_source_generation_by_implication"
+      ]
+    },
+    "privileged_replay_and_event_history": {
+      "decision": "OPEN-EVT-014",
+      "evidence_id": "privileged_bounded_replay_with_original_identity_and_effect_safety",
+      "candidate_classes": [
+        "canonical_event_history_store_profile",
+        "broker_retained_log_plus_authoritative_history_index_profile",
+        "hybrid_history_archive_plus_replay_controller_profile",
+        "equivalent_reviewed_profile"
+      ],
+      "must_prove": [
+        "replay_is_privileged_audited_bounded_and_currently_authorized",
+        "replayed_message_preserves_original_identity_and_immutable_semantic_meaning",
+        "replay_retains_or_recovers_required_equivalence_and_historical_verifier_authority",
+        "irreversible_effects_cannot_be_repeated_by_disabling_dedup",
+        "projection_rebuild_uses_isolated_generation_or_target",
+        "replay_cannot_exceed_safe_schema_data_dedup_equivalence_and_recovery_evidence",
+        "history_storage_product_identity_does_not_become_message_or_contract_identity"
+      ]
+    },
+    "historical_reader_and_upcaster": {
+      "decision": "OPEN-EVT-015",
+      "evidence_id": "historical_reader_upcaster_semantic_and_equivalence_continuity",
+      "candidate_classes": [
+        "in_process_versioned_reader_upcaster_registry",
+        "sidecar_or_library_historical_reader_profile",
+        "offline_replay_transform_pipeline_profile",
+        "equivalent_reviewed_profile"
+      ],
+      "must_prove": [
+        "historical_semantic_meaning_is_immutable",
+        "upcasting_cannot_fabricate_newer_historical_facts",
+        "source_message_identity_tenant_and_occurrence_semantics_remain_traceable",
+        "supported_retained_history_remains_interpretable",
+        "equivalence_evidence_and_comparison_profile_semantics_are_preserved_or_deterministically_mapped",
+        "reader_or_upcaster_version_is_explicit_and_historically_recoverable",
+        "dynamic_untrusted_code_or_schema_execution_is_not_required_for_historical_read"
+      ]
+    },
+    "recovery_generation_reconciliation_and_activation": {
+      "decision": "OPEN-EVT-025",
+      "evidence_id": "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
+      "candidate_classes": [
+        "restore_generation_fence_manifest_profile",
+        "reconciliation_inventory_job_plus_activation_gate_profile",
+        "hybrid_generation_manifest_plus_multi_store_reconciler_profile",
+        "equivalent_reviewed_profile"
+      ],
+      "must_prove": [
+        "restore_generation_and_fence_boundary_are_explicit_and_durable",
+        "r_f_window_inventory_reconciles_broker_history_inbox_outbox_equivalence_and_external_effect_evidence",
+        "missing_restored_state_is_uncertainty_not_absence",
+        "missing_or_stale_historical_comparison_authority_blocks_duplicate_sensitive_effects",
+        "stale_producer_replay_authorization_and_destination_generations_do_not_revive",
+        "obsolete_restored_verifier_or_profile_cannot_become_current_authority_for_unrelated_scope",
+        "offset_outbox_or_inbox_state_cannot_override_surviving_external_audit_effect_or_equivalence_evidence",
+        "effectful_async_activation_is_fail_closed_until_required_reconciliation_is_proven",
+        "reconciliation_results_are_generation_scoped_auditable_and_reproducible"
+      ]
+    }
+  },
+  "cross_axis_invariants": [
+    "all_nine_axes_are_independently_selectable_and_no_candidate_choice_implies_another_axis_choice",
+    "broker_native_features_may_accelerate_mechanics_but_never_replace_platform_business_or_recovery_truth",
+    "message_identity_equivalence_ordering_generation_and_authorization_authorities_remain_distinct",
+    "current_authority_is_reestablished_at_redrive_replay_and_recovery_activation",
+    "historical_message_meaning_and_required_equivalence_verifier_authority_remain_reproducible_for_supported_horizons",
+    "uncertainty_never_collapses_to_absence_safe_duplicate_or_effect_eligibility",
+    "no_candidate_may_require_dynamic_untrusted_code_schema_or_parser_behavior",
+    "d4a_and_d4b_selected_bounded_c2_profiles_are_preserved_without_modification",
+    "d4c_existing_evidence_credit_remains_zero_and_no_evaluation_run_auto_credits_the_ledger",
+    "d4d_remains_open_unselected_and_uncredited",
+    "d4_gate_remains_scoped",
+    "transport_product_wave4_production_and_c3_authorities_remain_unchanged_and_ungranted"
+  ],
+  "evaluation_output_states": [
+    "eligible_for_evidence_execution",
+    "ineligible_by_contract",
+    "insufficient_evidence"
+  ],
+  "forbidden_outputs": [
+    "selected",
+    "preferred_without_evidence",
+    "ledger_credit_granted",
+    "full_d4_accepted",
+    "production_ready",
+    "authority_granted"
+  ]
+}

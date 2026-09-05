@@ -58,6 +58,16 @@ def inject_duplicate_selection_state(data: dict[Path, object]) -> None:
     data[validator.PLAN] = raw.replace(needle, b'  "selection_state": "selected",\n' + needle, 1)
 
 
+def replace_first_proof(data: dict[Path, object]) -> None:
+    axis = obj(data, validator.PLAN)["axes"]["ack_visibility_lease_and_checkpoint"]
+    axis["must_prove"][0] = "weakened_but_same_count"
+
+
+def inject_non_string_candidate(data: dict[Path, object]) -> None:
+    axis = obj(data, validator.PLAN)["axes"]["quarantine_and_redrive"]
+    axis["candidate_classes"][0] = {"profile": "not-a-string"}
+
+
 def main() -> int:
     errors = validator.validate(ROOT)
     if errors:
@@ -71,7 +81,9 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.PLAN)["axes"].pop("historical_reader_and_upcaster"), "exact nine-axis inventory drift")
     must_fail(lambda d: obj(d, validator.PLAN)["axes"]["ack_visibility_lease_and_checkpoint"].__setitem__("preferred_candidate", "durable_inbox_claim_then_broker_ack_profile"), "exact key schema drift")
     must_fail(lambda d: obj(d, validator.PLAN)["axes"]["quarantine_and_redrive"]["candidate_classes"].pop(), "candidate class inventory drift")
-    must_fail(lambda d: obj(d, validator.PLAN)["axes"]["scoped_content_equivalence_authority"]["must_prove"].pop(), "proof inventory drift")
+    must_fail(inject_non_string_candidate, "candidate class inventory drift")
+    must_fail(lambda d: obj(d, validator.PLAN)["axes"]["scoped_content_equivalence_authority"]["must_prove"].pop(), "exact proof inventory drift")
+    must_fail(replace_first_proof, "exact proof inventory drift")
     must_fail(lambda d: obj(d, validator.PLAN)["axes"]["recovery_generation_reconciliation_and_activation"].__setitem__("evidence_id", "wrong"), "evidence binding drift")
     must_fail(lambda d: obj(d, validator.PLAN)["source_decisions"].pop(), "source decision inventory drift")
     must_fail(lambda d: obj(d, validator.PLAN)["cross_axis_invariants"].pop(), "cross-axis invariant inventory drift")
@@ -90,7 +102,7 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("production_authority", "granted"), "production authority escalation")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("c3_numeric_topology_authority", "selected"), "C3 authority escalation")
 
-    print("d4c_candidate_evaluation_falsification=PASS duplicate_json=blocked hidden_selection=blocked axis_removal=blocked hidden_preference=blocked candidate_collapse=blocked proof_weakening=blocked evidence_binding_drift=blocked source_decision_drift=blocked output_escalation=blocked d4a_d4b_regression=blocked d4c_credit_leak=blocked d4d_credit_leak=blocked authority_escalation=blocked")
+    print("d4c_candidate_evaluation_falsification=PASS duplicate_json=blocked hidden_selection=blocked axis_removal=blocked hidden_preference=blocked candidate_collapse=blocked non_string_collection=blocked proof_removal=blocked proof_substitution=blocked evidence_binding_drift=blocked source_decision_drift=blocked output_escalation=blocked d4a_d4b_regression=blocked d4c_credit_leak=blocked d4d_credit_leak=blocked authority_escalation=blocked")
     return 0
 
 

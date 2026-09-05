@@ -91,7 +91,7 @@ class PromotionFalsificationTests(unittest.TestCase):
         self._reject(self._mutate(PROMOTION, lambda p: p["source_workflow"].__setitem__("artifact_digest", "sha256:" + "0" * 64)), "source workflow provenance drift")
 
     def test_run_attempt_bool_is_rejected(self):
-        self._reject(self._mutate(PROMOTION, lambda p: p["source_workflow"].__setitem__("run_attempt", True)), "source workflow provenance drift")
+        self._reject(self._mutate(PROMOTION, lambda p: p["source_workflow"].__setitem__("run_attempt", True)), "source workflow integer type drift: run_attempt")
 
     def test_separate_selection_guard_is_rejected(self):
         self._reject(self._mutate(PROMOTION, lambda p: p.__setitem__("separate_selection_required", False)), "separate-selection guard drift")

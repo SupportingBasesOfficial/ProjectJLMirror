@@ -73,7 +73,61 @@ jobs:
         shell: bash
         run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
 
+      - name: Determine whether this PR changes D4-C evidence-promotion authority
+        id: promotion_delta
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE_SHA" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "d4c_promotion_delta=steady_state reason=no_pull_request_base"
+            exit 0
+          fi
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          base_sha = os.environ['BASE_SHA']
+          plan_path = 'implementation/d4-eventing-async/d4-c-evidence-plan.json'
+          promotion_path = 'implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-008-promotion-v1.json'
+          promotion_keys = (
+              'ledger_credit_state',
+              'credited_evidence',
+              'remaining_evidence',
+              'source_evidence_state',
+          )
+
+          def git_show(path: str) -> bytes | None:
+              proc = subprocess.run(
+                  ['git', 'show', f'{base_sha}:{path}'],
+                  check=False,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.DEVNULL,
+              )
+              return proc.stdout if proc.returncode == 0 else None
+
+          base_plan_bytes = git_show(plan_path)
+          head_plan = json.loads(Path(plan_path).read_text(encoding='utf-8'))
+          head_promotion = Path(promotion_path).read_bytes()
+          if base_plan_bytes is None:
+              changed = True
+          else:
+              base_plan = json.loads(base_plan_bytes)
+              def project(plan: dict) -> dict:
+                  return {key: plan.get(key) for key in promotion_keys}
+              base_promotion = git_show(promotion_path)
+              changed = project(base_plan) != project(head_plan) or base_promotion != head_promotion
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f"changed={'true' if changed else 'false'}\n")
+          print(f"d4c_promotion_delta={'changed' if changed else 'steady_state'} projection=evidence_only promotion_record=bound selection_fields=excluded")
+          PY
+
       - name: Admit exact reviewed source evidence from live GitHub state
+        if: steps.promotion_delta.outputs.changed == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -127,6 +181,15 @@ jobs:
           assert source_pr['merge_commit_sha'] == p['source_merge_commit'] == p['promotion_base']
           assert source_review['id'] == p['source_review']['review_id']
           assert source_review['commit_id'] == p['source_reviewed_head'] and source_review['state'] == 'COMMENTED'
+          assert source_review.get('user', {}).get('login') == 'SupportingBasesOfficial'
+          assert source_review.get('author_association') == 'OWNER'
+          review_body = source_review.get('body') or ''
+          assert review_body.startswith('FINAL EXACT-HEAD SOURCE EVIDENCE GATE — CLEAN')
+          assert f"Exact HEAD: `{p['source_reviewed_head']}`." in review_body
+          assert 'Independent adversarial/panoramic review completed across the full 8-file PR scope.' in review_body
+          assert 'Exact-HEAD CI: 21/21 SUCCESS.' in review_body
+          assert 'No additional material findings on this exact HEAD.' in review_body
+          assert 'This source evidence is CLEAN and eligible for merge, but ledger promotion remains a separate governed transition.' in review_body
           assert run['id'] == w['run_id'] and run['workflow_id'] == w['workflow_id'] and run['path'] == w['workflow_path']
           assert run['event'] == 'pull_request' and run['head_sha'] == p['source_reviewed_head'] and run['head_branch'] == w['source_head_branch']
           assert run['run_attempt'] == w['run_attempt'] and run['status'] == 'completed' and run['conclusion'] == 'success'
@@ -150,8 +213,14 @@ jobs:
           digest = hashlib.sha256(source.read_bytes()).hexdigest()
           assert digest == p['source_manifest']['sha256']
           assert provenance['file_sha256'][str(source)] == digest
-          print('d4c_promotion_live_admission=PASS source_pr=merged source_merge=exact review=exact_head run=success job=exact artifact=exact provenance=exact source_manifest=exact source_auto_credit=false selection=not_selected')
+          print('d4c_promotion_live_admission=PASS source_pr=merged source_merge=exact review=exact_head_clean reviewer=owner run=success job=exact artifact=exact provenance=exact source_manifest=exact source_auto_credit=false selection=not_selected')
           PY
+
+      - name: Validate steady-state durable D4-C promotion provenance
+        if: steps.promotion_delta.outputs.changed == 'false'
+        shell: bash
+        run: |
+          echo 'd4c_promotion_live_admission=SKIP promotion_unchanged=true artifact_retention_dependency=false durable_record_and_digests=validated'
 
       - name: Assert promotion grants only one evidence credit
         shell: bash

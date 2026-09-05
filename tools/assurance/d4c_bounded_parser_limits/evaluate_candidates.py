@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import gzip
-import io
 import json
 import zlib
 from dataclasses import dataclass
@@ -213,7 +212,12 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
     long_string = encoded({"s": "x" * (TEST_MAX_STRING_CHARS + 1)})
     string_result = decode_and_validate(candidate, [long_string], declared_length=len(long_string))
 
-    many_fields = encoded({f"f{i}": i for i in range(TEST_MAX_TOTAL_FIELDS + 1)})
+    many_fields_value = {
+        "a": {f"a{i}": i for i in range(TEST_MAX_COLLECTION_ITEMS)},
+        "b": {f"b{i}": i for i in range(TEST_MAX_COLLECTION_ITEMS)},
+        "c": {"c0": 0},
+    }
+    many_fields = encoded(many_fields_value)
     fields_result = decode_and_validate(candidate, [many_fields], declared_length=len(many_fields))
 
     bomb_plain = encoded({"data": "x" * (TEST_MAX_DECOMPRESSED_BYTES + 512)})

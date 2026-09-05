@@ -13,6 +13,7 @@ PINNED_FILES = (
     Path("tools/assurance/d4c_ack_lease_checkpoint/evaluate_candidates.py"),
     Path("tools/assurance/d4c_ack_lease_checkpoint/validate_source_evidence.py"),
     Path("tools/assurance/d4c_ack_lease_checkpoint/test_source_evidence.py"),
+    Path("tools/assurance/d4c_ack_lease_checkpoint/emit_source_provenance.py"),
     Path("docs/16-implementation-readiness/40-d4-c-ack-lease-checkpoint-source-evidence.md"),
     Path(".github/workflows/d4-c-ack-lease-checkpoint-source-evidence.yml"),
 )
@@ -64,6 +65,9 @@ def main() -> int:
         "ledger_credit": source["ledger_credit"],
         "candidate_results": runtime["candidate_results"],
         "equivalent_reviewed_profile": runtime["equivalent_reviewed_profile"],
+        "required_proofs": source["required_proofs"],
+        "source_assertions": source["source_assertions"],
+        "non_authority": source["non_authority"],
         "file_sha256": {str(path): sha256(path) for path in PINNED_FILES},
         "candidate_results_sha256": sha256(args.candidate_results),
     }

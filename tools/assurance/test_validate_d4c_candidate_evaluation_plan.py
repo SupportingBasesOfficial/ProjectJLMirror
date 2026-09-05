@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "assurance"))
 import validate_d4c_candidate_evaluation_plan as validator
 
+WEBHOOK_RECOVERY_PROOF = "webhook_recovery_preserves_stable_delivery_identity_semantic_snapshot_or_reproduction_authority_and_destination_generation_fences"
+
 
 def snapshot() -> dict[Path, object]:
     return {
@@ -63,6 +65,11 @@ def replace_first_proof(data: dict[Path, object]) -> None:
     axis["must_prove"][0] = "weakened_but_same_count"
 
 
+def remove_webhook_recovery_proof(data: dict[Path, object]) -> None:
+    axis = obj(data, validator.PLAN)["axes"]["recovery_generation_reconciliation_and_activation"]
+    axis["must_prove"].remove(WEBHOOK_RECOVERY_PROOF)
+
+
 def inject_non_string_candidate(data: dict[Path, object]) -> None:
     axis = obj(data, validator.PLAN)["axes"]["quarantine_and_redrive"]
     axis["candidate_classes"][0] = {"profile": "not-a-string"}
@@ -84,6 +91,7 @@ def main() -> int:
     must_fail(inject_non_string_candidate, "candidate class inventory drift")
     must_fail(lambda d: obj(d, validator.PLAN)["axes"]["scoped_content_equivalence_authority"]["must_prove"].pop(), "exact proof inventory drift")
     must_fail(replace_first_proof, "exact proof inventory drift")
+    must_fail(remove_webhook_recovery_proof, "exact proof inventory drift")
     must_fail(lambda d: obj(d, validator.PLAN)["axes"]["recovery_generation_reconciliation_and_activation"].__setitem__("evidence_id", "wrong"), "evidence binding drift")
     must_fail(lambda d: obj(d, validator.PLAN)["source_decisions"].pop(), "source decision inventory drift")
     must_fail(lambda d: obj(d, validator.PLAN)["cross_axis_invariants"].pop(), "cross-axis invariant inventory drift")
@@ -102,7 +110,7 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("production_authority", "granted"), "production authority escalation")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("c3_numeric_topology_authority", "selected"), "C3 authority escalation")
 
-    print("d4c_candidate_evaluation_falsification=PASS duplicate_json=blocked hidden_selection=blocked axis_removal=blocked hidden_preference=blocked candidate_collapse=blocked non_string_collection=blocked proof_removal=blocked proof_substitution=blocked evidence_binding_drift=blocked source_decision_drift=blocked output_escalation=blocked d4a_d4b_regression=blocked d4c_credit_leak=blocked d4d_credit_leak=blocked authority_escalation=blocked")
+    print("d4c_candidate_evaluation_falsification=PASS duplicate_json=blocked hidden_selection=blocked axis_removal=blocked hidden_preference=blocked candidate_collapse=blocked non_string_collection=blocked proof_removal=blocked proof_substitution=blocked webhook_recovery_omission=blocked evidence_binding_drift=blocked source_decision_drift=blocked output_escalation=blocked d4a_d4b_regression=blocked d4c_credit_leak=blocked d4d_credit_leak=blocked authority_escalation=blocked")
     return 0
 
 

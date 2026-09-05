@@ -62,9 +62,21 @@ jobs:
         shell: bash
         run: python3 tools/assurance/d4b_catalog_tooling/evaluate_candidates.py
 
-      - name: Falsify candidate source-evidence weakening
+      - name: Falsify historical candidate source-evidence weakening with HEAD tooling
         shell: bash
-        run: python3 tools/assurance/d4b_catalog_tooling/test_source_evidence.py
+        run: |
+          set -euo pipefail
+          root="$(mktemp -d)"
+          mkdir -p "$root/tools/assurance/d4b_catalog_tooling" "$root/implementation/d4-eventing-async/source-evidence"
+          cp tools/assurance/d4b_catalog_tooling/evaluate_candidates.py "$root/tools/assurance/d4b_catalog_tooling/"
+          cp tools/assurance/d4b_catalog_tooling/validate_source_evidence.py "$root/tools/assurance/d4b_catalog_tooling/"
+          cp tools/assurance/d4b_catalog_tooling/test_source_evidence.py "$root/tools/assurance/d4b_catalog_tooling/"
+          cp implementation/d4-eventing-async/source-evidence/d4-b-catalog-tooling-candidate-source.json "$root/implementation/d4-eventing-async/source-evidence/"
+          cp implementation/d4-eventing-async/d4-b-candidate-evaluation-plan.json "$root/implementation/d4-eventing-async/"
+          git show "$PRESELECTION_MAIN:implementation/d4-eventing-async/d4-b-evidence-plan.json" > "$root/implementation/d4-eventing-async/d4-b-evidence-plan.json"
+          git show "$PRESELECTION_MAIN:implementation/d4-eventing-async/state-manifest.json" > "$root/implementation/d4-eventing-async/state-manifest.json"
+          (cd "$root" && python3 tools/assurance/d4b_catalog_tooling/test_source_evidence.py)
+          rm -rf "$root"
 
       - name: Validate historical source manifest against pre-selection state
         shell: bash

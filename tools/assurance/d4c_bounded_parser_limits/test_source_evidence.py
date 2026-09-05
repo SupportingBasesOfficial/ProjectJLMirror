@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import gzip
-import json
 import sys
 import unittest
 from pathlib import Path
@@ -15,6 +14,7 @@ from evaluate_candidates import (  # noqa: E402
     CANDIDATES,
     TEST_LIMIT_PROFILE,
     TEST_MAX_BATCH_ITEMS,
+    TEST_MAX_COLLECTION_ITEMS,
     TEST_MAX_DECOMPRESSED_BYTES,
     TEST_MAX_WIRE_BYTES,
     ProbeChunks,
@@ -64,6 +64,14 @@ class BoundedParserSourceTests(unittest.TestCase):
             self.assertEqual(result["failure"]["code"], "decompressed_bytes_exceeded")
             self.assertFalse(result["failure"]["retryable"])
 
+    def test_concatenated_gzip_member_is_rejected(self):
+        first = gzip.compress(encoded({"value": "ok"}))
+        second = gzip.compress(encoded({"value": "smuggled"}))
+        payload = first + second
+        for candidate in CANDIDATES:
+            result = decode_and_validate(candidate, [payload], declared_length=len(payload), encoding="gzip")
+            self.assertEqual(result["failure"]["code"], "compressed_trailing_data")
+
     def test_batch_limit_is_deterministic_and_non_retryable(self):
         payload = encoded([{"i": i} for i in range(TEST_MAX_BATCH_ITEMS + 1)])
         for candidate in CANDIDATES:
@@ -73,13 +81,19 @@ class BoundedParserSourceTests(unittest.TestCase):
             self.assertEqual(first["failure"]["code"], "batch_items_exceeded")
             self.assertFalse(first["failure"]["retryable"])
 
-    def test_artifact_and_telemetry_are_reference_only(self):
+    def test_nested_collection_limit_is_independent_from_batch_limit(self):
+        payload = encoded({"items": list(range(TEST_MAX_COLLECTION_ITEMS + 1))})
         for candidate in CANDIDATES:
-            inline = encoded({"kind": "artifact", "inline": "abc"})
+            result = decode_and_validate(candidate, [payload], declared_length=len(payload))
+            self.assertEqual(result["failure"]["code"], "collection_items_exceeded")
+
+    def test_artifact_and_telemetry_are_reference_only_at_any_depth(self):
+        for candidate in CANDIDATES:
+            inline = encoded({"wrapper": {"kind": "artifact", "inline": "abc"}})
             rejected = decode_and_validate(candidate, [inline], declared_length=len(inline))
             self.assertEqual(rejected["failure"]["code"], "artifact_reference_required")
-            artifact = encoded({"kind": "artifact", "artifact_ref": "artifact://tenant/object"})
-            telemetry = encoded({"kind": "raw_telemetry", "telemetry_ref": "telemetry://tenant/range"})
+            artifact = encoded({"wrapper": {"kind": "artifact", "artifact_ref": "artifact://tenant/object"}})
+            telemetry = encoded({"wrapper": {"kind": "raw_telemetry", "telemetry_ref": "telemetry://tenant/range"}})
             self.assertTrue(decode_and_validate(candidate, [artifact], declared_length=len(artifact))["accepted"])
             self.assertTrue(decode_and_validate(candidate, [telemetry], declared_length=len(telemetry))["accepted"])
 

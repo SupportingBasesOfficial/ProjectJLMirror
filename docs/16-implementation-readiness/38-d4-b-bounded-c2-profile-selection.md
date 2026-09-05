@@ -196,11 +196,14 @@ A registry product swap inside the selected hybrid mechanism does not by itself 
 
 ## Governed artifacts
 
-Current D4-B selection authority is represented by:
+Current D4-B **selection authority** is represented only by:
 
 - `implementation/d4-eventing-async/d4-b-selection-record.json`;
 - `implementation/d4-eventing-async/d4-b-evidence-plan.json`;
-- `implementation/d4-eventing-async/state-manifest.json`;
+- `implementation/d4-eventing-async/state-manifest.json`.
+
+The following are **supporting assurance artifacts**. They verify, falsify and enforce the authoritative records but do not themselves carry or grant selection authority:
+
 - `tools/assurance/validate_d4b_selection.py`;
 - `tools/assurance/test_validate_d4b_selection.py`;
 - `tools/assurance/validate_d4_eventing_async_state.py`;

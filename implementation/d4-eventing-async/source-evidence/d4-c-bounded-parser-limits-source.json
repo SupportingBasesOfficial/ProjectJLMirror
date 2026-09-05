@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-C",
+  "axis": "bounded_message_payload_batch_and_compression",
+  "source_decision": "OPEN-EVT-010",
+  "evidence_id": "bounded_message_batch_compression_and_parser_limits",
+  "canonical_base": "c72f53100e504922563106d1f8d2d3a5e7577589",
+  "mode": "candidate_source_evidence_only",
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "current_run_auto_credit": false,
+  "ledger_credit": [],
+  "candidate_results": {
+    "contract_bound_application_limits_with_transport_precheck": "eligible_for_evidence_execution",
+    "bounded_envelope_codec_profile": "eligible_for_evidence_execution",
+    "layered_transport_and_application_bounds_profile": "eligible_for_evidence_execution"
+  },
+  "equivalent_reviewed_profile": "insufficient_evidence",
+  "required_proofs": [
+    "message_payload_and_batch_sizes_are_bounded_before_unbounded_allocation",
+    "nesting_string_collection_and_field_counts_are_bounded",
+    "decompression_work_and_output_are_bounded",
+    "parser_recursion_and_cpu_amplification_fail_closed",
+    "large_artifacts_and_raw_telemetry_are_referenced_or_routed_to_specialized_planes",
+    "transport_limits_cannot_silently_weaken_contract_limits",
+    "limit_failures_are_deterministic_observable_and_non_retry_amplifying"
+  ],
+  "source_assertions": [
+    "all_three_concrete_candidate_classes_enforce_one_contract_owned_admission_boundary",
+    "declared_oversize_is_rejected_before_stream_consumption_or_payload_allocation",
+    "unknown_length_streams_are_read_only_within_a_contract_owned_byte_budget",
+    "batch_item_count_is_bounded_before_per_item_semantic_admission",
+    "nesting_string_collection_and_total_field_counts_are_explicitly_bounded",
+    "gzip_output_is_incrementally_bounded_and_decompression_bombs_fail_closed",
+    "structured_validation_is_iterative_and_bounded_after_wire_and_decompression_limits",
+    "transport_configuration_can_be_stricter_but_cannot_relax_the_contract_limit",
+    "artifact_and_raw_telemetry_payload_classes_require_references_to_specialized_planes",
+    "limit_rejections_emit_stable_machine_codes_and_are_marked_non_retryable",
+    "repeating_the_same_invalid_input_does_not_create_retry_amplification_authority",
+    "numeric_limit_values_are_evidence_fixtures_only_and_do_not_select_production_limits",
+    "codec_and_transport_library_choices_remain_replaceable_mechanics_not_contract_identity",
+    "candidate_source_evidence_does_not_select_a_codec_transport_parser_or_production_topology"
+  ],
+  "non_authority": {
+    "d4c_mechanism_selection": "not_selected",
+    "d4c_content_equivalence_profile_selection": "not_selected",
+    "open_evt_010_ledger_credit": "uncredited",
+    "d4c_ledger_credit": "current_2_of_9_unchanged",
+    "d4d_ledger_credit": "0_of_5",
+    "d4_gate": "scoped",
+    "d4_transport_authority": "selected_not_granted",
+    "canonical_product_implementation_authority": "not_granted",
+    "wave4_implementation_authority": "not_granted",
+    "production_authority": "none",
+    "c3_numeric_topology_authority": "not_selected"
+  }
+}

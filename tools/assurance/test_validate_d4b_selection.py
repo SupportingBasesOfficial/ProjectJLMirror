@@ -50,10 +50,14 @@ def inject_duplicate_selection_state(documents: dict[Path, object]) -> None:
     documents[validator.SELECTION] = raw.replace(needle, replacement, 1)
 
 
-def d4b_track(documents: dict[Path, object]) -> dict:
+def track(documents: dict[Path, object], track_id: str) -> dict:
     state = documents[validator.STATE]
     assert isinstance(state, dict)
-    return next(track for track in state["tracks"] if track["track_id"] == "D4-B")
+    return next(item for item in state["tracks"] if item["track_id"] == track_id)
+
+
+def as_keyed_object(values: list[str]) -> dict[str, object]:
+    return {value: {} for value in values}
 
 
 def main() -> int:
@@ -65,7 +69,8 @@ def main() -> int:
     must_fail(lambda d: d[validator.SELECTION].__setitem__("hidden_authority", "granted"), "selection exact key schema drift")
     must_fail(lambda d: d[validator.PLAN].__setitem__("full_d4_acceptance", "granted"), "D4-B evidence-plan exact key schema drift")
     must_fail(lambda d: d[validator.STATE].__setitem__("full_d4_acceptance", "granted"), "D4 state exact key schema drift")
-    must_fail(lambda d: d4b_track(d).__setitem__("hidden_authority", "granted"), "D4-B exact track key schema drift")
+    must_fail(lambda d: track(d, "D4-B").__setitem__("hidden_authority", "granted"), "D4-B exact track key schema drift")
+    must_fail(lambda d: d[validator.STATE]["predecessor"].__setitem__("hidden_authority", "granted"), "D4 predecessor exact key schema drift")
     must_fail(lambda d: d[validator.SELECTION].__setitem__("selection_base_main_commit", "drift"), "selection base drift")
     must_fail(lambda d: d[validator.SELECTION]["evidence_completion"].__setitem__("evidence_plan_path", "implementation/d4-eventing-async/other.json"), "selection evidence-plan provenance path drift")
     must_fail(lambda d: d[validator.SELECTION]["evidence_completion"].__setitem__("axis_a_source_path", "implementation/d4-eventing-async/source-evidence/other.json"), "Axis A source provenance path drift")
@@ -95,16 +100,24 @@ def main() -> int:
     must_fail(lambda d: d[validator.PLAN].__setitem__("selection_state", "not_selected"), "evidence-plan selection state drift")
     must_fail(lambda d: d[validator.PLAN].__setitem__("current_run_auto_credit", True), "cannot invent source-run auto-credit")
     must_fail(lambda d: d[validator.PLAN]["credited_evidence"].pop(), "D4-B evidence-plan credited inventory must be an exact list")
-    must_fail(lambda d: d[validator.PLAN].__setitem__("separate_d4_acceptance_required", False), "full D4 acceptance must remain separate")
+    must_fail(lambda d: d[validator.PLAN].__setitem__("required_evidence", as_keyed_object(d[validator.PLAN]["required_evidence"])), "D4-B evidence-plan required inventory must be an exact list")
+    must_fail(lambda d: d[validator.PLAN].__setitem__("credited_evidence", as_keyed_object(d[validator.PLAN]["credited_evidence"])), "D4-B evidence-plan credited inventory must be an exact list")
+    must_fail(lambda d: d[validator.PLAN].__setitem__("separate_d4_acceptance_required", False), "D4-B selection/full-acceptance separation drift")
 
     must_fail(lambda d: d[validator.STATE].__setitem__("gate_state", "separately_accepted"), "D4 must remain scoped")
     must_fail(lambda d: d[validator.STATE].__setitem__("canonical_product_implementation_authority", "granted"), "Product implementation authority must remain ungranted")
     must_fail(lambda d: d[validator.STATE].__setitem__("wave4_implementation_authority", "granted"), "Wave4 implementation authority must remain ungranted")
     must_fail(lambda d: d[validator.STATE].__setitem__("production_authority", "granted"), "production authority must remain none")
     must_fail(lambda d: d[validator.STATE].__setitem__("c3_numeric_topology_authority", "selected"), "C3 numeric/topology authority must remain not_selected")
-    must_fail(lambda d: next(t for t in d[validator.STATE]["tracks"] if t["track_id"] == "D4-C").__setitem__("candidate", "rabbitmq"), "D4-C must remain open/uncredited")
+    must_fail(lambda d: d[validator.STATE].__setitem__("explicit_c3_exclusions", as_keyed_object(d[validator.STATE]["explicit_c3_exclusions"])), "D4 C3 exclusions must be an exact list")
+    must_fail(lambda d: d[validator.STATE].__setitem__("explicit_product_or_later_gate_exclusions", as_keyed_object(d[validator.STATE]["explicit_product_or_later_gate_exclusions"])), "D4 Product/later exclusions must be an exact list")
+    must_fail(lambda d: d[validator.STATE].__setitem__("acceptance_rule", "full_d4_acceptance_granted"), "D4 acceptance rule drift")
+    must_fail(lambda d: d[validator.STATE].__setitem__("merge_rule", "automatic_merge_allowed"), "D4 merge rule drift")
+    must_fail(lambda d: track(d, "D4-B").__setitem__("evidence_completed", as_keyed_object(track(d, "D4-B")["evidence_completed"])), "D4-B completed evidence must be an exact list")
+    must_fail(lambda d: track(d, "D4-C").__setitem__("evidence_remaining", as_keyed_object(track(d, "D4-C")["evidence_remaining"])), "D4-C remaining evidence must be an exact list")
+    must_fail(lambda d: track(d, "D4-C").__setitem__("candidate", "rabbitmq"), "D4-C must remain open/unselected")
 
-    print("d4b_selection_falsification=PASS duplicate_json=blocked exact_authoritative_schemas=locked hidden_authority=blocked provenance_paths=bound alternative_arrays=typed internal_surface_swap=blocked webhook_surface_swap=blocked realtime_coupling=blocked divergence_rule=locked catalog_swap=blocked registry_role_escalation=blocked registry_vendor_selection=blocked contract_version_swap=blocked version_ordering_authority=blocked non_authority_rule=locked source_history_rewrite=blocked unsupported_selection=blocked evidence_credit_drift=blocked full_d4_acceptance=blocked product_wave4_production=blocked c3_scope_leak=blocked sibling_selection=blocked")
+    print("d4b_selection_falsification=PASS duplicate_json=blocked exact_authoritative_schemas=locked hidden_authority=blocked provenance_paths=bound authoritative_arrays=typed acceptance_merge_rules=locked predecessor=locked internal_surface_swap=blocked webhook_surface_swap=blocked realtime_coupling=blocked divergence_rule=locked catalog_swap=blocked registry_role_escalation=blocked registry_vendor_selection=blocked contract_version_swap=blocked version_ordering_authority=blocked non_authority_rule=locked source_history_rewrite=blocked unsupported_selection=blocked evidence_credit_drift=blocked full_d4_acceptance=blocked product_wave4_production=blocked c3_scope_leak=blocked sibling_selection=blocked")
     return 0
 
 

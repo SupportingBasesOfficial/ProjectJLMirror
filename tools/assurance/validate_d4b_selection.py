@@ -170,6 +170,10 @@ def exact_list(value: object, expected: set[str]) -> bool:
     return isinstance(value, list) and len(value) == len(expected) and set(value) == expected
 
 
+def exact_int(value: object, expected: int) -> bool:
+    return type(value) is int and value == expected
+
+
 def validate(root: Path) -> list[str]:
     errors: list[str] = []
 
@@ -188,7 +192,7 @@ def validate(root: Path) -> list[str]:
         return [f"strict JSON parse failure: {exc}"]
 
     require(set(selection) == EXPECTED_SELECTION_KEYS, "selection exact key schema drift")
-    require(selection.get("schema_version") == 1, "selection schema_version must be 1")
+    require(exact_int(selection.get("schema_version"), 1), "selection schema_version must be integer 1")
     require(selection.get("selection_id") == "d4-b-profile-selection-v1", "selection_id drift")
     require(selection.get("gate_id") == "D4" and selection.get("track_id") == "D4-B", "selection track identity drift")
     require(selection.get("selection_base_main_commit") == EXPECTED_BASE, "selection base drift")
@@ -199,8 +203,8 @@ def validate(root: Path) -> list[str]:
 
     completion = selection.get("evidence_completion", {})
     require(isinstance(completion, dict) and set(completion) == EXPECTED_COMPLETION_KEYS, "selection evidence-completion exact key schema drift")
-    require(completion.get("required_evidence_count") == 5, "selection required evidence count drift")
-    require(completion.get("credited_evidence_count") == 5, "selection credited evidence count drift")
+    require(exact_int(completion.get("required_evidence_count"), 5), "selection required evidence count must be integer 5")
+    require(exact_int(completion.get("credited_evidence_count"), 5), "selection credited evidence count must be integer 5")
     require(completion.get("evidence_plan_path") == PLAN.as_posix(), "selection evidence-plan provenance path drift")
     require(completion.get("axis_a_source_path") == AXIS_A.as_posix(), "Axis A source provenance path drift")
     require(completion.get("axis_b_source_path") == AXIS_B.as_posix(), "Axis B source provenance path drift")
@@ -255,7 +259,8 @@ def validate(root: Path) -> list[str]:
     }
 
     require(set(plan) == EXPECTED_PLAN_KEYS, "D4-B evidence-plan exact key schema drift")
-    require(plan.get("schema_version") == 1 and plan.get("gate_id") == "D4" and plan.get("track_id") == "D4-B", "D4-B evidence-plan identity drift")
+    require(exact_int(plan.get("schema_version"), 1), "D4-B evidence-plan schema_version must be integer 1")
+    require(plan.get("gate_id") == "D4" and plan.get("track_id") == "D4-B", "D4-B evidence-plan identity drift")
     require(plan.get("name") == "serialization_schema_catalog_and_contract_versioning", "D4-B evidence-plan name drift")
     require(exact_list(plan.get("source_decisions"), EXPECTED_SOURCE_DECISIONS), "D4-B evidence-plan source decision drift")
     require(plan.get("candidate") == expected_candidate and plan.get("candidate_status") == "selected_c2_profile", "D4-B evidence-plan selected candidate drift")
@@ -278,7 +283,8 @@ def validate(root: Path) -> list[str]:
     require(plan.get("c3_numeric_topology_authority") == "not_selected", "D4-B evidence-plan C3 authority drift")
 
     require(set(state) == EXPECTED_STATE_KEYS, "D4 state exact key schema drift")
-    require(state.get("schema_version") == 1 and state.get("gate_id") == "D4", "D4 state identity drift")
+    require(exact_int(state.get("schema_version"), 1), "D4 state schema_version must be integer 1")
+    require(state.get("gate_id") == "D4", "D4 state identity drift")
     require(state.get("gate_name") == "eventing_async_transport_c2", "D4 gate name drift")
     require(state.get("canonical_base") == EXPECTED_D4_BASE, "D4 canonical base drift")
     predecessor = state.get("predecessor", {})
@@ -370,7 +376,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_SELECTION_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_selection=PASS exact_authoritative_schemas=true authoritative_arrays=typed_exact provenance_paths=bound internal=protobuf webhook=bounded_json_json_schema catalog=hybrid_reviewed_git_registry registry_role=downstream_non_authority contract_version=positive_integer equality_only=true evidence=5/5 source_history=immutable_not_selected registry_product=unselected d4=scoped authorities=not_granted")
+    print("d4b_selection=PASS exact_authoritative_schemas=true authoritative_arrays=typed_exact authoritative_integers=typed_exact provenance_paths=bound internal=protobuf webhook=bounded_json_json_schema catalog=hybrid_reviewed_git_registry registry_role=downstream_non_authority contract_version=positive_integer equality_only=true evidence=5/5 source_history=immutable_not_selected registry_product=unselected d4=scoped authorities=not_granted")
     return 0
 
 

@@ -15,11 +15,14 @@ EVIDENCE = "quarantine_redrive_current_authority_and_dedup_preservation"
 EXPECTED_ASSERTIONS = [
     "all_three_concrete_candidate_classes_share_one_platform_quarantine_process_truth",
     "retry_budget_exhaustion_transitions_to_governed_quarantine_without_inferring_production_retry_numerics",
+    "retry_count_cannot_regress_retry_budget_cannot_rebind_and_quarantine_cannot_be_reopened_by_redelivery",
     "redrive_without_current_privileged_authority_is_rejected",
-    "every_redrive_attempt_is_audited_with_current_actor_and_reason",
+    "redrive_authority_is_current_tenant_scoped_and_classification_scoped",
+    "cross_tenant_redrive_authority_is_rejected",
+    "every_redrive_attempt_is_audited_with_current_actor_tenant_scope_and_reason",
     "redrive_reenters_normal_dedup_equivalence_and_reconciliation_admission",
     "same_scoped_identity_with_conflicting_immutable_content_is_rejected_as_integrity_failure",
-    "confidential_payload_and_equivalence_evidence_require_classification_scoped_access",
+    "confidential_payload_and_equivalence_evidence_require_tenant_and_classification_scoped_access",
     "retention_is_expressed_as_governed_policy_class_not_selected_numeric_horizon",
     "broker_native_dlq_identity_is_adapter_metadata_not_platform_quarantine_identity",
     "broker_replacement_preserves_platform_quarantine_record_identity_and_redrive_history",
@@ -112,6 +115,8 @@ def validate(root: Path) -> list[str]:
         errors.append("one or more executable source proofs failed")
     if runtime.get("test_retry_budget_is_noncanonical_fixture") is not True:
         errors.append("test retry budget lost noncanonical-fixture guard")
+    if runtime.get("test_fingerprint_profile") != "sha256_fixture_only_noncanonical":
+        errors.append("test fingerprint profile lost explicit noncanonical guard")
 
     tracks_raw = state.get("tracks", [])
     if not isinstance(tracks_raw, list) or len(tracks_raw) != 4:
@@ -155,7 +160,7 @@ def main() -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_009_SOURCE_ERROR: {error}")
         return 1
-    print("d4c_quarantine_redrive_source=PASS candidates=3 source_auto_credit=false current_d4c=1_of_9 open_evt_009_uncredited=true d4wide=13_of_26 selection=not_selected")
+    print("d4c_quarantine_redrive_source=PASS candidates=3 tenant_scoped_current_authority=true non_regressive_quarantine=true source_auto_credit=false current_d4c=1_of_9 open_evt_009_uncredited=true d4wide=13_of_26 selection=not_selected")
     return 0
 
 

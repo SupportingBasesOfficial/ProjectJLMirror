@@ -36,7 +36,7 @@ Candidate classes:
 - database-owned work claim plus broker checkpoint;
 - equivalent reviewed profile.
 
-Any eligible profile must prove ack-after-durable-responsibility, fail-closed lease ambiguity, fenced takeover, safe redelivery/rewind and crash recovery between responsibility and broker progress.
+Any eligible profile must prove ack-after-durable-responsibility, fail-closed lease ambiguity, fenced takeover, safe redelivery/rewind and crash recovery between responsibility and broker progress. Offset rewind remains safe only when inbox/effect idempotency and scoped-ID content-equivalence evidence are both preserved; identity alone cannot establish benign duplicate status.
 
 ### 2. Quarantine / redrive
 
@@ -70,7 +70,7 @@ Candidate classes:
 - hybrid equivalence authority;
 - equivalent reviewed profile.
 
-The selected future profile must cover all immutable semantic fields for the scoped message identity while avoiding cross-tenant/cross-consumer equality oracles. Comparison evidence must use the same canonical structured interpretation as protected contract validation. Co-resident inbox/effect completion is atomic, while cross-authority effects use stable operation/result reconciliation. Missing/unverifiable evidence is uncertainty, never benign duplicate success.
+The future selected profile must preserve the dedup identity boundary `(consumer_contract, trusted message_identity_scope, message_id)` or an explicitly equivalent representation. A repeated scoped identity is benign only when durable evidence proves equivalent immutable semantics; identity alone is insufficient. The profile must cover all immutable semantic fields for the scoped message identity while avoiding cross-tenant/cross-consumer equality oracles. Comparison evidence must use the same canonical structured interpretation as protected contract validation. Co-resident inbox/effect completion is atomic, while cross-authority effects use stable operation/result reconciliation. Required historical equivalence authority remains available for the supported horizon or is replaced only through governed equality-preserving migration. Missing/unverifiable evidence is uncertainty, never benign duplicate success.
 
 ### 5. Outbox claim / dispatch / ack ambiguity
 
@@ -92,7 +92,7 @@ Candidate classes:
 - authority-issued epoch/generation;
 - equivalent reviewed profile.
 
-Generation never becomes tenant identity or placement identity. Retired generations cannot regain current-source authority after failover or restore.
+Generation never becomes tenant identity or placement identity. Retired generations cannot regain current-source authority after failover or restore, and historical fact identity remains distinct from current-source command/signal authority.
 
 ### 7. Privileged replay / event history
 
@@ -103,7 +103,7 @@ Candidate classes:
 - hybrid history archive plus replay controller;
 - equivalent reviewed profile.
 
-Replay stays privileged, audited and bounded; original message identity and immutable semantic meaning survive replay; irreversible effects cannot be repeated by disabling dedup.
+Replay stays privileged, audited and bounded; original message identity and immutable semantic meaning survive replay; irreversible effects cannot be repeated by disabling dedup. Duplicate-sensitive replay must retain or recover the required equivalence and historical comparison authority. If that historical authority is unavailable, duplicate-sensitive effects are blocked or reconciled rather than treating identity alone as proof of a safe duplicate.
 
 ### 8. Historical reader / upcaster
 
@@ -125,7 +125,7 @@ Candidate classes:
 - hybrid generation manifest plus multi-store reconciler;
 - equivalent reviewed profile.
 
-The selected future profile must make `(R,F]` reconciliation reproducible across broker/history/inbox/outbox/equivalence and surviving external/effect evidence. It must also preserve webhook recovery continuity explicitly: stable delivery identity, the semantic snapshot or reproduction authority required to recreate the original delivery meaning, and destination-generation fences. Missing state remains uncertainty and effectful async activation stays fail-closed until continuity is proven.
+The future selected profile must make `(R,F]` reconciliation reproducible across broker/history/inbox/outbox/equivalence and surviving external/effect evidence. It must also preserve webhook recovery continuity explicitly: stable delivery identity, the semantic snapshot or reproduction authority required to recreate the original delivery meaning, and destination-generation fences. Missing restored state remains uncertainty; missing or older content-comparison evidence is not proof of a safe duplicate; missing/stale historical comparison authority blocks duplicate-sensitive effects. Duplicate classification and effectful async admission remain fail-closed until continuity, equivalence and required historical authority are proven. Effectful async activation remains fail-closed until required reconciliation is complete.
 
 ## Cross-axis invariants
 

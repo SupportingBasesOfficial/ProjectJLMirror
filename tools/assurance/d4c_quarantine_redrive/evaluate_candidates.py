@@ -79,6 +79,16 @@ class QuarantineAuthority:
             )
             """
         )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS redrive_grant (
+              actor TEXT NOT NULL,
+              classification TEXT NOT NULL,
+              active INTEGER NOT NULL CHECK (active IN (0,1)),
+              PRIMARY KEY (actor, classification)
+            )
+            """
+        )
         self.conn.commit()
 
     @contextmanager
@@ -105,7 +115,12 @@ class QuarantineAuthority:
         if not isinstance(identity, tuple) or len(identity) != 3 or any(type(v) is not str or not v for v in identity):
             raise ValueError("identity must be a three-part non-empty scoped tuple")
 
-    def _row(self, identity: Identity) -> sqlite3.Row | tuple | None:
+    @staticmethod
+    def _validate_actor(actor: str) -> None:
+        if type(actor) is not str or not actor:
+            raise ValueError("actor must be a non-empty string")
+
+    def _row(self, identity: Identity) -> tuple | None:
         return self.conn.execute(
             """SELECT fingerprint,payload_json,classification,retention_policy_class,retry_count,retry_budget,
                       state,broker_adapter,broker_dlq_ref,effect_committed,external_outcome_unknown,audit_json
@@ -113,6 +128,45 @@ class QuarantineAuthority:
                 WHERE consumer_contract=? AND identity_scope=? AND message_id=?""",
             identity,
         ).fetchone()
+
+    def _append_audit(self, identity: Identity, event: dict) -> None:
+        with self._tx():
+            row = self._row(identity)
+            if row is None:
+                raise Uncertainty("quarantine record missing")
+            audit = json.loads(row[11])
+            audit.append(event)
+            self.conn.execute(
+                """UPDATE quarantine_record SET audit_json=?
+                     WHERE consumer_contract=? AND identity_scope=? AND message_id=?""",
+                (json.dumps(audit, sort_keys=True), *identity),
+            )
+
+    def grant_redrive(self, actor: str, classifications: set[str]) -> None:
+        self._validate_actor(actor)
+        if not classifications or any(type(v) is not str or not v for v in classifications):
+            raise ValueError("at least one non-empty classification is required")
+        with self._tx():
+            for classification in classifications:
+                self.conn.execute(
+                    """INSERT INTO redrive_grant(actor,classification,active) VALUES(?,?,1)
+                       ON CONFLICT(actor,classification) DO UPDATE SET active=1""",
+                    (actor, classification),
+                )
+
+    def revoke_redrive(self, actor: str) -> None:
+        self._validate_actor(actor)
+        with self._tx():
+            self.conn.execute("UPDATE redrive_grant SET active=0 WHERE actor=?", (actor,))
+
+    def _has_any_active_grant(self, actor: str) -> bool:
+        return self.conn.execute("SELECT 1 FROM redrive_grant WHERE actor=? AND active=1 LIMIT 1", (actor,)).fetchone() is not None
+
+    def _has_current_grant(self, actor: str, classification: str) -> bool:
+        return self.conn.execute(
+            "SELECT 1 FROM redrive_grant WHERE actor=? AND classification=? AND active=1",
+            (actor, classification),
+        ).fetchone() is not None
 
     def record_failure(
         self,
@@ -133,19 +187,33 @@ class QuarantineAuthority:
             raise ValueError("classification required")
         if type(retention_policy_class) is not str or not retention_policy_class or any(ch.isdigit() for ch in retention_policy_class):
             raise ValueError("retention must be a nonnumeric governed policy class")
+        if type(broker_adapter) is not str or not broker_adapter:
+            raise ValueError("broker adapter metadata required")
         fp = self.fingerprint(content)
         state = "quarantined" if retry_count >= retry_budget else "retryable"
-        audit = [{"action": "failure_recorded", "retry_count": retry_count, "state": state}]
         with self._tx():
             existing = self._row(identity)
-            if existing is not None and existing[0] != fp:
-                raise IntegrityFailure("same scoped identity has conflicting immutable content")
-            self.conn.execute(
-                """INSERT OR REPLACE INTO quarantine_record
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,0,?)""",
-                (*identity, fp, json.dumps(content, sort_keys=True), classification, retention_policy_class,
-                 retry_count, retry_budget, state, broker_adapter, broker_dlq_ref, json.dumps(audit, sort_keys=True)),
-            )
+            if existing is None:
+                audit = [{"action": "failure_recorded", "retry_count": retry_count, "state": state}]
+                self.conn.execute(
+                    """INSERT INTO quarantine_record
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,0,?)""",
+                    (*identity, fp, json.dumps(content, sort_keys=True), classification, retention_policy_class,
+                     retry_count, retry_budget, state, broker_adapter, broker_dlq_ref, json.dumps(audit, sort_keys=True)),
+                )
+            else:
+                if existing[0] != fp:
+                    raise IntegrityFailure("same scoped identity has conflicting immutable content")
+                if existing[2] != classification or existing[3] != retention_policy_class:
+                    raise IntegrityFailure("classification or retention policy cannot be silently rebound")
+                audit = json.loads(existing[11])
+                audit.append({"action": "failure_recorded", "retry_count": retry_count, "state": state})
+                self.conn.execute(
+                    """UPDATE quarantine_record
+                          SET retry_count=?, retry_budget=?, state=?, broker_adapter=?, broker_dlq_ref=?, audit_json=?
+                        WHERE consumer_contract=? AND identity_scope=? AND message_id=?""",
+                    (retry_count, retry_budget, state, broker_adapter, broker_dlq_ref, json.dumps(audit, sort_keys=True), *identity),
+                )
         return state
 
     def set_effect_truth(self, identity: Identity, *, committed: bool, external_outcome_unknown: bool = False) -> None:
@@ -168,56 +236,61 @@ class QuarantineAuthority:
                 identity,
             )
 
-    def read_payload(self, identity: Identity, allowed_classifications: set[str]) -> dict:
+    def read_payload(self, identity: Identity, actor: str) -> dict:
+        self._validate_actor(actor)
         row = self._row(identity)
         if row is None:
             raise Uncertainty("quarantine record missing")
-        if row[2] not in allowed_classifications:
+        if not self._has_current_grant(actor, row[2]):
             raise ClassificationDenied("classification-scoped payload access denied")
         return json.loads(row[1])
 
-    def redrive(
-        self,
-        identity: Identity,
-        content: Any,
-        *,
-        actor: str,
-        reason: str,
-        currently_authorized: bool,
-        allowed_classifications: set[str],
-    ) -> str:
+    def redrive(self, identity: Identity, content: Any, *, actor: str, reason: str) -> str:
         self._validate_identity(identity)
-        if not currently_authorized or type(actor) is not str or not actor:
-            raise AuthorizationDenied("redrive requires current privileged authority")
+        self._validate_actor(actor)
         if type(reason) is not str or not reason:
             raise ValueError("audited redrive reason required")
+        initial = self._row(identity)
+        if initial is None or initial[6] != "quarantined":
+            raise Uncertainty("redrive requires governed quarantine truth")
+
+        self._append_audit(identity, {"action": "redrive_attempt", "actor": actor, "reason": reason})
+        row = self._row(identity)
+        assert row is not None
+        if not self._has_current_grant(actor, row[2]):
+            denial = "classification_denied" if self._has_any_active_grant(actor) else "authority_denied"
+            self._append_audit(identity, {"action": "redrive_denied", "actor": actor, "reason": denial})
+            if denial == "classification_denied":
+                raise ClassificationDenied("current grant does not cover quarantine classification")
+            raise AuthorizationDenied("redrive requires current privileged authority")
+        if row[0] is None:
+            self._append_audit(identity, {"action": "redrive_blocked", "actor": actor, "reason": "equivalence_unavailable"})
+            raise Uncertainty("equivalence authority unavailable; identity alone is insufficient")
+        if row[0] != self.fingerprint(content):
+            self._append_audit(identity, {"action": "redrive_blocked", "actor": actor, "reason": "content_conflict"})
+            raise IntegrityFailure("same scoped identity has conflicting immutable content")
+
+        if bool(row[10]):
+            outcome = "reconciliation_required"
+            next_state = "quarantined_reconciliation"
+        elif bool(row[9]):
+            outcome = "duplicate_noop"
+            next_state = "resolved_duplicate"
+        else:
+            outcome = "admitted_for_reprocessing"
+            next_state = "redrive_admitted"
+        self._append_audit(identity, {"action": "redrive_admission", "actor": actor, "outcome": outcome})
         with self._tx():
-            row = self._row(identity)
-            if row is None or row[6] != "quarantined":
-                raise Uncertainty("redrive requires governed quarantine truth")
-            if row[2] not in allowed_classifications:
-                raise ClassificationDenied("redrive access is classification scoped")
-            if row[0] is None:
-                raise Uncertainty("equivalence authority unavailable; identity alone is insufficient")
-            if row[0] != self.fingerprint(content):
-                raise IntegrityFailure("same scoped identity has conflicting immutable content")
-            audit = json.loads(row[11])
-            audit.append({"action": "redrive_requested", "actor": actor, "reason": reason})
-            if bool(row[10]):
-                outcome = "reconciliation_required"
-            elif bool(row[9]):
-                outcome = "duplicate_noop"
-            else:
-                outcome = "admitted_for_reprocessing"
-            audit.append({"action": "redrive_admission", "outcome": outcome})
             self.conn.execute(
-                """UPDATE quarantine_record SET state='redriven', audit_json=?
+                """UPDATE quarantine_record SET state=?
                      WHERE consumer_contract=? AND identity_scope=? AND message_id=?""",
-                (json.dumps(audit, sort_keys=True), *identity),
+                (next_state, *identity),
             )
-            return outcome
+        return outcome
 
     def replace_broker(self, identity: Identity, *, new_adapter: str, new_dlq_ref: str | None) -> None:
+        if type(new_adapter) is not str or not new_adapter:
+            raise ValueError("replacement adapter required")
         with self._tx():
             row = self._row(identity)
             if row is None:
@@ -259,43 +332,57 @@ def run_profile(profile: str) -> Dict[str, bool]:
 
     q = QuarantineAuthority()
     retryable = q.record_failure(identity, content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET - 1, retry_budget=TEST_RETRY_BUDGET, broker_adapter=profile, broker_dlq_ref=broker_ref)
+    q.set_effect_truth(identity, committed=False, external_outcome_unknown=False)
     quarantined = q.record_failure(identity, content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET, retry_budget=TEST_RETRY_BUDGET, broker_adapter=profile, broker_dlq_ref=broker_ref)
-    bounded_retry_to_quarantine = retryable == "retryable" and quarantined == "quarantined"
+    after_retry_update = q.snapshot(identity)
+    bounded_retry_to_quarantine = retryable == "retryable" and quarantined == "quarantined" and len(after_retry_update["audit"]) == 2 and after_retry_update["effect_committed"] is False
 
     before = q.snapshot(identity)
     platform_identity_independent_of_dlq = before["fingerprint"] == q.fingerprint(content) and before["state"] == "quarantined"
-    unauthorized_redrive_rejected = _expect(AuthorizationDenied, lambda: q.redrive(identity, content, actor="operator", reason="manual", currently_authorized=False, allowed_classifications={"confidential"}))
-    classification_scope_enforced = _expect(ClassificationDenied, lambda: q.read_payload(identity, {"public"}))
-    conflicting_content_rejected = _expect(IntegrityFailure, lambda: q.redrive(identity, {**content, "payload": {"order_id": "o1", "revision": 10}}, actor="admin", reason="manual", currently_authorized=True, allowed_classifications={"confidential"}))
+
+    q.grant_redrive("historical-admin", {"confidential"})
+    q.revoke_redrive("historical-admin")
+    historical_grant_revoked = _expect(AuthorizationDenied, lambda: q.redrive(identity, content, actor="historical-admin", reason="revoked actor retry"))
+    denied_audited = any(e.get("action") == "redrive_denied" and e.get("actor") == "historical-admin" for e in q.snapshot(identity)["audit"])
+
+    q.grant_redrive("public-operator", {"public"})
+    classification_scope_enforced = _expect(ClassificationDenied, lambda: q.read_payload(identity, "public-operator")) and _expect(ClassificationDenied, lambda: q.redrive(identity, content, actor="public-operator", reason="wrong classification"))
+
+    q.grant_redrive("admin", {"confidential"})
+    conflicting_content_rejected = _expect(IntegrityFailure, lambda: q.redrive(identity, {**content, "payload": {"order_id": "o1", "revision": 10}}, actor="admin", reason="conflicting replay"))
 
     q.set_effect_truth(identity, committed=True)
-    duplicate_outcome = q.redrive(identity, content, actor="admin", reason="authorized replay", currently_authorized=True, allowed_classifications={"confidential"})
+    duplicate_outcome = q.redrive(identity, content, actor="admin", reason="authorized replay")
     audit = q.snapshot(identity)["audit"]
-    redrive_audited_and_dedup_safe = duplicate_outcome == "duplicate_noop" and any(e.get("action") == "redrive_requested" and e.get("actor") == "admin" for e in audit)
+    redrive_audited_and_dedup_safe = duplicate_outcome == "duplicate_noop" and any(e.get("action") == "redrive_attempt" and e.get("actor") == "admin" for e in audit) and q.snapshot(identity)["state"] == "resolved_duplicate"
     q.close()
 
     uncertain = QuarantineAuthority()
     uncertain.record_failure(identity, content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET, retry_budget=TEST_RETRY_BUDGET, broker_adapter=profile, broker_dlq_ref=broker_ref)
+    uncertain.grant_redrive("admin", {"confidential"})
     uncertain.set_effect_truth(identity, committed=False, external_outcome_unknown=True)
-    reconciliation_required = uncertain.redrive(identity, content, actor="admin", reason="recover ambiguous external effect", currently_authorized=True, allowed_classifications={"confidential"}) == "reconciliation_required"
+    reconciliation_required = uncertain.redrive(identity, content, actor="admin", reason="recover ambiguous external effect") == "reconciliation_required" and uncertain.snapshot(identity)["state"] == "quarantined_reconciliation"
     uncertain.close()
 
     missing_equivalence = QuarantineAuthority()
     missing_equivalence.record_failure(identity, content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET, retry_budget=TEST_RETRY_BUDGET, broker_adapter=profile, broker_dlq_ref=broker_ref)
+    missing_equivalence.grant_redrive("admin", {"confidential"})
     missing_equivalence.remove_equivalence_authority(identity)
-    identity_only_rejected = _expect(Uncertainty, lambda: missing_equivalence.redrive(identity, content, actor="admin", reason="manual", currently_authorized=True, allowed_classifications={"confidential"}))
+    identity_only_rejected = _expect(Uncertainty, lambda: missing_equivalence.redrive(identity, content, actor="admin", reason="missing equivalence"))
     missing_equivalence.close()
 
     with tempfile.TemporaryDirectory(prefix="d4c-quarantine-") as td:
         db = Path(td) / "quarantine.sqlite3"
         persisted = QuarantineAuthority(db)
         persisted.record_failure(identity, content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET, retry_budget=TEST_RETRY_BUDGET, broker_adapter=profile, broker_dlq_ref=broker_ref)
+        persisted.grant_redrive("admin", {"confidential"})
         original = persisted.snapshot(identity)
         persisted.replace_broker(identity, new_adapter="replacement_broker_adapter", new_dlq_ref="replacement:opaque-ref")
         replaced = persisted.snapshot(identity)
         persisted.close()
         reopened = QuarantineAuthority(db)
         after_restart = reopened.snapshot(identity)
+        current_authority_survives_restart = reopened.read_payload(identity, "admin") == content
         broker_replacement_preserves_truth = original["fingerprint"] == replaced["fingerprint"] == after_restart["fingerprint"] and after_restart["classification"] == "confidential" and after_restart["retention_policy_class"] == "regulated_event_policy" and after_restart["broker_adapter"] == "replacement_broker_adapter" and any(e.get("action") == "broker_adapter_replaced" for e in after_restart["audit"])
         reopened.close()
 
@@ -304,8 +391,9 @@ def run_profile(profile: str) -> Dict[str, bool]:
 
     return {
         "platform_quarantine_truth_independent_of_broker_dlq": platform_identity_independent_of_dlq,
-        "bounded_retry_exhaustion_reaches_quarantine": bounded_retry_to_quarantine,
-        "unauthorized_redrive_rejected": unauthorized_redrive_rejected,
+        "bounded_retry_exhaustion_reaches_quarantine_without_truth_reset": bounded_retry_to_quarantine,
+        "historical_privilege_revocation_blocks_redrive": historical_grant_revoked,
+        "denied_redrive_attempt_is_audited": denied_audited,
         "redrive_is_audited_and_dedup_safe": redrive_audited_and_dedup_safe,
         "ambiguous_external_effect_requires_reconciliation": reconciliation_required,
         "same_identity_conflicting_content_rejected": conflicting_content_rejected,
@@ -313,6 +401,7 @@ def run_profile(profile: str) -> Dict[str, bool]:
         "classification_scoped_access_enforced": classification_scope_enforced,
         "retention_policy_is_nonnumeric_governed_class": retention_policy_nonnumeric,
         "broker_replacement_preserves_platform_truth": broker_replacement_preserves_truth,
+        "current_authority_state_survives_process_restart": current_authority_survives_restart,
         "test_fingerprint_profile_is_noncanonical": fingerprint_fixture_noncanonical,
     }
 

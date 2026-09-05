@@ -16,6 +16,8 @@ EXPECTED_ASSERTIONS = [
     "all_three_concrete_candidate_classes_share_one_platform_quarantine_process_truth",
     "retry_budget_exhaustion_transitions_to_governed_quarantine_without_inferring_production_retry_numerics",
     "retry_count_cannot_regress_retry_budget_cannot_rebind_and_quarantine_cannot_be_reopened_by_redelivery",
+    "tenant_authority_context_is_distinct_from_consumer_message_identity_scope",
+    "tenant_authority_context_cannot_be_rebound_for_the_same_scoped_message_identity",
     "redrive_without_current_privileged_authority_is_rejected",
     "redrive_authority_is_current_tenant_scoped_and_classification_scoped",
     "cross_tenant_redrive_authority_is_rejected",
@@ -160,7 +162,7 @@ def main() -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_009_SOURCE_ERROR: {error}")
         return 1
-    print("d4c_quarantine_redrive_source=PASS candidates=3 tenant_scoped_current_authority=true non_regressive_quarantine=true source_auto_credit=false current_d4c=1_of_9 open_evt_009_uncredited=true d4wide=13_of_26 selection=not_selected")
+    print("d4c_quarantine_redrive_source=PASS candidates=3 tenant_authority_distinct_from_message_identity=true tenant_scoped_current_authority=true non_regressive_quarantine=true source_auto_credit=false current_d4c=1_of_9 open_evt_009_uncredited=true d4wide=13_of_26 selection=not_selected")
     return 0
 
 

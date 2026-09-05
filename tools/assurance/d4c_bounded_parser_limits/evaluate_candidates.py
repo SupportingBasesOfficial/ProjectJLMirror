@@ -279,7 +279,7 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
     many_fields = encoded(many_fields_value)
     fields_result = decode_and_validate(candidate, [many_fields], declared_length=len(many_fields))
 
-    duplicate_members = b"{" + b",".join([b'\"dup\":0'] * (TEST_MAX_TOTAL_FIELDS + 1)) + b"}"
+    duplicate_members = b'{"dup":0,"dup":1}'
     duplicate_result = decode_and_validate(candidate, [duplicate_members], declared_length=len(duplicate_members))
 
     bomb_plain = encoded({"data": "x" * (TEST_MAX_DECOMPRESSED_BYTES + 512)})
@@ -318,7 +318,7 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
         "collection_size_bound": nested_collection_result["failure"]["code"] == "collection_items_exceeded",
         "string_bound": string_result["failure"]["code"] == "string_chars_exceeded",
         "field_count_bound": fields_result["failure"]["code"] == "total_fields_exceeded",
-        "duplicate_json_members_rejected_before_collapse": duplicate_result["failure"]["code"] in {"duplicate_json_member", "total_fields_exceeded"},
+        "duplicate_json_members_rejected_before_collapse": duplicate_result["failure"]["code"] == "duplicate_json_member",
         "decompression_output_bound": bomb_result["failure"]["code"] == "decompressed_bytes_exceeded",
         "malformed_gzip_is_bounded_failure": malformed_result["failure"]["code"] == "invalid_compressed_payload" and malformed_result["failure"]["retryable"] is False,
         "compressed_trailing_member_rejected": concatenated_result["failure"]["code"] == "compressed_trailing_data",

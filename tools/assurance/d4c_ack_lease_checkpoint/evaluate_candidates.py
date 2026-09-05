@@ -54,6 +54,9 @@ class DurableConsumerAuthority:
     ack/checkpoint state is intentionally subordinate transport progress. File-
     backed instances are closed and reopened in crash scenarios so restart
     continuity is not accidentally proved by reusing an in-memory object.
+
+    SHA-256 below is only a deterministic evidence-fixture comparator. It is not
+    an OPEN-EVT-011 content-equivalence profile selection.
     """
 
     def __init__(self, db_path: str | Path | None = None) -> None:
@@ -98,8 +101,8 @@ class DurableConsumerAuthority:
             self.conn.commit()
 
     @staticmethod
-    def fingerprint(payload: Any) -> str:
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    def fingerprint(content: Any) -> str:
+        canonical = json.dumps(content, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     @staticmethod
@@ -152,10 +155,10 @@ class DurableConsumerAuthority:
         if receipt.owner != owner or receipt.epoch != epoch or receipt.lease_expired:
             raise FenceViolation("owner is not current fenced authority")
 
-    def claim(self, identity: Identity, payload: Any, owner: str, epoch: int) -> Receipt:
+    def claim(self, identity: Identity, content: Any, owner: str, epoch: int) -> Receipt:
         self._validate_identity(identity)
         self._validate_owner_epoch(owner, epoch)
-        fp = self.fingerprint(payload)
+        fp = self.fingerprint(content)
         with self._tx():
             row = self._row(identity)
             if row is None:
@@ -308,53 +311,83 @@ def run_profile(profile: str) -> Dict[str, bool]:
         raise ValueError(profile)
 
     identity = ("consumer.orders.v1", "tenant:t1/order:o1", "msg-001")
-    payload = {"event": "order.updated", "order_id": "o1", "revision": 7}
+    content = {
+        "envelope": {
+            "event_type": "order.updated",
+            "contract_version": "7",
+            "occurred_at": "2026-09-05T05:00:00Z",
+            "source_generation": "generation-a",
+        },
+        "payload": {"order_id": "o1", "revision": 7},
+    }
 
     premature = DurableConsumerAuthority()
     premature_ack = _expect(PrematureProgress, lambda: premature.ack(identity, "w1", 1))
     premature_checkpoint = _expect(PrematureProgress, lambda: premature.checkpoint(identity, "w1", 1))
 
     progress_only = DurableConsumerAuthority()
-    progress_only.claim(identity, payload, "w1", 1)
+    progress_only.claim(identity, content, "w1", 1)
     _advance_progress(progress_only, profile, identity, "w1", 1)
     broker_progress_not_effect_truth = not progress_only.business_effect_truth(identity)
 
     ambiguous = DurableConsumerAuthority()
-    ambiguous.claim(identity, payload, "w1", 1)
+    ambiguous.claim(identity, content, "w1", 1)
+    unexpired_claim_not_stealable = _expect(
+        FenceViolation,
+        lambda: ambiguous.claim(identity, content, "w2", 2),
+    )
     ambiguous.complete_effect(identity, "w1", 1)
     ambiguous.expire_lease(identity, "w1", 1)
-    same_epoch_takeover_rejected = _expect(FenceViolation, lambda: ambiguous.claim(identity, payload, "w2", 1))
-    ambiguous.claim(identity, payload, "w2", 2)
+    same_epoch_takeover_rejected = _expect(FenceViolation, lambda: ambiguous.claim(identity, content, "w2", 1))
+    ambiguous.claim(identity, content, "w2", 2)
     duplicate_result = ambiguous.complete_effect(identity, "w2", 2)
     lease_expiry_ambiguous_safe = duplicate_result == "duplicate_noop" and ambiguous.effect_count(identity) == 1
 
-    conflicting = DurableConsumerAuthority()
-    conflicting.claim(identity, payload, "w1", 1)
-    conflicting_content_fails_closed = _expect(
+    conflicting_payload = DurableConsumerAuthority()
+    conflicting_payload.claim(identity, content, "w1", 1)
+    payload_conflict_fails_closed = _expect(
         IntegrityFailure,
-        lambda: conflicting.claim(identity, {**payload, "revision": 8}, "w2", 2),
+        lambda: conflicting_payload.claim(
+            identity,
+            {**content, "payload": {**content["payload"], "revision": 8}},
+            "w1",
+            1,
+        ),
     )
 
+    conflicting_envelope = DurableConsumerAuthority()
+    conflicting_envelope.claim(identity, content, "w1", 1)
+    envelope_conflict_fails_closed = _expect(
+        IntegrityFailure,
+        lambda: conflicting_envelope.claim(
+            identity,
+            {**content, "envelope": {**content["envelope"], "contract_version": "8"}},
+            "w1",
+            1,
+        ),
+    )
+    conflicting_content_fails_closed = payload_conflict_fails_closed and envelope_conflict_fails_closed
+
     rewind = DurableConsumerAuthority()
-    rewind.claim(identity, payload, "w1", 1)
+    rewind.claim(identity, content, "w1", 1)
     rewind.remove_equivalence_authority(identity)
-    rewind_requires_equivalence = _expect(Uncertainty, lambda: rewind.claim(identity, payload, "w1", 1))
+    rewind_requires_equivalence = _expect(Uncertainty, lambda: rewind.claim(identity, content, "w1", 1))
 
     fenced = DurableConsumerAuthority()
-    fenced.claim(identity, payload, "w1", 1)
+    fenced.claim(identity, content, "w1", 1)
     fenced.expire_lease(identity, "w1", 1)
-    fenced.claim(identity, payload, "w2", 2)
+    fenced.claim(identity, content, "w2", 2)
     stale_owner_fenced = _expect(FenceViolation, lambda: fenced.complete_effect(identity, "w1", 1))
 
     with tempfile.TemporaryDirectory(prefix="d4c-ack-before-") as td:
         db = Path(td) / "authority.sqlite3"
         first = DurableConsumerAuthority(db)
-        first.claim(identity, payload, "w1", 1)
+        first.claim(identity, content, "w1", 1)
         first.close()
         restarted = DurableConsumerAuthority(db)
         restart_preserved_receipt = not restarted.business_effect_truth(identity) and restarted._get(identity).fingerprint is not None
         restarted.expire_lease(identity, "w1", 1)
-        restarted.claim(identity, payload, "w2", 2)
+        restarted.claim(identity, content, "w2", 2)
         restarted.complete_effect(identity, "w2", 2)
         _advance_progress(restarted, profile, identity, "w2", 2)
         responsibility_crash_recovers = restarted.effect_count(identity) == 1
@@ -363,13 +396,13 @@ def run_profile(profile: str) -> Dict[str, bool]:
     with tempfile.TemporaryDirectory(prefix="d4c-ack-after-") as td:
         db = Path(td) / "authority.sqlite3"
         first = DurableConsumerAuthority(db)
-        first.claim(identity, payload, "w1", 1)
+        first.claim(identity, content, "w1", 1)
         first.complete_effect(identity, "w1", 1)
         first.close()
         restarted = DurableConsumerAuthority(db)
         restart_preserved_effect_truth = restarted.business_effect_truth(identity) and restarted.effect_count(identity) == 1
         restarted.expire_lease(identity, "w1", 1)
-        restarted.claim(identity, payload, "w2", 2)
+        restarted.claim(identity, content, "w2", 2)
         second = restarted.complete_effect(identity, "w2", 2)
         _advance_progress(restarted, profile, identity, "w2", 2)
         effect_to_progress_crash_safe = second == "duplicate_noop" and restarted.effect_count(identity) == 1
@@ -379,10 +412,11 @@ def run_profile(profile: str) -> Dict[str, bool]:
         "premature_ack_rejected": premature_ack,
         "premature_checkpoint_rejected": premature_checkpoint,
         "broker_progress_not_effect_truth": broker_progress_not_effect_truth,
+        "unexpired_claim_cannot_be_stolen": unexpired_claim_not_stealable,
         "lease_expiry_requires_new_fence_epoch": same_epoch_takeover_rejected,
         "lease_expiry_is_ambiguity_with_idempotent_redelivery": lease_expiry_ambiguous_safe,
         "rewind_requires_content_equivalence_authority": rewind_requires_equivalence,
-        "conflicting_same_identity_fails_closed": conflicting_content_fails_closed,
+        "envelope_and_payload_conflicts_fail_closed": conflicting_content_fails_closed,
         "stale_owner_is_fenced": stale_owner_fenced,
         "restart_preserves_durable_receipt_and_equivalence_authority": restart_preserved_receipt,
         "crash_after_responsibility_before_effect_or_progress_recovers": responsibility_crash_recovers,

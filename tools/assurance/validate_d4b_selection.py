@@ -45,6 +45,29 @@ EXPECTED_VERSION_KEYS = {
     "deployment_api_provider_realtime_registry_version_authority", "unselected_eligible_alternatives",
     "breaking_change_rule", "surface_encoding_rule",
 }
+EXPECTED_PLAN_KEYS = {
+    "schema_version", "gate_id", "track_id", "name", "source_decisions", "candidate", "candidate_status",
+    "source_evidence_state", "ledger_credit_state", "required_evidence", "credited_evidence", "remaining_evidence",
+    "current_run_auto_credit", "selection_state", "serialization_selection_state", "schema_catalog_selection_state",
+    "contract_version_syntax_selection_state", "selection_record", "separate_selection_required",
+    "separate_d4_acceptance_required", "d4_transport_authority", "canonical_product_implementation_authority",
+    "wave4_implementation_authority", "production_authority", "c3_numeric_topology_authority",
+}
+EXPECTED_STATE_KEYS = {
+    "schema_version", "gate_id", "gate_name", "canonical_base", "predecessor", "gate_state",
+    "canonical_product_implementation_authority", "wave4_implementation_authority", "production_authority",
+    "d4_transport_authority", "c3_numeric_topology_authority", "tracks", "explicit_c3_exclusions",
+    "explicit_product_or_later_gate_exclusions", "acceptance_rule", "merge_rule",
+}
+EXPECTED_PREDECESSOR_KEYS = {"gate_id", "state", "canonical_commit"}
+EXPECTED_TRACK_KEYS = {
+    "track_id", "name", "source_decisions", "candidate", "candidate_status", "state",
+    "required_evidence", "evidence_completed", "evidence_remaining",
+}
+EXPECTED_TRACK_IDS = {"D4-A", "D4-B", "D4-C", "D4-D"}
+EXPECTED_D4A_DECISIONS = {"OPEN-EVT-001", "OPEN-EVT-005", "OPEN-REL-012.A"}
+EXPECTED_D4C_DECISIONS = {"OPEN-EVT-008", "OPEN-EVT-009", "OPEN-EVT-010", "OPEN-EVT-011", "OPEN-EVT-012", "OPEN-EVT-013", "OPEN-EVT-014", "OPEN-EVT-015", "OPEN-EVT-025"}
+EXPECTED_D4D_DECISIONS = {"OPEN-EVT-016", "OPEN-EVT-017", "OPEN-EVT-018"}
 EXPECTED_DIVERGENCE_RULE = (
     "Internal broker and outbound webhook representations may differ only at the selected adapter/profile boundary; "
     "canonical logical contract meaning, identity, tenant scope, version semantics and equivalence obligations remain transport-independent."
@@ -91,6 +114,10 @@ def load(root: Path, path: Path) -> dict:
     return value
 
 
+def exact_list(value: object, expected: set[str]) -> bool:
+    return isinstance(value, list) and len(value) == len(expected) and set(value) == expected
+
+
 def validate(root: Path) -> list[str]:
     errors: list[str] = []
 
@@ -113,8 +140,7 @@ def validate(root: Path) -> list[str]:
     require(selection.get("selection_id") == "d4-b-profile-selection-v1", "selection_id drift")
     require(selection.get("gate_id") == "D4" and selection.get("track_id") == "D4-B", "selection track identity drift")
     require(selection.get("selection_base_main_commit") == EXPECTED_BASE, "selection base drift")
-    source_decisions = selection.get("source_decisions", [])
-    require(isinstance(source_decisions, list) and set(source_decisions) == EXPECTED_SOURCE_DECISIONS and len(source_decisions) == 3, "selection source decisions drift")
+    require(exact_list(selection.get("source_decisions"), EXPECTED_SOURCE_DECISIONS), "selection source decisions drift")
     require(selection.get("selection_state") == "selected", "D4-B selection must remain selected")
     require(selection.get("selection_scope") == "bounded_c2_contract_profile_selection_only", "D4-B selection scope drift")
     require(selection.get("track_state") == "selected_candidate", "D4-B selected track state drift")
@@ -148,7 +174,7 @@ def validate(root: Path) -> list[str]:
     require(catalog.get("canonical_authority") == "reviewed_git_contract_history", "reviewed Git authority drift")
     require(catalog.get("registry_role") == EXPECTED_REGISTRY_ROLE, "registry role drift")
     require(catalog.get("registry_product") is None, "registry vendor/product must remain unselected")
-    require(set(catalog.get("unselected_eligible_alternatives", [])) == {"reviewed_git_catalog", "registry_backed_catalog"}, "catalog alternative inventory drift")
+    require(exact_list(catalog.get("unselected_eligible_alternatives"), {"reviewed_git_catalog", "registry_backed_catalog"}), "catalog alternative inventory must be an exact list")
     require(catalog.get("replacement_rule") == EXPECTED_REPLACEMENT_RULE, "catalog replacement rule drift")
 
     version = selection.get("contract_version", {})
@@ -159,12 +185,38 @@ def validate(root: Path) -> list[str]:
     require(version.get("zero_allowed") is False, "contract-version zero must remain forbidden")
     require(version.get("ordering_authority") == "none_equality_only", "numeric version must not gain ordering authority")
     require(version.get("deployment_api_provider_realtime_registry_version_authority") == "none", "contract-version namespace authority leak")
-    require(set(version.get("unselected_eligible_alternatives", [])) == {"semantic_version_like_contract_revision", "opaque_monotonic_contract_token"}, "version alternative inventory drift")
+    require(exact_list(version.get("unselected_eligible_alternatives"), {"semantic_version_like_contract_revision", "opaque_monotonic_contract_token"}), "contract-version alternative inventory must be an exact list")
     require(version.get("breaking_change_rule") == EXPECTED_BREAKING_CHANGE_RULE, "contract-version breaking-change rule drift")
     require(version.get("surface_encoding_rule") == EXPECTED_SURFACE_ENCODING_RULE, "contract-version surface-encoding rule drift")
 
     require(selection.get("historical_evidence_rule") == EXPECTED_HISTORICAL_RULE, "selection historical-evidence rule drift")
     require(selection.get("non_authority_rule") == EXPECTED_NON_AUTHORITY_RULE, "selection non-authority rule drift")
+
+    require(set(plan) == EXPECTED_PLAN_KEYS, "D4-B evidence-plan exact key schema drift")
+    require(exact_list(plan.get("source_decisions"), EXPECTED_SOURCE_DECISIONS), "D4-B evidence-plan source decision drift")
+
+    require(set(state) == EXPECTED_STATE_KEYS, "D4 state exact key schema drift")
+    predecessor = state.get("predecessor", {})
+    require(isinstance(predecessor, dict) and set(predecessor) == EXPECTED_PREDECESSOR_KEYS, "D4 predecessor exact key schema drift")
+    state_tracks = state.get("tracks")
+    require(isinstance(state_tracks, list) and len(state_tracks) == 4 and all(isinstance(track, dict) for track in state_tracks), "D4 tracks must be exactly four objects")
+    tracks: dict[str, dict] = {}
+    if isinstance(state_tracks, list) and len(state_tracks) == 4 and all(isinstance(track, dict) for track in state_tracks):
+        ids = [track.get("track_id") for track in state_tracks]
+        require(len(ids) == len(set(ids)) and set(ids) == EXPECTED_TRACK_IDS, "D4 track identity drift")
+        for track in state_tracks:
+            track_id = track.get("track_id")
+            require(set(track) == EXPECTED_TRACK_KEYS, f"{track_id} exact track key schema drift")
+            decisions = track.get("source_decisions")
+            expected_decisions = {
+                "D4-A": EXPECTED_D4A_DECISIONS,
+                "D4-B": EXPECTED_SOURCE_DECISIONS,
+                "D4-C": EXPECTED_D4C_DECISIONS,
+                "D4-D": EXPECTED_D4D_DECISIONS,
+            }.get(track_id, set())
+            require(exact_list(decisions, expected_decisions), f"{track_id} source decision inventory drift")
+            if isinstance(track_id, str):
+                tracks[track_id] = track
 
     for name, source in (("Axis A", axis_a), ("Axis B", axis_b), ("Axis C", axis_c)):
         require(source.get("selection_state") == "not_selected", f"{name} source history must remain not_selected")
@@ -198,12 +250,12 @@ def validate(root: Path) -> list[str]:
     require(plan.get("serialization_selection_state") == "selected_surface_bound", "D4-B serialization selection marker drift")
     require(plan.get("schema_catalog_selection_state") == "selected", "D4-B catalog selection marker drift")
     require(plan.get("contract_version_syntax_selection_state") == "selected", "D4-B version selection marker drift")
+    require(plan.get("selection_record") == SELECTION.as_posix(), "D4-B evidence-plan selection-record binding drift")
     require(plan.get("current_run_auto_credit") is False, "D4-B selection cannot invent source-run auto-credit")
     require(len(plan.get("credited_evidence", [])) == 5 and plan.get("remaining_evidence") == [], "D4-B selection must preserve 5/5 evidence accounting")
     require(plan.get("separate_selection_required") is False, "D4-B separate selection should be discharged by this record")
     require(plan.get("separate_d4_acceptance_required") is True, "full D4 acceptance must remain separate")
 
-    tracks = {track.get("track_id"): track for track in state.get("tracks", []) if isinstance(track, dict)}
     d4b = tracks.get("D4-B", {})
     require(d4b.get("candidate") == expected_candidate, "global D4 state selected D4-B profile drift")
     require(d4b.get("candidate_status") == "selected_c2_profile", "global D4 state D4-B candidate status drift")
@@ -238,7 +290,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_SELECTION_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_selection=PASS exact_schema=true provenance_paths=bound internal=protobuf webhook=bounded_json_json_schema catalog=hybrid_reviewed_git_registry registry_role=downstream_non_authority contract_version=positive_integer equality_only=true evidence=5/5 source_history=immutable_not_selected registry_product=unselected d4=scoped authorities=not_granted")
+    print("d4b_selection=PASS exact_authoritative_schemas=true provenance_paths=bound alternatives=array_typed internal=protobuf webhook=bounded_json_json_schema catalog=hybrid_reviewed_git_registry registry_role=downstream_non_authority contract_version=positive_integer equality_only=true evidence=5/5 source_history=immutable_not_selected registry_product=unselected d4=scoped authorities=not_granted")
     return 0
 
 

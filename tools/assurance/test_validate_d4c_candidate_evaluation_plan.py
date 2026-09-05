@@ -11,6 +11,11 @@ sys.path.insert(0, str(ROOT / "tools" / "assurance"))
 import validate_d4c_candidate_evaluation_plan as validator
 
 WEBHOOK_RECOVERY_PROOF = "webhook_recovery_preserves_stable_delivery_identity_semantic_snapshot_or_reproduction_authority_and_destination_generation_fences"
+QUARANTINE_RETENTION_PROOF = "quarantine_payload_and_equivalence_evidence_retention_is_data_classification_governed_without_selecting_numeric_horizons"
+EQUIVALENCE_CANONICAL_INTERPRETATION_PROOF = "comparison_evidence_uses_the_same_canonical_structured_interpretation_as_protected_contract_validation"
+EQUIVALENCE_LOCAL_ATOMICITY_PROOF = "co_resident_inbox_and_effect_completion_is_atomic"
+EQUIVALENCE_CROSS_AUTHORITY_PROOF = "cross_authority_effects_use_stable_operation_and_result_reconciliation"
+OUTBOX_RECOVERY_PROOF = "dispatcher_restart_and_recovery_preserve_stable_message_identity_and_semantic_content"
 
 
 def snapshot() -> dict[Path, object]:
@@ -65,9 +70,9 @@ def replace_first_proof(data: dict[Path, object]) -> None:
     axis["must_prove"][0] = "weakened_but_same_count"
 
 
-def remove_webhook_recovery_proof(data: dict[Path, object]) -> None:
-    axis = obj(data, validator.PLAN)["axes"]["recovery_generation_reconciliation_and_activation"]
-    axis["must_prove"].remove(WEBHOOK_RECOVERY_PROOF)
+def remove_axis_proof(data: dict[Path, object], axis_name: str, proof: str) -> None:
+    axis = obj(data, validator.PLAN)["axes"][axis_name]
+    axis["must_prove"].remove(proof)
 
 
 def inject_non_string_candidate(data: dict[Path, object]) -> None:
@@ -91,7 +96,12 @@ def main() -> int:
     must_fail(inject_non_string_candidate, "candidate class inventory drift")
     must_fail(lambda d: obj(d, validator.PLAN)["axes"]["scoped_content_equivalence_authority"]["must_prove"].pop(), "exact proof inventory drift")
     must_fail(replace_first_proof, "exact proof inventory drift")
-    must_fail(remove_webhook_recovery_proof, "exact proof inventory drift")
+    must_fail(lambda d: remove_axis_proof(d, "recovery_generation_reconciliation_and_activation", WEBHOOK_RECOVERY_PROOF), "exact proof inventory drift")
+    must_fail(lambda d: remove_axis_proof(d, "quarantine_and_redrive", QUARANTINE_RETENTION_PROOF), "exact proof inventory drift")
+    must_fail(lambda d: remove_axis_proof(d, "scoped_content_equivalence_authority", EQUIVALENCE_CANONICAL_INTERPRETATION_PROOF), "exact proof inventory drift")
+    must_fail(lambda d: remove_axis_proof(d, "scoped_content_equivalence_authority", EQUIVALENCE_LOCAL_ATOMICITY_PROOF), "exact proof inventory drift")
+    must_fail(lambda d: remove_axis_proof(d, "scoped_content_equivalence_authority", EQUIVALENCE_CROSS_AUTHORITY_PROOF), "exact proof inventory drift")
+    must_fail(lambda d: remove_axis_proof(d, "outbox_claim_dispatch_and_ack_ambiguity", OUTBOX_RECOVERY_PROOF), "exact proof inventory drift")
     must_fail(lambda d: obj(d, validator.PLAN)["axes"]["recovery_generation_reconciliation_and_activation"].__setitem__("evidence_id", "wrong"), "evidence binding drift")
     must_fail(lambda d: obj(d, validator.PLAN)["source_decisions"].pop(), "source decision inventory drift")
     must_fail(lambda d: obj(d, validator.PLAN)["cross_axis_invariants"].pop(), "cross-axis invariant inventory drift")
@@ -110,7 +120,7 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("production_authority", "granted"), "production authority escalation")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("c3_numeric_topology_authority", "selected"), "C3 authority escalation")
 
-    print("d4c_candidate_evaluation_falsification=PASS duplicate_json=blocked hidden_selection=blocked axis_removal=blocked hidden_preference=blocked candidate_collapse=blocked non_string_collection=blocked proof_removal=blocked proof_substitution=blocked webhook_recovery_omission=blocked evidence_binding_drift=blocked source_decision_drift=blocked output_escalation=blocked d4a_d4b_regression=blocked d4c_credit_leak=blocked d4d_credit_leak=blocked authority_escalation=blocked")
+    print("d4c_candidate_evaluation_falsification=PASS duplicate_json=blocked hidden_selection=blocked axis_removal=blocked hidden_preference=blocked candidate_collapse=blocked non_string_collection=blocked proof_removal=blocked proof_substitution=blocked webhook_recovery_omission=blocked quarantine_retention_omission=blocked equivalence_canonical_interpretation_omission=blocked equivalence_local_atomicity_omission=blocked equivalence_cross_authority_reconciliation_omission=blocked outbox_semantic_recovery_omission=blocked evidence_binding_drift=blocked source_decision_drift=blocked output_escalation=blocked d4a_d4b_regression=blocked d4c_credit_leak=blocked d4d_credit_leak=blocked authority_escalation=blocked")
     return 0
 
 

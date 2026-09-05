@@ -68,6 +68,7 @@ def inject_duplicate_rogue_d4c(data: dict[Path, object]) -> None:
 
 def inject_candidate_fields(data: dict[Path, object]) -> None:
     promotion = data[validator.PROMOTION]
+    assert isinstance(promotion, dict)
     promotion["candidate"] = "protobuf"
     promotion["candidate_status"] = "selected"
 
@@ -97,15 +98,20 @@ def inject_duplicate_nested_review_mode(data: dict[Path, object]) -> None:
 def main() -> int:
     errors = validator.validate(ROOT)
     if errors:
-        raise AssertionError(f"canonical D4-B promotion failed: {errors!r}")
+        raise AssertionError(f"canonical D4-B promotion/current selection failed: {errors!r}")
 
-    # Ledger exactness and candidate neutrality.
+    # Current ledger exactness: evidence is unchanged while current selection is exact.
     must_fail(lambda d: d[validator.PLAN]["credited_evidence"].pop(), "credited evidence drift")
     must_fail(lambda d: d[validator.PLAN]["credited_evidence"].append("canonical_bounded_serialization_profile"), "credited evidence drift")
-    must_fail(lambda d: d[validator.PLAN].__setitem__("selection_state", "selected"), "selection must remain not_selected")
+    must_fail(lambda d: d[validator.PLAN].__setitem__("selection_state", "not_selected"), "current selection must remain selected")
+    must_fail(lambda d: d[validator.PLAN].__setitem__("candidate", None), "current selected profile drift")
+    must_fail(lambda d: d[validator.PLAN]["candidate"]["serialization"].__setitem__("internal_broker", "avro_profile"), "current selected profile drift")
+    must_fail(lambda d: d[validator.PLAN]["candidate"].__setitem__("schema_catalog", "registry_backed_catalog"), "current selected profile drift")
+    must_fail(lambda d: d[validator.PLAN]["candidate"].__setitem__("contract_version", "semantic_version_like_contract_revision"), "current selected profile drift")
     must_fail(lambda d: d[validator.PLAN].__setitem__("d4_transport_authority", "granted"), "plan transport authority drift")
+    must_fail(lambda d: d[validator.PLAN].__setitem__("separate_d4_acceptance_required", False), "full D4 acceptance remains separate")
 
-    # Promotion identity, exact schema, strict JSON meaning, review and provenance must be immutable.
+    # Historical promotion identity, schema, strict JSON, review and provenance remain immutable.
     must_fail(lambda d: d[validator.PROMOTION].__setitem__("gate_id", "D3"), "promotion identity envelope drift")
     must_fail(inject_candidate_fields, "promotion exact key schema drift")
     must_fail(lambda d: d[validator.PROMOTION].__setitem__("unexpected_field", "smuggled"), "promotion exact key schema drift")
@@ -121,27 +127,29 @@ def main() -> int:
     must_fail(lambda d: d[validator.PROMOTION]["source_workflow"].__setitem__("workflow_path", ".github/workflows/other.yml"), "source workflow path provenance drift")
     must_fail(lambda d: d[validator.PROMOTION]["source_workflow"].__setitem__("workflow_event", "workflow_dispatch"), "source workflow event provenance drift")
     must_fail(lambda d: d[validator.PROMOTION]["source_workflow"].__setitem__("source_head_branch", "rogue/source"), "source workflow branch provenance drift")
-    must_fail(lambda d: d[validator.PROMOTION]["source_workflow"].__setitem__("artifact_digest", "sha256:deadbeef"), "artifact digest drift")
+    must_fail(lambda d: d[validator.PROMOTION]["source_workflow"].__setitem__("artifact_digest", "sha256:deadbeef"), "source artifact digest drift")
     must_fail(lambda d: d[validator.PROMOTION]["source_manifest"].__setitem__("path", "implementation/other.json"), "source-manifest path drift")
     must_fail(lambda d: d[validator.PROMOTION]["credited_evidence"].append("canonical_bounded_serialization_profile"), "promotion credit set drift")
     must_fail(lambda d: d[validator.PROMOTION].__setitem__("credit_count", 4), "promotion credit set drift")
 
-    # The promotion record itself may not smuggle selection or authority.
-    must_fail(lambda d: d[validator.PROMOTION].__setitem__("serialization_selection_state", "selected"), "promotion serialization selection drift")
-    must_fail(lambda d: d[validator.PROMOTION].__setitem__("schema_catalog_selection_state", "selected"), "promotion schema catalog selection drift")
-    must_fail(lambda d: d[validator.PROMOTION].__setitem__("contract_version_syntax_selection_state", "selected"), "promotion contract version syntax selection drift")
+    # Historical promotion may never be rewritten to pretend selection already existed.
+    must_fail(lambda d: d[validator.PROMOTION].__setitem__("selection_state", "selected"), "historical promotion must remain not_selected")
+    must_fail(lambda d: d[validator.PROMOTION].__setitem__("serialization_selection_state", "selected"), "historical promotion serialization selection drift")
+    must_fail(lambda d: d[validator.PROMOTION].__setitem__("schema_catalog_selection_state", "selected"), "historical promotion schema catalog selection drift")
+    must_fail(lambda d: d[validator.PROMOTION].__setitem__("contract_version_syntax_selection_state", "selected"), "historical promotion contract version syntax selection drift")
     must_fail(lambda d: d[validator.PROMOTION].__setitem__("d4_gate_state", "separately_accepted"), "promotion must not accept D4")
     must_fail(lambda d: d[validator.PROMOTION].__setitem__("d4_transport_authority", "granted"), "promotion transport authority drift")
     must_fail(lambda d: d[validator.PROMOTION].__setitem__("canonical_product_implementation_authority", "granted"), "promotion Product authority drift")
     must_fail(lambda d: d[validator.PROMOTION].__setitem__("wave4_implementation_authority", "granted"), "promotion Wave 4 authority drift")
     must_fail(lambda d: d[validator.PROMOTION].__setitem__("production_authority", "granted"), "promotion production authority drift")
     must_fail(lambda d: d[validator.PROMOTION].__setitem__("c3_numeric_topology_authority", "selected"), "promotion C3 authority drift")
-    must_fail(lambda d: d[validator.PROMOTION].__setitem__("separate_selection_required", False), "separate selection and D4 acceptance")
-    must_fail(lambda d: d[validator.PROMOTION].__setitem__("separate_d4_acceptance_required", False), "separate selection and D4 acceptance")
+    must_fail(lambda d: d[validator.PROMOTION].__setitem__("separate_selection_required", False), "historical promotion must preserve separate selection")
+    must_fail(lambda d: d[validator.PROMOTION].__setitem__("separate_d4_acceptance_required", False), "historical promotion must preserve separate selection")
 
-    # Immutable source package and global state boundaries.
+    # Immutable source package and current global-state boundaries.
     must_fail(lambda d: d.__setitem__(validator.SOURCE, d[validator.SOURCE] + b"\n"), "source manifest byte drift")
-    must_fail(lambda d: track(d, "D4-B").__setitem__("candidate", "protobuf"), "must not silently select")
+    must_fail(lambda d: track(d, "D4-B").__setitem__("candidate", None), "current state selected profile drift")
+    must_fail(lambda d: track(d, "D4-B")["candidate"]["serialization"].__setitem__("outbound_webhook", "protobuf_profile"), "current state selected profile drift")
     must_fail(lambda d: track(d, "D4-B")["evidence_completed"].pop(), "state credit drift")
     must_fail(lambda d: track(d, "D4-A").__setitem__("candidate", "rabbitmq"), "D4-A selected candidate drift")
     must_fail(lambda d: track(d, "D4-A")["evidence_completed"].pop(), "D4-A exact 7/7 evidence membership drift")
@@ -153,10 +161,10 @@ def main() -> int:
     must_fail(lambda d: d[validator.STATE].__setitem__("production_authority", "granted"), "production authority must remain none")
 
     print(
-        "d4b_ledger_falsification=PASS exact_credit=locked exact_promotion_schema=locked duplicate_json_members=blocked "
-        "duplicate_track_identity=blocked source_workflow_identity=blocked candidate_injection=blocked selection=blocked "
-        "promotion_record_selection=blocked promotion_record_authority=blocked provenance_tamper=blocked source_mutation=blocked "
-        "d4a_exact_membership=blocked cross_track_substitution=blocked d4c_d_leak=blocked full_d4_acceptance=blocked"
+        "d4b_ledger_falsification=PASS exact_credit=locked current_selection=locked historical_promotion_selection=locked "
+        "exact_promotion_schema=locked duplicate_json_members=blocked duplicate_track_identity=blocked source_workflow_identity=blocked "
+        "provenance_tamper=blocked source_mutation=blocked d4a_exact_membership=blocked cross_track_substitution=blocked "
+        "d4c_d_leak=blocked full_d4_acceptance=blocked authority_escalation=blocked"
     )
     return 0
 

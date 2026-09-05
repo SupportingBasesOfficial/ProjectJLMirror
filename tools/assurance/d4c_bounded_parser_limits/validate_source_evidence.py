@@ -36,7 +36,9 @@ EXPECTED_ASSERTIONS = [
     "batch_item_count_is_bounded_before_per_item_semantic_admission",
     "nesting_string_collection_and_total_field_counts_are_explicitly_bounded",
     "gzip_output_is_incrementally_bounded_and_decompression_bombs_fail_closed",
+    "malformed_gzip_and_trailing_or_concatenated_members_fail_closed_with_stable_codes",
     "json_nesting_is_prescanned_before_recursive_parser_entry",
+    "duplicate_json_members_are_rejected_before_object_collapse_can_hide_parser_work",
     "structured_validation_is_iterative_and_bounded_after_wire_and_decompression_limits",
     "transport_configuration_can_be_stricter_but_cannot_relax_the_contract_limit",
     "artifact_and_raw_telemetry_payload_classes_require_references_to_specialized_planes_at_any_depth",
@@ -158,7 +160,9 @@ def validate(root: Path) -> list[str]:
             "collection_size_bound",
             "string_bound",
             "field_count_bound",
+            "duplicate_json_members_rejected_before_collapse",
             "decompression_output_bound",
+            "malformed_gzip_is_bounded_failure",
             "compressed_trailing_member_rejected",
             "artifact_reference_required_at_any_depth",
             "raw_telemetry_reference_supported_at_any_depth",
@@ -216,7 +220,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_010_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_open_evt_010_source=PASS candidates=3 proofs=7 bounded_before_allocation=true decompression_bomb=blocked parser_nesting_prechecked=true specialized_planes=referenced_at_any_depth deterministic_nonretryable=true fixture_limits_noncanonical=true source_auto_credit=false current_d4c=2_of_9 open_evt_010_uncredited=true d4wide=14_of_26 selection=not_selected")
+    print("d4c_open_evt_010_source=PASS candidates=3 proofs=7 bounded_before_allocation=true malformed_gzip=blocked concatenated_gzip=blocked duplicate_members=blocked parser_nesting_prechecked=true specialized_planes=referenced_at_any_depth deterministic_nonretryable=true fixture_limits_noncanonical=true source_auto_credit=false current_d4c=2_of_9 open_evt_010_uncredited=true d4wide=14_of_26 selection=not_selected")
     return 0
 
 

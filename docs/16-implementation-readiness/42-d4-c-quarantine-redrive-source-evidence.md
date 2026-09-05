@@ -22,12 +22,15 @@ The accepted candidate classes are:
 
 The executable harness establishes one platform-owned quarantine process truth across all three concrete candidates. Broker-native DLQ coordinates are transport adapter metadata and cannot become the logical quarantine identity or business/recovery truth.
 
+The canonical dedup identity remains exactly `(consumer_contract, message_identity_scope, message_id)`. Tenant authorization context is stored and validated separately; tenant scope is never parsed or inferred from `message_identity_scope`. This preserves the accepted separation between message identity and authorization authority.
+
 The source run proves:
 
 - bounded retry exhaustion transitions work into governed quarantine;
 - the retry count used by the harness is a test-only bounded fixture and does not select production retry numerics;
 - for the same scoped message identity, retry count cannot regress and retry budget cannot be silently rebound;
 - once governed quarantine is reached, failure redelivery cannot reopen the record as retryable;
+- tenant authority context cannot be silently rebound for the same scoped message identity;
 - redrive requires **current** privileged authority, not merely historical authority;
 - current redrive authority is scoped by actor, tenant and data classification;
 - authority for one tenant cannot authorize redrive in another tenant;
@@ -39,7 +42,7 @@ The source run proves:
 - ambiguous external-effect outcome requires reconciliation rather than blind re-execution;
 - confidential payload/equivalence access is tenant- and classification-scoped;
 - retention is represented only as a governed, nonnumeric policy class in this C2 evidence;
-- broker replacement changes adapter metadata while preserving platform quarantine identity, classification, retention policy and audit history;
+- broker replacement changes adapter metadata while preserving platform quarantine identity, tenant context, classification, retention policy and audit history;
 - durable current authority and quarantine truth survive the process restart exercised by the evidence harness.
 
 ## Deliberate non-selection

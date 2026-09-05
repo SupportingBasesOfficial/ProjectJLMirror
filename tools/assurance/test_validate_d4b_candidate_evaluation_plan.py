@@ -62,8 +62,9 @@ def inject_duplicate_selection_state(data: dict[Path, object]) -> None:
 def main() -> int:
     errors = validator.validate(ROOT)
     if errors:
-        raise AssertionError(f"canonical evaluation plan failed: {errors!r}")
+        raise AssertionError(f"canonical evaluation/current selection failed: {errors!r}")
 
+    # Historical evaluation plan remains immutable and non-selecting.
     must_fail(lambda d: obj(d, validator.PLAN).__setitem__("candidate", "protobuf"), "evaluation plan exact key schema drift")
     must_fail(inject_duplicate_selection_state, "duplicate JSON member 'selection_state'")
     must_fail(lambda d: obj(d, validator.PLAN)["axes"].pop("contract_version_representation"), "exact three-axis evaluation inventory drift")
@@ -71,11 +72,16 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.PLAN)["axes"]["wire_serialization_and_schema_language"]["candidate_classes"].pop(), "candidate class inventory drift")
     must_fail(lambda d: obj(d, validator.PLAN)["axes"]["schema_registry_catalog_and_tooling"]["must_prove"].pop(), "exact proof inventory drift")
     must_fail(lambda d: obj(d, validator.PLAN)["cross_axis_invariants"].remove("a_catalog_or_registry_product_cannot_select_wire_serialization_by_implication"), "cross-axis exact invariant inventory drift")
-    must_fail(lambda d: obj(d, validator.PLAN).__setitem__("selection_state", "selected"), "must not select D4-B")
+    must_fail(lambda d: obj(d, validator.PLAN).__setitem__("selection_state", "selected"), "historical evaluation plan must not be rewritten as selected")
     must_fail(lambda d: obj(d, validator.PLAN)["evaluation_output_states"].append("selected"), "evaluation output state inventory drift")
+
+    # Current ledger/state must keep the separately governed exact selection and 5/5 accounting.
     must_fail(lambda d: obj(d, validator.D4B_LEDGER)["credited_evidence"].pop(), "D4-B 5/5 ledger drift")
+    must_fail(lambda d: obj(d, validator.D4B_LEDGER).__setitem__("selection_state", "not_selected"), "current D4-B selected ledger drift")
+    must_fail(lambda d: obj(d, validator.D4B_LEDGER)["candidate"]["serialization"].__setitem__("internal_broker", "avro_profile"), "current D4-B selected ledger drift")
     must_fail(lambda d: track(d, "D4-A").__setitem__("candidate", "rabbitmq"), "D4-A Kafka 7/7 regression")
-    must_fail(lambda d: track(d, "D4-B").__setitem__("candidate", "protobuf"), "D4-B premature selection")
+    must_fail(lambda d: track(d, "D4-B").__setitem__("candidate", None), "D4-B current selected profile drift")
+    must_fail(lambda d: track(d, "D4-B")["candidate"].__setitem__("schema_catalog", "registry_backed_catalog"), "D4-B current selected profile drift")
     must_fail(lambda d: track(d, "D4-C")["evidence_completed"].append(track(d, "D4-C")["required_evidence"][0]), "D4-C/D must remain open")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("gate_state", "separately_accepted"), "D4 gate must remain scoped")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("canonical_product_implementation_authority", "granted"), "Product authority escalation")
@@ -83,8 +89,9 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("production_authority", "granted"), "production authority escalation")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("c3_numeric_topology_authority", "selected"), "C3 authority escalation")
 
-    print("d4b_candidate_evaluation_falsification=PASS duplicate_json=blocked additive_selection=blocked axis_removal=blocked hidden_preference=blocked candidate_collapse=blocked proof_weakening=blocked coupling=blocked premature_selection=blocked evidence_mutation=blocked d4a_regression=blocked sibling_leak=blocked authority_escalation=blocked")
+    print("d4b_candidate_evaluation_falsification=PASS duplicate_json=blocked historical_plan_selection=blocked axis_removal=blocked hidden_preference=blocked candidate_collapse=blocked proof_weakening=blocked coupling=blocked current_selection_drift=blocked evidence_mutation=blocked d4a_regression=blocked sibling_leak=blocked authority_escalation=blocked")
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "implementation/d4-eventing-async/source-evidence/schema-contract/source-evidence-manifest.json"
 STATE = ROOT / "implementation/d4-eventing-async/state-manifest.json"
+D4C_CREDIT = "ack_after_durable_responsibility_and_lease_ambiguity"
 EXPECTED_IDS = {
     "canonical_bounded_serialization_profile",
     "parser_ambiguity_and_duplicate_field_negative_vectors",
@@ -53,7 +54,7 @@ def main() -> int:
     source = json.loads(SOURCE.read_text(encoding="utf-8"))
     state = json.loads(STATE.read_text(encoding="utf-8"))
 
-    # Historical source package remains byte/meaning neutral about later selection.
+    # Historical source package remains byte/meaning neutral about later selection or sibling promotions.
     assert source["schema_version"] == 1
     assert source["package_id"] == "d4-b-schema-contract-source-v1"
     assert source["canonical_base_commit"] == "790f967446bf039ba4d5f618c9f30494c720ee7c"
@@ -80,7 +81,7 @@ def main() -> int:
     assert source["production_authority"] == "none"
     assert source["c3_numeric_topology_authority"] == "not_selected"
 
-    # Current global state may reflect the later separately governed selection.
+    # Current global state may reflect later, separately governed selections and sibling promotions.
     state_tracks = state.get("tracks")
     assert isinstance(state_tracks, list) and len(state_tracks) == 4
     assert all(isinstance(track, dict) for track in state_tracks)
@@ -97,10 +98,14 @@ def main() -> int:
     assert set(d4b["required_evidence"]) == EXPECTED_IDS and len(d4b["required_evidence"]) == 5
     assert set(d4b["evidence_completed"]) == EXPECTED_IDS and len(d4b["evidence_completed"]) == 5
     assert d4b["evidence_remaining"] == []
-    for sibling in (d4c, d4d):
-        assert sibling["candidate"] is None and sibling["candidate_status"] == "not_selected"
-        assert sibling["evidence_completed"] == []
-    assert sum(len(track["evidence_completed"]) for track in state_tracks) == 12
+
+    assert d4c["candidate"] is None and d4c["candidate_status"] == "not_selected"
+    assert d4c["state"] == "candidate_selection_open"
+    assert d4c["evidence_completed"] == [D4C_CREDIT]
+    assert len(d4c["evidence_remaining"]) == 8 and D4C_CREDIT not in d4c["evidence_remaining"]
+    assert d4d["candidate"] is None and d4d["candidate_status"] == "not_selected"
+    assert d4d["evidence_completed"] == []
+    assert sum(len(track["evidence_completed"]) for track in state_tracks) == 13
     assert state["gate_state"] == "scoped"
     assert state["d4_transport_authority"] == "selected_not_granted"
     assert state["canonical_product_implementation_authority"] == "not_granted"
@@ -111,7 +116,7 @@ def main() -> int:
     print(
         "d4b_schema_contract_source_manifest=PASS evidence_ids=5 evidence_kinds=exact reference_properties=exact "
         "source_credit=0 source_history=not_selected current_selection=selected_c2_profile unique_tracks=true "
-        "d4a=exact_7_of_7_kafka_selected d4wide=12/26 d4c_d=open authorities=not_granted"
+        "d4a=exact_7_of_7_kafka_selected d4c=1_of_9 d4wide=13/26 d4d=open authorities=not_granted"
     )
     return 0
 

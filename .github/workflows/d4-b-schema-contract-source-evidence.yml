@@ -9,9 +9,12 @@ on:
       - 'tools/assurance/d4b_schema_contract/**'
       - 'tools/assurance/validate_d4b_evidence_plan.py'
       - 'tools/assurance/test_validate_d4b_evidence_plan.py'
+      - 'tools/assurance/validate_d4b_selection.py'
+      - 'tools/assurance/test_validate_d4b_selection.py'
       - 'docs/10-event-contracts/**'
       - 'docs/16-implementation-readiness/32-d4-b-schema-contract-source-evidence.md'
       - 'docs/16-implementation-readiness/33-d4-b-schema-contract-ledger-promotion.md'
+      - 'docs/16-implementation-readiness/38-d4-b-bounded-c2-profile-selection.md'
       - '.github/workflows/d4-b-schema-contract-source-evidence.yml'
       - '.github/workflows/d4-b-schema-contract-ledger-promotion.yml'
   workflow_dispatch:
@@ -42,7 +45,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
-      - name: Compile D4-B source tooling
+      - name: Compile D4-B source and selection tooling
         shell: bash
         run: |
           set -euo pipefail
@@ -50,16 +53,22 @@ jobs:
             tools/assurance/d4b_schema_contract/reference_model.py \
             tools/assurance/d4b_schema_contract/test_schema_contract.py \
             tools/assurance/d4b_schema_contract/validate_source_evidence.py \
-            tools/assurance/d4b_schema_contract/emit_source_provenance.py
+            tools/assurance/d4b_schema_contract/emit_source_provenance.py \
+            tools/assurance/validate_d4b_selection.py \
+            tools/assurance/test_validate_d4b_selection.py
 
       - name: Falsify parser schema compatibility history and version escapes
         shell: bash
         working-directory: tools/assurance/d4b_schema_contract
         run: python3 test_schema_contract.py
 
-      - name: Validate source manifest and non-authority boundaries
+      - name: Validate source history and current selected state
         shell: bash
-        run: python3 tools/assurance/d4b_schema_contract/validate_source_evidence.py
+        run: |
+          set -euo pipefail
+          python3 tools/assurance/d4b_schema_contract/validate_source_evidence.py
+          python3 tools/assurance/test_validate_d4b_selection.py
+          python3 tools/assurance/validate_d4b_selection.py .
 
       - name: Re-run Phase 10 contract suite
         shell: bash
@@ -69,7 +78,7 @@ jobs:
             PYTHONPATH=. python3 "$test_file"
           done
 
-      - name: Assert source run cannot add ledger credit after separate promotion
+      - name: Assert source run remains historical and cannot add ledger credit
         shell: bash
         run: |
           python3 - <<'PY'
@@ -77,32 +86,44 @@ jobs:
           from pathlib import Path
           source = json.loads(Path('implementation/d4-eventing-async/source-evidence/schema-contract/source-evidence-manifest.json').read_text())
           state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
+          plan = json.loads(Path('implementation/d4-eventing-async/d4-b-evidence-plan.json').read_text())
           tracks = {t['track_id']: t for t in state['tracks']}
-          expected = {
+          expected_evidence = {
               'canonical_bounded_serialization_profile',
               'parser_ambiguity_and_duplicate_field_negative_vectors',
               'schema_catalog_semantic_manifest_compatibility_ci',
               'historical_reader_and_equivalence_profile_continuity',
               'contract_version_representation_and_breaking_change_vectors',
           }
+          selected = {
+              'serialization': {
+                  'surface_policy': 'explicit_surface_bound_profiles',
+                  'internal_broker': 'protobuf_profile',
+                  'outbound_webhook': 'bounded_json_plus_json_schema_profile',
+              },
+              'schema_catalog': 'hybrid_reviewed_git_plus_registry_catalog',
+              'contract_version': 'positive_integer_family_revision',
+          }
           assert source['current_run_auto_credit'] is False and source['ledger_credit'] == []
           assert source['candidate'] is None and source['candidate_status'] == 'not_selected'
           assert source['serialization_selection_state'] == 'not_selected'
           assert source['schema_catalog_selection_state'] == 'not_selected'
           assert source['contract_version_syntax_selection_state'] == 'not_selected'
-          assert tracks['D4-B']['candidate'] is None and tracks['D4-B']['candidate_status'] == 'not_selected'
-          assert tracks['D4-B']['state'] == 'evidence_complete_selection_pending'
-          assert set(tracks['D4-B']['evidence_completed']) == expected
-          assert tracks['D4-B']['evidence_remaining'] == []
+          assert plan['current_run_auto_credit'] is False
+          assert plan['candidate'] == selected and plan['selection_state'] == 'selected'
+          assert tracks['D4-B']['candidate'] == selected and tracks['D4-B']['candidate_status'] == 'selected_c2_profile'
+          assert tracks['D4-B']['state'] == 'selected_candidate'
+          assert set(tracks['D4-B']['evidence_completed']) == expected_evidence and tracks['D4-B']['evidence_remaining'] == []
           assert tracks['D4-C']['candidate'] is None and tracks['D4-C']['evidence_completed'] == []
           assert tracks['D4-D']['candidate'] is None and tracks['D4-D']['evidence_completed'] == []
+          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 12
           assert state['gate_state'] == 'scoped'
           assert state['d4_transport_authority'] == 'selected_not_granted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['c3_numeric_topology_authority'] == 'not_selected'
-          print('d4b_source_nonpromotion=PASS source_credit=0 prior_promoted_credit=5 candidate=not_selected d4=scoped authorities=not_granted')
+          print('d4b_source_nonpromotion=PASS source_credit=0 source_history=not_selected current_selection=selected_c2_profile promoted_credit=5 d4wide=12/26 d4=scoped authorities=not_granted')
           PY
 
       - name: Resolve exact workflow job identity and emit provenance

@@ -22,7 +22,10 @@ ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "implementation/d4-eventing-async/source-evidence/d4-c-quarantine-redrive-source.json"
 PLAN = ROOT / "implementation/d4-eventing-async/d4-c-candidate-evaluation-plan.json"
 STATE = ROOT / "implementation/d4-eventing-async/state-manifest.json"
-CREDIT = "ack_after_durable_responsibility_and_lease_ambiguity"
+CREDITS = [
+    "ack_after_durable_responsibility_and_lease_ambiguity",
+    "quarantine_redrive_current_authority_and_dedup_preservation",
+]
 TENANT = "tenant:t1"
 
 
@@ -174,12 +177,13 @@ class SourceEvidenceTests(unittest.TestCase):
         state = json.loads(STATE.read_text(encoding="utf-8"))
         tracks = {t["track_id"]: t for t in state["tracks"]}
         d4c = tracks["D4-C"]
-        self.assertEqual(d4c["evidence_completed"], [CREDIT])
-        self.assertEqual(len(d4c["evidence_remaining"]), 8)
+        self.assertEqual(d4c["evidence_completed"], CREDITS)
+        self.assertEqual(d4c["evidence_remaining"], [x for x in d4c["required_evidence"] if x not in CREDITS])
+        self.assertEqual(len(d4c["evidence_remaining"]), 7)
         self.assertIsNone(d4c["candidate"])
         self.assertEqual(d4c["candidate_status"], "not_selected")
         self.assertEqual(tracks["D4-D"]["evidence_completed"], [])
-        self.assertEqual(sum(len(t["evidence_completed"]) for t in state["tracks"]), 13)
+        self.assertEqual(sum(len(t["evidence_completed"]) for t in state["tracks"]), 14)
         self.assertEqual(state["gate_state"], "scoped")
         self.assertEqual(state["canonical_product_implementation_authority"], "not_granted")
         self.assertEqual(state["wave4_implementation_authority"], "not_granted")

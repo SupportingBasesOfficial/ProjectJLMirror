@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
 
 PLAN = Path("implementation/d4-eventing-async/d4-c-evidence-plan.json")
-PROMOTION = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-008-promotion-v1.json")
-SOURCE = Path("implementation/d4-eventing-async/source-evidence/d4-c-ack-lease-checkpoint-source.json")
+PROMOTION_008 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-008-promotion-v1.json")
+PROMOTION_009 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-009-promotion-v1.json")
+SOURCE_008 = Path("implementation/d4-eventing-async/source-evidence/d4-c-ack-lease-checkpoint-source.json")
+SOURCE_009 = Path("implementation/d4-eventing-async/source-evidence/d4-c-quarantine-redrive-source.json")
 STATE = Path("implementation/d4-eventing-async/state-manifest.json")
-CREDIT = "ack_after_durable_responsibility_and_lease_ambiguity"
-SOURCE_HEAD = "02063da13a4a93fe6bc67521e4a7e4e0d4999045"
-SOURCE_MERGE = "69ad19e6129898e7fdf7e9d57e40a841cb0d4ef5"
-REVIEW_MODE = "independent_exact_head_adversarial_clean_after_exact_head_ci"
-EXPECTED_SOURCE_DECISIONS = [
-    "OPEN-EVT-008", "OPEN-EVT-009", "OPEN-EVT-010", "OPEN-EVT-011", "OPEN-EVT-012",
-    "OPEN-EVT-013", "OPEN-EVT-014", "OPEN-EVT-015", "OPEN-EVT-025",
-]
+CREDIT_008 = "ack_after_durable_responsibility_and_lease_ambiguity"
+CREDIT_009 = "quarantine_redrive_current_authority_and_dedup_preservation"
+EXPECTED_CREDITS = [CREDIT_008, CREDIT_009]
 EXPECTED_REMAINING = [
-    "quarantine_redrive_current_authority_and_dedup_preservation",
     "bounded_message_batch_compression_and_parser_limits",
     "scoped_content_equivalence_confidentiality_and_conflict_rejection",
     "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
@@ -26,6 +23,10 @@ EXPECTED_REMAINING = [
     "privileged_bounded_replay_with_original_identity_and_effect_safety",
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
+]
+EXPECTED_SOURCE_DECISIONS = [
+    "OPEN-EVT-008", "OPEN-EVT-009", "OPEN-EVT-010", "OPEN-EVT-011", "OPEN-EVT-012",
+    "OPEN-EVT-013", "OPEN-EVT-014", "OPEN-EVT-015", "OPEN-EVT-025",
 ]
 EXPECTED_PLAN_KEYS = {
     "schema_version", "gate_id", "track_id", "name", "source_decisions", "candidate", "candidate_status",
@@ -48,23 +49,61 @@ EXPECTED_WORKFLOW_KEYS = {
     "job_id", "job_name", "artifact_id", "artifact_name", "artifact_digest",
 }
 EXPECTED_MANIFEST_KEYS = {"path", "sha256"}
-EXPECTED_WORKFLOW = {
-    "workflow_id": 350722209,
-    "workflow_path": ".github/workflows/d4-c-ack-lease-checkpoint-source-evidence.yml",
-    "workflow_event": "pull_request",
-    "source_head_branch": "evidence/d4-c-ack-lease-checkpoint-source",
-    "run_id": 33948472401,
-    "run_attempt": 1,
-    "job_id": 101258703919,
-    "job_name": "D4-C OPEN-EVT-008 source evidence",
-    "artifact_id": 9964116208,
-    "artifact_name": "d4-c-ack-lease-checkpoint-source-02063da13a4a93fe6bc67521e4a7e4e0d4999045-33948472401-1",
-    "artifact_digest": "sha256:2a7a38caff4ddb6e7740ee079bb0c3cffb2f3e29acacb842ce84c0ab987786d6",
-}
-EXPECTED_SOURCE_MANIFEST = {
-    "path": str(SOURCE),
-    "sha256": "5c085286b9b6cac8df524f87fa4043accc74cc0878939427abd5df7da16a7708",
-}
+REVIEW_MODE = "independent_exact_head_adversarial_clean_after_exact_head_ci"
+PROMOTIONS = (
+    {
+        "path": PROMOTION_008,
+        "source": SOURCE_008,
+        "promotion_id": "d4-c-open-evt-008-promotion-v1",
+        "promotion_base": "69ad19e6129898e7fdf7e9d57e40a841cb0d4ef5",
+        "source_pr": 72,
+        "source_head": "02063da13a4a93fe6bc67521e4a7e4e0d4999045",
+        "source_merge": "69ad19e6129898e7fdf7e9d57e40a841cb0d4ef5",
+        "review_id": 5120040394,
+        "decision": "OPEN-EVT-008",
+        "evidence": CREDIT_008,
+        "workflow": {
+            "workflow_id": 350722209,
+            "workflow_path": ".github/workflows/d4-c-ack-lease-checkpoint-source-evidence.yml",
+            "workflow_event": "pull_request",
+            "source_head_branch": "evidence/d4-c-ack-lease-checkpoint-source",
+            "run_id": 33948472401,
+            "run_attempt": 1,
+            "job_id": 101258703919,
+            "job_name": "D4-C OPEN-EVT-008 source evidence",
+            "artifact_id": 9964116208,
+            "artifact_name": "d4-c-ack-lease-checkpoint-source-02063da13a4a93fe6bc67521e4a7e4e0d4999045-33948472401-1",
+            "artifact_digest": "sha256:2a7a38caff4ddb6e7740ee079bb0c3cffb2f3e29acacb842ce84c0ab987786d6",
+        },
+        "source_sha256": "5c085286b9b6cac8df524f87fa4043accc74cc0878939427abd5df7da16a7708",
+    },
+    {
+        "path": PROMOTION_009,
+        "source": SOURCE_009,
+        "promotion_id": "d4-c-open-evt-009-promotion-v1",
+        "promotion_base": "a238c82b8ddd4084b3ae80786e0e75b39111132e",
+        "source_pr": 74,
+        "source_head": "f3c5e49828160abde9fd99b25688456fa13408df",
+        "source_merge": "a238c82b8ddd4084b3ae80786e0e75b39111132e",
+        "review_id": 5123104259,
+        "decision": "OPEN-EVT-009",
+        "evidence": CREDIT_009,
+        "workflow": {
+            "workflow_id": 351163085,
+            "workflow_path": ".github/workflows/d4-c-quarantine-redrive-source-evidence.yml",
+            "workflow_event": "pull_request",
+            "source_head_branch": "evidence/d4-c-quarantine-redrive-source",
+            "run_id": 33992605858,
+            "run_attempt": 1,
+            "job_id": 101377381065,
+            "job_name": "D4-C OPEN-EVT-009 source evidence",
+            "artifact_id": 9977118464,
+            "artifact_name": "d4-c-quarantine-redrive-source-f3c5e49828160abde9fd99b25688456fa13408df-33992605858-1",
+            "artifact_digest": "sha256:680d0d965b965c7f44b4474a7725b3e6c23e143af8ed34f41aa37a0bbbdabaa1",
+        },
+        "source_sha256": "2e03e9a7ade9f6c379953b44ce7778846272948c30cd27336cb0c06f18483ddc",
+    },
+)
 
 
 class DuplicateKeyError(ValueError):
@@ -92,12 +131,80 @@ def _exact_bool(value: object, expected: bool) -> bool:
     return type(value) is bool and value is expected
 
 
+def _validate_promotion(root: Path, spec: dict, errors: list[str]) -> None:
+    label = spec["decision"]
+    try:
+        promotion = load(root / spec["path"])
+        source = load(root / spec["source"])
+    except Exception as exc:
+        errors.append(f"{label}: {exc}")
+        return
+    if not isinstance(promotion, dict) or set(promotion) != EXPECTED_PROMOTION_KEYS:
+        errors.append(f"{label}: promotion exact key schema drift")
+    if not _exact_int(promotion.get("schema_version"), 1):
+        errors.append(f"{label}: promotion schema_version must be integer 1")
+    for key, expected in {
+        "promotion_id": spec["promotion_id"], "gate_id": "D4", "track_id": "D4-C",
+        "promotion_base": spec["promotion_base"], "source_reviewed_head": spec["source_head"],
+        "source_merge_commit": spec["source_merge"],
+    }.items():
+        if promotion.get(key) != expected:
+            errors.append(f"{label}: promotion scalar drift: {key}")
+    if not _exact_int(promotion.get("source_pr"), spec["source_pr"]):
+        errors.append(f"{label}: source PR drift")
+    review = promotion.get("source_review")
+    if not isinstance(review, dict) or set(review) != EXPECTED_REVIEW_KEYS:
+        errors.append(f"{label}: source review exact key schema drift")
+    else:
+        if not _exact_int(review.get("review_id"), spec["review_id"]):
+            errors.append(f"{label}: source review id drift")
+        if review.get("review_mode") != REVIEW_MODE:
+            errors.append(f"{label}: source review mode drift")
+        if not _exact_int(review.get("material_threads_unresolved"), 0):
+            errors.append(f"{label}: source review unresolved-thread drift")
+    workflow = promotion.get("source_workflow")
+    if not isinstance(workflow, dict) or set(workflow) != EXPECTED_WORKFLOW_KEYS:
+        errors.append(f"{label}: source workflow exact key schema drift")
+    elif workflow != spec["workflow"]:
+        errors.append(f"{label}: source workflow provenance drift")
+    else:
+        for key in ("workflow_id", "run_id", "run_attempt", "job_id", "artifact_id"):
+            if type(workflow.get(key)) is not int:
+                errors.append(f"{label}: source workflow integer type drift: {key}")
+    manifest = promotion.get("source_manifest")
+    expected_manifest = {"path": str(spec["source"]), "sha256": spec["source_sha256"]}
+    if not isinstance(manifest, dict) or set(manifest) != EXPECTED_MANIFEST_KEYS:
+        errors.append(f"{label}: source manifest exact key schema drift")
+    elif manifest != expected_manifest:
+        errors.append(f"{label}: source manifest provenance drift")
+    elif hashlib.sha256((root / spec["source"]).read_bytes()).hexdigest() != spec["source_sha256"]:
+        errors.append(f"{label}: source manifest bytes drift")
+    if promotion.get("credited_evidence") != [spec["evidence"]] or not _exact_int(promotion.get("credit_count"), 1):
+        errors.append(f"{label}: promotion credit drift")
+    for key, expected in {
+        "selection_state": "not_selected", "selection_authority": "not_granted", "d4_gate_state": "scoped",
+        "d4_transport_authority": "selected_not_granted", "canonical_product_implementation_authority": "not_granted",
+        "wave4_implementation_authority": "not_granted", "production_authority": "none",
+        "c3_numeric_topology_authority": "not_selected",
+    }.items():
+        if promotion.get(key) != expected:
+            errors.append(f"{label}: promotion authority drift: {key}")
+    if not _exact_bool(promotion.get("separate_selection_required"), True):
+        errors.append(f"{label}: separate-selection guard drift")
+    if not _exact_bool(promotion.get("separate_d4_acceptance_required"), True):
+        errors.append(f"{label}: separate-acceptance guard drift")
+    if source.get("source_decision") != spec["decision"] or source.get("evidence_id") != spec["evidence"]:
+        errors.append(f"{label}: source evidence binding drift")
+    if source.get("current_run_auto_credit") is not False or source.get("ledger_credit") != []:
+        errors.append(f"{label}: source package must remain non-promoting")
+    if source.get("selection_state") != "not_selected" or source.get("selection_authority") != "not_granted":
+        errors.append(f"{label}: source package selection leakage")
+
+
 def validate(root: Path) -> list[str]:
     errors: list[str] = []
     try:
         plan = load(root / PLAN)
-        promotion = load(root / PROMOTION)
-        source = load(root / SOURCE)
         state = load(root / STATE)
     except Exception as exc:
         return [str(exc)]
@@ -105,23 +212,14 @@ def validate(root: Path) -> list[str]:
     if not isinstance(plan, dict) or set(plan) != EXPECTED_PLAN_KEYS:
         errors.append("D4-C evidence-plan exact key schema drift")
     expected_plan_scalars = {
-        "schema_version": 1,
-        "gate_id": "D4",
-        "track_id": "D4-C",
+        "schema_version": 1, "gate_id": "D4", "track_id": "D4-C",
         "name": "delivery_ack_quarantine_equivalence_outbox_replay_history_recovery",
-        "candidate": None,
-        "candidate_status": "not_selected",
-        "source_evidence_state": "reviewed_source_run_available",
-        "ledger_credit_state": "one_of_nine",
-        "current_run_auto_credit": False,
-        "selection_state": "not_selected",
-        "selection_authority": "not_granted",
-        "separate_selection_required": True,
-        "separate_d4_acceptance_required": True,
-        "d4_transport_authority": "selected_not_granted",
-        "canonical_product_implementation_authority": "not_granted",
-        "wave4_implementation_authority": "not_granted",
-        "production_authority": "none",
+        "candidate": None, "candidate_status": "not_selected",
+        "source_evidence_state": "reviewed_source_run_available", "ledger_credit_state": "two_of_nine",
+        "current_run_auto_credit": False, "selection_state": "not_selected", "selection_authority": "not_granted",
+        "separate_selection_required": True, "separate_d4_acceptance_required": True,
+        "d4_transport_authority": "selected_not_granted", "canonical_product_implementation_authority": "not_granted",
+        "wave4_implementation_authority": "not_granted", "production_authority": "none",
         "c3_numeric_topology_authority": "not_selected",
     }
     for key, expected in expected_plan_scalars.items():
@@ -129,111 +227,47 @@ def validate(root: Path) -> list[str]:
             errors.append(f"plan scalar drift: {key}")
     if plan.get("source_decisions") != EXPECTED_SOURCE_DECISIONS:
         errors.append("D4-C source decision inventory drift")
-    if plan.get("credited_evidence") != [CREDIT]:
-        errors.append("D4-C credited evidence must be exactly OPEN-EVT-008 obligation")
+    if plan.get("credited_evidence") != EXPECTED_CREDITS:
+        errors.append("D4-C credited evidence must be exactly OPEN-EVT-008 plus OPEN-EVT-009 obligations")
     if plan.get("remaining_evidence") != EXPECTED_REMAINING:
         errors.append("D4-C remaining evidence inventory drift")
-    required = plan.get("required_evidence")
-    if not isinstance(required, list) or len(required) != 9 or required != [CREDIT, *EXPECTED_REMAINING]:
+    if plan.get("required_evidence") != [*EXPECTED_CREDITS, *EXPECTED_REMAINING]:
         errors.append("D4-C required evidence inventory drift")
 
-    if not isinstance(promotion, dict) or set(promotion) != EXPECTED_PROMOTION_KEYS:
-        errors.append("promotion exact key schema drift")
-    if not _exact_int(promotion.get("schema_version"), 1):
-        errors.append("promotion schema_version must be integer 1")
-    if promotion.get("promotion_id") != "d4-c-open-evt-008-promotion-v1" or promotion.get("gate_id") != "D4" or promotion.get("track_id") != "D4-C":
-        errors.append("promotion identity drift")
-    if promotion.get("promotion_base") != SOURCE_MERGE:
-        errors.append("promotion base drift")
-    if not _exact_int(promotion.get("source_pr"), 72):
-        errors.append("source PR drift")
-    if promotion.get("source_reviewed_head") != SOURCE_HEAD:
-        errors.append("source reviewed HEAD drift")
-    if promotion.get("source_merge_commit") != SOURCE_MERGE:
-        errors.append("source merge commit drift")
-
-    review = promotion.get("source_review")
-    if not isinstance(review, dict) or set(review) != EXPECTED_REVIEW_KEYS:
-        errors.append("source review exact key schema drift")
-    else:
-        if not _exact_int(review.get("review_id"), 5120040394):
-            errors.append("source review id drift")
-        if review.get("review_mode") != REVIEW_MODE:
-            errors.append("source review mode drift")
-        if not _exact_int(review.get("material_threads_unresolved"), 0):
-            errors.append("source review unresolved-thread drift")
-
-    workflow = promotion.get("source_workflow")
-    if not isinstance(workflow, dict) or set(workflow) != EXPECTED_WORKFLOW_KEYS:
-        errors.append("source workflow exact key schema drift")
-    elif workflow != EXPECTED_WORKFLOW:
-        errors.append("source workflow provenance drift")
-    else:
-        for key in ("workflow_id", "run_id", "run_attempt", "job_id", "artifact_id"):
-            if type(workflow.get(key)) is not int:
-                errors.append(f"source workflow integer type drift: {key}")
-
-    source_manifest = promotion.get("source_manifest")
-    if not isinstance(source_manifest, dict) or set(source_manifest) != EXPECTED_MANIFEST_KEYS:
-        errors.append("source manifest exact key schema drift")
-    elif source_manifest != EXPECTED_SOURCE_MANIFEST:
-        errors.append("source manifest provenance drift")
-
-    if promotion.get("credited_evidence") != [CREDIT] or not _exact_int(promotion.get("credit_count"), 1):
-        errors.append("promotion credit drift")
-    if not _exact_bool(promotion.get("separate_selection_required"), True):
-        errors.append("promotion separate-selection guard drift")
-    if not _exact_bool(promotion.get("separate_d4_acceptance_required"), True):
-        errors.append("promotion separate-acceptance guard drift")
-    expected_authority = {
-        "selection_state": "not_selected",
-        "selection_authority": "not_granted",
-        "d4_gate_state": "scoped",
-        "d4_transport_authority": "selected_not_granted",
-        "canonical_product_implementation_authority": "not_granted",
-        "wave4_implementation_authority": "not_granted",
-        "production_authority": "none",
-        "c3_numeric_topology_authority": "not_selected",
-    }
-    for key, expected in expected_authority.items():
-        if promotion.get(key) != expected or type(promotion.get(key)) is not str:
-            errors.append(f"promotion authority drift: {key}")
-
-    if source.get("source_decision") != "OPEN-EVT-008" or source.get("evidence_id") != CREDIT:
-        errors.append("source evidence binding drift")
-    if source.get("current_run_auto_credit") is not False or type(source.get("current_run_auto_credit")) is not bool or source.get("ledger_credit") != []:
-        errors.append("source package must remain non-promoting")
-    if source.get("selection_state") != "not_selected" or source.get("selection_authority") != "not_granted":
-        errors.append("source package selection leakage")
+    for spec in PROMOTIONS:
+        _validate_promotion(root, spec, errors)
 
     tracks_raw = state.get("tracks", [])
     if not isinstance(tracks_raw, list) or len(tracks_raw) != 4 or not all(isinstance(t, dict) for t in tracks_raw):
         errors.append("D4 track structure drift")
-        tracks = {}
-    else:
-        ids = [t.get("track_id") for t in tracks_raw]
-        if len(ids) != len(set(ids)) or set(ids) != {"D4-A", "D4-B", "D4-C", "D4-D"}:
-            errors.append("D4 track identity drift")
-        tracks = {t["track_id"]: t for t in tracks_raw if t.get("track_id") in {"D4-A", "D4-B", "D4-C", "D4-D"}}
-    try:
-        d4a, d4b, d4c, d4d = tracks["D4-A"], tracks["D4-B"], tracks["D4-C"], tracks["D4-D"]
-        if d4a.get("candidate") != "kafka" or len(d4a.get("evidence_completed", [])) != 7 or d4a.get("evidence_remaining") != []:
-            errors.append("D4-A accepted 7/7 state drift")
-        if d4b.get("candidate_status") != "selected_c2_profile" or len(d4b.get("evidence_completed", [])) != 5 or d4b.get("evidence_remaining") != []:
-            errors.append("D4-B accepted 5/5 state drift")
-        if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
-            errors.append("D4-C selection/state leakage")
-        if d4c.get("evidence_completed") != [CREDIT]:
-            errors.append("D4-C state credit drift")
-        if d4c.get("evidence_remaining") != EXPECTED_REMAINING:
-            errors.append("D4-C state remaining evidence drift")
-        if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("evidence_completed") != []:
-            errors.append("D4-D state/credit leakage")
-        if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 13:
-            errors.append("D4-wide credited evidence must be exactly 13/26")
-    except Exception as exc:
-        errors.append(f"invalid D4 state: {exc}")
-
+        return errors
+    ids = [t.get("track_id") for t in tracks_raw]
+    if len(ids) != len(set(ids)) or set(ids) != {"D4-A", "D4-B", "D4-C", "D4-D"}:
+        errors.append("D4 track identity drift")
+        return errors
+    tracks = {t["track_id"]: t for t in tracks_raw}
+    d4a, d4b, d4c, d4d = tracks["D4-A"], tracks["D4-B"], tracks["D4-C"], tracks["D4-D"]
+    if d4a.get("candidate") != "kafka" or len(d4a.get("evidence_completed", [])) != 7 or d4a.get("evidence_remaining") != []:
+        errors.append("D4-A accepted 7/7 state drift")
+    if d4b.get("candidate_status") != "selected_c2_profile" or len(d4b.get("evidence_completed", [])) != 5 or d4b.get("evidence_remaining") != []:
+        errors.append("D4-B accepted 5/5 state drift")
+    if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
+        errors.append("D4-C selection/state leakage")
+    if d4c.get("evidence_completed") != EXPECTED_CREDITS:
+        errors.append("D4-C state credit drift")
+    if d4c.get("evidence_remaining") != EXPECTED_REMAINING:
+        errors.append("D4-C state remaining evidence drift")
+    if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("evidence_completed") != []:
+        errors.append("D4-D state/credit leakage")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 14:
+        errors.append("D4-wide credited evidence must be exactly 14/26")
+    for key, expected in {
+        "gate_state": "scoped", "d4_transport_authority": "selected_not_granted",
+        "canonical_product_implementation_authority": "not_granted", "wave4_implementation_authority": "not_granted",
+        "production_authority": "none", "c3_numeric_topology_authority": "not_selected",
+    }.items():
+        if state.get(key) != expected:
+            errors.append(f"global authority drift: {key}")
     return errors
 
 
@@ -244,7 +278,7 @@ def main() -> int:
         for error in errors:
             print(f"D4C_PROMOTION_ERROR: {error}")
         return 1
-    print("d4c_open_evt_008_promotion=PASS exact_schemas=true source_merge_bound=true d4c=1_of_9 d4wide=13_of_26 selection=not_selected authorities=unchanged")
+    print("d4c_open_evt_009_promotion=PASS promotion_records=2 immutable_history=true d4c=2_of_9 d4wide=14_of_26 selection=not_selected authorities=unchanged")
     return 0
 
 

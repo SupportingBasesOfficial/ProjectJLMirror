@@ -7,7 +7,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from validate_d4c_evidence_plan import PLAN, PROMOTION, SOURCE, STATE, validate
+from validate_d4c_evidence_plan import (
+    PLAN,
+    PROMOTION_008,
+    PROMOTION_009,
+    SOURCE_008,
+    SOURCE_009,
+    STATE,
+    CREDIT_008,
+    CREDIT_009,
+    validate,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -15,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class PromotionFalsificationTests(unittest.TestCase):
     def _root(self) -> Path:
         tmp = Path(tempfile.mkdtemp(prefix="d4c-promotion-"))
-        for rel in (PLAN, PROMOTION, SOURCE, STATE):
+        for rel in (PLAN, PROMOTION_008, PROMOTION_009, SOURCE_008, SOURCE_009, STATE):
             dst = tmp / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / rel, dst)
@@ -43,70 +53,52 @@ class PromotionFalsificationTests(unittest.TestCase):
             self._write(root, rel, data)
         return mutate
 
+    def test_baseline_is_valid(self):
+        self.assertEqual(validate(ROOT), [])
+
     def test_plan_hidden_field_is_rejected(self):
         self._reject(self._mutate(PLAN, lambda p: p.__setitem__("hidden_authority", "granted")), "evidence-plan exact key schema drift")
 
-    def test_promotion_hidden_field_is_rejected(self):
-        self._reject(self._mutate(PROMOTION, lambda p: p.__setitem__("hidden_authority", "granted")), "promotion exact key schema drift")
+    def test_second_credit_removal_is_rejected(self):
+        self._reject(self._mutate(PLAN, lambda p: p["credited_evidence"].pop()), "credited evidence")
 
-    def test_nested_review_hidden_field_is_rejected(self):
-        self._reject(self._mutate(PROMOTION, lambda p: p["source_review"].__setitem__("hidden", True)), "source review exact key schema drift")
-
-    def test_nested_workflow_hidden_field_is_rejected(self):
-        self._reject(self._mutate(PROMOTION, lambda p: p["source_workflow"].__setitem__("hidden", True)), "source workflow exact key schema drift")
-
-    def test_nested_manifest_hidden_field_is_rejected(self):
-        self._reject(self._mutate(PROMOTION, lambda p: p["source_manifest"].__setitem__("hidden", True)), "source manifest exact key schema drift")
-
-    def test_promotion_bool_schema_version_is_rejected(self):
-        self._reject(self._mutate(PROMOTION, lambda p: p.__setitem__("schema_version", True)), "schema_version must be integer 1")
-
-    def test_credit_count_bool_is_rejected(self):
-        self._reject(self._mutate(PROMOTION, lambda p: p.__setitem__("credit_count", True)), "promotion credit drift")
-
-    def test_credit_removal_is_rejected(self):
-        self._reject(self._mutate(PLAN, lambda p: p.__setitem__("credited_evidence", [])), "credited evidence")
-
-    def test_extra_credit_is_rejected(self):
+    def test_third_credit_is_rejected(self):
         def change(p):
-            p["credited_evidence"].append(p["remaining_evidence"][0])
+            p["credited_evidence"].append(p["remaining_evidence"].pop(0))
         self._reject(self._mutate(PLAN, change), "credited evidence")
 
     def test_selection_leakage_is_rejected(self):
         self._reject(self._mutate(PLAN, lambda p: p.__setitem__("selection_state", "selected")), "plan scalar drift: selection_state")
 
-    def test_source_head_drift_is_rejected(self):
-        self._reject(self._mutate(PROMOTION, lambda p: p.__setitem__("source_reviewed_head", "0" * 40)), "source reviewed HEAD drift")
+    def test_008_promotion_record_drift_is_rejected(self):
+        self._reject(self._mutate(PROMOTION_008, lambda p: p.__setitem__("source_reviewed_head", "0" * 40)), "OPEN-EVT-008: promotion scalar drift")
 
-    def test_source_merge_commit_drift_is_rejected(self):
-        self._reject(self._mutate(PROMOTION, lambda p: p.__setitem__("source_merge_commit", "0" * 40)), "source merge commit drift")
+    def test_009_promotion_record_drift_is_rejected(self):
+        self._reject(self._mutate(PROMOTION_009, lambda p: p.__setitem__("source_reviewed_head", "0" * 40)), "OPEN-EVT-009: promotion scalar drift")
 
-    def test_source_review_mode_drift_is_rejected(self):
-        self._reject(self._mutate(PROMOTION, lambda p: p["source_review"].__setitem__("review_mode", "older_review_reused")), "source review mode drift")
+    def test_009_review_id_drift_is_rejected(self):
+        self._reject(self._mutate(PROMOTION_009, lambda p: p["source_review"].__setitem__("review_id", 1)), "OPEN-EVT-009: source review id drift")
 
-    def test_source_review_id_drift_is_rejected(self):
-        self._reject(self._mutate(PROMOTION, lambda p: p["source_review"].__setitem__("review_id", 1)), "source review id drift")
+    def test_009_artifact_digest_drift_is_rejected(self):
+        self._reject(self._mutate(PROMOTION_009, lambda p: p["source_workflow"].__setitem__("artifact_digest", "sha256:" + "0" * 64)), "OPEN-EVT-009: source workflow provenance drift")
 
-    def test_artifact_digest_drift_is_rejected(self):
-        self._reject(self._mutate(PROMOTION, lambda p: p["source_workflow"].__setitem__("artifact_digest", "sha256:" + "0" * 64)), "source workflow provenance drift")
+    def test_008_source_auto_credit_is_rejected(self):
+        self._reject(self._mutate(SOURCE_008, lambda s: s.__setitem__("current_run_auto_credit", True)), "OPEN-EVT-008: source package must remain non-promoting")
 
-    def test_run_attempt_bool_is_rejected(self):
-        self._reject(self._mutate(PROMOTION, lambda p: p["source_workflow"].__setitem__("run_attempt", True)), "source workflow integer type drift: run_attempt")
-
-    def test_separate_selection_guard_is_rejected(self):
-        self._reject(self._mutate(PROMOTION, lambda p: p.__setitem__("separate_selection_required", False)), "separate-selection guard drift")
-
-    def test_separate_acceptance_guard_is_rejected(self):
-        self._reject(self._mutate(PROMOTION, lambda p: p.__setitem__("separate_d4_acceptance_required", False)), "separate-acceptance guard drift")
-
-    def test_source_auto_credit_is_rejected(self):
-        self._reject(self._mutate(SOURCE, lambda s: s.__setitem__("current_run_auto_credit", True)), "source package must remain non-promoting")
+    def test_009_source_auto_credit_is_rejected(self):
+        self._reject(self._mutate(SOURCE_009, lambda s: s.__setitem__("current_run_auto_credit", True)), "OPEN-EVT-009: source package must remain non-promoting")
 
     def test_state_credit_regression_is_rejected(self):
         def change(s):
             d4c = next(t for t in s["tracks"] if t["track_id"] == "D4-C")
-            d4c["evidence_completed"] = []
-            d4c["evidence_remaining"].insert(0, "ack_after_durable_responsibility_and_lease_ambiguity")
+            d4c["evidence_completed"].remove(CREDIT_009)
+            d4c["evidence_remaining"].insert(0, CREDIT_009)
+        self._reject(self._mutate(STATE, change), "D4-C state credit drift")
+
+    def test_state_extra_credit_is_rejected(self):
+        def change(s):
+            d4c = next(t for t in s["tracks"] if t["track_id"] == "D4-C")
+            d4c["evidence_completed"].append(d4c["evidence_remaining"].pop(0))
         self._reject(self._mutate(STATE, change), "D4-C state credit drift")
 
     def test_sibling_credit_leakage_is_rejected(self):
@@ -120,13 +112,33 @@ class PromotionFalsificationTests(unittest.TestCase):
             s["tracks"].append(dict(s["tracks"][2]))
         self._reject(self._mutate(STATE, change), "D4 track structure drift")
 
+    def test_promotion_hidden_field_is_rejected(self):
+        self._reject(self._mutate(PROMOTION_009, lambda p: p.__setitem__("hidden_authority", "granted")), "OPEN-EVT-009: promotion exact key schema drift")
+
+    def test_nested_review_hidden_field_is_rejected(self):
+        self._reject(self._mutate(PROMOTION_009, lambda p: p["source_review"].__setitem__("hidden", True)), "OPEN-EVT-009: source review exact key schema drift")
+
+    def test_credit_count_bool_is_rejected(self):
+        self._reject(self._mutate(PROMOTION_009, lambda p: p.__setitem__("credit_count", True)), "OPEN-EVT-009: promotion credit drift")
+
+    def test_separate_selection_guard_is_rejected(self):
+        self._reject(self._mutate(PROMOTION_009, lambda p: p.__setitem__("separate_selection_required", False)), "OPEN-EVT-009: separate-selection guard drift")
+
+    def test_separate_acceptance_guard_is_rejected(self):
+        self._reject(self._mutate(PROMOTION_009, lambda p: p.__setitem__("separate_d4_acceptance_required", False)), "OPEN-EVT-009: separate-acceptance guard drift")
+
     def test_duplicate_json_member_is_rejected(self):
         root = self._root()
-        path = root / PROMOTION
+        path = root / PROMOTION_009
         raw = path.read_text(encoding="utf-8")
         path.write_text(raw.replace('"schema_version": 1,', '"schema_version": 1,\n  "schema_version": 1,', 1), encoding="utf-8")
         errors = validate(root)
         self.assertTrue(any("duplicate JSON member: schema_version" in e for e in errors), errors)
+
+    def test_required_credit_order_is_exact(self):
+        def change(p):
+            p["credited_evidence"] = [CREDIT_009, CREDIT_008]
+        self._reject(self._mutate(PLAN, change), "credited evidence")
 
 
 if __name__ == "__main__":

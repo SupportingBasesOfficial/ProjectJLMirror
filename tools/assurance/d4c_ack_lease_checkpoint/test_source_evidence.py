@@ -237,7 +237,7 @@ class ValidatorFalsificationTests(unittest.TestCase):
             evidence = track["evidence_remaining"].pop(0)
             track["evidence_completed"].append(evidence)
             self._write(root, STATE_PATH, state)
-        self._assert_rejected(mutate, "D4-C ledger credit leakage")
+        self._assert_rejected(mutate, "D4-C current ledger drift")
 
     def test_duplicate_json_member_is_rejected(self):
         root = self._temp_root()

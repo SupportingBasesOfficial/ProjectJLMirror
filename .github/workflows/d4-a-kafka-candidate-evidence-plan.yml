@@ -194,9 +194,11 @@ jobs:
               'historical_reader_and_equivalence_profile_continuity',
               'contract_version_representation_and_breaking_change_vectors',
           }
-          expected_d4c_credit = ['ack_after_durable_responsibility_and_lease_ambiguity']
-          expected_d4c_remaining = [
+          expected_d4c_credit = [
+              'ack_after_durable_responsibility_and_lease_ambiguity',
               'quarantine_redrive_current_authority_and_dedup_preservation',
+          ]
+          expected_d4c_remaining = [
               'bounded_message_batch_compression_and_parser_limits',
               'scoped_content_equivalence_confidentiality_and_conflict_rejection',
               'outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity',
@@ -233,6 +235,6 @@ jobs:
           assert d4c['candidate'] is None and d4c['candidate_status'] == 'not_selected' and d4c['state'] == 'candidate_selection_open'
           assert d4c['evidence_completed'] == expected_d4c_credit and d4c['evidence_remaining'] == expected_d4c_remaining
           assert d4d['candidate'] is None and d4d['candidate_status'] == 'not_selected' and d4d['evidence_completed'] == []
-          assert sum(len(track['evidence_completed']) for track in state['tracks']) == 13
-          print('d4a_selection_boundary=PASS kafka=selected scope=bounded_c2 transport_authority=not_granted d4=scoped d4b=5_of_5_selected_profile d4c=1_of_9 d4d=open d4wide=13/26 product_wave4=not_granted production=none c3=not_selected')
+          assert sum(len(track['evidence_completed']) for track in state['tracks']) == 14
+          print('d4a_selection_boundary=PASS kafka=selected scope=bounded_c2 transport_authority=not_granted d4=scoped d4b=5_of_5_selected_profile d4c=2_of_9 d4d=open d4wide=14/26 product_wave4=not_granted production=none c3=not_selected')
           PY

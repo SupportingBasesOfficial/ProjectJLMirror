@@ -26,15 +26,21 @@ The source run proves:
 
 - bounded retry exhaustion transitions work into governed quarantine;
 - the retry count used by the harness is a test-only bounded fixture and does not select production retry numerics;
+- for the same scoped message identity, retry count cannot regress and retry budget cannot be silently rebound;
+- once governed quarantine is reached, failure redelivery cannot reopen the record as retryable;
 - redrive requires **current** privileged authority, not merely historical authority;
-- redrive actor and reason are durably auditable;
+- current redrive authority is scoped by actor, tenant and data classification;
+- authority for one tenant cannot authorize redrive in another tenant;
+- revocation removes historical authority from current admission;
+- redrive attempts, denials and admissions carry durable actor, tenant-scope and reason/outcome audit evidence;
 - redrive re-enters normal deduplication, content-equivalence and reconciliation admission instead of bypassing it;
 - same scoped identity with changed immutable content fails closed as integrity failure;
 - identity without durable equivalence evidence is uncertainty, not duplicate success;
 - ambiguous external-effect outcome requires reconciliation rather than blind re-execution;
-- confidential payload/equivalence access is classification-scoped;
+- confidential payload/equivalence access is tenant- and classification-scoped;
 - retention is represented only as a governed, nonnumeric policy class in this C2 evidence;
-- broker replacement changes adapter metadata while preserving platform quarantine identity, classification, retention policy and audit history.
+- broker replacement changes adapter metadata while preserving platform quarantine identity, classification, retention policy and audit history;
+- durable current authority and quarantine truth survive the process restart exercised by the evidence harness.
 
 ## Deliberate non-selection
 
@@ -46,6 +52,7 @@ This evidence does **not** select:
 - an OPEN-EVT-011 content-equivalence profile;
 - a redrive UI/API/product surface;
 - storage technology/schema for production quarantine;
+- a production IAM/RBAC technology or tenant-authorization implementation;
 - Product, Wave4, production or C3 authority.
 
 The harness uses SHA-256 only as a deterministic test comparator over canonicalized fixture content. It is not an OPEN-EVT-011 production content-equivalence selection.

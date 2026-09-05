@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -22,6 +23,7 @@ SOURCE = ROOT / "implementation/d4-eventing-async/source-evidence/d4-c-quarantin
 PLAN = ROOT / "implementation/d4-eventing-async/d4-c-candidate-evaluation-plan.json"
 STATE = ROOT / "implementation/d4-eventing-async/state-manifest.json"
 CREDIT = "ack_after_durable_responsibility_and_lease_ambiguity"
+TENANT = "tenant:t1"
 
 
 class SourceEvidenceTests(unittest.TestCase):
@@ -55,7 +57,7 @@ class SourceEvidenceTests(unittest.TestCase):
         self.assertEqual(runtime["test_fingerprint_profile"], TEST_FINGERPRINT_PROFILE)
         self.assertEqual(TEST_FINGERPRINT_PROFILE, "sha256_fixture_only_noncanonical")
 
-    def test_retry_updates_preserve_audit_and_effect_truth(self):
+    def test_retry_updates_preserve_truth_and_cannot_regress_quarantine(self):
         q = QuarantineAuthority()
         self.assertEqual(q.record_failure(self.identity, self.content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET - 1, retry_budget=TEST_RETRY_BUDGET, broker_adapter="a", broker_dlq_ref=None), "retryable")
         q.set_effect_truth(self.identity, committed=True)
@@ -63,21 +65,33 @@ class SourceEvidenceTests(unittest.TestCase):
         snapshot = q.snapshot(self.identity)
         self.assertTrue(snapshot["effect_committed"])
         self.assertEqual(len([e for e in snapshot["audit"] if e.get("action") == "failure_recorded"]), 2)
+        with self.assertRaises(IntegrityFailure):
+            q.record_failure(self.identity, self.content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET - 1, retry_budget=TEST_RETRY_BUDGET, broker_adapter="a", broker_dlq_ref=None)
+        with self.assertRaises(IntegrityFailure):
+            q.record_failure(self.identity, self.content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET + 1, retry_budget=TEST_RETRY_BUDGET + 1, broker_adapter="a", broker_dlq_ref=None)
+        self.assertEqual(q.snapshot(self.identity)["state"], "quarantined")
         q.close()
 
-    def test_redrive_requires_current_not_historical_authority_and_audits_denial(self):
+    def test_redrive_requires_current_not_historical_tenant_authority_and_audits_denial(self):
         q = self._quarantined()
-        q.grant_redrive("operator", {"confidential"})
-        q.revoke_redrive("operator")
+        q.grant_redrive("operator", TENANT, {"confidential"})
+        q.revoke_redrive("operator", TENANT)
         with self.assertRaises(AuthorizationDenied):
             q.redrive(self.identity, self.content, actor="operator", reason="revoked actor")
         audit = q.snapshot(self.identity)["audit"]
-        self.assertTrue(any(e.get("action") == "redrive_denied" and e.get("actor") == "operator" for e in audit))
+        self.assertTrue(any(e.get("action") == "redrive_denied" and e.get("actor") == "operator" and e.get("tenant_scope") == TENANT for e in audit))
+        q.close()
+
+    def test_cross_tenant_redrive_authority_is_rejected(self):
+        q = self._quarantined()
+        q.grant_redrive("admin", "tenant:t2", {"confidential"})
+        with self.assertRaises(AuthorizationDenied):
+            q.redrive(self.identity, self.content, actor="admin", reason="wrong tenant")
         q.close()
 
     def test_classification_scope_is_current_authority(self):
         q = self._quarantined()
-        q.grant_redrive("public-operator", {"public"})
+        q.grant_redrive("public-operator", TENANT, {"public"})
         with self.assertRaises(ClassificationDenied):
             q.read_payload(self.identity, "public-operator")
         with self.assertRaises(ClassificationDenied):
@@ -86,7 +100,7 @@ class SourceEvidenceTests(unittest.TestCase):
 
     def test_redrive_cannot_bypass_dedup_equivalence_or_reconciliation(self):
         q = self._quarantined()
-        q.grant_redrive("admin", {"confidential"})
+        q.grant_redrive("admin", TENANT, {"confidential"})
         with self.assertRaises(IntegrityFailure):
             q.redrive(self.identity, {**self.content, "payload": {"order_id": "o1", "revision": 10}}, actor="admin", reason="conflicting replay")
         q.remove_equivalence_authority(self.identity)
@@ -95,7 +109,7 @@ class SourceEvidenceTests(unittest.TestCase):
         q.close()
 
         q = self._quarantined()
-        q.grant_redrive("admin", {"confidential"})
+        q.grant_redrive("admin", TENANT, {"confidential"})
         q.set_effect_truth(self.identity, committed=False, external_outcome_unknown=True)
         self.assertEqual(q.redrive(self.identity, self.content, actor="admin", reason="reconcile"), "reconciliation_required")
         self.assertEqual(q.snapshot(self.identity)["state"], "quarantined_reconciliation")
@@ -103,21 +117,20 @@ class SourceEvidenceTests(unittest.TestCase):
 
     def test_effect_already_committed_becomes_duplicate_noop_and_is_audited(self):
         q = self._quarantined()
-        q.grant_redrive("admin", {"confidential"})
+        q.grant_redrive("admin", TENANT, {"confidential"})
         q.set_effect_truth(self.identity, committed=True)
         self.assertEqual(q.redrive(self.identity, self.content, actor="admin", reason="authorized replay"), "duplicate_noop")
         snapshot = q.snapshot(self.identity)
         self.assertEqual(snapshot["state"], "resolved_duplicate")
-        self.assertTrue(any(e.get("action") == "redrive_attempt" and e.get("actor") == "admin" for e in snapshot["audit"]))
+        self.assertTrue(any(e.get("action") == "redrive_attempt" and e.get("actor") == "admin" and e.get("tenant_scope") == TENANT for e in snapshot["audit"]))
         q.close()
 
-    def test_broker_replacement_and_authority_survive_restart_without_rewriting_truth(self):
-        import tempfile
+    def test_broker_replacement_and_tenant_authority_survive_restart_without_rewriting_truth(self):
         with tempfile.TemporaryDirectory(prefix="d4c-quarantine-test-") as td:
             db = Path(td) / "quarantine.sqlite3"
             q = QuarantineAuthority(db)
             q.record_failure(self.identity, self.content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET, retry_budget=TEST_RETRY_BUDGET, broker_adapter="original", broker_dlq_ref="original:opaque")
-            q.grant_redrive("admin", {"confidential"})
+            q.grant_redrive("admin", TENANT, {"confidential"})
             before = q.snapshot(self.identity)
             q.replace_broker(self.identity, new_adapter="replacement", new_dlq_ref="replacement:opaque")
             q.close()

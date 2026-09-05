@@ -33,6 +33,8 @@ EXPECTED_ASSERTIONS = [
     "equivalent_redelivery_after_effect_completion_is_idempotent_and_produces_one_business_effect",
     "offset_rewind_with_missing_equivalence_authority_fails_closed_as_uncertainty",
     "same_scoped_identity_with_changed_immutable_content_is_rejected_as_integrity_failure",
+    "equivalence_fixture_covers_immutable_envelope_and_payload_content",
+    "test_fingerprint_algorithm_is_noncanonical_evidence_fixture_and_does_not_select_open_evt_011_profile",
     "stale_claim_owner_is_fenced_after_higher_epoch_takeover",
     "process_restart_reloads_durable_receipt_equivalence_fence_and_effect_state_before_redelivery",
     "crash_after_durable_responsibility_before_effect_or_ack_recovers_under_a_new_fenced_owner",
@@ -42,6 +44,7 @@ EXPECTED_ASSERTIONS = [
 
 EXPECTED_NON_AUTHORITY = {
     "d4c_mechanism_selection": "not_selected",
+    "d4c_content_equivalence_profile_selection": "not_selected",
     "d4c_ledger_credit": "0_of_9",
     "d4d_ledger_credit": "0_of_5",
     "d4_gate": "scoped",
@@ -181,7 +184,7 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}")
         return 1
-    print("d4c_ack_lease_checkpoint_source=PASS candidates=3 durable_restart=true strict_epoch_fence=true d4c=0_of_9 d4wide=12_of_26 selection=not_selected auto_credit=false")
+    print("d4c_ack_lease_checkpoint_source=PASS candidates=3 durable_restart=true strict_epoch_fence=true full_semantic_fixture=true d4c=0_of_9 d4wide=12_of_26 selection=not_selected auto_credit=false")
     return 0
 
 

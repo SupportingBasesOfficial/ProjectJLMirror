@@ -49,16 +49,15 @@ This decision is a **bounded C2 contract-profile selection only**. It does not:
 
 D4 remains `scoped`, D4-wide evidence remains 12/26, D4-C/D remain open and separate full D4 acceptance remains required.
 
-## Authoritative machine-owned record
+## Authoritative machine-owned records
 
-Current selection authority is:
+Current D4-B selection authority is represented jointly by these machine-owned current-state records:
 
-- `implementation/d4-eventing-async/d4-b-selection-record.json`.
+- `implementation/d4-eventing-async/d4-b-selection-record.json` — explicit D4-B bounded-C2 selection record;
+- `implementation/d4-eventing-async/d4-b-evidence-plan.json` — current D4-B ledger carrying the selected profile while preserving exact 5/5 evidence accounting;
+- `implementation/d4-eventing-async/state-manifest.json` — current global D4 state carrying the same D4-B selection while preserving D4-wide scope and authority boundaries.
 
-Supporting current state:
-
-- `implementation/d4-eventing-async/d4-b-evidence-plan.json`;
-- `implementation/d4-eventing-async/state-manifest.json`.
+Assurance validators, falsification tests and workflows verify and enforce these records but do not themselves carry or grant selection authority.
 
 Full rationale and replacement governance:
 

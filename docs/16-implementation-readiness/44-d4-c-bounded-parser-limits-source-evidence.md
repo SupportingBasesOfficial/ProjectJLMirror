@@ -37,10 +37,12 @@ The model enforces a contract-owned admission boundary:
 - declared oversize is rejected before stream iteration;
 - streams without a declared length are accumulated only inside a bounded budget;
 - gzip output is produced incrementally with a hard decompressed-output ceiling;
-- JSON is parsed only after wire/decompression bounds have succeeded;
-- structural validation is iterative and bounds nesting, strings, collections and total fields;
+- trailing bytes or concatenated gzip members are rejected rather than silently changing payload meaning;
+- JSON nesting is pre-scanned outside quoted/escaped strings before recursive parser entry, so deeply nested small inputs fail closed before parser recursion;
+- JSON is parsed only after wire, decompression and pre-parser nesting bounds have succeeded;
+- structural validation is iterative and independently bounds strings, collections and total fields;
 - top-level batches are bounded before per-item semantic admission;
-- artifact and raw telemetry classes must use references to specialized planes rather than inline bulk payloads;
+- artifact and raw telemetry classes must use references to specialized planes rather than inline bulk payloads, including when nested inside wrappers;
 - a transport configuration may be stricter than the contract, but a more permissive transport configuration cannot relax the contract bound;
 - every limit rejection emits a stable machine code and `retryable=false`.
 

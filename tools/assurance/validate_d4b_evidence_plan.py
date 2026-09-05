@@ -13,7 +13,7 @@ D4C_CREDIT = "ack_after_durable_responsibility_and_lease_ambiguity"
 _legacy_load = historical.load
 
 
-def _current_errors(state: dict) -> list[str]:
+def _current_sibling_errors(state: dict) -> list[str]:
     tracks = {t.get("track_id"): t for t in state.get("tracks", []) if isinstance(t, dict)}
     d4c = tracks.get("D4-C", {})
     required = d4c.get("required_evidence", [])
@@ -24,11 +24,17 @@ def _current_errors(state: dict) -> list[str]:
         errors.append("D4-C must remain uncredited in the historical projection; current promoted credit must remain exactly OPEN-EVT-008")
     if d4c.get("evidence_remaining") != [x for x in required if x != D4C_CREDIT]:
         errors.append("D4-C must remain uncredited in the historical projection; current promoted remaining evidence drift")
-    if tracks.get("D4-D", {}).get("evidence_completed") != []:
+    d4d = tracks.get("D4-D", {})
+    if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("evidence_completed") != []:
         errors.append("D4-D candidate must remain unselected and uncredited")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 13:
-        errors.append("D4-wide evidence must remain 12/26 in the historical projection and exactly 13/26 in current promoted state")
     return errors
+
+
+def _current_total_errors(state: dict) -> list[str]:
+    tracks = [t for t in state.get("tracks", []) if isinstance(t, dict)]
+    if sum(len(t.get("evidence_completed", [])) for t in tracks) != 13:
+        return ["D4-wide evidence must remain 12/26 in the historical projection and exactly 13/26 in current promoted state"]
+    return []
 
 
 def _project(state: dict) -> dict:
@@ -41,18 +47,23 @@ def _project(state: dict) -> dict:
 
 def validate(root: Path) -> list[str]:
     state = json.loads((root / STATE).read_text(encoding="utf-8"))
-    current = _current_errors(state)
+    current = _current_sibling_errors(state)
     if current:
         return current
+
     original = historical.load
     try:
         def projected_load(inner_root: Path, path: Path) -> dict:
             value = _legacy_load(inner_root, path)
             return _project(value) if path == STATE else value
         historical.load = projected_load
-        return historical.validate(root)
+        historical_errors = historical.validate(root)
     finally:
         historical.load = original
+
+    if historical_errors:
+        return historical_errors
+    return _current_total_errors(state)
 
 
 def main(argv: list[str]) -> int:

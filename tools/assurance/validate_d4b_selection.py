@@ -16,12 +16,29 @@ EXPECTED_BASE = "1104997c5bb97aae59373077a9e2f8d7570968b4"
 EXPECTED_INTERNAL = "protobuf_profile"
 EXPECTED_WEBHOOK = "bounded_json_plus_json_schema_profile"
 EXPECTED_CATALOG = "hybrid_reviewed_git_plus_registry_catalog"
+EXPECTED_REGISTRY_ROLE = "authenticated_authorized_distribution_index_compatibility_and_physical_mapping"
 EXPECTED_VERSION = "positive_integer_family_revision"
 EXPECTED_SOURCE_DECISIONS = {"OPEN-EVT-002", "OPEN-EVT-003", "OPEN-EVT-004"}
 
 
+class DuplicateMemberError(ValueError):
+    pass
+
+
+def reject_duplicate_members(pairs: list[tuple[str, object]]) -> dict:
+    out: dict = {}
+    for key, value in pairs:
+        if key in out:
+            raise DuplicateMemberError(f"duplicate JSON member {key!r}")
+        out[key] = value
+    return out
+
+
 def load(root: Path, path: Path) -> dict:
-    return json.loads((root / path).read_text(encoding="utf-8"))
+    value = json.loads((root / path).read_bytes(), object_pairs_hook=reject_duplicate_members)
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must be a JSON object")
+    return value
 
 
 def validate(root: Path) -> list[str]:
@@ -31,12 +48,15 @@ def validate(root: Path) -> list[str]:
         if not condition:
             errors.append(message)
 
-    selection = load(root, SELECTION)
-    plan = load(root, PLAN)
-    state = load(root, STATE)
-    axis_a = load(root, AXIS_A)
-    axis_b = load(root, AXIS_B)
-    axis_c = load(root, AXIS_C)
+    try:
+        selection = load(root, SELECTION)
+        plan = load(root, PLAN)
+        state = load(root, STATE)
+        axis_a = load(root, AXIS_A)
+        axis_b = load(root, AXIS_B)
+        axis_c = load(root, AXIS_C)
+    except (json.JSONDecodeError, DuplicateMemberError, ValueError) as exc:
+        return [f"strict JSON parse failure: {exc}"]
 
     require(selection.get("schema_version") == 1, "selection schema_version must be 1")
     require(selection.get("selection_id") == "d4-b-profile-selection-v1", "selection_id drift")
@@ -66,6 +86,7 @@ def validate(root: Path) -> list[str]:
     require(catalog.get("selection_state") == "selected", "catalog selection state drift")
     require(catalog.get("mechanism") == EXPECTED_CATALOG, "catalog mechanism drift")
     require(catalog.get("canonical_authority") == "reviewed_git_contract_history", "reviewed Git authority drift")
+    require(catalog.get("registry_role") == EXPECTED_REGISTRY_ROLE, "registry role drift")
     require(catalog.get("registry_product") is None, "registry vendor/product must remain unselected")
     require(set(catalog.get("unselected_eligible_alternatives", [])) == {"reviewed_git_catalog", "registry_backed_catalog"}, "catalog alternative inventory drift")
 
@@ -150,7 +171,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_SELECTION_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_selection=PASS internal=protobuf webhook=bounded_json_json_schema catalog=hybrid_reviewed_git_registry contract_version=positive_integer equality_only=true evidence=5/5 source_history=immutable_not_selected registry_product=unselected d4=scoped authorities=not_granted")
+    print("d4b_selection=PASS internal=protobuf webhook=bounded_json_json_schema catalog=hybrid_reviewed_git_registry registry_role=downstream_non_authority contract_version=positive_integer equality_only=true evidence=5/5 source_history=immutable_not_selected registry_product=unselected d4=scoped authorities=not_granted")
     return 0
 
 

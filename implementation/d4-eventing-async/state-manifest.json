@@ -93,10 +93,10 @@
       ],
       "evidence_completed": [
         "ack_after_durable_responsibility_and_lease_ambiguity",
-        "quarantine_redrive_current_authority_and_dedup_preservation"
+        "quarantine_redrive_current_authority_and_dedup_preservation",
+        "bounded_message_batch_compression_and_parser_limits"
       ],
       "evidence_remaining": [
-        "bounded_message_batch_compression_and_parser_limits",
         "scoped_content_equivalence_confidentiality_and_conflict_rejection",
         "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
         "producer_generation_nonresurrection_across_failover_restore",

@@ -25,7 +25,9 @@ A registry-backed or hybrid profile is eligible only if publish is downstream of
 
 ## Contract identity and immutable history
 
-Logical identity in the evidence fixture is carried independently as domain/name/family. Each reviewed revision binds:
+Logical identity in the evidence fixture is carried independently as domain/name/family. Components cannot contain the `/` delimiter or control characters, so distinct logical identities cannot collapse into the same canonical key.
+
+Each reviewed revision binds:
 
 - payload-schema digest;
 - canonical semantic-manifest digest;
@@ -34,7 +36,7 @@ Logical identity in the evidence fixture is carried independently as domain/name
 - comparison-profile reference;
 - reviewed provenance.
 
-The deterministic reviewed-content digest includes the reviewed provenance as well as the semantic/schema/history metadata. Registry publish requires exact equality with the committed reviewed revision, so a caller cannot reuse a valid logical revision while substituting forged provenance.
+The reviewed-content digest is computed from an explicitly framed structured representation containing named fields, rather than delimiter-based string concatenation. Newlines or other bytes inside historical metadata/provenance therefore cannot shift field boundaries and alias a different reviewed revision. Registry publish additionally requires exact equality with the pre-existing committed reviewed revision.
 
 Revision history is append-only. Reusing an existing logical revision token with different reviewed content fails closed. Historical reader/upcaster/comparison metadata remains attached to the reviewed revision rather than being reconstructed from a vendor registry ID.
 
@@ -42,7 +44,9 @@ Revision history is append-only. Reusing an existing logical revision token with
 
 Semantic-manifest compatibility is evaluated over a deterministic canonical structured representation rather than raw JSON text formatting. Object member order and insignificant whitespace therefore cannot create a false compatibility break. Duplicate semantic-manifest members are rejected rather than collapsed by parser behavior.
 
-This aligns Axis B with the already accepted D4-B requirement for a deterministic semantic manifest: formatting syntax is not semantic authority.
+JSON numbers are parsed directly into exact decimal semantics rather than binary floating point. Equivalent JSON number spellings such as `1`, `1.0` and `1e0` produce the same canonical semantic value and therefore the same semantic-manifest digest. The canonical form is derived from the exact decimal tuple and does not expand huge exponents into unbounded strings.
+
+This aligns Axis B with the already accepted D4-B requirement for deterministic semantic meaning: presentation syntax and runtime float spelling are not semantic authority.
 
 ## Semantic compatibility, not syntax-only compatibility
 
@@ -58,7 +62,7 @@ The evidence distinguishes:
 - `contract_reviewer`;
 - `registry_publisher`.
 
-Anonymous reads fail closed. Authenticated principals without the required role fail closed. A reader cannot publish registry mappings merely because the contract is readable.
+Anonymous reads fail closed. Authenticated principals without the required role fail closed. All exposed reviewed-history reads require a `Principal`; registry publish and lookup traverse the same reviewed-history authorization boundary. A reader cannot publish registry mappings merely because the contract is readable.
 
 This is evidence-profile behavior only; it does not select an IAM product, protocol or concrete policy engine.
 
@@ -98,7 +102,7 @@ The allowed result of this source-evidence stage is only:
 1. all three concrete candidate results;
 2. the exact eight Axis B `must_prove` obligations;
 3. candidate-specific guard profiles;
-4. source assertions, including provenance/content binding, canonical semantic-manifest digest and immutable registry mapping history;
+4. source assertions, including reviewed provenance binding, unambiguous digest framing, decimal-exact semantic canonicalization and immutable registry mapping history;
 5. `selection_state=not_selected`;
 6. `selection_authority=not_granted`;
 7. `current_run_auto_credit=false`;
@@ -106,7 +110,7 @@ The allowed result of this source-evidence stage is only:
 9. independent Axis A and Axis C selection state;
 10. unchanged global D4 authority state.
 
-Negative controls must reject hidden selection, candidate promotion, proof removal, provenance/canonical-semantic/mapping-history assertion removal, auto-credit, ledger credit, Product authority escalation, wire-format coupling and `contract_version` coupling.
+Negative controls must reject hidden selection, candidate promotion, proof removal, provenance/digest-framing/canonical-semantic/numeric-equivalence/mapping-history assertion removal, auto-credit, ledger credit, Product authority escalation, wire-format coupling and `contract_version` coupling.
 
 ## Preserved canonical state
 

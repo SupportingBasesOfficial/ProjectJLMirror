@@ -36,60 +36,89 @@ class PromotionFalsificationTests(unittest.TestCase):
         errors = validate(root)
         self.assertTrue(any(fragment in error for error in errors), errors)
 
+    def _mutate(self, rel: Path, fn):
+        def mutate(root):
+            data = self._read(root, rel)
+            fn(data)
+            self._write(root, rel, data)
+        return mutate
+
+    def test_plan_hidden_field_is_rejected(self):
+        self._reject(self._mutate(PLAN, lambda p: p.__setitem__("hidden_authority", "granted")), "evidence-plan exact key schema drift")
+
+    def test_promotion_hidden_field_is_rejected(self):
+        self._reject(self._mutate(PROMOTION, lambda p: p.__setitem__("hidden_authority", "granted")), "promotion exact key schema drift")
+
+    def test_nested_review_hidden_field_is_rejected(self):
+        self._reject(self._mutate(PROMOTION, lambda p: p["source_review"].__setitem__("hidden", True)), "source review exact key schema drift")
+
+    def test_nested_workflow_hidden_field_is_rejected(self):
+        self._reject(self._mutate(PROMOTION, lambda p: p["source_workflow"].__setitem__("hidden", True)), "source workflow exact key schema drift")
+
+    def test_nested_manifest_hidden_field_is_rejected(self):
+        self._reject(self._mutate(PROMOTION, lambda p: p["source_manifest"].__setitem__("hidden", True)), "source manifest exact key schema drift")
+
+    def test_promotion_bool_schema_version_is_rejected(self):
+        self._reject(self._mutate(PROMOTION, lambda p: p.__setitem__("schema_version", True)), "schema_version must be integer 1")
+
+    def test_credit_count_bool_is_rejected(self):
+        self._reject(self._mutate(PROMOTION, lambda p: p.__setitem__("credit_count", True)), "promotion credit drift")
+
     def test_credit_removal_is_rejected(self):
-        self._reject(lambda r: self._mutate_list(r, PLAN, "credited_evidence", []), "credited evidence")
+        self._reject(self._mutate(PLAN, lambda p: p.__setitem__("credited_evidence", [])), "credited evidence")
 
     def test_extra_credit_is_rejected(self):
-        def mutate(root):
-            p = self._read(root, PLAN)
+        def change(p):
             p["credited_evidence"].append(p["remaining_evidence"][0])
-            self._write(root, PLAN, p)
-        self._reject(mutate, "credited evidence")
+        self._reject(self._mutate(PLAN, change), "credited evidence")
 
     def test_selection_leakage_is_rejected(self):
-        def mutate(root):
-            p = self._read(root, PLAN)
-            p["selection_state"] = "selected"
-            self._write(root, PLAN, p)
-        self._reject(mutate, "plan scalar drift: selection_state")
+        self._reject(self._mutate(PLAN, lambda p: p.__setitem__("selection_state", "selected")), "plan scalar drift: selection_state")
 
     def test_source_head_drift_is_rejected(self):
-        def mutate(root):
-            p = self._read(root, PROMOTION)
-            p["source_reviewed_head"] = "0" * 40
-            self._write(root, PROMOTION, p)
-        self._reject(mutate, "source reviewed HEAD drift")
+        self._reject(self._mutate(PROMOTION, lambda p: p.__setitem__("source_reviewed_head", "0" * 40)), "source reviewed HEAD drift")
+
+    def test_source_merge_commit_drift_is_rejected(self):
+        self._reject(self._mutate(PROMOTION, lambda p: p.__setitem__("source_merge_commit", "0" * 40)), "source merge commit drift")
+
+    def test_source_review_mode_drift_is_rejected(self):
+        self._reject(self._mutate(PROMOTION, lambda p: p["source_review"].__setitem__("review_mode", "older_review_reused")), "source review mode drift")
+
+    def test_source_review_id_drift_is_rejected(self):
+        self._reject(self._mutate(PROMOTION, lambda p: p["source_review"].__setitem__("review_id", 1)), "source review id drift")
 
     def test_artifact_digest_drift_is_rejected(self):
-        def mutate(root):
-            p = self._read(root, PROMOTION)
-            p["source_workflow"]["artifact_digest"] = "sha256:" + "0" * 64
-            self._write(root, PROMOTION, p)
-        self._reject(mutate, "source workflow provenance drift")
+        self._reject(self._mutate(PROMOTION, lambda p: p["source_workflow"].__setitem__("artifact_digest", "sha256:" + "0" * 64)), "source workflow provenance drift")
+
+    def test_run_attempt_bool_is_rejected(self):
+        self._reject(self._mutate(PROMOTION, lambda p: p["source_workflow"].__setitem__("run_attempt", True)), "source workflow provenance drift")
+
+    def test_separate_selection_guard_is_rejected(self):
+        self._reject(self._mutate(PROMOTION, lambda p: p.__setitem__("separate_selection_required", False)), "separate-selection guard drift")
+
+    def test_separate_acceptance_guard_is_rejected(self):
+        self._reject(self._mutate(PROMOTION, lambda p: p.__setitem__("separate_d4_acceptance_required", False)), "separate-acceptance guard drift")
 
     def test_source_auto_credit_is_rejected(self):
-        def mutate(root):
-            s = self._read(root, SOURCE)
-            s["current_run_auto_credit"] = True
-            self._write(root, SOURCE, s)
-        self._reject(mutate, "source package must remain non-promoting")
+        self._reject(self._mutate(SOURCE, lambda s: s.__setitem__("current_run_auto_credit", True)), "source package must remain non-promoting")
 
     def test_state_credit_regression_is_rejected(self):
-        def mutate(root):
-            s = self._read(root, STATE)
+        def change(s):
             d4c = next(t for t in s["tracks"] if t["track_id"] == "D4-C")
             d4c["evidence_completed"] = []
             d4c["evidence_remaining"].insert(0, "ack_after_durable_responsibility_and_lease_ambiguity")
-            self._write(root, STATE, s)
-        self._reject(mutate, "D4-C state credit drift")
+        self._reject(self._mutate(STATE, change), "D4-C state credit drift")
 
     def test_sibling_credit_leakage_is_rejected(self):
-        def mutate(root):
-            s = self._read(root, STATE)
+        def change(s):
             d4d = next(t for t in s["tracks"] if t["track_id"] == "D4-D")
             d4d["evidence_completed"] = [d4d["evidence_remaining"].pop(0)]
-            self._write(root, STATE, s)
-        self._reject(mutate, "D4-wide credited evidence must be exactly 13/26")
+        self._reject(self._mutate(STATE, change), "D4-D state/credit leakage")
+
+    def test_duplicate_track_id_is_rejected(self):
+        def change(s):
+            s["tracks"].append(dict(s["tracks"][2]))
+        self._reject(self._mutate(STATE, change), "D4 track structure drift")
 
     def test_duplicate_json_member_is_rejected(self):
         root = self._root()
@@ -98,11 +127,6 @@ class PromotionFalsificationTests(unittest.TestCase):
         path.write_text(raw.replace('"schema_version": 1,', '"schema_version": 1,\n  "schema_version": 1,', 1), encoding="utf-8")
         errors = validate(root)
         self.assertTrue(any("duplicate JSON member: schema_version" in e for e in errors), errors)
-
-    def _mutate_list(self, root, rel, key, value):
-        data = self._read(root, rel)
-        data[key] = value
-        self._write(root, rel, data)
 
 
 if __name__ == "__main__":

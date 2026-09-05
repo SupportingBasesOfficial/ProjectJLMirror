@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   d4c-ack-lease-checkpoint-source:
@@ -49,6 +50,7 @@ jobs:
             tools/assurance/d4c_ack_lease_checkpoint/evaluate_candidates.py \
             tools/assurance/d4c_ack_lease_checkpoint/validate_source_evidence.py \
             tools/assurance/d4c_ack_lease_checkpoint/test_source_evidence.py \
+            tools/assurance/d4c_ack_lease_checkpoint/emit_source_provenance.py \
             tools/assurance/validate_d4_eventing_async_state.py \
             tools/assurance/test_validate_d4_eventing_async_state.py
 
@@ -58,7 +60,11 @@ jobs:
 
       - name: Evaluate all concrete candidate classes
         shell: bash
-        run: python3 tools/assurance/d4c_ack_lease_checkpoint/evaluate_candidates.py
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          python3 tools/assurance/d4c_ack_lease_checkpoint/evaluate_candidates.py \
+            > runtime-evidence/candidate-results.json
 
       - name: Validate machine-owned source manifest
         shell: bash
@@ -108,3 +114,44 @@ jobs:
           assert state['c3_numeric_topology_authority'] == 'not_selected'
           print('d4c_open_evt_008_source_boundary=PASS d4c=0_of_9 d4wide=12_of_26 selection=not_selected auto_credit=false')
           PY
+
+      - name: Resolve exact workflow job identity and emit immutable provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+            -o runtime-evidence/jobs.json
+          job_id="$(python3 - <<'PY'
+          import json
+          jobs = json.load(open('runtime-evidence/jobs.json', encoding='utf-8'))['jobs']
+          matches = [job for job in jobs if job['name'] == 'D4-C OPEN-EVT-008 source evidence']
+          if len(matches) != 1:
+              raise SystemExit(f'expected exactly one current evidence job, got {len(matches)}')
+          print(matches[0]['id'])
+          PY
+          )"
+          python3 tools/assurance/d4c_ack_lease_checkpoint/emit_source_provenance.py \
+            --repository-sha "$EXPECTED_SHA" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --workflow-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --job-id "$job_id" \
+            --job-name "D4-C OPEN-EVT-008 source evidence" \
+            --candidate-results runtime-evidence/candidate-results.json \
+            --output runtime-evidence/resolved-source-run-provenance.json
+          rm runtime-evidence/jobs.json
+
+      - name: Persist source-run provenance and candidate evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: d4-c-ack-lease-checkpoint-source-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            runtime-evidence/resolved-source-run-provenance.json
+            runtime-evidence/candidate-results.json
+          if-no-files-found: error
+          retention-days: 90

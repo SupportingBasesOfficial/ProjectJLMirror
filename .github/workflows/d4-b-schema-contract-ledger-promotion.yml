@@ -8,12 +8,15 @@ on:
       - 'implementation/d4-eventing-async/**'
       - 'tools/assurance/validate_d4b_evidence_plan.py'
       - 'tools/assurance/test_validate_d4b_evidence_plan.py'
+      - 'tools/assurance/validate_d4b_selection.py'
+      - 'tools/assurance/test_validate_d4b_selection.py'
       - 'tools/assurance/validate_d4_eventing_async_state.py'
       - 'tools/assurance/test_validate_d4_eventing_async_state.py'
       - 'tools/assurance/d4b_schema_contract/**'
       - 'docs/10-event-contracts/**'
       - 'docs/16-implementation-readiness/32-d4-b-schema-contract-source-evidence.md'
       - 'docs/16-implementation-readiness/33-d4-b-schema-contract-ledger-promotion.md'
+      - 'docs/16-implementation-readiness/38-d4-b-bounded-c2-profile-selection.md'
       - '.github/workflows/d4-b-schema-contract-source-evidence.yml'
       - '.github/workflows/d4-b-schema-contract-ledger-promotion.yml'
       - '.github/workflows/d4-eventing-async-entry-gate.yml'
@@ -46,13 +49,15 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
-      - name: Compile D4-B promotion and state tooling
+      - name: Compile D4-B promotion selection and state tooling
         shell: bash
         run: |
           set -euo pipefail
           python3 -m py_compile \
             tools/assurance/validate_d4b_evidence_plan.py \
             tools/assurance/test_validate_d4b_evidence_plan.py \
+            tools/assurance/validate_d4b_selection.py \
+            tools/assurance/test_validate_d4b_selection.py \
             tools/assurance/validate_d4_eventing_async_state.py \
             tools/assurance/test_validate_d4_eventing_async_state.py \
             tools/assurance/d4b_schema_contract/validate_source_evidence.py
@@ -61,9 +66,13 @@ jobs:
         shell: bash
         run: python3 tools/assurance/test_validate_d4b_evidence_plan.py
 
-      - name: Validate D4-B reviewed ledger promotion
+      - name: Validate D4-B reviewed ledger promotion and current selection
         shell: bash
-        run: python3 tools/assurance/validate_d4b_evidence_plan.py .
+        run: |
+          set -euo pipefail
+          python3 tools/assurance/validate_d4b_evidence_plan.py .
+          python3 tools/assurance/test_validate_d4b_selection.py
+          python3 tools/assurance/validate_d4b_selection.py .
 
       - name: Preserve D4 scoped state
         shell: bash
@@ -266,16 +275,16 @@ jobs:
           assert provenance['production_authority'] == 'none'
           assert provenance['c3_numeric_topology_authority'] == 'not_selected'
           assert provenance['promotion_rule'] == 'source_run_review_then_separate_ledger_promotion'
-          print('d4b_promotion_live_admission=PASS source_pr=merged source_review=exact_head_clean source_workflow=exact_pull_request_run source_run=success run_attempt=exact job=exact artifact=exact_digest artifact_payload=exact source_manifest=exact source_credit=0 selection=not_selected')
+          print('d4b_promotion_live_admission=PASS source_pr=merged source_review=exact_head_clean source_workflow=exact_pull_request_run source_run=success run_attempt=exact job=exact artifact=exact_digest artifact_payload=exact source_manifest=exact source_credit=0 historical_selection=not_selected')
           PY
 
       - name: Validate steady-state durable D4-B promotion provenance
         if: steps.promotion_delta.outputs.changed == 'false'
         shell: bash
         run: |
-          echo 'd4b_promotion_live_admission=SKIP promotion_unchanged=true artifact_retention_dependency=false durable_record_and_digests=validated'
+          echo 'd4b_promotion_live_admission=SKIP promotion_unchanged=true artifact_retention_dependency=false durable_record_and_digests=validated selection_fields_excluded=true'
 
-      - name: Assert promotion does not select technology or escalate authority
+      - name: Assert historical promotion and current selection remain separated
         shell: bash
         run: |
           python3 - <<'PY'
@@ -284,25 +293,41 @@ jobs:
           plan = json.loads(Path('implementation/d4-eventing-async/d4-b-evidence-plan.json').read_text())
           state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
           source = json.loads(Path('implementation/d4-eventing-async/source-evidence/schema-contract/source-evidence-manifest.json').read_text())
+          promotion = json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-b-schema-contract-promotion-v1.json').read_text())
           d4b = next(t for t in state['tracks'] if t['track_id'] == 'D4-B')
           expected = set(plan['required_evidence'])
+          expected_candidate = {
+              'serialization': {
+                  'surface_policy': 'explicit_surface_bound_profiles',
+                  'internal_broker': 'protobuf_profile',
+                  'outbound_webhook': 'bounded_json_plus_json_schema_profile',
+              },
+              'schema_catalog': 'hybrid_reviewed_git_plus_registry_catalog',
+              'contract_version': 'positive_integer_family_revision',
+          }
           assert len(expected) == 5
-          assert set(plan['credited_evidence']) == expected
-          assert plan['remaining_evidence'] == []
-          assert plan['candidate'] is None and plan['candidate_status'] == 'not_selected'
-          assert plan['selection_state'] == 'not_selected'
-          assert plan['serialization_selection_state'] == 'not_selected'
-          assert plan['schema_catalog_selection_state'] == 'not_selected'
-          assert plan['contract_version_syntax_selection_state'] == 'not_selected'
+          assert set(plan['credited_evidence']) == expected and plan['remaining_evidence'] == []
+          assert plan['candidate'] == expected_candidate and plan['candidate_status'] == 'selected_c2_profile'
+          assert plan['selection_state'] == 'selected'
+          assert plan['serialization_selection_state'] == 'selected_surface_bound'
+          assert plan['schema_catalog_selection_state'] == 'selected'
+          assert plan['contract_version_syntax_selection_state'] == 'selected'
+          assert plan['current_run_auto_credit'] is False
           assert source['current_run_auto_credit'] is False and source['ledger_credit'] == []
-          assert d4b['candidate'] is None and d4b['candidate_status'] == 'not_selected'
-          assert d4b['state'] == 'evidence_complete_selection_pending'
+          assert source['candidate'] is None and source['candidate_status'] == 'not_selected'
+          assert promotion['selection_state'] == 'not_selected'
+          assert promotion['serialization_selection_state'] == 'not_selected'
+          assert promotion['schema_catalog_selection_state'] == 'not_selected'
+          assert promotion['contract_version_syntax_selection_state'] == 'not_selected'
+          assert d4b['candidate'] == expected_candidate and d4b['candidate_status'] == 'selected_c2_profile'
+          assert d4b['state'] == 'selected_candidate'
           assert set(d4b['evidence_completed']) == expected and d4b['evidence_remaining'] == []
+          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 12
           assert state['gate_state'] == 'scoped'
           assert state['d4_transport_authority'] == 'selected_not_granted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['c3_numeric_topology_authority'] == 'not_selected'
-          print('d4b_promotion_boundary=PASS credit=5/5 candidate=not_selected selection=separate d4=scoped authorities=not_granted')
+          print('d4b_promotion_boundary=PASS credit=5/5 promotion_history=not_selected current_selection=selected_c2_profile d4wide=12/26 d4=scoped authorities=not_granted')
           PY

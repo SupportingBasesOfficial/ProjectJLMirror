@@ -48,6 +48,15 @@ EXPECTED_D4B_EVIDENCE = {
     "historical_reader_and_equivalence_profile_continuity",
     "contract_version_representation_and_breaking_change_vectors",
 }
+EXPECTED_D4B_SELECTED = {
+    "serialization": {
+        "surface_policy": "explicit_surface_bound_profiles",
+        "internal_broker": "protobuf_profile",
+        "outbound_webhook": "bounded_json_plus_json_schema_profile",
+    },
+    "schema_catalog": "hybrid_reviewed_git_plus_registry_catalog",
+    "contract_version": "positive_integer_family_revision",
+}
 EXPECTED_PRIOR_CREDIT = EXPECTED_EVIDENCE - {"broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark"}
 EXPECTED_NEW_CREDIT = {"broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark"}
 EXPECTED_KINDS = {
@@ -172,20 +181,22 @@ def validate_objects(plan: dict, entry: dict, promotion: dict, selection: dict) 
     require(entry.get("production_authority") == "none", "production authority escalation")
     require(entry.get("c3_numeric_topology_authority") == "not_selected", "C3 authority escalation")
 
+    # D4-A is independent of D4-B, but the current global state must preserve the later D4-B selection exactly.
     d4b = tracks.get("D4-B", {})
-    require(d4b.get("candidate") is None, "D4-B candidate must remain unselected")
-    require(d4b.get("candidate_status") == "not_selected", "D4-B candidate status drift")
-    require(d4b.get("state") == "evidence_complete_selection_pending", "D4-B evidence-complete selection-pending state drift")
+    require(d4b.get("candidate") == EXPECTED_D4B_SELECTED, "D4-B selected profile drift")
+    require(d4b.get("candidate_status") == "selected_c2_profile", "D4-B selected profile status drift")
+    require(d4b.get("state") == "selected_candidate", "D4-B selected state drift")
     require(set(d4b.get("evidence_completed", [])) == EXPECTED_D4B_EVIDENCE, "D4-B reviewed evidence credit drift")
     require(len(d4b.get("evidence_completed", [])) == len(EXPECTED_D4B_EVIDENCE), "D4-B evidence multiplicity drift")
-    require(d4b.get("evidence_remaining") == [], "D4-B evidence_remaining must be empty after reviewed promotion")
+    require(d4b.get("evidence_remaining") == [], "D4-B evidence_remaining must remain empty")
     for track_id in ("D4-C", "D4-D"):
         sibling = tracks.get(track_id, {})
         require(sibling.get("candidate") is None, f"{track_id} candidate must remain unselected")
         require(sibling.get("candidate_status") == "not_selected", f"{track_id} candidate status drift")
         require(sibling.get("evidence_completed") == [], f"{track_id} must remain uncredited")
+    require(sum(len(track.get("evidence_completed", [])) for track in tracks.values()) == 12, "D4-wide evidence must remain 12/26")
 
-    # Historical promotion truth is immutable: it was created before selection.
+    # Historical D4-A promotion truth is immutable: it was created before D4-A selection.
     require(promotion.get("schema_version") == 1, "promotion schema drift")
     require(promotion.get("promotion_id") == "d4-a-recovery-promotion-v1", "promotion identity drift")
     require(promotion.get("track") == "D4-A", "promotion track drift")
@@ -239,7 +250,7 @@ def validate_objects(plan: dict, entry: dict, promotion: dict, selection: dict) 
     require(promotion.get("c3_numeric_topology_authority") == "not_selected", "promotion grants C3 authority")
     require(promotion.get("promotion_rule") == "reviewed_source_run_to_ledger_credit_only", "promotion rule drift")
 
-    # Current selection record is the only object allowed to make the selection transition.
+    # Current D4-A selection record is the only object allowed to make the D4-A selection transition.
     require(selection.get("schema_version") == 1, "selection schema drift")
     require(selection.get("selection_id") == "d4-a-kafka-selection-v1", "selection identity drift")
     require(selection.get("gate_id") == "D4" and selection.get("track_id") == "D4-A", "selection track identity drift")
@@ -353,7 +364,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4A_PLAN_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4a_evidence_plan=PASS evidence=7 credited=7 exact_assertions=preserved kafka=selected selection_scope=bounded_c2 transport_authority=not_granted d4=scoped d4b=5_of_5_selection_pending d4c_d=open production_numerics=not_granted provenance=full_chain")
+    print("d4a_evidence_plan=PASS evidence=7 credited=7 exact_assertions=preserved kafka=selected selection_scope=bounded_c2 transport_authority=not_granted d4=scoped d4b=5_of_5_selected_profile d4wide=12/26 d4c_d=open production_numerics=not_granted provenance=full_chain")
     return 0
 
 

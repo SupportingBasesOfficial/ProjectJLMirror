@@ -8,11 +8,15 @@ on:
       - 'implementation/d4-eventing-async/source-evidence/d4-b-wire-schema-candidate-source.json'
       - 'implementation/d4-eventing-async/d4-b-candidate-evaluation-plan.json'
       - 'implementation/d4-eventing-async/d4-b-evidence-plan.json'
+      - 'implementation/d4-eventing-async/d4-b-selection-record.json'
       - 'implementation/d4-eventing-async/state-manifest.json'
       - 'tools/assurance/d4b_wire_schema/**'
+      - 'tools/assurance/validate_d4b_selection.py'
+      - 'tools/assurance/test_validate_d4b_selection.py'
       - 'tools/assurance/validate_d4_eventing_async_state.py'
       - 'tools/assurance/test_validate_d4_eventing_async_state.py'
       - 'docs/16-implementation-readiness/36-d4-b-wire-schema-candidate-source-evidence.md'
+      - 'docs/16-implementation-readiness/38-d4-b-bounded-c2-profile-selection.md'
       - '.github/workflows/d4-b-wire-schema-candidate-source-evidence.yml'
   workflow_dispatch:
 
@@ -26,6 +30,7 @@ jobs:
     timeout-minutes: 8
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PRESELECTION_MAIN: 1104997c5bb97aae59373077a9e2f8d7570968b4
     steps:
       - name: Checkout exact analyzed HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -40,27 +45,58 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          git cat-file -e "$PRESELECTION_MAIN^{commit}"
 
-      - name: Compile source-evidence tooling
+      - name: Compile source and selection assurance
         shell: bash
         run: |
           set -euo pipefail
           python3 -m py_compile \
             tools/assurance/d4b_wire_schema/evaluate_candidates.py \
             tools/assurance/d4b_wire_schema/validate_source_evidence.py \
-            tools/assurance/d4b_wire_schema/test_source_evidence.py
+            tools/assurance/d4b_wire_schema/test_source_evidence.py \
+            tools/assurance/validate_d4b_selection.py \
+            tools/assurance/test_validate_d4b_selection.py
 
       - name: Execute candidate behavior evidence
         shell: bash
         run: python3 tools/assurance/d4b_wire_schema/evaluate_candidates.py
 
-      - name: Falsify candidate source-evidence weakening
+      - name: Falsify historical candidate source-evidence weakening with HEAD tooling
         shell: bash
-        run: python3 tools/assurance/d4b_wire_schema/test_source_evidence.py
+        run: |
+          set -euo pipefail
+          root="$(mktemp -d)"
+          mkdir -p "$root/tools/assurance/d4b_wire_schema" "$root/implementation/d4-eventing-async/source-evidence"
+          cp tools/assurance/d4b_wire_schema/evaluate_candidates.py "$root/tools/assurance/d4b_wire_schema/"
+          cp tools/assurance/d4b_wire_schema/validate_source_evidence.py "$root/tools/assurance/d4b_wire_schema/"
+          cp tools/assurance/d4b_wire_schema/test_source_evidence.py "$root/tools/assurance/d4b_wire_schema/"
+          cp implementation/d4-eventing-async/source-evidence/d4-b-wire-schema-candidate-source.json "$root/implementation/d4-eventing-async/source-evidence/"
+          cp implementation/d4-eventing-async/d4-b-candidate-evaluation-plan.json "$root/implementation/d4-eventing-async/"
+          git show "$PRESELECTION_MAIN:implementation/d4-eventing-async/d4-b-evidence-plan.json" > "$root/implementation/d4-eventing-async/d4-b-evidence-plan.json"
+          git show "$PRESELECTION_MAIN:implementation/d4-eventing-async/state-manifest.json" > "$root/implementation/d4-eventing-async/state-manifest.json"
+          (cd "$root" && python3 tools/assurance/d4b_wire_schema/test_source_evidence.py)
+          rm -rf "$root"
 
-      - name: Validate machine-owned source manifest
+      - name: Validate historical source manifest against pre-selection state
         shell: bash
-        run: python3 tools/assurance/d4b_wire_schema/validate_source_evidence.py .
+        run: |
+          set -euo pipefail
+          root="$(mktemp -d)"
+          mkdir -p "$root/implementation/d4-eventing-async/source-evidence"
+          cp implementation/d4-eventing-async/source-evidence/d4-b-wire-schema-candidate-source.json "$root/implementation/d4-eventing-async/source-evidence/"
+          cp implementation/d4-eventing-async/d4-b-candidate-evaluation-plan.json "$root/implementation/d4-eventing-async/"
+          git show "$PRESELECTION_MAIN:implementation/d4-eventing-async/d4-b-evidence-plan.json" > "$root/implementation/d4-eventing-async/d4-b-evidence-plan.json"
+          git show "$PRESELECTION_MAIN:implementation/d4-eventing-async/state-manifest.json" > "$root/implementation/d4-eventing-async/state-manifest.json"
+          python3 tools/assurance/d4b_wire_schema/validate_source_evidence.py "$root"
+          rm -rf "$root"
+
+      - name: Validate current D4-B selected profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/assurance/test_validate_d4b_selection.py
+          python3 tools/assurance/validate_d4b_selection.py .
 
       - name: Preserve global D4 state
         shell: bash
@@ -72,36 +108,3 @@ jobs:
       - name: Preserve Phase 10 contracts
         shell: bash
         run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
-
-      - name: Assert source-only non-selection boundary
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          source = json.loads(Path('implementation/d4-eventing-async/source-evidence/d4-b-wire-schema-candidate-source.json').read_text())
-          ledger = json.loads(Path('implementation/d4-eventing-async/d4-b-evidence-plan.json').read_text())
-          state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
-          tracks = {t['track_id']: t for t in state['tracks']}
-          assert source['mode'] == 'candidate_source_evidence_only'
-          assert source['test_profile_only'] is True
-          assert source['selection_state'] == 'not_selected' and source['selection_authority'] == 'not_granted'
-          assert source['current_run_auto_credit'] is False and source['ledger_credit'] == []
-          assert set(source['candidate_results'].values()) == {'eligible_for_evidence_execution'}
-          assert source['equivalent_reviewed_profile'] == 'insufficient_evidence'
-          assert source['non_authority']['d4b_catalog_selection'] == 'not_selected'
-          assert source['non_authority']['d4b_contract_version_selection'] == 'not_selected'
-          assert ledger['candidate'] is None and ledger['selection_state'] == 'not_selected'
-          assert tracks['D4-B']['candidate'] is None and tracks['D4-B']['state'] == 'evidence_complete_selection_pending'
-          assert len(tracks['D4-B']['evidence_completed']) == 5
-          assert tracks['D4-A']['candidate'] == 'kafka' and len(tracks['D4-A']['evidence_completed']) == 7
-          assert tracks['D4-C']['candidate'] is None and tracks['D4-C']['evidence_completed'] == []
-          assert tracks['D4-D']['candidate'] is None and tracks['D4-D']['evidence_completed'] == []
-          assert state['gate_state'] == 'scoped'
-          assert state['canonical_product_implementation_authority'] == 'not_granted'
-          assert state['wave4_implementation_authority'] == 'not_granted'
-          assert state['production_authority'] == 'none'
-          assert state['c3_numeric_topology_authority'] == 'not_selected'
-          print('d4b_wire_schema_source_boundary=PASS concrete_candidates=3 selection=not_selected ledger_credit=0 axis_b_c=not_selected d4=scoped authorities=not_granted')
-          PY

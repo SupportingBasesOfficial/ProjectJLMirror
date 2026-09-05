@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "selection_id": "d4-b-profile-selection-v1",
+  "gate_id": "D4",
+  "track_id": "D4-B",
+  "selection_base_main_commit": "1104997c5bb97aae59373077a9e2f8d7570968b4",
+  "source_decisions": [
+    "OPEN-EVT-002",
+    "OPEN-EVT-003",
+    "OPEN-EVT-004"
+  ],
+  "evidence_completion": {
+    "required_evidence_count": 5,
+    "credited_evidence_count": 5,
+    "evidence_plan_path": "implementation/d4-eventing-async/d4-b-evidence-plan.json",
+    "axis_a_source_path": "implementation/d4-eventing-async/source-evidence/d4-b-wire-schema-candidate-source.json",
+    "axis_b_source_path": "implementation/d4-eventing-async/source-evidence/d4-b-catalog-tooling-candidate-source.json",
+    "axis_c_source_path": "implementation/d4-eventing-async/source-evidence/d4-b-contract-version-candidate-source.json",
+    "axis_a_accepted_main_commit": "df62898b6d9fc36f2a10c0c3713679d2cbe05da8",
+    "axis_b_accepted_main_commit": "1104997c5bb97aae59373077a9e2f8d7570968b4",
+    "axis_c_accepted_main_commit": "9cfe67915b6081af015670d7f1edb7ecf11ffdf2"
+  },
+  "selection_state": "selected",
+  "selection_scope": "bounded_c2_contract_profile_selection_only",
+  "track_state": "selected_candidate",
+  "serialization": {
+    "selection_state": "selected",
+    "surface_policy": "explicit_surface_bound_profiles",
+    "internal_broker": "protobuf_profile",
+    "outbound_webhook": "bounded_json_plus_json_schema_profile",
+    "realtime_protocol": "unchanged_phase10_canonical_json_baseline",
+    "unselected_eligible_alternatives": [
+      "avro_profile"
+    ],
+    "divergence_rule": "Internal broker and outbound webhook representations may differ only at the selected adapter/profile boundary; canonical logical contract meaning, identity, tenant scope, version semantics and equivalence obligations remain transport-independent."
+  },
+  "schema_catalog": {
+    "selection_state": "selected",
+    "mechanism": "hybrid_reviewed_git_plus_registry_catalog",
+    "canonical_authority": "reviewed_git_contract_history",
+    "registry_role": "authenticated_authorized_distribution_index_compatibility_and_physical_mapping",
+    "registry_product": null,
+    "unselected_eligible_alternatives": [
+      "reviewed_git_catalog",
+      "registry_backed_catalog"
+    ],
+    "replacement_rule": "A registry product may be introduced or replaced without changing logical contract identity only after its mapping, outage, authorization, provenance and historical-reader behavior conforms to the selected hybrid mechanism profile."
+  },
+  "contract_version": {
+    "selection_state": "selected",
+    "representation": "positive_integer_family_revision",
+    "logical_domain": "positive_integer",
+    "zero_allowed": false,
+    "ordering_authority": "none_equality_only",
+    "deployment_api_provider_realtime_registry_version_authority": "none",
+    "unselected_eligible_alternatives": [
+      "semantic_version_like_contract_revision",
+      "opaque_monotonic_contract_token"
+    ],
+    "breaking_change_rule": "A breaking semantic contract family change requires a newly reviewed positive integer family revision or an explicitly accepted migration; an existing revision cannot be rebound to different semantic meaning.",
+    "surface_encoding_rule": "Each selected wire profile encodes the same positive-integer logical revision using its native bounded integer representation; string spellings, lexical order and registry IDs are not contract-version authority."
+  },
+  "d4_gate_state": "scoped",
+  "d4_transport_authority": "selected_not_granted",
+  "canonical_product_implementation_authority": "not_granted",
+  "wave4_implementation_authority": "not_granted",
+  "production_authority": "none",
+  "c3_numeric_topology_authority": "not_selected",
+  "d4_cd_completion_required": true,
+  "separate_d4_acceptance_required": true,
+  "historical_evidence_rule": "Axis A, Axis B and Axis C source manifests remain immutable historical evidence with selection_state=not_selected, current_run_auto_credit=false and ledger_credit=[]; this selection record is the current selection authority and must not rewrite earlier evidence truth.",
+  "non_authority_rule": "Selecting D4-B contract profiles does not authorize Product or Wave4 implementation, create an outbound-webhook Product surface, choose a registry vendor, grant production deployment, select C3 numerics/topology, complete D4-C/D, or constitute full D4 acceptance."
+}

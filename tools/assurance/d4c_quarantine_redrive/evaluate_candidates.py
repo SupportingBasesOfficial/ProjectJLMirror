@@ -190,10 +190,10 @@ class QuarantineAuthority:
         if type(broker_adapter) is not str or not broker_adapter:
             raise ValueError("broker adapter metadata required")
         fp = self.fingerprint(content)
-        state = "quarantined" if retry_count >= retry_budget else "retryable"
         with self._tx():
             existing = self._row(identity)
             if existing is None:
+                state = "quarantined" if retry_count >= retry_budget else "retryable"
                 audit = [{"action": "failure_recorded", "retry_count": retry_count, "state": state}]
                 self.conn.execute(
                     """INSERT INTO quarantine_record
@@ -206,13 +206,18 @@ class QuarantineAuthority:
                     raise IntegrityFailure("same scoped identity has conflicting immutable content")
                 if existing[2] != classification or existing[3] != retention_policy_class:
                     raise IntegrityFailure("classification or retention policy cannot be silently rebound")
+                if existing[5] != retry_budget:
+                    raise IntegrityFailure("retry budget cannot be silently rebound for the same scoped identity")
+                if retry_count < existing[4]:
+                    raise IntegrityFailure("retry count cannot regress for the same scoped identity")
+                state = "quarantined" if existing[6].startswith("quarantined") or retry_count >= retry_budget else "retryable"
                 audit = json.loads(existing[11])
                 audit.append({"action": "failure_recorded", "retry_count": retry_count, "state": state})
                 self.conn.execute(
                     """UPDATE quarantine_record
-                          SET retry_count=?, retry_budget=?, state=?, broker_adapter=?, broker_dlq_ref=?, audit_json=?
+                          SET retry_count=?, state=?, broker_adapter=?, broker_dlq_ref=?, audit_json=?
                         WHERE consumer_contract=? AND identity_scope=? AND message_id=?""",
-                    (retry_count, retry_budget, state, broker_adapter, broker_dlq_ref, json.dumps(audit, sort_keys=True), *identity),
+                    (retry_count, state, broker_adapter, broker_dlq_ref, json.dumps(audit, sort_keys=True), *identity),
                 )
         return state
 
@@ -336,6 +341,9 @@ def run_profile(profile: str) -> Dict[str, bool]:
     quarantined = q.record_failure(identity, content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET, retry_budget=TEST_RETRY_BUDGET, broker_adapter=profile, broker_dlq_ref=broker_ref)
     after_retry_update = q.snapshot(identity)
     bounded_retry_to_quarantine = retryable == "retryable" and quarantined == "quarantined" and len(after_retry_update["audit"]) == 2 and after_retry_update["effect_committed"] is False
+    retry_count_regression_rejected = _expect(IntegrityFailure, lambda: q.record_failure(identity, content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET - 1, retry_budget=TEST_RETRY_BUDGET, broker_adapter=profile, broker_dlq_ref=broker_ref))
+    retry_budget_rebind_rejected = _expect(IntegrityFailure, lambda: q.record_failure(identity, content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET + 1, retry_budget=TEST_RETRY_BUDGET + 1, broker_adapter=profile, broker_dlq_ref=broker_ref))
+    quarantine_nonregression = q.snapshot(identity)["state"] == "quarantined"
 
     before = q.snapshot(identity)
     platform_identity_independent_of_dlq = before["fingerprint"] == q.fingerprint(content) and before["state"] == "quarantined"
@@ -392,6 +400,9 @@ def run_profile(profile: str) -> Dict[str, bool]:
     return {
         "platform_quarantine_truth_independent_of_broker_dlq": platform_identity_independent_of_dlq,
         "bounded_retry_exhaustion_reaches_quarantine_without_truth_reset": bounded_retry_to_quarantine,
+        "retry_count_regression_is_rejected": retry_count_regression_rejected,
+        "retry_budget_rebind_is_rejected": retry_budget_rebind_rejected,
+        "quarantine_state_cannot_regress_via_failure_redelivery": quarantine_nonregression,
         "historical_privilege_revocation_blocks_redrive": historical_grant_revoked,
         "denied_redrive_attempt_is_audited": denied_audited,
         "redrive_is_audited_and_dedup_safe": redrive_audited_and_dedup_safe,

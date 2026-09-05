@@ -88,6 +88,7 @@ jobs:
           state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
           plan = json.loads(Path('implementation/d4-eventing-async/d4-b-evidence-plan.json').read_text())
           tracks = {t['track_id']: t for t in state['tracks']}
+          d4c_credit = 'ack_after_durable_responsibility_and_lease_ambiguity'
           expected_evidence = {
               'canonical_bounded_serialization_profile',
               'parser_ambiguity_and_duplicate_field_negative_vectors',
@@ -114,16 +115,21 @@ jobs:
           assert tracks['D4-B']['candidate'] == selected and tracks['D4-B']['candidate_status'] == 'selected_c2_profile'
           assert tracks['D4-B']['state'] == 'selected_candidate'
           assert set(tracks['D4-B']['evidence_completed']) == expected_evidence and tracks['D4-B']['evidence_remaining'] == []
-          assert tracks['D4-C']['candidate'] is None and tracks['D4-C']['evidence_completed'] == []
-          assert tracks['D4-D']['candidate'] is None and tracks['D4-D']['evidence_completed'] == []
-          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 12
+          d4c = tracks['D4-C']
+          assert d4c['candidate'] is None and d4c['candidate_status'] == 'not_selected'
+          assert d4c['state'] == 'candidate_selection_open'
+          assert d4c['evidence_completed'] == [d4c_credit]
+          assert len(d4c['evidence_remaining']) == 8 and d4c_credit not in d4c['evidence_remaining']
+          assert tracks['D4-D']['candidate'] is None and tracks['D4-D']['candidate_status'] == 'not_selected'
+          assert tracks['D4-D']['evidence_completed'] == []
+          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 13
           assert state['gate_state'] == 'scoped'
           assert state['d4_transport_authority'] == 'selected_not_granted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['c3_numeric_topology_authority'] == 'not_selected'
-          print('d4b_source_nonpromotion=PASS source_credit=0 source_history=not_selected current_selection=selected_c2_profile promoted_credit=5 d4wide=12/26 d4=scoped authorities=not_granted')
+          print('d4b_source_nonpromotion=PASS source_credit=0 source_history=not_selected current_selection=selected_c2_profile promoted_credit=5 d4c=1/9 d4wide=13/26 d4=scoped authorities=not_granted')
           PY
 
       - name: Resolve exact workflow job identity and emit provenance

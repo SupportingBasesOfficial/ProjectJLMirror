@@ -294,7 +294,11 @@ jobs:
           state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
           source = json.loads(Path('implementation/d4-eventing-async/source-evidence/schema-contract/source-evidence-manifest.json').read_text())
           promotion = json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-b-schema-contract-promotion-v1.json').read_text())
-          d4b = next(t for t in state['tracks'] if t['track_id'] == 'D4-B')
+          tracks = {t['track_id']: t for t in state['tracks']}
+          d4b = tracks['D4-B']
+          d4c = tracks['D4-C']
+          d4d = tracks['D4-D']
+          d4c_credit = 'ack_after_durable_responsibility_and_lease_ambiguity'
           expected = set(plan['required_evidence'])
           expected_candidate = {
               'serialization': {
@@ -322,12 +326,17 @@ jobs:
           assert d4b['candidate'] == expected_candidate and d4b['candidate_status'] == 'selected_c2_profile'
           assert d4b['state'] == 'selected_candidate'
           assert set(d4b['evidence_completed']) == expected and d4b['evidence_remaining'] == []
-          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 12
+          assert d4c['candidate'] is None and d4c['candidate_status'] == 'not_selected'
+          assert d4c['state'] == 'candidate_selection_open'
+          assert d4c['evidence_completed'] == [d4c_credit]
+          assert len(d4c['evidence_remaining']) == 8 and d4c_credit not in d4c['evidence_remaining']
+          assert d4d['candidate'] is None and d4d['candidate_status'] == 'not_selected' and d4d['evidence_completed'] == []
+          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 13
           assert state['gate_state'] == 'scoped'
           assert state['d4_transport_authority'] == 'selected_not_granted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['c3_numeric_topology_authority'] == 'not_selected'
-          print('d4b_promotion_boundary=PASS credit=5/5 promotion_history=not_selected current_selection=selected_c2_profile d4wide=12/26 d4=scoped authorities=not_granted')
+          print('d4b_promotion_boundary=PASS credit=5/5 promotion_history=not_selected current_selection=selected_c2_profile d4c=1/9 d4wide=13/26 d4=scoped authorities=not_granted')
           PY

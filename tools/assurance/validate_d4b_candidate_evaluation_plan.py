@@ -12,6 +12,7 @@ from validate_d4b_candidate_evaluation_plan_historical import *  # noqa: F401,F4
 D4C_CREDITS = [
     "ack_after_durable_responsibility_and_lease_ambiguity",
     "quarantine_redrive_current_authority_and_dedup_preservation",
+    "bounded_message_batch_compression_and_parser_limits",
 ]
 _legacy_load = historical.load
 
@@ -24,14 +25,14 @@ def _current_errors(state: dict) -> list[str]:
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
         errors.append("D4-C/D must remain open; current D4-C selection/state drift")
     if d4c.get("evidence_completed") != D4C_CREDITS:
-        errors.append("D4-C/D must remain open; historical D4-C credit is zero while current promoted credits must be exactly OPEN-EVT-008 plus OPEN-EVT-009")
+        errors.append("D4-C/D must remain open; historical D4-C credit is zero while current promoted credits must be exactly OPEN-EVT-008 plus OPEN-EVT-009 plus OPEN-EVT-010")
     if d4c.get("evidence_remaining") != [x for x in required if x not in D4C_CREDITS]:
         errors.append("D4-C/D must remain open; current D4-C remaining evidence drift")
     d4d = tracks.get("D4-D", {})
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("evidence_completed") != []:
         errors.append("D4-C/D must remain open and D4-D uncredited")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 14:
-        errors.append("D4-wide evidence must remain 12/26 in historical projection and exactly 14/26 in current promoted state")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 15:
+        errors.append("D4-wide evidence must remain 12/26 in historical projection and exactly 15/26 in current promoted state")
     return errors
 
 
@@ -66,7 +67,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_EVAL_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_candidate_evaluation=PASS historical_oracle=preserved current_sibling_d4c=2_of_9 d4wide=14_of_26")
+    print("d4b_candidate_evaluation=PASS historical_oracle=preserved current_sibling_d4c=3_of_9 d4wide=15_of_26")
     return 0
 
 

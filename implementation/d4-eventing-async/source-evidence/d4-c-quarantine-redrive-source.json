@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-C",
+  "axis": "quarantine_and_redrive",
+  "source_decision": "OPEN-EVT-009",
+  "evidence_id": "quarantine_redrive_current_authority_and_dedup_preservation",
+  "canonical_base": "48734ede4bceb6b4f25f7ac5c9f84ced9563e351",
+  "mode": "candidate_source_evidence_only",
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "current_run_auto_credit": false,
+  "ledger_credit": [],
+  "candidate_results": {
+    "durable_platform_quarantine_store_with_broker_dlq_adapter": "eligible_for_evidence_execution",
+    "broker_native_dlq_with_canonical_platform_quarantine_index": "eligible_for_evidence_execution",
+    "hybrid_platform_quarantine_store_plus_broker_dlq": "eligible_for_evidence_execution"
+  },
+  "equivalent_reviewed_profile": "insufficient_evidence",
+  "required_proofs": [
+    "platform_quarantine_meaning_does_not_depend_on_broker_native_dlq_semantics",
+    "bounded_retry_exhaustion_reaches_governed_quarantine",
+    "redrive_requires_current_privileged_authority_and_is_audited",
+    "redrive_cannot_bypass_inbox_dedup_equivalence_or_reconciliation",
+    "same_identity_different_content_is_integrity_failure_not_benign_duplicate",
+    "confidential_payload_and_equivalence_evidence_access_is_classification_scoped",
+    "quarantine_payload_and_equivalence_evidence_retention_is_data_classification_governed_without_selecting_numeric_horizons",
+    "broker_replacement_does_not_rewrite_quarantine_process_truth"
+  ],
+  "source_assertions": [
+    "all_three_concrete_candidate_classes_share_one_platform_quarantine_process_truth",
+    "retry_budget_exhaustion_transitions_to_governed_quarantine_without_inferring_production_retry_numerics",
+    "redrive_without_current_privileged_authority_is_rejected",
+    "every_redrive_attempt_is_audited_with_current_actor_and_reason",
+    "redrive_reenters_normal_dedup_equivalence_and_reconciliation_admission",
+    "same_scoped_identity_with_conflicting_immutable_content_is_rejected_as_integrity_failure",
+    "confidential_payload_and_equivalence_evidence_require_classification_scoped_access",
+    "retention_is_expressed_as_governed_policy_class_not_selected_numeric_horizon",
+    "broker_native_dlq_identity_is_adapter_metadata_not_platform_quarantine_identity",
+    "broker_replacement_preserves_platform_quarantine_record_identity_and_redrive_history",
+    "candidate_source_evidence_does_not_select_a_candidate_broker_dlq_or_production_topology"
+  ],
+  "non_authority": {
+    "d4c_mechanism_selection": "not_selected",
+    "d4c_content_equivalence_profile_selection": "not_selected",
+    "d4c_ledger_credit": "current_1_of_9_unchanged",
+    "d4d_ledger_credit": "0_of_5",
+    "d4_gate": "scoped",
+    "d4_transport_authority": "selected_not_granted",
+    "canonical_product_implementation_authority": "not_granted",
+    "wave4_implementation_authority": "not_granted",
+    "production_authority": "none",
+    "c3_numeric_topology_authority": "not_selected"
+  }
+}

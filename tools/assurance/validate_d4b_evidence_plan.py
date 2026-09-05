@@ -19,15 +19,15 @@ def _current_errors(state: dict) -> list[str]:
     required = d4c.get("required_evidence", [])
     errors: list[str] = []
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
-        errors.append("D4-C current sibling state must remain open/unselected")
+        errors.append("D4-C must remain uncredited in the historical projection and open/unselected in current promoted state")
     if d4c.get("evidence_completed") != [D4C_CREDIT]:
-        errors.append("D4-C current sibling credit must be exactly OPEN-EVT-008")
+        errors.append("D4-C must remain uncredited in the historical projection; current promoted credit must remain exactly OPEN-EVT-008")
     if d4c.get("evidence_remaining") != [x for x in required if x != D4C_CREDIT]:
-        errors.append("D4-C current sibling remaining evidence drift")
+        errors.append("D4-C must remain uncredited in the historical projection; current promoted remaining evidence drift")
     if tracks.get("D4-D", {}).get("evidence_completed") != []:
-        errors.append("D4-D must remain uncredited")
+        errors.append("D4-D candidate must remain unselected and uncredited")
     if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 13:
-        errors.append("D4-wide current evidence must remain 13/26")
+        errors.append("D4-wide evidence must remain 12/26 in the historical projection and exactly 13/26 in current promoted state")
     return errors
 
 

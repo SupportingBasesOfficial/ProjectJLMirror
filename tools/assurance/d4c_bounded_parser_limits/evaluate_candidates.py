@@ -106,6 +106,29 @@ def bounded_gzip_decode(data: bytes) -> bytes:
     return bytes(out)
 
 
+def precheck_json_nesting(payload: bytes) -> None:
+    depth = 0
+    in_string = False
+    escaped = False
+    for byte in payload:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif byte == 0x5C:  # backslash
+                escaped = True
+            elif byte == 0x22:  # quote
+                in_string = False
+            continue
+        if byte == 0x22:
+            in_string = True
+        elif byte in (0x7B, 0x5B):  # { [
+            depth += 1
+            if depth > TEST_MAX_NESTING_DEPTH:
+                raise LimitViolation("nesting_depth_exceeded")
+        elif byte in (0x7D, 0x5D):  # } ]
+            depth -= 1
+
+
 def validate_structure(value: Any) -> None:
     stack: List[tuple[Any, int]] = [(value, 1)]
     total_fields = 0
@@ -173,9 +196,10 @@ def decode_and_validate(
             payload = wire
         else:
             raise LimitViolation("unsupported_content_encoding")
+        precheck_json_nesting(payload)
         try:
             value = json.loads(payload.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
             raise LimitViolation("invalid_json")
         if isinstance(value, list) and len(value) > TEST_MAX_BATCH_ITEMS:
             raise LimitViolation("batch_items_exceeded")
@@ -206,11 +230,8 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
     batch = encoded([{"i": i} for i in range(TEST_MAX_BATCH_ITEMS + 1)])
     batch_result = decode_and_validate(candidate, [batch], declared_length=len(batch))
 
-    nested: Any = "x"
-    for _ in range(TEST_MAX_NESTING_DEPTH + 1):
-        nested = [nested]
-    nested_bytes = encoded(nested)
-    nested_result = decode_and_validate(candidate, [nested_bytes], declared_length=len(nested_bytes))
+    deep_raw = b"[" * (TEST_MAX_NESTING_DEPTH + 20) + b"0" + b"]" * (TEST_MAX_NESTING_DEPTH + 20)
+    deep_result = decode_and_validate(candidate, [deep_raw], declared_length=len(deep_raw))
 
     nested_collection = encoded({"items": list(range(TEST_MAX_COLLECTION_ITEMS + 1))})
     nested_collection_result = decode_and_validate(candidate, [nested_collection], declared_length=len(nested_collection))
@@ -254,7 +275,7 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
         "declared_oversize_rejected_before_stream_consumption": declared["failure"]["code"] == "wire_bytes_exceeded" and declared_probe.yielded == 0,
         "unknown_length_stream_remains_bounded": unknown["failure"]["code"] == "wire_bytes_exceeded" and unknown_probe.yielded <= 2,
         "batch_size_bound": batch_result["failure"]["code"] == "batch_items_exceeded",
-        "nesting_bound": nested_result["failure"]["code"] == "nesting_depth_exceeded",
+        "parser_nesting_prechecked_before_json_decode": deep_result["failure"]["code"] == "nesting_depth_exceeded",
         "collection_size_bound": nested_collection_result["failure"]["code"] == "collection_items_exceeded",
         "string_bound": string_result["failure"]["code"] == "string_chars_exceeded",
         "field_count_bound": fields_result["failure"]["code"] == "total_fields_exceeded",

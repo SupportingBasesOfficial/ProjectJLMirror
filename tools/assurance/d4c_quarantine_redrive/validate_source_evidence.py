@@ -10,8 +10,9 @@ from evaluate_candidates import CANDIDATES, evaluate_all
 SOURCE = Path("implementation/d4-eventing-async/source-evidence/d4-c-quarantine-redrive-source.json")
 PLAN = Path("implementation/d4-eventing-async/d4-c-candidate-evaluation-plan.json")
 STATE = Path("implementation/d4-eventing-async/state-manifest.json")
-CREDIT = "ack_after_durable_responsibility_and_lease_ambiguity"
+CREDIT_008 = "ack_after_durable_responsibility_and_lease_ambiguity"
 EVIDENCE = "quarantine_redrive_current_authority_and_dedup_preservation"
+CURRENT_CREDITS = [CREDIT_008, EVIDENCE]
 EXPECTED_ASSERTIONS = [
     "all_three_concrete_candidate_classes_share_one_platform_quarantine_process_truth",
     "retry_budget_exhaustion_transitions_to_governed_quarantine_without_inferring_production_retry_numerics",
@@ -30,6 +31,7 @@ EXPECTED_ASSERTIONS = [
     "broker_replacement_preserves_platform_quarantine_record_identity_and_redrive_history",
     "candidate_source_evidence_does_not_select_a_candidate_broker_dlq_or_production_topology",
 ]
+# Immutable source-time boundary: this source package was produced while the ledger was 1/9.
 EXPECTED_NON_AUTHORITY = {
     "d4c_mechanism_selection": "not_selected",
     "d4c_content_equivalence_profile_selection": "not_selected",
@@ -136,11 +138,12 @@ def validate(root: Path) -> list[str]:
         errors.append("D4-B accepted state drift")
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
         errors.append("D4-C selection leakage")
-    if d4c.get("evidence_completed") != [CREDIT] or len(d4c.get("evidence_remaining", [])) != 8 or EVIDENCE not in d4c.get("evidence_remaining", []):
-        errors.append("D4-C current 1/9 ledger drift or OPEN-EVT-009 precredited")
+    expected_remaining = [x for x in d4c.get("required_evidence", []) if x not in CURRENT_CREDITS]
+    if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining:
+        errors.append("D4-C current 2/9 ledger drift")
     if d4d.get("candidate") is not None or d4d.get("evidence_completed") != []:
         errors.append("D4-D state leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 13:
+    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 14:
         errors.append("D4-wide evidence count drift")
     for key, expected in {
         "gate_state": "scoped",
@@ -162,7 +165,7 @@ def main() -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_009_SOURCE_ERROR: {error}")
         return 1
-    print("d4c_quarantine_redrive_source=PASS candidates=3 tenant_authority_distinct_from_message_identity=true tenant_scoped_current_authority=true non_regressive_quarantine=true source_auto_credit=false current_d4c=1_of_9 open_evt_009_uncredited=true d4wide=13_of_26 selection=not_selected")
+    print("d4c_quarantine_redrive_source=PASS candidates=3 source_snapshot_nonpromoting=true current_d4c=2_of_9 current_d4wide=14_of_26 selection=not_selected")
     return 0
 
 

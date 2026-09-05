@@ -31,6 +31,8 @@
     "all_three_concrete_candidate_classes_share_one_platform_quarantine_process_truth",
     "retry_budget_exhaustion_transitions_to_governed_quarantine_without_inferring_production_retry_numerics",
     "retry_count_cannot_regress_retry_budget_cannot_rebind_and_quarantine_cannot_be_reopened_by_redelivery",
+    "tenant_authority_context_is_distinct_from_consumer_message_identity_scope",
+    "tenant_authority_context_cannot_be_rebound_for_the_same_scoped_message_identity",
     "redrive_without_current_privileged_authority_is_rejected",
     "redrive_authority_is_current_tenant_scoped_and_classification_scoped",
     "cross_tenant_redrive_authority_is_rejected",

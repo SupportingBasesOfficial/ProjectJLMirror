@@ -43,63 +43,32 @@ def behavior_falsification() -> None:
         'ambiguous logical contract identity delimiter',
     )
 
-    unreviewed = evaluator.ContractRevision(
-        identity=v1.identity,
-        revision='unreviewed-r9',
-        payload_schema=v1.payload_schema,
-        semantic_manifest=v1.semantic_manifest,
-        historical_metadata=v1.historical_metadata,
-        reviewed_provenance='git:not-reviewed',
-    )
-    expect_violation(
-        lambda: profile.registry.publish(reviewer, unreviewed, 'subject', '9', 'vendor-9'),
-        'unreviewed registry authority',
-    )
+    unreviewed = evaluator.ContractRevision(v1.identity, 'unreviewed-r9', v1.payload_schema, v1.semantic_manifest, v1.historical_metadata, 'git:not-reviewed')
+    expect_violation(lambda: profile.registry.publish(reviewer, unreviewed, 'subject', '9', 'vendor-9'), 'unreviewed registry authority')
 
-    forged_provenance = evaluator.ContractRevision(
-        identity=v1.identity,
-        revision=v1.revision,
-        payload_schema=v1.payload_schema,
-        semantic_manifest=v1.semantic_manifest,
-        historical_metadata=v1.historical_metadata,
-        reviewed_provenance='git:forged-provenance',
-    )
+    forged_provenance = evaluator.ContractRevision(v1.identity, v1.revision, v1.payload_schema, v1.semantic_manifest, v1.historical_metadata, 'git:forged-provenance')
     assert forged_provenance.reviewed_content_sha256 != v1.reviewed_content_sha256
-    expect_violation(
-        lambda: profile.registry.publish(reviewer, forged_provenance, 'subject', '10', 'vendor-forged'),
-        'forged reviewed provenance',
-    )
+    expect_violation(lambda: profile.registry.publish(reviewer, forged_provenance, 'subject', '10', 'vendor-forged'), 'forged reviewed provenance')
 
-    reformatted = evaluator.ContractRevision(
-        identity=v1.identity,
-        revision='format-only',
-        payload_schema=v1.payload_schema,
-        semantic_manifest='{ "delivery": "at_least_once", "tenant_authority": "tenant_id", "event_identity": "message_id" }',
-        historical_metadata=v1.historical_metadata,
-        reviewed_provenance='git:format-only',
-    )
+    reformatted = evaluator.ContractRevision(v1.identity, 'format-only', v1.payload_schema, '{ "delivery": "at_least_once", "tenant_authority": "tenant_id", "event_identity": "message_id" }', v1.historical_metadata, 'git:format-only')
     assert reformatted.semantic_manifest_sha256 == v1.semantic_manifest_sha256
-    duplicate_manifest = evaluator.ContractRevision(
-        identity=v1.identity,
-        revision='duplicate-semantic',
-        payload_schema=v1.payload_schema,
-        semantic_manifest='{"tenant_authority":"tenant_id","tenant_authority":"other"}',
-        historical_metadata=v1.historical_metadata,
-        reviewed_provenance='git:duplicate-semantic',
-    )
+
+    numeric_1 = evaluator.ContractRevision(v1.identity, 'n1', v1.payload_schema, '{"threshold":1}', v1.historical_metadata, 'git:n1')
+    numeric_10 = evaluator.ContractRevision(v1.identity, 'n10', v1.payload_schema, '{"threshold":1.0}', v1.historical_metadata, 'git:n10')
+    numeric_1e0 = evaluator.ContractRevision(v1.identity, 'n1e0', v1.payload_schema, '{"threshold":1e0}', v1.historical_metadata, 'git:n1e0')
+    assert numeric_1.semantic_manifest_sha256 == numeric_10.semantic_manifest_sha256 == numeric_1e0.semantic_manifest_sha256
+
+    duplicate_manifest = evaluator.ContractRevision(v1.identity, 'duplicate-semantic', v1.payload_schema, '{"tenant_authority":"tenant_id","tenant_authority":"other"}', v1.historical_metadata, 'git:duplicate-semantic')
     expect_violation(lambda: profile.history.commit(reviewer, duplicate_manifest), 'duplicate semantic manifest member')
+
+    frame_a = evaluator.ContractRevision(v1.identity, 'frame', v1.payload_schema, v1.semantic_manifest, evaluator.HistoricalMetadata('reader', 'upcaster', 'c\np'), 'q')
+    frame_b = evaluator.ContractRevision(v1.identity, 'frame', v1.payload_schema, v1.semantic_manifest, evaluator.HistoricalMetadata('reader', 'upcaster', 'c'), 'p\nq')
+    assert frame_a.reviewed_content_sha256 != frame_b.reviewed_content_sha256
 
     assert v1.payload_schema_sha256 == v2.payload_schema_sha256
     assert evaluator.compatibility(v1, v2) == 'semantic_review_required_breaking_until_proven_otherwise'
 
-    rebound = evaluator.ContractRevision(
-        identity=v1.identity,
-        revision=v1.revision,
-        payload_schema=v1.payload_schema,
-        semantic_manifest='{"tenant_authority":"provider_tenant"}',
-        historical_metadata=v1.historical_metadata,
-        reviewed_provenance='git:rebind',
-    )
+    rebound = evaluator.ContractRevision(v1.identity, v1.revision, v1.payload_schema, '{"tenant_authority":"provider_tenant"}', v1.historical_metadata, 'git:rebind')
     expect_violation(lambda: profile.history.commit(reviewer, rebound), 'history overwrite')
 
     anonymous = evaluator.Principal('', (), authenticated=False)
@@ -107,17 +76,11 @@ def behavior_falsification() -> None:
     expect_violation(lambda: profile.history.read(anonymous, v1.identity, v1.revision), 'anonymous direct history read')
     expect_violation(lambda: profile.history.read(no_role, v1.identity, v1.revision), 'unauthorized direct history read')
     expect_violation(lambda: profile.resolve(anonymous, v1.identity, v1.revision), 'anonymous catalog read')
-    expect_violation(
-        lambda: profile.registry.publish(reader, v1, 'subject', '20', 'vendor-20'),
-        'reader registry publish',
-    )
+    expect_violation(lambda: profile.registry.publish(reader, v1, 'subject', '20', 'vendor-20'), 'reader registry publish')
 
     original = profile.registry.publish(reviewer, v1, 'event-created', '17', 'vendor-abc')
     assert original == profile.registry.mapping(reader, v1)
-    expect_violation(
-        lambda: profile.registry.publish(reviewer, v1, 'changed-subject', '99', 'changed-vendor'),
-        'registry mapping provenance overwrite',
-    )
+    expect_violation(lambda: profile.registry.publish(reviewer, v1, 'changed-subject', '99', 'changed-vendor'), 'registry mapping provenance overwrite')
 
     before = profile.resolve(reader, v1.identity, v1.revision).reviewed_content_sha256
     profile.registry.available = False
@@ -159,7 +122,9 @@ def validator_falsification() -> None:
         ('candidate promotion', lambda m: m['candidate_results'].__setitem__('reviewed_git_catalog', 'selected')),
         ('proof weakening', lambda m: m.__setitem__('required_proofs', m['required_proofs'][:-1])),
         ('provenance assertion weakening', lambda m: m.__setitem__('source_assertions', [x for x in m['source_assertions'] if not x.startswith('reviewed_provenance_is_bound_')])),
+        ('digest frame assertion weakening', lambda m: m.__setitem__('source_assertions', [x for x in m['source_assertions'] if not x.startswith('reviewed_content_digest_uses_')])),
         ('semantic canonical assertion weakening', lambda m: m.__setitem__('source_assertions', [x for x in m['source_assertions'] if not x.startswith('semantic_manifest_digest_uses_')])),
+        ('semantic numeric assertion weakening', lambda m: m.__setitem__('source_assertions', [x for x in m['source_assertions'] if not x.startswith('semantic_manifest_numeric_equivalence_')])),
         ('mapping history assertion weakening', lambda m: m.__setitem__('source_assertions', [x for x in m['source_assertions'] if not x.startswith('registry_mapping_metadata_is_')])),
         ('product authority', lambda m: m['non_authority'].__setitem__('canonical_product_implementation_authority', 'granted')),
         ('wire coupling', lambda m: m['non_authority'].__setitem__('d4b_wire_selection', 'protobuf_profile')),
@@ -169,8 +134,7 @@ def validator_falsification() -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             prepare_tree(root)
-            errors = mutate_manifest(root, mutation)
-            if not errors:
+            if not mutate_manifest(root, mutation):
                 raise AssertionError(f'validator did not reject {label}')
 
 
@@ -178,12 +142,11 @@ def main() -> None:
     behavior_falsification()
     validator_falsification()
     print(
-        'd4b_catalog_tooling_falsification=PASS '
-        'identity_delimiter_collision=blocked unreviewed_publish=blocked forged_provenance=blocked '
-        'semantic_formatting=canonical duplicate_semantic_member=blocked semantic_only_break=detected '
-        'history_rebind=blocked direct_history_authz=blocked mapping_rebind=blocked '
-        'outage_reinterpretation=blocked product_identity_coupling=blocked '
-        'selection_credit_authority_coupling=blocked'
+        'd4b_catalog_tooling_falsification=PASS identity_delimiter_collision=blocked '
+        'unreviewed_publish=blocked forged_provenance=blocked digest_frame_alias=blocked '
+        'semantic_formatting=canonical semantic_numeric_spellings=canonical duplicate_semantic_member=blocked '
+        'semantic_only_break=detected history_rebind=blocked direct_history_authz=blocked mapping_rebind=blocked '
+        'outage_reinterpretation=blocked product_identity_coupling=blocked selection_credit_authority_coupling=blocked'
     )
 
 

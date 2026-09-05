@@ -28,10 +28,12 @@ EXPECTED_ASSERTIONS = [
     "premature_ack_or_checkpoint_before_durable_responsibility_is_rejected",
     "broker_ack_or_checkpoint_progress_without_effect_completion_does_not_report_business_effect_success",
     "lease_expiry_preserves_durable_receipt_and_is_processed_as_ambiguous_redelivery",
+    "lease_expiry_takeover_requires_a_strictly_new_fence_epoch",
     "equivalent_redelivery_after_effect_completion_is_idempotent_and_produces_one_business_effect",
     "offset_rewind_with_missing_equivalence_authority_fails_closed_as_uncertainty",
     "same_scoped_identity_with_changed_immutable_content_is_rejected_as_integrity_failure",
     "stale_claim_owner_is_fenced_after_higher_epoch_takeover",
+    "process_restart_reloads_durable_receipt_equivalence_fence_and_effect_state_before_redelivery",
     "crash_after_durable_responsibility_before_effect_or_ack_recovers_under_a_new_fenced_owner",
     "crash_after_effect_completion_before_ack_redelivers_without_repeating_the_business_effect",
     "candidate_source_evidence_does_not_select_a_candidate_or_broker_specific_business_truth",
@@ -178,7 +180,7 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}")
         return 1
-    print("d4c_ack_lease_checkpoint_source=PASS candidates=3 d4c=0_of_9 d4wide=12_of_26 selection=not_selected auto_credit=false")
+    print("d4c_ack_lease_checkpoint_source=PASS candidates=3 durable_restart=true strict_epoch_fence=true d4c=0_of_9 d4wide=12_of_26 selection=not_selected auto_credit=false")
     return 0
 
 

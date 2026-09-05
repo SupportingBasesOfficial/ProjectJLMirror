@@ -46,6 +46,32 @@ class RuntimeSemanticsTests(unittest.TestCase):
         with self.assertRaises(IntegrityFailure):
             store.claim(identity, {"value": 2}, "w2", 2)
 
+    def test_equivalence_fixture_covers_envelope_and_payload_semantics(self):
+        store = DurableConsumerAuthority()
+        identity: Identity = ("consumer.a", "tenant:t1/resource:r1", "m1")
+        content = {
+            "envelope": {
+                "event_type": "resource.updated",
+                "contract_version": "7",
+                "occurred_at": "2026-09-05T05:00:00Z",
+                "source_generation": "generation-a",
+            },
+            "payload": {"resource_id": "r1", "value": 1},
+        }
+        store.claim(identity, content, "w1", 1)
+        changed_envelope = {
+            **content,
+            "envelope": {**content["envelope"], "contract_version": "8"},
+        }
+        changed_payload = {
+            **content,
+            "payload": {**content["payload"], "value": 2},
+        }
+        with self.assertRaises(IntegrityFailure):
+            store.claim(identity, changed_envelope, "w1", 1)
+        with self.assertRaises(IntegrityFailure):
+            store.claim(identity, changed_payload, "w1", 1)
+
     def test_missing_equivalence_authority_is_uncertainty_not_duplicate(self):
         store = DurableConsumerAuthority()
         identity: Identity = ("consumer.a", "tenant:t1/resource:r1", "m1")

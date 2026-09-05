@@ -6,6 +6,7 @@
   "promotion_base": "69ad19e6129898e7fdf7e9d57e40a841cb0d4ef5",
   "source_pr": 72,
   "source_reviewed_head": "02063da13a4a93fe6bc67521e4a7e4e0d4999045",
+  "source_merge_commit": "69ad19e6129898e7fdf7e9d57e40a841cb0d4ef5",
   "source_review": {
     "review_id": 5120040394,
     "review_mode": "independent_exact_head_adversarial_clean_after_exact_head_ci",

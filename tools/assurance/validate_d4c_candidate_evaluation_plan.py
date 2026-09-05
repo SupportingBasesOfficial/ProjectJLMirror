@@ -63,16 +63,92 @@ EXPECTED_CANDIDATES = {
         "hybrid_generation_manifest_plus_multi_store_reconciler_profile", "equivalent_reviewed_profile",
     },
 }
-EXPECTED_PROOF_COUNTS = {
-    "ack_visibility_lease_and_checkpoint": 7,
-    "quarantine_and_redrive": 7,
-    "bounded_message_payload_batch_and_compression": 7,
-    "scoped_content_equivalence_authority": 9,
-    "outbox_claim_dispatch_and_ack_ambiguity": 7,
-    "producer_source_generation": 7,
-    "privileged_replay_and_event_history": 7,
-    "historical_reader_and_upcaster": 7,
-    "recovery_generation_reconciliation_and_activation": 9,
+EXPECTED_PROOFS = {
+    "ack_visibility_lease_and_checkpoint": {
+        "ack_or_checkpoint_never_precedes_durable_consumer_responsibility",
+        "lease_or_visibility_expiry_is_treated_as_ambiguity_not_effect_absence",
+        "broker_progress_is_never_business_effect_truth",
+        "redelivery_or_offset_rewind_remains_safe_through_inbox_effect_idempotency",
+        "same_scoped_identity_with_conflicting_immutable_content_fails_closed",
+        "claim_ownership_and_takeover_are_fenced_against_concurrent_effect_execution",
+        "crash_between_effect_responsibility_and_broker_ack_recovers_without_semantic_loss",
+    },
+    "quarantine_and_redrive": {
+        "platform_quarantine_meaning_does_not_depend_on_broker_native_dlq_semantics",
+        "bounded_retry_exhaustion_reaches_governed_quarantine",
+        "redrive_requires_current_privileged_authority_and_is_audited",
+        "redrive_cannot_bypass_inbox_dedup_equivalence_or_reconciliation",
+        "same_identity_different_content_is_integrity_failure_not_benign_duplicate",
+        "confidential_payload_and_equivalence_evidence_access_is_classification_scoped",
+        "broker_replacement_does_not_rewrite_quarantine_process_truth",
+    },
+    "bounded_message_payload_batch_and_compression": {
+        "message_payload_and_batch_sizes_are_bounded_before_unbounded_allocation",
+        "nesting_string_collection_and_field_counts_are_bounded",
+        "decompression_work_and_output_are_bounded",
+        "parser_recursion_and_cpu_amplification_fail_closed",
+        "large_artifacts_and_raw_telemetry_are_referenced_or_routed_to_specialized_planes",
+        "transport_limits_cannot_silently_weaken_contract_limits",
+        "limit_failures_are_deterministic_observable_and_non_retry_amplifying",
+    },
+    "scoped_content_equivalence_authority": {
+        "equivalence_is_evaluated_only_after_trusted_consumer_contract_and_message_scope_identity",
+        "every_immutable_semantic_field_required_for_same_id_meaning_is_covered",
+        "same_scoped_id_with_different_immutable_content_fails_closed",
+        "comparison_profile_and_version_are_stable_and_historically_recoverable",
+        "low_entropy_confidential_values_do_not_create_dictionary_or_cross_scope_equality_oracles",
+        "comparison_evidence_is_never_authorization_routing_ordering_or_bearer_authority",
+        "payload_erasure_cannot_remove_last_required_equivalence_authority_within_supported_horizon",
+        "missing_or_unverifiable_equivalence_evidence_is_uncertainty_not_duplicate_success",
+        "verification_work_is_bounded_and_access_controlled",
+    },
+    "outbox_claim_dispatch_and_ack_ambiguity": {
+        "authoritative_mutation_and_required_outbox_fact_commit_atomically",
+        "claim_takeover_is_fenced_and_does_not_create_concurrent_semantic_owners",
+        "retry_workers_do_not_rewrite_immutable_fact_meaning",
+        "broker_ack_ambiguity_retries_same_message_identity_and_semantic_content",
+        "broker_outage_preserves_committed_backlog_without_loss",
+        "dispatcher_restart_and_recovery_preserve_stable_message_identity",
+        "cleanup_never_removes_the_last_recovery_authority_before_safe_horizon",
+    },
+    "producer_source_generation": {
+        "current_source_generation_is_explicitly_validated_at_effectful_admission",
+        "retired_generation_cannot_regain_current_authority",
+        "restore_or_failover_cannot_resurrect_retired_source_authority",
+        "historical_fact_identity_remains_distinct_from_current_source_authority",
+        "tenant_logical_identity_is_independent_of_generation_and_placement",
+        "generation_comparison_rule_is_unambiguous_and_does_not_infer_ungranted_ordering_semantics",
+        "provider_or_broker_generation_is_not_platform_source_generation_by_implication",
+    },
+    "privileged_replay_and_event_history": {
+        "replay_is_privileged_audited_bounded_and_currently_authorized",
+        "replayed_message_preserves_original_identity_and_immutable_semantic_meaning",
+        "replay_retains_or_recovers_required_equivalence_and_historical_verifier_authority",
+        "irreversible_effects_cannot_be_repeated_by_disabling_dedup",
+        "projection_rebuild_uses_isolated_generation_or_target",
+        "replay_cannot_exceed_safe_schema_data_dedup_equivalence_and_recovery_evidence",
+        "history_storage_product_identity_does_not_become_message_or_contract_identity",
+    },
+    "historical_reader_and_upcaster": {
+        "historical_semantic_meaning_is_immutable",
+        "upcasting_cannot_fabricate_newer_historical_facts",
+        "source_message_identity_tenant_and_occurrence_semantics_remain_traceable",
+        "supported_retained_history_remains_interpretable",
+        "equivalence_evidence_and_comparison_profile_semantics_are_preserved_or_deterministically_mapped",
+        "reader_or_upcaster_version_is_explicit_and_historically_recoverable",
+        "dynamic_untrusted_code_or_schema_execution_is_not_required_for_historical_read",
+    },
+    "recovery_generation_reconciliation_and_activation": {
+        "restore_generation_and_fence_boundary_are_explicit_and_durable",
+        "r_f_window_inventory_reconciles_broker_history_inbox_outbox_equivalence_and_external_effect_evidence",
+        "missing_restored_state_is_uncertainty_not_absence",
+        "missing_or_stale_historical_comparison_authority_blocks_duplicate_sensitive_effects",
+        "stale_producer_replay_authorization_and_destination_generations_do_not_revive",
+        "obsolete_restored_verifier_or_profile_cannot_become_current_authority_for_unrelated_scope",
+        "offset_outbox_or_inbox_state_cannot_override_surviving_external_audit_effect_or_equivalence_evidence",
+        "effectful_async_activation_is_fail_closed_until_required_reconciliation_is_proven",
+        "reconciliation_results_are_generation_scoped_auditable_and_reproducible",
+    },
 }
 EXPECTED_CROSS = {
     "all_nine_axes_are_independently_selectable_and_no_candidate_choice_implies_another_axis_choice",
@@ -125,7 +201,13 @@ def load(root: Path, path: Path) -> dict:
 
 
 def exact_list(value: object, expected: set[str]) -> bool:
-    return isinstance(value, list) and len(value) == len(expected) and len(set(value)) == len(value) and set(value) == expected
+    return (
+        isinstance(value, list)
+        and all(type(item) is str for item in value)
+        and len(value) == len(expected)
+        and len(set(value)) == len(value)
+        and set(value) == expected
+    )
 
 
 def validate(root: Path) -> list[str]:
@@ -164,10 +246,8 @@ def validate(root: Path) -> list[str]:
                 continue
             req(axis.get("decision") == decision, f"{name} decision binding drift")
             req(axis.get("evidence_id") == evidence_id, f"{name} evidence binding drift")
-            candidates = axis.get("candidate_classes")
-            req(exact_list(candidates, EXPECTED_CANDIDATES[name]), f"{name} candidate class inventory drift")
-            proofs = axis.get("must_prove")
-            req(isinstance(proofs, list) and len(proofs) == EXPECTED_PROOF_COUNTS[name] and len(set(proofs)) == len(proofs) and all(isinstance(x, str) and x for x in proofs), f"{name} proof inventory drift")
+            req(exact_list(axis.get("candidate_classes"), EXPECTED_CANDIDATES[name]), f"{name} candidate class inventory drift")
+            req(exact_list(axis.get("must_prove"), EXPECTED_PROOFS[name]), f"{name} exact proof inventory drift")
             if isinstance(axis.get("evidence_id"), str):
                 seen_evidence.add(axis["evidence_id"])
         req(len(seen_evidence) == 9, "D4-C evidence IDs must be one-to-one with axes")

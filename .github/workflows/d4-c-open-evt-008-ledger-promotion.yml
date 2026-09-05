@@ -88,6 +88,7 @@ jobs:
             'SOURCE_PR': p['source_pr'],
             'SOURCE_REVIEW_ID': p['source_review']['review_id'],
             'SOURCE_HEAD': p['source_reviewed_head'],
+            'SOURCE_MERGE': p['source_merge_commit'],
             'WORKFLOW_ID': w['workflow_id'],
             'WORKFLOW_PATH': w['workflow_path'],
             'SOURCE_HEAD_BRANCH': w['source_head_branch'],
@@ -111,7 +112,7 @@ jobs:
           rm -rf /tmp/source-artifact && mkdir /tmp/source-artifact
           unzip -q /tmp/source.zip -d /tmp/source-artifact
           python3 - <<'PY'
-          import hashlib, json, os
+          import hashlib, json
           from pathlib import Path
           p = json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-008-promotion-v1.json').read_text())
           source = Path(p['source_manifest']['path'])
@@ -121,8 +122,9 @@ jobs:
           source_pr = json.load(open('/tmp/source-pr.json'))
           source_review = json.load(open('/tmp/source-review.json'))
           w = p['source_workflow']
-          assert source_pr['number'] == 72 and source_pr['state'] == 'closed' and source_pr.get('merged_at') is not None
+          assert source_pr['number'] == p['source_pr'] and source_pr['state'] == 'closed' and source_pr.get('merged_at') is not None
           assert source_pr['head']['sha'] == p['source_reviewed_head'] and source_pr['head']['ref'] == w['source_head_branch']
+          assert source_pr['merge_commit_sha'] == p['source_merge_commit'] == p['promotion_base']
           assert source_review['id'] == p['source_review']['review_id']
           assert source_review['commit_id'] == p['source_reviewed_head'] and source_review['state'] == 'COMMENTED'
           assert run['id'] == w['run_id'] and run['workflow_id'] == w['workflow_id'] and run['path'] == w['workflow_path']
@@ -148,7 +150,7 @@ jobs:
           digest = hashlib.sha256(source.read_bytes()).hexdigest()
           assert digest == p['source_manifest']['sha256']
           assert provenance['file_sha256'][str(source)] == digest
-          print('d4c_promotion_live_admission=PASS source_pr=merged review=exact_head run=success job=exact artifact=exact provenance=exact source_manifest=exact source_auto_credit=false selection=not_selected')
+          print('d4c_promotion_live_admission=PASS source_pr=merged source_merge=exact review=exact_head run=success job=exact artifact=exact provenance=exact source_manifest=exact source_auto_credit=false selection=not_selected')
           PY
 
       - name: Assert promotion grants only one evidence credit

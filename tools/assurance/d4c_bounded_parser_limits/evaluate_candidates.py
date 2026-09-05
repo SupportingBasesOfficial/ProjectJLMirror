@@ -83,20 +83,23 @@ def bounded_gzip_decode(data: bytes) -> bytes:
     decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
     out = bytearray()
     pending = data
-    while pending:
+    try:
+        while pending:
+            remaining = TEST_MAX_DECOMPRESSED_BYTES - len(out)
+            if remaining < 0:
+                raise LimitViolation("decompressed_bytes_exceeded")
+            piece = decoder.decompress(pending, remaining + 1)
+            out.extend(piece)
+            if len(out) > TEST_MAX_DECOMPRESSED_BYTES:
+                raise LimitViolation("decompressed_bytes_exceeded")
+            pending = decoder.unconsumed_tail
+            if not pending:
+                break
         remaining = TEST_MAX_DECOMPRESSED_BYTES - len(out)
-        if remaining < 0:
-            raise LimitViolation("decompressed_bytes_exceeded")
-        piece = decoder.decompress(pending, remaining + 1)
-        out.extend(piece)
-        if len(out) > TEST_MAX_DECOMPRESSED_BYTES:
-            raise LimitViolation("decompressed_bytes_exceeded")
-        pending = decoder.unconsumed_tail
-        if not pending:
-            break
-    remaining = TEST_MAX_DECOMPRESSED_BYTES - len(out)
-    tail = decoder.flush(remaining + 1)
-    out.extend(tail)
+        tail = decoder.flush(remaining + 1)
+        out.extend(tail)
+    except zlib.error as exc:
+        raise LimitViolation("invalid_compressed_payload") from exc
     if len(out) > TEST_MAX_DECOMPRESSED_BYTES:
         raise LimitViolation("decompressed_bytes_exceeded")
     if not decoder.eof:
@@ -114,19 +117,51 @@ def precheck_json_nesting(payload: bytes) -> None:
         if in_string:
             if escaped:
                 escaped = False
-            elif byte == 0x5C:  # backslash
+            elif byte == 0x5C:
                 escaped = True
-            elif byte == 0x22:  # quote
+            elif byte == 0x22:
                 in_string = False
             continue
         if byte == 0x22:
             in_string = True
-        elif byte in (0x7B, 0x5B):  # { [
+        elif byte in (0x7B, 0x5B):
             depth += 1
             if depth > TEST_MAX_NESTING_DEPTH:
                 raise LimitViolation("nesting_depth_exceeded")
-        elif byte in (0x7D, 0x5D):  # } ]
+        elif byte in (0x7D, 0x5D):
             depth -= 1
+
+
+def strict_json_loads(payload: bytes) -> Any:
+    parsed_fields = 0
+
+    def strict_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        nonlocal parsed_fields
+        if len(pairs) > TEST_MAX_COLLECTION_ITEMS:
+            raise LimitViolation("collection_items_exceeded")
+        parsed_fields += len(pairs)
+        if parsed_fields > TEST_MAX_TOTAL_FIELDS:
+            raise LimitViolation("total_fields_exceeded")
+        out: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in out:
+                raise LimitViolation("duplicate_json_member")
+            if len(key) > TEST_MAX_STRING_CHARS:
+                raise LimitViolation("field_name_invalid_or_exceeded")
+            out[key] = value
+        return out
+
+    def reject_constant(_: str) -> None:
+        raise LimitViolation("invalid_json_constant")
+
+    try:
+        return json.loads(
+            payload.decode("utf-8"),
+            object_pairs_hook=strict_pairs,
+            parse_constant=reject_constant,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
+        raise LimitViolation("invalid_json")
 
 
 def validate_structure(value: Any) -> None:
@@ -147,7 +182,7 @@ def validate_structure(value: Any) -> None:
             if total_fields > TEST_MAX_TOTAL_FIELDS:
                 raise LimitViolation("total_fields_exceeded")
             for key, child in node.items():
-                if not isinstance(key, str) or len(key) > TEST_MAX_STRING_CHARS:
+                if len(key) > TEST_MAX_STRING_CHARS:
                     raise LimitViolation("field_name_invalid_or_exceeded")
                 stack.append((child, depth + 1))
             continue
@@ -197,10 +232,7 @@ def decode_and_validate(
         else:
             raise LimitViolation("unsupported_content_encoding")
         precheck_json_nesting(payload)
-        try:
-            value = json.loads(payload.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
-            raise LimitViolation("invalid_json")
+        value = strict_json_loads(payload)
         if isinstance(value, list) and len(value) > TEST_MAX_BATCH_ITEMS:
             raise LimitViolation("batch_items_exceeded")
         validate_structure(value)
@@ -247,13 +279,20 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
     many_fields = encoded(many_fields_value)
     fields_result = decode_and_validate(candidate, [many_fields], declared_length=len(many_fields))
 
+    duplicate_members = b"{" + b",".join([b'\"dup\":0'] * (TEST_MAX_TOTAL_FIELDS + 1)) + b"}"
+    duplicate_result = decode_and_validate(candidate, [duplicate_members], declared_length=len(duplicate_members))
+
     bomb_plain = encoded({"data": "x" * (TEST_MAX_DECOMPRESSED_BYTES + 512)})
     bomb = gzip.compress(bomb_plain)
     bomb_result = decode_and_validate(candidate, [bomb], declared_length=len(bomb), encoding="gzip")
 
+    malformed_gzip = b"not-a-gzip-stream"
+    malformed_result = decode_and_validate(candidate, [malformed_gzip], declared_length=len(malformed_gzip), encoding="gzip")
+
     first_member = gzip.compress(encoded({"value": "ok"}))
-    second_member = gzip.compress(encoded({"value": "smuggled"}))
-    concatenated_result = decode_and_validate(candidate, [first_member + second_member], declared_length=len(first_member + second_member), encoding="gzip")
+    second_member = gzip.compress(b"x" * (TEST_MAX_DECOMPRESSED_BYTES + 512))
+    concatenated = first_member + second_member
+    concatenated_result = decode_and_validate(candidate, [concatenated], declared_length=len(concatenated), encoding="gzip")
 
     artifact_inline = encoded({"kind": "artifact", "inline": "abc"})
     artifact_inline_result = decode_and_validate(candidate, [artifact_inline], declared_length=len(artifact_inline))
@@ -279,7 +318,9 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
         "collection_size_bound": nested_collection_result["failure"]["code"] == "collection_items_exceeded",
         "string_bound": string_result["failure"]["code"] == "string_chars_exceeded",
         "field_count_bound": fields_result["failure"]["code"] == "total_fields_exceeded",
+        "duplicate_json_members_rejected_before_collapse": duplicate_result["failure"]["code"] in {"duplicate_json_member", "total_fields_exceeded"},
         "decompression_output_bound": bomb_result["failure"]["code"] == "decompressed_bytes_exceeded",
+        "malformed_gzip_is_bounded_failure": malformed_result["failure"]["code"] == "invalid_compressed_payload" and malformed_result["failure"]["retryable"] is False,
         "compressed_trailing_member_rejected": concatenated_result["failure"]["code"] == "compressed_trailing_data",
         "artifact_reference_required_at_any_depth": artifact_inline_result["failure"]["code"] == "artifact_reference_required" and nested_artifact_inline_result["failure"]["code"] == "artifact_reference_required" and artifact_ref_result["accepted"] is True,
         "raw_telemetry_reference_supported_at_any_depth": telemetry_ref_result["accepted"] is True,

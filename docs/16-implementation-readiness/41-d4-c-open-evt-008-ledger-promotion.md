@@ -35,6 +35,20 @@ After this transition:
 
 Only `ack_after_durable_responsibility_and_lease_ambiguity` is credited.
 
+## Temporal interpretation of the candidate-evaluation baseline
+
+The accepted PR #71 candidate-evaluation plan is preserved as an immutable **baseline snapshot** of the moment when D4-C had `0/9` promoted evidence. Its historical cross-axis statement that existing D4-C credit was zero is therefore interpreted at that baseline point in time; it is not a prohibition on later governed promotions.
+
+The live invariant after this transition is stricter and temporal:
+
+- candidate-evaluation runs remain non-promoting and may never auto-credit the D4-C ledger;
+- source-evidence runs remain non-promoting and keep `current_run_auto_credit=false` and `ledger_credit=[]`;
+- only a separately reviewed promotion transition, bound to exact source HEAD/review/run/job/artifact provenance, may change `evidence_completed`;
+- historical validators remain byte-preserved as snapshot oracles and are evaluated against their historical sibling-ledger projection;
+- current validators separately require the real current state to be exactly `D4-C=1/9`, `D4-wide=13/26`, with candidate selection still open and all authorities unchanged.
+
+This temporal split prevents both failure modes: rewriting historical truth to match today, and freezing the current ledger forever at the historical `0/9` baseline.
+
 ## Non-authority boundary
 
 This promotion does **not** select any D4-C candidate or implementation mechanism. In particular it does not select:

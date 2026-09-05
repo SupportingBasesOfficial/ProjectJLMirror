@@ -19,15 +19,16 @@ def _current_errors(state: dict) -> list[str]:
     required = d4c.get("required_evidence", [])
     errors: list[str] = []
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
-        errors.append("D4-C current sibling state must remain open/unselected")
+        errors.append("D4-C/D must remain open; current D4-C selection/state drift")
     if d4c.get("evidence_completed") != [D4C_CREDIT]:
-        errors.append("D4-C current sibling credit must be exactly OPEN-EVT-008")
+        errors.append("D4-C/D must remain open; historical D4-C credit is zero while current promoted credit must be exactly OPEN-EVT-008")
     if d4c.get("evidence_remaining") != [x for x in required if x != D4C_CREDIT]:
-        errors.append("D4-C current sibling remaining evidence drift")
-    if tracks.get("D4-D", {}).get("evidence_completed") != []:
-        errors.append("D4-D must remain uncredited")
+        errors.append("D4-C/D must remain open; current D4-C remaining evidence drift")
+    d4d = tracks.get("D4-D", {})
+    if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("evidence_completed") != []:
+        errors.append("D4-C/D must remain open and uncredited except the separately promoted current D4-C OPEN-EVT-008 credit")
     if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 13:
-        errors.append("D4-wide current evidence must remain 13/26")
+        errors.append("D4-wide evidence must remain 12/26 in the historical projection and exactly 13/26 in current promoted state")
     return errors
 
 

@@ -33,6 +33,7 @@
     "broker_ack_or_checkpoint_progress_without_effect_completion_does_not_report_business_effect_success",
     "lease_expiry_preserves_durable_receipt_and_is_processed_as_ambiguous_redelivery",
     "lease_expiry_takeover_requires_a_strictly_new_fence_epoch",
+    "unexpired_claim_cannot_be_stolen_by_a_higher_epoch_without_explicit_expiry",
     "equivalent_redelivery_after_effect_completion_is_idempotent_and_produces_one_business_effect",
     "offset_rewind_with_missing_equivalence_authority_fails_closed_as_uncertainty",
     "same_scoped_identity_with_changed_immutable_content_is_rejected_as_integrity_failure",

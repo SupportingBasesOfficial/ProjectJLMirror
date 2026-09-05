@@ -28,22 +28,25 @@ TENANT = "tenant:t1"
 
 class SourceEvidenceTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.identity = ("consumer.orders.v1", "tenant:t1/order:o1", "msg-009")
+        self.identity = ("consumer.orders.v1", "order:o1", "msg-009")
         self.content = {"envelope": {"event_type": "order.updated", "contract_version": 7}, "payload": {"order_id": "o1", "revision": 9}}
 
-    def _quarantined(self) -> QuarantineAuthority:
-        q = QuarantineAuthority()
-        state = q.record_failure(
+    def _failure(self, q: QuarantineAuthority, retry_count: int, *, retry_budget: int = TEST_RETRY_BUDGET, tenant_scope: str = TENANT, content=None) -> str:
+        return q.record_failure(
             self.identity,
-            self.content,
+            self.content if content is None else content,
+            tenant_scope=tenant_scope,
             classification="confidential",
             retention_policy_class="regulated_event_policy",
-            retry_count=TEST_RETRY_BUDGET,
-            retry_budget=TEST_RETRY_BUDGET,
+            retry_count=retry_count,
+            retry_budget=retry_budget,
             broker_adapter="test_adapter",
             broker_dlq_ref="opaque:test",
         )
-        self.assertEqual(state, "quarantined")
+
+    def _quarantined(self) -> QuarantineAuthority:
+        q = QuarantineAuthority()
+        self.assertEqual(self._failure(q, TEST_RETRY_BUDGET), "quarantined")
         return q
 
     def test_all_concrete_candidates_are_evidence_eligible(self):
@@ -57,18 +60,28 @@ class SourceEvidenceTests(unittest.TestCase):
         self.assertEqual(runtime["test_fingerprint_profile"], TEST_FINGERPRINT_PROFILE)
         self.assertEqual(TEST_FINGERPRINT_PROFILE, "sha256_fixture_only_noncanonical")
 
+    def test_tenant_authority_is_separate_from_message_identity_scope(self):
+        q = self._quarantined()
+        snapshot = q.snapshot(self.identity)
+        self.assertEqual(self.identity, ("consumer.orders.v1", "order:o1", "msg-009"))
+        self.assertEqual(snapshot["tenant_scope"], TENANT)
+        self.assertNotIn(TENANT, self.identity)
+        with self.assertRaises(IntegrityFailure):
+            self._failure(q, TEST_RETRY_BUDGET + 1, tenant_scope="tenant:t2")
+        q.close()
+
     def test_retry_updates_preserve_truth_and_cannot_regress_quarantine(self):
         q = QuarantineAuthority()
-        self.assertEqual(q.record_failure(self.identity, self.content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET - 1, retry_budget=TEST_RETRY_BUDGET, broker_adapter="a", broker_dlq_ref=None), "retryable")
+        self.assertEqual(self._failure(q, TEST_RETRY_BUDGET - 1), "retryable")
         q.set_effect_truth(self.identity, committed=True)
-        self.assertEqual(q.record_failure(self.identity, self.content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET, retry_budget=TEST_RETRY_BUDGET, broker_adapter="a", broker_dlq_ref=None), "quarantined")
+        self.assertEqual(self._failure(q, TEST_RETRY_BUDGET), "quarantined")
         snapshot = q.snapshot(self.identity)
         self.assertTrue(snapshot["effect_committed"])
         self.assertEqual(len([e for e in snapshot["audit"] if e.get("action") == "failure_recorded"]), 2)
         with self.assertRaises(IntegrityFailure):
-            q.record_failure(self.identity, self.content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET - 1, retry_budget=TEST_RETRY_BUDGET, broker_adapter="a", broker_dlq_ref=None)
+            self._failure(q, TEST_RETRY_BUDGET - 1)
         with self.assertRaises(IntegrityFailure):
-            q.record_failure(self.identity, self.content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET + 1, retry_budget=TEST_RETRY_BUDGET + 1, broker_adapter="a", broker_dlq_ref=None)
+            self._failure(q, TEST_RETRY_BUDGET + 1, retry_budget=TEST_RETRY_BUDGET + 1)
         self.assertEqual(q.snapshot(self.identity)["state"], "quarantined")
         q.close()
 
@@ -129,7 +142,7 @@ class SourceEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="d4c-quarantine-test-") as td:
             db = Path(td) / "quarantine.sqlite3"
             q = QuarantineAuthority(db)
-            q.record_failure(self.identity, self.content, classification="confidential", retention_policy_class="regulated_event_policy", retry_count=TEST_RETRY_BUDGET, retry_budget=TEST_RETRY_BUDGET, broker_adapter="original", broker_dlq_ref="original:opaque")
+            self._failure(q, TEST_RETRY_BUDGET)
             q.grant_redrive("admin", TENANT, {"confidential"})
             before = q.snapshot(self.identity)
             q.replace_broker(self.identity, new_adapter="replacement", new_dlq_ref="replacement:opaque")
@@ -137,6 +150,7 @@ class SourceEvidenceTests(unittest.TestCase):
             q = QuarantineAuthority(db)
             after = q.snapshot(self.identity)
             self.assertEqual(before["fingerprint"], after["fingerprint"])
+            self.assertEqual(before["tenant_scope"], after["tenant_scope"])
             self.assertEqual(before["classification"], after["classification"])
             self.assertEqual(before["retention_policy_class"], after["retention_policy_class"])
             self.assertEqual(after["broker_adapter"], "replacement")

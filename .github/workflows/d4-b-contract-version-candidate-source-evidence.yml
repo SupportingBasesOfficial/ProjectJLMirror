@@ -62,9 +62,14 @@ jobs:
         shell: bash
         run: python3 tools/assurance/d4b_contract_version/evaluate_candidates.py
 
-      - name: Falsify candidate source-evidence weakening
+      - name: Falsify historical candidate source-evidence weakening
         shell: bash
-        run: python3 tools/assurance/d4b_contract_version/test_source_evidence.py
+        run: |
+          set -euo pipefail
+          root="$(mktemp -d)"
+          git worktree add --detach "$root" "$PRESELECTION_MAIN"
+          (cd "$root" && python3 tools/assurance/d4b_contract_version/test_source_evidence.py)
+          git worktree remove --force "$root"
 
       - name: Validate historical source manifest against pre-selection state
         shell: bash

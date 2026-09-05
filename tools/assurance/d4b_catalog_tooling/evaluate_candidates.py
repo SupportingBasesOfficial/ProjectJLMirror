@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 
 class EvidenceViolation(RuntimeError):
@@ -15,8 +16,8 @@ class DuplicateMemberError(ValueError):
     pass
 
 
-def _reject_duplicate_members(pairs):
-    out = {}
+def _reject_duplicate_members(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
     for key, value in pairs:
         if key in out:
             raise DuplicateMemberError(f"duplicate semantic manifest member: {key}")
@@ -24,23 +25,81 @@ def _reject_duplicate_members(pairs):
     return out
 
 
+def _parse_decimal(raw: str) -> Decimal:
+    try:
+        value = Decimal(raw)
+    except InvalidOperation as exc:
+        raise EvidenceViolation("invalid semantic manifest number") from exc
+    if not value.is_finite():
+        raise EvidenceViolation("non-finite semantic manifest number")
+    return value
+
+
+def _canonical_decimal_text(value: Decimal) -> str:
+    if value == 0:
+        return "0"
+    sign, raw_digits, exponent = value.as_tuple()
+    digits = list(raw_digits)
+    while len(digits) > 1 and digits[-1] == 0:
+        digits.pop()
+        exponent += 1
+    coefficient = "".join(str(digit) for digit in digits)
+    return ("-" if sign else "") + coefficient + "e" + str(exponent)
+
+
+def _canonical_semantic_value(value: Any) -> Any:
+    if value is None:
+        return ["null"]
+    if isinstance(value, bool):
+        return ["bool", value]
+    if isinstance(value, Decimal):
+        return ["number", _canonical_decimal_text(value)]
+    if isinstance(value, str):
+        try:
+            value.encode("utf-8", "strict")
+        except UnicodeEncodeError as exc:
+            raise EvidenceViolation("semantic manifest string must be strict utf-8") from exc
+        return ["string", value]
+    if isinstance(value, list):
+        return ["array", [_canonical_semantic_value(item) for item in value]]
+    if isinstance(value, dict):
+        for key in value:
+            if not isinstance(key, str):
+                raise EvidenceViolation("semantic manifest object key must be string")
+            try:
+                key.encode("utf-8", "strict")
+            except UnicodeEncodeError as exc:
+                raise EvidenceViolation("semantic manifest key must be strict utf-8") from exc
+        return ["object", [[key, _canonical_semantic_value(value[key])] for key in sorted(value)]]
+    raise EvidenceViolation("unsupported semantic manifest runtime mapping")
+
+
 def _canonical_semantic_manifest_bytes(raw: str) -> bytes:
     try:
-        value = json.loads(raw, object_pairs_hook=_reject_duplicate_members)
+        value = json.loads(
+            raw,
+            object_pairs_hook=_reject_duplicate_members,
+            parse_int=_parse_decimal,
+            parse_float=_parse_decimal,
+            parse_constant=lambda token: (_ for _ in ()).throw(EvidenceViolation(f"forbidden semantic manifest constant {token}")),
+        )
     except (json.JSONDecodeError, DuplicateMemberError) as exc:
         raise EvidenceViolation("semantic manifest must be strict canonicalizable JSON") from exc
     if not isinstance(value, dict):
         raise EvidenceViolation("semantic manifest must be an object")
+    canonical = _canonical_semantic_value(value)
     try:
-        return json.dumps(
-            value,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        ).encode("utf-8")
+        return json.dumps(canonical, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
     except (TypeError, ValueError, UnicodeEncodeError) as exc:
         raise EvidenceViolation("semantic manifest cannot be canonically encoded") from exc
+
+
+def _framed_reviewed_digest_bytes(fields: list[tuple[str, str]]) -> bytes:
+    frame = ["jlmirror-reviewed-contract-v1", [[name, value] for name, value in fields]]
+    try:
+        return json.dumps(frame, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError, UnicodeEncodeError) as exc:
+        raise EvidenceViolation("reviewed contract digest frame cannot be encoded") from exc
 
 
 @dataclass(frozen=True)
@@ -58,12 +117,7 @@ class LogicalContractIdentity:
 
     def canonical(self) -> str:
         for value in (self.domain, self.name, self.family):
-            if (
-                not value
-                or len(value) > 96
-                or "/" in value
-                or any(ord(ch) < 0x20 for ch in value)
-            ):
+            if not value or len(value) > 96 or "/" in value or any(ord(ch) < 0x20 for ch in value):
                 raise EvidenceViolation("invalid or ambiguous logical contract identity")
         return f"{self.domain}/{self.name}/{self.family}"
 
@@ -86,7 +140,11 @@ class ContractRevision:
 
     @property
     def payload_schema_sha256(self) -> str:
-        return sha256(self.payload_schema.encode("utf-8")).hexdigest()
+        try:
+            raw = self.payload_schema.encode("utf-8", "strict")
+        except UnicodeEncodeError as exc:
+            raise EvidenceViolation("payload schema must be strict utf-8") from exc
+        return sha256(raw).hexdigest()
 
     @property
     def semantic_manifest_sha256(self) -> str:
@@ -94,19 +152,19 @@ class ContractRevision:
 
     @property
     def reviewed_content_sha256(self) -> str:
-        payload = "\n".join(
+        framed = _framed_reviewed_digest_bytes(
             [
-                self.identity.canonical(),
-                self.revision,
-                self.payload_schema_sha256,
-                self.semantic_manifest_sha256,
-                self.historical_metadata.reader_ref,
-                self.historical_metadata.upcaster_ref,
-                self.historical_metadata.comparison_profile_ref,
-                self.reviewed_provenance,
+                ("logical_contract_identity", self.identity.canonical()),
+                ("revision", self.revision),
+                ("payload_schema_sha256", self.payload_schema_sha256),
+                ("semantic_manifest_sha256", self.semantic_manifest_sha256),
+                ("reader_ref", self.historical_metadata.reader_ref),
+                ("upcaster_ref", self.historical_metadata.upcaster_ref),
+                ("comparison_profile_ref", self.historical_metadata.comparison_profile_ref),
+                ("reviewed_provenance", self.reviewed_provenance),
             ]
         )
-        return sha256(payload.encode("utf-8")).hexdigest()
+        return sha256(framed).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -135,15 +193,12 @@ def _validate_revision(revision: ContractRevision) -> None:
     if not revision.revision or len(revision.revision) > 64:
         raise EvidenceViolation("invalid evidence revision token")
     try:
-        payload_schema_bytes = revision.payload_schema.encode("utf-8")
+        payload_schema_bytes = revision.payload_schema.encode("utf-8", "strict")
+        semantic_raw = revision.semantic_manifest.encode("utf-8", "strict")
     except UnicodeEncodeError as exc:
-        raise EvidenceViolation("payload schema must be strict utf-8") from exc
+        raise EvidenceViolation("schema and semantic manifest must be strict utf-8") from exc
     if not revision.payload_schema or len(payload_schema_bytes) > 16_384:
         raise EvidenceViolation("payload schema outside evidence bound")
-    try:
-        semantic_raw = revision.semantic_manifest.encode("utf-8")
-    except UnicodeEncodeError as exc:
-        raise EvidenceViolation("semantic manifest must be strict utf-8") from exc
     if not revision.semantic_manifest or len(semantic_raw) > 16_384:
         raise EvidenceViolation("semantic manifest outside evidence bound")
     _canonical_semantic_manifest_bytes(revision.semantic_manifest)
@@ -153,8 +208,13 @@ def _validate_revision(revision: ContractRevision) -> None:
         revision.historical_metadata.comparison_profile_ref,
         revision.reviewed_provenance,
     ):
-        if not ref or len(ref) > 256:
+        if not isinstance(ref, str) or not ref or len(ref) > 256:
             raise EvidenceViolation("invalid provenance or historical metadata ref")
+        try:
+            ref.encode("utf-8", "strict")
+        except UnicodeEncodeError as exc:
+            raise EvidenceViolation("provenance and historical metadata refs must be strict utf-8") from exc
+    revision.reviewed_content_sha256
 
 
 class ReviewedHistory:
@@ -191,14 +251,7 @@ class RegistryMirror:
         self.available = True
         self._mappings: Dict[Tuple[str, str], ProductMapping] = {}
 
-    def publish(
-        self,
-        principal: Principal,
-        reviewed: ContractRevision,
-        subject: str,
-        vendor_version: str,
-        vendor_id: str,
-    ) -> ProductMapping:
+    def publish(self, principal: Principal, reviewed: ContractRevision, subject: str, vendor_version: str, vendor_id: str) -> ProductMapping:
         require_role(principal, REGISTRY_PUBLISHER_ROLE)
         if not self.available:
             raise EvidenceViolation("registry unavailable")
@@ -209,13 +262,7 @@ class RegistryMirror:
         if committed != reviewed or committed.reviewed_content_sha256 != reviewed.reviewed_content_sha256:
             raise EvidenceViolation("registry publish requires exact preexisting reviewed authority")
         key = (reviewed.identity.canonical(), reviewed.revision)
-        mapping = ProductMapping(
-            product=self.product,
-            subject=subject,
-            vendor_version=vendor_version,
-            vendor_id=vendor_id,
-            reviewed_content_sha256=reviewed.reviewed_content_sha256,
-        )
+        mapping = ProductMapping(self.product, subject, vendor_version, vendor_id, reviewed.reviewed_content_sha256)
         existing = self._mappings.get(key)
         if existing is not None:
             if existing != mapping:
@@ -280,20 +327,20 @@ def candidate_fixture(candidate: str) -> Tuple[CatalogProfile, Principal, Princi
     reader = Principal("reader:axis-b", (READER_ROLE,))
     identity = LogicalContractIdentity("monitoring", "event.created", "canonical")
     v1 = ContractRevision(
-        identity=identity,
-        revision="fixture-r1",
-        payload_schema='{"fields":["tenant_id","event_type","payload"]}',
-        semantic_manifest='{"tenant_authority":"tenant_id","event_identity":"message_id","delivery":"at_least_once"}',
-        historical_metadata=HistoricalMetadata("reader:event:v1", "upcaster:none", "compare:event:v1"),
-        reviewed_provenance="git:fixture-commit-a",
+        identity,
+        "fixture-r1",
+        '{"fields":["tenant_id","event_type","payload"]}',
+        '{"tenant_authority":"tenant_id","event_identity":"message_id","delivery":"at_least_once"}',
+        HistoricalMetadata("reader:event:v1", "upcaster:none", "compare:event:v1"),
+        "git:fixture-commit-a",
     )
     v2 = ContractRevision(
-        identity=identity,
-        revision="fixture-r2",
-        payload_schema=v1.payload_schema,
-        semantic_manifest='{"tenant_authority":"tenant_id","event_identity":"provider_event_id","delivery":"at_least_once"}',
-        historical_metadata=HistoricalMetadata("reader:event:v2", "upcaster:event:v1-to-v2", "compare:event:v2"),
-        reviewed_provenance="git:fixture-commit-b",
+        identity,
+        "fixture-r2",
+        v1.payload_schema,
+        '{"tenant_authority":"tenant_id","event_identity":"provider_event_id","delivery":"at_least_once"}',
+        HistoricalMetadata("reader:event:v2", "upcaster:event:v1-to-v2", "compare:event:v2"),
+        "git:fixture-commit-b",
     )
     history = ReviewedHistory()
     history.commit(reviewer, v1)
@@ -313,35 +360,28 @@ def exercise_candidate(candidate: str) -> None:
     assert_metadata_recoverable(v1)
     assert_metadata_recoverable(v2)
 
-    v1_reformatted = ContractRevision(
-        identity=v1.identity,
-        revision="fixture-r1-reformatted",
-        payload_schema=v1.payload_schema,
-        semantic_manifest='{ "delivery": "at_least_once", "event_identity": "message_id", "tenant_authority": "tenant_id" }',
-        historical_metadata=v1.historical_metadata,
-        reviewed_provenance="git:fixture-commit-reformatted",
-    )
-    assert v1.semantic_manifest_sha256 == v1_reformatted.semantic_manifest_sha256
+    reformatted = ContractRevision(v1.identity, "format-only", v1.payload_schema, '{ "delivery": "at_least_once", "event_identity": "message_id", "tenant_authority": "tenant_id" }', v1.historical_metadata, "git:format-only")
+    assert v1.semantic_manifest_sha256 == reformatted.semantic_manifest_sha256
+    numeric_1 = ContractRevision(v1.identity, "numeric-1", v1.payload_schema, '{"threshold":1}', v1.historical_metadata, "git:numeric-1")
+    numeric_10 = ContractRevision(v1.identity, "numeric-1.0", v1.payload_schema, '{"threshold":1.0}', v1.historical_metadata, "git:numeric-1.0")
+    numeric_1e0 = ContractRevision(v1.identity, "numeric-1e0", v1.payload_schema, '{"threshold":1e0}', v1.historical_metadata, "git:numeric-1e0")
+    assert numeric_1.semantic_manifest_sha256 == numeric_10.semantic_manifest_sha256 == numeric_1e0.semantic_manifest_sha256
 
     assert v1.payload_schema_sha256 == v2.payload_schema_sha256
     assert compatibility(v1, v2) == "semantic_review_required_breaking_until_proven_otherwise"
 
-    ambiguous_identity = LogicalContractIdentity("monitoring/legacy", "event.created", "canonical")
     try:
-        ambiguous_identity.canonical()
+        LogicalContractIdentity("monitoring/legacy", "event.created", "canonical").canonical()
     except EvidenceViolation:
         pass
     else:
         raise AssertionError("ambiguous logical contract identity delimiter was not blocked")
 
-    rebound = ContractRevision(
-        identity=v1.identity,
-        revision=v1.revision,
-        payload_schema=v1.payload_schema,
-        semantic_manifest='{"tenant_authority":"provider_tenant"}',
-        historical_metadata=v1.historical_metadata,
-        reviewed_provenance="git:malicious-rebind",
-    )
+    frame_a = ContractRevision(v1.identity, "frame-a", v1.payload_schema, v1.semantic_manifest, HistoricalMetadata("reader", "upcaster", "c\np"), "q")
+    frame_b = ContractRevision(v1.identity, "frame-a", v1.payload_schema, v1.semantic_manifest, HistoricalMetadata("reader", "upcaster", "c"), "p\nq")
+    assert frame_a.reviewed_content_sha256 != frame_b.reviewed_content_sha256
+
+    rebound = ContractRevision(v1.identity, v1.revision, v1.payload_schema, '{"tenant_authority":"provider_tenant"}', v1.historical_metadata, "git:malicious-rebind")
     try:
         profile.history.commit(reviewer, rebound)
     except EvidenceViolation:
@@ -350,28 +390,19 @@ def exercise_candidate(candidate: str) -> None:
         raise AssertionError("reviewed history overwrite was not blocked")
 
     for principal in (Principal("", (), authenticated=False), Principal("reader-no-role", ())):
-        try:
-            profile.history.read(principal, v1.identity, v1.revision)
-        except EvidenceViolation:
-            pass
-        else:
-            raise AssertionError("unauthorized direct history read was not blocked")
-        try:
-            profile.resolve(principal, v1.identity, v1.revision)
-        except EvidenceViolation:
-            pass
-        else:
-            raise AssertionError("unauthorized catalog read was not blocked")
+        for operation in (
+            lambda p=principal: profile.history.read(p, v1.identity, v1.revision),
+            lambda p=principal: profile.resolve(p, v1.identity, v1.revision),
+        ):
+            try:
+                operation()
+            except EvidenceViolation:
+                pass
+            else:
+                raise AssertionError("unauthorized catalog/history read was not blocked")
 
     if profile.registry:
-        unreviewed = ContractRevision(
-            identity=v1.identity,
-            revision="fixture-unreviewed",
-            payload_schema=v1.payload_schema,
-            semantic_manifest=v1.semantic_manifest,
-            historical_metadata=v1.historical_metadata,
-            reviewed_provenance="git:not-committed",
-        )
+        unreviewed = ContractRevision(v1.identity, "fixture-unreviewed", v1.payload_schema, v1.semantic_manifest, v1.historical_metadata, "git:not-committed")
         try:
             profile.registry.publish(reviewer, unreviewed, "event-created", "19", "vendor-unreviewed")
         except EvidenceViolation:
@@ -379,23 +410,16 @@ def exercise_candidate(candidate: str) -> None:
         else:
             raise AssertionError("registry accepted unreviewed contract authority")
 
-        fake_provenance = ContractRevision(
-            identity=v1.identity,
-            revision=v1.revision,
-            payload_schema=v1.payload_schema,
-            semantic_manifest=v1.semantic_manifest,
-            historical_metadata=v1.historical_metadata,
-            reviewed_provenance="git:forged-provenance",
-        )
+        forged = ContractRevision(v1.identity, v1.revision, v1.payload_schema, v1.semantic_manifest, v1.historical_metadata, "git:forged-provenance")
         try:
-            profile.registry.publish(reviewer, fake_provenance, "event-created", "20", "vendor-forged")
+            profile.registry.publish(reviewer, forged, "event-created", "20", "vendor-forged")
         except EvidenceViolation:
             pass
         else:
             raise AssertionError("registry accepted forged reviewed provenance")
 
-        original_mapping = profile.registry.publish(reviewer, v1, "event-created", "17", "vendor-abc")
-        assert original_mapping == profile.registry.mapping(reader, v1)
+        original = profile.registry.publish(reviewer, v1, "event-created", "17", "vendor-abc")
+        assert original == profile.registry.mapping(reader, v1)
         try:
             profile.registry.publish(reviewer, v1, "renamed-in-place", "99", "vendor-rebind")
         except EvidenceViolation:
@@ -413,26 +437,20 @@ def exercise_candidate(candidate: str) -> None:
         replacement.publish(reviewer, v1, "renamed-subject", "1", "other-vendor-001")
         old_map = profile.registry.mapping(reader, v1)
         new_map = replacement.mapping(reader, v1)
-        assert old_map.vendor_id != new_map.vendor_id
-        assert old_map.product != new_map.product
+        assert old_map.vendor_id != new_map.vendor_id and old_map.product != new_map.product
         assert old_map.reviewed_content_sha256 == new_map.reviewed_content_sha256 == v1.reviewed_content_sha256
         assert v1.identity.canonical() == "monitoring/event.created/canonical"
 
 
 def main() -> None:
-    candidates = (
-        "reviewed_git_catalog",
-        "registry_backed_catalog",
-        "hybrid_reviewed_git_plus_registry_catalog",
-    )
-    for candidate in candidates:
+    for candidate in ("reviewed_git_catalog", "registry_backed_catalog", "hybrid_reviewed_git_plus_registry_catalog"):
         exercise_candidate(candidate)
     print(
         "d4b_catalog_tooling_candidate_source=PASS "
-        "candidates=3 reviewed_authority=preexisting provenance=content_bound history=append_only "
-        "semantic_manifest=canonical_and_compared mapping_history=immutable identity=unambiguous "
-        "historical_metadata=recoverable authz=all_reads_fail_closed outage=meaning_stable "
-        "product_identity=non_authoritative selection=not_selected ledger_credit=0"
+        "candidates=3 reviewed_authority=preexisting provenance=content_bound digest_frame=unambiguous "
+        "history=append_only semantic_manifest=canonical_decimal_and_compared mapping_history=immutable "
+        "identity=unambiguous historical_metadata=recoverable authz=all_reads_fail_closed "
+        "outage=meaning_stable product_identity=non_authoritative selection=not_selected ledger_credit=0"
     )
 
 

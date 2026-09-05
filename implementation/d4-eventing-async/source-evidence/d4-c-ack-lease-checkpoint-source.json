@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-C",
+  "axis": "ack_visibility_lease_and_checkpoint",
+  "source_decision": "OPEN-EVT-008",
+  "evidence_id": "ack_after_durable_responsibility_and_lease_ambiguity",
+  "canonical_base": "c0b061eb3f9e42f63b9f4c05e7b8b2d2de75a987",
+  "mode": "candidate_source_evidence_only",
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "current_run_auto_credit": false,
+  "ledger_credit": [],
+  "candidate_results": {
+    "durable_inbox_claim_then_broker_ack_profile": "eligible_for_evidence_execution",
+    "broker_visibility_lease_plus_durable_receipt_profile": "eligible_for_evidence_execution",
+    "database_owned_work_claim_plus_broker_checkpoint_profile": "eligible_for_evidence_execution"
+  },
+  "equivalent_reviewed_profile": "insufficient_evidence",
+  "required_proofs": [
+    "ack_or_checkpoint_never_precedes_durable_consumer_responsibility",
+    "lease_or_visibility_expiry_is_treated_as_ambiguity_not_effect_absence",
+    "broker_progress_is_never_business_effect_truth",
+    "redelivery_or_offset_rewind_remains_safe_through_inbox_effect_idempotency",
+    "offset_rewind_duplicate_handling_requires_scoped_id_content_equivalence_evidence_not_identity_alone",
+    "same_scoped_identity_with_conflicting_immutable_content_fails_closed",
+    "claim_ownership_and_takeover_are_fenced_against_concurrent_effect_execution",
+    "crash_between_effect_responsibility_and_broker_ack_recovers_without_semantic_loss"
+  ],
+  "source_assertions": [
+    "all_three_concrete_candidate_classes_use_the_same_platform_durable_responsibility_and_fencing_semantics",
+    "premature_ack_or_checkpoint_before_durable_responsibility_is_rejected",
+    "broker_ack_or_checkpoint_progress_without_effect_completion_does_not_report_business_effect_success",
+    "lease_expiry_preserves_durable_receipt_and_is_processed_as_ambiguous_redelivery",
+    "equivalent_redelivery_after_effect_completion_is_idempotent_and_produces_one_business_effect",
+    "offset_rewind_with_missing_equivalence_authority_fails_closed_as_uncertainty",
+    "same_scoped_identity_with_changed_immutable_content_is_rejected_as_integrity_failure",
+    "stale_claim_owner_is_fenced_after_higher_epoch_takeover",
+    "crash_after_durable_responsibility_before_effect_or_ack_recovers_under_a_new_fenced_owner",
+    "crash_after_effect_completion_before_ack_redelivers_without_repeating_the_business_effect",
+    "candidate_source_evidence_does_not_select_a_candidate_or_broker_specific_business_truth"
+  ],
+  "non_authority": {
+    "d4c_mechanism_selection": "not_selected",
+    "d4c_ledger_credit": "0_of_9",
+    "d4d_ledger_credit": "0_of_5",
+    "d4_gate": "scoped",
+    "d4_transport_authority": "selected_not_granted",
+    "canonical_product_implementation_authority": "not_granted",
+    "wave4_implementation_authority": "not_granted",
+    "production_authority": "none",
+    "c3_numeric_topology_authority": "not_selected"
+  }
+}

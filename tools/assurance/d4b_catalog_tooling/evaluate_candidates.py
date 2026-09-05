@@ -58,8 +58,13 @@ class LogicalContractIdentity:
 
     def canonical(self) -> str:
         for value in (self.domain, self.name, self.family):
-            if not value or len(value) > 96:
-                raise EvidenceViolation("invalid logical contract identity")
+            if (
+                not value
+                or len(value) > 96
+                or "/" in value
+                or any(ord(ch) < 0x20 for ch in value)
+            ):
+                raise EvidenceViolation("invalid or ambiguous logical contract identity")
         return f"{self.domain}/{self.name}/{self.family}"
 
 
@@ -321,6 +326,14 @@ def exercise_candidate(candidate: str) -> None:
     assert v1.payload_schema_sha256 == v2.payload_schema_sha256
     assert compatibility(v1, v2) == "semantic_review_required_breaking_until_proven_otherwise"
 
+    ambiguous_identity = LogicalContractIdentity("monitoring/legacy", "event.created", "canonical")
+    try:
+        ambiguous_identity.canonical()
+    except EvidenceViolation:
+        pass
+    else:
+        raise AssertionError("ambiguous logical contract identity delimiter was not blocked")
+
     rebound = ContractRevision(
         identity=v1.identity,
         revision=v1.revision,
@@ -417,9 +430,9 @@ def main() -> None:
     print(
         "d4b_catalog_tooling_candidate_source=PASS "
         "candidates=3 reviewed_authority=preexisting provenance=content_bound history=append_only "
-        "semantic_manifest=canonical_and_compared mapping_history=immutable historical_metadata=recoverable "
-        "authz=all_reads_fail_closed outage=meaning_stable product_identity=non_authoritative "
-        "selection=not_selected ledger_credit=0"
+        "semantic_manifest=canonical_and_compared mapping_history=immutable identity=unambiguous "
+        "historical_metadata=recoverable authz=all_reads_fail_closed outage=meaning_stable "
+        "product_identity=non_authoritative selection=not_selected ledger_credit=0"
     )
 
 

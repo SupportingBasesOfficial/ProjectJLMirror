@@ -39,14 +39,15 @@ def must_fail(mutator, expected_fragment: str) -> None:
 
 def inject_duplicate_selection_state(documents: dict[Path, object]) -> None:
     raw = (ROOT / validator.SELECTION).read_bytes()
-    needle = b'  "selection_state": "selected",\n'
+    needle = b'  "selection_state": "selected",\n  "selection_scope": "bounded_c2_contract_profile_selection_only",\n'
     if raw.count(needle) != 1:
-        raise AssertionError("selection_state line not uniquely located")
-    documents[validator.SELECTION] = raw.replace(
-        needle,
-        b'  "selection_state": "not_selected",\n' + needle,
-        1,
+        raise AssertionError("top-level selection_state/selection_scope pair not uniquely located")
+    replacement = (
+        b'  "selection_state": "not_selected",\n'
+        b'  "selection_state": "selected",\n'
+        b'  "selection_scope": "bounded_c2_contract_profile_selection_only",\n'
     )
+    documents[validator.SELECTION] = raw.replace(needle, replacement, 1)
 
 
 def main() -> int:

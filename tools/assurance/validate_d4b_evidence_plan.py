@@ -26,46 +26,28 @@ EXPECTED_D4A_IDS = {
     "physical_naming_routing_and_cell_topology_adapter_mapping",
     "broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark",
 }
+EXPECTED_D4B_CANDIDATE = {
+    "serialization": {
+        "surface_policy": "explicit_surface_bound_profiles",
+        "internal_broker": "protobuf_profile",
+        "outbound_webhook": "bounded_json_plus_json_schema_profile",
+    },
+    "schema_catalog": "hybrid_reviewed_git_plus_registry_catalog",
+    "contract_version": "positive_integer_family_revision",
+}
 EXPECTED_TRACK_IDS = {"D4-A", "D4-B", "D4-C", "D4-D"}
 EXPECTED_PROMOTION_KEYS = {
-    "schema_version",
-    "promotion_id",
-    "gate_id",
-    "track_id",
-    "promotion_base",
-    "source_pr",
-    "source_reviewed_head",
-    "source_review",
-    "source_workflow",
-    "source_manifest",
-    "credited_evidence",
-    "credit_count",
-    "selection_state",
-    "serialization_selection_state",
-    "schema_catalog_selection_state",
-    "contract_version_syntax_selection_state",
-    "d4_gate_state",
-    "d4_transport_authority",
-    "canonical_product_implementation_authority",
-    "wave4_implementation_authority",
-    "production_authority",
-    "c3_numeric_topology_authority",
-    "separate_selection_required",
-    "separate_d4_acceptance_required",
+    "schema_version", "promotion_id", "gate_id", "track_id", "promotion_base", "source_pr",
+    "source_reviewed_head", "source_review", "source_workflow", "source_manifest", "credited_evidence",
+    "credit_count", "selection_state", "serialization_selection_state", "schema_catalog_selection_state",
+    "contract_version_syntax_selection_state", "d4_gate_state", "d4_transport_authority",
+    "canonical_product_implementation_authority", "wave4_implementation_authority", "production_authority",
+    "c3_numeric_topology_authority", "separate_selection_required", "separate_d4_acceptance_required",
 }
 EXPECTED_SOURCE_REVIEW_KEYS = {"review_id", "review_mode", "material_threads_unresolved"}
 EXPECTED_SOURCE_WORKFLOW_KEYS = {
-    "workflow_id",
-    "workflow_path",
-    "workflow_event",
-    "source_head_branch",
-    "run_id",
-    "run_attempt",
-    "job_id",
-    "job_name",
-    "artifact_id",
-    "artifact_name",
-    "artifact_digest",
+    "workflow_id", "workflow_path", "workflow_event", "source_head_branch", "run_id", "run_attempt",
+    "job_id", "job_name", "artifact_id", "artifact_name", "artifact_digest",
 }
 EXPECTED_SOURCE_MANIFEST_KEYS = {"path", "sha256"}
 EXPECTED_SOURCE_HEAD = "0a5509442d4b55f6d4de989af9bb62a088198ab4"
@@ -129,25 +111,28 @@ def validate(root: Path) -> list[str]:
     tracks = {track["track_id"]: track for track in state_tracks}
     d4b = tracks["D4-B"]
 
+    # Current ledger: 5/5 evidence is preserved and a separately governed selection now exists.
     req(plan.get("schema_version") == 1 and plan.get("gate_id") == "D4" and plan.get("track_id") == "D4-B", "D4-B plan identity drift")
     req(set(plan.get("required_evidence", [])) == EXPECTED_IDS and len(plan.get("required_evidence", [])) == 5, "D4-B required evidence drift")
     req(set(plan.get("credited_evidence", [])) == EXPECTED_IDS and len(plan.get("credited_evidence", [])) == 5, "D4-B credited evidence drift")
     req(plan.get("remaining_evidence") == [], "D4-B remaining evidence must be empty after reviewed promotion")
     req(plan.get("source_evidence_state") == "reviewed_source_run_available", "D4-B source evidence state drift")
     req(plan.get("ledger_credit_state") == "five_of_five", "D4-B ledger credit state drift")
-    req(plan.get("candidate") is None and plan.get("candidate_status") == "not_selected", "D4-B plan must remain candidate-neutral")
-    req(plan.get("selection_state") == "not_selected", "D4-B selection must remain not_selected")
-    req(plan.get("serialization_selection_state") == "not_selected", "serialization must remain not_selected")
-    req(plan.get("schema_catalog_selection_state") == "not_selected", "schema catalog must remain not_selected")
-    req(plan.get("contract_version_syntax_selection_state") == "not_selected", "contract version syntax must remain not_selected")
+    req(plan.get("candidate") == EXPECTED_D4B_CANDIDATE and plan.get("candidate_status") == "selected_c2_profile", "D4-B current selected profile drift")
+    req(plan.get("selection_state") == "selected", "D4-B current selection must remain selected")
+    req(plan.get("serialization_selection_state") == "selected_surface_bound", "serialization selection marker drift")
+    req(plan.get("schema_catalog_selection_state") == "selected", "schema catalog selection marker drift")
+    req(plan.get("contract_version_syntax_selection_state") == "selected", "contract version syntax selection marker drift")
+    req(plan.get("selection_record") == "implementation/d4-eventing-async/d4-b-selection-record.json", "D4-B selection record binding drift")
     req(plan.get("current_run_auto_credit") is False, "source runs must not auto-credit")
-    req(plan.get("separate_selection_required") is True and plan.get("separate_d4_acceptance_required") is True, "selection and D4 acceptance must remain separate")
+    req(plan.get("separate_selection_required") is False and plan.get("separate_d4_acceptance_required") is True, "selection must be discharged while full D4 acceptance remains separate")
     req(plan.get("d4_transport_authority") == "selected_not_granted", "D4-B plan transport authority drift")
     req(plan.get("canonical_product_implementation_authority") == "not_granted", "D4-B plan Product authority drift")
     req(plan.get("wave4_implementation_authority") == "not_granted", "D4-B plan Wave 4 authority drift")
     req(plan.get("production_authority") == "none", "D4-B plan production authority drift")
     req(plan.get("c3_numeric_topology_authority") == "not_selected", "D4-B plan C3 authority drift")
 
+    # Historical promotion record is immutable: at promotion time no profile was selected.
     req(set(promotion) == EXPECTED_PROMOTION_KEYS, "promotion exact key schema drift")
     req(promotion.get("schema_version") == 1 and promotion.get("gate_id") == "D4" and promotion.get("track_id") == "D4-B", "promotion identity envelope drift")
     req(promotion.get("promotion_id") == "d4-b-schema-contract-promotion-v1", "promotion identity drift")
@@ -175,18 +160,19 @@ def validate(root: Path) -> list[str]:
     req(source_manifest.get("path") == SOURCE.as_posix(), "promotion source-manifest path drift")
     req(source_manifest.get("sha256") == EXPECTED_MANIFEST_SHA256, "promotion source-manifest digest drift")
     req(set(promotion.get("credited_evidence", [])) == EXPECTED_IDS and len(promotion.get("credited_evidence", [])) == 5 and promotion.get("credit_count") == 5, "promotion credit set drift")
-    req(promotion.get("selection_state") == "not_selected", "promotion must not select a D4-B candidate")
-    req(promotion.get("serialization_selection_state") == "not_selected", "promotion serialization selection drift")
-    req(promotion.get("schema_catalog_selection_state") == "not_selected", "promotion schema catalog selection drift")
-    req(promotion.get("contract_version_syntax_selection_state") == "not_selected", "promotion contract version syntax selection drift")
+    req(promotion.get("selection_state") == "not_selected", "historical promotion must remain not_selected")
+    req(promotion.get("serialization_selection_state") == "not_selected", "historical promotion serialization selection drift")
+    req(promotion.get("schema_catalog_selection_state") == "not_selected", "historical promotion schema catalog selection drift")
+    req(promotion.get("contract_version_syntax_selection_state") == "not_selected", "historical promotion contract version syntax selection drift")
     req(promotion.get("d4_gate_state") == "scoped", "promotion must not accept D4")
     req(promotion.get("d4_transport_authority") == "selected_not_granted", "promotion transport authority drift")
     req(promotion.get("canonical_product_implementation_authority") == "not_granted", "promotion Product authority drift")
     req(promotion.get("wave4_implementation_authority") == "not_granted", "promotion Wave 4 authority drift")
     req(promotion.get("production_authority") == "none", "promotion production authority drift")
     req(promotion.get("c3_numeric_topology_authority") == "not_selected", "promotion C3 authority drift")
-    req(promotion.get("separate_selection_required") is True and promotion.get("separate_d4_acceptance_required") is True, "promotion must preserve separate selection and D4 acceptance")
+    req(promotion.get("separate_selection_required") is True and promotion.get("separate_d4_acceptance_required") is True, "historical promotion must preserve separate selection and D4 acceptance")
 
+    # Historical source package is immutable and remains candidate-neutral/nonpromoting.
     req(hashlib.sha256(source_bytes).hexdigest() == EXPECTED_MANIFEST_SHA256, "source manifest byte drift")
     req(source.get("current_run_auto_credit") is False and source.get("ledger_credit") == [], "immutable source package must remain nonpromoting")
     req(source.get("candidate") is None and source.get("candidate_status") == "not_selected", "source package must remain candidate-neutral")
@@ -195,10 +181,12 @@ def validate(root: Path) -> list[str]:
     req(source.get("schema_catalog_selection_state") == "not_selected", "source schema catalog selection drift")
     req(source.get("contract_version_syntax_selection_state") == "not_selected", "source contract version syntax selection drift")
 
-    req(d4b.get("state") == "evidence_complete_selection_pending", "D4-B state must be evidence-complete selection-pending")
-    req(d4b.get("candidate") is None and d4b.get("candidate_status") == "not_selected", "D4-B state must not silently select a candidate")
+    # Current global state reflects the later selection, without changing evidence accounting.
+    req(d4b.get("state") == "selected_candidate", "D4-B current state must remain selected_candidate")
+    req(d4b.get("candidate") == EXPECTED_D4B_CANDIDATE and d4b.get("candidate_status") == "selected_c2_profile", "D4-B current state selected profile drift")
     req(set(d4b.get("evidence_completed", [])) == EXPECTED_IDS and len(d4b.get("evidence_completed", [])) == 5, "D4-B state credit drift")
     req(d4b.get("evidence_remaining") == [], "D4-B state remaining evidence must be empty")
+
     d4a = tracks["D4-A"]
     req(d4a.get("candidate") == "kafka" and d4a.get("candidate_status") == "selected_c2_candidate", "D4-A selected candidate drift")
     req(d4a.get("state") == "selected_candidate", "D4-A selected state drift")
@@ -209,6 +197,7 @@ def validate(root: Path) -> list[str]:
         req(sibling.get("candidate") is None and sibling.get("candidate_status") == "not_selected", f"{track_id} candidate must remain unselected")
         req(sibling.get("evidence_completed") == [], f"{track_id} must remain uncredited")
 
+    req(sum(len(track.get("evidence_completed", [])) for track in state_tracks) == 12, "D4-wide credited evidence must remain 12/26")
     req(state.get("gate_state") == "scoped", "D4 must remain scoped")
     req(state.get("d4_transport_authority") == "selected_not_granted", "transport authority must remain selected_not_granted")
     req(state.get("canonical_product_implementation_authority") == "not_granted", "Product authority must remain not_granted")
@@ -225,7 +214,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_LEDGER_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_ledger_promotion=PASS credited=5/5 candidate=not_selected selection=separate source_immutable=true strict_json=true unique_tracks=true source_workflow=exact promotion_record=exact_schema_pinned d4a=exact_7_of_7 d4=scoped authorities=not_granted")
+    print("d4b_ledger_promotion=PASS credited=5/5 current_selection=selected_c2_profile promotion_history=not_selected source_history=not_selected source_immutable=true strict_json=true unique_tracks=true d4a=exact_7_of_7 d4wide=12/26 d4=scoped authorities=not_granted")
     return 0
 
 

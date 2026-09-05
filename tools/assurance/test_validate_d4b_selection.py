@@ -71,6 +71,13 @@ def main() -> int:
     must_fail(lambda d: d[validator.STATE].__setitem__("full_d4_acceptance", "granted"), "D4 state exact key schema drift")
     must_fail(lambda d: track(d, "D4-B").__setitem__("hidden_authority", "granted"), "D4-B exact track key schema drift")
     must_fail(lambda d: d[validator.STATE]["predecessor"].__setitem__("hidden_authority", "granted"), "D4 predecessor exact key schema drift")
+
+    must_fail(lambda d: d[validator.SELECTION].__setitem__("schema_version", True), "selection schema_version must be integer 1")
+    must_fail(lambda d: d[validator.PLAN].__setitem__("schema_version", 1.0), "D4-B evidence-plan schema_version must be integer 1")
+    must_fail(lambda d: d[validator.STATE].__setitem__("schema_version", True), "D4 state schema_version must be integer 1")
+    must_fail(lambda d: d[validator.SELECTION]["evidence_completion"].__setitem__("required_evidence_count", 5.0), "selection required evidence count must be integer 5")
+    must_fail(lambda d: d[validator.SELECTION]["evidence_completion"].__setitem__("credited_evidence_count", True), "selection credited evidence count must be integer 5")
+
     must_fail(lambda d: d[validator.SELECTION].__setitem__("selection_base_main_commit", "drift"), "selection base drift")
     must_fail(lambda d: d[validator.SELECTION]["evidence_completion"].__setitem__("evidence_plan_path", "implementation/d4-eventing-async/other.json"), "selection evidence-plan provenance path drift")
     must_fail(lambda d: d[validator.SELECTION]["evidence_completion"].__setitem__("axis_a_source_path", "implementation/d4-eventing-async/source-evidence/other.json"), "Axis A source provenance path drift")
@@ -117,7 +124,7 @@ def main() -> int:
     must_fail(lambda d: track(d, "D4-C").__setitem__("evidence_remaining", as_keyed_object(track(d, "D4-C")["evidence_remaining"])), "D4-C remaining evidence must be an exact list")
     must_fail(lambda d: track(d, "D4-C").__setitem__("candidate", "rabbitmq"), "D4-C must remain open/unselected")
 
-    print("d4b_selection_falsification=PASS duplicate_json=blocked exact_authoritative_schemas=locked hidden_authority=blocked provenance_paths=bound authoritative_arrays=typed acceptance_merge_rules=locked predecessor=locked internal_surface_swap=blocked webhook_surface_swap=blocked realtime_coupling=blocked divergence_rule=locked catalog_swap=blocked registry_role_escalation=blocked registry_vendor_selection=blocked contract_version_swap=blocked version_ordering_authority=blocked non_authority_rule=locked source_history_rewrite=blocked unsupported_selection=blocked evidence_credit_drift=blocked full_d4_acceptance=blocked product_wave4_production=blocked c3_scope_leak=blocked sibling_selection=blocked")
+    print("d4b_selection_falsification=PASS duplicate_json=blocked exact_authoritative_schemas=locked hidden_authority=blocked authoritative_integers=typed_exact provenance_paths=bound authoritative_arrays=typed acceptance_merge_rules=locked predecessor=locked internal_surface_swap=blocked webhook_surface_swap=blocked realtime_coupling=blocked divergence_rule=locked catalog_swap=blocked registry_role_escalation=blocked registry_vendor_selection=blocked contract_version_swap=blocked version_ordering_authority=blocked non_authority_rule=locked source_history_rewrite=blocked unsupported_selection=blocked evidence_credit_drift=blocked full_d4_acceptance=blocked product_wave4_production=blocked c3_scope_leak=blocked sibling_selection=blocked")
     return 0
 
 

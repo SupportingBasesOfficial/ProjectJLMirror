@@ -70,7 +70,7 @@ jobs:
         shell: bash
         run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
 
-      - name: Assert historical evaluation remains non-promoting at current two-credit ledger
+      - name: Assert historical evaluation remains non-promoting at current three-credit ledger
         shell: bash
         run: |
           set -euo pipefail
@@ -83,6 +83,7 @@ jobs:
           credits = [
               'ack_after_durable_responsibility_and_lease_ambiguity',
               'quarantine_redrive_current_authority_and_dedup_preservation',
+              'bounded_message_batch_compression_and_parser_limits',
           ]
           assert plan['mode'] == 'candidate_evaluation_only'
           assert plan['selection_state'] == 'not_selected' and plan['selection_authority'] == 'not_granted'
@@ -93,14 +94,14 @@ jobs:
           assert d4c['candidate'] is None and d4c['candidate_status'] == 'not_selected' and d4c['state'] == 'candidate_selection_open'
           assert d4c['evidence_completed'] == credits
           assert d4c['evidence_remaining'] == [x for x in d4c['required_evidence'] if x not in credits]
-          assert len(d4c['evidence_remaining']) == 7
+          assert len(d4c['evidence_remaining']) == 6
           assert tracks['D4-D']['candidate'] is None and tracks['D4-D']['candidate_status'] == 'not_selected' and tracks['D4-D']['evidence_completed'] == []
-          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 14
+          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 15
           assert state['gate_state'] == 'scoped'
           assert state['d4_transport_authority'] == 'selected_not_granted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['c3_numeric_topology_authority'] == 'not_selected'
-          print('d4c_candidate_evaluation_boundary=PASS axes=9 evaluation_auto_credit=forbidden selection=not_selected current_d4c=2_of_9 d4d=0_of_5 d4wide=14/26 d4=scoped authorities=unchanged')
+          print('d4c_candidate_evaluation_boundary=PASS axes=9 evaluation_auto_credit=forbidden selection=not_selected current_d4c=3_of_9 d4d=0_of_5 d4wide=15/26 d4=scoped authorities=unchanged')
           PY

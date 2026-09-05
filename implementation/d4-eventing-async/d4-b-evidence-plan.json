@@ -4,8 +4,16 @@
   "track_id": "D4-B",
   "name": "serialization_schema_catalog_and_contract_versioning",
   "source_decisions": ["OPEN-EVT-002", "OPEN-EVT-003", "OPEN-EVT-004"],
-  "candidate": null,
-  "candidate_status": "not_selected",
+  "candidate": {
+    "serialization": {
+      "surface_policy": "explicit_surface_bound_profiles",
+      "internal_broker": "protobuf_profile",
+      "outbound_webhook": "bounded_json_plus_json_schema_profile"
+    },
+    "schema_catalog": "hybrid_reviewed_git_plus_registry_catalog",
+    "contract_version": "positive_integer_family_revision"
+  },
+  "candidate_status": "selected_c2_profile",
   "source_evidence_state": "reviewed_source_run_available",
   "ledger_credit_state": "five_of_five",
   "required_evidence": [
@@ -24,11 +32,12 @@
   ],
   "remaining_evidence": [],
   "current_run_auto_credit": false,
-  "selection_state": "not_selected",
-  "serialization_selection_state": "not_selected",
-  "schema_catalog_selection_state": "not_selected",
-  "contract_version_syntax_selection_state": "not_selected",
-  "separate_selection_required": true,
+  "selection_state": "selected",
+  "serialization_selection_state": "selected_surface_bound",
+  "schema_catalog_selection_state": "selected",
+  "contract_version_syntax_selection_state": "selected",
+  "selection_record": "implementation/d4-eventing-async/d4-b-selection-record.json",
+  "separate_selection_required": false,
   "separate_d4_acceptance_required": true,
   "d4_transport_authority": "selected_not_granted",
   "canonical_product_implementation_authority": "not_granted",

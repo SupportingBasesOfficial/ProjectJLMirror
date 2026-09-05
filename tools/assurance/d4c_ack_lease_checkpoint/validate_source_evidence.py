@@ -9,7 +9,9 @@ from pathlib import Path
 import validate_source_evidence_historical as historical
 from validate_source_evidence_historical import *  # noqa: F401,F403
 
-D4C_CREDIT = "ack_after_durable_responsibility_and_lease_ambiguity"
+D4C_CREDIT_008 = "ack_after_durable_responsibility_and_lease_ambiguity"
+D4C_CREDIT_009 = "quarantine_redrive_current_authority_and_dedup_preservation"
+CURRENT_CREDITS = [D4C_CREDIT_008, D4C_CREDIT_009]
 _legacy_load_json = historical.load_json
 
 
@@ -20,11 +22,12 @@ def _current_errors(state: dict) -> list[str]:
     errors: list[str] = []
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
         errors.append("D4-C selection leakage")
-    if d4c.get("evidence_completed") != [D4C_CREDIT] or d4c.get("evidence_remaining") != [x for x in required if x != D4C_CREDIT]:
-        errors.append("D4-C ledger credit leakage beyond separately promoted OPEN-EVT-008")
+    expected_remaining = [x for x in required if x not in CURRENT_CREDITS]
+    if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining:
+        errors.append("D4-C current ledger drift beyond separately promoted OPEN-EVT-008 and OPEN-EVT-009")
     if tracks.get("D4-D", {}).get("evidence_completed") != []:
         errors.append("D4-D state leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 13:
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 14:
         errors.append("D4-wide evidence count drift")
     return errors
 
@@ -66,7 +69,7 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}")
         return 1
-    print("d4c_ack_lease_checkpoint_source=PASS source_auto_credit=false historical_oracle=preserved current_promoted_credit=1_of_9 d4wide=13_of_26 selection=not_selected")
+    print("d4c_ack_lease_checkpoint_source=PASS source_auto_credit=false historical_oracle=preserved current_promoted_credit=2_of_9 d4wide=14_of_26 selection=not_selected")
     return 0
 
 

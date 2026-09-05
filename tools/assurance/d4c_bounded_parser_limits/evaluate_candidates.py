@@ -101,6 +101,8 @@ def bounded_gzip_decode(data: bytes) -> bytes:
         raise LimitViolation("decompressed_bytes_exceeded")
     if not decoder.eof:
         raise LimitViolation("invalid_compressed_payload")
+    if decoder.unused_data:
+        raise LimitViolation("compressed_trailing_data")
     return bytes(out)
 
 
@@ -137,16 +139,21 @@ def validate_structure(value: Any) -> None:
         raise LimitViolation("unsupported_value_type")
 
 
-def validate_specialized_plane(value: Any) -> None:
-    if not isinstance(value, dict):
-        return
-    kind = value.get("kind")
-    if kind == "artifact":
-        if "inline" in value or not isinstance(value.get("artifact_ref"), str) or not value["artifact_ref"]:
-            raise LimitViolation("artifact_reference_required")
-    if kind == "raw_telemetry":
-        if "inline" in value or not isinstance(value.get("telemetry_ref"), str) or not value["telemetry_ref"]:
-            raise LimitViolation("telemetry_reference_required")
+def validate_specialized_planes(value: Any) -> None:
+    stack: List[Any] = [value]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            kind = node.get("kind")
+            if kind == "artifact":
+                if "inline" in node or not isinstance(node.get("artifact_ref"), str) or not node["artifact_ref"]:
+                    raise LimitViolation("artifact_reference_required")
+            if kind == "raw_telemetry":
+                if "inline" in node or not isinstance(node.get("telemetry_ref"), str) or not node["telemetry_ref"]:
+                    raise LimitViolation("telemetry_reference_required")
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
 
 
 def decode_and_validate(
@@ -173,11 +180,7 @@ def decode_and_validate(
         if isinstance(value, list) and len(value) > TEST_MAX_BATCH_ITEMS:
             raise LimitViolation("batch_items_exceeded")
         validate_structure(value)
-        if isinstance(value, list):
-            for item in value:
-                validate_specialized_plane(item)
-        else:
-            validate_specialized_plane(value)
+        validate_specialized_planes(value)
         return {"accepted": True, "failure": None, "events": events, "limit_profile": TEST_LIMIT_PROFILE}
     except LimitViolation as exc:
         event = {"code": exc.code, "retryable": False, "candidate": candidate}
@@ -209,6 +212,9 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
     nested_bytes = encoded(nested)
     nested_result = decode_and_validate(candidate, [nested_bytes], declared_length=len(nested_bytes))
 
+    nested_collection = encoded({"items": list(range(TEST_MAX_COLLECTION_ITEMS + 1))})
+    nested_collection_result = decode_and_validate(candidate, [nested_collection], declared_length=len(nested_collection))
+
     long_string = encoded({"s": "x" * (TEST_MAX_STRING_CHARS + 1)})
     string_result = decode_and_validate(candidate, [long_string], declared_length=len(long_string))
 
@@ -224,11 +230,17 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
     bomb = gzip.compress(bomb_plain)
     bomb_result = decode_and_validate(candidate, [bomb], declared_length=len(bomb), encoding="gzip")
 
+    first_member = gzip.compress(encoded({"value": "ok"}))
+    second_member = gzip.compress(encoded({"value": "smuggled"}))
+    concatenated_result = decode_and_validate(candidate, [first_member + second_member], declared_length=len(first_member + second_member), encoding="gzip")
+
     artifact_inline = encoded({"kind": "artifact", "inline": "abc"})
     artifact_inline_result = decode_and_validate(candidate, [artifact_inline], declared_length=len(artifact_inline))
-    artifact_ref = encoded({"kind": "artifact", "artifact_ref": "artifact://tenant/object"})
+    nested_artifact_inline = encoded({"wrapper": {"kind": "artifact", "inline": "abc"}})
+    nested_artifact_inline_result = decode_and_validate(candidate, [nested_artifact_inline], declared_length=len(nested_artifact_inline))
+    artifact_ref = encoded({"wrapper": {"kind": "artifact", "artifact_ref": "artifact://tenant/object"}})
     artifact_ref_result = decode_and_validate(candidate, [artifact_ref], declared_length=len(artifact_ref))
-    telemetry_ref = encoded({"kind": "raw_telemetry", "telemetry_ref": "telemetry://tenant/range"})
+    telemetry_ref = encoded({"wrapper": {"kind": "raw_telemetry", "telemetry_ref": "telemetry://tenant/range"}})
     telemetry_ref_result = decode_and_validate(candidate, [telemetry_ref], declared_length=len(telemetry_ref))
 
     oversized_contract = b"{" + b" " * TEST_MAX_WIRE_BYTES + b"}"
@@ -243,11 +255,13 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
         "unknown_length_stream_remains_bounded": unknown["failure"]["code"] == "wire_bytes_exceeded" and unknown_probe.yielded <= 2,
         "batch_size_bound": batch_result["failure"]["code"] == "batch_items_exceeded",
         "nesting_bound": nested_result["failure"]["code"] == "nesting_depth_exceeded",
+        "collection_size_bound": nested_collection_result["failure"]["code"] == "collection_items_exceeded",
         "string_bound": string_result["failure"]["code"] == "string_chars_exceeded",
         "field_count_bound": fields_result["failure"]["code"] == "total_fields_exceeded",
         "decompression_output_bound": bomb_result["failure"]["code"] == "decompressed_bytes_exceeded",
-        "artifact_reference_required": artifact_inline_result["failure"]["code"] == "artifact_reference_required" and artifact_ref_result["accepted"] is True,
-        "raw_telemetry_reference_supported": telemetry_ref_result["accepted"] is True,
+        "compressed_trailing_member_rejected": concatenated_result["failure"]["code"] == "compressed_trailing_data",
+        "artifact_reference_required_at_any_depth": artifact_inline_result["failure"]["code"] == "artifact_reference_required" and nested_artifact_inline_result["failure"]["code"] == "artifact_reference_required" and artifact_ref_result["accepted"] is True,
+        "raw_telemetry_reference_supported_at_any_depth": telemetry_ref_result["accepted"] is True,
         "transport_cannot_weaken_contract_limit": weak_transport_result["failure"]["code"] == "wire_bytes_exceeded",
         "limit_failures_deterministic": deterministic_1["failure"]["code"] == deterministic_2["failure"]["code"] == "batch_items_exceeded",
         "limit_failures_non_retryable": deterministic_1["failure"]["retryable"] is False and deterministic_2["failure"]["retryable"] is False,

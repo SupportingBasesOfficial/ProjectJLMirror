@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-C",
+  "name": "delivery_ack_quarantine_equivalence_outbox_replay_history_recovery",
+  "source_decisions": [
+    "OPEN-EVT-008",
+    "OPEN-EVT-009",
+    "OPEN-EVT-010",
+    "OPEN-EVT-011",
+    "OPEN-EVT-012",
+    "OPEN-EVT-013",
+    "OPEN-EVT-014",
+    "OPEN-EVT-015",
+    "OPEN-EVT-025"
+  ],
+  "candidate": null,
+  "candidate_status": "not_selected",
+  "source_evidence_state": "reviewed_source_run_available",
+  "ledger_credit_state": "one_of_nine",
+  "required_evidence": [
+    "ack_after_durable_responsibility_and_lease_ambiguity",
+    "quarantine_redrive_current_authority_and_dedup_preservation",
+    "bounded_message_batch_compression_and_parser_limits",
+    "scoped_content_equivalence_confidentiality_and_conflict_rejection",
+    "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
+    "producer_generation_nonresurrection_across_failover_restore",
+    "privileged_bounded_replay_with_original_identity_and_effect_safety",
+    "historical_reader_upcaster_semantic_and_equivalence_continuity",
+    "recovery_generation_rf_inventory_reconciliation_and_activation_gates"
+  ],
+  "credited_evidence": [
+    "ack_after_durable_responsibility_and_lease_ambiguity"
+  ],
+  "remaining_evidence": [
+    "quarantine_redrive_current_authority_and_dedup_preservation",
+    "bounded_message_batch_compression_and_parser_limits",
+    "scoped_content_equivalence_confidentiality_and_conflict_rejection",
+    "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
+    "producer_generation_nonresurrection_across_failover_restore",
+    "privileged_bounded_replay_with_original_identity_and_effect_safety",
+    "historical_reader_upcaster_semantic_and_equivalence_continuity",
+    "recovery_generation_rf_inventory_reconciliation_and_activation_gates"
+  ],
+  "current_run_auto_credit": false,
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "separate_selection_required": true,
+  "separate_d4_acceptance_required": true,
+  "d4_transport_authority": "selected_not_granted",
+  "canonical_product_implementation_authority": "not_granted",
+  "wave4_implementation_authority": "not_granted",
+  "production_authority": "none",
+  "c3_numeric_topology_authority": "not_selected"
+}

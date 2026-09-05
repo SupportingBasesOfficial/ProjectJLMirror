@@ -64,7 +64,7 @@ jobs:
         shell: bash
         run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
 
-      - name: Preserve D4 non-authority boundary after D4-A and D4-B selections
+      - name: Preserve D4 non-authority boundary after governed D4-A D4-B selections and D4-C promotion
         shell: bash
         run: |
           set -euo pipefail
@@ -77,6 +77,9 @@ jobs:
           tracks = {track['track_id']: track for track in state['tracks']}
           d4a = tracks['D4-A']
           d4b = tracks['D4-B']
+          d4c = tracks['D4-C']
+          d4d = tracks['D4-D']
+          d4c_credit = 'ack_after_durable_responsibility_and_lease_ambiguity'
           expected_d4a = {
               'capacity_envelope_baseline_growth_stress',
               'broker_neutral_anti_corruption_stub_swap',
@@ -125,8 +128,12 @@ jobs:
           assert d4b_selection['selection_scope'] == 'bounded_c2_contract_profile_selection_only'
           assert d4b_selection['separate_d4_acceptance_required'] is True
 
-          assert all(tracks[track_id]['evidence_completed'] == [] for track_id in ('D4-C', 'D4-D'))
-          assert all(tracks[track_id]['candidate'] is None and tracks[track_id]['candidate_status'] == 'not_selected' for track_id in ('D4-C', 'D4-D'))
-          assert sum(len(track['evidence_completed']) for track in state['tracks']) == 12
-          print('d4_scoped_boundary=PASS d4a=kafka_selected_7_of_7 d4b=profile_selected_5_of_5 evidence_credited=12 transport_authority=not_granted product_wave4=not_granted production=none c3=not_selected d4c_d=open')
+          assert d4c['candidate'] is None and d4c['candidate_status'] == 'not_selected'
+          assert d4c['state'] == 'candidate_selection_open'
+          assert d4c['evidence_completed'] == [d4c_credit]
+          assert len(d4c['evidence_remaining']) == 8 and d4c_credit not in d4c['evidence_remaining']
+          assert d4d['candidate'] is None and d4d['candidate_status'] == 'not_selected'
+          assert d4d['evidence_completed'] == []
+          assert sum(len(track['evidence_completed']) for track in state['tracks']) == 13
+          print('d4_scoped_boundary=PASS d4a=kafka_selected_7_of_7 d4b=profile_selected_5_of_5 d4c=1_of_9 d4d=0_of_5 evidence_credited=13 transport_authority=not_granted product_wave4=not_granted production=none c3=not_selected')
           PY

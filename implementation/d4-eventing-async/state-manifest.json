@@ -18,11 +18,7 @@
     {
       "track_id": "D4-A",
       "name": "broker_transport_topology_anti_corruption",
-      "source_decisions": [
-        "OPEN-EVT-001",
-        "OPEN-EVT-005",
-        "OPEN-REL-012.A"
-      ],
+      "source_decisions": ["OPEN-EVT-001", "OPEN-EVT-005", "OPEN-REL-012.A"],
       "candidate": "kafka",
       "candidate_status": "selected_c2_candidate",
       "state": "selected_candidate",
@@ -95,9 +91,10 @@
         "historical_reader_upcaster_semantic_and_equivalence_continuity",
         "recovery_generation_rf_inventory_reconciliation_and_activation_gates"
       ],
-      "evidence_completed": [],
+      "evidence_completed": [
+        "ack_after_durable_responsibility_and_lease_ambiguity"
+      ],
       "evidence_remaining": [
-        "ack_after_durable_responsibility_and_lease_ambiguity",
         "quarantine_redrive_current_authority_and_dedup_preservation",
         "bounded_message_batch_compression_and_parser_limits",
         "scoped_content_equivalence_confidentiality_and_conflict_rejection",
@@ -132,13 +129,8 @@
       ]
     }
   ],
-  "explicit_c3_exclusions": [
-    "OPEN-EVT-006", "OPEN-EVT-007", "OPEN-EVT-019", "OPEN-EVT-026", "OPEN-EVT-027", "OPEN-EVT-028", "OPEN-REL-012.B",
-    "production_partition_counts", "production_retry_backoff_jitter_numerics", "production_retention_lag_replay_quarantine_horizons", "production_realtime_buffer_session_numerics"
-  ],
-  "explicit_product_or_later_gate_exclusions": [
-    "OPEN-EVT-020", "OPEN-EVT-021", "OPEN-EVT-022", "OPEN-EVT-023", "OPEN-EVT-024", "wave4_monitoring_product_implementation", "production_deployment"
-  ],
+  "explicit_c3_exclusions": ["OPEN-EVT-006", "OPEN-EVT-007", "OPEN-EVT-019", "OPEN-EVT-026", "OPEN-EVT-027", "OPEN-EVT-028", "OPEN-REL-012.B", "production_partition_counts", "production_retry_backoff_jitter_numerics", "production_retention_lag_replay_quarantine_horizons", "production_realtime_buffer_session_numerics"],
+  "explicit_product_or_later_gate_exclusions": ["OPEN-EVT-020", "OPEN-EVT-021", "OPEN-EVT-022", "OPEN-EVT-023", "OPEN-EVT-024", "wave4_monitoring_product_implementation", "production_deployment"],
   "acceptance_rule": "all_d4_tracks_have_reviewed_terminal_c2_disposition_all_required_evidence_completed_and_exact_head_assurance_clean_then_separate_acceptance",
   "merge_rule": "separate_explicit_user_authorization_after_final_exact_head_clean_gate"
 }

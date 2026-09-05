@@ -16,6 +16,7 @@ from evaluate_candidates import (  # noqa: E402
     TEST_MAX_BATCH_ITEMS,
     TEST_MAX_COLLECTION_ITEMS,
     TEST_MAX_DECOMPRESSED_BYTES,
+    TEST_MAX_NESTING_DEPTH,
     TEST_MAX_WIRE_BYTES,
     ProbeChunks,
     decode_and_validate,
@@ -54,6 +55,14 @@ class BoundedParserSourceTests(unittest.TestCase):
         payload = b"{" + b" " * TEST_MAX_WIRE_BYTES + b"}"
         result = decode_and_validate(candidate, [payload], declared_length=len(payload))
         self.assertEqual(result["failure"]["code"], "wire_bytes_exceeded")
+
+    def test_parser_nesting_is_rejected_before_recursive_json_decode(self):
+        payload = b"[" * (TEST_MAX_NESTING_DEPTH + 100) + b"0" + b"]" * (TEST_MAX_NESTING_DEPTH + 100)
+        self.assertLess(len(payload), TEST_MAX_WIRE_BYTES)
+        for candidate in CANDIDATES:
+            result = decode_and_validate(candidate, [payload], declared_length=len(payload))
+            self.assertEqual(result["failure"]["code"], "nesting_depth_exceeded")
+            self.assertFalse(result["failure"]["retryable"])
 
     def test_decompression_bomb_is_bounded_before_json_parse(self):
         plain = encoded({"data": "x" * (TEST_MAX_DECOMPRESSED_BYTES + 1024)})

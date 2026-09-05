@@ -28,28 +28,45 @@ The executable harness and falsification suite require all of the following:
 4. redelivery/rewind remains safe through durable inbox/effect idempotency;
 5. scoped identity alone is insufficient after rewind: durable content-equivalence authority is required;
 6. same scoped identity with conflicting immutable content fails closed as integrity failure;
-7. ownership/takeover is fenced so a stale worker cannot execute an effect after takeover;
-8. takeover after expiry requires a **strictly newer fence epoch** and cannot reuse the expired epoch;
-9. a higher epoch cannot steal a still-unexpired claim by implication;
-10. crashes between durable responsibility/effect and broker progress recover without semantic loss or repeated business effect.
+7. the evidence fixture compares immutable **envelope + payload** semantics, and independently rejects envelope drift and payload drift under the same scoped ID;
+8. ownership/takeover is fenced so a stale worker cannot execute an effect after takeover;
+9. takeover after expiry requires a **strictly newer fence epoch** and cannot reuse the expired epoch;
+10. a higher epoch cannot steal a still-unexpired claim by implication;
+11. crashes between durable responsibility/effect and broker progress recover without semantic loss or repeated business effect.
 
 The reference state machine deliberately keeps broker ack/checkpoint state subordinate to platform durable receipt/equivalence/effect truth. This prevents Kafka, a future broker, or a broker-native visibility/DLQ primitive from becoming business-effect authority by implication.
+
+The harness uses canonicalized JSON plus SHA-256 only as a deterministic **test comparison fixture**. It does **not** select the production content-equivalence mechanism, hash/MAC, canonicalization profile, storage representation or historical verifier governed by `OPEN-EVT-011`.
 
 ## Crash and ambiguity controls
 
 The source harness separately exercises:
 
 - durable responsibility with broker progress but no effect, proving progress is not effect truth;
+- rejection of a higher-epoch claim while the current lease remains valid;
 - lease expiry after a completed effect, followed by equivalent redelivery and a strictly higher fenced takeover, proving exactly one business effect;
 - rejection of a same-epoch takeover after expiry;
-- rejection of a higher-epoch takeover while the prior lease remains current;
 - process close/reopen after durable responsibility but before effect/progress, proving receipt, equivalence and fence state survive restart before safe takeover and completion;
 - process close/reopen after effect completion but before broker progress, proving effect truth and count survive restart and redelivery becomes an idempotent no-op;
 - missing historical content-equivalence authority after close/reopen, which remains uncertainty and fails closed;
-- conflicting same-ID/different-content redelivery, which fails closed;
+- conflicting same-ID/different-envelope and same-ID/different-payload redelivery, both of which fail closed;
 - stale-owner effect execution after takeover, which is fenced.
 
 These probes prove logical/process restart continuity of the accepted semantics. They do not select a production database durability model, filesystem, replication topology, timeout, lease duration or failover product.
+
+## Source-run provenance
+
+The exact-HEAD workflow emits an immutable source artifact containing:
+
+- exact repository SHA;
+- workflow run ID and attempt;
+- exact resolved job ID/name;
+- candidate results and their SHA-256;
+- source decision/evidence binding;
+- exact required-proof, source-assertion and non-authority inventories;
+- SHA-256 digests for the source manifest, evaluator, validator, falsification suite, provenance emitter, readiness record and workflow itself.
+
+The artifact is retained as source evidence only. Its existence or digest grants no ledger credit or selection.
 
 ## Governance boundary
 
@@ -59,7 +76,8 @@ This PR is intentionally **source evidence only**:
 - D4-C remains `0/9` credited evidence;
 - `current_run_auto_credit=false`;
 - `ledger_credit=[]`;
-- no candidate, timeout, lease duration, broker-specific ack API, checkpoint topology, production database schema, persistence product, or numeric production setting is selected;
+- the OPEN-EVT-011 content-equivalence profile remains `not_selected`;
+- no candidate, timeout, lease duration, broker-specific ack API, checkpoint topology, production database schema, persistence product, comparison algorithm/profile, or numeric production setting is selected;
 - D4-D remains `0/5`, open and unselected;
 - D4-wide remains `12/26`;
 - D4 remains `scoped`;

@@ -94,7 +94,7 @@ def main() -> int:
 
     must_fail(lambda d: d[validator.PLAN].__setitem__("selection_state", "not_selected"), "evidence-plan selection state drift")
     must_fail(lambda d: d[validator.PLAN].__setitem__("current_run_auto_credit", True), "cannot invent source-run auto-credit")
-    must_fail(lambda d: d[validator.PLAN]["credited_evidence"].pop(), "must preserve 5/5 evidence accounting")
+    must_fail(lambda d: d[validator.PLAN]["credited_evidence"].pop(), "D4-B evidence-plan credited inventory must be an exact list")
     must_fail(lambda d: d[validator.PLAN].__setitem__("separate_d4_acceptance_required", False), "full D4 acceptance must remain separate")
 
     must_fail(lambda d: d[validator.STATE].__setitem__("gate_state", "separately_accepted"), "D4 must remain scoped")

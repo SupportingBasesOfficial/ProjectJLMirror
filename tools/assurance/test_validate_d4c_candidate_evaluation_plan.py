@@ -16,6 +16,13 @@ EQUIVALENCE_CANONICAL_INTERPRETATION_PROOF = "comparison_evidence_uses_the_same_
 EQUIVALENCE_LOCAL_ATOMICITY_PROOF = "co_resident_inbox_and_effect_completion_is_atomic"
 EQUIVALENCE_CROSS_AUTHORITY_PROOF = "cross_authority_effects_use_stable_operation_and_result_reconciliation"
 OUTBOX_RECOVERY_PROOF = "dispatcher_restart_and_recovery_preserve_stable_message_identity_and_semantic_content"
+ACK_REWIND_EQUIVALENCE_PROOF = "offset_rewind_duplicate_handling_requires_scoped_id_content_equivalence_evidence_not_identity_alone"
+DEDUP_IDENTITY_PROOF = "dedup_identity_is_consumer_contract_trusted_message_identity_scope_and_message_id_or_equivalent"
+DURABLE_DUPLICATE_EVIDENCE_PROOF = "repeated_scoped_identity_is_benign_duplicate_only_with_durable_equivalence_evidence"
+HISTORICAL_EQUIVALENCE_MIGRATION_PROOF = "historical_equivalence_authority_survives_supported_horizon_or_is_replaced_by_governed_equality_preserving_migration"
+REPLAY_MISSING_VERIFIER_PROOF = "unavailable_historical_comparison_authority_blocks_or_reconciles_duplicate_sensitive_effects_instead_of_trusting_identity_alone"
+RECOVERY_OLDER_EVIDENCE_PROOF = "missing_or_older_content_comparison_evidence_is_not_safe_duplicate_proof"
+RECOVERY_DUPLICATE_CLASSIFICATION_PROOF = "duplicate_classification_and_effectful_async_admission_remain_fail_closed_until_continuity_equivalence_and_historical_authority_are_proven"
 
 
 def snapshot() -> dict[Path, object]:
@@ -96,12 +103,25 @@ def main() -> int:
     must_fail(inject_non_string_candidate, "candidate class inventory drift")
     must_fail(lambda d: obj(d, validator.PLAN)["axes"]["scoped_content_equivalence_authority"]["must_prove"].pop(), "exact proof inventory drift")
     must_fail(replace_first_proof, "exact proof inventory drift")
-    must_fail(lambda d: remove_axis_proof(d, "recovery_generation_reconciliation_and_activation", WEBHOOK_RECOVERY_PROOF), "exact proof inventory drift")
-    must_fail(lambda d: remove_axis_proof(d, "quarantine_and_redrive", QUARANTINE_RETENTION_PROOF), "exact proof inventory drift")
-    must_fail(lambda d: remove_axis_proof(d, "scoped_content_equivalence_authority", EQUIVALENCE_CANONICAL_INTERPRETATION_PROOF), "exact proof inventory drift")
-    must_fail(lambda d: remove_axis_proof(d, "scoped_content_equivalence_authority", EQUIVALENCE_LOCAL_ATOMICITY_PROOF), "exact proof inventory drift")
-    must_fail(lambda d: remove_axis_proof(d, "scoped_content_equivalence_authority", EQUIVALENCE_CROSS_AUTHORITY_PROOF), "exact proof inventory drift")
-    must_fail(lambda d: remove_axis_proof(d, "outbox_claim_dispatch_and_ack_ambiguity", OUTBOX_RECOVERY_PROOF), "exact proof inventory drift")
+
+    proof_omissions = [
+        ("recovery_generation_reconciliation_and_activation", WEBHOOK_RECOVERY_PROOF),
+        ("quarantine_and_redrive", QUARANTINE_RETENTION_PROOF),
+        ("scoped_content_equivalence_authority", EQUIVALENCE_CANONICAL_INTERPRETATION_PROOF),
+        ("scoped_content_equivalence_authority", EQUIVALENCE_LOCAL_ATOMICITY_PROOF),
+        ("scoped_content_equivalence_authority", EQUIVALENCE_CROSS_AUTHORITY_PROOF),
+        ("outbox_claim_dispatch_and_ack_ambiguity", OUTBOX_RECOVERY_PROOF),
+        ("ack_visibility_lease_and_checkpoint", ACK_REWIND_EQUIVALENCE_PROOF),
+        ("scoped_content_equivalence_authority", DEDUP_IDENTITY_PROOF),
+        ("scoped_content_equivalence_authority", DURABLE_DUPLICATE_EVIDENCE_PROOF),
+        ("scoped_content_equivalence_authority", HISTORICAL_EQUIVALENCE_MIGRATION_PROOF),
+        ("privileged_replay_and_event_history", REPLAY_MISSING_VERIFIER_PROOF),
+        ("recovery_generation_reconciliation_and_activation", RECOVERY_OLDER_EVIDENCE_PROOF),
+        ("recovery_generation_reconciliation_and_activation", RECOVERY_DUPLICATE_CLASSIFICATION_PROOF),
+    ]
+    for axis_name, proof in proof_omissions:
+        must_fail(lambda d, a=axis_name, p=proof: remove_axis_proof(d, a, p), "exact proof inventory drift")
+
     must_fail(lambda d: obj(d, validator.PLAN)["axes"]["recovery_generation_reconciliation_and_activation"].__setitem__("evidence_id", "wrong"), "evidence binding drift")
     must_fail(lambda d: obj(d, validator.PLAN)["source_decisions"].pop(), "source decision inventory drift")
     must_fail(lambda d: obj(d, validator.PLAN)["cross_axis_invariants"].pop(), "cross-axis invariant inventory drift")
@@ -120,7 +140,7 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("production_authority", "granted"), "production authority escalation")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("c3_numeric_topology_authority", "selected"), "C3 authority escalation")
 
-    print("d4c_candidate_evaluation_falsification=PASS duplicate_json=blocked hidden_selection=blocked axis_removal=blocked hidden_preference=blocked candidate_collapse=blocked non_string_collection=blocked proof_removal=blocked proof_substitution=blocked webhook_recovery_omission=blocked quarantine_retention_omission=blocked equivalence_canonical_interpretation_omission=blocked equivalence_local_atomicity_omission=blocked equivalence_cross_authority_reconciliation_omission=blocked outbox_semantic_recovery_omission=blocked evidence_binding_drift=blocked source_decision_drift=blocked output_escalation=blocked d4a_d4b_regression=blocked d4c_credit_leak=blocked d4d_credit_leak=blocked authority_escalation=blocked")
+    print("d4c_candidate_evaluation_falsification=PASS duplicate_json=blocked hidden_selection=blocked axis_removal=blocked hidden_preference=blocked candidate_collapse=blocked non_string_collection=blocked proof_removal=blocked proof_substitution=blocked fixed_phase10_proof_omissions=blocked evidence_binding_drift=blocked source_decision_drift=blocked output_escalation=blocked d4a_d4b_regression=blocked d4c_credit_leak=blocked d4d_credit_leak=blocked authority_escalation=blocked")
     return 0
 
 

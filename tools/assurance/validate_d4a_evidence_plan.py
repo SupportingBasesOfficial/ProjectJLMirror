@@ -8,7 +8,10 @@ from pathlib import Path
 import validate_d4a_evidence_plan_historical as historical
 from validate_d4a_evidence_plan_historical import *  # noqa: F401,F403
 
-D4C_CREDIT = "ack_after_durable_responsibility_and_lease_ambiguity"
+D4C_CREDITS = [
+    "ack_after_durable_responsibility_and_lease_ambiguity",
+    "quarantine_redrive_current_authority_and_dedup_preservation",
+]
 _legacy_validate_objects = historical.validate_objects
 
 
@@ -17,17 +20,17 @@ def _current_sibling_errors(entry: dict) -> list[str]:
     tracks = {t.get("track_id"): t for t in entry.get("tracks", []) if isinstance(t, dict)}
     d4c = tracks.get("D4-C", {})
     required = d4c.get("required_evidence", [])
-    expected_remaining = [item for item in required if item != D4C_CREDIT]
+    expected_remaining = [item for item in required if item not in D4C_CREDITS]
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
         errors.append("D4-C current sibling state must remain open/unselected")
-    if d4c.get("evidence_completed") != [D4C_CREDIT]:
-        errors.append("D4-C current sibling credit must be exactly OPEN-EVT-008")
+    if d4c.get("evidence_completed") != D4C_CREDITS:
+        errors.append("D4-C current sibling credit must be exactly OPEN-EVT-008 plus OPEN-EVT-009")
     if d4c.get("evidence_remaining") != expected_remaining:
         errors.append("D4-C current sibling remaining evidence drift")
     if tracks.get("D4-D", {}).get("evidence_completed") != []:
         errors.append("D4-D must remain uncredited")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 13:
-        errors.append("D4-wide current evidence must remain 13/26")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 14:
+        errors.append("D4-wide current evidence must remain 14/26")
     return errors
 
 
@@ -66,7 +69,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4A_PLAN_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4a_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=1_of_9 d4wide=13_of_26")
+    print("d4a_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=2_of_9 d4wide=14_of_26")
     return 0
 
 

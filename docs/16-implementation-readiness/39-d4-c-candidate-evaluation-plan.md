@@ -125,7 +125,7 @@ Candidate classes:
 - hybrid generation manifest plus multi-store reconciler;
 - equivalent reviewed profile.
 
-The selected future profile must make `(R,F]` reconciliation reproducible across broker/history/inbox/outbox/equivalence and surviving external/effect evidence. Missing state remains uncertainty and effectful async activation stays fail-closed until continuity is proven.
+The selected future profile must make `(R,F]` reconciliation reproducible across broker/history/inbox/outbox/equivalence and surviving external/effect evidence. It must also preserve webhook recovery continuity explicitly: stable delivery identity, the semantic snapshot or reproduction authority required to recreate the original delivery meaning, and destination-generation fences. Missing state remains uncertainty and effectful async activation stays fail-closed until continuity is proven.
 
 ## Cross-axis invariants
 

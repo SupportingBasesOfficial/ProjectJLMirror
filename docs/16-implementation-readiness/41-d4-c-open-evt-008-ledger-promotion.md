@@ -12,13 +12,14 @@ This transition promotes exactly one reviewed source obligation into the D4-C le
 - evidence: `ack_after_durable_responsibility_and_lease_ambiguity`;
 - source PR: `#72`;
 - exact reviewed source HEAD: `02063da13a4a93fe6bc67521e4a7e4e0d4999045`;
+- source squash commit accepted on `main`: `69ad19e6129898e7fdf7e9d57e40a841cb0d4ef5`;
 - source workflow run: `33948472401`, attempt `1`;
 - source job: `101258703919` — `D4-C OPEN-EVT-008 source evidence`;
 - source artifact: `9964116208`;
 - artifact digest: `sha256:2a7a38caff4ddb6e7740ee079bb0c3cffb2f3e29acacb842ce84c0ab987786d6`;
 - source manifest digest: `5c085286b9b6cac8df524f87fa4043accc74cc0878939427abd5df7da16a7708`.
 
-The promotion workflow re-fetches the PR, exact review, workflow run, job and artifact from live GitHub state and verifies the artifact payload and source-manifest digest before admitting credit.
+The promotion workflow re-fetches the PR, exact review, workflow run, job and artifact from live GitHub state, verifies that the PR squash merge is the same commit used as the promotion base, and verifies the artifact payload and source-manifest digest before admitting credit.
 
 ## Ledger transition
 

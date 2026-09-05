@@ -12,7 +12,8 @@ PLAN = Path("implementation/d4-eventing-async/d4-c-candidate-evaluation-plan.jso
 STATE = Path("implementation/d4-eventing-async/state-manifest.json")
 CREDIT_008 = "ack_after_durable_responsibility_and_lease_ambiguity"
 EVIDENCE = "quarantine_redrive_current_authority_and_dedup_preservation"
-CURRENT_CREDITS = [CREDIT_008, EVIDENCE]
+CREDIT_010 = "bounded_message_batch_compression_and_parser_limits"
+CURRENT_CREDITS = [CREDIT_008, EVIDENCE, CREDIT_010]
 EXPECTED_ASSERTIONS = [
     "all_three_concrete_candidate_classes_share_one_platform_quarantine_process_truth",
     "retry_budget_exhaustion_transitions_to_governed_quarantine_without_inferring_production_retry_numerics",
@@ -140,10 +141,10 @@ def validate(root: Path) -> list[str]:
         errors.append("D4-C selection leakage")
     expected_remaining = [x for x in d4c.get("required_evidence", []) if x not in CURRENT_CREDITS]
     if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining:
-        errors.append("D4-C current 2/9 ledger drift")
+        errors.append("D4-C current 3/9 ledger drift")
     if d4d.get("candidate") is not None or d4d.get("evidence_completed") != []:
         errors.append("D4-D state leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 14:
+    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 15:
         errors.append("D4-wide evidence count drift")
     for key, expected in {
         "gate_state": "scoped",
@@ -165,7 +166,7 @@ def main() -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_009_SOURCE_ERROR: {error}")
         return 1
-    print("d4c_quarantine_redrive_source=PASS candidates=3 source_snapshot_nonpromoting=true current_d4c=2_of_9 current_d4wide=14_of_26 selection=not_selected")
+    print("d4c_quarantine_redrive_source=PASS candidates=3 source_snapshot_nonpromoting=true current_d4c=3_of_9 current_d4wide=15_of_26 selection=not_selected")
     return 0
 
 

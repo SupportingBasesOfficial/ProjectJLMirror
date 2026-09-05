@@ -1,0 +1,157 @@
+name: JLMIRROR D4-C Quarantine Redrive Source Evidence
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'implementation/d4-eventing-async/source-evidence/d4-c-quarantine-redrive-source.json'
+      - 'implementation/d4-eventing-async/d4-c-candidate-evaluation-plan.json'
+      - 'implementation/d4-eventing-async/state-manifest.json'
+      - 'tools/assurance/d4c_quarantine_redrive/**'
+      - 'tools/assurance/validate_d4_eventing_async_state.py'
+      - 'tools/assurance/test_validate_d4_eventing_async_state.py'
+      - 'docs/16-implementation-readiness/42-d4-c-quarantine-redrive-source-evidence.md'
+      - '.github/workflows/d4-c-quarantine-redrive-source-evidence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  d4c-quarantine-redrive-source:
+    name: D4-C OPEN-EVT-009 source evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Compile OPEN-EVT-009 source and global assurance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            tools/assurance/d4c_quarantine_redrive/evaluate_candidates.py \
+            tools/assurance/d4c_quarantine_redrive/validate_source_evidence.py \
+            tools/assurance/d4c_quarantine_redrive/test_source_evidence.py \
+            tools/assurance/d4c_quarantine_redrive/emit_source_provenance.py \
+            tools/assurance/validate_d4_eventing_async_state.py \
+            tools/assurance/test_validate_d4_eventing_async_state.py
+
+      - name: Execute and falsify OPEN-EVT-009 source semantics
+        shell: bash
+        run: python3 tools/assurance/d4c_quarantine_redrive/test_source_evidence.py
+
+      - name: Evaluate all concrete candidate classes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          python3 tools/assurance/d4c_quarantine_redrive/evaluate_candidates.py > runtime-evidence/candidate-results.json
+
+      - name: Validate machine-owned source manifest
+        shell: bash
+        run: python3 tools/assurance/d4c_quarantine_redrive/validate_source_evidence.py .
+
+      - name: Preserve global D4 scoped state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/assurance/test_validate_d4_eventing_async_state.py
+          python3 tools/assurance/validate_d4_eventing_async_state.py .
+
+      - name: Preserve Phase 10 contract suite
+        shell: bash
+        run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
+
+      - name: Assert source-only non-promotion boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          source = json.loads(Path('implementation/d4-eventing-async/source-evidence/d4-c-quarantine-redrive-source.json').read_text())
+          state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
+          tracks = {t['track_id']: t for t in state['tracks']}
+          existing_credit = 'ack_after_durable_responsibility_and_lease_ambiguity'
+          open_evt_009 = 'quarantine_redrive_current_authority_and_dedup_preservation'
+          assert source['mode'] == 'candidate_source_evidence_only'
+          assert source['source_decision'] == 'OPEN-EVT-009'
+          assert source['evidence_id'] == open_evt_009
+          assert source['selection_state'] == 'not_selected'
+          assert source['selection_authority'] == 'not_granted'
+          assert source['current_run_auto_credit'] is False
+          assert source['ledger_credit'] == []
+          assert set(source['candidate_results'].values()) == {'eligible_for_evidence_execution'}
+          assert source['equivalent_reviewed_profile'] == 'insufficient_evidence'
+          d4c = tracks['D4-C']
+          assert d4c['candidate'] is None and d4c['candidate_status'] == 'not_selected' and d4c['state'] == 'candidate_selection_open'
+          assert d4c['evidence_completed'] == [existing_credit]
+          assert len(d4c['evidence_remaining']) == 8 and open_evt_009 in d4c['evidence_remaining']
+          assert tracks['D4-D']['candidate'] is None and tracks['D4-D']['evidence_completed'] == []
+          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 13
+          assert state['gate_state'] == 'scoped'
+          assert state['d4_transport_authority'] == 'selected_not_granted'
+          assert state['canonical_product_implementation_authority'] == 'not_granted'
+          assert state['wave4_implementation_authority'] == 'not_granted'
+          assert state['production_authority'] == 'none'
+          assert state['c3_numeric_topology_authority'] == 'not_selected'
+          print('d4c_open_evt_009_source_boundary=PASS source_credit=0 current_d4c=1_of_9 open_evt_009_uncredited=true d4wide=13_of_26 selection=not_selected')
+          PY
+
+      - name: Resolve exact workflow job identity and emit immutable provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+            -o runtime-evidence/jobs.json
+          job_id="$(python3 - <<'PY'
+          import json
+          jobs = json.load(open('runtime-evidence/jobs.json', encoding='utf-8'))['jobs']
+          matches = [job for job in jobs if job['name'] == 'D4-C OPEN-EVT-009 source evidence']
+          if len(matches) != 1:
+              raise SystemExit(f'expected exactly one current evidence job, got {len(matches)}')
+          print(matches[0]['id'])
+          PY
+          )"
+          python3 tools/assurance/d4c_quarantine_redrive/emit_source_provenance.py \
+            --repository-sha "$EXPECTED_SHA" \
+            --workflow-run-id "$GITHUB_RUN_ID" \
+            --workflow-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --job-id "$job_id" \
+            --job-name "D4-C OPEN-EVT-009 source evidence" \
+            --candidate-results runtime-evidence/candidate-results.json \
+            --output runtime-evidence/resolved-source-run-provenance.json
+          rm runtime-evidence/jobs.json
+
+      - name: Persist source-run provenance and candidate evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: d4-c-quarantine-redrive-source-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            runtime-evidence/resolved-source-run-provenance.json
+            runtime-evidence/candidate-results.json
+          if-no-files-found: error
+          retention-days: 90

@@ -67,7 +67,9 @@ EXPECTED_ASSERTIONS = {
     'all_three_concrete_catalog_classes_can_reach_eligible_for_evidence_execution_without_selecting_a_product',
     'reviewed_contract_content_is_authority_and_registry_registration_is_never_authority_by_itself',
     'reviewed_provenance_is_bound_into_reviewed_content_digest_and_registry_publish_requires_exact_committed_revision',
+    'reviewed_content_digest_uses_explicit_structural_framing_so_field_boundary_bytes_cannot_alias',
     'semantic_manifest_digest_uses_deterministic_canonical_semantic_representation_not_raw_json_formatting',
+    'semantic_manifest_numeric_equivalence_is_decimal_exact_and_normalizes_equivalent_json_number_spellings',
     'registry_mapping_metadata_is_immutable_per_reviewed_revision_and_exact_retry_is_idempotent',
     'payload_schema_compatibility_alone_is_insufficient_when_semantic_manifest_changes_break_authoritative_meaning',
     'contract_revision_history_is_append_only_and_old_revision_content_cannot_be_overwritten',
@@ -168,7 +170,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f'ERROR: {error}', file=sys.stderr)
         return 1
-    print('d4b_catalog_tooling_source_manifest=PASS candidates=3 proofs=8 provenance=content_bound semantic_manifest=canonical mapping_history=immutable selection=not_selected ledger_credit=0 d4=12/26')
+    print('d4b_catalog_tooling_source_manifest=PASS candidates=3 proofs=8 provenance=content_bound digest_frame=unambiguous semantic_manifest=canonical_decimal mapping_history=immutable selection=not_selected ledger_credit=0 d4=12/26')
     return 0
 
 if __name__ == '__main__':

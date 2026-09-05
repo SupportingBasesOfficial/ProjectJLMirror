@@ -187,6 +187,7 @@
       "must_prove": [
         "restore_generation_and_fence_boundary_are_explicit_and_durable",
         "r_f_window_inventory_reconciles_broker_history_inbox_outbox_equivalence_and_external_effect_evidence",
+        "webhook_recovery_preserves_stable_delivery_identity_semantic_snapshot_or_reproduction_authority_and_destination_generation_fences",
         "missing_restored_state_is_uncertainty_not_absence",
         "missing_or_stale_historical_comparison_authority_blocks_duplicate_sensitive_effects",
         "stale_producer_replay_authorization_and_destination_generations_do_not_revive",

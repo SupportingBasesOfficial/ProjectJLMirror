@@ -17,7 +17,6 @@ from evaluate_candidates import (  # noqa: E402
     TEST_MAX_COLLECTION_ITEMS,
     TEST_MAX_DECOMPRESSED_BYTES,
     TEST_MAX_NESTING_DEPTH,
-    TEST_MAX_TOTAL_FIELDS,
     TEST_MAX_WIRE_BYTES,
     ProbeChunks,
     decode_and_validate,
@@ -92,12 +91,11 @@ class BoundedParserSourceTests(unittest.TestCase):
             result = decode_and_validate(candidate, [payload], declared_length=len(payload), encoding="gzip")
             self.assertEqual(result["failure"]["code"], "compressed_trailing_data")
 
-    def test_duplicate_json_members_are_not_collapsed_before_field_guard(self):
-        payload = b"{" + b",".join([b'\"dup\":0'] * (TEST_MAX_TOTAL_FIELDS + 1)) + b"}"
-        self.assertLess(len(payload), TEST_MAX_WIRE_BYTES)
+    def test_duplicate_json_members_are_rejected_before_object_collapse(self):
+        payload = b'{"dup":0,"dup":1}'
         for candidate in CANDIDATES:
             result = decode_and_validate(candidate, [payload], declared_length=len(payload))
-            self.assertIn(result["failure"]["code"], {"duplicate_json_member", "total_fields_exceeded"})
+            self.assertEqual(result["failure"]["code"], "duplicate_json_member")
             self.assertFalse(result["failure"]["retryable"])
 
     def test_batch_limit_is_deterministic_and_non_retryable(self):

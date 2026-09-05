@@ -32,6 +32,7 @@ class Uncertainty(EvidenceError):
 
 Identity = Tuple[str, str, str]
 TEST_RETRY_BUDGET = 3  # evidence fixture only; never production numeric authority
+TEST_FINGERPRINT_PROFILE = "sha256_fixture_only_noncanonical"
 CANDIDATES = (
     "durable_platform_quarantine_store_with_broker_dlq_adapter",
     "broker_native_dlq_with_canonical_platform_quarantine_index",
@@ -46,6 +47,8 @@ class QuarantineAuthority:
     immutable-content equivalence, current redrive authority, audit history and
     classification policy remain platform-owned. Numeric retry values below are
     bounded test fixtures and do not select production retry/retention horizons.
+    SHA-256 is only a deterministic evidence comparator and does not select the
+    OPEN-EVT-011 production equivalence profile.
     """
 
     def __init__(self, db_path: str | Path | None = None) -> None:
@@ -139,7 +142,7 @@ class QuarantineAuthority:
                 raise IntegrityFailure("same scoped identity has conflicting immutable content")
             self.conn.execute(
                 """INSERT OR REPLACE INTO quarantine_record
-                   VALUES (?,?,?,?,?,?,?,?,?,?,0,0,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,0,?)""",
                 (*identity, fp, json.dumps(content, sort_keys=True), classification, retention_policy_class,
                  retry_count, retry_budget, state, broker_adapter, broker_dlq_ref, json.dumps(audit, sort_keys=True)),
             )
@@ -297,6 +300,7 @@ def run_profile(profile: str) -> Dict[str, bool]:
         reopened.close()
 
     retention_policy_nonnumeric = before["retention_policy_class"] == "regulated_event_policy" and not any(ch.isdigit() for ch in before["retention_policy_class"])
+    fingerprint_fixture_noncanonical = TEST_FINGERPRINT_PROFILE == "sha256_fixture_only_noncanonical"
 
     return {
         "platform_quarantine_truth_independent_of_broker_dlq": platform_identity_independent_of_dlq,
@@ -309,6 +313,7 @@ def run_profile(profile: str) -> Dict[str, bool]:
         "classification_scoped_access_enforced": classification_scope_enforced,
         "retention_policy_is_nonnumeric_governed_class": retention_policy_nonnumeric,
         "broker_replacement_preserves_platform_truth": broker_replacement_preserves_truth,
+        "test_fingerprint_profile_is_noncanonical": fingerprint_fixture_noncanonical,
     }
 
 
@@ -322,6 +327,7 @@ def evaluate_all() -> dict:
         "selection": "not_selected",
         "ledger_credit": [],
         "test_retry_budget_is_noncanonical_fixture": True,
+        "test_fingerprint_profile": TEST_FINGERPRINT_PROFILE,
     }
 
 

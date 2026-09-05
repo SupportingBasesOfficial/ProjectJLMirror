@@ -19,6 +19,56 @@ EXPECTED_CATALOG = "hybrid_reviewed_git_plus_registry_catalog"
 EXPECTED_REGISTRY_ROLE = "authenticated_authorized_distribution_index_compatibility_and_physical_mapping"
 EXPECTED_VERSION = "positive_integer_family_revision"
 EXPECTED_SOURCE_DECISIONS = {"OPEN-EVT-002", "OPEN-EVT-003", "OPEN-EVT-004"}
+EXPECTED_SELECTION_KEYS = {
+    "schema_version", "selection_id", "gate_id", "track_id", "selection_base_main_commit",
+    "source_decisions", "evidence_completion", "selection_state", "selection_scope", "track_state",
+    "serialization", "schema_catalog", "contract_version", "d4_gate_state", "d4_transport_authority",
+    "canonical_product_implementation_authority", "wave4_implementation_authority", "production_authority",
+    "c3_numeric_topology_authority", "d4_cd_completion_required", "separate_d4_acceptance_required",
+    "historical_evidence_rule", "non_authority_rule",
+}
+EXPECTED_COMPLETION_KEYS = {
+    "required_evidence_count", "credited_evidence_count", "evidence_plan_path",
+    "axis_a_source_path", "axis_b_source_path", "axis_c_source_path",
+    "axis_a_accepted_main_commit", "axis_b_accepted_main_commit", "axis_c_accepted_main_commit",
+}
+EXPECTED_SERIALIZATION_KEYS = {
+    "selection_state", "surface_policy", "internal_broker", "outbound_webhook", "realtime_protocol",
+    "unselected_eligible_alternatives", "divergence_rule",
+}
+EXPECTED_CATALOG_KEYS = {
+    "selection_state", "mechanism", "canonical_authority", "registry_role", "registry_product",
+    "unselected_eligible_alternatives", "replacement_rule",
+}
+EXPECTED_VERSION_KEYS = {
+    "selection_state", "representation", "logical_domain", "zero_allowed", "ordering_authority",
+    "deployment_api_provider_realtime_registry_version_authority", "unselected_eligible_alternatives",
+    "breaking_change_rule", "surface_encoding_rule",
+}
+EXPECTED_DIVERGENCE_RULE = (
+    "Internal broker and outbound webhook representations may differ only at the selected adapter/profile boundary; "
+    "canonical logical contract meaning, identity, tenant scope, version semantics and equivalence obligations remain transport-independent."
+)
+EXPECTED_REPLACEMENT_RULE = (
+    "A registry product may be introduced or replaced without changing logical contract identity only after its mapping, outage, "
+    "authorization, provenance and historical-reader behavior conforms to the selected hybrid mechanism profile."
+)
+EXPECTED_BREAKING_CHANGE_RULE = (
+    "A breaking semantic contract family change requires a newly reviewed positive integer family revision or an explicitly accepted migration; "
+    "an existing revision cannot be rebound to different semantic meaning."
+)
+EXPECTED_SURFACE_ENCODING_RULE = (
+    "Each selected wire profile encodes the same positive-integer logical revision using its native bounded integer representation; "
+    "string spellings, lexical order and registry IDs are not contract-version authority."
+)
+EXPECTED_HISTORICAL_RULE = (
+    "Axis A, Axis B and Axis C source manifests remain immutable historical evidence with selection_state=not_selected, "
+    "current_run_auto_credit=false and ledger_credit=[]; this selection record is the current selection authority and must not rewrite earlier evidence truth."
+)
+EXPECTED_NON_AUTHORITY_RULE = (
+    "Selecting D4-B contract profiles does not authorize Product or Wave4 implementation, create an outbound-webhook Product surface, "
+    "choose a registry vendor, grant production deployment, select C3 numerics/topology, complete D4-C/D, or constitute full D4 acceptance."
+)
 
 
 class DuplicateMemberError(ValueError):
@@ -58,39 +108,51 @@ def validate(root: Path) -> list[str]:
     except (json.JSONDecodeError, DuplicateMemberError, ValueError) as exc:
         return [f"strict JSON parse failure: {exc}"]
 
+    require(set(selection) == EXPECTED_SELECTION_KEYS, "selection exact key schema drift")
     require(selection.get("schema_version") == 1, "selection schema_version must be 1")
     require(selection.get("selection_id") == "d4-b-profile-selection-v1", "selection_id drift")
     require(selection.get("gate_id") == "D4" and selection.get("track_id") == "D4-B", "selection track identity drift")
     require(selection.get("selection_base_main_commit") == EXPECTED_BASE, "selection base drift")
-    require(set(selection.get("source_decisions", [])) == EXPECTED_SOURCE_DECISIONS, "selection source decisions drift")
+    source_decisions = selection.get("source_decisions", [])
+    require(isinstance(source_decisions, list) and set(source_decisions) == EXPECTED_SOURCE_DECISIONS and len(source_decisions) == 3, "selection source decisions drift")
     require(selection.get("selection_state") == "selected", "D4-B selection must remain selected")
     require(selection.get("selection_scope") == "bounded_c2_contract_profile_selection_only", "D4-B selection scope drift")
     require(selection.get("track_state") == "selected_candidate", "D4-B selected track state drift")
 
     completion = selection.get("evidence_completion", {})
+    require(isinstance(completion, dict) and set(completion) == EXPECTED_COMPLETION_KEYS, "selection evidence-completion exact key schema drift")
     require(completion.get("required_evidence_count") == 5, "selection required evidence count drift")
     require(completion.get("credited_evidence_count") == 5, "selection credited evidence count drift")
+    require(completion.get("evidence_plan_path") == PLAN.as_posix(), "selection evidence-plan provenance path drift")
+    require(completion.get("axis_a_source_path") == AXIS_A.as_posix(), "Axis A source provenance path drift")
+    require(completion.get("axis_b_source_path") == AXIS_B.as_posix(), "Axis B source provenance path drift")
+    require(completion.get("axis_c_source_path") == AXIS_C.as_posix(), "Axis C source provenance path drift")
     require(completion.get("axis_a_accepted_main_commit") == "df62898b6d9fc36f2a10c0c3713679d2cbe05da8", "Axis A accepted commit drift")
     require(completion.get("axis_b_accepted_main_commit") == EXPECTED_BASE, "Axis B accepted commit drift")
     require(completion.get("axis_c_accepted_main_commit") == "9cfe67915b6081af015670d7f1edb7ecf11ffdf2", "Axis C accepted commit drift")
 
     serialization = selection.get("serialization", {})
+    require(isinstance(serialization, dict) and set(serialization) == EXPECTED_SERIALIZATION_KEYS, "serialization exact key schema drift")
     require(serialization.get("selection_state") == "selected", "serialization selection state drift")
     require(serialization.get("surface_policy") == "explicit_surface_bound_profiles", "serialization surface policy drift")
     require(serialization.get("internal_broker") == EXPECTED_INTERNAL, "internal broker serialization drift")
     require(serialization.get("outbound_webhook") == EXPECTED_WEBHOOK, "outbound webhook serialization drift")
     require(serialization.get("realtime_protocol") == "unchanged_phase10_canonical_json_baseline", "realtime protocol must remain independent")
     require(serialization.get("unselected_eligible_alternatives") == ["avro_profile"], "wire alternative inventory drift")
+    require(serialization.get("divergence_rule") == EXPECTED_DIVERGENCE_RULE, "serialization divergence rule drift")
 
     catalog = selection.get("schema_catalog", {})
+    require(isinstance(catalog, dict) and set(catalog) == EXPECTED_CATALOG_KEYS, "catalog exact key schema drift")
     require(catalog.get("selection_state") == "selected", "catalog selection state drift")
     require(catalog.get("mechanism") == EXPECTED_CATALOG, "catalog mechanism drift")
     require(catalog.get("canonical_authority") == "reviewed_git_contract_history", "reviewed Git authority drift")
     require(catalog.get("registry_role") == EXPECTED_REGISTRY_ROLE, "registry role drift")
     require(catalog.get("registry_product") is None, "registry vendor/product must remain unselected")
     require(set(catalog.get("unselected_eligible_alternatives", [])) == {"reviewed_git_catalog", "registry_backed_catalog"}, "catalog alternative inventory drift")
+    require(catalog.get("replacement_rule") == EXPECTED_REPLACEMENT_RULE, "catalog replacement rule drift")
 
     version = selection.get("contract_version", {})
+    require(isinstance(version, dict) and set(version) == EXPECTED_VERSION_KEYS, "contract-version exact key schema drift")
     require(version.get("selection_state") == "selected", "contract-version selection state drift")
     require(version.get("representation") == EXPECTED_VERSION, "contract-version representation drift")
     require(version.get("logical_domain") == "positive_integer", "contract-version logical domain drift")
@@ -98,6 +160,11 @@ def validate(root: Path) -> list[str]:
     require(version.get("ordering_authority") == "none_equality_only", "numeric version must not gain ordering authority")
     require(version.get("deployment_api_provider_realtime_registry_version_authority") == "none", "contract-version namespace authority leak")
     require(set(version.get("unselected_eligible_alternatives", [])) == {"semantic_version_like_contract_revision", "opaque_monotonic_contract_token"}, "version alternative inventory drift")
+    require(version.get("breaking_change_rule") == EXPECTED_BREAKING_CHANGE_RULE, "contract-version breaking-change rule drift")
+    require(version.get("surface_encoding_rule") == EXPECTED_SURFACE_ENCODING_RULE, "contract-version surface-encoding rule drift")
+
+    require(selection.get("historical_evidence_rule") == EXPECTED_HISTORICAL_RULE, "selection historical-evidence rule drift")
+    require(selection.get("non_authority_rule") == EXPECTED_NON_AUTHORITY_RULE, "selection non-authority rule drift")
 
     for name, source in (("Axis A", axis_a), ("Axis B", axis_b), ("Axis C", axis_c)):
         require(source.get("selection_state") == "not_selected", f"{name} source history must remain not_selected")
@@ -171,7 +238,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_SELECTION_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_selection=PASS internal=protobuf webhook=bounded_json_json_schema catalog=hybrid_reviewed_git_registry registry_role=downstream_non_authority contract_version=positive_integer equality_only=true evidence=5/5 source_history=immutable_not_selected registry_product=unselected d4=scoped authorities=not_granted")
+    print("d4b_selection=PASS exact_schema=true provenance_paths=bound internal=protobuf webhook=bounded_json_json_schema catalog=hybrid_reviewed_git_registry registry_role=downstream_non_authority contract_version=positive_integer equality_only=true evidence=5/5 source_history=immutable_not_selected registry_product=unselected d4=scoped authorities=not_granted")
     return 0
 
 

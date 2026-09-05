@@ -38,6 +38,11 @@ def behavior_falsification() -> None:
     profile, reviewer, reader, v1, v2 = evaluator.candidate_fixture('registry_backed_catalog')
     assert profile.registry is not None
 
+    expect_violation(
+        lambda: evaluator.LogicalContractIdentity('monitoring/legacy', 'event.created', 'canonical').canonical(),
+        'ambiguous logical contract identity delimiter',
+    )
+
     unreviewed = evaluator.ContractRevision(
         identity=v1.identity,
         revision='unreviewed-r9',
@@ -174,10 +179,11 @@ def main() -> None:
     validator_falsification()
     print(
         'd4b_catalog_tooling_falsification=PASS '
-        'unreviewed_publish=blocked forged_provenance=blocked semantic_formatting=canonical '
-        'duplicate_semantic_member=blocked semantic_only_break=detected history_rebind=blocked '
-        'direct_history_authz=blocked mapping_rebind=blocked outage_reinterpretation=blocked '
-        'product_identity_coupling=blocked selection_credit_authority_coupling=blocked'
+        'identity_delimiter_collision=blocked unreviewed_publish=blocked forged_provenance=blocked '
+        'semantic_formatting=canonical duplicate_semantic_member=blocked semantic_only_break=detected '
+        'history_rebind=blocked direct_history_authz=blocked mapping_rebind=blocked '
+        'outage_reinterpretation=blocked product_identity_coupling=blocked '
+        'selection_credit_authority_coupling=blocked'
     )
 
 

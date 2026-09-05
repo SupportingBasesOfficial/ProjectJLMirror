@@ -22,6 +22,15 @@ EXPECTED_D4A_IDS = {
     "physical_naming_routing_and_cell_topology_adapter_mapping",
     "broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark",
 }
+EXPECTED_SELECTED = {
+    "serialization": {
+        "surface_policy": "explicit_surface_bound_profiles",
+        "internal_broker": "protobuf_profile",
+        "outbound_webhook": "bounded_json_plus_json_schema_profile",
+    },
+    "schema_catalog": "hybrid_reviewed_git_plus_registry_catalog",
+    "contract_version": "positive_integer_family_revision",
+}
 EXPECTED_TRACK_IDS = {"D4-A", "D4-B", "D4-C", "D4-D"}
 EXPECTED_KINDS = {
     "canonical_bounded_serialization_profile": "deterministic_reference_profile_and_negative_vectors",
@@ -43,6 +52,8 @@ EXPECTED_REFERENCE_PROPERTIES = {
 def main() -> int:
     source = json.loads(SOURCE.read_text(encoding="utf-8"))
     state = json.loads(STATE.read_text(encoding="utf-8"))
+
+    # Historical source package remains byte/meaning neutral about later selection.
     assert source["schema_version"] == 1
     assert source["package_id"] == "d4-b-schema-contract-source-v1"
     assert source["canonical_base_commit"] == "790f967446bf039ba4d5f618c9f30494c720ee7c"
@@ -69,27 +80,27 @@ def main() -> int:
     assert source["production_authority"] == "none"
     assert source["c3_numeric_topology_authority"] == "not_selected"
 
+    # Current global state may reflect the later separately governed selection.
     state_tracks = state.get("tracks")
-    assert isinstance(state_tracks, list)
-    assert len(state_tracks) == 4
+    assert isinstance(state_tracks, list) and len(state_tracks) == 4
     assert all(isinstance(track, dict) for track in state_tracks)
     track_ids = [track.get("track_id") for track in state_tracks]
-    assert len(track_ids) == len(set(track_ids))
-    assert set(track_ids) == EXPECTED_TRACK_IDS
+    assert len(track_ids) == len(set(track_ids)) and set(track_ids) == EXPECTED_TRACK_IDS
     tracks = {track["track_id"]: track for track in state_tracks}
     d4a, d4b, d4c, d4d = tracks["D4-A"], tracks["D4-B"], tracks["D4-C"], tracks["D4-D"]
     assert d4a["candidate"] == "kafka" and d4a["candidate_status"] == "selected_c2_candidate"
     assert d4a["state"] == "selected_candidate"
     assert set(d4a["evidence_completed"]) == EXPECTED_D4A_IDS and len(d4a["evidence_completed"]) == 7
     assert d4a["evidence_remaining"] == []
-    assert d4b["candidate"] is None and d4b["candidate_status"] == "not_selected"
-    assert d4b["state"] == "evidence_complete_selection_pending"
+    assert d4b["candidate"] == EXPECTED_SELECTED and d4b["candidate_status"] == "selected_c2_profile"
+    assert d4b["state"] == "selected_candidate"
     assert set(d4b["required_evidence"]) == EXPECTED_IDS and len(d4b["required_evidence"]) == 5
     assert set(d4b["evidence_completed"]) == EXPECTED_IDS and len(d4b["evidence_completed"]) == 5
     assert d4b["evidence_remaining"] == []
     for sibling in (d4c, d4d):
         assert sibling["candidate"] is None and sibling["candidate_status"] == "not_selected"
         assert sibling["evidence_completed"] == []
+    assert sum(len(track["evidence_completed"]) for track in state_tracks) == 12
     assert state["gate_state"] == "scoped"
     assert state["d4_transport_authority"] == "selected_not_granted"
     assert state["canonical_product_implementation_authority"] == "not_granted"
@@ -99,8 +110,8 @@ def main() -> int:
 
     print(
         "d4b_schema_contract_source_manifest=PASS evidence_ids=5 evidence_kinds=exact reference_properties=exact "
-        "source_credit=0 prior_promoted_credit=5 candidate=not_selected unique_tracks=true d4a=exact_7_of_7_kafka_selected "
-        "d4b=selection_pending d4c_d=open authorities=not_granted"
+        "source_credit=0 source_history=not_selected current_selection=selected_c2_profile unique_tracks=true "
+        "d4a=exact_7_of_7_kafka_selected d4wide=12/26 d4c_d=open authorities=not_granted"
     )
     return 0
 

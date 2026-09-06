@@ -5,12 +5,22 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - 'implementation/d4-eventing-async/**'
+      - 'implementation/d4-eventing-async/d4-a-evidence-plan.json'
+      - 'implementation/d4-eventing-async/state-manifest.json'
+      - 'implementation/d4-eventing-async/d4-a-selection-record.json'
+      - 'implementation/d4-eventing-async/ledger-promotions/d4-a-recovery-promotion-v1.json'
+      - 'implementation/d4-eventing-async/ledger-promotions/d4-a-capacity-ordering-promotion-v1.json'
+      - 'implementation/d4-eventing-async/ledger-promotions/d4-a-semantic-boundary-promotion-v1.json'
+      - 'implementation/d4-eventing-async/source-evidence/capacity-ordering/**'
+      - 'implementation/d4-eventing-async/source-evidence/recovery/source-evidence-manifest.json'
+      - 'implementation/d4-eventing-async/source-evidence/data-topology/source-evidence-manifest.json'
       - 'tools/assurance/d4a_capacity_ordering/**'
       - 'tools/assurance/validate_d4_eventing_async_state.py'
       - 'tools/assurance/test_validate_d4_eventing_async_state.py'
       - 'tools/assurance/validate_d4a_evidence_plan.py'
+      - 'tools/assurance/validate_d4a_evidence_plan_historical.py'
       - 'tools/assurance/test_validate_d4a_evidence_plan.py'
+      - 'tools/contracts/**'
       - 'docs/04-quality/capacity-envelope.md'
       - 'docs/10-event-contracts/OPEN-EVT-001-kafka-decision-record.md'
       - 'docs/10-event-contracts/ordering-sequencing-and-replay.md'

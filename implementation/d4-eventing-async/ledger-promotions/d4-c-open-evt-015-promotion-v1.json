@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "promotion_id": "d4-c-open-evt-015-promotion-v1",
+  "gate_id": "D4",
+  "track_id": "D4-C",
+  "promotion_base": "5f4711f388ac1b07de4e544ee31b9e09a2fec481",
+  "source_pr": 103,
+  "source_reviewed_head": "90371a0e91da9e9a29f344231ab04461e47026d4",
+  "source_merge_commit": "5f4711f388ac1b07de4e544ee31b9e09a2fec481",
+  "source_review": {
+    "review_id": 5126450377,
+    "review_mode": "independent_exact_head_adversarial_clean_after_exact_head_ci",
+    "material_threads_unresolved": 0
+  },
+  "source_workflow": {
+    "workflow_id": 351770101,
+    "workflow_path": ".github/workflows/d4-c-historical-reader-upcaster-source-evidence.yml",
+    "workflow_event": "pull_request",
+    "source_head_branch": "d4c/open-evt-015-historical-reader-source",
+    "run_id": 34056103551,
+    "run_attempt": 1,
+    "job_id": 101548179099,
+    "job_name": "D4-C OPEN-EVT-015 source evidence",
+    "artifact_id": 9995996278,
+    "artifact_name": "d4-c-historical-reader-source-90371a0e91da9e9a29f344231ab04461e47026d4-34056103551-1",
+    "artifact_digest": "sha256:dae09cfdc630d4bdc62d6e1fd56502535ba5e879ca39cc58519ac8788cdde3a0"
+  },
+  "source_manifest": {
+    "path": "implementation/d4-eventing-async/source-evidence/d4-c-historical-reader-upcaster-source.json",
+    "sha256": "192a3997d406e93581b72a734a1db2f9f071f1dc9ad3178ee56f166c24b4567f"
+  },
+  "credited_evidence": [
+    "historical_reader_upcaster_semantic_and_equivalence_continuity"
+  ],
+  "credit_count": 1,
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "d4_gate_state": "scoped",
+  "d4_transport_authority": "selected_not_granted",
+  "canonical_product_implementation_authority": "not_granted",
+  "wave4_implementation_authority": "not_granted",
+  "production_authority": "none",
+  "c3_numeric_topology_authority": "not_selected",
+  "separate_selection_required": true,
+  "separate_d4_acceptance_required": true
+}

@@ -67,7 +67,7 @@ jobs:
       - name: Preserve Phase 10 contract suite
         shell: bash
         run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
-      - name: Assert source remains historically non-promoting under current seven-credit ledger
+      - name: Assert source remains historically non-promoting under current eight-credit ledger
         shell: bash
         run: |
           set -euo pipefail
@@ -75,21 +75,21 @@ jobs:
           import json
           from pathlib import Path
           source=json.loads(Path('implementation/d4-eventing-async/source-evidence/d4-c-scoped-content-equivalence-source.json').read_text()); plan=json.loads(Path('implementation/d4-eventing-async/d4-c-evidence-plan.json').read_text()); state=json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text()); tracks={t['track_id']:t for t in state['tracks']}
-          credits=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity','producer_generation_nonresurrection_across_failover_restore','privileged_bounded_replay_with_original_identity_and_effect_safety']
+          credits=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity','producer_generation_nonresurrection_across_failover_restore','privileged_bounded_replay_with_original_identity_and_effect_safety','historical_reader_upcaster_semantic_and_equivalence_continuity']
           assert source['mode']=='candidate_source_evidence_only' and source['source_decision']=='OPEN-EVT-011'
           assert source['current_run_auto_credit'] is False and source['ledger_credit']==[]
           assert source['non_authority']['d4c_ledger_credit']=='current_3_of_9_unchanged' and source['non_authority']['open_evt_011_ledger_credit']=='uncredited'
           assert source['selection_state']=='not_selected' and source['selection_authority']=='not_granted'
           assert source['candidate_results']['canonical_collision_resistant_fingerprint_profile']=='ineligible_by_contract'
           assert source['candidate_results']['keyed_authenticated_digest_profile']=='eligible_for_evidence_execution' and source['candidate_results']['protected_retained_immutable_original_profile']=='eligible_for_evidence_execution' and source['candidate_results']['hybrid_equivalence_authority_profile']=='eligible_for_evidence_execution'
-          assert plan['ledger_credit_state']=='seven_of_nine' and plan['credited_evidence']==credits and len(plan['remaining_evidence'])==2
+          assert plan['ledger_credit_state']=='eight_of_nine' and plan['credited_evidence']==credits and len(plan['remaining_evidence'])==1
           assert source['evidence_id'] not in plan['remaining_evidence']
           d4c=tracks['D4-C']; assert d4c['evidence_completed']==credits and d4c['evidence_remaining']==plan['remaining_evidence']
           assert d4c['candidate'] is None and d4c['candidate_status']=='not_selected' and d4c['state']=='candidate_selection_open'
           assert tracks['D4-D']['evidence_completed']==[] and tracks['D4-D']['candidate'] is None
-          assert sum(len(t['evidence_completed']) for t in state['tracks'])==19
+          assert sum(len(t['evidence_completed']) for t in state['tracks'])==20
           assert state['gate_state']=='scoped' and state['d4_transport_authority']=='selected_not_granted' and state['canonical_product_implementation_authority']=='not_granted' and state['wave4_implementation_authority']=='not_granted' and state['production_authority']=='none' and state['c3_numeric_topology_authority']=='not_selected'
-          print('d4c_open_evt_011_source_boundary=PASS source_snapshot=3_of_9 source_credit=0 current_d4c=7_of_9 d4wide=19_of_26 selection=not_selected fingerprint=ineligible confidential_profiles=eligible authorities=unchanged')
+          print('d4c_open_evt_011_source_boundary=PASS source_snapshot=3_of_9 source_credit=0 current_d4c=8_of_9 d4wide=20_of_26 selection=not_selected fingerprint=ineligible confidential_profiles=eligible authorities=unchanged')
           PY
       - name: Resolve exact workflow job identity and emit immutable provenance
         shell: bash

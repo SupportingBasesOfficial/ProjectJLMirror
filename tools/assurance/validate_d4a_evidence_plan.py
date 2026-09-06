@@ -16,6 +16,7 @@ D4C_CREDITS = [
     "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
     "producer_generation_nonresurrection_across_failover_restore",
     "privileged_bounded_replay_with_original_identity_and_effect_safety",
+    "historical_reader_upcaster_semantic_and_equivalence_continuity",
 ]
 _legacy_validate_objects = historical.validate_objects
 
@@ -29,13 +30,13 @@ def _current_sibling_errors(entry: dict) -> list[str]:
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
         errors.append("D4-C current sibling state must remain open/unselected")
     if d4c.get("evidence_completed") != D4C_CREDITS:
-        errors.append("D4-C current sibling credit must be exactly OPEN-EVT-008 through OPEN-EVT-014")
+        errors.append("D4-C current sibling credit must be exactly OPEN-EVT-008 through OPEN-EVT-015")
     if d4c.get("evidence_remaining") != expected_remaining:
         errors.append("D4-C current sibling remaining evidence drift")
     if tracks.get("D4-D", {}).get("evidence_completed") != []:
         errors.append("D4-D must remain uncredited")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 19:
-        errors.append("D4-wide current evidence must remain 19/26")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 20:
+        errors.append("D4-wide current evidence must remain 20/26")
     return errors
 
 
@@ -74,7 +75,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4A_PLAN_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4a_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=7_of_9 d4wide=19_of_26")
+    print("d4a_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=8_of_9 d4wide=20_of_26")
     return 0
 
 

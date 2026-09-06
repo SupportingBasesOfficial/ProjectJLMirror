@@ -23,14 +23,45 @@ EXPECTED_REQUIRED_EVIDENCE = {
         "physical_naming_routing_and_cell_topology_adapter_mapping",
         "broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark",
     },
-    "D4-B": {"canonical_bounded_serialization_profile", "parser_ambiguity_and_duplicate_field_negative_vectors", "schema_catalog_semantic_manifest_compatibility_ci", "historical_reader_and_equivalence_profile_continuity", "contract_version_representation_and_breaking_change_vectors"},
-    "D4-C": {"ack_after_durable_responsibility_and_lease_ambiguity", "quarantine_redrive_current_authority_and_dedup_preservation", "bounded_message_batch_compression_and_parser_limits", "scoped_content_equivalence_confidentiality_and_conflict_rejection", "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity", "producer_generation_nonresurrection_across_failover_restore", "privileged_bounded_replay_with_original_identity_and_effect_safety", "historical_reader_upcaster_semantic_and_equivalence_continuity", "recovery_generation_rf_inventory_reconciliation_and_activation_gates"},
-    "D4-D": {"workload_identity_to_broker_credential_adapter_least_privilege", "tenant_and_contract_scoped_producer_consumer_authorization", "message_protection_key_authority_and_historical_verifier_continuity", "secret_credential_payload_exclusion_and_erasure_boundary", "trace_context_observability_only_validation_and_redaction"},
+    "D4-B": {
+        "canonical_bounded_serialization_profile",
+        "parser_ambiguity_and_duplicate_field_negative_vectors",
+        "schema_catalog_semantic_manifest_compatibility_ci",
+        "historical_reader_and_equivalence_profile_continuity",
+        "contract_version_representation_and_breaking_change_vectors",
+    },
+    "D4-C": {
+        "ack_after_durable_responsibility_and_lease_ambiguity",
+        "quarantine_redrive_current_authority_and_dedup_preservation",
+        "bounded_message_batch_compression_and_parser_limits",
+        "scoped_content_equivalence_confidentiality_and_conflict_rejection",
+        "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
+        "producer_generation_nonresurrection_across_failover_restore",
+        "privileged_bounded_replay_with_original_identity_and_effect_safety",
+        "historical_reader_upcaster_semantic_and_equivalence_continuity",
+        "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
+    },
+    "D4-D": {
+        "workload_identity_to_broker_credential_adapter_least_privilege",
+        "tenant_and_contract_scoped_producer_consumer_authorization",
+        "message_protection_key_authority_and_historical_verifier_continuity",
+        "secret_credential_payload_exclusion_and_erasure_boundary",
+        "trace_context_observability_only_validation_and_redaction",
+    },
 }
 EXPECTED_COMPLETED = {
     "D4-A": set(EXPECTED_REQUIRED_EVIDENCE["D4-A"]),
     "D4-B": set(EXPECTED_REQUIRED_EVIDENCE["D4-B"]),
-    "D4-C": {"ack_after_durable_responsibility_and_lease_ambiguity", "quarantine_redrive_current_authority_and_dedup_preservation", "bounded_message_batch_compression_and_parser_limits", "scoped_content_equivalence_confidentiality_and_conflict_rejection", "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity", "producer_generation_nonresurrection_across_failover_restore", "privileged_bounded_replay_with_original_identity_and_effect_safety"},
+    "D4-C": {
+        "ack_after_durable_responsibility_and_lease_ambiguity",
+        "quarantine_redrive_current_authority_and_dedup_preservation",
+        "bounded_message_batch_compression_and_parser_limits",
+        "scoped_content_equivalence_confidentiality_and_conflict_rejection",
+        "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
+        "producer_generation_nonresurrection_across_failover_restore",
+        "privileged_bounded_replay_with_original_identity_and_effect_safety",
+        "historical_reader_upcaster_semantic_and_equivalence_continuity",
+    },
     "D4-D": set(),
 }
 EXPECTED_TOTAL_EVIDENCE = sum(len(items) for items in EXPECTED_REQUIRED_EVIDENCE.values())
@@ -50,13 +81,18 @@ EXPECTED_D4B_CANDIDATE = {
     "schema_catalog": "hybrid_reviewed_git_plus_registry_catalog",
     "contract_version": "positive_integer_family_revision",
 }
-EXPECTED_C3_EXCLUSIONS = {"OPEN-EVT-006", "OPEN-EVT-007", "OPEN-EVT-019", "OPEN-EVT-026", "OPEN-EVT-027", "OPEN-EVT-028", "OPEN-REL-012.B", "production_partition_counts", "production_retry_backoff_jitter_numerics", "production_retention_lag_replay_quarantine_horizons", "production_realtime_buffer_session_numerics"}
-EXPECTED_LATER_EXCLUSIONS = {"OPEN-EVT-020", "OPEN-EVT-021", "OPEN-EVT-022", "OPEN-EVT-023", "OPEN-EVT-024", "wave4_monitoring_product_implementation", "production_deployment"}
-
+EXPECTED_C3_EXCLUSIONS = {
+    "OPEN-EVT-006", "OPEN-EVT-007", "OPEN-EVT-019", "OPEN-EVT-026", "OPEN-EVT-027", "OPEN-EVT-028",
+    "OPEN-REL-012.B", "production_partition_counts", "production_retry_backoff_jitter_numerics",
+    "production_retention_lag_replay_quarantine_horizons", "production_realtime_buffer_session_numerics",
+}
+EXPECTED_LATER_EXCLUSIONS = {
+    "OPEN-EVT-020", "OPEN-EVT-021", "OPEN-EVT-022", "OPEN-EVT-023", "OPEN-EVT-024",
+    "wave4_monitoring_product_implementation", "production_deployment",
+}
 
 def load_manifest(root: Path) -> dict:
     return json.loads((root / MANIFEST).read_text(encoding="utf-8"))
-
 
 def validate_manifest(state: dict) -> list[str]:
     errors: list[str] = []
@@ -135,7 +171,6 @@ def validate_manifest(state: dict) -> list[str]:
     require("separate_explicit_user_authorization" in state.get("merge_rule", ""), "D4 merge rule must require separate explicit user authorization")
     return errors
 
-
 def main(argv: list[str]) -> int:
     root = Path(argv[1]).resolve() if len(argv) > 1 else Path.cwd()
     state = load_manifest(root)
@@ -144,9 +179,13 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4_STATE_ERROR: {error}", file=sys.stderr)
         return 1
-    print(f"d4_eventing_async_state=PASS gate_state={state['gate_state']} tracks={len(state['tracks'])} unique_tracks=true evidence_required={EXPECTED_TOTAL_EVIDENCE} evidence_credited={EXPECTED_TOTAL_CREDITED} d4a_candidate=kafka d4a_selection=selected d4b=5_of_5_selected_profile d4c=7_of_9_selection_open d4d=open transport_authority=not_granted")
+    print(
+        f"d4_eventing_async_state=PASS gate_state={state['gate_state']} tracks={len(state['tracks'])} "
+        f"unique_tracks=true evidence_required={EXPECTED_TOTAL_EVIDENCE} evidence_credited={EXPECTED_TOTAL_CREDITED} "
+        "d4a_candidate=kafka d4a_selection=selected d4b=5_of_5_selected_profile "
+        "d4c=8_of_9_selection_open d4d=open transport_authority=not_granted"
+    )
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv))

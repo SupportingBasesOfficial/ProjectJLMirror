@@ -73,17 +73,17 @@ jobs:
           import json
           from pathlib import Path
           source=json.loads(Path('implementation/d4-eventing-async/source-evidence/d4-c-quarantine-redrive-source.json').read_text()); state=json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text()); tracks={t['track_id']:t for t in state['tracks']}
-          credits=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity','producer_generation_nonresurrection_across_failover_restore','privileged_bounded_replay_with_original_identity_and_effect_safety']
+          credits=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity','producer_generation_nonresurrection_across_failover_restore','privileged_bounded_replay_with_original_identity_and_effect_safety','historical_reader_upcaster_semantic_and_equivalence_continuity']
           assert source['mode']=='candidate_source_evidence_only' and source['source_decision']=='OPEN-EVT-009' and source['evidence_id']==credits[1]
           assert source['selection_state']=='not_selected' and source['selection_authority']=='not_granted' and source['current_run_auto_credit'] is False and source['ledger_credit']==[]
           assert source['non_authority']['d4c_ledger_credit']=='current_1_of_9_unchanged'
           assert set(source['candidate_results'].values())=={'eligible_for_evidence_execution'} and source['equivalent_reviewed_profile']=='insufficient_evidence'
           d4c=tracks['D4-C']; assert d4c['candidate'] is None and d4c['candidate_status']=='not_selected' and d4c['state']=='candidate_selection_open'
-          assert d4c['evidence_completed']==credits and d4c['evidence_remaining']==[x for x in d4c['required_evidence'] if x not in credits] and len(d4c['evidence_remaining'])==2
+          assert d4c['evidence_completed']==credits and d4c['evidence_remaining']==[x for x in d4c['required_evidence'] if x not in credits] and len(d4c['evidence_remaining'])==1
           assert tracks['D4-D']['candidate'] is None and tracks['D4-D']['evidence_completed']==[]
-          assert sum(len(t['evidence_completed']) for t in state['tracks'])==19
+          assert sum(len(t['evidence_completed']) for t in state['tracks'])==20
           assert state['gate_state']=='scoped' and state['d4_transport_authority']=='selected_not_granted' and state['canonical_product_implementation_authority']=='not_granted' and state['wave4_implementation_authority']=='not_granted' and state['production_authority']=='none' and state['c3_numeric_topology_authority']=='not_selected'
-          print('d4c_open_evt_009_source_boundary=PASS immutable_source_snapshot=1_of_9 source_credit=0 current_d4c=7_of_9 d4wide=19_of_26 selection=not_selected')
+          print('d4c_open_evt_009_source_boundary=PASS immutable_source_snapshot=1_of_9 source_credit=0 current_d4c=8_of_9 d4wide=20_of_26 selection=not_selected')
           PY
       - name: Resolve exact workflow job identity and emit immutable provenance
         shell: bash

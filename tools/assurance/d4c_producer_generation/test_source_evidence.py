@@ -57,6 +57,27 @@ def main() -> int:
             "retired_generation",
         )
 
+        # Neither provider nor broker generation may substitute for a missing
+        # platform generation, even when the external value equals current.
+        assert blocked(
+            lambda: authority.admit_effect(
+                tenant_id=identity.tenant_id,
+                logical_source_id=identity.logical_source_id,
+                platform_generation=None,
+                provider_generation=current,
+            ),
+            "platform_generation_required",
+        )
+        assert blocked(
+            lambda: authority.admit_effect(
+                tenant_id=identity.tenant_id,
+                logical_source_id=identity.logical_source_id,
+                platform_generation=None,
+                broker_generation=current,
+            ),
+            "platform_generation_required",
+        )
+
         assert authority.read_historical_fact(historical) == historical
         assert blocked(
             lambda: authority.admit_effect(
@@ -113,7 +134,7 @@ def main() -> int:
         "d4c_open_evt_013_source_falsification=PASS "
         "candidates=3 proofs=7 exact_representation=true stale=blocked future=blocked "
         "restore_resurrection=blocked history_not_authority=true external_generation_not_authority=true "
-        "selection=none credit=none"
+        "external_fallback_when_platform_missing=blocked selection=none credit=none"
     )
     return 0
 

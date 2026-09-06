@@ -4,6 +4,13 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+      - '.github/workflows/d3-cache-exploratory.yml'
+      - 'implementation/d3-identity-security/state-manifest.json'
+      - 'implementation/d3-identity-security/harness/cache_admission_probe.sh'
+      - 'tools/assurance/validate_d3_identity_security_state.py'
+      - 'tools/assurance/validate_d3_identity_security_state_legacy.py'
+      - 'docs/16-implementation-readiness/19-d3-identity-security-c2-entry-gate.md'
     types:
       - opened
       - synchronize

@@ -15,6 +15,7 @@ D4C_CREDITS = [
     "bounded_message_batch_compression_and_parser_limits",
     "scoped_content_equivalence_confidentiality_and_conflict_rejection",
     "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
+    "producer_generation_nonresurrection_across_failover_restore",
 ]
 _legacy_load = historical.load
 
@@ -27,7 +28,7 @@ def _current_sibling_errors(state: dict) -> list[str]:
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
         errors.append("D4-C must remain uncredited in historical projection and open/unselected in current promoted state")
     if d4c.get("evidence_completed") != D4C_CREDITS:
-        errors.append("D4-C must remain uncredited in historical projection; current promoted credits must be exactly OPEN-EVT-008 through OPEN-EVT-012")
+        errors.append("D4-C must remain uncredited in historical projection; current promoted credits must be exactly OPEN-EVT-008 through OPEN-EVT-013")
     if d4c.get("evidence_remaining") != [x for x in required if x not in D4C_CREDITS]:
         errors.append("D4-C must remain uncredited in historical projection; current promoted remaining evidence drift")
     d4d = tracks.get("D4-D", {})
@@ -38,8 +39,8 @@ def _current_sibling_errors(state: dict) -> list[str]:
 
 def _current_total_errors(state: dict) -> list[str]:
     tracks = [t for t in state.get("tracks", []) if isinstance(t, dict)]
-    if sum(len(t.get("evidence_completed", [])) for t in tracks) != 17:
-        return ["D4-wide evidence must remain 12/26 in historical projection and exactly 17/26 in current promoted state"]
+    if sum(len(t.get("evidence_completed", [])) for t in tracks) != 18:
+        return ["D4-wide evidence must remain 12/26 in historical projection and exactly 18/26 in current promoted state"]
     return []
 
 
@@ -77,7 +78,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_PLAN_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=5_of_9 d4wide=17_of_26")
+    print("d4b_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=6_of_9 d4wide=18_of_26")
     return 0
 
 

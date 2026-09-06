@@ -43,6 +43,8 @@ EXPECTED_PROOF_CHECKS = {
         "expired_claim_cannot_dispatch",
         "inflight_takeover_fenced_before_broker_accept",
         "stale_owner_fenced_after_takeover",
+        "expired_claim_cannot_mark_terminal",
+        "superseded_claim_cannot_mark_terminal",
         "single_current_claim_owner",
     ),
     EXPECTED_PROOFS[2]: (
@@ -69,7 +71,7 @@ EXPECTED_SOURCE_ASSERTIONS = [
     "effectful_broker_acceptance_revalidates_current_unexpired_claim_authority",
     "retry_changes_attempt_metadata_only_and_never_message_identity_or_immutable_fact_content",
     "ack_lost_after_broker_acceptance_is_retried_with_the_exact_same_message_identity_and_semantic_content",
-    "terminal_delivery_evidence_requires_acked_receipt_for_same_message_identity_and_content",
+    "terminal_delivery_evidence_requires_current_unexpired_claim_and_acked_receipt_for_same_message_identity_and_content",
     "broker_unavailability_leaves_committed_outbox_backlog_durable_and_dispatchable_after_recovery",
     "dispatcher_restart_rehydrates_claim_state_from_durable_outbox_truth_and_preserves_message_identity_and_content",
     "notification_is_only_a_wakeup_hint_and_polling_or_durable_store_remains_recovery_authority",
@@ -244,7 +246,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_012_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=23 source_auto_credit=false current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
+    print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=25 source_auto_credit=false current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
     return 0
 
 if __name__ == "__main__":

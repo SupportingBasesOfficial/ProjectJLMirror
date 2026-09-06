@@ -25,7 +25,12 @@ PROOFS = (
 
 PROOF_CHECKS = {
     PROOFS[0]: ("atomic_commit_all_or_nothing", "message_identity_fixed_at_commit"),
-    PROOFS[1]: ("preexpiry_takeover_rejected", "stale_owner_fenced_after_takeover", "single_current_claim_owner"),
+    PROOFS[1]: (
+        "preexpiry_takeover_rejected",
+        "expired_claim_cannot_dispatch",
+        "stale_owner_fenced_after_takeover",
+        "single_current_claim_owner",
+    ),
     PROOFS[2]: ("immutable_fact_rewrite_rejected", "retry_preserves_identity", "retry_preserves_semantic_content"),
     PROOFS[3]: ("ack_lost_retry_same_identity", "ack_lost_retry_same_content", "ambiguous_ack_cannot_mark_terminal"),
     PROOFS[4]: ("broker_outage_preserves_backlog", "unavailable_publish_cannot_mark_terminal"),
@@ -57,6 +62,7 @@ class ClaimToken:
     message_id: str
     owner: str
     fence: int
+    lease_expires_at: int
 
 
 @dataclass(frozen=True)
@@ -147,20 +153,25 @@ class DurableStore:
         if fact.claim_owner is not None and fact.lease_expires_at > now:
             raise ContractViolation("claim_already_owned")
         fence = fact.claim_fence + 1
+        lease_expires_at = now + lease
         self._replace_fact(
             message_id,
-            replace(fact, claim_owner=owner, claim_fence=fence, lease_expires_at=now + lease),
+            replace(fact, claim_owner=owner, claim_fence=fence, lease_expires_at=lease_expires_at),
         )
-        return ClaimToken(message_id, owner, fence)
+        return ClaimToken(message_id, owner, fence, lease_expires_at)
 
-    def assert_current(self, token: ClaimToken) -> OutboxFact:
+    def assert_current(self, token: ClaimToken, *, now: int) -> OutboxFact:
         fact = self._state.outbox[token.message_id]
         if token.fence != fact.claim_fence or token.owner != fact.claim_owner:
             raise ContractViolation("stale_claim")
+        if token.lease_expires_at != fact.lease_expires_at:
+            raise ContractViolation("stale_claim")
+        if now >= fact.lease_expires_at:
+            raise ContractViolation("claim_expired")
         return fact
 
-    def mark_terminal_delivery(self, token: ClaimToken, receipt: PublishReceipt) -> None:
-        fact = self.assert_current(token)
+    def mark_terminal_delivery(self, token: ClaimToken, receipt: PublishReceipt, *, now: int) -> None:
+        fact = self.assert_current(token, now=now)
         if receipt.status != "acked":
             raise ContractViolation("delivery_not_terminal")
         if receipt.message_id != fact.message_id or receipt.content_digest != fact.content_digest:
@@ -217,8 +228,8 @@ class Dispatcher:
     def notify(self, message_id: str) -> None:
         self.notifications.append(message_id)
 
-    def dispatch(self, token: ClaimToken) -> PublishReceipt:
-        fact = self.store.assert_current(token)
+    def dispatch(self, token: ClaimToken, *, now: int) -> PublishReceipt:
+        fact = self.store.assert_current(token, now=now)
         return self.broker.publish(fact)
 
 
@@ -265,10 +276,18 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     except ContractViolation as exc:
         preexpiry_blocked = str(exc) == "claim_already_owned"
     checks["preexpiry_takeover_rejected"] = preexpiry_blocked
+
+    expired_dispatch_blocked = False
+    try:
+        d1.dispatch(token1, now=15)
+    except ContractViolation as exc:
+        expired_dispatch_blocked = str(exc) == "claim_expired"
+    checks["expired_claim_cannot_dispatch"] = expired_dispatch_blocked
+
     token2 = store.claim(mid, "worker-b", now=15, lease=5)
     stale_blocked = False
     try:
-        d1.dispatch(token1)
+        d1.dispatch(token1, now=15)
     except ContractViolation as exc:
         stale_blocked = str(exc) == "stale_claim"
     checks["stale_owner_fenced_after_takeover"] = stale_blocked and token2.fence > token1.fence
@@ -288,8 +307,8 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     )
 
     d2 = Dispatcher(store, broker, candidate=candidate, owner="worker-b")
-    first = d2.dispatch(token2)
-    second = d2.dispatch(token2)
+    first = d2.dispatch(token2, now=16)
+    second = d2.dispatch(token2, now=17)
     after = store.outbox[mid]
     checks["retry_preserves_identity"] = (
         broker.attempts[-2][0] == broker.attempts[-1][0] == before.message_id == after.message_id
@@ -309,13 +328,13 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     token = store2.claim(mid2, "worker-a", now=1, lease=10)
     dispatcher = Dispatcher(store2, broker2, candidate=candidate, owner="worker-a")
     broker2.accept_then_lose_ack_once = True
-    ambiguous = dispatcher.dispatch(token)
+    ambiguous = dispatcher.dispatch(token, now=2)
     ambiguous_terminal_blocked = False
     try:
-        store2.mark_terminal_delivery(token, ambiguous)
+        store2.mark_terminal_delivery(token, ambiguous, now=2)
     except ContractViolation as exc:
         ambiguous_terminal_blocked = str(exc) == "delivery_not_terminal"
-    retry = dispatcher.dispatch(token)
+    retry = dispatcher.dispatch(token, now=3)
     checks["ack_lost_retry_same_identity"] = (
         ambiguous.status == "ambiguous_ack_lost"
         and retry.status == "acked"
@@ -337,10 +356,10 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     token3 = store3.claim(mid3, "worker-a", now=1, lease=2)
     broker3.available = False
     outage_dispatcher = Dispatcher(store3, broker3, candidate=candidate, owner="worker-a")
-    unavailable = outage_dispatcher.dispatch(token3)
+    unavailable = outage_dispatcher.dispatch(token3, now=2)
     unavailable_terminal_blocked = False
     try:
-        store3.mark_terminal_delivery(token3, unavailable)
+        store3.mark_terminal_delivery(token3, unavailable, now=2)
     except ContractViolation as exc:
         unavailable_terminal_blocked = str(exc) == "delivery_not_terminal"
     checks["broker_outage_preserves_backlog"] = (
@@ -353,9 +372,9 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     )
 
     restarted = Dispatcher(store3, broker3, candidate=candidate, owner="worker-restarted")
-    token4 = store3.claim(mid3, "worker-restarted", now=3, lease=2)
+    token4 = store3.claim(mid3, "worker-restarted", now=3, lease=3)
     broker3.available = True
-    recovered = restarted.dispatch(token4)
+    recovered = restarted.dispatch(token4, now=4)
     checks["restart_preserves_identity"] = recovered.status == "acked" and recovered.message_id == mid3
     checks["restart_preserves_semantic_content"] = (
         recovered.content_digest
@@ -373,7 +392,7 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     except ContractViolation as exc:
         uncertain_blocked = str(exc) == "delivery_uncertain"
     checks["cleanup_blocks_uncertain_delivery"] = uncertain_blocked
-    store3.mark_terminal_delivery(token4, recovered)
+    store3.mark_terminal_delivery(token4, recovered, now=4)
     horizon_blocked = False
     try:
         store3.cleanup(mid3)

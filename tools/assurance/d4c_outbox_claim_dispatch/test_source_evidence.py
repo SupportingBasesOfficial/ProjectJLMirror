@@ -26,16 +26,19 @@ class SourceEvidenceTests(unittest.TestCase):
         self.assertEqual(store.business_revision, 0)
         self.assertEqual(dict(store.outbox), {})
 
-    def test_stale_claim_cannot_dispatch_after_noncooperative_expiry_takeover(self):
+    def test_expired_claim_cannot_dispatch_before_takeover_and_stale_claim_cannot_dispatch_after_takeover(self):
         store, broker = DurableStore(), BrokerProbe()
         store.commit_business_and_outbox(business_value="v1", message_id="m1", semantic_content="{}")
         a = store.claim("m1", "a", now=0, lease=2)
+        dispatcher_a = Dispatcher(store, broker, candidate=CANDIDATES[0], owner="a")
         with self.assertRaisesRegex(ContractViolation, "claim_already_owned"):
             store.claim("m1", "b", now=1, lease=2)
+        with self.assertRaisesRegex(ContractViolation, "claim_expired"):
+            dispatcher_a.dispatch(a, now=2)
         b = store.claim("m1", "b", now=2, lease=2)
         self.assertGreater(b.fence, a.fence)
         with self.assertRaisesRegex(ContractViolation, "stale_claim"):
-            Dispatcher(store, broker, candidate=CANDIDATES[0], owner="a").dispatch(a)
+            dispatcher_a.dispatch(a, now=2)
 
     def test_immutable_fact_rewrite_is_rejected(self):
         store = DurableStore()
@@ -49,38 +52,38 @@ class SourceEvidenceTests(unittest.TestCase):
     def test_ack_ambiguity_does_not_change_identity_or_grant_terminal_authority(self):
         store, broker = DurableStore(), BrokerProbe()
         store.commit_business_and_outbox(business_value="v1", message_id="m1", semantic_content='{"a":1}')
-        token = store.claim("m1", "a", now=0, lease=2)
+        token = store.claim("m1", "a", now=0, lease=5)
         d = Dispatcher(store, broker, candidate=CANDIDATES[1], owner="a")
         broker.accept_then_lose_ack_once = True
-        ambiguous = d.dispatch(token)
+        ambiguous = d.dispatch(token, now=1)
         self.assertEqual(ambiguous.status, "ambiguous_ack_lost")
         with self.assertRaisesRegex(ContractViolation, "delivery_not_terminal"):
-            store.mark_terminal_delivery(token, ambiguous)
-        acked = d.dispatch(token)
+            store.mark_terminal_delivery(token, ambiguous, now=1)
+        acked = d.dispatch(token, now=2)
         self.assertEqual(acked.status, "acked")
         self.assertEqual(broker.attempts[-2], broker.attempts[-1])
-        store.mark_terminal_delivery(token, acked)
+        store.mark_terminal_delivery(token, acked, now=2)
         self.assertTrue(store.outbox["m1"].terminal_delivery_evidence)
 
     def test_unavailable_publish_cannot_grant_terminal_authority(self):
         store, broker = DurableStore(), BrokerProbe()
         store.commit_business_and_outbox(business_value="v1", message_id="m1", semantic_content="{}")
-        token = store.claim("m1", "a", now=0, lease=2)
+        token = store.claim("m1", "a", now=0, lease=3)
         broker.available = False
-        receipt = Dispatcher(store, broker, candidate=CANDIDATES[0], owner="a").dispatch(token)
+        receipt = Dispatcher(store, broker, candidate=CANDIDATES[0], owner="a").dispatch(token, now=1)
         self.assertEqual(receipt.status, "unavailable")
         with self.assertRaisesRegex(ContractViolation, "delivery_not_terminal"):
-            store.mark_terminal_delivery(token, receipt)
+            store.mark_terminal_delivery(token, receipt, now=1)
         self.assertFalse(store.outbox["m1"].terminal_delivery_evidence)
 
     def test_cleanup_requires_terminal_evidence_and_safe_horizon(self):
         store, broker = DurableStore(), BrokerProbe()
         store.commit_business_and_outbox(business_value="v1", message_id="m1", semantic_content="{}")
-        token = store.claim("m1", "a", now=0, lease=2)
+        token = store.claim("m1", "a", now=0, lease=3)
         with self.assertRaisesRegex(ContractViolation, "delivery_uncertain"):
             store.cleanup("m1")
-        acked = Dispatcher(store, broker, candidate=CANDIDATES[0], owner="a").dispatch(token)
-        store.mark_terminal_delivery(token, acked)
+        acked = Dispatcher(store, broker, candidate=CANDIDATES[0], owner="a").dispatch(token, now=1)
+        store.mark_terminal_delivery(token, acked, now=1)
         with self.assertRaisesRegex(ContractViolation, "safe_horizon_not_reached"):
             store.cleanup("m1")
         store.set_safe_horizon("m1")
@@ -92,8 +95,8 @@ class SourceEvidenceTests(unittest.TestCase):
         store.commit_business_and_outbox(business_value="v1", message_id="m1", semantic_content="{}")
         d = Dispatcher(store, broker, candidate="notification_assisted_polling_claim_profile", owner="a")
         self.assertEqual(d.notifications, [])
-        token = store.claim("m1", "a", now=0, lease=2)
-        self.assertEqual(d.dispatch(token).status, "acked")
+        token = store.claim("m1", "a", now=0, lease=3)
+        self.assertEqual(d.dispatch(token, now=1).status, "acked")
 
 
 if __name__ == "__main__":

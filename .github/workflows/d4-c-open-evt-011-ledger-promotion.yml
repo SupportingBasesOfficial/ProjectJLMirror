@@ -148,7 +148,9 @@ jobs:
           assert run['id']==w['run_id'] and run['workflow_id']==w['workflow_id'] and run['path']==w['workflow_path']
           assert run['event']=='pull_request' and run['head_sha']==p['source_reviewed_head'] and run['head_branch']==w['source_head_branch'] and run['run_attempt']==w['run_attempt'] and run['status']=='completed' and run['conclusion']=='success'
           assert job['id']==w['job_id'] and job['run_id']==w['run_id'] and job['run_attempt']==w['run_attempt'] and job['name']==w['job_name'] and job['status']=='completed' and job['conclusion']=='success'
-          assert artifact['id']==w['artifact_id'] and artifact['name']==w['artifact_name'] and artifact['digest']==w['artifact_digest'] and artifact['expired'] is False and artifact['workflow_run']['head_sha']==p['source_reviewed_head']
+          artifact_run=artifact.get('workflow_run') or {}
+          assert artifact['id']==w['artifact_id'] and artifact['name']==w['artifact_name'] and artifact['digest']==w['artifact_digest'] and artifact['expired'] is False
+          assert artifact_run['id']==w['run_id'] and artifact_run['head_sha']==p['source_reviewed_head']
           files={x.name for x in Path('/tmp/source-artifact').iterdir() if x.is_file()}
           assert files=={'resolved-source-run-provenance.json','candidate-results.json'}, files
           provenance=json.loads(Path('/tmp/source-artifact/resolved-source-run-provenance.json').read_text()); results=json.loads(Path('/tmp/source-artifact/candidate-results.json').read_text())

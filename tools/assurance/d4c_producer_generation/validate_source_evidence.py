@@ -18,9 +18,9 @@ EXPECTED_CURRENT_CREDITS = [
     "scoped_content_equivalence_confidentiality_and_conflict_rejection",
     "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
     "producer_generation_nonresurrection_across_failover_restore",
+    "privileged_bounded_replay_with_original_identity_and_effect_safety",
 ]
 EXPECTED_CURRENT_REMAINING = [
-    "privileged_bounded_replay_with_original_identity_and_effect_safety",
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
@@ -51,10 +51,8 @@ EXPECTED_BOUNDARY = {
     "external_generation_rule": "provider_and_broker_generations_are_observations_not_platform_source_generation",
 }
 
-
 class DuplicateKeyError(ValueError):
     pass
-
 
 def no_duplicates(pairs):
     out = {}
@@ -64,24 +62,18 @@ def no_duplicates(pairs):
         out[key] = value
     return out
 
-
 def load(path: Path):
     return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=no_duplicates)
-
 
 def fail(message: str) -> int:
     print(f"d4c_open_evt_013_source_validation=FAIL reason={message}", file=sys.stderr)
     return 1
 
-
 def main() -> int:
     try:
-        source = load(SOURCE)
-        plan = load(PLAN)
-        state = load(STATE)
+        source = load(SOURCE); plan = load(PLAN); state = load(STATE)
     except Exception as exc:
         return fail(str(exc))
-
     if not isinstance(source, dict) or set(source) != EXPECTED_SOURCE_KEYS:
         return fail("source exact key schema drift")
     if type(source.get("schema_version")) is not int or source["schema_version"] != 1:
@@ -106,13 +98,9 @@ def main() -> int:
         return fail("auto-credit leakage")
     if source.get("ledger_credit") != []:
         return fail("source run must remain historically non-promoting")
-
-    non_authority = source.get("non_authority")
-    if not isinstance(non_authority, dict) or non_authority != EXPECTED_NON_AUTHORITY:
+    if source.get("non_authority") != EXPECTED_NON_AUTHORITY:
         return fail("historical source non-authority exact boundary drift")
-
-    boundary = source.get("source_boundary")
-    if not isinstance(boundary, dict) or boundary != EXPECTED_BOUNDARY:
+    if source.get("source_boundary") != EXPECTED_BOUNDARY:
         return fail("source boundary exact value drift")
 
     runtime = evaluate()
@@ -128,8 +116,8 @@ def main() -> int:
         if not all(runtime["check_results"][candidate].values()):
             return fail(f"check failure for {candidate}")
 
-    if plan.get("ledger_credit_state") != "six_of_nine":
-        return fail("D4-C current ledger must be six_of_nine after separate promotion")
+    if plan.get("ledger_credit_state") != "seven_of_nine":
+        return fail("D4-C current ledger must be seven_of_nine after separate promotions")
     if plan.get("credited_evidence") != EXPECTED_CURRENT_CREDITS:
         return fail("D4-C current credited evidence drift")
     if plan.get("remaining_evidence") != EXPECTED_CURRENT_REMAINING:
@@ -149,28 +137,18 @@ def main() -> int:
         return fail("D4-C global selection leakage")
     if tracks["D4-D"].get("evidence_completed") != [] or tracks["D4-D"].get("candidate") is not None:
         return fail("D4-D leakage")
-    if sum(len(track.get("evidence_completed", [])) for track in tracks.values()) != 18:
-        return fail("D4-wide current credit count must be 18/26")
-
+    if sum(len(track.get("evidence_completed", [])) for track in tracks.values()) != 19:
+        return fail("D4-wide current credit count must be 19/26")
     expected_authority = {
-        "gate_state": "scoped",
-        "d4_transport_authority": "selected_not_granted",
-        "canonical_product_implementation_authority": "not_granted",
-        "wave4_implementation_authority": "not_granted",
-        "production_authority": "none",
-        "c3_numeric_topology_authority": "not_selected",
+        "gate_state": "scoped", "d4_transport_authority": "selected_not_granted",
+        "canonical_product_implementation_authority": "not_granted", "wave4_implementation_authority": "not_granted",
+        "production_authority": "none", "c3_numeric_topology_authority": "not_selected",
     }
     for key, expected in expected_authority.items():
         if state.get(key) != expected:
             return fail(f"authority drift: {key}")
-
-    print(
-        "d4c_open_evt_013_source_validation=PASS candidates=3 proofs=7 boundary=exact "
-        "source_history=non_promoting_at_5_of_9 current_d4c=6/9 d4wide=18/26 "
-        "open_evt_013=current_promoted_by_separate_review selection=none authorities=unchanged"
-    )
+    print("d4c_open_evt_013_source_validation=PASS candidates=3 proofs=7 boundary=exact source_history=non_promoting_at_5_of_9 current_d4c=7/9 d4wide=19/26 open_evt_013=current_promoted_by_separate_review selection=none authorities=unchanged")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

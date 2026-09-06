@@ -41,13 +41,14 @@ EXPECTED_PROOF_CHECKS = {
         "atomic_commit_all_or_nothing",
         "business_snapshot_isolated_from_caller_mutation",
         "mutable_mapping_key_rejected",
+        "scalar_subclass_mapping_key_rejected",
         "message_identity_fixed_at_commit",
     ),
     EXPECTED_PROOFS[1]: (
         "preexpiry_takeover_rejected",
         "expired_claim_cannot_dispatch",
-        "inflight_takeover_fenced_before_broker_accept",
-        "post_authorize_takeover_cannot_duplicate_broker_accept",
+        "inflight_takeover_fenced_before_broker_handoff",
+        "post_handoff_takeover_completion_is_ambiguous_and_deduplicated",
         "broker_acceptance_atomic_under_concurrency",
         "stale_owner_fenced_after_takeover",
         "expired_claim_cannot_mark_terminal",
@@ -84,11 +85,12 @@ EXPECTED_PROOF_CHECKS = {
 EXPECTED_SOURCE_ASSERTIONS = [
     "business_mutation_and_required_outbox_fact_share_one_atomic_commit_boundary",
     "authoritative_business_state_is_an_immutable_snapshot_not_a_caller_alias",
-    "mutable_mapping_keys_are_rejected_unless_they_are_supported_immutable_scalars",
+    "mapping_keys_are_exact_supported_builtin_immutable_scalars_or_rejected_before_commit",
     "outbox_message_identity_and_immutable_semantic_payload_are_fixed_at_commit",
-    "claims_carry_monotonic_fence_tokens_and_stale_owners_cannot_dispatch_after_takeover",
+    "claims_carry_monotonic_fence_tokens_and_stale_owners_cannot_dispatch_before_broker_handoff",
     "lease_expiry_is_ambiguity_and_takeover_never_creates_two_current_semantic_owners",
-    "effectful_broker_acceptance_revalidates_current_unexpired_claim_authority",
+    "broker_handoff_revalidates_current_unexpired_claim_authority_before_cross_authority_effect",
+    "post_handoff_claim_loss_is_delivery_ambiguity_not_retroactive_broker_cancellation_or_current_authority",
     "broker_dedup_lookup_conflict_check_and_acceptance_are_one_atomic_operation",
     "broker_acceptance_is_idempotent_for_same_message_identity_and_content_and_conflicts_fail_closed",
     "retry_changes_attempt_metadata_only_and_never_message_identity_or_immutable_fact_content",
@@ -115,6 +117,7 @@ EXPECTED_NON_AUTHORITY = {
     "production_authority": "none",
     "c3_numeric_topology_authority": "not_selected",
 }
+
 
 class DuplicateKeyError(ValueError):
     pass
@@ -259,8 +262,9 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_012_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=32 source_auto_credit=false current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
+    print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=33 source_auto_credit=false current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv))

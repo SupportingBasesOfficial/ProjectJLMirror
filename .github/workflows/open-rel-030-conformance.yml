@@ -4,6 +4,11 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+      - '.github/workflows/open-rel-030-conformance.yml'
+      - 'tools/open_rel_030/**'
+      - 'sql/d2-open-rel-030/**'
+      - 'implementation/d2-open-rel-030/**'
     types:
       - opened
       - synchronize

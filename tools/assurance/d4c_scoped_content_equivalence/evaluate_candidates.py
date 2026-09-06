@@ -5,7 +5,7 @@ import hashlib
 import hmac
 import json
 from dataclasses import dataclass, replace
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, Mapping, Sequence
 
 CANDIDATES = (
     "canonical_collision_resistant_fingerprint_profile",
@@ -22,6 +22,11 @@ KEY_V1 = "fixture-verifier-key/v1"
 KEY_V2 = "fixture-verifier-key/v2"
 TEST_LIMIT_PROFILE = "scoped_equivalence_fixture_only_noncanonical"
 TEST_MAX_CANONICAL_BYTES = 2048
+TEST_MAX_STRUCTURAL_NODES = 256
+TEST_MAX_NESTING_DEPTH = 16
+TEST_MAX_COLLECTION_ITEMS = 64
+TEST_MAX_STRING_CHARS = 512
+TEST_MAX_IDENTITY_COMPONENT_BYTES = 256
 TEST_KEYRING = {
     KEY_V1: b"fixture-root-secret-v1-not-production",
     KEY_V2: b"fixture-root-secret-v2-not-production",
@@ -110,21 +115,36 @@ def policy_for(candidate: str) -> CandidatePolicy:
 
 
 def validate_structured_value(value: Any) -> None:
-    stack = [value]
+    stack: list[tuple[Any, int]] = [(value, 1)]
+    visited = 0
     while stack:
-        node = stack.pop()
-        if node is None or isinstance(node, (bool, int, str)):
+        node, depth = stack.pop()
+        visited += 1
+        if visited > TEST_MAX_STRUCTURAL_NODES or depth > TEST_MAX_NESTING_DEPTH:
+            raise EvidenceViolation("verification_work_exceeded")
+        if node is None or isinstance(node, (bool, int)):
+            continue
+        if isinstance(node, str):
+            if len(node) > TEST_MAX_STRING_CHARS:
+                raise EvidenceViolation("verification_work_exceeded")
             continue
         if isinstance(node, float):
             raise EvidenceViolation("ambiguous_numeric_semantics")
         if isinstance(node, list):
-            stack.extend(node)
+            if len(node) > TEST_MAX_COLLECTION_ITEMS:
+                raise EvidenceViolation("verification_work_exceeded")
+            for child in node:
+                stack.append((child, depth + 1))
             continue
         if isinstance(node, dict):
+            if len(node) > TEST_MAX_COLLECTION_ITEMS:
+                raise EvidenceViolation("verification_work_exceeded")
             for key, child in node.items():
                 if not isinstance(key, str):
                     raise EvidenceViolation("non_string_semantic_key")
-                stack.append(child)
+                if len(key) > TEST_MAX_STRING_CHARS:
+                    raise EvidenceViolation("verification_work_exceeded")
+                stack.append((child, depth + 1))
             continue
         raise EvidenceViolation("unsupported_semantic_type")
 
@@ -143,19 +163,33 @@ def canonical_semantic_bytes(immutable: Mapping[str, Any]) -> bytes:
         allow_nan=False,
     )
     out = bytearray()
-    for text in encoder.iterencode(projection):
-        chunk = text.encode("utf-8")
-        if len(out) + len(chunk) > TEST_MAX_CANONICAL_BYTES:
+    try:
+        for text in encoder.iterencode(projection):
+            chunk = text.encode("utf-8")
+            if len(out) + len(chunk) > TEST_MAX_CANONICAL_BYTES:
+                raise EvidenceViolation("verification_work_exceeded")
+            out.extend(chunk)
+    except (RecursionError, MemoryError) as exc:
+        raise EvidenceViolation("verification_work_exceeded") from exc
+    return bytes(out)
+
+
+def encode_tuple(parts: Sequence[str]) -> bytes:
+    out = bytearray()
+    for part in parts:
+        if not isinstance(part, str) or not part:
+            raise EvidenceViolation("invalid_scoped_message_identity")
+        encoded = part.encode("utf-8")
+        if len(encoded) > TEST_MAX_IDENTITY_COMPONENT_BYTES:
             raise EvidenceViolation("verification_work_exceeded")
-        out.extend(chunk)
+        out.extend(len(encoded).to_bytes(4, "big"))
+        out.extend(encoded)
     return bytes(out)
 
 
 def scope_key(identity: Identity, key_version: str) -> bytes:
     secret = TEST_KEYRING[key_version]
-    scope_material = (
-        identity.consumer_contract + "\x1f" + identity.trusted_message_identity_scope
-    ).encode("utf-8")
+    scope_material = encode_tuple((identity.consumer_contract, identity.trusted_message_identity_scope))
     return hmac.new(secret, scope_material, hashlib.sha256).digest()
 
 
@@ -253,8 +287,7 @@ class EquivalenceEngine:
             raise EvidenceViolation("untrusted_consumer_contract")
         if not trusted_message_scope:
             raise EvidenceViolation("untrusted_message_identity_scope")
-        if not all(identity.key):
-            raise EvidenceViolation("invalid_scoped_message_identity")
+        encode_tuple(identity.key)
 
     def classify_or_commit(
         self,
@@ -271,15 +304,17 @@ class EquivalenceEngine:
             trusted_consumer_contract=trusted_consumer_contract,
             trusted_message_scope=trusted_message_scope,
         )
-        canonical = canonical_semantic_bytes(immutable)
         existing = self._co_resident.get(identity.key)
+        if existing is not None and not comparison_access:
+            return "uncertain_access_denied"
+        canonical = canonical_semantic_bytes(immutable)
         if existing is not None:
             return compare_record(
                 self.policy,
                 identity,
                 existing.evidence,
                 canonical,
-                comparison_access=comparison_access,
+                comparison_access=True,
             )
 
         record = build_record(self.policy, identity, canonical)
@@ -353,7 +388,7 @@ class EquivalenceEngine:
         return migrated.key_version == record.key_version and migrated.digest_hex == record.digest_hex
 
     def stable_external_operation_id(self, identity: Identity) -> str:
-        material = "\x1f".join(identity.key).encode("utf-8")
+        material = encode_tuple(identity.key)
         return hmac.new(TEST_OPERATION_SECRET, material, hashlib.sha256).hexdigest()
 
     def reconcile_external_effect(self, identity: Identity, result: str) -> tuple[str, str]:
@@ -379,7 +414,16 @@ def base_event(secret_value: str = "yes") -> Dict[str, Any]:
 
 class ExplodingImmutable(dict):
     def __contains__(self, key: object) -> bool:
-        raise AssertionError("semantic content inspected before trust admission")
+        raise AssertionError("semantic content inspected before trust or comparison-access admission")
+
+
+def deeply_nested_payload(depth: int) -> Dict[str, Any]:
+    node: Any = "leaf"
+    for _ in range(depth):
+        node = [node]
+    event = base_event()
+    event["payload"] = node
+    return event
 
 
 def check_candidate(candidate: str) -> Dict[str, bool]:
@@ -418,6 +462,11 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
     except EvidenceViolation as exc:
         contract_blocked = exc.code == "untrusted_consumer_contract"
 
+    access_precedes_semantic_work = (
+        engine.classify_or_commit(identity, ExplodingImmutable(), comparison_access=False)
+        == "uncertain_access_denied"
+    )
+
     missing_engine = EquivalenceEngine(candidate)
     missing = missing_engine.classify_missing(identity, base_event())
 
@@ -450,6 +499,16 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
     else:
         confidentiality_ok = evidence_a is None and evidence_b is None
         dictionary_oracle_blocked = True
+
+    collision_a = Identity("a\x1fb", "c", "msg-collision")
+    collision_b = Identity("a", "b\x1fc", "msg-collision")
+    injective_scope_encoding = True
+    if policy.keyed:
+        injective_scope_encoding = scope_key(collision_a, KEY_V1) != scope_key(collision_b, KEY_V1)
+    injective_operation_encoding = (
+        engine.stable_external_operation_id(collision_a)
+        != engine.stable_external_operation_id(collision_b)
+    )
 
     no_access = engine.exposed_comparison_evidence(identity, comparison_access=False) is None
     authority_surface = engine.records[identity.key].authority_surface()
@@ -488,11 +547,27 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
     erasure_safety = erasure_allowed is False if policy.evidence_mode == "protected_original" else erasure_allowed is True
 
     oversized = base_event("x" * (TEST_MAX_CANONICAL_BYTES + 128))
-    bounded = False
+    bounded_bytes = bounded_depth = bounded_width = False
     try:
         EquivalenceEngine(candidate).classify_or_commit(identity, oversized)
     except EvidenceViolation as exc:
-        bounded = exc.code == "verification_work_exceeded" and exc.retryable is False
+        bounded_bytes = exc.code == "verification_work_exceeded" and exc.retryable is False
+    try:
+        EquivalenceEngine(candidate).classify_or_commit(
+            Identity("ticket-projection/v3", "tenant-a:cell-1", "msg-deep"),
+            deeply_nested_payload(TEST_MAX_NESTING_DEPTH + 4),
+        )
+    except EvidenceViolation as exc:
+        bounded_depth = exc.code == "verification_work_exceeded" and exc.retryable is False
+    wide = base_event()
+    wide["payload"] = {f"k{i}": i for i in range(TEST_MAX_COLLECTION_ITEMS + 1)}
+    try:
+        EquivalenceEngine(candidate).classify_or_commit(
+            Identity("ticket-projection/v3", "tenant-a:cell-1", "msg-wide"),
+            wide,
+        )
+    except EvidenceViolation as exc:
+        bounded_width = exc.code == "verification_work_exceeded" and exc.retryable is False
 
     access_result = engine.classify_or_commit(identity, base_event(), comparison_access=False)
     uncertainty_ok = missing == "uncertain_equivalence_evidence_missing" and unverifiable_profile == "uncertain_unverifiable_profile"
@@ -500,22 +575,22 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
         uncertainty_ok = uncertainty_ok and unverifiable_key == "uncertain_unverifiable_key"
 
     return {
-        "dedup_identity_is_scoped_tuple": identity.key == ("ticket-projection/v3", "tenant-a:cell-1", "msg-001"),
+        "dedup_identity_is_scoped_tuple": identity.key == ("ticket-projection/v3", "tenant-a:cell-1", "msg-001") and injective_scope_encoding,
         "trusted_identity_precedes_equivalence_work": scope_blocked and contract_blocked,
         "durable_equal_repeat_is_benign_duplicate": first == "new_effect_committed" and repeated == "benign_duplicate",
         "all_required_immutable_semantic_fields_are_covered": all(conflicts),
         "conflicting_same_scoped_identity_fails_closed": all(conflicts),
         "same_canonical_interpretation_drives_validation_and_evidence": canonical_semantic_bytes(base_event()) == canonical_semantic_bytes(dict(reversed(list(base_event().items())))),
         "profile_version_is_explicit_and_historically_recoverable": historical_before and migration_ok and historical_after and verifier_generation_explicit,
-        "low_entropy_confidentiality_is_scope_safe": confidentiality_ok and dictionary_oracle_blocked,
+        "low_entropy_confidentiality_is_scope_safe": confidentiality_ok and dictionary_oracle_blocked and injective_scope_encoding,
         "keyed_verifier_generation_is_explicit_and_recoverable": verifier_generation_explicit and ((not policy.keyed) or unverifiable_key == "uncertain_unverifiable_key"),
         "comparison_evidence_has_no_forbidden_authority": no_forbidden_authority,
         "co_resident_inbox_and_effect_are_atomic": atomic_rollback and committed_entry_is_atomic,
-        "cross_authority_effect_uses_stable_operation_and_reconciliation": stable_external,
+        "cross_authority_effect_uses_stable_operation_and_reconciliation": stable_external and injective_operation_encoding,
         "historical_authority_survives_or_migrates_equality_preserving": historical_before and historical_after,
         "payload_erasure_preserves_last_equivalence_authority": erasure_safety,
         "missing_or_unverifiable_evidence_is_uncertainty": uncertainty_ok,
-        "verification_is_bounded_and_access_controlled": bounded and no_access and access_result == "uncertain_access_denied",
+        "verification_is_bounded_and_access_controlled": bounded_bytes and bounded_depth and bounded_width and no_access and access_result == "uncertain_access_denied" and access_precedes_semantic_work,
         "fixture_profile_is_noncanonical": TEST_LIMIT_PROFILE.endswith("_noncanonical"),
     }
 

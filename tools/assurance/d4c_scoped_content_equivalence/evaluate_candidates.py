@@ -201,7 +201,10 @@ def compare_record(
     if record.evidence_mode != policy.evidence_mode:
         return "uncertain_profile_mismatch"
     matched = True
-    if policy.keyed:
+    if policy.evidence_mode == "sha256":
+        expected = hashlib.sha256(canonical).hexdigest()
+        matched = matched and hmac.compare_digest(record.digest_hex or "", expected)
+    elif policy.keyed:
         if record.key_version not in TEST_KEYRING:
             return "uncertain_unverifiable_key"
         expected = digest_for(

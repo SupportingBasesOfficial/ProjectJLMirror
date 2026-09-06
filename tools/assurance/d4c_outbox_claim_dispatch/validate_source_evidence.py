@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +12,16 @@ HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
-from evaluate_candidates import CANDIDATES, PROOFS, PROOF_CHECKS, evaluate_all  # noqa: E402
+from evaluate_candidates import (  # noqa: E402
+    CANDIDATES,
+    PROOFS,
+    PROOF_CHECKS,
+    BrokerProbe,
+    ContractViolation,
+    DurableStore,
+    OutboxFact,
+    evaluate_all,
+)
 
 MANIFEST = Path("implementation/d4-eventing-async/source-evidence/d4-c-outbox-claim-dispatch-source.json")
 PLAN = Path("implementation/d4-eventing-async/d4-c-candidate-evaluation-plan.json")
@@ -136,6 +146,76 @@ def load(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_pairs)
 
 
+def _probe_scalar_subclass_key_rejection(errors: list[str]) -> None:
+    class MutableStr(str):
+        pass
+
+    class MutableInt(int):
+        pass
+
+    class MutableFloat(float):
+        pass
+
+    cases = [
+        (MutableStr("key"), "str"),
+        (MutableInt(7), "int"),
+        (MutableFloat(1.5), "float"),
+    ]
+    for key, label in cases:
+        key.mutable_state = "before"
+        store = DurableStore()
+        message_id = f"validator-scalar-{label}"
+        blocked = False
+        try:
+            store.commit_business_and_outbox(
+                business_value={key: "value"},
+                message_id=message_id,
+                semantic_content="{}",
+            )
+        except ContractViolation as exc:
+            blocked = str(exc) == "unsupported_mutable_business_key"
+        key.mutable_state = "after"
+        if not blocked or store.business_revision != 0 or message_id in store.outbox:
+            errors.append(f"scalar subclass mapping key rejection probe failed: {label}")
+
+
+def _probe_concurrent_broker_conflict(errors: list[str]) -> None:
+    broker = BrokerProbe()
+    broker.accept_pause_after_lookup = True
+    one = OutboxFact("validator-conflict", "one", DurableStore._digest("one"), 1)
+    two = OutboxFact("validator-conflict", "two", DurableStore._digest("two"), 1)
+    barrier = threading.Barrier(2)
+    failures: list[Exception] = []
+
+    def publish(fact: OutboxFact) -> None:
+        try:
+            barrier.wait()
+            broker.publish(fact, authorize_handoff=lambda: None)
+        except Exception as exc:
+            failures.append(exc)
+
+    threads = [threading.Thread(target=publish, args=(one,)), threading.Thread(target=publish, args=(two,))]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    expected_pairs = {
+        ("validator-conflict", DurableStore._digest("one")),
+        ("validator-conflict", DurableStore._digest("two")),
+    }
+    valid = (
+        len(broker.attempts) == 2
+        and len(broker.accepted) == 1
+        and broker.accepted[0] in expected_pairs
+        and len(failures) == 1
+        and isinstance(failures[0], ContractViolation)
+        and str(failures[0]) == "broker_message_identity_conflict"
+    )
+    if not valid:
+        errors.append("concurrent broker conflict atomicity probe failed")
+
+
 def validate(root: Path) -> list[str]:
     errors: list[str] = []
     try:
@@ -223,6 +303,9 @@ def validate(root: Path) -> list[str]:
             elif not all(candidate_proofs.values()):
                 errors.append(f"runtime proof failure for {candidate}")
 
+    _probe_scalar_subclass_key_rejection(errors)
+    _probe_concurrent_broker_conflict(errors)
+
     if ledger.get("ledger_credit_state") != "four_of_nine" or ledger.get("credited_evidence") != CURRENT_CREDITS:
         errors.append("current D4-C ledger drift")
     if EVIDENCE not in ledger.get("remaining_evidence", []) or len(ledger.get("remaining_evidence", [])) != 5:
@@ -262,7 +345,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_012_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=33 source_auto_credit=false current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
+    print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=33 independent_adversarial_probes=2 source_auto_credit=false current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
     return 0
 
 

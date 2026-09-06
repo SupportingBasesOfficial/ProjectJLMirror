@@ -40,6 +40,7 @@ EXPECTED_PROOF_CHECKS = {
     EXPECTED_PROOFS[0]: (
         "atomic_commit_all_or_nothing",
         "business_snapshot_isolated_from_caller_mutation",
+        "mutable_mapping_key_rejected",
         "message_identity_fixed_at_commit",
     ),
     EXPECTED_PROOFS[1]: (
@@ -47,10 +48,12 @@ EXPECTED_PROOF_CHECKS = {
         "expired_claim_cannot_dispatch",
         "inflight_takeover_fenced_before_broker_accept",
         "post_authorize_takeover_cannot_duplicate_broker_accept",
+        "broker_acceptance_atomic_under_concurrency",
         "stale_owner_fenced_after_takeover",
         "expired_claim_cannot_mark_terminal",
         "superseded_claim_cannot_mark_terminal",
         "inflight_terminal_takeover_cas_rejected",
+        "terminal_claim_write_atomic_under_concurrency",
         "single_current_claim_owner",
     ),
     EXPECTED_PROOFS[2]: (
@@ -64,6 +67,7 @@ EXPECTED_PROOF_CHECKS = {
         "ambiguous_ack_cannot_mark_terminal",
         "foreign_identity_ack_cannot_mark_terminal",
         "foreign_content_ack_cannot_mark_terminal",
+        "broker_conflicting_content_rejected",
     ),
     EXPECTED_PROOFS[4]: ("broker_outage_preserves_backlog", "unavailable_publish_cannot_mark_terminal"),
     EXPECTED_PROOFS[5]: (
@@ -80,15 +84,17 @@ EXPECTED_PROOF_CHECKS = {
 EXPECTED_SOURCE_ASSERTIONS = [
     "business_mutation_and_required_outbox_fact_share_one_atomic_commit_boundary",
     "authoritative_business_state_is_an_immutable_snapshot_not_a_caller_alias",
+    "mutable_mapping_keys_are_rejected_unless_they_are_supported_immutable_scalars",
     "outbox_message_identity_and_immutable_semantic_payload_are_fixed_at_commit",
     "claims_carry_monotonic_fence_tokens_and_stale_owners_cannot_dispatch_after_takeover",
     "lease_expiry_is_ambiguity_and_takeover_never_creates_two_current_semantic_owners",
     "effectful_broker_acceptance_revalidates_current_unexpired_claim_authority",
+    "broker_dedup_lookup_conflict_check_and_acceptance_are_one_atomic_operation",
     "broker_acceptance_is_idempotent_for_same_message_identity_and_content_and_conflicts_fail_closed",
     "retry_changes_attempt_metadata_only_and_never_message_identity_or_immutable_fact_content",
     "ack_lost_after_broker_acceptance_is_retried_with_the_exact_same_message_identity_and_semantic_content",
     "terminal_delivery_evidence_requires_current_unexpired_claim_and_acked_receipt_for_same_message_identity_and_content",
-    "terminal_delivery_write_is_conditionally_fenced_at_its_commit_boundary",
+    "terminal_delivery_claim_check_and_write_are_one_serialized_conditional_commit_boundary",
     "broker_unavailability_leaves_committed_outbox_backlog_durable_and_dispatchable_after_recovery",
     "dispatcher_restart_rehydrates_claim_state_from_durable_outbox_truth_and_preserves_message_identity_and_content",
     "notification_is_only_a_wakeup_hint_and_polling_or_durable_store_remains_recovery_authority",
@@ -145,15 +151,9 @@ def validate(root: Path) -> list[str]:
     if not isinstance(manifest, dict) or set(manifest) != expected_manifest_keys:
         errors.append("source manifest exact key schema drift")
     for key, expected in {
-        "schema_version": 1,
-        "gate_id": "D4",
-        "track_id": "D4-C",
-        "axis": AXIS,
-        "source_decision": DECISION,
-        "evidence_id": EVIDENCE,
-        "canonical_base": BASE,
-        "mode": "candidate_source_evidence_only",
-        "selection_state": "not_selected",
+        "schema_version": 1, "gate_id": "D4", "track_id": "D4-C", "axis": AXIS,
+        "source_decision": DECISION, "evidence_id": EVIDENCE, "canonical_base": BASE,
+        "mode": "candidate_source_evidence_only", "selection_state": "not_selected",
         "selection_authority": "not_granted",
     }.items():
         if manifest.get(key) != expected or type(manifest.get(key)) is not type(expected):
@@ -169,8 +169,7 @@ def validate(root: Path) -> list[str]:
     if PROOF_CHECKS != EXPECTED_PROOF_CHECKS:
         errors.append("evaluator proof-to-check map drift")
 
-    axes = plan.get("axes", {}) if isinstance(plan, dict) else {}
-    axis = axes.get(AXIS)
+    axis = plan.get("axes", {}).get(AXIS) if isinstance(plan, dict) else None
     if not isinstance(axis, dict):
         errors.append("accepted OPEN-EVT-012 axis missing")
     else:
@@ -244,12 +243,9 @@ def validate(root: Path) -> list[str]:
     if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 16:
         errors.append("D4-wide evidence count drift")
     for key, expected in {
-        "gate_state": "scoped",
-        "d4_transport_authority": "selected_not_granted",
-        "canonical_product_implementation_authority": "not_granted",
-        "wave4_implementation_authority": "not_granted",
-        "production_authority": "none",
-        "c3_numeric_topology_authority": "not_selected",
+        "gate_state": "scoped", "d4_transport_authority": "selected_not_granted",
+        "canonical_product_implementation_authority": "not_granted", "wave4_implementation_authority": "not_granted",
+        "production_authority": "none", "c3_numeric_topology_authority": "not_selected",
     }.items():
         if state.get(key) != expected:
             errors.append(f"global authority drift: {key}")
@@ -263,7 +259,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_012_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=28 source_auto_credit=false current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
+    print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=32 source_auto_credit=false current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
     return 0
 
 if __name__ == "__main__":

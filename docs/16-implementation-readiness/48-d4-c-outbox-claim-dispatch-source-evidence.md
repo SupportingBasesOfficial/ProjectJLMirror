@@ -25,7 +25,9 @@ The executable evidence proves:
 6. dispatcher restart preserves stable message identity/content and notification remains only a wake-up hint;
 7. cleanup cannot remove the last recovery authority before terminal evidence plus the safe horizon.
 
-Effectful publish admission re-establishes the current, unexpired claim fence at the acceptance boundary. Terminal delivery evidence additionally requires an `acked` receipt bound to the same message identity and content digest as the immutable outbox fact.
+Effectful publish admission re-establishes the current, unexpired claim fence at the broker acceptance boundary. Terminal-delivery admission independently re-establishes that same current, unexpired claim authority when the ACK is consumed: an ACK obtained while the worker was current cannot be used after lease expiry or after takeover. Terminal delivery evidence additionally requires an `acked` receipt bound to the same message identity and content digest as the immutable outbox fact.
+
+The machine validator pins an exact seven-proof / twenty-five-check inventory so removing stale-terminal, in-flight fencing, receipt-binding, or immutability falsification cannot remain green by changing the evaluator alone.
 
 The numeric times and lease durations used by the harness are evidence fixtures only. They do not select production retry, lease, retention, cleanup, partition, or topology numerics.
 

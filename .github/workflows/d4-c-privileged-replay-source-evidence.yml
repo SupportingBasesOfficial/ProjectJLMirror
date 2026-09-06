@@ -61,7 +61,7 @@ jobs:
           python3 tools/assurance/validate_d4_eventing_async_state.py .
           python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
 
-      - name: Assert source remains non-promoting and authorities unchanged
+      - name: Preserve source-time non-promotion after separate OPEN-EVT-014 promotion
         shell: bash
         run: |
           set -euo pipefail
@@ -72,22 +72,23 @@ jobs:
           plan=json.loads(Path('implementation/d4-eventing-async/d4-c-evidence-plan.json').read_text())
           state=json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
           tracks={t['track_id']:t for t in state['tracks']}
+          evidence='privileged_bounded_replay_with_original_identity_and_effect_safety'
           assert p['current_run_auto_credit'] is False and p['ledger_credit']==[]
           assert p['selection_state']=='not_selected' and p['selection_authority']=='not_granted'
           assert p['non_authority']['d4c_ledger_credit']=='current_6_of_9_unchanged'
           assert p['non_authority']['open_evt_014_ledger_credit']=='uncredited'
-          assert plan['ledger_credit_state']=='six_of_nine'
-          assert 'privileged_bounded_replay_with_original_identity_and_effect_safety' in plan['remaining_evidence']
-          assert 'privileged_bounded_replay_with_original_identity_and_effect_safety' not in plan['credited_evidence']
+          assert plan['ledger_credit_state']=='seven_of_nine'
+          assert evidence in plan['credited_evidence'] and evidence not in plan['remaining_evidence'] and len(plan['remaining_evidence'])==2
           assert tracks['D4-C']['candidate'] is None and tracks['D4-C']['candidate_status']=='not_selected'
-          assert sum(len(t['evidence_completed']) for t in state['tracks'])==18
+          assert tracks['D4-C']['evidence_completed']==plan['credited_evidence']
+          assert sum(len(t['evidence_completed']) for t in state['tracks'])==19
           assert state['gate_state']=='scoped'
           assert state['d4_transport_authority']=='selected_not_granted'
           assert state['canonical_product_implementation_authority']=='not_granted'
           assert state['wave4_implementation_authority']=='not_granted'
           assert state['production_authority']=='none'
           assert state['c3_numeric_topology_authority']=='not_selected'
-          print('open_evt_014_source_boundary=PASS source_credit=0 current_d4c=6/9 current_d4wide=18/26 selection=none authorities=unchanged')
+          print('open_evt_014_source_boundary=PASS immutable_source_snapshot=6_of_9 source_credit=0 current_d4c=7/9 current_d4wide=19/26 selection=none authorities=unchanged')
           PY
 
       - name: Resolve exact workflow job identity and emit immutable provenance

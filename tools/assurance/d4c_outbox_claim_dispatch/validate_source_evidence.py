@@ -40,8 +40,8 @@ EXPECTED_PROOF_CHECKS = {
     EXPECTED_PROOFS[0]: ("atomic_commit_all_or_nothing", "message_identity_fixed_at_commit"),
     EXPECTED_PROOFS[1]: ("preexpiry_takeover_rejected", "stale_owner_fenced_after_takeover", "single_current_claim_owner"),
     EXPECTED_PROOFS[2]: ("immutable_fact_rewrite_rejected", "retry_preserves_identity", "retry_preserves_semantic_content"),
-    EXPECTED_PROOFS[3]: ("ack_lost_retry_same_identity", "ack_lost_retry_same_content"),
-    EXPECTED_PROOFS[4]: ("broker_outage_preserves_backlog",),
+    EXPECTED_PROOFS[3]: ("ack_lost_retry_same_identity", "ack_lost_retry_same_content", "ambiguous_ack_cannot_mark_terminal"),
+    EXPECTED_PROOFS[4]: ("broker_outage_preserves_backlog", "unavailable_publish_cannot_mark_terminal"),
     EXPECTED_PROOFS[5]: ("restart_preserves_identity", "restart_preserves_semantic_content", "notification_is_non_authoritative"),
     EXPECTED_PROOFS[6]: ("cleanup_blocks_uncertain_delivery", "cleanup_blocks_before_safe_horizon", "cleanup_after_safe_horizon_requires_terminal_evidence"),
 }
@@ -227,7 +227,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_012_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=17 source_auto_credit=false current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
+    print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=19 source_auto_credit=false current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
     return 0
 
 

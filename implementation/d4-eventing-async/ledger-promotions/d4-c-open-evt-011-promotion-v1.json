@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "promotion_id": "d4-c-open-evt-011-promotion-v1",
+  "gate_id": "D4",
+  "track_id": "D4-C",
+  "promotion_base": "d99edd423d5447eddf68f26ed7c74ac6346a0f3a",
+  "source_pr": 78,
+  "source_reviewed_head": "268e3ec44e8050c077da689a945c57c3b82b540a",
+  "source_merge_commit": "d99edd423d5447eddf68f26ed7c74ac6346a0f3a",
+  "source_review": {
+    "review_id": 5123629475,
+    "review_mode": "independent_exact_head_adversarial_clean_after_exact_head_ci",
+    "material_threads_unresolved": 0
+  },
+  "source_workflow": {
+    "workflow_id": 351243757,
+    "workflow_path": ".github/workflows/d4-c-scoped-content-equivalence-source-evidence.yml",
+    "workflow_event": "pull_request",
+    "source_head_branch": "evidence/d4-c-scoped-content-equivalence-source",
+    "run_id": 34002570352,
+    "run_attempt": 1,
+    "job_id": 101403949771,
+    "job_name": "D4-C OPEN-EVT-011 source evidence",
+    "artifact_id": 9979927320,
+    "artifact_name": "d4-c-scoped-equivalence-source-268e3ec44e8050c077da689a945c57c3b82b540a-34002570352-1",
+    "artifact_digest": "sha256:ea0c2d84a5530c7b3879bac3b1495fe1a928d4dffd297c612bef84a99d4f89c5"
+  },
+  "source_manifest": {
+    "path": "implementation/d4-eventing-async/source-evidence/d4-c-scoped-content-equivalence-source.json",
+    "sha256": "f47f67895be554666a9e74d53e3121d6e951e3f2e13842ebaa7554142a8c30de"
+  },
+  "credited_evidence": [
+    "scoped_content_equivalence_confidentiality_and_conflict_rejection"
+  ],
+  "credit_count": 1,
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "d4_gate_state": "scoped",
+  "d4_transport_authority": "selected_not_granted",
+  "canonical_product_implementation_authority": "not_granted",
+  "wave4_implementation_authority": "not_granted",
+  "production_authority": "none",
+  "c3_numeric_topology_authority": "not_selected",
+  "separate_selection_required": true,
+  "separate_d4_acceptance_required": true
+}

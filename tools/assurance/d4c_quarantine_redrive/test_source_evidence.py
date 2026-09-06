@@ -26,6 +26,7 @@ CREDITS = [
     "ack_after_durable_responsibility_and_lease_ambiguity",
     "quarantine_redrive_current_authority_and_dedup_preservation",
     "bounded_message_batch_compression_and_parser_limits",
+    "scoped_content_equivalence_confidentiality_and_conflict_rejection",
 ]
 TENANT = "tenant:t1"
 
@@ -180,11 +181,11 @@ class SourceEvidenceTests(unittest.TestCase):
         d4c = tracks["D4-C"]
         self.assertEqual(d4c["evidence_completed"], CREDITS)
         self.assertEqual(d4c["evidence_remaining"], [x for x in d4c["required_evidence"] if x not in CREDITS])
-        self.assertEqual(len(d4c["evidence_remaining"]), 6)
+        self.assertEqual(len(d4c["evidence_remaining"]), 5)
         self.assertIsNone(d4c["candidate"])
         self.assertEqual(d4c["candidate_status"], "not_selected")
         self.assertEqual(tracks["D4-D"]["evidence_completed"], [])
-        self.assertEqual(sum(len(t["evidence_completed"]) for t in state["tracks"]), 15)
+        self.assertEqual(sum(len(t["evidence_completed"]) for t in state["tracks"]), 16)
         self.assertEqual(state["gate_state"], "scoped")
         self.assertEqual(state["canonical_product_implementation_authority"], "not_granted")
         self.assertEqual(state["wave4_implementation_authority"], "not_granted")

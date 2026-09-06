@@ -17,21 +17,23 @@ The accepted candidate classes are:
 
 The executable evidence proves:
 
-1. authoritative business mutation and its required outbox fact commit atomically, with business state snapshotted immutably so caller-side mutation cannot bypass the outbox boundary;
-2. claim takeover is fenced so stale owners cannot remain semantic owners, including an already in-flight worker that validated before expiry and a worker preempted after validation but before the broker effect completes;
+1. authoritative business mutation and its required outbox fact commit atomically, with business state recursively snapshotted and unsupported mutable mapping-key objects rejected before commit;
+2. claim takeover is fenced so stale owners cannot remain semantic owners, including workers preempted before broker acceptance, after authorization, and while terminal delivery is being committed;
 3. retries preserve immutable fact meaning, including rejection of a coherent post-commit content+digest rewrite;
-4. broker ACK ambiguity retries the same message identity and semantic content, while ambiguous or foreign `acked` receipts cannot grant terminal-delivery authority;
+4. broker ACK ambiguity retries the same message identity and semantic content, while ambiguous, foreign, or conflicting-content evidence cannot grant benign/terminal meaning;
 5. broker outage preserves committed backlog and an unavailable publish cannot become terminal delivery evidence;
 6. dispatcher restart preserves stable message identity/content and notification remains only a wake-up hint;
 7. cleanup cannot remove the last recovery authority before terminal evidence plus the safe horizon.
 
-Effectful publish admission re-establishes the current, unexpired claim fence at the broker acceptance boundary. Because database claim authority and broker acceptance are cross-authority, the broker-side evidence model also makes acceptance idempotent for the same stable message identity and immutable content; a post-validation takeover can therefore produce retries/attempts but not a second semantic broker acceptance, and conflicting content for the same message identity fails closed.
+Effectful publish admission re-establishes the current, unexpired claim fence at the broker acceptance boundary. Database claim authority and broker acceptance remain cross-authority; therefore the broker-side evidence model provides an atomic idempotent acceptance operation whose lookup, conflict decision, stable message-ID/content insertion, and semantic acceptance are serialized together. Concurrent same-ID/same-content publishes collapse to one semantic acceptance, while same-ID/different-content fails closed.
 
-Terminal-delivery admission independently re-establishes current, unexpired claim authority when the ACK is consumed. Its write is modeled as a conditional/CAS update over owner, fence, and lease at the commit boundary, so a takeover between method entry and write cannot restore the stale owner's claim or grant terminal evidence. An ACK obtained while the worker was current cannot be used after lease expiry or after takeover. Terminal evidence additionally requires an `acked` receipt bound to the same message identity and content digest as the immutable outbox fact.
+Terminal-delivery admission independently re-establishes current, unexpired claim authority when the ACK is consumed. The modeled terminal transition serializes owner/fence/lease comparison, transformation, final comparison, and state replacement inside one conditional commit boundary. A concurrent takeover cannot be overwritten by the stale worker, and an ACK obtained while current cannot be reused after lease expiry or takeover. Terminal evidence additionally requires an `acked` receipt bound to the same message identity and content digest as the immutable outbox fact.
 
-The machine validator pins an exact seven-proof / twenty-eight-check inventory so removing business snapshot isolation, post-validation broker idempotence, stale-terminal/CAS fencing, in-flight takeover fencing, receipt binding, or immutability falsification cannot remain green by changing the evaluator alone.
+Authoritative business state is detached from caller aliases. Supported nested values are recursively frozen; mapping keys are limited to supported immutable scalar keys, while arbitrary mutable/hashable key objects are rejected before the business/outbox commit.
 
-The numeric times and lease durations used by the harness are evidence fixtures only. They do not select production retry, lease, retention, cleanup, partition, or topology numerics.
+The machine validator pins an exact seven-proof / thirty-two-check inventory. It independently requires concurrent broker atomicity, conflicting-content rejection, concurrent terminal-write serialization, mutable-key rejection, business snapshot isolation, stale-terminal fencing, receipt binding, in-flight takeover fencing, and immutable-fact protection, so removing those guards cannot remain green by changing the evaluator alone.
+
+The numeric times, thread counts, sleeps, and lease durations used by the harness are evidence fixtures only. They do not select production retry, lease, retention, cleanup, partition, concurrency, or topology numerics.
 
 ## Non-authority boundary
 

@@ -30,13 +30,14 @@ PROOF_CHECKS = {
         "atomic_commit_all_or_nothing",
         "business_snapshot_isolated_from_caller_mutation",
         "mutable_mapping_key_rejected",
+        "scalar_subclass_mapping_key_rejected",
         "message_identity_fixed_at_commit",
     ),
     PROOFS[1]: (
         "preexpiry_takeover_rejected",
         "expired_claim_cannot_dispatch",
-        "inflight_takeover_fenced_before_broker_accept",
-        "post_authorize_takeover_cannot_duplicate_broker_accept",
+        "inflight_takeover_fenced_before_broker_handoff",
+        "post_handoff_takeover_completion_is_ambiguous_and_deduplicated",
         "broker_acceptance_atomic_under_concurrency",
         "stale_owner_fenced_after_takeover",
         "expired_claim_cannot_mark_terminal",
@@ -76,13 +77,16 @@ class ContractViolation(RuntimeError):
     pass
 
 
+_IMMUTABLE_SCALAR_TYPES = (str, int, float, bool, type(None))
+
+
 def _freeze(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool)):
+    if type(value) in _IMMUTABLE_SCALAR_TYPES:
         return value
     if isinstance(value, Mapping):
         frozen: dict[Any, Any] = {}
         for key, item in value.items():
-            if key is not None and not isinstance(key, (str, int, float, bool)):
+            if type(key) not in _IMMUTABLE_SCALAR_TYPES:
                 raise ContractViolation("unsupported_mutable_business_key")
             frozen[key] = _freeze(item)
         return MappingProxyType(frozen)
@@ -190,7 +194,6 @@ class DurableStore:
         now: int,
         transform: Callable[[OutboxFact], OutboxFact],
     ) -> None:
-        # The claim predicate, transform and state replacement are one serialized CAS boundary.
         with self._state_lock:
             current = self._state.outbox[token.message_id]
             self._assert_token_matches(current, token, now=now)
@@ -310,7 +313,6 @@ class BrokerProbe:
 
     def _accept_idempotently(self, pair: tuple[str, str]) -> None:
         message_id, content_digest = pair
-        # Lookup, conflict decision, insert and accepted-list append are one atomic broker operation.
         with self._accept_lock:
             existing = self._accepted_by_message_id.get(message_id)
             if self.accept_pause_after_lookup:
@@ -325,19 +327,21 @@ class BrokerProbe:
         self,
         fact: OutboxFact,
         *,
-        authorize_accept: Callable[[], None],
-        before_accept: Callable[[], None] | None = None,
-        after_authorize: Callable[[], None] | None = None,
+        authorize_handoff: Callable[[], None],
+        before_handoff: Callable[[], None] | None = None,
+        after_handoff: Callable[[], None] | None = None,
     ) -> PublishReceipt:
         pair = (fact.message_id, fact.content_digest)
         self.attempts.append(pair)
         if not self.available:
             return PublishReceipt("unavailable", *pair)
-        if before_accept is not None:
-            before_accept()
-        authorize_accept()
-        if after_authorize is not None:
-            after_authorize()
+        if before_handoff is not None:
+            before_handoff()
+        authorize_handoff()
+        if after_handoff is not None:
+            after_handoff()
+        # Once the cross-authority broker call is in flight, later claim loss cannot
+        # retroactively cancel it. Completion is ambiguity contained by stable ID/content.
         self._accept_idempotently(pair)
         if self.accept_then_lose_ack_once:
             self.accept_then_lose_ack_once = False
@@ -360,17 +364,17 @@ class Dispatcher:
         token: ClaimToken,
         *,
         now: int,
-        accept_now: int | None = None,
-        before_accept: Callable[[], None] | None = None,
-        after_authorize: Callable[[], None] | None = None,
+        handoff_now: int | None = None,
+        before_handoff: Callable[[], None] | None = None,
+        after_handoff: Callable[[], None] | None = None,
     ) -> PublishReceipt:
         fact = self.store.assert_current(token, now=now)
-        boundary_now = now if accept_now is None else accept_now
+        boundary_now = now if handoff_now is None else handoff_now
         return self.broker.publish(
             fact,
-            authorize_accept=lambda: self.store.assert_current(token, now=boundary_now),
-            before_accept=before_accept,
-            after_authorize=after_authorize,
+            authorize_handoff=lambda: self.store.assert_current(token, now=boundary_now),
+            before_handoff=before_handoff,
+            after_handoff=after_handoff,
         )
 
 
@@ -429,6 +433,19 @@ def check_candidate(candidate: str) -> dict[str, bool]:
         "unsupported_mutable_business_key",
     ) and key_store.business_revision == 0 and "key-msg" not in key_store.outbox
 
+    class MutableStr(str):
+        pass
+
+    scalar_key = MutableStr("key")
+    scalar_key.mutable_state = "before"
+    scalar_key_store = DurableStore()
+    checks["scalar_subclass_mapping_key_rejected"] = _blocked(
+        lambda: scalar_key_store.commit_business_and_outbox(
+            business_value={scalar_key: "value"}, message_id="scalar-key-msg", semantic_content="{}"
+        ),
+        "unsupported_mutable_business_key",
+    ) and scalar_key_store.business_revision == 0 and "scalar-key-msg" not in scalar_key_store.outbox
+
     committed = store.outbox[mid]
     checks["message_identity_fixed_at_commit"] = (
         committed.message_id == mid
@@ -448,46 +465,56 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     broker.accepted.clear()
     token2_box: list[ClaimToken] = []
 
-    def takeover_before_authorize() -> None:
+    def takeover_before_handoff() -> None:
         token2_box.append(store.claim(mid, "worker-b", now=15, lease=5))
 
     inflight_blocked = _blocked(
         lambda: d1.dispatch(
             token1,
             now=14,
-            accept_now=15,
-            before_accept=takeover_before_authorize,
+            handoff_now=15,
+            before_handoff=takeover_before_handoff,
         ),
         "stale_claim",
     )
     token2 = token2_box[0]
-    checks["inflight_takeover_fenced_before_broker_accept"] = inflight_blocked and broker.accepted == []
+    checks["inflight_takeover_fenced_before_broker_handoff"] = inflight_blocked and broker.accepted == []
 
-    broker_race = BrokerProbe()
-    race_store = DurableStore()
-    race_store.commit_business_and_outbox(
-        business_value={"rev": 1}, message_id="race-msg", semantic_content=semantic
+    ambiguity_broker = BrokerProbe()
+    ambiguity_store = DurableStore()
+    ambiguity_store.commit_business_and_outbox(
+        business_value={"rev": 1}, message_id="ambiguity-msg", semantic_content=semantic
     )
-    race_a = race_store.claim("race-msg", "worker-a", now=10, lease=5)
-    race_dispatcher_a = Dispatcher(race_store, broker_race, candidate=candidate, owner="worker-a")
-    race_b_box: list[ClaimToken] = []
+    ambiguity_a = ambiguity_store.claim("ambiguity-msg", "worker-a", now=10, lease=5)
+    ambiguity_dispatcher_a = Dispatcher(
+        ambiguity_store, ambiguity_broker, candidate=candidate, owner="worker-a"
+    )
+    ambiguity_b_box: list[ClaimToken] = []
 
-    def takeover_and_publish_after_authorize() -> None:
-        race_b = race_store.claim("race-msg", "worker-b", now=15, lease=5)
-        race_b_box.append(race_b)
-        Dispatcher(race_store, broker_race, candidate=candidate, owner="worker-b").dispatch(race_b, now=15)
+    def takeover_after_handoff() -> None:
+        ambiguity_b_box.append(ambiguity_store.claim("ambiguity-msg", "worker-b", now=15, lease=5))
 
-    race_a_receipt = race_dispatcher_a.dispatch(
-        race_a,
+    stale_completion = ambiguity_dispatcher_a.dispatch(
+        ambiguity_a,
         now=14,
-        accept_now=14,
-        after_authorize=takeover_and_publish_after_authorize,
+        handoff_now=14,
+        after_handoff=takeover_after_handoff,
     )
-    checks["post_authorize_takeover_cannot_duplicate_broker_accept"] = (
-        race_a_receipt.status == "acked"
-        and len(race_b_box) == 1
-        and broker_race.accepted == [("race-msg", DurableStore._digest(semantic))]
-        and len(broker_race.attempts) == 2
+    ambiguity_b = ambiguity_b_box[0]
+    current_retry = Dispatcher(
+        ambiguity_store, ambiguity_broker, candidate=candidate, owner="worker-b"
+    ).dispatch(ambiguity_b, now=15)
+    stale_terminal_blocked = _blocked(
+        lambda: ambiguity_store.mark_terminal_delivery(ambiguity_a, stale_completion, now=15),
+        "stale_claim",
+    )
+    checks["post_handoff_takeover_completion_is_ambiguous_and_deduplicated"] = (
+        stale_completion.status == "acked"
+        and current_retry.status == "acked"
+        and len(ambiguity_broker.attempts) == 2
+        and ambiguity_broker.accepted == [("ambiguity-msg", DurableStore._digest(semantic))]
+        and stale_terminal_blocked
+        and not ambiguity_store.outbox["ambiguity-msg"].terminal_delivery_evidence
     )
 
     concurrent_broker = BrokerProbe()
@@ -499,8 +526,8 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     def concurrent_publish() -> None:
         try:
             start.wait()
-            concurrent_broker.publish(concurrent_fact, authorize_accept=lambda: None)
-        except Exception as exc:  # pragma: no cover - captured into deterministic check
+            concurrent_broker.publish(concurrent_fact, authorize_handoff=lambda: None)
+        except Exception as exc:
             failures.append(exc)
 
     threads = [threading.Thread(target=concurrent_publish) for _ in range(8)]
@@ -604,7 +631,7 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     def terminal_writer() -> None:
         try:
             concurrent_store.mark_terminal_delivery(concurrent_a, concurrent_ack, now=1)
-        except Exception as exc:  # pragma: no cover
+        except Exception as exc:
             terminal_errors.append(exc)
 
     writer = threading.Thread(target=terminal_writer)
@@ -652,9 +679,9 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     conflict_broker = BrokerProbe()
     original = OutboxFact("conflict-msg", "one", DurableStore._digest("one"), 1)
     conflict = OutboxFact("conflict-msg", "two", DurableStore._digest("two"), 1)
-    conflict_broker.publish(original, authorize_accept=lambda: None)
+    conflict_broker.publish(original, authorize_handoff=lambda: None)
     checks["broker_conflicting_content_rejected"] = _blocked(
-        lambda: conflict_broker.publish(conflict, authorize_accept=lambda: None),
+        lambda: conflict_broker.publish(conflict, authorize_handoff=lambda: None),
         "broker_message_identity_conflict",
     ) and conflict_broker.accepted == [("conflict-msg", DurableStore._digest("one"))]
 

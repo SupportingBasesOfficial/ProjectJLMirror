@@ -10,6 +10,7 @@ D4C_CREDITS = [
     "ack_after_durable_responsibility_and_lease_ambiguity",
     "quarantine_redrive_current_authority_and_dedup_preservation",
     "bounded_message_batch_compression_and_parser_limits",
+    "scoped_content_equivalence_confidentiality_and_conflict_rejection",
 ]
 EXPECTED_IDS = {
     "canonical_bounded_serialization_profile",
@@ -58,7 +59,6 @@ def main() -> int:
     source = json.loads(SOURCE.read_text(encoding="utf-8"))
     state = json.loads(STATE.read_text(encoding="utf-8"))
 
-    # Historical source package remains byte/meaning neutral about later selection or sibling promotions.
     assert source["schema_version"] == 1
     assert source["package_id"] == "d4-b-schema-contract-source-v1"
     assert source["canonical_base_commit"] == "790f967446bf039ba4d5f618c9f30494c720ee7c"
@@ -85,7 +85,6 @@ def main() -> int:
     assert source["production_authority"] == "none"
     assert source["c3_numeric_topology_authority"] == "not_selected"
 
-    # Current global state may reflect later, separately governed selections and sibling promotions.
     state_tracks = state.get("tracks")
     assert isinstance(state_tracks, list) and len(state_tracks) == 4
     assert all(isinstance(track, dict) for track in state_tracks)
@@ -107,10 +106,10 @@ def main() -> int:
     assert d4c["state"] == "candidate_selection_open"
     assert d4c["evidence_completed"] == D4C_CREDITS
     expected_remaining = [x for x in d4c["required_evidence"] if x not in D4C_CREDITS]
-    assert d4c["evidence_remaining"] == expected_remaining and len(expected_remaining) == 6
+    assert d4c["evidence_remaining"] == expected_remaining and len(expected_remaining) == 5
     assert d4d["candidate"] is None and d4d["candidate_status"] == "not_selected"
     assert d4d["evidence_completed"] == []
-    assert sum(len(track["evidence_completed"]) for track in state_tracks) == 15
+    assert sum(len(track["evidence_completed"]) for track in state_tracks) == 16
     assert state["gate_state"] == "scoped"
     assert state["d4_transport_authority"] == "selected_not_granted"
     assert state["canonical_product_implementation_authority"] == "not_granted"
@@ -121,7 +120,7 @@ def main() -> int:
     print(
         "d4b_schema_contract_source_manifest=PASS evidence_ids=5 evidence_kinds=exact reference_properties=exact "
         "source_credit=0 source_history=not_selected current_selection=selected_c2_profile unique_tracks=true "
-        "d4a=exact_7_of_7_kafka_selected d4c=3_of_9 d4wide=15/26 d4d=open authorities=not_granted"
+        "d4a=exact_7_of_7_kafka_selected d4c=4_of_9 d4wide=16/26 d4d=open authorities=not_granted"
     )
     return 0
 

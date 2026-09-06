@@ -11,11 +11,7 @@ HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
-from evaluate_candidates import (  # noqa: E402
-    CANDIDATES,
-    TEST_LIMIT_PROFILE,
-    evaluate_all,
-)
+from evaluate_candidates import CANDIDATES, TEST_LIMIT_PROFILE, evaluate_all  # noqa: E402
 
 MANIFEST = Path("implementation/d4-eventing-async/source-evidence/d4-c-bounded-parser-limits-source.json")
 PLAN = Path("implementation/d4-eventing-async/d4-c-candidate-evaluation-plan.json")
@@ -28,6 +24,7 @@ CURRENT_CREDITS = [
     "ack_after_durable_responsibility_and_lease_ambiguity",
     "quarantine_redrive_current_authority_and_dedup_preservation",
     EVIDENCE,
+    "scoped_content_equivalence_confidentiality_and_conflict_rejection",
 ]
 
 EXPECTED_ASSERTIONS = [
@@ -50,7 +47,27 @@ EXPECTED_ASSERTIONS = [
     "candidate_source_evidence_does_not_select_a_codec_transport_parser_or_production_topology",
 ]
 
-# Immutable source-time boundary: this source package was produced while the ledger was 2/9.
+EXPECTED_RUNTIME_CHECKS = {
+    "valid_payload_admitted",
+    "declared_oversize_rejected_before_stream_consumption",
+    "unknown_length_stream_remains_bounded",
+    "batch_size_bound",
+    "parser_nesting_prechecked_before_json_decode",
+    "collection_size_bound",
+    "string_bound",
+    "field_count_bound",
+    "duplicate_json_members_rejected_before_collapse",
+    "decompression_output_bound",
+    "malformed_gzip_is_bounded_failure",
+    "compressed_trailing_member_rejected",
+    "artifact_reference_required_at_any_depth",
+    "raw_telemetry_reference_supported_at_any_depth",
+    "transport_cannot_weaken_contract_limit",
+    "limit_failures_deterministic",
+    "limit_failures_non_retryable",
+    "fixture_profile_is_noncanonical",
+}
+
 EXPECTED_NON_AUTHORITY = {
     "d4c_mechanism_selection": "not_selected",
     "d4c_content_equivalence_profile_selection": "not_selected",
@@ -150,32 +167,19 @@ def validate(root: Path) -> list[str]:
         errors.append("runtime selection leakage")
     if runtime.get("ledger_credit") != [] or runtime.get("current_run_auto_credit") is not False:
         errors.append("runtime source auto-credit leakage")
+
     checks = runtime.get("checks")
-    if not isinstance(checks, dict) or set(checks) != set(CANDIDATES) or not all(all(v.values()) for v in checks.values()):
-        errors.append("runtime proof checks incomplete")
+    if not isinstance(checks, dict) or set(checks) != set(CANDIDATES):
+        errors.append("runtime proof candidate inventory incomplete")
     else:
-        required_runtime_checks = {
-            "declared_oversize_rejected_before_stream_consumption",
-            "unknown_length_stream_remains_bounded",
-            "batch_size_bound",
-            "parser_nesting_prechecked_before_json_decode",
-            "collection_size_bound",
-            "string_bound",
-            "field_count_bound",
-            "duplicate_json_members_rejected_before_collapse",
-            "decompression_output_bound",
-            "malformed_gzip_is_bounded_failure",
-            "compressed_trailing_member_rejected",
-            "artifact_reference_required_at_any_depth",
-            "raw_telemetry_reference_supported_at_any_depth",
-            "transport_cannot_weaken_contract_limit",
-            "limit_failures_deterministic",
-            "limit_failures_non_retryable",
-            "fixture_profile_is_noncanonical",
-        }
         for candidate, candidate_checks in checks.items():
-            if not required_runtime_checks.issubset(candidate_checks):
+            if not isinstance(candidate_checks, dict):
+                errors.append(f"runtime proof checks malformed for {candidate}")
+                continue
+            if set(candidate_checks) != EXPECTED_RUNTIME_CHECKS:
                 errors.append(f"runtime proof inventory incomplete for {candidate}")
+            elif not all(candidate_checks.values()):
+                errors.append(f"runtime proof checks failed for {candidate}")
 
     tracks_raw = state.get("tracks") if isinstance(state, dict) else None
     if not isinstance(tracks_raw, list) or len(tracks_raw) != 4:
@@ -194,10 +198,10 @@ def validate(root: Path) -> list[str]:
         errors.append("D4-C selection/state leakage")
     expected_remaining = [x for x in d4c.get("required_evidence", []) if x not in CURRENT_CREDITS]
     if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining:
-        errors.append("D4-C current 3/9 ledger drift")
+        errors.append("D4-C current 4/9 ledger drift")
     if d4d.get("evidence_completed") != [] or d4d.get("candidate") is not None:
         errors.append("D4-D state leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 15:
+    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 16:
         errors.append("D4-wide evidence count drift")
     for key, expected in {
         "gate_state": "scoped",
@@ -219,7 +223,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_010_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_open_evt_010_source=PASS candidates=3 proofs=7 source_snapshot_nonpromoting=true bounded_before_allocation=true malformed_gzip=blocked concatenated_gzip=blocked duplicate_members=blocked parser_nesting_prechecked=true specialized_planes=referenced_at_any_depth deterministic_nonretryable=true fixture_limits_noncanonical=true source_auto_credit=false current_d4c=3_of_9 current_d4wide=15_of_26 selection=not_selected")
+    print("d4c_open_evt_010_source=PASS candidates=3 checks=18_of_18 proof_inventory=exact source_snapshot_nonpromoting=true bounded_before_allocation=true malformed_gzip=blocked concatenated_gzip=blocked duplicate_members=blocked parser_nesting_prechecked=true specialized_planes=referenced_at_any_depth deterministic_nonretryable=true fixture_limits_noncanonical=true source_auto_credit=false current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
     return 0
 
 

@@ -9,10 +9,12 @@ on:
       - 'implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-008-promotion-v1.json'
       - 'implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-009-promotion-v1.json'
       - 'implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-010-promotion-v1.json'
+      - 'implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-011-promotion-v1.json'
       - 'implementation/d4-eventing-async/state-manifest.json'
       - 'implementation/d4-eventing-async/source-evidence/d4-c-ack-lease-checkpoint-source.json'
       - 'implementation/d4-eventing-async/source-evidence/d4-c-quarantine-redrive-source.json'
       - 'implementation/d4-eventing-async/source-evidence/d4-c-bounded-parser-limits-source.json'
+      - 'implementation/d4-eventing-async/source-evidence/d4-c-scoped-content-equivalence-source.json'
       - 'tools/assurance/validate_d4c_evidence_plan.py'
       - 'tools/assurance/test_validate_d4c_evidence_plan.py'
       - 'tools/assurance/validate_d4_eventing_async_state.py'
@@ -48,7 +50,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
-      - name: Compile promotion and global state assurance
+      - name: Compile cumulative promotion and global state assurance
         shell: bash
         run: |
           set -euo pipefail
@@ -58,11 +60,11 @@ jobs:
             tools/assurance/validate_d4_eventing_async_state.py \
             tools/assurance/test_validate_d4_eventing_async_state.py
 
-      - name: Falsify D4-C promotion weakening
+      - name: Falsify D4-C cumulative promotion weakening
         shell: bash
         run: python3 tools/assurance/test_validate_d4c_evidence_plan.py
 
-      - name: Validate D4-C three-of-nine promotion
+      - name: Validate current D4-C cumulative promotion state
         shell: bash
         run: python3 tools/assurance/validate_d4c_evidence_plan.py .
 
@@ -93,10 +95,8 @@ jobs:
           import os
           import subprocess
           from pathlib import Path
-
           base_sha = os.environ['BASE_SHA']
           promotion_path = 'implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-010-promotion-v1.json'
-
           proc = subprocess.run(
               ['git', 'show', f'{base_sha}:{promotion_path}'],
               check=False,
@@ -214,7 +214,7 @@ jobs:
         run: |
           echo 'd4c_open_evt_010_promotion_live_admission=SKIP promotion_unchanged=true aggregate_ledger_change_ignored=true artifact_retention_dependency=false durable_records_and_digests=validated'
 
-      - name: Assert promotion grants exactly the third evidence credit
+      - name: Assert OPEN-EVT-010 history is preserved under current fourth credit
         shell: bash
         run: |
           python3 - <<'PY'
@@ -222,24 +222,25 @@ jobs:
           from pathlib import Path
           plan = json.loads(Path('implementation/d4-eventing-async/d4-c-evidence-plan.json').read_text())
           state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
+          record = json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-010-promotion-v1.json').read_text())
           d4c = next(t for t in state['tracks'] if t['track_id'] == 'D4-C')
           expected = [
             'ack_after_durable_responsibility_and_lease_ambiguity',
             'quarantine_redrive_current_authority_and_dedup_preservation',
             'bounded_message_batch_compression_and_parser_limits',
+            'scoped_content_equivalence_confidentiality_and_conflict_rejection',
           ]
-          assert plan['ledger_credit_state'] == 'three_of_nine'
-          assert plan['credited_evidence'] == expected
-          assert len(plan['remaining_evidence']) == 6
-          assert d4c['evidence_completed'] == expected
-          assert d4c['evidence_remaining'] == plan['remaining_evidence']
+          assert record['credited_evidence'] == ['bounded_message_batch_compression_and_parser_limits'] and record['credit_count'] == 1
+          assert plan['ledger_credit_state'] == 'four_of_nine'
+          assert plan['credited_evidence'] == expected and len(plan['remaining_evidence']) == 5
+          assert d4c['evidence_completed'] == expected and d4c['evidence_remaining'] == plan['remaining_evidence']
           assert d4c['candidate'] is None and d4c['candidate_status'] == 'not_selected' and d4c['state'] == 'candidate_selection_open'
-          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 15
+          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 16
           assert state['gate_state'] == 'scoped'
           assert state['d4_transport_authority'] == 'selected_not_granted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['c3_numeric_topology_authority'] == 'not_selected'
-          print('d4c_open_evt_010_promotion_boundary=PASS d4c=3_of_9 d4wide=15_of_26 selection=not_selected authorities=unchanged')
+          print('d4c_open_evt_010_promotion_continuity=PASS own_credit=third current_d4c=4_of_9 d4wide=16_of_26 artifact_retention_dependency=false selection=not_selected authorities=unchanged')
           PY

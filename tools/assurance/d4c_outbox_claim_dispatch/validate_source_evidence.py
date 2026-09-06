@@ -66,8 +66,10 @@ EXPECTED_SOURCE_ASSERTIONS = [
     "outbox_message_identity_and_immutable_semantic_payload_are_fixed_at_commit",
     "claims_carry_monotonic_fence_tokens_and_stale_owners_cannot_dispatch_after_takeover",
     "lease_expiry_is_ambiguity_and_takeover_never_creates_two_current_semantic_owners",
+    "effectful_broker_acceptance_revalidates_current_unexpired_claim_authority",
     "retry_changes_attempt_metadata_only_and_never_message_identity_or_immutable_fact_content",
     "ack_lost_after_broker_acceptance_is_retried_with_the_exact_same_message_identity_and_semantic_content",
+    "terminal_delivery_evidence_requires_acked_receipt_for_same_message_identity_and_content",
     "broker_unavailability_leaves_committed_outbox_backlog_durable_and_dispatchable_after_recovery",
     "dispatcher_restart_rehydrates_claim_state_from_durable_outbox_truth_and_preserves_message_identity_and_content",
     "notification_is_only_a_wakeup_hint_and_polling_or_durable_store_remains_recovery_authority",
@@ -88,7 +90,6 @@ EXPECTED_NON_AUTHORITY = {
     "production_authority": "none",
     "c3_numeric_topology_authority": "not_selected",
 }
-
 
 class DuplicateKeyError(ValueError):
     pass
@@ -144,7 +145,6 @@ def validate(root: Path) -> list[str]:
         errors.append("source assertions drift")
     if manifest.get("non_authority") != EXPECTED_NON_AUTHORITY:
         errors.append("source non-authority boundary drift")
-
     if tuple(PROOFS) != EXPECTED_PROOFS:
         errors.append("evaluator proof inventory drift")
     if PROOF_CHECKS != EXPECTED_PROOF_CHECKS:
@@ -246,7 +246,6 @@ def main(argv: list[str]) -> int:
         return 1
     print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=23 source_auto_credit=false current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv))

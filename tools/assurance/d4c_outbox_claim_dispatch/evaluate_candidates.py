@@ -4,7 +4,8 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, replace
-from typing import Any
+from types import MappingProxyType
+from typing import Any, Mapping
 
 CANDIDATES = (
     "database_skip_locked_polling_claim_profile",
@@ -24,7 +25,7 @@ PROOFS = (
 
 PROOF_CHECKS = {
     PROOFS[0]: ("atomic_commit_all_or_nothing", "message_identity_fixed_at_commit"),
-    PROOFS[1]: ("stale_owner_fenced_after_takeover", "single_current_claim_owner"),
+    PROOFS[1]: ("preexpiry_takeover_rejected", "stale_owner_fenced_after_takeover", "single_current_claim_owner"),
     PROOFS[2]: ("retry_preserves_identity", "retry_preserves_semantic_content"),
     PROOFS[3]: ("ack_lost_retry_same_identity", "ack_lost_retry_same_content"),
     PROOFS[4]: ("broker_outage_preserves_backlog",),
@@ -58,67 +59,92 @@ class ClaimToken:
     fence: int
 
 
+@dataclass(frozen=True)
+class StoreState:
+    business_revision: int
+    business_value: Any
+    outbox: Mapping[str, OutboxFact]
+
+
 class DurableStore:
     def __init__(self) -> None:
-        self.business_revision = 0
-        self.business_value: Any = None
-        self.outbox: dict[str, OutboxFact] = {}
+        self._state = StoreState(0, None, MappingProxyType({}))
+
+    @property
+    def business_revision(self) -> int:
+        return self._state.business_revision
+
+    @property
+    def business_value(self) -> Any:
+        return self._state.business_value
+
+    @property
+    def outbox(self) -> Mapping[str, OutboxFact]:
+        return self._state.outbox
 
     @staticmethod
     def _digest(content: str) -> str:
         return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
+    def _commit_state(self, *, business_revision: int | None = None, business_value: Any = None, preserve_business_value: bool = True, outbox: dict[str, OutboxFact]) -> None:
+        revision = self._state.business_revision if business_revision is None else business_revision
+        value = self._state.business_value if preserve_business_value else business_value
+        self._state = StoreState(revision, value, MappingProxyType(dict(outbox)))
+
+    def _replace_fact(self, message_id: str, fact: OutboxFact) -> None:
+        staged = dict(self._state.outbox)
+        staged[message_id] = fact
+        self._commit_state(outbox=staged)
+
     def commit_business_and_outbox(self, *, business_value: Any, message_id: str, semantic_content: str, fail_before_commit: bool = False) -> None:
-        if message_id in self.outbox:
+        if message_id in self._state.outbox:
             raise ContractViolation("message_identity_reuse")
-        next_revision = self.business_revision + 1
+        next_revision = self._state.business_revision + 1
         fact = OutboxFact(
             message_id=message_id,
             semantic_content=semantic_content,
             content_digest=self._digest(semantic_content),
             business_revision=next_revision,
         )
+        staged = dict(self._state.outbox)
+        staged[message_id] = fact
+        next_state = StoreState(next_revision, business_value, MappingProxyType(staged))
         if fail_before_commit:
             return
-        self.business_value = business_value
-        self.business_revision = next_revision
-        self.outbox[message_id] = fact
+        # One state-pointer replacement represents the co-resident transaction commit.
+        self._state = next_state
 
     def claim(self, message_id: str, owner: str, *, now: int, lease: int) -> ClaimToken:
-        fact = self.outbox[message_id]
+        fact = self._state.outbox[message_id]
         if fact.claim_owner is not None and fact.lease_expires_at > now:
             raise ContractViolation("claim_already_owned")
         fence = fact.claim_fence + 1
-        self.outbox[message_id] = replace(fact, claim_owner=owner, claim_fence=fence, lease_expires_at=now + lease)
+        self._replace_fact(message_id, replace(fact, claim_owner=owner, claim_fence=fence, lease_expires_at=now + lease))
         return ClaimToken(message_id, owner, fence)
 
-    def release_or_expire_claim(self, token: ClaimToken, *, now: int) -> None:
-        fact = self.outbox[token.message_id]
-        if token.fence != fact.claim_fence or token.owner != fact.claim_owner:
-            raise ContractViolation("stale_claim")
-        self.outbox[token.message_id] = replace(fact, lease_expires_at=now)
-
     def assert_current(self, token: ClaimToken) -> OutboxFact:
-        fact = self.outbox[token.message_id]
+        fact = self._state.outbox[token.message_id]
         if token.fence != fact.claim_fence or token.owner != fact.claim_owner:
             raise ContractViolation("stale_claim")
         return fact
 
     def mark_terminal_delivery(self, token: ClaimToken) -> None:
         fact = self.assert_current(token)
-        self.outbox[token.message_id] = replace(fact, delivery_state="delivered", terminal_delivery_evidence=True)
+        self._replace_fact(token.message_id, replace(fact, delivery_state="delivered", terminal_delivery_evidence=True))
 
     def set_safe_horizon(self, message_id: str) -> None:
-        fact = self.outbox[message_id]
-        self.outbox[message_id] = replace(fact, safe_horizon_reached=True)
+        fact = self._state.outbox[message_id]
+        self._replace_fact(message_id, replace(fact, safe_horizon_reached=True))
 
     def cleanup(self, message_id: str) -> None:
-        fact = self.outbox[message_id]
+        fact = self._state.outbox[message_id]
         if not fact.terminal_delivery_evidence:
             raise ContractViolation("delivery_uncertain")
         if not fact.safe_horizon_reached:
             raise ContractViolation("safe_horizon_not_reached")
-        del self.outbox[message_id]
+        staged = dict(self._state.outbox)
+        del staged[message_id]
+        self._commit_state(outbox=staged)
 
 
 class BrokerProbe:
@@ -174,11 +200,16 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     checks["atomic_commit_all_or_nothing"] = store.business_revision == 0 and mid not in store.outbox
     store.commit_business_and_outbox(business_value={"rev": 1}, message_id=mid, semantic_content=semantic)
     committed = store.outbox[mid]
-    checks["message_identity_fixed_at_commit"] = committed.message_id == mid and committed.content_digest == DurableStore._digest(semantic)
+    checks["message_identity_fixed_at_commit"] = committed.message_id == mid and committed.content_digest == DurableStore._digest(semantic) and committed.business_revision == store.business_revision == 1
 
     d1 = Dispatcher(store, broker, candidate=candidate, owner="worker-a")
     token1 = store.claim(mid, "worker-a", now=10, lease=5)
-    store.release_or_expire_claim(token1, now=15)
+    preexpiry_blocked = False
+    try:
+        store.claim(mid, "worker-b", now=14, lease=5)
+    except ContractViolation as exc:
+        preexpiry_blocked = str(exc) == "claim_already_owned"
+    checks["preexpiry_takeover_rejected"] = preexpiry_blocked
     token2 = store.claim(mid, "worker-b", now=15, lease=5)
     stale_blocked = False
     try:
@@ -215,10 +246,7 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     unavailable = outage_dispatcher.dispatch(token3)
     checks["broker_outage_preserves_backlog"] = unavailable == "unavailable" and mid3 in store3.outbox and store3.outbox[mid3].semantic_content == semantic3
 
-    store3.release_or_expire_claim(token3, now=3)
     restarted = Dispatcher(store3, broker3, candidate=candidate, owner="worker-restarted")
-    if candidate == "notification_assisted_polling_claim_profile":
-        restarted.notifications.clear()
     token4 = store3.claim(mid3, "worker-restarted", now=3, lease=2)
     broker3.available = True
     recovered = restarted.dispatch(token4)

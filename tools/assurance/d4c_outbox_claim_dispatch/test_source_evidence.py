@@ -44,10 +44,8 @@ class SourceEvidenceTests(unittest.TestCase):
         token_a = store.claim("m1", "a", now=0, lease=2)
         dispatcher_a = Dispatcher(store, broker, candidate=CANDIDATES[0], owner="a")
         token_b: list = []
-
         def takeover() -> None:
             token_b.append(store.claim("m1", "b", now=2, lease=2))
-
         with self.assertRaisesRegex(ContractViolation, "stale_claim"):
             dispatcher_a.dispatch(token_a, now=1, accept_now=2, before_accept=takeover)
         self.assertEqual(broker.accepted, [])
@@ -61,16 +59,25 @@ class SourceEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractViolation, "claim_expired"):
             Dispatcher(store, broker, candidate=CANDIDATES[0], owner="a").dispatch(token, now=2)
 
+    def test_acked_receipt_cannot_mark_terminal_after_expiry_or_takeover(self):
+        store, broker = DurableStore(), BrokerProbe()
+        store.commit_business_and_outbox(business_value="v1", message_id="m1", semantic_content="{}")
+        token_a = store.claim("m1", "a", now=0, lease=2)
+        acked = Dispatcher(store, broker, candidate=CANDIDATES[0], owner="a").dispatch(token_a, now=1)
+        with self.assertRaisesRegex(ContractViolation, "claim_expired"):
+            store.mark_terminal_delivery(token_a, acked, now=2)
+        token_b = store.claim("m1", "b", now=2, lease=2)
+        self.assertGreater(token_b.fence, token_a.fence)
+        with self.assertRaisesRegex(ContractViolation, "stale_claim"):
+            store.mark_terminal_delivery(token_a, acked, now=2)
+        self.assertFalse(store.outbox["m1"].terminal_delivery_evidence)
+
     def test_coherent_immutable_fact_rewrite_is_rejected(self):
         store = DurableStore()
         store.commit_business_and_outbox(business_value="v1", message_id="m1", semantic_content='{"a":1}')
         before = store.outbox["m1"]
         rewritten = '{"a":2}'
-        coherent = replace(
-            before,
-            semantic_content=rewritten,
-            content_digest=DurableStore._digest(rewritten),
-        )
+        coherent = replace(before, semantic_content=rewritten, content_digest=DurableStore._digest(rewritten))
         with self.assertRaisesRegex(ContractViolation, "immutable_fact_rewrite"):
             store._replace_fact("m1", coherent)
         self.assertEqual(store.outbox["m1"].semantic_content, before.semantic_content)
@@ -95,12 +102,10 @@ class SourceEvidenceTests(unittest.TestCase):
         store.commit_business_and_outbox(business_value="v1", message_id="m1", semantic_content='{"a":1}')
         token = store.claim("m1", "a", now=0, lease=5)
         acked = Dispatcher(store, broker, candidate=CANDIDATES[0], owner="a").dispatch(token, now=1)
-        wrong_identity = PublishReceipt("acked", "other", acked.content_digest)
         with self.assertRaisesRegex(ContractViolation, "delivery_receipt_mismatch"):
-            store.mark_terminal_delivery(token, wrong_identity, now=1)
-        wrong_digest = PublishReceipt("acked", "m1", DurableStore._digest("different"))
+            store.mark_terminal_delivery(token, PublishReceipt("acked", "other", acked.content_digest), now=1)
         with self.assertRaisesRegex(ContractViolation, "delivery_receipt_mismatch"):
-            store.mark_terminal_delivery(token, wrong_digest, now=1)
+            store.mark_terminal_delivery(token, PublishReceipt("acked", "m1", DurableStore._digest("different")), now=1)
         self.assertFalse(store.outbox["m1"].terminal_delivery_evidence)
 
     def test_unavailable_publish_cannot_grant_terminal_authority(self):

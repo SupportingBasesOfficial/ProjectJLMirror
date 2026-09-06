@@ -7,6 +7,7 @@ from evaluate_candidates import (
     ContractViolation,
     GenerationAuthority,
     HistoricalFact,
+    SourceIdentity,
     evaluate,
 )
 
@@ -46,6 +47,26 @@ def main() -> int:
         authority.rotate(placement="cell-b")
         current = authority.current_generation
 
+        # Generation authority is scoped to the platform tenant/logical source
+        # identity. A coincident current generation from another source is not
+        # transferable authority.
+        assert blocked(
+            lambda: authority.admit_effect(
+                tenant_id="tenant-b",
+                logical_source_id=identity.logical_source_id,
+                platform_generation=current,
+            ),
+            "source_identity_mismatch",
+        )
+        assert blocked(
+            lambda: authority.admit_effect(
+                tenant_id=identity.tenant_id,
+                logical_source_id="source-other",
+                platform_generation=current,
+            ),
+            "source_identity_mismatch",
+        )
+
         assert blocked(
             lambda: authority.admit_effect(
                 tenant_id=identity.tenant_id,
@@ -79,6 +100,16 @@ def main() -> int:
         )
 
         assert authority.read_historical_fact(historical) == historical
+        foreign_historical = HistoricalFact(
+            SourceIdentity("tenant-b", identity.logical_source_id),
+            historical.generation,
+            "hist-foreign",
+            "{}",
+        )
+        assert blocked(
+            lambda: authority.read_historical_fact(foreign_historical),
+            "historical_identity_mismatch",
+        )
         assert blocked(
             lambda: authority.admit_effect(
                 tenant_id=identity.tenant_id,
@@ -132,8 +163,9 @@ def main() -> int:
 
     print(
         "d4c_open_evt_013_source_falsification=PASS "
-        "candidates=3 proofs=7 exact_representation=true stale=blocked future=blocked "
-        "restore_resurrection=blocked history_not_authority=true external_generation_not_authority=true "
+        "candidates=3 proofs=7 exact_representation=true identity_fence=blocked "
+        "stale=blocked future=blocked restore_resurrection=blocked history_not_authority=true "
+        "historical_cross_source=blocked external_generation_not_authority=true "
         "external_fallback_when_platform_missing=blocked selection=none credit=none"
     )
     return 0

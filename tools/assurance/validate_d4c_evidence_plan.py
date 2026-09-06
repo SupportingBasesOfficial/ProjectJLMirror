@@ -11,18 +11,20 @@ PROMOTION_008 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-op
 PROMOTION_009 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-009-promotion-v1.json")
 PROMOTION_010 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-010-promotion-v1.json")
 PROMOTION_011 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-011-promotion-v1.json")
+PROMOTION_012 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-012-promotion-v1.json")
 SOURCE_008 = Path("implementation/d4-eventing-async/source-evidence/d4-c-ack-lease-checkpoint-source.json")
 SOURCE_009 = Path("implementation/d4-eventing-async/source-evidence/d4-c-quarantine-redrive-source.json")
 SOURCE_010 = Path("implementation/d4-eventing-async/source-evidence/d4-c-bounded-parser-limits-source.json")
 SOURCE_011 = Path("implementation/d4-eventing-async/source-evidence/d4-c-scoped-content-equivalence-source.json")
+SOURCE_012 = Path("implementation/d4-eventing-async/source-evidence/d4-c-outbox-claim-dispatch-source.json")
 STATE = Path("implementation/d4-eventing-async/state-manifest.json")
 CREDIT_008 = "ack_after_durable_responsibility_and_lease_ambiguity"
 CREDIT_009 = "quarantine_redrive_current_authority_and_dedup_preservation"
 CREDIT_010 = "bounded_message_batch_compression_and_parser_limits"
 CREDIT_011 = "scoped_content_equivalence_confidentiality_and_conflict_rejection"
-EXPECTED_CREDITS = [CREDIT_008, CREDIT_009, CREDIT_010, CREDIT_011]
+CREDIT_012 = "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity"
+EXPECTED_CREDITS = [CREDIT_008, CREDIT_009, CREDIT_010, CREDIT_011, CREDIT_012]
 EXPECTED_REMAINING = [
-    "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
     "producer_generation_nonresurrection_across_failover_restore",
     "privileged_bounded_replay_with_original_identity_and_effect_safety",
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
@@ -123,6 +125,23 @@ PROMOTIONS = (
         },
         "source_sha256": "f47f67895be554666a9e74d53e3121d6e951e3f2e13842ebaa7554142a8c30de",
     },
+    {
+        "path": PROMOTION_012, "source": SOURCE_012,
+        "promotion_id": "d4-c-open-evt-012-promotion-v1",
+        "promotion_base": "077efd6d582fddf3e316cad5bdf03887ef08ace5",
+        "source_pr": 80, "source_head": "72bce1b28bce98425f486370b4d887e04c769091",
+        "source_merge": "077efd6d582fddf3e316cad5bdf03887ef08ace5", "review_id": 5124079168,
+        "decision": "OPEN-EVT-012", "evidence": CREDIT_012,
+        "workflow": {
+            "workflow_id": 351286755, "workflow_path": ".github/workflows/d4-c-outbox-claim-dispatch-source-evidence.yml",
+            "workflow_event": "pull_request", "source_head_branch": "evidence/d4-c-outbox-claim-dispatch-source",
+            "run_id": 34010311086, "run_attempt": 1, "job_id": 101424854557,
+            "job_name": "D4-C OPEN-EVT-012 source evidence", "artifact_id": 9982251234,
+            "artifact_name": "d4-c-outbox-claim-dispatch-source-72bce1b28bce98425f486370b4d887e04c769091-34010311086-1",
+            "artifact_digest": "sha256:c15c57c7bb02a87a9dfaf0b779efb16a126f6919618235c48763d23acb4a794d",
+        },
+        "source_sha256": "7737b26e9cf83c41328f18bf62d84199abef3e4ca6c0b51b37e2ecd86ec2c8d2",
+    },
 )
 
 class DuplicateKeyError(ValueError):
@@ -214,7 +233,7 @@ def validate(root: Path) -> list[str]:
         "schema_version": 1, "gate_id": "D4", "track_id": "D4-C",
         "name": "delivery_ack_quarantine_equivalence_outbox_replay_history_recovery",
         "candidate": None, "candidate_status": "not_selected",
-        "source_evidence_state": "reviewed_source_run_available", "ledger_credit_state": "four_of_nine",
+        "source_evidence_state": "reviewed_source_run_available", "ledger_credit_state": "five_of_nine",
         "current_run_auto_credit": False, "selection_state": "not_selected", "selection_authority": "not_granted",
         "separate_selection_required": True, "separate_d4_acceptance_required": True,
         "d4_transport_authority": "selected_not_granted", "canonical_product_implementation_authority": "not_granted",
@@ -223,7 +242,7 @@ def validate(root: Path) -> list[str]:
     for key, expected in expected_plan_scalars.items():
         if plan.get(key) != expected or type(plan.get(key)) is not type(expected): errors.append(f"plan scalar drift: {key}")
     if plan.get("source_decisions") != EXPECTED_SOURCE_DECISIONS: errors.append("D4-C source decision inventory drift")
-    if plan.get("credited_evidence") != EXPECTED_CREDITS: errors.append("D4-C credited evidence must be exactly OPEN-EVT-008 through OPEN-EVT-011 obligations")
+    if plan.get("credited_evidence") != EXPECTED_CREDITS: errors.append("D4-C credited evidence must be exactly OPEN-EVT-008 through OPEN-EVT-012 obligations")
     if plan.get("remaining_evidence") != EXPECTED_REMAINING: errors.append("D4-C remaining evidence inventory drift")
     if plan.get("required_evidence") != [*EXPECTED_CREDITS, *EXPECTED_REMAINING]: errors.append("D4-C required evidence inventory drift")
     for spec in PROMOTIONS: _validate_promotion(root, spec, errors)
@@ -240,7 +259,7 @@ def validate(root: Path) -> list[str]:
     if d4c.get("evidence_completed") != EXPECTED_CREDITS: errors.append("D4-C state credit drift")
     if d4c.get("evidence_remaining") != EXPECTED_REMAINING: errors.append("D4-C state remaining evidence drift")
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("evidence_completed") != []: errors.append("D4-D state/credit leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 16: errors.append("D4-wide credited evidence must be exactly 16/26")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 17: errors.append("D4-wide credited evidence must be exactly 17/26")
     for key, expected in {
         "gate_state": "scoped", "d4_transport_authority": "selected_not_granted",
         "canonical_product_implementation_authority": "not_granted", "wave4_implementation_authority": "not_granted",
@@ -255,7 +274,7 @@ def main() -> int:
     if errors:
         for error in errors: print(f"D4C_PROMOTION_ERROR: {error}")
         return 1
-    print("d4c_open_evt_011_promotion=PASS promotion_records=4 immutable_history=true d4c=4_of_9 d4wide=16_of_26 selection=not_selected authorities=unchanged")
+    print("d4c_open_evt_012_promotion=PASS promotion_records=5 immutable_history=true d4c=5_of_9 d4wide=17_of_26 selection=not_selected authorities=unchanged")
     return 0
 
 if __name__ == "__main__":

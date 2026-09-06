@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-C",
+  "mode": "candidate_source_evidence_only",
+  "source_decision": "OPEN-EVT-014",
+  "evidence_id": "privileged_bounded_replay_with_original_identity_and_effect_safety",
+  "candidate_classes": [
+    "canonical_event_history_store_profile",
+    "broker_retained_log_plus_authoritative_history_index_profile",
+    "hybrid_history_archive_plus_replay_controller_profile"
+  ],
+  "must_prove": [
+    "replay_is_privileged_audited_bounded_and_currently_authorized",
+    "replayed_message_preserves_original_identity_and_immutable_semantic_meaning",
+    "replay_retains_or_recovers_required_equivalence_and_historical_verifier_authority",
+    "unavailable_historical_comparison_authority_blocks_or_reconciles_duplicate_sensitive_effects_instead_of_trusting_identity_alone",
+    "irreversible_effects_cannot_be_repeated_by_disabling_dedup",
+    "projection_rebuild_uses_isolated_generation_or_target",
+    "replay_cannot_exceed_safe_schema_data_dedup_equivalence_and_recovery_evidence",
+    "history_storage_product_identity_does_not_become_message_or_contract_identity"
+  ],
+  "candidate_results": {
+    "canonical_event_history_store_profile": "eligible_for_evidence_execution",
+    "broker_retained_log_plus_authoritative_history_index_profile": "eligible_for_evidence_execution",
+    "hybrid_history_archive_plus_replay_controller_profile": "eligible_for_evidence_execution"
+  },
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "current_run_auto_credit": false,
+  "ledger_credit": [],
+  "non_authority": {
+    "d4c_ledger_credit": "current_6_of_9_unchanged",
+    "open_evt_014_ledger_credit": "uncredited",
+    "d4c_candidate": "null_not_selected_candidate_selection_open",
+    "d4d_ledger_credit": "zero_of_five",
+    "d4_gate": "scoped",
+    "d4_transport_authority": "selected_not_granted",
+    "canonical_product_implementation_authority": "not_granted",
+    "wave4_implementation_authority": "not_granted",
+    "production_authority": "none",
+    "c3_numeric_topology_authority": "not_selected"
+  },
+  "source_boundary": {
+    "authorization_rule": "current_privileged_authority_required_per_replay_request",
+    "audit_rule": "every_replay_attempt_is_audited_before_effectful_execution",
+    "identity_rule": "original_tenant_contract_message_identity_and_semantic_meaning_are_preserved",
+    "comparison_rule": "duplicate_sensitive_effects_require_available_historical_equivalence_and_verifier_authority",
+    "effect_rule": "dedup_bypass_is_forbidden_and_irreversible_effect_completion_is_never_repeatable",
+    "projection_rule": "projection_rebuild_requires_isolated_target_and_replay_generation",
+    "evidence_rule": "schema_data_dedup_equivalence_and_recovery_evidence_must_all_remain_safe",
+    "storage_identity_rule": "history_storage_product_identity_is_never_message_or_contract_identity"
+  }
+}

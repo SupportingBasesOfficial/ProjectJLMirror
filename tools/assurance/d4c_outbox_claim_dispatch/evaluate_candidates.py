@@ -30,6 +30,8 @@ PROOF_CHECKS = {
         "expired_claim_cannot_dispatch",
         "inflight_takeover_fenced_before_broker_accept",
         "stale_owner_fenced_after_takeover",
+        "expired_claim_cannot_mark_terminal",
+        "superseded_claim_cannot_mark_terminal",
         "single_current_claim_owner",
     ),
     PROOFS[2]: (
@@ -221,7 +223,6 @@ class BrokerProbe:
             return PublishReceipt("unavailable", *pair)
         if before_accept is not None:
             before_accept()
-        # Fence/lease authority is re-established at the effectful acceptance boundary.
         authorize_accept()
         self.accepted.append(pair)
         if self.accept_then_lose_ack_once:
@@ -302,7 +303,6 @@ def check_candidate(candidate: str) -> dict[str, bool]:
         lambda: d1.dispatch(token1, now=15), "claim_expired"
     )
 
-    # A validates while current, then stalls. B takes over at expiry before broker acceptance.
     broker.accepted.clear()
     token2_box: list[ClaimToken] = []
     def takeover() -> None:
@@ -339,6 +339,24 @@ def check_candidate(candidate: str) -> dict[str, bool]:
         broker.attempts[-2][1] == broker.attempts[-1][1] == before.content_digest == after.content_digest
         and first.status == second.status == "acked"
     )
+
+    # ACK obtained while current must not create terminal authority after expiry or takeover.
+    terminal_store, terminal_broker, terminal_mid, terminal_semantic = _new_fixture()
+    terminal_store.commit_business_and_outbox(
+        business_value={"rev": 1}, message_id=terminal_mid, semantic_content=terminal_semantic
+    )
+    terminal_a = terminal_store.claim(terminal_mid, "worker-a", now=0, lease=2)
+    terminal_dispatcher = Dispatcher(terminal_store, terminal_broker, candidate=candidate, owner="worker-a")
+    terminal_ack = terminal_dispatcher.dispatch(terminal_a, now=1)
+    checks["expired_claim_cannot_mark_terminal"] = _blocked(
+        lambda: terminal_store.mark_terminal_delivery(terminal_a, terminal_ack, now=2),
+        "claim_expired",
+    ) and not terminal_store.outbox[terminal_mid].terminal_delivery_evidence
+    terminal_b = terminal_store.claim(terminal_mid, "worker-b", now=2, lease=2)
+    checks["superseded_claim_cannot_mark_terminal"] = _blocked(
+        lambda: terminal_store.mark_terminal_delivery(terminal_a, terminal_ack, now=2),
+        "stale_claim",
+    ) and not terminal_store.outbox[terminal_mid].terminal_delivery_evidence and terminal_b.fence > terminal_a.fence
 
     store2, broker2, mid2, semantic2 = _new_fixture()
     store2.commit_business_and_outbox(business_value={"rev": 1}, message_id=mid2, semantic_content=semantic2)
@@ -393,9 +411,7 @@ def check_candidate(candidate: str) -> dict[str, bool]:
         or (restarted.notifications == [] and recovered.status == "acked")
     )
 
-    checks["cleanup_blocks_uncertain_delivery"] = _blocked(
-        lambda: store3.cleanup(mid3), "delivery_uncertain"
-    )
+    checks["cleanup_blocks_uncertain_delivery"] = _blocked(lambda: store3.cleanup(mid3), "delivery_uncertain")
     store3.mark_terminal_delivery(token4, recovered, now=4)
     checks["cleanup_blocks_before_safe_horizon"] = _blocked(
         lambda: store3.cleanup(mid3), "safe_horizon_not_reached"

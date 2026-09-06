@@ -9,6 +9,17 @@ on:
       - synchronize
       - reopened
       - ready_for_review
+    paths:
+      - '.github/workflows/d3-recovery-admission-boundary.yml'
+      - 'implementation/d3-identity-security/state-manifest.json'
+      - 'implementation/d3-identity-security/harness/replay_recovery_conformance_runner.py'
+      - 'implementation/d3-identity-security/harness/replay_recovery_boundary_hardening.py'
+      - 'implementation/d3-identity-security/harness/replay_recovery_capability_binding.py'
+      - 'implementation/d3-identity-security/harness/private_key_jwt_token_boundary_conformance.py'
+      - 'implementation/d3-identity-security/harness/replay_recovery_strict_entrypoint.py'
+      - 'tools/assurance/validate_d3_identity_security_state.py'
+      - 'tools/assurance/validate_d3_identity_security_state_legacy.py'
+      - 'docs/16-implementation-readiness/19-d3-identity-security-c2-entry-gate.md'
   workflow_dispatch:
 
 permissions:

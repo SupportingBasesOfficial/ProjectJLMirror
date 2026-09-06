@@ -7,12 +7,17 @@ from evaluate_candidates import (
     CANDIDATES,
     ELIGIBLE,
     INELIGIBLE,
+    KEY_V1,
+    TEST_MAX_COLLECTION_ITEMS,
+    TEST_MAX_NESTING_DEPTH,
     EquivalenceEngine,
     EvidenceViolation,
     ExplodingImmutable,
     Identity,
     base_event,
+    deeply_nested_payload,
     evaluate_all,
+    scope_key,
 )
 
 
@@ -50,7 +55,13 @@ def main() -> int:
         conflict = copy.deepcopy(event)
         conflict["payload"]["count"] = 2
         require(engine.classify_or_commit(identity, conflict) == "integrity_conflict", f"identity-only duplicate bypass: {candidate}")
-        require(engine.classify_or_commit(identity, event, comparison_access=False) == "uncertain_access_denied", f"comparison access bypass: {candidate}")
+
+        # P2 regression: comparison access must be denied before semantic content is inspected.
+        require(
+            engine.classify_or_commit(identity, ExplodingImmutable(), comparison_access=False)
+            == "uncertain_access_denied",
+            f"comparison access checked after semantic inspection: {candidate}",
+        )
 
         try:
             engine.classify_or_commit(
@@ -74,6 +85,44 @@ def main() -> int:
         else:
             raise AssertionError(f"untrusted message scope reached semantic comparison: {candidate}")
 
+        # P2 regression: deep/wide structures must fail closed under fixture work bounds,
+        # never recurse or traverse unboundedly before the work limit is enforced.
+        try:
+            EquivalenceEngine(candidate).classify_or_commit(
+                Identity("ticket-projection/v3", "tenant-a:cell-1", f"msg-deep-{candidate}"),
+                deeply_nested_payload(TEST_MAX_NESTING_DEPTH + 4),
+            )
+        except EvidenceViolation as exc:
+            require(exc.code == "verification_work_exceeded", f"deep input escaped bounded verification: {candidate}")
+        else:
+            raise AssertionError(f"deep input admitted beyond bounded verification: {candidate}")
+
+        wide = base_event()
+        wide["payload"] = {f"k{i}": i for i in range(TEST_MAX_COLLECTION_ITEMS + 1)}
+        try:
+            EquivalenceEngine(candidate).classify_or_commit(
+                Identity("ticket-projection/v3", "tenant-a:cell-1", f"msg-wide-{candidate}"),
+                wide,
+            )
+        except EvidenceViolation as exc:
+            require(exc.code == "verification_work_exceeded", f"wide input escaped bounded verification: {candidate}")
+        else:
+            raise AssertionError(f"wide input admitted beyond bounded verification: {candidate}")
+
+        # P2 regression: delimiter-containing identity components must remain injective.
+        collision_a = Identity("a\x1fb", "c", "msg-collision")
+        collision_b = Identity("a", "b\x1fc", "msg-collision")
+        require(
+            engine.stable_external_operation_id(collision_a)
+            != engine.stable_external_operation_id(collision_b),
+            f"external operation identity tuple collision: {candidate}",
+        )
+        if candidate in {"keyed_authenticated_digest_profile", "hybrid_equivalence_authority_profile"}:
+            require(
+                scope_key(collision_a, KEY_V1) != scope_key(collision_b, KEY_V1),
+                f"scope key tuple collision: {candidate}",
+            )
+
     for candidate in CANDIDATES[1:]:
         checks = result["checks"][candidate]
         require(all(checks.values()), f"eligible candidate has unproven obligation: {candidate}: {checks}")
@@ -88,7 +137,7 @@ def main() -> int:
     else:
         raise AssertionError("missing immutable field admitted")
 
-    print("d4c_open_evt_011_source_falsification=PASS fingerprint=ineligible_confidentiality_only fingerprint_conflict=fail_closed keyed_digest=eligible retained_original=eligible hybrid=eligible trusted_contract_scope=precondition missing=uncertainty selection=none credit=none")
+    print("d4c_open_evt_011_source_falsification=PASS fingerprint=ineligible_confidentiality_only fingerprint_conflict=fail_closed bounded_traversal=preencode comparison_access=precanonical identity_encoding=injective keyed_digest=eligible retained_original=eligible hybrid=eligible trusted_contract_scope=precondition missing=uncertainty selection=none credit=none")
     return 0
 
 

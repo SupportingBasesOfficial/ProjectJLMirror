@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeAlias
+
+Generation: TypeAlias = int | str
 
 CANDIDATES = (
     "positive_integer_fenced_generation",
@@ -23,10 +25,12 @@ PROOFS = (
 
 PROOF_CHECKS = {
     PROOFS[0]: (
+        "candidate_representation_is_exact",
         "current_generation_admitted",
         "stale_generation_rejected",
         "future_generation_rejected",
         "missing_generation_rejected",
+        "invalid_generation_representation_rejected",
     ),
     PROOFS[1]: (
         "retired_generation_rejected_after_rotation",
@@ -48,7 +52,8 @@ PROOF_CHECKS = {
     PROOFS[5]: (
         "comparison_is_exact_current_generation_equality",
         "numeric_magnitude_does_not_imply_authority",
-        "opaque_or_epoch_lexical_order_does_not_imply_authority",
+        "lexical_magnitude_does_not_imply_authority",
+        "zero_negative_or_bool_never_become_positive_integer_authority",
     ),
     PROOFS[6]: (
         "provider_generation_does_not_substitute_platform_generation",
@@ -71,14 +76,14 @@ class SourceIdentity:
 @dataclass(frozen=True)
 class SourceAuthority:
     identity: SourceIdentity
-    generation: str
+    generation: Generation
     placement: str
 
 
 @dataclass(frozen=True)
 class HistoricalFact:
     identity: SourceIdentity
-    generation: str
+    generation: Generation
     message_id: str
     semantic_content: str
 
@@ -86,16 +91,16 @@ class HistoricalFact:
 @dataclass(frozen=True)
 class DurableAuthorityState:
     current: SourceAuthority
-    retired_generations: frozenset[str]
+    retired_generations: frozenset[Generation]
     sequence: int
 
 
 class GenerationAuthority:
-    """Minimal authority model for C2 source evidence.
+    """Bounded C2 model: representation may vary, authority semantics may not.
 
-    Generation values are opaque at admission time. The only effectful rule is
-    exact equality with the durable current platform generation plus explicit
-    retirement non-membership. Numeric/lexical ordering is never authority.
+    Effectful admission grants source authority only to the exact durable current
+    platform generation. Numeric or lexical ordering, provider metadata, broker
+    metadata, placement and restored bytes do not derive current authority.
     """
 
     def __init__(self, candidate: str, *, tenant_id: str = "tenant-a", logical_source_id: str = "source-1") -> None:
@@ -110,37 +115,44 @@ class GenerationAuthority:
             sequence=1,
         )
 
-    def _format_generation(self, sequence: int) -> str:
+    def _format_generation(self, sequence: int) -> Generation:
         if self.candidate == "positive_integer_fenced_generation":
-            return str(sequence)
+            return sequence
         if self.candidate == "opaque_fenced_generation_token":
             return f"g-{sequence:04d}-opaque-token"
         if self.candidate == "authority_issued_epoch_generation":
             return f"epoch-{sequence:04d}"
         raise AssertionError(self.candidate)
 
+    def _validate_representation(self, generation: Generation) -> None:
+        if self.candidate == "positive_integer_fenced_generation":
+            if type(generation) is not int or generation <= 0:
+                raise ContractViolation("generation_representation_invalid")
+            return
+        if type(generation) is not str or not generation:
+            raise ContractViolation("generation_representation_invalid")
+
     @property
     def state(self) -> DurableAuthorityState:
         return self._state
 
     @property
-    def current_generation(self) -> str:
+    def current_generation(self) -> Generation:
         return self._state.current.generation
 
     def snapshot(self) -> DurableAuthorityState:
         return self._state
 
-    def rotate(self, *, placement: str | None = None) -> str:
+    def rotate(self, *, placement: str | None = None) -> Generation:
         old = self._state.current
         next_sequence = self._state.sequence + 1
         next_generation = self._format_generation(next_sequence)
-        next_authority = SourceAuthority(
-            old.identity,
-            next_generation,
-            old.placement if placement is None else placement,
-        )
         self._state = DurableAuthorityState(
-            current=next_authority,
+            current=SourceAuthority(
+                old.identity,
+                next_generation,
+                old.placement if placement is None else placement,
+            ),
             retired_generations=self._state.retired_generations | frozenset({old.generation}),
             sequence=next_sequence,
         )
@@ -155,19 +167,12 @@ class GenerationAuthority:
         )
 
     def restore_snapshot(self, restored: DurableAuthorityState) -> None:
-        """Restore cannot lower surviving authority or erase retirement evidence.
-
-        The surviving durable authority state is the activation fence. Restored
-        bytes may contribute history, but they cannot become current merely by
-        being older or by containing a generation value.
-        """
         surviving = self._state
         if restored.current.identity != surviving.current.identity:
             raise ContractViolation("restore_identity_mismatch")
-        merged_retired = surviving.retired_generations | restored.retired_generations
         self._state = DurableAuthorityState(
             current=surviving.current,
-            retired_generations=merged_retired,
+            retired_generations=surviving.retired_generations | restored.retired_generations,
             sequence=surviving.sequence,
         )
 
@@ -176,20 +181,21 @@ class GenerationAuthority:
         *,
         tenant_id: str,
         logical_source_id: str,
-        platform_generation: str | None,
-        provider_generation: str | None = None,
-        broker_generation: str | None = None,
+        platform_generation: Generation | None,
+        provider_generation: Generation | None = None,
+        broker_generation: Generation | None = None,
     ) -> bool:
         if SourceIdentity(tenant_id, logical_source_id) != self._state.current.identity:
             raise ContractViolation("source_identity_mismatch")
         if platform_generation is None:
             raise ContractViolation("platform_generation_required")
+        self._validate_representation(platform_generation)
         if platform_generation in self._state.retired_generations:
             raise ContractViolation("retired_generation")
+        if type(platform_generation) is not type(self._state.current.generation):
+            raise ContractViolation("generation_not_current")
         if platform_generation != self._state.current.generation:
             raise ContractViolation("generation_not_current")
-        # External generations are observations only. They are intentionally not
-        # consulted to derive or substitute platform source authority.
         _ = provider_generation, broker_generation
         return True
 
@@ -207,12 +213,16 @@ def _blocked(fn: Any, code: str) -> bool:
     return False
 
 
-def _future_generation(candidate: str) -> str:
+def _future_generation(candidate: str) -> Generation:
     if candidate == "positive_integer_fenced_generation":
-        return "999999"
+        return 999999
     if candidate == "opaque_fenced_generation_token":
         return "zzzz-future-looking-token"
     return "epoch-999999"
+
+
+def _wrong_representation(candidate: str) -> Generation:
+    return "1" if candidate == "positive_integer_fenced_generation" else 1
 
 
 def check_candidate(candidate: str) -> dict[str, bool]:
@@ -221,6 +231,10 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     identity = authority.identity
     g1 = authority.current_generation
 
+    checks["candidate_representation_is_exact"] = (
+        (candidate == "positive_integer_fenced_generation" and type(g1) is int and g1 > 0)
+        or (candidate != "positive_integer_fenced_generation" and type(g1) is str and bool(g1))
+    )
     checks["current_generation_admitted"] = authority.admit_effect(
         tenant_id=identity.tenant_id,
         logical_source_id=identity.logical_source_id,
@@ -233,6 +247,14 @@ def check_candidate(candidate: str) -> dict[str, bool]:
             platform_generation=None,
         ),
         "platform_generation_required",
+    )
+    checks["invalid_generation_representation_rejected"] = _blocked(
+        lambda: authority.admit_effect(
+            tenant_id=identity.tenant_id,
+            logical_source_id=identity.logical_source_id,
+            platform_generation=_wrong_representation(candidate),
+        ),
+        "generation_representation_invalid",
     )
     checks["future_generation_rejected"] = _blocked(
         lambda: authority.admit_effect(
@@ -318,22 +340,40 @@ def check_candidate(candidate: str) -> dict[str, bool]:
         logical_source_id=identity.logical_source_id,
         platform_generation=g3,
     )
+    numeric_probe: Generation = 999999999 if candidate == "positive_integer_fenced_generation" else 999999999
+    numeric_expected = "generation_not_current" if candidate == "positive_integer_fenced_generation" else "generation_representation_invalid"
     checks["numeric_magnitude_does_not_imply_authority"] = _blocked(
         lambda: authority.admit_effect(
             tenant_id=identity.tenant_id,
             logical_source_id=identity.logical_source_id,
-            platform_generation="999999999",
+            platform_generation=numeric_probe,
         ),
-        "generation_not_current",
+        numeric_expected,
     )
-    checks["opaque_or_epoch_lexical_order_does_not_imply_authority"] = _blocked(
+    lexical_probe: Generation = "zzzzzzzzzz"
+    lexical_expected = "generation_representation_invalid" if candidate == "positive_integer_fenced_generation" else "generation_not_current"
+    checks["lexical_magnitude_does_not_imply_authority"] = _blocked(
         lambda: authority.admit_effect(
             tenant_id=identity.tenant_id,
             logical_source_id=identity.logical_source_id,
-            platform_generation="zzzzzzzzzz",
+            platform_generation=lexical_probe,
         ),
-        "generation_not_current",
+        lexical_expected,
     )
+    if candidate == "positive_integer_fenced_generation":
+        checks["zero_negative_or_bool_never_become_positive_integer_authority"] = all(
+            _blocked(
+                lambda bad=bad: authority.admit_effect(
+                    tenant_id=identity.tenant_id,
+                    logical_source_id=identity.logical_source_id,
+                    platform_generation=bad,
+                ),
+                "generation_representation_invalid",
+            )
+            for bad in (0, -1, True)
+        )
+    else:
+        checks["zero_negative_or_bool_never_become_positive_integer_authority"] = True
 
     checks["provider_generation_does_not_substitute_platform_generation"] = _blocked(
         lambda: authority.admit_effect(
@@ -363,7 +403,6 @@ def check_candidate(candidate: str) -> dict[str, bool]:
         ),
         "retired_generation",
     )
-
     return checks
 
 

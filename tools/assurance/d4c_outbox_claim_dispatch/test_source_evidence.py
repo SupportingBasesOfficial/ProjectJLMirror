@@ -4,7 +4,17 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from evaluate_candidates import CANDIDATES, PROOFS, PROOF_CHECKS, ContractViolation, DurableStore, BrokerProbe, Dispatcher, evaluate_all
+from evaluate_candidates import (
+    CANDIDATES,
+    PROOFS,
+    PROOF_CHECKS,
+    ContractViolation,
+    DurableStore,
+    BrokerProbe,
+    Dispatcher,
+    PublishReceipt,
+    evaluate_all,
+)
 
 
 class SourceEvidenceTests(unittest.TestCase):
@@ -22,30 +32,47 @@ class SourceEvidenceTests(unittest.TestCase):
 
     def test_business_mutation_cannot_commit_without_outbox_fact(self):
         store = DurableStore()
-        store.commit_business_and_outbox(business_value="v1", message_id="m1", semantic_content="{}", fail_before_commit=True)
+        store.commit_business_and_outbox(
+            business_value="v1", message_id="m1", semantic_content="{}", fail_before_commit=True
+        )
         self.assertEqual(store.business_revision, 0)
         self.assertEqual(dict(store.outbox), {})
 
-    def test_expired_claim_cannot_dispatch_before_takeover_and_stale_claim_cannot_dispatch_after_takeover(self):
+    def test_inflight_worker_is_fenced_before_broker_accept_after_takeover(self):
         store, broker = DurableStore(), BrokerProbe()
         store.commit_business_and_outbox(business_value="v1", message_id="m1", semantic_content="{}")
-        a = store.claim("m1", "a", now=0, lease=2)
+        token_a = store.claim("m1", "a", now=0, lease=2)
         dispatcher_a = Dispatcher(store, broker, candidate=CANDIDATES[0], owner="a")
-        with self.assertRaisesRegex(ContractViolation, "claim_already_owned"):
-            store.claim("m1", "b", now=1, lease=2)
-        with self.assertRaisesRegex(ContractViolation, "claim_expired"):
-            dispatcher_a.dispatch(a, now=2)
-        b = store.claim("m1", "b", now=2, lease=2)
-        self.assertGreater(b.fence, a.fence)
-        with self.assertRaisesRegex(ContractViolation, "stale_claim"):
-            dispatcher_a.dispatch(a, now=2)
+        token_b: list = []
 
-    def test_immutable_fact_rewrite_is_rejected(self):
+        def takeover() -> None:
+            token_b.append(store.claim("m1", "b", now=2, lease=2))
+
+        with self.assertRaisesRegex(ContractViolation, "stale_claim"):
+            dispatcher_a.dispatch(token_a, now=1, accept_now=2, before_accept=takeover)
+        self.assertEqual(broker.accepted, [])
+        self.assertEqual(len(token_b), 1)
+        self.assertGreater(token_b[0].fence, token_a.fence)
+
+    def test_expired_claim_cannot_dispatch_before_takeover(self):
+        store, broker = DurableStore(), BrokerProbe()
+        store.commit_business_and_outbox(business_value="v1", message_id="m1", semantic_content="{}")
+        token = store.claim("m1", "a", now=0, lease=2)
+        with self.assertRaisesRegex(ContractViolation, "claim_expired"):
+            Dispatcher(store, broker, candidate=CANDIDATES[0], owner="a").dispatch(token, now=2)
+
+    def test_coherent_immutable_fact_rewrite_is_rejected(self):
         store = DurableStore()
         store.commit_business_and_outbox(business_value="v1", message_id="m1", semantic_content='{"a":1}')
         before = store.outbox["m1"]
+        rewritten = '{"a":2}'
+        coherent = replace(
+            before,
+            semantic_content=rewritten,
+            content_digest=DurableStore._digest(rewritten),
+        )
         with self.assertRaisesRegex(ContractViolation, "immutable_fact_rewrite"):
-            store._replace_fact("m1", replace(before, semantic_content='{"a":2}'))
+            store._replace_fact("m1", coherent)
         self.assertEqual(store.outbox["m1"].semantic_content, before.semantic_content)
         self.assertEqual(store.outbox["m1"].content_digest, before.content_digest)
 
@@ -62,8 +89,19 @@ class SourceEvidenceTests(unittest.TestCase):
         acked = d.dispatch(token, now=2)
         self.assertEqual(acked.status, "acked")
         self.assertEqual(broker.attempts[-2], broker.attempts[-1])
-        store.mark_terminal_delivery(token, acked, now=2)
-        self.assertTrue(store.outbox["m1"].terminal_delivery_evidence)
+
+    def test_foreign_acked_receipts_cannot_grant_terminal_authority(self):
+        store, broker = DurableStore(), BrokerProbe()
+        store.commit_business_and_outbox(business_value="v1", message_id="m1", semantic_content='{"a":1}')
+        token = store.claim("m1", "a", now=0, lease=5)
+        acked = Dispatcher(store, broker, candidate=CANDIDATES[0], owner="a").dispatch(token, now=1)
+        wrong_identity = PublishReceipt("acked", "other", acked.content_digest)
+        with self.assertRaisesRegex(ContractViolation, "delivery_receipt_mismatch"):
+            store.mark_terminal_delivery(token, wrong_identity, now=1)
+        wrong_digest = PublishReceipt("acked", "m1", DurableStore._digest("different"))
+        with self.assertRaisesRegex(ContractViolation, "delivery_receipt_mismatch"):
+            store.mark_terminal_delivery(token, wrong_digest, now=1)
+        self.assertFalse(store.outbox["m1"].terminal_delivery_evidence)
 
     def test_unavailable_publish_cannot_grant_terminal_authority(self):
         store, broker = DurableStore(), BrokerProbe()

@@ -23,14 +23,15 @@ class SourceEvidenceTests(unittest.TestCase):
         store = DurableStore()
         store.commit_business_and_outbox(business_value="v1", message_id="m1", semantic_content="{}", fail_before_commit=True)
         self.assertEqual(store.business_revision, 0)
-        self.assertEqual(store.outbox, {})
+        self.assertEqual(dict(store.outbox), {})
 
-    def test_stale_claim_cannot_dispatch_after_takeover(self):
+    def test_stale_claim_cannot_dispatch_after_noncooperative_expiry_takeover(self):
         store, broker = DurableStore(), BrokerProbe()
         store.commit_business_and_outbox(business_value="v1", message_id="m1", semantic_content="{}")
-        a = store.claim("m1", "a", now=0, lease=1)
-        store.release_or_expire_claim(a, now=1)
-        b = store.claim("m1", "b", now=1, lease=1)
+        a = store.claim("m1", "a", now=0, lease=2)
+        with self.assertRaisesRegex(ContractViolation, "claim_already_owned"):
+            store.claim("m1", "b", now=1, lease=2)
+        b = store.claim("m1", "b", now=2, lease=2)
         self.assertGreater(b.fence, a.fence)
         with self.assertRaisesRegex(ContractViolation, "stale_claim"):
             Dispatcher(store, broker, candidate=CANDIDATES[0], owner="a").dispatch(a)

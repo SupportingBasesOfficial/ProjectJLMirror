@@ -37,14 +37,20 @@ EXPECTED_PROOFS = (
     "cleanup_never_removes_the_last_recovery_authority_before_safe_horizon",
 )
 EXPECTED_PROOF_CHECKS = {
-    EXPECTED_PROOFS[0]: ("atomic_commit_all_or_nothing", "message_identity_fixed_at_commit"),
+    EXPECTED_PROOFS[0]: (
+        "atomic_commit_all_or_nothing",
+        "business_snapshot_isolated_from_caller_mutation",
+        "message_identity_fixed_at_commit",
+    ),
     EXPECTED_PROOFS[1]: (
         "preexpiry_takeover_rejected",
         "expired_claim_cannot_dispatch",
         "inflight_takeover_fenced_before_broker_accept",
+        "post_authorize_takeover_cannot_duplicate_broker_accept",
         "stale_owner_fenced_after_takeover",
         "expired_claim_cannot_mark_terminal",
         "superseded_claim_cannot_mark_terminal",
+        "inflight_terminal_takeover_cas_rejected",
         "single_current_claim_owner",
     ),
     EXPECTED_PROOFS[2]: (
@@ -60,18 +66,29 @@ EXPECTED_PROOF_CHECKS = {
         "foreign_content_ack_cannot_mark_terminal",
     ),
     EXPECTED_PROOFS[4]: ("broker_outage_preserves_backlog", "unavailable_publish_cannot_mark_terminal"),
-    EXPECTED_PROOFS[5]: ("restart_preserves_identity", "restart_preserves_semantic_content", "notification_is_non_authoritative"),
-    EXPECTED_PROOFS[6]: ("cleanup_blocks_uncertain_delivery", "cleanup_blocks_before_safe_horizon", "cleanup_after_safe_horizon_requires_terminal_evidence"),
+    EXPECTED_PROOFS[5]: (
+        "restart_preserves_identity",
+        "restart_preserves_semantic_content",
+        "notification_is_non_authoritative",
+    ),
+    EXPECTED_PROOFS[6]: (
+        "cleanup_blocks_uncertain_delivery",
+        "cleanup_blocks_before_safe_horizon",
+        "cleanup_after_safe_horizon_requires_terminal_evidence",
+    ),
 }
 EXPECTED_SOURCE_ASSERTIONS = [
     "business_mutation_and_required_outbox_fact_share_one_atomic_commit_boundary",
+    "authoritative_business_state_is_an_immutable_snapshot_not_a_caller_alias",
     "outbox_message_identity_and_immutable_semantic_payload_are_fixed_at_commit",
     "claims_carry_monotonic_fence_tokens_and_stale_owners_cannot_dispatch_after_takeover",
     "lease_expiry_is_ambiguity_and_takeover_never_creates_two_current_semantic_owners",
     "effectful_broker_acceptance_revalidates_current_unexpired_claim_authority",
+    "broker_acceptance_is_idempotent_for_same_message_identity_and_content_and_conflicts_fail_closed",
     "retry_changes_attempt_metadata_only_and_never_message_identity_or_immutable_fact_content",
     "ack_lost_after_broker_acceptance_is_retried_with_the_exact_same_message_identity_and_semantic_content",
     "terminal_delivery_evidence_requires_current_unexpired_claim_and_acked_receipt_for_same_message_identity_and_content",
+    "terminal_delivery_write_is_conditionally_fenced_at_its_commit_boundary",
     "broker_unavailability_leaves_committed_outbox_backlog_durable_and_dispatchable_after_recovery",
     "dispatcher_restart_rehydrates_claim_state_from_durable_outbox_truth_and_preserves_message_identity_and_content",
     "notification_is_only_a_wakeup_hint_and_polling_or_durable_store_remains_recovery_authority",
@@ -246,7 +263,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_012_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=25 source_auto_credit=false current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
+    print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=28 source_auto_credit=false current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
     return 0
 
 if __name__ == "__main__":

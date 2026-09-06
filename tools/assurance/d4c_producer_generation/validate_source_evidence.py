@@ -30,14 +30,25 @@ EXPECTED_SOURCE_KEYS = {
     "selection_authority", "current_run_auto_credit", "ledger_credit", "non_authority",
     "source_boundary",
 }
-EXPECTED_NON_AUTHORITY_KEYS = {
-    "d4c_ledger_credit", "open_evt_013_ledger_credit", "d4c_candidate", "d4d_ledger_credit",
-    "d4_gate", "d4_transport_authority", "canonical_product_implementation_authority",
-    "wave4_implementation_authority", "production_authority", "c3_numeric_topology_authority",
+EXPECTED_NON_AUTHORITY = {
+    "d4c_ledger_credit": "current_5_of_9_unchanged",
+    "open_evt_013_ledger_credit": "uncredited",
+    "d4c_candidate": "null_not_selected_candidate_selection_open",
+    "d4d_ledger_credit": "zero_of_five",
+    "d4_gate": "scoped",
+    "d4_transport_authority": "selected_not_granted",
+    "canonical_product_implementation_authority": "not_granted",
+    "wave4_implementation_authority": "not_granted",
+    "production_authority": "none",
+    "c3_numeric_topology_authority": "not_selected",
 }
-EXPECTED_BOUNDARY_KEYS = {
-    "platform_generation_authority", "historical_generation", "restore_rule", "failover_rule",
-    "comparison_rule", "external_generation_rule",
+EXPECTED_BOUNDARY = {
+    "platform_generation_authority": "explicit_current_generation_only",
+    "historical_generation": "historical_fact_metadata_not_current_authority",
+    "restore_rule": "surviving_current_authority_and_retirement_fences_cannot_be_lowered_by_restored_snapshot",
+    "failover_rule": "placement_change_does_not_change_logical_source_identity_or_revive_retired_generation",
+    "comparison_rule": "exact_current_generation_equality_only_no_numeric_or_lexical_ordering_authority",
+    "external_generation_rule": "provider_and_broker_generations_are_observations_not_platform_source_generation",
 }
 
 
@@ -97,32 +108,12 @@ def main() -> int:
         return fail("source run must not grant ledger credit")
 
     non_authority = source.get("non_authority")
-    if not isinstance(non_authority, dict) or set(non_authority) != EXPECTED_NON_AUTHORITY_KEYS:
-        return fail("non-authority exact schema drift")
-    expected_non_authority = {
-        "d4c_ledger_credit": "current_5_of_9_unchanged",
-        "open_evt_013_ledger_credit": "uncredited",
-        "d4c_candidate": "null_not_selected_candidate_selection_open",
-        "d4d_ledger_credit": "zero_of_five",
-        "d4_gate": "scoped",
-        "d4_transport_authority": "selected_not_granted",
-        "canonical_product_implementation_authority": "not_granted",
-        "wave4_implementation_authority": "not_granted",
-        "production_authority": "none",
-        "c3_numeric_topology_authority": "not_selected",
-    }
-    if non_authority != expected_non_authority:
-        return fail("non-authority boundary drift")
+    if not isinstance(non_authority, dict) or non_authority != EXPECTED_NON_AUTHORITY:
+        return fail("non-authority exact boundary drift")
 
     boundary = source.get("source_boundary")
-    if not isinstance(boundary, dict) or set(boundary) != EXPECTED_BOUNDARY_KEYS:
-        return fail("source boundary schema drift")
-    if boundary.get("platform_generation_authority") != "explicit_current_generation_only":
-        return fail("platform generation authority weakened")
-    if boundary.get("comparison_rule") != "exact_current_generation_equality_only_no_numeric_or_lexical_ordering_authority":
-        return fail("generation comparison authority drift")
-    if boundary.get("external_generation_rule") != "provider_and_broker_generations_are_observations_not_platform_source_generation":
-        return fail("external generation authority leakage")
+    if not isinstance(boundary, dict) or boundary != EXPECTED_BOUNDARY:
+        return fail("source boundary exact value drift")
 
     runtime = evaluate()
     if runtime["candidate_results"] != source["candidate_results"]:
@@ -175,7 +166,8 @@ def main() -> int:
 
     print(
         "d4c_open_evt_013_source_validation=PASS candidates=3 proofs=7 "
-        "current_d4c=5/9 d4wide=17/26 open_evt_013=uncredited selection=none authorities=unchanged"
+        "boundary=exact current_d4c=5/9 d4wide=17/26 open_evt_013=uncredited "
+        "selection=none authorities=unchanged"
     )
     return 0
 

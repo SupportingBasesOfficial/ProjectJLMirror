@@ -23,6 +23,7 @@ EXPECTED_CREDITS = [
     "ack_after_durable_responsibility_and_lease_ambiguity",
     "quarantine_redrive_current_authority_and_dedup_preservation",
     "bounded_message_batch_compression_and_parser_limits",
+    "scoped_content_equivalence_confidentiality_and_conflict_rejection",
 ]
 EXPECTED_NON_AUTHORITY = {
     "d4c_mechanism_selection": "not_selected",
@@ -59,19 +60,13 @@ PROOF_TO_CHECKS = {
 def load(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
-
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
 
-
 def main() -> int:
-    source = load(SOURCE)
-    plan = load(PLAN)
-    ledger = load(LEDGER)
-    state = load(STATE)
+    source = load(SOURCE); plan = load(PLAN); ledger = load(LEDGER); state = load(STATE)
     results = load(RESULTS) if RESULTS.exists() else None
-
     axis = plan["axes"]["scoped_content_equivalence_authority"]
     require(source["schema_version"] == 1, "source schema drift")
     require(source["gate_id"] == "D4" and source["track_id"] == "D4-C", "wrong gate/track")
@@ -88,8 +83,7 @@ def main() -> int:
     require(source["required_proofs"] == axis["must_prove"], "must-prove contract drift")
     require(set(PROOF_TO_CHECKS) == set(axis["must_prove"]), "proof-to-runtime-check map does not cover exact must-prove contract")
     require(set(axis["candidate_classes"]) == set(EXPECTED_CANDIDATES) | {"equivalent_reviewed_profile"}, "candidate class drift")
-    require(source["non_authority"] == EXPECTED_NON_AUTHORITY, "non-authority boundary drift")
-
+    require(source["non_authority"] == EXPECTED_NON_AUTHORITY, "source non-authority boundary drift")
     required_assertions = {
         "dedup_key_is_exactly_consumer_contract_trusted_message_identity_scope_and_message_id",
         "untrusted_contract_or_scope_is_rejected_before_equivalence_evaluation",
@@ -110,30 +104,26 @@ def main() -> int:
         "candidate_source_evidence_does_not_select_a_digest_key_store_database_effect_transport_or_production_topology",
     }
     require(set(source["source_assertions"]) == required_assertions, "source assertion coverage drift")
-
-    require(ledger["ledger_credit_state"] == "three_of_nine", "current D4-C ledger must remain 3/9")
+    require(ledger["ledger_credit_state"] == "four_of_nine", "current D4-C ledger must be 4/9 after separate promotion")
     require(ledger["credited_evidence"] == EXPECTED_CREDITS, "current D4-C credits changed")
-    require(source["evidence_id"] in ledger["remaining_evidence"], "OPEN-EVT-011 must remain uncredited")
-    require(len(ledger["remaining_evidence"]) == 6, "D4-C remaining count drift")
+    require(source["evidence_id"] not in ledger["remaining_evidence"], "OPEN-EVT-011 must now be separately promoted")
+    require(len(ledger["remaining_evidence"]) == 5, "D4-C remaining count drift")
     require(ledger["candidate"] is None and ledger["candidate_status"] == "not_selected", "D4-C candidate selected")
     require(ledger["selection_state"] == "not_selected" and ledger["selection_authority"] == "not_granted", "D4-C selection authority changed")
     require(ledger["current_run_auto_credit"] is False, "ledger auto-credit changed")
-
     tracks = {track["track_id"]: track for track in state["tracks"]}
-    d4c = tracks["D4-C"]
-    d4d = tracks["D4-D"]
+    d4c = tracks["D4-C"]; d4d = tracks["D4-D"]
     require(d4c["evidence_completed"] == EXPECTED_CREDITS, "state D4-C credits changed")
     require(d4c["evidence_remaining"] == ledger["remaining_evidence"], "state/ledger D4-C mismatch")
     require(d4c["candidate"] is None and d4c["candidate_status"] == "not_selected" and d4c["state"] == "candidate_selection_open", "D4-C state escalated")
     require(d4d["evidence_completed"] == [] and d4d["candidate"] is None and d4d["candidate_status"] == "not_selected", "D4-D changed")
-    require(sum(len(track["evidence_completed"]) for track in state["tracks"]) == 15, "D4-wide must remain 15/26")
+    require(sum(len(track["evidence_completed"]) for track in state["tracks"]) == 16, "D4-wide must be 16/26")
     require(state["gate_state"] == "scoped", "D4 gate escalated")
     require(state["d4_transport_authority"] == "selected_not_granted", "transport authority changed")
     require(state["canonical_product_implementation_authority"] == "not_granted", "Product authority changed")
     require(state["wave4_implementation_authority"] == "not_granted", "Wave4 authority changed")
     require(state["production_authority"] == "none", "production authority changed")
     require(state["c3_numeric_topology_authority"] == "not_selected", "C3 authority changed")
-
     if results is not None:
         require(results["source_decision"] == source["source_decision"], "runtime decision mismatch")
         require(results["evidence_id"] == source["evidence_id"], "runtime evidence mismatch")
@@ -141,7 +131,6 @@ def main() -> int:
         require(results["equivalent_reviewed_profile"] == "insufficient_evidence", "runtime equivalent profile drift")
         require(results["selection"] == "not_selected" and results["selection_authority"] == "not_granted", "runtime selection escalation")
         require(results["ledger_credit"] == [] and results["current_run_auto_credit"] is False, "runtime auto-credit escalation")
-
         fingerprint = "canonical_collision_resistant_fingerprint_profile"
         confidentiality_proof = "low_entropy_confidential_values_do_not_create_dictionary_or_cross_scope_equality_oracles"
         for candidate, status in EXPECTED_CANDIDATES.items():
@@ -154,10 +143,8 @@ def main() -> int:
                     require(not proven, "unkeyed fingerprint must fail confidentiality proof")
                 elif candidate == fingerprint:
                     require(proven, f"fingerprint candidate has unrelated failure outside confidentiality proof: {proof}")
-
-    print("d4c_open_evt_011_source_validation=PASS proof_map=15_of_15 fingerprint=ineligible_only_by_confidentiality keyed_digest=eligible retained_original=eligible hybrid=eligible historical_key_generation=explicit current_d4c=3/9 d4wide=15/26 selection=none authorities=unchanged")
+    print("d4c_open_evt_011_source_validation=PASS source_snapshot=3_of_9_unchanged proof_map=15_of_15 fingerprint=ineligible_only_by_confidentiality keyed_digest=eligible retained_original=eligible hybrid=eligible current_d4c=4/9 d4wide=16/26 selection=none authorities=unchanged")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -9,6 +9,7 @@ from evaluate_candidates import (
     INELIGIBLE,
     EquivalenceEngine,
     EvidenceViolation,
+    ExplodingImmutable,
     Identity,
     base_event,
     evaluate_all,
@@ -50,8 +51,29 @@ def main() -> int:
         conflict = copy.deepcopy(event)
         conflict["payload"]["count"] = 2
         require(engine.classify_or_commit(identity, conflict) == "integrity_conflict", f"identity-only duplicate bypass: {candidate}")
-
         require(engine.classify_or_commit(identity, event, comparison_access=False) == "uncertain_access_denied", f"comparison access bypass: {candidate}")
+
+        try:
+            engine.classify_or_commit(
+                Identity("untrusted-contract", "tenant-a:cell-1", "msg-u1"),
+                ExplodingImmutable(),
+                trusted_consumer_contract=False,
+            )
+        except EvidenceViolation as exc:
+            require(exc.code == "untrusted_consumer_contract", f"consumer-contract trust bypass: {candidate}")
+        else:
+            raise AssertionError(f"untrusted consumer contract reached semantic comparison: {candidate}")
+
+        try:
+            engine.classify_or_commit(
+                Identity("ticket-projection/v3", "untrusted-scope", "msg-u2"),
+                ExplodingImmutable(),
+                trusted_message_scope=False,
+            )
+        except EvidenceViolation as exc:
+            require(exc.code == "untrusted_message_identity_scope", f"message-scope trust bypass: {candidate}")
+        else:
+            raise AssertionError(f"untrusted message scope reached semantic comparison: {candidate}")
 
     try:
         EquivalenceEngine("keyed_authenticated_digest_profile").classify_or_commit(
@@ -63,7 +85,7 @@ def main() -> int:
     else:
         raise AssertionError("missing immutable field admitted")
 
-    print("d4c_open_evt_011_source_falsification=PASS fingerprint=ineligible keyed_digest=eligible retained_original=eligible hybrid=eligible conflict=fail_closed missing=uncertainty selection=none credit=none")
+    print("d4c_open_evt_011_source_falsification=PASS fingerprint=ineligible keyed_digest=eligible retained_original=eligible hybrid=eligible trusted_contract_scope=precondition conflict=fail_closed missing=uncertainty selection=none credit=none")
     return 0
 
 

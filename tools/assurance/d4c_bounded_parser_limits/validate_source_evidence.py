@@ -27,6 +27,7 @@ CURRENT_CREDITS = [
     "scoped_content_equivalence_confidentiality_and_conflict_rejection",
     "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
     "producer_generation_nonresurrection_across_failover_restore",
+    "privileged_bounded_replay_with_original_identity_and_effect_safety",
 ]
 
 EXPECTED_ASSERTIONS = [
@@ -129,9 +130,9 @@ def validate(root: Path) -> list[str]:
     if len(d4b.get("evidence_completed", [])) != 5 or d4b.get("candidate_status") != "selected_c2_profile": errors.append("D4-B accepted state drift")
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open": errors.append("D4-C selection/state leakage")
     expected_remaining = [x for x in d4c.get("required_evidence", []) if x not in CURRENT_CREDITS]
-    if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining: errors.append("D4-C current 6/9 ledger drift")
+    if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining: errors.append("D4-C current 7/9 ledger drift")
     if d4d.get("evidence_completed") != [] or d4d.get("candidate") is not None: errors.append("D4-D state leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 18: errors.append("D4-wide evidence count drift")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 19: errors.append("D4-wide evidence count drift")
     for key, expected in {"gate_state":"scoped","d4_transport_authority":"selected_not_granted","canonical_product_implementation_authority":"not_granted","wave4_implementation_authority":"not_granted","production_authority":"none","c3_numeric_topology_authority":"not_selected"}.items():
         if state.get(key) != expected: errors.append(f"global authority drift: {key}")
     return errors
@@ -142,7 +143,7 @@ def main(argv: list[str]) -> int:
     if errors:
         for error in errors: print(f"D4C_OPEN_EVT_010_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_open_evt_010_source=PASS candidates=3 checks=18_of_18 proof_inventory=exact source_snapshot_nonpromoting=true bounded_before_allocation=true malformed_gzip=blocked concatenated_gzip=blocked duplicate_members=blocked parser_nesting_prechecked=true specialized_planes=referenced_at_any_depth deterministic_nonretryable=true fixture_limits_noncanonical=true source_auto_credit=false current_d4c=6_of_9 current_d4wide=18_of_26 selection=not_selected")
+    print("d4c_open_evt_010_source=PASS candidates=3 checks=18_of_18 proof_inventory=exact source_snapshot_nonpromoting=true bounded_before_allocation=true malformed_gzip=blocked concatenated_gzip=blocked duplicate_members=blocked parser_nesting_prechecked=true specialized_planes=referenced_at_any_depth deterministic_nonretryable=true fixture_limits_noncanonical=true source_auto_credit=false current_d4c=7_of_9 current_d4wide=19_of_26 selection=not_selected")
     return 0
 
 if __name__ == "__main__": raise SystemExit(main(sys.argv))

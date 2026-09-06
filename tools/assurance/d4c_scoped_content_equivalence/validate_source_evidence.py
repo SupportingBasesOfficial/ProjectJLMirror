@@ -26,6 +26,7 @@ EXPECTED_CREDITS = [
     "scoped_content_equivalence_confidentiality_and_conflict_rejection",
     "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
     "producer_generation_nonresurrection_across_failover_restore",
+    "privileged_bounded_replay_with_original_identity_and_effect_safety",
 ]
 EXPECTED_NON_AUTHORITY = {
     "d4c_mechanism_selection": "not_selected",
@@ -104,10 +105,10 @@ def main() -> int:
         "candidate_source_evidence_does_not_select_a_digest_key_store_database_effect_transport_or_production_topology",
     }
     require(set(source["source_assertions"]) == required_assertions, "source assertion coverage drift")
-    require(ledger["ledger_credit_state"] == "six_of_nine", "current D4-C ledger must be 6/9 after OPEN-EVT-013 promotion")
+    require(ledger["ledger_credit_state"] == "seven_of_nine", "current D4-C ledger must be 7/9 after OPEN-EVT-014 promotion")
     require(ledger["credited_evidence"] == EXPECTED_CREDITS, "current D4-C credits changed")
     require(source["evidence_id"] not in ledger["remaining_evidence"], "OPEN-EVT-011 must remain separately promoted")
-    require(len(ledger["remaining_evidence"]) == 3, "D4-C remaining count drift")
+    require(len(ledger["remaining_evidence"]) == 2, "D4-C remaining count drift")
     require(ledger["candidate"] is None and ledger["candidate_status"] == "not_selected", "D4-C candidate selected")
     require(ledger["selection_state"] == "not_selected" and ledger["selection_authority"] == "not_granted", "D4-C selection authority changed")
     require(ledger["current_run_auto_credit"] is False, "ledger auto-credit changed")
@@ -117,7 +118,7 @@ def main() -> int:
     require(d4c["evidence_remaining"] == ledger["remaining_evidence"], "state/ledger D4-C mismatch")
     require(d4c["candidate"] is None and d4c["candidate_status"] == "not_selected" and d4c["state"] == "candidate_selection_open", "D4-C state escalated")
     require(d4d["evidence_completed"] == [] and d4d["candidate"] is None and d4d["candidate_status"] == "not_selected", "D4-D changed")
-    require(sum(len(track["evidence_completed"]) for track in state["tracks"]) == 18, "D4-wide must be 18/26")
+    require(sum(len(track["evidence_completed"]) for track in state["tracks"]) == 19, "D4-wide must be 19/26")
     require(state["gate_state"] == "scoped", "D4 gate escalated")
     require(state["d4_transport_authority"] == "selected_not_granted", "transport authority changed")
     require(state["canonical_product_implementation_authority"] == "not_granted", "Product authority changed")
@@ -140,7 +141,7 @@ def main() -> int:
                 if status == "eligible_for_evidence_execution": require(proven, f"eligible candidate lacks proof {proof}: {candidate}")
                 elif candidate == fingerprint and proof == confidentiality_proof: require(not proven, "unkeyed fingerprint must fail confidentiality proof")
                 elif candidate == fingerprint: require(proven, f"fingerprint candidate has unrelated failure outside confidentiality proof: {proof}")
-    print("d4c_open_evt_011_source_validation=PASS source_snapshot=3_of_9_unchanged proof_map=15_of_15 fingerprint=ineligible_only_by_confidentiality keyed_digest=eligible retained_original=eligible hybrid=eligible current_d4c=6/9 d4wide=18/26 selection=none authorities=unchanged")
+    print("d4c_open_evt_011_source_validation=PASS source_snapshot=3_of_9_unchanged proof_map=15_of_15 fingerprint=ineligible_only_by_confidentiality keyed_digest=eligible retained_original=eligible hybrid=eligible current_d4c=7/9 d4wide=19/26 selection=none authorities=unchanged")
     return 0
 
 if __name__ == "__main__": raise SystemExit(main())

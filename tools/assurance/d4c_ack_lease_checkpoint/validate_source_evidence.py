@@ -15,7 +15,16 @@ D4C_CREDIT_010 = "bounded_message_batch_compression_and_parser_limits"
 D4C_CREDIT_011 = "scoped_content_equivalence_confidentiality_and_conflict_rejection"
 D4C_CREDIT_012 = "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity"
 D4C_CREDIT_013 = "producer_generation_nonresurrection_across_failover_restore"
-CURRENT_CREDITS = [D4C_CREDIT_008, D4C_CREDIT_009, D4C_CREDIT_010, D4C_CREDIT_011, D4C_CREDIT_012, D4C_CREDIT_013]
+D4C_CREDIT_014 = "privileged_bounded_replay_with_original_identity_and_effect_safety"
+CURRENT_CREDITS = [
+    D4C_CREDIT_008,
+    D4C_CREDIT_009,
+    D4C_CREDIT_010,
+    D4C_CREDIT_011,
+    D4C_CREDIT_012,
+    D4C_CREDIT_013,
+    D4C_CREDIT_014,
+]
 _legacy_load_json = historical.load_json
 
 
@@ -28,10 +37,10 @@ def _current_errors(state: dict) -> list[str]:
         errors.append("D4-C selection leakage")
     expected_remaining = [x for x in required if x not in CURRENT_CREDITS]
     if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining:
-        errors.append("D4-C current ledger drift beyond separately promoted OPEN-EVT-008 through OPEN-EVT-013")
+        errors.append("D4-C current ledger drift beyond separately promoted OPEN-EVT-008 through OPEN-EVT-014")
     if tracks.get("D4-D", {}).get("evidence_completed") != []:
         errors.append("D4-D state leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 18:
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 19:
         errors.append("D4-wide evidence count drift")
     return errors
 
@@ -73,7 +82,7 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}")
         return 1
-    print("d4c_ack_lease_checkpoint_source=PASS source_auto_credit=false historical_oracle=preserved current_promoted_credit=6_of_9 d4wide=18_of_26 selection=not_selected")
+    print("d4c_ack_lease_checkpoint_source=PASS source_auto_credit=false historical_oracle=preserved current_promoted_credit=7_of_9 d4wide=19_of_26 selection=not_selected")
     return 0
 
 

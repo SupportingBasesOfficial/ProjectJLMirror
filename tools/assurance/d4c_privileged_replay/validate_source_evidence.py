@@ -18,9 +18,9 @@ CURRENT_CREDITS = [
     "scoped_content_equivalence_confidentiality_and_conflict_rejection",
     "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
     "producer_generation_nonresurrection_across_failover_restore",
+    "privileged_bounded_replay_with_original_identity_and_effect_safety",
 ]
 CURRENT_REMAINING = [
-    "privileged_bounded_replay_with_original_identity_and_effect_safety",
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
@@ -145,16 +145,16 @@ def main() -> int:
             return fail(f"runtime check failure for {candidate}")
 
     if (
-        plan.get("ledger_credit_state") != "six_of_nine"
+        plan.get("ledger_credit_state") != "seven_of_nine"
         or plan.get("credited_evidence") != CURRENT_CREDITS
         or plan.get("remaining_evidence") != CURRENT_REMAINING
     ):
         return fail("D4-C current ledger drift")
     if (
-        source["evidence_id"] in plan.get("credited_evidence", [])
-        or source["evidence_id"] not in plan.get("remaining_evidence", [])
+        source["evidence_id"] not in plan.get("credited_evidence", [])
+        or source["evidence_id"] in plan.get("remaining_evidence", [])
     ):
-        return fail("OPEN-EVT-014 must remain uncredited")
+        return fail("OPEN-EVT-014 separate promotion projection drift")
     if plan.get("candidate") is not None or plan.get("candidate_status") != "not_selected":
         return fail("D4-C candidate selection leakage")
 
@@ -175,8 +175,8 @@ def main() -> int:
         return fail("D4-C global selection leakage")
     if tracks["D4-D"].get("evidence_completed") != [] or tracks["D4-D"].get("candidate") is not None:
         return fail("D4-D leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 18:
-        return fail("D4-wide current credit count must remain 18/26")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 19:
+        return fail("D4-wide current credit count must remain 19/26")
 
     expected = {
         "gate_state": "scoped",
@@ -192,7 +192,7 @@ def main() -> int:
 
     print(
         "d4c_open_evt_014_source_validation=PASS candidates=3 proofs=8 "
-        "source_schema=exact d4c=6/9 d4wide=18/26 open_evt_014=uncredited "
+        "source_schema=exact source_snapshot=6/9_uncredited current_d4c=7/9 current_d4wide=19/26 "
         "selection=none authorities=unchanged"
     )
     return 0

@@ -4,6 +4,16 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/d3-key-authority-conformance.yml'
+      - 'implementation/d3-identity-security/state-manifest.json'
+      - 'implementation/d3-identity-security/harness/openbao_crypto_*'
+      - 'implementation/d3-identity-security/harness/_openbao_crypto_conformance_base.py'
+      - 'implementation/d3-identity-security/harness/replay_recovery_*'
+      - 'implementation/d3-identity-security/harness/private_key_jwt_token_boundary_conformance.py'
+      - 'tools/assurance/validate_d3_identity_security_state.py'
+      - 'tools/assurance/validate_d3_identity_security_state_legacy.py'
+      - 'docs/16-implementation-readiness/19-d3-identity-security-c2-entry-gate.md'
   workflow_dispatch:
 
 permissions:

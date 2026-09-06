@@ -9,6 +9,13 @@ on:
       - synchronize
       - reopened
       - ready_for_review
+    paths:
+      - '.github/workflows/d3-spire-candidate-evaluation.yml'
+      - 'implementation/d3-identity-security/**'
+      - 'src/jlmirror_authority/**'
+      - 'tools/assurance/validate_d3_identity_security_state.py'
+      - 'tools/assurance/validate_d3_identity_security_state_legacy.py'
+      - 'docs/16-implementation-readiness/19-d3-identity-security-c2-entry-gate.md'
   workflow_dispatch:
 
 concurrency:

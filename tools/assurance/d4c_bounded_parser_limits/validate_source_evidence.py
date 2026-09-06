@@ -24,9 +24,10 @@ AXIS = "bounded_message_payload_batch_and_compression"
 DECISION = "OPEN-EVT-010"
 EVIDENCE = "bounded_message_batch_compression_and_parser_limits"
 BASE = "c72f53100e504922563106d1f8d2d3a5e7577589"
-CREDITS = [
+CURRENT_CREDITS = [
     "ack_after_durable_responsibility_and_lease_ambiguity",
     "quarantine_redrive_current_authority_and_dedup_preservation",
+    EVIDENCE,
 ]
 
 EXPECTED_ASSERTIONS = [
@@ -49,6 +50,7 @@ EXPECTED_ASSERTIONS = [
     "candidate_source_evidence_does_not_select_a_codec_transport_parser_or_production_topology",
 ]
 
+# Immutable source-time boundary: this source package was produced while the ledger was 2/9.
 EXPECTED_NON_AUTHORITY = {
     "d4c_mechanism_selection": "not_selected",
     "d4c_content_equivalence_profile_selection": "not_selected",
@@ -135,7 +137,7 @@ def validate(root: Path) -> list[str]:
     if manifest.get("source_assertions") != EXPECTED_ASSERTIONS:
         errors.append("source assertions drift")
     if manifest.get("non_authority") != EXPECTED_NON_AUTHORITY:
-        errors.append("non-authority boundary drift")
+        errors.append("source non-authority boundary drift")
 
     runtime = evaluate_all()
     if runtime.get("limit_profile") != TEST_LIMIT_PROFILE or not TEST_LIMIT_PROFILE.endswith("_noncanonical"):
@@ -190,16 +192,13 @@ def validate(root: Path) -> list[str]:
         errors.append("D4-B accepted state drift")
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
         errors.append("D4-C selection/state leakage")
-    if d4c.get("evidence_completed") != CREDITS:
-        errors.append("D4-C current credited evidence drift")
-    if EVIDENCE not in d4c.get("evidence_remaining", []):
-        errors.append("OPEN-EVT-010 must remain uncredited")
-    if len(d4c.get("evidence_remaining", [])) != 7:
-        errors.append("D4-C remaining evidence count drift")
+    expected_remaining = [x for x in d4c.get("required_evidence", []) if x not in CURRENT_CREDITS]
+    if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining:
+        errors.append("D4-C current 3/9 ledger drift")
     if d4d.get("evidence_completed") != [] or d4d.get("candidate") is not None:
         errors.append("D4-D state leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 14:
-        errors.append("D4-wide ledger must remain exactly 14/26")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 15:
+        errors.append("D4-wide evidence count drift")
     for key, expected in {
         "gate_state": "scoped",
         "d4_transport_authority": "selected_not_granted",
@@ -220,7 +219,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_010_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_open_evt_010_source=PASS candidates=3 proofs=7 bounded_before_allocation=true malformed_gzip=blocked concatenated_gzip=blocked duplicate_members=blocked parser_nesting_prechecked=true specialized_planes=referenced_at_any_depth deterministic_nonretryable=true fixture_limits_noncanonical=true source_auto_credit=false current_d4c=2_of_9 open_evt_010_uncredited=true d4wide=14_of_26 selection=not_selected")
+    print("d4c_open_evt_010_source=PASS candidates=3 proofs=7 source_snapshot_nonpromoting=true bounded_before_allocation=true malformed_gzip=blocked concatenated_gzip=blocked duplicate_members=blocked parser_nesting_prechecked=true specialized_planes=referenced_at_any_depth deterministic_nonretryable=true fixture_limits_noncanonical=true source_auto_credit=false current_d4c=3_of_9 current_d4wide=15_of_26 selection=not_selected")
     return 0
 
 

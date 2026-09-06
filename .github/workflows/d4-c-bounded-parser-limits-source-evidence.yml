@@ -64,7 +64,7 @@ jobs:
           mkdir -p runtime-evidence
           python3 tools/assurance/d4c_bounded_parser_limits/evaluate_candidates.py > runtime-evidence/candidate-results.json
 
-      - name: Validate machine-owned source manifest
+      - name: Validate immutable source manifest against current state
         shell: bash
         run: python3 tools/assurance/d4c_bounded_parser_limits/validate_source_evidence.py .
 
@@ -79,7 +79,7 @@ jobs:
         shell: bash
         run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
 
-      - name: Assert OPEN-EVT-010 source remains non-promoting
+      - name: Assert immutable OPEN-EVT-010 source package and current promoted state
         shell: bash
         run: |
           set -euo pipefail
@@ -92,27 +92,30 @@ jobs:
           credits = [
               'ack_after_durable_responsibility_and_lease_ambiguity',
               'quarantine_redrive_current_authority_and_dedup_preservation',
+              'bounded_message_batch_compression_and_parser_limits',
           ]
           evidence = 'bounded_message_batch_compression_and_parser_limits'
           assert source['mode'] == 'candidate_source_evidence_only'
           assert source['source_decision'] == 'OPEN-EVT-010' and source['evidence_id'] == evidence
           assert source['selection_state'] == 'not_selected' and source['selection_authority'] == 'not_granted'
           assert source['current_run_auto_credit'] is False and source['ledger_credit'] == []
+          assert source['non_authority']['open_evt_010_ledger_credit'] == 'uncredited'
+          assert source['non_authority']['d4c_ledger_credit'] == 'current_2_of_9_unchanged'
           assert set(source['candidate_results'].values()) == {'eligible_for_evidence_execution'}
           assert source['equivalent_reviewed_profile'] == 'insufficient_evidence'
           d4c = tracks['D4-C']
           assert d4c['candidate'] is None and d4c['candidate_status'] == 'not_selected' and d4c['state'] == 'candidate_selection_open'
           assert d4c['evidence_completed'] == credits
-          assert evidence in d4c['evidence_remaining'] and len(d4c['evidence_remaining']) == 7
+          assert evidence not in d4c['evidence_remaining'] and len(d4c['evidence_remaining']) == 6
           assert tracks['D4-D']['candidate'] is None and tracks['D4-D']['evidence_completed'] == []
-          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 14
+          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 15
           assert state['gate_state'] == 'scoped'
           assert state['d4_transport_authority'] == 'selected_not_granted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['c3_numeric_topology_authority'] == 'not_selected'
-          print('d4c_open_evt_010_source_boundary=PASS source_credit=0 current_d4c=2_of_9 open_evt_010_uncredited=true d4wide=14_of_26 selection=not_selected')
+          print('d4c_open_evt_010_source_boundary=PASS immutable_source_snapshot=2_of_9 source_auto_credit=false current_d4c=3_of_9 d4wide=15_of_26 selection=not_selected')
           PY
 
       - name: Resolve exact workflow job identity and emit immutable provenance

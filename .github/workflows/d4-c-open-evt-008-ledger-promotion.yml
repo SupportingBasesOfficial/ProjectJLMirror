@@ -8,9 +8,11 @@ on:
       - 'implementation/d4-eventing-async/d4-c-evidence-plan.json'
       - 'implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-008-promotion-v1.json'
       - 'implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-009-promotion-v1.json'
+      - 'implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-010-promotion-v1.json'
       - 'implementation/d4-eventing-async/state-manifest.json'
       - 'implementation/d4-eventing-async/source-evidence/d4-c-ack-lease-checkpoint-source.json'
       - 'implementation/d4-eventing-async/source-evidence/d4-c-quarantine-redrive-source.json'
+      - 'implementation/d4-eventing-async/source-evidence/d4-c-bounded-parser-limits-source.json'
       - 'tools/assurance/validate_d4c_evidence_plan.py'
       - 'tools/assurance/test_validate_d4c_evidence_plan.py'
       - 'tools/assurance/validate_d4_eventing_async_state.py'
@@ -84,17 +86,18 @@ jobs:
           d4c = next(t for t in state['tracks'] if t['track_id'] == 'D4-C')
           first = 'ack_after_durable_responsibility_and_lease_ambiguity'
           second = 'quarantine_redrive_current_authority_and_dedup_preservation'
+          third = 'bounded_message_batch_compression_and_parser_limits'
           assert p8['promotion_id'] == 'd4-c-open-evt-008-promotion-v1'
           assert p8['credited_evidence'] == [first] and p8['credit_count'] == 1
-          assert plan['credited_evidence'] == [first, second]
-          assert d4c['evidence_completed'] == [first, second]
-          assert len(d4c['evidence_remaining']) == 7
-          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 14
+          assert plan['credited_evidence'] == [first, second, third]
+          assert d4c['evidence_completed'] == [first, second, third]
+          assert len(d4c['evidence_remaining']) == 6
+          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 15
           assert d4c['candidate'] is None and d4c['candidate_status'] == 'not_selected' and d4c['state'] == 'candidate_selection_open'
           assert state['gate_state'] == 'scoped'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['c3_numeric_topology_authority'] == 'not_selected'
-          print('d4c_open_evt_008_continuity=PASS historical_credit=1 current_d4c=2_of_9 d4wide=14_of_26 artifact_retention_dependency=false authorities=unchanged')
+          print('d4c_open_evt_008_continuity=PASS historical_credit=1 current_d4c=3_of_9 d4wide=15_of_26 artifact_retention_dependency=false authorities=unchanged')
           PY

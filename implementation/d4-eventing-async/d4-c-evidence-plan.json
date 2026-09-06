@@ -17,7 +17,7 @@
   "candidate": null,
   "candidate_status": "not_selected",
   "source_evidence_state": "reviewed_source_run_available",
-  "ledger_credit_state": "two_of_nine",
+  "ledger_credit_state": "three_of_nine",
   "required_evidence": [
     "ack_after_durable_responsibility_and_lease_ambiguity",
     "quarantine_redrive_current_authority_and_dedup_preservation",
@@ -31,10 +31,10 @@
   ],
   "credited_evidence": [
     "ack_after_durable_responsibility_and_lease_ambiguity",
-    "quarantine_redrive_current_authority_and_dedup_preservation"
+    "quarantine_redrive_current_authority_and_dedup_preservation",
+    "bounded_message_batch_compression_and_parser_limits"
   ],
   "remaining_evidence": [
-    "bounded_message_batch_compression_and_parser_limits",
     "scoped_content_equivalence_confidentiality_and_conflict_rejection",
     "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
     "producer_generation_nonresurrection_across_failover_restore",

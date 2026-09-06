@@ -12,6 +12,7 @@ from validate_d4c_candidate_evaluation_plan_historical import *  # noqa: F401,F4
 D4C_CREDITS = [
     "ack_after_durable_responsibility_and_lease_ambiguity",
     "quarantine_redrive_current_authority_and_dedup_preservation",
+    "bounded_message_batch_compression_and_parser_limits",
 ]
 _legacy_load = historical.load
 
@@ -24,12 +25,12 @@ def _current_errors(state: dict) -> list[str]:
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
         errors.append("D4-C state must remain open/unselected")
     if d4c.get("evidence_completed") != D4C_CREDITS or d4c.get("evidence_remaining") != [x for x in required if x not in D4C_CREDITS]:
-        errors.append("D4-C evidence must remain 0/9 in historical projection and exactly promoted 2/9 in current state")
+        errors.append("D4-C evidence must remain 0/9 in historical projection and exactly promoted 3/9 in current state")
     d4d = tracks.get("D4-D", {})
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open" or d4d.get("evidence_completed") != []:
         errors.append("D4-D must remain open/unselected/uncredited")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 14:
-        errors.append("D4-wide evidence must be exactly 14/26 in current promoted state")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 15:
+        errors.append("D4-wide evidence must be exactly 15/26 in current promoted state")
     return errors
 
 
@@ -65,7 +66,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4C_EVAL_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_candidate_evaluation_plan=PASS historical_baseline_oracle=preserved evaluation_auto_credit=forbidden current_promoted_credit=2_of_9 selection=not_selected d4wide=14/26")
+    print("d4c_candidate_evaluation_plan=PASS historical_baseline_oracle=preserved evaluation_auto_credit=forbidden current_promoted_credit=3_of_9 selection=not_selected d4wide=15/26")
     return 0
 
 

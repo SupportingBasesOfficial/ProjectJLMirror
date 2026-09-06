@@ -98,6 +98,7 @@ jobs:
           d4c_credits = [
               'ack_after_durable_responsibility_and_lease_ambiguity',
               'quarantine_redrive_current_authority_and_dedup_preservation',
+              'bounded_message_batch_compression_and_parser_limits',
           ]
           assert selection['selection_state'] == 'selected'
           assert ledger['selection_state'] == 'selected'
@@ -113,9 +114,9 @@ jobs:
           assert d4c['candidate'] is None and d4c['candidate_status'] == 'not_selected' and d4c['state'] == 'candidate_selection_open'
           assert d4c['evidence_completed'] == d4c_credits
           assert d4c['evidence_remaining'] == [x for x in d4c['required_evidence'] if x not in d4c_credits]
-          assert len(d4c['evidence_remaining']) == 7
+          assert len(d4c['evidence_remaining']) == 6
           assert tracks['D4-D']['candidate'] is None and tracks['D4-D']['candidate_status'] == 'not_selected'
           assert tracks['D4-D']['evidence_completed'] == []
-          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 14
-          print('d4b_selection_boundary=PASS d4b=5/5 d4wide=14/26 d4c=2/9 d4d=0/5 d4=scoped product_wave4=not_granted production=none c3=not_selected')
+          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 15
+          print('d4b_selection_boundary=PASS d4b=5/5 d4wide=15/26 d4c=3/9 d4d=0/5 d4=scoped product_wave4=not_granted production=none c3=not_selected')
           PY

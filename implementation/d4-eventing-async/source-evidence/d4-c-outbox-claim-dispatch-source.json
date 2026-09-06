@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-C",
+  "axis": "outbox_claim_dispatch_and_ack_ambiguity",
+  "source_decision": "OPEN-EVT-012",
+  "evidence_id": "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
+  "canonical_base": "aa36c4dcff1bed03178942ee05b6b8ef1fc03d08",
+  "mode": "candidate_source_evidence_only",
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "current_run_auto_credit": false,
+  "ledger_credit": [],
+  "candidate_results": {
+    "database_skip_locked_polling_claim_profile": "eligible_for_evidence_execution",
+    "compare_and_swap_lease_claim_profile": "eligible_for_evidence_execution",
+    "notification_assisted_polling_claim_profile": "eligible_for_evidence_execution"
+  },
+  "equivalent_reviewed_profile": "insufficient_evidence",
+  "required_proofs": [
+    "authoritative_mutation_and_required_outbox_fact_commit_atomically",
+    "claim_takeover_is_fenced_and_does_not_create_concurrent_semantic_owners",
+    "retry_workers_do_not_rewrite_immutable_fact_meaning",
+    "broker_ack_ambiguity_retries_same_message_identity_and_semantic_content",
+    "broker_outage_preserves_committed_backlog_without_loss",
+    "dispatcher_restart_and_recovery_preserve_stable_message_identity_and_semantic_content",
+    "cleanup_never_removes_the_last_recovery_authority_before_safe_horizon"
+  ],
+  "source_assertions": [
+    "business_mutation_and_required_outbox_fact_share_one_atomic_commit_boundary",
+    "outbox_message_identity_and_immutable_semantic_payload_are_fixed_at_commit",
+    "claims_carry_monotonic_fence_tokens_and_stale_owners_cannot_dispatch_after_takeover",
+    "lease_expiry_is_ambiguity_and_takeover_never creates_two_current_semantic_owners",
+    "retry_changes_attempt_metadata_only_and_never_message_identity_or_immutable_fact_content",
+    "ack_lost_after_broker_acceptance_is_retried_with_the_exact_same_message_identity_and_semantic_content",
+    "broker_unavailability_leaves_committed_outbox_backlog durable_and_dispatchable_after_recovery",
+    "dispatcher_restart_rehydrates_claim_state_from_durable_outbox_truth_and_preserves_message_identity_and_content",
+    "notification_is_only_a_wakeup_hint_and_polling_or_durable_store_remains_recovery_authority",
+    "cleanup_requires_terminal_delivery_evidence_and_safe_horizon_or_stronger durable_recovery_authority",
+    "missing_ack_or_delivery_evidence_is_uncertainty_not_cleanup_permission",
+    "candidate_source_evidence_does_not_select_claim_sql_broker_retry_numeric_topology_or_production_mechanics"
+  ],
+  "non_authority": {
+    "d4c_mechanism_selection": "not_selected",
+    "d4c_outbox_claim_profile_selection": "not_selected",
+    "open_evt_012_ledger_credit": "uncredited",
+    "d4c_ledger_credit": "current_4_of_9_unchanged",
+    "d4d_ledger_credit": "0_of_5",
+    "d4_gate": "scoped",
+    "d4_transport_authority": "selected_not_granted",
+    "canonical_product_implementation_authority": "not_granted",
+    "wave4_implementation_authority": "not_granted",
+    "production_authority": "none",
+    "c3_numeric_topology_authority": "not_selected"
+  }
+}

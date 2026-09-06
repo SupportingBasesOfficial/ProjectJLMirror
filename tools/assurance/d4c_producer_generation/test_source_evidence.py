@@ -37,13 +37,15 @@ def main() -> int:
         authority = GenerationAuthority(candidate)
         identity = authority.identity
         retired = authority.current_generation
+        if candidate == "positive_integer_fenced_generation":
+            assert type(retired) is int and retired > 0
+        else:
+            assert type(retired) is str and retired
+
         historical = HistoricalFact(identity, retired, "hist-1", "{}")
         authority.rotate(placement="cell-b")
         current = authority.current_generation
 
-        # Stale authority remains stale even if an external system reports the
-        # current generation. External provider/broker metadata is observation,
-        # never platform generation authority.
         assert blocked(
             lambda: authority.admit_effect(
                 tenant_id=identity.tenant_id,
@@ -55,8 +57,6 @@ def main() -> int:
             "retired_generation",
         )
 
-        # Historical facts remain readable but cannot be replayed as current
-        # source authority merely because they carry an old generation value.
         assert authority.read_historical_fact(historical) == historical
         assert blocked(
             lambda: authority.admit_effect(
@@ -67,25 +67,42 @@ def main() -> int:
             "retired_generation",
         )
 
-        # A numerically or lexically "greater" token has no ordering authority.
-        assert blocked(
-            lambda: authority.admit_effect(
-                tenant_id=identity.tenant_id,
-                logical_source_id=identity.logical_source_id,
-                platform_generation="999999999999999999",
-            ),
-            "generation_not_current",
-        )
-        assert blocked(
-            lambda: authority.admit_effect(
-                tenant_id=identity.tenant_id,
-                logical_source_id=identity.logical_source_id,
-                platform_generation="zzzzzzzzzzzzzzzz",
-            ),
-            "generation_not_current",
-        )
+        if candidate == "positive_integer_fenced_generation":
+            assert blocked(
+                lambda: authority.admit_effect(
+                    tenant_id=identity.tenant_id,
+                    logical_source_id=identity.logical_source_id,
+                    platform_generation=999999999999999999,
+                ),
+                "generation_not_current",
+            )
+            for bad in (0, -1, True, "2"):
+                assert blocked(
+                    lambda bad=bad: authority.admit_effect(
+                        tenant_id=identity.tenant_id,
+                        logical_source_id=identity.logical_source_id,
+                        platform_generation=bad,
+                    ),
+                    "generation_representation_invalid",
+                )
+        else:
+            assert blocked(
+                lambda: authority.admit_effect(
+                    tenant_id=identity.tenant_id,
+                    logical_source_id=identity.logical_source_id,
+                    platform_generation="zzzzzzzzzzzzzzzz",
+                ),
+                "generation_not_current",
+            )
+            assert blocked(
+                lambda: authority.admit_effect(
+                    tenant_id=identity.tenant_id,
+                    logical_source_id=identity.logical_source_id,
+                    platform_generation=999999999,
+                ),
+                "generation_representation_invalid",
+            )
 
-        # Restore of a stale snapshot cannot demote the surviving authority.
         stale_snapshot = GenerationAuthority(candidate).snapshot()
         before_restore = authority.current_generation
         authority.restore_snapshot(stale_snapshot)
@@ -94,8 +111,9 @@ def main() -> int:
 
     print(
         "d4c_open_evt_013_source_falsification=PASS "
-        "candidates=3 proofs=7 stale=blocked future=blocked restore_resurrection=blocked "
-        "history_not_authority=true external_generation_not_authority=true selection=none credit=none"
+        "candidates=3 proofs=7 exact_representation=true stale=blocked future=blocked "
+        "restore_resurrection=blocked history_not_authority=true external_generation_not_authority=true "
+        "selection=none credit=none"
     )
     return 0
 

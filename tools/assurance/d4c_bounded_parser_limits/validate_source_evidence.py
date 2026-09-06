@@ -48,6 +48,7 @@ EXPECTED_ASSERTIONS = [
 ]
 
 EXPECTED_RUNTIME_CHECKS = {
+    "valid_payload_admitted",
     "declared_oversize_rejected_before_stream_consumption",
     "unknown_length_stream_remains_bounded",
     "batch_size_bound",
@@ -222,7 +223,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_010_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_open_evt_010_source=PASS candidates=3 proofs=17 proof_inventory=exact source_snapshot_nonpromoting=true bounded_before_allocation=true malformed_gzip=blocked concatenated_gzip=blocked duplicate_members=blocked parser_nesting_prechecked=true specialized_planes=referenced_at_any_depth deterministic_nonretryable=true fixture_limits_noncanonical=true source_auto_credit=false current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
+    print("d4c_open_evt_010_source=PASS candidates=3 checks=18_of_18 proof_inventory=exact source_snapshot_nonpromoting=true bounded_before_allocation=true malformed_gzip=blocked concatenated_gzip=blocked duplicate_members=blocked parser_nesting_prechecked=true specialized_planes=referenced_at_any_depth deterministic_nonretryable=true fixture_limits_noncanonical=true source_auto_credit=false current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
     return 0
 
 

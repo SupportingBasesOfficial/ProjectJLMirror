@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-C",
+  "mode": "candidate_source_evidence_only",
+  "source_decision": "OPEN-EVT-025",
+  "evidence_id": "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
+  "candidate_classes": [
+    "restore_generation_fence_manifest_profile",
+    "reconciliation_inventory_job_plus_activation_gate_profile",
+    "hybrid_generation_manifest_plus_multi_store_reconciler_profile"
+  ],
+  "must_prove": [
+    "restore_generation_and_fence_boundary_are_explicit_and_durable",
+    "r_f_window_inventory_reconciles_broker_history_inbox_outbox_equivalence_and_external_effect_evidence",
+    "webhook_recovery_preserves_stable_delivery_identity_semantic_snapshot_or_reproduction_authority_and_destination_generation_fences",
+    "missing_restored_state_is_uncertainty_not_absence",
+    "missing_or_older_content_comparison_evidence_is_not_safe_duplicate_proof",
+    "missing_or_stale_historical_comparison_authority_blocks_duplicate_sensitive_effects",
+    "duplicate_classification_and_effectful_async_admission_remain_fail_closed_until_continuity_equivalence_and_historical_authority_are_proven",
+    "stale_producer_replay_authorization_and_destination_generations_do_not_revive",
+    "obsolete_restored_verifier_or_profile_cannot_become_current_authority_for_unrelated_scope",
+    "offset_outbox_or_inbox_state_cannot_override_surviving_external_audit_effect_or_equivalence_evidence",
+    "effectful_async_activation_is_fail_closed_until_required_reconciliation_is_proven",
+    "reconciliation_results_are_generation_scoped_auditable_and_reproducible"
+  ],
+  "candidate_results": {
+    "restore_generation_fence_manifest_profile": "eligible_for_evidence_execution",
+    "reconciliation_inventory_job_plus_activation_gate_profile": "eligible_for_evidence_execution",
+    "hybrid_generation_manifest_plus_multi_store_reconciler_profile": "eligible_for_evidence_execution"
+  },
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "current_run_auto_credit": false,
+  "ledger_credit": [],
+  "non_authority": {
+    "d4c_ledger_credit": "current_8_of_9_unchanged",
+    "open_evt_025_ledger_credit": "uncredited",
+    "d4c_candidate": "null_not_selected_candidate_selection_open",
+    "d4d_ledger_credit": "zero_of_five",
+    "d4_gate": "scoped",
+    "d4_transport_authority": "selected_not_granted",
+    "canonical_product_implementation_authority": "not_granted",
+    "wave4_implementation_authority": "not_granted",
+    "production_authority": "none",
+    "c3_numeric_topology_authority": "not_selected"
+  },
+  "source_boundary": {
+    "generation_rule": "restore_and_activation_generations_are_explicit_durable_and_fenced",
+    "inventory_rule": "rf_inventory_reconciles_broker_inbox_outbox_equivalence_external_effect_and_webhook_evidence",
+    "uncertainty_rule": "missing_or_stale_restored_state_is_uncertainty_never_absence_or_safe_duplicate",
+    "authority_rule": "stale_producer_replay_destination_verifier_and_comparison_authority_never_revive",
+    "external_effect_rule": "surviving_external_audit_effect_or_equivalence_evidence_cannot_be_overridden_by_offsets_inbox_or_outbox",
+    "activation_rule": "effectful_async_activation_is_fail_closed_until_generation_scoped_reconciliation_is_complete_and_reproducible"
+  }
+}

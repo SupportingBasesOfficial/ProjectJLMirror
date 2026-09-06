@@ -9,6 +9,15 @@ on:
       - synchronize
       - reopened
       - ready_for_review
+    paths:
+      - '.github/workflows/d3-crypto-replay-final-hardening.yml'
+      - 'implementation/d3-identity-security/state-manifest.json'
+      - 'implementation/d3-identity-security/harness/openbao_crypto_*.py'
+      - 'implementation/d3-identity-security/harness/_openbao_crypto_conformance_base.py'
+      - 'implementation/d3-identity-security/harness/replay_recovery_*.py'
+      - 'tools/assurance/validate_d3_identity_security_state.py'
+      - 'tools/assurance/validate_d3_identity_security_state_legacy.py'
+      - 'docs/16-implementation-readiness/19-d3-identity-security-c2-entry-gate.md'
   workflow_dispatch:
 
 permissions:

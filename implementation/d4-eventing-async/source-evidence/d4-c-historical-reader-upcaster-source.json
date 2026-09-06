@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-C",
+  "mode": "candidate_source_evidence_only",
+  "source_decision": "OPEN-EVT-015",
+  "evidence_id": "historical_reader_upcaster_semantic_and_equivalence_continuity",
+  "candidate_classes": [
+    "in_process_versioned_reader_upcaster_registry",
+    "sidecar_or_library_historical_reader_profile",
+    "offline_replay_transform_pipeline_profile"
+  ],
+  "must_prove": [
+    "historical_semantic_meaning_is_immutable",
+    "upcasting_cannot_fabricate_newer_historical_facts",
+    "source_message_identity_tenant_and_occurrence_semantics_remain_traceable",
+    "supported_retained_history_remains_interpretable",
+    "equivalence_evidence_and_comparison_profile_semantics_are_preserved_or_deterministically_mapped",
+    "reader_or_upcaster_version_is_explicit_and_historically_recoverable",
+    "dynamic_untrusted_code_or_schema_execution_is_not_required_for_historical_read"
+  ],
+  "candidate_results": {
+    "in_process_versioned_reader_upcaster_registry": "eligible_for_evidence_execution",
+    "sidecar_or_library_historical_reader_profile": "eligible_for_evidence_execution",
+    "offline_replay_transform_pipeline_profile": "eligible_for_evidence_execution"
+  },
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "current_run_auto_credit": false,
+  "ledger_credit": [],
+  "non_authority": {
+    "d4c_ledger_credit": "current_7_of_9_unchanged",
+    "open_evt_015_ledger_credit": "uncredited",
+    "d4c_candidate": "null_not_selected_candidate_selection_open",
+    "d4d_ledger_credit": "zero_of_five",
+    "d4_gate": "scoped",
+    "d4_transport_authority": "selected_not_granted",
+    "canonical_product_implementation_authority": "not_granted",
+    "wave4_implementation_authority": "not_granted",
+    "production_authority": "none",
+    "c3_numeric_topology_authority": "not_selected"
+  },
+  "source_boundary": {
+    "semantic_rule": "historical_semantic_meaning_is_immutable_across_supported_readers",
+    "upcast_rule": "upcasters_may_translate_representation_but_never_fabricate_newer_historical_facts",
+    "identity_rule": "tenant_contract_message_and_occurrence_identity_remain_traceable_to_source_history",
+    "retention_rule": "supported_retained_history_requires_an_explicit_recoverable_reader_version",
+    "equivalence_rule": "historical_equivalence_profiles_are_preserved_or_deterministically_mapped_without_semantic_drift",
+    "execution_rule": "historical_read_never_requires_dynamic_untrusted_code_or_schema_execution"
+  }
+}

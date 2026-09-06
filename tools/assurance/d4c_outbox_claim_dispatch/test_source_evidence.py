@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from evaluate_candidates import CANDIDATES, PROOFS, PROOF_CHECKS, ContractViolation, DurableStore, BrokerProbe, Dispatcher, evaluate_all
 
@@ -35,6 +36,15 @@ class SourceEvidenceTests(unittest.TestCase):
         self.assertGreater(b.fence, a.fence)
         with self.assertRaisesRegex(ContractViolation, "stale_claim"):
             Dispatcher(store, broker, candidate=CANDIDATES[0], owner="a").dispatch(a)
+
+    def test_immutable_fact_rewrite_is_rejected(self):
+        store = DurableStore()
+        store.commit_business_and_outbox(business_value="v1", message_id="m1", semantic_content='{"a":1}')
+        before = store.outbox["m1"]
+        with self.assertRaisesRegex(ContractViolation, "immutable_fact_rewrite"):
+            store._replace_fact("m1", replace(before, semantic_content='{"a":2}'))
+        self.assertEqual(store.outbox["m1"].semantic_content, before.semantic_content)
+        self.assertEqual(store.outbox["m1"].content_digest, before.content_digest)
 
     def test_ack_ambiguity_does_not_change_identity_or_content(self):
         store, broker = DurableStore(), BrokerProbe()

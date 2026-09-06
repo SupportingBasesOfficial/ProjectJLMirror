@@ -39,7 +39,7 @@ EXPECTED_PROOFS = (
 EXPECTED_PROOF_CHECKS = {
     EXPECTED_PROOFS[0]: ("atomic_commit_all_or_nothing", "message_identity_fixed_at_commit"),
     EXPECTED_PROOFS[1]: ("preexpiry_takeover_rejected", "stale_owner_fenced_after_takeover", "single_current_claim_owner"),
-    EXPECTED_PROOFS[2]: ("retry_preserves_identity", "retry_preserves_semantic_content"),
+    EXPECTED_PROOFS[2]: ("immutable_fact_rewrite_rejected", "retry_preserves_identity", "retry_preserves_semantic_content"),
     EXPECTED_PROOFS[3]: ("ack_lost_retry_same_identity", "ack_lost_retry_same_content"),
     EXPECTED_PROOFS[4]: ("broker_outage_preserves_backlog",),
     EXPECTED_PROOFS[5]: ("restart_preserves_identity", "restart_preserves_semantic_content", "notification_is_non_authoritative"),

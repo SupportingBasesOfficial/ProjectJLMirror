@@ -30,6 +30,7 @@ CREDITS = [
     "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
     "producer_generation_nonresurrection_across_failover_restore",
     "privileged_bounded_replay_with_original_identity_and_effect_safety",
+    "historical_reader_upcaster_semantic_and_equivalence_continuity",
 ]
 TENANT = "tenant:t1"
 
@@ -107,6 +108,6 @@ class SourceEvidenceTests(unittest.TestCase):
 
     def test_current_global_state_is_not_modified_by_source_run(self):
         state=json.loads(STATE.read_text(encoding="utf-8")); tracks={t["track_id"]:t for t in state["tracks"]}; d4c=tracks["D4-C"]
-        self.assertEqual(d4c["evidence_completed"],CREDITS); self.assertEqual(d4c["evidence_remaining"],[x for x in d4c["required_evidence"] if x not in CREDITS]); self.assertEqual(len(d4c["evidence_remaining"]),2); self.assertIsNone(d4c["candidate"]); self.assertEqual(d4c["candidate_status"],"not_selected"); self.assertEqual(tracks["D4-D"]["evidence_completed"],[]); self.assertEqual(sum(len(t["evidence_completed"]) for t in state["tracks"]),19); self.assertEqual(state["gate_state"],"scoped"); self.assertEqual(state["canonical_product_implementation_authority"],"not_granted"); self.assertEqual(state["wave4_implementation_authority"],"not_granted"); self.assertEqual(state["production_authority"],"none"); self.assertEqual(state["c3_numeric_topology_authority"],"not_selected")
+        self.assertEqual(d4c["evidence_completed"],CREDITS); self.assertEqual(d4c["evidence_remaining"],[x for x in d4c["required_evidence"] if x not in CREDITS]); self.assertEqual(len(d4c["evidence_remaining"]),1); self.assertIsNone(d4c["candidate"]); self.assertEqual(d4c["candidate_status"],"not_selected"); self.assertEqual(tracks["D4-D"]["evidence_completed"],[]); self.assertEqual(sum(len(t["evidence_completed"]) for t in state["tracks"]),20); self.assertEqual(state["gate_state"],"scoped"); self.assertEqual(state["canonical_product_implementation_authority"],"not_granted"); self.assertEqual(state["wave4_implementation_authority"],"not_granted"); self.assertEqual(state["production_authority"],"none"); self.assertEqual(state["c3_numeric_topology_authority"],"not_selected")
 
 if __name__ == "__main__": unittest.main(verbosity=2)

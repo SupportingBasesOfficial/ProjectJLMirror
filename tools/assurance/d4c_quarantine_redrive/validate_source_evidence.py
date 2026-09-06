@@ -17,7 +17,8 @@ CREDIT_011 = "scoped_content_equivalence_confidentiality_and_conflict_rejection"
 CREDIT_012 = "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity"
 CREDIT_013 = "producer_generation_nonresurrection_across_failover_restore"
 CREDIT_014 = "privileged_bounded_replay_with_original_identity_and_effect_safety"
-CURRENT_CREDITS = [CREDIT_008, EVIDENCE, CREDIT_010, CREDIT_011, CREDIT_012, CREDIT_013, CREDIT_014]
+CREDIT_015 = "historical_reader_upcaster_semantic_and_equivalence_continuity"
+CURRENT_CREDITS = [CREDIT_008, EVIDENCE, CREDIT_010, CREDIT_011, CREDIT_012, CREDIT_013, CREDIT_014, CREDIT_015]
 EXPECTED_ASSERTIONS = [
     "all_three_concrete_candidate_classes_share_one_platform_quarantine_process_truth",
     "retry_budget_exhaustion_transitions_to_governed_quarantine_without_inferring_production_retry_numerics",
@@ -95,9 +96,9 @@ def validate(root: Path) -> list[str]:
     if d4b.get("candidate_status") != "selected_c2_profile" or len(d4b.get("evidence_completed", [])) != 5: errors.append("D4-B accepted state drift")
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open": errors.append("D4-C selection leakage")
     expected_remaining = [x for x in d4c.get("required_evidence", []) if x not in CURRENT_CREDITS]
-    if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining: errors.append("D4-C current 7/9 ledger drift")
+    if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining: errors.append("D4-C current 8/9 ledger drift")
     if d4d.get("candidate") is not None or d4d.get("evidence_completed") != []: errors.append("D4-D state leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 19: errors.append("D4-wide evidence count drift")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 20: errors.append("D4-wide evidence count drift")
     for key, expected in {"gate_state":"scoped","d4_transport_authority":"selected_not_granted","canonical_product_implementation_authority":"not_granted","wave4_implementation_authority":"not_granted","production_authority":"none","c3_numeric_topology_authority":"not_selected"}.items():
         if state.get(key) != expected: errors.append(f"global authority drift: {key}")
     return errors
@@ -108,7 +109,7 @@ def main() -> int:
     if errors:
         for error in errors: print(f"D4C_OPEN_EVT_009_SOURCE_ERROR: {error}")
         return 1
-    print("d4c_quarantine_redrive_source=PASS candidates=3 source_snapshot_nonpromoting=true current_d4c=7_of_9 current_d4wide=19_of_26 selection=not_selected")
+    print("d4c_quarantine_redrive_source=PASS candidates=3 source_snapshot_nonpromoting=true current_d4c=8_of_9 current_d4wide=20_of_26 selection=not_selected")
     return 0
 
 if __name__ == "__main__": raise SystemExit(main())

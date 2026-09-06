@@ -18,12 +18,14 @@ The accepted candidate classes are:
 The executable evidence proves:
 
 1. authoritative business mutation and its required outbox fact commit atomically;
-2. claim takeover is fenced so stale owners cannot remain semantic owners;
-3. retries preserve immutable fact meaning;
-4. broker ACK ambiguity retries the same message identity and semantic content;
-5. broker outage preserves committed backlog;
+2. claim takeover is fenced so stale owners cannot remain semantic owners, including an already in-flight worker that validated before expiry but reaches the broker acceptance boundary after takeover;
+3. retries preserve immutable fact meaning, including rejection of a coherent post-commit content+digest rewrite;
+4. broker ACK ambiguity retries the same message identity and semantic content, while ambiguous or foreign `acked` receipts cannot grant terminal-delivery authority;
+5. broker outage preserves committed backlog and an unavailable publish cannot become terminal delivery evidence;
 6. dispatcher restart preserves stable message identity/content and notification remains only a wake-up hint;
 7. cleanup cannot remove the last recovery authority before terminal evidence plus the safe horizon.
+
+Effectful publish admission re-establishes the current, unexpired claim fence at the acceptance boundary. Terminal delivery evidence additionally requires an `acked` receipt bound to the same message identity and content digest as the immutable outbox fact.
 
 The numeric times and lease durations used by the harness are evidence fixtures only. They do not select production retry, lease, retention, cleanup, partition, or topology numerics.
 

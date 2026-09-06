@@ -73,16 +73,29 @@ class SourceEvidenceTests(unittest.TestCase):
         class MutableStr(str):
             pass
 
-        scalar_key = MutableStr("key")
-        scalar_key.mutable_state = "before"
-        scalar_key_store = DurableStore()
-        with self.assertRaisesRegex(ContractViolation, "unsupported_mutable_business_key"):
-            scalar_key_store.commit_business_and_outbox(
-                business_value={scalar_key: "value"}, message_id="scalar-key-msg", semantic_content="{}"
-            )
-        scalar_key.mutable_state = "after"
-        self.assertEqual(scalar_key_store.business_revision, 0)
-        self.assertNotIn("scalar-key-msg", scalar_key_store.outbox)
+        class MutableInt(int):
+            pass
+
+        class MutableFloat(float):
+            pass
+
+        scalar_cases = [
+            (MutableStr("key"), "str"),
+            (MutableInt(7), "int"),
+            (MutableFloat(1.5), "float"),
+        ]
+        for scalar_key, label in scalar_cases:
+            scalar_key.mutable_state = "before"
+            scalar_key_store = DurableStore()
+            with self.assertRaisesRegex(ContractViolation, "unsupported_mutable_business_key"):
+                scalar_key_store.commit_business_and_outbox(
+                    business_value={scalar_key: "value"},
+                    message_id=f"scalar-key-{label}",
+                    semantic_content="{}",
+                )
+            scalar_key.mutable_state = "after"
+            self.assertEqual(scalar_key_store.business_revision, 0)
+            self.assertNotIn(f"scalar-key-{label}", scalar_key_store.outbox)
 
     def test_broker_acceptance_is_atomic_and_conflict_fails_closed(self):
         broker = BrokerProbe()
@@ -112,6 +125,38 @@ class SourceEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractViolation, "broker_message_identity_conflict"):
             broker.publish(conflict, authorize_handoff=lambda: None)
         self.assertEqual(len(broker.accepted), 1)
+
+        concurrent_conflict_broker = BrokerProbe()
+        concurrent_conflict_broker.accept_pause_after_lookup = True
+        one = OutboxFact("same-id", "one", DurableStore._digest("one"), 1)
+        two = OutboxFact("same-id", "two", DurableStore._digest("two"), 1)
+        conflict_barrier = threading.Barrier(2)
+        conflict_errors = []
+
+        def publish_conflict(candidate_fact):
+            try:
+                conflict_barrier.wait()
+                concurrent_conflict_broker.publish(candidate_fact, authorize_handoff=lambda: None)
+            except Exception as exc:
+                conflict_errors.append(exc)
+
+        conflict_threads = [
+            threading.Thread(target=publish_conflict, args=(one,)),
+            threading.Thread(target=publish_conflict, args=(two,)),
+        ]
+        for thread in conflict_threads:
+            thread.start()
+        for thread in conflict_threads:
+            thread.join()
+        self.assertEqual(len(concurrent_conflict_broker.attempts), 2)
+        self.assertEqual(len(concurrent_conflict_broker.accepted), 1)
+        self.assertEqual(len(conflict_errors), 1)
+        self.assertIsInstance(conflict_errors[0], ContractViolation)
+        self.assertEqual(str(conflict_errors[0]), "broker_message_identity_conflict")
+        self.assertIn(
+            concurrent_conflict_broker.accepted[0],
+            [("same-id", DurableStore._digest("one")), ("same-id", DurableStore._digest("two"))],
+        )
 
     def test_inflight_worker_is_fenced_before_broker_handoff_after_takeover(self):
         store, broker = DurableStore(), BrokerProbe()

@@ -90,44 +90,28 @@ jobs:
             exit 0
           fi
           python3 - <<'PY'
-          import json
           import os
           import subprocess
           from pathlib import Path
 
           base_sha = os.environ['BASE_SHA']
-          plan_path = 'implementation/d4-eventing-async/d4-c-evidence-plan.json'
           promotion_path = 'implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-010-promotion-v1.json'
-          promotion_keys = (
-              'ledger_credit_state',
-              'credited_evidence',
-              'remaining_evidence',
-              'source_evidence_state',
+
+          proc = subprocess.run(
+              ['git', 'show', f'{base_sha}:{promotion_path}'],
+              check=False,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.DEVNULL,
           )
-
-          def git_show(path: str) -> bytes | None:
-              proc = subprocess.run(
-                  ['git', 'show', f'{base_sha}:{path}'],
-                  check=False,
-                  stdout=subprocess.PIPE,
-                  stderr=subprocess.DEVNULL,
-              )
-              return proc.stdout if proc.returncode == 0 else None
-
-          base_plan_bytes = git_show(plan_path)
-          head_plan = json.loads(Path(plan_path).read_text(encoding='utf-8'))
+          base_promotion = proc.stdout if proc.returncode == 0 else None
           head_promotion = Path(promotion_path).read_bytes()
-          if base_plan_bytes is None:
-              changed = True
-          else:
-              base_plan = json.loads(base_plan_bytes)
-              def project(plan: dict) -> dict:
-                  return {key: plan.get(key) for key in promotion_keys}
-              base_promotion = git_show(promotion_path)
-              changed = project(base_plan) != project(head_plan) or base_promotion != head_promotion
+          changed = base_promotion != head_promotion
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
               output.write(f"changed={'true' if changed else 'false'}\n")
-          print(f"d4c_open_evt_010_promotion_delta={'changed' if changed else 'steady_state'} projection=evidence_only promotion_record=bound selection_fields=excluded")
+          print(
+              f"d4c_open_evt_010_promotion_delta={'changed' if changed else 'steady_state'} "
+              "authority_source=own_promotion_record aggregate_ledger_ignored=true"
+          )
           PY
 
       - name: Admit exact reviewed OPEN-EVT-010 source evidence from live GitHub state
@@ -228,7 +212,7 @@ jobs:
         if: steps.promotion_delta.outputs.changed == 'false'
         shell: bash
         run: |
-          echo 'd4c_open_evt_010_promotion_live_admission=SKIP promotion_unchanged=true artifact_retention_dependency=false durable_records_and_digests=validated'
+          echo 'd4c_open_evt_010_promotion_live_admission=SKIP promotion_unchanged=true aggregate_ledger_change_ignored=true artifact_retention_dependency=false durable_records_and_digests=validated'
 
       - name: Assert promotion grants exactly the third evidence credit
         shell: bash

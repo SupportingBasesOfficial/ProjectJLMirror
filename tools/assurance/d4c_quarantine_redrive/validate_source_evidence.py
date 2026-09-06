@@ -14,7 +14,8 @@ CREDIT_008 = "ack_after_durable_responsibility_and_lease_ambiguity"
 EVIDENCE = "quarantine_redrive_current_authority_and_dedup_preservation"
 CREDIT_010 = "bounded_message_batch_compression_and_parser_limits"
 CREDIT_011 = "scoped_content_equivalence_confidentiality_and_conflict_rejection"
-CURRENT_CREDITS = [CREDIT_008, EVIDENCE, CREDIT_010, CREDIT_011]
+CREDIT_012 = "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity"
+CURRENT_CREDITS = [CREDIT_008, EVIDENCE, CREDIT_010, CREDIT_011, CREDIT_012]
 EXPECTED_ASSERTIONS = [
     "all_three_concrete_candidate_classes_share_one_platform_quarantine_process_truth",
     "retry_budget_exhaustion_transitions_to_governed_quarantine_without_inferring_production_retry_numerics",
@@ -46,14 +47,12 @@ EXPECTED_NON_AUTHORITY = {
     "c3_numeric_topology_authority": "not_selected",
 }
 
-class DuplicateKeyError(ValueError):
-    pass
+class DuplicateKeyError(ValueError): pass
 
 def _no_duplicates(pairs):
     out = {}
     for key, value in pairs:
-        if key in out:
-            raise DuplicateKeyError(f"duplicate JSON member: {key}")
+        if key in out: raise DuplicateKeyError(f"duplicate JSON member: {key}")
         out[key] = value
     return out
 
@@ -63,22 +62,15 @@ def load(root: Path, path: Path):
 def validate(root: Path) -> list[str]:
     errors: list[str] = []
     try:
-        source = load(root, SOURCE); plan = load(root, PLAN); state = load(root, STATE)
+        source, plan, state = load(root, SOURCE), load(root, PLAN), load(root, STATE)
     except Exception as exc:
         return [str(exc)]
-    expected_scalars = {
-        "schema_version": 1, "gate_id": "D4", "track_id": "D4-C", "axis": "quarantine_and_redrive",
-        "source_decision": "OPEN-EVT-009", "evidence_id": EVIDENCE,
-        "canonical_base": "48734ede4bceb6b4f25f7ac5c9f84ced9563e351", "mode": "candidate_source_evidence_only",
-        "selection_state": "not_selected", "selection_authority": "not_granted", "current_run_auto_credit": False,
-    }
+    expected_scalars = {"schema_version":1,"gate_id":"D4","track_id":"D4-C","axis":"quarantine_and_redrive","source_decision":"OPEN-EVT-009","evidence_id":EVIDENCE,"canonical_base":"48734ede4bceb6b4f25f7ac5c9f84ced9563e351","mode":"candidate_source_evidence_only","selection_state":"not_selected","selection_authority":"not_granted","current_run_auto_credit":False}
     for key, expected in expected_scalars.items():
         if source.get(key) != expected or type(source.get(key)) is not type(expected): errors.append(f"source scalar drift: {key}")
     if source.get("ledger_credit") != []: errors.append("source ledger credit must remain empty")
-    try:
-        axis = plan["axes"]["quarantine_and_redrive"]
-    except Exception:
-        axis = {}; errors.append("accepted OPEN-EVT-009 axis missing")
+    try: axis = plan["axes"]["quarantine_and_redrive"]
+    except Exception: axis = {}; errors.append("accepted OPEN-EVT-009 axis missing")
     if axis.get("decision") != "OPEN-EVT-009" or axis.get("evidence_id") != EVIDENCE: errors.append("accepted axis binding drift")
     if source.get("required_proofs") != axis.get("must_prove"): errors.append("required proof inventory drift from accepted plan")
     concrete = [c for c in axis.get("candidate_classes", []) if c != "equivalent_reviewed_profile"]
@@ -93,24 +85,18 @@ def validate(root: Path) -> list[str]:
     if runtime.get("test_retry_budget_is_noncanonical_fixture") is not True: errors.append("test retry budget lost noncanonical-fixture guard")
     if runtime.get("test_fingerprint_profile") != "sha256_fixture_only_noncanonical": errors.append("test fingerprint profile lost explicit noncanonical guard")
     tracks_raw = state.get("tracks", [])
-    if not isinstance(tracks_raw, list) or len(tracks_raw) != 4:
-        errors.append("D4 track structure drift"); return errors
+    if not isinstance(tracks_raw, list) or len(tracks_raw) != 4: errors.append("D4 track structure drift"); return errors
     ids = [t.get("track_id") for t in tracks_raw if isinstance(t, dict)]
-    if len(ids) != 4 or len(set(ids)) != 4 or set(ids) != {"D4-A", "D4-B", "D4-C", "D4-D"}:
-        errors.append("D4 track identity drift"); return errors
-    tracks = {t["track_id"]: t for t in tracks_raw}; d4a,d4b,d4c,d4d=tracks["D4-A"],tracks["D4-B"],tracks["D4-C"],tracks["D4-D"]
+    if len(ids) != 4 or len(set(ids)) != 4 or set(ids) != {"D4-A","D4-B","D4-C","D4-D"}: errors.append("D4 track identity drift"); return errors
+    tracks = {t["track_id"]:t for t in tracks_raw}; d4a,d4b,d4c,d4d=tracks["D4-A"],tracks["D4-B"],tracks["D4-C"],tracks["D4-D"]
     if d4a.get("candidate") != "kafka" or len(d4a.get("evidence_completed", [])) != 7: errors.append("D4-A accepted state drift")
     if d4b.get("candidate_status") != "selected_c2_profile" or len(d4b.get("evidence_completed", [])) != 5: errors.append("D4-B accepted state drift")
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open": errors.append("D4-C selection leakage")
     expected_remaining = [x for x in d4c.get("required_evidence", []) if x not in CURRENT_CREDITS]
-    if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining: errors.append("D4-C current 4/9 ledger drift")
+    if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining: errors.append("D4-C current 5/9 ledger drift")
     if d4d.get("candidate") is not None or d4d.get("evidence_completed") != []: errors.append("D4-D state leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 16: errors.append("D4-wide evidence count drift")
-    for key, expected in {
-        "gate_state": "scoped", "d4_transport_authority": "selected_not_granted",
-        "canonical_product_implementation_authority": "not_granted", "wave4_implementation_authority": "not_granted",
-        "production_authority": "none", "c3_numeric_topology_authority": "not_selected",
-    }.items():
+    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 17: errors.append("D4-wide evidence count drift")
+    for key, expected in {"gate_state":"scoped","d4_transport_authority":"selected_not_granted","canonical_product_implementation_authority":"not_granted","wave4_implementation_authority":"not_granted","production_authority":"none","c3_numeric_topology_authority":"not_selected"}.items():
         if state.get(key) != expected: errors.append(f"global authority drift: {key}")
     return errors
 
@@ -120,8 +106,7 @@ def main() -> int:
     if errors:
         for error in errors: print(f"D4C_OPEN_EVT_009_SOURCE_ERROR: {error}")
         return 1
-    print("d4c_quarantine_redrive_source=PASS candidates=3 source_snapshot_nonpromoting=true current_d4c=4_of_9 current_d4wide=16_of_26 selection=not_selected")
+    print("d4c_quarantine_redrive_source=PASS candidates=3 source_snapshot_nonpromoting=true current_d4c=5_of_9 current_d4wide=17_of_26 selection=not_selected")
     return 0
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+if __name__ == "__main__": raise SystemExit(main())

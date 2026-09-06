@@ -25,33 +25,27 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           allow-unsafe-pr-checkout: false
-
       - name: Verify exact commit identity
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-
       - name: Compile D4-A assurance tooling
         shell: bash
         run: python3 -m py_compile tools/assurance/validate_d4a_evidence_plan.py tools/assurance/test_validate_d4a_evidence_plan.py tools/assurance/validate_d4_eventing_async_state.py tools/assurance/test_validate_d4_eventing_async_state.py
-
       - name: Falsify D4-A evidence selection and authority weakening
         shell: bash
         working-directory: tools/assurance
         run: python3 test_validate_d4a_evidence_plan.py
-
       - name: Validate D4-A evidence chain and governed selection record
         shell: bash
         run: python3 tools/assurance/validate_d4a_evidence_plan.py .
-
       - name: Preserve D4 scoped boundary
         shell: bash
         run: |
           set -euo pipefail
           python3 tools/assurance/validate_d4_eventing_async_state.py .
           python3 tools/assurance/test_validate_d4_eventing_async_state.py
-
       - name: Determine whether this PR changes D4-A evidence-promotion authority
         id: promotion_delta
         shell: bash
@@ -66,19 +60,14 @@ jobs:
           fi
           git show "$BASE_SHA:implementation/d4-eventing-async/d4-a-evidence-plan.json" > /tmp/base-d4a-plan.json
           python3 - <<'PY'
-          import json
-          import os
+          import json, os
           from pathlib import Path
-          promotion_keys = ('ledger_credit_state','credited_evidence','latest_promotion_record','source_evidence_state')
-          base = json.loads(Path('/tmp/base-d4a-plan.json').read_text())
-          head = json.loads(Path('implementation/d4-eventing-async/d4-a-evidence-plan.json').read_text())
-          def project(plan): return {key: plan.get(key) for key in promotion_keys}
-          changed = project(base) != project(head)
-          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
-              output.write(f"changed={'true' if changed else 'false'}\n")
+          promotion_keys=('ledger_credit_state','credited_evidence','latest_promotion_record','source_evidence_state')
+          base=json.loads(Path('/tmp/base-d4a-plan.json').read_text()); head=json.loads(Path('implementation/d4-eventing-async/d4-a-evidence-plan.json').read_text())
+          project=lambda p:{key:p.get(key) for key in promotion_keys}; changed=project(base)!=project(head)
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as output: output.write(f"changed={'true' if changed else 'false'}\n")
           print(f"d4a_promotion_delta={'changed' if changed else 'steady_state'} projection=evidence_only selection_fields=excluded")
           PY
-
       - name: Admit promoted recovery source run from live external evidence
         if: steps.promotion_delta.outputs.changed == 'true'
         shell: bash
@@ -89,10 +78,8 @@ jobs:
           python3 - <<'PY' > /tmp/d4a_promotion.env
           import json
           from pathlib import Path
-          p = json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-a-recovery-promotion-v1.json').read_text())
-          w = p['source_workflow']
-          for key, value in {'RUN_ID':w['run_id'],'JOB_ID':w['job_id'],'ARTIFACT_ID':w['artifact_id'],'SOURCE_PR':p['source_pr']}.items():
-              print(f'{key}={value}')
+          p=json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-a-recovery-promotion-v1.json').read_text()); w=p['source_workflow']
+          for key,value in {'RUN_ID':w['run_id'],'JOB_ID':w['job_id'],'ARTIFACT_ID':w['artifact_id'],'SOURCE_PR':p['source_pr']}.items(): print(f'{key}={value}')
           PY
           source /tmp/d4a_promotion.env
           headers=(-H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
@@ -100,107 +87,49 @@ jobs:
           curl --fail --silent --show-error "${headers[@]}" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/jobs/$JOB_ID" -o /tmp/job.json
           curl --fail --silent --show-error "${headers[@]}" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" -o /tmp/artifact.json
           curl --fail --silent --show-error --location "${headers[@]}" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" -o /tmp/source-artifact.zip
-          rm -rf /tmp/source-artifact && mkdir -p /tmp/source-artifact
-          unzip -q /tmp/source-artifact.zip -d /tmp/source-artifact
+          rm -rf /tmp/source-artifact && mkdir -p /tmp/source-artifact && unzip -q /tmp/source-artifact.zip -d /tmp/source-artifact
           curl --fail --silent --show-error "${headers[@]}" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$SOURCE_PR/reviews?per_page=100" -o /tmp/reviews.json
           curl --fail --silent --show-error "${headers[@]}" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/$SOURCE_PR/comments?per_page=100" -o /tmp/comments.json
           python3 - <<'PY'
           from hashlib import sha256
           import json
           from pathlib import Path
-          p = json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-a-recovery-promotion-v1.json').read_text())
-          w, g = p['source_workflow'], p['review_gate']
-          run = json.load(open('/tmp/run.json')); job = json.load(open('/tmp/job.json')); artifact = json.load(open('/tmp/artifact.json'))
-          reviews = json.load(open('/tmp/reviews.json')); comments = json.load(open('/tmp/comments.json'))
-          root = Path('/tmp/source-artifact')
-          files = {x.name for x in root.iterdir() if x.is_file()}
-          assert files == {'resolved-source-run-provenance.json','benchmark-results.json'}, files
-          provenance = json.loads((root/'resolved-source-run-provenance.json').read_text())
-          benchmark_bytes = (root/'benchmark-results.json').read_bytes(); benchmark = json.loads(benchmark_bytes)
-          artifact_run = artifact.get('workflow_run') or {}
-          assert run['id'] == w['run_id'] and run['run_attempt'] == w['run_attempt']
-          assert run['head_sha'] == p['source_reviewed_head'] and run['status'] == 'completed' and run['conclusion'] == 'success'
-          assert job['id'] == w['job_id'] and job['run_id'] == w['run_id'] and job['run_attempt'] == w['run_attempt']
-          assert job['name'] == w['job_name'] and job['status'] == 'completed' and job['conclusion'] == 'success'
-          assert artifact['id'] == w['artifact_id'] and artifact['name'] == w['artifact_name'] and artifact['digest'] == w['artifact_digest']
-          assert artifact['expired'] is False
-          assert artifact_run['id'] == w['run_id'] and artifact_run['head_sha'] == p['source_reviewed_head']
-          assert provenance['schema'] == 'd4a-recovery-source-run-provenance-v1'
-          assert provenance['repository_sha'] == p['source_reviewed_head']
-          assert provenance['source_manifest_sha256'] == p['source_manifest_sha256']
-          assert provenance['benchmark_results_sha256'] == sha256(benchmark_bytes).hexdigest()
-          assert provenance['current_run_auto_credit'] is False and provenance['ledger_credit'] == []
-          assert provenance['kafka_selection_state'] == 'not_selected'
-          assert provenance['d4_transport_authority'] == 'not_selected_not_granted'
-          assert benchmark['real_candidate_outage_exercised'] is True
-          assert benchmark['committed_outbox_backlog_survives_broker_outage'] is True
-          assert benchmark['backlog_fully_drained'] is True
-          assert benchmark['priority_preserving_anti_starvation'] is True
-          assert benchmark['broker_progress_non_authority']['broker_progress_is_business_effect_truth'] is False
-          assert benchmark['consumer_effect_safety']['duplicate_business_effects_suppressed'] == 1
-          by_node = {r.get('node_id'):r for r in reviews}
-          for key in ('independent_adversarial_review_node_id','fresh_codex_exact_head_review_node_id'):
-              assert g[key] in by_node and by_node[g[key]].get('commit_id') == p['source_reviewed_head']
-          assert any(c.get('id') == g['final_gate_comment_id'] for c in comments)
+          p=json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-a-recovery-promotion-v1.json').read_text()); w,g=p['source_workflow'],p['review_gate']; run=json.load(open('/tmp/run.json')); job=json.load(open('/tmp/job.json')); artifact=json.load(open('/tmp/artifact.json')); reviews=json.load(open('/tmp/reviews.json')); comments=json.load(open('/tmp/comments.json')); root=Path('/tmp/source-artifact')
+          files={x.name for x in root.iterdir() if x.is_file()}; assert files=={'resolved-source-run-provenance.json','benchmark-results.json'},files
+          provenance=json.loads((root/'resolved-source-run-provenance.json').read_text()); benchmark_bytes=(root/'benchmark-results.json').read_bytes(); benchmark=json.loads(benchmark_bytes); artifact_run=artifact.get('workflow_run') or {}
+          assert run['id']==w['run_id'] and run['run_attempt']==w['run_attempt'] and run['head_sha']==p['source_reviewed_head'] and run['status']=='completed' and run['conclusion']=='success'
+          assert job['id']==w['job_id'] and job['run_id']==w['run_id'] and job['run_attempt']==w['run_attempt'] and job['name']==w['job_name'] and job['status']=='completed' and job['conclusion']=='success'
+          assert artifact['id']==w['artifact_id'] and artifact['name']==w['artifact_name'] and artifact['digest']==w['artifact_digest'] and artifact['expired'] is False and artifact_run['id']==w['run_id'] and artifact_run['head_sha']==p['source_reviewed_head']
+          assert provenance['schema']=='d4a-recovery-source-run-provenance-v1' and provenance['repository_sha']==p['source_reviewed_head'] and provenance['source_manifest_sha256']==p['source_manifest_sha256'] and provenance['benchmark_results_sha256']==sha256(benchmark_bytes).hexdigest() and provenance['current_run_auto_credit'] is False and provenance['ledger_credit']==[] and provenance['kafka_selection_state']=='not_selected' and provenance['d4_transport_authority']=='not_selected_not_granted'
+          assert benchmark['real_candidate_outage_exercised'] is True and benchmark['committed_outbox_backlog_survives_broker_outage'] is True and benchmark['backlog_fully_drained'] is True and benchmark['priority_preserving_anti_starvation'] is True and benchmark['broker_progress_non_authority']['broker_progress_is_business_effect_truth'] is False and benchmark['consumer_effect_safety']['duplicate_business_effects_suppressed']==1
+          by_node={r.get('node_id'):r for r in reviews}
+          for key in ('independent_adversarial_review_node_id','fresh_codex_exact_head_review_node_id'): assert g[key] in by_node and by_node[g[key]].get('commit_id')==p['source_reviewed_head']
+          assert any(c.get('id')==g['final_gate_comment_id'] for c in comments)
           print('d4a_promotion_live_admission=PASS historical_selection=not_selected evidence_credit=7 artifact=live_and_exact')
           PY
-
       - name: Validate steady-state durable evidence provenance
         if: steps.promotion_delta.outputs.changed == 'false'
         shell: bash
         run: echo 'd4a_promotion_live_admission=SKIP promotion_unchanged=true selection_change_does_not_reopen_artifact_retention_dependency=true durable_chain=validated'
-
       - name: Assert bounded Kafka selection does not escalate D4 authority
         shell: bash
         run: |
           python3 - <<'PY'
           import json
           from pathlib import Path
-          plan = json.loads(Path('implementation/d4-eventing-async/d4-a-evidence-plan.json').read_text())
-          state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
-          selection = json.loads(Path('implementation/d4-eventing-async/d4-a-selection-record.json').read_text())
-          tracks = {t['track_id']: t for t in state['tracks']}
-          d4a,d4b,d4c,d4d = tracks['D4-A'],tracks['D4-B'],tracks['D4-C'],tracks['D4-D']
-          expected = {
-              'capacity_envelope_baseline_growth_stress','broker_neutral_anti_corruption_stub_swap','regulated_payload_erasure_granularity','exactly_once_guardrail_consumer_inbox_enforcement','ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency','physical_naming_routing_and_cell_topology_adapter_mapping','broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark',
-          }
-          expected_d4b = {'canonical_bounded_serialization_profile','parser_ambiguity_and_duplicate_field_negative_vectors','schema_catalog_semantic_manifest_compatibility_ci','historical_reader_and_equivalence_profile_continuity','contract_version_representation_and_breaking_change_vectors'}
-          expected_d4c_credit = [
-              'ack_after_durable_responsibility_and_lease_ambiguity',
-              'quarantine_redrive_current_authority_and_dedup_preservation',
-              'bounded_message_batch_compression_and_parser_limits',
-              'scoped_content_equivalence_confidentiality_and_conflict_rejection',
-          ]
-          expected_d4c_remaining = [
-              'outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity',
-              'producer_generation_nonresurrection_across_failover_restore',
-              'privileged_bounded_replay_with_original_identity_and_effect_safety',
-              'historical_reader_upcaster_semantic_and_equivalence_continuity',
-              'recovery_generation_rf_inventory_reconciliation_and_activation_gates',
-          ]
-          expected_profile = {
-              'serialization': {'surface_policy':'explicit_surface_bound_profiles','internal_broker':'protobuf_profile','outbound_webhook':'bounded_json_plus_json_schema_profile'},
-              'schema_catalog':'hybrid_reviewed_git_plus_registry_catalog','contract_version':'positive_integer_family_revision',
-          }
-          assert plan['ledger_credit_state'] == 'seven_of_seven' and set(plan['credited_evidence']) == expected
-          assert plan['candidate'] == 'kafka' and plan['candidate_status'] == 'selected_c2_candidate'
-          assert plan['selection_state'] == 'selected'
-          assert plan['acceptance_state'] == 'track_selected_separate_d4_acceptance_required'
-          assert set(d4a['evidence_completed']) == expected and d4a['evidence_remaining'] == []
-          assert d4a['state'] == 'selected_candidate' and d4a['candidate_status'] == 'selected_c2_candidate'
-          assert selection['selection_state'] == 'selected' and selection['selection_scope'] == 'bounded_c2_mechanism_selection_only'
-          assert state['gate_state'] == 'scoped'
-          assert state['d4_transport_authority'] == 'selected_not_granted'
-          assert state['canonical_product_implementation_authority'] == 'not_granted'
-          assert state['wave4_implementation_authority'] == 'not_granted'
-          assert state['production_authority'] == 'none'
-          assert state['c3_numeric_topology_authority'] == 'not_selected'
-          assert d4b['candidate'] == expected_profile and d4b['candidate_status'] == 'selected_c2_profile'
-          assert d4b['state'] == 'selected_candidate'
-          assert set(d4b['evidence_completed']) == expected_d4b and d4b['evidence_remaining'] == []
-          assert d4c['candidate'] is None and d4c['candidate_status'] == 'not_selected' and d4c['state'] == 'candidate_selection_open'
-          assert d4c['evidence_completed'] == expected_d4c_credit and d4c['evidence_remaining'] == expected_d4c_remaining
-          assert d4d['candidate'] is None and d4d['candidate_status'] == 'not_selected' and d4d['evidence_completed'] == []
-          assert sum(len(track['evidence_completed']) for track in state['tracks']) == 16
-          print('d4a_selection_boundary=PASS kafka=selected scope=bounded_c2 transport_authority=not_granted d4=scoped d4b=5_of_5_selected_profile d4c=4_of_9 d4d=open d4wide=16/26 product_wave4=not_granted production=none c3=not_selected')
+          plan=json.loads(Path('implementation/d4-eventing-async/d4-a-evidence-plan.json').read_text()); state=json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text()); selection=json.loads(Path('implementation/d4-eventing-async/d4-a-selection-record.json').read_text()); tracks={t['track_id']:t for t in state['tracks']}; d4a,d4b,d4c,d4d=tracks['D4-A'],tracks['D4-B'],tracks['D4-C'],tracks['D4-D']
+          expected={'capacity_envelope_baseline_growth_stress','broker_neutral_anti_corruption_stub_swap','regulated_payload_erasure_granularity','exactly_once_guardrail_consumer_inbox_enforcement','ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency','physical_naming_routing_and_cell_topology_adapter_mapping','broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark'}
+          expected_d4b={'canonical_bounded_serialization_profile','parser_ambiguity_and_duplicate_field_negative_vectors','schema_catalog_semantic_manifest_compatibility_ci','historical_reader_and_equivalence_profile_continuity','contract_version_representation_and_breaking_change_vectors'}
+          expected_d4c_credit=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity']
+          expected_d4c_remaining=['producer_generation_nonresurrection_across_failover_restore','privileged_bounded_replay_with_original_identity_and_effect_safety','historical_reader_upcaster_semantic_and_equivalence_continuity','recovery_generation_rf_inventory_reconciliation_and_activation_gates']
+          expected_profile={'serialization':{'surface_policy':'explicit_surface_bound_profiles','internal_broker':'protobuf_profile','outbound_webhook':'bounded_json_plus_json_schema_profile'},'schema_catalog':'hybrid_reviewed_git_plus_registry_catalog','contract_version':'positive_integer_family_revision'}
+          assert plan['ledger_credit_state']=='seven_of_seven' and set(plan['credited_evidence'])==expected and plan['candidate']=='kafka' and plan['candidate_status']=='selected_c2_candidate' and plan['selection_state']=='selected' and plan['acceptance_state']=='track_selected_separate_d4_acceptance_required'
+          assert set(d4a['evidence_completed'])==expected and d4a['evidence_remaining']==[] and d4a['state']=='selected_candidate' and d4a['candidate_status']=='selected_c2_candidate'
+          assert selection['selection_state']=='selected' and selection['selection_scope']=='bounded_c2_mechanism_selection_only'
+          assert state['gate_state']=='scoped' and state['d4_transport_authority']=='selected_not_granted' and state['canonical_product_implementation_authority']=='not_granted' and state['wave4_implementation_authority']=='not_granted' and state['production_authority']=='none' and state['c3_numeric_topology_authority']=='not_selected'
+          assert d4b['candidate']==expected_profile and d4b['candidate_status']=='selected_c2_profile' and d4b['state']=='selected_candidate' and set(d4b['evidence_completed'])==expected_d4b and d4b['evidence_remaining']==[]
+          assert d4c['candidate'] is None and d4c['candidate_status']=='not_selected' and d4c['state']=='candidate_selection_open' and d4c['evidence_completed']==expected_d4c_credit and d4c['evidence_remaining']==expected_d4c_remaining
+          assert d4d['candidate'] is None and d4d['candidate_status']=='not_selected' and d4d['evidence_completed']==[]
+          assert sum(len(track['evidence_completed']) for track in state['tracks'])==17
+          print('d4a_selection_boundary=PASS kafka=selected scope=bounded_c2 transport_authority=not_granted d4=scoped d4b=5_of_5_selected_profile d4c=5_of_9 d4d=open d4wide=17/26 product_wave4=not_granted production=none c3=not_selected')
           PY

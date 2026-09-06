@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
+import time
 from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Any, Callable, Mapping
@@ -27,6 +29,7 @@ PROOF_CHECKS = {
     PROOFS[0]: (
         "atomic_commit_all_or_nothing",
         "business_snapshot_isolated_from_caller_mutation",
+        "mutable_mapping_key_rejected",
         "message_identity_fixed_at_commit",
     ),
     PROOFS[1]: (
@@ -34,10 +37,12 @@ PROOF_CHECKS = {
         "expired_claim_cannot_dispatch",
         "inflight_takeover_fenced_before_broker_accept",
         "post_authorize_takeover_cannot_duplicate_broker_accept",
+        "broker_acceptance_atomic_under_concurrency",
         "stale_owner_fenced_after_takeover",
         "expired_claim_cannot_mark_terminal",
         "superseded_claim_cannot_mark_terminal",
         "inflight_terminal_takeover_cas_rejected",
+        "terminal_claim_write_atomic_under_concurrency",
         "single_current_claim_owner",
     ),
     PROOFS[2]: (
@@ -51,6 +56,7 @@ PROOF_CHECKS = {
         "ambiguous_ack_cannot_mark_terminal",
         "foreign_identity_ack_cannot_mark_terminal",
         "foreign_content_ack_cannot_mark_terminal",
+        "broker_conflicting_content_rejected",
     ),
     PROOFS[4]: ("broker_outage_preserves_backlog", "unavailable_publish_cannot_mark_terminal"),
     PROOFS[5]: (
@@ -74,7 +80,12 @@ def _freeze(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, Mapping):
-        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+        frozen: dict[Any, Any] = {}
+        for key, item in value.items():
+            if key is not None and not isinstance(key, (str, int, float, bool)):
+                raise ContractViolation("unsupported_mutable_business_key")
+            frozen[key] = _freeze(item)
+        return MappingProxyType(frozen)
     if isinstance(value, (list, tuple)):
         return tuple(_freeze(item) for item in value)
     if isinstance(value, (set, frozenset)):
@@ -121,18 +132,23 @@ class StoreState:
 class DurableStore:
     def __init__(self) -> None:
         self._state = StoreState(0, None, MappingProxyType({}))
+        self._state_lock = threading.RLock()
+        self.terminal_pause_after_read = False
 
     @property
     def business_revision(self) -> int:
-        return self._state.business_revision
+        with self._state_lock:
+            return self._state.business_revision
 
     @property
     def business_value(self) -> Any:
-        return self._state.business_value
+        with self._state_lock:
+            return self._state.business_value
 
     @property
     def outbox(self) -> Mapping[str, OutboxFact]:
-        return self._state.outbox
+        with self._state_lock:
+            return self._state.outbox
 
     @staticmethod
     def _digest(content: str) -> str:
@@ -151,7 +167,7 @@ class DurableStore:
         if now >= fact.lease_expires_at:
             raise ContractViolation("claim_expired")
 
-    def _commit_outbox(self, outbox: dict[str, OutboxFact]) -> None:
+    def _commit_outbox_locked(self, outbox: dict[str, OutboxFact]) -> None:
         self._state = StoreState(
             self._state.business_revision,
             self._state.business_value,
@@ -159,12 +175,13 @@ class DurableStore:
         )
 
     def _replace_fact(self, message_id: str, fact: OutboxFact) -> None:
-        old = self._state.outbox[message_id]
-        if self._immutable_tuple(old) != self._immutable_tuple(fact):
-            raise ContractViolation("immutable_fact_rewrite")
-        staged = dict(self._state.outbox)
-        staged[message_id] = fact
-        self._commit_outbox(staged)
+        with self._state_lock:
+            old = self._state.outbox[message_id]
+            if self._immutable_tuple(old) != self._immutable_tuple(fact):
+                raise ContractViolation("immutable_fact_rewrite")
+            staged = dict(self._state.outbox)
+            staged[message_id] = fact
+            self._commit_outbox_locked(staged)
 
     def _replace_fact_if_current_claim(
         self,
@@ -173,14 +190,22 @@ class DurableStore:
         now: int,
         transform: Callable[[OutboxFact], OutboxFact],
     ) -> None:
-        current = self._state.outbox[token.message_id]
-        self._assert_token_matches(current, token, now=now)
-        replacement = transform(current)
-        if self._immutable_tuple(current) != self._immutable_tuple(replacement):
-            raise ContractViolation("immutable_fact_rewrite")
-        staged = dict(self._state.outbox)
-        staged[token.message_id] = replacement
-        self._commit_outbox(staged)
+        # The claim predicate, transform and state replacement are one serialized CAS boundary.
+        with self._state_lock:
+            current = self._state.outbox[token.message_id]
+            self._assert_token_matches(current, token, now=now)
+            if self.terminal_pause_after_read:
+                time.sleep(0.01)
+            replacement = transform(current)
+            if self._immutable_tuple(current) != self._immutable_tuple(replacement):
+                raise ContractViolation("immutable_fact_rewrite")
+            latest = self._state.outbox[token.message_id]
+            self._assert_token_matches(latest, token, now=now)
+            if latest != current:
+                raise ContractViolation("claim_state_changed")
+            staged = dict(self._state.outbox)
+            staged[token.message_id] = replacement
+            self._commit_outbox_locked(staged)
 
     def commit_business_and_outbox(
         self,
@@ -190,38 +215,42 @@ class DurableStore:
         semantic_content: str,
         fail_before_commit: bool = False,
     ) -> None:
-        if message_id in self._state.outbox:
-            raise ContractViolation("message_identity_reuse")
-        next_revision = self._state.business_revision + 1
-        fact = OutboxFact(
-            message_id=message_id,
-            semantic_content=semantic_content,
-            content_digest=self._digest(semantic_content),
-            business_revision=next_revision,
-        )
-        staged = dict(self._state.outbox)
-        staged[message_id] = fact
-        next_state = StoreState(next_revision, _freeze(business_value), MappingProxyType(staged))
-        if fail_before_commit:
-            return
-        self._state = next_state
+        frozen_business = _freeze(business_value)
+        with self._state_lock:
+            if message_id in self._state.outbox:
+                raise ContractViolation("message_identity_reuse")
+            next_revision = self._state.business_revision + 1
+            fact = OutboxFact(
+                message_id=message_id,
+                semantic_content=semantic_content,
+                content_digest=self._digest(semantic_content),
+                business_revision=next_revision,
+            )
+            staged = dict(self._state.outbox)
+            staged[message_id] = fact
+            next_state = StoreState(next_revision, frozen_business, MappingProxyType(staged))
+            if fail_before_commit:
+                return
+            self._state = next_state
 
     def claim(self, message_id: str, owner: str, *, now: int, lease: int) -> ClaimToken:
-        fact = self._state.outbox[message_id]
-        if fact.claim_owner is not None and fact.lease_expires_at > now:
-            raise ContractViolation("claim_already_owned")
-        fence = fact.claim_fence + 1
-        expires = now + lease
-        self._replace_fact(
-            message_id,
-            replace(fact, claim_owner=owner, claim_fence=fence, lease_expires_at=expires),
-        )
-        return ClaimToken(message_id, owner, fence, expires)
+        with self._state_lock:
+            fact = self._state.outbox[message_id]
+            if fact.claim_owner is not None and fact.lease_expires_at > now:
+                raise ContractViolation("claim_already_owned")
+            fence = fact.claim_fence + 1
+            expires = now + lease
+            replacement = replace(fact, claim_owner=owner, claim_fence=fence, lease_expires_at=expires)
+            staged = dict(self._state.outbox)
+            staged[message_id] = replacement
+            self._commit_outbox_locked(staged)
+            return ClaimToken(message_id, owner, fence, expires)
 
     def assert_current(self, token: ClaimToken, *, now: int) -> OutboxFact:
-        fact = self._state.outbox[token.message_id]
-        self._assert_token_matches(fact, token, now=now)
-        return fact
+        with self._state_lock:
+            fact = self._state.outbox[token.message_id]
+            self._assert_token_matches(fact, token, now=now)
+            return fact
 
     def mark_terminal_delivery(
         self,
@@ -251,18 +280,22 @@ class DurableStore:
         )
 
     def set_safe_horizon(self, message_id: str) -> None:
-        fact = self._state.outbox[message_id]
-        self._replace_fact(message_id, replace(fact, safe_horizon_reached=True))
+        with self._state_lock:
+            fact = self._state.outbox[message_id]
+            staged = dict(self._state.outbox)
+            staged[message_id] = replace(fact, safe_horizon_reached=True)
+            self._commit_outbox_locked(staged)
 
     def cleanup(self, message_id: str) -> None:
-        fact = self._state.outbox[message_id]
-        if not fact.terminal_delivery_evidence:
-            raise ContractViolation("delivery_uncertain")
-        if not fact.safe_horizon_reached:
-            raise ContractViolation("safe_horizon_not_reached")
-        staged = dict(self._state.outbox)
-        del staged[message_id]
-        self._commit_outbox(staged)
+        with self._state_lock:
+            fact = self._state.outbox[message_id]
+            if not fact.terminal_delivery_evidence:
+                raise ContractViolation("delivery_uncertain")
+            if not fact.safe_horizon_reached:
+                raise ContractViolation("safe_horizon_not_reached")
+            staged = dict(self._state.outbox)
+            del staged[message_id]
+            self._commit_outbox_locked(staged)
 
 
 class BrokerProbe:
@@ -272,6 +305,21 @@ class BrokerProbe:
         self.accepted: list[tuple[str, str]] = []
         self.attempts: list[tuple[str, str]] = []
         self._accepted_by_message_id: dict[str, str] = {}
+        self._accept_lock = threading.Lock()
+        self.accept_pause_after_lookup = False
+
+    def _accept_idempotently(self, pair: tuple[str, str]) -> None:
+        message_id, content_digest = pair
+        # Lookup, conflict decision, insert and accepted-list append are one atomic broker operation.
+        with self._accept_lock:
+            existing = self._accepted_by_message_id.get(message_id)
+            if self.accept_pause_after_lookup:
+                time.sleep(0.01)
+            if existing is None:
+                self._accepted_by_message_id[message_id] = content_digest
+                self.accepted.append(pair)
+            elif existing != content_digest:
+                raise ContractViolation("broker_message_identity_conflict")
 
     def publish(
         self,
@@ -290,12 +338,7 @@ class BrokerProbe:
         authorize_accept()
         if after_authorize is not None:
             after_authorize()
-        existing = self._accepted_by_message_id.get(fact.message_id)
-        if existing is None:
-            self._accepted_by_message_id[fact.message_id] = fact.content_digest
-            self.accepted.append(pair)
-        elif existing != fact.content_digest:
-            raise ContractViolation("broker_message_identity_conflict")
+        self._accept_idempotently(pair)
         if self.accept_then_lose_ack_once:
             self.accept_then_lose_ack_once = False
             return PublishReceipt("ambiguous_ack_lost", *pair)
@@ -370,6 +413,22 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     checks["business_snapshot_isolated_from_caller_mutation"] = (
         snapshot["rev"] == 1 and snapshot["nested"]["status"] == "committed"
     )
+
+    class MutableKey:
+        def __init__(self) -> None:
+            self.value = "before"
+        def __hash__(self) -> int:
+            return 7
+
+    mutable_key = MutableKey()
+    key_store = DurableStore()
+    checks["mutable_mapping_key_rejected"] = _blocked(
+        lambda: key_store.commit_business_and_outbox(
+            business_value={mutable_key: "value"}, message_id="key-msg", semantic_content="{}"
+        ),
+        "unsupported_mutable_business_key",
+    ) and key_store.business_revision == 0 and "key-msg" not in key_store.outbox
+
     committed = store.outbox[mid]
     checks["message_identity_fixed_at_commit"] = (
         committed.message_id == mid
@@ -404,7 +463,6 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     token2 = token2_box[0]
     checks["inflight_takeover_fenced_before_broker_accept"] = inflight_blocked and broker.accepted == []
 
-    # Close the remaining check-then-effect window with broker-side stable-id/content idempotence.
     broker_race = BrokerProbe()
     race_store = DurableStore()
     race_store.commit_business_and_outbox(
@@ -430,6 +488,30 @@ def check_candidate(candidate: str) -> dict[str, bool]:
         and len(race_b_box) == 1
         and broker_race.accepted == [("race-msg", DurableStore._digest(semantic))]
         and len(broker_race.attempts) == 2
+    )
+
+    concurrent_broker = BrokerProbe()
+    concurrent_broker.accept_pause_after_lookup = True
+    concurrent_fact = OutboxFact("concurrent-msg", semantic, DurableStore._digest(semantic), 1)
+    start = threading.Barrier(8)
+    failures: list[Exception] = []
+
+    def concurrent_publish() -> None:
+        try:
+            start.wait()
+            concurrent_broker.publish(concurrent_fact, authorize_accept=lambda: None)
+        except Exception as exc:  # pragma: no cover - captured into deterministic check
+            failures.append(exc)
+
+    threads = [threading.Thread(target=concurrent_publish) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    checks["broker_acceptance_atomic_under_concurrency"] = (
+        failures == []
+        and len(concurrent_broker.attempts) == 8
+        and concurrent_broker.accepted == [("concurrent-msg", DurableStore._digest(semantic))]
     )
 
     checks["stale_owner_fenced_after_takeover"] = _blocked(
@@ -508,6 +590,36 @@ def check_candidate(candidate: str) -> dict[str, bool]:
         and not cas_current.terminal_delivery_evidence
     )
 
+    concurrent_store, concurrent_terminal_broker, concurrent_mid, concurrent_semantic = _new_fixture()
+    concurrent_store.commit_business_and_outbox(
+        business_value={"rev": 1}, message_id=concurrent_mid, semantic_content=concurrent_semantic
+    )
+    concurrent_a = concurrent_store.claim(concurrent_mid, "worker-a", now=0, lease=2)
+    concurrent_ack = Dispatcher(
+        concurrent_store, concurrent_terminal_broker, candidate=candidate, owner="worker-a"
+    ).dispatch(concurrent_a, now=1)
+    concurrent_store.terminal_pause_after_read = True
+    terminal_errors: list[Exception] = []
+
+    def terminal_writer() -> None:
+        try:
+            concurrent_store.mark_terminal_delivery(concurrent_a, concurrent_ack, now=1)
+        except Exception as exc:  # pragma: no cover
+            terminal_errors.append(exc)
+
+    writer = threading.Thread(target=terminal_writer)
+    writer.start()
+    time.sleep(0.002)
+    concurrent_b = concurrent_store.claim(concurrent_mid, "worker-b", now=2, lease=2)
+    writer.join()
+    concurrent_current = concurrent_store.outbox[concurrent_mid]
+    checks["terminal_claim_write_atomic_under_concurrency"] = (
+        terminal_errors == []
+        and concurrent_current.claim_owner == "worker-b"
+        and concurrent_current.claim_fence == concurrent_b.fence
+        and concurrent_current.terminal_delivery_evidence
+    )
+
     store2, broker2, mid2, semantic2 = _new_fixture()
     store2.commit_business_and_outbox(
         business_value={"rev": 1}, message_id=mid2, semantic_content=semantic2
@@ -536,6 +648,15 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     checks["foreign_content_ack_cannot_mark_terminal"] = _blocked(
         lambda: store2.mark_terminal_delivery(token, foreign_content, now=3), "delivery_receipt_mismatch"
     ) and not store2.outbox[mid2].terminal_delivery_evidence
+
+    conflict_broker = BrokerProbe()
+    original = OutboxFact("conflict-msg", "one", DurableStore._digest("one"), 1)
+    conflict = OutboxFact("conflict-msg", "two", DurableStore._digest("two"), 1)
+    conflict_broker.publish(original, authorize_accept=lambda: None)
+    checks["broker_conflicting_content_rejected"] = _blocked(
+        lambda: conflict_broker.publish(conflict, authorize_accept=lambda: None),
+        "broker_message_identity_conflict",
+    ) and conflict_broker.accepted == [("conflict-msg", DurableStore._digest("one"))]
 
     store3, broker3, mid3, semantic3 = _new_fixture()
     store3.commit_business_and_outbox(

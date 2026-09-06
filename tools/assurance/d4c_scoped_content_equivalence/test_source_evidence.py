@@ -36,13 +36,12 @@ def main() -> int:
     require(result["current_run_auto_credit"] is False, "auto-credit must remain false")
 
     fingerprint = result["checks"]["canonical_collision_resistant_fingerprint_profile"]
-    require(fingerprint["low_entropy_confidentiality_is_scope_safe"] is False, "unkeyed fingerprint must expose cross-scope equality in the falsification vector")
-    for candidate in CANDIDATES[1:]:
-        checks = result["checks"][candidate]
-        require(all(checks.values()), f"eligible candidate has unproven obligation: {candidate}: {checks}")
+    require(fingerprint["low_entropy_confidentiality_is_scope_safe"] is False, "unkeyed fingerprint must expose cross-scope/dictionary oracle in the falsification vector")
+    require(fingerprint["all_required_immutable_semantic_fields_are_covered"] is True, "fingerprint must still cover every immutable semantic field")
+    require(fingerprint["conflicting_same_scoped_identity_fails_closed"] is True, "fingerprint must reject conflicting same-id content")
 
     identity = Identity("ticket-projection/v3", "tenant-a:cell-1", "msg-falsify")
-    for candidate in CANDIDATES[1:]:
+    for candidate in CANDIDATES:
         engine = EquivalenceEngine(candidate)
         event = base_event()
         require(engine.classify_or_commit(identity, event) == "new_effect_committed", candidate)
@@ -75,6 +74,10 @@ def main() -> int:
         else:
             raise AssertionError(f"untrusted message scope reached semantic comparison: {candidate}")
 
+    for candidate in CANDIDATES[1:]:
+        checks = result["checks"][candidate]
+        require(all(checks.values()), f"eligible candidate has unproven obligation: {candidate}: {checks}")
+
     try:
         EquivalenceEngine("keyed_authenticated_digest_profile").classify_or_commit(
             identity,
@@ -85,7 +88,7 @@ def main() -> int:
     else:
         raise AssertionError("missing immutable field admitted")
 
-    print("d4c_open_evt_011_source_falsification=PASS fingerprint=ineligible keyed_digest=eligible retained_original=eligible hybrid=eligible trusted_contract_scope=precondition conflict=fail_closed missing=uncertainty selection=none credit=none")
+    print("d4c_open_evt_011_source_falsification=PASS fingerprint=ineligible_confidentiality_only fingerprint_conflict=fail_closed keyed_digest=eligible retained_original=eligible hybrid=eligible trusted_contract_scope=precondition missing=uncertainty selection=none credit=none")
     return 0
 
 

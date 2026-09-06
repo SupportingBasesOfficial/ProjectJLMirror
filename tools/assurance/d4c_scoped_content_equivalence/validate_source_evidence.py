@@ -81,6 +81,7 @@ def main() -> int:
         "missing_unknown_or_unverifiable_historical_profile_is_uncertainty_not_duplicate_success",
         "unkeyed_cross_scope_fingerprint_is_contract_ineligible_for_low_entropy_confidential_content",
         "keyed_digest_uses_scope_separated_authenticated_evidence_so_equal_low_entropy_content_does_not_expose_cross_scope_equality",
+        "keyed_digest_records_explicit_verifier_key_generation_and_unknown_or_retired_generation_is_uncertainty",
         "protected_retained_original_comparison_requires_explicit_comparison_access_and_does_not_expose_a_bearer_or_routing_token",
         "hybrid_profile_retains_independent_equality_authority_across_governed_payload_erasure",
         "equivalence_records_contain_no_authorization_routing_ordering_or_bearer_authority",
@@ -127,7 +128,7 @@ def main() -> int:
             if EXPECTED_CANDIDATES[candidate] == "eligible_for_evidence_execution":
                 require(all(results["checks"][candidate].values()), f"eligible candidate missing proof: {candidate}")
 
-    print("d4c_open_evt_011_source_validation=PASS source=nonpromoting fingerprint=ineligible keyed_digest=eligible retained_original=eligible hybrid=eligible current_d4c=3/9 d4wide=15/26 selection=none authorities=unchanged")
+    print("d4c_open_evt_011_source_validation=PASS source=nonpromoting fingerprint=ineligible keyed_digest=eligible retained_original=eligible hybrid=eligible historical_key_generation=explicit current_d4c=3/9 d4wide=15/26 selection=none authorities=unchanged")
     return 0
 
 

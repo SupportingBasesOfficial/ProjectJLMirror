@@ -29,7 +29,7 @@ The source harness deliberately does not make every named candidate pass.
 
 The following are eligible for evidence execution only when all obligations pass:
 
-- `keyed_authenticated_digest_profile` — scope-separated authenticated evidence;
+- `keyed_authenticated_digest_profile` — scope-separated authenticated evidence with explicit historical verifier-key generation;
 - `protected_retained_immutable_original_profile` — protected canonical original with comparison access control;
 - `hybrid_equivalence_authority_profile` — scope-separated authenticated evidence plus protected retained original.
 
@@ -41,15 +41,17 @@ The harness proves that deduplication identity and content equivalence are diffe
 
 All immutable fields required for same-id meaning are projected through one deterministic structured interpretation. The same canonical bytes feed protected contract interpretation and comparison evidence. Mutating any required immutable field under the same scoped identity is an integrity conflict and fails closed.
 
-Missing evidence, inaccessible comparison evidence, unknown historical profile versions, or profile mismatch are uncertainty states. They never collapse to duplicate success.
+Missing evidence, inaccessible comparison evidence, unknown historical profile versions, unknown/retired verifier-key generations, or profile mismatch are uncertainty states. They never collapse to duplicate success.
 
 ## Confidentiality and authority separation
 
-Low-entropy confidential content must not create a cross-scope equality oracle. Keyed profiles derive scope-separated authenticated evidence. Protected-original comparison exposes no comparison token without explicit comparison access.
+Low-entropy confidential content must not create an offline dictionary or cross-scope equality oracle. Keyed profiles derive scope-separated authenticated evidence. Protected-original comparison exposes no comparison token without explicit comparison access.
+
+A keyed equivalence record carries an explicit verifier-key generation. Historical verification is permitted only while that generation remains available to the governed verifier. A missing or retired generation is uncertainty, not equality. Hybrid migration may re-key only when protected canonical authority is available and equality is re-proven; keyed-only history retains the old verifier generation for its supported horizon rather than silently recomputing an unverifiable digest.
 
 Equivalence records do not carry authorization, routing, ordering, placement, or bearer authority. A matching digest/original is evidence of content equality only.
 
-The fixture secrets, byte bound, profile names, operation ids, and algorithms are assurance fixtures. They are not production selections.
+The fixture secrets, key generations, byte bound, profile names, operation ids, and algorithms are assurance fixtures. They are not production selections.
 
 ## Effect safety and history
 

@@ -1,0 +1,106 @@
+name: JLMIRROR D4-C Privileged Replay Source Evidence
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  open-evt-014-source-evidence:
+    name: D4-C OPEN-EVT-014 source evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ANALYZED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.ANALYZED_SHA }}
+
+      - name: Verify exact commit identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${ANALYZED_SHA}"
+
+      - name: Compile validate and falsify privileged replay source package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile tools/assurance/d4c_privileged_replay/*.py
+          python tools/assurance/d4c_privileged_replay/evaluate_candidates.py > candidate-results.json
+          python tools/assurance/d4c_privileged_replay/test_source_evidence.py
+          (cd tools/assurance/d4c_privileged_replay && python validate_source_evidence.py) || python tools/assurance/d4c_privileged_replay/validate_source_evidence.py
+
+      - name: Preserve current D4 state and Phase 10 contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/assurance/validate_d4c_evidence_plan.py
+          python tools/assurance/validate_d4_eventing_async_state.py
+          if [ -f tools/assurance/validate_phase10_event_contracts.py ]; then
+            python tools/assurance/validate_phase10_event_contracts.py
+          fi
+
+      - name: Assert source remains non-promoting and authorities unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path('implementation/d4-eventing-async/source-evidence/d4-c-privileged-replay-source.json').read_text())
+          plan=json.loads(Path('implementation/d4-eventing-async/d4-c-evidence-plan.json').read_text())
+          assert p['current_run_auto_credit'] is False and p['ledger_credit']==[]
+          assert p['selection_state']=='not_selected' and p['selection_authority']=='not_granted'
+          assert plan['ledger_credit_state']=='six_of_nine'
+          assert 'privileged_bounded_replay_with_original_identity_and_effect_safety' in plan['remaining_evidence']
+          assert 'privileged_bounded_replay_with_original_identity_and_effect_safety' not in plan['credited_evidence']
+          print('open_evt_014_source_boundary=PASS current_d4c=6/9 current_d4wide=18/26')
+          PY
+
+      - name: Resolve exact workflow job identity and emit immutable provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          jobs_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?per_page=100"
+          for attempt in 1 2 3 4 5; do
+            if curl --fail --silent --show-error --retry 3 --retry-all-errors \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "$jobs_url" > jobs.json; then
+              break
+            fi
+            sleep $((attempt * 2))
+          done
+          python - <<'PY' > job-id.txt
+          import json
+          jobs=json.load(open('jobs.json'))['jobs']
+          matches=[j for j in jobs if j['name']=='D4-C OPEN-EVT-014 source evidence']
+          assert len(matches)==1, matches
+          print(matches[0]['id'])
+          PY
+          python tools/assurance/d4c_privileged_replay/emit_source_provenance.py \
+            --repository-sha "${ANALYZED_SHA}" \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --workflow-run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --job-id "$(cat job-id.txt)" \
+            --job-name "D4-C OPEN-EVT-014 source evidence" \
+            --candidate-results candidate-results.json \
+            --output resolved-source-run-provenance.json
+
+      - name: Persist source-run provenance and candidate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: d4-c-privileged-replay-source-${{ env.ANALYZED_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            resolved-source-run-provenance.json
+            candidate-results.json
+          if-no-files-found: error
+          retention-days: 30

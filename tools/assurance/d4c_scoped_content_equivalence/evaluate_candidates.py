@@ -80,6 +80,12 @@ class EvidenceRecord:
         }
 
 
+@dataclass(frozen=True)
+class CoResidentEntry:
+    evidence: EvidenceRecord
+    effect_completion: str
+
+
 POLICIES = {
     "canonical_collision_resistant_fingerprint_profile": CandidatePolicy(
         "canonical_collision_resistant_fingerprint_profile", "sha256", False, False
@@ -215,9 +221,23 @@ def compare_record(
 class EquivalenceEngine:
     def __init__(self, candidate: str) -> None:
         self.policy = policy_for(candidate)
-        self.records: Dict[tuple[str, str, str], EvidenceRecord] = {}
-        self.effects: Dict[tuple[str, str, str], str] = {}
+        self._co_resident: Dict[tuple[str, str, str], CoResidentEntry] = {}
         self.external_results: Dict[str, str] = {}
+
+    @property
+    def records(self) -> Dict[tuple[str, str, str], EvidenceRecord]:
+        return {key: entry.evidence for key, entry in self._co_resident.items()}
+
+    @property
+    def effects(self) -> Dict[tuple[str, str, str], str]:
+        return {key: entry.effect_completion for key, entry in self._co_resident.items()}
+
+    def _record(self, identity: Identity) -> EvidenceRecord:
+        return self._co_resident[identity.key].evidence
+
+    def _replace_record(self, identity: Identity, record: EvidenceRecord) -> None:
+        entry = self._co_resident[identity.key]
+        self._co_resident[identity.key] = replace(entry, evidence=record)
 
     @staticmethod
     def _require_trusted_identity(
@@ -249,12 +269,12 @@ class EquivalenceEngine:
             trusted_message_scope=trusted_message_scope,
         )
         canonical = canonical_semantic_bytes(immutable)
-        existing = self.records.get(identity.key)
+        existing = self._co_resident.get(identity.key)
         if existing is not None:
             return compare_record(
                 self.policy,
                 identity,
-                existing,
+                existing.evidence,
                 canonical,
                 comparison_access=comparison_access,
             )
@@ -262,8 +282,10 @@ class EquivalenceEngine:
         record = build_record(self.policy, identity, canonical)
         if fail_co_resident_effect:
             return "co_resident_effect_rolled_back"
-        self.records[identity.key] = record
-        self.effects[identity.key] = "effect_completed"
+        self._co_resident[identity.key] = CoResidentEntry(
+            evidence=record,
+            effect_completion="effect_completed",
+        )
         return "new_effect_committed"
 
     def classify_missing(self, identity: Identity, immutable: Mapping[str, Any]) -> str:
@@ -273,34 +295,35 @@ class EquivalenceEngine:
             trusted_message_scope=True,
         )
         canonical_semantic_bytes(immutable)
-        if identity.key not in self.records:
+        if identity.key not in self._co_resident:
             return "uncertain_equivalence_evidence_missing"
         raise AssertionError("fixture expected missing evidence")
 
     def erase_payload_authority(self, identity: Identity) -> bool:
-        record = self.records[identity.key]
+        record = self._record(identity)
         if record.retained_original is None:
             return record.digest_hex is not None
         if record.digest_hex is None:
             return False
-        self.records[identity.key] = replace(record, retained_original=None)
+        self._replace_record(identity, replace(record, retained_original=None))
         return True
 
     def tamper_profile(self, identity: Identity) -> None:
-        self.records[identity.key] = replace(
-            self.records[identity.key], profile_version="equivalence/unknown"
+        self._replace_record(
+            identity,
+            replace(self._record(identity), profile_version="equivalence/unknown"),
         )
 
     def tamper_key_version(self, identity: Identity) -> None:
-        self.records[identity.key] = replace(
-            self.records[identity.key], key_version="fixture-verifier-key/retired"
+        self._replace_record(
+            identity,
+            replace(self._record(identity), key_version="fixture-verifier-key/retired"),
         )
 
     def equality_preserving_migrate(self, identity: Identity) -> bool:
-        record = self.records[identity.key]
+        record = self._record(identity)
         if record.profile_version != PROFILE_V1:
             return False
-        migrated = record
         if self.policy.keyed and self.policy.retains_original and record.retained_original is not None:
             migrated = replace(
                 record,
@@ -315,7 +338,7 @@ class EquivalenceEngine:
             )
         else:
             migrated = replace(record, profile_version=PROFILE_V2)
-        self.records[identity.key] = migrated
+        self._replace_record(identity, migrated)
         if self.policy.retains_original and record.retained_original is not None:
             return compare_record(
                 self.policy,
@@ -338,7 +361,7 @@ class EquivalenceEngine:
     def exposed_comparison_evidence(self, identity: Identity, *, comparison_access: bool) -> str | None:
         if not comparison_access:
             return None
-        return self.records[identity.key].digest_hex
+        return self._record(identity).digest_hex
 
 
 def base_event(secret_value: str = "yes") -> Dict[str, Any]:
@@ -433,7 +456,16 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
     rolled_back = rollback_engine.classify_or_commit(
         identity, base_event(), fail_co_resident_effect=True
     )
-    atomic_rollback = rolled_back == "co_resident_effect_rolled_back" and identity.key not in rollback_engine.records and identity.key not in rollback_engine.effects
+    atomic_rollback = (
+        rolled_back == "co_resident_effect_rolled_back"
+        and identity.key not in rollback_engine.records
+        and identity.key not in rollback_engine.effects
+    )
+    committed_entry_is_atomic = (
+        identity.key in engine.records
+        and identity.key in engine.effects
+        and set(engine.records) == set(engine.effects)
+    )
 
     op1, result1 = engine.reconcile_external_effect(identity, "accepted")
     op2, result2 = engine.reconcile_external_effect(identity, "different-retry-result")
@@ -475,7 +507,7 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
         "low_entropy_confidentiality_is_scope_safe": confidentiality_ok and dictionary_oracle_blocked,
         "keyed_verifier_generation_is_explicit_and_recoverable": verifier_generation_explicit and ((not policy.keyed) or unverifiable_key == "uncertain_unverifiable_key"),
         "comparison_evidence_has_no_forbidden_authority": no_forbidden_authority,
-        "co_resident_inbox_and_effect_are_atomic": atomic_rollback,
+        "co_resident_inbox_and_effect_are_atomic": atomic_rollback and committed_entry_is_atomic,
         "cross_authority_effect_uses_stable_operation_and_reconciliation": stable_external,
         "historical_authority_survives_or_migrates_equality_preserving": historical_before and historical_after,
         "payload_erasure_preserves_last_equivalence_authority": erasure_safety,

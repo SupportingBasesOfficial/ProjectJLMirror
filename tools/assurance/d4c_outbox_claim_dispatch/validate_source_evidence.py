@@ -50,13 +50,50 @@ EXPECTED_PROOFS = (
     "cleanup_never_removes_the_last_recovery_authority_before_safe_horizon",
 )
 EXPECTED_PROOF_CHECKS = {
-    EXPECTED_PROOFS[0]: ("atomic_commit_all_or_nothing","business_snapshot_isolated_from_caller_mutation","mutable_mapping_key_rejected","scalar_subclass_mapping_key_rejected","message_identity_fixed_at_commit"),
-    EXPECTED_PROOFS[1]: ("preexpiry_takeover_rejected","expired_claim_cannot_dispatch","inflight_takeover_fenced_before_broker_handoff","post_handoff_takeover_completion_is_ambiguous_and_deduplicated","broker_acceptance_atomic_under_concurrency","stale_owner_fenced_after_takeover","expired_claim_cannot_mark_terminal","superseded_claim_cannot_mark_terminal","inflight_terminal_takeover_cas_rejected","terminal_claim_write_atomic_under_concurrency","single_current_claim_owner"),
-    EXPECTED_PROOFS[2]: ("coherent_immutable_fact_rewrite_rejected","retry_preserves_identity","retry_preserves_semantic_content"),
-    EXPECTED_PROOFS[3]: ("ack_lost_retry_same_identity","ack_lost_retry_same_content","ambiguous_ack_cannot_mark_terminal","foreign_identity_ack_cannot_mark_terminal","foreign_content_ack_cannot_mark_terminal","broker_conflicting_content_rejected"),
+    EXPECTED_PROOFS[0]: (
+        "atomic_commit_all_or_nothing",
+        "business_snapshot_isolated_from_caller_mutation",
+        "mutable_mapping_key_rejected",
+        "scalar_subclass_mapping_key_rejected",
+        "message_identity_fixed_at_commit",
+    ),
+    EXPECTED_PROOFS[1]: (
+        "preexpiry_takeover_rejected",
+        "expired_claim_cannot_dispatch",
+        "inflight_takeover_fenced_before_broker_handoff",
+        "post_handoff_takeover_completion_is_ambiguous_and_deduplicated",
+        "broker_acceptance_atomic_under_concurrency",
+        "stale_owner_fenced_after_takeover",
+        "expired_claim_cannot_mark_terminal",
+        "superseded_claim_cannot_mark_terminal",
+        "inflight_terminal_takeover_cas_rejected",
+        "terminal_claim_write_atomic_under_concurrency",
+        "single_current_claim_owner",
+    ),
+    EXPECTED_PROOFS[2]: (
+        "coherent_immutable_fact_rewrite_rejected",
+        "retry_preserves_identity",
+        "retry_preserves_semantic_content",
+    ),
+    EXPECTED_PROOFS[3]: (
+        "ack_lost_retry_same_identity",
+        "ack_lost_retry_same_content",
+        "ambiguous_ack_cannot_mark_terminal",
+        "foreign_identity_ack_cannot_mark_terminal",
+        "foreign_content_ack_cannot_mark_terminal",
+        "broker_conflicting_content_rejected",
+    ),
     EXPECTED_PROOFS[4]: ("broker_outage_preserves_backlog", "unavailable_publish_cannot_mark_terminal"),
-    EXPECTED_PROOFS[5]: ("restart_preserves_identity","restart_preserves_semantic_content","notification_is_non_authoritative"),
-    EXPECTED_PROOFS[6]: ("cleanup_blocks_uncertain_delivery","cleanup_blocks_before_safe_horizon","cleanup_after_safe_horizon_requires_terminal_evidence"),
+    EXPECTED_PROOFS[5]: (
+        "restart_preserves_identity",
+        "restart_preserves_semantic_content",
+        "notification_is_non_authoritative",
+    ),
+    EXPECTED_PROOFS[6]: (
+        "cleanup_blocks_uncertain_delivery",
+        "cleanup_blocks_before_safe_horizon",
+        "cleanup_after_safe_horizon_requires_terminal_evidence",
+    ),
 }
 EXPECTED_SOURCE_ASSERTIONS = [
     "business_mutation_and_required_outbox_fact_share_one_atomic_commit_boundary",
@@ -94,109 +131,226 @@ EXPECTED_NON_AUTHORITY = {
     "c3_numeric_topology_authority": "not_selected",
 }
 
-class DuplicateKeyError(ValueError): pass
+
+class DuplicateKeyError(ValueError):
+    pass
+
 
 def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    out = {}
+    out: dict[str, Any] = {}
     for key, value in pairs:
-        if key in out: raise DuplicateKeyError(f"duplicate JSON member: {key}")
+        if key in out:
+            raise DuplicateKeyError(f"duplicate JSON member: {key}")
         out[key] = value
     return out
+
 
 def load(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_pairs)
 
+
 def _probe_scalar_subclass_key_rejection(errors: list[str]) -> None:
-    class MutableStr(str): pass
-    class MutableInt(int): pass
-    class MutableFloat(float): pass
-    cases=[(MutableStr("key"),"str"),(MutableInt(7),"int"),(MutableFloat(1.5),"float")]
-    for key,label in cases:
-        key.mutable_state="before"; store=DurableStore(); message_id=f"validator-scalar-{label}"; blocked=False
-        try: store.commit_business_and_outbox(business_value={key:"value"},message_id=message_id,semantic_content="{}")
-        except ContractViolation as exc: blocked=str(exc)=="unsupported_mutable_business_key"
-        key.mutable_state="after"
+    class MutableStr(str):
+        pass
+
+    class MutableInt(int):
+        pass
+
+    class MutableFloat(float):
+        pass
+
+    cases = [
+        (MutableStr("key"), "str"),
+        (MutableInt(7), "int"),
+        (MutableFloat(1.5), "float"),
+    ]
+    for key, label in cases:
+        key.mutable_state = "before"
+        store = DurableStore()
+        message_id = f"validator-scalar-{label}"
+        blocked = False
+        try:
+            store.commit_business_and_outbox(
+                business_value={key: "value"},
+                message_id=message_id,
+                semantic_content="{}",
+            )
+        except ContractViolation as exc:
+            blocked = str(exc) == "unsupported_mutable_business_key"
+        key.mutable_state = "after"
         if not blocked or store.business_revision != 0 or message_id in store.outbox:
             errors.append(f"scalar subclass mapping key rejection probe failed: {label}")
 
+
 def _probe_concurrent_broker_conflict(errors: list[str]) -> None:
-    broker=BrokerProbe(); broker.accept_pause_after_lookup=True
-    one=OutboxFact("validator-conflict","one",DurableStore._digest("one"),1); two=OutboxFact("validator-conflict","two",DurableStore._digest("two"),1)
-    barrier=threading.Barrier(2); failures=[]
-    def publish(fact):
-        try: barrier.wait(); broker.publish(fact,authorize_handoff=lambda:None)
-        except Exception as exc: failures.append(exc)
-    threads=[threading.Thread(target=publish,args=(one,)),threading.Thread(target=publish,args=(two,))]
-    [t.start() for t in threads]; [t.join() for t in threads]
-    expected_pairs={("validator-conflict",DurableStore._digest("one")),("validator-conflict",DurableStore._digest("two"))}
-    valid=(len(broker.attempts)==2 and len(broker.accepted)==1 and broker.accepted[0] in expected_pairs and len(failures)==1 and isinstance(failures[0],ContractViolation) and str(failures[0])=="broker_message_identity_conflict")
-    if not valid: errors.append("concurrent broker conflict atomicity probe failed")
+    broker = BrokerProbe()
+    broker.accept_pause_after_lookup = True
+    one = OutboxFact("validator-conflict", "one", DurableStore._digest("one"), 1)
+    two = OutboxFact("validator-conflict", "two", DurableStore._digest("two"), 1)
+    barrier = threading.Barrier(2)
+    failures: list[Exception] = []
+
+    def publish(fact: OutboxFact) -> None:
+        try:
+            barrier.wait()
+            broker.publish(fact, authorize_handoff=lambda: None)
+        except Exception as exc:
+            failures.append(exc)
+
+    threads = [threading.Thread(target=publish, args=(one,)), threading.Thread(target=publish, args=(two,))]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    expected_pairs = {
+        ("validator-conflict", DurableStore._digest("one")),
+        ("validator-conflict", DurableStore._digest("two")),
+    }
+    valid = (
+        len(broker.attempts) == 2
+        and len(broker.accepted) == 1
+        and broker.accepted[0] in expected_pairs
+        and len(failures) == 1
+        and isinstance(failures[0], ContractViolation)
+        and str(failures[0]) == "broker_message_identity_conflict"
+    )
+    if not valid:
+        errors.append("concurrent broker conflict atomicity probe failed")
+
 
 def validate(root: Path) -> list[str]:
-    errors=[]
+    errors: list[str] = []
     try:
-        manifest=load(root/MANIFEST); plan=load(root/PLAN); ledger=load(root/LEDGER); state=load(root/STATE)
-    except Exception as exc: return [str(exc)]
-    expected_manifest_keys={"schema_version","gate_id","track_id","axis","source_decision","evidence_id","canonical_base","mode","selection_state","selection_authority","current_run_auto_credit","ledger_credit","candidate_results","equivalent_reviewed_profile","required_proofs","source_assertions","non_authority"}
-    if not isinstance(manifest,dict) or set(manifest)!=expected_manifest_keys: errors.append("source manifest exact key schema drift")
-    for key,expected in {"schema_version":1,"gate_id":"D4","track_id":"D4-C","axis":AXIS,"source_decision":DECISION,"evidence_id":EVIDENCE,"canonical_base":BASE,"mode":"candidate_source_evidence_only","selection_state":"not_selected","selection_authority":"not_granted"}.items():
-        if manifest.get(key)!=expected or type(manifest.get(key)) is not type(expected): errors.append(f"source manifest scalar drift: {key}")
-    if manifest.get("current_run_auto_credit") is not False or manifest.get("ledger_credit") != []: errors.append("source must remain non-promoting")
-    if manifest.get("source_assertions") != EXPECTED_SOURCE_ASSERTIONS: errors.append("source assertions drift")
-    if manifest.get("non_authority") != EXPECTED_NON_AUTHORITY: errors.append("source non-authority boundary drift")
-    if tuple(PROOFS) != EXPECTED_PROOFS: errors.append("evaluator proof inventory drift")
-    if PROOF_CHECKS != EXPECTED_PROOF_CHECKS: errors.append("evaluator proof-to-check map drift")
-    axis=plan.get("axes",{}).get(AXIS) if isinstance(plan,dict) else None
-    if not isinstance(axis,dict): errors.append("accepted OPEN-EVT-012 axis missing")
+        manifest = load(root / MANIFEST)
+        plan = load(root / PLAN)
+        ledger = load(root / LEDGER)
+        state = load(root / STATE)
+    except Exception as exc:
+        return [str(exc)]
+
+    expected_manifest_keys = {
+        "schema_version", "gate_id", "track_id", "axis", "source_decision", "evidence_id", "canonical_base",
+        "mode", "selection_state", "selection_authority", "current_run_auto_credit", "ledger_credit",
+        "candidate_results", "equivalent_reviewed_profile", "required_proofs", "source_assertions", "non_authority",
+    }
+    if not isinstance(manifest, dict) or set(manifest) != expected_manifest_keys:
+        errors.append("source manifest exact key schema drift")
+    for key, expected in {
+        "schema_version": 1, "gate_id": "D4", "track_id": "D4-C", "axis": AXIS,
+        "source_decision": DECISION, "evidence_id": EVIDENCE, "canonical_base": BASE,
+        "mode": "candidate_source_evidence_only", "selection_state": "not_selected",
+        "selection_authority": "not_granted",
+    }.items():
+        if manifest.get(key) != expected or type(manifest.get(key)) is not type(expected):
+            errors.append(f"source manifest scalar drift: {key}")
+    if manifest.get("current_run_auto_credit") is not False or manifest.get("ledger_credit") != []:
+        errors.append("source must remain non-promoting")
+    if manifest.get("source_assertions") != EXPECTED_SOURCE_ASSERTIONS:
+        errors.append("source assertions drift")
+    if manifest.get("non_authority") != EXPECTED_NON_AUTHORITY:
+        errors.append("source non-authority boundary drift")
+    if tuple(PROOFS) != EXPECTED_PROOFS:
+        errors.append("evaluator proof inventory drift")
+    if PROOF_CHECKS != EXPECTED_PROOF_CHECKS:
+        errors.append("evaluator proof-to-check map drift")
+
+    axis = plan.get("axes", {}).get(AXIS) if isinstance(plan, dict) else None
+    if not isinstance(axis, dict):
+        errors.append("accepted OPEN-EVT-012 axis missing")
     else:
-        if axis.get("decision")!=DECISION or axis.get("evidence_id")!=EVIDENCE: errors.append("axis decision/evidence drift")
-        expected_candidates=[x for x in axis.get("candidate_classes",[]) if x!="equivalent_reviewed_profile"]
-        if expected_candidates != list(CANDIDATES): errors.append("candidate inventory drift")
-        if axis.get("must_prove") != list(EXPECTED_PROOFS): errors.append("proof inventory drift")
-        if manifest.get("required_proofs") != axis.get("must_prove"): errors.append("manifest required proofs must exactly match accepted candidate plan")
-    expected_results={candidate:"eligible_for_evidence_execution" for candidate in CANDIDATES}
-    if manifest.get("candidate_results") != expected_results: errors.append("manifest candidate results drift")
-    if manifest.get("equivalent_reviewed_profile") != "insufficient_evidence": errors.append("equivalent profile drift")
-    runtime=evaluate_all()
-    if runtime.get("candidate_results") != expected_results: errors.append("runtime candidate results drift")
-    if runtime.get("selection") != "not_selected" or runtime.get("selection_authority") != "not_granted": errors.append("runtime selection leakage")
-    if runtime.get("ledger_credit") != [] or runtime.get("current_run_auto_credit") is not False: errors.append("runtime auto-credit leakage")
-    if runtime.get("equivalent_reviewed_profile") != "insufficient_evidence": errors.append("runtime equivalent profile drift")
-    expected_check_names={name for names in EXPECTED_PROOF_CHECKS.values() for name in names}; checks=runtime.get("checks")
-    if not isinstance(checks,dict) or set(checks)!=set(CANDIDATES): errors.append("runtime candidate check inventory drift")
+        if axis.get("decision") != DECISION or axis.get("evidence_id") != EVIDENCE:
+            errors.append("axis decision/evidence drift")
+        expected_candidates = [x for x in axis.get("candidate_classes", []) if x != "equivalent_reviewed_profile"]
+        if expected_candidates != list(CANDIDATES):
+            errors.append("candidate inventory drift")
+        if axis.get("must_prove") != list(EXPECTED_PROOFS):
+            errors.append("proof inventory drift")
+        if manifest.get("required_proofs") != axis.get("must_prove"):
+            errors.append("manifest required proofs must exactly match accepted candidate plan")
+
+    expected_results = {candidate: "eligible_for_evidence_execution" for candidate in CANDIDATES}
+    if manifest.get("candidate_results") != expected_results:
+        errors.append("manifest candidate results drift")
+    if manifest.get("equivalent_reviewed_profile") != "insufficient_evidence":
+        errors.append("equivalent profile drift")
+
+    runtime = evaluate_all()
+    if runtime.get("candidate_results") != expected_results:
+        errors.append("runtime candidate results drift")
+    if runtime.get("selection") != "not_selected" or runtime.get("selection_authority") != "not_granted":
+        errors.append("runtime selection leakage")
+    if runtime.get("ledger_credit") != [] or runtime.get("current_run_auto_credit") is not False:
+        errors.append("runtime auto-credit leakage")
+    if runtime.get("equivalent_reviewed_profile") != "insufficient_evidence":
+        errors.append("runtime equivalent profile drift")
+
+    expected_check_names = {name for names in EXPECTED_PROOF_CHECKS.values() for name in names}
+    checks = runtime.get("checks")
+    if not isinstance(checks, dict) or set(checks) != set(CANDIDATES):
+        errors.append("runtime candidate check inventory drift")
     else:
-        for candidate,candidate_checks in checks.items():
-            if not isinstance(candidate_checks,dict) or set(candidate_checks)!=expected_check_names: errors.append(f"runtime exact check inventory drift for {candidate}")
-            elif not all(candidate_checks.values()): errors.append(f"runtime check failure for {candidate}")
-    proofs=runtime.get("proof_results")
-    if not isinstance(proofs,dict) or set(proofs)!=set(CANDIDATES): errors.append("runtime proof inventory drift")
+        for candidate, candidate_checks in checks.items():
+            if not isinstance(candidate_checks, dict) or set(candidate_checks) != expected_check_names:
+                errors.append(f"runtime exact check inventory drift for {candidate}")
+            elif not all(candidate_checks.values()):
+                errors.append(f"runtime check failure for {candidate}")
+
+    proofs = runtime.get("proof_results")
+    if not isinstance(proofs, dict) or set(proofs) != set(CANDIDATES):
+        errors.append("runtime proof inventory drift")
     else:
-        for candidate,candidate_proofs in proofs.items():
-            if not isinstance(candidate_proofs,dict) or set(candidate_proofs)!=set(EXPECTED_PROOFS): errors.append(f"runtime exact proof inventory drift for {candidate}")
-            elif not all(candidate_proofs.values()): errors.append(f"runtime proof failure for {candidate}")
-    _probe_scalar_subclass_key_rejection(errors); _probe_concurrent_broker_conflict(errors)
-    if ledger.get("ledger_credit_state") != "seven_of_nine" or ledger.get("credited_evidence") != CURRENT_CREDITS: errors.append("current D4-C ledger drift")
-    if EVIDENCE in ledger.get("remaining_evidence",[]) or len(ledger.get("remaining_evidence",[])) != 2: errors.append("OPEN-EVT-012 current promotion drift")
-    tracks_raw=state.get("tracks") if isinstance(state,dict) else None
-    if not isinstance(tracks_raw,list) or len(tracks_raw)!=4: errors.append("global D4 track structure drift"); return errors
-    tracks={t.get("track_id"):t for t in tracks_raw if isinstance(t,dict)}
-    if set(tracks)!={"D4-A","D4-B","D4-C","D4-D"}: errors.append("global D4 track identity drift"); return errors
-    d4c=tracks["D4-C"]
-    if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != ledger.get("remaining_evidence"): errors.append("D4-C current state drift")
-    if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open": errors.append("D4-C candidate leakage")
-    if tracks["D4-D"].get("evidence_completed") != [] or tracks["D4-D"].get("candidate") is not None: errors.append("D4-D leakage")
-    if sum(len(t.get("evidence_completed",[])) for t in tracks_raw) != 19: errors.append("D4-wide evidence count drift")
-    for key,expected in {"gate_state":"scoped","d4_transport_authority":"selected_not_granted","canonical_product_implementation_authority":"not_granted","wave4_implementation_authority":"not_granted","production_authority":"none","c3_numeric_topology_authority":"not_selected"}.items():
-        if state.get(key)!=expected: errors.append(f"global authority drift: {key}")
+        for candidate, candidate_proofs in proofs.items():
+            if not isinstance(candidate_proofs, dict) or set(candidate_proofs) != set(EXPECTED_PROOFS):
+                errors.append(f"runtime exact proof inventory drift for {candidate}")
+            elif not all(candidate_proofs.values()):
+                errors.append(f"runtime proof failure for {candidate}")
+
+    _probe_scalar_subclass_key_rejection(errors)
+    _probe_concurrent_broker_conflict(errors)
+
+    if ledger.get("ledger_credit_state") != "seven_of_nine" or ledger.get("credited_evidence") != CURRENT_CREDITS:
+        errors.append("current D4-C ledger drift")
+    if EVIDENCE in ledger.get("remaining_evidence", []) or len(ledger.get("remaining_evidence", [])) != 2:
+        errors.append("OPEN-EVT-012 current promotion drift")
+
+    tracks_raw = state.get("tracks") if isinstance(state, dict) else None
+    if not isinstance(tracks_raw, list) or len(tracks_raw) != 4:
+        errors.append("global D4 track structure drift")
+        return errors
+    tracks = {t.get("track_id"): t for t in tracks_raw if isinstance(t, dict)}
+    if set(tracks) != {"D4-A", "D4-B", "D4-C", "D4-D"}:
+        errors.append("global D4 track identity drift")
+        return errors
+    d4c = tracks["D4-C"]
+    if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != ledger.get("remaining_evidence"):
+        errors.append("D4-C current state drift")
+    if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
+        errors.append("D4-C candidate leakage")
+    if tracks["D4-D"].get("evidence_completed") != [] or tracks["D4-D"].get("candidate") is not None:
+        errors.append("D4-D leakage")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 19:
+        errors.append("D4-wide evidence count drift")
+    for key, expected in {
+        "gate_state": "scoped", "d4_transport_authority": "selected_not_granted",
+        "canonical_product_implementation_authority": "not_granted", "wave4_implementation_authority": "not_granted",
+        "production_authority": "none", "c3_numeric_topology_authority": "not_selected",
+    }.items():
+        if state.get(key) != expected:
+            errors.append(f"global authority drift: {key}")
     return errors
 
+
 def main(argv: list[str]) -> int:
-    root=Path(argv[1]).resolve() if len(argv)>1 else ROOT; errors=validate(root)
+    root = Path(argv[1]).resolve() if len(argv) > 1 else ROOT
+    errors = validate(root)
     if errors:
-        for error in errors: print(f"D4C_OPEN_EVT_012_SOURCE_ERROR: {error}",file=sys.stderr)
+        for error in errors:
+            print(f"D4C_OPEN_EVT_012_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
     print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=33 independent_adversarial_probes=2 source_auto_credit=false source_snapshot=4_of_9 current_d4c=7_of_9 current_d4wide=19_of_26 selection=not_selected")
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv))

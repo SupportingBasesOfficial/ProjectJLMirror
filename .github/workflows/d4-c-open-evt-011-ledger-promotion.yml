@@ -172,7 +172,7 @@ jobs:
         shell: bash
         run: echo 'd4c_open_evt_011_promotion_live_admission=SKIP promotion_unchanged=true aggregate_ledger_change_ignored=true artifact_retention_dependency=false durable_records_and_digests=validated'
 
-      - name: Assert OPEN-EVT-011 remains the fourth historical credit within current six-credit ledger
+      - name: Assert OPEN-EVT-011 remains the fourth historical credit within current seven-credit ledger
         shell: bash
         run: |
           python3 - <<'PY'
@@ -180,12 +180,14 @@ jobs:
           from pathlib import Path
           plan=json.loads(Path('implementation/d4-eventing-async/d4-c-evidence-plan.json').read_text())
           state=json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
+          record=json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-011-promotion-v1.json').read_text())
           d4c=next(t for t in state['tracks'] if t['track_id']=='D4-C')
-          expected=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity','producer_generation_nonresurrection_across_failover_restore']
-          assert plan['ledger_credit_state']=='six_of_nine' and plan['credited_evidence']==expected and len(plan['remaining_evidence'])==3
+          expected=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity','producer_generation_nonresurrection_across_failover_restore','privileged_bounded_replay_with_original_identity_and_effect_safety']
+          assert record['credited_evidence']==['scoped_content_equivalence_confidentiality_and_conflict_rejection'] and record['credit_count']==1
+          assert plan['ledger_credit_state']=='seven_of_nine' and plan['credited_evidence']==expected and len(plan['remaining_evidence'])==2
           assert d4c['evidence_completed']==expected and d4c['evidence_remaining']==plan['remaining_evidence']
           assert d4c['candidate'] is None and d4c['candidate_status']=='not_selected' and d4c['state']=='candidate_selection_open'
-          assert sum(len(t['evidence_completed']) for t in state['tracks'])==18
+          assert sum(len(t['evidence_completed']) for t in state['tracks'])==19
           assert state['gate_state']=='scoped' and state['d4_transport_authority']=='selected_not_granted' and state['canonical_product_implementation_authority']=='not_granted' and state['wave4_implementation_authority']=='not_granted' and state['production_authority']=='none' and state['c3_numeric_topology_authority']=='not_selected'
-          print('d4c_open_evt_011_promotion_boundary=PASS historical_credit=4 current_d4c=6_of_9 d4wide=18_of_26 selection=not_selected authorities=unchanged')
+          print('d4c_open_evt_011_promotion_boundary=PASS historical_credit=4 current_d4c=7_of_9 d4wide=19_of_26 selection=not_selected authorities=unchanged')
           PY

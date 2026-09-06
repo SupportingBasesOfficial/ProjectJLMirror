@@ -36,30 +36,19 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           allow-unsafe-pr-checkout: false
-
       - name: Verify exact commit identity
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-
       - name: Compile durable D4-B promotion assurance
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile \
-            tools/assurance/validate_d4b_evidence_plan.py \
-            tools/assurance/test_validate_d4b_evidence_plan.py \
-            tools/assurance/validate_d4b_selection.py \
-            tools/assurance/test_validate_d4b_selection.py \
-            tools/assurance/validate_d4_eventing_async_state.py \
-            tools/assurance/test_validate_d4_eventing_async_state.py \
-            tools/assurance/d4b_schema_contract/validate_source_evidence.py
-
+          python3 -m py_compile tools/assurance/validate_d4b_evidence_plan.py tools/assurance/test_validate_d4b_evidence_plan.py tools/assurance/validate_d4b_selection.py tools/assurance/test_validate_d4b_selection.py tools/assurance/validate_d4_eventing_async_state.py tools/assurance/test_validate_d4_eventing_async_state.py tools/assurance/d4b_schema_contract/validate_source_evidence.py
       - name: Falsify D4-B historical promotion weakening
         shell: bash
         run: python3 tools/assurance/test_validate_d4b_evidence_plan.py
-
       - name: Validate immutable D4-B promotion and current selected profile
         shell: bash
         run: |
@@ -68,53 +57,41 @@ jobs:
           python3 tools/assurance/test_validate_d4b_selection.py
           python3 tools/assurance/validate_d4b_selection.py .
           python3 tools/assurance/d4b_schema_contract/validate_source_evidence.py
-
       - name: Preserve current D4 scoped state
         shell: bash
         run: |
           set -euo pipefail
           python3 tools/assurance/test_validate_d4_eventing_async_state.py
           python3 tools/assurance/validate_d4_eventing_async_state.py .
-
       - name: Preserve Phase 10 contracts
         shell: bash
         run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
-
       - name: Assert historical D4-B promotion remains isolated from current D4-C promotion
         shell: bash
         run: |
           python3 - <<'PY'
           import json
           from pathlib import Path
-          plan = json.loads(Path('implementation/d4-eventing-async/d4-b-evidence-plan.json').read_text())
-          state = json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
-          source = json.loads(Path('implementation/d4-eventing-async/source-evidence/schema-contract/source-evidence-manifest.json').read_text())
-          promotion = json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-b-schema-contract-promotion-v1.json').read_text())
-          tracks = {t['track_id']: t for t in state['tracks']}
-          d4c_credits = [
-              'ack_after_durable_responsibility_and_lease_ambiguity',
-              'quarantine_redrive_current_authority_and_dedup_preservation',
-              'bounded_message_batch_compression_and_parser_limits',
-          ]
-          assert source['current_run_auto_credit'] is False and source['ledger_credit'] == []
-          assert source['candidate'] is None and source['candidate_status'] == 'not_selected'
-          assert promotion['credit_count'] == 5 and set(promotion['credited_evidence']) == set(plan['required_evidence'])
-          assert plan['selection_state'] == 'selected' and len(plan['credited_evidence']) == 5 and plan['remaining_evidence'] == []
-          d4b = tracks['D4-B']
-          assert d4b['candidate_status'] == 'selected_c2_profile' and d4b['state'] == 'selected_candidate'
-          assert len(d4b['evidence_completed']) == 5 and d4b['evidence_remaining'] == []
-          d4c = tracks['D4-C']
-          assert d4c['candidate'] is None and d4c['candidate_status'] == 'not_selected' and d4c['state'] == 'candidate_selection_open'
-          assert d4c['evidence_completed'] == d4c_credits
-          assert d4c['evidence_remaining'] == [x for x in d4c['required_evidence'] if x not in d4c_credits]
-          assert len(d4c['evidence_remaining']) == 6
-          assert tracks['D4-D']['evidence_completed'] == []
-          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 15
-          assert state['gate_state'] == 'scoped'
-          assert state['d4_transport_authority'] == 'selected_not_granted'
-          assert state['canonical_product_implementation_authority'] == 'not_granted'
-          assert state['wave4_implementation_authority'] == 'not_granted'
-          assert state['production_authority'] == 'none'
-          assert state['c3_numeric_topology_authority'] == 'not_selected'
-          print('d4b_promotion_continuity=PASS historical_credit=5 current_d4c=3_of_9 d4wide=15_of_26 artifact_retention_dependency=false authorities=unchanged')
+          plan=json.loads(Path('implementation/d4-eventing-async/d4-b-evidence-plan.json').read_text())
+          state=json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
+          source=json.loads(Path('implementation/d4-eventing-async/source-evidence/schema-contract/source-evidence-manifest.json').read_text())
+          promotion=json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-b-schema-contract-promotion-v1.json').read_text())
+          tracks={t['track_id']:t for t in state['tracks']}
+          d4c_credits=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection']
+          assert source['current_run_auto_credit'] is False and source['ledger_credit']==[]
+          assert source['candidate'] is None and source['candidate_status']=='not_selected'
+          assert promotion['credit_count']==5 and set(promotion['credited_evidence'])==set(plan['required_evidence'])
+          assert plan['selection_state']=='selected' and len(plan['credited_evidence'])==5 and plan['remaining_evidence']==[]
+          d4b=tracks['D4-B']; d4c=tracks['D4-C']
+          assert d4b['candidate_status']=='selected_c2_profile' and d4b['state']=='selected_candidate'
+          assert len(d4b['evidence_completed'])==5 and d4b['evidence_remaining']==[]
+          assert d4c['candidate'] is None and d4c['candidate_status']=='not_selected' and d4c['state']=='candidate_selection_open'
+          assert d4c['evidence_completed']==d4c_credits
+          assert d4c['evidence_remaining']==[x for x in d4c['required_evidence'] if x not in d4c_credits] and len(d4c['evidence_remaining'])==5
+          assert tracks['D4-D']['evidence_completed']==[]
+          assert sum(len(t['evidence_completed']) for t in state['tracks'])==16
+          assert state['gate_state']=='scoped' and state['d4_transport_authority']=='selected_not_granted'
+          assert state['canonical_product_implementation_authority']=='not_granted' and state['wave4_implementation_authority']=='not_granted'
+          assert state['production_authority']=='none' and state['c3_numeric_topology_authority']=='not_selected'
+          print('d4b_promotion_continuity=PASS historical_credit=5 current_d4c=4_of_9 d4wide=16_of_26 artifact_retention_dependency=false authorities=unchanged')
           PY

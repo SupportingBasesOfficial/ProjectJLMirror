@@ -1,0 +1,145 @@
+name: JLMIRROR D4-C OPEN-EVT-012 Ledger Promotion
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'implementation/d4-eventing-async/d4-c-evidence-plan.json'
+      - 'implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-012-promotion-v1.json'
+      - 'implementation/d4-eventing-async/state-manifest.json'
+      - 'implementation/d4-eventing-async/source-evidence/d4-c-outbox-claim-dispatch-source.json'
+      - 'tools/assurance/validate_d4c_evidence_plan.py'
+      - 'tools/assurance/test_validate_d4c_evidence_plan.py'
+      - 'tools/assurance/validate_d4_eventing_async_state.py'
+      - 'tools/assurance/test_validate_d4_eventing_async_state.py'
+      - 'docs/16-implementation-readiness/49-d4-c-open-evt-012-ledger-promotion.md'
+      - '.github/workflows/d4-c-open-evt-012-ledger-promotion.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  d4c-open-evt-012-promotion:
+    name: D4-C OPEN-EVT-012 reviewed source ledger promotion
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Compile promotion and global assurance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            tools/assurance/validate_d4c_evidence_plan.py \
+            tools/assurance/test_validate_d4c_evidence_plan.py \
+            tools/assurance/validate_d4_eventing_async_state.py \
+            tools/assurance/test_validate_d4_eventing_async_state.py
+
+      - name: Falsify D4-C fifth-credit weakening
+        shell: bash
+        run: python3 tools/assurance/test_validate_d4c_evidence_plan.py
+
+      - name: Validate D4-C five-of-nine promotion
+        shell: bash
+        run: python3 tools/assurance/validate_d4c_evidence_plan.py .
+
+      - name: Preserve global D4 scoped state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/assurance/test_validate_d4_eventing_async_state.py
+          python3 tools/assurance/validate_d4_eventing_async_state.py .
+
+      - name: Preserve Phase 10 contract suite
+        shell: bash
+        run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
+
+      - name: Admit exact reviewed OPEN-EVT-012 source evidence from live GitHub state
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/promotion.env
+          import json
+          from pathlib import Path
+          p=json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-012-promotion-v1.json').read_text())
+          w=p['source_workflow']
+          values={'SOURCE_PR':p['source_pr'],'SOURCE_REVIEW_ID':p['source_review']['review_id'],'SOURCE_HEAD':p['source_reviewed_head'],'SOURCE_MERGE':p['source_merge_commit'],'WORKFLOW_ID':w['workflow_id'],'WORKFLOW_PATH':w['workflow_path'],'SOURCE_HEAD_BRANCH':w['source_head_branch'],'RUN_ID':w['run_id'],'RUN_ATTEMPT':w['run_attempt'],'JOB_ID':w['job_id'],'ARTIFACT_ID':w['artifact_id'],'ARTIFACT_NAME':w['artifact_name'],'ARTIFACT_DIGEST':w['artifact_digest']}
+          for k,v in values.items(): print(f'{k}={v}')
+          PY
+          source /tmp/promotion.env
+          headers=(-H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
+          curl --fail --silent --show-error "${headers[@]}" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$SOURCE_PR" -o /tmp/source-pr.json
+          curl --fail --silent --show-error "${headers[@]}" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$SOURCE_PR/reviews/$SOURCE_REVIEW_ID" -o /tmp/source-review.json
+          curl --fail --silent --show-error "${headers[@]}" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" -o /tmp/run.json
+          curl --fail --silent --show-error "${headers[@]}" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/jobs/$JOB_ID" -o /tmp/job.json
+          curl --fail --silent --show-error "${headers[@]}" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" -o /tmp/artifact.json
+          curl --fail --silent --show-error --location "${headers[@]}" "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" -o /tmp/source.zip
+          rm -rf /tmp/source-artifact && mkdir /tmp/source-artifact
+          unzip -q /tmp/source.zip -d /tmp/source-artifact
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          p=json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-012-promotion-v1.json').read_text())
+          w=p['source_workflow']; source=Path(p['source_manifest']['path'])
+          source_pr=json.load(open('/tmp/source-pr.json')); review=json.load(open('/tmp/source-review.json')); run=json.load(open('/tmp/run.json')); job=json.load(open('/tmp/job.json')); artifact=json.load(open('/tmp/artifact.json'))
+          assert source_pr['number']==80 and source_pr['state']=='closed' and source_pr.get('merged_at') is not None
+          assert source_pr['head']['sha']==p['source_reviewed_head'] and source_pr['merge_commit_sha']==p['source_merge_commit']==p['promotion_base']
+          assert review['id']==p['source_review']['review_id'] and review['commit_id']==p['source_reviewed_head'] and review['state']=='COMMENTED'
+          body=review.get('body') or ''
+          assert body.startswith('FINAL EXACT-HEAD INDEPENDENT ADVERSARIAL / PANORAMIC SOURCE-EVIDENCE GATE — CLEAN')
+          assert f"Reviewed exact commit: `{p['source_reviewed_head']}`." in body
+          assert '21/21 pull-request-triggered workflows completed SUCCESS.' in body
+          assert 'zero unresolved material review threads remain' in body.lower()
+          assert run['id']==w['run_id'] and run['workflow_id']==w['workflow_id'] and run['path']==w['workflow_path'] and run['event']=='pull_request' and run['head_sha']==p['source_reviewed_head'] and run['conclusion']=='success'
+          assert job['id']==w['job_id'] and job['run_id']==w['run_id'] and job['name']==w['job_name'] and job['conclusion']=='success'
+          assert artifact['id']==w['artifact_id'] and artifact['name']==w['artifact_name'] and artifact['digest']==w['artifact_digest'] and artifact['expired'] is False
+          files={x.name for x in Path('/tmp/source-artifact').iterdir() if x.is_file()}
+          assert files=={'resolved-source-run-provenance.json','candidate-results.json'}, files
+          provenance=json.loads(Path('/tmp/source-artifact/resolved-source-run-provenance.json').read_text()); results=json.loads(Path('/tmp/source-artifact/candidate-results.json').read_text())
+          assert provenance['repository_sha']==p['source_reviewed_head'] and provenance['workflow_run_id']==w['run_id'] and provenance['job_id']==w['job_id']
+          assert provenance['source_decision']=='OPEN-EVT-012' and provenance['evidence_id']=='outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity'
+          assert provenance['current_run_auto_credit'] is False and provenance['ledger_credit']==[] and provenance['selection_state']=='not_selected' and provenance['selection_authority']=='not_granted'
+          assert results['selection']=='not_selected' and results['ledger_credit']==[]
+          digest=hashlib.sha256(source.read_bytes()).hexdigest()
+          assert digest==p['source_manifest']['sha256'] and provenance['file_sha256'][str(source)]==digest
+          print('d4c_open_evt_012_promotion_live_admission=PASS source_pr=merged review=exact_head_clean run=success job=exact artifact=exact source_manifest=exact source_auto_credit=false selection=not_selected')
+          PY
+
+      - name: Assert promotion grants exactly the fifth evidence credit
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          plan=json.loads(Path('implementation/d4-eventing-async/d4-c-evidence-plan.json').read_text())
+          state=json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
+          d4c=next(t for t in state['tracks'] if t['track_id']=='D4-C')
+          expected=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity']
+          assert plan['ledger_credit_state']=='five_of_nine' and plan['credited_evidence']==expected and len(plan['remaining_evidence'])==4
+          assert d4c['evidence_completed']==expected and d4c['evidence_remaining']==plan['remaining_evidence']
+          assert d4c['candidate'] is None and d4c['candidate_status']=='not_selected' and d4c['state']=='candidate_selection_open'
+          assert sum(len(t['evidence_completed']) for t in state['tracks'])==17
+          assert state['gate_state']=='scoped' and state['d4_transport_authority']=='selected_not_granted' and state['canonical_product_implementation_authority']=='not_granted' and state['wave4_implementation_authority']=='not_granted' and state['production_authority']=='none' and state['c3_numeric_topology_authority']=='not_selected'
+          print('d4c_open_evt_012_promotion_boundary=PASS d4c=5_of_9 d4wide=17_of_26 selection=not_selected authorities=unchanged')
+          PY

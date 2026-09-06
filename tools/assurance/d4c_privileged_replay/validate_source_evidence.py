@@ -25,9 +25,21 @@ CURRENT_REMAINING = [
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
 EXPECTED_SOURCE_KEYS = {
-    "schema_version", "gate_id", "track_id", "mode", "source_decision", "evidence_id",
-    "candidate_classes", "must_prove", "candidate_results", "selection_state", "selection_authority",
-    "current_run_auto_credit", "ledger_credit", "non_authority", "source_boundary",
+    "schema_version",
+    "gate_id",
+    "track_id",
+    "mode",
+    "source_decision",
+    "evidence_id",
+    "candidate_classes",
+    "must_prove",
+    "candidate_results",
+    "selection_state",
+    "selection_authority",
+    "current_run_auto_credit",
+    "ledger_credit",
+    "non_authority",
+    "source_boundary",
 }
 EXPECTED_BOUNDARY = {
     "authorization_rule": "current_privileged_authority_required_per_replay_request",
@@ -52,8 +64,10 @@ EXPECTED_NON_AUTHORITY = {
     "c3_numeric_topology_authority": "not_selected",
 }
 
+
 class DuplicateKeyError(ValueError):
     pass
+
 
 def no_duplicates(pairs):
     out = {}
@@ -63,18 +77,22 @@ def no_duplicates(pairs):
         out[key] = value
     return out
 
+
 def load(path: Path):
     return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=no_duplicates)
+
 
 def fail(msg: str) -> int:
     print(f"d4c_open_evt_014_source_validation=FAIL reason={msg}", file=sys.stderr)
     return 1
+
 
 def main() -> int:
     try:
         source, plan, state = load(SOURCE), load(PLAN), load(STATE)
     except Exception as exc:
         return fail(str(exc))
+
     if not isinstance(source, dict) or set(source) != EXPECTED_SOURCE_KEYS:
         return fail("source exact key schema drift")
     if type(source.get("schema_version")) is not int or source["schema_version"] != 1:
@@ -83,15 +101,24 @@ def main() -> int:
         return fail("gate or track drift")
     if source.get("mode") != "candidate_source_evidence_only":
         return fail("source mode drift")
-    if source.get("source_decision") != "OPEN-EVT-014" or source.get("evidence_id") != "privileged_bounded_replay_with_original_identity_and_effect_safety":
+    if (
+        source.get("source_decision") != "OPEN-EVT-014"
+        or source.get("evidence_id")
+        != "privileged_bounded_replay_with_original_identity_and_effect_safety"
+    ):
         return fail("source identity drift")
     if tuple(source.get("candidate_classes", [])) != CANDIDATES:
         return fail("candidate inventory drift")
     if tuple(source.get("must_prove", [])) != PROOFS:
         return fail("proof inventory drift")
-    if source.get("candidate_results") != {c: "eligible_for_evidence_execution" for c in CANDIDATES}:
+    if source.get("candidate_results") != {
+        c: "eligible_for_evidence_execution" for c in CANDIDATES
+    }:
         return fail("candidate result drift")
-    if source.get("selection_state") != "not_selected" or source.get("selection_authority") != "not_granted":
+    if (
+        source.get("selection_state") != "not_selected"
+        or source.get("selection_authority") != "not_granted"
+    ):
         return fail("selection leakage")
     if type(source.get("current_run_auto_credit")) is not bool:
         return fail("auto-credit type drift")
@@ -117,9 +144,16 @@ def main() -> int:
         if not all(runtime["check_results"][candidate].values()):
             return fail(f"runtime check failure for {candidate}")
 
-    if plan.get("ledger_credit_state") != "seven_of_nine" or plan.get("credited_evidence") != CURRENT_CREDITS or plan.get("remaining_evidence") != CURRENT_REMAINING:
+    if (
+        plan.get("ledger_credit_state") != "seven_of_nine"
+        or plan.get("credited_evidence") != CURRENT_CREDITS
+        or plan.get("remaining_evidence") != CURRENT_REMAINING
+    ):
         return fail("D4-C current ledger drift")
-    if source["evidence_id"] not in plan.get("credited_evidence", []) or source["evidence_id"] in plan.get("remaining_evidence", []):
+    if (
+        source["evidence_id"] not in plan.get("credited_evidence", [])
+        or source["evidence_id"] in plan.get("remaining_evidence", [])
+    ):
         return fail("OPEN-EVT-014 separate promotion projection drift")
     if plan.get("candidate") is not None or plan.get("candidate_status") != "not_selected":
         return fail("D4-C candidate selection leakage")
@@ -128,24 +162,41 @@ def main() -> int:
     if set(tracks) != {"D4-A", "D4-B", "D4-C", "D4-D"}:
         return fail("D4 track inventory drift")
     d4c = tracks["D4-C"]
-    if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != CURRENT_REMAINING:
+    if (
+        d4c.get("evidence_completed") != CURRENT_CREDITS
+        or d4c.get("evidence_remaining") != CURRENT_REMAINING
+    ):
         return fail("D4-C global projection drift")
-    if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
+    if (
+        d4c.get("candidate") is not None
+        or d4c.get("candidate_status") != "not_selected"
+        or d4c.get("state") != "candidate_selection_open"
+    ):
         return fail("D4-C global selection leakage")
     if tracks["D4-D"].get("evidence_completed") != [] or tracks["D4-D"].get("candidate") is not None:
         return fail("D4-D leakage")
     if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 19:
         return fail("D4-wide current credit count must remain 19/26")
+
     expected = {
-        "gate_state": "scoped", "d4_transport_authority": "selected_not_granted",
-        "canonical_product_implementation_authority": "not_granted", "wave4_implementation_authority": "not_granted",
-        "production_authority": "none", "c3_numeric_topology_authority": "not_selected",
+        "gate_state": "scoped",
+        "d4_transport_authority": "selected_not_granted",
+        "canonical_product_implementation_authority": "not_granted",
+        "wave4_implementation_authority": "not_granted",
+        "production_authority": "none",
+        "c3_numeric_topology_authority": "not_selected",
     }
     for key, value in expected.items():
         if state.get(key) != value:
             return fail(f"authority drift: {key}")
-    print("d4c_open_evt_014_source_validation=PASS candidates=3 proofs=8 source_schema=exact source_snapshot=6/9_uncredited current_d4c=7/9 current_d4wide=19/26 selection=none authorities=unchanged")
+
+    print(
+        "d4c_open_evt_014_source_validation=PASS candidates=3 proofs=8 "
+        "source_schema=exact source_snapshot=6/9_uncredited current_d4c=7/9 current_d4wide=19/26 "
+        "selection=none authorities=unchanged"
+    )
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

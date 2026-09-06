@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-C",
+  "mode": "candidate_source_evidence_only",
+  "source_decision": "OPEN-EVT-013",
+  "evidence_id": "producer_generation_nonresurrection_across_failover_restore",
+  "candidate_classes": [
+    "positive_integer_fenced_generation",
+    "opaque_fenced_generation_token",
+    "authority_issued_epoch_generation"
+  ],
+  "must_prove": [
+    "current_source_generation_is_explicitly_validated_at_effectful_admission",
+    "retired_generation_cannot_regain_current_authority",
+    "restore_or_failover_cannot_resurrect_retired_source_authority",
+    "historical_fact_identity_remains_distinct_from_current_source_authority",
+    "tenant_logical_identity_is_independent_of_generation_and_placement",
+    "generation_comparison_rule_is_unambiguous_and_does_not_infer_ungranted_ordering_semantics",
+    "provider_or_broker_generation_is_not_platform_source_generation_by_implication"
+  ],
+  "candidate_results": {
+    "positive_integer_fenced_generation": "eligible_for_evidence_execution",
+    "opaque_fenced_generation_token": "eligible_for_evidence_execution",
+    "authority_issued_epoch_generation": "eligible_for_evidence_execution"
+  },
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "current_run_auto_credit": false,
+  "ledger_credit": [],
+  "non_authority": {
+    "d4c_ledger_credit": "current_5_of_9_unchanged",
+    "open_evt_013_ledger_credit": "uncredited",
+    "d4c_candidate": "null_not_selected_candidate_selection_open",
+    "d4d_ledger_credit": "zero_of_five",
+    "d4_gate": "scoped",
+    "d4_transport_authority": "selected_not_granted",
+    "canonical_product_implementation_authority": "not_granted",
+    "wave4_implementation_authority": "not_granted",
+    "production_authority": "none",
+    "c3_numeric_topology_authority": "not_selected"
+  },
+  "source_boundary": {
+    "platform_generation_authority": "explicit_current_generation_only",
+    "historical_generation": "historical_fact_metadata_not_current_authority",
+    "restore_rule": "surviving_current_authority_and_retirement_fences_cannot_be_lowered_by_restored_snapshot",
+    "failover_rule": "placement_change_does_not_change_logical_source_identity_or_revive_retired_generation",
+    "comparison_rule": "exact_current_generation_equality_only_no_numeric_or_lexical_ordering_authority",
+    "external_generation_rule": "provider_and_broker_generations_are_observations_not_platform_source_generation"
+  }
+}

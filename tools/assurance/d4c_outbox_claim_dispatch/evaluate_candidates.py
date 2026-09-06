@@ -26,7 +26,7 @@ PROOFS = (
 PROOF_CHECKS = {
     PROOFS[0]: ("atomic_commit_all_or_nothing", "message_identity_fixed_at_commit"),
     PROOFS[1]: ("preexpiry_takeover_rejected", "stale_owner_fenced_after_takeover", "single_current_claim_owner"),
-    PROOFS[2]: ("retry_preserves_identity", "retry_preserves_semantic_content"),
+    PROOFS[2]: ("immutable_fact_rewrite_rejected", "retry_preserves_identity", "retry_preserves_semantic_content"),
     PROOFS[3]: ("ack_lost_retry_same_identity", "ack_lost_retry_same_content"),
     PROOFS[4]: ("broker_outage_preserves_backlog",),
     PROOFS[5]: ("restart_preserves_identity", "restart_preserves_semantic_content", "notification_is_non_authoritative"),
@@ -86,17 +86,38 @@ class DurableStore:
     def _digest(content: str) -> str:
         return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
-    def _commit_state(self, *, business_revision: int | None = None, business_value: Any = None, preserve_business_value: bool = True, outbox: dict[str, OutboxFact]) -> None:
+    @staticmethod
+    def _immutable_tuple(fact: OutboxFact) -> tuple[str, str, str, int]:
+        return (fact.message_id, fact.semantic_content, fact.content_digest, fact.business_revision)
+
+    def _commit_state(
+        self,
+        *,
+        business_revision: int | None = None,
+        business_value: Any = None,
+        preserve_business_value: bool = True,
+        outbox: dict[str, OutboxFact],
+    ) -> None:
         revision = self._state.business_revision if business_revision is None else business_revision
         value = self._state.business_value if preserve_business_value else business_value
         self._state = StoreState(revision, value, MappingProxyType(dict(outbox)))
 
     def _replace_fact(self, message_id: str, fact: OutboxFact) -> None:
+        old = self._state.outbox[message_id]
+        if self._immutable_tuple(old) != self._immutable_tuple(fact):
+            raise ContractViolation("immutable_fact_rewrite")
         staged = dict(self._state.outbox)
         staged[message_id] = fact
         self._commit_state(outbox=staged)
 
-    def commit_business_and_outbox(self, *, business_value: Any, message_id: str, semantic_content: str, fail_before_commit: bool = False) -> None:
+    def commit_business_and_outbox(
+        self,
+        *,
+        business_value: Any,
+        message_id: str,
+        semantic_content: str,
+        fail_before_commit: bool = False,
+    ) -> None:
         if message_id in self._state.outbox:
             raise ContractViolation("message_identity_reuse")
         next_revision = self._state.business_revision + 1
@@ -111,7 +132,7 @@ class DurableStore:
         next_state = StoreState(next_revision, business_value, MappingProxyType(staged))
         if fail_before_commit:
             return
-        # One state-pointer replacement represents the co-resident transaction commit.
+        # One state-pointer replacement models the co-resident transaction commit.
         self._state = next_state
 
     def claim(self, message_id: str, owner: str, *, now: int, lease: int) -> ClaimToken:
@@ -119,7 +140,10 @@ class DurableStore:
         if fact.claim_owner is not None and fact.lease_expires_at > now:
             raise ContractViolation("claim_already_owned")
         fence = fact.claim_fence + 1
-        self._replace_fact(message_id, replace(fact, claim_owner=owner, claim_fence=fence, lease_expires_at=now + lease))
+        self._replace_fact(
+            message_id,
+            replace(fact, claim_owner=owner, claim_fence=fence, lease_expires_at=now + lease),
+        )
         return ClaimToken(message_id, owner, fence)
 
     def assert_current(self, token: ClaimToken) -> OutboxFact:
@@ -130,7 +154,10 @@ class DurableStore:
 
     def mark_terminal_delivery(self, token: ClaimToken) -> None:
         fact = self.assert_current(token)
-        self._replace_fact(token.message_id, replace(fact, delivery_state="delivered", terminal_delivery_evidence=True))
+        self._replace_fact(
+            token.message_id,
+            replace(fact, delivery_state="delivered", terminal_delivery_evidence=True),
+        )
 
     def set_safe_horizon(self, message_id: str) -> None:
         fact = self._state.outbox[message_id]
@@ -188,7 +215,11 @@ def _new_fixture() -> tuple[DurableStore, BrokerProbe, str, str]:
     store = DurableStore()
     broker = BrokerProbe()
     message_id = "msg-tenant-a-0001"
-    semantic = json.dumps({"tenant":"tenant-a","event":"asset.changed","revision":1}, sort_keys=True, separators=(",", ":"))
+    semantic = json.dumps(
+        {"tenant": "tenant-a", "event": "asset.changed", "revision": 1},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return store, broker, message_id, semantic
 
 
@@ -196,11 +227,24 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     checks: dict[str, bool] = {}
 
     store, broker, mid, semantic = _new_fixture()
-    store.commit_business_and_outbox(business_value={"rev": 1}, message_id=mid, semantic_content=semantic, fail_before_commit=True)
+    store.commit_business_and_outbox(
+        business_value={"rev": 1},
+        message_id=mid,
+        semantic_content=semantic,
+        fail_before_commit=True,
+    )
     checks["atomic_commit_all_or_nothing"] = store.business_revision == 0 and mid not in store.outbox
-    store.commit_business_and_outbox(business_value={"rev": 1}, message_id=mid, semantic_content=semantic)
+    store.commit_business_and_outbox(
+        business_value={"rev": 1},
+        message_id=mid,
+        semantic_content=semantic,
+    )
     committed = store.outbox[mid]
-    checks["message_identity_fixed_at_commit"] = committed.message_id == mid and committed.content_digest == DurableStore._digest(semantic) and committed.business_revision == store.business_revision == 1
+    checks["message_identity_fixed_at_commit"] = (
+        committed.message_id == mid
+        and committed.content_digest == DurableStore._digest(semantic)
+        and committed.business_revision == store.business_revision == 1
+    )
 
     d1 = Dispatcher(store, broker, candidate=candidate, owner="worker-a")
     token1 = store.claim(mid, "worker-a", now=10, lease=5)
@@ -221,38 +265,80 @@ def check_candidate(candidate: str) -> dict[str, bool]:
     checks["single_current_claim_owner"] = current.claim_owner == "worker-b" and current.claim_fence == token2.fence
 
     before = store.outbox[mid]
+    rewrite_blocked = False
+    try:
+        store._replace_fact(mid, replace(before, semantic_content="rewritten"))
+    except ContractViolation as exc:
+        rewrite_blocked = str(exc) == "immutable_fact_rewrite"
+    checks["immutable_fact_rewrite_rejected"] = (
+        rewrite_blocked
+        and store.outbox[mid].semantic_content == before.semantic_content
+        and store.outbox[mid].content_digest == before.content_digest
+    )
+
     d2 = Dispatcher(store, broker, candidate=candidate, owner="worker-b")
     first = d2.dispatch(token2)
     second = d2.dispatch(token2)
     after = store.outbox[mid]
-    checks["retry_preserves_identity"] = broker.attempts[-2][0] == broker.attempts[-1][0] == before.message_id == after.message_id
-    checks["retry_preserves_semantic_content"] = broker.attempts[-2][1] == broker.attempts[-1][1] == before.content_digest == after.content_digest and first == second == "acked"
+    checks["retry_preserves_identity"] = (
+        broker.attempts[-2][0] == broker.attempts[-1][0] == before.message_id == after.message_id
+    )
+    checks["retry_preserves_semantic_content"] = (
+        broker.attempts[-2][1]
+        == broker.attempts[-1][1]
+        == before.content_digest
+        == after.content_digest
+        and first == second == "acked"
+    )
 
     store2, broker2, mid2, semantic2 = _new_fixture()
-    store2.commit_business_and_outbox(business_value={"rev": 1}, message_id=mid2, semantic_content=semantic2)
+    store2.commit_business_and_outbox(
+        business_value={"rev": 1}, message_id=mid2, semantic_content=semantic2
+    )
     token = store2.claim(mid2, "worker-a", now=1, lease=10)
     dispatcher = Dispatcher(store2, broker2, candidate=candidate, owner="worker-a")
     broker2.accept_then_lose_ack_once = True
     ambiguous = dispatcher.dispatch(token)
     retry = dispatcher.dispatch(token)
-    checks["ack_lost_retry_same_identity"] = ambiguous == "ambiguous_ack_lost" and retry == "acked" and broker2.attempts[-2][0] == broker2.attempts[-1][0] == mid2
-    checks["ack_lost_retry_same_content"] = broker2.attempts[-2][1] == broker2.attempts[-1][1] == store2.outbox[mid2].content_digest
+    checks["ack_lost_retry_same_identity"] = (
+        ambiguous == "ambiguous_ack_lost"
+        and retry == "acked"
+        and broker2.attempts[-2][0] == broker2.attempts[-1][0] == mid2
+    )
+    checks["ack_lost_retry_same_content"] = (
+        broker2.attempts[-2][1]
+        == broker2.attempts[-1][1]
+        == store2.outbox[mid2].content_digest
+    )
 
     store3, broker3, mid3, semantic3 = _new_fixture()
-    store3.commit_business_and_outbox(business_value={"rev": 1}, message_id=mid3, semantic_content=semantic3)
+    store3.commit_business_and_outbox(
+        business_value={"rev": 1}, message_id=mid3, semantic_content=semantic3
+    )
     token3 = store3.claim(mid3, "worker-a", now=1, lease=2)
     broker3.available = False
     outage_dispatcher = Dispatcher(store3, broker3, candidate=candidate, owner="worker-a")
     unavailable = outage_dispatcher.dispatch(token3)
-    checks["broker_outage_preserves_backlog"] = unavailable == "unavailable" and mid3 in store3.outbox and store3.outbox[mid3].semantic_content == semantic3
+    checks["broker_outage_preserves_backlog"] = (
+        unavailable == "unavailable"
+        and mid3 in store3.outbox
+        and store3.outbox[mid3].semantic_content == semantic3
+    )
 
     restarted = Dispatcher(store3, broker3, candidate=candidate, owner="worker-restarted")
     token4 = store3.claim(mid3, "worker-restarted", now=3, lease=2)
     broker3.available = True
     recovered = restarted.dispatch(token4)
     checks["restart_preserves_identity"] = recovered == "acked" and broker3.attempts[-1][0] == mid3
-    checks["restart_preserves_semantic_content"] = broker3.attempts[-1][1] == store3.outbox[mid3].content_digest == DurableStore._digest(semantic3)
-    checks["notification_is_non_authoritative"] = candidate != "notification_assisted_polling_claim_profile" or (restarted.notifications == [] and recovered == "acked")
+    checks["restart_preserves_semantic_content"] = (
+        broker3.attempts[-1][1]
+        == store3.outbox[mid3].content_digest
+        == DurableStore._digest(semantic3)
+    )
+    checks["notification_is_non_authoritative"] = (
+        candidate != "notification_assisted_polling_claim_profile"
+        or (restarted.notifications == [] and recovered == "acked")
+    )
 
     uncertain_blocked = False
     try:
@@ -276,9 +362,15 @@ def check_candidate(candidate: str) -> dict[str, bool]:
 
 def evaluate_all() -> dict[str, Any]:
     checks = {candidate: check_candidate(candidate) for candidate in CANDIDATES}
-    results = {candidate: "eligible_for_evidence_execution" if all(values.values()) else "insufficient_evidence" for candidate, values in checks.items()}
+    results = {
+        candidate: "eligible_for_evidence_execution" if all(values.values()) else "insufficient_evidence"
+        for candidate, values in checks.items()
+    }
     proof_results = {
-        candidate: {proof: all(values[name] for name in PROOF_CHECKS[proof]) for proof in PROOFS}
+        candidate: {
+            proof: all(values[name] for name in PROOF_CHECKS[proof])
+            for proof in PROOFS
+        }
         for candidate, values in checks.items()
     }
     return {
@@ -299,7 +391,9 @@ def evaluate_all() -> dict[str, Any]:
 def main() -> int:
     result = evaluate_all()
     print(json.dumps(result, indent=2, sort_keys=True))
-    expected = {candidate: "eligible_for_evidence_execution" for candidate in CANDIDATES}
+    expected = {
+        candidate: "eligible_for_evidence_execution" for candidate in CANDIDATES
+    }
     return 0 if result["candidate_results"] == expected else 1
 
 

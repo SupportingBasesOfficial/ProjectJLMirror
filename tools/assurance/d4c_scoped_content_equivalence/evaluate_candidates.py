@@ -18,9 +18,14 @@ INELIGIBLE = "ineligible_by_contract"
 INSUFFICIENT = "insufficient_evidence"
 PROFILE_V1 = "equivalence/v1"
 PROFILE_V2 = "equivalence/v2"
+KEY_V1 = "fixture-verifier-key/v1"
+KEY_V2 = "fixture-verifier-key/v2"
 TEST_LIMIT_PROFILE = "scoped_equivalence_fixture_only_noncanonical"
 TEST_MAX_CANONICAL_BYTES = 2048
-TEST_ROOT_SECRET = b"fixture-root-secret-not-production"
+TEST_KEYRING = {
+    KEY_V1: b"fixture-root-secret-v1-not-production",
+    KEY_V2: b"fixture-root-secret-v2-not-production",
+}
 TEST_OPERATION_SECRET = b"fixture-operation-secret-not-production"
 IMMUTABLE_FIELDS = (
     "tenant_id",
@@ -53,7 +58,6 @@ class Identity:
 class CandidatePolicy:
     name: str
     evidence_mode: str
-    confidentiality_safe: bool
     retains_original: bool
     keyed: bool
 
@@ -62,6 +66,7 @@ class CandidatePolicy:
 class EvidenceRecord:
     profile_version: str
     evidence_mode: str
+    key_version: str | None
     digest_hex: str | None
     retained_original: bytes | None
 
@@ -69,6 +74,7 @@ class EvidenceRecord:
         return {
             "profile_version": self.profile_version,
             "evidence_mode": self.evidence_mode,
+            "key_version": self.key_version,
             "digest_hex": self.digest_hex,
             "has_retained_original": self.retained_original is not None,
         }
@@ -76,16 +82,16 @@ class EvidenceRecord:
 
 POLICIES = {
     "canonical_collision_resistant_fingerprint_profile": CandidatePolicy(
-        "canonical_collision_resistant_fingerprint_profile", "sha256", False, False, False
+        "canonical_collision_resistant_fingerprint_profile", "sha256", False, False
     ),
     "keyed_authenticated_digest_profile": CandidatePolicy(
-        "keyed_authenticated_digest_profile", "hmac_sha256", True, False, True
+        "keyed_authenticated_digest_profile", "hmac_sha256", False, True
     ),
     "protected_retained_immutable_original_profile": CandidatePolicy(
-        "protected_retained_immutable_original_profile", "protected_original", True, True, False
+        "protected_retained_immutable_original_profile", "protected_original", True, False
     ),
     "hybrid_equivalence_authority_profile": CandidatePolicy(
-        "hybrid_equivalence_authority_profile", "hybrid_hmac_plus_original", True, True, True
+        "hybrid_equivalence_authority_profile", "hybrid_hmac_plus_original", True, True
     ),
 }
 
@@ -139,26 +145,37 @@ def canonical_semantic_bytes(immutable: Mapping[str, Any]) -> bytes:
     return bytes(out)
 
 
-def scope_key(identity: Identity) -> bytes:
+def scope_key(identity: Identity, key_version: str) -> bytes:
+    secret = TEST_KEYRING[key_version]
     scope_material = (
         identity.consumer_contract + "\x1f" + identity.trusted_message_identity_scope
     ).encode("utf-8")
-    return hmac.new(TEST_ROOT_SECRET, scope_material, hashlib.sha256).digest()
+    return hmac.new(secret, scope_material, hashlib.sha256).digest()
 
 
-def digest_for(policy: CandidatePolicy, identity: Identity, canonical: bytes) -> str | None:
+def digest_for(
+    policy: CandidatePolicy,
+    identity: Identity,
+    canonical: bytes,
+    *,
+    key_version: str | None,
+) -> str | None:
     if policy.evidence_mode == "sha256":
         return hashlib.sha256(canonical).hexdigest()
     if policy.keyed:
-        return hmac.new(scope_key(identity), canonical, hashlib.sha256).hexdigest()
+        if key_version not in TEST_KEYRING:
+            raise EvidenceViolation("historical_verifier_key_unavailable")
+        return hmac.new(scope_key(identity, key_version), canonical, hashlib.sha256).hexdigest()
     return None
 
 
 def build_record(policy: CandidatePolicy, identity: Identity, canonical: bytes) -> EvidenceRecord:
+    key_version = KEY_V1 if policy.keyed else None
     return EvidenceRecord(
         profile_version=PROFILE_V1,
         evidence_mode=policy.evidence_mode,
-        digest_hex=digest_for(policy, identity, canonical),
+        key_version=key_version,
+        digest_hex=digest_for(policy, identity, canonical, key_version=key_version),
         retained_original=canonical if policy.retains_original else None,
     )
 
@@ -179,7 +196,14 @@ def compare_record(
         return "uncertain_profile_mismatch"
     matched = True
     if policy.keyed:
-        expected = digest_for(policy, identity, canonical)
+        if record.key_version not in TEST_KEYRING:
+            return "uncertain_unverifiable_key"
+        expected = digest_for(
+            policy,
+            identity,
+            canonical,
+            key_version=record.key_version,
+        )
         matched = matched and expected is not None and hmac.compare_digest(record.digest_hex or "", expected)
     if policy.retains_original and record.retained_original is not None:
         matched = matched and hmac.compare_digest(record.retained_original, canonical)
@@ -267,12 +291,40 @@ class EquivalenceEngine:
             self.records[identity.key], profile_version="equivalence/unknown"
         )
 
+    def tamper_key_version(self, identity: Identity) -> None:
+        self.records[identity.key] = replace(
+            self.records[identity.key], key_version="fixture-verifier-key/retired"
+        )
+
     def equality_preserving_migrate(self, identity: Identity) -> bool:
         record = self.records[identity.key]
         if record.profile_version != PROFILE_V1:
             return False
-        self.records[identity.key] = replace(record, profile_version=PROFILE_V2)
-        return self.records[identity.key].digest_hex == record.digest_hex and self.records[identity.key].retained_original == record.retained_original
+        migrated = record
+        if self.policy.keyed and self.policy.retains_original and record.retained_original is not None:
+            migrated = replace(
+                record,
+                profile_version=PROFILE_V2,
+                key_version=KEY_V2,
+                digest_hex=digest_for(
+                    self.policy,
+                    identity,
+                    record.retained_original,
+                    key_version=KEY_V2,
+                ),
+            )
+        else:
+            migrated = replace(record, profile_version=PROFILE_V2)
+        self.records[identity.key] = migrated
+        if self.policy.retains_original and record.retained_original is not None:
+            return compare_record(
+                self.policy,
+                identity,
+                migrated,
+                record.retained_original,
+                comparison_access=True,
+            ) == "benign_duplicate"
+        return migrated.key_version == record.key_version and migrated.digest_hex == record.digest_hex
 
     def stable_external_operation_id(self, identity: Identity) -> str:
         material = "\x1f".join(identity.key).encode("utf-8")
@@ -286,8 +338,7 @@ class EquivalenceEngine:
     def exposed_comparison_evidence(self, identity: Identity, *, comparison_access: bool) -> str | None:
         if not comparison_access:
             return None
-        record = self.records[identity.key]
-        return record.digest_hex
+        return self.records[identity.key].digest_hex
 
 
 def base_event(secret_value: str = "yes") -> Dict[str, Any]:
@@ -323,15 +374,23 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
             changed[field] = str(changed[field]) + "-changed"
         conflicts.append(engine.classify_or_commit(identity, changed) == "integrity_conflict")
 
-    untrusted_blocked = False
+    scope_blocked = contract_blocked = False
     try:
         engine.classify_or_commit(
-            Identity("ticket-projection/v3", "untrusted", "msg-u"),
+            Identity("ticket-projection/v3", "untrusted", "msg-u1"),
             ExplodingImmutable(),
             trusted_message_scope=False,
         )
     except EvidenceViolation as exc:
-        untrusted_blocked = exc.code == "untrusted_message_identity_scope"
+        scope_blocked = exc.code == "untrusted_message_identity_scope"
+    try:
+        engine.classify_or_commit(
+            Identity("untrusted-contract", "tenant-a:cell-1", "msg-u2"),
+            ExplodingImmutable(),
+            trusted_consumer_contract=False,
+        )
+    except EvidenceViolation as exc:
+        contract_blocked = exc.code == "untrusted_consumer_contract"
 
     missing_engine = EquivalenceEngine(candidate)
     missing = missing_engine.classify_missing(identity, base_event())
@@ -339,19 +398,32 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
     profile_engine = EquivalenceEngine(candidate)
     profile_engine.classify_or_commit(identity, base_event())
     profile_engine.tamper_profile(identity)
-    unverifiable = profile_engine.classify_or_commit(identity, base_event())
+    unverifiable_profile = profile_engine.classify_or_commit(identity, base_event())
+
+    key_engine = EquivalenceEngine(candidate)
+    key_engine.classify_or_commit(identity, base_event())
+    if policy.keyed:
+        key_engine.tamper_key_version(identity)
+        unverifiable_key = key_engine.classify_or_commit(identity, base_event())
+    else:
+        unverifiable_key = "not_applicable"
 
     scope_b = Identity("ticket-projection/v3", "tenant-b:cell-1", "msg-001")
     engine_b = EquivalenceEngine(candidate)
     engine_b.classify_or_commit(scope_b, base_event())
     evidence_a = engine.exposed_comparison_evidence(identity, comparison_access=True)
     evidence_b = engine_b.exposed_comparison_evidence(scope_b, comparison_access=True)
+    canonical_guess = canonical_semantic_bytes(base_event("yes"))
     if policy.evidence_mode == "sha256":
-        confidentiality_ok = evidence_a != evidence_b
+        guessed = hashlib.sha256(canonical_guess).hexdigest()
+        confidentiality_ok = evidence_a != evidence_b and guessed != evidence_a
+        dictionary_oracle_blocked = guessed != evidence_a
     elif policy.keyed:
         confidentiality_ok = evidence_a is not None and evidence_b is not None and evidence_a != evidence_b
+        dictionary_oracle_blocked = True
     else:
         confidentiality_ok = evidence_a is None and evidence_b is None
+        dictionary_oracle_blocked = True
 
     no_access = engine.exposed_comparison_evidence(identity, comparison_access=False) is None
     authority_surface = engine.records[identity.key].authority_surface()
@@ -372,14 +444,13 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
     historical_before = history_engine.classify_or_commit(identity, base_event()) == "benign_duplicate"
     migration_ok = history_engine.equality_preserving_migrate(identity)
     historical_after = history_engine.classify_or_commit(identity, base_event()) == "benign_duplicate"
+    record_after = history_engine.records[identity.key]
+    verifier_generation_explicit = (not policy.keyed) or record_after.key_version in TEST_KEYRING
 
     erasure_engine = EquivalenceEngine(candidate)
     erasure_engine.classify_or_commit(identity, base_event())
     erasure_allowed = erasure_engine.erase_payload_authority(identity)
-    if policy.evidence_mode == "protected_original":
-        erasure_safety = erasure_allowed is False
-    else:
-        erasure_safety = erasure_allowed is True
+    erasure_safety = erasure_allowed is False if policy.evidence_mode == "protected_original" else erasure_allowed is True
 
     oversized = base_event("x" * (TEST_MAX_CANONICAL_BYTES + 128))
     bounded = False
@@ -389,22 +460,26 @@ def check_candidate(candidate: str) -> Dict[str, bool]:
         bounded = exc.code == "verification_work_exceeded" and exc.retryable is False
 
     access_result = engine.classify_or_commit(identity, base_event(), comparison_access=False)
+    uncertainty_ok = missing == "uncertain_equivalence_evidence_missing" and unverifiable_profile == "uncertain_unverifiable_profile"
+    if policy.keyed:
+        uncertainty_ok = uncertainty_ok and unverifiable_key == "uncertain_unverifiable_key"
 
     return {
         "dedup_identity_is_scoped_tuple": identity.key == ("ticket-projection/v3", "tenant-a:cell-1", "msg-001"),
-        "trusted_identity_precedes_equivalence_work": untrusted_blocked,
+        "trusted_identity_precedes_equivalence_work": scope_blocked and contract_blocked,
         "durable_equal_repeat_is_benign_duplicate": first == "new_effect_committed" and repeated == "benign_duplicate",
         "all_required_immutable_semantic_fields_are_covered": all(conflicts),
         "conflicting_same_scoped_identity_fails_closed": all(conflicts),
         "same_canonical_interpretation_drives_validation_and_evidence": canonical_semantic_bytes(base_event()) == canonical_semantic_bytes(dict(reversed(list(base_event().items())))),
-        "profile_version_is_explicit_and_historically_recoverable": historical_before and migration_ok and historical_after,
-        "low_entropy_confidentiality_is_scope_safe": confidentiality_ok,
+        "profile_version_is_explicit_and_historically_recoverable": historical_before and migration_ok and historical_after and verifier_generation_explicit,
+        "low_entropy_confidentiality_is_scope_safe": confidentiality_ok and dictionary_oracle_blocked,
+        "keyed_verifier_generation_is_explicit_and_recoverable": verifier_generation_explicit and ((not policy.keyed) or unverifiable_key == "uncertain_unverifiable_key"),
         "comparison_evidence_has_no_forbidden_authority": no_forbidden_authority,
         "co_resident_inbox_and_effect_are_atomic": atomic_rollback,
         "cross_authority_effect_uses_stable_operation_and_reconciliation": stable_external,
         "historical_authority_survives_or_migrates_equality_preserving": historical_before and historical_after,
         "payload_erasure_preserves_last_equivalence_authority": erasure_safety,
-        "missing_or_unverifiable_evidence_is_uncertainty": missing == "uncertain_equivalence_evidence_missing" and unverifiable == "uncertain_unverifiable_profile",
+        "missing_or_unverifiable_evidence_is_uncertainty": uncertainty_ok,
         "verification_is_bounded_and_access_controlled": bounded and no_access and access_result == "uncertain_access_denied",
         "fixture_profile_is_noncanonical": TEST_LIMIT_PROFILE.endswith("_noncanonical"),
     }

@@ -29,7 +29,7 @@ jobs:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact analyzed HEAD
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
@@ -81,7 +81,7 @@ jobs:
         shell: bash
         run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
 
-      - name: Assert source remains non-promoting at current three-credit ledger
+      - name: Assert source remains non-promoting while current ledger is four credits
         shell: bash
         run: |
           set -euo pipefail
@@ -96,29 +96,32 @@ jobs:
               'ack_after_durable_responsibility_and_lease_ambiguity',
               'quarantine_redrive_current_authority_and_dedup_preservation',
               'bounded_message_batch_compression_and_parser_limits',
+              'scoped_content_equivalence_confidentiality_and_conflict_rejection',
           ]
           assert source['mode'] == 'candidate_source_evidence_only'
           assert source['source_decision'] == 'OPEN-EVT-011'
           assert source['current_run_auto_credit'] is False and source['ledger_credit'] == []
+          assert source['non_authority']['d4c_ledger_credit'] == 'current_3_of_9_unchanged'
+          assert source['non_authority']['open_evt_011_ledger_credit'] == 'uncredited'
           assert source['selection_state'] == 'not_selected' and source['selection_authority'] == 'not_granted'
           assert source['candidate_results']['canonical_collision_resistant_fingerprint_profile'] == 'ineligible_by_contract'
           assert source['candidate_results']['keyed_authenticated_digest_profile'] == 'eligible_for_evidence_execution'
           assert source['candidate_results']['protected_retained_immutable_original_profile'] == 'eligible_for_evidence_execution'
           assert source['candidate_results']['hybrid_equivalence_authority_profile'] == 'eligible_for_evidence_execution'
-          assert plan['ledger_credit_state'] == 'three_of_nine' and plan['credited_evidence'] == credits
-          assert source['evidence_id'] in plan['remaining_evidence'] and len(plan['remaining_evidence']) == 6
+          assert plan['ledger_credit_state'] == 'four_of_nine' and plan['credited_evidence'] == credits
+          assert source['evidence_id'] not in plan['remaining_evidence'] and len(plan['remaining_evidence']) == 5
           d4c = tracks['D4-C']
           assert d4c['evidence_completed'] == credits and d4c['evidence_remaining'] == plan['remaining_evidence']
           assert d4c['candidate'] is None and d4c['candidate_status'] == 'not_selected' and d4c['state'] == 'candidate_selection_open'
           assert tracks['D4-D']['evidence_completed'] == [] and tracks['D4-D']['candidate'] is None
-          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 15
+          assert sum(len(t['evidence_completed']) for t in state['tracks']) == 16
           assert state['gate_state'] == 'scoped'
           assert state['d4_transport_authority'] == 'selected_not_granted'
           assert state['canonical_product_implementation_authority'] == 'not_granted'
           assert state['wave4_implementation_authority'] == 'not_granted'
           assert state['production_authority'] == 'none'
           assert state['c3_numeric_topology_authority'] == 'not_selected'
-          print('d4c_open_evt_011_source_boundary=PASS source_credit=0 current_d4c=3_of_9 d4wide=15_of_26 selection=not_selected fingerprint=ineligible confidential_profiles=eligible authorities=unchanged')
+          print('d4c_open_evt_011_source_boundary=PASS source_snapshot=3_of_9 source_credit=0 current_d4c=4_of_9 d4wide=16_of_26 selection=not_selected fingerprint=ineligible confidential_profiles=eligible authorities=unchanged')
           PY
 
       - name: Resolve exact workflow job identity and emit immutable provenance
@@ -153,7 +156,7 @@ jobs:
           rm runtime-evidence/jobs.json
 
       - name: Persist exact source-run provenance
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: d4-c-scoped-equivalence-source-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |

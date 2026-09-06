@@ -62,7 +62,7 @@ jobs:
           import json
           from pathlib import Path
           state=json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text()); d4a_selection=json.loads(Path('implementation/d4-eventing-async/d4-a-selection-record.json').read_text()); d4b_selection=json.loads(Path('implementation/d4-eventing-async/d4-b-selection-record.json').read_text()); tracks={track['track_id']:track for track in state['tracks']}; d4a,d4b,d4c,d4d=tracks['D4-A'],tracks['D4-B'],tracks['D4-C'],tracks['D4-D']
-          d4c_credits=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity','producer_generation_nonresurrection_across_failover_restore']
+          d4c_credits=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity','producer_generation_nonresurrection_across_failover_restore','privileged_bounded_replay_with_original_identity_and_effect_safety']
           expected_d4a={'capacity_envelope_baseline_growth_stress','broker_neutral_anti_corruption_stub_swap','regulated_payload_erasure_granularity','exactly_once_guardrail_consumer_inbox_enforcement','ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency','physical_naming_routing_and_cell_topology_adapter_mapping','broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark'}
           expected_d4b={'canonical_bounded_serialization_profile','parser_ambiguity_and_duplicate_field_negative_vectors','schema_catalog_semantic_manifest_compatibility_ci','historical_reader_and_equivalence_profile_continuity','contract_version_representation_and_breaking_change_vectors'}
           expected_profile={'serialization':{'surface_policy':'explicit_surface_bound_profiles','internal_broker':'protobuf_profile','outbound_webhook':'bounded_json_plus_json_schema_profile'},'schema_catalog':'hybrid_reviewed_git_plus_registry_catalog','contract_version':'positive_integer_family_revision'}
@@ -72,8 +72,8 @@ jobs:
           assert d4b['candidate']==expected_profile and d4b['candidate_status']=='selected_c2_profile' and d4b['state']=='selected_candidate' and set(d4b['evidence_completed'])==expected_d4b and d4b['evidence_remaining']==[]
           assert d4b_selection['selection_state']=='selected' and d4b_selection['selection_scope']=='bounded_c2_contract_profile_selection_only' and d4b_selection['separate_d4_acceptance_required'] is True
           assert d4c['candidate'] is None and d4c['candidate_status']=='not_selected' and d4c['state']=='candidate_selection_open' and d4c['evidence_completed']==d4c_credits
-          assert d4c['evidence_remaining']==[x for x in d4c['required_evidence'] if x not in d4c_credits] and len(d4c['evidence_remaining'])==3
+          assert d4c['evidence_remaining']==[x for x in d4c['required_evidence'] if x not in d4c_credits] and len(d4c['evidence_remaining'])==2
           assert d4d['candidate'] is None and d4d['candidate_status']=='not_selected' and d4d['evidence_completed']==[]
-          assert sum(len(track['evidence_completed']) for track in state['tracks'])==18
-          print('d4_scoped_boundary=PASS d4a=kafka_selected_7_of_7 d4b=profile_selected_5_of_5 d4c=6_of_9 d4d=0_of_5 evidence_credited=18 transport_authority=not_granted product_wave4=not_granted production=none c3=not_selected')
+          assert sum(len(track['evidence_completed']) for track in state['tracks'])==19
+          print('d4_scoped_boundary=PASS d4a=kafka_selected_7_of_7 d4b=profile_selected_5_of_5 d4c=7_of_9 d4d=0_of_5 evidence_credited=19 transport_authority=not_granted product_wave4=not_granted production=none c3=not_selected')
           PY

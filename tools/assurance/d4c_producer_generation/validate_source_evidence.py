@@ -20,10 +20,9 @@ EXPECTED_CURRENT_CREDITS = [
     "producer_generation_nonresurrection_across_failover_restore",
     "privileged_bounded_replay_with_original_identity_and_effect_safety",
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
-]
-EXPECTED_CURRENT_REMAINING = [
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
+EXPECTED_CURRENT_REMAINING = []
 EXPECTED_SOURCE_KEYS = {
     "schema_version", "gate_id", "track_id", "mode", "source_decision", "evidence_id",
     "candidate_classes", "must_prove", "candidate_results", "selection_state",
@@ -128,8 +127,8 @@ def main() -> int:
         if not all(runtime["check_results"][candidate].values()):
             return fail(f"check failure for {candidate}")
 
-    if plan.get("ledger_credit_state") != "eight_of_nine":
-        return fail("D4-C current ledger must be eight_of_nine after separate promotions")
+    if plan.get("ledger_credit_state") != "nine_of_nine":
+        return fail("D4-C current ledger must be nine_of_nine after separate promotions")
     if plan.get("credited_evidence") != EXPECTED_CURRENT_CREDITS:
         return fail("D4-C current credited evidence drift")
     if plan.get("remaining_evidence") != EXPECTED_CURRENT_REMAINING:
@@ -149,8 +148,8 @@ def main() -> int:
         return fail("D4-C global selection leakage")
     if tracks["D4-D"].get("evidence_completed") != [] or tracks["D4-D"].get("candidate") is not None:
         return fail("D4-D leakage")
-    if sum(len(track.get("evidence_completed", [])) for track in tracks.values()) != 20:
-        return fail("D4-wide current credit count must be 20/26")
+    if sum(len(track.get("evidence_completed", [])) for track in tracks.values()) != 21:
+        return fail("D4-wide current credit count must be 21/26")
 
     expected_authority = {
         "gate_state": "scoped",
@@ -166,7 +165,7 @@ def main() -> int:
 
     print(
         "d4c_open_evt_013_source_validation=PASS candidates=3 proofs=7 boundary=exact "
-        "source_history=non_promoting_at_5_of_9 current_d4c=8/9 d4wide=20/26 "
+        "source_history=non_promoting_at_5_of_9 current_d4c=9/9 d4wide=21/26 "
         "open_evt_013=current_promoted_by_separate_review selection=none authorities=unchanged"
     )
     return 0

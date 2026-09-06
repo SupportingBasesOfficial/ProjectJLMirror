@@ -18,7 +18,11 @@
     {
       "track_id": "D4-A",
       "name": "broker_transport_topology_anti_corruption",
-      "source_decisions": ["OPEN-EVT-001", "OPEN-EVT-005", "OPEN-REL-012.A"],
+      "source_decisions": [
+        "OPEN-EVT-001",
+        "OPEN-EVT-005",
+        "OPEN-REL-012.A"
+      ],
       "candidate": "kafka",
       "candidate_status": "selected_c2_candidate",
       "state": "selected_candidate",
@@ -45,7 +49,11 @@
     {
       "track_id": "D4-B",
       "name": "serialization_schema_catalog_and_contract_versioning",
-      "source_decisions": ["OPEN-EVT-002", "OPEN-EVT-003", "OPEN-EVT-004"],
+      "source_decisions": [
+        "OPEN-EVT-002",
+        "OPEN-EVT-003",
+        "OPEN-EVT-004"
+      ],
       "candidate": {
         "serialization": {
           "surface_policy": "explicit_surface_bound_profiles",
@@ -76,7 +84,17 @@
     {
       "track_id": "D4-C",
       "name": "delivery_ack_quarantine_equivalence_outbox_replay_history_recovery",
-      "source_decisions": ["OPEN-EVT-008", "OPEN-EVT-009", "OPEN-EVT-010", "OPEN-EVT-011", "OPEN-EVT-012", "OPEN-EVT-013", "OPEN-EVT-014", "OPEN-EVT-015", "OPEN-EVT-025"],
+      "source_decisions": [
+        "OPEN-EVT-008",
+        "OPEN-EVT-009",
+        "OPEN-EVT-010",
+        "OPEN-EVT-011",
+        "OPEN-EVT-012",
+        "OPEN-EVT-013",
+        "OPEN-EVT-014",
+        "OPEN-EVT-015",
+        "OPEN-EVT-025"
+      ],
       "candidate": null,
       "candidate_status": "not_selected",
       "state": "candidate_selection_open",
@@ -99,16 +117,19 @@
         "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
         "producer_generation_nonresurrection_across_failover_restore",
         "privileged_bounded_replay_with_original_identity_and_effect_safety",
-        "historical_reader_upcaster_semantic_and_equivalence_continuity"
-      ],
-      "evidence_remaining": [
+        "historical_reader_upcaster_semantic_and_equivalence_continuity",
         "recovery_generation_rf_inventory_reconciliation_and_activation_gates"
-      ]
+      ],
+      "evidence_remaining": []
     },
     {
       "track_id": "D4-D",
       "name": "broker_auth_message_protection_and_trace_context",
-      "source_decisions": ["OPEN-EVT-016", "OPEN-EVT-017", "OPEN-EVT-018"],
+      "source_decisions": [
+        "OPEN-EVT-016",
+        "OPEN-EVT-017",
+        "OPEN-EVT-018"
+      ],
       "candidate": null,
       "candidate_status": "not_selected",
       "state": "candidate_selection_open",
@@ -129,8 +150,28 @@
       ]
     }
   ],
-  "explicit_c3_exclusions": ["OPEN-EVT-006", "OPEN-EVT-007", "OPEN-EVT-019", "OPEN-EVT-026", "OPEN-EVT-027", "OPEN-EVT-028", "OPEN-REL-012.B", "production_partition_counts", "production_retry_backoff_jitter_numerics", "production_retention_lag_replay_quarantine_horizons", "production_realtime_buffer_session_numerics"],
-  "explicit_product_or_later_gate_exclusions": ["OPEN-EVT-020", "OPEN-EVT-021", "OPEN-EVT-022", "OPEN-EVT-023", "OPEN-EVT-024", "wave4_monitoring_product_implementation", "production_deployment"],
+  "explicit_c3_exclusions": [
+    "OPEN-EVT-006",
+    "OPEN-EVT-007",
+    "OPEN-EVT-019",
+    "OPEN-EVT-026",
+    "OPEN-EVT-027",
+    "OPEN-EVT-028",
+    "OPEN-REL-012.B",
+    "production_partition_counts",
+    "production_retry_backoff_jitter_numerics",
+    "production_retention_lag_replay_quarantine_horizons",
+    "production_realtime_buffer_session_numerics"
+  ],
+  "explicit_product_or_later_gate_exclusions": [
+    "OPEN-EVT-020",
+    "OPEN-EVT-021",
+    "OPEN-EVT-022",
+    "OPEN-EVT-023",
+    "OPEN-EVT-024",
+    "wave4_monitoring_product_implementation",
+    "production_deployment"
+  ],
   "acceptance_rule": "all_d4_tracks_have_reviewed_terminal_c2_disposition_all_required_evidence_completed_and_exact_head_assurance_clean_then_separate_acceptance",
   "merge_rule": "separate_explicit_user_authorization_after_final_exact_head_clean_gate"
 }

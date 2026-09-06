@@ -21,10 +21,9 @@ CURRENT_CREDITS = [
     "producer_generation_nonresurrection_across_failover_restore",
     "privileged_bounded_replay_with_original_identity_and_effect_safety",
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
-]
-CURRENT_REMAINING = [
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
+CURRENT_REMAINING = []
 EXPECTED_KEYS = {
     "schema_version", "gate_id", "track_id", "mode", "source_decision",
     "evidence_id", "candidate_classes", "must_prove", "candidate_results",
@@ -121,7 +120,7 @@ def main() -> int:
     if runtime["selection"] != "not_selected" or runtime["ledger_credit"] != [] or runtime["current_run_auto_credit"] is not False:
         return fail("runtime authority leakage")
 
-    if plan.get("ledger_credit_state") != "eight_of_nine" or plan.get("credited_evidence") != CURRENT_CREDITS or plan.get("remaining_evidence") != CURRENT_REMAINING:
+    if plan.get("ledger_credit_state") != "nine_of_nine" or plan.get("credited_evidence") != CURRENT_CREDITS or plan.get("remaining_evidence") != CURRENT_REMAINING:
         return fail("D4-C ledger drift")
     if PROOFS_ID not in plan.get("credited_evidence", []) or PROOFS_ID in plan.get("remaining_evidence", []):
         return fail("OPEN-EVT-015 current ledger must reflect separate reviewed promotion")
@@ -138,8 +137,8 @@ def main() -> int:
         return fail("D4-C selection leakage")
     if tracks["D4-D"].get("evidence_completed") != [] or tracks["D4-D"].get("candidate") is not None:
         return fail("D4-D leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 20:
-        return fail("D4-wide credit count must remain 20/26")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 21:
+        return fail("D4-wide credit count must remain 21/26")
     expected = {
         "gate_state": "scoped", "d4_transport_authority": "selected_not_granted",
         "canonical_product_implementation_authority": "not_granted",
@@ -149,7 +148,7 @@ def main() -> int:
     for key, value in expected.items():
         if state.get(key) != value:
             return fail(f"authority drift: {key}")
-    print("d4c_open_evt_015_source_validation=PASS candidates=3 proofs=7 source_snapshot=7/9_uncredited current_d4c=8/9 current_d4wide=20/26 selection=none authorities=unchanged")
+    print("d4c_open_evt_015_source_validation=PASS candidates=3 proofs=7 source_snapshot=7/9_uncredited current_d4c=9/9 current_d4wide=21/26 selection=none authorities=unchanged")
     return 0
 
 PROOFS_ID = "historical_reader_upcaster_semantic_and_equivalence_continuity"

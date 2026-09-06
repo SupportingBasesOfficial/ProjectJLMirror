@@ -33,7 +33,7 @@ def main() -> int:
         raise AssertionError(f"canonical D4 state failed validation: {errors!r}")
     if validator.EXPECTED_TOTAL_EVIDENCE != 26:
         raise AssertionError(f"unexpected D4 evidence inventory size: {validator.EXPECTED_TOTAL_EVIDENCE}")
-    if validator.EXPECTED_TOTAL_CREDITED != 20:
+    if validator.EXPECTED_TOTAL_CREDITED != 21:
         raise AssertionError(f"unexpected D4 credited evidence count: {validator.EXPECTED_TOTAL_CREDITED}")
 
     d4a = lambda s: next(t for t in s["tracks"] if t["track_id"] == "D4-A")
@@ -50,19 +50,19 @@ def main() -> int:
     must_fail(lambda s: d4b(s).__setitem__("candidate", None), "D4-B selected profile drift")
     must_fail(lambda s: d4b(s)["evidence_completed"].pop(), "completed evidence drift")
 
-    def regress_eighth_credit(s):
+    def regress_ninth_credit(s):
         d = d4c(s)
-        credit = "historical_reader_upcaster_semantic_and_equivalence_continuity"
+        credit = "recovery_generation_rf_inventory_reconciliation_and_activation_gates"
         d["evidence_completed"].remove(credit)
-        d["evidence_remaining"].insert(0, credit)
-    must_fail(regress_eighth_credit, "completed evidence drift")
+        d["evidence_remaining"].append(credit)
+    must_fail(regress_ninth_credit, "completed evidence drift")
 
-    def leak_ninth_credit(s):
+    def duplicate_credit(s):
         d = d4c(s)
-        d["evidence_completed"].append(d["evidence_remaining"].pop(0))
-    must_fail(leak_ninth_credit, "completed evidence drift")
+        d["evidence_completed"].append(d["evidence_completed"][-1])
+    must_fail(duplicate_credit, "completed evidence multiplicity drift")
 
-    must_fail(lambda s: d4c(s).__setitem__("candidate", "in_process_versioned_reader_upcaster_registry"), "must not silently select a candidate")
+    must_fail(lambda s: d4c(s).__setitem__("candidate", "restore_generation_fence_manifest_profile"), "must not silently select a candidate")
     must_fail(lambda s: d4c(s).__setitem__("candidate_status", "selected"), "candidate status must remain not_selected")
     must_fail(lambda s: d4c(s).__setitem__("state", "selected_candidate"), "scoped state drift")
 
@@ -72,9 +72,9 @@ def main() -> int:
 
     print(
         "d4_state_falsification=PASS full_d4_acceptance=blocked transport_grant=blocked "
-        "d4a_b_regression=blocked d4c_eighth_credit_regression=blocked d4c_ninth_credit_leakage=blocked "
+        "d4a_b_regression=blocked d4c_ninth_credit_regression=blocked d4c_duplicate_credit=blocked "
         "d4c_selection_leakage=blocked duplicate_track_identity=blocked product_wave4_production=blocked "
-        "c3_scope_leak=blocked total_required=26 total_credited=20"
+        "c3_scope_leak=blocked total_required=26 total_credited=21"
     )
     return 0
 

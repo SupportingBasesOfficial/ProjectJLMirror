@@ -40,6 +40,7 @@ CURRENT_CREDITS = [
     "producer_generation_nonresurrection_across_failover_restore",
     "privileged_bounded_replay_with_original_identity_and_effect_safety",
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
+    "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
 EXPECTED_PROOFS = (
     "authoritative_mutation_and_required_outbox_fact_commit_atomically",
@@ -310,9 +311,9 @@ def validate(root: Path) -> list[str]:
     _probe_scalar_subclass_key_rejection(errors)
     _probe_concurrent_broker_conflict(errors)
 
-    if ledger.get("ledger_credit_state") != "eight_of_nine" or ledger.get("credited_evidence") != CURRENT_CREDITS:
+    if ledger.get("ledger_credit_state") != "nine_of_nine" or ledger.get("credited_evidence") != CURRENT_CREDITS:
         errors.append("current D4-C ledger drift")
-    if EVIDENCE in ledger.get("remaining_evidence", []) or len(ledger.get("remaining_evidence", [])) != 1:
+    if EVIDENCE in ledger.get("remaining_evidence", []) or ledger.get("remaining_evidence") != []:
         errors.append("OPEN-EVT-012 current promotion drift")
 
     tracks_raw = state.get("tracks") if isinstance(state, dict) else None
@@ -324,13 +325,13 @@ def validate(root: Path) -> list[str]:
         errors.append("global D4 track identity drift")
         return errors
     d4c = tracks["D4-C"]
-    if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != ledger.get("remaining_evidence"):
+    if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != []:
         errors.append("D4-C current state drift")
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
         errors.append("D4-C candidate leakage")
     if tracks["D4-D"].get("evidence_completed") != [] or tracks["D4-D"].get("candidate") is not None:
         errors.append("D4-D leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 20:
+    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 21:
         errors.append("D4-wide evidence count drift")
     for key, expected in {
         "gate_state": "scoped", "d4_transport_authority": "selected_not_granted",
@@ -349,7 +350,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_012_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=33 independent_adversarial_probes=2 source_auto_credit=false source_snapshot=4_of_9 current_d4c=8_of_9 current_d4wide=20_of_26 selection=not_selected")
+    print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=33 independent_adversarial_probes=2 source_auto_credit=false source_snapshot=4_of_9 current_d4c=9_of_9 current_d4wide=21_of_26 selection=not_selected")
     return 0
 
 

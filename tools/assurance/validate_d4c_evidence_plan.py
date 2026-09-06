@@ -12,20 +12,22 @@ PROMOTION_009 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-op
 PROMOTION_010 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-010-promotion-v1.json")
 PROMOTION_011 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-011-promotion-v1.json")
 PROMOTION_012 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-012-promotion-v1.json")
+PROMOTION_013 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-013-promotion-v1.json")
 SOURCE_008 = Path("implementation/d4-eventing-async/source-evidence/d4-c-ack-lease-checkpoint-source.json")
 SOURCE_009 = Path("implementation/d4-eventing-async/source-evidence/d4-c-quarantine-redrive-source.json")
 SOURCE_010 = Path("implementation/d4-eventing-async/source-evidence/d4-c-bounded-parser-limits-source.json")
 SOURCE_011 = Path("implementation/d4-eventing-async/source-evidence/d4-c-scoped-content-equivalence-source.json")
 SOURCE_012 = Path("implementation/d4-eventing-async/source-evidence/d4-c-outbox-claim-dispatch-source.json")
+SOURCE_013 = Path("implementation/d4-eventing-async/source-evidence/d4-c-producer-generation-source.json")
 STATE = Path("implementation/d4-eventing-async/state-manifest.json")
 CREDIT_008 = "ack_after_durable_responsibility_and_lease_ambiguity"
 CREDIT_009 = "quarantine_redrive_current_authority_and_dedup_preservation"
 CREDIT_010 = "bounded_message_batch_compression_and_parser_limits"
 CREDIT_011 = "scoped_content_equivalence_confidentiality_and_conflict_rejection"
 CREDIT_012 = "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity"
-EXPECTED_CREDITS = [CREDIT_008, CREDIT_009, CREDIT_010, CREDIT_011, CREDIT_012]
+CREDIT_013 = "producer_generation_nonresurrection_across_failover_restore"
+EXPECTED_CREDITS = [CREDIT_008, CREDIT_009, CREDIT_010, CREDIT_011, CREDIT_012, CREDIT_013]
 EXPECTED_REMAINING = [
-    "producer_generation_nonresurrection_across_failover_restore",
     "privileged_bounded_replay_with_original_identity_and_effect_safety",
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
@@ -142,6 +144,23 @@ PROMOTIONS = (
         },
         "source_sha256": "7737b26e9cf83c41328f18bf62d84199abef3e4ca6c0b51b37e2ecd86ec2c8d2",
     },
+    {
+        "path": PROMOTION_013, "source": SOURCE_013,
+        "promotion_id": "d4-c-open-evt-013-promotion-v1",
+        "promotion_base": "8b9761a0469040ee26499902cd64aea25ee0016d",
+        "source_pr": 82, "source_head": "317479d2e71108a6854d16f35e063648365d9b62",
+        "source_merge": "8b9761a0469040ee26499902cd64aea25ee0016d", "review_id": 5124310737,
+        "decision": "OPEN-EVT-013", "evidence": CREDIT_013,
+        "workflow": {
+            "workflow_id": 351350724, "workflow_path": ".github/workflows/d4-c-producer-generation-source-evidence.yml",
+            "workflow_event": "pull_request", "source_head_branch": "evidence/d4-c-producer-generation-source",
+            "run_id": 34014396915, "run_attempt": 1, "job_id": 101435567019,
+            "job_name": "D4-C OPEN-EVT-013 source evidence", "artifact_id": 9983444885,
+            "artifact_name": "d4-c-producer-generation-source-317479d2e71108a6854d16f35e063648365d9b62-34014396915-1",
+            "artifact_digest": "sha256:03f2dcbb8929e385a539147a1d2a9cd5068f41d090d1273f6db7ffb2dc56733f",
+        },
+        "source_sha256": "f1bbb8b35ffa9da6920d1db8ec54e1a626fa277afe7409aa81e99d172eee2345",
+    },
 )
 
 class DuplicateKeyError(ValueError):
@@ -233,7 +252,7 @@ def validate(root: Path) -> list[str]:
         "schema_version": 1, "gate_id": "D4", "track_id": "D4-C",
         "name": "delivery_ack_quarantine_equivalence_outbox_replay_history_recovery",
         "candidate": None, "candidate_status": "not_selected",
-        "source_evidence_state": "reviewed_source_run_available", "ledger_credit_state": "five_of_nine",
+        "source_evidence_state": "reviewed_source_run_available", "ledger_credit_state": "six_of_nine",
         "current_run_auto_credit": False, "selection_state": "not_selected", "selection_authority": "not_granted",
         "separate_selection_required": True, "separate_d4_acceptance_required": True,
         "d4_transport_authority": "selected_not_granted", "canonical_product_implementation_authority": "not_granted",
@@ -242,7 +261,7 @@ def validate(root: Path) -> list[str]:
     for key, expected in expected_plan_scalars.items():
         if plan.get(key) != expected or type(plan.get(key)) is not type(expected): errors.append(f"plan scalar drift: {key}")
     if plan.get("source_decisions") != EXPECTED_SOURCE_DECISIONS: errors.append("D4-C source decision inventory drift")
-    if plan.get("credited_evidence") != EXPECTED_CREDITS: errors.append("D4-C credited evidence must be exactly OPEN-EVT-008 through OPEN-EVT-012 obligations")
+    if plan.get("credited_evidence") != EXPECTED_CREDITS: errors.append("D4-C credited evidence must be exactly OPEN-EVT-008 through OPEN-EVT-013 obligations")
     if plan.get("remaining_evidence") != EXPECTED_REMAINING: errors.append("D4-C remaining evidence inventory drift")
     if plan.get("required_evidence") != [*EXPECTED_CREDITS, *EXPECTED_REMAINING]: errors.append("D4-C required evidence inventory drift")
     for spec in PROMOTIONS: _validate_promotion(root, spec, errors)
@@ -259,7 +278,7 @@ def validate(root: Path) -> list[str]:
     if d4c.get("evidence_completed") != EXPECTED_CREDITS: errors.append("D4-C state credit drift")
     if d4c.get("evidence_remaining") != EXPECTED_REMAINING: errors.append("D4-C state remaining evidence drift")
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("evidence_completed") != []: errors.append("D4-D state/credit leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 17: errors.append("D4-wide credited evidence must be exactly 17/26")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 18: errors.append("D4-wide credited evidence must be exactly 18/26")
     for key, expected in {
         "gate_state": "scoped", "d4_transport_authority": "selected_not_granted",
         "canonical_product_implementation_authority": "not_granted", "wave4_implementation_authority": "not_granted",
@@ -274,7 +293,7 @@ def main() -> int:
     if errors:
         for error in errors: print(f"D4C_PROMOTION_ERROR: {error}")
         return 1
-    print("d4c_open_evt_012_promotion=PASS promotion_records=5 immutable_history=true d4c=5_of_9 d4wide=17_of_26 selection=not_selected authorities=unchanged")
+    print("d4c_open_evt_013_promotion=PASS promotion_records=6 immutable_history=true d4c=6_of_9 d4wide=18_of_26 selection=not_selected authorities=unchanged")
     return 0
 
 if __name__ == "__main__":

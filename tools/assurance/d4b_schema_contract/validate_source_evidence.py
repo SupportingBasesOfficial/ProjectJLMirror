@@ -12,6 +12,7 @@ D4C_CREDITS = [
     "bounded_message_batch_compression_and_parser_limits",
     "scoped_content_equivalence_confidentiality_and_conflict_rejection",
     "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
+    "producer_generation_nonresurrection_across_failover_restore",
 ]
 EXPECTED_IDS = {
     "canonical_bounded_serialization_profile",
@@ -104,17 +105,17 @@ def main() -> int:
     assert d4c["state"] == "candidate_selection_open"
     assert d4c["evidence_completed"] == D4C_CREDITS
     expected_remaining = [x for x in d4c["required_evidence"] if x not in D4C_CREDITS]
-    assert d4c["evidence_remaining"] == expected_remaining and len(expected_remaining) == 4
+    assert d4c["evidence_remaining"] == expected_remaining and len(expected_remaining) == 3
     assert d4d["candidate"] is None and d4d["candidate_status"] == "not_selected"
     assert d4d["evidence_completed"] == []
-    assert sum(len(track["evidence_completed"]) for track in state_tracks) == 17
+    assert sum(len(track["evidence_completed"]) for track in state_tracks) == 18
     assert state["gate_state"] == "scoped"
     assert state["d4_transport_authority"] == "selected_not_granted"
     assert state["canonical_product_implementation_authority"] == "not_granted"
     assert state["wave4_implementation_authority"] == "not_granted"
     assert state["production_authority"] == "none"
     assert state["c3_numeric_topology_authority"] == "not_selected"
-    print("d4b_schema_contract_source_manifest=PASS evidence_ids=5 evidence_kinds=exact reference_properties=exact source_credit=0 source_history=not_selected current_selection=selected_c2_profile unique_tracks=true d4a=exact_7_of_7_kafka_selected d4c=5_of_9 d4wide=17/26 d4d=open authorities=not_granted")
+    print("d4b_schema_contract_source_manifest=PASS evidence_ids=5 evidence_kinds=exact reference_properties=exact source_credit=0 source_history=not_selected current_selection=selected_c2_profile unique_tracks=true d4a=exact_7_of_7_kafka_selected d4c=6_of_9 d4wide=18/26 d4d=open authorities=not_granted")
     return 0
 
 

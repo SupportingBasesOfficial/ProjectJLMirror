@@ -11,15 +11,15 @@ SOURCE = Path("implementation/d4-eventing-async/source-evidence/d4-c-producer-ge
 PLAN = Path("implementation/d4-eventing-async/d4-c-evidence-plan.json")
 STATE = Path("implementation/d4-eventing-async/state-manifest.json")
 
-EXPECTED_CREDITS = [
+EXPECTED_CURRENT_CREDITS = [
     "ack_after_durable_responsibility_and_lease_ambiguity",
     "quarantine_redrive_current_authority_and_dedup_preservation",
     "bounded_message_batch_compression_and_parser_limits",
     "scoped_content_equivalence_confidentiality_and_conflict_rejection",
     "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
-]
-EXPECTED_REMAINING = [
     "producer_generation_nonresurrection_across_failover_restore",
+]
+EXPECTED_CURRENT_REMAINING = [
     "privileged_bounded_replay_with_original_identity_and_effect_safety",
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
@@ -105,11 +105,11 @@ def main() -> int:
     if type(source.get("current_run_auto_credit")) is not bool or source["current_run_auto_credit"] is not False:
         return fail("auto-credit leakage")
     if source.get("ledger_credit") != []:
-        return fail("source run must not grant ledger credit")
+        return fail("source run must remain historically non-promoting")
 
     non_authority = source.get("non_authority")
     if not isinstance(non_authority, dict) or non_authority != EXPECTED_NON_AUTHORITY:
-        return fail("non-authority exact boundary drift")
+        return fail("historical source non-authority exact boundary drift")
 
     boundary = source.get("source_boundary")
     if not isinstance(boundary, dict) or boundary != EXPECTED_BOUNDARY:
@@ -121,21 +121,21 @@ def main() -> int:
     if runtime["selection"] != "not_selected" or runtime["selection_authority"] != "not_granted":
         return fail("runtime selection leakage")
     if runtime["ledger_credit"] != [] or runtime["current_run_auto_credit"] is not False:
-        return fail("runtime auto-credit leakage")
+        return fail("runtime source auto-credit leakage")
     for candidate in CANDIDATES:
         if not all(runtime["proof_results"][candidate].values()):
             return fail(f"proof failure for {candidate}")
         if not all(runtime["check_results"][candidate].values()):
             return fail(f"check failure for {candidate}")
 
-    if plan.get("ledger_credit_state") != "five_of_nine":
-        return fail("D4-C current ledger must remain five_of_nine")
-    if plan.get("credited_evidence") != EXPECTED_CREDITS:
-        return fail("D4-C credited evidence drift")
-    if plan.get("remaining_evidence") != EXPECTED_REMAINING:
-        return fail("D4-C remaining evidence drift")
-    if source["evidence_id"] not in plan["remaining_evidence"]:
-        return fail("OPEN-EVT-013 must remain uncredited in source PR")
+    if plan.get("ledger_credit_state") != "six_of_nine":
+        return fail("D4-C current ledger must be six_of_nine after separate promotion")
+    if plan.get("credited_evidence") != EXPECTED_CURRENT_CREDITS:
+        return fail("D4-C current credited evidence drift")
+    if plan.get("remaining_evidence") != EXPECTED_CURRENT_REMAINING:
+        return fail("D4-C current remaining evidence drift")
+    if source["evidence_id"] not in plan["credited_evidence"] or source["evidence_id"] in plan["remaining_evidence"]:
+        return fail("OPEN-EVT-013 current ledger projection must reflect separate reviewed promotion")
     if plan.get("candidate") is not None or plan.get("candidate_status") != "not_selected":
         return fail("D4-C candidate selection leakage")
 
@@ -143,14 +143,14 @@ def main() -> int:
     if set(tracks) != {"D4-A", "D4-B", "D4-C", "D4-D"}:
         return fail("D4 track inventory drift")
     d4c = tracks["D4-C"]
-    if d4c.get("evidence_completed") != EXPECTED_CREDITS or d4c.get("evidence_remaining") != EXPECTED_REMAINING:
-        return fail("D4-C global evidence projection drift")
+    if d4c.get("evidence_completed") != EXPECTED_CURRENT_CREDITS or d4c.get("evidence_remaining") != EXPECTED_CURRENT_REMAINING:
+        return fail("D4-C current global evidence projection drift")
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
         return fail("D4-C global selection leakage")
     if tracks["D4-D"].get("evidence_completed") != [] or tracks["D4-D"].get("candidate") is not None:
         return fail("D4-D leakage")
-    if sum(len(track.get("evidence_completed", [])) for track in tracks.values()) != 17:
-        return fail("D4-wide credit count must remain 17/26")
+    if sum(len(track.get("evidence_completed", [])) for track in tracks.values()) != 18:
+        return fail("D4-wide current credit count must be 18/26")
 
     expected_authority = {
         "gate_state": "scoped",
@@ -165,9 +165,9 @@ def main() -> int:
             return fail(f"authority drift: {key}")
 
     print(
-        "d4c_open_evt_013_source_validation=PASS candidates=3 proofs=7 "
-        "boundary=exact current_d4c=5/9 d4wide=17/26 open_evt_013=uncredited "
-        "selection=none authorities=unchanged"
+        "d4c_open_evt_013_source_validation=PASS candidates=3 proofs=7 boundary=exact "
+        "source_history=non_promoting_at_5_of_9 current_d4c=6/9 d4wide=18/26 "
+        "open_evt_013=current_promoted_by_separate_review selection=none authorities=unchanged"
     )
     return 0
 

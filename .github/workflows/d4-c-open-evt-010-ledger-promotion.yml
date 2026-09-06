@@ -137,18 +137,18 @@ jobs:
         if: steps.promotion_delta.outputs.changed == 'false'
         shell: bash
         run: echo 'd4c_open_evt_010_promotion_live_admission=SKIP promotion_unchanged=true aggregate_ledger_change_ignored=true artifact_retention_dependency=false durable_records_and_digests=validated'
-      - name: Assert OPEN-EVT-010 history is preserved under current fifth credit
+      - name: Assert OPEN-EVT-010 history is preserved under current sixth credit
         shell: bash
         run: |
           python3 - <<'PY'
           import json
           from pathlib import Path
           plan=json.loads(Path('implementation/d4-eventing-async/d4-c-evidence-plan.json').read_text()); state=json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text()); record=json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-010-promotion-v1.json').read_text()); d4c=next(t for t in state['tracks'] if t['track_id']=='D4-C')
-          expected=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity']
+          expected=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity','producer_generation_nonresurrection_across_failover_restore']
           assert record['credited_evidence']==['bounded_message_batch_compression_and_parser_limits'] and record['credit_count']==1
-          assert plan['ledger_credit_state']=='five_of_nine' and plan['credited_evidence']==expected and len(plan['remaining_evidence'])==4
+          assert plan['ledger_credit_state']=='six_of_nine' and plan['credited_evidence']==expected and len(plan['remaining_evidence'])==3
           assert d4c['evidence_completed']==expected and d4c['evidence_remaining']==plan['remaining_evidence'] and d4c['candidate'] is None and d4c['candidate_status']=='not_selected' and d4c['state']=='candidate_selection_open'
-          assert sum(len(t['evidence_completed']) for t in state['tracks'])==17
+          assert sum(len(t['evidence_completed']) for t in state['tracks'])==18
           assert state['gate_state']=='scoped' and state['d4_transport_authority']=='selected_not_granted' and state['canonical_product_implementation_authority']=='not_granted' and state['wave4_implementation_authority']=='not_granted' and state['production_authority']=='none' and state['c3_numeric_topology_authority']=='not_selected'
-          print('d4c_open_evt_010_promotion_continuity=PASS own_credit=third current_d4c=5_of_9 d4wide=17_of_26 artifact_retention_dependency=false selection=not_selected authorities=unchanged')
+          print('d4c_open_evt_010_promotion_continuity=PASS own_credit=third current_d4c=6_of_9 d4wide=18_of_26 artifact_retention_dependency=false selection=not_selected authorities=unchanged')
           PY

@@ -37,6 +37,7 @@ CURRENT_CREDITS = [
     "bounded_message_batch_compression_and_parser_limits",
     "scoped_content_equivalence_confidentiality_and_conflict_rejection",
     EVIDENCE,
+    "producer_generation_nonresurrection_across_failover_restore",
 ]
 EXPECTED_PROOFS = (
     "authoritative_mutation_and_required_outbox_fact_commit_atomically",
@@ -307,9 +308,9 @@ def validate(root: Path) -> list[str]:
     _probe_scalar_subclass_key_rejection(errors)
     _probe_concurrent_broker_conflict(errors)
 
-    if ledger.get("ledger_credit_state") != "five_of_nine" or ledger.get("credited_evidence") != CURRENT_CREDITS:
+    if ledger.get("ledger_credit_state") != "six_of_nine" or ledger.get("credited_evidence") != CURRENT_CREDITS:
         errors.append("current D4-C ledger drift")
-    if EVIDENCE in ledger.get("remaining_evidence", []) or len(ledger.get("remaining_evidence", [])) != 4:
+    if EVIDENCE in ledger.get("remaining_evidence", []) or len(ledger.get("remaining_evidence", [])) != 3:
         errors.append("OPEN-EVT-012 current promotion drift")
 
     tracks_raw = state.get("tracks") if isinstance(state, dict) else None
@@ -327,7 +328,7 @@ def validate(root: Path) -> list[str]:
         errors.append("D4-C candidate leakage")
     if tracks["D4-D"].get("evidence_completed") != [] or tracks["D4-D"].get("candidate") is not None:
         errors.append("D4-D leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 17:
+    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 18:
         errors.append("D4-wide evidence count drift")
     for key, expected in {
         "gate_state": "scoped", "d4_transport_authority": "selected_not_granted",
@@ -346,7 +347,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_012_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=33 independent_adversarial_probes=2 source_auto_credit=false source_snapshot=4_of_9 current_d4c=5_of_9 current_d4wide=17_of_26 selection=not_selected")
+    print("d4c_open_evt_012_source=PASS candidates=3 proofs=7 proof_inventory=exact checks=33 independent_adversarial_probes=2 source_auto_credit=false source_snapshot=4_of_9 current_d4c=6_of_9 current_d4wide=18_of_26 selection=not_selected")
     return 0
 
 

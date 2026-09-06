@@ -71,7 +71,7 @@ jobs:
           import json
           from pathlib import Path
           source=json.loads(Path('implementation/d4-eventing-async/source-evidence/schema-contract/source-evidence-manifest.json').read_text()); state=json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text()); plan=json.loads(Path('implementation/d4-eventing-async/d4-b-evidence-plan.json').read_text()); tracks={t['track_id']:t for t in state['tracks']}
-          d4c_credits=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity','producer_generation_nonresurrection_across_failover_restore']
+          d4c_credits=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity','producer_generation_nonresurrection_across_failover_restore','privileged_bounded_replay_with_original_identity_and_effect_safety']
           expected_evidence={'canonical_bounded_serialization_profile','parser_ambiguity_and_duplicate_field_negative_vectors','schema_catalog_semantic_manifest_compatibility_ci','historical_reader_and_equivalence_profile_continuity','contract_version_representation_and_breaking_change_vectors'}
           selected={'serialization':{'surface_policy':'explicit_surface_bound_profiles','internal_broker':'protobuf_profile','outbound_webhook':'bounded_json_plus_json_schema_profile'},'schema_catalog':'hybrid_reviewed_git_plus_registry_catalog','contract_version':'positive_integer_family_revision'}
           assert source['current_run_auto_credit'] is False and source['ledger_credit']==[] and source['candidate'] is None and source['candidate_status']=='not_selected'
@@ -79,11 +79,11 @@ jobs:
           assert plan['current_run_auto_credit'] is False and plan['candidate']==selected and plan['selection_state']=='selected'
           assert tracks['D4-B']['candidate']==selected and tracks['D4-B']['candidate_status']=='selected_c2_profile' and tracks['D4-B']['state']=='selected_candidate' and set(tracks['D4-B']['evidence_completed'])==expected_evidence and tracks['D4-B']['evidence_remaining']==[]
           d4c=tracks['D4-C']; assert d4c['candidate'] is None and d4c['candidate_status']=='not_selected' and d4c['state']=='candidate_selection_open'
-          assert d4c['evidence_completed']==d4c_credits and d4c['evidence_remaining']==[x for x in d4c['required_evidence'] if x not in d4c_credits] and len(d4c['evidence_remaining'])==3
+          assert d4c['evidence_completed']==d4c_credits and d4c['evidence_remaining']==[x for x in d4c['required_evidence'] if x not in d4c_credits] and len(d4c['evidence_remaining'])==2
           assert tracks['D4-D']['candidate'] is None and tracks['D4-D']['candidate_status']=='not_selected' and tracks['D4-D']['evidence_completed']==[]
-          assert sum(len(t['evidence_completed']) for t in state['tracks'])==18
+          assert sum(len(t['evidence_completed']) for t in state['tracks'])==19
           assert state['gate_state']=='scoped' and state['d4_transport_authority']=='selected_not_granted' and state['canonical_product_implementation_authority']=='not_granted' and state['wave4_implementation_authority']=='not_granted' and state['production_authority']=='none' and state['c3_numeric_topology_authority']=='not_selected'
-          print('d4b_source_nonpromotion=PASS source_credit=0 source_history=not_selected current_selection=selected_c2_profile promoted_credit=5 d4c=6/9 d4wide=18/26 d4=scoped authorities=not_granted')
+          print('d4b_source_nonpromotion=PASS source_credit=0 source_history=not_selected current_selection=selected_c2_profile promoted_credit=5 d4c=7/9 d4wide=19/26 d4=scoped authorities=not_granted')
           PY
       - name: Resolve exact workflow job identity and emit provenance
         shell: bash

@@ -47,31 +47,37 @@ The exact candidate-plan obligations are:
 
 ## Executable proof model
 
-The source harness treats ordinary messages as reference-only consumers of external secret/KMS authority. Every ordinary payload field carries an explicit material classification. Only `public`, `internal`, and `business_data` classifications are accepted; `secret`, `credential`, and `key_material` are rejected independently of the field name.
+The source harness treats ordinary messages as reference-only consumers of external secret/KMS authority. Every ordinary payload field carries an explicit material classification. Only `public`, `internal`, and `business_data` classifications are admitted; `secret`, `credential`, `key_material`, and unknown classifications are rejected.
 
-Verification references must use the dedicated `verification-profile://` namespace, and the profile identifier is constrained to a canonical identifier alphabet. Negative probes independently require both the namespace guard and the canonical-ID guard, rather than relying only on collision fixtures. The reference therefore cannot be an arbitrary secret handle, path, URI, or malformed identifier.
+A shared message-boundary validator is applied at creation, sanitization, and erasure. This prevents a reconstructed/deserialized `OrdinaryMessage` from bypassing the same payload, secret-reference, verification-reference, and verification-generation invariants that apply at creation time.
 
-Audit references are **not caller-supplied**. They are derived internally from the validated scope and the exact secret generation as `secret-audit-ref://<scope>/generation-<n>`. Because neither scope nor generation can carry the resolvable secret handle, the audit reference cannot alias or embed it by construction. Sanitization and erasure revalidate the secret reference and verification reference before retaining any historical reference.
+Verification references must use the dedicated `verification-profile://` namespace and a canonical profile identifier. The namespace and canonical-ID guards each have an independent negative probe. Alias/embedding probes use collision-shaped values that satisfy earlier syntax checks, so the overlap guards themselves are required.
 
-The revalidation boundary is tested independently of message creation: adversarial probes directly reconstruct `OrdinaryMessage` instances with a syntactically valid verification-reference/secret-handle collision and prove that both `sanitize_record` and `erase_and_minimize` reject them before persistence or historical retention. This models deserialized/reconstructed input that never passed through `create_message`.
+Secret references require a non-empty handle, positive generation, canonical slash-delimited scope, and non-bearer semantics. Audit references are **not caller-supplied**: they are derived from the validated scope and exact generation as `secret-audit-ref://<scope>/generation-<n>`, with an explicit overlap guard preventing the resolvable handle from appearing in the derived audit reference.
 
-Secret resolution requires the exact current authority generation. Stale and unknown generations fail closed. Secondary persistence/observability records retain only message identity, tenant identity, and validated non-secret verification profile/generation references. Secret references and secret/key/credential material are excluded from inbox, log, trace, and quarantine records. Secret-resolution audit records retain only the derived non-secret audit reference and never the resolvable handle or secret material.
+Secret resolution is independently guarded by authority availability, authority source, exact current generation, explicit authorization, reference/request scope equality, and authority allowlisting. The probes isolate these conditions rather than relying on one combined rejection path. Stale and unknown generations fail closed.
 
-The corrected harness executes 27 positive and negative probes covering:
+The reconstructed/deserialized-input probes cover both aliased verification references and secret-classified payload material at sanitization and erasure boundaries. Secondary persistence/observability records retain only validated message identity, tenant identity, and non-secret verification profile/generation references. Secret references and secret/key/credential material are excluded from inbox, log, trace, and quarantine records.
 
-- explicit payload-material classification and rejection of secret, credential, and key material regardless of field name;
-- representative negative vectors for password, secret, credential, token, API key, private key, and key material;
-- independent rejection of a wrong verification namespace and a non-canonical verification profile identifier;
-- rejection of verification-reference aliasing or embedding of the secret handle with collision-shaped fixtures that reach the overlap guards;
-- proof that the audit reference is internally derived and non-secret, plus rejection of a secret-handle-shaped scope;
-- direct reconstructed/deserialized-message rejection at both sanitization and erasure boundaries;
-- exclusion of secret handles/material from inbox, log, trace, and quarantine records;
-- erasure/minimization that preserves only validated non-secret verification profile/generation continuity;
-- duplicate-sensitive correctness after erasure using only non-secret historical verification references;
-- narrowly scoped and audited secret resolution without logging the resolvable handle;
-- fail-closed behavior for unauthorized, cross-scope, authority-outage, stale-generation, and unknown-generation resolution;
-- rejection of bearer-capable secret references;
-- proof that historical verification references cannot resolve secrets.
+The corrected harness executes an exact validator-pinned set of 39 positive and negative probes covering:
+
+- safe ordinary-payload admission;
+- rejection of password, secret, credential, token, API key, private key, key material, and unknown payload classifications;
+- independent secret-reference handle, generation, scope, and bearer guards;
+- positive verification-generation requirement;
+- independent verification namespace and canonical-ID guards;
+- verification-reference alias and embedding guards with collision-shaped fixtures;
+- internally derived non-secret audit references and audit-handle overlap rejection;
+- unsupported secondary-record kinds;
+- reconstructed/deserialized alias rejection at sanitization and erasure;
+- reconstructed/deserialized secret-payload rejection at sanitization and erasure;
+- exclusion of secret/key/credential material from inbox, logs, trace, and quarantine;
+- erasure/minimization preserving only required non-secret historical verification continuity;
+- duplicate-sensitive correctness after erasure;
+- successful narrowly authorized and audited resolution without logging the resolvable handle;
+- independent unauthorized, reference/request scope-mismatch, allowlist, outage, authority-source, stale-generation, and unknown-generation fail-closed paths;
+- non-bearer historical-reference behavior;
+- bearer secret-reference rejection at both message creation and secret resolution.
 
 ## Governance boundary
 

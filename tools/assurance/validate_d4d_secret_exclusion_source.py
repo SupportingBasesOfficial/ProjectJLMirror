@@ -32,7 +32,7 @@ EXPECTED_PROBES={
 'secret_reference_empty_handle_rejected','secret_reference_nonpositive_generation_rejected','secret_reference_invalid_scope_rejected',
 'verification_generation_nonpositive_rejected',
 'verification_reference_namespace_rejected','verification_reference_noncanonical_id_rejected',
-'verification_reference_alias_secret_handle_rejected','verification_reference_embedding_secret_handle_rejected',
+'secret_handle_verification_namespace_rejected','verification_reference_alias_secret_handle_rejected','verification_reference_embedding_secret_handle_rejected',
 'audit_reference_is_derived_non_secret','secret_handle_scope_rejected',
 'unsupported_record_kind_rejected',
 'sanitize_reconstructed_alias_rejected','erase_reconstructed_alias_rejected',
@@ -42,11 +42,13 @@ EXPECTED_PROBES={
 'erasure_preserves_non_secret_historical_verification_reference',
 'redaction_erasure_preserve_correctness_evidence',
 'secret_resolution_is_narrowly_authorized_and_audited','resolved_secret_material_rejected_under_business_classification',
+'nested_list_secret_material_rejected','nested_object_secret_material_rejected','opaque_payload_value_type_rejected',
 'unauthorized_resolution_fails_closed','cross_scope_resolution_fails_closed',
 'reference_scope_mismatch_fails_closed','scope_not_allowlisted_fails_closed',
 'secret_authority_outage_fails_closed','invalid_secret_authority_source_rejected','unknown_secret_handle_resolution_fails_closed',
 'stale_generation_resolution_fails_closed','unknown_generation_resolution_fails_closed',
-'historical_reference_is_not_bearer_authority','bearer_secret_reference_rejected','resolve_bearer_secret_reference_rejected'}
+'historical_reference_is_not_bearer_authority','historical_verification_namespace_collision_fails_closed',
+'bearer_secret_reference_rejected','resolve_bearer_secret_reference_rejected'}
 REQUIRED=[FIRST,SECOND,THIRD,EXPECTED_ID,'trace_context_observability_only_validation_and_redaction']
 CREDITED=[FIRST,SECOND,THIRD]
 
@@ -83,4 +85,4 @@ if __name__=='__main__':
     errors=validate(root)
     [print('D4D_SECRET_EXCLUSION_SOURCE_ERROR:',x,file=sys.stderr) for x in errors]
     if errors:raise SystemExit(1)
-    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=43 corrected_lineage=true')
+    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=48 corrected_lineage=true')

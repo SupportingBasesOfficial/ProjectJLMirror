@@ -7,8 +7,13 @@ class SecretBoundaryDenied(Exception):
     pass
 
 @dataclass(frozen=True)
+class SecretMaterial:
+    handle: str
+    generation: int
+
+@dataclass(frozen=True)
 class PayloadField:
-    value: str
+    value: object
     classification: str
 
 @dataclass(frozen=True)
@@ -53,7 +58,11 @@ CANONICAL_ID = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 CANONICAL_SCOPE = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)+$")
 
 def _contains_sensitive_material(values: dict[str, PayloadField]) -> bool:
-    return any(field.classification in FORBIDDEN_PAYLOAD_CLASSIFICATIONS for field in values.values())
+    return any(
+        field.classification in FORBIDDEN_PAYLOAD_CLASSIFICATIONS
+        or isinstance(field.value, SecretMaterial)
+        for field in values.values()
+    )
 
 def _validate_payload(values: dict[str, PayloadField]) -> None:
     classifications = {field.classification for field in values.values()}
@@ -122,7 +131,7 @@ def sanitize_record(message: OrdinaryMessage, *, record_kind: str) -> dict[str, 
         "key_material_present": False,
     }
 
-def resolve_secret(*, reference: SecretReference, authority: SecretAuthority, requested_scope: str, authorized: bool, audit_sink: list[dict[str, object]]) -> str:
+def resolve_secret(*, reference: SecretReference, authority: SecretAuthority, requested_scope: str, authorized: bool, audit_sink: list[dict[str, object]]) -> SecretMaterial:
     _validate_secret_reference_shape(reference)
     if not authority.available:
         raise SecretBoundaryDenied("secret authority unavailable: fail closed")
@@ -136,7 +145,7 @@ def resolve_secret(*, reference: SecretReference, authority: SecretAuthority, re
         raise SecretBoundaryDenied("secret resolution is not narrowly authorized")
     audit_ref = _audit_reference(reference)
     audit_sink.append({"scope": requested_scope, "reference": audit_ref, "generation": reference.generation, "resolved": True, "secret_handle_logged": False, "secret_material_logged": False})
-    return f"resolved-secret-for:{reference.handle}:generation:{reference.generation}"
+    return SecretMaterial(reference.handle, reference.generation)
 
 def erase_and_minimize(message: OrdinaryMessage) -> HistoricalEvidence:
     _validate_message_boundary(message)
@@ -231,7 +240,8 @@ def run_probes() -> dict[str, bool]:
 
     audit=[]
     resolved=resolve_secret(reference=ref,authority=authority,requested_scope="tenant-a/orders",authorized=True,audit_sink=audit)
-    checks["secret_resolution_is_narrowly_authorized_and_audited"]=resolved.startswith("resolved-secret-for:") and len(audit)==1 and audit[0]["scope"]=="tenant-a/orders" and audit[0]["reference"]==_audit_reference(ref) and audit[0]["secret_handle_logged"] is False and audit[0]["secret_material_logged"] is False and ref.handle not in str(audit[0])
+    checks["secret_resolution_is_narrowly_authorized_and_audited"]=isinstance(resolved,SecretMaterial) and resolved.handle==ref.handle and resolved.generation==7 and len(audit)==1 and audit[0]["scope"]=="tenant-a/orders" and audit[0]["reference"]==_audit_reference(ref) and audit[0]["secret_handle_logged"] is False and audit[0]["secret_material_logged"] is False and ref.handle not in str(audit[0])
+    _expect_denied(checks,"resolved_secret_material_rejected_under_business_classification",lambda:create_message(message_id="bad-resolved-secret",tenant_id="tenant-a",payload={"note":PayloadField(resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
 
     _expect_denied(checks,"unauthorized_resolution_fails_closed",lambda:resolve_secret(reference=ref,authority=authority,requested_scope="tenant-a/orders",authorized=False,audit_sink=[]))
     _expect_denied(checks,"cross_scope_resolution_fails_closed",lambda:resolve_secret(reference=ref,authority=authority,requested_scope="tenant-b/orders",authorized=True,audit_sink=[]))

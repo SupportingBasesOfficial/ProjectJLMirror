@@ -37,6 +37,7 @@ EXPECTED_PROBES={
 'unsupported_record_kind_rejected',
 'sanitize_reconstructed_alias_rejected','erase_reconstructed_alias_rejected',
 'sanitize_reconstructed_secret_payload_rejected','erase_reconstructed_secret_payload_rejected',
+'sanitize_reconstructed_nonpositive_verification_generation_rejected','erase_reconstructed_nonpositive_verification_generation_rejected',
 'secondary_records_exclude_secret_key_material',
 'erasure_preserves_non_secret_historical_verification_reference',
 'redaction_erasure_preserve_correctness_evidence',
@@ -82,4 +83,4 @@ if __name__=='__main__':
     errors=validate(root)
     [print('D4D_SECRET_EXCLUSION_SOURCE_ERROR:',x,file=sys.stderr) for x in errors]
     if errors:raise SystemExit(1)
-    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=39 corrected_lineage=true')
+    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=41 corrected_lineage=true')

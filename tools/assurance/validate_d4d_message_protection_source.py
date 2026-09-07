@@ -20,6 +20,24 @@ EXPECTED_MUST={
 'restored_old_verifier_or_profile_cannot_become_current_authority_for_unrelated_scope',
 'key_or_profile_rotation_preserves_historical_comparison_without_secret_exposure',
 'encryption_does_not_replace_minimization_or_authorization'}
+EXPECTED_PROBES={
+'classification_controls_protection_storage_delivery_logging_retention',
+'key_material_stays_behind_secret_kms',
+'retained_evidence_is_non_secret_reference_only',
+'historical_verifier_available',
+'duplicate_sensitive_effect_accepts_known_historical_generation',
+'verifier_loss_fails_closed',
+'unknown_generation_fails_closed',
+'scope_mismatch_fails_closed',
+'profile_mismatch_fails_closed',
+'rotation_preserves_historical_verifier',
+'equality_preserving_migration_preserves_scope_profile',
+'migrated_evidence_verifies',
+'restored_old_verifier_cannot_become_current',
+'restored_profile_cannot_authorize_unrelated_scope',
+'encryption_does_not_replace_authorization',
+'encryption_does_not_replace_minimization',
+'exportable_key_material_rejected'}
 REQUIRED=[FIRST,SECOND,EXPECTED_ID,'secret_credential_payload_exclusion_and_erasure_boundary','trace_context_observability_only_validation_and_redaction']
 
 def validate(root:Path):
@@ -41,7 +59,9 @@ def validate(root:Path):
     if d.get('required_evidence')!=REQUIRED or d.get('evidence_completed')!=[FIRST,SECOND] or d.get('evidence_remaining')!=REQUIRED[2:]:e.append('current D4-D state must remain exactly two promoted credits')
     if sum(len(t['evidence_completed']) for t in state['tracks'])!=23:e.append('D4-wide current state must remain 23/26')
     if state.get('gate_state')!='scoped' or state.get('d4_transport_authority')!='selected_not_granted' or state.get('canonical_product_implementation_authority')!='not_granted' or state.get('wave4_implementation_authority')!='not_granted' or state.get('production_authority')!='none' or state.get('c3_numeric_topology_authority')!='not_selected':e.append('authority leakage')
-    bad=[k for k,v in run_probes().items() if not v]
+    proofs=run_probes()
+    if set(proofs)!=EXPECTED_PROBES:e.append('executed probe set drift')
+    bad=[k for k,v in proofs.items() if not v]
     if bad:e.append('behavior probes failed: '+','.join(bad))
     return e
 
@@ -50,4 +70,4 @@ if __name__=='__main__':
     errors=validate(root)
     [print('D4D_MESSAGE_PROTECTION_SOURCE_ERROR:',x,file=sys.stderr) for x in errors]
     if errors:raise SystemExit(1)
-    print('d4d_message_protection_source=PASS source_snapshot=2_of_5 source_auto_credit=false current_d4d=2_of_5 d4wide=23/26 selection=not_selected authorities=unchanged')
+    print('d4d_message_protection_source=PASS source_snapshot=2_of_5 source_auto_credit=false current_d4d=2_of_5 d4wide=23/26 selection=not_selected authorities=unchanged probes=17')

@@ -33,7 +33,7 @@ EXPECTED_PROBES={
 'secret_reference_empty_handle_rejected','secret_reference_nonpositive_generation_rejected','secret_reference_boolean_generation_rejected','secret_reference_fractional_generation_rejected','secret_reference_invalid_scope_rejected',
 'verification_generation_nonpositive_rejected','verification_generation_boolean_rejected','verification_generation_fractional_rejected',
 'verification_reference_namespace_rejected','verification_reference_noncanonical_id_rejected',
-'secret_handle_verification_namespace_rejected','verification_reference_alias_secret_handle_rejected','verification_reference_embedding_secret_handle_rejected',
+'secret_handle_verification_namespace_rejected','secret_handle_audit_namespace_rejected','verification_reference_alias_secret_handle_rejected','verification_reference_embedding_secret_handle_rejected',
 'audit_reference_is_derived_non_secret','secret_handle_scope_rejected',
 'unsupported_record_kind_rejected',
 'sanitize_reconstructed_alias_rejected','erase_reconstructed_alias_rejected',
@@ -88,4 +88,4 @@ if __name__=='__main__':
     errors=validate(root)
     [print('D4D_SECRET_EXCLUSION_SOURCE_ERROR:',x,file=sys.stderr) for x in errors]
     if errors:raise SystemExit(1)
-    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=62 corrected_lineage=true')
+    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=63 corrected_lineage=true')

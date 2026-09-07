@@ -41,10 +41,10 @@ EXPECTED_PROBES={
 'secondary_records_exclude_secret_key_material',
 'erasure_preserves_non_secret_historical_verification_reference',
 'redaction_erasure_preserve_correctness_evidence',
-'secret_resolution_is_narrowly_authorized_and_audited',
+'secret_resolution_is_narrowly_authorized_and_audited','resolved_secret_material_rejected_under_business_classification',
 'unauthorized_resolution_fails_closed','cross_scope_resolution_fails_closed',
 'reference_scope_mismatch_fails_closed','scope_not_allowlisted_fails_closed',
-'secret_authority_outage_fails_closed','invalid_secret_authority_source_rejected',
+'secret_authority_outage_fails_closed','invalid_secret_authority_source_rejected','unknown_secret_handle_resolution_fails_closed',
 'stale_generation_resolution_fails_closed','unknown_generation_resolution_fails_closed',
 'historical_reference_is_not_bearer_authority','bearer_secret_reference_rejected','resolve_bearer_secret_reference_rejected'}
 REQUIRED=[FIRST,SECOND,THIRD,EXPECTED_ID,'trace_context_observability_only_validation_and_redaction']
@@ -83,4 +83,4 @@ if __name__=='__main__':
     errors=validate(root)
     [print('D4D_SECRET_EXCLUSION_SOURCE_ERROR:',x,file=sys.stderr) for x in errors]
     if errors:raise SystemExit(1)
-    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=41 corrected_lineage=true')
+    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=43 corrected_lineage=true')

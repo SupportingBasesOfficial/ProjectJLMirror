@@ -111,7 +111,7 @@ def run_probes() -> dict[str, bool]:
         "duplicate_sensitive_effect_accepts_known_historical_generation": duplicate_sensitive_effect_eligible(evidence, authority, scope=evidence.scope, profile=evidence.comparison_profile),
     }
 
-    missing = KeyAuthority(current_generation=7, historical_generations=(6, 7))
+    missing = KeyAuthority(current_generation=8, historical_generations=(5, 6, 8))
     checks["verifier_loss_fails_closed"] = not duplicate_sensitive_effect_eligible(evidence, missing, scope=evidence.scope, profile=evidence.comparison_profile)
     unknown = replace(evidence, key_generation_ref=99)
     checks["unknown_generation_fails_closed"] = not duplicate_sensitive_effect_eligible(unknown, authority, scope=evidence.scope, profile=evidence.comparison_profile)

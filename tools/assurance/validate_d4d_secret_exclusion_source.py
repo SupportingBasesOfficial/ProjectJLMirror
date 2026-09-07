@@ -30,6 +30,7 @@ EXPECTED_PROBES={
 'message_payload_mapping_is_immutable','source_payload_mutation_does_not_reach_message','nested_payload_sequence_is_immutable','nested_payload_mapping_is_immutable',
 'reject_payload_password','reject_payload_secret','reject_payload_credential','reject_payload_token','reject_payload_api_key','reject_payload_private_key','reject_payload_key_material',
 'reject_payload_unknown_classification','message_id_secret_material_rejected','tenant_id_secret_material_rejected',
+'message_id_secret_handle_rejected','tenant_id_secret_handle_rejected','message_id_embedded_secret_handle_rejected','tenant_id_embedded_secret_handle_rejected',
 'secret_reference_empty_handle_rejected','secret_reference_nonpositive_generation_rejected','secret_reference_boolean_generation_rejected','secret_reference_fractional_generation_rejected','secret_reference_invalid_scope_rejected',
 'verification_generation_nonpositive_rejected','verification_generation_boolean_rejected','verification_generation_fractional_rejected',
 'verification_reference_namespace_rejected','verification_reference_noncanonical_id_rejected',
@@ -39,6 +40,8 @@ EXPECTED_PROBES={
 'sanitize_reconstructed_alias_rejected','erase_reconstructed_alias_rejected',
 'sanitize_reconstructed_secret_message_id_rejected','erase_reconstructed_secret_message_id_rejected',
 'sanitize_reconstructed_secret_tenant_id_rejected','erase_reconstructed_secret_tenant_id_rejected',
+'sanitize_reconstructed_secret_handle_message_id_rejected','erase_reconstructed_secret_handle_message_id_rejected',
+'sanitize_reconstructed_secret_handle_tenant_id_rejected','erase_reconstructed_secret_handle_tenant_id_rejected',
 'sanitize_reconstructed_secret_payload_rejected','erase_reconstructed_secret_payload_rejected',
 'sanitize_reconstructed_nonpositive_verification_generation_rejected','erase_reconstructed_nonpositive_verification_generation_rejected',
 'sanitize_reconstructed_boolean_verification_generation_rejected','erase_reconstructed_boolean_verification_generation_rejected',
@@ -48,6 +51,7 @@ EXPECTED_PROBES={
 'redaction_erasure_preserve_correctness_evidence',
 'secret_resolution_is_narrowly_authorized_and_audited','resolved_secret_material_rejected_under_business_classification',
 'serialized_resolved_secret_material_rejected','nested_serialized_resolved_secret_material_rejected',
+'positional_serialized_resolved_secret_material_rejected','nested_positional_serialized_resolved_secret_material_rejected',
 'nested_list_secret_material_rejected','nested_object_secret_material_rejected','opaque_payload_value_type_rejected',
 'unauthorized_resolution_fails_closed','truthy_nonboolean_authorization_rejected','cross_scope_resolution_fails_closed',
 'reference_scope_mismatch_fails_closed','scope_not_allowlisted_fails_closed',
@@ -91,4 +95,4 @@ if __name__=='__main__':
     errors=validate(root)
     [print('D4D_SECRET_EXCLUSION_SOURCE_ERROR:',x,file=sys.stderr) for x in errors]
     if errors:raise SystemExit(1)
-    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=73 corrected_lineage=true')
+    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=83 corrected_lineage=true')

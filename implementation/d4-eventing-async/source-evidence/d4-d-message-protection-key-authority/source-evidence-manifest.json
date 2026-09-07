@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-D",
+  "source_decision": "OPEN-EVT-017",
+  "evidence_id": "message_protection_key_authority_and_historical_verifier_continuity",
+  "mode": "source_evidence_only",
+  "source_base": "99cb8a887bd9acdcf955a1eed37347cadcbfc086",
+  "current_run_auto_credit": false,
+  "ledger_credit": [],
+  "candidate": null,
+  "candidate_status": "not_selected",
+  "selection_authority": "not_granted",
+  "message_protection_authority": "secret_or_kms_authority_with_historical_verifier_continuity",
+  "must_prove": [
+    "data_classification_controls_protection_storage_delivery_logging_and_retention",
+    "key_material_remains_behind_secret_or_kms_authority",
+    "retained_evidence_contains_only_non_secret_profile_and_key_generation_references",
+    "historical_verifier_authority_remains_available_for_supported_equivalence_horizon_or_is_equality_preserving_migrated",
+    "verifier_loss_or_unknown_generation_fails_closed_for_duplicate_sensitive_effects",
+    "restored_old_verifier_or_profile_cannot_become_current_authority_for_unrelated_scope",
+    "key_or_profile_rotation_preserves_historical_comparison_without_secret_exposure",
+    "encryption_does_not_replace_minimization_or_authorization"
+  ],
+  "source_time_state": {
+    "d4a": "7_of_7_selected",
+    "d4b": "5_of_5_selected",
+    "d4c": "9_of_9_unselected",
+    "d4d": "2_of_5_unselected",
+    "d4wide": "23_of_26",
+    "d4_transport_authority": "selected_not_granted",
+    "canonical_product_implementation_authority": "not_granted",
+    "wave4_implementation_authority": "not_granted",
+    "production_authority": "none",
+    "c3_numeric_topology_authority": "not_selected"
+  }
+}

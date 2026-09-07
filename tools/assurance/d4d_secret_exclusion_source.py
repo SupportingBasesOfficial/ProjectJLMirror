@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from types import MappingProxyType
 
 class SecretBoundaryDenied(Exception):
     pass
@@ -35,7 +37,7 @@ class SecretAuthority:
 class OrdinaryMessage:
     message_id: str
     tenant_id: str
-    payload: dict[str, PayloadField]
+    payload: Mapping[str, PayloadField]
     secret_ref: SecretReference | None
     verification_profile_ref: str
     verification_generation_ref: int
@@ -58,21 +60,40 @@ CANONICAL_ID = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 CANONICAL_SCOPE = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)+$")
 
 
+def _validate_generation(value: object, label: str) -> None:
+    if type(value) is not int or value <= 0:
+        raise SecretBoundaryDenied(f"{label} must be a positive integer")
+
+
 def _value_contains_secret_material(value: object) -> bool:
     if isinstance(value, SecretMaterial):
         return True
     if value is None or isinstance(value, (str, int, float, bool)):
         return False
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return any(_value_contains_secret_material(item) for item in value)
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         if not all(isinstance(key, str) for key in value):
             raise SecretBoundaryDenied("payload object keys must be strings")
         return any(_value_contains_secret_material(item) for item in value.values())
     raise SecretBoundaryDenied("unsupported payload value type")
 
 
-def _contains_sensitive_material(values: dict[str, PayloadField]) -> bool:
+def _freeze_payload_value(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, list):
+        return tuple(_freeze_payload_value(item) for item in value)
+    if isinstance(value, tuple):
+        return tuple(_freeze_payload_value(item) for item in value)
+    if isinstance(value, Mapping):
+        if not all(isinstance(key, str) for key in value):
+            raise SecretBoundaryDenied("payload object keys must be strings")
+        return MappingProxyType({key: _freeze_payload_value(item) for key, item in value.items()})
+    raise SecretBoundaryDenied("unsupported payload value type")
+
+
+def _contains_sensitive_material(values: Mapping[str, PayloadField]) -> bool:
     return any(
         field.classification in FORBIDDEN_PAYLOAD_CLASSIFICATIONS
         or _value_contains_secret_material(field.value)
@@ -80,13 +101,26 @@ def _contains_sensitive_material(values: dict[str, PayloadField]) -> bool:
     )
 
 
-def _validate_payload(values: dict[str, PayloadField]) -> None:
+def _validate_payload(values: Mapping[str, PayloadField]) -> None:
+    if not isinstance(values, Mapping) or not all(isinstance(key, str) for key in values):
+        raise SecretBoundaryDenied("ordinary payload must be a string-keyed mapping")
+    if not all(isinstance(field, PayloadField) for field in values.values()):
+        raise SecretBoundaryDenied("ordinary payload values must be classified payload fields")
     classifications = {field.classification for field in values.values()}
     unknown = classifications - ALLOWED_PAYLOAD_CLASSIFICATIONS - FORBIDDEN_PAYLOAD_CLASSIFICATIONS
     if unknown:
         raise SecretBoundaryDenied("unknown payload classification")
     if _contains_sensitive_material(values):
         raise SecretBoundaryDenied("ordinary message payload cannot contain secret, credential, or key material")
+
+
+def _freeze_payload(values: Mapping[str, PayloadField]) -> Mapping[str, PayloadField]:
+    _validate_payload(values)
+    frozen = {
+        key: PayloadField(_freeze_payload_value(field.value), field.classification)
+        for key, field in values.items()
+    }
+    return MappingProxyType(frozen)
 
 
 def _validate_scope(scope: str) -> None:
@@ -103,8 +137,7 @@ def _validate_secret_reference_shape(reference: SecretReference) -> None:
         raise SecretBoundaryDenied("secret handle cannot use verification reference namespace")
     if reference.handle.startswith(AUDIT_REFERENCE_PREFIX):
         raise SecretBoundaryDenied("secret handle cannot use audit reference namespace")
-    if reference.generation <= 0:
-        raise SecretBoundaryDenied("secret reference generation must be positive")
+    _validate_generation(reference.generation, "secret reference generation")
     _validate_scope(reference.scope)
 
 
@@ -132,12 +165,12 @@ def _validate_message_boundary(message: OrdinaryMessage) -> None:
     if message.secret_ref is not None:
         _validate_secret_reference_shape(message.secret_ref)
     _validate_verification_reference(message.verification_profile_ref, message.secret_ref)
-    if message.verification_generation_ref <= 0:
-        raise SecretBoundaryDenied("non-secret historical verification generation required")
+    _validate_generation(message.verification_generation_ref, "historical verification generation")
 
 
-def create_message(*, message_id: str, tenant_id: str, payload: dict[str, PayloadField], secret_ref: SecretReference | None, verification_profile_ref: str, verification_generation_ref: int) -> OrdinaryMessage:
-    message = OrdinaryMessage(message_id, tenant_id, dict(payload), secret_ref, verification_profile_ref, verification_generation_ref)
+def create_message(*, message_id: str, tenant_id: str, payload: Mapping[str, PayloadField], secret_ref: SecretReference | None, verification_profile_ref: str, verification_generation_ref: int) -> OrdinaryMessage:
+    frozen_payload = _freeze_payload(payload)
+    message = OrdinaryMessage(message_id, tenant_id, frozen_payload, secret_ref, verification_profile_ref, verification_generation_ref)
     _validate_message_boundary(message)
     return message
 
@@ -161,6 +194,7 @@ def sanitize_record(message: OrdinaryMessage, *, record_kind: str) -> dict[str, 
 
 def resolve_secret(*, reference: SecretReference, authority: SecretAuthority, requested_scope: str, authorized: bool, audit_sink: list[dict[str, object]]) -> SecretMaterial:
     _validate_secret_reference_shape(reference)
+    _validate_generation(authority.current_generation, "secret authority current generation")
     if not authority.available:
         raise SecretBoundaryDenied("secret authority unavailable: fail closed")
     if authority.authority_source != "secret_or_kms_authority":
@@ -216,15 +250,31 @@ def _expect_denied(checks: dict[str, bool], name: str, fn) -> None:
         checks[name] = True
 
 
+def _expect_type_error(checks: dict[str, bool], name: str, fn) -> None:
+    try:
+        fn()
+        checks[name] = False
+    except TypeError:
+        checks[name] = True
+
+
 def run_probes() -> dict[str, bool]:
     ref = SecretReference("kms://orders-signing/current", 7, "tenant-a/orders")
     authority = SecretAuthority(True, ref.handle, 7, ("tenant-a/orders",))
     verification_ref = "verification-profile://semantic-equivalence-v3"
-    safe_payload = {"order_id": PayloadField("ord-42", "business_data"), "event": PayloadField("order.created", "internal")}
+    nested_source = ["one", {"two": ["three"]}]
+    safe_payload = {"order_id": PayloadField("ord-42", "business_data"), "event": PayloadField("order.created", "internal"), "nested": PayloadField(nested_source, "business_data")}
     message = create_message(message_id="msg-001", tenant_id="tenant-a", payload=safe_payload, secret_ref=ref, verification_profile_ref=verification_ref, verification_generation_ref=7)
     checks: dict[str, bool] = {}
 
     checks["ordinary_payload_excludes_secret_credential_material"] = not _contains_sensitive_material(message.payload) and all(field.classification in ALLOWED_PAYLOAD_CLASSIFICATIONS for field in message.payload.values())
+    _expect_type_error(checks,"message_payload_mapping_is_immutable",lambda:message.payload.__setitem__("late",PayloadField("x","business_data")))
+    nested_source.append(SecretMaterial(ref.handle, ref.generation))
+    checks["source_payload_mutation_does_not_reach_message"] = not _value_contains_secret_material(message.payload["nested"].value)
+    _expect_type_error(checks,"nested_payload_sequence_is_immutable",lambda:message.payload["nested"].value.__setitem__(0,SecretMaterial(ref.handle,ref.generation)))
+    nested_mapping = message.payload["nested"].value[1]
+    _expect_type_error(checks,"nested_payload_mapping_is_immutable",lambda:nested_mapping.__setitem__("secret",SecretMaterial(ref.handle,ref.generation)))
+
     for probe_name, field_name, classification in [
         ("password", "password", "credential"), ("secret", "business_note", "secret"), ("credential", "credential", "credential"),
         ("token", "token", "credential"), ("api_key", "api_key", "credential"), ("private_key", "private_key", "key_material"), ("key_material", "key_material", "key_material")]:
@@ -233,8 +283,12 @@ def run_probes() -> dict[str, bool]:
     _expect_denied(checks,"reject_payload_unknown_classification",lambda:create_message(message_id="bad-unknown-classification",tenant_id="tenant-a",payload={"note":PayloadField("opaque","unclassified")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"secret_reference_empty_handle_rejected",lambda:create_message(message_id="bad-empty-handle",tenant_id="tenant-a",payload=safe_payload,secret_ref=replace(ref,handle=""),verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"secret_reference_nonpositive_generation_rejected",lambda:create_message(message_id="bad-secret-generation",tenant_id="tenant-a",payload=safe_payload,secret_ref=replace(ref,generation=0),verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"secret_reference_boolean_generation_rejected",lambda:create_message(message_id="bad-secret-generation-bool",tenant_id="tenant-a",payload=safe_payload,secret_ref=replace(ref,generation=True),verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"secret_reference_fractional_generation_rejected",lambda:create_message(message_id="bad-secret-generation-float",tenant_id="tenant-a",payload=safe_payload,secret_ref=replace(ref,generation=1.5),verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"secret_reference_invalid_scope_rejected",lambda:create_message(message_id="bad-secret-scope",tenant_id="tenant-a",payload=safe_payload,secret_ref=replace(ref,scope="tenant-a"),verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"verification_generation_nonpositive_rejected",lambda:create_message(message_id="bad-verification-generation",tenant_id="tenant-a",payload=safe_payload,secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=0))
+    _expect_denied(checks,"verification_generation_boolean_rejected",lambda:create_message(message_id="bad-verification-generation-bool",tenant_id="tenant-a",payload=safe_payload,secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=True))
+    _expect_denied(checks,"verification_generation_fractional_rejected",lambda:create_message(message_id="bad-verification-generation-float",tenant_id="tenant-a",payload=safe_payload,secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=1.5))
 
     wrong_namespace_but_canonical_suffix=("x"*len(VERIFICATION_REFERENCE_PREFIX))+"valid-profile"
     _expect_denied(checks,"verification_reference_namespace_rejected",lambda:create_message(message_id="bad-verification-namespace",tenant_id="tenant-a",payload=safe_payload,secret_ref=ref,verification_profile_ref=wrong_namespace_but_canonical_suffix,verification_generation_ref=7))
@@ -265,6 +319,12 @@ def run_probes() -> dict[str, bool]:
     reconstructed_bad_verification_generation=OrdinaryMessage("reconstructed-bad-verification-generation","tenant-a",dict(safe_payload),ref,verification_ref,0)
     _expect_denied(checks,"sanitize_reconstructed_nonpositive_verification_generation_rejected",lambda:sanitize_record(reconstructed_bad_verification_generation,record_kind="inbox"))
     _expect_denied(checks,"erase_reconstructed_nonpositive_verification_generation_rejected",lambda:erase_and_minimize(reconstructed_bad_verification_generation))
+    reconstructed_bool_verification_generation=OrdinaryMessage("reconstructed-bool-verification-generation","tenant-a",dict(safe_payload),ref,verification_ref,True)
+    _expect_denied(checks,"sanitize_reconstructed_boolean_verification_generation_rejected",lambda:sanitize_record(reconstructed_bool_verification_generation,record_kind="inbox"))
+    _expect_denied(checks,"erase_reconstructed_boolean_verification_generation_rejected",lambda:erase_and_minimize(reconstructed_bool_verification_generation))
+    reconstructed_fractional_verification_generation=OrdinaryMessage("reconstructed-fractional-verification-generation","tenant-a",dict(safe_payload),ref,verification_ref,1.5)
+    _expect_denied(checks,"sanitize_reconstructed_fractional_verification_generation_rejected",lambda:sanitize_record(reconstructed_fractional_verification_generation,record_kind="inbox"))
+    _expect_denied(checks,"erase_reconstructed_fractional_verification_generation_rejected",lambda:erase_and_minimize(reconstructed_fractional_verification_generation))
 
     sanitized=[sanitize_record(message,record_kind=k) for k in ("inbox","log","trace","quarantine")]
     checks["secondary_records_exclude_secret_key_material"]=all(not r["secret_ref_present"] and not r["secret_material_present"] and not r["credential_material_present"] and not r["key_material_present"] and ref.handle not in str(r) for r in sanitized)
@@ -291,6 +351,8 @@ def run_probes() -> dict[str, bool]:
     _expect_denied(checks,"unknown_secret_handle_resolution_fails_closed",lambda:resolve_secret(reference=replace(ref,handle="kms://orders-signing/unknown"),authority=authority,requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
     _expect_denied(checks,"stale_generation_resolution_fails_closed",lambda:resolve_secret(reference=replace(ref,generation=6),authority=authority,requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
     _expect_denied(checks,"unknown_generation_resolution_fails_closed",lambda:resolve_secret(reference=replace(ref,generation=99),authority=authority,requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
+    _expect_denied(checks,"authority_boolean_generation_rejected",lambda:resolve_secret(reference=ref,authority=replace(authority,current_generation=True),requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
+    _expect_denied(checks,"authority_fractional_generation_rejected",lambda:resolve_secret(reference=ref,authority=replace(authority,current_generation=7.0),requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
 
     checks["historical_reference_is_not_bearer_authority"]=not historical_reference_can_resolve_secret(evidence,authority,scope="tenant-a/orders")
     colliding_authority=replace(authority,current_handle=evidence.verification_profile_ref,current_generation=evidence.verification_generation_ref)

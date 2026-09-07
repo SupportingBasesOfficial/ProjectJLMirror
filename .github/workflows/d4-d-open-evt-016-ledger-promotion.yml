@@ -159,7 +159,8 @@ jobs:
           second='tenant_and_contract_scoped_producer_consumer_authorization'
           assert source['current_run_auto_credit'] is False and source['ledger_credit']==[]
           assert source['source_time_state']['d4d']=='0_of_5_unselected' and source['source_time_state']['d4wide']=='21_of_26'
-          assert first_promotion['evidence_id']==first
+          assert first_promotion['promotion_id']=='d4-d-open-evt-016-promotion-v1'
+          assert first_promotion['credited_evidence']==[first] and first_promotion['credit_count']==1
           assert plan['ledger_credit_state']=='two_of_five' and plan['credited_evidence']==[first,second] and len(plan['remaining_evidence'])==3
           assert d4d['evidence_completed']==[first,second] and len(d4d['evidence_remaining'])==3
           assert d4d['candidate'] is None and d4d['candidate_status']=='not_selected' and d4d['state']=='candidate_selection_open'

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-D",
+  "canonical_base": "7e8a395d22cdf0e7b474b887a1db4087d834057c",
+  "mode": "candidate_evaluation_only",
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "separate_selection_required": true,
+  "separate_d4_acceptance_required": true,
+  "source_decisions": ["OPEN-EVT-016", "OPEN-EVT-017", "OPEN-EVT-018"],
+  "axes": {
+    "workload_identity_to_broker_credential_adapter": {
+      "decision": "OPEN-EVT-016",
+      "candidate_classes": ["workload_identity_mtls_broker_adapter", "workload_oidc_token_exchange_broker_adapter", "derived_short_lived_broker_native_credential_adapter", "equivalent_reviewed_derived_credential_adapter"],
+      "must_prove": ["canonical_internal_workload_identity_is_authenticated_before_broker_credential_derivation", "adapter_consumes_ir_d_002_canonical_workload_identity_without_reopening_issuer_or_attestation_authority", "broker_credential_is_derived_and_replaceable_not_platform_identity_authority", "credential_scope_is_least_privilege_and_bound_to_service_environment_and_broker_role", "internal_network_or_broker_presence_alone_never_establishes_trust", "credential_rotation_or_replacement_does_not_change_canonical_workload_identity", "stale_or_revoked_workload_identity_cannot_mint_or_retain_current_broker_authority", "credential_material_is_not_embedded_in_ordinary_messages_logs_or_quarantine_records"]
+    },
+    "tenant_and_contract_scoped_producer_consumer_authorization": {
+      "decision": "OPEN-EVT-016",
+      "candidate_classes": ["broker_acl_projection_adapter", "broker_policy_engine_authorization_adapter", "scoped_token_or_credential_claim_authorization_adapter", "equivalent_reviewed_broker_authorization_adapter"],
+      "must_prove": ["producer_authorization_is_contract_scoped_and_least_privilege", "consumer_authorization_is_service_domain_and_tenant_constrained", "broker_acl_or_policy_identity_does_not_replace_platform_tenant_authority", "cross_tenant_produce_and_consume_attempts_fail_closed", "authorization_revocation_or_generation_change_blocks_stale_broker_access", "wildcard_or_broad_broker_permissions_cannot_bypass_contract_scope", "authorization_projection_is_reconcilable_from_current_platform_authority"]
+    },
+    "message_protection_key_authority_and_historical_verifier_continuity": {
+      "decision": "OPEN-EVT-017",
+      "candidate_classes": ["kms_backed_envelope_or_transport_protection_profile", "secret_authority_backed_authenticated_equivalence_profile", "broker_native_encryption_plus_external_historical_verifier_profile", "equivalent_reviewed_key_and_verifier_profile"],
+      "must_prove": ["data_classification_controls_protection_storage_delivery_logging_and_retention", "key_material_remains_behind_secret_or_kms_authority", "retained_evidence_contains_only_non_secret_profile_and_key_generation_references", "historical_verifier_authority_remains_available_for_supported_equivalence_horizon_or_is_equality_preserving_migrated", "verifier_loss_or_unknown_generation_fails_closed_for_duplicate_sensitive_effects", "restored_old_verifier_or_profile_cannot_become_current_authority_for_unrelated_scope", "key_or_profile_rotation_preserves_historical_comparison_without_secret_exposure", "encryption_does_not_replace_minimization_or_authorization"]
+    },
+    "secret_credential_payload_exclusion_and_erasure_boundary": {
+      "decision": "OPEN-EVT-017",
+      "candidate_classes": ["reference_only_secret_authority_profile", "opaque_key_generation_reference_profile", "protected_external_secret_handle_profile", "equivalent_reviewed_secret_exclusion_profile"],
+      "must_prove": ["ordinary_message_payloads_never_contain_secret_or_credential_material", "inbox_logs_trace_and_quarantine_records_never_copy_secret_or_key_material", "erasure_or_minimization_does_not_remove_last_required_non_secret_historical_verification_reference", "secret_reference_resolution_is_narrowly_authorized_and_audited", "secret_store_or_kms_outage_does_not_degrade_to_plaintext_or_unverified_acceptance", "historical_verification_reference_is_not_bearer_authority", "payload_redaction_and_erasure_preserve_required_correctness_evidence_without_preserving_secret_material"]
+    },
+    "trace_context_observability_only_validation_and_redaction": {
+      "decision": "OPEN-EVT-018",
+      "candidate_classes": ["w3c_trace_context_bounded_profile", "vendor_neutral_trace_correlation_profile", "broker_header_trace_adapter_profile", "equivalent_reviewed_trace_context_profile"],
+      "must_prove": ["trace_context_is_observability_only", "trace_context_never_becomes_tenant_authorization_idempotency_ordering_or_message_identity_authority", "trace_fields_are_bounded_and_canonically_validated", "untrusted_or_malformed_trace_context_is_rejected_or_safely_regenerated_without_changing_message_semantics", "sensitive_trace_attributes_are_redacted_by_policy", "cross_tenant_trace_correlation_cannot_expose_or_join_protected_context", "missing_trace_context_does_not_change_business_effect_or_delivery_semantics"]
+    }
+  },
+  "cross_axis_invariants": ["open_evt_016_017_018_choices_are_evaluated_without_implicit_cross_axis_selection", "ir_d_002_canonical_workload_authentication_baseline_is_consumed_not_reopened", "broker_vendor_identity_never_becomes_platform_workload_or_tenant_identity", "broker_authorization_is_projection_of_current_platform_authority_not_a_parallel_business_authority", "message_protection_never_weakens_minimization_authorization_or_historical_equivalence_requirements", "trace_context_is_never_security_or_business_effect_authority", "d4a_seven_of_seven_d4b_five_of_five_and_d4c_nine_of_nine_evidence_are_preserved", "d4d_evidence_remains_zero_of_five_until_separate_source_evidence_and_promotion", "d4d_candidate_remains_unselected_and_selection_authority_not_granted", "d4_gate_remains_scoped", "product_wave4_production_and_c3_authorities_remain_ungranted"],
+  "evaluation_output_states": ["eligible_for_evidence_execution", "ineligible_by_contract", "insufficient_evidence"],
+  "forbidden_outputs": ["selected", "preferred_without_evidence", "production_ready", "authority_granted"]
+}

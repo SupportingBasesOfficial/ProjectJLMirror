@@ -101,14 +101,7 @@ def _validate_message_boundary(message: OrdinaryMessage) -> None:
         raise SecretBoundaryDenied("non-secret historical verification generation required")
 
 def create_message(*, message_id: str, tenant_id: str, payload: dict[str, PayloadField], secret_ref: SecretReference | None, verification_profile_ref: str, verification_generation_ref: int) -> OrdinaryMessage:
-    message = OrdinaryMessage(
-        message_id=message_id,
-        tenant_id=tenant_id,
-        payload=dict(payload),
-        secret_ref=secret_ref,
-        verification_profile_ref=verification_profile_ref,
-        verification_generation_ref=verification_generation_ref,
-    )
+    message = OrdinaryMessage(message_id, tenant_id, dict(payload), secret_ref, verification_profile_ref, verification_generation_ref)
     _validate_message_boundary(message)
     return message
 
@@ -139,27 +132,12 @@ def resolve_secret(*, reference: SecretReference, authority: SecretAuthority, re
     if not authorized or requested_scope != reference.scope or requested_scope not in authority.allowed_scopes:
         raise SecretBoundaryDenied("secret resolution is not narrowly authorized")
     audit_ref = _audit_reference(reference)
-    audit_sink.append({
-        "scope": requested_scope,
-        "reference": audit_ref,
-        "generation": reference.generation,
-        "resolved": True,
-        "secret_handle_logged": False,
-        "secret_material_logged": False,
-    })
+    audit_sink.append({"scope": requested_scope, "reference": audit_ref, "generation": reference.generation, "resolved": True, "secret_handle_logged": False, "secret_material_logged": False})
     return f"resolved-secret-for:{reference.handle}:generation:{reference.generation}"
 
 def erase_and_minimize(message: OrdinaryMessage) -> HistoricalEvidence:
     _validate_message_boundary(message)
-    return HistoricalEvidence(
-        message_id=message.message_id,
-        tenant_id=message.tenant_id,
-        verification_profile_ref=message.verification_profile_ref,
-        verification_generation_ref=message.verification_generation_ref,
-        secret_material_present=False,
-        credential_material_present=False,
-        secret_reference_present=False,
-    )
+    return HistoricalEvidence(message.message_id, message.tenant_id, message.verification_profile_ref, message.verification_generation_ref, False, False, False)
 
 def historical_reference_can_resolve_secret(evidence: HistoricalEvidence, authority: SecretAuthority) -> bool:
     return False
@@ -184,407 +162,81 @@ def _expect_denied(checks: dict[str, bool], name: str, fn) -> None:
         checks[name] = True
 
 def run_probes() -> dict[str, bool]:
-    ref = SecretReference(
-        handle="kms://orders-signing/current",
-        generation=7,
-        scope="tenant-a/orders",
-    )
-    authority = SecretAuthority(available=True, current_generation=7, allowed_scopes=("tenant-a/orders",))
+    ref = SecretReference("kms://orders-signing/current", 7, "tenant-a/orders")
+    authority = SecretAuthority(True, 7, ("tenant-a/orders",))
     verification_ref = "verification-profile://semantic-equivalence-v3"
-    safe_payload = {
-        "order_id": PayloadField("ord-42", "business_data"),
-        "event": PayloadField("order.created", "internal"),
-    }
-    message = create_message(
-        message_id="msg-001",
-        tenant_id="tenant-a",
-        payload=safe_payload,
-        secret_ref=ref,
-        verification_profile_ref=verification_ref,
-        verification_generation_ref=7,
-    )
+    safe_payload = {"order_id": PayloadField("ord-42", "business_data"), "event": PayloadField("order.created", "internal")}
+    message = create_message(message_id="msg-001", tenant_id="tenant-a", payload=safe_payload, secret_ref=ref, verification_profile_ref=verification_ref, verification_generation_ref=7)
     checks: dict[str, bool] = {}
 
-    checks["ordinary_payload_excludes_secret_credential_material"] = (
-        not _contains_sensitive_material(message.payload)
-        and all(field.classification in ALLOWED_PAYLOAD_CLASSIFICATIONS for field in message.payload.values())
-    )
+    checks["ordinary_payload_excludes_secret_credential_material"] = not _contains_sensitive_material(message.payload) and all(field.classification in ALLOWED_PAYLOAD_CLASSIFICATIONS for field in message.payload.values())
+    for probe_name, field_name, classification in [
+        ("password", "password", "credential"), ("secret", "business_note", "secret"), ("credential", "credential", "credential"),
+        ("token", "token", "credential"), ("api_key", "api_key", "credential"), ("private_key", "private_key", "key_material"), ("key_material", "key_material", "key_material")]:
+        _expect_denied(checks, f"reject_payload_{probe_name}", lambda field_name=field_name, classification=classification: create_message(message_id="bad", tenant_id="tenant-a", payload={field_name: PayloadField("must-not-appear", classification)}, secret_ref=ref, verification_profile_ref=verification_ref, verification_generation_ref=7))
 
-    negative_cases = [
-        ("password", "password", "credential"),
-        ("secret", "business_note", "secret"),
-        ("credential", "credential", "credential"),
-        ("token", "token", "credential"),
-        ("api_key", "api_key", "credential"),
-        ("private_key", "private_key", "key_material"),
-        ("key_material", "key_material", "key_material"),
-    ]
-    for probe_name, field_name, classification in negative_cases:
-        _expect_denied(
-            checks,
-            f"reject_payload_{probe_name}",
-            lambda field_name=field_name, classification=classification: create_message(
-                message_id="bad",
-                tenant_id="tenant-a",
-                payload={field_name: PayloadField("must-not-appear", classification)},
-                secret_ref=ref,
-                verification_profile_ref=verification_ref,
-                verification_generation_ref=7,
-            ),
-        )
+    _expect_denied(checks,"reject_payload_unknown_classification",lambda:create_message(message_id="bad-unknown-classification",tenant_id="tenant-a",payload={"note":PayloadField("opaque","unclassified")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"secret_reference_empty_handle_rejected",lambda:create_message(message_id="bad-empty-handle",tenant_id="tenant-a",payload=safe_payload,secret_ref=replace(ref,handle=""),verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"secret_reference_nonpositive_generation_rejected",lambda:create_message(message_id="bad-secret-generation",tenant_id="tenant-a",payload=safe_payload,secret_ref=replace(ref,generation=0),verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"secret_reference_invalid_scope_rejected",lambda:create_message(message_id="bad-secret-scope",tenant_id="tenant-a",payload=safe_payload,secret_ref=replace(ref,scope="tenant-a"),verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"verification_generation_nonpositive_rejected",lambda:create_message(message_id="bad-verification-generation",tenant_id="tenant-a",payload=safe_payload,secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=0))
 
-    _expect_denied(
-        checks,
-        "reject_payload_unknown_classification",
-        lambda: create_message(
-            message_id="bad-unknown-classification",
-            tenant_id="tenant-a",
-            payload={"note": PayloadField("opaque", "unclassified")},
-            secret_ref=ref,
-            verification_profile_ref=verification_ref,
-            verification_generation_ref=7,
-        ),
-    )
-    _expect_denied(
-        checks,
-        "secret_reference_empty_handle_rejected",
-        lambda: create_message(
-            message_id="bad-empty-handle",
-            tenant_id="tenant-a",
-            payload=safe_payload,
-            secret_ref=replace(ref, handle=""),
-            verification_profile_ref=verification_ref,
-            verification_generation_ref=7,
-        ),
-    )
-    _expect_denied(
-        checks,
-        "secret_reference_nonpositive_generation_rejected",
-        lambda: create_message(
-            message_id="bad-secret-generation",
-            tenant_id="tenant-a",
-            payload=safe_payload,
-            secret_ref=replace(ref, generation=0),
-            verification_profile_ref=verification_ref,
-            verification_generation_ref=7,
-        ),
-    )
-    _expect_denied(
-        checks,
-        "secret_reference_invalid_scope_rejected",
-        lambda: create_message(
-            message_id="bad-secret-scope",
-            tenant_id="tenant-a",
-            payload=safe_payload,
-            secret_ref=replace(ref, scope="tenant-a"),
-            verification_profile_ref=verification_ref,
-            verification_generation_ref=7,
-        ),
-    )
-    _expect_denied(
-        checks,
-        "verification_generation_nonpositive_rejected",
-        lambda: create_message(
-            message_id="bad-verification-generation",
-            tenant_id="tenant-a",
-            payload=safe_payload,
-            secret_ref=ref,
-            verification_profile_ref=verification_ref,
-            verification_generation_ref=0,
-        ),
-    )
+    wrong_namespace_but_canonical_suffix=("x"*len(VERIFICATION_REFERENCE_PREFIX))+"valid-profile"
+    _expect_denied(checks,"verification_reference_namespace_rejected",lambda:create_message(message_id="bad-verification-namespace",tenant_id="tenant-a",payload=safe_payload,secret_ref=ref,verification_profile_ref=wrong_namespace_but_canonical_suffix,verification_generation_ref=7))
+    _expect_denied(checks,"verification_reference_noncanonical_id_rejected",lambda:create_message(message_id="bad-verification-id",tenant_id="tenant-a",payload=safe_payload,secret_ref=ref,verification_profile_ref="verification-profile://bad/id",verification_generation_ref=7))
 
-    # Namespace and canonical-ID probes are independent: removing the targeted
-    # guard lets every later guard pass.
-    wrong_namespace_but_canonical_suffix = (
-        "x" * len(VERIFICATION_REFERENCE_PREFIX)
-    ) + "valid-profile"
-    _expect_denied(
-        checks,
-        "verification_reference_namespace_rejected",
-        lambda: create_message(
-            message_id="bad-verification-namespace",
-            tenant_id="tenant-a",
-            payload=safe_payload,
-            secret_ref=ref,
-            verification_profile_ref=wrong_namespace_but_canonical_suffix,
-            verification_generation_ref=7,
-        ),
-    )
-    _expect_denied(
-        checks,
-        "verification_reference_noncanonical_id_rejected",
-        lambda: create_message(
-            message_id="bad-verification-id",
-            tenant_id="tenant-a",
-            payload=safe_payload,
-            secret_ref=ref,
-            verification_profile_ref="verification-profile://bad/id",
-            verification_generation_ref=7,
-        ),
-    )
+    direct_collision_ref=replace(ref,handle="verification-profile://collision-profile")
+    _expect_denied(checks,"verification_reference_alias_secret_handle_rejected",lambda:create_message(message_id="bad-verification-alias",tenant_id="tenant-a",payload=safe_payload,secret_ref=direct_collision_ref,verification_profile_ref=direct_collision_ref.handle,verification_generation_ref=7))
+    embedded_collision_ref=replace(ref,handle="collision-handle-7")
+    _expect_denied(checks,"verification_reference_embedding_secret_handle_rejected",lambda:create_message(message_id="bad-verification-embed",tenant_id="tenant-a",payload=safe_payload,secret_ref=embedded_collision_ref,verification_profile_ref="verification-profile://prefix-collision-handle-7-suffix",verification_generation_ref=7))
 
-    # Collision-shaped fixtures satisfy the earlier syntax checks, so the
-    # overlap guards themselves are required.
-    direct_collision_ref = replace(ref, handle="verification-profile://collision-profile")
-    _expect_denied(
-        checks,
-        "verification_reference_alias_secret_handle_rejected",
-        lambda: create_message(
-            message_id="bad-verification-alias",
-            tenant_id="tenant-a",
-            payload=safe_payload,
-            secret_ref=direct_collision_ref,
-            verification_profile_ref=direct_collision_ref.handle,
-            verification_generation_ref=7,
-        ),
-    )
-    embedded_collision_ref = replace(ref, handle="collision-handle-7")
-    _expect_denied(
-        checks,
-        "verification_reference_embedding_secret_handle_rejected",
-        lambda: create_message(
-            message_id="bad-verification-embed",
-            tenant_id="tenant-a",
-            payload=safe_payload,
-            secret_ref=embedded_collision_ref,
-            verification_profile_ref="verification-profile://prefix-collision-handle-7-suffix",
-            verification_generation_ref=7,
-        ),
-    )
+    checks["audit_reference_is_derived_non_secret"]=_audit_reference(ref)=="secret-audit-ref://tenant-a/orders/generation-7" and ref.handle not in _audit_reference(ref)
+    scope_collision_ref=replace(ref,handle="tenant-a/orders",scope="tenant-a/orders")
+    _expect_denied(checks,"secret_handle_scope_rejected",lambda:resolve_secret(reference=scope_collision_ref,authority=authority,requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
+    _expect_denied(checks,"unsupported_record_kind_rejected",lambda:sanitize_record(message,record_kind="debug_dump"))
 
-    checks["audit_reference_is_derived_non_secret"] = (
-        _audit_reference(ref) == "secret-audit-ref://tenant-a/orders/generation-7"
-        and ref.handle not in _audit_reference(ref)
-    )
-    scope_collision_ref = replace(ref, handle="tenant-a/orders", scope="tenant-a/orders")
-    _expect_denied(
-        checks,
-        "secret_handle_scope_rejected",
-        lambda: resolve_secret(
-            reference=scope_collision_ref,
-            authority=authority,
-            requested_scope="tenant-a/orders",
-            authorized=True,
-            audit_sink=[],
-        ),
-    )
+    reconstructed_collision_ref=replace(ref,handle="verification-profile://reconstructed-collision")
+    reconstructed_aliased_message=OrdinaryMessage("reconstructed-alias","tenant-a",dict(safe_payload),reconstructed_collision_ref,reconstructed_collision_ref.handle,7)
+    _expect_denied(checks,"sanitize_reconstructed_alias_rejected",lambda:sanitize_record(reconstructed_aliased_message,record_kind="inbox"))
+    _expect_denied(checks,"erase_reconstructed_alias_rejected",lambda:erase_and_minimize(reconstructed_aliased_message))
 
-    _expect_denied(
-        checks,
-        "unsupported_record_kind_rejected",
-        lambda: sanitize_record(message, record_kind="debug_dump"),
-    )
+    reconstructed_secret_payload=OrdinaryMessage("reconstructed-secret-payload","tenant-a",{"note":PayloadField("must-not-survive","secret")},ref,verification_ref,7)
+    _expect_denied(checks,"sanitize_reconstructed_secret_payload_rejected",lambda:sanitize_record(reconstructed_secret_payload,record_kind="inbox"))
+    _expect_denied(checks,"erase_reconstructed_secret_payload_rejected",lambda:erase_and_minimize(reconstructed_secret_payload))
 
-    # Reconstructed/deserialized messages bypass create_message and therefore
-    # prove that persistence and erasure boundaries perform their own admission.
-    reconstructed_collision_ref = replace(ref, handle="verification-profile://reconstructed-collision")
-    reconstructed_aliased_message = OrdinaryMessage(
-        message_id="reconstructed-alias",
-        tenant_id="tenant-a",
-        payload=dict(safe_payload),
-        secret_ref=reconstructed_collision_ref,
-        verification_profile_ref=reconstructed_collision_ref.handle,
-        verification_generation_ref=7,
-    )
-    _expect_denied(
-        checks,
-        "sanitize_reconstructed_alias_rejected",
-        lambda: sanitize_record(reconstructed_aliased_message, record_kind="inbox"),
-    )
-    _expect_denied(
-        checks,
-        "erase_reconstructed_alias_rejected",
-        lambda: erase_and_minimize(reconstructed_aliased_message),
-    )
+    reconstructed_bad_verification_generation=OrdinaryMessage("reconstructed-bad-verification-generation","tenant-a",dict(safe_payload),ref,verification_ref,0)
+    _expect_denied(checks,"sanitize_reconstructed_nonpositive_verification_generation_rejected",lambda:sanitize_record(reconstructed_bad_verification_generation,record_kind="inbox"))
+    _expect_denied(checks,"erase_reconstructed_nonpositive_verification_generation_rejected",lambda:erase_and_minimize(reconstructed_bad_verification_generation))
 
-    reconstructed_secret_payload = OrdinaryMessage(
-        message_id="reconstructed-secret-payload",
-        tenant_id="tenant-a",
-        payload={"note": PayloadField("must-not-survive", "secret")},
-        secret_ref=ref,
-        verification_profile_ref=verification_ref,
-        verification_generation_ref=7,
-    )
-    _expect_denied(
-        checks,
-        "sanitize_reconstructed_secret_payload_rejected",
-        lambda: sanitize_record(reconstructed_secret_payload, record_kind="inbox"),
-    )
-    _expect_denied(
-        checks,
-        "erase_reconstructed_secret_payload_rejected",
-        lambda: erase_and_minimize(reconstructed_secret_payload),
-    )
+    sanitized=[sanitize_record(message,record_kind=k) for k in ("inbox","log","trace","quarantine")]
+    checks["secondary_records_exclude_secret_key_material"]=all(not r["secret_ref_present"] and not r["secret_material_present"] and not r["credential_material_present"] and not r["key_material_present"] and ref.handle not in str(r) for r in sanitized)
 
-    sanitized = [sanitize_record(message, record_kind=k) for k in ("inbox", "log", "trace", "quarantine")]
-    checks["secondary_records_exclude_secret_key_material"] = all(
-        not r["secret_ref_present"]
-        and not r["secret_material_present"]
-        and not r["credential_material_present"]
-        and not r["key_material_present"]
-        and ref.handle not in str(r)
-        for r in sanitized
-    )
+    evidence=erase_and_minimize(message)
+    checks["erasure_preserves_non_secret_historical_verification_reference"]=evidence.verification_profile_ref==verification_ref and evidence.verification_generation_ref==7 and ref.handle not in evidence.verification_profile_ref and not evidence.secret_material_present and not evidence.credential_material_present and not evidence.secret_reference_present
+    checks["redaction_erasure_preserve_correctness_evidence"]=duplicate_sensitive_effect_eligible(evidence,expected_tenant="tenant-a",expected_profile=verification_ref,known_generations=(5,6,7))
 
-    evidence = erase_and_minimize(message)
-    checks["erasure_preserves_non_secret_historical_verification_reference"] = (
-        evidence.verification_profile_ref == verification_ref
-        and evidence.verification_generation_ref == 7
-        and ref.handle not in evidence.verification_profile_ref
-        and not evidence.secret_material_present
-        and not evidence.credential_material_present
-        and not evidence.secret_reference_present
-    )
-    checks["redaction_erasure_preserve_correctness_evidence"] = duplicate_sensitive_effect_eligible(
-        evidence,
-        expected_tenant="tenant-a",
-        expected_profile=verification_ref,
-        known_generations=(5, 6, 7),
-    )
+    audit=[]
+    resolved=resolve_secret(reference=ref,authority=authority,requested_scope="tenant-a/orders",authorized=True,audit_sink=audit)
+    checks["secret_resolution_is_narrowly_authorized_and_audited"]=resolved.startswith("resolved-secret-for:") and len(audit)==1 and audit[0]["scope"]=="tenant-a/orders" and audit[0]["reference"]==_audit_reference(ref) and audit[0]["secret_handle_logged"] is False and audit[0]["secret_material_logged"] is False and ref.handle not in str(audit[0])
 
-    audit: list[dict[str, object]] = []
-    resolved = resolve_secret(
-        reference=ref,
-        authority=authority,
-        requested_scope="tenant-a/orders",
-        authorized=True,
-        audit_sink=audit,
-    )
-    checks["secret_resolution_is_narrowly_authorized_and_audited"] = (
-        resolved.startswith("resolved-secret-for:")
-        and len(audit) == 1
-        and audit[0]["scope"] == "tenant-a/orders"
-        and audit[0]["reference"] == _audit_reference(ref)
-        and audit[0]["secret_handle_logged"] is False
-        and audit[0]["secret_material_logged"] is False
-        and ref.handle not in str(audit[0])
-    )
+    _expect_denied(checks,"unauthorized_resolution_fails_closed",lambda:resolve_secret(reference=ref,authority=authority,requested_scope="tenant-a/orders",authorized=False,audit_sink=[]))
+    _expect_denied(checks,"cross_scope_resolution_fails_closed",lambda:resolve_secret(reference=ref,authority=authority,requested_scope="tenant-b/orders",authorized=True,audit_sink=[]))
+    scope_mismatch_authority=replace(authority,allowed_scopes=("tenant-a/orders","tenant-b/orders"))
+    _expect_denied(checks,"reference_scope_mismatch_fails_closed",lambda:resolve_secret(reference=ref,authority=scope_mismatch_authority,requested_scope="tenant-b/orders",authorized=True,audit_sink=[]))
+    _expect_denied(checks,"scope_not_allowlisted_fails_closed",lambda:resolve_secret(reference=ref,authority=replace(authority,allowed_scopes=()),requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
+    _expect_denied(checks,"secret_authority_outage_fails_closed",lambda:resolve_secret(reference=ref,authority=replace(authority,available=False),requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
+    _expect_denied(checks,"invalid_secret_authority_source_rejected",lambda:resolve_secret(reference=ref,authority=replace(authority,authority_source="ordinary_payload_authority"),requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
+    _expect_denied(checks,"stale_generation_resolution_fails_closed",lambda:resolve_secret(reference=replace(ref,generation=6),authority=authority,requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
+    _expect_denied(checks,"unknown_generation_resolution_fails_closed",lambda:resolve_secret(reference=replace(ref,generation=99),authority=authority,requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
 
-    _expect_denied(
-        checks,
-        "unauthorized_resolution_fails_closed",
-        lambda: resolve_secret(
-            reference=ref,
-            authority=authority,
-            requested_scope="tenant-a/orders",
-            authorized=False,
-            audit_sink=[],
-        ),
-    )
-    _expect_denied(
-        checks,
-        "cross_scope_resolution_fails_closed",
-        lambda: resolve_secret(
-            reference=ref,
-            authority=authority,
-            requested_scope="tenant-b/orders",
-            authorized=True,
-            audit_sink=[],
-        ),
-    )
-    scope_mismatch_authority = replace(
-        authority,
-        allowed_scopes=("tenant-a/orders", "tenant-b/orders"),
-    )
-    _expect_denied(
-        checks,
-        "reference_scope_mismatch_fails_closed",
-        lambda: resolve_secret(
-            reference=ref,
-            authority=scope_mismatch_authority,
-            requested_scope="tenant-b/orders",
-            authorized=True,
-            audit_sink=[],
-        ),
-    )
-    _expect_denied(
-        checks,
-        "scope_not_allowlisted_fails_closed",
-        lambda: resolve_secret(
-            reference=ref,
-            authority=replace(authority, allowed_scopes=()),
-            requested_scope="tenant-a/orders",
-            authorized=True,
-            audit_sink=[],
-        ),
-    )
-    _expect_denied(
-        checks,
-        "secret_authority_outage_fails_closed",
-        lambda: resolve_secret(
-            reference=ref,
-            authority=replace(authority, available=False),
-            requested_scope="tenant-a/orders",
-            authorized=True,
-            audit_sink=[],
-        ),
-    )
-    _expect_denied(
-        checks,
-        "invalid_secret_authority_source_rejected",
-        lambda: resolve_secret(
-            reference=ref,
-            authority=replace(authority, authority_source="ordinary_payload_authority"),
-            requested_scope="tenant-a/orders",
-            authorized=True,
-            audit_sink=[],
-        ),
-    )
-    _expect_denied(
-        checks,
-        "stale_generation_resolution_fails_closed",
-        lambda: resolve_secret(
-            reference=replace(ref, generation=6),
-            authority=authority,
-            requested_scope="tenant-a/orders",
-            authorized=True,
-            audit_sink=[],
-        ),
-    )
-    _expect_denied(
-        checks,
-        "unknown_generation_resolution_fails_closed",
-        lambda: resolve_secret(
-            reference=replace(ref, generation=99),
-            authority=authority,
-            requested_scope="tenant-a/orders",
-            authorized=True,
-            audit_sink=[],
-        ),
-    )
-
-    checks["historical_reference_is_not_bearer_authority"] = not historical_reference_can_resolve_secret(evidence, authority)
-    bearer_ref = replace(ref, bearer_authority=True)
-    _expect_denied(
-        checks,
-        "bearer_secret_reference_rejected",
-        lambda: create_message(
-            message_id="bad-ref",
-            tenant_id="tenant-a",
-            payload=safe_payload,
-            secret_ref=bearer_ref,
-            verification_profile_ref=verification_ref,
-            verification_generation_ref=7,
-        ),
-    )
-    _expect_denied(
-        checks,
-        "resolve_bearer_secret_reference_rejected",
-        lambda: resolve_secret(
-            reference=bearer_ref,
-            authority=authority,
-            requested_scope="tenant-a/orders",
-            authorized=True,
-            audit_sink=[],
-        ),
-    )
-
+    checks["historical_reference_is_not_bearer_authority"]=not historical_reference_can_resolve_secret(evidence,authority)
+    bearer_ref=replace(ref,bearer_authority=True)
+    _expect_denied(checks,"bearer_secret_reference_rejected",lambda:create_message(message_id="bad-ref",tenant_id="tenant-a",payload=safe_payload,secret_ref=bearer_ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"resolve_bearer_secret_reference_rejected",lambda:resolve_secret(reference=bearer_ref,authority=authority,requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
     return checks
 
-if __name__ == "__main__":
-    checks = run_probes()
-    failed = [name for name, ok in checks.items() if not ok]
-    if failed:
-        raise SystemExit("FAILED: " + ",".join(failed))
+if __name__=="__main__":
+    checks=run_probes()
+    failed=[name for name,ok in checks.items() if not ok]
+    if failed: raise SystemExit("FAILED: "+",".join(failed))
     print(f"d4d_open_evt_017_secret_exclusion_source=PASS probes={len(checks)}")

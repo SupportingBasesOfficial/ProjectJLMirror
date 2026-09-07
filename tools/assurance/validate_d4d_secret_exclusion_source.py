@@ -29,7 +29,7 @@ EXPECTED_PROBES={
 'ordinary_payload_excludes_secret_credential_material',
 'reject_payload_password','reject_payload_secret','reject_payload_credential','reject_payload_token','reject_payload_api_key','reject_payload_private_key','reject_payload_key_material',
 'verification_reference_alias_secret_handle_rejected','verification_reference_embedding_secret_handle_rejected',
-'audit_reference_alias_secret_handle_rejected','audit_reference_embedding_secret_handle_rejected',
+'audit_reference_is_derived_non_secret','secret_handle_scope_rejected',
 'secondary_records_exclude_secret_key_material',
 'erasure_preserves_non_secret_historical_verification_reference',
 'redaction_erasure_preserve_correctness_evidence',

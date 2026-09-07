@@ -9,7 +9,10 @@ from pathlib import Path
 import validate_source_evidence_historical_current as historical
 from validate_source_evidence_historical_current import *  # noqa: F401,F403
 
-D4D_CREDIT = "workload_identity_to_broker_credential_adapter_least_privilege"
+D4D_CREDITS = [
+    "workload_identity_to_broker_credential_adapter_least_privilege",
+    "tenant_and_contract_scoped_producer_consumer_authorization",
+]
 _legacy_load = historical.load
 
 
@@ -24,12 +27,12 @@ def _current_errors(state: dict) -> list[str]:
         errors.append("D4-C current state drift")
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
         errors.append("D4-C candidate leakage")
-    expected_remaining = [x for x in d4d.get("required_evidence", []) if x != D4D_CREDIT]
-    if d4d.get("evidence_completed") != [D4D_CREDIT] or d4d.get("evidence_remaining") != expected_remaining:
-        errors.append("D4-D current state must remain exactly 1/5")
+    expected_remaining = [x for x in d4d.get("required_evidence", []) if x not in D4D_CREDITS]
+    if d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != expected_remaining:
+        errors.append("D4-D current state must remain exactly 2/5")
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
         errors.append("D4-D candidate leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 22:
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 23:
         errors.append("D4-wide evidence count drift")
     expected_authority = {
         "gate_state": "scoped",
@@ -81,7 +84,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_012_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_open_evt_012_source=PASS historical_oracle=byte_preserved source_snapshot=4_of_9 current_d4c=9_of_9 current_d4d=1_of_5 current_d4wide=22_of_26 selection=not_selected authorities=unchanged")
+    print("d4c_open_evt_012_source=PASS historical_oracle=byte_preserved source_snapshot=4_of_9 current_d4c=9_of_9 current_d4d=2_of_5 current_d4wide=23_of_26 selection=not_selected authorities=unchanged")
     return 0
 
 

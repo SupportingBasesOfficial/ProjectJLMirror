@@ -47,7 +47,7 @@ The exact candidate-plan obligations are:
 
 ## Executable proof model
 
-The source harness treats ordinary messages as reference-only consumers of external secret/KMS authority. Every ordinary payload field carries an explicit material classification. Only `public`, `internal`, and `business_data` classifications are admitted; `secret`, `credential`, `key_material`, and unknown classifications are rejected.
+The source harness treats ordinary messages as reference-only consumers of external secret/KMS authority. Every ordinary payload field carries an explicit material classification. Only `public`, `internal`, and `business_data` classifications are admitted; `secret`, `credential`, `key_material`, unknown classifications, and typed `SecretMaterial` values are rejected. A successfully resolved secret is returned as `SecretMaterial`, not as an ordinary string, so it cannot be relabeled as `business_data` and serialized into an ordinary message.
 
 A shared message-boundary validator is applied at creation, sanitization, and erasure. This prevents a reconstructed/deserialized `OrdinaryMessage` from bypassing the same payload, secret-reference, verification-reference, and verification-generation invariants that apply at creation time.
 
@@ -55,14 +55,14 @@ Verification references must use the dedicated `verification-profile://` namespa
 
 Secret references require a non-empty handle, positive generation, canonical slash-delimited scope, and non-bearer semantics. Audit references are **not caller-supplied**: they are derived from the validated scope and exact generation as `secret-audit-ref://<scope>/generation-<n>`, with an explicit overlap guard preventing the resolvable handle from appearing in the derived audit reference.
 
-Secret resolution is independently guarded by authority availability, authority source, exact current generation, explicit authorization, reference/request scope equality, and authority allowlisting. The probes isolate these conditions rather than relying on one combined rejection path. Stale and unknown generations fail closed.
+Secret resolution is independently guarded by authority availability, authority source, **exact authorized handle**, exact current generation, explicit authorization, reference/request scope equality, and authority allowlisting. Unknown/revoked handles, stale generations, and unknown generations fail closed. A historical verification reference is actively rewrapped as a secret reference in a negative probe and is rejected because it does not match the authority's current secret handle; the non-bearer property is therefore enforced through the real resolution path rather than asserted by a constant helper.
 
 The reconstructed/deserialized-input probes cover aliased verification references, secret-classified payload material, and non-positive historical verification generations at both sanitization and erasure boundaries. Secondary persistence/observability records retain only validated message identity, tenant identity, and non-secret verification profile/generation references. Secret references and secret/key/credential material are excluded from inbox, log, trace, and quarantine records.
 
-The corrected harness executes an exact validator-pinned set of **41** positive and negative probes covering:
+The corrected harness executes an exact validator-pinned set of **43** positive and negative probes covering:
 
 - safe ordinary-payload admission;
-- rejection of password, secret, credential, token, API key, private key, key material, and unknown payload classifications;
+- rejection of password, secret, credential, token, API key, private key, key material, unknown payload classifications, and typed resolved secret material even when mislabeled as business data;
 - independent secret-reference handle, generation, scope, and bearer guards;
 - positive verification-generation requirement at creation and independently at reconstructed sanitize/erasure boundaries;
 - independent verification namespace and canonical-ID guards;
@@ -76,8 +76,8 @@ The corrected harness executes an exact validator-pinned set of **41** positive 
 - erasure/minimization preserving only required non-secret historical verification continuity;
 - duplicate-sensitive correctness after erasure;
 - successful narrowly authorized and audited resolution without logging the resolvable handle;
-- independent unauthorized, reference/request scope-mismatch, allowlist, outage, authority-source, stale-generation, and unknown-generation fail-closed paths;
-- non-bearer historical-reference behavior;
+- independent unauthorized, reference/request scope-mismatch, allowlist, outage, authority-source, unknown/revoked-handle, stale-generation, and unknown-generation fail-closed paths;
+- real-path proof that a historical verification reference cannot be used as a secret bearer;
 - bearer secret-reference rejection at both message creation and secret resolution.
 
 ## Governance boundary

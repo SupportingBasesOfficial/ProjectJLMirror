@@ -140,9 +140,10 @@
         "secret_credential_payload_exclusion_and_erasure_boundary",
         "trace_context_observability_only_validation_and_redaction"
       ],
-      "evidence_completed": [],
+      "evidence_completed": [
+        "workload_identity_to_broker_credential_adapter_least_privilege"
+      ],
       "evidence_remaining": [
-        "workload_identity_to_broker_credential_adapter_least_privilege",
         "tenant_and_contract_scoped_producer_consumer_authorization",
         "message_protection_key_authority_and_historical_verifier_continuity",
         "secret_credential_payload_exclusion_and_erasure_boundary",

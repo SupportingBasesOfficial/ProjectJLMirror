@@ -18,6 +18,7 @@ D4C_CREDIT_013 = "producer_generation_nonresurrection_across_failover_restore"
 D4C_CREDIT_014 = "privileged_bounded_replay_with_original_identity_and_effect_safety"
 D4C_CREDIT_015 = "historical_reader_upcaster_semantic_and_equivalence_continuity"
 D4C_CREDIT_025 = "recovery_generation_rf_inventory_reconciliation_and_activation_gates"
+D4D_CREDIT_016 = "workload_identity_to_broker_credential_adapter_least_privilege"
 CURRENT_CREDITS = [
     D4C_CREDIT_008,
     D4C_CREDIT_009,
@@ -35,6 +36,7 @@ _legacy_load_json = historical.load_json
 def _current_errors(state: dict) -> list[str]:
     tracks = {t.get("track_id"): t for t in state.get("tracks", []) if isinstance(t, dict)}
     d4c = tracks.get("D4-C", {})
+    d4d = tracks.get("D4-D", {})
     required = d4c.get("required_evidence", [])
     errors: list[str] = []
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
@@ -42,9 +44,11 @@ def _current_errors(state: dict) -> list[str]:
     expected_remaining = [x for x in required if x not in CURRENT_CREDITS]
     if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining:
         errors.append("D4-C current ledger drift beyond separately promoted nine reviewed obligations")
-    if tracks.get("D4-D", {}).get("evidence_completed") != []:
-        errors.append("D4-D state leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 21:
+    if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
+        errors.append("D4-D selection leakage")
+    if d4d.get("evidence_completed") != [D4D_CREDIT_016] or d4d.get("evidence_remaining") != [x for x in d4d.get("required_evidence", []) if x != D4D_CREDIT_016]:
+        errors.append("D4-D current ledger drift beyond separately promoted OPEN-EVT-016")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 22:
         errors.append("D4-wide evidence count drift")
     return errors
 
@@ -52,8 +56,11 @@ def _current_errors(state: dict) -> list[str]:
 def _project(state: dict) -> dict:
     result = copy.deepcopy(state)
     d4c = next(t for t in result["tracks"] if t.get("track_id") == "D4-C")
+    d4d = next(t for t in result["tracks"] if t.get("track_id") == "D4-D")
     d4c["evidence_completed"] = []
     d4c["evidence_remaining"] = list(d4c["required_evidence"])
+    d4d["evidence_completed"] = []
+    d4d["evidence_remaining"] = list(d4d["required_evidence"])
     return result
 
 
@@ -86,7 +93,7 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}")
         return 1
-    print("d4c_ack_lease_checkpoint_source=PASS source_auto_credit=false historical_oracle=preserved current_promoted_credit=9_of_9 d4wide=21_of_26 selection=not_selected")
+    print("d4c_ack_lease_checkpoint_source=PASS source_auto_credit=false historical_oracle=preserved current_d4c=9_of_9 current_d4d=1_of_5 d4wide=22_of_26 selection=not_selected")
     return 0
 
 

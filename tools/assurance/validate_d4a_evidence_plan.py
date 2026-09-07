@@ -19,6 +19,7 @@ D4C_CREDITS = [
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
+D4D_CREDITS = ["workload_identity_to_broker_credential_adapter_least_privilege"]
 _legacy_validate_objects = historical.validate_objects
 
 
@@ -26,6 +27,7 @@ def _current_sibling_errors(entry: dict) -> list[str]:
     errors: list[str] = []
     tracks = {t.get("track_id"): t for t in entry.get("tracks", []) if isinstance(t, dict)}
     d4c = tracks.get("D4-C", {})
+    d4d = tracks.get("D4-D", {})
     required = d4c.get("required_evidence", [])
     expected_remaining = [item for item in required if item not in D4C_CREDITS]
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
@@ -34,18 +36,25 @@ def _current_sibling_errors(entry: dict) -> list[str]:
         errors.append("D4-C current sibling credit must be exactly all nine reviewed D4-C obligations")
     if d4c.get("evidence_remaining") != expected_remaining:
         errors.append("D4-C current sibling remaining evidence drift")
-    if tracks.get("D4-D", {}).get("evidence_completed") != []:
-        errors.append("D4-D must remain uncredited")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 21:
-        errors.append("D4-wide current evidence must remain 21/26")
+    if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
+        errors.append("D4-D current sibling state must remain open/unselected")
+    if d4d.get("evidence_completed") != D4D_CREDITS:
+        errors.append("D4-D current sibling credit must be exactly the reviewed first obligation")
+    if d4d.get("evidence_remaining") != [x for x in d4d.get("required_evidence", []) if x not in D4D_CREDITS]:
+        errors.append("D4-D current sibling remaining evidence drift")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 22:
+        errors.append("D4-wide current evidence must remain 22/26")
     return errors
 
 
 def _historical_projection(entry: dict) -> dict:
     projected = copy.deepcopy(entry)
     d4c = next(t for t in projected["tracks"] if t.get("track_id") == "D4-C")
+    d4d = next(t for t in projected["tracks"] if t.get("track_id") == "D4-D")
     d4c["evidence_completed"] = []
     d4c["evidence_remaining"] = list(d4c["required_evidence"])
+    d4d["evidence_completed"] = []
+    d4d["evidence_remaining"] = list(d4d["required_evidence"])
     return projected
 
 
@@ -76,7 +85,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4A_PLAN_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4a_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=9_of_9 d4wide=21_of_26")
+    print("d4a_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=9_of_9 current_sibling_d4d=1_of_5 d4wide=22_of_26")
     return 0
 
 

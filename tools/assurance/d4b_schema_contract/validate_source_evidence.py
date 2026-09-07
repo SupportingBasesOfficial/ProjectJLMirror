@@ -17,6 +17,7 @@ D4C_CREDITS = [
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
+D4D_CREDITS = ["workload_identity_to_broker_credential_adapter_least_privilege"]
 EXPECTED_IDS = {
     "canonical_bounded_serialization_profile",
     "parser_ambiguity_and_duplicate_field_negative_vectors",
@@ -106,21 +107,19 @@ def main() -> int:
     assert d4b["evidence_remaining"] == []
     assert d4c["candidate"] is None and d4c["candidate_status"] == "not_selected"
     assert d4c["state"] == "candidate_selection_open"
-    assert d4c["evidence_completed"] == D4C_CREDITS
-    expected_remaining = [x for x in d4c["required_evidence"] if x not in D4C_CREDITS]
-    assert d4c["evidence_remaining"] == expected_remaining and expected_remaining == []
-    assert d4d["candidate"] is None and d4d["candidate_status"] == "not_selected"
-    assert d4d["evidence_completed"] == []
-    assert sum(len(track["evidence_completed"]) for track in state_tracks) == 21
+    assert d4c["evidence_completed"] == D4C_CREDITS and d4c["evidence_remaining"] == []
+    assert d4d["candidate"] is None and d4d["candidate_status"] == "not_selected" and d4d["state"] == "candidate_selection_open"
+    assert d4d["evidence_completed"] == D4D_CREDITS
+    assert d4d["evidence_remaining"] == [x for x in d4d["required_evidence"] if x not in D4D_CREDITS]
+    assert sum(len(track["evidence_completed"]) for track in state_tracks) == 22
     assert state["gate_state"] == "scoped"
     assert state["d4_transport_authority"] == "selected_not_granted"
     assert state["canonical_product_implementation_authority"] == "not_granted"
     assert state["wave4_implementation_authority"] == "not_granted"
     assert state["production_authority"] == "none"
     assert state["c3_numeric_topology_authority"] == "not_selected"
-    print("d4b_schema_contract_source_manifest=PASS evidence_ids=5 evidence_kinds=exact reference_properties=exact source_credit=0 source_history=not_selected current_selection=selected_c2_profile unique_tracks=true d4a=exact_7_of_7_kafka_selected d4c=9_of_9 d4wide=21/26 d4d=open authorities=not_granted")
+    print("d4b_schema_contract_source_manifest=PASS evidence_ids=5 source_history=not_selected current_selection=selected_c2_profile d4a=7_of_7 d4c=9_of_9 d4d=1_of_5 d4wide=22/26 authorities=not_granted")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

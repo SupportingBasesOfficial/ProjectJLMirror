@@ -78,13 +78,11 @@ def replace_first_proof(data: dict[Path, object]) -> None:
 
 
 def remove_axis_proof(data: dict[Path, object], axis_name: str, proof: str) -> None:
-    axis = obj(data, validator.PLAN)["axes"][axis_name]
-    axis["must_prove"].remove(proof)
+    obj(data, validator.PLAN)["axes"][axis_name]["must_prove"].remove(proof)
 
 
 def inject_non_string_candidate(data: dict[Path, object]) -> None:
-    axis = obj(data, validator.PLAN)["axes"]["quarantine_and_redrive"]
-    axis["candidate_classes"][0] = {"profile": "not-a-string"}
+    obj(data, validator.PLAN)["axes"]["quarantine_and_redrive"]["candidate_classes"][0] = {"profile": "not-a-string"}
 
 
 def main() -> int:
@@ -131,8 +129,8 @@ def main() -> int:
     must_fail(lambda d: track(d, "D4-A").__setitem__("candidate", "rabbitmq"), "D4-A selected 7/7 regression")
     must_fail(lambda d: track(d, "D4-B").__setitem__("candidate", None), "D4-B selected 5/5 regression")
     must_fail(lambda d: track(d, "D4-C").__setitem__("candidate", "some_profile"), "D4-C state must remain open/unselected")
-    must_fail(lambda d: track(d, "D4-C")["evidence_completed"].append(track(d, "D4-C")["required_evidence"][0]), "D4-C evidence must remain 0/9")
-    must_fail(lambda d: track(d, "D4-D")["evidence_completed"].append(track(d, "D4-D")["required_evidence"][0]), "D4-D must remain open")
+    must_fail(lambda d: track(d, "D4-C")["evidence_completed"].append(track(d, "D4-C")["required_evidence"][0]), "D4-C current evidence must remain exactly 9/9")
+    must_fail(lambda d: track(d, "D4-D")["evidence_completed"].append(track(d, "D4-D")["required_evidence"][0]), "D4-D current evidence must be exactly 1/5")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("gate_state", "separately_accepted"), "D4 gate must remain scoped")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("d4_transport_authority", "granted"), "D4 transport authority drift")
     must_fail(lambda d: obj(d, validator.STATE).__setitem__("canonical_product_implementation_authority", "granted"), "Product authority escalation")
@@ -142,7 +140,6 @@ def main() -> int:
 
     print("d4c_candidate_evaluation_falsification=PASS duplicate_json=blocked hidden_selection=blocked axis_removal=blocked hidden_preference=blocked candidate_collapse=blocked non_string_collection=blocked proof_removal=blocked proof_substitution=blocked fixed_phase10_proof_omissions=blocked evidence_binding_drift=blocked source_decision_drift=blocked output_escalation=blocked d4a_d4b_regression=blocked d4c_credit_leak=blocked d4d_credit_leak=blocked authority_escalation=blocked")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

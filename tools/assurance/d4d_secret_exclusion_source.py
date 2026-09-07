@@ -65,6 +65,11 @@ def _validate_generation(value: object, label: str) -> None:
         raise SecretBoundaryDenied(f"{label} must be a positive integer")
 
 
+def _validate_identifier(value: object, label: str) -> None:
+    if type(value) is not str or not value:
+        raise SecretBoundaryDenied(f"{label} must be a non-empty non-secret string")
+
+
 def _looks_like_serialized_secret_material(value: Mapping[str, object]) -> bool:
     if "handle" not in value or "generation" not in value:
         return False
@@ -173,6 +178,8 @@ def _validate_verification_reference(reference: str, secret_ref: SecretReference
 
 
 def _validate_message_boundary(message: OrdinaryMessage) -> None:
+    _validate_identifier(message.message_id, "message id")
+    _validate_identifier(message.tenant_id, "tenant id")
     _validate_payload(message.payload)
     if message.secret_ref is not None:
         _validate_secret_reference_shape(message.secret_ref)
@@ -207,7 +214,7 @@ def sanitize_record(message: OrdinaryMessage, *, record_kind: str) -> dict[str, 
 def resolve_secret(*, reference: SecretReference, authority: SecretAuthority, requested_scope: str, authorized: bool, audit_sink: list[dict[str, object]]) -> SecretMaterial:
     _validate_secret_reference_shape(reference)
     _validate_generation(authority.current_generation, "secret authority current generation")
-    if not authority.available:
+    if authority.available is not True:
         raise SecretBoundaryDenied("secret authority unavailable: fail closed")
     if authority.authority_source != "secret_or_kms_authority":
         raise SecretBoundaryDenied("invalid secret authority source")
@@ -215,7 +222,7 @@ def resolve_secret(*, reference: SecretReference, authority: SecretAuthority, re
         raise SecretBoundaryDenied("unknown or revoked secret handle")
     if reference.generation != authority.current_generation:
         raise SecretBoundaryDenied("stale or unknown secret generation")
-    if not authorized or requested_scope != reference.scope or requested_scope not in authority.allowed_scopes:
+    if authorized is not True or requested_scope != reference.scope or requested_scope not in authority.allowed_scopes:
         raise SecretBoundaryDenied("secret resolution is not narrowly authorized")
     audit_ref = _audit_reference(reference)
     audit_sink.append({"scope": requested_scope, "reference": audit_ref, "generation": reference.generation, "resolved": True, "secret_handle_logged": False, "secret_material_logged": False})
@@ -296,6 +303,9 @@ def run_probes() -> dict[str, bool]:
         _expect_denied(checks, f"reject_payload_{probe_name}", lambda field_name=field_name, classification=classification: create_message(message_id="bad", tenant_id="tenant-a", payload={field_name: PayloadField("must-not-appear", classification)}, secret_ref=ref, verification_profile_ref=verification_ref, verification_generation_ref=7))
 
     _expect_denied(checks,"reject_payload_unknown_classification",lambda:create_message(message_id="bad-unknown-classification",tenant_id="tenant-a",payload={"note":PayloadField("opaque","unclassified")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    identifier_secret=SecretMaterial(ref.handle,ref.generation)
+    _expect_denied(checks,"message_id_secret_material_rejected",lambda:create_message(message_id=identifier_secret,tenant_id="tenant-a",payload=safe_payload,secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"tenant_id_secret_material_rejected",lambda:create_message(message_id="bad-tenant-id",tenant_id=identifier_secret,payload=safe_payload,secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"secret_reference_empty_handle_rejected",lambda:create_message(message_id="bad-empty-handle",tenant_id="tenant-a",payload=safe_payload,secret_ref=replace(ref,handle=""),verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"secret_reference_nonpositive_generation_rejected",lambda:create_message(message_id="bad-secret-generation",tenant_id="tenant-a",payload=safe_payload,secret_ref=replace(ref,generation=0),verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"secret_reference_boolean_generation_rejected",lambda:create_message(message_id="bad-secret-generation-bool",tenant_id="tenant-a",payload=safe_payload,secret_ref=replace(ref,generation=True),verification_profile_ref=verification_ref,verification_generation_ref=7))
@@ -330,6 +340,13 @@ def run_probes() -> dict[str, bool]:
     _expect_denied(checks,"sanitize_reconstructed_alias_rejected",lambda:sanitize_record(reconstructed_aliased_message,record_kind="inbox"))
     _expect_denied(checks,"erase_reconstructed_alias_rejected",lambda:erase_and_minimize(reconstructed_aliased_message))
 
+    reconstructed_secret_message_id=OrdinaryMessage(identifier_secret,"tenant-a",dict(safe_payload),ref,verification_ref,7)
+    _expect_denied(checks,"sanitize_reconstructed_secret_message_id_rejected",lambda:sanitize_record(reconstructed_secret_message_id,record_kind="inbox"))
+    _expect_denied(checks,"erase_reconstructed_secret_message_id_rejected",lambda:erase_and_minimize(reconstructed_secret_message_id))
+    reconstructed_secret_tenant_id=OrdinaryMessage("reconstructed-secret-tenant",identifier_secret,dict(safe_payload),ref,verification_ref,7)
+    _expect_denied(checks,"sanitize_reconstructed_secret_tenant_id_rejected",lambda:sanitize_record(reconstructed_secret_tenant_id,record_kind="inbox"))
+    _expect_denied(checks,"erase_reconstructed_secret_tenant_id_rejected",lambda:erase_and_minimize(reconstructed_secret_tenant_id))
+
     reconstructed_secret_payload=OrdinaryMessage("reconstructed-secret-payload","tenant-a",{"note":PayloadField("must-not-survive","secret")},ref,verification_ref,7)
     _expect_denied(checks,"sanitize_reconstructed_secret_payload_rejected",lambda:sanitize_record(reconstructed_secret_payload,record_kind="inbox"))
     _expect_denied(checks,"erase_reconstructed_secret_payload_rejected",lambda:erase_and_minimize(reconstructed_secret_payload))
@@ -363,11 +380,13 @@ def run_probes() -> dict[str, bool]:
     _expect_denied(checks,"opaque_payload_value_type_rejected",lambda:create_message(message_id="bad-opaque-payload",tenant_id="tenant-a",payload={"note":PayloadField(object(),"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
 
     _expect_denied(checks,"unauthorized_resolution_fails_closed",lambda:resolve_secret(reference=ref,authority=authority,requested_scope="tenant-a/orders",authorized=False,audit_sink=[]))
+    _expect_denied(checks,"truthy_nonboolean_authorization_rejected",lambda:resolve_secret(reference=ref,authority=authority,requested_scope="tenant-a/orders",authorized="false",audit_sink=[]))
     _expect_denied(checks,"cross_scope_resolution_fails_closed",lambda:resolve_secret(reference=ref,authority=authority,requested_scope="tenant-b/orders",authorized=True,audit_sink=[]))
     scope_mismatch_authority=replace(authority,allowed_scopes=("tenant-a/orders","tenant-b/orders"))
     _expect_denied(checks,"reference_scope_mismatch_fails_closed",lambda:resolve_secret(reference=ref,authority=scope_mismatch_authority,requested_scope="tenant-b/orders",authorized=True,audit_sink=[]))
     _expect_denied(checks,"scope_not_allowlisted_fails_closed",lambda:resolve_secret(reference=ref,authority=replace(authority,allowed_scopes=()),requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
     _expect_denied(checks,"secret_authority_outage_fails_closed",lambda:resolve_secret(reference=ref,authority=replace(authority,available=False),requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
+    _expect_denied(checks,"truthy_nonboolean_authority_availability_rejected",lambda:resolve_secret(reference=ref,authority=replace(authority,available="false"),requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
     _expect_denied(checks,"invalid_secret_authority_source_rejected",lambda:resolve_secret(reference=ref,authority=replace(authority,authority_source="ordinary_payload_authority"),requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
     _expect_denied(checks,"unknown_secret_handle_resolution_fails_closed",lambda:resolve_secret(reference=replace(ref,handle="kms://orders-signing/unknown"),authority=authority,requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
     _expect_denied(checks,"stale_generation_resolution_fails_closed",lambda:resolve_secret(reference=replace(ref,generation=6),authority=authority,requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))

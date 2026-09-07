@@ -299,6 +299,9 @@ def run_probes() -> dict[str, bool]:
 
     namespace_collision_ref=replace(ref,handle="verification-profile://collision-profile")
     _expect_denied(checks,"secret_handle_verification_namespace_rejected",lambda:create_message(message_id="bad-secret-namespace",tenant_id="tenant-a",payload=safe_payload,secret_ref=namespace_collision_ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    audit_namespace_ref=replace(ref,handle="secret-audit-ref://unrelated")
+    audit_namespace_authority=replace(authority,current_handle=audit_namespace_ref.handle)
+    _expect_denied(checks,"secret_handle_audit_namespace_rejected",lambda:resolve_secret(reference=audit_namespace_ref,authority=audit_namespace_authority,requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
     direct_collision_ref=replace(ref,handle="collision-profile")
     _expect_denied(checks,"verification_reference_alias_secret_handle_rejected",lambda:create_message(message_id="bad-verification-alias",tenant_id="tenant-a",payload=safe_payload,secret_ref=direct_collision_ref,verification_profile_ref="verification-profile://collision-profile",verification_generation_ref=7))
     embedded_collision_ref=replace(ref,handle="collision-handle-7")

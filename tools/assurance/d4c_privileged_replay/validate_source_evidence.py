@@ -20,25 +20,13 @@ CURRENT_CREDITS = [
     "producer_generation_nonresurrection_across_failover_restore",
     "privileged_bounded_replay_with_original_identity_and_effect_safety",
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
-]
-CURRENT_REMAINING = [
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
+CURRENT_REMAINING = []
 EXPECTED_SOURCE_KEYS = {
-    "schema_version",
-    "gate_id",
-    "track_id",
-    "mode",
-    "source_decision",
-    "evidence_id",
-    "candidate_classes",
-    "must_prove",
-    "candidate_results",
-    "selection_state",
-    "selection_authority",
-    "current_run_auto_credit",
-    "ledger_credit",
-    "non_authority",
+    "schema_version", "gate_id", "track_id", "mode", "source_decision", "evidence_id",
+    "candidate_classes", "must_prove", "candidate_results", "selection_state",
+    "selection_authority", "current_run_auto_credit", "ledger_credit", "non_authority",
     "source_boundary",
 }
 EXPECTED_BOUNDARY = {
@@ -111,14 +99,9 @@ def main() -> int:
         return fail("candidate inventory drift")
     if tuple(source.get("must_prove", [])) != PROOFS:
         return fail("proof inventory drift")
-    if source.get("candidate_results") != {
-        c: "eligible_for_evidence_execution" for c in CANDIDATES
-    }:
+    if source.get("candidate_results") != {c: "eligible_for_evidence_execution" for c in CANDIDATES}:
         return fail("candidate result drift")
-    if (
-        source.get("selection_state") != "not_selected"
-        or source.get("selection_authority") != "not_granted"
-    ):
+    if source.get("selection_state") != "not_selected" or source.get("selection_authority") != "not_granted":
         return fail("selection leakage")
     if type(source.get("current_run_auto_credit")) is not bool:
         return fail("auto-credit type drift")
@@ -145,15 +128,12 @@ def main() -> int:
             return fail(f"runtime check failure for {candidate}")
 
     if (
-        plan.get("ledger_credit_state") != "eight_of_nine"
+        plan.get("ledger_credit_state") != "nine_of_nine"
         or plan.get("credited_evidence") != CURRENT_CREDITS
         or plan.get("remaining_evidence") != CURRENT_REMAINING
     ):
         return fail("D4-C current ledger drift")
-    if (
-        source["evidence_id"] not in plan.get("credited_evidence", [])
-        or source["evidence_id"] in plan.get("remaining_evidence", [])
-    ):
+    if source["evidence_id"] not in plan.get("credited_evidence", []) or source["evidence_id"] in plan.get("remaining_evidence", []):
         return fail("OPEN-EVT-014 separate promotion projection drift")
     if plan.get("candidate") is not None or plan.get("candidate_status") != "not_selected":
         return fail("D4-C candidate selection leakage")
@@ -162,21 +142,14 @@ def main() -> int:
     if set(tracks) != {"D4-A", "D4-B", "D4-C", "D4-D"}:
         return fail("D4 track inventory drift")
     d4c = tracks["D4-C"]
-    if (
-        d4c.get("evidence_completed") != CURRENT_CREDITS
-        or d4c.get("evidence_remaining") != CURRENT_REMAINING
-    ):
+    if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != CURRENT_REMAINING:
         return fail("D4-C global projection drift")
-    if (
-        d4c.get("candidate") is not None
-        or d4c.get("candidate_status") != "not_selected"
-        or d4c.get("state") != "candidate_selection_open"
-    ):
+    if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
         return fail("D4-C global selection leakage")
     if tracks["D4-D"].get("evidence_completed") != [] or tracks["D4-D"].get("candidate") is not None:
         return fail("D4-D leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 20:
-        return fail("D4-wide current credit count must remain 20/26")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 21:
+        return fail("D4-wide current credit count must remain 21/26")
 
     expected = {
         "gate_state": "scoped",
@@ -192,7 +165,7 @@ def main() -> int:
 
     print(
         "d4c_open_evt_014_source_validation=PASS candidates=3 proofs=8 "
-        "source_schema=exact source_snapshot=6/9_uncredited current_d4c=8/9 current_d4wide=20/26 "
+        "source_schema=exact source_snapshot=6/9_uncredited current_d4c=9/9 current_d4wide=21/26 "
         "selection=none authorities=unchanged"
     )
     return 0

@@ -17,6 +17,7 @@ D4C_CREDIT_012 = "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity"
 D4C_CREDIT_013 = "producer_generation_nonresurrection_across_failover_restore"
 D4C_CREDIT_014 = "privileged_bounded_replay_with_original_identity_and_effect_safety"
 D4C_CREDIT_015 = "historical_reader_upcaster_semantic_and_equivalence_continuity"
+D4C_CREDIT_025 = "recovery_generation_rf_inventory_reconciliation_and_activation_gates"
 CURRENT_CREDITS = [
     D4C_CREDIT_008,
     D4C_CREDIT_009,
@@ -26,6 +27,7 @@ CURRENT_CREDITS = [
     D4C_CREDIT_013,
     D4C_CREDIT_014,
     D4C_CREDIT_015,
+    D4C_CREDIT_025,
 ]
 _legacy_load_json = historical.load_json
 
@@ -39,10 +41,10 @@ def _current_errors(state: dict) -> list[str]:
         errors.append("D4-C selection leakage")
     expected_remaining = [x for x in required if x not in CURRENT_CREDITS]
     if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining:
-        errors.append("D4-C current ledger drift beyond separately promoted OPEN-EVT-008 through OPEN-EVT-015")
+        errors.append("D4-C current ledger drift beyond separately promoted nine reviewed obligations")
     if tracks.get("D4-D", {}).get("evidence_completed") != []:
         errors.append("D4-D state leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 20:
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 21:
         errors.append("D4-wide evidence count drift")
     return errors
 
@@ -84,7 +86,7 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}")
         return 1
-    print("d4c_ack_lease_checkpoint_source=PASS source_auto_credit=false historical_oracle=preserved current_promoted_credit=8_of_9 d4wide=20_of_26 selection=not_selected")
+    print("d4c_ack_lease_checkpoint_source=PASS source_auto_credit=false historical_oracle=preserved current_promoted_credit=9_of_9 d4wide=21_of_26 selection=not_selected")
     return 0
 
 

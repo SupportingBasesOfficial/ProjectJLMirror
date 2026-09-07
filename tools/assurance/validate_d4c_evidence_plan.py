@@ -8,212 +8,93 @@ from pathlib import Path
 
 PLAN = Path("implementation/d4-eventing-async/d4-c-evidence-plan.json")
 STATE = Path("implementation/d4-eventing-async/state-manifest.json")
+PROMOTION_025 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-025-promotion-v1.json")
+SOURCE_025 = Path("implementation/d4-eventing-async/source-evidence/d4-c-recovery-generation-source.json")
 
-CREDIT_008 = "ack_after_durable_responsibility_and_lease_ambiguity"
-CREDIT_009 = "quarantine_redrive_current_authority_and_dedup_preservation"
-CREDIT_010 = "bounded_message_batch_compression_and_parser_limits"
-CREDIT_011 = "scoped_content_equivalence_confidentiality_and_conflict_rejection"
-CREDIT_012 = "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity"
-CREDIT_013 = "producer_generation_nonresurrection_across_failover_restore"
-CREDIT_014 = "privileged_bounded_replay_with_original_identity_and_effect_safety"
-CREDIT_015 = "historical_reader_upcaster_semantic_and_equivalence_continuity"
-
-PROMOTION_008 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-008-promotion-v1.json")
-PROMOTION_009 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-009-promotion-v1.json")
-PROMOTION_010 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-010-promotion-v1.json")
-PROMOTION_011 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-011-promotion-v1.json")
-PROMOTION_012 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-012-promotion-v1.json")
-PROMOTION_013 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-013-promotion-v1.json")
-PROMOTION_014 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-014-promotion-v1.json")
-PROMOTION_015 = Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-015-promotion-v1.json")
-
-SOURCE_008 = Path("implementation/d4-eventing-async/source-evidence/d4-c-ack-lease-checkpoint-source.json")
-SOURCE_009 = Path("implementation/d4-eventing-async/source-evidence/d4-c-quarantine-redrive-source.json")
-SOURCE_010 = Path("implementation/d4-eventing-async/source-evidence/d4-c-bounded-parser-limits-source.json")
-SOURCE_011 = Path("implementation/d4-eventing-async/source-evidence/d4-c-scoped-content-equivalence-source.json")
-SOURCE_012 = Path("implementation/d4-eventing-async/source-evidence/d4-c-outbox-claim-dispatch-source.json")
-SOURCE_013 = Path("implementation/d4-eventing-async/source-evidence/d4-c-producer-generation-source.json")
-SOURCE_014 = Path("implementation/d4-eventing-async/source-evidence/d4-c-privileged-replay-source.json")
-SOURCE_015 = Path("implementation/d4-eventing-async/source-evidence/d4-c-historical-reader-upcaster-source.json")
-
-EXPECTED_CREDITS = [
-    CREDIT_008, CREDIT_009, CREDIT_010, CREDIT_011,
-    CREDIT_012, CREDIT_013, CREDIT_014, CREDIT_015,
+SOURCE_DECISIONS = [
+    "OPEN-EVT-008",
+    "OPEN-EVT-009",
+    "OPEN-EVT-010",
+    "OPEN-EVT-011",
+    "OPEN-EVT-012",
+    "OPEN-EVT-013",
+    "OPEN-EVT-014",
+    "OPEN-EVT-015",
+    "OPEN-EVT-025",
 ]
-EXPECTED_REMAINING = ["recovery_generation_rf_inventory_reconciliation_and_activation_gates"]
-EXPECTED_SOURCE_DECISIONS = [
-    "OPEN-EVT-008", "OPEN-EVT-009", "OPEN-EVT-010", "OPEN-EVT-011", "OPEN-EVT-012",
-    "OPEN-EVT-013", "OPEN-EVT-014", "OPEN-EVT-015", "OPEN-EVT-025",
+CREDITS = [
+    "ack_after_durable_responsibility_and_lease_ambiguity",
+    "quarantine_redrive_current_authority_and_dedup_preservation",
+    "bounded_message_batch_compression_and_parser_limits",
+    "scoped_content_equivalence_confidentiality_and_conflict_rejection",
+    "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
+    "producer_generation_nonresurrection_across_failover_restore",
+    "privileged_bounded_replay_with_original_identity_and_effect_safety",
+    "historical_reader_upcaster_semantic_and_equivalence_continuity",
+    "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
+CREDIT_025 = CREDITS[-1]
+
+HISTORICAL_PROMOTIONS = {
+    Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-008-promotion-v1.json"): "1fa1251a79504176ed6583640c2812bfe178dd87",
+    Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-009-promotion-v1.json"): "491a13179316e03d02fe17e229244d4667b0ee81",
+    Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-010-promotion-v1.json"): "6723c7bfde777e2888591fa443c059db0e0ba586",
+    Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-011-promotion-v1.json"): "2cde2242347cac39ce9eb5a4d972c4338385e419",
+    Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-012-promotion-v1.json"): "17566e0b99741cb1197dc4301b9d8b3a8b88609a",
+    Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-013-promotion-v1.json"): "79690e653894abb370726040f270a998836000cb",
+    Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-014-promotion-v1.json"): "1245faf35161ce0aa014f4910dd4db437cab16c9",
+    Path("implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-015-promotion-v1.json"): "6ab3685f26a4b9601d8a06ef2a8226d1403637f0",
+}
 
 EXPECTED_PLAN_KEYS = {
-    "schema_version", "gate_id", "track_id", "name", "source_decisions", "candidate", "candidate_status",
-    "source_evidence_state", "ledger_credit_state", "required_evidence", "credited_evidence", "remaining_evidence",
-    "current_run_auto_credit", "selection_state", "selection_authority", "separate_selection_required",
-    "separate_d4_acceptance_required", "d4_transport_authority", "canonical_product_implementation_authority",
-    "wave4_implementation_authority", "production_authority", "c3_numeric_topology_authority",
+    "schema_version","gate_id","track_id","name","source_decisions","candidate","candidate_status",
+    "source_evidence_state","ledger_credit_state","required_evidence","credited_evidence","remaining_evidence",
+    "current_run_auto_credit","selection_state","selection_authority","separate_selection_required",
+    "separate_d4_acceptance_required","d4_transport_authority","canonical_product_implementation_authority",
+    "wave4_implementation_authority","production_authority","c3_numeric_topology_authority",
 }
 EXPECTED_PROMOTION_KEYS = {
-    "schema_version", "promotion_id", "gate_id", "track_id", "promotion_base", "source_pr",
-    "source_reviewed_head", "source_merge_commit", "source_review", "source_workflow", "source_manifest",
-    "credited_evidence", "credit_count", "selection_state", "selection_authority", "d4_gate_state",
-    "d4_transport_authority", "canonical_product_implementation_authority", "wave4_implementation_authority",
-    "production_authority", "c3_numeric_topology_authority", "separate_selection_required",
-    "separate_d4_acceptance_required",
+    "schema_version","promotion_id","gate_id","track_id","promotion_base","source_pr","source_reviewed_head",
+    "source_merge_commit","source_review","source_workflow","source_manifest","credited_evidence","credit_count",
+    "selection_state","selection_authority","d4_gate_state","d4_transport_authority",
+    "canonical_product_implementation_authority","wave4_implementation_authority","production_authority",
+    "c3_numeric_topology_authority","separate_selection_required","separate_d4_acceptance_required",
 }
-EXPECTED_REVIEW_KEYS = {"review_id", "review_mode", "material_threads_unresolved"}
+EXPECTED_REVIEW_KEYS = {"review_id","review_mode","material_threads_unresolved"}
 EXPECTED_WORKFLOW_KEYS = {
-    "workflow_id", "workflow_path", "workflow_event", "source_head_branch", "run_id", "run_attempt",
-    "job_id", "job_name", "artifact_id", "artifact_name", "artifact_digest",
+    "workflow_id","workflow_path","workflow_event","source_head_branch","run_id","run_attempt","job_id",
+    "job_name","artifact_id","artifact_name","artifact_digest",
 }
-EXPECTED_MANIFEST_KEYS = {"path", "sha256"}
-REVIEW_MODE = "independent_exact_head_adversarial_clean_after_exact_head_ci"
+EXPECTED_MANIFEST_KEYS = {"path","sha256"}
 
-PROMOTIONS = (
-    {
-        "path": PROMOTION_008, "source": SOURCE_008,
-        "promotion_id": "d4-c-open-evt-008-promotion-v1",
-        "promotion_base": "69ad19e6129898e7fdf7e9d57e40a841cb0d4ef5",
-        "source_pr": 72, "source_head": "02063da13a4a93fe6bc67521e4a7e4e0d4999045",
-        "source_merge": "69ad19e6129898e7fdf7e9d57e40a841cb0d4ef5", "review_id": 5120040394,
-        "decision": "OPEN-EVT-008", "evidence": CREDIT_008,
-        "workflow": {
-            "workflow_id": 350722209, "workflow_path": ".github/workflows/d4-c-ack-lease-checkpoint-source-evidence.yml",
-            "workflow_event": "pull_request", "source_head_branch": "evidence/d4-c-ack-lease-checkpoint-source",
-            "run_id": 33948472401, "run_attempt": 1, "job_id": 101258703919,
-            "job_name": "D4-C OPEN-EVT-008 source evidence", "artifact_id": 9964116208,
-            "artifact_name": "d4-c-ack-lease-checkpoint-source-02063da13a4a93fe6bc67521e4a7e4e0d4999045-33948472401-1",
-            "artifact_digest": "sha256:2a7a38caff4ddb6e7740ee079bb0c3cffb2f3e29acacb842ce84c0ab987786d6",
-        },
-        "source_sha256": "5c085286b9b6cac8df524f87fa4043accc74cc0878939427abd5df7da16a7708",
+EXPECTED_025 = {
+    "promotion_id":"d4-c-open-evt-025-promotion-v1",
+    "promotion_base":"f98bf5d6b1905dcb3a8b53356e1bab0879076511",
+    "source_pr":105,
+    "source_reviewed_head":"1cc709f02189e7cf8cc429f4a9b60d6554b79da7",
+    "source_merge_commit":"f98bf5d6b1905dcb3a8b53356e1bab0879076511",
+    "review_id":5126669191,
+    "workflow":{
+        "workflow_id":351814203,
+        "workflow_path":".github/workflows/d4-c-recovery-generation-source-evidence.yml",
+        "workflow_event":"pull_request",
+        "source_head_branch":"d4c/open-evt-025-recovery-generation-source",
+        "run_id":34061206063,
+        "run_attempt":1,
+        "job_id":101561958282,
+        "job_name":"D4-C OPEN-EVT-025 source evidence",
+        "artifact_id":9997516312,
+        "artifact_name":"d4-c-recovery-generation-source-1cc709f02189e7cf8cc429f4a9b60d6554b79da7-34061206063-1",
+        "artifact_digest":"sha256:1f32307e4f43f9f510abebf42f32e300f066896013ecfbd09f544a9d290faa27",
     },
-    {
-        "path": PROMOTION_009, "source": SOURCE_009,
-        "promotion_id": "d4-c-open-evt-009-promotion-v1",
-        "promotion_base": "a238c82b8ddd4084b3ae80786e0e75b39111132e",
-        "source_pr": 74, "source_head": "f3c5e49828160abde9fd99b25688456fa13408df",
-        "source_merge": "a238c82b8ddd4084b3ae80786e0e75b39111132e", "review_id": 5123104259,
-        "decision": "OPEN-EVT-009", "evidence": CREDIT_009,
-        "workflow": {
-            "workflow_id": 351163085, "workflow_path": ".github/workflows/d4-c-quarantine-redrive-source-evidence.yml",
-            "workflow_event": "pull_request", "source_head_branch": "evidence/d4-c-quarantine-redrive-source",
-            "run_id": 33992605858, "run_attempt": 1, "job_id": 101377381065,
-            "job_name": "D4-C OPEN-EVT-009 source evidence", "artifact_id": 9977118464,
-            "artifact_name": "d4-c-quarantine-redrive-source-f3c5e49828160abde9fd99b25688456fa13408df-33992605858-1",
-            "artifact_digest": "sha256:680d0d965b965c7f44b4474a7725b3e6c23e143af8ed34f41aa37a0bbbdabaa1",
-        },
-        "source_sha256": "2e03e9a7ade9f6c379953b44ce7778846272948c30cd27336cb0c06f18483ddc",
-    },
-    {
-        "path": PROMOTION_010, "source": SOURCE_010,
-        "promotion_id": "d4-c-open-evt-010-promotion-v1",
-        "promotion_base": "0266d406b91906587dbcb6ab7e96c2ce2802384c",
-        "source_pr": 76, "source_head": "08a2d3c1fb34d8ff5fbe164f7c9315615f6aab22",
-        "source_merge": "0266d406b91906587dbcb6ab7e96c2ce2802384c", "review_id": 5123374309,
-        "decision": "OPEN-EVT-010", "evidence": CREDIT_010,
-        "workflow": {
-            "workflow_id": 351206153, "workflow_path": ".github/workflows/d4-c-bounded-parser-limits-source-evidence.yml",
-            "workflow_event": "pull_request", "source_head_branch": "evidence/d4-c-bounded-parser-limits-source",
-            "run_id": 33997326798, "run_attempt": 1, "job_id": 101390021787,
-            "job_name": "D4-C OPEN-EVT-010 source evidence", "artifact_id": 9978515069,
-            "artifact_name": "d4-c-bounded-parser-source-08a2d3c1fb34d8ff5fbe164f7c9315615f6aab22-33997326798-1",
-            "artifact_digest": "sha256:d4b58eba717323689cef2849428636ed5cff62df13cad154fddf9c38d202703e",
-        },
-        "source_sha256": "a81715abe1c3e705d31d1949d0c98bc73605ab5c5f8453a28e2a63beb88959f1",
-    },
-    {
-        "path": PROMOTION_011, "source": SOURCE_011,
-        "promotion_id": "d4-c-open-evt-011-promotion-v1",
-        "promotion_base": "d99edd423d5447eddf68f26ed7c74ac6346a0f3a",
-        "source_pr": 78, "source_head": "268e3ec44e8050c077da689a945c57c3b82b540a",
-        "source_merge": "d99edd423d5447eddf68f26ed7c74ac6346a0f3a", "review_id": 5123629475,
-        "decision": "OPEN-EVT-011", "evidence": CREDIT_011,
-        "workflow": {
-            "workflow_id": 351243757, "workflow_path": ".github/workflows/d4-c-scoped-content-equivalence-source-evidence.yml",
-            "workflow_event": "pull_request", "source_head_branch": "evidence/d4-c-scoped-content-equivalence-source",
-            "run_id": 34002570352, "run_attempt": 1, "job_id": 101403949771,
-            "job_name": "D4-C OPEN-EVT-011 source evidence", "artifact_id": 9979927320,
-            "artifact_name": "d4-c-scoped-equivalence-source-268e3ec44e8050c077da689a945c57c3b82b540a-34002570352-1",
-            "artifact_digest": "sha256:ea0c2d84a5530c7b3879bac3b1495fe1a928d4dffd297c612bef84a99d4f89c5",
-        },
-        "source_sha256": "f47f67895be554666a9e74d53e3121d6e951e3f2e13842ebaa7554142a8c30de",
-    },
-    {
-        "path": PROMOTION_012, "source": SOURCE_012,
-        "promotion_id": "d4-c-open-evt-012-promotion-v1",
-        "promotion_base": "077efd6d582fddf3e316cad5bdf03887ef08ace5",
-        "source_pr": 80, "source_head": "72bce1b28bce98425f486370b4d887e04c769091",
-        "source_merge": "077efd6d582fddf3e316cad5bdf03887ef08ace5", "review_id": 5124079168,
-        "decision": "OPEN-EVT-012", "evidence": CREDIT_012,
-        "workflow": {
-            "workflow_id": 351286755, "workflow_path": ".github/workflows/d4-c-outbox-claim-dispatch-source-evidence.yml",
-            "workflow_event": "pull_request", "source_head_branch": "evidence/d4-c-outbox-claim-dispatch-source",
-            "run_id": 34010311086, "run_attempt": 1, "job_id": 101424854557,
-            "job_name": "D4-C OPEN-EVT-012 source evidence", "artifact_id": 9982251234,
-            "artifact_name": "d4-c-outbox-claim-dispatch-source-72bce1b28bce98425f486370b4d887e04c769091-34010311086-1",
-            "artifact_digest": "sha256:c15c57c7bb02a87a9dfaf0b779efb16a126f6919618235c48763d23acb4a794d",
-        },
-        "source_sha256": "7737b26e9cf83c41328f18bf62d84199abef3e4ca6c0b51b37e2ecd86ec2c8d2",
-    },
-    {
-        "path": PROMOTION_013, "source": SOURCE_013,
-        "promotion_id": "d4-c-open-evt-013-promotion-v1",
-        "promotion_base": "8b9761a0469040ee26499902cd64aea25ee0016d",
-        "source_pr": 82, "source_head": "317479d2e71108a6854d16f35e063648365d9b62",
-        "source_merge": "8b9761a0469040ee26499902cd64aea25ee0016d", "review_id": 5124310737,
-        "decision": "OPEN-EVT-013", "evidence": CREDIT_013,
-        "workflow": {
-            "workflow_id": 351350724, "workflow_path": ".github/workflows/d4-c-producer-generation-source-evidence.yml",
-            "workflow_event": "pull_request", "source_head_branch": "evidence/d4-c-producer-generation-source",
-            "run_id": 34014396915, "run_attempt": 1, "job_id": 101435567019,
-            "job_name": "D4-C OPEN-EVT-013 source evidence", "artifact_id": 9983444885,
-            "artifact_name": "d4-c-producer-generation-source-317479d2e71108a6854d16f35e063648365d9b62-34014396915-1",
-            "artifact_digest": "sha256:03f2dcbb8929e385a539147a1d2a9cd5068f41d090d1273f6db7ffb2dc56733f",
-        },
-        "source_sha256": "f1bbb8b35ffa9da6920d1db8ec54e1a626fa277afe7409aa81e99d172eee2345",
-    },
-    {
-        "path": PROMOTION_014, "source": SOURCE_014,
-        "promotion_id": "d4-c-open-evt-014-promotion-v1",
-        "promotion_base": "20af413f3f06aef7693e4f2c64e3b2a382df0814",
-        "source_pr": 84, "source_head": "87f0b186f20e73c95793d2c4de7e7683e8fb5871",
-        "source_merge": "20af413f3f06aef7693e4f2c64e3b2a382df0814", "review_id": 5124541370,
-        "decision": "OPEN-EVT-014", "evidence": CREDIT_014,
-        "workflow": {
-            "workflow_id": 351392426, "workflow_path": ".github/workflows/d4-c-privileged-replay-source-evidence.yml",
-            "workflow_event": "pull_request", "source_head_branch": "evidence/d4-c-privileged-replay-source",
-            "run_id": 34018618849, "run_attempt": 1, "job_id": 101446946047,
-            "job_name": "D4-C OPEN-EVT-014 source evidence", "artifact_id": 9984720066,
-            "artifact_name": "d4-c-privileged-replay-source-87f0b186f20e73c95793d2c4de7e7683e8fb5871-34018618849-1",
-            "artifact_digest": "sha256:710f41ae99518d37fc5ed8bdf2c1760422097a45ad4951167a47069d52ab9c69",
-        },
-        "source_sha256": "a49c1839234c8aadc86dcd842ce5485d2d6509874418779c5b5f6dfe59c73d1e",
-    },
-    {
-        "path": PROMOTION_015, "source": SOURCE_015,
-        "promotion_id": "d4-c-open-evt-015-promotion-v1",
-        "promotion_base": "5f4711f388ac1b07de4e544ee31b9e09a2fec481",
-        "source_pr": 103, "source_head": "90371a0e91da9e9a29f344231ab04461e47026d4",
-        "source_merge": "5f4711f388ac1b07de4e544ee31b9e09a2fec481", "review_id": 5126450377,
-        "decision": "OPEN-EVT-015", "evidence": CREDIT_015,
-        "workflow": {
-            "workflow_id": 351770101,
-            "workflow_path": ".github/workflows/d4-c-historical-reader-upcaster-source-evidence.yml",
-            "workflow_event": "pull_request",
-            "source_head_branch": "d4c/open-evt-015-historical-reader-source",
-            "run_id": 34056103551, "run_attempt": 1, "job_id": 101548179099,
-            "job_name": "D4-C OPEN-EVT-015 source evidence", "artifact_id": 9995996278,
-            "artifact_name": "d4-c-historical-reader-source-90371a0e91da9e9a29f344231ab04461e47026d4-34056103551-1",
-            "artifact_digest": "sha256:dae09cfdc630d4bdc62d6e1fd56502535ba5e879ca39cc58519ac8788cdde3a0",
-        },
-        "source_sha256": "192a3997d406e93581b72a734a1db2f9f071f1dc9ad3178ee56f166c24b4567f",
-    },
-)
+    "source_sha256":"069cb3551b64a65ec0e4aa66e416289ee0d5c2d7037f1a3d07effd9333cbdeda",
+}
+REVIEW_MODE = "independent_exact_head_adversarial_clean_after_exact_head_ci"
 
 class DuplicateKeyError(ValueError):
     pass
 
-def _no_duplicates(pairs):
+def no_duplicates(pairs):
     out = {}
     for key, value in pairs:
         if key in out:
@@ -222,82 +103,86 @@ def _no_duplicates(pairs):
     return out
 
 def load(path: Path):
-    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_no_duplicates)
+    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=no_duplicates)
 
-def _exact_int(value: object, expected: int) -> bool:
-    return type(value) is int and value == expected
+def git_blob_sha(path: Path) -> str:
+    data = path.read_bytes()
+    return hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest()
 
-def _exact_bool(value: object, expected: bool) -> bool:
-    return type(value) is bool and value is expected
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
-def _validate_promotion(root: Path, spec: dict, errors: list[str]) -> None:
-    label = spec["decision"]
+def _validate_historical(root: Path, errors: list[str]) -> None:
+    for path, expected_blob in HISTORICAL_PROMOTIONS.items():
+        label = path.stem
+        full = root / path
+        if git_blob_sha(full) != expected_blob:
+            errors.append(f"{label}: historical promotion blob drift")
+            continue
+        try:
+            record = load(full)
+            manifest = record["source_manifest"]
+            source = root / manifest["path"]
+            source_data = load(source)
+        except Exception as exc:
+            errors.append(f"{label}: {exc}")
+            continue
+        if sha256(source) != manifest.get("sha256"):
+            errors.append(f"{label}: historical source manifest bytes drift")
+        if source_data.get("current_run_auto_credit") is not False or source_data.get("ledger_credit") != []:
+            errors.append(f"{label}: historical source package must remain non-promoting")
+        if source_data.get("selection_state") != "not_selected" or source_data.get("selection_authority") != "not_granted":
+            errors.append(f"{label}: historical source selection leakage")
+
+def _validate_025(root: Path, errors: list[str]) -> None:
     try:
-        promotion = load(root / spec["path"])
-        source = load(root / spec["source"])
+        p = load(root / PROMOTION_025)
+        source = load(root / SOURCE_025)
     except Exception as exc:
-        errors.append(f"{label}: {exc}")
+        errors.append(f"OPEN-EVT-025: {exc}")
         return
-    if not isinstance(promotion, dict) or set(promotion) != EXPECTED_PROMOTION_KEYS:
-        errors.append(f"{label}: promotion exact key schema drift")
-    if not _exact_int(promotion.get("schema_version"), 1):
-        errors.append(f"{label}: promotion schema_version must be integer 1")
-    for key, expected in {
-        "promotion_id": spec["promotion_id"], "gate_id": "D4", "track_id": "D4-C",
-        "promotion_base": spec["promotion_base"], "source_reviewed_head": spec["source_head"],
-        "source_merge_commit": spec["source_merge"],
-    }.items():
-        if promotion.get(key) != expected:
-            errors.append(f"{label}: promotion scalar drift: {key}")
-    if not _exact_int(promotion.get("source_pr"), spec["source_pr"]):
-        errors.append(f"{label}: source PR drift")
-    review = promotion.get("source_review")
+    if not isinstance(p, dict) or set(p) != EXPECTED_PROMOTION_KEYS:
+        errors.append("OPEN-EVT-025: promotion exact key schema drift")
+        return
+    expected_scalars = {
+        "schema_version":1,"promotion_id":EXPECTED_025["promotion_id"],"gate_id":"D4","track_id":"D4-C",
+        "promotion_base":EXPECTED_025["promotion_base"],"source_pr":EXPECTED_025["source_pr"],
+        "source_reviewed_head":EXPECTED_025["source_reviewed_head"],"source_merge_commit":EXPECTED_025["source_merge_commit"],
+        "credit_count":1,"selection_state":"not_selected","selection_authority":"not_granted","d4_gate_state":"scoped",
+        "d4_transport_authority":"selected_not_granted","canonical_product_implementation_authority":"not_granted",
+        "wave4_implementation_authority":"not_granted","production_authority":"none","c3_numeric_topology_authority":"not_selected",
+        "separate_selection_required":True,"separate_d4_acceptance_required":True,
+    }
+    for key, expected in expected_scalars.items():
+        if p.get(key) != expected or type(p.get(key)) is not type(expected):
+            errors.append(f"OPEN-EVT-025: promotion scalar drift: {key}")
+    review = p.get("source_review")
     if not isinstance(review, dict) or set(review) != EXPECTED_REVIEW_KEYS:
-        errors.append(f"{label}: source review exact key schema drift")
+        errors.append("OPEN-EVT-025: source review exact key schema drift")
     else:
-        if not _exact_int(review.get("review_id"), spec["review_id"]):
-            errors.append(f"{label}: source review id drift")
-        if review.get("review_mode") != REVIEW_MODE:
-            errors.append(f"{label}: source review mode drift")
-        if not _exact_int(review.get("material_threads_unresolved"), 0):
-            errors.append(f"{label}: source review unresolved-thread drift")
-    workflow = promotion.get("source_workflow")
+        if review.get("review_id") != EXPECTED_025["review_id"] or type(review.get("review_id")) is not int:
+            errors.append("OPEN-EVT-025: source review id drift")
+        if review.get("review_mode") != REVIEW_MODE or review.get("material_threads_unresolved") != 0:
+            errors.append("OPEN-EVT-025: source review boundary drift")
+    workflow = p.get("source_workflow")
     if not isinstance(workflow, dict) or set(workflow) != EXPECTED_WORKFLOW_KEYS:
-        errors.append(f"{label}: source workflow exact key schema drift")
-    elif workflow != spec["workflow"]:
-        errors.append(f"{label}: source workflow provenance drift")
-    else:
-        for key in ("workflow_id", "run_id", "run_attempt", "job_id", "artifact_id"):
-            if type(workflow.get(key)) is not int:
-                errors.append(f"{label}: source workflow integer type drift: {key}")
-    manifest = promotion.get("source_manifest")
-    expected_manifest = {"path": str(spec["source"]), "sha256": spec["source_sha256"]}
-    if not isinstance(manifest, dict) or set(manifest) != EXPECTED_MANIFEST_KEYS:
-        errors.append(f"{label}: source manifest exact key schema drift")
-    elif manifest != expected_manifest:
-        errors.append(f"{label}: source manifest provenance drift")
-    elif hashlib.sha256((root / spec["source"]).read_bytes()).hexdigest() != spec["source_sha256"]:
-        errors.append(f"{label}: source manifest bytes drift")
-    if promotion.get("credited_evidence") != [spec["evidence"]] or not _exact_int(promotion.get("credit_count"), 1):
-        errors.append(f"{label}: promotion credit drift")
-    for key, expected in {
-        "selection_state": "not_selected", "selection_authority": "not_granted", "d4_gate_state": "scoped",
-        "d4_transport_authority": "selected_not_granted", "canonical_product_implementation_authority": "not_granted",
-        "wave4_implementation_authority": "not_granted", "production_authority": "none",
-        "c3_numeric_topology_authority": "not_selected",
-    }.items():
-        if promotion.get(key) != expected:
-            errors.append(f"{label}: promotion authority drift: {key}")
-    if not _exact_bool(promotion.get("separate_selection_required"), True):
-        errors.append(f"{label}: separate-selection guard drift")
-    if not _exact_bool(promotion.get("separate_d4_acceptance_required"), True):
-        errors.append(f"{label}: separate-acceptance guard drift")
-    if source.get("source_decision") != spec["decision"] or source.get("evidence_id") != spec["evidence"]:
-        errors.append(f"{label}: source evidence binding drift")
+        errors.append("OPEN-EVT-025: source workflow exact key schema drift")
+    elif workflow != EXPECTED_025["workflow"]:
+        errors.append("OPEN-EVT-025: source workflow provenance drift")
+    manifest = p.get("source_manifest")
+    expected_manifest = {"path":str(SOURCE_025),"sha256":EXPECTED_025["source_sha256"]}
+    if not isinstance(manifest, dict) or set(manifest) != EXPECTED_MANIFEST_KEYS or manifest != expected_manifest:
+        errors.append("OPEN-EVT-025: source manifest provenance drift")
+    elif sha256(root / SOURCE_025) != EXPECTED_025["source_sha256"]:
+        errors.append("OPEN-EVT-025: source manifest bytes drift")
+    if p.get("credited_evidence") != [CREDIT_025]:
+        errors.append("OPEN-EVT-025: promotion credit drift")
+    if source.get("source_decision") != "OPEN-EVT-025" or source.get("evidence_id") != CREDIT_025:
+        errors.append("OPEN-EVT-025: source evidence binding drift")
     if source.get("current_run_auto_credit") is not False or source.get("ledger_credit") != []:
-        errors.append(f"{label}: source package must remain non-promoting")
+        errors.append("OPEN-EVT-025: source package must remain non-promoting")
     if source.get("selection_state") != "not_selected" or source.get("selection_authority") != "not_granted":
-        errors.append(f"{label}: source package selection leakage")
+        errors.append("OPEN-EVT-025: source package selection leakage")
 
 def validate(root: Path) -> list[str]:
     errors: list[str] = []
@@ -308,59 +193,55 @@ def validate(root: Path) -> list[str]:
         return [str(exc)]
     if not isinstance(plan, dict) or set(plan) != EXPECTED_PLAN_KEYS:
         errors.append("D4-C evidence-plan exact key schema drift")
-    expected_plan_scalars = {
-        "schema_version": 1, "gate_id": "D4", "track_id": "D4-C",
-        "name": "delivery_ack_quarantine_equivalence_outbox_replay_history_recovery",
-        "candidate": None, "candidate_status": "not_selected",
-        "source_evidence_state": "reviewed_source_run_available", "ledger_credit_state": "eight_of_nine",
-        "current_run_auto_credit": False, "selection_state": "not_selected", "selection_authority": "not_granted",
-        "separate_selection_required": True, "separate_d4_acceptance_required": True,
-        "d4_transport_authority": "selected_not_granted", "canonical_product_implementation_authority": "not_granted",
-        "wave4_implementation_authority": "not_granted", "production_authority": "none",
-        "c3_numeric_topology_authority": "not_selected",
+    scalars = {
+        "schema_version":1,"gate_id":"D4","track_id":"D4-C",
+        "name":"delivery_ack_quarantine_equivalence_outbox_replay_history_recovery",
+        "candidate":None,"candidate_status":"not_selected","source_evidence_state":"reviewed_source_run_available",
+        "ledger_credit_state":"nine_of_nine","current_run_auto_credit":False,"selection_state":"not_selected",
+        "selection_authority":"not_granted","separate_selection_required":True,"separate_d4_acceptance_required":True,
+        "d4_transport_authority":"selected_not_granted","canonical_product_implementation_authority":"not_granted",
+        "wave4_implementation_authority":"not_granted","production_authority":"none","c3_numeric_topology_authority":"not_selected",
     }
-    for key, expected in expected_plan_scalars.items():
+    for key, expected in scalars.items():
         if plan.get(key) != expected or type(plan.get(key)) is not type(expected):
             errors.append(f"plan scalar drift: {key}")
-    if plan.get("source_decisions") != EXPECTED_SOURCE_DECISIONS:
+    if plan.get("source_decisions") != SOURCE_DECISIONS:
         errors.append("D4-C source decision inventory drift")
-    if plan.get("credited_evidence") != EXPECTED_CREDITS:
-        errors.append("D4-C credited evidence must be exactly OPEN-EVT-008 through OPEN-EVT-015 obligations")
-    if plan.get("remaining_evidence") != EXPECTED_REMAINING:
-        errors.append("D4-C remaining evidence inventory drift")
-    if plan.get("required_evidence") != [*EXPECTED_CREDITS, *EXPECTED_REMAINING]:
+    if plan.get("credited_evidence") != CREDITS:
+        errors.append("D4-C credited evidence must be exactly all nine reviewed obligations")
+    if plan.get("remaining_evidence") != []:
+        errors.append("D4-C remaining evidence must be empty after ninth promotion")
+    if plan.get("required_evidence") != CREDITS:
         errors.append("D4-C required evidence inventory drift")
-    for spec in PROMOTIONS:
-        _validate_promotion(root, spec, errors)
+    _validate_historical(root, errors)
+    _validate_025(root, errors)
 
     tracks_raw = state.get("tracks", [])
     if not isinstance(tracks_raw, list) or len(tracks_raw) != 4 or not all(isinstance(t, dict) for t in tracks_raw):
         errors.append("D4 track structure drift")
         return errors
     ids = [t.get("track_id") for t in tracks_raw]
-    if len(ids) != len(set(ids)) or set(ids) != {"D4-A", "D4-B", "D4-C", "D4-D"}:
+    if len(ids) != len(set(ids)) or set(ids) != {"D4-A","D4-B","D4-C","D4-D"}:
         errors.append("D4 track identity drift")
         return errors
-    tracks = {t["track_id"]: t for t in tracks_raw}
-    d4a, d4b, d4c, d4d = tracks["D4-A"], tracks["D4-B"], tracks["D4-C"], tracks["D4-D"]
-    if d4a.get("candidate") != "kafka" or len(d4a.get("evidence_completed", [])) != 7 or d4a.get("evidence_remaining") != []:
+    tracks = {t["track_id"]:t for t in tracks_raw}
+    d4a,d4b,d4c,d4d = tracks["D4-A"],tracks["D4-B"],tracks["D4-C"],tracks["D4-D"]
+    if d4a.get("candidate") != "kafka" or len(d4a.get("evidence_completed",[])) != 7 or d4a.get("evidence_remaining") != []:
         errors.append("D4-A accepted 7/7 state drift")
-    if d4b.get("candidate_status") != "selected_c2_profile" or len(d4b.get("evidence_completed", [])) != 5 or d4b.get("evidence_remaining") != []:
+    if d4b.get("candidate_status") != "selected_c2_profile" or len(d4b.get("evidence_completed",[])) != 5 or d4b.get("evidence_remaining") != []:
         errors.append("D4-B accepted 5/5 state drift")
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
         errors.append("D4-C selection/state leakage")
-    if d4c.get("evidence_completed") != EXPECTED_CREDITS:
+    if d4c.get("evidence_completed") != CREDITS or d4c.get("evidence_remaining") != []:
         errors.append("D4-C state credit drift")
-    if d4c.get("evidence_remaining") != EXPECTED_REMAINING:
-        errors.append("D4-C state remaining evidence drift")
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("evidence_completed") != []:
         errors.append("D4-D state/credit leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 20:
-        errors.append("D4-wide credited evidence must be exactly 20/26")
+    if sum(len(t.get("evidence_completed",[])) for t in tracks_raw) != 21:
+        errors.append("D4-wide credited evidence must be exactly 21/26")
     for key, expected in {
-        "gate_state": "scoped", "d4_transport_authority": "selected_not_granted",
-        "canonical_product_implementation_authority": "not_granted", "wave4_implementation_authority": "not_granted",
-        "production_authority": "none", "c3_numeric_topology_authority": "not_selected",
+        "gate_state":"scoped","d4_transport_authority":"selected_not_granted",
+        "canonical_product_implementation_authority":"not_granted","wave4_implementation_authority":"not_granted",
+        "production_authority":"none","c3_numeric_topology_authority":"not_selected",
     }.items():
         if state.get(key) != expected:
             errors.append(f"global authority drift: {key}")
@@ -373,10 +254,7 @@ def main() -> int:
         for error in errors:
             print(f"D4C_PROMOTION_ERROR: {error}")
         return 1
-    print(
-        "d4c_open_evt_015_promotion=PASS promotion_records=8 immutable_history=true "
-        "d4c=8_of_9 d4wide=20_of_26 selection=not_selected authorities=unchanged"
-    )
+    print("d4c_open_evt_025_promotion=PASS promotion_records=9 historical_blobs_pinned=true d4c=9_of_9 d4wide=21_of_26 selection=not_selected authorities=unchanged")
     return 0
 
 if __name__ == "__main__":

@@ -230,12 +230,20 @@ class ValidatorFalsificationTests(unittest.TestCase):
             self._write(root, PLAN_PATH, plan)
         self._assert_rejected(mutate, "source proof inventory no longer matches accepted candidate plan")
 
-    def test_d4c_credit_leakage_is_rejected(self):
+    def test_d4c_credit_regression_is_rejected(self):
         def mutate(root):
             state = self._read(root, STATE_PATH)
             track = next(t for t in state["tracks"] if t["track_id"] == "D4-C")
-            evidence = track["evidence_remaining"].pop(0)
-            track["evidence_completed"].append(evidence)
+            evidence = track["evidence_completed"].pop()
+            track["evidence_remaining"].insert(0, evidence)
+            self._write(root, STATE_PATH, state)
+        self._assert_rejected(mutate, "D4-C current ledger drift")
+
+    def test_d4c_duplicate_credit_is_rejected(self):
+        def mutate(root):
+            state = self._read(root, STATE_PATH)
+            track = next(t for t in state["tracks"] if t["track_id"] == "D4-C")
+            track["evidence_completed"].append(track["evidence_completed"][-1])
             self._write(root, STATE_PATH, state)
         self._assert_rejected(mutate, "D4-C current ledger drift")
 

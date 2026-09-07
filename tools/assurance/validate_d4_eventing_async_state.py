@@ -52,16 +52,7 @@ EXPECTED_REQUIRED_EVIDENCE = {
 EXPECTED_COMPLETED = {
     "D4-A": set(EXPECTED_REQUIRED_EVIDENCE["D4-A"]),
     "D4-B": set(EXPECTED_REQUIRED_EVIDENCE["D4-B"]),
-    "D4-C": {
-        "ack_after_durable_responsibility_and_lease_ambiguity",
-        "quarantine_redrive_current_authority_and_dedup_preservation",
-        "bounded_message_batch_compression_and_parser_limits",
-        "scoped_content_equivalence_confidentiality_and_conflict_rejection",
-        "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
-        "producer_generation_nonresurrection_across_failover_restore",
-        "privileged_bounded_replay_with_original_identity_and_effect_safety",
-        "historical_reader_upcaster_semantic_and_equivalence_continuity",
-    },
+    "D4-C": set(EXPECTED_REQUIRED_EVIDENCE["D4-C"]),
     "D4-D": set(),
 }
 EXPECTED_TOTAL_EVIDENCE = sum(len(items) for items in EXPECTED_REQUIRED_EVIDENCE.values())
@@ -183,7 +174,7 @@ def main(argv: list[str]) -> int:
         f"d4_eventing_async_state=PASS gate_state={state['gate_state']} tracks={len(state['tracks'])} "
         f"unique_tracks=true evidence_required={EXPECTED_TOTAL_EVIDENCE} evidence_credited={EXPECTED_TOTAL_CREDITED} "
         "d4a_candidate=kafka d4a_selection=selected d4b=5_of_5_selected_profile "
-        "d4c=8_of_9_selection_open d4d=open transport_authority=not_granted"
+        "d4c=9_of_9_selection_open d4d=open transport_authority=not_granted"
     )
     return 0
 

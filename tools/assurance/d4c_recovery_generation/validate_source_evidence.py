@@ -20,8 +20,9 @@ CURRENT_CREDITS = [
     'producer_generation_nonresurrection_across_failover_restore',
     'privileged_bounded_replay_with_original_identity_and_effect_safety',
     'historical_reader_upcaster_semantic_and_equivalence_continuity',
+    EVIDENCE_ID,
 ]
-CURRENT_REMAINING = [EVIDENCE_ID]
+CURRENT_REMAINING = []
 EXPECTED_KEYS = {
     'schema_version','gate_id','track_id','mode','source_decision','evidence_id',
     'candidate_classes','must_prove','candidate_results','selection_state',
@@ -87,7 +88,7 @@ def main() -> int:
     if source.get('current_run_auto_credit') is not False or source.get('ledger_credit') != []:
         return fail('source credit leakage')
     if source.get('non_authority') != EXPECTED_NON_AUTHORITY or source.get('source_boundary') != EXPECTED_BOUNDARY:
-        return fail('boundary drift')
+        return fail('source-time boundary drift')
     axis = candidate_plan.get('axes',{}).get('recovery_generation_reconciliation_and_activation',{})
     if axis.get('decision') != 'OPEN-EVT-025' or axis.get('evidence_id') != EVIDENCE_ID:
         return fail('candidate-plan axis identity drift')
@@ -103,10 +104,10 @@ def main() -> int:
             return fail(f'runtime proof/check failure for {c}')
     if runtime['selection'] != 'not_selected' or runtime['ledger_credit'] != [] or runtime['current_run_auto_credit'] is not False:
         return fail('runtime authority leakage')
-    if plan.get('ledger_credit_state') != 'eight_of_nine' or plan.get('credited_evidence') != CURRENT_CREDITS or plan.get('remaining_evidence') != CURRENT_REMAINING:
-        return fail('D4-C ledger drift')
-    if EVIDENCE_ID in plan.get('credited_evidence',[]) or EVIDENCE_ID not in plan.get('remaining_evidence',[]):
-        return fail('OPEN-EVT-025 must remain uncredited at source stage')
+    if plan.get('ledger_credit_state') != 'nine_of_nine' or plan.get('credited_evidence') != CURRENT_CREDITS or plan.get('remaining_evidence') != CURRENT_REMAINING:
+        return fail('D4-C current ledger drift')
+    if EVIDENCE_ID not in plan.get('credited_evidence',[]) or plan.get('remaining_evidence') != []:
+        return fail('OPEN-EVT-025 current ledger must reflect separate reviewed promotion')
     if plan.get('candidate') is not None or plan.get('candidate_status') != 'not_selected':
         return fail('D4-C candidate selection leakage')
     tracks = {t['track_id']:t for t in state.get('tracks',[])}
@@ -119,8 +120,8 @@ def main() -> int:
         return fail('D4-C selection leakage')
     if tracks['D4-D'].get('evidence_completed') != [] or tracks['D4-D'].get('candidate') is not None:
         return fail('D4-D leakage')
-    if sum(len(t.get('evidence_completed',[])) for t in tracks.values()) != 20:
-        return fail('D4-wide credit count must remain 20/26')
+    if sum(len(t.get('evidence_completed',[])) for t in tracks.values()) != 21:
+        return fail('D4-wide credit count must remain 21/26')
     expected = {
         'gate_state':'scoped','d4_transport_authority':'selected_not_granted',
         'canonical_product_implementation_authority':'not_granted',
@@ -130,7 +131,7 @@ def main() -> int:
     for k,v in expected.items():
         if state.get(k) != v:
             return fail(f'authority drift: {k}')
-    print('d4c_open_evt_025_source_validation=PASS candidates=3 proofs=12 source_snapshot=8/9_uncredited current_d4c=8/9 current_d4wide=20/26 selection=none authorities=unchanged')
+    print('d4c_open_evt_025_source_validation=PASS candidates=3 proofs=12 source_snapshot=8/9_uncredited current_d4c=9/9 current_d4wide=21/26 selection=none authorities=unchanged')
     return 0
 
 if __name__ == '__main__':

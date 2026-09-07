@@ -50,14 +50,21 @@ FORBIDDEN_PAYLOAD_CLASSIFICATIONS = {"secret", "credential", "key_material"}
 def _contains_sensitive_material(values: dict[str, PayloadField]) -> bool:
     return any(field.classification in FORBIDDEN_PAYLOAD_CLASSIFICATIONS for field in values.values())
 
+def _reference_aliases_secret_handle(value: str, reference: SecretReference) -> bool:
+    normalized = value.strip()
+    return not normalized or normalized == reference.handle or reference.handle in normalized
+
 def create_message(*, message_id: str, tenant_id: str, payload: dict[str, PayloadField], secret_ref: SecretReference | None, verification_profile_ref: str, verification_generation_ref: int) -> OrdinaryMessage:
     unknown = {field.classification for field in payload.values()} - ALLOWED_PAYLOAD_CLASSIFICATIONS - FORBIDDEN_PAYLOAD_CLASSIFICATIONS
     if unknown:
         raise SecretBoundaryDenied("unknown payload classification")
     if _contains_sensitive_material(payload):
         raise SecretBoundaryDenied("ordinary message payload cannot contain secret, credential, or key material")
-    if secret_ref is not None and secret_ref.bearer_authority:
-        raise SecretBoundaryDenied("secret reference cannot be bearer authority")
+    if secret_ref is not None:
+        if secret_ref.bearer_authority:
+            raise SecretBoundaryDenied("secret reference cannot be bearer authority")
+        if _reference_aliases_secret_handle(verification_profile_ref, secret_ref):
+            raise SecretBoundaryDenied("verification profile reference cannot retain or alias secret handle")
     if not verification_profile_ref or verification_generation_ref <= 0:
         raise SecretBoundaryDenied("non-secret historical verification reference required")
     return OrdinaryMessage(message_id, tenant_id, dict(payload), secret_ref, verification_profile_ref, verification_generation_ref)
@@ -84,6 +91,10 @@ def resolve_secret(*, reference: SecretReference, authority: SecretAuthority, re
         raise SecretBoundaryDenied("secret authority unavailable: fail closed")
     if authority.authority_source != "secret_or_kms_authority":
         raise SecretBoundaryDenied("invalid secret authority source")
+    if reference.generation != authority.current_generation:
+        raise SecretBoundaryDenied("stale or unknown secret generation: fail closed")
+    if _reference_aliases_secret_handle(reference.audit_reference, reference):
+        raise SecretBoundaryDenied("audit reference cannot retain or alias secret handle")
     if not authorized or requested_scope != reference.scope or requested_scope not in authority.allowed_scopes:
         raise SecretBoundaryDenied("secret resolution is not narrowly authorized")
     audit_sink.append({
@@ -165,17 +176,31 @@ def run_probes() -> dict[str, bool]:
         except SecretBoundaryDenied:
             checks[f"reject_payload_{probe_name}"] = True
 
+    try:
+        create_message(
+            message_id="alias-profile",
+            tenant_id="tenant-a",
+            payload={"order_id": PayloadField("ord-43", "business_data")},
+            secret_ref=ref,
+            verification_profile_ref=ref.handle,
+            verification_generation_ref=7,
+        )
+        checks["verification_profile_alias_secret_handle_rejected"] = False
+    except SecretBoundaryDenied:
+        checks["verification_profile_alias_secret_handle_rejected"] = True
+
     sanitized = [sanitize_record(message, record_kind=k) for k in ("inbox", "log", "trace", "quarantine")]
     checks["secondary_records_exclude_secret_key_material"] = all(
         not r["secret_ref_present"]
         and not r["secret_material_present"]
         and not r["credential_material_present"]
         and not r["key_material_present"]
+        and ref.handle not in str(r)
         for r in sanitized
     )
 
     evidence = erase_and_minimize(message)
-    checks["erasure_preserves_non_secret_historical_verification_reference"] = evidence.verification_profile_ref == "semantic-equivalence-v3" and evidence.verification_generation_ref == 7 and not evidence.secret_material_present and not evidence.credential_material_present and not evidence.secret_reference_present
+    checks["erasure_preserves_non_secret_historical_verification_reference"] = evidence.verification_profile_ref == "semantic-equivalence-v3" and evidence.verification_generation_ref == 7 and ref.handle not in str(evidence) and not evidence.secret_material_present and not evidence.credential_material_present and not evidence.secret_reference_present
     checks["redaction_erasure_preserve_correctness_evidence"] = duplicate_sensitive_effect_eligible(evidence, expected_tenant="tenant-a", expected_profile="semantic-equivalence-v3", known_generations=(5, 6, 7))
 
     audit: list[dict[str, object]] = []
@@ -189,6 +214,14 @@ def run_probes() -> dict[str, bool]:
         and audit[0]["secret_material_logged"] is False
         and ref.handle not in str(audit[0])
     )
+
+    alias_audit_ref = replace(ref, audit_reference=ref.handle)
+    try:
+        resolve_secret(reference=alias_audit_ref, authority=authority, requested_scope="tenant-a/orders", authorized=True, audit_sink=[])
+        checks["audit_reference_alias_secret_handle_rejected"] = False
+    except SecretBoundaryDenied:
+        checks["audit_reference_alias_secret_handle_rejected"] = True
+
     for name, scope, authorized in [
         ("unauthorized_resolution_fails_closed", "tenant-a/orders", False),
         ("cross_scope_resolution_fails_closed", "tenant-b/orders", True),
@@ -206,13 +239,23 @@ def run_probes() -> dict[str, bool]:
     except SecretBoundaryDenied:
         checks["secret_authority_outage_fails_closed"] = True
 
+    for probe_name, generation in [
+        ("stale_generation_resolution_fails_closed", 6),
+        ("unknown_generation_resolution_fails_closed", 99),
+    ]:
+        try:
+            resolve_secret(reference=replace(ref, generation=generation), authority=authority, requested_scope="tenant-a/orders", authorized=True, audit_sink=[])
+            checks[probe_name] = False
+        except SecretBoundaryDenied:
+            checks[probe_name] = True
+
     checks["historical_reference_is_not_bearer_authority"] = not historical_reference_can_resolve_secret(evidence, authority)
     bearer_ref = replace(ref, bearer_authority=True)
     try:
         create_message(
             message_id="bad-ref",
             tenant_id="tenant-a",
-            payload={"order_id": PayloadField("ord-43", "business_data")},
+            payload={"order_id": PayloadField("ord-44", "business_data")},
             secret_ref=bearer_ref,
             verification_profile_ref="semantic-equivalence-v3",
             verification_generation_ref=7,

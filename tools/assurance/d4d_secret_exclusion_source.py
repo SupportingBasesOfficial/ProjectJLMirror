@@ -218,6 +218,9 @@ def run_probes() -> dict[str, bool]:
             ),
         )
 
+    # Collision-shaped fixtures deliberately satisfy earlier syntax checks so
+    # the overlap guards themselves are required for these probes to pass.
+    direct_collision_ref = replace(ref, handle="verification-profile://collision-profile")
     _expect_denied(
         checks,
         "verification_reference_alias_secret_handle_rejected",
@@ -225,11 +228,12 @@ def run_probes() -> dict[str, bool]:
             message_id="bad-verification-alias",
             tenant_id="tenant-a",
             payload={"order_id": PayloadField("ord-43", "business_data")},
-            secret_ref=ref,
-            verification_profile_ref=ref.handle,
+            secret_ref=direct_collision_ref,
+            verification_profile_ref=direct_collision_ref.handle,
             verification_generation_ref=7,
         ),
     )
+    embedded_collision_ref = replace(ref, handle="collision-handle-7")
     _expect_denied(
         checks,
         "verification_reference_embedding_secret_handle_rejected",
@@ -237,8 +241,8 @@ def run_probes() -> dict[str, bool]:
             message_id="bad-verification-embed",
             tenant_id="tenant-a",
             payload={"order_id": PayloadField("ord-44", "business_data")},
-            secret_ref=ref,
-            verification_profile_ref=VERIFICATION_REFERENCE_PREFIX + ref.handle,
+            secret_ref=embedded_collision_ref,
+            verification_profile_ref="verification-profile://prefix-collision-handle-7-suffix",
             verification_generation_ref=7,
         ),
     )
@@ -246,13 +250,14 @@ def run_probes() -> dict[str, bool]:
         _audit_reference(ref) == "secret-audit-ref://tenant-a/orders/generation-7"
         and ref.handle not in _audit_reference(ref)
     )
+    scope_collision_ref = replace(ref, handle="tenant-a/orders", scope="tenant-a/orders")
     _expect_denied(
         checks,
         "secret_handle_scope_rejected",
         lambda: resolve_secret(
-            reference=replace(ref, scope=ref.handle),
+            reference=scope_collision_ref,
             authority=authority,
-            requested_scope=ref.handle,
+            requested_scope="tenant-a/orders",
             authorized=True,
             audit_sink=[],
         ),

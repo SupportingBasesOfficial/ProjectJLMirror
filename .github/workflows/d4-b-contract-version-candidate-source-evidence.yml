@@ -54,6 +54,7 @@ jobs:
           python3 -m py_compile \
             tools/assurance/d4b_contract_version/evaluate_candidates.py \
             tools/assurance/d4b_contract_version/validate_source_evidence.py \
+            tools/assurance/d4b_contract_version/validate_source_evidence_historical_current.py \
             tools/assurance/d4b_contract_version/test_source_evidence.py \
             tools/assurance/validate_d4b_selection.py \
             tools/assurance/test_validate_d4b_selection.py
@@ -69,7 +70,7 @@ jobs:
           root="$(mktemp -d)"
           mkdir -p "$root/tools/assurance/d4b_contract_version" "$root/implementation/d4-eventing-async/source-evidence"
           cp tools/assurance/d4b_contract_version/evaluate_candidates.py "$root/tools/assurance/d4b_contract_version/"
-          cp tools/assurance/d4b_contract_version/validate_source_evidence.py "$root/tools/assurance/d4b_contract_version/"
+          cp tools/assurance/d4b_contract_version/validate_source_evidence_historical_current.py "$root/tools/assurance/d4b_contract_version/validate_source_evidence.py"
           cp tools/assurance/d4b_contract_version/test_source_evidence.py "$root/tools/assurance/d4b_contract_version/"
           cp implementation/d4-eventing-async/source-evidence/d4-b-contract-version-candidate-source.json "$root/implementation/d4-eventing-async/source-evidence/"
           cp implementation/d4-eventing-async/d4-b-candidate-evaluation-plan.json "$root/implementation/d4-eventing-async/"
@@ -88,7 +89,7 @@ jobs:
           cp implementation/d4-eventing-async/d4-b-candidate-evaluation-plan.json "$root/implementation/d4-eventing-async/"
           git show "$PRESELECTION_MAIN:implementation/d4-eventing-async/d4-b-evidence-plan.json" > "$root/implementation/d4-eventing-async/d4-b-evidence-plan.json"
           git show "$PRESELECTION_MAIN:implementation/d4-eventing-async/state-manifest.json" > "$root/implementation/d4-eventing-async/state-manifest.json"
-          python3 tools/assurance/d4b_contract_version/validate_source_evidence.py "$root"
+          python3 tools/assurance/d4b_contract_version/validate_source_evidence_historical_current.py "$root"
           rm -rf "$root"
 
       - name: Validate current D4-B selected profile

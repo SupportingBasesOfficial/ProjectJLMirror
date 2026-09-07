@@ -20,6 +20,13 @@ EXPECTED_MUST={
 "stale_or_revoked_workload_identity_cannot_mint_or_retain_current_broker_authority",
 "credential_material_is_not_embedded_in_ordinary_messages_logs_or_quarantine_records",
 }
+REQUIRED=[
+EXPECTED_ID,
+"tenant_and_contract_scoped_producer_consumer_authorization",
+"message_protection_key_authority_and_historical_verifier_continuity",
+"secret_credential_payload_exclusion_and_erasure_boundary",
+"trace_context_observability_only_validation_and_redaction",
+]
 
 def validate(root:Path)->list[str]:
     errors=[]
@@ -28,15 +35,18 @@ def validate(root:Path)->list[str]:
     plan=json.loads((root/PLAN).read_text())
     if m.get("evidence_id")!=EXPECTED_ID or m.get("source_decision")!=EXPECTED_DECISION: errors.append("wrong source evidence identity")
     if set(m.get("must_prove",[]))!=EXPECTED_MUST: errors.append("must_prove drift")
-    if m.get("current_run_auto_credit") is not False or m.get("ledger_credit")!=[]: errors.append("source evidence must not auto-credit")
+    if m.get("current_run_auto_credit") is not False or m.get("ledger_credit")!=[]: errors.append("source evidence must remain non-promoting at source time")
     if m.get("candidate") is not None or m.get("candidate_status")!="not_selected" or m.get("selection_authority")!="not_granted": errors.append("source evidence must not select D4-D")
     if m.get("canonical_identity_authority")!="IR-D-002": errors.append("IR-D-002 authority must remain canonical")
+    source_time=m.get("source_time_state",{})
+    if source_time.get("d4d")!="0_of_5_unselected" or source_time.get("d4wide")!="21_of_26": errors.append("source-time snapshot must remain 0/5 and 21/26")
     axis=plan["axes"]["workload_identity_to_broker_credential_adapter"]
     if set(axis["must_prove"])!=EXPECTED_MUST: errors.append("candidate-plan/source must_prove mismatch")
     tracks={t["track_id"]:t for t in state["tracks"]}
     d4d=tracks["D4-D"]
-    if d4d["candidate"] is not None or d4d["candidate_status"]!="not_selected" or d4d["evidence_completed"]!=[]: errors.append("D4-D state must remain 0/5 unselected")
-    if sum(len(t["evidence_completed"]) for t in state["tracks"])!=21: errors.append("D4-wide must remain 21/26")
+    if d4d["candidate"] is not None or d4d["candidate_status"]!="not_selected" or d4d.get("state")!="candidate_selection_open": errors.append("D4-D state must remain open/unselected")
+    if d4d.get("required_evidence")!=REQUIRED or d4d.get("evidence_completed")!=[EXPECTED_ID] or d4d.get("evidence_remaining")!=REQUIRED[1:]: errors.append("current D4-D state must reflect exactly the separate first promotion")
+    if sum(len(t["evidence_completed"]) for t in state["tracks"])!=22: errors.append("D4-wide current state must be 22/26")
     if state["gate_state"]!="scoped" or state["d4_transport_authority"]!="selected_not_granted" or state["canonical_product_implementation_authority"]!="not_granted" or state["wave4_implementation_authority"]!="not_granted" or state["production_authority"]!="none" or state["c3_numeric_topology_authority"]!="not_selected": errors.append("authority leakage")
     checks=run_probes()
     bad=[k for k,v in checks.items() if not v]
@@ -49,4 +59,4 @@ if __name__=="__main__":
     if errors:
         for e in errors: print("D4D_SOURCE_ERROR:",e,file=sys.stderr)
         raise SystemExit(1)
-    print("d4d_workload_identity_source=PASS source_auto_credit=false d4d=0_of_5 d4wide=21/26 selection=not_selected authorities=unchanged")
+    print("d4d_workload_identity_source=PASS source_snapshot=0_of_5 source_auto_credit=false current_d4d=1_of_5 d4wide=22/26 selection=not_selected authorities=unchanged")

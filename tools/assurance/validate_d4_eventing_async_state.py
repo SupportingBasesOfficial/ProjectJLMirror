@@ -8,13 +8,13 @@ from pathlib import Path
 MANIFEST = Path("implementation/d4-eventing-async/state-manifest.json")
 EXPECTED_BASE = "ee8775fc5e7a25b1c4e166a8bb48b53438f6bd42"
 EXPECTED_TRACK_SOURCES = {
-    "D4-A": {"OPEN-EVT-001", "OPEN-EVT-005", "OPEN-REL-012.A"},
-    "D4-B": {"OPEN-EVT-002", "OPEN-EVT-003", "OPEN-EVT-004"},
-    "D4-C": {"OPEN-EVT-008", "OPEN-EVT-009", "OPEN-EVT-010", "OPEN-EVT-011", "OPEN-EVT-012", "OPEN-EVT-013", "OPEN-EVT-014", "OPEN-EVT-015", "OPEN-EVT-025"},
-    "D4-D": {"OPEN-EVT-016", "OPEN-EVT-017", "OPEN-EVT-018"},
+    "D4-A": ["OPEN-EVT-001", "OPEN-EVT-005", "OPEN-REL-012.A"],
+    "D4-B": ["OPEN-EVT-002", "OPEN-EVT-003", "OPEN-EVT-004"],
+    "D4-C": ["OPEN-EVT-008", "OPEN-EVT-009", "OPEN-EVT-010", "OPEN-EVT-011", "OPEN-EVT-012", "OPEN-EVT-013", "OPEN-EVT-014", "OPEN-EVT-015", "OPEN-EVT-025"],
+    "D4-D": ["OPEN-EVT-016", "OPEN-EVT-017", "OPEN-EVT-018"],
 }
 EXPECTED_REQUIRED_EVIDENCE = {
-    "D4-A": {
+    "D4-A": [
         "capacity_envelope_baseline_growth_stress",
         "broker_neutral_anti_corruption_stub_swap",
         "regulated_payload_erasure_granularity",
@@ -22,15 +22,15 @@ EXPECTED_REQUIRED_EVIDENCE = {
         "ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency",
         "physical_naming_routing_and_cell_topology_adapter_mapping",
         "broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark",
-    },
-    "D4-B": {
+    ],
+    "D4-B": [
         "canonical_bounded_serialization_profile",
         "parser_ambiguity_and_duplicate_field_negative_vectors",
         "schema_catalog_semantic_manifest_compatibility_ci",
         "historical_reader_and_equivalence_profile_continuity",
         "contract_version_representation_and_breaking_change_vectors",
-    },
-    "D4-C": {
+    ],
+    "D4-C": [
         "ack_after_durable_responsibility_and_lease_ambiguity",
         "quarantine_redrive_current_authority_and_dedup_preservation",
         "bounded_message_batch_compression_and_parser_limits",
@@ -40,29 +40,23 @@ EXPECTED_REQUIRED_EVIDENCE = {
         "privileged_bounded_replay_with_original_identity_and_effect_safety",
         "historical_reader_upcaster_semantic_and_equivalence_continuity",
         "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
-    },
-    "D4-D": {
+    ],
+    "D4-D": [
         "workload_identity_to_broker_credential_adapter_least_privilege",
         "tenant_and_contract_scoped_producer_consumer_authorization",
         "message_protection_key_authority_and_historical_verifier_continuity",
         "secret_credential_payload_exclusion_and_erasure_boundary",
         "trace_context_observability_only_validation_and_redaction",
-    },
+    ],
 }
 EXPECTED_COMPLETED = {
-    "D4-A": set(EXPECTED_REQUIRED_EVIDENCE["D4-A"]),
-    "D4-B": set(EXPECTED_REQUIRED_EVIDENCE["D4-B"]),
-    "D4-C": set(EXPECTED_REQUIRED_EVIDENCE["D4-C"]),
-    "D4-D": set(),
+    "D4-A": list(EXPECTED_REQUIRED_EVIDENCE["D4-A"]),
+    "D4-B": list(EXPECTED_REQUIRED_EVIDENCE["D4-B"]),
+    "D4-C": list(EXPECTED_REQUIRED_EVIDENCE["D4-C"]),
+    "D4-D": ["workload_identity_to_broker_credential_adapter_least_privilege"],
 }
-EXPECTED_TOTAL_EVIDENCE = sum(len(items) for items in EXPECTED_REQUIRED_EVIDENCE.values())
-EXPECTED_TOTAL_CREDITED = sum(len(items) for items in EXPECTED_COMPLETED.values())
-EXPECTED_ENTRY_STATES = {
-    "D4-A": "selected_candidate",
-    "D4-B": "selected_candidate",
-    "D4-C": "candidate_selection_open",
-    "D4-D": "candidate_selection_open",
-}
+EXPECTED_TOTAL_EVIDENCE = 26
+EXPECTED_TOTAL_CREDITED = 22
 EXPECTED_D4B_CANDIDATE = {
     "serialization": {
         "surface_policy": "explicit_surface_bound_profiles",
@@ -82,85 +76,70 @@ EXPECTED_LATER_EXCLUSIONS = {
     "wave4_monitoring_product_implementation", "production_deployment",
 }
 
+
 def load_manifest(root: Path) -> dict:
     return json.loads((root / MANIFEST).read_text(encoding="utf-8"))
+
 
 def validate_manifest(state: dict) -> list[str]:
     errors: list[str] = []
 
-    def require(condition: bool, message: str) -> None:
-        if not condition:
+    def require(ok: bool, message: str) -> None:
+        if not ok:
             errors.append(message)
 
     require(state.get("schema_version") == 1, "schema_version must be 1")
-    require(state.get("gate_id") == "D4", "gate_id must be D4")
-    require(state.get("gate_name") == "eventing_async_transport_c2", "unexpected D4 gate_name")
+    require(state.get("gate_id") == "D4" and state.get("gate_name") == "eventing_async_transport_c2", "D4 identity drift")
     require(state.get("canonical_base") == EXPECTED_BASE, "D4 canonical_base drift")
     predecessor = state.get("predecessor", {})
-    require(predecessor.get("gate_id") == "D3", "D4 predecessor must be D3")
-    require(predecessor.get("state") == "separately_accepted", "D3 predecessor is not separately accepted")
-    require(predecessor.get("canonical_commit") == EXPECTED_BASE, "D3 predecessor commit drift")
+    require(predecessor == {"gate_id": "D3", "state": "separately_accepted", "canonical_commit": EXPECTED_BASE}, "D3 predecessor drift")
     require(state.get("gate_state") == "scoped", "D4 must remain scoped until separate full acceptance")
+    require(state.get("d4_transport_authority") == "selected_not_granted", "D4 transport must be selected but authority must remain ungranted")
     require(state.get("canonical_product_implementation_authority") == "not_granted", "D4 must not grant canonical Product implementation authority")
     require(state.get("wave4_implementation_authority") == "not_granted", "D4 must not grant Wave 4 implementation authority")
     require(state.get("production_authority") == "none", "D4 must not grant production authority")
-    require(state.get("d4_transport_authority") == "selected_not_granted", "D4 transport must be selected but authority must remain ungranted")
     require(state.get("c3_numeric_topology_authority") == "not_selected", "D4 must not select C3 numeric/topology authority")
 
     tracks = state.get("tracks")
-    require(isinstance(tracks, list), "tracks must be a list")
-    if isinstance(tracks, list):
-        valid_track_objects = all(isinstance(track, dict) for track in tracks)
-        require(valid_track_objects, "every D4 track must be an object")
-        if valid_track_objects:
-            track_ids = [track.get("track_id") for track in tracks]
-            require(len(tracks) == len(EXPECTED_TRACK_SOURCES), "D4 track identity multiplicity drift")
-            require(len(track_ids) == len(set(track_ids)), "D4 duplicate track_id is forbidden")
-            by_id = {track.get("track_id"): track for track in tracks}
-            require(set(by_id) == set(EXPECTED_TRACK_SOURCES), "D4 track set drift")
-            for track_id, expected_sources in EXPECTED_TRACK_SOURCES.items():
-                track = by_id.get(track_id, {})
-                expected_evidence = EXPECTED_REQUIRED_EVIDENCE[track_id]
-                expected_completed = EXPECTED_COMPLETED[track_id]
-                expected_remaining = expected_evidence - expected_completed
-                require(set(track.get("source_decisions", [])) == expected_sources, f"{track_id} source decision drift")
-                require(track.get("state") == EXPECTED_ENTRY_STATES[track_id], f"{track_id} scoped state drift")
-                required = track.get("required_evidence", [])
-                completed = track.get("evidence_completed", [])
-                remaining = track.get("evidence_remaining", [])
-                require(isinstance(required, list), f"{track_id} required evidence must be a list")
-                require(set(required) == expected_evidence, f"{track_id} required evidence inventory drift")
-                require(len(required) == len(expected_evidence), f"{track_id} required evidence multiplicity drift")
-                require(set(completed) == expected_completed, f"{track_id} completed evidence drift")
-                require(len(completed) == len(expected_completed), f"{track_id} completed evidence multiplicity drift")
-                require(set(remaining) == expected_remaining, f"{track_id} remaining evidence drift")
-                require(len(remaining) == len(expected_remaining), f"{track_id} remaining evidence multiplicity drift")
-                require(set(completed).isdisjoint(remaining), f"{track_id} completed/remaining overlap")
-                require(set(completed) | set(remaining) == expected_evidence, f"{track_id} evidence partition drift")
-            require(sum(len(track.get("required_evidence", [])) for track in by_id.values()) == EXPECTED_TOTAL_EVIDENCE, "D4 total required evidence inventory drift")
-            require(sum(len(track.get("evidence_completed", [])) for track in by_id.values()) == EXPECTED_TOTAL_CREDITED, "D4 total credited evidence drift")
+    require(isinstance(tracks, list) and all(isinstance(t, dict) for t in tracks), "tracks must be object list")
+    if not isinstance(tracks, list) or not all(isinstance(t, dict) for t in tracks):
+        return errors
+    ids = [t.get("track_id") for t in tracks]
+    require(ids == ["D4-A", "D4-B", "D4-C", "D4-D"], "D4 track identity/order drift")
+    require(len(ids) == len(set(ids)), "D4 duplicate track_id is forbidden")
+    by_id = {t["track_id"]: t for t in tracks if t.get("track_id") in EXPECTED_TRACK_SOURCES}
+    if set(by_id) != set(EXPECTED_TRACK_SOURCES):
+        errors.append("D4 track set drift")
+        return errors
 
-            d4a = by_id.get("D4-A", {})
-            require(d4a.get("candidate") == "kafka", "D4-A selected candidate must remain Kafka")
-            require(d4a.get("candidate_status") == "selected_c2_candidate", "D4-A Kafka candidate must remain selected at bounded C2 scope")
-            require(d4a.get("evidence_remaining") == [], "D4-A selected state must retain complete evidence")
+    for track_id in ("D4-A", "D4-B", "D4-C", "D4-D"):
+        track = by_id[track_id]
+        required = EXPECTED_REQUIRED_EVIDENCE[track_id]
+        completed = EXPECTED_COMPLETED[track_id]
+        remaining = [x for x in required if x not in completed]
+        require(track.get("source_decisions") == EXPECTED_TRACK_SOURCES[track_id], f"{track_id} source decision drift")
+        require(track.get("required_evidence") == required, f"{track_id} required evidence inventory drift")
+        require(track.get("evidence_completed") == completed, f"{track_id} completed evidence drift")
+        require(track.get("evidence_remaining") == remaining, f"{track_id} remaining evidence drift")
+        require(len(track.get("evidence_completed", [])) == len(set(track.get("evidence_completed", []))), f"{track_id} completed evidence multiplicity drift")
+        require(set(track.get("evidence_completed", [])).isdisjoint(track.get("evidence_remaining", [])), f"{track_id} completed/remaining overlap")
 
-            d4b = by_id.get("D4-B", {})
-            require(d4b.get("candidate") == EXPECTED_D4B_CANDIDATE, "D4-B selected profile drift")
-            require(d4b.get("candidate_status") == "selected_c2_profile", "D4-B candidate status must remain selected_c2_profile")
-            require(d4b.get("state") == "selected_candidate", "D4-B must remain selected_candidate at bounded C2 scope")
-            require(d4b.get("evidence_remaining") == [], "D4-B selected state must retain complete evidence")
+    d4a, d4b, d4c, d4d = (by_id[x] for x in ("D4-A", "D4-B", "D4-C", "D4-D"))
+    require(d4a.get("candidate") == "kafka" and d4a.get("candidate_status") == "selected_c2_candidate" and d4a.get("state") == "selected_candidate", "D4-A selected candidate drift")
+    require(d4b.get("candidate") == EXPECTED_D4B_CANDIDATE and d4b.get("candidate_status") == "selected_c2_profile" and d4b.get("state") == "selected_candidate", "D4-B selected profile drift")
+    for track_id, track in (("D4-C", d4c), ("D4-D", d4d)):
+        require(track.get("candidate") is None, f"{track_id} must not silently select a candidate")
+        require(track.get("candidate_status") == "not_selected", f"{track_id} candidate status must remain not_selected")
+        require(track.get("state") == "candidate_selection_open", f"{track_id} scoped state drift")
 
-            for track_id in ("D4-C", "D4-D"):
-                track = by_id.get(track_id, {})
-                require(track.get("candidate") is None, f"{track_id} must not silently select a candidate")
-                require(track.get("candidate_status") == "not_selected", f"{track_id} candidate status must remain not_selected")
-
+    require(sum(len(t.get("required_evidence", [])) for t in tracks) == EXPECTED_TOTAL_EVIDENCE, "D4 total required evidence inventory drift")
+    require(sum(len(t.get("evidence_completed", [])) for t in tracks) == EXPECTED_TOTAL_CREDITED, "D4 total credited evidence drift")
     require(set(state.get("explicit_c3_exclusions", [])) == EXPECTED_C3_EXCLUSIONS, "D4 C3 exclusion set drift")
     require(set(state.get("explicit_product_or_later_gate_exclusions", [])) == EXPECTED_LATER_EXCLUSIONS, "D4 Product/later-gate exclusion set drift")
     require("separate_acceptance" in state.get("acceptance_rule", ""), "D4 acceptance must remain a separate action")
     require("separate_explicit_user_authorization" in state.get("merge_rule", ""), "D4 merge rule must require separate explicit user authorization")
     return errors
+
 
 def main(argv: list[str]) -> int:
     root = Path(argv[1]).resolve() if len(argv) > 1 else Path.cwd()
@@ -170,12 +149,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4_STATE_ERROR: {error}", file=sys.stderr)
         return 1
-    print(
-        f"d4_eventing_async_state=PASS gate_state={state['gate_state']} tracks={len(state['tracks'])} "
-        f"unique_tracks=true evidence_required={EXPECTED_TOTAL_EVIDENCE} evidence_credited={EXPECTED_TOTAL_CREDITED} "
-        "d4a_candidate=kafka d4a_selection=selected d4b=5_of_5_selected_profile "
-        "d4c=9_of_9_selection_open d4d=open transport_authority=not_granted"
-    )
+    print("d4_eventing_async_state=PASS evidence_required=26 evidence_credited=22 d4a=7_of_7 d4b=5_of_5 d4c=9_of_9 d4d=1_of_5 selection_open authorities=unchanged")
     return 0
 
 if __name__ == "__main__":

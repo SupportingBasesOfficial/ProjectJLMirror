@@ -1,20 +1,22 @@
-name: JLMIRROR D4-C OPEN-EVT-025 Ledger Promotion
+name: JLMIRROR D4-D OPEN-EVT-016 Ledger Promotion
 
 on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - 'implementation/d4-eventing-async/d4-c-evidence-plan.json'
-      - 'implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-025-promotion-v1.json'
+      - 'implementation/d4-eventing-async/d4-d-evidence-plan.json'
+      - 'implementation/d4-eventing-async/ledger-promotions/d4-d-open-evt-016-promotion-v1.json'
       - 'implementation/d4-eventing-async/state-manifest.json'
-      - 'implementation/d4-eventing-async/source-evidence/d4-c-recovery-generation-source.json'
-      - 'tools/assurance/validate_d4c_evidence_plan.py'
-      - 'tools/assurance/test_validate_d4c_evidence_plan.py'
+      - 'implementation/d4-eventing-async/source-evidence/d4-d-workload-identity/source-evidence-manifest.json'
+      - 'tools/assurance/validate_d4d_evidence_plan.py'
+      - 'tools/assurance/test_validate_d4d_evidence_plan.py'
       - 'tools/assurance/validate_d4_eventing_async_state.py'
       - 'tools/assurance/test_validate_d4_eventing_async_state.py'
-      - 'docs/16-implementation-readiness/55-d4-c-open-evt-025-ledger-promotion.md'
-      - '.github/workflows/d4-c-open-evt-025-ledger-promotion.yml'
+      - 'tools/assurance/validate_d4d_candidate_evaluation_plan.py'
+      - 'tools/assurance/validate_d4d_workload_identity_source.py'
+      - 'docs/16-implementation-readiness/57-d4-d-open-evt-016-ledger-promotion.md'
+      - '.github/workflows/d4-d-open-evt-016-ledger-promotion.yml'
   workflow_dispatch:
 
 permissions:
@@ -23,8 +25,8 @@ permissions:
   pull-requests: read
 
 jobs:
-  d4c-open-evt-025-promotion:
-    name: D4-C OPEN-EVT-025 reviewed source ledger promotion
+  d4d-open-evt-016-promotion:
+    name: D4-D OPEN-EVT-016 reviewed source ledger promotion
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
@@ -49,18 +51,18 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile \
-            tools/assurance/validate_d4c_evidence_plan.py \
-            tools/assurance/test_validate_d4c_evidence_plan.py \
+            tools/assurance/validate_d4d_evidence_plan.py \
+            tools/assurance/test_validate_d4d_evidence_plan.py \
             tools/assurance/validate_d4_eventing_async_state.py \
-            tools/assurance/test_validate_d4_eventing_async_state.py
+            tools/assurance/test_validate_d4_eventing_async_state.py \
+            tools/assurance/validate_d4d_candidate_evaluation_plan.py \
+            tools/assurance/validate_d4d_workload_identity_source.py
 
-      - name: Falsify D4-C ninth-credit weakening
-        shell: bash
-        run: python3 tools/assurance/test_validate_d4c_evidence_plan.py
+      - name: Falsify D4-D first-credit weakening
+        run: python3 tools/assurance/test_validate_d4d_evidence_plan.py
 
-      - name: Validate D4-C nine-of-nine promotion
-        shell: bash
-        run: python3 tools/assurance/validate_d4c_evidence_plan.py .
+      - name: Validate D4-D one-of-five promotion
+        run: python3 tools/assurance/validate_d4d_evidence_plan.py .
 
       - name: Preserve global D4 scoped state
         shell: bash
@@ -68,12 +70,15 @@ jobs:
           set -euo pipefail
           python3 tools/assurance/test_validate_d4_eventing_async_state.py
           python3 tools/assurance/validate_d4_eventing_async_state.py .
+          python3 tools/assurance/test_validate_d4d_candidate_evaluation_plan.py
+          python3 tools/assurance/validate_d4d_candidate_evaluation_plan.py .
+          python3 tools/assurance/test_validate_d4d_workload_identity_source.py
+          python3 tools/assurance/validate_d4d_workload_identity_source.py .
 
       - name: Preserve Phase 10 contract suite
-        shell: bash
         run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
 
-      - name: Admit exact reviewed OPEN-EVT-025 source evidence from live GitHub state
+      - name: Admit exact reviewed OPEN-EVT-016 source evidence from live GitHub state
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -82,7 +87,7 @@ jobs:
           python3 - <<'PY' > /tmp/promotion.env
           import json
           from pathlib import Path
-          p=json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-025-promotion-v1.json').read_text())
+          p=json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-d-open-evt-016-promotion-v1.json').read_text())
           w=p['source_workflow']
           for k,v in {
               'SOURCE_PR':p['source_pr'],'SOURCE_REVIEW_ID':p['source_review']['review_id'],
@@ -91,8 +96,7 @@ jobs:
               'SOURCE_HEAD_BRANCH':w['source_head_branch'],'RUN_ID':w['run_id'],
               'RUN_ATTEMPT':w['run_attempt'],'JOB_ID':w['job_id'],'ARTIFACT_ID':w['artifact_id'],
               'ARTIFACT_NAME':w['artifact_name'],'ARTIFACT_DIGEST':w['artifact_digest'],
-          }.items():
-              print(f'{k}={v}')
+          }.items(): print(f'{k}={v}')
           PY
           source /tmp/promotion.env
           headers=(-H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
@@ -107,58 +111,55 @@ jobs:
           python3 - <<'PY'
           import hashlib, json
           from pathlib import Path
-          p=json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-025-promotion-v1.json').read_text())
+          p=json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-d-open-evt-016-promotion-v1.json').read_text())
           w=p['source_workflow']; source=Path(p['source_manifest']['path'])
           source_pr=json.load(open('/tmp/source-pr.json')); review=json.load(open('/tmp/source-review.json'))
           run=json.load(open('/tmp/run.json')); job=json.load(open('/tmp/job.json')); artifact=json.load(open('/tmp/artifact.json'))
-          assert source_pr['number']==105 and source_pr['state']=='closed' and source_pr.get('merged_at') is not None
+          assert source_pr['number']==108 and source_pr['state']=='closed' and source_pr.get('merged_at') is not None
           assert source_pr['head']['sha']==p['source_reviewed_head']
           assert source_pr['merge_commit_sha']==p['source_merge_commit']==p['promotion_base']
-          assert review['id']==p['source_review']['review_id']
-          assert review['commit_id']==p['source_reviewed_head'] and review['state']=='COMMENTED'
+          assert review['id']==p['source_review']['review_id'] and review['commit_id']==p['source_reviewed_head'] and review['state']=='COMMENTED'
           body=review.get('body') or ''
-          assert body.startswith('## Final exact-HEAD technical review')
-          assert f"Reviewed exact HEAD `{p['source_reviewed_head']}`" in body
-          assert 'pre-ready matrix: 9/9 SUCCESS' in body and 'post-ready matrix: 9/9 SUCCESS' in body
-          assert 'review threads: 0 unresolved' in body and 'Result: CLEAN / READY_FOR_MERGE.' in body
+          assert 'CLEAN / READY_FOR_MERGE' in body
+          assert p['source_reviewed_head'] in body
+          assert 'Pre-ready: 9/9 SUCCESS.' in body and 'Post-ready: 9/9 SUCCESS.' in body
+          assert 'Review threads: 0.' in body
           assert run['id']==w['run_id'] and run['workflow_id']==w['workflow_id'] and run['path']==w['workflow_path']
           assert run['event']=='pull_request' and run['head_sha']==p['source_reviewed_head'] and run['conclusion']=='success'
           assert job['id']==w['job_id'] and job['run_id']==w['run_id'] and job['name']==w['job_name'] and job['conclusion']=='success'
           assert artifact['id']==w['artifact_id'] and artifact['name']==w['artifact_name'] and artifact['digest']==w['artifact_digest'] and artifact['expired'] is False
           files={x.name for x in Path('/tmp/source-artifact').iterdir() if x.is_file()}
-          assert files=={'resolved-source-run-provenance.json','candidate-results.json'}
+          assert files=={'resolved-source-run-provenance.json'}
           provenance=json.loads(Path('/tmp/source-artifact/resolved-source-run-provenance.json').read_text())
-          results=json.loads(Path('/tmp/source-artifact/candidate-results.json').read_text())
           assert provenance['repository_sha']==p['source_reviewed_head'] and provenance['workflow_run_id']==w['run_id']
           assert provenance['workflow_run_attempt']==w['run_attempt'] and provenance['job_id']==w['job_id'] and provenance['job_name']==w['job_name']
-          assert provenance['source_decision']=='OPEN-EVT-025' and provenance['evidence_id']=='recovery_generation_rf_inventory_reconciliation_and_activation_gates'
+          assert provenance['source_decision']=='OPEN-EVT-016'
+          assert provenance['evidence_id']=='workload_identity_to_broker_credential_adapter_least_privilege'
+          assert provenance['canonical_identity_authority']=='IR-D-002'
           assert provenance['current_run_auto_credit'] is False and provenance['ledger_credit']==[]
           assert provenance['selection']=='not_selected' and provenance['selection_authority']=='not_granted'
-          assert results['selection']=='not_selected' and results['ledger_credit']==[]
-          assert all(v=='eligible_for_evidence_execution' for v in results['candidate_results'].values())
-          assert all(all(proofs.values()) for proofs in results['proof_results'].values())
+          assert all(provenance['proof_results'].values())
           digest=hashlib.sha256(source.read_bytes()).hexdigest()
           assert digest==p['source_manifest']['sha256']==provenance['source_manifest_sha256']
-          print('d4c_open_evt_025_promotion_live_admission=PASS')
+          print('d4d_open_evt_016_promotion_live_admission=PASS')
           PY
 
-      - name: Assert promotion grants exactly the ninth evidence credit
+      - name: Assert promotion grants exactly the first D4-D evidence credit
         shell: bash
         run: |
           python3 - <<'PY'
           import json
           from pathlib import Path
-          plan=json.loads(Path('implementation/d4-eventing-async/d4-c-evidence-plan.json').read_text())
+          plan=json.loads(Path('implementation/d4-eventing-async/d4-d-evidence-plan.json').read_text())
           state=json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text())
-          tracks={t['track_id']:t for t in state['tracks']}; d4c=tracks['D4-C']; d4d=tracks['D4-D']
-          expected=plan['required_evidence']; d4d_credit='workload_identity_to_broker_credential_adapter_least_privilege'
-          assert plan['ledger_credit_state']=='nine_of_nine'
-          assert plan['credited_evidence']==expected and plan['remaining_evidence']==[]
-          assert d4c['evidence_completed']==expected and d4c['evidence_remaining']==[]
-          assert d4c['candidate'] is None and d4c['candidate_status']=='not_selected' and d4c['state']=='candidate_selection_open'
+          source=json.loads(Path('implementation/d4-eventing-async/source-evidence/d4-d-workload-identity/source-evidence-manifest.json').read_text())
+          d4d=next(t for t in state['tracks'] if t['track_id']=='D4-D')
+          first='workload_identity_to_broker_credential_adapter_least_privilege'
+          assert source['current_run_auto_credit'] is False and source['ledger_credit']==[]
+          assert source['source_time_state']['d4d']=='0_of_5_unselected' and source['source_time_state']['d4wide']=='21_of_26'
+          assert plan['ledger_credit_state']=='one_of_five' and plan['credited_evidence']==[first] and len(plan['remaining_evidence'])==4
+          assert d4d['evidence_completed']==[first] and len(d4d['evidence_remaining'])==4
           assert d4d['candidate'] is None and d4d['candidate_status']=='not_selected' and d4d['state']=='candidate_selection_open'
-          assert d4d['evidence_completed']==[d4d_credit]
-          assert d4d['evidence_remaining']==[x for x in d4d['required_evidence'] if x != d4d_credit]
           assert sum(len(t['evidence_completed']) for t in state['tracks'])==22
           assert state['gate_state']=='scoped'
           assert state['d4_transport_authority']=='selected_not_granted'
@@ -166,5 +167,5 @@ jobs:
           assert state['wave4_implementation_authority']=='not_granted'
           assert state['production_authority']=='none'
           assert state['c3_numeric_topology_authority']=='not_selected'
-          print('d4c_open_evt_025_promotion_boundary=PASS d4c=9_of_9 current_d4d=1_of_5 d4wide=22_of_26 selection=not_selected authorities=unchanged')
+          print('d4d_open_evt_016_promotion_boundary=PASS source_snapshot=0_of_5 current_d4d=1_of_5 d4wide=22_of_26 selection=not_selected authorities=unchanged')
           PY

@@ -20,6 +20,7 @@ AXIS = "bounded_message_payload_batch_and_compression"
 DECISION = "OPEN-EVT-010"
 EVIDENCE = "bounded_message_batch_compression_and_parser_limits"
 BASE = "c72f53100e504922563106d1f8d2d3a5e7577589"
+D4D_CREDIT = "workload_identity_to_broker_credential_adapter_least_privilege"
 CURRENT_CREDITS = [
     "ack_after_durable_responsibility_and_lease_ambiguity",
     "quarantine_redrive_current_authority_and_dedup_preservation",
@@ -133,8 +134,9 @@ def validate(root: Path) -> list[str]:
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open": errors.append("D4-C selection/state leakage")
     expected_remaining = [x for x in d4c.get("required_evidence", []) if x not in CURRENT_CREDITS]
     if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining: errors.append("D4-C current 9/9 ledger drift")
-    if d4d.get("evidence_completed") != [] or d4d.get("candidate") is not None: errors.append("D4-D state leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 21: errors.append("D4-wide evidence count drift")
+    expected_d4d_remaining = [x for x in d4d.get("required_evidence", []) if x != D4D_CREDIT]
+    if d4d.get("evidence_completed") != [D4D_CREDIT] or d4d.get("evidence_remaining") != expected_d4d_remaining or d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open": errors.append("D4-D current state must remain exactly 1/5")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 22: errors.append("D4-wide evidence count drift")
     for key, expected in {"gate_state":"scoped","d4_transport_authority":"selected_not_granted","canonical_product_implementation_authority":"not_granted","wave4_implementation_authority":"not_granted","production_authority":"none","c3_numeric_topology_authority":"not_selected"}.items():
         if state.get(key) != expected: errors.append(f"global authority drift: {key}")
     return errors
@@ -145,7 +147,7 @@ def main(argv: list[str]) -> int:
     if errors:
         for error in errors: print(f"D4C_OPEN_EVT_010_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_open_evt_010_source=PASS candidates=3 checks=18_of_18 proof_inventory=exact source_snapshot_nonpromoting=true bounded_before_allocation=true malformed_gzip=blocked concatenated_gzip=blocked duplicate_members=blocked parser_nesting_prechecked=true specialized_planes=referenced_at_any_depth deterministic_nonretryable=true fixture_limits_noncanonical=true source_auto_credit=false current_d4c=9_of_9 current_d4wide=21_of_26 selection=not_selected")
+    print("d4c_open_evt_010_source=PASS candidates=3 checks=18_of_18 proof_inventory=exact source_snapshot_nonpromoting=true bounded_before_allocation=true malformed_gzip=blocked concatenated_gzip=blocked duplicate_members=blocked parser_nesting_prechecked=true specialized_planes=referenced_at_any_depth deterministic_nonretryable=true fixture_limits_noncanonical=true source_auto_credit=false current_d4c=9_of_9 current_d4d=1_of_5 current_d4wide=22_of_26 selection=not_selected")
     return 0
 
 if __name__ == "__main__": raise SystemExit(main(sys.argv))

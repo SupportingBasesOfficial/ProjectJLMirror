@@ -4,7 +4,7 @@
 
 Source evidence only. This package does **not** grant ledger credit, select a D4-D candidate, grant selection authority, accept D4, or grant product/Wave4/production authority.
 
-Canonical source base: `e2f130bac4adcb7cdec04f996b38382749b0458c`.
+Corrected canonical source base: `e899b4a422a72e998dc6d0b612ac93c5cb71eb6a`.
 
 Source-time D4 state:
 
@@ -18,6 +18,16 @@ Source-time D4 state:
 - Product/Wave4 implementation authority: `not_granted`
 - Production authority: `none`
 - C3 numeric/topology authority: `not_selected`
+
+## Correction lineage
+
+PR #114 merged the first source-evidence package at reviewed HEAD `c8d49ccf05113f0274287578bbc6965d220a677d`. A Codex review published after the merge identified three material gaps:
+
+1. `verification_profile_ref` could alias or embed the resolvable secret handle and then survive sanitization/erasure as if it were a non-secret historical reference;
+2. `audit_reference` could alias or embed the secret handle and be written to the audit sink while the record merely asserted that no handle was logged;
+3. secret resolution did not enforce the authority's current generation, so stale or fabricated generations could resolve.
+
+That source is therefore superseded for promotion purposes. The source manifest binds this correction lineage explicitly to PR #114, source HEAD `c8d49ccf05113f0274287578bbc6965d220a677d`, and Codex review `5134974949`. Any future ledger promotion must bind this corrected lineage or a later reviewed source; the superseded #114 provenance is not promotion-eligible.
 
 ## Evidence axis
 
@@ -37,19 +47,23 @@ The exact candidate-plan obligations are:
 
 ## Executable proof model
 
-The source harness treats ordinary messages as reference-only consumers of external secret/KMS authority. Every ordinary payload field carries an explicit material classification. Only `public`, `internal`, and `business_data` classifications are accepted; `secret`, `credential`, and `key_material` are rejected independently of the field name. This prevents a secret from being admitted under an innocuous-looking key.
+The source harness treats ordinary messages as reference-only consumers of external secret/KMS authority. Every ordinary payload field carries an explicit material classification. Only `public`, `internal`, and `business_data` classifications are accepted; `secret`, `credential`, and `key_material` are rejected independently of the field name.
 
-Secondary persistence/observability records retain only message identity, tenant identity, and non-secret verification profile/generation references. Secret references and secret/key/credential material are excluded from inbox, log, trace, and quarantine records. Secret-resolution audit records use a non-bearer audit reference and explicitly do not log the resolvable secret handle or secret material.
+Verification references must use the dedicated `verification-profile://` non-secret namespace and cannot alias or embed the resolvable secret handle. Secret audit references must use `secret-audit-ref://` and likewise cannot alias or embed the handle. Sanitization and erasure revalidate those reference boundaries before retaining any reference.
 
-The harness executes positive and negative probes covering:
+Secret resolution requires the exact current authority generation. Stale and unknown generations fail closed. Secondary persistence/observability records retain only message identity, tenant identity, and validated non-secret verification profile/generation references. Secret references and secret/key/credential material are excluded from inbox, log, trace, and quarantine records. Secret-resolution audit records retain only the validated non-secret audit reference and never the resolvable handle or secret material.
+
+The corrected harness executes 23 positive and negative probes covering:
 
 - explicit payload-material classification and rejection of secret, credential, and key material regardless of field name;
 - representative negative vectors for password, secret, credential, token, API key, private key, and key material;
+- rejection of verification-reference aliasing or embedding of the secret handle;
+- rejection of audit-reference aliasing or embedding of the secret handle;
 - exclusion of secret handles/material from inbox, log, trace, and quarantine records;
-- erasure/minimization that preserves non-secret verification profile/generation continuity;
+- erasure/minimization that preserves only validated non-secret verification profile/generation continuity;
 - duplicate-sensitive correctness after erasure using only non-secret historical verification references;
 - narrowly scoped and audited secret resolution without logging the resolvable handle;
-- fail-closed behavior for unauthorized, cross-scope, and authority-outage resolution;
+- fail-closed behavior for unauthorized, cross-scope, authority-outage, stale-generation, and unknown-generation resolution;
 - rejection of bearer-capable secret references;
 - proof that historical verification references cannot resolve secrets.
 
@@ -62,4 +76,4 @@ The source manifest is intentionally non-promoting:
 - candidate remains `null/not_selected`
 - selection authority remains `not_granted`
 
-The validator additionally requires the current canonical state to remain exactly D4-D 3/5 and D4-wide 24/26 while this source package is reviewed. Any future ledger credit for this evidence must be performed by a separate promotion PR bound to the exact reviewed source HEAD, workflow run, job, artifact, and source-manifest digest.
+The validator additionally requires the current canonical state to remain exactly D4-D 3/5 and D4-wide 24/26 while this corrected source package is reviewed, and falsifies attempts to remove the correction lineage or reuse the superseded source base. Any future ledger credit for this evidence must be performed by a separate promotion PR bound to the exact corrected reviewed source HEAD, workflow run, job, artifact, and source-manifest digest.

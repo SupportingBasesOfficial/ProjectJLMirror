@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-D",
+  "source_decision": "OPEN-EVT-016",
+  "evidence_id": "workload_identity_to_broker_credential_adapter_least_privilege",
+  "mode": "source_evidence_only",
+  "source_base": "5bf77ec3d4f4a884b70a323d10358b7485db9a0b",
+  "current_run_auto_credit": false,
+  "ledger_credit": [],
+  "candidate": null,
+  "candidate_status": "not_selected",
+  "selection_authority": "not_granted",
+  "canonical_identity_authority": "IR-D-002",
+  "must_prove": [
+    "canonical_internal_workload_identity_is_authenticated_before_broker_credential_derivation",
+    "adapter_consumes_ir_d_002_canonical_workload_identity_without_reopening_issuer_or_attestation_authority",
+    "broker_credential_is_derived_and_replaceable_not_platform_identity_authority",
+    "credential_scope_is_least_privilege_and_bound_to_service_environment_and_broker_role",
+    "internal_network_or_broker_presence_alone_never_establishes_trust",
+    "credential_rotation_or_replacement_does_not_change_canonical_workload_identity",
+    "stale_or_revoked_workload_identity_cannot_mint_or_retain_current_broker_authority",
+    "credential_material_is_not_embedded_in_ordinary_messages_logs_or_quarantine_records"
+  ],
+  "source_time_state": {
+    "d4a": "7_of_7_selected",
+    "d4b": "5_of_5_selected",
+    "d4c": "9_of_9_unselected",
+    "d4d": "0_of_5_unselected",
+    "d4wide": "21_of_26",
+    "d4_transport_authority": "selected_not_granted",
+    "canonical_product_implementation_authority": "not_granted",
+    "wave4_implementation_authority": "not_granted",
+    "production_authority": "none",
+    "c3_numeric_topology_authority": "not_selected"
+  }
+}

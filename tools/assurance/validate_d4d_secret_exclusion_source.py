@@ -45,6 +45,7 @@ EXPECTED_PROBES={
 'erasure_preserves_non_secret_historical_verification_reference',
 'redaction_erasure_preserve_correctness_evidence',
 'secret_resolution_is_narrowly_authorized_and_audited','resolved_secret_material_rejected_under_business_classification',
+'serialized_resolved_secret_material_rejected','nested_serialized_resolved_secret_material_rejected',
 'nested_list_secret_material_rejected','nested_object_secret_material_rejected','opaque_payload_value_type_rejected',
 'unauthorized_resolution_fails_closed','cross_scope_resolution_fails_closed',
 'reference_scope_mismatch_fails_closed','scope_not_allowlisted_fails_closed',
@@ -88,4 +89,4 @@ if __name__=='__main__':
     errors=validate(root)
     [print('D4D_SECRET_EXCLUSION_SOURCE_ERROR:',x,file=sys.stderr) for x in errors]
     if errors:raise SystemExit(1)
-    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=63 corrected_lineage=true')
+    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=65 corrected_lineage=true')

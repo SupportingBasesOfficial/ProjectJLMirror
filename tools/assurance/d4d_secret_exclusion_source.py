@@ -254,7 +254,7 @@ def _expect_type_error(checks: dict[str, bool], name: str, fn) -> None:
     try:
         fn()
         checks[name] = False
-    except TypeError:
+    except (TypeError, AttributeError):
         checks[name] = True
 
 

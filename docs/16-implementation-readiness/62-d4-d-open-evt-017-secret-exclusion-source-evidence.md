@@ -57,20 +57,21 @@ Secret references require a non-empty handle, positive generation, canonical sla
 
 Secret resolution is independently guarded by authority availability, authority source, exact current generation, explicit authorization, reference/request scope equality, and authority allowlisting. The probes isolate these conditions rather than relying on one combined rejection path. Stale and unknown generations fail closed.
 
-The reconstructed/deserialized-input probes cover both aliased verification references and secret-classified payload material at sanitization and erasure boundaries. Secondary persistence/observability records retain only validated message identity, tenant identity, and non-secret verification profile/generation references. Secret references and secret/key/credential material are excluded from inbox, log, trace, and quarantine records.
+The reconstructed/deserialized-input probes cover aliased verification references, secret-classified payload material, and non-positive historical verification generations at both sanitization and erasure boundaries. Secondary persistence/observability records retain only validated message identity, tenant identity, and non-secret verification profile/generation references. Secret references and secret/key/credential material are excluded from inbox, log, trace, and quarantine records.
 
-The corrected harness executes an exact validator-pinned set of 39 positive and negative probes covering:
+The corrected harness executes an exact validator-pinned set of **41** positive and negative probes covering:
 
 - safe ordinary-payload admission;
 - rejection of password, secret, credential, token, API key, private key, key material, and unknown payload classifications;
 - independent secret-reference handle, generation, scope, and bearer guards;
-- positive verification-generation requirement;
+- positive verification-generation requirement at creation and independently at reconstructed sanitize/erasure boundaries;
 - independent verification namespace and canonical-ID guards;
 - verification-reference alias and embedding guards with collision-shaped fixtures;
 - internally derived non-secret audit references and audit-handle overlap rejection;
 - unsupported secondary-record kinds;
 - reconstructed/deserialized alias rejection at sanitization and erasure;
 - reconstructed/deserialized secret-payload rejection at sanitization and erasure;
+- reconstructed/deserialized non-positive verification-generation rejection at sanitization and erasure;
 - exclusion of secret/key/credential material from inbox, logs, trace, and quarantine;
 - erasure/minimization preserving only required non-secret historical verification continuity;
 - duplicate-sensitive correctness after erasure;

@@ -9,7 +9,10 @@ from pathlib import Path
 import validate_source_evidence_historical_current as historical
 from validate_source_evidence_historical_current import *  # noqa: F401,F403
 
-D4D_CREDIT = "workload_identity_to_broker_credential_adapter_least_privilege"
+D4D_CREDITS = [
+    "workload_identity_to_broker_credential_adapter_least_privilege",
+    "tenant_and_contract_scoped_producer_consumer_authorization",
+]
 _original_load = historical.load
 
 
@@ -24,10 +27,10 @@ def _current_errors(state: dict) -> list[str]:
     required = d4d.get("required_evidence", [])
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
         errors.append("D4-D state/credit leakage: selection changed")
-    if d4d.get("evidence_completed") != [D4D_CREDIT] or d4d.get("evidence_remaining") != [x for x in required if x != D4D_CREDIT]:
-        errors.append("D4-D state/credit leakage: current state must be exactly 1/5")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 22:
-        errors.append("D4-wide evidence count must be exactly 22/26")
+    if d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != [x for x in required if x not in D4D_CREDITS]:
+        errors.append("D4-D state/credit leakage: current state must be exactly 2/5")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 23:
+        errors.append("D4-wide evidence count must be exactly 23/26")
     return errors
 
 
@@ -61,7 +64,7 @@ def main() -> int:
     finally:
         historical.load = original
     if result == 0:
-        print("d4c_open_evt_011_current_projection=PASS d4c=9_of_9 d4d=1_of_5 d4wide=22_of_26")
+        print("d4c_open_evt_011_current_projection=PASS d4c=9_of_9 d4d=2_of_5 d4wide=23_of_26")
     return result
 
 if __name__ == "__main__":

@@ -3,15 +3,11 @@
   "gate_id": "D4",
   "track_id": "D4-D",
   "name": "broker_auth_message_protection_and_trace_context",
-  "source_decisions": [
-    "OPEN-EVT-016",
-    "OPEN-EVT-017",
-    "OPEN-EVT-018"
-  ],
+  "source_decisions": ["OPEN-EVT-016","OPEN-EVT-017","OPEN-EVT-018"],
   "candidate": null,
   "candidate_status": "not_selected",
   "source_evidence_state": "reviewed_source_run_available",
-  "ledger_credit_state": "one_of_five",
+  "ledger_credit_state": "two_of_five",
   "required_evidence": [
     "workload_identity_to_broker_credential_adapter_least_privilege",
     "tenant_and_contract_scoped_producer_consumer_authorization",
@@ -20,15 +16,15 @@
     "trace_context_observability_only_validation_and_redaction"
   ],
   "credited_evidence": [
-    "workload_identity_to_broker_credential_adapter_least_privilege"
+    "workload_identity_to_broker_credential_adapter_least_privilege",
+    "tenant_and_contract_scoped_producer_consumer_authorization"
   ],
   "remaining_evidence": [
-    "tenant_and_contract_scoped_producer_consumer_authorization",
     "message_protection_key_authority_and_historical_verifier_continuity",
     "secret_credential_payload_exclusion_and_erasure_boundary",
     "trace_context_observability_only_validation_and_redaction"
   ],
-  "latest_promotion": "implementation/d4-eventing-async/ledger-promotions/d4-d-open-evt-016-promotion-v1.json",
+  "latest_promotion": "implementation/d4-eventing-async/ledger-promotions/d4-d-open-evt-016-tenant-contract-promotion-v1.json",
   "current_run_auto_credit": false,
   "selection_state": "not_selected",
   "selection_authority": "not_granted",

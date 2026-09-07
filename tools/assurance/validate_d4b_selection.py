@@ -20,7 +20,10 @@ D4C_CREDITS = [
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
-D4D_CREDITS = ["workload_identity_to_broker_credential_adapter_least_privilege"]
+D4D_CREDITS = [
+    "workload_identity_to_broker_credential_adapter_least_privilege",
+    "tenant_and_contract_scoped_producer_consumer_authorization",
+]
 _legacy_load = historical.load
 
 
@@ -43,10 +46,10 @@ def _current_sibling_errors(state: dict) -> list[str]:
     if not isinstance(d4d.get("evidence_remaining"), list):
         errors.append("D4-D remaining evidence must be an exact list")
     elif d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != [x for x in required_d4d if x not in D4D_CREDITS]:
-        errors.append("D4-D current sibling must be exactly 1/5")
+        errors.append("D4-D current sibling must be exactly 2/5")
 
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 22:
-        errors.append("D4-wide current evidence must be exactly 22/26")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 23:
+        errors.append("D4-wide current evidence must be exactly 23/26")
     return errors
 
 
@@ -82,7 +85,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_SELECTION_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_selection=PASS historical_oracle=preserved current_sibling_d4c=9_of_9 current_sibling_d4d=1_of_5 d4wide=22_of_26")
+    print("d4b_selection=PASS historical_oracle=preserved current_sibling_d4c=9_of_9 current_sibling_d4d=2_of_5 d4wide=23_of_26")
     return 0
 
 if __name__ == "__main__":

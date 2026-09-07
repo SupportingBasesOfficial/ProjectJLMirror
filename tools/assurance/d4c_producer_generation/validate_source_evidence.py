@@ -9,7 +9,10 @@ from pathlib import Path
 import validate_source_evidence_historical_current as historical
 from validate_source_evidence_historical_current import *  # noqa: F401,F403
 
-D4D_CREDIT = "workload_identity_to_broker_credential_adapter_least_privilege"
+D4D_CREDITS = [
+    "workload_identity_to_broker_credential_adapter_least_privilege",
+    "tenant_and_contract_scoped_producer_consumer_authorization",
+]
 _legacy_load = historical.load
 
 
@@ -24,13 +27,13 @@ def _current_errors(state: dict) -> list[str]:
         errors.append("D4-C current global evidence projection drift")
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
         errors.append("D4-C global selection leakage")
-    expected_remaining = [x for x in d4d.get("required_evidence", []) if x != D4D_CREDIT]
-    if d4d.get("evidence_completed") != [D4D_CREDIT] or d4d.get("evidence_remaining") != expected_remaining:
-        errors.append("D4-D current state must remain exactly 1/5")
+    expected_remaining = [x for x in d4d.get("required_evidence", []) if x not in D4D_CREDITS]
+    if d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != expected_remaining:
+        errors.append("D4-D current state must remain exactly 2/5")
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
         errors.append("D4-D selection leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 22:
-        errors.append("D4-wide current credit count must be 22/26")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 23:
+        errors.append("D4-wide current credit count must be 23/26")
     expected_authority = {
         "gate_state": "scoped",
         "d4_transport_authority": "selected_not_granted",
@@ -77,7 +80,7 @@ def main() -> int:
     finally:
         historical.load = original
     if result == 0:
-        print("d4c_open_evt_013_current_projection=PASS current_d4d=1/5 current_d4wide=22/26 historical_oracle=byte_preserved")
+        print("d4c_open_evt_013_current_projection=PASS current_d4d=2/5 current_d4wide=23/26 historical_oracle=byte_preserved")
     return result
 
 

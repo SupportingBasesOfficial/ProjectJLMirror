@@ -181,13 +181,14 @@ def run_probes() -> dict[str, bool]:
     )
     authority = SecretAuthority(available=True, current_generation=7, allowed_scopes=("tenant-a/orders",))
     verification_ref = "verification-profile://semantic-equivalence-v3"
+    safe_payload = {
+        "order_id": PayloadField("ord-42", "business_data"),
+        "event": PayloadField("order.created", "internal"),
+    }
     message = create_message(
         message_id="msg-001",
         tenant_id="tenant-a",
-        payload={
-            "order_id": PayloadField("ord-42", "business_data"),
-            "event": PayloadField("order.created", "internal"),
-        },
+        payload=safe_payload,
         secret_ref=ref,
         verification_profile_ref=verification_ref,
         verification_generation_ref=7,
@@ -217,6 +218,32 @@ def run_probes() -> dict[str, bool]:
                 verification_generation_ref=7,
             ),
         )
+
+    # These probes independently require the namespace and canonical-ID guards.
+    _expect_denied(
+        checks,
+        "verification_reference_namespace_rejected",
+        lambda: create_message(
+            message_id="bad-verification-namespace",
+            tenant_id="tenant-a",
+            payload=safe_payload,
+            secret_ref=ref,
+            verification_profile_ref="kms://unrelated-secret",
+            verification_generation_ref=7,
+        ),
+    )
+    _expect_denied(
+        checks,
+        "verification_reference_noncanonical_id_rejected",
+        lambda: create_message(
+            message_id="bad-verification-id",
+            tenant_id="tenant-a",
+            payload=safe_payload,
+            secret_ref=ref,
+            verification_profile_ref="verification-profile://bad/id",
+            verification_generation_ref=7,
+        ),
+    )
 
     # Collision-shaped fixtures deliberately satisfy earlier syntax checks so
     # the overlap guards themselves are required for these probes to pass.
@@ -261,6 +288,28 @@ def run_probes() -> dict[str, bool]:
             authorized=True,
             audit_sink=[],
         ),
+    )
+
+    # Reconstructed/deserialized objects must be revalidated at persistence and
+    # erasure boundaries even when they never passed through create_message.
+    reconstructed_collision_ref = replace(ref, handle="verification-profile://reconstructed-collision")
+    reconstructed_aliased_message = OrdinaryMessage(
+        message_id="reconstructed-bad",
+        tenant_id="tenant-a",
+        payload=dict(safe_payload),
+        secret_ref=reconstructed_collision_ref,
+        verification_profile_ref=reconstructed_collision_ref.handle,
+        verification_generation_ref=7,
+    )
+    _expect_denied(
+        checks,
+        "sanitize_reconstructed_alias_rejected",
+        lambda: sanitize_record(reconstructed_aliased_message, record_kind="inbox"),
+    )
+    _expect_denied(
+        checks,
+        "erase_reconstructed_alias_rejected",
+        lambda: erase_and_minimize(reconstructed_aliased_message),
     )
 
     sanitized = [sanitize_record(message, record_kind=k) for k in ("inbox", "log", "trace", "quarantine")]

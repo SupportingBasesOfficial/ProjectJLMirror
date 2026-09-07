@@ -2,7 +2,7 @@
 from __future__ import annotations
 import re
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, astuple, dataclass, replace
 from types import MappingProxyType
 
 class SecretBoundaryDenied(Exception):
@@ -65,9 +65,11 @@ def _validate_generation(value: object, label: str) -> None:
         raise SecretBoundaryDenied(f"{label} must be a positive integer")
 
 
-def _validate_identifier(value: object, label: str) -> None:
+def _validate_identifier(value: object, label: str, secret_handle: object = None) -> None:
     if type(value) is not str or not value:
         raise SecretBoundaryDenied(f"{label} must be a non-empty non-secret string")
+    if isinstance(secret_handle, str) and secret_handle and (value == secret_handle or secret_handle in value):
+        raise SecretBoundaryDenied(f"{label} must not alias or embed the secret handle")
 
 
 def _looks_like_serialized_secret_material(value: Mapping[str, object]) -> bool:
@@ -78,12 +80,21 @@ def _looks_like_serialized_secret_material(value: Mapping[str, object]) -> bool:
     return isinstance(handle, str) and bool(handle) and type(generation) is int and generation > 0
 
 
+def _looks_like_positional_serialized_secret_material(value: object) -> bool:
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        return False
+    handle, generation = value
+    return isinstance(handle, str) and bool(handle) and type(generation) is int and generation > 0
+
+
 def _value_contains_secret_material(value: object) -> bool:
     if isinstance(value, SecretMaterial):
         return True
     if value is None or isinstance(value, (str, int, float, bool)):
         return False
     if isinstance(value, (list, tuple)):
+        if _looks_like_positional_serialized_secret_material(value):
+            return True
         return any(_value_contains_secret_material(item) for item in value)
     if isinstance(value, Mapping):
         if not all(isinstance(key, str) for key in value):
@@ -98,8 +109,12 @@ def _freeze_payload_value(value: object) -> object:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, list):
+        if _looks_like_positional_serialized_secret_material(value):
+            raise SecretBoundaryDenied("ordinary payload cannot contain a positional serialized secret handle and generation")
         return tuple(_freeze_payload_value(item) for item in value)
     if isinstance(value, tuple):
+        if _looks_like_positional_serialized_secret_material(value):
+            raise SecretBoundaryDenied("ordinary payload cannot contain a positional serialized secret handle and generation")
         return tuple(_freeze_payload_value(item) for item in value)
     if isinstance(value, Mapping):
         if not all(isinstance(key, str) for key in value):
@@ -178,8 +193,9 @@ def _validate_verification_reference(reference: str, secret_ref: SecretReference
 
 
 def _validate_message_boundary(message: OrdinaryMessage) -> None:
-    _validate_identifier(message.message_id, "message id")
-    _validate_identifier(message.tenant_id, "tenant id")
+    secret_handle = message.secret_ref.handle if isinstance(message.secret_ref, SecretReference) else None
+    _validate_identifier(message.message_id, "message id", secret_handle)
+    _validate_identifier(message.tenant_id, "tenant id", secret_handle)
     _validate_payload(message.payload)
     if message.secret_ref is not None:
         _validate_secret_reference_shape(message.secret_ref)
@@ -306,6 +322,10 @@ def run_probes() -> dict[str, bool]:
     identifier_secret=SecretMaterial(ref.handle,ref.generation)
     _expect_denied(checks,"message_id_secret_material_rejected",lambda:create_message(message_id=identifier_secret,tenant_id="tenant-a",payload=safe_payload,secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"tenant_id_secret_material_rejected",lambda:create_message(message_id="bad-tenant-id",tenant_id=identifier_secret,payload=safe_payload,secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"message_id_secret_handle_rejected",lambda:create_message(message_id=ref.handle,tenant_id="tenant-a",payload=safe_payload,secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"tenant_id_secret_handle_rejected",lambda:create_message(message_id="bad-tenant-handle",tenant_id=ref.handle,payload=safe_payload,secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"message_id_embedded_secret_handle_rejected",lambda:create_message(message_id=f"msg-{ref.handle}-suffix",tenant_id="tenant-a",payload=safe_payload,secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"tenant_id_embedded_secret_handle_rejected",lambda:create_message(message_id="bad-tenant-embedded",tenant_id=f"tenant-{ref.handle}-suffix",payload=safe_payload,secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"secret_reference_empty_handle_rejected",lambda:create_message(message_id="bad-empty-handle",tenant_id="tenant-a",payload=safe_payload,secret_ref=replace(ref,handle=""),verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"secret_reference_nonpositive_generation_rejected",lambda:create_message(message_id="bad-secret-generation",tenant_id="tenant-a",payload=safe_payload,secret_ref=replace(ref,generation=0),verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"secret_reference_boolean_generation_rejected",lambda:create_message(message_id="bad-secret-generation-bool",tenant_id="tenant-a",payload=safe_payload,secret_ref=replace(ref,generation=True),verification_profile_ref=verification_ref,verification_generation_ref=7))
@@ -346,6 +366,12 @@ def run_probes() -> dict[str, bool]:
     reconstructed_secret_tenant_id=OrdinaryMessage("reconstructed-secret-tenant",identifier_secret,dict(safe_payload),ref,verification_ref,7)
     _expect_denied(checks,"sanitize_reconstructed_secret_tenant_id_rejected",lambda:sanitize_record(reconstructed_secret_tenant_id,record_kind="inbox"))
     _expect_denied(checks,"erase_reconstructed_secret_tenant_id_rejected",lambda:erase_and_minimize(reconstructed_secret_tenant_id))
+    reconstructed_handle_message_id=OrdinaryMessage(ref.handle,"tenant-a",dict(safe_payload),ref,verification_ref,7)
+    _expect_denied(checks,"sanitize_reconstructed_secret_handle_message_id_rejected",lambda:sanitize_record(reconstructed_handle_message_id,record_kind="inbox"))
+    _expect_denied(checks,"erase_reconstructed_secret_handle_message_id_rejected",lambda:erase_and_minimize(reconstructed_handle_message_id))
+    reconstructed_handle_tenant_id=OrdinaryMessage("reconstructed-handle-tenant",ref.handle,dict(safe_payload),ref,verification_ref,7)
+    _expect_denied(checks,"sanitize_reconstructed_secret_handle_tenant_id_rejected",lambda:sanitize_record(reconstructed_handle_tenant_id,record_kind="inbox"))
+    _expect_denied(checks,"erase_reconstructed_secret_handle_tenant_id_rejected",lambda:erase_and_minimize(reconstructed_handle_tenant_id))
 
     reconstructed_secret_payload=OrdinaryMessage("reconstructed-secret-payload","tenant-a",{"note":PayloadField("must-not-survive","secret")},ref,verification_ref,7)
     _expect_denied(checks,"sanitize_reconstructed_secret_payload_rejected",lambda:sanitize_record(reconstructed_secret_payload,record_kind="inbox"))
@@ -375,6 +401,9 @@ def run_probes() -> dict[str, bool]:
     serialized_resolved = asdict(resolved)
     _expect_denied(checks,"serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-serialized-resolved-secret",tenant_id="tenant-a",payload={"note":PayloadField(serialized_resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"nested_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-nested-serialized-resolved-secret",tenant_id="tenant-a",payload={"note":PayloadField({"outer":[{"inner":serialized_resolved}]},"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    positional_serialized_resolved = astuple(resolved)
+    _expect_denied(checks,"positional_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-positional-serialized-secret",tenant_id="tenant-a",payload={"note":PayloadField(positional_serialized_resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"nested_positional_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-nested-positional-serialized-secret",tenant_id="tenant-a",payload={"note":PayloadField({"outer":[positional_serialized_resolved]},"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"nested_list_secret_material_rejected",lambda:create_message(message_id="bad-nested-list-secret",tenant_id="tenant-a",payload={"note":PayloadField(["prefix",resolved],"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"nested_object_secret_material_rejected",lambda:create_message(message_id="bad-nested-object-secret",tenant_id="tenant-a",payload={"note":PayloadField({"safe":"x","nested":{"secret":resolved}},"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"opaque_payload_value_type_rejected",lambda:create_message(message_id="bad-opaque-payload",tenant_id="tenant-a",payload={"note":PayloadField(object(),"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))

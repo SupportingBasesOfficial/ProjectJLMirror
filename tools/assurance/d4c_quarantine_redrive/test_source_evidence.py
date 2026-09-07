@@ -33,7 +33,10 @@ CREDITS = [
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
-D4D_CREDIT = "workload_identity_to_broker_credential_adapter_least_privilege"
+D4D_CREDITS = [
+    "workload_identity_to_broker_credential_adapter_least_privilege",
+    "tenant_and_contract_scoped_producer_consumer_authorization",
+]
 TENANT = "tenant:t1"
 
 class SourceEvidenceTests(unittest.TestCase):
@@ -111,7 +114,7 @@ class SourceEvidenceTests(unittest.TestCase):
     def test_current_global_state_is_not_modified_by_source_run(self):
         state=json.loads(STATE.read_text(encoding="utf-8")); tracks={t["track_id"]:t for t in state["tracks"]}; d4c=tracks["D4-C"]; d4d=tracks["D4-D"]
         self.assertEqual(d4c["evidence_completed"],CREDITS); self.assertEqual(d4c["evidence_remaining"],[x for x in d4c["required_evidence"] if x not in CREDITS]); self.assertEqual(d4c["evidence_remaining"],[]); self.assertIsNone(d4c["candidate"]); self.assertEqual(d4c["candidate_status"],"not_selected")
-        self.assertIsNone(d4d["candidate"]); self.assertEqual(d4d["candidate_status"],"not_selected"); self.assertEqual(d4d["state"],"candidate_selection_open"); self.assertEqual(d4d["evidence_completed"],[D4D_CREDIT]); self.assertEqual(d4d["evidence_remaining"],[x for x in d4d["required_evidence"] if x != D4D_CREDIT])
-        self.assertEqual(sum(len(t["evidence_completed"]) for t in state["tracks"]),22); self.assertEqual(state["gate_state"],"scoped"); self.assertEqual(state["canonical_product_implementation_authority"],"not_granted"); self.assertEqual(state["wave4_implementation_authority"],"not_granted"); self.assertEqual(state["production_authority"],"none"); self.assertEqual(state["c3_numeric_topology_authority"],"not_selected")
+        self.assertIsNone(d4d["candidate"]); self.assertEqual(d4d["candidate_status"],"not_selected"); self.assertEqual(d4d["state"],"candidate_selection_open"); self.assertEqual(d4d["evidence_completed"],D4D_CREDITS); self.assertEqual(d4d["evidence_remaining"],[x for x in d4d["required_evidence"] if x not in D4D_CREDITS])
+        self.assertEqual(sum(len(t["evidence_completed"]) for t in state["tracks"]),23); self.assertEqual(state["gate_state"],"scoped"); self.assertEqual(state["canonical_product_implementation_authority"],"not_granted"); self.assertEqual(state["wave4_implementation_authority"],"not_granted"); self.assertEqual(state["production_authority"],"none"); self.assertEqual(state["c3_numeric_topology_authority"],"not_selected")
 
 if __name__ == "__main__": unittest.main(verbosity=2)

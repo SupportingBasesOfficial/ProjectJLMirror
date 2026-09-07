@@ -1,153 +1,60 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import copy
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
-ROOT = Path(__file__).resolve().parents[3]
-HERE = Path(__file__).resolve().parent
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
+import validate_source_evidence_historical_current as historical
+from validate_source_evidence_historical_current import *  # noqa: F401,F403
 
-from evaluate_candidates import CANDIDATES, TEST_LIMIT_PROFILE, evaluate_all  # noqa: E402
-
-MANIFEST = Path("implementation/d4-eventing-async/source-evidence/d4-c-bounded-parser-limits-source.json")
-PLAN = Path("implementation/d4-eventing-async/d4-c-candidate-evaluation-plan.json")
-STATE = Path("implementation/d4-eventing-async/state-manifest.json")
-AXIS = "bounded_message_payload_batch_and_compression"
-DECISION = "OPEN-EVT-010"
-EVIDENCE = "bounded_message_batch_compression_and_parser_limits"
-BASE = "c72f53100e504922563106d1f8d2d3a5e7577589"
-D4D_CREDIT = "workload_identity_to_broker_credential_adapter_least_privilege"
-CURRENT_CREDITS = [
-    "ack_after_durable_responsibility_and_lease_ambiguity",
-    "quarantine_redrive_current_authority_and_dedup_preservation",
-    EVIDENCE,
-    "scoped_content_equivalence_confidentiality_and_conflict_rejection",
-    "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
-    "producer_generation_nonresurrection_across_failover_restore",
-    "privileged_bounded_replay_with_original_identity_and_effect_safety",
-    "historical_reader_upcaster_semantic_and_equivalence_continuity",
-    "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
+D4D_CURRENT = [
+    "workload_identity_to_broker_credential_adapter_least_privilege",
+    "tenant_and_contract_scoped_producer_consumer_authorization",
 ]
+D4D_HISTORICAL_CURRENT = ["workload_identity_to_broker_credential_adapter_least_privilege"]
+_original_load = historical.load
 
-EXPECTED_ASSERTIONS = [
-    "all_three_concrete_candidate_classes_enforce_one_contract_owned_admission_boundary",
-    "declared_oversize_is_rejected_before_stream_consumption_or_payload_allocation",
-    "unknown_length_streams_are_read_only_within_a_contract_owned_byte_budget",
-    "batch_item_count_is_bounded_before_per_item_semantic_admission",
-    "nesting_string_collection_and_total_field_counts_are_explicitly_bounded",
-    "gzip_output_is_incrementally_bounded_and_decompression_bombs_fail_closed",
-    "malformed_gzip_and_trailing_or_concatenated_members_fail_closed_with_stable_codes",
-    "json_nesting_is_prescanned_before_recursive_parser_entry",
-    "duplicate_json_members_are_rejected_before_object_collapse_can_hide_parser_work",
-    "structured_validation_is_iterative_and_bounded_after_wire_and_decompression_limits",
-    "transport_configuration_can_be_stricter_but_cannot_relax_the_contract_limit",
-    "artifact_and_raw_telemetry_payload_classes_require_references_to_specialized_planes_at_any_depth",
-    "limit_rejections_emit_stable_machine_codes_and_are_marked_non_retryable",
-    "repeating_the_same_invalid_input_does_not_create_retry_amplification_authority",
-    "numeric_limit_values_are_evidence_fixtures_only_and_do_not_select_production_limits",
-    "codec_and_transport_library_choices_remain_replaceable_mechanics_not_contract_identity",
-    "candidate_source_evidence_does_not_select_a_codec_transport_parser_or_production_topology",
-]
 
-EXPECTED_RUNTIME_CHECKS = {
-    "valid_payload_admitted", "declared_oversize_rejected_before_stream_consumption", "unknown_length_stream_remains_bounded",
-    "batch_size_bound", "parser_nesting_prechecked_before_json_decode", "collection_size_bound", "string_bound", "field_count_bound",
-    "duplicate_json_members_rejected_before_collapse", "decompression_output_bound", "malformed_gzip_is_bounded_failure",
-    "compressed_trailing_member_rejected", "artifact_reference_required_at_any_depth", "raw_telemetry_reference_supported_at_any_depth",
-    "transport_cannot_weaken_contract_limit", "limit_failures_deterministic", "limit_failures_non_retryable", "fixture_profile_is_noncanonical",
-}
-
-EXPECTED_NON_AUTHORITY = {
-    "d4c_mechanism_selection": "not_selected",
-    "d4c_content_equivalence_profile_selection": "not_selected",
-    "open_evt_010_ledger_credit": "uncredited",
-    "d4c_ledger_credit": "current_2_of_9_unchanged",
-    "d4d_ledger_credit": "0_of_5",
-    "d4_gate": "scoped",
-    "d4_transport_authority": "selected_not_granted",
-    "canonical_product_implementation_authority": "not_granted",
-    "wave4_implementation_authority": "not_granted",
-    "production_authority": "none",
-    "c3_numeric_topology_authority": "not_selected",
-}
-
-class DuplicateKeyError(ValueError): pass
-
-def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in out: raise DuplicateKeyError(f"duplicate JSON member: {key}")
-        out[key] = value
-    return out
-
-def load(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_pairs)
-
-def validate(root: Path) -> list[str]:
-    errors: list[str] = []
-    try:
-        manifest, plan, state = load(root / MANIFEST), load(root / PLAN), load(root / STATE)
-    except Exception as exc:
-        return [str(exc)]
-    expected_manifest_keys = {"schema_version","gate_id","track_id","axis","source_decision","evidence_id","canonical_base","mode","selection_state","selection_authority","current_run_auto_credit","ledger_credit","candidate_results","equivalent_reviewed_profile","required_proofs","source_assertions","non_authority"}
-    if not isinstance(manifest, dict) or set(manifest) != expected_manifest_keys: errors.append("source manifest exact key schema drift")
-    for key, expected in {"schema_version":1,"gate_id":"D4","track_id":"D4-C","axis":AXIS,"source_decision":DECISION,"evidence_id":EVIDENCE,"canonical_base":BASE,"mode":"candidate_source_evidence_only","selection_state":"not_selected","selection_authority":"not_granted"}.items():
-        if manifest.get(key) != expected or type(manifest.get(key)) is not type(expected): errors.append(f"source manifest scalar drift: {key}")
-    if manifest.get("current_run_auto_credit") is not False or manifest.get("ledger_credit") != []: errors.append("source evidence must remain non-promoting")
-    axes = plan.get("axes") if isinstance(plan, dict) else None
-    axis = axes.get(AXIS) if isinstance(axes, dict) else None
-    if not isinstance(axis, dict): errors.append("accepted D4-C axis missing")
-    else:
-        if axis.get("decision") != DECISION or axis.get("evidence_id") != EVIDENCE: errors.append("source decision/evidence binding drift")
-        expected_candidates = [x for x in axis.get("candidate_classes", []) if x != "equivalent_reviewed_profile"]
-        if expected_candidates != list(CANDIDATES): errors.append("concrete candidate inventory drift")
-        if manifest.get("required_proofs") != axis.get("must_prove"): errors.append("required proofs must exactly match accepted candidate plan")
-    expected_results = {candidate:"eligible_for_evidence_execution" for candidate in CANDIDATES}
-    if manifest.get("candidate_results") != expected_results: errors.append("source candidate results drift")
-    if manifest.get("equivalent_reviewed_profile") != "insufficient_evidence": errors.append("equivalent reviewed profile must remain insufficient_evidence")
-    if manifest.get("source_assertions") != EXPECTED_ASSERTIONS: errors.append("source assertions drift")
-    if manifest.get("non_authority") != EXPECTED_NON_AUTHORITY: errors.append("source non-authority boundary drift")
-    runtime = evaluate_all()
-    if runtime.get("limit_profile") != TEST_LIMIT_PROFILE or not TEST_LIMIT_PROFILE.endswith("_noncanonical"): errors.append("numeric fixture profile became canonical")
-    if runtime.get("candidate_results") != manifest.get("candidate_results"): errors.append("runtime candidate results do not match source manifest")
-    if runtime.get("equivalent_reviewed_profile") != "insufficient_evidence": errors.append("runtime equivalent profile drift")
-    if runtime.get("selection") != "not_selected" or runtime.get("selection_authority") != "not_granted": errors.append("runtime selection leakage")
-    if runtime.get("ledger_credit") != [] or runtime.get("current_run_auto_credit") is not False: errors.append("runtime source auto-credit leakage")
-    checks = runtime.get("checks")
-    if not isinstance(checks, dict) or set(checks) != set(CANDIDATES): errors.append("runtime proof candidate inventory incomplete")
-    else:
-        for candidate, candidate_checks in checks.items():
-            if not isinstance(candidate_checks, dict): errors.append(f"runtime proof checks malformed for {candidate}"); continue
-            if set(candidate_checks) != EXPECTED_RUNTIME_CHECKS: errors.append(f"runtime proof inventory incomplete for {candidate}")
-            elif not all(candidate_checks.values()): errors.append(f"runtime proof checks failed for {candidate}")
-    tracks_raw = state.get("tracks") if isinstance(state, dict) else None
-    if not isinstance(tracks_raw, list) or len(tracks_raw) != 4: errors.append("global D4 track structure drift"); return errors
-    tracks = {t.get("track_id"):t for t in tracks_raw if isinstance(t, dict)}
-    if set(tracks) != {"D4-A","D4-B","D4-C","D4-D"}: errors.append("global D4 track identity drift"); return errors
-    d4a,d4b,d4c,d4d = tracks["D4-A"],tracks["D4-B"],tracks["D4-C"],tracks["D4-D"]
-    if len(d4a.get("evidence_completed", [])) != 7 or d4a.get("candidate") != "kafka": errors.append("D4-A accepted state drift")
-    if len(d4b.get("evidence_completed", [])) != 5 or d4b.get("candidate_status") != "selected_c2_profile": errors.append("D4-B accepted state drift")
-    if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open": errors.append("D4-C selection/state leakage")
-    expected_remaining = [x for x in d4c.get("required_evidence", []) if x not in CURRENT_CREDITS]
-    if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining: errors.append("D4-C current 9/9 ledger drift")
-    expected_d4d_remaining = [x for x in d4d.get("required_evidence", []) if x != D4D_CREDIT]
-    if d4d.get("evidence_completed") != [D4D_CREDIT] or d4d.get("evidence_remaining") != expected_d4d_remaining or d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open": errors.append("D4-D current state must remain exactly 1/5")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks_raw) != 22: errors.append("D4-wide evidence count drift")
-    for key, expected in {"gate_state":"scoped","d4_transport_authority":"selected_not_granted","canonical_product_implementation_authority":"not_granted","wave4_implementation_authority":"not_granted","production_authority":"none","c3_numeric_topology_authority":"not_selected"}.items():
-        if state.get(key) != expected: errors.append(f"global authority drift: {key}")
+def _current_errors(state: dict) -> list[str]:
+    tracks={t.get("track_id"):t for t in state.get("tracks",[]) if isinstance(t,dict)}
+    if set(tracks)!={"D4-A","D4-B","D4-C","D4-D"}: return ["global D4 track identity drift"]
+    d4d=tracks["D4-D"]; required=d4d.get("required_evidence",[]); errors=[]
+    if d4d.get("candidate") is not None or d4d.get("candidate_status")!="not_selected" or d4d.get("state")!="candidate_selection_open": errors.append("D4-D current state/selection drift")
+    if d4d.get("evidence_completed")!=D4D_CURRENT or d4d.get("evidence_remaining")!=[x for x in required if x not in D4D_CURRENT]: errors.append("D4-D current state must be exactly 2/5")
+    if sum(len(t.get("evidence_completed",[])) for t in tracks.values())!=23: errors.append("D4-wide evidence count must be exactly 23/26")
     return errors
 
+
+def _project(state: dict) -> dict:
+    out=copy.deepcopy(state); d=next(t for t in out["tracks"] if t.get("track_id")=="D4-D")
+    d["evidence_completed"]=list(D4D_HISTORICAL_CURRENT); d["evidence_remaining"]=[x for x in d["required_evidence"] if x not in D4D_HISTORICAL_CURRENT]
+    return out
+
+
+def validate(root: Path) -> list[str]:
+    state=json.loads((root/STATE).read_text(encoding="utf-8")); current=_current_errors(state)
+    if current: return current
+    original=historical.load
+    try:
+        def projected_load(path: Path):
+            value=_original_load(path)
+            try:
+                if path.resolve()==(root/STATE).resolve(): return _project(value)
+            except Exception: pass
+            return value
+        historical.load=projected_load
+        return historical.validate(root)
+    finally: historical.load=original
+
+
 def main(argv: list[str]) -> int:
-    root = Path(argv[1]).resolve() if len(argv) > 1 else ROOT
-    errors = validate(root)
+    root=Path(argv[1]).resolve() if len(argv)>1 else ROOT; errors=validate(root)
     if errors:
-        for error in errors: print(f"D4C_OPEN_EVT_010_SOURCE_ERROR: {error}", file=sys.stderr)
+        for error in errors: print(f"D4C_OPEN_EVT_010_SOURCE_ERROR: {error}",file=sys.stderr)
         return 1
-    print("d4c_open_evt_010_source=PASS candidates=3 checks=18_of_18 proof_inventory=exact source_snapshot_nonpromoting=true bounded_before_allocation=true malformed_gzip=blocked concatenated_gzip=blocked duplicate_members=blocked parser_nesting_prechecked=true specialized_planes=referenced_at_any_depth deterministic_nonretryable=true fixture_limits_noncanonical=true source_auto_credit=false current_d4c=9_of_9 current_d4d=1_of_5 current_d4wide=22_of_26 selection=not_selected")
+    print("d4c_open_evt_010_source=PASS historical_current_oracle=byte_preserved current_d4d=2_of_5 current_d4wide=23_of_26")
     return 0
 
-if __name__ == "__main__": raise SystemExit(main(sys.argv))
+if __name__=="__main__": raise SystemExit(main(sys.argv))

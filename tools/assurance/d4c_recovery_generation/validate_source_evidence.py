@@ -10,6 +10,7 @@ from validate_source_evidence_historical_current import *  # noqa: F401,F403
 D4D_CREDITS = [
     "workload_identity_to_broker_credential_adapter_least_privilege",
     "tenant_and_contract_scoped_producer_consumer_authorization",
+    "message_protection_key_authority_and_historical_verifier_continuity",
 ]
 _original_load = historical.load
 
@@ -26,9 +27,9 @@ def _current_errors(state: dict) -> list[str]:
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
         errors.append("D4-D selection leakage")
     if d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != [x for x in required if x not in D4D_CREDITS]:
-        errors.append("D4-D current state must be exactly 2/5")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 23:
-        errors.append("D4-wide credit count must be 23/26")
+        errors.append("D4-D current state must be exactly 3/5")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 24:
+        errors.append("D4-wide credit count must be 24/26")
     return errors
 
 
@@ -57,7 +58,7 @@ def main() -> int:
     finally:
         historical.load = original
     if result == 0:
-        print("d4c_open_evt_025_current_projection=PASS d4d=2_of_5 d4wide=23_of_26")
+        print("d4c_open_evt_025_current_projection=PASS d4d=3_of_5 d4wide=24_of_26")
     return result
 
 if __name__ == "__main__":

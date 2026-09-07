@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+import re
 from dataclasses import dataclass, replace
 
 class SecretBoundaryDenied(Exception):
@@ -13,7 +14,6 @@ class PayloadField:
 @dataclass(frozen=True)
 class SecretReference:
     handle: str
-    audit_reference: str
     generation: int
     scope: str
     bearer_authority: bool = False
@@ -48,32 +48,41 @@ ALLOWED_PAYLOAD_CLASSIFICATIONS = {"public", "internal", "business_data"}
 FORBIDDEN_PAYLOAD_CLASSIFICATIONS = {"secret", "credential", "key_material"}
 VERIFICATION_REFERENCE_PREFIX = "verification-profile://"
 AUDIT_REFERENCE_PREFIX = "secret-audit-ref://"
+CANONICAL_ID = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+CANONICAL_SCOPE = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)+$")
 
 def _contains_sensitive_material(values: dict[str, PayloadField]) -> bool:
     return any(field.classification in FORBIDDEN_PAYLOAD_CLASSIFICATIONS for field in values.values())
 
-def _contains_secret_handle(candidate: str, secret_ref: SecretReference | None) -> bool:
-    if secret_ref is None:
-        return False
-    return candidate == secret_ref.handle or secret_ref.handle in candidate
+def _validate_scope(scope: str) -> None:
+    if not CANONICAL_SCOPE.fullmatch(scope):
+        raise SecretBoundaryDenied("scope must be a canonical non-secret identifier")
 
 def _validate_secret_reference_shape(reference: SecretReference) -> None:
     if reference.bearer_authority:
         raise SecretBoundaryDenied("secret reference cannot be bearer authority")
-    if not reference.handle or not reference.scope or reference.generation <= 0:
+    if not reference.handle or reference.generation <= 0:
         raise SecretBoundaryDenied("secret reference shape invalid")
-    if not reference.audit_reference.startswith(AUDIT_REFERENCE_PREFIX):
-        raise SecretBoundaryDenied("audit reference must use non-secret namespace")
-    if reference.audit_reference == reference.handle or reference.handle in reference.audit_reference:
-        raise SecretBoundaryDenied("audit reference must not alias or embed secret handle")
+    _validate_scope(reference.scope)
+
+def _audit_reference(reference: SecretReference) -> str:
+    _validate_secret_reference_shape(reference)
+    audit_ref = f"{AUDIT_REFERENCE_PREFIX}{reference.scope}/generation-{reference.generation}"
+    if reference.handle == audit_ref or reference.handle in audit_ref:
+        raise SecretBoundaryDenied("derived audit reference must not contain secret handle")
+    return audit_ref
 
 def _validate_verification_reference(reference: str, secret_ref: SecretReference | None) -> None:
     if not reference.startswith(VERIFICATION_REFERENCE_PREFIX):
         raise SecretBoundaryDenied("verification reference must use non-secret namespace")
-    if _contains_secret_handle(reference, secret_ref):
-        raise SecretBoundaryDenied("verification reference must not alias or embed secret handle")
-    if secret_ref is not None and reference == secret_ref.audit_reference:
-        raise SecretBoundaryDenied("verification reference must remain distinct from secret audit reference")
+    profile_id = reference[len(VERIFICATION_REFERENCE_PREFIX):]
+    if not CANONICAL_ID.fullmatch(profile_id):
+        raise SecretBoundaryDenied("verification profile identifier must be canonical")
+    if secret_ref is not None:
+        if reference == secret_ref.handle or secret_ref.handle in reference:
+            raise SecretBoundaryDenied("verification reference must not alias or embed secret handle")
+        if reference == _audit_reference(secret_ref):
+            raise SecretBoundaryDenied("verification reference must remain distinct from audit reference")
 
 def create_message(*, message_id: str, tenant_id: str, payload: dict[str, PayloadField], secret_ref: SecretReference | None, verification_profile_ref: str, verification_generation_ref: int) -> OrdinaryMessage:
     unknown = {field.classification for field in payload.values()} - ALLOWED_PAYLOAD_CLASSIFICATIONS - FORBIDDEN_PAYLOAD_CLASSIFICATIONS
@@ -108,6 +117,7 @@ def sanitize_record(message: OrdinaryMessage, *, record_kind: str) -> dict[str, 
 
 def resolve_secret(*, reference: SecretReference, authority: SecretAuthority, requested_scope: str, authorized: bool, audit_sink: list[dict[str, object]]) -> str:
     _validate_secret_reference_shape(reference)
+    _validate_scope(requested_scope)
     if not authority.available:
         raise SecretBoundaryDenied("secret authority unavailable: fail closed")
     if authority.authority_source != "secret_or_kms_authority":
@@ -116,9 +126,10 @@ def resolve_secret(*, reference: SecretReference, authority: SecretAuthority, re
         raise SecretBoundaryDenied("stale or unknown secret generation")
     if not authorized or requested_scope != reference.scope or requested_scope not in authority.allowed_scopes:
         raise SecretBoundaryDenied("secret resolution is not narrowly authorized")
+    audit_ref = _audit_reference(reference)
     audit_sink.append({
         "scope": requested_scope,
-        "reference": reference.audit_reference,
+        "reference": audit_ref,
         "generation": reference.generation,
         "resolved": True,
         "secret_handle_logged": False,
@@ -149,6 +160,7 @@ def duplicate_sensitive_effect_eligible(evidence: HistoricalEvidence, *, expecte
         and evidence.verification_profile_ref == expected_profile
         and evidence.verification_generation_ref in known_generations
         and evidence.verification_profile_ref.startswith(VERIFICATION_REFERENCE_PREFIX)
+        and bool(CANONICAL_ID.fullmatch(evidence.verification_profile_ref[len(VERIFICATION_REFERENCE_PREFIX):]))
         and not evidence.secret_material_present
         and not evidence.credential_material_present
         and not evidence.secret_reference_present
@@ -164,7 +176,6 @@ def _expect_denied(checks: dict[str, bool], name: str, fn) -> None:
 def run_probes() -> dict[str, bool]:
     ref = SecretReference(
         handle="kms://orders-signing/current",
-        audit_reference="secret-audit-ref://orders-signing/generation-7",
         generation=7,
         scope="tenant-a/orders",
     )
@@ -231,24 +242,17 @@ def run_probes() -> dict[str, bool]:
             verification_generation_ref=7,
         ),
     )
-    _expect_denied(
-        checks,
-        "audit_reference_alias_secret_handle_rejected",
-        lambda: resolve_secret(
-            reference=replace(ref, audit_reference=ref.handle),
-            authority=authority,
-            requested_scope="tenant-a/orders",
-            authorized=True,
-            audit_sink=[],
-        ),
+    checks["audit_reference_is_derived_non_secret"] = (
+        _audit_reference(ref) == "secret-audit-ref://tenant-a/orders/generation-7"
+        and ref.handle not in _audit_reference(ref)
     )
     _expect_denied(
         checks,
-        "audit_reference_embedding_secret_handle_rejected",
+        "secret_handle_scope_rejected",
         lambda: resolve_secret(
-            reference=replace(ref, audit_reference=AUDIT_REFERENCE_PREFIX + ref.handle),
+            reference=replace(ref, scope=ref.handle),
             authority=authority,
-            requested_scope="tenant-a/orders",
+            requested_scope=ref.handle,
             authorized=True,
             audit_sink=[],
         ),
@@ -274,7 +278,7 @@ def run_probes() -> dict[str, bool]:
         resolved.startswith("resolved-secret-for:")
         and len(audit) == 1
         and audit[0]["scope"] == "tenant-a/orders"
-        and audit[0]["reference"] == ref.audit_reference
+        and audit[0]["reference"] == _audit_reference(ref)
         and audit[0]["secret_handle_logged"] is False
         and audit[0]["secret_material_logged"] is False
         and ref.handle not in str(audit[0])
@@ -298,12 +302,12 @@ def run_probes() -> dict[str, bool]:
     _expect_denied(
         checks,
         "stale_generation_resolution_fails_closed",
-        lambda: resolve_secret(reference=replace(ref, generation=6, audit_reference="secret-audit-ref://orders-signing/generation-6"), authority=authority, requested_scope="tenant-a/orders", authorized=True, audit_sink=[]),
+        lambda: resolve_secret(reference=replace(ref, generation=6), authority=authority, requested_scope="tenant-a/orders", authorized=True, audit_sink=[]),
     )
     _expect_denied(
         checks,
         "unknown_generation_resolution_fails_closed",
-        lambda: resolve_secret(reference=replace(ref, generation=99, audit_reference="secret-audit-ref://orders-signing/generation-99"), authority=authority, requested_scope="tenant-a/orders", authorized=True, audit_sink=[]),
+        lambda: resolve_secret(reference=replace(ref, generation=99), authority=authority, requested_scope="tenant-a/orders", authorized=True, audit_sink=[]),
     )
 
     checks["historical_reference_is_not_bearer_authority"] = not historical_reference_can_resolve_secret(evidence, authority)

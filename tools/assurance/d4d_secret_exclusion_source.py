@@ -262,17 +262,20 @@ def run_probes() -> dict[str, bool]:
     ref = SecretReference("kms://orders-signing/current", 7, "tenant-a/orders")
     authority = SecretAuthority(True, ref.handle, 7, ("tenant-a/orders",))
     verification_ref = "verification-profile://semantic-equivalence-v3"
-    nested_source = ["one", {"two": ["three"]}]
-    safe_payload = {"order_id": PayloadField("ord-42", "business_data"), "event": PayloadField("order.created", "internal"), "nested": PayloadField(nested_source, "business_data")}
+    safe_payload = {"order_id": PayloadField("ord-42", "business_data"), "event": PayloadField("order.created", "internal")}
     message = create_message(message_id="msg-001", tenant_id="tenant-a", payload=safe_payload, secret_ref=ref, verification_profile_ref=verification_ref, verification_generation_ref=7)
     checks: dict[str, bool] = {}
 
     checks["ordinary_payload_excludes_secret_credential_material"] = not _contains_sensitive_material(message.payload) and all(field.classification in ALLOWED_PAYLOAD_CLASSIFICATIONS for field in message.payload.values())
-    _expect_type_error(checks,"message_payload_mapping_is_immutable",lambda:message.payload.__setitem__("late",PayloadField("x","business_data")))
-    nested_source.append(SecretMaterial(ref.handle, ref.generation))
-    checks["source_payload_mutation_does_not_reach_message"] = not _value_contains_secret_material(message.payload["nested"].value)
-    _expect_type_error(checks,"nested_payload_sequence_is_immutable",lambda:message.payload["nested"].value.__setitem__(0,SecretMaterial(ref.handle,ref.generation)))
-    nested_mapping = message.payload["nested"].value[1]
+
+    mutable_nested_source = ["one", {"two": ["three"]}]
+    mutable_source_payload = {"nested": PayloadField(mutable_nested_source, "business_data")}
+    frozen_message = create_message(message_id="msg-freeze", tenant_id="tenant-a", payload=mutable_source_payload, secret_ref=ref, verification_profile_ref=verification_ref, verification_generation_ref=7)
+    _expect_type_error(checks,"message_payload_mapping_is_immutable",lambda:frozen_message.payload.__setitem__("late",PayloadField("x","business_data")))
+    mutable_nested_source.append(SecretMaterial(ref.handle, ref.generation))
+    checks["source_payload_mutation_does_not_reach_message"] = not _value_contains_secret_material(frozen_message.payload["nested"].value)
+    _expect_type_error(checks,"nested_payload_sequence_is_immutable",lambda:frozen_message.payload["nested"].value.__setitem__(0,SecretMaterial(ref.handle,ref.generation)))
+    nested_mapping = frozen_message.payload["nested"].value[1]
     _expect_type_error(checks,"nested_payload_mapping_is_immutable",lambda:nested_mapping.__setitem__("secret",SecretMaterial(ref.handle,ref.generation)))
 
     for probe_name, field_name, classification in [

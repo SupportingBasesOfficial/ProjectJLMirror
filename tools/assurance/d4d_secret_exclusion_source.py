@@ -220,6 +220,11 @@ def run_probes() -> dict[str, bool]:
         )
 
     # These probes independently require the namespace and canonical-ID guards.
+    # If the namespace check is removed, slicing at the canonical prefix length
+    # yields "valid-profile", which satisfies CANONICAL_ID and all later guards.
+    wrong_namespace_but_canonical_suffix = (
+        "x" * len(VERIFICATION_REFERENCE_PREFIX)
+    ) + "valid-profile"
     _expect_denied(
         checks,
         "verification_reference_namespace_rejected",
@@ -228,7 +233,7 @@ def run_probes() -> dict[str, bool]:
             tenant_id="tenant-a",
             payload=safe_payload,
             secret_ref=ref,
-            verification_profile_ref="kms://unrelated-secret",
+            verification_profile_ref=wrong_namespace_but_canonical_suffix,
             verification_generation_ref=7,
         ),
     )

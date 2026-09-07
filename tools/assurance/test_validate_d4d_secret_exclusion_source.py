@@ -22,6 +22,9 @@ def main():
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('current_run_auto_credit',True)))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('ledger_credit',[v.EXPECTED_ID])))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('secret_reference_authority','ordinary_payload_embedded_secret_authority')))
+    mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('source_base','c8d49ccf05113f0274287578bbc6965d220a677d')))
+    mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d['correction_lineage'].__setitem__('promotion_eligible_source_must_be_this_corrected_lineage_or_later',False)))
+    mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d['correction_lineage'].__setitem__('superseded_codex_review_id',0)))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.PLAN,lambda d:d['axes'][v.EXPECTED_AXIS]['must_prove'].pop()))
     def grant_fourth(r):
         def fn(d):
@@ -31,6 +34,6 @@ def main():
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d['source_time_state'].__setitem__('d4d','4_of_5_unselected')))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:(d.__setitem__('candidate',{'kind':'secret_profile'}),d.__setitem__('candidate_status','selected'))))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.STATE,lambda d:d.__setitem__('production_authority','granted')))
-    print('d4d_secret_exclusion_source_falsification=PASS fourth_credit_without_promotion=blocked source_snapshot=preserved authority_leakage=blocked')
+    print('d4d_secret_exclusion_source_falsification=PASS fourth_credit_without_promotion=blocked superseded_source_reuse=blocked source_snapshot=preserved authority_leakage=blocked')
 
 if __name__=='__main__': main()

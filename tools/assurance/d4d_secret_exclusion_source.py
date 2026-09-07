@@ -46,9 +46,34 @@ class HistoricalEvidence:
 
 ALLOWED_PAYLOAD_CLASSIFICATIONS = {"public", "internal", "business_data"}
 FORBIDDEN_PAYLOAD_CLASSIFICATIONS = {"secret", "credential", "key_material"}
+VERIFICATION_REFERENCE_PREFIX = "verification-profile://"
+AUDIT_REFERENCE_PREFIX = "secret-audit-ref://"
 
 def _contains_sensitive_material(values: dict[str, PayloadField]) -> bool:
     return any(field.classification in FORBIDDEN_PAYLOAD_CLASSIFICATIONS for field in values.values())
+
+def _contains_secret_handle(candidate: str, secret_ref: SecretReference | None) -> bool:
+    if secret_ref is None:
+        return False
+    return candidate == secret_ref.handle or secret_ref.handle in candidate
+
+def _validate_secret_reference_shape(reference: SecretReference) -> None:
+    if reference.bearer_authority:
+        raise SecretBoundaryDenied("secret reference cannot be bearer authority")
+    if not reference.handle or not reference.scope or reference.generation <= 0:
+        raise SecretBoundaryDenied("secret reference shape invalid")
+    if not reference.audit_reference.startswith(AUDIT_REFERENCE_PREFIX):
+        raise SecretBoundaryDenied("audit reference must use non-secret namespace")
+    if reference.audit_reference == reference.handle or reference.handle in reference.audit_reference:
+        raise SecretBoundaryDenied("audit reference must not alias or embed secret handle")
+
+def _validate_verification_reference(reference: str, secret_ref: SecretReference | None) -> None:
+    if not reference.startswith(VERIFICATION_REFERENCE_PREFIX):
+        raise SecretBoundaryDenied("verification reference must use non-secret namespace")
+    if _contains_secret_handle(reference, secret_ref):
+        raise SecretBoundaryDenied("verification reference must not alias or embed secret handle")
+    if secret_ref is not None and reference == secret_ref.audit_reference:
+        raise SecretBoundaryDenied("verification reference must remain distinct from secret audit reference")
 
 def create_message(*, message_id: str, tenant_id: str, payload: dict[str, PayloadField], secret_ref: SecretReference | None, verification_profile_ref: str, verification_generation_ref: int) -> OrdinaryMessage:
     unknown = {field.classification for field in payload.values()} - ALLOWED_PAYLOAD_CLASSIFICATIONS - FORBIDDEN_PAYLOAD_CLASSIFICATIONS
@@ -56,15 +81,19 @@ def create_message(*, message_id: str, tenant_id: str, payload: dict[str, Payloa
         raise SecretBoundaryDenied("unknown payload classification")
     if _contains_sensitive_material(payload):
         raise SecretBoundaryDenied("ordinary message payload cannot contain secret, credential, or key material")
-    if secret_ref is not None and secret_ref.bearer_authority:
-        raise SecretBoundaryDenied("secret reference cannot be bearer authority")
-    if not verification_profile_ref or verification_generation_ref <= 0:
-        raise SecretBoundaryDenied("non-secret historical verification reference required")
+    if secret_ref is not None:
+        _validate_secret_reference_shape(secret_ref)
+    _validate_verification_reference(verification_profile_ref, secret_ref)
+    if verification_generation_ref <= 0:
+        raise SecretBoundaryDenied("non-secret historical verification generation required")
     return OrdinaryMessage(message_id, tenant_id, dict(payload), secret_ref, verification_profile_ref, verification_generation_ref)
 
 def sanitize_record(message: OrdinaryMessage, *, record_kind: str) -> dict[str, object]:
     if record_kind not in {"inbox", "log", "trace", "quarantine"}:
         raise SecretBoundaryDenied("unsupported record kind")
+    if message.secret_ref is not None:
+        _validate_secret_reference_shape(message.secret_ref)
+    _validate_verification_reference(message.verification_profile_ref, message.secret_ref)
     return {
         "record_kind": record_kind,
         "message_id": message.message_id,
@@ -78,12 +107,13 @@ def sanitize_record(message: OrdinaryMessage, *, record_kind: str) -> dict[str, 
     }
 
 def resolve_secret(*, reference: SecretReference, authority: SecretAuthority, requested_scope: str, authorized: bool, audit_sink: list[dict[str, object]]) -> str:
-    if reference.bearer_authority:
-        raise SecretBoundaryDenied("historical/reference handle is not bearer authority")
+    _validate_secret_reference_shape(reference)
     if not authority.available:
         raise SecretBoundaryDenied("secret authority unavailable: fail closed")
     if authority.authority_source != "secret_or_kms_authority":
         raise SecretBoundaryDenied("invalid secret authority source")
+    if reference.generation != authority.current_generation:
+        raise SecretBoundaryDenied("stale or unknown secret generation")
     if not authorized or requested_scope != reference.scope or requested_scope not in authority.allowed_scopes:
         raise SecretBoundaryDenied("secret resolution is not narrowly authorized")
     audit_sink.append({
@@ -97,6 +127,9 @@ def resolve_secret(*, reference: SecretReference, authority: SecretAuthority, re
     return f"resolved-secret-for:{reference.handle}:generation:{reference.generation}"
 
 def erase_and_minimize(message: OrdinaryMessage) -> HistoricalEvidence:
+    if message.secret_ref is not None:
+        _validate_secret_reference_shape(message.secret_ref)
+    _validate_verification_reference(message.verification_profile_ref, message.secret_ref)
     return HistoricalEvidence(
         message_id=message.message_id,
         tenant_id=message.tenant_id,
@@ -115,19 +148,28 @@ def duplicate_sensitive_effect_eligible(evidence: HistoricalEvidence, *, expecte
         evidence.tenant_id == expected_tenant
         and evidence.verification_profile_ref == expected_profile
         and evidence.verification_generation_ref in known_generations
+        and evidence.verification_profile_ref.startswith(VERIFICATION_REFERENCE_PREFIX)
         and not evidence.secret_material_present
         and not evidence.credential_material_present
         and not evidence.secret_reference_present
     )
 
+def _expect_denied(checks: dict[str, bool], name: str, fn) -> None:
+    try:
+        fn()
+        checks[name] = False
+    except SecretBoundaryDenied:
+        checks[name] = True
+
 def run_probes() -> dict[str, bool]:
     ref = SecretReference(
         handle="kms://orders-signing/current",
-        audit_reference="secret-ref/orders-signing/generation-7",
+        audit_reference="secret-audit-ref://orders-signing/generation-7",
         generation=7,
         scope="tenant-a/orders",
     )
     authority = SecretAuthority(available=True, current_generation=7, allowed_scopes=("tenant-a/orders",))
+    verification_ref = "verification-profile://semantic-equivalence-v3"
     message = create_message(
         message_id="msg-001",
         tenant_id="tenant-a",
@@ -136,7 +178,7 @@ def run_probes() -> dict[str, bool]:
             "event": PayloadField("order.created", "internal"),
         },
         secret_ref=ref,
-        verification_profile_ref="semantic-equivalence-v3",
+        verification_profile_ref=verification_ref,
         verification_generation_ref=7,
     )
     checks: dict[str, bool] = {}
@@ -152,18 +194,65 @@ def run_probes() -> dict[str, bool]:
         ("key_material", "key_material", "key_material"),
     ]
     for probe_name, field_name, classification in negative_cases:
-        try:
-            create_message(
+        _expect_denied(
+            checks,
+            f"reject_payload_{probe_name}",
+            lambda field_name=field_name, classification=classification: create_message(
                 message_id="bad",
                 tenant_id="tenant-a",
                 payload={field_name: PayloadField("must-not-appear", classification)},
                 secret_ref=ref,
-                verification_profile_ref="semantic-equivalence-v3",
+                verification_profile_ref=verification_ref,
                 verification_generation_ref=7,
-            )
-            checks[f"reject_payload_{probe_name}"] = False
-        except SecretBoundaryDenied:
-            checks[f"reject_payload_{probe_name}"] = True
+            ),
+        )
+
+    _expect_denied(
+        checks,
+        "verification_reference_alias_secret_handle_rejected",
+        lambda: create_message(
+            message_id="bad-verification-alias",
+            tenant_id="tenant-a",
+            payload={"order_id": PayloadField("ord-43", "business_data")},
+            secret_ref=ref,
+            verification_profile_ref=ref.handle,
+            verification_generation_ref=7,
+        ),
+    )
+    _expect_denied(
+        checks,
+        "verification_reference_embedding_secret_handle_rejected",
+        lambda: create_message(
+            message_id="bad-verification-embed",
+            tenant_id="tenant-a",
+            payload={"order_id": PayloadField("ord-44", "business_data")},
+            secret_ref=ref,
+            verification_profile_ref=VERIFICATION_REFERENCE_PREFIX + ref.handle,
+            verification_generation_ref=7,
+        ),
+    )
+    _expect_denied(
+        checks,
+        "audit_reference_alias_secret_handle_rejected",
+        lambda: resolve_secret(
+            reference=replace(ref, audit_reference=ref.handle),
+            authority=authority,
+            requested_scope="tenant-a/orders",
+            authorized=True,
+            audit_sink=[],
+        ),
+    )
+    _expect_denied(
+        checks,
+        "audit_reference_embedding_secret_handle_rejected",
+        lambda: resolve_secret(
+            reference=replace(ref, audit_reference=AUDIT_REFERENCE_PREFIX + ref.handle),
+            authority=authority,
+            requested_scope="tenant-a/orders",
+            authorized=True,
+            audit_sink=[],
+        ),
+    )
 
     sanitized = [sanitize_record(message, record_kind=k) for k in ("inbox", "log", "trace", "quarantine")]
     checks["secondary_records_exclude_secret_key_material"] = all(
@@ -171,12 +260,13 @@ def run_probes() -> dict[str, bool]:
         and not r["secret_material_present"]
         and not r["credential_material_present"]
         and not r["key_material_present"]
+        and ref.handle not in str(r)
         for r in sanitized
     )
 
     evidence = erase_and_minimize(message)
-    checks["erasure_preserves_non_secret_historical_verification_reference"] = evidence.verification_profile_ref == "semantic-equivalence-v3" and evidence.verification_generation_ref == 7 and not evidence.secret_material_present and not evidence.credential_material_present and not evidence.secret_reference_present
-    checks["redaction_erasure_preserve_correctness_evidence"] = duplicate_sensitive_effect_eligible(evidence, expected_tenant="tenant-a", expected_profile="semantic-equivalence-v3", known_generations=(5, 6, 7))
+    checks["erasure_preserves_non_secret_historical_verification_reference"] = evidence.verification_profile_ref == verification_ref and evidence.verification_generation_ref == 7 and ref.handle not in evidence.verification_profile_ref and not evidence.secret_material_present and not evidence.credential_material_present and not evidence.secret_reference_present
+    checks["redaction_erasure_preserve_correctness_evidence"] = duplicate_sensitive_effect_eligible(evidence, expected_tenant="tenant-a", expected_profile=verification_ref, known_generations=(5, 6, 7))
 
     audit: list[dict[str, object]] = []
     resolved = resolve_secret(reference=ref, authority=authority, requested_scope="tenant-a/orders", authorized=True, audit_sink=audit)
@@ -193,33 +283,43 @@ def run_probes() -> dict[str, bool]:
         ("unauthorized_resolution_fails_closed", "tenant-a/orders", False),
         ("cross_scope_resolution_fails_closed", "tenant-b/orders", True),
     ]:
-        try:
-            resolve_secret(reference=ref, authority=authority, requested_scope=scope, authorized=authorized, audit_sink=[])
-            checks[name] = False
-        except SecretBoundaryDenied:
-            checks[name] = True
+        _expect_denied(
+            checks,
+            name,
+            lambda scope=scope, authorized=authorized: resolve_secret(reference=ref, authority=authority, requested_scope=scope, authorized=authorized, audit_sink=[]),
+        )
 
     unavailable = replace(authority, available=False)
-    try:
-        resolve_secret(reference=ref, authority=unavailable, requested_scope="tenant-a/orders", authorized=True, audit_sink=[])
-        checks["secret_authority_outage_fails_closed"] = False
-    except SecretBoundaryDenied:
-        checks["secret_authority_outage_fails_closed"] = True
+    _expect_denied(
+        checks,
+        "secret_authority_outage_fails_closed",
+        lambda: resolve_secret(reference=ref, authority=unavailable, requested_scope="tenant-a/orders", authorized=True, audit_sink=[]),
+    )
+    _expect_denied(
+        checks,
+        "stale_generation_resolution_fails_closed",
+        lambda: resolve_secret(reference=replace(ref, generation=6, audit_reference="secret-audit-ref://orders-signing/generation-6"), authority=authority, requested_scope="tenant-a/orders", authorized=True, audit_sink=[]),
+    )
+    _expect_denied(
+        checks,
+        "unknown_generation_resolution_fails_closed",
+        lambda: resolve_secret(reference=replace(ref, generation=99, audit_reference="secret-audit-ref://orders-signing/generation-99"), authority=authority, requested_scope="tenant-a/orders", authorized=True, audit_sink=[]),
+    )
 
     checks["historical_reference_is_not_bearer_authority"] = not historical_reference_can_resolve_secret(evidence, authority)
     bearer_ref = replace(ref, bearer_authority=True)
-    try:
-        create_message(
+    _expect_denied(
+        checks,
+        "bearer_secret_reference_rejected",
+        lambda: create_message(
             message_id="bad-ref",
             tenant_id="tenant-a",
-            payload={"order_id": PayloadField("ord-43", "business_data")},
+            payload={"order_id": PayloadField("ord-45", "business_data")},
             secret_ref=bearer_ref,
-            verification_profile_ref="semantic-equivalence-v3",
+            verification_profile_ref=verification_ref,
             verification_generation_ref=7,
-        )
-        checks["bearer_secret_reference_rejected"] = False
-    except SecretBoundaryDenied:
-        checks["bearer_secret_reference_rejected"] = True
+        ),
+    )
 
     return checks
 

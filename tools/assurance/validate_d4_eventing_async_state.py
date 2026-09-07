@@ -4,14 +4,14 @@ import json,sys
 from pathlib import Path
 MANIFEST=Path('implementation/d4-eventing-async/state-manifest.json'); EXPECTED_BASE='ee8775fc5e7a25b1c4e166a8bb48b53438f6bd42'
 EXPECTED_TOTAL_EVIDENCE=26
-EXPECTED_TOTAL_CREDITED=23
+EXPECTED_TOTAL_CREDITED=24
 EXPECTED_TRACK_SOURCES={'D4-A':['OPEN-EVT-001','OPEN-EVT-005','OPEN-REL-012.A'],'D4-B':['OPEN-EVT-002','OPEN-EVT-003','OPEN-EVT-004'],'D4-C':['OPEN-EVT-008','OPEN-EVT-009','OPEN-EVT-010','OPEN-EVT-011','OPEN-EVT-012','OPEN-EVT-013','OPEN-EVT-014','OPEN-EVT-015','OPEN-EVT-025'],'D4-D':['OPEN-EVT-016','OPEN-EVT-017','OPEN-EVT-018']}
 EXPECTED_REQUIRED_EVIDENCE={
 'D4-A':['capacity_envelope_baseline_growth_stress','broker_neutral_anti_corruption_stub_swap','regulated_payload_erasure_granularity','exactly_once_guardrail_consumer_inbox_enforcement','ordering_scope_partition_mapping_ceiling_tenant_cohort_fallback_and_key_level_concurrency','physical_naming_routing_and_cell_topology_adapter_mapping','broker_outbox_dispatch_priority_preserving_backlog_drain_recovery_benchmark'],
 'D4-B':['canonical_bounded_serialization_profile','parser_ambiguity_and_duplicate_field_negative_vectors','schema_catalog_semantic_manifest_compatibility_ci','historical_reader_and_equivalence_profile_continuity','contract_version_representation_and_breaking_change_vectors'],
 'D4-C':['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity','producer_generation_nonresurrection_across_failover_restore','privileged_bounded_replay_with_original_identity_and_effect_safety','historical_reader_upcaster_semantic_and_equivalence_continuity','recovery_generation_rf_inventory_reconciliation_and_activation_gates'],
 'D4-D':['workload_identity_to_broker_credential_adapter_least_privilege','tenant_and_contract_scoped_producer_consumer_authorization','message_protection_key_authority_and_historical_verifier_continuity','secret_credential_payload_exclusion_and_erasure_boundary','trace_context_observability_only_validation_and_redaction']}
-EXPECTED_COMPLETED={'D4-A':list(EXPECTED_REQUIRED_EVIDENCE['D4-A']),'D4-B':list(EXPECTED_REQUIRED_EVIDENCE['D4-B']),'D4-C':list(EXPECTED_REQUIRED_EVIDENCE['D4-C']),'D4-D':EXPECTED_REQUIRED_EVIDENCE['D4-D'][:2]}
+EXPECTED_COMPLETED={'D4-A':list(EXPECTED_REQUIRED_EVIDENCE['D4-A']),'D4-B':list(EXPECTED_REQUIRED_EVIDENCE['D4-B']),'D4-C':list(EXPECTED_REQUIRED_EVIDENCE['D4-C']),'D4-D':EXPECTED_REQUIRED_EVIDENCE['D4-D'][:3]}
 EXPECTED_D4B_CANDIDATE={'serialization':{'surface_policy':'explicit_surface_bound_profiles','internal_broker':'protobuf_profile','outbound_webhook':'bounded_json_plus_json_schema_profile'},'schema_catalog':'hybrid_reviewed_git_plus_registry_catalog','contract_version':'positive_integer_family_revision'}
 EXPECTED_C3_EXCLUSIONS={'OPEN-EVT-006','OPEN-EVT-007','OPEN-EVT-019','OPEN-EVT-026','OPEN-EVT-027','OPEN-EVT-028','OPEN-REL-012.B','production_partition_counts','production_retry_backoff_jitter_numerics','production_retention_lag_replay_quarantine_horizons','production_realtime_buffer_session_numerics'}
 EXPECTED_LATER_EXCLUSIONS={'OPEN-EVT-020','OPEN-EVT-021','OPEN-EVT-022','OPEN-EVT-023','OPEN-EVT-024','wave4_monitoring_product_implementation','production_deployment'}
@@ -35,4 +35,4 @@ def validate_manifest(state):
 if __name__=='__main__':
  root=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else Path.cwd(); errors=validate_manifest(load_manifest(root)); [print('D4_STATE_ERROR:',x,file=sys.stderr) for x in errors]
  if errors: raise SystemExit(1)
- print('d4_eventing_async_state=PASS evidence_required=26 evidence_credited=23 d4a=7_of_7 d4b=5_of_5 d4c=9_of_9 d4d=2_of_5 selection_open authorities=unchanged')
+ print('d4_eventing_async_state=PASS evidence_required=26 evidence_credited=24 d4a=7_of_7 d4b=5_of_5 d4c=9_of_9 d4d=3_of_5 selection_open authorities=unchanged')

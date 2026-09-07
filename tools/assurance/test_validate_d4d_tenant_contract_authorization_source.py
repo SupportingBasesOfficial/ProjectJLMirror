@@ -18,12 +18,12 @@ def main():
  mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('ledger_credit',[v.EXPECTED_ID])))
  mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('broker_authorization_authority','broker_acl_is_authority')))
  mutate_and_expect_failure(lambda r:mutate_json(r,v.PLAN,lambda d:d['axes'][v.EXPECTED_AXIS]['must_prove'].pop()))
- def grant_third(r):
+ def grant_fourth(r):
   def fn(d):
-   t=d['tracks'][3]; third=v.REQUIRED[2]; t['evidence_remaining'].remove(third); t['evidence_completed'].append(third)
+   t=d['tracks'][3]; fourth=v.REQUIRED[3]; t['evidence_remaining'].remove(fourth); t['evidence_completed'].append(fourth)
   mutate_json(r,v.STATE,fn)
- mutate_and_expect_failure(grant_third)
+ mutate_and_expect_failure(grant_fourth)
  mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d['source_time_state'].__setitem__('d4d','2_of_5_unselected')))
  mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:(d.__setitem__('candidate',{'kind':'broker_acl'}),d.__setitem__('candidate_status','selected'))))
- print('d4d_tenant_contract_authorization_source_falsification=PASS third_credit_without_promotion=blocked source_snapshot=preserved')
+ print('d4d_tenant_contract_authorization_source_falsification=PASS fourth_credit_without_promotion=blocked source_snapshot=preserved')
 if __name__=='__main__': main()

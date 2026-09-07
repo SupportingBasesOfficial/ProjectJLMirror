@@ -22,6 +22,7 @@ D4C_CREDITS = [
 D4D_CREDITS = [
     "workload_identity_to_broker_credential_adapter_least_privilege",
     "tenant_and_contract_scoped_producer_consumer_authorization",
+    "message_protection_key_authority_and_historical_verifier_continuity",
 ]
 _legacy_validate_objects = historical.validate_objects
 
@@ -42,11 +43,11 @@ def _current_sibling_errors(entry: dict) -> list[str]:
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
         errors.append("D4-D current sibling state must remain open/unselected")
     if d4d.get("evidence_completed") != D4D_CREDITS:
-        errors.append("D4-D current sibling credit must be exactly the two separately reviewed obligations")
+        errors.append("D4-D current sibling credit must be exactly the three separately reviewed obligations")
     if d4d.get("evidence_remaining") != [x for x in d4d.get("required_evidence", []) if x not in D4D_CREDITS]:
         errors.append("D4-D current sibling remaining evidence drift")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 23:
-        errors.append("D4-wide current evidence must remain 23/26")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 24:
+        errors.append("D4-wide current evidence must remain 24/26")
     return errors
 
 
@@ -88,7 +89,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4A_PLAN_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4a_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=9_of_9 current_sibling_d4d=2_of_5 d4wide=23_of_26")
+    print("d4a_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=9_of_9 current_sibling_d4d=3_of_5 d4wide=24_of_26")
     return 0
 
 

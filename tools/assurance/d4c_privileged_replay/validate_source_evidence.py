@@ -12,6 +12,7 @@ from validate_source_evidence_historical_current import *  # noqa: F401,F403
 D4D_CURRENT=[
     "workload_identity_to_broker_credential_adapter_least_privilege",
     "tenant_and_contract_scoped_producer_consumer_authorization",
+    "message_protection_key_authority_and_historical_verifier_continuity",
 ]
 D4D_HISTORICAL_CURRENT=["workload_identity_to_broker_credential_adapter_least_privilege"]
 _original_load=historical.load
@@ -22,8 +23,8 @@ def _current_errors(state:dict)->list[str]:
     if set(tracks)!={"D4-A","D4-B","D4-C","D4-D"}: return ["D4 track inventory drift"]
     d=tracks["D4-D"]; required=d.get("required_evidence",[]); errors=[]
     if d.get("candidate") is not None or d.get("candidate_status")!="not_selected" or d.get("state")!="candidate_selection_open": errors.append("D4-D selection leakage")
-    if d.get("evidence_completed")!=D4D_CURRENT or d.get("evidence_remaining")!=[x for x in required if x not in D4D_CURRENT]: errors.append("D4-D current state must be exactly 2/5")
-    if sum(len(t.get("evidence_completed",[])) for t in tracks.values())!=23: errors.append("D4-wide current credit count must be 23/26")
+    if d.get("evidence_completed")!=D4D_CURRENT or d.get("evidence_remaining")!=[x for x in required if x not in D4D_CURRENT]: errors.append("D4-D current state must be exactly 3/5")
+    if sum(len(t.get("evidence_completed",[])) for t in tracks.values())!=24: errors.append("D4-wide current credit count must be 24/26")
     return errors
 
 
@@ -52,7 +53,7 @@ def main()->int:
         historical.load=projected_load
         result=historical.main()
     finally: historical.load=original
-    if result==0: print("d4c_open_evt_014_current_projection=PASS current_d4d=2/5 current_d4wide=23/26 historical_current_oracle=byte_preserved")
+    if result==0: print("d4c_open_evt_014_current_projection=PASS current_d4d=3/5 current_d4wide=24/26 historical_current_oracle=byte_preserved")
     return result
 
 if __name__=="__main__": raise SystemExit(main())

@@ -18,6 +18,7 @@ HISTORICAL_PROMOTIONS = historical.HISTORICAL_PROMOTIONS
 D4D_CREDITS = [
     "workload_identity_to_broker_credential_adapter_least_privilege",
     "tenant_and_contract_scoped_producer_consumer_authorization",
+    "message_protection_key_authority_and_historical_verifier_continuity",
 ]
 
 
@@ -36,9 +37,9 @@ def _current_errors(state: dict) -> list[str]:
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
         errors.append("D4-D selection/state leakage")
     if d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != [x for x in required if x not in D4D_CREDITS]:
-        errors.append("D4-D state/credit leakage: current state must be exactly 2/5")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 23:
-        errors.append("D4-wide credited evidence must be exactly 23/26")
+        errors.append("D4-D state/credit leakage: current state must be exactly 3/5")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 24:
+        errors.append("D4-wide credited evidence must be exactly 24/26")
     authority = (
         state.get("gate_state"), state.get("d4_transport_authority"),
         state.get("canonical_product_implementation_authority"), state.get("wave4_implementation_authority"),
@@ -80,7 +81,7 @@ def main() -> int:
         for error in errors:
             print(f"D4C_PROMOTION_ERROR: {error}")
         return 1
-    print("d4c_open_evt_025_promotion=PASS historical_oracle=byte_preserved d4c=9_of_9 d4d=2_of_5 d4wide=23_of_26 selection=not_selected authorities=unchanged")
+    print("d4c_open_evt_025_promotion=PASS historical_oracle=byte_preserved d4c=9_of_9 d4d=3_of_5 d4wide=24_of_26 selection=not_selected authorities=unchanged")
     return 0
 
 if __name__ == "__main__":

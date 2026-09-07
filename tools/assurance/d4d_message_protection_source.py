@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 class ClassificationPolicy:
     classification: str
     require_protection: bool
+    storage_class: str
     allow_logging: bool
     retention_class: str
     delivery_class: str
@@ -31,9 +32,9 @@ class ProtectionDenied(Exception):
 
 def classify(classification: str) -> ClassificationPolicy:
     policies = {
-        "restricted": ClassificationPolicy("restricted", True, False, "bounded_confidential", "protected_only"),
-        "internal": ClassificationPolicy("internal", True, True, "bounded_internal", "protected_only"),
-        "public": ClassificationPolicy("public", False, True, "bounded_public", "ordinary"),
+        "restricted": ClassificationPolicy("restricted", True, "encrypted_restricted_store", False, "bounded_confidential", "protected_only"),
+        "internal": ClassificationPolicy("internal", True, "encrypted_internal_store", True, "bounded_internal", "protected_only"),
+        "public": ClassificationPolicy("public", False, "ordinary_public_store", True, "bounded_public", "ordinary"),
     }
     if classification not in policies:
         raise ProtectionDenied("unknown data classification")
@@ -49,7 +50,7 @@ def issue_evidence(*, authority: KeyAuthority, scope: str, classification: str, 
         raise ProtectionDenied("encryption does not replace minimization")
     if not scope or not comparison_profile:
         raise ProtectionDenied("scope/profile required")
-    if policy.require_protection and policy.delivery_class != "protected_only":
+    if policy.require_protection and (policy.delivery_class != "protected_only" or not policy.storage_class.startswith("encrypted_")):
         raise ProtectionDenied("classification policy weakened")
     return ProtectedEvidence(
         scope=scope,
@@ -104,7 +105,7 @@ def run_probes() -> dict[str, bool]:
     )
     policy = classify("restricted")
     checks: dict[str, bool] = {
-        "classification_controls_protection_storage_delivery_logging_retention": policy.require_protection and not policy.allow_logging and policy.retention_class == "bounded_confidential" and policy.delivery_class == "protected_only",
+        "classification_controls_protection_storage_delivery_logging_retention": policy.require_protection and policy.storage_class == "encrypted_restricted_store" and not policy.allow_logging and policy.retention_class == "bounded_confidential" and policy.delivery_class == "protected_only",
         "key_material_stays_behind_secret_kms": authority.authority_source == "secret_or_kms_authority" and not authority.key_material_exportable,
         "retained_evidence_is_non_secret_reference_only": evidence.retained_reference_only and not evidence.secret_material_present and evidence.key_generation_ref == 7,
         "historical_verifier_available": historical_verifier_available(evidence, authority),

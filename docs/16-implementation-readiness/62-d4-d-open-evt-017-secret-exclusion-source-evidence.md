@@ -37,15 +37,18 @@ The exact candidate-plan obligations are:
 
 ## Executable proof model
 
-The source harness treats ordinary messages as reference-only consumers of external secret/KMS authority. Secret material is never represented as an ordinary payload value. Secondary persistence/observability records retain only message identity, tenant identity, and non-secret verification profile/generation references.
+The source harness treats ordinary messages as reference-only consumers of external secret/KMS authority. Every ordinary payload field carries an explicit material classification. Only `public`, `internal`, and `business_data` classifications are accepted; `secret`, `credential`, and `key_material` are rejected independently of the field name. This prevents a secret from being admitted under an innocuous-looking key.
+
+Secondary persistence/observability records retain only message identity, tenant identity, and non-secret verification profile/generation references. Secret references and secret/key/credential material are excluded from inbox, log, trace, and quarantine records. Secret-resolution audit records use a non-bearer audit reference and explicitly do not log the resolvable secret handle or secret material.
 
 The harness executes positive and negative probes covering:
 
-- rejection of ordinary payload keys representing password, secret, credential, token, API key, private key, or key material;
+- explicit payload-material classification and rejection of secret, credential, and key material regardless of field name;
+- representative negative vectors for password, secret, credential, token, API key, private key, and key material;
 - exclusion of secret handles/material from inbox, log, trace, and quarantine records;
 - erasure/minimization that preserves non-secret verification profile/generation continuity;
 - duplicate-sensitive correctness after erasure using only non-secret historical verification references;
-- narrowly scoped and audited secret resolution;
+- narrowly scoped and audited secret resolution without logging the resolvable handle;
 - fail-closed behavior for unauthorized, cross-scope, and authority-outage resolution;
 - rejection of bearer-capable secret references;
 - proof that historical verification references cannot resolve secrets.

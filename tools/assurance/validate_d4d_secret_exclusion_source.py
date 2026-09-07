@@ -28,8 +28,10 @@ EXPECTED_MUST={
 EXPECTED_PROBES={
 'ordinary_payload_excludes_secret_credential_material',
 'reject_payload_password','reject_payload_secret','reject_payload_credential','reject_payload_token','reject_payload_api_key','reject_payload_private_key','reject_payload_key_material',
+'verification_reference_namespace_rejected','verification_reference_noncanonical_id_rejected',
 'verification_reference_alias_secret_handle_rejected','verification_reference_embedding_secret_handle_rejected',
 'audit_reference_is_derived_non_secret','secret_handle_scope_rejected',
+'sanitize_reconstructed_alias_rejected','erase_reconstructed_alias_rejected',
 'secondary_records_exclude_secret_key_material',
 'erasure_preserves_non_secret_historical_verification_reference',
 'redaction_erasure_preserve_correctness_evidence',
@@ -73,4 +75,4 @@ if __name__=='__main__':
     errors=validate(root)
     [print('D4D_SECRET_EXCLUSION_SOURCE_ERROR:',x,file=sys.stderr) for x in errors]
     if errors:raise SystemExit(1)
-    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=23 corrected_lineage=true')
+    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=27 corrected_lineage=true')

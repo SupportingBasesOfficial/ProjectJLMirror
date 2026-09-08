@@ -5,7 +5,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import asdict, astuple, dataclass, replace
 from types import MappingProxyType
-from urllib.parse import parse_qsl, urlencode
+from urllib.parse import parse_qsl, quote, unquote, urlencode
 
 class SecretBoundaryDenied(Exception):
     pass
@@ -123,6 +123,25 @@ def _url_form_contains_secret_material(value: str, secret_handle: object = None)
     return False
 
 
+def _url_escaped_contains_secret_material(value: str, secret_handle: object = None) -> bool:
+    if "%" not in value:
+        return False
+    decoded = unquote(value)
+    if decoded == value:
+        return False
+    if _known_secret_handle_in_text(decoded, secret_handle):
+        return True
+    stripped = decoded.lstrip()
+    if stripped.startswith(("{", "[")):
+        try:
+            structured = json.loads(decoded)
+        except (json.JSONDecodeError, TypeError):
+            structured = None
+        if structured is not None and _value_contains_secret_material(structured, secret_handle):
+            return True
+    return _url_form_contains_secret_material(decoded, secret_handle)
+
+
 def _text_contains_secret_material(value: str, secret_handle: object = None) -> bool:
     if _known_secret_handle_in_text(value, secret_handle):
         return True
@@ -134,7 +153,9 @@ def _text_contains_secret_material(value: str, secret_handle: object = None) -> 
             decoded = None
         if decoded is not None and _value_contains_secret_material(decoded, secret_handle):
             return True
-    return _url_form_contains_secret_material(value, secret_handle)
+    if _url_form_contains_secret_material(value, secret_handle):
+        return True
+    return _url_escaped_contains_secret_material(value, secret_handle)
 
 
 def _value_contains_secret_material(value: object, secret_handle: object = None) -> bool:
@@ -233,6 +254,8 @@ def _validate_allowed_scopes(scopes: object) -> tuple[str, ...]:
 
 
 def _validate_secret_reference_shape(reference: SecretReference) -> None:
+    if not isinstance(reference, SecretReference):
+        raise SecretBoundaryDenied("secret reference must be a hydrated SecretReference")
     if reference.bearer_authority:
         raise SecretBoundaryDenied("secret reference cannot be bearer authority")
     if type(reference.handle) is not str or not reference.handle:
@@ -435,6 +458,9 @@ def run_probes() -> dict[str, bool]:
     reconstructed_aliased_message=OrdinaryMessage("reconstructed-alias","tenant-a",dict(safe_payload),reconstructed_collision_ref,"verification-profile://collision-reconstructed",7)
     _expect_denied(checks,"sanitize_reconstructed_alias_rejected",lambda:sanitize_record(reconstructed_aliased_message,record_kind="inbox"))
     _expect_denied(checks,"erase_reconstructed_alias_rejected",lambda:erase_and_minimize(reconstructed_aliased_message))
+    reconstructed_unhydrated_secret_ref=OrdinaryMessage("reconstructed-unhydrated-ref","tenant-a",dict(safe_payload),{"handle":ref.handle,"generation":ref.generation,"scope":ref.scope},verification_ref,7)
+    _expect_denied(checks,"sanitize_reconstructed_unhydrated_secret_ref_rejected",lambda:sanitize_record(reconstructed_unhydrated_secret_ref,record_kind="inbox"))
+    _expect_denied(checks,"erase_reconstructed_unhydrated_secret_ref_rejected",lambda:erase_and_minimize(reconstructed_unhydrated_secret_ref))
     reconstructed_secret_message_id=OrdinaryMessage(identifier_secret,"tenant-a",dict(safe_payload),ref,verification_ref,7)
     _expect_denied(checks,"sanitize_reconstructed_secret_message_id_rejected",lambda:sanitize_record(reconstructed_secret_message_id,record_kind="inbox"))
     _expect_denied(checks,"erase_reconstructed_secret_message_id_rejected",lambda:erase_and_minimize(reconstructed_secret_message_id))
@@ -488,10 +514,12 @@ def run_probes() -> dict[str, bool]:
     positional_textual_serialized_resolved = json.dumps(positional_serialized_resolved)
     nested_textual_serialized_resolved = json.dumps({"outer":[{"inner":serialized_resolved}]}, sort_keys=True)
     url_form_serialized_resolved = urlencode(serialized_resolved)
+    url_escaped_serialized_resolved = quote(textual_serialized_resolved, safe="")
     _expect_denied(checks,"text_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-text-serialized-secret",tenant_id="tenant-a",payload={"note":PayloadField(textual_serialized_resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"positional_text_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-positional-text-serialized-secret",tenant_id="tenant-a",payload={"note":PayloadField(positional_textual_serialized_resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"nested_text_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-nested-text-serialized-secret",tenant_id="tenant-a",payload={"note":PayloadField(nested_textual_serialized_resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"url_form_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-url-form-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_form_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"url_escaped_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-url-escaped-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_escaped_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"secret_handle_text_fragment_rejected",lambda:create_message(message_id="bad-secret-handle-text",tenant_id="tenant-a",payload={"note":PayloadField(f"opaque-prefix:{ref.handle}:suffix","business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"top_level_payload_key_secret_handle_rejected",lambda:create_message(message_id="bad-top-key",tenant_id="tenant-a",payload={ref.handle:PayloadField("x","business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"nested_payload_key_secret_handle_rejected",lambda:create_message(message_id="bad-nested-key",tenant_id="tenant-a",payload={"note":PayloadField({ref.handle:"x"},"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))

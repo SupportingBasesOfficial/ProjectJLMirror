@@ -76,7 +76,7 @@ def _valid_traceparent(value: object) -> bool:
     if not isinstance(value, str) or not TRACEPARENT_RE.fullmatch(value):
         return False
     version, trace_id, parent_id, _flags = value.split("-")
-    return version != "ff" and trace_id != "0" * 32 and parent_id != "0" * 16
+    return version == "00" and trace_id != "0" * 32 and parent_id != "0" * 16
 
 def _trace_id(traceparent: str) -> str:
     return traceparent.split("-")[1]
@@ -150,14 +150,20 @@ def _validate_trace_context_object(trace: object, propagation_context: object | 
     context: PropagationContext | None = None
     if trace.attributes:
         context = _validate_propagation_context(propagation_context)
+    seen_keys: set[str] = set()
     for item in trace.attributes:
         if not isinstance(item, tuple) or len(item) != 2:
             raise TraceContextRejected("trace context attribute entry invalid")
         key, value = item
         if not isinstance(key, str) or not isinstance(value, str) or not key or len(key) > MAX_ATTR_KEY or len(value) > MAX_ATTR_VALUE:
             raise TraceContextRejected("trace context attribute out of bounds")
+        if key in seen_keys:
+            raise TraceContextRejected("duplicate trace context attribute")
+        seen_keys.add(key)
         assert context is not None
         _validate_attribute_profile(key, value, context)
+    if trace.attributes != tuple(sorted(trace.attributes)):
+        raise TraceContextRejected("trace context attributes are not canonical")
     return trace
 
 def _redact_attributes(attributes: object, context: PropagationContext | None) -> tuple[tuple[str, str], ...]:
@@ -295,6 +301,7 @@ def _isolated_from_business(envelope: BusinessEnvelope, observed: ObservedMessag
 def run_probes() -> dict[str, bool]:
     env = BusinessEnvelope("tenant-a", "msg-1", "idem-1", "order-1", "payload-v1", "at_least_once")
     valid = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+    future_version = "01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
     same_trace_other_parent = "00-4bf92f3577b34da6a3ce929d0e0e4736-1111111111111111-01"
     consumer_context = PropagationContext("consumer", "authenticated_internal", "internal", "local_async_boundary", False)
     scope_authority = TenantScopeAuthority(b"d4d-open-evt-018-test-scope-key-0001")
@@ -329,6 +336,7 @@ def run_probes() -> dict[str, bool]:
     ]
     for idx, candidate in enumerate(malformed_cases, start=1):
         checks[f"malformed_traceparent_{idx}_rejected"] = _rejected(lambda candidate=candidate: normalize_trace_context(candidate, None))
+    checks["unsupported_traceparent_version_rejected"] = _rejected(lambda: normalize_trace_context(future_version, None))
 
     checks["orphan_tracestate_rejected"] = _rejected(lambda: normalize_trace_context(None, "vendor=value"))
     checks["non_string_tracestate_rejected"] = _rejected(lambda: normalize_trace_context(valid, 42))
@@ -409,11 +417,15 @@ def run_probes() -> dict[str, bool]:
     direct_unknown = TraceContext(valid, None, (("authorization", "Bearer secret"),))
     direct_sensitive = TraceContext(valid, None, (("component", "Bearer secret"),))
     direct_impersonated = TraceContext(valid, None, (("component", "producer"),))
+    direct_duplicate = TraceContext(valid, None, (("phase", "receive"), ("phase", "validate")))
+    direct_noncanonical_order = TraceContext(valid, None, (("phase", "receive"), ("component", "consumer")))
     checks["scope_and_issue_requires_context_for_attributes"] = _rejected(lambda: scope_authority.scope_and_issue("tenant-a", direct_allowed))
     checks["scope_and_issue_rejects_unallowlisted_attributes"] = _rejected(lambda: scope_authority.scope_and_issue("tenant-a", direct_unknown, propagation_context=consumer_context))
     checks["scope_and_issue_rejects_sensitive_allowlisted_value"] = _rejected(lambda: scope_authority.scope_and_issue("tenant-a", direct_sensitive, propagation_context=consumer_context))
     checks["scope_and_issue_rejects_component_source_impersonation"] = _rejected(lambda: scope_authority.scope_and_issue("tenant-a", direct_impersonated, propagation_context=consumer_context))
     checks["scope_and_issue_rejects_untrusted_attribute_context"] = _rejected(lambda: scope_authority.scope_and_issue("tenant-a", direct_allowed, propagation_context=PropagationContext("consumer", "untrusted_external", "internal", "local_async_boundary", False)))
+    checks["scope_and_issue_rejects_duplicate_attribute_keys"] = _rejected(lambda: scope_authority.scope_and_issue("tenant-a", direct_duplicate, propagation_context=consumer_context))
+    checks["scope_and_issue_rejects_noncanonical_attribute_order"] = _rejected(lambda: scope_authority.scope_and_issue("tenant-a", direct_noncanonical_order, propagation_context=consumer_context))
 
     checks["same_tenant_trace_correlation_allowed"] = can_correlate(observed, tenant_a_2)
     checks["cross_tenant_trace_correlation_blocked"] = not can_correlate(observed, tenant_b)

@@ -14,6 +14,16 @@ def mutate_and_expect_failure(mutator):
         root=Path(td); clone(root); mutator(root); assert v.validate(root),'mutation unexpectedly accepted'
 def main():
     assert not v.validate(ROOT)
+    for field,bad in [
+        ('schema_version',2),
+        ('gate_id','D3'),
+        ('track_id','D4-C'),
+        ('source_decision','OPEN-EVT-017'),
+        ('evidence_id','wrong-evidence'),
+        ('mode','promotion'),
+        ('source_base','0'*40),
+    ]:
+        mutate_and_expect_failure(lambda r,field=field,bad=bad:mutate_json(r,v.MANIFEST,lambda d,field=field,bad=bad:d.__setitem__(field,bad)))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('current_run_auto_credit',True)))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('ledger_credit',[v.EXPECTED_ID])))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('trace_context_authority','tenant_authority')))
@@ -38,5 +48,5 @@ def main():
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('selection_authority','granted')))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.STATE,lambda d:d.__setitem__('canonical_product_implementation_authority','granted')))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.STATE,lambda d:d.__setitem__('production_authority','granted')))
-    print('d4d_trace_context_source_falsification=PASS source_snapshot=4_of_5_25_of_26_exact authorities_exact auto_credit=blocked fifth_credit_without_promotion=blocked selection=blocked authority_leakage=blocked')
+    print('d4d_trace_context_source_falsification=PASS source_identity=exact source_snapshot=4_of_5_25_of_26_exact authorities_exact auto_credit=blocked fifth_credit_without_promotion=blocked selection=blocked authority_leakage=blocked')
 if __name__=='__main__': main()

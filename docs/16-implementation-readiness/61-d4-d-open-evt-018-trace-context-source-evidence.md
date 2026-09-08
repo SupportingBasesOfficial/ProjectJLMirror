@@ -16,6 +16,8 @@ The proof set covers:
 - a selected canonical `tracestate` profile with bounded length, at most 32 members, valid member grammar, and duplicate-key rejection;
 - rejection of malformed, orphaned, or non-string trace metadata through the explicit fail-closed boundary rather than accidental runtime exceptions;
 - deny-by-default propagated attributes: only explicitly allowlisted semantic fields with bounded, enumerated values may cross the boundary;
+- explicit propagation context for every propagated attribute, binding `source`, `trust_level`, `classification`, `hop_scope`, and whether the field may leave JLMIRROR;
+- prevention of source impersonation, untrusted/external propagation, protected-classification propagation, invalid hop scope, and unauthorized egress;
 - rejection of unknown attributes and of credential/protected content smuggled under otherwise benign allowlisted field names;
 - exclusion of secrets, credentials, authorization tokens, cookies, private keys and other non-allowlisted protected baggage from propagated telemetry context;
 - cross-tenant correlation isolation even when trace identifiers match;
@@ -24,7 +26,7 @@ The proof set covers:
 
 ## Source-time state
 
-This source evidence is intentionally non-promoting:
+This source evidence is intentionally non-promoting, and the manifest snapshot is validated as an exact authority state rather than only checking the D4-D/D4-wide counters:
 
 - D4-D remains `4/5` and unselected;
 - D4-wide remains `25/26`;

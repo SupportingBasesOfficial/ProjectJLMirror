@@ -141,11 +141,19 @@ def normalize_trace_context(traceparent: object | None, tracestate: object | Non
         raise TraceContextRejected("malformed traceparent")
     return TraceContext(traceparent, _bounded_tracestate(tracestate), attrs)
 
+def _tenant_scope_marker(tenant_id: str, label: str, width: int) -> str:
+    return hashlib.sha256(f"jlmirror-trace-scope-v1\0marker\0{tenant_id}\0{label}".encode("utf-8")).hexdigest()[:width]
+
 def _tenant_scoped_hex(tenant_id: str, label: str, value: str, length: int) -> str:
-    digest = hashlib.sha256(f"jlmirror-trace-scope-v1\0{tenant_id}\0{label}\0{value}".encode("utf-8")).hexdigest()[:length]
-    if set(digest) == {"0"}:
-        return "1" + digest[1:]
-    return digest
+    marker_width = 8 if length >= 32 else 4
+    marker = _tenant_scope_marker(tenant_id, label, marker_width)
+    if value.startswith(marker):
+        return value
+    body = hashlib.sha256(f"jlmirror-trace-scope-v1\0{tenant_id}\0{label}\0{value}".encode("utf-8")).hexdigest()[: length - marker_width]
+    scoped = marker + body
+    if set(scoped) == {"0"}:
+        return "1" + scoped[1:]
+    return scoped
 
 def _scope_trace_to_tenant(trace: TraceContext, tenant_id: str) -> TraceContext:
     if not trace.traceparent:
@@ -153,6 +161,9 @@ def _scope_trace_to_tenant(trace: TraceContext, tenant_id: str) -> TraceContext:
     version, trace_id, parent_id, flags = trace.traceparent.split("-")
     scoped_trace_id = _tenant_scoped_hex(tenant_id, "trace-id", trace_id, 32)
     scoped_parent_id = _tenant_scoped_hex(tenant_id, "parent-id", parent_id, 16)
+    # Tenant markers make scoping idempotent for repeated trusted internal hops:
+    # T(T(id)) == T(id). A context scoped for another tenant has a different
+    # marker and is therefore re-scoped before becoming observable here.
     # W3C tracestate is validated on ingress but is intentionally not exported
     # by this tenant-scoped profile. Vendor-controlled state can carry a global
     # correlator or protected/high-cardinality value even when trace IDs are
@@ -272,11 +283,15 @@ def run_probes() -> dict[str, bool]:
     tenant_b = process_message(BusinessEnvelope("tenant-b", "msg-3", "idem-3", "order-3", "payload-v3", "at_least_once"), traceparent=same_trace_other_parent)
     tenant_a_same_input = process_message(BusinessEnvelope("tenant-a", "msg-4", "idem-4", "order-4", "payload-v4", "at_least_once"), traceparent=valid, tracestate="vendor=global-correlation-123")
     tenant_b_same_input = process_message(BusinessEnvelope("tenant-b", "msg-5", "idem-5", "order-5", "payload-v5", "at_least_once"), traceparent=valid, tracestate="vendor=global-correlation-123")
+    second_same_tenant_hop = process_message(BusinessEnvelope("tenant-a", "msg-6", "idem-6", "order-6", "payload-v6", "at_least_once"), traceparent=observed.trace.traceparent)
+    cross_tenant_from_scoped = process_message(BusinessEnvelope("tenant-b", "msg-7", "idem-7", "order-7", "payload-v7", "at_least_once"), traceparent=observed.trace.traceparent)
     checks["same_tenant_trace_correlation_allowed"] = can_correlate(observed, tenant_a_2)
     checks["cross_tenant_trace_correlation_blocked"] = not can_correlate(observed, tenant_b)
     checks["same_input_trace_id_is_stable_within_tenant"] = observed.trace.traceparent is not None and tenant_a_same_input.trace.traceparent is not None and observed.trace.traceparent.split("-")[1] == tenant_a_same_input.trace.traceparent.split("-")[1]
     checks["same_input_trace_id_is_different_across_tenants"] = observed.trace.traceparent is not None and tenant_b_same_input.trace.traceparent is not None and observed.trace.traceparent.split("-")[1] != tenant_b_same_input.trace.traceparent.split("-")[1]
     checks["copied_tracestate_is_not_exported_across_tenants"] = tenant_a_same_input.trace.tracestate is None and tenant_b_same_input.trace.tracestate is None
+    checks["tenant_scoping_is_idempotent_across_same_tenant_hops"] = observed.trace.traceparent is not None and second_same_tenant_hop.trace.traceparent == observed.trace.traceparent and can_correlate(observed, second_same_tenant_hop)
+    checks["scoped_trace_is_rescoped_at_different_tenant_boundary"] = observed.trace.traceparent is not None and cross_tenant_from_scoped.trace.traceparent is not None and cross_tenant_from_scoped.trace.traceparent != observed.trace.traceparent and not can_correlate(observed, cross_tenant_from_scoped)
 
     altered_trace = process_message(env, traceparent=same_trace_other_parent, tracestate=None)
     checks["trace_change_does_not_change_business_or_delivery_semantics"] = business_semantics(altered_trace) == business_semantics(observed)

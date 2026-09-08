@@ -59,6 +59,7 @@ VERIFICATION_REFERENCE_PREFIX = "verification-profile://"
 AUDIT_REFERENCE_PREFIX = "secret-audit-ref://"
 CANONICAL_ID = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 CANONICAL_SCOPE = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)+$")
+RESOLVED_SECRET_HANDLES: set[str] = set()
 
 
 def _validate_generation(value: object, label: str) -> None:
@@ -66,11 +67,18 @@ def _validate_generation(value: object, label: str) -> None:
         raise SecretBoundaryDenied(f"{label} must be a positive integer")
 
 
+def _known_secret_handle_in_text(value: str, secret_handle: object = None) -> bool:
+    handles = set(RESOLVED_SECRET_HANDLES)
+    if isinstance(secret_handle, str) and secret_handle:
+        handles.add(secret_handle)
+    return any(handle and handle in value for handle in handles)
+
+
 def _validate_identifier(value: object, label: str, secret_handle: object = None) -> None:
     if type(value) is not str or not value:
         raise SecretBoundaryDenied(f"{label} must be a non-empty non-secret string")
-    if isinstance(secret_handle, str) and secret_handle and (value == secret_handle or secret_handle in value):
-        raise SecretBoundaryDenied(f"{label} must not alias or embed the secret handle")
+    if _known_secret_handle_in_text(value, secret_handle):
+        raise SecretBoundaryDenied(f"{label} must not alias or embed a known secret handle")
 
 
 def _looks_like_serialized_secret_material(value: Mapping[str, object]) -> bool:
@@ -89,7 +97,7 @@ def _looks_like_positional_serialized_secret_material(value: object) -> bool:
 
 
 def _text_contains_secret_material(value: str, secret_handle: object = None) -> bool:
-    if isinstance(secret_handle, str) and secret_handle and secret_handle in value:
+    if _known_secret_handle_in_text(value, secret_handle):
         return True
     stripped = value.lstrip()
     if not stripped.startswith(("{", "[")):
@@ -115,6 +123,8 @@ def _value_contains_secret_material(value: object, secret_handle: object = None)
     if isinstance(value, Mapping):
         if not all(isinstance(key, str) for key in value):
             raise SecretBoundaryDenied("payload object keys must be strings")
+        if any(_text_contains_secret_material(key, secret_handle) for key in value):
+            return True
         if _looks_like_serialized_secret_material(value):
             return True
         return any(_value_contains_secret_material(item, secret_handle) for item in value.values())
@@ -124,7 +134,7 @@ def _value_contains_secret_material(value: object, secret_handle: object = None)
 def _freeze_payload_value(value: object, secret_handle: object = None) -> object:
     if isinstance(value, str):
         if _text_contains_secret_material(value, secret_handle):
-            raise SecretBoundaryDenied("ordinary payload cannot contain text-serialized secret material or secret handle")
+            raise SecretBoundaryDenied("ordinary payload cannot contain text-serialized secret material or known secret handle")
         return value
     if value is None or isinstance(value, (int, float, bool)):
         return value
@@ -139,6 +149,8 @@ def _freeze_payload_value(value: object, secret_handle: object = None) -> object
     if isinstance(value, Mapping):
         if not all(isinstance(key, str) for key in value):
             raise SecretBoundaryDenied("payload object keys must be strings")
+        if any(_text_contains_secret_material(key, secret_handle) for key in value):
+            raise SecretBoundaryDenied("ordinary payload object keys cannot contain known secret handles")
         if _looks_like_serialized_secret_material(value):
             raise SecretBoundaryDenied("ordinary payload cannot contain a serialized secret handle and generation")
         return MappingProxyType({key: _freeze_payload_value(item, secret_handle) for key, item in value.items()})
@@ -146,7 +158,7 @@ def _freeze_payload_value(value: object, secret_handle: object = None) -> object
 
 
 def _contains_sensitive_material(values: Mapping[str, PayloadField], secret_handle: object = None) -> bool:
-    return any(
+    return any(_text_contains_secret_material(key, secret_handle) for key in values) or any(
         field.classification in FORBIDDEN_PAYLOAD_CLASSIFICATIONS
         or _value_contains_secret_material(field.value, secret_handle)
         for field in values.values()
@@ -156,6 +168,8 @@ def _contains_sensitive_material(values: Mapping[str, PayloadField], secret_hand
 def _validate_payload(values: Mapping[str, PayloadField], secret_handle: object = None) -> None:
     if not isinstance(values, Mapping) or not all(isinstance(key, str) for key in values):
         raise SecretBoundaryDenied("ordinary payload must be a string-keyed mapping")
+    if any(_text_contains_secret_material(key, secret_handle) for key in values):
+        raise SecretBoundaryDenied("ordinary payload keys cannot contain known secret handles")
     if not all(isinstance(field, PayloadField) for field in values.values()):
         raise SecretBoundaryDenied("ordinary payload values must be classified payload fields")
     classifications = {field.classification for field in values.values()}
@@ -210,6 +224,8 @@ def _validate_verification_reference(reference: str, secret_ref: SecretReference
     if secret_ref is not None and secret_ref.handle:
         if reference == secret_ref.handle or secret_ref.handle in reference:
             raise SecretBoundaryDenied("verification reference must not alias or embed secret handle")
+    if _known_secret_handle_in_text(reference):
+        raise SecretBoundaryDenied("verification reference must not alias or embed a previously resolved secret handle")
 
 
 def _validate_message_boundary(message: OrdinaryMessage) -> None:
@@ -263,6 +279,7 @@ def resolve_secret(*, reference: SecretReference, authority: SecretAuthority, re
         raise SecretBoundaryDenied("secret resolution is not narrowly authorized")
     audit_ref = _audit_reference(reference)
     audit_sink.append({"scope": requested_scope, "reference": audit_ref, "generation": reference.generation, "resolved": True, "secret_handle_logged": False, "secret_material_logged": False})
+    RESOLVED_SECRET_HANDLES.add(reference.handle)
     return SecretMaterial(reference.handle, reference.generation)
 
 
@@ -315,6 +332,7 @@ def _expect_type_error(checks: dict[str, bool], name: str, fn) -> None:
 
 
 def run_probes() -> dict[str, bool]:
+    RESOLVED_SECRET_HANDLES.clear()
     ref = SecretReference("kms://orders-signing/current", 7, "tenant-a/orders")
     authority = SecretAuthority(True, ref.handle, 7, ("tenant-a/orders",))
     verification_ref = "verification-profile://semantic-equivalence-v3"
@@ -432,6 +450,17 @@ def run_probes() -> dict[str, bool]:
     _expect_denied(checks,"positional_text_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-positional-text-serialized-secret",tenant_id="tenant-a",payload={"note":PayloadField(positional_textual_serialized_resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"nested_text_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-nested-text-serialized-secret",tenant_id="tenant-a",payload={"note":PayloadField(nested_textual_serialized_resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"secret_handle_text_fragment_rejected",lambda:create_message(message_id="bad-secret-handle-text",tenant_id="tenant-a",payload={"note":PayloadField(f"opaque-prefix:{ref.handle}:suffix","business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"top_level_payload_key_secret_handle_rejected",lambda:create_message(message_id="bad-top-key",tenant_id="tenant-a",payload={ref.handle:PayloadField("x","business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"nested_payload_key_secret_handle_rejected",lambda:create_message(message_id="bad-nested-key",tenant_id="tenant-a",payload={"note":PayloadField({ref.handle:"x"},"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"resolved_handle_without_attached_reference_rejected",lambda:create_message(message_id="bad-detached-handle",tenant_id="tenant-a",payload={"note":PayloadField(resolved.handle,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    other_ref=SecretReference("kms://other/current",3,"tenant-a/other")
+    _expect_denied(checks,"resolved_handle_with_different_reference_rejected",lambda:create_message(message_id="bad-cross-ref-handle",tenant_id="tenant-a",payload={"note":PayloadField(resolved.handle,"business_data")},secret_ref=other_ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    parser_only_mapping=json.dumps({"handle":"opaque-parser-only","generation":11},sort_keys=True)
+    parser_only_positional=json.dumps(["opaque-parser-only",11])
+    parser_only_nested=json.dumps({"outer":[{"handle":"opaque-parser-only","generation":11}]},sort_keys=True)
+    _expect_denied(checks,"json_parser_mapping_secret_shape_rejected",lambda:create_message(message_id="bad-parser-map",tenant_id="tenant-a",payload={"note":PayloadField(parser_only_mapping,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"json_parser_positional_secret_shape_rejected",lambda:create_message(message_id="bad-parser-positional",tenant_id="tenant-a",payload={"note":PayloadField(parser_only_positional,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"json_parser_nested_secret_shape_rejected",lambda:create_message(message_id="bad-parser-nested",tenant_id="tenant-a",payload={"note":PayloadField(parser_only_nested,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"nested_list_secret_material_rejected",lambda:create_message(message_id="bad-nested-list-secret",tenant_id="tenant-a",payload={"note":PayloadField(["prefix",resolved],"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"nested_object_secret_material_rejected",lambda:create_message(message_id="bad-nested-object-secret",tenant_id="tenant-a",payload={"note":PayloadField({"safe":"x","nested":{"secret":resolved}},"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"opaque_payload_value_type_rejected",lambda:create_message(message_id="bad-opaque-payload",tenant_id="tenant-a",payload={"note":PayloadField(object(),"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))

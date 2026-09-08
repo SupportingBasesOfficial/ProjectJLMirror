@@ -105,7 +105,15 @@ def _bounded_tracestate(value: object | None) -> str | None:
         canonical.append(f"{key}={member_value}")
     return ",".join(canonical)
 
+def _validate_propagation_context(context: PropagationContext) -> None:
+    string_fields = (context.source, context.trust_level, context.classification, context.hop_scope)
+    if any(not isinstance(field, str) or not field for field in string_fields):
+        raise TraceContextRejected("propagation context string field invalid")
+    if not isinstance(context.leaving_jlmirror, bool):
+        raise TraceContextRejected("propagation context egress flag invalid")
+
 def _validate_attribute_profile(key: str, value: str, context: PropagationContext) -> None:
+    _validate_propagation_context(context)
     profile = ATTRIBUTE_PROFILES.get(key)
     if profile is None:
         raise TraceContextRejected("trace attribute is not allowlisted")
@@ -312,9 +320,11 @@ def run_probes() -> dict[str, bool]:
     malformed_traceparent_observed = process_message(env, traceparent=42)
     malformed_tracestate_observed = process_message(env, traceparent=valid, tracestate="not valid, =")
     malformed_attribute_observed = process_message(env, traceparent=valid, attributes={"component": "Bearer super-secret"}, propagation_context=consumer_context)
+    malformed_propagation_context_observed = process_message(env, traceparent=valid, attributes={"component": "consumer"}, propagation_context=PropagationContext(["consumer"], "authenticated_internal", "internal", "local_async_boundary", False))  # type: ignore[arg-type]
     checks["malformed_traceparent_does_not_abort_business_processing"] = _isolated_from_business(env, malformed_traceparent_observed)
     checks["malformed_tracestate_does_not_abort_business_processing"] = _isolated_from_business(env, malformed_tracestate_observed)
     checks["malformed_attribute_does_not_abort_business_processing"] = _isolated_from_business(env, malformed_attribute_observed)
+    checks["malformed_propagation_context_does_not_abort_business_processing"] = _isolated_from_business(env, malformed_propagation_context_observed)
 
     tenant_a_2 = process_message(BusinessEnvelope("tenant-a", "msg-2", "idem-2", "order-2", "payload-v2", "at_least_once"), traceparent=same_trace_other_parent, scope_authority=scope_authority)
     tenant_b = process_message(BusinessEnvelope("tenant-b", "msg-3", "idem-3", "order-3", "payload-v3", "at_least_once"), traceparent=same_trace_other_parent, scope_authority=scope_authority)

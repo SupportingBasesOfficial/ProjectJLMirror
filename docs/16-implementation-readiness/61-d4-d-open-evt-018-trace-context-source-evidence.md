@@ -21,7 +21,8 @@ The proof set covers:
 - prevention of source impersonation, untrusted/external propagation, protected-classification propagation, invalid hop scope, and unauthorized egress;
 - rejection of unknown attributes and of credential/protected content smuggled under otherwise benign allowlisted field names;
 - exclusion of secrets, credentials, authorization tokens, cookies, private keys and other non-allowlisted protected baggage from propagated telemetry context;
-- cross-tenant correlation isolation even when trace identifiers match;
+- tenant scoping of accepted trace identifiers before they are exposed as observable/exportable context: the same inbound trace ID remains correlatable inside one tenant but is deterministically transformed to a different trace ID for a different tenant, preventing a backend or exporter from joining tenants by the raw propagated trace ID;
+- cross-tenant correlation isolation even when the same valid inbound trace identifier is copied between tenants;
 - identical business identity, business effect, and delivery semantics with valid, missing, changed, or invalid trace context;
 - explicit separation from tenant, message, idempotency, ordering, delivery, and business-effect authorities.
 

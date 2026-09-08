@@ -153,9 +153,13 @@ def _scope_trace_to_tenant(trace: TraceContext, tenant_id: str) -> TraceContext:
     version, trace_id, parent_id, flags = trace.traceparent.split("-")
     scoped_trace_id = _tenant_scoped_hex(tenant_id, "trace-id", trace_id, 32)
     scoped_parent_id = _tenant_scoped_hex(tenant_id, "parent-id", parent_id, 16)
+    # W3C tracestate is validated on ingress but is intentionally not exported
+    # by this tenant-scoped profile. Vendor-controlled state can carry a global
+    # correlator or protected/high-cardinality value even when trace IDs are
+    # re-scoped, so the safe observable representation drops it entirely.
     return TraceContext(
         f"{version}-{scoped_trace_id}-{scoped_parent_id}-{flags}",
-        trace.tracestate,
+        None,
         trace.attributes,
     )
 
@@ -222,7 +226,8 @@ def run_probes() -> dict[str, bool]:
         "trace_context_not_delivery_authority": observed.envelope.delivery_semantics == "at_least_once",
         "valid_traceparent_accepted": strict_valid.traceparent == valid and observed.trace_context_disposition == "accepted_tenant_scoped",
         "accepted_traceparent_is_tenant_scoped": observed.trace.traceparent is not None and observed.trace.traceparent != valid and _valid_traceparent(observed.trace.traceparent),
-        "bounded_canonical_tracestate_accepted": observed.trace.tracestate == "vendor=value",
+        "bounded_canonical_tracestate_validated_on_ingress": strict_valid.tracestate == "vendor=value",
+        "observable_export_discards_tracestate": observed.trace.tracestate is None,
         "allowlisted_trace_attributes_preserved": attrs == {"component": "consumer", "phase": "receive"},
         "missing_trace_context_preserves_business_and_delivery_semantics": business_semantics(no_trace) == business_semantics(observed),
     }
@@ -265,12 +270,13 @@ def run_probes() -> dict[str, bool]:
 
     tenant_a_2 = process_message(BusinessEnvelope("tenant-a", "msg-2", "idem-2", "order-2", "payload-v2", "at_least_once"), traceparent=same_trace_other_parent)
     tenant_b = process_message(BusinessEnvelope("tenant-b", "msg-3", "idem-3", "order-3", "payload-v3", "at_least_once"), traceparent=same_trace_other_parent)
-    tenant_a_same_input = process_message(BusinessEnvelope("tenant-a", "msg-4", "idem-4", "order-4", "payload-v4", "at_least_once"), traceparent=valid)
-    tenant_b_same_input = process_message(BusinessEnvelope("tenant-b", "msg-5", "idem-5", "order-5", "payload-v5", "at_least_once"), traceparent=valid)
+    tenant_a_same_input = process_message(BusinessEnvelope("tenant-a", "msg-4", "idem-4", "order-4", "payload-v4", "at_least_once"), traceparent=valid, tracestate="vendor=global-correlation-123")
+    tenant_b_same_input = process_message(BusinessEnvelope("tenant-b", "msg-5", "idem-5", "order-5", "payload-v5", "at_least_once"), traceparent=valid, tracestate="vendor=global-correlation-123")
     checks["same_tenant_trace_correlation_allowed"] = can_correlate(observed, tenant_a_2)
     checks["cross_tenant_trace_correlation_blocked"] = not can_correlate(observed, tenant_b)
     checks["same_input_trace_id_is_stable_within_tenant"] = observed.trace.traceparent is not None and tenant_a_same_input.trace.traceparent is not None and observed.trace.traceparent.split("-")[1] == tenant_a_same_input.trace.traceparent.split("-")[1]
     checks["same_input_trace_id_is_different_across_tenants"] = observed.trace.traceparent is not None and tenant_b_same_input.trace.traceparent is not None and observed.trace.traceparent.split("-")[1] != tenant_b_same_input.trace.traceparent.split("-")[1]
+    checks["copied_tracestate_is_not_exported_across_tenants"] = tenant_a_same_input.trace.tracestate is None and tenant_b_same_input.trace.tracestate is None
 
     altered_trace = process_message(env, traceparent=same_trace_other_parent, tracestate=None)
     checks["trace_change_does_not_change_business_or_delivery_semantics"] = business_semantics(altered_trace) == business_semantics(observed)

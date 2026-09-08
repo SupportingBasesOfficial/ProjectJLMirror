@@ -77,7 +77,7 @@ jobs:
           from pathlib import Path
           plan=json.loads(Path('implementation/d4-eventing-async/d4-b-candidate-evaluation-plan.json').read_text()); state=json.loads(Path('implementation/d4-eventing-async/state-manifest.json').read_text()); ledger=json.loads(Path('implementation/d4-eventing-async/d4-b-evidence-plan.json').read_text()); tracks={t['track_id']:t for t in state['tracks']}
           d4c_credits=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity','producer_generation_nonresurrection_across_failover_restore','privileged_bounded_replay_with_original_identity_and_effect_safety','historical_reader_upcaster_semantic_and_equivalence_continuity','recovery_generation_rf_inventory_reconciliation_and_activation_gates']
-          d4d_credits=['workload_identity_to_broker_credential_adapter_least_privilege','tenant_and_contract_scoped_producer_consumer_authorization','message_protection_key_authority_and_historical_verifier_continuity']
+          d4d_credits=['workload_identity_to_broker_credential_adapter_least_privilege','tenant_and_contract_scoped_producer_consumer_authorization','message_protection_key_authority_and_historical_verifier_continuity','secret_credential_payload_exclusion_and_erasure_boundary']
           expected={'serialization':{'surface_policy':'explicit_surface_bound_profiles','internal_broker':'protobuf_profile','outbound_webhook':'bounded_json_plus_json_schema_profile'},'schema_catalog':'hybrid_reviewed_git_plus_registry_catalog','contract_version':'positive_integer_family_revision'}
           assert plan['mode']=='candidate_evaluation_only' and plan['selection_state']=='not_selected' and plan['selection_authority']=='not_granted'
           assert ledger['selection_state']=='selected' and ledger['candidate']==expected and ledger['current_run_auto_credit'] is False
@@ -87,7 +87,7 @@ jobs:
           assert d4c['evidence_completed']==d4c_credits and d4c['evidence_remaining']==[]
           d4d=tracks['D4-D']; assert d4d['candidate'] is None and d4d['candidate_status']=='not_selected' and d4d['state']=='candidate_selection_open'
           assert d4d['evidence_completed']==d4d_credits and d4d['evidence_remaining']==[x for x in d4d['required_evidence'] if x not in d4d_credits]
-          assert sum(len(t['evidence_completed']) for t in state['tracks'])==24
+          assert sum(len(t['evidence_completed']) for t in state['tracks'])==25
           assert state['gate_state']=='scoped' and state['d4_transport_authority']=='selected_not_granted' and state['canonical_product_implementation_authority']=='not_granted' and state['wave4_implementation_authority']=='not_granted' and state['production_authority']=='none' and state['c3_numeric_topology_authority']=='not_selected'
-          print('d4b_candidate_evaluation_boundary=PASS historical_plan=not_selected current_selection=selected_c2_profile evidence=5_of_5 d4a=kafka_7_of_7 d4c=9_of_9 d4d=3_of_5 d4wide=24/26 d4=scoped authorities=not_granted')
+          print('d4b_candidate_evaluation_boundary=PASS historical_plan=not_selected current_selection=selected_c2_profile evidence=5_of_5 d4a=kafka_7_of_7 d4c=9_of_9 d4d=4_of_5 d4wide=25/26 d4=scoped authorities=not_granted')
           PY

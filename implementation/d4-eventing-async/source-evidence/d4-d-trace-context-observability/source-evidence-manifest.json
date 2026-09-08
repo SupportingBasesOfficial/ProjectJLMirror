@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "gate_id": "D4",
+  "track_id": "D4-D",
+  "source_decision": "OPEN-EVT-018",
+  "evidence_id": "trace_context_observability_only_validation_and_redaction",
+  "mode": "source_evidence_only",
+  "source_base": "98fb99cc04fcf42e795596f68939149463645799",
+  "current_run_auto_credit": false,
+  "ledger_credit": [],
+  "candidate": null,
+  "candidate_status": "not_selected",
+  "selection_authority": "not_granted",
+  "trace_context_authority": "observability_only_validated_bounded_and_redacted",
+  "must_prove": [
+    "trace_context_is_observability_only",
+    "trace_context_never_becomes_tenant_authorization_idempotency_ordering_or_message_identity_authority",
+    "trace_fields_are_bounded_and_canonically_validated",
+    "untrusted_or_malformed_trace_context_is_rejected_or_safely_regenerated_without_changing_message_semantics",
+    "sensitive_trace_attributes_are_redacted_by_policy",
+    "cross_tenant_trace_correlation_cannot_expose_or_join_protected_context",
+    "missing_trace_context_does_not_change_business_effect_or_delivery_semantics"
+  ],
+  "source_time_state": {
+    "d4a": "7_of_7_selected",
+    "d4b": "5_of_5_selected",
+    "d4c": "9_of_9_unselected",
+    "d4d": "4_of_5_unselected",
+    "d4wide": "25_of_26",
+    "d4_transport_authority": "selected_not_granted",
+    "canonical_product_implementation_authority": "not_granted",
+    "wave4_implementation_authority": "not_granted",
+    "production_authority": "none",
+    "c3_numeric_topology_authority": "not_selected"
+  }
+}

@@ -12,6 +12,7 @@ D4D_CREDITS = [
     "workload_identity_to_broker_credential_adapter_least_privilege",
     "tenant_and_contract_scoped_producer_consumer_authorization",
     "message_protection_key_authority_and_historical_verifier_continuity",
+    "secret_credential_payload_exclusion_and_erasure_boundary",
 ]
 _legacy_load = historical.load
 
@@ -28,9 +29,9 @@ def _current_errors(state: dict) -> list[str]:
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
         errors.append("D4-D selection leakage")
     if d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != [x for x in required if x not in D4D_CREDITS]:
-        errors.append("D4-D current state must be exactly 3/5")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 24:
-        errors.append("D4-wide evidence count must be 24/26")
+        errors.append("D4-D current state must be exactly 4/5")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 25:
+        errors.append("D4-wide evidence count must be 25/26")
     return errors
 
 
@@ -65,7 +66,7 @@ def main() -> int:
         for error in errors:
             print(f"D4C_OPEN_EVT_009_SOURCE_ERROR: {error}")
         return 1
-    print("d4c_quarantine_redrive_source=PASS historical_oracle=preserved current_d4c=9_of_9 current_d4d=3_of_5 current_d4wide=24_of_26 selection=not_selected")
+    print("d4c_quarantine_redrive_source=PASS historical_oracle=preserved current_d4c=9_of_9 current_d4d=4_of_5 current_d4wide=25_of_26 selection=not_selected")
     return 0
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ PLAN=Path('implementation/d4-eventing-async/d4-d-candidate-evaluation-plan.json'
 EXPECTED_SOURCE_DECISIONS=['OPEN-EVT-016','OPEN-EVT-017','OPEN-EVT-018']
 EXPECTED_AXES={'workload_identity_to_broker_credential_adapter':'OPEN-EVT-016','tenant_and_contract_scoped_producer_consumer_authorization':'OPEN-EVT-016','message_protection_key_authority_and_historical_verifier_continuity':'OPEN-EVT-017','secret_credential_payload_exclusion_and_erasure_boundary':'OPEN-EVT-017','trace_context_observability_only_validation_and_redaction':'OPEN-EVT-018'}
 D4C_CREDITS=['ack_after_durable_responsibility_and_lease_ambiguity','quarantine_redrive_current_authority_and_dedup_preservation','bounded_message_batch_compression_and_parser_limits','scoped_content_equivalence_confidentiality_and_conflict_rejection','outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity','producer_generation_nonresurrection_across_failover_restore','privileged_bounded_replay_with_original_identity_and_effect_safety','historical_reader_upcaster_semantic_and_equivalence_continuity','recovery_generation_rf_inventory_reconciliation_and_activation_gates']
-D4D_REQUIRED=['workload_identity_to_broker_credential_adapter_least_privilege','tenant_and_contract_scoped_producer_consumer_authorization','message_protection_key_authority_and_historical_verifier_continuity','secret_credential_payload_exclusion_and_erasure_boundary','trace_context_observability_only_validation_and_redaction']; D4D_CREDITS=D4D_REQUIRED[:3]
+D4D_REQUIRED=['workload_identity_to_broker_credential_adapter_least_privilege','tenant_and_contract_scoped_producer_consumer_authorization','message_protection_key_authority_and_historical_verifier_continuity','secret_credential_payload_exclusion_and_erasure_boundary','trace_context_observability_only_validation_and_redaction']; D4D_CREDITS=D4D_REQUIRED[:4]
 FORBIDDEN_OUTPUTS=['selected','preferred_without_evidence','production_ready','authority_granted']; ALLOWED_OUTPUTS=['eligible_for_evidence_execution','ineligible_by_contract','insufficient_evidence']
 def load(root,p): return json.loads((root/p).read_text())
 def validate(root):
@@ -36,11 +36,11 @@ def validate(root):
  if b.get('candidate_status')!='selected_c2_profile' or len(b.get('evidence_completed',[]))!=5 or b.get('evidence_remaining')!=[]: e.append('D4-B must remain 5/5')
  if c.get('candidate') is not None or c.get('candidate_status')!='not_selected' or c.get('state')!='candidate_selection_open' or c.get('evidence_completed')!=D4C_CREDITS or c.get('evidence_remaining')!=[]: e.append('D4-C must remain 9/9 open/unselected')
  if d.get('source_decisions')!=EXPECTED_SOURCE_DECISIONS or d.get('candidate') is not None or d.get('candidate_status')!='not_selected' or d.get('state')!='candidate_selection_open': e.append('D4-D state boundary drift')
- if d.get('required_evidence')!=D4D_REQUIRED or d.get('evidence_completed')!=D4D_CREDITS or d.get('evidence_remaining')!=D4D_REQUIRED[3:]: e.append('current D4-D state must reflect exactly three separately promoted credits')
- if sum(len(t.get('evidence_completed',[])) for t in tracks.values())!=24: e.append('D4-wide evidence must be exactly 24/26')
+ if d.get('required_evidence')!=D4D_REQUIRED or d.get('evidence_completed')!=D4D_CREDITS or d.get('evidence_remaining')!=D4D_REQUIRED[4:]: e.append('current D4-D state must reflect exactly four separately promoted credits')
+ if sum(len(t.get('evidence_completed',[])) for t in tracks.values())!=25: e.append('D4-wide evidence must be exactly 25/26')
  if (state.get('gate_state'),state.get('d4_transport_authority'),state.get('canonical_product_implementation_authority'),state.get('wave4_implementation_authority'),state.get('production_authority'),state.get('c3_numeric_topology_authority'))!=('scoped','selected_not_granted','not_granted','not_granted','none','not_selected'): e.append('global authority boundary changed')
  return e
 if __name__=='__main__':
  root=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else Path.cwd(); errors=validate(root); [print('D4D_EVAL_ERROR:',x,file=sys.stderr) for x in errors]
  if errors: raise SystemExit(1)
- print('d4d_candidate_evaluation_plan=PASS axes=5 selection=not_selected current_d4d=3_of_5 d4wide=24/26 authorities=unchanged')
+ print('d4d_candidate_evaluation_plan=PASS axes=5 selection=not_selected current_d4d=4_of_5 d4wide=25/26 authorities=unchanged')

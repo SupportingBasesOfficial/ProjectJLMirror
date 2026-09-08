@@ -26,14 +26,20 @@ def main():
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d['correction_lineage'].__setitem__('promotion_eligible_source_must_be_this_corrected_lineage_or_later',False)))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d['correction_lineage'].__setitem__('superseded_codex_review_id',0)))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.PLAN,lambda d:d['axes'][v.EXPECTED_AXIS]['must_prove'].pop()))
-    def grant_fourth(r):
+    def regress_fourth(r):
         def fn(d):
-            t=d['tracks'][3]; fourth=v.EXPECTED_ID; t['evidence_remaining'].remove(fourth); t['evidence_completed'].append(fourth)
+            t=d['tracks'][3]; fourth=v.EXPECTED_ID; t['evidence_completed'].remove(fourth); t['evidence_remaining'].insert(0,fourth)
         mutate_json(r,v.STATE,fn)
-    mutate_and_expect_failure(grant_fourth)
+    mutate_and_expect_failure(regress_fourth)
+    def grant_fifth(r):
+        def fn(d):
+            t=d['tracks'][3]; fifth=v.FIFTH; t['evidence_remaining'].remove(fifth); t['evidence_completed'].append(fifth)
+        mutate_json(r,v.STATE,fn)
+    mutate_and_expect_failure(grant_fifth)
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d['source_time_state'].__setitem__('d4d','4_of_5_unselected')))
+    mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d['source_time_state'].__setitem__('d4wide','25_of_26')))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:(d.__setitem__('candidate',{'kind':'secret_profile'}),d.__setitem__('candidate_status','selected'))))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.STATE,lambda d:d.__setitem__('production_authority','granted')))
-    print('d4d_secret_exclusion_source_falsification=PASS fourth_credit_without_promotion=blocked superseded_source_reuse=blocked source_snapshot=preserved authority_leakage=blocked')
+    print('d4d_secret_exclusion_source_falsification=PASS source_snapshot=3_of_5_24_of_26_preserved current_fourth_credit=required fifth_credit_without_promotion=blocked superseded_source_reuse=blocked authority_leakage=blocked')
 
 if __name__=='__main__': main()

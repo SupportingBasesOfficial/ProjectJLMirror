@@ -22,6 +22,7 @@ D4D_CREDITS = [
     "workload_identity_to_broker_credential_adapter_least_privilege",
     "tenant_and_contract_scoped_producer_consumer_authorization",
     "message_protection_key_authority_and_historical_verifier_continuity",
+    "secret_credential_payload_exclusion_and_erasure_boundary",
 ]
 CURRENT_CREDITS = [
     D4C_CREDIT_008,D4C_CREDIT_009,D4C_CREDIT_010,D4C_CREDIT_011,D4C_CREDIT_012,
@@ -39,7 +40,7 @@ def _current_errors(state: dict) -> list[str]:
     if d4c.get("evidence_completed") != CURRENT_CREDITS or d4c.get("evidence_remaining") != expected_remaining: errors.append("D4-C current ledger drift beyond separately promoted nine reviewed obligations")
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open": errors.append("D4-D selection leakage")
     if d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != [x for x in d4d.get("required_evidence", []) if x not in D4D_CREDITS]: errors.append("D4-D current ledger drift beyond separately promoted OPEN-EVT-016/017 evidence")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 24: errors.append("D4-wide evidence count drift")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 25: errors.append("D4-wide evidence count drift")
     return errors
 
 
@@ -71,7 +72,7 @@ def main() -> int:
     if errors:
         for error in errors: print(f"ERROR: {error}")
         return 1
-    print("d4c_ack_lease_checkpoint_source=PASS source_auto_credit=false historical_oracle=preserved current_d4c=9_of_9 current_d4d=3_of_5 d4wide=24_of_26 selection=not_selected")
+    print("d4c_ack_lease_checkpoint_source=PASS source_auto_credit=false historical_oracle=preserved current_d4c=9_of_9 current_d4d=4_of_5 d4wide=25_of_26 selection=not_selected")
     return 0
 
 if __name__ == "__main__": raise SystemExit(main())

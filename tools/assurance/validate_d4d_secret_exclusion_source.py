@@ -34,7 +34,7 @@ EXPECTED_PROBES={
 'secret_reference_empty_handle_rejected','secret_reference_nonpositive_generation_rejected','secret_reference_boolean_generation_rejected','secret_reference_fractional_generation_rejected','secret_reference_invalid_scope_rejected',
 'verification_generation_nonpositive_rejected','verification_generation_boolean_rejected','verification_generation_fractional_rejected',
 'verification_reference_namespace_rejected','verification_reference_noncanonical_id_rejected',
-'secret_handle_verification_namespace_rejected','secret_handle_audit_namespace_rejected','verification_reference_alias_secret_handle_rejected','verification_reference_embedding_secret_handle_rejected',
+'secret_handle_verification_namespace_rejected','secret_handle_audit_namespace_rejected','verification_reference_alias_secret_handle_rejected','verification_reference_embedding_secret_handle_rejected','durable_authority_verification_reference_alias_rejected',
 'audit_reference_is_derived_non_secret','secret_handle_scope_rejected',
 'unsupported_record_kind_rejected',
 'sanitize_reconstructed_alias_rejected','erase_reconstructed_alias_rejected',
@@ -54,7 +54,7 @@ EXPECTED_PROBES={
 'positional_serialized_resolved_secret_material_rejected','nested_positional_serialized_resolved_secret_material_rejected',
 'text_serialized_resolved_secret_material_rejected','positional_text_serialized_resolved_secret_material_rejected','nested_text_serialized_resolved_secret_material_rejected','secret_handle_text_fragment_rejected',
 'top_level_payload_key_secret_handle_rejected','nested_payload_key_secret_handle_rejected',
-'resolved_handle_without_attached_reference_rejected','resolved_handle_with_different_reference_rejected',
+'fresh_worker_configured_handle_without_resolution_history_rejected','resolved_handle_without_attached_reference_rejected','resolved_handle_with_different_reference_rejected',
 'json_parser_mapping_secret_shape_rejected','json_parser_positional_secret_shape_rejected','json_parser_nested_secret_shape_rejected',
 'nested_list_secret_material_rejected','nested_object_secret_material_rejected','opaque_payload_value_type_rejected',
 'unauthorized_resolution_fails_closed','truthy_nonboolean_authorization_rejected','cross_scope_resolution_fails_closed',
@@ -99,4 +99,4 @@ if __name__=='__main__':
     errors=validate(root)
     [print('D4D_SECRET_EXCLUSION_SOURCE_ERROR:',x,file=sys.stderr) for x in errors]
     if errors:raise SystemExit(1)
-    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=94 corrected_lineage=true')
+    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=96 corrected_lineage=true')

@@ -8,6 +8,12 @@
       "invariant_ids": ["INV-BOUNDARY-001", "INV-OBS-001"]
     },
     {
+      "id": "ADV-BOUNDARY-RESOURCE-BOUND",
+      "name": "Unbounded work from untrusted boundary metadata",
+      "description": "Untrusted or optional metadata can trigger allocation, encoding, hashing, HMAC, parsing, iteration or other work proportional to attacker-controlled length before a cheap canonical bound is enforced.",
+      "invariant_ids": ["INV-BOUNDARY-003", "INV-OBS-001"]
+    },
+    {
       "id": "ADV-SEMANTIC-ALLOWLIST-BYPASS",
       "name": "Semantic policy bypass through alternate representation or entry point",
       "description": "Structurally valid data bypasses deny-by-default semantic classification, allowlisting, redaction, trust or egress policy through an alternate construction or call path.",

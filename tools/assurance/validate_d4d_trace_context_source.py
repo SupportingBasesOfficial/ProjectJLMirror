@@ -14,6 +14,17 @@ EXPECTED_ID='trace_context_observability_only_validation_and_redaction'
 EXPECTED_DECISION='OPEN-EVT-018'
 REQUIRED=[E1,E2,E3,E4,EXPECTED_ID]
 CURRENT_CREDITED=[E1,E2,E3,E4]
+EXPECTED_SOURCE_TIME_STATE={
+'d4a':'7_of_7_selected',
+'d4b':'5_of_5_selected',
+'d4c':'9_of_9_unselected',
+'d4d':'4_of_5_unselected',
+'d4wide':'25_of_26',
+'d4_transport_authority':'selected_not_granted',
+'canonical_product_implementation_authority':'not_granted',
+'wave4_implementation_authority':'not_granted',
+'production_authority':'none',
+'c3_numeric_topology_authority':'not_selected'}
 EXPECTED_MUST={
 'trace_context_is_observability_only',
 'trace_context_never_becomes_tenant_authorization_idempotency_ordering_or_message_identity_authority',
@@ -23,7 +34,7 @@ EXPECTED_MUST={
 'cross_tenant_trace_correlation_cannot_expose_or_join_protected_context',
 'missing_trace_context_does_not_change_business_effect_or_delivery_semantics'}
 EXPECTED_PROBES={
-'trace_context_is_observability_only','trace_context_not_tenant_authority','trace_context_not_idempotency_authority','trace_context_not_ordering_authority','trace_context_not_message_identity_authority','trace_context_not_delivery_authority','valid_traceparent_accepted','bounded_canonical_tracestate_accepted','allowlisted_trace_attributes_preserved','missing_trace_context_preserves_business_and_delivery_semantics','malformed_traceparent_1_rejected','malformed_traceparent_2_rejected','malformed_traceparent_3_rejected','malformed_traceparent_4_rejected','malformed_traceparent_5_rejected','orphan_tracestate_rejected','non_string_tracestate_rejected','oversized_tracestate_rejected','malformed_tracestate_member_rejected','duplicate_tracestate_key_rejected','excess_tracestate_members_rejected','excess_trace_attributes_rejected','unknown_trace_attribute_rejected','sensitive_value_under_allowlisted_key_rejected','non_string_trace_attributes_rejected','same_tenant_trace_correlation_allowed','cross_tenant_trace_correlation_blocked','trace_change_does_not_change_business_or_delivery_semantics'}
+'trace_context_is_observability_only','trace_context_not_tenant_authority','trace_context_not_idempotency_authority','trace_context_not_ordering_authority','trace_context_not_message_identity_authority','trace_context_not_delivery_authority','valid_traceparent_accepted','bounded_canonical_tracestate_accepted','allowlisted_trace_attributes_preserved','missing_trace_context_preserves_business_and_delivery_semantics','malformed_traceparent_1_rejected','malformed_traceparent_2_rejected','malformed_traceparent_3_rejected','malformed_traceparent_4_rejected','malformed_traceparent_5_rejected','orphan_tracestate_rejected','non_string_tracestate_rejected','oversized_tracestate_rejected','malformed_tracestate_member_rejected','duplicate_tracestate_key_rejected','excess_tracestate_members_rejected','excess_trace_attributes_rejected','unknown_trace_attribute_rejected','sensitive_value_under_allowlisted_key_rejected','non_string_trace_attributes_rejected','attribute_context_required','component_source_impersonation_rejected','untrusted_attribute_source_rejected','protected_classification_attribute_rejected','wrong_hop_scope_attribute_rejected','egress_attribute_rejected','same_tenant_trace_correlation_allowed','cross_tenant_trace_correlation_blocked','trace_change_does_not_change_business_or_delivery_semantics'}
 def validate(root:Path):
     e=[]; m=json.loads((root/MANIFEST).read_text()); state=json.loads((root/STATE).read_text()); plan=json.loads((root/PLAN).read_text())
     if m.get('evidence_id')!=EXPECTED_ID or m.get('source_decision')!=EXPECTED_DECISION:e.append('wrong source evidence identity')
@@ -32,7 +43,7 @@ def validate(root:Path):
     if m.get('current_run_auto_credit') is not False or m.get('ledger_credit')!=[]:e.append('source evidence must remain non-promoting at source time')
     if m.get('candidate') is not None or m.get('candidate_status')!='not_selected' or m.get('selection_authority')!='not_granted':e.append('source evidence must not select D4-D')
     st=m.get('source_time_state',{})
-    if st.get('d4d')!='4_of_5_unselected' or st.get('d4wide')!='25_of_26':e.append('source-time snapshot must remain 4/5 and 25/26')
+    if st!=EXPECTED_SOURCE_TIME_STATE:e.append('source-time snapshot or authority state drift')
     axis=plan['axes'][EXPECTED_ID]
     if axis.get('decision')!=EXPECTED_DECISION or set(axis.get('must_prove',[]))!=EXPECTED_MUST:e.append('candidate-plan/source must_prove mismatch')
     tracks={t['track_id']:t for t in state['tracks']}; d=tracks['D4-D']
@@ -49,4 +60,4 @@ if __name__=='__main__':
     root=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else Path.cwd(); errors=validate(root)
     [print('D4D_TRACE_CONTEXT_SOURCE_ERROR:',x,file=sys.stderr) for x in errors]
     if errors:raise SystemExit(1)
-    print('d4d_trace_context_source=PASS source_snapshot=4_of_5 source_auto_credit=false current_d4d=4_of_5 d4wide=25/26 selection=not_selected authorities=unchanged probes=28')
+    print('d4d_trace_context_source=PASS source_snapshot=4_of_5 source_auto_credit=false current_d4d=4_of_5 d4wide=25/26 selection=not_selected authorities=unchanged probes=34')

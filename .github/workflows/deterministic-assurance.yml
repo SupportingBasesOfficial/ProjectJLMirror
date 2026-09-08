@@ -10,10 +10,16 @@ on:
       - synchronize
       - reopened
       - ready_for_review
+  pull_request_review_comment:
+    types:
+      - created
+      - edited
+      - deleted
   workflow_dispatch:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   deterministic-assurance:
@@ -38,6 +44,32 @@ jobs:
           actual_sha="$(git rev-parse HEAD)"
           printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual_sha"
           test "$actual_sha" = "$EXPECTED_SHA"
+
+      - name: Falsify adversarial learning policy
+        shell: bash
+        run: PYTHONPATH=tools/assurance python3 tools/assurance/test_validate_adversarial_learning.py
+
+      - name: Validate static adversarial learning graph
+        shell: bash
+        run: python3 tools/assurance/validate_adversarial_learning.py --root .
+
+      - name: Collect all PR review comments for learning reconciliation
+        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/comments?per_page=100" \
+            > runtime-evidence/pr-review-comments.json
+
+      - name: Require every material PR finding to be internalized
+        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment'
+        shell: bash
+        run: python3 tools/assurance/validate_adversarial_learning.py --root . --review-comments runtime-evidence/pr-review-comments.json
 
       - name: Falsify validator policy
         shell: bash

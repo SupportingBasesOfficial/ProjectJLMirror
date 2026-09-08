@@ -13,6 +13,7 @@ D4D_CREDITS = [
     "workload_identity_to_broker_credential_adapter_least_privilege",
     "tenant_and_contract_scoped_producer_consumer_authorization",
     "message_protection_key_authority_and_historical_verifier_continuity",
+    "secret_credential_payload_exclusion_and_erasure_boundary",
 ]
 _legacy_load = historical.load
 
@@ -30,11 +31,11 @@ def _current_errors(state: dict) -> list[str]:
         errors.append("D4-C global selection leakage")
     expected_remaining = [x for x in d4d.get("required_evidence", []) if x not in D4D_CREDITS]
     if d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != expected_remaining:
-        errors.append("D4-D current state must remain exactly 3/5")
+        errors.append("D4-D current state must remain exactly 4/5")
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
         errors.append("D4-D selection leakage")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 24:
-        errors.append("D4-wide current credit count must be 24/26")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 25:
+        errors.append("D4-wide current credit count must be 25/26")
     expected_authority = {
         "gate_state": "scoped",
         "d4_transport_authority": "selected_not_granted",
@@ -81,7 +82,7 @@ def main() -> int:
     finally:
         historical.load = original
     if result == 0:
-        print("d4c_open_evt_013_current_projection=PASS current_d4d=3/5 current_d4wide=24/26 historical_oracle=byte_preserved")
+        print("d4c_open_evt_013_current_projection=PASS current_d4d=4/5 current_d4wide=25/26 historical_oracle=byte_preserved")
     return result
 
 

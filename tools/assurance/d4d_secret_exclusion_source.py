@@ -60,6 +60,8 @@ VERIFICATION_REFERENCE_PREFIX = "verification-profile://"
 AUDIT_REFERENCE_PREFIX = "secret-audit-ref://"
 CANONICAL_ID = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 CANONICAL_SCOPE = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)+$")
+URL_DECODE_MAX_ROUNDS = 4
+URL_DECODE_MAX_LENGTH = 16384
 DURABLE_SECRET_AUTHORITY_HANDLES = frozenset({
     "kms://orders-signing/current",
     "kms://other/current",
@@ -123,23 +125,38 @@ def _url_form_contains_secret_material(value: str, secret_handle: object = None)
     return False
 
 
-def _url_escaped_contains_secret_material(value: str, secret_handle: object = None) -> bool:
-    if "%" not in value:
-        return False
-    decoded = unquote(value)
-    if decoded == value:
-        return False
-    if _known_secret_handle_in_text(decoded, secret_handle):
+def _decoded_text_contains_secret_material(value: str, secret_handle: object = None) -> bool:
+    if _known_secret_handle_in_text(value, secret_handle):
         return True
-    stripped = decoded.lstrip()
+    stripped = value.lstrip()
     if stripped.startswith(("{", "[")):
         try:
-            structured = json.loads(decoded)
+            structured = json.loads(value)
         except (json.JSONDecodeError, TypeError):
             structured = None
         if structured is not None and _value_contains_secret_material(structured, secret_handle):
             return True
-    return _url_form_contains_secret_material(decoded, secret_handle)
+    return _url_form_contains_secret_material(value, secret_handle)
+
+
+def _url_escaped_contains_secret_material(value: str, secret_handle: object = None) -> bool:
+    if "%" not in value:
+        return False
+    decoded = value
+    for _ in range(URL_DECODE_MAX_ROUNDS):
+        if "%" not in decoded:
+            return False
+        next_decoded = unquote(decoded)
+        if next_decoded == decoded:
+            return False
+        decoded = next_decoded
+        if len(decoded) > URL_DECODE_MAX_LENGTH:
+            raise SecretBoundaryDenied("URL-decoded payload text exceeds normalization bound")
+        if _decoded_text_contains_secret_material(decoded, secret_handle):
+            return True
+    if "%" in decoded and unquote(decoded) != decoded:
+        return True
+    return False
 
 
 def _text_contains_secret_material(value: str, secret_handle: object = None) -> bool:
@@ -515,11 +532,13 @@ def run_probes() -> dict[str, bool]:
     nested_textual_serialized_resolved = json.dumps({"outer":[{"inner":serialized_resolved}]}, sort_keys=True)
     url_form_serialized_resolved = urlencode(serialized_resolved)
     url_escaped_serialized_resolved = quote(textual_serialized_resolved, safe="")
+    double_url_escaped_serialized_resolved = quote(url_escaped_serialized_resolved, safe="")
     _expect_denied(checks,"text_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-text-serialized-secret",tenant_id="tenant-a",payload={"note":PayloadField(textual_serialized_resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"positional_text_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-positional-text-serialized-secret",tenant_id="tenant-a",payload={"note":PayloadField(positional_textual_serialized_resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"nested_text_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-nested-text-serialized-secret",tenant_id="tenant-a",payload={"note":PayloadField(nested_textual_serialized_resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"url_form_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-url-form-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_form_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"url_escaped_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-url-escaped-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_escaped_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"double_url_escaped_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-double-url-escaped-secret",tenant_id="tenant-a",payload={"note":PayloadField(double_url_escaped_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"secret_handle_text_fragment_rejected",lambda:create_message(message_id="bad-secret-handle-text",tenant_id="tenant-a",payload={"note":PayloadField(f"opaque-prefix:{ref.handle}:suffix","business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"top_level_payload_key_secret_handle_rejected",lambda:create_message(message_id="bad-top-key",tenant_id="tenant-a",payload={ref.handle:PayloadField("x","business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"nested_payload_key_secret_handle_rejected",lambda:create_message(message_id="bad-nested-key",tenant_id="tenant-a",payload={"note":PayloadField({ref.handle:"x"},"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))

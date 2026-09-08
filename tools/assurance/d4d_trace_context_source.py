@@ -115,23 +115,6 @@ def _validate_propagation_context(context: object) -> PropagationContext:
         raise TraceContextRejected("propagation context egress flag invalid")
     return context
 
-def _validate_trace_context_object(trace: object) -> TraceContext:
-    if not isinstance(trace, TraceContext):
-        raise TraceContextRejected("trace context object invalid")
-    if trace.traceparent is not None and not _valid_traceparent(trace.traceparent):
-        raise TraceContextRejected("trace context traceparent invalid")
-    if trace.tracestate is not None:
-        if trace.traceparent is None:
-            raise TraceContextRejected("trace context tracestate requires traceparent")
-        if _bounded_tracestate(trace.tracestate) != trace.tracestate:
-            raise TraceContextRejected("trace context tracestate non-canonical")
-    if not isinstance(trace.attributes, tuple):
-        raise TraceContextRejected("trace context attributes container invalid")
-    for item in trace.attributes:
-        if not isinstance(item, tuple) or len(item) != 2 or not isinstance(item[0], str) or not isinstance(item[1], str):
-            raise TraceContextRejected("trace context attribute entry invalid")
-    return trace
-
 def _validate_attribute_profile(key: str, value: str, context: PropagationContext) -> None:
     context = _validate_propagation_context(context)
     profile = ATTRIBUTE_PROFILES.get(key)
@@ -151,6 +134,31 @@ def _validate_attribute_profile(key: str, value: str, context: PropagationContex
         raise TraceContextRejected("trace attribute may not leave JLMIRROR")
     if key == "component" and value != context.source:
         raise TraceContextRejected("component telemetry cannot impersonate another source")
+
+def _validate_trace_context_object(trace: object, propagation_context: object | None = None) -> TraceContext:
+    if not isinstance(trace, TraceContext):
+        raise TraceContextRejected("trace context object invalid")
+    if trace.traceparent is not None and not _valid_traceparent(trace.traceparent):
+        raise TraceContextRejected("trace context traceparent invalid")
+    if trace.tracestate is not None:
+        if trace.traceparent is None:
+            raise TraceContextRejected("trace context tracestate requires traceparent")
+        if _bounded_tracestate(trace.tracestate) != trace.tracestate:
+            raise TraceContextRejected("trace context tracestate non-canonical")
+    if not isinstance(trace.attributes, tuple) or len(trace.attributes) > MAX_ATTRS:
+        raise TraceContextRejected("trace context attributes container invalid")
+    context: PropagationContext | None = None
+    if trace.attributes:
+        context = _validate_propagation_context(propagation_context)
+    for item in trace.attributes:
+        if not isinstance(item, tuple) or len(item) != 2:
+            raise TraceContextRejected("trace context attribute entry invalid")
+        key, value = item
+        if not isinstance(key, str) or not isinstance(value, str) or not key or len(key) > MAX_ATTR_KEY or len(value) > MAX_ATTR_VALUE:
+            raise TraceContextRejected("trace context attribute out of bounds")
+        assert context is not None
+        _validate_attribute_profile(key, value, context)
+    return trace
 
 def _redact_attributes(attributes: object, context: PropagationContext | None) -> tuple[tuple[str, str], ...]:
     if not isinstance(attributes, dict):
@@ -182,8 +190,8 @@ def _tenant_scoped_hex(tenant_id: str, label: str, value: str, length: int) -> s
     digest = hashlib.sha256(f"jlmirror-trace-scope-v4\0{tenant_id}\0{label}\0{value}".encode("utf-8")).hexdigest()[:length]
     return ("1" + digest[1:]) if set(digest) == {"0"} else digest
 
-def _scope_trace_to_tenant(trace: object, tenant_id: object) -> TraceContext:
-    trace = _validate_trace_context_object(trace)
+def _scope_trace_to_tenant(trace: object, tenant_id: object, propagation_context: object | None = None) -> TraceContext:
+    trace = _validate_trace_context_object(trace, propagation_context)
     if not isinstance(tenant_id, str) or not tenant_id:
         raise TraceContextRejected("tenant scope identity invalid")
     if not trace.traceparent:
@@ -211,8 +219,8 @@ class TenantScopeAuthority:
         mac_hex = hmac.new(self._key, self._payload(tenant_id, scoped_trace_id), hashlib.sha256).hexdigest()
         return TenantScopeProof(tenant_id, scoped_trace_id, mac_hex)
 
-    def scope_and_issue(self, tenant_id: object, trace: object) -> tuple[TraceContext, TenantScopeProof | None]:
-        scoped = _scope_trace_to_tenant(trace, tenant_id)
+    def scope_and_issue(self, tenant_id: object, trace: object, *, propagation_context: object | None = None) -> tuple[TraceContext, TenantScopeProof | None]:
+        scoped = _scope_trace_to_tenant(trace, tenant_id, propagation_context)
         if not scoped.traceparent:
             return scoped, None
         assert isinstance(tenant_id, str)
@@ -249,13 +257,13 @@ def process_message(envelope: BusinessEnvelope, *, traceparent: object | None, t
                 next_proof = scope_proof
                 disposition = "accepted_authenticated_tenant_scope"
             else:
-                trace, next_proof = scope_authority.scope_and_issue(envelope.tenant_id, normalized)
+                trace, next_proof = scope_authority.scope_and_issue(envelope.tenant_id, normalized, propagation_context=propagation_context)
                 disposition = "accepted_rescoped_tenant_boundary"
         elif isinstance(scope_authority, TenantScopeAuthority):
-            trace, next_proof = scope_authority.scope_and_issue(envelope.tenant_id, normalized)
+            trace, next_proof = scope_authority.scope_and_issue(envelope.tenant_id, normalized, propagation_context=propagation_context)
             disposition = "accepted_tenant_scoped"
         else:
-            trace = _scope_trace_to_tenant(normalized, envelope.tenant_id)
+            trace = _scope_trace_to_tenant(normalized, envelope.tenant_id, propagation_context)
             next_proof = None
             disposition = "accepted_tenant_scoped"
     except TraceContextRejected:
@@ -387,15 +395,25 @@ def run_probes() -> dict[str, bool]:
         checks[f"malformed_scope_proof_{field}_does_not_abort_business_processing"] = _isolated_from_business(candidate.envelope, candidate)
 
     malformed_scope_inputs = [
-        ([], normalize_trace_context(valid, None)),
-        ("tenant-a", object()),
-        ("tenant-a", TraceContext(42, None, ())),  # type: ignore[arg-type]
-        ("tenant-a", TraceContext(valid, None, [["component", "consumer"]])),  # type: ignore[arg-type]
+        ([], normalize_trace_context(valid, None), None),
+        ("tenant-a", object(), None),
+        ("tenant-a", TraceContext(42, None, ()), None),  # type: ignore[arg-type]
+        ("tenant-a", TraceContext(valid, None, [["component", "consumer"]]), None),  # type: ignore[arg-type]
     ]
     checks["scope_and_issue_runtime_boundary_fail_closed"] = all(
-        _rejected(lambda tenant_id=tenant_id, trace=trace: scope_authority.scope_and_issue(tenant_id, trace))
-        for tenant_id, trace in malformed_scope_inputs
+        _rejected(lambda tenant_id=tenant_id, trace=trace, context=context: scope_authority.scope_and_issue(tenant_id, trace, propagation_context=context))
+        for tenant_id, trace, context in malformed_scope_inputs
     )
+
+    direct_allowed = TraceContext(valid, None, (("component", "consumer"),))
+    direct_unknown = TraceContext(valid, None, (("authorization", "Bearer secret"),))
+    direct_sensitive = TraceContext(valid, None, (("component", "Bearer secret"),))
+    direct_impersonated = TraceContext(valid, None, (("component", "producer"),))
+    checks["scope_and_issue_requires_context_for_attributes"] = _rejected(lambda: scope_authority.scope_and_issue("tenant-a", direct_allowed))
+    checks["scope_and_issue_rejects_unallowlisted_attributes"] = _rejected(lambda: scope_authority.scope_and_issue("tenant-a", direct_unknown, propagation_context=consumer_context))
+    checks["scope_and_issue_rejects_sensitive_allowlisted_value"] = _rejected(lambda: scope_authority.scope_and_issue("tenant-a", direct_sensitive, propagation_context=consumer_context))
+    checks["scope_and_issue_rejects_component_source_impersonation"] = _rejected(lambda: scope_authority.scope_and_issue("tenant-a", direct_impersonated, propagation_context=consumer_context))
+    checks["scope_and_issue_rejects_untrusted_attribute_context"] = _rejected(lambda: scope_authority.scope_and_issue("tenant-a", direct_allowed, propagation_context=PropagationContext("consumer", "untrusted_external", "internal", "local_async_boundary", False)))
 
     checks["same_tenant_trace_correlation_allowed"] = can_correlate(observed, tenant_a_2)
     checks["cross_tenant_trace_correlation_blocked"] = not can_correlate(observed, tenant_b)

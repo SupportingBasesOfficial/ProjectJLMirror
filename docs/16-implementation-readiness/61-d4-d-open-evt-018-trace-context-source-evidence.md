@@ -22,6 +22,7 @@ The proof set covers:
 - rejection of unknown attributes and of credential/protected content smuggled under otherwise benign allowlisted field names;
 - exclusion of secrets, credentials, authorization tokens, cookies, private keys and other non-allowlisted protected baggage from propagated telemetry context;
 - tenant scoping of accepted trace identifiers before they are exposed as observable/exportable context: the same inbound trace ID remains correlatable inside one tenant but is deterministically transformed to a different trace ID for a different tenant, preventing a backend or exporter from joining tenants by the raw propagated trace ID;
+- idempotent tenant scoping across repeated same-tenant async hops: an already scoped trace remains byte-for-byte stable on later hops in that tenant, while the same scoped input is re-scoped when it crosses into a different tenant boundary;
 - validated `tracestate` is intentionally discarded before observable/exportable context is produced, preventing attacker-controlled vendor state or high-cardinality correlators from becoming a cross-tenant join channel;
 - cross-tenant correlation isolation even when the same valid inbound trace identifier and `tracestate` are copied between tenants;
 - identical business identity, business effect, and delivery semantics with valid, missing, changed, or invalid trace context;

@@ -106,6 +106,14 @@ def _looks_like_positional_serialized_secret_material(value: object) -> bool:
     return isinstance(handle, str) and bool(handle) and type(generation) is int and generation > 0
 
 
+def _json_object_pairs_looks_like_serialized_secret_material(value: _JsonObjectPairs) -> bool:
+    handles = [item for key, item in value if key == "handle"]
+    generations = [item for key, item in value if key == "generation"]
+    return any(isinstance(handle, str) and bool(handle) for handle in handles) and any(
+        type(generation) is int and generation > 0 for generation in generations
+    )
+
+
 def _url_form_contains_secret_material(value: str, secret_handle: object = None) -> bool:
     if "=" not in value:
         return False
@@ -130,6 +138,8 @@ def _url_form_contains_secret_material(value: str, secret_handle: object = None)
 
 def _json_pairs_contains_secret_material(value: object, secret_handle: object = None) -> bool:
     if isinstance(value, _JsonObjectPairs):
+        if _json_object_pairs_looks_like_serialized_secret_material(value):
+            return True
         for key, item in value:
             if _text_contains_secret_material(key, secret_handle):
                 return True
@@ -550,6 +560,7 @@ def run_probes() -> dict[str, bool]:
     nested_textual_serialized_resolved = json.dumps({"outer":[{"inner":serialized_resolved}]}, sort_keys=True)
     json_scalar_escaped_secret_handle = json.dumps(ref.handle).replace("/", "\\/")
     duplicate_json_member_escaped_secret_handle = '{"x":' + json_scalar_escaped_secret_handle + ',"x":"benign"}'
+    duplicate_json_member_serialized_secret_object = '{"x":{"handle":"opaque-parser-only","generation":11},"x":"benign"}'
     url_form_serialized_resolved = urlencode(serialized_resolved)
     url_escaped_serialized_resolved = quote(textual_serialized_resolved, safe="")
     double_url_escaped_serialized_resolved = quote(url_escaped_serialized_resolved, safe="")
@@ -563,6 +574,7 @@ def run_probes() -> dict[str, bool]:
     _expect_denied(checks,"nested_text_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-nested-text-serialized-secret",tenant_id="tenant-a",payload={"note":PayloadField(nested_textual_serialized_resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"json_scalar_escaped_secret_handle_rejected",lambda:create_message(message_id="bad-json-scalar-secret",tenant_id="tenant-a",payload={"note":PayloadField(json_scalar_escaped_secret_handle,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"duplicate_json_member_escaped_secret_handle_rejected",lambda:create_message(message_id="bad-json-duplicate-member-secret",tenant_id="tenant-a",payload={"note":PayloadField(duplicate_json_member_escaped_secret_handle,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"duplicate_json_member_serialized_secret_object_rejected",lambda:create_message(message_id="bad-json-duplicate-structural-secret",tenant_id="tenant-a",payload={"note":PayloadField(duplicate_json_member_serialized_secret_object,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"url_form_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-url-form-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_form_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"url_escaped_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-url-escaped-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_escaped_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"double_url_escaped_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-double-url-escaped-secret",tenant_id="tenant-a",payload={"note":PayloadField(double_url_escaped_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))

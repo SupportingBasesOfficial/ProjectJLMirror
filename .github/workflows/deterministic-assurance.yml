@@ -15,6 +15,11 @@ on:
       - created
       - edited
       - deleted
+  pull_request_review:
+    types:
+      - submitted
+      - edited
+      - dismissed
   workflow_dispatch:
 
 permissions:
@@ -53,8 +58,8 @@ jobs:
         shell: bash
         run: python3 tools/assurance/validate_adversarial_learning.py --root .
 
-      - name: Collect all PR review comments for learning reconciliation
-        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment'
+      - name: Collect all PR review findings for learning reconciliation
+        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment' || github.event_name == 'pull_request_review'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -64,12 +69,22 @@ jobs:
           mkdir -p runtime-evidence
           gh api --paginate --slurp \
             "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/comments?per_page=100" \
-            > runtime-evidence/pr-review-comments.json
+            > runtime-evidence/inline-review-comments.json
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews?per_page=100" \
+            > runtime-evidence/formal-reviews.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          inline=json.loads(Path('runtime-evidence/inline-review-comments.json').read_text())
+          reviews=json.loads(Path('runtime-evidence/formal-reviews.json').read_text())
+          Path('runtime-evidence/pr-review-findings.json').write_text(json.dumps([inline,reviews]))
+          PY
 
       - name: Require every material PR finding to be internalized
-        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment'
+        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment' || github.event_name == 'pull_request_review'
         shell: bash
-        run: python3 tools/assurance/validate_adversarial_learning.py --root . --review-comments runtime-evidence/pr-review-comments.json
+        run: python3 tools/assurance/validate_adversarial_learning.py --root . --review-comments runtime-evidence/pr-review-findings.json
 
       - name: Falsify validator policy
         shell: bash

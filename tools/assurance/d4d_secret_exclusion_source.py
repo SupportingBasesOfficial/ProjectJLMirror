@@ -65,6 +65,7 @@ CANONICAL_ID = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 CANONICAL_SCOPE = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)+$")
 URL_DECODE_MAX_ROUNDS = 4
 URL_DECODE_MAX_LENGTH = 16384
+TEXT_REINSPECTION_MAX_DEPTH = 64
 DURABLE_SECRET_AUTHORITY_HANDLES = frozenset({
     "kms://orders-signing/current",
     "kms://other/current",
@@ -75,6 +76,11 @@ DURABLE_SECRET_AUTHORITY_HANDLES = frozenset({
 def _validate_generation(value: object, label: str) -> None:
     if type(value) is not int or value <= 0:
         raise SecretBoundaryDenied(f"{label} must be a positive integer")
+
+
+def _guard_text_reinspection_depth(depth: int) -> None:
+    if type(depth) is not int or depth < 0 or depth > TEXT_REINSPECTION_MAX_DEPTH:
+        raise SecretBoundaryDenied("payload text normalization exceeds reinspection depth bound")
 
 
 def _known_secret_handle_in_text(value: str, secret_handle: object = None) -> bool:
@@ -114,7 +120,8 @@ def _json_object_pairs_looks_like_serialized_secret_material(value: _JsonObjectP
     )
 
 
-def _url_form_contains_secret_material(value: str, secret_handle: object = None) -> bool:
+def _url_form_contains_secret_material(value: str, secret_handle: object = None, depth: int = 0) -> bool:
+    _guard_text_reinspection_depth(depth)
     if "=" not in value:
         return False
     try:
@@ -128,7 +135,7 @@ def _url_form_contains_secret_material(value: str, secret_handle: object = None)
         form.setdefault(key, []).append(item)
         if _known_secret_handle_in_text(key, secret_handle) or _known_secret_handle_in_text(item, secret_handle):
             return True
-        if _text_contains_secret_material(key, secret_handle) or _text_contains_secret_material(item, secret_handle):
+        if _text_contains_secret_material(key, secret_handle, depth + 1) or _text_contains_secret_material(item, secret_handle, depth + 1):
             return True
     if "handle" in form and "generation" in form:
         handles = form["handle"]
@@ -138,44 +145,48 @@ def _url_form_contains_secret_material(value: str, secret_handle: object = None)
     return False
 
 
-def _json_pairs_contains_secret_material(value: object, secret_handle: object = None) -> bool:
+def _json_pairs_contains_secret_material(value: object, secret_handle: object = None, depth: int = 0) -> bool:
+    _guard_text_reinspection_depth(depth)
     if isinstance(value, _JsonObjectPairs):
         if _json_object_pairs_looks_like_serialized_secret_material(value):
             return True
         for key, item in value:
-            if _text_contains_secret_material(key, secret_handle):
+            if _text_contains_secret_material(key, secret_handle, depth + 1):
                 return True
-            if _json_pairs_contains_secret_material(item, secret_handle):
+            if _json_pairs_contains_secret_material(item, secret_handle, depth + 1):
                 return True
         return False
     if isinstance(value, list):
-        return any(_json_pairs_contains_secret_material(item, secret_handle) for item in value)
-    return _value_contains_secret_material(value, secret_handle)
+        return any(_json_pairs_contains_secret_material(item, secret_handle, depth + 1) for item in value)
+    return _value_contains_secret_material(value, secret_handle, depth + 1)
 
 
-def _json_text_contains_secret_material(value: str, secret_handle: object = None) -> bool:
+def _json_text_contains_secret_material(value: str, secret_handle: object = None, depth: int = 0) -> bool:
+    _guard_text_reinspection_depth(depth)
     try:
         structured = json.loads(value)
     except (json.JSONDecodeError, TypeError):
         return False
-    if _value_contains_secret_material(structured, secret_handle):
+    if _value_contains_secret_material(structured, secret_handle, depth + 1):
         return True
     try:
         preserved = json.loads(value, object_pairs_hook=_JsonObjectPairs)
     except (json.JSONDecodeError, TypeError):
         return False
-    return _json_pairs_contains_secret_material(preserved, secret_handle)
+    return _json_pairs_contains_secret_material(preserved, secret_handle, depth + 1)
 
 
-def _decoded_text_contains_secret_material(value: str, secret_handle: object = None) -> bool:
+def _decoded_text_contains_secret_material(value: str, secret_handle: object = None, depth: int = 0) -> bool:
+    _guard_text_reinspection_depth(depth)
     if _known_secret_handle_in_text(value, secret_handle):
         return True
-    if _json_text_contains_secret_material(value, secret_handle):
+    if _json_text_contains_secret_material(value, secret_handle, depth + 1):
         return True
-    return _url_form_contains_secret_material(value, secret_handle)
+    return _url_form_contains_secret_material(value, secret_handle, depth + 1)
 
 
-def _url_escaped_contains_secret_material(value: str, secret_handle: object = None) -> bool:
+def _url_escaped_contains_secret_material(value: str, secret_handle: object = None, depth: int = 0) -> bool:
+    _guard_text_reinspection_depth(depth)
     if "%" not in value:
         return False
     decoded = value
@@ -188,42 +199,44 @@ def _url_escaped_contains_secret_material(value: str, secret_handle: object = No
         decoded = next_decoded
         if len(decoded) > URL_DECODE_MAX_LENGTH:
             raise SecretBoundaryDenied("URL-decoded payload text exceeds normalization bound")
-        if _decoded_text_contains_secret_material(decoded, secret_handle):
+        if _decoded_text_contains_secret_material(decoded, secret_handle, depth + 1):
             return True
     if "%" in decoded and unquote(decoded) != decoded:
         return True
     return False
 
 
-def _text_contains_secret_material(value: str, secret_handle: object = None) -> bool:
+def _text_contains_secret_material(value: str, secret_handle: object = None, depth: int = 0) -> bool:
+    _guard_text_reinspection_depth(depth)
     if _known_secret_handle_in_text(value, secret_handle):
         return True
-    if _json_text_contains_secret_material(value, secret_handle):
+    if _json_text_contains_secret_material(value, secret_handle, depth + 1):
         return True
-    if _url_form_contains_secret_material(value, secret_handle):
+    if _url_form_contains_secret_material(value, secret_handle, depth + 1):
         return True
-    return _url_escaped_contains_secret_material(value, secret_handle)
+    return _url_escaped_contains_secret_material(value, secret_handle, depth + 1)
 
 
-def _value_contains_secret_material(value: object, secret_handle: object = None) -> bool:
+def _value_contains_secret_material(value: object, secret_handle: object = None, depth: int = 0) -> bool:
+    _guard_text_reinspection_depth(depth)
     if isinstance(value, SecretMaterial):
         return True
     if isinstance(value, str):
-        return _text_contains_secret_material(value, secret_handle)
+        return _text_contains_secret_material(value, secret_handle, depth + 1)
     if value is None or isinstance(value, (int, float, bool)):
         return False
     if isinstance(value, (list, tuple)):
         if _looks_like_positional_serialized_secret_material(value):
             return True
-        return any(_value_contains_secret_material(item, secret_handle) for item in value)
+        return any(_value_contains_secret_material(item, secret_handle, depth + 1) for item in value)
     if isinstance(value, Mapping):
         if not all(isinstance(key, str) for key in value):
             raise SecretBoundaryDenied("payload object keys must be strings")
-        if any(_text_contains_secret_material(key, secret_handle) for key in value):
+        if any(_text_contains_secret_material(key, secret_handle, depth + 1) for key in value):
             return True
         if _looks_like_serialized_secret_material(value):
             return True
-        return any(_value_contains_secret_material(item, secret_handle) for item in value.values())
+        return any(_value_contains_secret_material(item, secret_handle, depth + 1) for item in value.values())
     raise SecretBoundaryDenied("unsupported payload value type")
 
 
@@ -567,6 +580,9 @@ def run_probes() -> dict[str, bool]:
     duplicate_json_member_serialized_secret_object = '{"x":{"handle":"opaque-parser-only","generation":11},"x":"benign"}'
     url_form_serialized_resolved = urlencode(serialized_resolved)
     url_form_nested_structural_secret = urlencode({"data": json.dumps({"handle": "opaque-parser-only", "generation": 11}, sort_keys=True)})
+    over_depth_nested_form = "handle=opaque-parser-only&generation=11"
+    for _ in range(1100):
+        over_depth_nested_form = "data=" + quote(over_depth_nested_form, safe="=")
     url_escaped_serialized_resolved = quote(textual_serialized_resolved, safe="")
     double_url_escaped_serialized_resolved = quote(url_escaped_serialized_resolved, safe="")
     benign_url_escaped = quote("benign payload", safe="")
@@ -582,6 +598,7 @@ def run_probes() -> dict[str, bool]:
     _expect_denied(checks,"duplicate_json_member_serialized_secret_object_rejected",lambda:create_message(message_id="bad-json-duplicate-structural-secret",tenant_id="tenant-a",payload={"note":PayloadField(duplicate_json_member_serialized_secret_object,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"url_form_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-url-form-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_form_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"url_form_nested_structural_secret_material_rejected",lambda:create_message(message_id="bad-url-form-nested-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_form_nested_structural_secret,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"over_depth_nested_form_reinspection_rejected",lambda:create_message(message_id="bad-over-depth-form",tenant_id="tenant-a",payload={"note":PayloadField(over_depth_nested_form,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"url_escaped_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-url-escaped-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_escaped_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"double_url_escaped_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-double-url-escaped-secret",tenant_id="tenant-a",payload={"note":PayloadField(double_url_escaped_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     benign_double_message=create_message(message_id="benign-double-url-escaped",tenant_id="tenant-a",payload={"note":PayloadField(benign_double_url_escaped,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7)

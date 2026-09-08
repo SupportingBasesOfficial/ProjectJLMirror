@@ -12,14 +12,15 @@ The source run must prove that trace context is an observability-only facility. 
 
 The proof set covers:
 
-- bounded canonical validation of `traceparent`, `tracestate`, and trace attributes;
-- rejection of malformed or invalid trace identifiers;
-- bounded trace metadata to prevent unbounded observability input;
-- policy redaction of sensitive trace attributes;
-- preservation of non-sensitive correlation metadata;
+- runtime type guards and bounded canonical validation of `traceparent`, `tracestate`, and trace attributes;
+- a selected canonical `tracestate` profile with bounded length, at most 32 members, valid member grammar, and duplicate-key rejection;
+- rejection of malformed, orphaned, or non-string trace metadata through the explicit fail-closed boundary rather than accidental runtime exceptions;
+- deny-by-default propagated attributes: only explicitly allowlisted semantic fields with bounded, enumerated values may cross the boundary;
+- rejection of unknown attributes and of credential/protected content smuggled under otherwise benign allowlisted field names;
+- exclusion of secrets, credentials, authorization tokens, cookies, private keys and other non-allowlisted protected baggage from propagated telemetry context;
 - cross-tenant correlation isolation even when trace identifiers match;
-- identical business identity/effect with valid, missing, or changed trace context;
-- explicit separation from tenant, message, idempotency, and ordering authorities.
+- identical business identity, business effect, and delivery semantics with valid, missing, or changed trace context;
+- explicit separation from tenant, message, idempotency, ordering, delivery, and business-effect authorities.
 
 ## Source-time state
 

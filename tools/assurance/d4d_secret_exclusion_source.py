@@ -165,12 +165,16 @@ def _json_text_contains_secret_material(value: str, secret_handle: object = None
     _guard_text_reinspection_depth(depth)
     try:
         structured = json.loads(value)
+    except RecursionError as exc:
+        raise SecretBoundaryDenied("JSON payload exceeds decoder nesting capacity") from exc
     except (json.JSONDecodeError, TypeError):
         return False
     if _value_contains_secret_material(structured, secret_handle, depth + 1):
         return True
     try:
         preserved = json.loads(value, object_pairs_hook=_JsonObjectPairs)
+    except RecursionError as exc:
+        raise SecretBoundaryDenied("JSON payload exceeds decoder nesting capacity") from exc
     except (json.JSONDecodeError, TypeError):
         return False
     return _json_pairs_contains_secret_material(preserved, secret_handle, depth + 1)
@@ -583,6 +587,7 @@ def run_probes() -> dict[str, bool]:
     over_depth_nested_form = "handle=opaque-parser-only&generation=11"
     for _ in range(1100):
         over_depth_nested_form = "data=" + quote(over_depth_nested_form, safe="=")
+    deeply_nested_json = "[" * 2000 + "0" + "]" * 2000
     url_escaped_serialized_resolved = quote(textual_serialized_resolved, safe="")
     double_url_escaped_serialized_resolved = quote(url_escaped_serialized_resolved, safe="")
     benign_url_escaped = quote("benign payload", safe="")
@@ -599,6 +604,7 @@ def run_probes() -> dict[str, bool]:
     _expect_denied(checks,"url_form_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-url-form-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_form_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"url_form_nested_structural_secret_material_rejected",lambda:create_message(message_id="bad-url-form-nested-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_form_nested_structural_secret,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"over_depth_nested_form_reinspection_rejected",lambda:create_message(message_id="bad-over-depth-form",tenant_id="tenant-a",payload={"note":PayloadField(over_depth_nested_form,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"deeply_nested_json_decoder_recursion_rejected",lambda:create_message(message_id="bad-deep-json",tenant_id="tenant-a",payload={"note":PayloadField(deeply_nested_json,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"url_escaped_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-url-escaped-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_escaped_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"double_url_escaped_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-double-url-escaped-secret",tenant_id="tenant-a",payload={"note":PayloadField(double_url_escaped_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     benign_double_message=create_message(message_id="benign-double-url-escaped",tenant_id="tenant-a",payload={"note":PayloadField(benign_double_url_escaped,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7)

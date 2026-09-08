@@ -128,6 +128,8 @@ def _url_form_contains_secret_material(value: str, secret_handle: object = None)
         form.setdefault(key, []).append(item)
         if _known_secret_handle_in_text(key, secret_handle) or _known_secret_handle_in_text(item, secret_handle):
             return True
+        if _text_contains_secret_material(key, secret_handle) or _text_contains_secret_material(item, secret_handle):
+            return True
     if "handle" in form and "generation" in form:
         handles = form["handle"]
         generations = form["generation"]
@@ -372,6 +374,8 @@ def sanitize_record(message: OrdinaryMessage, *, record_kind: str) -> dict[str, 
 
 def resolve_secret(*, reference: SecretReference, authority: SecretAuthority, requested_scope: str, authorized: bool, audit_sink: list[dict[str, object]]) -> SecretMaterial:
     _validate_secret_reference_shape(reference)
+    if not isinstance(authority, SecretAuthority):
+        raise SecretBoundaryDenied("secret authority must be a hydrated SecretAuthority")
     _validate_generation(authority.current_generation, "secret authority current generation")
     allowed_scopes = _validate_allowed_scopes(authority.allowed_scopes)
     if authority.available is not True:
@@ -562,6 +566,7 @@ def run_probes() -> dict[str, bool]:
     duplicate_json_member_escaped_secret_handle = '{"x":' + json_scalar_escaped_secret_handle + ',"x":"benign"}'
     duplicate_json_member_serialized_secret_object = '{"x":{"handle":"opaque-parser-only","generation":11},"x":"benign"}'
     url_form_serialized_resolved = urlencode(serialized_resolved)
+    url_form_nested_structural_secret = urlencode({"data": json.dumps({"handle": "opaque-parser-only", "generation": 11}, sort_keys=True)})
     url_escaped_serialized_resolved = quote(textual_serialized_resolved, safe="")
     double_url_escaped_serialized_resolved = quote(url_escaped_serialized_resolved, safe="")
     benign_url_escaped = quote("benign payload", safe="")
@@ -576,6 +581,7 @@ def run_probes() -> dict[str, bool]:
     _expect_denied(checks,"duplicate_json_member_escaped_secret_handle_rejected",lambda:create_message(message_id="bad-json-duplicate-member-secret",tenant_id="tenant-a",payload={"note":PayloadField(duplicate_json_member_escaped_secret_handle,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"duplicate_json_member_serialized_secret_object_rejected",lambda:create_message(message_id="bad-json-duplicate-structural-secret",tenant_id="tenant-a",payload={"note":PayloadField(duplicate_json_member_serialized_secret_object,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"url_form_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-url-form-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_form_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"url_form_nested_structural_secret_material_rejected",lambda:create_message(message_id="bad-url-form-nested-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_form_nested_structural_secret,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"url_escaped_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-url-escaped-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_escaped_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"double_url_escaped_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-double-url-escaped-secret",tenant_id="tenant-a",payload={"note":PayloadField(double_url_escaped_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     benign_double_message=create_message(message_id="benign-double-url-escaped",tenant_id="tenant-a",payload={"note":PayloadField(benign_double_url_escaped,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7)
@@ -598,6 +604,8 @@ def run_probes() -> dict[str, bool]:
     _expect_denied(checks,"nested_object_secret_material_rejected",lambda:create_message(message_id="bad-nested-object-secret",tenant_id="tenant-a",payload={"note":PayloadField({"safe":"x","nested":{"secret":resolved}},"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"opaque_payload_value_type_rejected",lambda:create_message(message_id="bad-opaque-payload",tenant_id="tenant-a",payload={"note":PayloadField(object(),"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
 
+    unhydrated_authority={"available":True,"current_handle":ref.handle,"current_generation":7,"allowed_scopes":["tenant-a/orders"],"authority_source":"secret_or_kms_authority"}
+    _expect_denied(checks,"unhydrated_secret_authority_rejected",lambda:resolve_secret(reference=ref,authority=unhydrated_authority,requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
     _expect_denied(checks,"unauthorized_resolution_fails_closed",lambda:resolve_secret(reference=ref,authority=authority,requested_scope="tenant-a/orders",authorized=False,audit_sink=[]))
     _expect_denied(checks,"truthy_nonboolean_authorization_rejected",lambda:resolve_secret(reference=ref,authority=authority,requested_scope="tenant-a/orders",authorized="false",audit_sink=[]))
     _expect_denied(checks,"cross_scope_resolution_fails_closed",lambda:resolve_secret(reference=ref,authority=authority,requested_scope="tenant-b/orders",authorized=True,audit_sink=[]))

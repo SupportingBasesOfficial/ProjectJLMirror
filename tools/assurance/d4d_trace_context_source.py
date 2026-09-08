@@ -58,6 +58,7 @@ class TraceContext:
 class ObservedMessage:
     envelope: BusinessEnvelope
     trace: TraceContext
+    trace_context_disposition: str = "accepted"
 
 class TraceContextRejected(Exception):
     pass
@@ -140,8 +141,16 @@ def normalize_trace_context(traceparent: object | None, tracestate: object | Non
     return TraceContext(traceparent, _bounded_tracestate(tracestate), attrs)
 
 def process_message(envelope: BusinessEnvelope, *, traceparent: object | None, tracestate: object | None = None, attributes: object | None = None, propagation_context: PropagationContext | None = None) -> ObservedMessage:
-    trace = normalize_trace_context(traceparent, tracestate, attributes, propagation_context=propagation_context)
-    return ObservedMessage(envelope=envelope, trace=trace)
+    try:
+        trace = normalize_trace_context(traceparent, tracestate, attributes, propagation_context=propagation_context)
+        disposition = "accepted"
+    except TraceContextRejected:
+        # Trace context is observability-only. Invalid telemetry is discarded at
+        # the observation boundary and MUST NOT suppress, retry, reorder, or
+        # otherwise alter processing of an otherwise valid business envelope.
+        trace = TraceContext(None, None, ())
+        disposition = "discarded_invalid_observability_context"
+    return ObservedMessage(envelope=envelope, trace=trace, trace_context_disposition=disposition)
 
 def business_semantics(observed: ObservedMessage) -> tuple[str, str, str, str, str, str]:
     e = observed.envelope
@@ -161,6 +170,21 @@ def _rejected(callable_) -> bool:
     except TraceContextRejected:
         return True
 
+def _isolated_from_business(envelope: BusinessEnvelope, observed: ObservedMessage) -> bool:
+    return (
+        observed.envelope == envelope
+        and business_semantics(observed) == (
+            envelope.tenant_id,
+            envelope.message_id,
+            envelope.idempotency_key,
+            envelope.ordering_key,
+            envelope.payload,
+            envelope.delivery_semantics,
+        )
+        and observed.trace == TraceContext(None, None, ())
+        and observed.trace_context_disposition == "discarded_invalid_observability_context"
+    )
+
 def run_probes() -> dict[str, bool]:
     env = BusinessEnvelope("tenant-a", "msg-1", "idem-1", "order-1", "payload-v1", "at_least_once")
     valid = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
@@ -178,7 +202,7 @@ def run_probes() -> dict[str, bool]:
         "trace_context_not_ordering_authority": observed.envelope.ordering_key == "order-1",
         "trace_context_not_message_identity_authority": observed.envelope.message_id == "msg-1",
         "trace_context_not_delivery_authority": observed.envelope.delivery_semantics == "at_least_once",
-        "valid_traceparent_accepted": observed.trace.traceparent == valid,
+        "valid_traceparent_accepted": observed.trace.traceparent == valid and observed.trace_context_disposition == "accepted",
         "bounded_canonical_tracestate_accepted": observed.trace.tracestate == "vendor=value",
         "allowlisted_trace_attributes_preserved": attrs == {"component": "consumer", "phase": "receive"},
         "missing_trace_context_preserves_business_and_delivery_semantics": business_semantics(no_trace) == business_semantics(observed),
@@ -192,26 +216,33 @@ def run_probes() -> dict[str, bool]:
         42,
     ]
     for idx, candidate in enumerate(malformed_cases, start=1):
-        checks[f"malformed_traceparent_{idx}_rejected"] = _rejected(lambda candidate=candidate: process_message(env, traceparent=candidate))
+        checks[f"malformed_traceparent_{idx}_rejected"] = _rejected(lambda candidate=candidate: normalize_trace_context(candidate, None))
 
-    checks["orphan_tracestate_rejected"] = _rejected(lambda: process_message(env, traceparent=None, tracestate="vendor=value"))
-    checks["non_string_tracestate_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, tracestate=42))
-    checks["oversized_tracestate_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, tracestate="x" * (MAX_TRACESTATE_LEN + 1)))
-    checks["malformed_tracestate_member_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, tracestate="not valid, ="))
-    checks["duplicate_tracestate_key_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, tracestate="vendor=a,vendor=b"))
+    checks["orphan_tracestate_rejected"] = _rejected(lambda: normalize_trace_context(None, "vendor=value"))
+    checks["non_string_tracestate_rejected"] = _rejected(lambda: normalize_trace_context(valid, 42))
+    checks["oversized_tracestate_rejected"] = _rejected(lambda: normalize_trace_context(valid, "x" * (MAX_TRACESTATE_LEN + 1)))
+    checks["malformed_tracestate_member_rejected"] = _rejected(lambda: normalize_trace_context(valid, "not valid, ="))
+    checks["duplicate_tracestate_key_rejected"] = _rejected(lambda: normalize_trace_context(valid, "vendor=a,vendor=b"))
     too_many_members = ",".join(f"k{i}=v" for i in range(MAX_TRACESTATE_MEMBERS + 1))
-    checks["excess_tracestate_members_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, tracestate=too_many_members))
+    checks["excess_tracestate_members_rejected"] = _rejected(lambda: normalize_trace_context(valid, too_many_members))
 
-    checks["excess_trace_attributes_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={f"k{i}": "v" for i in range(MAX_ATTRS + 1)}, propagation_context=consumer_context))
-    checks["unknown_trace_attribute_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"unknown": "benign"}, propagation_context=consumer_context))
-    checks["sensitive_value_under_allowlisted_key_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"component": "Bearer super-secret"}, propagation_context=consumer_context))
-    checks["non_string_trace_attributes_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes=42, propagation_context=consumer_context))
-    checks["attribute_context_required"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"component": "consumer"}))
-    checks["component_source_impersonation_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"component": "producer"}, propagation_context=consumer_context))
-    checks["untrusted_attribute_source_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"component": "consumer"}, propagation_context=PropagationContext("consumer", "untrusted_external", "internal", "local_async_boundary", False)))
-    checks["protected_classification_attribute_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"component": "consumer"}, propagation_context=PropagationContext("consumer", "authenticated_internal", "restricted", "local_async_boundary", False)))
-    checks["wrong_hop_scope_attribute_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"component": "consumer"}, propagation_context=PropagationContext("consumer", "authenticated_internal", "internal", "provider_egress", False)))
-    checks["egress_attribute_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"component": "consumer"}, propagation_context=PropagationContext("consumer", "authenticated_internal", "internal", "local_async_boundary", True)))
+    checks["excess_trace_attributes_rejected"] = _rejected(lambda: normalize_trace_context(valid, None, {f"k{i}": "v" for i in range(MAX_ATTRS + 1)}, propagation_context=consumer_context))
+    checks["unknown_trace_attribute_rejected"] = _rejected(lambda: normalize_trace_context(valid, None, {"unknown": "benign"}, propagation_context=consumer_context))
+    checks["sensitive_value_under_allowlisted_key_rejected"] = _rejected(lambda: normalize_trace_context(valid, None, {"component": "Bearer super-secret"}, propagation_context=consumer_context))
+    checks["non_string_trace_attributes_rejected"] = _rejected(lambda: normalize_trace_context(valid, None, 42, propagation_context=consumer_context))
+    checks["attribute_context_required"] = _rejected(lambda: normalize_trace_context(valid, None, {"component": "consumer"}))
+    checks["component_source_impersonation_rejected"] = _rejected(lambda: normalize_trace_context(valid, None, {"component": "producer"}, propagation_context=consumer_context))
+    checks["untrusted_attribute_source_rejected"] = _rejected(lambda: normalize_trace_context(valid, None, {"component": "consumer"}, propagation_context=PropagationContext("consumer", "untrusted_external", "internal", "local_async_boundary", False)))
+    checks["protected_classification_attribute_rejected"] = _rejected(lambda: normalize_trace_context(valid, None, {"component": "consumer"}, propagation_context=PropagationContext("consumer", "authenticated_internal", "restricted", "local_async_boundary", False)))
+    checks["wrong_hop_scope_attribute_rejected"] = _rejected(lambda: normalize_trace_context(valid, None, {"component": "consumer"}, propagation_context=PropagationContext("consumer", "authenticated_internal", "internal", "provider_egress", False)))
+    checks["egress_attribute_rejected"] = _rejected(lambda: normalize_trace_context(valid, None, {"component": "consumer"}, propagation_context=PropagationContext("consumer", "authenticated_internal", "internal", "local_async_boundary", True)))
+
+    malformed_traceparent_observed = process_message(env, traceparent=42)
+    malformed_tracestate_observed = process_message(env, traceparent=valid, tracestate="not valid, =")
+    malformed_attribute_observed = process_message(env, traceparent=valid, attributes={"component": "Bearer super-secret"}, propagation_context=consumer_context)
+    checks["malformed_traceparent_does_not_abort_business_processing"] = _isolated_from_business(env, malformed_traceparent_observed)
+    checks["malformed_tracestate_does_not_abort_business_processing"] = _isolated_from_business(env, malformed_tracestate_observed)
+    checks["malformed_attribute_does_not_abort_business_processing"] = _isolated_from_business(env, malformed_attribute_observed)
 
     tenant_a_2 = process_message(BusinessEnvelope("tenant-a", "msg-2", "idem-2", "order-2", "payload-v2", "at_least_once"), traceparent=same_trace_other_parent)
     tenant_b = process_message(BusinessEnvelope("tenant-b", "msg-3", "idem-3", "order-3", "payload-v3", "at_least_once"), traceparent=same_trace_other_parent)

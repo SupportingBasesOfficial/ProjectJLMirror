@@ -21,9 +21,13 @@ def _load(path: Path) -> Any:
 def _flatten_comments(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
-    if value and all(isinstance(page, list) for page in value):
-        return [item for page in value for item in page if isinstance(item, dict)]
-    return [item for item in value if isinstance(item, dict)]
+    result: list[dict[str, Any]] = []
+    for item in value:
+        if isinstance(item, list):
+            result.extend(_flatten_comments(item))
+        elif isinstance(item, dict):
+            result.append(item)
+    return result
 
 
 def validate(root: Path, review_comments: Path | None = None) -> list[str]:
@@ -94,10 +98,21 @@ def validate(root: Path, review_comments: Path | None = None) -> list[str]:
                 if not isinstance(guardrail, dict) or not isinstance(guardrail.get("path"), str):
                     errors.append(f"{eid}: malformed guardrail")
                     continue
-                if not (root / guardrail["path"]).is_file():
+                guardrail_path = root / guardrail["path"]
+                if not guardrail_path.is_file():
                     errors.append(f"{eid}: guardrail path does not exist: {guardrail['path']}")
-                if not isinstance(guardrail.get("probe"), str) or not guardrail["probe"].strip():
+                    continue
+                probe = guardrail.get("probe")
+                if not isinstance(probe, str) or not probe.strip():
                     errors.append(f"{eid}: guardrail must name the probe/check it relies on")
+                    continue
+                try:
+                    guardrail_text = guardrail_path.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    errors.append(f"{eid}: guardrail path must be UTF-8 reviewable text: {guardrail['path']}")
+                    continue
+                if probe not in guardrail_text:
+                    errors.append(f"{eid}: declared probe/check not found in guardrail path: {probe}")
         if entry.get("systemic_guardrail_updated") is not True:
             errors.append(f"{eid}: systemic_guardrail_updated must be true")
         generation = entry.get("guardrail_generation")
@@ -148,7 +163,7 @@ def main() -> None:
         print("ADVERSARIAL_LEARNING_ERROR:", error)
     if errors:
         raise SystemExit(1)
-    print("adversarial_learning=PASS taxonomy=linked invariants=linked ledger=complete recurrence=guardrail-advancing dynamic_findings=mapped")
+    print("adversarial_learning=PASS taxonomy=linked invariants=linked ledger=complete recurrence=guardrail-advancing guardrail-probes=present dynamic_findings=mapped")
 
 
 if __name__ == "__main__":

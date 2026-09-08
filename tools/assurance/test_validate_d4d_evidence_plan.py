@@ -25,7 +25,12 @@ def main():
  reject('fourth_source_auto_credit',target.S4,lambda p:p.__setitem__('current_run_auto_credit',True))
  reject('fourth_source_lineage_rewrite',target.S4,lambda p:p['correction_lineage'].__setitem__('supersedes_source_pr',113))
  reject('third_promotion_history_rewrite',target.P3,lambda p:p.__setitem__('credit_count',4))
+ reject('third_promotion_source_head_rewrite',target.P3,lambda p:p.__setitem__('source_reviewed_head','0'*40))
+ reject('third_promotion_review_rewrite',target.P3,lambda p:p['source_review'].__setitem__('review_id',1))
+ reject('third_promotion_workflow_rewrite',target.P3,lambda p:p['source_workflow'].__setitem__('run_id',1))
+ reject('third_promotion_artifact_digest_rewrite',target.P3,lambda p:p['source_workflow'].__setitem__('artifact_digest','sha256:'+'0'*64))
+ reject('third_promotion_manifest_binding_rewrite',target.P3,lambda p:p['source_manifest'].__setitem__('sha256','0'*64))
  with tempfile.TemporaryDirectory() as td:
   root=Path(td); clone(root); mutate(root,target.STATE,lambda s:next(t for t in s['tracks'] if t['track_id']=='D4-D')['evidence_completed'].append(target.E4)); assert target.validate(root); print('duplicate_current_state_credit=REJECTED')
- print('d4d_evidence_plan_falsification=PASS cumulative_history=bound fourth_credit=bound fifth_credit=blocked auto_credit=blocked corrected_lineage=bound selection=blocked')
+ print('d4d_evidence_plan_falsification=PASS cumulative_history=bound third_promotion_provenance=bound fourth_credit=bound fifth_credit=blocked auto_credit=blocked corrected_lineage=bound selection=blocked')
 if __name__=='__main__': main()

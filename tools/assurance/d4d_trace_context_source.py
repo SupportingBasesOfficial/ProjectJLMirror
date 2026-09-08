@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 from dataclasses import dataclass
+import hashlib
 import re
 
 TRACEPARENT_RE = re.compile(r"^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$")
@@ -140,14 +141,30 @@ def normalize_trace_context(traceparent: object | None, tracestate: object | Non
         raise TraceContextRejected("malformed traceparent")
     return TraceContext(traceparent, _bounded_tracestate(tracestate), attrs)
 
+def _tenant_scoped_hex(tenant_id: str, label: str, value: str, length: int) -> str:
+    digest = hashlib.sha256(f"jlmirror-trace-scope-v1\0{tenant_id}\0{label}\0{value}".encode("utf-8")).hexdigest()[:length]
+    if set(digest) == {"0"}:
+        return "1" + digest[1:]
+    return digest
+
+def _scope_trace_to_tenant(trace: TraceContext, tenant_id: str) -> TraceContext:
+    if not trace.traceparent:
+        return trace
+    version, trace_id, parent_id, flags = trace.traceparent.split("-")
+    scoped_trace_id = _tenant_scoped_hex(tenant_id, "trace-id", trace_id, 32)
+    scoped_parent_id = _tenant_scoped_hex(tenant_id, "parent-id", parent_id, 16)
+    return TraceContext(
+        f"{version}-{scoped_trace_id}-{scoped_parent_id}-{flags}",
+        trace.tracestate,
+        trace.attributes,
+    )
+
 def process_message(envelope: BusinessEnvelope, *, traceparent: object | None, tracestate: object | None = None, attributes: object | None = None, propagation_context: PropagationContext | None = None) -> ObservedMessage:
     try:
-        trace = normalize_trace_context(traceparent, tracestate, attributes, propagation_context=propagation_context)
-        disposition = "accepted"
+        normalized = normalize_trace_context(traceparent, tracestate, attributes, propagation_context=propagation_context)
+        trace = _scope_trace_to_tenant(normalized, envelope.tenant_id)
+        disposition = "accepted_tenant_scoped"
     except TraceContextRejected:
-        # Trace context is observability-only. Invalid telemetry is discarded at
-        # the observation boundary and MUST NOT suppress, retry, reorder, or
-        # otherwise alter processing of an otherwise valid business envelope.
         trace = TraceContext(None, None, ())
         disposition = "discarded_invalid_observability_context"
     return ObservedMessage(envelope=envelope, trace=trace, trace_context_disposition=disposition)
@@ -194,6 +211,7 @@ def run_probes() -> dict[str, bool]:
     observed = process_message(env, traceparent=valid, tracestate="vendor=value", attributes={"component": "consumer", "phase": "receive"}, propagation_context=consumer_context)
     no_trace = process_message(env, traceparent=None)
     attrs = dict(observed.trace.attributes)
+    strict_valid = normalize_trace_context(valid, "vendor=value", {"component": "consumer", "phase": "receive"}, propagation_context=consumer_context)
 
     checks: dict[str, bool] = {
         "trace_context_is_observability_only": business_semantics(observed) == business_semantics(no_trace),
@@ -202,7 +220,8 @@ def run_probes() -> dict[str, bool]:
         "trace_context_not_ordering_authority": observed.envelope.ordering_key == "order-1",
         "trace_context_not_message_identity_authority": observed.envelope.message_id == "msg-1",
         "trace_context_not_delivery_authority": observed.envelope.delivery_semantics == "at_least_once",
-        "valid_traceparent_accepted": observed.trace.traceparent == valid and observed.trace_context_disposition == "accepted",
+        "valid_traceparent_accepted": strict_valid.traceparent == valid and observed.trace_context_disposition == "accepted_tenant_scoped",
+        "accepted_traceparent_is_tenant_scoped": observed.trace.traceparent is not None and observed.trace.traceparent != valid and _valid_traceparent(observed.trace.traceparent),
         "bounded_canonical_tracestate_accepted": observed.trace.tracestate == "vendor=value",
         "allowlisted_trace_attributes_preserved": attrs == {"component": "consumer", "phase": "receive"},
         "missing_trace_context_preserves_business_and_delivery_semantics": business_semantics(no_trace) == business_semantics(observed),
@@ -246,8 +265,12 @@ def run_probes() -> dict[str, bool]:
 
     tenant_a_2 = process_message(BusinessEnvelope("tenant-a", "msg-2", "idem-2", "order-2", "payload-v2", "at_least_once"), traceparent=same_trace_other_parent)
     tenant_b = process_message(BusinessEnvelope("tenant-b", "msg-3", "idem-3", "order-3", "payload-v3", "at_least_once"), traceparent=same_trace_other_parent)
+    tenant_a_same_input = process_message(BusinessEnvelope("tenant-a", "msg-4", "idem-4", "order-4", "payload-v4", "at_least_once"), traceparent=valid)
+    tenant_b_same_input = process_message(BusinessEnvelope("tenant-b", "msg-5", "idem-5", "order-5", "payload-v5", "at_least_once"), traceparent=valid)
     checks["same_tenant_trace_correlation_allowed"] = can_correlate(observed, tenant_a_2)
     checks["cross_tenant_trace_correlation_blocked"] = not can_correlate(observed, tenant_b)
+    checks["same_input_trace_id_is_stable_within_tenant"] = observed.trace.traceparent is not None and tenant_a_same_input.trace.traceparent is not None and observed.trace.traceparent.split("-")[1] == tenant_a_same_input.trace.traceparent.split("-")[1]
+    checks["same_input_trace_id_is_different_across_tenants"] = observed.trace.traceparent is not None and tenant_b_same_input.trace.traceparent is not None and observed.trace.traceparent.split("-")[1] != tenant_b_same_input.trace.traceparent.split("-")[1]
 
     altered_trace = process_message(env, traceparent=same_trace_other_parent, tracestate=None)
     checks["trace_change_does_not_change_business_or_delivery_semantics"] = business_semantics(altered_trace) == business_semantics(observed)

@@ -125,17 +125,19 @@ def _url_form_contains_secret_material(value: str, secret_handle: object = None)
     return False
 
 
+def _json_text_contains_secret_material(value: str, secret_handle: object = None) -> bool:
+    try:
+        structured = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return _value_contains_secret_material(structured, secret_handle)
+
+
 def _decoded_text_contains_secret_material(value: str, secret_handle: object = None) -> bool:
     if _known_secret_handle_in_text(value, secret_handle):
         return True
-    stripped = value.lstrip()
-    if stripped.startswith(("{", "[")):
-        try:
-            structured = json.loads(value)
-        except (json.JSONDecodeError, TypeError):
-            structured = None
-        if structured is not None and _value_contains_secret_material(structured, secret_handle):
-            return True
+    if _json_text_contains_secret_material(value, secret_handle):
+        return True
     return _url_form_contains_secret_material(value, secret_handle)
 
 
@@ -162,14 +164,8 @@ def _url_escaped_contains_secret_material(value: str, secret_handle: object = No
 def _text_contains_secret_material(value: str, secret_handle: object = None) -> bool:
     if _known_secret_handle_in_text(value, secret_handle):
         return True
-    stripped = value.lstrip()
-    if stripped.startswith(("{", "[")):
-        try:
-            decoded = json.loads(value)
-        except (json.JSONDecodeError, TypeError):
-            decoded = None
-        if decoded is not None and _value_contains_secret_material(decoded, secret_handle):
-            return True
+    if _json_text_contains_secret_material(value, secret_handle):
+        return True
     if _url_form_contains_secret_material(value, secret_handle):
         return True
     return _url_escaped_contains_secret_material(value, secret_handle)
@@ -530,6 +526,7 @@ def run_probes() -> dict[str, bool]:
     textual_serialized_resolved = json.dumps(serialized_resolved, sort_keys=True)
     positional_textual_serialized_resolved = json.dumps(positional_serialized_resolved)
     nested_textual_serialized_resolved = json.dumps({"outer":[{"inner":serialized_resolved}]}, sort_keys=True)
+    json_scalar_escaped_secret_handle = json.dumps(ref.handle).replace("/", "\\/")
     url_form_serialized_resolved = urlencode(serialized_resolved)
     url_escaped_serialized_resolved = quote(textual_serialized_resolved, safe="")
     double_url_escaped_serialized_resolved = quote(url_escaped_serialized_resolved, safe="")
@@ -541,6 +538,7 @@ def run_probes() -> dict[str, bool]:
     _expect_denied(checks,"text_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-text-serialized-secret",tenant_id="tenant-a",payload={"note":PayloadField(textual_serialized_resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"positional_text_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-positional-text-serialized-secret",tenant_id="tenant-a",payload={"note":PayloadField(positional_textual_serialized_resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"nested_text_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-nested-text-serialized-secret",tenant_id="tenant-a",payload={"note":PayloadField(nested_textual_serialized_resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"json_scalar_escaped_secret_handle_rejected",lambda:create_message(message_id="bad-json-scalar-secret",tenant_id="tenant-a",payload={"note":PayloadField(json_scalar_escaped_secret_handle,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"url_form_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-url-form-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_form_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"url_escaped_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-url-escaped-secret",tenant_id="tenant-a",payload={"note":PayloadField(url_escaped_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"double_url_escaped_serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-double-url-escaped-secret",tenant_id="tenant-a",payload={"note":PayloadField(double_url_escaped_serialized_resolved,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))

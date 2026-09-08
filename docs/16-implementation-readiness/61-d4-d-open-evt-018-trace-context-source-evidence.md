@@ -14,15 +14,18 @@ The proof set covers:
 
 - runtime type guards and bounded canonical validation of `traceparent`, `tracestate`, and trace attributes;
 - a selected canonical `tracestate` profile with bounded length, at most 32 members, valid member grammar, and duplicate-key rejection;
-- rejection of malformed, orphaned, or non-string trace metadata through the explicit fail-closed boundary rather than accidental runtime exceptions;
+- strict rejection of malformed, orphaned, or non-string trace metadata by the trace normalizer rather than accidental runtime exceptions;
+- isolation of invalid observability metadata from business processing: the processing boundary discards invalid trace context and continues with an empty observation context without changing the business envelope or delivery semantics;
 - deny-by-default propagated attributes: only explicitly allowlisted semantic fields with bounded, enumerated values may cross the boundary;
 - explicit propagation context for every propagated attribute, binding `source`, `trust_level`, `classification`, `hop_scope`, and whether the field may leave JLMIRROR;
 - prevention of source impersonation, untrusted/external propagation, protected-classification propagation, invalid hop scope, and unauthorized egress;
 - rejection of unknown attributes and of credential/protected content smuggled under otherwise benign allowlisted field names;
 - exclusion of secrets, credentials, authorization tokens, cookies, private keys and other non-allowlisted protected baggage from propagated telemetry context;
 - cross-tenant correlation isolation even when trace identifiers match;
-- identical business identity, business effect, and delivery semantics with valid, missing, or changed trace context;
+- identical business identity, business effect, and delivery semantics with valid, missing, changed, or invalid trace context;
 - explicit separation from tenant, message, idempotency, ordering, delivery, and business-effect authorities.
+
+The source manifest identity envelope is immutable and validated exactly: `schema_version=1`, `gate_id=D4`, `track_id=D4-D`, `source_decision=OPEN-EVT-018`, `evidence_id=trace_context_observability_only_validation_and_redaction`, `mode=source_evidence_only`, and `source_base=98fb99cc04fcf42e795596f68939149463645799`.
 
 ## Source-time state
 

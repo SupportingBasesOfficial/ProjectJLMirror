@@ -12,8 +12,7 @@ def mutate_json(root,path,fn):
 def mutate_and_expect_failure(mutator):
     with tempfile.TemporaryDirectory() as td:
         root=Path(td); clone(root); mutator(root); assert v.validate(root),'mutation unexpectedly accepted'
-def main():
-    assert not v.validate(ROOT)
+def falsify_immutable_identity_envelope():
     for field,bad in [
         ('schema_version',2),
         ('gate_id','D3'),
@@ -24,9 +23,7 @@ def main():
         ('source_base','0'*40),
     ]:
         mutate_and_expect_failure(lambda r,field=field,bad=bad:mutate_json(r,v.MANIFEST,lambda d,field=field,bad=bad:d.__setitem__(field,bad)))
-    mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('current_run_auto_credit',True)))
-    mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('ledger_credit',[v.EXPECTED_ID])))
-    mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('trace_context_authority','tenant_authority')))
+def falsify_source_time_state_exactness():
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d['source_time_state'].__setitem__('d4d','5_of_5_unselected')))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d['source_time_state'].__setitem__('d4wide','26_of_26')))
     for field,bad in [
@@ -38,6 +35,13 @@ def main():
     ]:
         mutate_and_expect_failure(lambda r,field=field,bad=bad:mutate_json(r,v.MANIFEST,lambda d,field=field,bad=bad:d['source_time_state'].__setitem__(field,bad)))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d['source_time_state'].__setitem__('unexpected_authority','granted')))
+def main():
+    assert not v.validate(ROOT)
+    falsify_immutable_identity_envelope()
+    mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('current_run_auto_credit',True)))
+    mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('ledger_credit',[v.EXPECTED_ID])))
+    mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('trace_context_authority','tenant_authority')))
+    falsify_source_time_state_exactness()
     mutate_and_expect_failure(lambda r:mutate_json(r,v.PLAN,lambda d:d['axes'][v.EXPECTED_ID]['must_prove'].pop()))
     def grant_fifth(r):
         def fn(d):

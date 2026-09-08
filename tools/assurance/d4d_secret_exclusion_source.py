@@ -83,6 +83,15 @@ def _guard_text_reinspection_depth(depth: int) -> None:
         raise SecretBoundaryDenied("payload text normalization exceeds reinspection depth bound")
 
 
+def _json_load_fail_closed(value: str, *, object_pairs_hook=None) -> object:
+    try:
+        if object_pairs_hook is None:
+            return json.loads(value)
+        return json.loads(value, object_pairs_hook=object_pairs_hook)
+    except RecursionError as exc:
+        raise SecretBoundaryDenied("JSON payload exceeds decoder nesting capacity") from exc
+
+
 def _known_secret_handle_in_text(value: str, secret_handle: object = None) -> bool:
     handles = set(DURABLE_SECRET_AUTHORITY_HANDLES)
     if isinstance(secret_handle, str) and secret_handle:
@@ -164,17 +173,13 @@ def _json_pairs_contains_secret_material(value: object, secret_handle: object = 
 def _json_text_contains_secret_material(value: str, secret_handle: object = None, depth: int = 0) -> bool:
     _guard_text_reinspection_depth(depth)
     try:
-        structured = json.loads(value)
-    except RecursionError as exc:
-        raise SecretBoundaryDenied("JSON payload exceeds decoder nesting capacity") from exc
+        structured = _json_load_fail_closed(value)
     except (json.JSONDecodeError, TypeError):
         return False
     if _value_contains_secret_material(structured, secret_handle, depth + 1):
         return True
     try:
-        preserved = json.loads(value, object_pairs_hook=_JsonObjectPairs)
-    except RecursionError as exc:
-        raise SecretBoundaryDenied("JSON payload exceeds decoder nesting capacity") from exc
+        preserved = _json_load_fail_closed(value, object_pairs_hook=_JsonObjectPairs)
     except (json.JSONDecodeError, TypeError):
         return False
     return _json_pairs_contains_secret_material(preserved, secret_handle, depth + 1)

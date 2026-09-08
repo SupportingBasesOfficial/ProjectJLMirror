@@ -13,7 +13,7 @@ The source run must prove that trace context is an observability-only facility. 
 The proof set covers:
 
 - runtime type guards and bounded canonical validation of `traceparent`, `tracestate`, and trace attributes;
-- a selected canonical `tracestate` profile with bounded length, at most 32 members, valid member grammar, and duplicate-key rejection;
+- a selected canonical `tracestate` ingress profile with bounded length, at most 32 members, valid member grammar, and duplicate-key rejection;
 - strict rejection of malformed, orphaned, or non-string trace metadata by the trace normalizer rather than accidental runtime exceptions;
 - isolation of invalid observability metadata from business processing: the processing boundary discards invalid trace context and continues with an empty observation context without changing the business envelope or delivery semantics;
 - deny-by-default propagated attributes: only explicitly allowlisted semantic fields with bounded, enumerated values may cross the boundary;
@@ -22,7 +22,8 @@ The proof set covers:
 - rejection of unknown attributes and of credential/protected content smuggled under otherwise benign allowlisted field names;
 - exclusion of secrets, credentials, authorization tokens, cookies, private keys and other non-allowlisted protected baggage from propagated telemetry context;
 - tenant scoping of accepted trace identifiers before they are exposed as observable/exportable context: the same inbound trace ID remains correlatable inside one tenant but is deterministically transformed to a different trace ID for a different tenant, preventing a backend or exporter from joining tenants by the raw propagated trace ID;
-- cross-tenant correlation isolation even when the same valid inbound trace identifier is copied between tenants;
+- validated `tracestate` is intentionally discarded before observable/exportable context is produced, preventing attacker-controlled vendor state or high-cardinality correlators from becoming a cross-tenant join channel;
+- cross-tenant correlation isolation even when the same valid inbound trace identifier and `tracestate` are copied between tenants;
 - identical business identity, business effect, and delivery semantics with valid, missing, changed, or invalid trace context;
 - explicit separation from tenant, message, idempotency, ordering, delivery, and business-effect authorities.
 

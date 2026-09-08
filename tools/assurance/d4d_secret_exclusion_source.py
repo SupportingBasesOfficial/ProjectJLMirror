@@ -214,8 +214,8 @@ def _validate_secret_reference_shape(reference: SecretReference) -> None:
 def _audit_reference(reference: SecretReference) -> str:
     _validate_secret_reference_shape(reference)
     audit_ref = f"{AUDIT_REFERENCE_PREFIX}{reference.scope}/generation-{reference.generation}"
-    if reference.handle == audit_ref or reference.handle in audit_ref:
-        raise SecretBoundaryDenied("derived audit reference must not contain secret handle")
+    if _known_secret_handle_in_text(audit_ref, reference.handle):
+        raise SecretBoundaryDenied("derived audit reference must not contain any known secret-authority handle")
     return audit_ref
 
 
@@ -394,9 +394,12 @@ def run_probes() -> dict[str, bool]:
     _expect_denied(checks,"durable_authority_verification_reference_alias_rejected",lambda:create_message(message_id="bad-durable-verification-alias",tenant_id="tenant-a",payload=safe_payload,secret_ref=None,verification_profile_ref="verification-profile://collision-profile",verification_generation_ref=7))
 
     checks["audit_reference_is_derived_non_secret"]=_audit_reference(ref)=="secret-audit-ref://tenant-a/orders/generation-7" and ref.handle not in _audit_reference(ref)
-    scope_collision_ref=replace(ref,handle="tenant-a/orders",scope="tenant-a/orders")
-    scope_collision_authority=replace(authority,current_handle=scope_collision_ref.handle)
-    _expect_denied(checks,"secret_handle_scope_rejected",lambda:resolve_secret(reference=scope_collision_ref,authority=scope_collision_authority,requested_scope="tenant-a/orders",authorized=True,audit_sink=[]))
+    scope_collision_ref=replace(ref,handle="collision-profile",scope="tenant-a/collision-profile")
+    scope_collision_authority=replace(authority,current_handle=scope_collision_ref.handle,allowed_scopes=(scope_collision_ref.scope,))
+    _expect_denied(checks,"secret_handle_scope_rejected",lambda:resolve_secret(reference=scope_collision_ref,authority=scope_collision_authority,requested_scope=scope_collision_ref.scope,authorized=True,audit_sink=[]))
+    catalog_collision_ref=replace(ref,scope="tenant-a/collision-profile")
+    catalog_collision_authority=replace(authority,allowed_scopes=(catalog_collision_ref.scope,))
+    _expect_denied(checks,"audit_reference_catalogued_handle_collision_rejected",lambda:resolve_secret(reference=catalog_collision_ref,authority=catalog_collision_authority,requested_scope=catalog_collision_ref.scope,authorized=True,audit_sink=[]))
     _expect_denied(checks,"unsupported_record_kind_rejected",lambda:sanitize_record(message,record_kind="debug_dump"))
 
     reconstructed_collision_ref=replace(ref,handle="collision-reconstructed")

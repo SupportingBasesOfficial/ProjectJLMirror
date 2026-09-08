@@ -49,7 +49,7 @@ EXPECTED_PROBES={
 'secondary_records_exclude_secret_key_material',
 'erasure_preserves_non_secret_historical_verification_reference',
 'redaction_erasure_preserve_correctness_evidence',
-'secret_resolution_is_narrowly_authorized_and_audited','resolved_secret_material_rejected_under_business_classification',
+'secret_resolution_is_narrowly_authorized_and_audited','second_configured_authority_handle_resolves','second_configured_authority_handle_detached_payload_rejected','uncatalogued_authority_handle_rejected','resolved_secret_material_rejected_under_business_classification',
 'serialized_resolved_secret_material_rejected','nested_serialized_resolved_secret_material_rejected',
 'positional_serialized_resolved_secret_material_rejected','nested_positional_serialized_resolved_secret_material_rejected',
 'text_serialized_resolved_secret_material_rejected','positional_text_serialized_resolved_secret_material_rejected','nested_text_serialized_resolved_secret_material_rejected','secret_handle_text_fragment_rejected',
@@ -99,4 +99,4 @@ if __name__=='__main__':
     errors=validate(root)
     [print('D4D_SECRET_EXCLUSION_SOURCE_ERROR:',x,file=sys.stderr) for x in errors]
     if errors:raise SystemExit(1)
-    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=96 corrected_lineage=true')
+    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=99 corrected_lineage=true')

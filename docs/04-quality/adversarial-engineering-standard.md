@@ -13,7 +13,7 @@ Every material defect or review finding SHALL complete this sequence before clos
 1. **Local remediation** — remove the concrete defect without broadening authority.
 2. **Root-cause classification** — identify the defect class and the invalid assumption that allowed it.
 3. **Generalized invariant** — state the rule that would have prevented the entire class, not only the observed instance.
-4. **Horizontal audit** — inspect sibling fields, sibling boundaries, alternate callers, serialization paths, export paths, tenant transitions, and authority transitions for the same class.
+4. **Horizontal audit** — inspect sibling fields, sibling boundaries, alternate callers, serialization paths, export paths, tenant transitions, authority transitions, and resource-amplification paths for the same class.
 5. **Permanent guardrail** — encode the invariant in executable validation, falsification tests, architecture/governance checks, or an explicitly reviewable contract wherever technically possible.
 6. **Independent red team** — only after the internal gate is clean may an external reviewer be used to search for residual or novel failures.
 
@@ -28,6 +28,14 @@ Type annotations, dataclasses, generated models, SDK types, provider schemas, or
 No operation that presupposes type or shape — including regex matching, set/dict membership, indexing, splitting, encoding, hashing, comparison, iteration, arithmetic, or attribute dereference — may occur before the required runtime checks.
 
 When one malformed field exposes a missing runtime guard, the horizontal audit SHALL cover every sibling field of the same boundary object.
+
+### Bounded work before expensive operations
+
+Untrusted or optional metadata SHALL be rejected by cheap type, shape and size checks before allocation, UTF encoding, hashing, HMAC, parsing, iteration, sorting, decompression, regular-expression work, or any other operation whose cost can grow with attacker-controlled input.
+
+A field being semantically non-authoritative does not make its resource cost harmless. Optional observability metadata MUST NOT become a CPU, memory or latency denial-of-service path for business processing.
+
+When an unbounded-work finding occurs, the horizontal audit SHALL inspect sibling fields and every alternate entry point that feeds proportional work, not only the operation named by the finding.
 
 ### Optional context cannot own business liveness
 
@@ -59,14 +67,17 @@ Before requesting external review, the internal review SHALL answer at least:
 
 - Which values are assumed typed only because of annotations or constructors?
 - Which operations can throw outside the intended fail-closed exception path?
+- Which inputs can cause work proportional to attacker-controlled length before a cheap bound check?
+- Which sibling fields feed allocation, encoding, hashing, HMAC, parsing, sorting or iteration?
 - Which sibling fields share the same validation pattern?
 - Which public or indirectly callable API can bypass the intended safe wrapper?
 - Where is representation being mistaken for authority or provenance?
-- Can optional metadata alter liveness, retry, delivery, ordering, identity, or authorization?
+- Can optional metadata alter liveness, retry, delivery, ordering, identity or authorization?
+- Can optional metadata consume unbounded CPU, memory or latency even if business semantics remain unchanged?
 - Can the same raw or derived value correlate two tenants outside application helpers?
 - Can a proof be issued for a value that did not actually pass the protected transformation?
 - Is the proof bound to semantic identity or to an incidental serialization that legitimate hops must change?
-- Does the test suite falsify malformed runtime types, not only semantically invalid well-typed values?
+- Does the test suite falsify malformed runtime types, oversized values and resource-amplification cases, not only semantically invalid well-typed values?
 - Does a local fix require auditing the entire boundary object or adjacent trust boundary?
 
 ## Review independence

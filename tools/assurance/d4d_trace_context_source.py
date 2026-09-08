@@ -11,9 +11,24 @@ MAX_TRACESTATE_MEMBERS = 32
 MAX_ATTRS = 16
 MAX_ATTR_KEY = 64
 MAX_ATTR_VALUE = 128
-ALLOWED_ATTRIBUTE_VALUES = {
-    "component": {"producer", "consumer", "dispatcher", "broker_adapter"},
-    "phase": {"receive", "validate", "dispatch", "ack", "retry"},
+
+ATTRIBUTE_PROFILES = {
+    "component": {
+        "allowed_values": {"producer", "consumer", "dispatcher", "broker_adapter"},
+        "allowed_sources": {"producer", "consumer", "dispatcher", "broker_adapter"},
+        "allowed_trust_levels": {"authenticated_internal"},
+        "allowed_classifications": {"internal"},
+        "allowed_hop_scopes": {"local_async_boundary"},
+        "may_leave_jlmirror": False,
+    },
+    "phase": {
+        "allowed_values": {"receive", "validate", "dispatch", "ack", "retry"},
+        "allowed_sources": {"producer", "consumer", "dispatcher", "broker_adapter"},
+        "allowed_trust_levels": {"authenticated_internal"},
+        "allowed_classifications": {"internal"},
+        "allowed_hop_scopes": {"local_async_boundary"},
+        "may_leave_jlmirror": False,
+    },
 }
 
 @dataclass(frozen=True)
@@ -24,6 +39,14 @@ class BusinessEnvelope:
     ordering_key: str
     payload: str
     delivery_semantics: str
+
+@dataclass(frozen=True)
+class PropagationContext:
+    source: str
+    trust_level: str
+    classification: str
+    hop_scope: str
+    leaving_jlmirror: bool = False
 
 @dataclass(frozen=True)
 class TraceContext:
@@ -71,23 +94,43 @@ def _bounded_tracestate(value: object | None) -> str | None:
         canonical.append(f"{key}={member_value}")
     return ",".join(canonical)
 
-def _redact_attributes(attributes: object) -> tuple[tuple[str, str], ...]:
+def _validate_attribute_profile(key: str, value: str, context: PropagationContext) -> None:
+    profile = ATTRIBUTE_PROFILES.get(key)
+    if profile is None:
+        raise TraceContextRejected("trace attribute is not allowlisted")
+    if value not in profile["allowed_values"]:
+        raise TraceContextRejected("trace attribute value outside semantic profile")
+    if context.source not in profile["allowed_sources"]:
+        raise TraceContextRejected("trace attribute source not allowed")
+    if context.trust_level not in profile["allowed_trust_levels"]:
+        raise TraceContextRejected("trace attribute trust level not allowed")
+    if context.classification not in profile["allowed_classifications"]:
+        raise TraceContextRejected("trace attribute classification not allowed")
+    if context.hop_scope not in profile["allowed_hop_scopes"]:
+        raise TraceContextRejected("trace attribute hop scope not allowed")
+    if context.leaving_jlmirror and not profile["may_leave_jlmirror"]:
+        raise TraceContextRejected("trace attribute may not leave JLMIRROR")
+    if key == "component" and value != context.source:
+        raise TraceContextRejected("component telemetry cannot impersonate another source")
+
+def _redact_attributes(attributes: object, context: PropagationContext | None) -> tuple[tuple[str, str], ...]:
     if not isinstance(attributes, dict):
         raise TraceContextRejected("trace attributes must be an object")
     if len(attributes) > MAX_ATTRS:
         raise TraceContextRejected("too many trace attributes")
+    if attributes and not isinstance(context, PropagationContext):
+        raise TraceContextRejected("propagation context required for trace attributes")
     clean: list[tuple[str, str]] = []
     for key, value in attributes.items():
         if not isinstance(key, str) or not isinstance(value, str) or not key or len(key) > MAX_ATTR_KEY or len(value) > MAX_ATTR_VALUE:
             raise TraceContextRejected("trace attribute out of bounds")
-        allowed_values = ALLOWED_ATTRIBUTE_VALUES.get(key)
-        if allowed_values is None or value not in allowed_values:
-            raise TraceContextRejected("trace attribute not in allowlisted semantic profile")
+        assert context is not None
+        _validate_attribute_profile(key, value, context)
         clean.append((key, value))
     return tuple(sorted(clean))
 
-def normalize_trace_context(traceparent: object | None, tracestate: object | None, attributes: object | None = None) -> TraceContext:
-    attrs = _redact_attributes({} if attributes is None else attributes)
+def normalize_trace_context(traceparent: object | None, tracestate: object | None, attributes: object | None = None, *, propagation_context: PropagationContext | None = None) -> TraceContext:
+    attrs = _redact_attributes({} if attributes is None else attributes, propagation_context)
     if traceparent is None:
         if tracestate is not None:
             raise TraceContextRejected("tracestate requires traceparent")
@@ -96,8 +139,8 @@ def normalize_trace_context(traceparent: object | None, tracestate: object | Non
         raise TraceContextRejected("malformed traceparent")
     return TraceContext(traceparent, _bounded_tracestate(tracestate), attrs)
 
-def process_message(envelope: BusinessEnvelope, *, traceparent: object | None, tracestate: object | None = None, attributes: object | None = None) -> ObservedMessage:
-    trace = normalize_trace_context(traceparent, tracestate, attributes)
+def process_message(envelope: BusinessEnvelope, *, traceparent: object | None, tracestate: object | None = None, attributes: object | None = None, propagation_context: PropagationContext | None = None) -> ObservedMessage:
+    trace = normalize_trace_context(traceparent, tracestate, attributes, propagation_context=propagation_context)
     return ObservedMessage(envelope=envelope, trace=trace)
 
 def business_semantics(observed: ObservedMessage) -> tuple[str, str, str, str, str, str]:
@@ -122,8 +165,9 @@ def run_probes() -> dict[str, bool]:
     env = BusinessEnvelope("tenant-a", "msg-1", "idem-1", "order-1", "payload-v1", "at_least_once")
     valid = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
     same_trace_other_parent = "00-4bf92f3577b34da6a3ce929d0e0e4736-1111111111111111-01"
+    consumer_context = PropagationContext("consumer", "authenticated_internal", "internal", "local_async_boundary", False)
 
-    observed = process_message(env, traceparent=valid, tracestate="vendor=value", attributes={"component": "consumer", "phase": "receive"})
+    observed = process_message(env, traceparent=valid, tracestate="vendor=value", attributes={"component": "consumer", "phase": "receive"}, propagation_context=consumer_context)
     no_trace = process_message(env, traceparent=None)
     attrs = dict(observed.trace.attributes)
 
@@ -158,10 +202,16 @@ def run_probes() -> dict[str, bool]:
     too_many_members = ",".join(f"k{i}=v" for i in range(MAX_TRACESTATE_MEMBERS + 1))
     checks["excess_tracestate_members_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, tracestate=too_many_members))
 
-    checks["excess_trace_attributes_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={f"k{i}": "v" for i in range(MAX_ATTRS + 1)}))
-    checks["unknown_trace_attribute_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"unknown": "benign"}))
-    checks["sensitive_value_under_allowlisted_key_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"component": "Bearer super-secret"}))
-    checks["non_string_trace_attributes_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes=42))
+    checks["excess_trace_attributes_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={f"k{i}": "v" for i in range(MAX_ATTRS + 1)}, propagation_context=consumer_context))
+    checks["unknown_trace_attribute_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"unknown": "benign"}, propagation_context=consumer_context))
+    checks["sensitive_value_under_allowlisted_key_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"component": "Bearer super-secret"}, propagation_context=consumer_context))
+    checks["non_string_trace_attributes_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes=42, propagation_context=consumer_context))
+    checks["attribute_context_required"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"component": "consumer"}))
+    checks["component_source_impersonation_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"component": "producer"}, propagation_context=consumer_context))
+    checks["untrusted_attribute_source_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"component": "consumer"}, propagation_context=PropagationContext("consumer", "untrusted_external", "internal", "local_async_boundary", False)))
+    checks["protected_classification_attribute_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"component": "consumer"}, propagation_context=PropagationContext("consumer", "authenticated_internal", "restricted", "local_async_boundary", False)))
+    checks["wrong_hop_scope_attribute_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"component": "consumer"}, propagation_context=PropagationContext("consumer", "authenticated_internal", "internal", "provider_egress", False)))
+    checks["egress_attribute_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"component": "consumer"}, propagation_context=PropagationContext("consumer", "authenticated_internal", "internal", "local_async_boundary", True)))
 
     tenant_a_2 = process_message(BusinessEnvelope("tenant-a", "msg-2", "idem-2", "order-2", "payload-v2", "at_least_once"), traceparent=same_trace_other_parent)
     tenant_b = process_message(BusinessEnvelope("tenant-b", "msg-3", "idem-3", "order-3", "payload-v3", "at_least_once"), traceparent=same_trace_other_parent)

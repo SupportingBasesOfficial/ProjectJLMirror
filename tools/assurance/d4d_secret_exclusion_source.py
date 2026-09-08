@@ -61,6 +61,7 @@ CANONICAL_ID = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 CANONICAL_SCOPE = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)+$")
 DURABLE_SECRET_AUTHORITY_HANDLES = frozenset({
     "kms://orders-signing/current",
+    "kms://other/current",
     "collision-profile",
 })
 
@@ -274,6 +275,8 @@ def resolve_secret(*, reference: SecretReference, authority: SecretAuthority, re
         raise SecretBoundaryDenied("secret authority unavailable: fail closed")
     if authority.authority_source != "secret_or_kms_authority":
         raise SecretBoundaryDenied("invalid secret authority source")
+    if authority.current_handle not in DURABLE_SECRET_AUTHORITY_HANDLES:
+        raise SecretBoundaryDenied("secret authority handle is not durably configured")
     if reference.handle != authority.current_handle:
         raise SecretBoundaryDenied("unknown or revoked secret handle")
     if reference.generation != authority.current_generation:
@@ -438,6 +441,14 @@ def run_probes() -> dict[str, bool]:
     audit=[]
     resolved=resolve_secret(reference=ref,authority=authority,requested_scope="tenant-a/orders",authorized=True,audit_sink=audit)
     checks["secret_resolution_is_narrowly_authorized_and_audited"]=isinstance(resolved,SecretMaterial) and resolved.handle==ref.handle and resolved.generation==7 and len(audit)==1 and audit[0]["scope"]=="tenant-a/orders" and audit[0]["reference"]==_audit_reference(ref) and audit[0]["secret_handle_logged"] is False and audit[0]["secret_material_logged"] is False and ref.handle not in str(audit[0])
+    second_ref=SecretReference("kms://other/current",3,"tenant-a/other")
+    second_authority=SecretAuthority(True,second_ref.handle,3,("tenant-a/other",))
+    second_resolved=resolve_secret(reference=second_ref,authority=second_authority,requested_scope="tenant-a/other",authorized=True,audit_sink=[])
+    checks["second_configured_authority_handle_resolves"]=isinstance(second_resolved,SecretMaterial) and second_resolved.handle==second_ref.handle and second_resolved.generation==3
+    _expect_denied(checks,"second_configured_authority_handle_detached_payload_rejected",lambda:create_message(message_id="bad-second-detached-handle",tenant_id="tenant-a",payload={"note":PayloadField(second_resolved.handle,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    uncatalogued_ref=SecretReference("kms://uncatalogued/current",4,"tenant-a/uncatalogued")
+    uncatalogued_authority=SecretAuthority(True,uncatalogued_ref.handle,4,("tenant-a/uncatalogued",))
+    _expect_denied(checks,"uncatalogued_authority_handle_rejected",lambda:resolve_secret(reference=uncatalogued_ref,authority=uncatalogued_authority,requested_scope="tenant-a/uncatalogued",authorized=True,audit_sink=[]))
     _expect_denied(checks,"resolved_secret_material_rejected_under_business_classification",lambda:create_message(message_id="bad-resolved-secret",tenant_id="tenant-a",payload={"note":PayloadField(resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     serialized_resolved = asdict(resolved)
     _expect_denied(checks,"serialized_resolved_secret_material_rejected",lambda:create_message(message_id="bad-serialized-resolved-secret",tenant_id="tenant-a",payload={"note":PayloadField(serialized_resolved,"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))

@@ -13,6 +13,7 @@ MAX_TRACESTATE_MEMBERS = 32
 MAX_ATTRS = 16
 MAX_ATTR_KEY = 64
 MAX_ATTR_VALUE = 128
+MAX_SCOPE_TENANT_ID_CHARS = 128
 
 ATTRIBUTE_PROFILES = {
     "component": {
@@ -77,6 +78,9 @@ def _valid_traceparent(value: object) -> bool:
         return False
     version, trace_id, parent_id, _flags = value.split("-")
     return version == "00" and trace_id != "0" * 32 and parent_id != "0" * 16
+
+def _valid_scope_tenant_id(value: object) -> bool:
+    return isinstance(value, str) and 0 < len(value) <= MAX_SCOPE_TENANT_ID_CHARS
 
 def _trace_id(traceparent: str) -> str:
     return traceparent.split("-")[1]
@@ -193,15 +197,18 @@ def normalize_trace_context(traceparent: object | None, tracestate: object | Non
     return TraceContext(traceparent, _bounded_tracestate(tracestate), attrs)
 
 def _tenant_scoped_hex(tenant_id: str, label: str, value: str, length: int) -> str:
+    if not _valid_scope_tenant_id(tenant_id):
+        raise TraceContextRejected("tenant scope identity out of bounds")
     digest = hashlib.sha256(f"jlmirror-trace-scope-v4\0{tenant_id}\0{label}\0{value}".encode("utf-8")).hexdigest()[:length]
     return ("1" + digest[1:]) if set(digest) == {"0"} else digest
 
 def _scope_trace_to_tenant(trace: object, tenant_id: object, propagation_context: object | None = None) -> TraceContext:
     trace = _validate_trace_context_object(trace, propagation_context)
-    if not isinstance(tenant_id, str) or not tenant_id:
-        raise TraceContextRejected("tenant scope identity invalid")
+    if not _valid_scope_tenant_id(tenant_id):
+        raise TraceContextRejected("tenant scope identity invalid or out of bounds")
     if not trace.traceparent:
         return trace
+    assert isinstance(tenant_id, str)
     version, trace_id, parent_id, flags = trace.traceparent.split("-")
     return TraceContext(
         f"{version}-{_tenant_scoped_hex(tenant_id, 'trace-id', trace_id, 32)}-{_tenant_scoped_hex(tenant_id, 'parent-id', parent_id, 16)}-{flags}",
@@ -217,11 +224,13 @@ class TenantScopeAuthority:
 
     @staticmethod
     def _payload(tenant_id: str, trace_id: str) -> bytes:
+        if not _valid_scope_tenant_id(tenant_id):
+            raise TraceContextRejected("tenant scope proof identity out of bounds")
         return f"jlmirror-tenant-trace-identity-v3\0{tenant_id}\0{trace_id}".encode("utf-8")
 
     def _attest_scoped_trace_id(self, tenant_id: str, scoped_trace_id: str) -> TenantScopeProof:
-        if not isinstance(tenant_id, str) or not tenant_id or not isinstance(scoped_trace_id, str) or not re.fullmatch(r"[0-9a-f]{32}", scoped_trace_id) or scoped_trace_id == "0" * 32:
-            raise TraceContextRejected("cannot attest malformed scoped trace identity")
+        if not _valid_scope_tenant_id(tenant_id) or not isinstance(scoped_trace_id, str) or not re.fullmatch(r"[0-9a-f]{32}", scoped_trace_id) or scoped_trace_id == "0" * 32:
+            raise TraceContextRejected("cannot attest malformed or unbounded scoped trace identity")
         mac_hex = hmac.new(self._key, self._payload(tenant_id, scoped_trace_id), hashlib.sha256).hexdigest()
         return TenantScopeProof(tenant_id, scoped_trace_id, mac_hex)
 
@@ -235,13 +244,13 @@ class TenantScopeAuthority:
     def verifies(self, proof: object, traceparent: object) -> bool:
         if not isinstance(proof, TenantScopeProof) or not _valid_traceparent(traceparent):
             return False
-        if not isinstance(proof.tenant_id, str) or not proof.tenant_id:
+        if not _valid_scope_tenant_id(proof.tenant_id):
             return False
         if not isinstance(proof.trace_id, str) or not re.fullmatch(r"[0-9a-f]{32}", proof.trace_id) or proof.trace_id == "0" * 32:
             return False
         if not isinstance(proof.mac_hex, str) or not re.fullmatch(r"[0-9a-f]{64}", proof.mac_hex):
             return False
-        assert isinstance(traceparent, str)
+        assert isinstance(traceparent, str) and isinstance(proof.tenant_id, str)
         if proof.trace_id != _trace_id(traceparent):
             return False
         expected = hmac.new(self._key, self._payload(proof.tenant_id, proof.trace_id), hashlib.sha256).hexdigest()
@@ -401,6 +410,9 @@ def run_probes() -> dict[str, bool]:
     for field, malformed_proof in malformed_proofs.items():
         candidate = process_message(BusinessEnvelope("tenant-a", f"msg-proof-{field}", f"idem-proof-{field}", f"order-proof-{field}", "payload-proof", "at_least_once"), traceparent=observed.trace.traceparent, scope_proof=malformed_proof, scope_authority=scope_authority)
         checks[f"malformed_scope_proof_{field}_does_not_abort_business_processing"] = _isolated_from_business(candidate.envelope, candidate)
+    oversized_proof = TenantScopeProof("t" * (MAX_SCOPE_TENANT_ID_CHARS + 1), scoped_trace_id, observed.scope_proof.mac_hex)
+    oversized_proof_observed = process_message(BusinessEnvelope("tenant-a", "msg-proof-oversized", "idem-proof-oversized", "order-proof-oversized", "payload-proof", "at_least_once"), traceparent=observed.trace.traceparent, scope_proof=oversized_proof, scope_authority=scope_authority)
+    checks["oversized_scope_proof_tenant_id_does_not_abort_business_processing"] = _isolated_from_business(oversized_proof_observed.envelope, oversized_proof_observed)
 
     malformed_scope_inputs = [
         ([], normalize_trace_context(valid, None), None),
@@ -411,6 +423,9 @@ def run_probes() -> dict[str, bool]:
     checks["scope_and_issue_runtime_boundary_fail_closed"] = all(
         _rejected(lambda tenant_id=tenant_id, trace=trace, context=context: scope_authority.scope_and_issue(tenant_id, trace, propagation_context=context))
         for tenant_id, trace, context in malformed_scope_inputs
+    )
+    checks["scope_and_issue_rejects_oversized_tenant_id_before_hashing"] = _rejected(
+        lambda: scope_authority.scope_and_issue("t" * (MAX_SCOPE_TENANT_ID_CHARS + 1), normalize_trace_context(valid, None))
     )
 
     direct_allowed = TraceContext(valid, None, (("component", "consumer"),))

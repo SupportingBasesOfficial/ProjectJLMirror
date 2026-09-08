@@ -105,15 +105,35 @@ def _bounded_tracestate(value: object | None) -> str | None:
         canonical.append(f"{key}={member_value}")
     return ",".join(canonical)
 
-def _validate_propagation_context(context: PropagationContext) -> None:
+def _validate_propagation_context(context: object) -> PropagationContext:
+    if not isinstance(context, PropagationContext):
+        raise TraceContextRejected("propagation context object invalid")
     string_fields = (context.source, context.trust_level, context.classification, context.hop_scope)
     if any(not isinstance(field, str) or not field for field in string_fields):
         raise TraceContextRejected("propagation context string field invalid")
     if not isinstance(context.leaving_jlmirror, bool):
         raise TraceContextRejected("propagation context egress flag invalid")
+    return context
+
+def _validate_trace_context_object(trace: object) -> TraceContext:
+    if not isinstance(trace, TraceContext):
+        raise TraceContextRejected("trace context object invalid")
+    if trace.traceparent is not None and not _valid_traceparent(trace.traceparent):
+        raise TraceContextRejected("trace context traceparent invalid")
+    if trace.tracestate is not None:
+        if trace.traceparent is None:
+            raise TraceContextRejected("trace context tracestate requires traceparent")
+        if _bounded_tracestate(trace.tracestate) != trace.tracestate:
+            raise TraceContextRejected("trace context tracestate non-canonical")
+    if not isinstance(trace.attributes, tuple):
+        raise TraceContextRejected("trace context attributes container invalid")
+    for item in trace.attributes:
+        if not isinstance(item, tuple) or len(item) != 2 or not isinstance(item[0], str) or not isinstance(item[1], str):
+            raise TraceContextRejected("trace context attribute entry invalid")
+    return trace
 
 def _validate_attribute_profile(key: str, value: str, context: PropagationContext) -> None:
-    _validate_propagation_context(context)
+    context = _validate_propagation_context(context)
     profile = ATTRIBUTE_PROFILES.get(key)
     if profile is None:
         raise TraceContextRejected("trace attribute is not allowlisted")
@@ -137,8 +157,8 @@ def _redact_attributes(attributes: object, context: PropagationContext | None) -
         raise TraceContextRejected("trace attributes must be an object")
     if len(attributes) > MAX_ATTRS:
         raise TraceContextRejected("too many trace attributes")
-    if attributes and not isinstance(context, PropagationContext):
-        raise TraceContextRejected("propagation context required for trace attributes")
+    if attributes:
+        context = _validate_propagation_context(context)
     clean: list[tuple[str, str]] = []
     for key, value in attributes.items():
         if not isinstance(key, str) or not isinstance(value, str) or not key or len(key) > MAX_ATTR_KEY or len(value) > MAX_ATTR_VALUE:
@@ -162,7 +182,10 @@ def _tenant_scoped_hex(tenant_id: str, label: str, value: str, length: int) -> s
     digest = hashlib.sha256(f"jlmirror-trace-scope-v4\0{tenant_id}\0{label}\0{value}".encode("utf-8")).hexdigest()[:length]
     return ("1" + digest[1:]) if set(digest) == {"0"} else digest
 
-def _scope_trace_to_tenant(trace: TraceContext, tenant_id: str) -> TraceContext:
+def _scope_trace_to_tenant(trace: object, tenant_id: object) -> TraceContext:
+    trace = _validate_trace_context_object(trace)
+    if not isinstance(tenant_id, str) or not tenant_id:
+        raise TraceContextRejected("tenant scope identity invalid")
     if not trace.traceparent:
         return trace
     version, trace_id, parent_id, flags = trace.traceparent.split("-")
@@ -188,10 +211,11 @@ class TenantScopeAuthority:
         mac_hex = hmac.new(self._key, self._payload(tenant_id, scoped_trace_id), hashlib.sha256).hexdigest()
         return TenantScopeProof(tenant_id, scoped_trace_id, mac_hex)
 
-    def scope_and_issue(self, tenant_id: str, trace: TraceContext) -> tuple[TraceContext, TenantScopeProof | None]:
+    def scope_and_issue(self, tenant_id: object, trace: object) -> tuple[TraceContext, TenantScopeProof | None]:
         scoped = _scope_trace_to_tenant(trace, tenant_id)
         if not scoped.traceparent:
             return scoped, None
+        assert isinstance(tenant_id, str)
         return scoped, self._attest_scoped_trace_id(tenant_id, _trace_id(scoped.traceparent))
 
     def verifies(self, proof: object, traceparent: object) -> bool:
@@ -320,11 +344,19 @@ def run_probes() -> dict[str, bool]:
     malformed_traceparent_observed = process_message(env, traceparent=42)
     malformed_tracestate_observed = process_message(env, traceparent=valid, tracestate="not valid, =")
     malformed_attribute_observed = process_message(env, traceparent=valid, attributes={"component": "Bearer super-secret"}, propagation_context=consumer_context)
-    malformed_propagation_context_observed = process_message(env, traceparent=valid, attributes={"component": "consumer"}, propagation_context=PropagationContext(["consumer"], "authenticated_internal", "internal", "local_async_boundary", False))  # type: ignore[arg-type]
+    malformed_contexts = {
+        "source": PropagationContext(["consumer"], "authenticated_internal", "internal", "local_async_boundary", False),  # type: ignore[arg-type]
+        "trust_level": PropagationContext("consumer", ["authenticated_internal"], "internal", "local_async_boundary", False),  # type: ignore[arg-type]
+        "classification": PropagationContext("consumer", "authenticated_internal", ["internal"], "local_async_boundary", False),  # type: ignore[arg-type]
+        "hop_scope": PropagationContext("consumer", "authenticated_internal", "internal", ["local_async_boundary"], False),  # type: ignore[arg-type]
+        "leaving_jlmirror": PropagationContext("consumer", "authenticated_internal", "internal", "local_async_boundary", ["false"]),  # type: ignore[arg-type]
+    }
     checks["malformed_traceparent_does_not_abort_business_processing"] = _isolated_from_business(env, malformed_traceparent_observed)
     checks["malformed_tracestate_does_not_abort_business_processing"] = _isolated_from_business(env, malformed_tracestate_observed)
     checks["malformed_attribute_does_not_abort_business_processing"] = _isolated_from_business(env, malformed_attribute_observed)
-    checks["malformed_propagation_context_does_not_abort_business_processing"] = _isolated_from_business(env, malformed_propagation_context_observed)
+    for field, malformed_context in malformed_contexts.items():
+        candidate = process_message(env, traceparent=valid, attributes={"component": "consumer"}, propagation_context=malformed_context)
+        checks[f"malformed_propagation_context_{field}_does_not_abort_business_processing"] = _isolated_from_business(env, candidate)
 
     tenant_a_2 = process_message(BusinessEnvelope("tenant-a", "msg-2", "idem-2", "order-2", "payload-v2", "at_least_once"), traceparent=same_trace_other_parent, scope_authority=scope_authority)
     tenant_b = process_message(BusinessEnvelope("tenant-b", "msg-3", "idem-3", "order-3", "payload-v3", "at_least_once"), traceparent=same_trace_other_parent, scope_authority=scope_authority)
@@ -345,8 +377,25 @@ def run_probes() -> dict[str, bool]:
     version, scoped_trace_id, _old_parent_id, flags = observed.trace.traceparent.split("-")
     child_traceparent = f"{version}-{scoped_trace_id}-2222222222222222-{flags}"
     child_hop = process_message(BusinessEnvelope("tenant-a", "msg-12", "idem-12", "order-12", "payload-v12", "at_least_once"), traceparent=child_traceparent, scope_proof=observed.scope_proof, scope_authority=scope_authority)
-    malformed_proof = TenantScopeProof("tenant-a", scoped_trace_id, 42)  # type: ignore[arg-type]
-    malformed_proof_observed = process_message(BusinessEnvelope("tenant-a", "msg-13", "idem-13", "order-13", "payload-v13", "at_least_once"), traceparent=observed.trace.traceparent, scope_proof=malformed_proof, scope_authority=scope_authority)
+    malformed_proofs = {
+        "tenant_id": TenantScopeProof(["tenant-a"], scoped_trace_id, observed.scope_proof.mac_hex),  # type: ignore[arg-type]
+        "trace_id": TenantScopeProof("tenant-a", [scoped_trace_id], observed.scope_proof.mac_hex),  # type: ignore[arg-type]
+        "mac_hex": TenantScopeProof("tenant-a", scoped_trace_id, 42),  # type: ignore[arg-type]
+    }
+    for field, malformed_proof in malformed_proofs.items():
+        candidate = process_message(BusinessEnvelope("tenant-a", f"msg-proof-{field}", f"idem-proof-{field}", f"order-proof-{field}", "payload-proof", "at_least_once"), traceparent=observed.trace.traceparent, scope_proof=malformed_proof, scope_authority=scope_authority)
+        checks[f"malformed_scope_proof_{field}_does_not_abort_business_processing"] = _isolated_from_business(candidate.envelope, candidate)
+
+    malformed_scope_inputs = [
+        ([], normalize_trace_context(valid, None)),
+        ("tenant-a", object()),
+        ("tenant-a", TraceContext(42, None, ())),  # type: ignore[arg-type]
+        ("tenant-a", TraceContext(valid, None, [["component", "consumer"]])),  # type: ignore[arg-type]
+    ]
+    checks["scope_and_issue_runtime_boundary_fail_closed"] = all(
+        _rejected(lambda tenant_id=tenant_id, trace=trace: scope_authority.scope_and_issue(tenant_id, trace))
+        for tenant_id, trace in malformed_scope_inputs
+    )
 
     checks["same_tenant_trace_correlation_allowed"] = can_correlate(observed, tenant_a_2)
     checks["cross_tenant_trace_correlation_blocked"] = not can_correlate(observed, tenant_b)
@@ -360,7 +409,6 @@ def run_probes() -> dict[str, bool]:
     checks["known_short_marker_collision_cannot_bypass_tenant_rescoping"] = collision_b.trace.traceparent is not None and collision_b.trace.traceparent != collision_a.trace.traceparent and collision_b.trace_context_disposition == "accepted_rescoped_tenant_boundary"
     checks["scope_proof_issuance_scopes_before_attesting"] = direct_scoped.traceparent is not None and direct_scoped.traceparent != valid and direct_proof is not None and direct_proof.trace_id == _trace_id(direct_scoped.traceparent) and direct_proof.tenant_id == "tenant-a" and scope_authority.verifies(direct_proof, direct_scoped.traceparent)
     checks["authenticated_trace_identity_allows_child_span_parent_change"] = child_hop.trace.traceparent == child_traceparent and child_hop.trace_context_disposition == "accepted_authenticated_tenant_scope" and child_hop.scope_proof == observed.scope_proof and can_correlate(observed, child_hop)
-    checks["malformed_scope_proof_fields_do_not_abort_business_processing"] = _isolated_from_business(malformed_proof_observed.envelope, malformed_proof_observed)
 
     altered_trace = process_message(env, traceparent=same_trace_other_parent, tracestate=None, scope_authority=scope_authority)
     checks["trace_change_does_not_change_business_or_delivery_semantics"] = business_semantics(altered_trace) == business_semantics(observed)

@@ -12,6 +12,11 @@
       "enforcement": ["alternate_entrypoint_audit", "semantic_allowlist_validation"]
     },
     {
+      "id": "INV-BOUNDARY-003",
+      "statement": "Untrusted or optional metadata must be cheaply size-bounded before allocation, encoding, hashing, HMAC, parsing, iteration, or any other work proportional to attacker-controlled input length.",
+      "enforcement": ["cheap_preflight_bound", "resource_exhaustion_probe", "sibling_expensive_operation_audit"]
+    },
+    {
       "id": "INV-OBS-001",
       "statement": "Observability and other optional diagnostic context cannot own business liveness, authorization, identity, idempotency, ordering or delivery semantics.",
       "enforcement": ["business_isolation_probe", "fail_closed_context_only"]

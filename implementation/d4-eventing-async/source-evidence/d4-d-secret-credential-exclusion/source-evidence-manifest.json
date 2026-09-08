@@ -5,7 +5,14 @@
   "source_decision": "OPEN-EVT-017",
   "evidence_id": "secret_credential_payload_exclusion_and_erasure_boundary",
   "mode": "source_evidence_only",
-  "source_base": "e2f130bac4adcb7cdec04f996b38382749b0458c",
+  "source_base": "e899b4a422a72e998dc6d0b612ac93c5cb71eb6a",
+  "correction_lineage": {
+    "supersedes_source_pr": 114,
+    "supersedes_source_head": "c8d49ccf05113f0274287578bbc6965d220a677d",
+    "superseded_codex_review_id": 5134974949,
+    "promotion_eligible_source_must_be_this_corrected_lineage_or_later": true,
+    "reason": "post-ready review identified verification-reference aliasing, audit-reference aliasing, and missing secret-generation enforcement"
+  },
   "current_run_auto_credit": false,
   "ledger_credit": [],
   "candidate": null,

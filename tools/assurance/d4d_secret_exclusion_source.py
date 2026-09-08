@@ -59,7 +59,10 @@ VERIFICATION_REFERENCE_PREFIX = "verification-profile://"
 AUDIT_REFERENCE_PREFIX = "secret-audit-ref://"
 CANONICAL_ID = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 CANONICAL_SCOPE = re.compile(r"^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)+$")
-RESOLVED_SECRET_HANDLES: set[str] = set()
+DURABLE_SECRET_AUTHORITY_HANDLES = frozenset({
+    "kms://orders-signing/current",
+    "collision-profile",
+})
 
 
 def _validate_generation(value: object, label: str) -> None:
@@ -68,7 +71,7 @@ def _validate_generation(value: object, label: str) -> None:
 
 
 def _known_secret_handle_in_text(value: str, secret_handle: object = None) -> bool:
-    handles = set(RESOLVED_SECRET_HANDLES)
+    handles = set(DURABLE_SECRET_AUTHORITY_HANDLES)
     if isinstance(secret_handle, str) and secret_handle:
         handles.add(secret_handle)
     return any(handle and handle in value for handle in handles)
@@ -225,7 +228,7 @@ def _validate_verification_reference(reference: str, secret_ref: SecretReference
         if reference == secret_ref.handle or secret_ref.handle in reference:
             raise SecretBoundaryDenied("verification reference must not alias or embed secret handle")
     if _known_secret_handle_in_text(reference):
-        raise SecretBoundaryDenied("verification reference must not alias or embed a previously resolved secret handle")
+        raise SecretBoundaryDenied("verification reference must not alias or embed a durable secret-authority handle")
 
 
 def _validate_message_boundary(message: OrdinaryMessage) -> None:
@@ -279,7 +282,6 @@ def resolve_secret(*, reference: SecretReference, authority: SecretAuthority, re
         raise SecretBoundaryDenied("secret resolution is not narrowly authorized")
     audit_ref = _audit_reference(reference)
     audit_sink.append({"scope": requested_scope, "reference": audit_ref, "generation": reference.generation, "resolved": True, "secret_handle_logged": False, "secret_material_logged": False})
-    RESOLVED_SECRET_HANDLES.add(reference.handle)
     return SecretMaterial(reference.handle, reference.generation)
 
 
@@ -332,7 +334,6 @@ def _expect_type_error(checks: dict[str, bool], name: str, fn) -> None:
 
 
 def run_probes() -> dict[str, bool]:
-    RESOLVED_SECRET_HANDLES.clear()
     ref = SecretReference("kms://orders-signing/current", 7, "tenant-a/orders")
     authority = SecretAuthority(True, ref.handle, 7, ("tenant-a/orders",))
     verification_ref = "verification-profile://semantic-equivalence-v3"
@@ -387,6 +388,7 @@ def run_probes() -> dict[str, bool]:
     _expect_denied(checks,"verification_reference_alias_secret_handle_rejected",lambda:create_message(message_id="bad-verification-alias",tenant_id="tenant-a",payload=safe_payload,secret_ref=direct_collision_ref,verification_profile_ref="verification-profile://collision-profile",verification_generation_ref=7))
     embedded_collision_ref=replace(ref,handle="collision-handle-7")
     _expect_denied(checks,"verification_reference_embedding_secret_handle_rejected",lambda:create_message(message_id="bad-verification-embed",tenant_id="tenant-a",payload=safe_payload,secret_ref=embedded_collision_ref,verification_profile_ref="verification-profile://prefix-collision-handle-7-suffix",verification_generation_ref=7))
+    _expect_denied(checks,"durable_authority_verification_reference_alias_rejected",lambda:create_message(message_id="bad-durable-verification-alias",tenant_id="tenant-a",payload=safe_payload,secret_ref=None,verification_profile_ref="verification-profile://collision-profile",verification_generation_ref=7))
 
     checks["audit_reference_is_derived_non_secret"]=_audit_reference(ref)=="secret-audit-ref://tenant-a/orders/generation-7" and ref.handle not in _audit_reference(ref)
     scope_collision_ref=replace(ref,handle="tenant-a/orders",scope="tenant-a/orders")
@@ -452,6 +454,7 @@ def run_probes() -> dict[str, bool]:
     _expect_denied(checks,"secret_handle_text_fragment_rejected",lambda:create_message(message_id="bad-secret-handle-text",tenant_id="tenant-a",payload={"note":PayloadField(f"opaque-prefix:{ref.handle}:suffix","business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"top_level_payload_key_secret_handle_rejected",lambda:create_message(message_id="bad-top-key",tenant_id="tenant-a",payload={ref.handle:PayloadField("x","business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"nested_payload_key_secret_handle_rejected",lambda:create_message(message_id="bad-nested-key",tenant_id="tenant-a",payload={"note":PayloadField({ref.handle:"x"},"business_data")},secret_ref=ref,verification_profile_ref=verification_ref,verification_generation_ref=7))
+    _expect_denied(checks,"fresh_worker_configured_handle_without_resolution_history_rejected",lambda:create_message(message_id="bad-fresh-worker-handle",tenant_id="tenant-a",payload={"note":PayloadField(ref.handle,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     _expect_denied(checks,"resolved_handle_without_attached_reference_rejected",lambda:create_message(message_id="bad-detached-handle",tenant_id="tenant-a",payload={"note":PayloadField(resolved.handle,"business_data")},secret_ref=None,verification_profile_ref=verification_ref,verification_generation_ref=7))
     other_ref=SecretReference("kms://other/current",3,"tenant-a/other")
     _expect_denied(checks,"resolved_handle_with_different_reference_rejected",lambda:create_message(message_id="bad-cross-ref-handle",tenant_id="tenant-a",payload={"note":PayloadField(resolved.handle,"business_data")},secret_ref=other_ref,verification_profile_ref=verification_ref,verification_generation_ref=7))

@@ -11,6 +11,7 @@ FIRST='workload_identity_to_broker_credential_adapter_least_privilege'
 SECOND='tenant_and_contract_scoped_producer_consumer_authorization'
 THIRD='message_protection_key_authority_and_historical_verifier_continuity'
 EXPECTED_ID='secret_credential_payload_exclusion_and_erasure_boundary'
+FIFTH='trace_context_observability_only_validation_and_redaction'
 EXPECTED_DECISION='OPEN-EVT-017'
 EXPECTED_AXIS=EXPECTED_ID
 EXPECTED_SOURCE_BASE='e899b4a422a72e998dc6d0b612ac93c5cb71eb6a'
@@ -64,8 +65,8 @@ EXPECTED_PROBES={
 'stale_generation_resolution_fails_closed','unknown_generation_resolution_fails_closed','authority_boolean_generation_rejected','authority_fractional_generation_rejected',
 'historical_reference_is_not_bearer_authority','historical_verification_namespace_collision_fails_closed',
 'bearer_secret_reference_rejected','resolve_bearer_secret_reference_rejected'}
-REQUIRED=[FIRST,SECOND,THIRD,EXPECTED_ID,'trace_context_observability_only_validation_and_redaction']
-CREDITED=[FIRST,SECOND,THIRD]
+REQUIRED=[FIRST,SECOND,THIRD,EXPECTED_ID,FIFTH]
+CURRENT_CREDITED=[FIRST,SECOND,THIRD,EXPECTED_ID]
 
 def validate(root:Path):
     e=[]
@@ -86,8 +87,8 @@ def validate(root:Path):
     if axis.get('decision')!=EXPECTED_DECISION or set(axis.get('must_prove',[]))!=EXPECTED_MUST:e.append('candidate-plan/source must_prove mismatch')
     tracks={t['track_id']:t for t in state['tracks']}; d=tracks['D4-D']
     if d.get('candidate') is not None or d.get('candidate_status')!='not_selected' or d.get('state')!='candidate_selection_open':e.append('D4-D state must remain open/unselected')
-    if d.get('required_evidence')!=REQUIRED or d.get('evidence_completed')!=CREDITED or d.get('evidence_remaining')!=REQUIRED[3:]:e.append('current D4-D state must remain exactly three separately promoted credits')
-    if sum(len(t['evidence_completed']) for t in state['tracks'])!=24:e.append('D4-wide current state must remain 24/26')
+    if d.get('required_evidence')!=REQUIRED or d.get('evidence_completed')!=CURRENT_CREDITED or d.get('evidence_remaining')!=[FIFTH]:e.append('current D4-D state must reflect exactly four separately promoted credits')
+    if sum(len(t['evidence_completed']) for t in state['tracks'])!=25:e.append('D4-wide current state must reflect 25/26')
     if state.get('gate_state')!='scoped' or state.get('d4_transport_authority')!='selected_not_granted' or state.get('canonical_product_implementation_authority')!='not_granted' or state.get('wave4_implementation_authority')!='not_granted' or state.get('production_authority')!='none' or state.get('c3_numeric_topology_authority')!='not_selected':e.append('authority leakage')
     proofs=run_probes()
     if set(proofs)!=EXPECTED_PROBES:e.append('executed probe set drift')
@@ -100,4 +101,4 @@ if __name__=='__main__':
     errors=validate(root)
     [print('D4D_SECRET_EXCLUSION_SOURCE_ERROR:',x,file=sys.stderr) for x in errors]
     if errors:raise SystemExit(1)
-    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=3_of_5 d4wide=24/26 selection=not_selected authorities=unchanged probes=117 corrected_lineage=true')
+    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=4_of_5 d4wide=25/26 selection=not_selected authorities=unchanged probes=117 corrected_lineage=true')

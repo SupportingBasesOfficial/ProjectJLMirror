@@ -31,7 +31,13 @@ def validate(root):
  if lineage.get('supersedes_source_pr')!=114 or lineage.get('supersedes_source_head')!='c8d49ccf05113f0274287578bbc6965d220a677d' or lineage.get('superseded_codex_review_id')!=5134974949 or lineage.get('promotion_eligible_source_must_be_this_corrected_lineage_or_later') is not True: e.append('fourth corrected source lineage drift')
  if p1.get('promotion_id')!='d4-d-open-evt-016-promotion-v1' or p1.get('credited_evidence')!=[E1] or p1.get('credit_count')!=1: e.append('first promotion history drift')
  if p2.get('promotion_id')!='d4-d-open-evt-016-tenant-contract-promotion-v1' or p2.get('credited_evidence')!=[E1,E2] or p2.get('credit_count')!=2: e.append('second promotion history drift')
- if p3.get('promotion_id')!='d4-d-open-evt-017-message-protection-promotion-v1' or p3.get('credited_evidence')!=[E1,E2,E3] or p3.get('credit_count')!=3: e.append('third promotion history drift')
+ if p3.get('promotion_id')!='d4-d-open-evt-017-message-protection-promotion-v1' or p3.get('promotion_base')!='28c5274b9ec99a5866eceaec1b76459c6b4ab4ef' or p3.get('source_pr')!=112 or p3.get('source_reviewed_head')!='7d0ca86a582d2b695858c9f4437b459b21194922' or p3.get('source_merge_commit')!='28c5274b9ec99a5866eceaec1b76459c6b4ab4ef': e.append('third promotion source identity drift')
+ r3=p3.get('source_review',{}); w3=p3.get('source_workflow',{})
+ if r3.get('review_id')!=5134095776 or r3.get('material_threads_unresolved')!=0: e.append('third promotion review provenance drift')
+ expected3={'workflow_id':352456873,'workflow_path':'.github/workflows/d4-d-message-protection-source-evidence.yml','workflow_event':'pull_request','source_head_branch':'d4d/open-evt-017-message-protection-source','run_id':34144652834,'run_attempt':1,'job_id':101813930120,'job_name':'D4-D message protection source evidence','artifact_id':10027183776,'artifact_name':'d4-d-message-protection-source-7d0ca86a582d2b695858c9f4437b459b21194922-34144652834-1','artifact_digest':'sha256:58f6e78324c924c4d41d8230b4e752e7ab64af5b2a95fe54115ded1890fdf9e6'}
+ for k,v in expected3.items():
+  if w3.get(k)!=v: e.append('third promotion workflow '+k+' drift')
+ if p3.get('source_manifest',{}).get('path')!=str(S3) or p3.get('source_manifest',{}).get('sha256')!=SHA3 or p3.get('credited_evidence')!=[E1,E2,E3] or p3.get('newly_credited_evidence')!=E3 or p3.get('credit_count')!=3: e.append('third promotion credit/provenance drift')
  if p4.get('promotion_id')!='d4-d-open-evt-017-secret-exclusion-promotion-v1' or p4.get('promotion_base')!='c9cf2a4623b209c27283efb91d7c743efada71b6' or p4.get('source_pr')!=115 or p4.get('source_reviewed_head')!='31523e7d8d388af3d4f6a6adb309d4363a014884' or p4.get('source_merge_commit')!='c9cf2a4623b209c27283efb91d7c743efada71b6': e.append('fourth promotion source identity drift')
  r=p4.get('source_review',{}); w=p4.get('source_workflow',{})
  if r.get('review_id')!=5144105945 or r.get('codex_clean_comment_id')!=5587879590 or r.get('material_threads_unresolved')!=0: e.append('fourth promotion review provenance drift')
@@ -52,4 +58,4 @@ if __name__=='__main__':
  root=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else Path.cwd(); errors=validate(root)
  [print('D4D_LEDGER_ERROR:',x,file=sys.stderr) for x in errors]
  if errors: raise SystemExit(1)
- print('d4d_evidence_plan=PASS ledger=4_of_5 d4wide=25/26 selection=not_selected source_snapshots=0_of_5,1_of_5,2_of_5,3_of_5 corrected_lineage=bound authorities=unchanged')
+ print('d4d_evidence_plan=PASS ledger=4_of_5 d4wide=25/26 selection=not_selected source_snapshots=0_of_5,1_of_5,2_of_5,3_of_5 corrected_lineage=bound third_promotion_provenance=bound authorities=unchanged')

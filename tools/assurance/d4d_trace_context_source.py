@@ -4,11 +4,17 @@ from dataclasses import dataclass
 import re
 
 TRACEPARENT_RE = re.compile(r"^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$")
-SENSITIVE_MARKERS = ("authorization", "cookie", "secret", "password", "credential", "api_key", "apikey", "token")
+TRACESTATE_KEY_RE = re.compile(r"^[a-z][a-z0-9_\-*/]{0,31}$")
+TRACESTATE_VALUE_RE = re.compile(r"^[\x21-\x2b\x2d-\x3c\x3e-\x7e](?:[\x20-\x2b\x2d-\x3c\x3e-\x7e]{0,254}[\x21-\x2b\x2d-\x3c\x3e-\x7e])?$")
 MAX_TRACESTATE_LEN = 512
+MAX_TRACESTATE_MEMBERS = 32
 MAX_ATTRS = 16
 MAX_ATTR_KEY = 64
 MAX_ATTR_VALUE = 128
+ALLOWED_ATTRIBUTE_VALUES = {
+    "component": {"producer", "consumer", "dispatcher", "broker_adapter"},
+    "phase": {"receive", "validate", "dispatch", "ack", "retry"},
+}
 
 @dataclass(frozen=True)
 class BusinessEnvelope:
@@ -33,35 +39,55 @@ class ObservedMessage:
 class TraceContextRejected(Exception):
     pass
 
-def _valid_traceparent(value: str) -> bool:
+def _valid_traceparent(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
     if not TRACEPARENT_RE.fullmatch(value):
         return False
     version, trace_id, parent_id, _flags = value.split("-")
     return version != "ff" and trace_id != "0" * 32 and parent_id != "0" * 16
 
-def _bounded_tracestate(value: str | None) -> str | None:
+def _bounded_tracestate(value: object | None) -> str | None:
     if value is None:
         return None
+    if not isinstance(value, str):
+        raise TraceContextRejected("tracestate must be a string")
     if len(value) > MAX_TRACESTATE_LEN or "\n" in value or "\r" in value:
         raise TraceContextRejected("tracestate out of bounds")
-    return value
+    members = value.split(",")
+    if not members or len(members) > MAX_TRACESTATE_MEMBERS:
+        raise TraceContextRejected("tracestate member count invalid")
+    seen: set[str] = set()
+    canonical: list[str] = []
+    for member in members:
+        if member.count("=") != 1:
+            raise TraceContextRejected("malformed tracestate member")
+        key, member_value = member.split("=", 1)
+        if not TRACESTATE_KEY_RE.fullmatch(key) or not TRACESTATE_VALUE_RE.fullmatch(member_value):
+            raise TraceContextRejected("non-canonical tracestate member")
+        if key in seen:
+            raise TraceContextRejected("duplicate tracestate key")
+        seen.add(key)
+        canonical.append(f"{key}={member_value}")
+    return ",".join(canonical)
 
-def _is_sensitive_attribute(key: str) -> bool:
-    lowered = key.lower()
-    return any(marker in lowered for marker in SENSITIVE_MARKERS)
-
-def _redact_attributes(attributes: dict[str, str]) -> tuple[tuple[str, str], ...]:
+def _redact_attributes(attributes: object) -> tuple[tuple[str, str], ...]:
+    if not isinstance(attributes, dict):
+        raise TraceContextRejected("trace attributes must be an object")
     if len(attributes) > MAX_ATTRS:
         raise TraceContextRejected("too many trace attributes")
     clean: list[tuple[str, str]] = []
     for key, value in attributes.items():
         if not isinstance(key, str) or not isinstance(value, str) or not key or len(key) > MAX_ATTR_KEY or len(value) > MAX_ATTR_VALUE:
             raise TraceContextRejected("trace attribute out of bounds")
-        clean.append((key, "[REDACTED]" if _is_sensitive_attribute(key) else value))
+        allowed_values = ALLOWED_ATTRIBUTE_VALUES.get(key)
+        if allowed_values is None or value not in allowed_values:
+            raise TraceContextRejected("trace attribute not in allowlisted semantic profile")
+        clean.append((key, value))
     return tuple(sorted(clean))
 
-def normalize_trace_context(traceparent: str | None, tracestate: str | None, attributes: dict[str, str] | None = None) -> TraceContext:
-    attrs = _redact_attributes(attributes or {})
+def normalize_trace_context(traceparent: object | None, tracestate: object | None, attributes: object | None = None) -> TraceContext:
+    attrs = _redact_attributes({} if attributes is None else attributes)
     if traceparent is None:
         if tracestate is not None:
             raise TraceContextRejected("tracestate requires traceparent")
@@ -70,7 +96,7 @@ def normalize_trace_context(traceparent: str | None, tracestate: str | None, att
         raise TraceContextRejected("malformed traceparent")
     return TraceContext(traceparent, _bounded_tracestate(tracestate), attrs)
 
-def process_message(envelope: BusinessEnvelope, *, traceparent: str | None, tracestate: str | None = None, attributes: dict[str, str] | None = None) -> ObservedMessage:
+def process_message(envelope: BusinessEnvelope, *, traceparent: object | None, tracestate: object | None = None, attributes: object | None = None) -> ObservedMessage:
     trace = normalize_trace_context(traceparent, tracestate, attributes)
     return ObservedMessage(envelope=envelope, trace=trace)
 
@@ -85,12 +111,19 @@ def can_correlate(left: ObservedMessage, right: ObservedMessage) -> bool:
         return False
     return left.trace.traceparent.split("-")[1] == right.trace.traceparent.split("-")[1]
 
+def _rejected(callable_) -> bool:
+    try:
+        callable_()
+        return False
+    except TraceContextRejected:
+        return True
+
 def run_probes() -> dict[str, bool]:
     env = BusinessEnvelope("tenant-a", "msg-1", "idem-1", "order-1", "payload-v1", "at_least_once")
     valid = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
     same_trace_other_parent = "00-4bf92f3577b34da6a3ce929d0e0e4736-1111111111111111-01"
 
-    observed = process_message(env, traceparent=valid, tracestate="vendor=value", attributes={"component": "consumer", "http.request.header.authorization": "Bearer super-secret", "db.api_token": "opaque-secret"})
+    observed = process_message(env, traceparent=valid, tracestate="vendor=value", attributes={"component": "consumer", "phase": "receive"})
     no_trace = process_message(env, traceparent=None)
     attrs = dict(observed.trace.attributes)
 
@@ -102,42 +135,33 @@ def run_probes() -> dict[str, bool]:
         "trace_context_not_message_identity_authority": observed.envelope.message_id == "msg-1",
         "trace_context_not_delivery_authority": observed.envelope.delivery_semantics == "at_least_once",
         "valid_traceparent_accepted": observed.trace.traceparent == valid,
-        "bounded_tracestate_accepted": observed.trace.tracestate == "vendor=value",
-        "sensitive_trace_attribute_redacted": attrs["http.request.header.authorization"] == "[REDACTED]" and attrs["db.api_token"] == "[REDACTED]",
-        "non_sensitive_trace_attribute_preserved": attrs["component"] == "consumer",
+        "bounded_canonical_tracestate_accepted": observed.trace.tracestate == "vendor=value",
+        "allowlisted_trace_attributes_preserved": attrs == {"component": "consumer", "phase": "receive"},
         "missing_trace_context_preserves_business_and_delivery_semantics": business_semantics(no_trace) == business_semantics(observed),
     }
 
-    malformed_cases = [
+    malformed_cases: list[object] = [
         "zz-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
         "00-00000000000000000000000000000000-00f067aa0ba902b7-01",
         "00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01",
         "ff-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        42,
     ]
     for idx, candidate in enumerate(malformed_cases, start=1):
-        try:
-            process_message(env, traceparent=candidate)
-            checks[f"malformed_traceparent_{idx}_rejected"] = False
-        except TraceContextRejected:
-            checks[f"malformed_traceparent_{idx}_rejected"] = True
+        checks[f"malformed_traceparent_{idx}_rejected"] = _rejected(lambda candidate=candidate: process_message(env, traceparent=candidate))
 
-    try:
-        process_message(env, traceparent=None, tracestate="vendor=value")
-        checks["orphan_tracestate_rejected"] = False
-    except TraceContextRejected:
-        checks["orphan_tracestate_rejected"] = True
+    checks["orphan_tracestate_rejected"] = _rejected(lambda: process_message(env, traceparent=None, tracestate="vendor=value"))
+    checks["non_string_tracestate_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, tracestate=42))
+    checks["oversized_tracestate_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, tracestate="x" * (MAX_TRACESTATE_LEN + 1)))
+    checks["malformed_tracestate_member_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, tracestate="not valid, ="))
+    checks["duplicate_tracestate_key_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, tracestate="vendor=a,vendor=b"))
+    too_many_members = ",".join(f"k{i}=v" for i in range(MAX_TRACESTATE_MEMBERS + 1))
+    checks["excess_tracestate_members_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, tracestate=too_many_members))
 
-    try:
-        process_message(env, traceparent=valid, tracestate="x" * (MAX_TRACESTATE_LEN + 1))
-        checks["oversized_tracestate_rejected"] = False
-    except TraceContextRejected:
-        checks["oversized_tracestate_rejected"] = True
-
-    try:
-        process_message(env, traceparent=valid, attributes={f"k{i}": "v" for i in range(MAX_ATTRS + 1)})
-        checks["excess_trace_attributes_rejected"] = False
-    except TraceContextRejected:
-        checks["excess_trace_attributes_rejected"] = True
+    checks["excess_trace_attributes_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={f"k{i}": "v" for i in range(MAX_ATTRS + 1)}))
+    checks["unknown_trace_attribute_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"unknown": "benign"}))
+    checks["sensitive_value_under_allowlisted_key_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes={"component": "Bearer super-secret"}))
+    checks["non_string_trace_attributes_rejected"] = _rejected(lambda: process_message(env, traceparent=valid, attributes=42))
 
     tenant_a_2 = process_message(BusinessEnvelope("tenant-a", "msg-2", "idem-2", "order-2", "payload-v2", "at_least_once"), traceparent=same_trace_other_parent)
     tenant_b = process_message(BusinessEnvelope("tenant-b", "msg-3", "idem-3", "order-3", "payload-v3", "at_least_once"), traceparent=same_trace_other_parent)

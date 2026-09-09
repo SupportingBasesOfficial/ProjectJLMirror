@@ -23,6 +23,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
+          allow-unsafe-pr-checkout: false
 
       - name: Assert exact checked-out commit
         shell: bash

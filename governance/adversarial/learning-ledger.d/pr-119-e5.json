@@ -89,6 +89,28 @@
       "guardrails": [{"path": "tools/assurance/test_validate_d4d_trace_context_source.py", "probe": "falsify_current_projection_adapters"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 6
+    },
+    {
+      "id": "LEARN-PR119-005",
+      "pr": 119,
+      "source": "external_review",
+      "review_comment_id": 3968414339,
+      "class_id": "ADV-EPHEMERAL-EVIDENCE-LIVENESS",
+      "invariant_ids": ["INV-PROVENANCE-002"],
+      "root_cause": "The E5 promotion workflow treated retention-limited GitHub source artifacts as a permanent steady-state dependency even after the exact source identity, artifact digest, manifest digest, review, run, job, and promotion record had already been durably admitted, so natural artifact expiration could later break unrelated validation of an unchanged promotion.",
+      "horizontal_audit": [
+        "E5 live source artifact admission versus steady-state durable validation",
+        "promotion-record delta detection using the PR base and exact E5 promotion path",
+        "source manifest SHA-256 validation after artifact expiry",
+        "historical source-time 4-of-5 and 25-of-26 snapshot preservation",
+        "separate candidate-selection and D4-acceptance flags in durable promotion record",
+        "D4-C promotion workflows that already gate live artifact admission on own promotion-record change",
+        "workflow_dispatch steady-state behavior when no pull-request base exists",
+        "future PRs touching aggregate ledger state without changing E5 promotion authority"
+      ],
+      "guardrails": [{"path": "tools/assurance/test_validate_d4d_trace_context_source.py", "probe": "falsify_promotion_artifact_retention_liveness"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1
     }
   ]
 }

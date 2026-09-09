@@ -40,7 +40,7 @@ jobs:
       - name: Validate D4-A evidence chain and governed selection record
         shell: bash
         run: python3 tools/assurance/validate_d4a_evidence_plan.py .
-      - name: Preserve D4 scoped boundary
+      - name: Preserve separately accepted D4 boundary
         shell: bash
         run: |
           set -euo pipefail
@@ -127,10 +127,10 @@ jobs:
           assert plan['ledger_credit_state']=='seven_of_seven' and set(plan['credited_evidence'])==expected and plan['candidate']=='kafka' and plan['candidate_status']=='selected_c2_candidate' and plan['selection_state']=='selected' and plan['acceptance_state']=='track_selected_separate_d4_acceptance_required'
           assert set(d4a['evidence_completed'])==expected and d4a['evidence_remaining']==[] and d4a['state']=='selected_candidate' and d4a['candidate_status']=='selected_c2_candidate'
           assert selection['selection_state']=='selected' and selection['selection_scope']=='bounded_c2_mechanism_selection_only'
-          assert state['gate_state']=='scoped' and state['d4_transport_authority']=='selected_not_granted' and state['canonical_product_implementation_authority']=='not_granted' and state['wave4_implementation_authority']=='not_granted' and state['production_authority']=='none' and state['c3_numeric_topology_authority']=='not_selected'
+          assert state['gate_state']=='separately_accepted' and state['d4_transport_authority']=='selected_not_granted' and state['canonical_product_implementation_authority']=='not_granted' and state['wave4_implementation_authority']=='not_granted' and state['production_authority']=='none' and state['c3_numeric_topology_authority']=='not_selected'
           assert d4b['candidate']==expected_profile and d4b['candidate_status']=='selected_c2_profile' and d4b['state']=='selected_candidate' and set(d4b['evidence_completed'])==expected_d4b and d4b['evidence_remaining']==[]
           assert d4c['candidate']==expected_d4c and d4c['candidate_status']=='selected_c2_delivery_recovery_profile' and d4c['state']=='selected_candidate' and d4c['evidence_completed']==expected_d4c_credit and d4c['evidence_remaining']==[]
           assert d4d['candidate']=={'workload_identity_to_broker_credential_adapter': 'derived_short_lived_broker_native_credential_adapter', 'tenant_and_contract_scoped_producer_consumer_authorization': 'broker_acl_projection_adapter', 'message_protection_key_authority_and_historical_verifier_continuity': 'kms_backed_envelope_or_transport_protection_profile', 'secret_credential_payload_exclusion_and_erasure_boundary': 'reference_only_secret_authority_profile', 'trace_context_observability_only_validation_and_redaction': 'w3c_trace_context_bounded_profile'} and d4d['candidate_status']=='selected_c2_security_profile' and d4d['state']=='selected_candidate' and d4d['evidence_completed']==expected_d4d_credit and d4d['evidence_remaining']==[]
           assert sum(len(track['evidence_completed']) for track in state['tracks'])==26
-          print('d4a_selection_boundary=PASS kafka=selected scope=bounded_c2 transport_authority=not_granted d4=scoped d4b=5_of_5_selected_profile d4c=9_of_9_selected_profile d4d=5_of_5 d4wide=26/26 product_wave4=not_granted production=none c3=not_selected')
+          print('d4a_selection_boundary=PASS kafka=selected scope=bounded_c2 transport_authority=not_granted d4=separately_accepted d4b=5_of_5_selected_profile d4c=9_of_9_selected_profile d4d=5_of_5 d4wide=26/26 product_wave4=not_granted production=none c3=not_selected')
           PY

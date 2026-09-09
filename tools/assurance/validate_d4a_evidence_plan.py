@@ -19,6 +19,17 @@ D4C_CREDITS = [
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
+D4C_SELECTED_PROFILE = {
+    "ack_visibility_lease_and_checkpoint": "durable_inbox_claim_then_broker_ack_profile",
+    "quarantine_and_redrive": "hybrid_platform_quarantine_store_plus_broker_dlq",
+    "bounded_message_payload_batch_and_compression": "layered_transport_and_application_bounds_profile",
+    "scoped_content_equivalence_authority": "hybrid_equivalence_authority_profile",
+    "outbox_claim_dispatch_and_ack_ambiguity": "compare_and_swap_lease_claim_profile",
+    "producer_source_generation": "authority_issued_epoch_generation",
+    "privileged_replay_and_event_history": "hybrid_history_archive_plus_replay_controller_profile",
+    "historical_reader_and_upcaster": "in_process_versioned_reader_upcaster_registry",
+    "recovery_generation_reconciliation_and_activation": "hybrid_generation_manifest_plus_multi_store_reconciler_profile",
+}
 D4D_CREDITS = [
     "workload_identity_to_broker_credential_adapter_least_privilege",
     "tenant_and_contract_scoped_producer_consumer_authorization",
@@ -41,13 +52,11 @@ def _current_sibling_errors(entry: dict) -> list[str]:
     tracks = {t.get("track_id"): t for t in entry.get("tracks", []) if isinstance(t, dict)}
     d4c = tracks.get("D4-C", {})
     d4d = tracks.get("D4-D", {})
-    required = d4c.get("required_evidence", [])
-    expected_remaining = [item for item in required if item not in D4C_CREDITS]
-    if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
-        errors.append("D4-C current sibling state must remain open/unselected")
+    if d4c.get("candidate") != D4C_SELECTED_PROFILE or d4c.get("candidate_status") != "selected_c2_delivery_recovery_profile" or d4c.get("state") != "selected_candidate":
+        errors.append("D4-C current sibling selected profile drift")
     if d4c.get("evidence_completed") != D4C_CREDITS:
         errors.append("D4-C current sibling credit must be exactly all nine reviewed D4-C obligations")
-    if d4c.get("evidence_remaining") != expected_remaining:
+    if d4c.get("evidence_remaining") != []:
         errors.append("D4-C current sibling remaining evidence drift")
     if d4d.get("candidate") != D4D_SELECTED_PROFILE or d4d.get("candidate_status") != "selected_c2_security_profile" or d4d.get("state") != "selected_candidate":
         errors.append("D4-D current sibling selected security profile drift")
@@ -63,9 +72,12 @@ def _current_sibling_errors(entry: dict) -> list[str]:
 def _historical_projection(entry: dict) -> dict:
     projected = copy.deepcopy(entry)
     d4c = next(t for t in projected["tracks"] if t.get("track_id") == "D4-C")
-    d4d = next(t for t in projected["tracks"] if t.get("track_id") == "D4-D")
+    d4c["candidate"] = None
+    d4c["candidate_status"] = "not_selected"
+    d4c["state"] = "candidate_selection_open"
     d4c["evidence_completed"] = []
     d4c["evidence_remaining"] = list(d4c["required_evidence"])
+    d4d = next(t for t in projected["tracks"] if t.get("track_id") == "D4-D")
     d4d["candidate"] = None
     d4d["candidate_status"] = "not_selected"
     d4d["state"] = "candidate_selection_open"
@@ -101,7 +113,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4A_PLAN_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4a_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=9_of_9 current_sibling_d4d=5_of_5_selected d4wide=26_of_26")
+    print("d4a_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=9_of_9_selected current_sibling_d4d=5_of_5_selected d4wide=26_of_26")
     return 0
 
 

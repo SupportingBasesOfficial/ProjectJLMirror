@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "selection_id": "d4-c-bounded-c2-delivery-recovery-profile-selection-v1",
+  "gate_id": "D4",
+  "track_id": "D4-C",
+  "selection_base_main_commit": "8d49980d45256a86a6005a93cc71f5518622cc90",
+  "source_decisions": [
+    "OPEN-EVT-008",
+    "OPEN-EVT-009",
+    "OPEN-EVT-010",
+    "OPEN-EVT-011",
+    "OPEN-EVT-012",
+    "OPEN-EVT-013",
+    "OPEN-EVT-014",
+    "OPEN-EVT-015",
+    "OPEN-EVT-025"
+  ],
+  "evidence_completion": {
+    "required_evidence_count": 9,
+    "credited_evidence_count": 9,
+    "evidence_plan_path": "implementation/d4-eventing-async/d4-c-evidence-plan.json",
+    "candidate_evaluation_plan_path": "implementation/d4-eventing-async/d4-c-candidate-evaluation-plan.json"
+  },
+  "selection_state": "selected",
+  "selection_scope": "bounded_c2_delivery_recovery_profile_selection_only",
+  "track_state": "selected_candidate",
+  "profile": {
+    "ack_visibility_lease_and_checkpoint": {
+      "selection_state": "selected",
+      "mechanism_class": "durable_inbox_claim_then_broker_ack_profile",
+      "durable_responsibility_authority": "platform_inbox_or_equivalent_durable_consumer_claim",
+      "broker_progress_authority": "transport_progress_only",
+      "takeover_rule": "fenced_fail_closed_on_lease_ambiguity",
+      "unselected_eligible_alternatives": [
+        "broker_visibility_lease_plus_durable_receipt_profile",
+        "database_owned_work_claim_plus_broker_checkpoint_profile",
+        "equivalent_reviewed_profile"
+      ]
+    },
+    "quarantine_and_redrive": {
+      "selection_state": "selected",
+      "mechanism_class": "hybrid_platform_quarantine_store_plus_broker_dlq",
+      "canonical_quarantine_authority": "platform_governed_quarantine_record",
+      "broker_dlq_role": "replaceable_transport_assist_only",
+      "redrive_authority": "current_privileged_platform_authority",
+      "unselected_eligible_alternatives": [
+        "durable_platform_quarantine_store_with_broker_dlq_adapter",
+        "broker_native_dlq_with_canonical_platform_quarantine_index",
+        "equivalent_reviewed_profile"
+      ]
+    },
+    "bounded_message_payload_batch_and_compression": {
+      "selection_state": "selected",
+      "mechanism_class": "layered_transport_and_application_bounds_profile",
+      "contract_limit_authority": "application_contract",
+      "transport_limit_role": "precheck_and_defense_in_depth",
+      "unselected_eligible_alternatives": [
+        "contract_bound_application_limits_with_transport_precheck",
+        "bounded_envelope_codec_profile",
+        "equivalent_reviewed_profile"
+      ]
+    },
+    "scoped_content_equivalence_authority": {
+      "selection_state": "selected",
+      "mechanism_class": "hybrid_equivalence_authority_profile",
+      "identity_boundary": "consumer_contract_trusted_message_identity_scope_and_message_id",
+      "equivalence_requirement": "durable_same_semantics_evidence_required_for_benign_duplicate",
+      "conflict_behavior": "fail_closed",
+      "cross_scope_equality_oracle": "forbidden",
+      "unselected_eligible_alternatives": [
+        "canonical_collision_resistant_fingerprint_profile",
+        "keyed_authenticated_digest_profile",
+        "protected_retained_immutable_original_profile",
+        "equivalent_reviewed_profile"
+      ]
+    },
+    "outbox_claim_dispatch_and_ack_ambiguity": {
+      "selection_state": "selected",
+      "mechanism_class": "compare_and_swap_lease_claim_profile",
+      "authoritative_fact_commit": "atomic_with_business_mutation",
+      "claim_takeover_rule": "fenced_compare_and_swap_generation",
+      "ack_ambiguity_rule": "retry_same_identity_and_semantic_meaning",
+      "unselected_eligible_alternatives": [
+        "database_skip_locked_polling_claim_profile",
+        "notification_assisted_polling_claim_profile",
+        "equivalent_reviewed_profile"
+      ]
+    },
+    "producer_source_generation": {
+      "selection_state": "selected",
+      "mechanism_class": "authority_issued_epoch_generation",
+      "current_generation_authority": "platform_source_authority",
+      "retired_generation_behavior": "cannot_regain_current_authority",
+      "tenant_or_placement_identity_authority": "none",
+      "unselected_eligible_alternatives": [
+        "positive_integer_fenced_generation",
+        "opaque_fenced_generation_token",
+        "equivalent_reviewed_profile"
+      ]
+    },
+    "privileged_replay_and_event_history": {
+      "selection_state": "selected",
+      "mechanism_class": "hybrid_history_archive_plus_replay_controller_profile",
+      "replay_authority": "current_privileged_audited_platform_authority",
+      "original_identity_and_meaning": "preserved",
+      "dedup_disable_escape_hatch": "forbidden",
+      "unselected_eligible_alternatives": [
+        "canonical_event_history_store_profile",
+        "broker_retained_log_plus_authoritative_history_index_profile",
+        "equivalent_reviewed_profile"
+      ]
+    },
+    "historical_reader_and_upcaster": {
+      "selection_state": "selected",
+      "mechanism_class": "in_process_versioned_reader_upcaster_registry",
+      "historical_meaning_authority": "immutable_original_contract_semantics",
+      "dynamic_untrusted_code": "forbidden",
+      "equivalence_mapping_rule": "deterministic_and_historically_recoverable",
+      "unselected_eligible_alternatives": [
+        "sidecar_or_library_historical_reader_profile",
+        "offline_replay_transform_pipeline_profile",
+        "equivalent_reviewed_profile"
+      ]
+    },
+    "recovery_generation_reconciliation_and_activation": {
+      "selection_state": "selected",
+      "mechanism_class": "hybrid_generation_manifest_plus_multi_store_reconciler_profile",
+      "reconciliation_window": "explicit_r_f_generation_scoped_inventory",
+      "activation_rule": "fail_closed_until_required_reconciliation_proven",
+      "missing_state_semantics": "uncertainty_not_absence",
+      "unselected_eligible_alternatives": [
+        "restore_generation_fence_manifest_profile",
+        "reconciliation_inventory_job_plus_activation_gate_profile",
+        "equivalent_reviewed_profile"
+      ]
+    }
+  },
+  "cross_axis_rules": [
+    "message_identity_equivalence_ordering_generation_and_authorization_remain_distinct_authorities",
+    "broker_native_features_never_replace_platform_business_quarantine_replay_or_recovery_truth",
+    "current_authority_is_reestablished_for_redrive_replay_and_recovery_activation",
+    "historical_message_meaning_and_required_equivalence_or_verifier_authority_remain_reproducible",
+    "uncertainty_never_collapses_to_absence_safe_duplicate_or_effect_eligibility",
+    "dynamic_untrusted_code_schema_or_parser_execution_remains_forbidden",
+    "selected_mechanism_classes_remain_replaceable_profiles_beneath_canonical_platform_authority"
+  ],
+  "d4_gate_state": "scoped",
+  "d4_transport_authority": "selected_not_granted",
+  "canonical_product_implementation_authority": "not_granted",
+  "wave4_implementation_authority": "not_granted",
+  "production_authority": "none",
+  "c3_numeric_topology_authority": "not_selected",
+  "separate_d4_acceptance_required": true,
+  "historical_evidence_rule": "The D4-C candidate-evaluation plan and all nine source-evidence records remain immutable historical evidence with selection not_selected/not_granted and source-time ledger truth; this selection record is the current bounded C2 D4-C selection authority and must not rewrite earlier evidence truth.",
+  "non_authority_rule": "Selecting the D4-C bounded C2 delivery/recovery profile does not accept D4, grant transport implementation authority, grant canonical Product or Wave 4 implementation authority, grant production deployment authority, select C3 numeric/topology authority, or choose production retry retention replay quarantine recovery or capacity numerics."
+}

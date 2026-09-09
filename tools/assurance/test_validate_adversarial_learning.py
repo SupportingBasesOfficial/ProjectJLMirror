@@ -25,6 +25,7 @@ GUARDRAIL_FILES = [
     Path("tools/assurance/validate_adversarial_learning_strict.py"),
     Path("tools/assurance/validate_repository.py"),
     Path("tools/assurance/test_validate_d4d_selection.py"),
+    Path("tools/assurance/test_validate_d4c_selection.py"),
     Path("tools/assurance/d4b_wire_schema/test_source_evidence.py"),
 ]
 
@@ -77,29 +78,8 @@ def expect_repository_failure(mutator) -> None:
         assert vr.validate_repository(root), "repository-policy mutation unexpectedly accepted"
 
 
-def stale_d4c_current_workflow_projections(root: Path) -> list[str]:
-    stale_markers = (
-        "d4c['candidate'] is None",
-        "tracks['D4-C']['candidate'] is None",
-        "d4c['candidate_status']=='not_selected'",
-        "tracks['D4-C']['candidate_status']=='not_selected'",
-        "d4c['state']=='candidate_selection_open'",
-        "tracks['D4-C']['state']=='candidate_selection_open'",
-    )
-    findings: list[str] = []
-    for rel in D4C_CURRENT_WORKFLOWS:
-        text = (root / rel).read_text(encoding="utf-8")
-        for marker in stale_markers:
-            if marker in text:
-                findings.append(f"{rel}:{marker}")
-    return findings
-
-
 def falsify_stale_d4c_current_workflow_projection() -> None:
-    assert not stale_d4c_current_workflow_projections(ROOT), stale_d4c_current_workflow_projections(ROOT)
-    with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
-        clone(root)
+    def mutate(root: Path) -> None:
         rel = D4C_CURRENT_WORKFLOWS[0]
         mutate_text(
             root,
@@ -107,7 +87,7 @@ def falsify_stale_d4c_current_workflow_projection() -> None:
             "assert d4c['candidate']==expected_c and d4c['candidate_status']=='selected_c2_delivery_recovery_profile' and d4c['state']=='selected_candidate'",
             "assert d4c['candidate'] is None and d4c['candidate_status']=='not_selected' and d4c['state']=='candidate_selection_open'",
         )
-        assert stale_d4c_current_workflow_projections(root), "stale D4-C current-state workflow regression was not detected"
+    expect_failure(mutate)
 
 
 def falsify_top_level_review_surface_coverage() -> None:
@@ -258,7 +238,7 @@ def main() -> None:
         comments.write_text(json.dumps([[{"id": 3963734258, "body": "**P1 Badge** exact bootstrap finding"}]]), encoding="utf-8")
         assert not s.validate(root, comments)
 
-    print("adversarial_learning_falsification=PASS entrypoint_termination=blocked no_op_assertion=blocked dead_branch_helper=blocked privileged_job_pr_execution=blocked implicit_api_write=blocked exact_status_endpoint=bound reconciliation_concurrency=fresh manual_dispatch=removed strict_reconciliation=all-surfaces stale_d4c_workflow_projection=blocked")
+    print("adversarial_learning_falsification=PASS entrypoint_termination=blocked no_op_assertion=blocked dead_branch_helper=blocked privileged_job_pr_execution=blocked implicit_api_write=blocked exact_status_endpoint=bound reconciliation_concurrency=fresh manual_dispatch=removed strict_reconciliation=all-surfaces stale_d4c_workflow_projection=blocked d4c_product_authority_guardrail=attested")
 
 
 if __name__ == "__main__":

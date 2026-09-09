@@ -69,15 +69,21 @@
     },
     {
       "id": "ADV-LEARNING-SURFACE-OMISSION",
-      "name": "Material review surface omitted from learning reconciliation",
-      "description": "A channel capable of carrying a material review finding is not collected or does not trigger exact-head reconciliation, allowing a valid finding to exist while the automatic learning gate still reports complete coverage.",
+      "name": "Learning reconciliation surface, trigger or freshness gap",
+      "description": "A channel or trigger capable of carrying a material review finding is omitted, misbound, non-strict, unusable, or allowed to publish stale success after newer evidence, so the learning gate can report coverage that does not correspond to the latest complete review state.",
       "invariant_ids": ["INV-LEARNING-001"]
     },
     {
       "id": "ADV-GUARDRAIL-ATTESTATION-GAP",
-      "name": "Declared learning guardrail is not proven executable and reachable",
-      "description": "The learning ledger can claim a permanent guardrail using a textual token, incidental symbol, or syntactically present but unreachable falsifier call that is not guaranteed to execute from the CI entrypoint.",
+      "name": "Declared learning guardrail is not proven executable and effective",
+      "description": "The learning ledger can claim a permanent guardrail using textual presence, generic assertions, statically dead branches, no-op bodies, or entrypoint/call paths that are syntactically present but do not execute a registered negative test.",
       "invariant_ids": ["INV-LEARNING-002"]
+    },
+    {
+      "id": "ADV-ASSURANCE-PRIVILEGE-BOUNDARY",
+      "name": "Assurance write authority exposed to pull-request-controlled execution",
+      "description": "A workflow, runner state, command parser or endpoint allowlist permits pull-request-controlled execution to influence a context with write authority, or permits an implicit or spoofed mutation to escape the exact trusted publication boundary.",
+      "invariant_ids": ["INV-LEARNING-003"]
     }
   ]
 }

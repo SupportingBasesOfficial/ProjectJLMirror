@@ -80,11 +80,21 @@ def _valid_traceparent(value: object) -> bool:
     version, trace_id, parent_id, _flags = value.split("-")
     return version == "00" and trace_id != "0" * 32 and parent_id != "0" * 16
 
+def _utf8_encodable(value: str) -> bool:
+    try:
+        value.encode("utf-8")
+        return True
+    except UnicodeEncodeError:
+        return False
+
 def _valid_scope_tenant_id(value: object) -> bool:
-    return isinstance(value, str) and 0 < len(value) <= MAX_SCOPE_TENANT_ID_CHARS
+    return isinstance(value, str) and 0 < len(value) <= MAX_SCOPE_TENANT_ID_CHARS and _utf8_encodable(value)
 
 def _trace_id(traceparent: str) -> str:
     return traceparent.split("-")[1]
+
+def _parent_id(traceparent: str) -> str:
+    return traceparent.split("-")[2]
 
 def _bounded_tracestate(value: object | None) -> str | None:
     if value is None:
@@ -199,20 +209,30 @@ def normalize_trace_context(traceparent: object | None, tracestate: object | Non
 
 def _tenant_scoped_hex(tenant_id: str, label: str, value: str, length: int) -> str:
     if not _valid_scope_tenant_id(tenant_id):
-        raise TraceContextRejected("tenant scope identity out of bounds")
+        raise TraceContextRejected("tenant scope identity out of bounds or non-canonical")
     digest = hashlib.sha256(f"jlmirror-trace-scope-v4\0{tenant_id}\0{label}\0{value}".encode("utf-8")).hexdigest()[:length]
     return ("1" + digest[1:]) if set(digest) == {"0"} else digest
 
 def _scope_trace_to_tenant(trace: object, tenant_id: object, propagation_context: object | None = None) -> TraceContext:
     trace = _validate_trace_context_object(trace, propagation_context)
     if not _valid_scope_tenant_id(tenant_id):
-        raise TraceContextRejected("tenant scope identity invalid or out of bounds")
+        raise TraceContextRejected("tenant scope identity invalid, non-canonical, or out of bounds")
     if not trace.traceparent:
         return trace
     assert isinstance(tenant_id, str)
     version, trace_id, parent_id, flags = trace.traceparent.split("-")
     return TraceContext(
         f"{version}-{_tenant_scoped_hex(tenant_id, 'trace-id', trace_id, 32)}-{_tenant_scoped_hex(tenant_id, 'parent-id', parent_id, 16)}-{flags}",
+        None,
+        trace.attributes,
+    )
+
+def _scope_authenticated_parent_to_tenant(trace: TraceContext, tenant_id: str) -> TraceContext:
+    if not trace.traceparent or not _valid_scope_tenant_id(tenant_id):
+        raise TraceContextRejected("authenticated tenant trace cannot scope malformed parent identity")
+    version, trace_id, parent_id, flags = trace.traceparent.split("-")
+    return TraceContext(
+        f"{version}-{trace_id}-{_tenant_scoped_hex(tenant_id, 'parent-id', parent_id, 16)}-{flags}",
         None,
         trace.attributes,
     )
@@ -226,12 +246,12 @@ class TenantScopeAuthority:
     @staticmethod
     def _payload(tenant_id: str, trace_id: str) -> bytes:
         if not _valid_scope_tenant_id(tenant_id):
-            raise TraceContextRejected("tenant scope proof identity out of bounds")
+            raise TraceContextRejected("tenant scope proof identity invalid, non-canonical, or out of bounds")
         return f"jlmirror-tenant-trace-identity-v3\0{tenant_id}\0{trace_id}".encode("utf-8")
 
     def _attest_scoped_trace_id(self, tenant_id: str, scoped_trace_id: str) -> TenantScopeProof:
         if not _valid_scope_tenant_id(tenant_id) or not isinstance(scoped_trace_id, str) or not re.fullmatch(r"[0-9a-f]{32}", scoped_trace_id) or scoped_trace_id == "0" * 32:
-            raise TraceContextRejected("cannot attest malformed or unbounded scoped trace identity")
+            raise TraceContextRejected("cannot attest malformed, non-canonical, or unbounded scoped trace identity")
         mac_hex = hmac.new(self._key, self._payload(tenant_id, scoped_trace_id), hashlib.sha256).hexdigest()
         return TenantScopeProof(tenant_id, scoped_trace_id, mac_hex)
 
@@ -269,7 +289,7 @@ def process_message(envelope: BusinessEnvelope, *, traceparent: object | None, t
                 raise TraceContextRejected("tenant scope proof invalid")
             assert isinstance(scope_proof, TenantScopeProof)
             if scope_proof.tenant_id == envelope.tenant_id:
-                trace = TraceContext(normalized.traceparent, None, normalized.attributes)
+                trace = _scope_authenticated_parent_to_tenant(normalized, envelope.tenant_id)
                 next_proof = scope_proof
                 disposition = "accepted_authenticated_tenant_scope"
             else:
@@ -412,8 +432,15 @@ def run_probes() -> dict[str, bool]:
     direct_scoped, direct_proof = scope_authority.scope_and_issue("tenant-a", normalize_trace_context(valid, None))
 
     version, scoped_trace_id, _old_parent_id, flags = observed.trace.traceparent.split("-")
-    child_traceparent = f"{version}-{scoped_trace_id}-2222222222222222-{flags}"
+    raw_child_parent = "2222222222222222"
+    child_traceparent = f"{version}-{scoped_trace_id}-{raw_child_parent}-{flags}"
     child_hop = process_message(BusinessEnvelope("tenant-a", "msg-12", "idem-12", "order-12", "payload-v12", "at_least_once"), traceparent=child_traceparent, scope_proof=observed.scope_proof, scope_authority=scope_authority)
+    tenant_b_base = process_message(BusinessEnvelope("tenant-b", "msg-13", "idem-13", "order-13", "payload-v13", "at_least_once"), traceparent=valid, scope_authority=scope_authority)
+    assert tenant_b_base.scope_proof is not None and tenant_b_base.trace.traceparent is not None
+    version_b, scoped_trace_id_b, _old_parent_id_b, flags_b = tenant_b_base.trace.traceparent.split("-")
+    tenant_b_child_raw = f"{version_b}-{scoped_trace_id_b}-{raw_child_parent}-{flags_b}"
+    tenant_b_child = process_message(BusinessEnvelope("tenant-b", "msg-14", "idem-14", "order-14", "payload-v14", "at_least_once"), traceparent=tenant_b_child_raw, scope_proof=tenant_b_base.scope_proof, scope_authority=scope_authority)
+
     malformed_proofs = {
         "tenant_id": TenantScopeProof(["tenant-a"], scoped_trace_id, observed.scope_proof.mac_hex),  # type: ignore[arg-type]
         "trace_id": TenantScopeProof("tenant-a", [scoped_trace_id], observed.scope_proof.mac_hex),  # type: ignore[arg-type]
@@ -425,6 +452,9 @@ def run_probes() -> dict[str, bool]:
     oversized_proof = TenantScopeProof("t" * (MAX_SCOPE_TENANT_ID_CHARS + 1), scoped_trace_id, observed.scope_proof.mac_hex)
     oversized_proof_observed = process_message(BusinessEnvelope("tenant-a", "msg-proof-oversized", "idem-proof-oversized", "order-proof-oversized", "payload-proof", "at_least_once"), traceparent=observed.trace.traceparent, scope_proof=oversized_proof, scope_authority=scope_authority)
     checks["oversized_scope_proof_tenant_id_does_not_abort_business_processing"] = _isolated_from_business(oversized_proof_observed.envelope, oversized_proof_observed)
+    surrogate_proof = TenantScopeProof("\ud800", scoped_trace_id, observed.scope_proof.mac_hex)
+    surrogate_proof_observed = process_message(BusinessEnvelope("tenant-a", "msg-proof-surrogate", "idem-proof-surrogate", "order-proof-surrogate", "payload-proof", "at_least_once"), traceparent=observed.trace.traceparent, scope_proof=surrogate_proof, scope_authority=scope_authority)
+    checks["non_utf8_scope_proof_tenant_id_does_not_abort_business_processing"] = _isolated_from_business(surrogate_proof_observed.envelope, surrogate_proof_observed)
 
     malformed_scope_inputs = [
         ([], normalize_trace_context(valid, None), None),
@@ -438,6 +468,9 @@ def run_probes() -> dict[str, bool]:
     )
     checks["scope_and_issue_rejects_oversized_tenant_id_before_hashing"] = _rejected(
         lambda: scope_authority.scope_and_issue("t" * (MAX_SCOPE_TENANT_ID_CHARS + 1), normalize_trace_context(valid, None))
+    )
+    checks["scope_and_issue_rejects_non_utf8_tenant_id_before_encoding"] = _rejected(
+        lambda: scope_authority.scope_and_issue("\ud800", normalize_trace_context(valid, None))
     )
 
     direct_allowed = TraceContext(valid, None, (("component", "consumer"),))
@@ -459,13 +492,15 @@ def run_probes() -> dict[str, bool]:
     checks["same_input_trace_id_is_stable_within_tenant"] = tenant_a_same_input.trace.traceparent is not None and _trace_id(observed.trace.traceparent) == _trace_id(tenant_a_same_input.trace.traceparent)
     checks["same_input_trace_id_is_different_across_tenants"] = tenant_b_same_input.trace.traceparent is not None and _trace_id(observed.trace.traceparent) != _trace_id(tenant_b_same_input.trace.traceparent)
     checks["copied_tracestate_is_not_exported_across_tenants"] = tenant_a_same_input.trace.tracestate is None and tenant_b_same_input.trace.tracestate is None
-    checks["authenticated_scope_preserves_same_tenant_multi_hop_trace"] = second_same_tenant_hop.trace.traceparent == observed.trace.traceparent and second_same_tenant_hop.trace_context_disposition == "accepted_authenticated_tenant_scope" and can_correlate(observed, second_same_tenant_hop)
+    checks["authenticated_scope_preserves_same_tenant_multi_hop_trace"] = second_same_tenant_hop.trace.traceparent is not None and _trace_id(second_same_tenant_hop.trace.traceparent) == _trace_id(observed.trace.traceparent) and second_same_tenant_hop.trace_context_disposition == "accepted_authenticated_tenant_scope" and can_correlate(observed, second_same_tenant_hop)
     checks["authenticated_scope_is_rescoped_at_different_tenant_boundary"] = cross_tenant_from_scoped.trace.traceparent is not None and cross_tenant_from_scoped.trace.traceparent != observed.trace.traceparent and cross_tenant_from_scoped.trace_context_disposition == "accepted_rescoped_tenant_boundary" and not can_correlate(observed, cross_tenant_from_scoped)
     checks["raw_scoped_bytes_are_not_scope_authority"] = raw_replayed_same_tenant.trace.traceparent is not None and raw_replayed_same_tenant.trace.traceparent != observed.trace.traceparent
     checks["forged_scope_proof_is_rejected_without_business_abort"] = _isolated_from_business(forged_scope.envelope, forged_scope)
     checks["known_short_marker_collision_cannot_bypass_tenant_rescoping"] = collision_b.trace.traceparent is not None and collision_b.trace.traceparent != collision_a.trace.traceparent and collision_b.trace_context_disposition == "accepted_rescoped_tenant_boundary"
     checks["scope_proof_issuance_scopes_before_attesting"] = direct_scoped.traceparent is not None and direct_scoped.traceparent != valid and direct_proof is not None and direct_proof.trace_id == _trace_id(direct_scoped.traceparent) and direct_proof.tenant_id == "tenant-a" and scope_authority.verifies(direct_proof, direct_scoped.traceparent)
-    checks["authenticated_trace_identity_allows_child_span_parent_change"] = child_hop.trace.traceparent == child_traceparent and child_hop.trace_context_disposition == "accepted_authenticated_tenant_scope" and child_hop.scope_proof == observed.scope_proof and can_correlate(observed, child_hop)
+    checks["authenticated_trace_identity_allows_child_span_parent_change"] = child_hop.trace.traceparent is not None and _trace_id(child_hop.trace.traceparent) == scoped_trace_id and _parent_id(child_hop.trace.traceparent) != raw_child_parent and child_hop.trace_context_disposition == "accepted_authenticated_tenant_scope" and child_hop.scope_proof == observed.scope_proof and can_correlate(observed, child_hop)
+    checks["authenticated_child_parent_id_is_tenant_scoped_before_export"] = child_hop.trace.traceparent is not None and _parent_id(child_hop.trace.traceparent) == _tenant_scoped_hex("tenant-a", "parent-id", raw_child_parent, 16)
+    checks["same_child_parent_id_is_different_across_tenants"] = child_hop.trace.traceparent is not None and tenant_b_child.trace.traceparent is not None and _parent_id(child_hop.trace.traceparent) != _parent_id(tenant_b_child.trace.traceparent) and _parent_id(tenant_b_child.trace.traceparent) != raw_child_parent
 
     altered_trace = process_message(env, traceparent=same_trace_other_parent, tracestate=None, scope_authority=scope_authority)
     checks["trace_change_does_not_change_business_or_delivery_semantics"] = business_semantics(altered_trace) == business_semantics(observed)

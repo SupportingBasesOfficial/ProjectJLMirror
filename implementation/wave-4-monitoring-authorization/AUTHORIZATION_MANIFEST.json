@@ -4,7 +4,13 @@
   "canonical_base_main_commit": "860dbf5ffab465504f75ae7a13f13a13ed3bcd7f",
   "authorization_state": "proposed_exact_scope_authorization",
   "effective_rule": "becomes_canonical_only_after_exact_head_review_and_separately_authorized_merge",
+  "canonical_effect_after_merge": "authorized_to_implement_exact_scoped_monitoring_vertical_only",
   "authorized_product_vertical": "monitoring",
+  "authorized_capability_scope": [
+    "accepted_monitoring_track_a_domain_api_and_event_contracts",
+    "accepted_d2_track_b_customer_telemetry_durable_acceptance_projection_profile",
+    "accepted_monitoring_zabbix_read_only_provider_and_normalization_subprofile"
+  ],
   "authorized_slices": [
     {
       "slice_id": "impl.customer-telemetry@1",

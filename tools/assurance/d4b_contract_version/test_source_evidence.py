@@ -110,11 +110,11 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("opaque_fixture_mapping_is_collision_free_over_the_bounded_uint64_test_domain_via_bijective_permutation"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("historical_candidate_family_and_original_version_bytes_are_preserved_and_cross_family_reinterpretation_fails_closed"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.LEDGER).__setitem__("candidate", "positive_integer_family_revision"), "D4-B ledger selection drift")
-    must_fail(lambda d: obj(d, validator.STATE).__setitem__("gate_state", "accepted"), "D4 gate escalation")
-    must_fail(lambda d: obj(d, validator.STATE).__setitem__("canonical_product_implementation_authority", "granted"), "Product authority escalation")
-    must_fail(lambda d: obj(d, validator.STATE).__setitem__("wave4_implementation_authority", "granted"), "Wave4 authority escalation")
-    must_fail(lambda d: obj(d, validator.STATE).__setitem__("production_authority", "granted"), "production authority escalation")
-    must_fail(lambda d: obj(d, validator.STATE).__setitem__("c3_numeric_topology_authority", "selected"), "C3 authority escalation")
+    must_fail(lambda d: obj(d, validator.STATE).__setitem__("gate_state", "accepted"), "authority boundary drift")
+    must_fail(lambda d: obj(d, validator.STATE).__setitem__("canonical_product_implementation_authority", "granted"), "authority boundary drift")
+    must_fail(lambda d: obj(d, validator.STATE).__setitem__("wave4_implementation_authority", "granted"), "authority boundary drift")
+    must_fail(lambda d: obj(d, validator.STATE).__setitem__("production_authority", "granted"), "authority boundary drift")
+    must_fail(lambda d: obj(d, validator.STATE).__setitem__("c3_numeric_topology_authority", "selected"), "authority boundary drift")
 
     for adapter in evaluator.ADAPTERS:
         valid = {

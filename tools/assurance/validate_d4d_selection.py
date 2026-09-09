@@ -24,6 +24,52 @@ EXPECTED_PROFILE = {
     'secret_credential_payload_exclusion_and_erasure_boundary': 'reference_only_secret_authority_profile',
     'trace_context_observability_only_validation_and_redaction': 'w3c_trace_context_bounded_profile',
 }
+EXPECTED_PROFILE_RECORDS = {'workload_identity_to_broker_credential_adapter': {'selection_state': 'selected',
+                                                    'mechanism_class': 'derived_short_lived_broker_native_credential_adapter',
+                                                    'canonical_workload_identity_authority': 'IR-D-002',
+                                                    'credential_role': 'replaceable_least_privilege_broker_credential_only',
+                                                    'identity_provider_product': None,
+                                                    'unselected_eligible_alternatives': ['workload_identity_mtls_broker_adapter',
+                                                                                         'workload_oidc_token_exchange_broker_adapter',
+                                                                                         'equivalent_reviewed_derived_credential_adapter']},
+ 'tenant_and_contract_scoped_producer_consumer_authorization': {'selection_state': 'selected',
+                                                                'mechanism_class': 'broker_acl_projection_adapter',
+                                                                'authority_source': 'current_platform_authority_projection',
+                                                                'projection_scope': 'tenant_service_domain_role_and_contract',
+                                                                'broker_or_policy_product': None,
+                                                                'unselected_eligible_alternatives': ['broker_policy_engine_authorization_adapter',
+                                                                                                     'scoped_token_or_credential_claim_authorization_adapter',
+                                                                                                     'equivalent_reviewed_broker_authorization_adapter']},
+ 'message_protection_key_authority_and_historical_verifier_continuity': {'selection_state': 'selected',
+                                                                         'mechanism_class': 'kms_backed_envelope_or_transport_protection_profile',
+                                                                         'key_authority': 'secret_or_kms_authority',
+                                                                         'historical_verifier_reference': 'non_secret_profile_and_key_generation_reference',
+                                                                         'historical_verifier_loss_behavior': 'fail_closed_for_duplicate_sensitive_effects',
+                                                                         'kms_product': None,
+                                                                         'crypto_algorithm': None,
+                                                                         'rotation_interval': None,
+                                                                         'unselected_eligible_alternatives': ['secret_authority_backed_authenticated_equivalence_profile',
+                                                                                                              'broker_native_encryption_plus_external_historical_verifier_profile',
+                                                                                                              'equivalent_reviewed_key_and_verifier_profile']},
+ 'secret_credential_payload_exclusion_and_erasure_boundary': {'selection_state': 'selected',
+                                                              'mechanism_class': 'reference_only_secret_authority_profile',
+                                                              'ordinary_payload_secret_material': 'forbidden',
+                                                              'historical_correctness_reference': 'non_secret_reference_only',
+                                                              'secret_reference_bearer_authority': False,
+                                                              'secret_store_product': None,
+                                                              'unselected_eligible_alternatives': ['opaque_key_generation_reference_profile',
+                                                                                                   'protected_external_secret_handle_profile',
+                                                                                                   'equivalent_reviewed_secret_exclusion_profile']},
+ 'trace_context_observability_only_validation_and_redaction': {'selection_state': 'selected',
+                                                               'mechanism_class': 'w3c_trace_context_bounded_profile',
+                                                               'traceparent_profile': 'w3c_version_00_bounded_validated',
+                                                               'tracestate_policy': 'bounded_canonical_and_removed_from_tenant_scoped_export',
+                                                               'attribute_policy': 'deny_by_default_allowlisted_bounded_redacted',
+                                                               'business_or_security_authority': 'none',
+                                                               'tracing_product': None,
+                                                               'unselected_eligible_alternatives': ['vendor_neutral_trace_correlation_profile',
+                                                                                                    'broker_header_trace_adapter_profile',
+                                                                                                    'equivalent_reviewed_trace_context_profile']}}
 EXPECTED_CREDITS = [
     'workload_identity_to_broker_credential_adapter_least_privilege',
     'tenant_and_contract_scoped_producer_consumer_authorization',
@@ -73,12 +119,13 @@ def validate_records(selection: dict, ledger: dict, state: dict, evaluation: dic
 
     completion = selection.get('evidence_completion', {})
     req(completion.get('required_evidence_count') == 5 and completion.get('credited_evidence_count') == 5, 'selection evidence completion drift')
-    req(completion.get('evidence_plan_path') == str(LEDGER), 'selection evidence plan path drift')
-    req(completion.get('candidate_evaluation_plan_path') == str(EVALUATION), 'selection evaluation plan path drift')
-    req(completion.get('source_manifest_paths') == [str(p) for p in SOURCES], 'selection source manifest inventory drift')
+    req(completion.get('evidence_plan_path') == LEDGER.as_posix(), 'selection evidence plan path drift')
+    req(completion.get('candidate_evaluation_plan_path') == EVALUATION.as_posix(), 'selection evaluation plan path drift')
+    req(completion.get('source_manifest_paths') == [p.as_posix() for p in SOURCES], 'selection source manifest inventory drift')
 
     profile = selection.get('profile', {})
     req(set(profile) == set(EXPECTED_PROFILE), 'selected profile axis inventory drift')
+    req(profile == EXPECTED_PROFILE_RECORDS, 'selected profile nested contract drift')
     eval_axes = evaluation.get('axes', {})
     for axis, expected in EXPECTED_PROFILE.items():
         axis_record = profile.get(axis, {})
@@ -116,7 +163,7 @@ def validate_records(selection: dict, ledger: dict, state: dict, evaluation: dic
     req(ledger.get('ledger_credit_state') == 'five_of_five', 'D4-D evidence completion drift')
     req(ledger.get('credited_evidence') == EXPECTED_CREDITS and ledger.get('remaining_evidence') == [], 'D4-D current ledger credits drift')
     req(ledger.get('selection_state') == 'selected' and ledger.get('selection_authority') == 'selection_record', 'D4-D current selection authority drift')
-    req(ledger.get('selection_record') == str(SELECTION), 'D4-D selection record binding drift')
+    req(ledger.get('selection_record') == SELECTION.as_posix(), 'D4-D selection record binding drift')
     req(ledger.get('separate_selection_required') is False and ledger.get('separate_d4_acceptance_required') is True, 'D4-D selection/acceptance separation drift')
     req(ledger.get('current_run_auto_credit') is False, 'selection must not become auto-credit authority')
 
@@ -133,7 +180,7 @@ def validate_records(selection: dict, ledger: dict, state: dict, evaluation: dic
         req(obj.get('d4_transport_authority') == 'selected_not_granted', f'{label} transport authority escalation')
         req(obj.get('canonical_product_implementation_authority') == 'not_granted', f'{label} Product authority escalation')
         req(obj.get('wave4_implementation_authority') == 'not_granted', f'{label} Wave4 authority escalation')
-        req(obj.get('production_authority') in ('none', None), f'{label} production authority escalation')
+        req(obj.get('production_authority') == 'none', f'{label} production authority escalation')
         req(obj.get('c3_numeric_topology_authority') == 'not_selected', f'{label} C3 authority escalation')
     req(selection.get('d4_gate_state') == 'scoped' and state.get('gate_state') == 'scoped', 'D4 must remain scoped')
     req(selection.get('separate_d4_acceptance_required') is True, 'D4 acceptance must remain separate')

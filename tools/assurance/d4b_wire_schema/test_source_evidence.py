@@ -389,6 +389,10 @@ def prove_behavior_falsifications() -> None:
         raise AssertionError("Avro nullable enum semantics lost")
 
 
+def falsify_current_ledger_before_projection() -> None:
+    must_fail(lambda d: obj(d, validator.LEDGER).__setitem__("candidate", "protobuf_profile"), "D4-B ledger selection drift")
+
+
 def main() -> int:
     if evaluator.evaluate() != validator.EXPECTED_RESULTS:
         raise AssertionError("candidate evaluator result drift")
@@ -435,12 +439,12 @@ def main() -> int:
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("json_numeric_normalization_is_bounded_decimal_context_independent_and_runtime_independent_within_the_evidence_profile"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_allowed_promotions_materialize_reader_representation_before_semantic_equivalence"), "source assertion inventory drift")
     must_fail(lambda d: obj(d, validator.MANIFEST)["source_assertions"].remove("avro_schema_and_datum_resource_bounds_are_enforced_before_structural_equivalence"), "source assertion inventory drift")
-    must_fail(lambda d: obj(d, validator.LEDGER).__setitem__("candidate", "protobuf_profile"), "D4-B ledger selection drift")
-    must_fail(lambda d: obj(d, validator.STATE).__setitem__("gate_state", "accepted"), "D4 gate escalation")
-    must_fail(lambda d: obj(d, validator.STATE).__setitem__("canonical_product_implementation_authority", "granted"), "Product authority escalation")
-    must_fail(lambda d: obj(d, validator.STATE).__setitem__("wave4_implementation_authority", "granted"), "Wave4 authority escalation")
-    must_fail(lambda d: obj(d, validator.STATE).__setitem__("production_authority", "granted"), "production authority escalation")
-    must_fail(lambda d: obj(d, validator.STATE).__setitem__("c3_numeric_topology_authority", "selected"), "C3 authority escalation")
+    falsify_current_ledger_before_projection()
+    must_fail(lambda d: obj(d, validator.STATE).__setitem__("gate_state", "accepted"), "authority boundary drift")
+    must_fail(lambda d: obj(d, validator.STATE).__setitem__("canonical_product_implementation_authority", "granted"), "authority boundary drift")
+    must_fail(lambda d: obj(d, validator.STATE).__setitem__("wave4_implementation_authority", "granted"), "authority boundary drift")
+    must_fail(lambda d: obj(d, validator.STATE).__setitem__("production_authority", "granted"), "authority boundary drift")
+    must_fail(lambda d: obj(d, validator.STATE).__setitem__("c3_numeric_topology_authority", "selected"), "authority boundary drift")
 
     prove_behavior_falsifications()
     print(
@@ -463,4 +467,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

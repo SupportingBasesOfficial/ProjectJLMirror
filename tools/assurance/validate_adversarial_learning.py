@@ -20,6 +20,9 @@ STOP_POLICY = Path("governance/adversarial/review-stop-policy.json")
 WORKFLOW = Path(".github/workflows/deterministic-assurance.yml")
 SOURCE_PROBE_PATH = Path("tools/assurance/d4d_trace_context_source.py")
 FALSIFICATION_PATHS = {
+    Path('tools/assurance/test_validate_d4d_selection.py'),
+    Path('tools/assurance/d4b_wire_schema/test_source_evidence.py'),
+
     Path("tools/assurance/test_validate_d4d_trace_context_source.py"),
     Path("tools/assurance/test_validate_adversarial_learning.py"),
 }

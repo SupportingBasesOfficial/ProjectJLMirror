@@ -24,7 +24,7 @@ def _current_errors(state: dict) -> list[str]:
     tracks={t.get("track_id"):t for t in state.get("tracks",[]) if isinstance(t,dict)}
     if set(tracks)!={"D4-A","D4-B","D4-C","D4-D"}: return ["global D4 track identity drift"]
     d4d=tracks["D4-D"]; errors=[]
-    if d4d.get("candidate") is not None or d4d.get("candidate_status")!="not_selected" or d4d.get("state")!="candidate_selection_open": errors.append("D4-D current state/selection drift")
+    if d4d.get('candidate') != {'workload_identity_to_broker_credential_adapter': 'derived_short_lived_broker_native_credential_adapter', 'tenant_and_contract_scoped_producer_consumer_authorization': 'broker_acl_projection_adapter', 'message_protection_key_authority_and_historical_verifier_continuity': 'kms_backed_envelope_or_transport_protection_profile', 'secret_credential_payload_exclusion_and_erasure_boundary': 'reference_only_secret_authority_profile', 'trace_context_observability_only_validation_and_redaction': 'w3c_trace_context_bounded_profile'} or d4d.get('candidate_status') != 'selected_c2_security_profile' or d4d.get('state') != 'selected_candidate': errors.append("D4-D current state/selection drift")
     if d4d.get("evidence_completed")!=D4D_CURRENT or d4d.get("evidence_remaining")!=[]: errors.append("D4-D current state must be exactly 5/5")
     if sum(len(t.get("evidence_completed",[])) for t in tracks.values())!=26: errors.append("D4-wide evidence count must be exactly 26/26")
     return errors
@@ -33,7 +33,7 @@ def _current_errors(state: dict) -> list[str]:
 def _project(state: dict) -> dict:
     out=copy.deepcopy(state); d=next(t for t in out["tracks"] if t.get("track_id")=="D4-D")
     d["evidence_completed"]=list(D4D_HISTORICAL_CURRENT); d["evidence_remaining"]=[x for x in d["required_evidence"] if x not in D4D_HISTORICAL_CURRENT]
-    return out
+    _d4d = next(t for t in out['tracks'] if t.get('track_id') == 'D4-D'); _d4d.update(candidate=None, candidate_status='not_selected', state='candidate_selection_open'); return out
 
 
 def validate(root: Path) -> list[str]:

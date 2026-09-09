@@ -82,6 +82,13 @@ jobs:
         shell: bash
         run: PYTHONPATH=tools/assurance python3 tools/assurance/test_validate_adversarial_learning.py
 
+      - name: Falsify selected profile and current ledger projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/assurance/test_validate_d4d_selection.py
+          python3 tools/assurance/d4b_wire_schema/test_source_evidence.py
+
       - name: Validate static adversarial learning graph
         shell: bash
         run: python3 tools/assurance/validate_adversarial_learning.py --root .

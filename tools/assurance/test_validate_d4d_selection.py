@@ -29,6 +29,26 @@ def must_fail(mutator, fragment: str) -> None:
         raise AssertionError(f'expected failure containing {fragment!r}, got {errors!r}')
 
 
+def falsify_selected_profile_contract() -> None:
+    def inject_topology(selection, ledger, state, evaluation, sources):
+        selection['profile']['trace_context_observability_only_validation_and_redaction']['production_topology'] = 'unauthorized'
+    must_fail(inject_topology, 'selected profile nested contract drift')
+    for axis in validator.EXPECTED_PROFILE_RECORDS:
+        for field in validator.EXPECTED_PROFILE_RECORDS[axis]:
+            def drift(selection, ledger, state, evaluation, sources, a=axis, f=field):
+                selection['profile'][a][f] = 'unauthorized_override'
+            must_fail(drift, 'selected profile nested contract drift')
+        def smuggle(selection, ledger, state, evaluation, sources, a=axis):
+            selection['profile'][a]['production_topology'] = 'unauthorized'
+        must_fail(smuggle, 'selected profile nested contract drift')
+
+    for index in (0, 1, 2):
+        def remove_production(*values, i=index):
+            values[i].pop('production_authority', None)
+        must_fail(remove_production, 'production authority escalation')
+
+
+
 def main() -> int:
     values = baseline()
     errors = validator.validate_records(*values)
@@ -91,9 +111,11 @@ def main() -> int:
         ledger['remaining_evidence'] = [validator.EXPECTED_CREDITS[-1]]
     must_fail(regress_credit, 'current ledger credits drift')
 
+    falsify_selected_profile_contract()
+
     print('d4d_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked authority_escalation=blocked product_binding=blocked evidence_regression=blocked')
     return 0
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    main()

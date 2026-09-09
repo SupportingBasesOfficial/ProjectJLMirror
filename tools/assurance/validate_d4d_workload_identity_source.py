@@ -18,7 +18,7 @@ def validate(root):
  if st.get('d4d')!='0_of_5_unselected' or st.get('d4wide')!='21_of_26':e.append('source-time snapshot must remain 0/5 and 21/26')
  if set(plan['axes']['workload_identity_to_broker_credential_adapter']['must_prove'])!=EXPECTED_MUST:e.append('candidate-plan/source must_prove mismatch')
  tracks={t['track_id']:t for t in state['tracks']}; d=tracks['D4-D']
- if d.get('candidate') is not None or d.get('candidate_status')!='not_selected' or d.get('state')!='candidate_selection_open':e.append('D4-D state must remain open/unselected')
+ if d.get('candidate') != {'workload_identity_to_broker_credential_adapter': 'derived_short_lived_broker_native_credential_adapter', 'tenant_and_contract_scoped_producer_consumer_authorization': 'broker_acl_projection_adapter', 'message_protection_key_authority_and_historical_verifier_continuity': 'kms_backed_envelope_or_transport_protection_profile', 'secret_credential_payload_exclusion_and_erasure_boundary': 'reference_only_secret_authority_profile', 'trace_context_observability_only_validation_and_redaction': 'w3c_trace_context_bounded_profile'} or d.get('candidate_status') != 'selected_c2_security_profile' or d.get('state') != 'selected_candidate':e.append('D4-D selected security profile drift')
  if d.get('required_evidence')!=REQUIRED or d.get('evidence_completed')!=CURRENT_CREDITS or d.get('evidence_remaining')!=[]:e.append('current D4-D state must reflect exactly five separate promotions')
  if sum(len(t['evidence_completed']) for t in state['tracks'])!=26:e.append('D4-wide current state must be 26/26')
  if state.get('gate_state')!='scoped' or state.get('d4_transport_authority')!='selected_not_granted' or state.get('canonical_product_implementation_authority')!='not_granted' or state.get('wave4_implementation_authority')!='not_granted' or state.get('production_authority')!='none' or state.get('c3_numeric_topology_authority')!='not_selected':e.append('authority leakage')
@@ -28,4 +28,4 @@ def validate(root):
 if __name__=='__main__':
  root=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else Path.cwd(); errors=validate(root); [print('D4D_SOURCE_ERROR:',x,file=sys.stderr) for x in errors]
  if errors:raise SystemExit(1)
- print('d4d_workload_identity_source=PASS source_snapshot=0_of_5 current_d4d=5_of_5 d4wide=26/26 selection=not_selected authorities=unchanged')
+ print('d4d_workload_identity_source=PASS source_snapshot=0_of_5 current_d4d=5_of_5 d4wide=26/26 historical_selection=not_selected current_selection=selected_c2_security_profile authorities=unchanged')

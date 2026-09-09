@@ -27,6 +27,13 @@ D4D_CREDITS = [
     "secret_credential_payload_exclusion_and_erasure_boundary",
     "trace_context_observability_only_validation_and_redaction",
 ]
+D4D_SELECTED_PROFILE = {
+    "workload_identity_to_broker_credential_adapter": "derived_short_lived_broker_native_credential_adapter",
+    "tenant_and_contract_scoped_producer_consumer_authorization": "broker_acl_projection_adapter",
+    "message_protection_key_authority_and_historical_verifier_continuity": "kms_backed_envelope_or_transport_protection_profile",
+    "secret_credential_payload_exclusion_and_erasure_boundary": "reference_only_secret_authority_profile",
+    "trace_context_observability_only_validation_and_redaction": "w3c_trace_context_bounded_profile",
+}
 _legacy_load = historical.load
 
 
@@ -39,8 +46,8 @@ def _current_sibling_errors(state: dict) -> list[str]:
         errors.append("D4-C current sibling state drift")
     if d4c.get("evidence_completed") != D4C_CREDITS or d4c.get("evidence_remaining") != []:
         errors.append("D4-C must remain uncredited historically; D4-C current sibling must remain exactly 9/9")
-    if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
-        errors.append("D4-D candidate must remain unselected; D4-D current sibling state drift")
+    if d4d.get("candidate") != D4D_SELECTED_PROFILE or d4d.get("candidate_status") != "selected_c2_security_profile" or d4d.get("state") != "selected_candidate":
+        errors.append("D4-D current sibling selected security profile drift")
     if d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != []:
         errors.append("D4-D current sibling must be exactly 5/5")
     return errors
@@ -59,6 +66,10 @@ def _project(state: dict) -> dict:
         track = next(t for t in result["tracks"] if t.get("track_id") == track_id)
         track["evidence_completed"] = []
         track["evidence_remaining"] = list(track["required_evidence"])
+    d4d = next(t for t in result["tracks"] if t.get("track_id") == "D4-D")
+    d4d["candidate"] = None
+    d4d["candidate_status"] = "not_selected"
+    d4d["state"] = "candidate_selection_open"
     return result
 
 
@@ -88,7 +99,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_PLAN_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=9_of_9 current_sibling_d4d=5_of_5 d4wide=26_of_26")
+    print("d4b_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=9_of_9 current_sibling_d4d=5_of_5_selected d4wide=26_of_26")
     return 0
 
 if __name__ == "__main__":

@@ -31,4 +31,5 @@ def main():
  falsify_selection_record_product_authority()
  print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked separate_acceptance=preserved')
  return 0
-if __name__=='__main__': raise SystemExit(main())
+if __name__=='__main__':
+ main()

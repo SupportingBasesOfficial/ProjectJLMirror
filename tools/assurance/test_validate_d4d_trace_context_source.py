@@ -58,6 +58,18 @@ def falsify_promotion_identity_envelopes():
             lambda r,promotion_path=promotion_path:mutate_json(r,promotion_path,lambda d:d['source_manifest'].__setitem__('sha256','0'*64)),
             validator=ledger.validate,
         )
+def falsify_promotion_unknown_fields():
+    for promotion_path in (ledger.P1,ledger.P2,ledger.P3,ledger.P4,ledger.P5):
+        for field,bad in (
+            ('acceptance_state','accepted'),
+            ('implementation_authority','granted'),
+            ('production_ready',True),
+            ('candidate_selected',True),
+        ):
+            mutate_and_expect_failure(
+                lambda r,promotion_path=promotion_path,field=field,bad=bad:mutate_json(r,promotion_path,lambda d,field=field,bad=bad:d.__setitem__(field,bad)),
+                validator=ledger.validate,
+            )
 def main():
     assert not v.validate(ROOT)
     falsify_immutable_identity_envelope()
@@ -77,5 +89,6 @@ def main():
     mutate_and_expect_failure(lambda r:mutate_json(r,v.STATE,lambda d:d.__setitem__('production_authority','granted')))
     falsify_promotion_separation_flags()
     falsify_promotion_identity_envelopes()
-    print('d4d_trace_context_source_falsification=PASS source_identity=exact source_snapshot=4_of_5_25_of_26_exact current_state=5_of_5_26_of_26 authorities_exact promotion_separation=bound promotion_identity=P1-P5-complete-envelope-bound auto_credit=blocked selection=blocked authority_leakage=blocked')
+    falsify_promotion_unknown_fields()
+    print('d4d_trace_context_source_falsification=PASS source_identity=exact source_snapshot=4_of_5_25_of_26_exact current_state=5_of_5_26_of_26 authorities_exact promotion_separation=bound promotion_identity=P1-P5-closed-complete-envelope-bound unknown_promotion_fields=blocked auto_credit=blocked selection=blocked authority_leakage=blocked')
 if __name__=='__main__': main()

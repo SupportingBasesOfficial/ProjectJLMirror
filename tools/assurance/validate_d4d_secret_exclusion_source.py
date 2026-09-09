@@ -33,7 +33,7 @@ def validate(root:Path):
     if d.get('candidate')!=CURRENT_PROFILE or d.get('candidate_status')!='selected_c2_security_profile' or d.get('state')!='selected_candidate':e.append('D4-D current selected security profile drift')
     if d.get('required_evidence')!=REQUIRED or d.get('evidence_completed')!=CURRENT_CREDITED or d.get('evidence_remaining')!=[]:e.append('current D4-D state must reflect exactly five separately promoted credits')
     if sum(len(t['evidence_completed']) for t in state['tracks'])!=26:e.append('D4-wide current state must reflect 26/26')
-    if state.get('gate_state')!='scoped' or state.get('d4_transport_authority')!='selected_not_granted' or state.get('canonical_product_implementation_authority')!='not_granted' or state.get('wave4_implementation_authority')!='not_granted' or state.get('production_authority')!='none' or state.get('c3_numeric_topology_authority')!='not_selected':e.append('authority leakage')
+    if state.get('gate_state')!='separately_accepted' or state.get('d4_transport_authority')!='selected_not_granted' or state.get('canonical_product_implementation_authority')!='not_granted' or state.get('wave4_implementation_authority')!='not_granted' or state.get('production_authority')!='none' or state.get('c3_numeric_topology_authority')!='not_selected':e.append('authority leakage')
     proofs=run_probes()
     if set(proofs)!=EXPECTED_PROBES:e.append('executed probe set drift')
     bad=[k for k,v in proofs.items() if not v]
@@ -44,4 +44,4 @@ if __name__=='__main__':
     root=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else Path.cwd(); errors=validate(root)
     [print('D4D_SECRET_EXCLUSION_SOURCE_ERROR:',x,file=sys.stderr) for x in errors]
     if errors:raise SystemExit(1)
-    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 source_auto_credit=false current_d4d=5_of_5_selected d4wide=26/26 authorities=unchanged probes=117 corrected_lineage=true')
+    print('d4d_secret_exclusion_source=PASS source_snapshot=3_of_5 historical_gate=scoped source_auto_credit=false current_gate=separately_accepted current_d4d=5_of_5_selected d4wide=26/26 authorities=unchanged probes=117 corrected_lineage=true')

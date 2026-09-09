@@ -25,6 +25,35 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 3
+    },
+    {
+      "id": "LEARN-PR119-002",
+      "pr": 119,
+      "source": "external_review",
+      "review_comment_id": 3964901313,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": ["INV-PROVENANCE-001", "INV-AUTH-001"],
+      "root_cause": "The previous promotion hardening concentrated on authority and separation fields plus selected provenance values, but it did not define the durable promotion record itself as one complete immutable identity envelope, leaving schema, scope, review-mode, and sibling nested provenance fields independently mutable without invalidating assurance.",
+      "horizontal_audit": [
+        "P1 workload identity complete promotion identity envelope",
+        "P2 tenant authorization complete promotion identity envelope",
+        "P3 message protection complete promotion identity envelope",
+        "P4 secret exclusion complete promotion identity envelope",
+        "P5 trace context complete promotion identity envelope",
+        "schema_version gate_id track_id and promotion_id binding",
+        "source_review review_id review_mode and material thread binding",
+        "source_workflow exact run job artifact and digest binding",
+        "source_manifest path and SHA-256 binding",
+        "cumulative credits and authority/separation binding"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4d_trace_context_source.py",
+          "probe": "falsify_promotion_identity_envelopes"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 4
     }
   ]
 }

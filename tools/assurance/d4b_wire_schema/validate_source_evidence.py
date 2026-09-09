@@ -56,7 +56,7 @@ def _current_errors(state: dict) -> list[str]:
     if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 26:
         errors.append("D4-wide current state must be 26/26")
     expected_authority = {
-        'gate_state': ('scoped', 'D4 gate escalation'),
+        'gate_state': ('separately_accepted', 'D4 current gate acceptance drift'),
         'd4_transport_authority': ('selected_not_granted', 'transport authority escalation'),
         'canonical_product_implementation_authority': ('not_granted', 'Product authority escalation'),
         'wave4_implementation_authority': ('not_granted', 'Wave4 authority escalation'),
@@ -71,6 +71,7 @@ def _current_errors(state: dict) -> list[str]:
 
 def _historical_state(state: dict) -> dict:
     projected = copy.deepcopy(state)
+    projected["gate_state"] = "scoped"
     by = {t["track_id"]: t for t in projected["tracks"]}
     d4b = by["D4-B"]
     d4b["candidate"] = None
@@ -125,7 +126,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_WIRE_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_wire_schema_source=PASS historical_oracle=preserved current_d4b=5_of_5_selected current_d4c=9_of_9_selected current_d4d=5_of_5_selected d4wide=26_of_26")
+    print("d4b_wire_schema_source=PASS historical_oracle=preserved current_d4=separately_accepted current_d4b=5_of_5_selected current_d4c=9_of_9_selected current_d4d=5_of_5_selected d4wide=26_of_26")
     return 0
 
 if __name__ == "__main__":

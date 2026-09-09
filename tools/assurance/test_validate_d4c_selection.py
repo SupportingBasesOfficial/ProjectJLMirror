@@ -24,7 +24,7 @@ def main():
  def grant_transport(selection,ledger,state,evaluation): state['d4_transport_authority']='granted'
  must_fail(grant_transport,'transport authority escalation')
  def accept_d4(selection,ledger,state,evaluation): state['gate_state']='separately_accepted'
- must_fail(accept_d4,'D4 must remain scoped')
+ must_fail(accept_d4,'state D4 gate authority escalation')
  def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
  must_fail(grant_product,'Product authority escalation')
  print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked separate_acceptance=preserved')

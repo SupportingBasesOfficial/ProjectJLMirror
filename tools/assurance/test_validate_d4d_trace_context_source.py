@@ -59,17 +59,17 @@ def falsify_promotion_identity_envelopes():
             validator=ledger.validate,
         )
 def falsify_promotion_unknown_fields():
-    for promotion_path in (ledger.P1,ledger.P2,ledger.P3,ledger.P4,ledger.P5):
-        for field,bad in (
-            ('acceptance_state','accepted'),
-            ('implementation_authority','granted'),
-            ('production_ready',True),
-            ('candidate_selected',True),
-        ):
-            mutate_and_expect_failure(
-                lambda r,promotion_path=promotion_path,field=field,bad=bad:mutate_json(r,promotion_path,lambda d,field=field,bad=bad:d.__setitem__(field,bad)),
-                validator=ledger.validate,
-            )
+    for promotion_path,field,bad in (
+        (ledger.P1,'acceptance_state','accepted'),(ledger.P1,'implementation_authority','granted'),(ledger.P1,'production_ready',True),(ledger.P1,'candidate_selected',True),
+        (ledger.P2,'acceptance_state','accepted'),(ledger.P2,'implementation_authority','granted'),(ledger.P2,'production_ready',True),(ledger.P2,'candidate_selected',True),
+        (ledger.P3,'acceptance_state','accepted'),(ledger.P3,'implementation_authority','granted'),(ledger.P3,'production_ready',True),(ledger.P3,'candidate_selected',True),
+        (ledger.P4,'acceptance_state','accepted'),(ledger.P4,'implementation_authority','granted'),(ledger.P4,'production_ready',True),(ledger.P4,'candidate_selected',True),
+        (ledger.P5,'acceptance_state','accepted'),(ledger.P5,'implementation_authority','granted'),(ledger.P5,'production_ready',True),(ledger.P5,'candidate_selected',True),
+    ):
+        mutate_and_expect_failure(
+            lambda r,promotion_path=promotion_path,field=field,bad=bad:mutate_json(r,promotion_path,lambda d,field=field,bad=bad:d.__setitem__(field,bad)),
+            validator=ledger.validate,
+        )
 def main():
     assert not v.validate(ROOT)
     falsify_immutable_identity_envelope()

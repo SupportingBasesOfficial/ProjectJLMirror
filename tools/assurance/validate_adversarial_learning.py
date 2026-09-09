@@ -71,7 +71,7 @@ def _executed_source_probes(path: Path) -> tuple[set[str], list[str]]:
         sys.modules.pop(module_name, None)
 
 
-def _main_called_falsifiers(path: Path) -> tuple[set[str], list[str]]:
+def _reachable_main_falsifiers(path: Path) -> tuple[set[str], list[str]]:
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     except (OSError, UnicodeDecodeError, SyntaxError) as exc:
@@ -80,12 +80,23 @@ def _main_called_falsifiers(path: Path) -> tuple[set[str], list[str]]:
     main = functions.get("main")
     if main is None:
         return set(), [f"registered falsification file has no main function: {path}"]
-    called = {
-        node.func.id
-        for node in ast.walk(main)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-    }
-    executed = {name for name in called if name in functions and name.startswith("falsify_")}
+
+    # Ledger credit is intentionally conservative: only an unconditional, direct
+    # top-level call in main before an unconditional terminator is considered
+    # reachable. Calls hidden under conditions, nested functions/closures, loops,
+    # exception handlers, or after return/raise do not prove CI execution.
+    executed: set[str] = set()
+    for statement in main.body:
+        if isinstance(statement, (ast.Return, ast.Raise)):
+            break
+        if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
+            continue
+        call = statement.value
+        if not isinstance(call.func, ast.Name):
+            continue
+        name = call.func.id
+        if name in functions and name.startswith("falsify_"):
+            executed.add(name)
     return executed, []
 
 
@@ -103,7 +114,7 @@ def _resolve_executable_checks(root: Path) -> tuple[dict[Path, set[str]], list[s
         if not path.is_file():
             errors.append(f"registered falsification path missing: {rel}")
             continue
-        checks[rel], file_errors = _main_called_falsifiers(path)
+        checks[rel], file_errors = _reachable_main_falsifiers(path)
         errors.extend(file_errors)
     return checks, errors
 
@@ -263,7 +274,7 @@ def main() -> None:
         print("ADVERSARIAL_LEARNING_ERROR:", error)
     if errors:
         raise SystemExit(1)
-    print("adversarial_learning=PASS taxonomy=linked invariants=linked ledger=complete recurrence=guardrail-advancing guardrail-checks=executed dynamic_findings=all-surfaces-mapped")
+    print("adversarial_learning=PASS taxonomy=linked invariants=linked ledger=complete recurrence=guardrail-advancing guardrail-checks=reachable dynamic_findings=all-surfaces-mapped")
 
 
 if __name__ == "__main__":

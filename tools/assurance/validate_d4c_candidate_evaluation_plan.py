@@ -17,7 +17,7 @@ D4C_CREDITS = [
     "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
     "producer_generation_nonresurrection_across_failover_restore",
     "privileged_bounded_replay_with_original_identity_and_effect_safety",
-    "historical_reader_upcaster_semantic_and_equivalence_continuity",
+    "historical_reader_upcaster_semantic_and_equivalence_profile_continuity",
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
 D4D_CREDITS = [
@@ -25,6 +25,7 @@ D4D_CREDITS = [
     "tenant_and_contract_scoped_producer_consumer_authorization",
     "message_protection_key_authority_and_historical_verifier_continuity",
     "secret_credential_payload_exclusion_and_erasure_boundary",
+    "trace_context_observability_only_validation_and_redaction",
 ]
 _legacy_load = historical.load
 
@@ -34,16 +35,11 @@ def _current_errors(state: dict) -> list[str]:
     d4c = tracks.get("D4-C", {})
     d4d = tracks.get("D4-D", {})
     errors: list[str] = []
-    if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
-        errors.append("D4-C state must remain open/unselected")
-    if d4c.get("evidence_completed") != D4C_CREDITS or d4c.get("evidence_remaining") != []:
-        errors.append("D4-C current evidence must remain exactly 9/9")
-    if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
-        errors.append("D4-D must remain open/unselected")
-    if d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != [x for x in d4d.get("required_evidence", []) if x not in D4D_CREDITS]:
-        errors.append("D4-D current evidence must be exactly 4/5")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 25:
-        errors.append("D4-wide evidence must be exactly 25/26 in current promoted state")
+    if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open": errors.append("D4-C state must remain open/unselected")
+    if d4c.get("evidence_completed") != D4C_CREDITS or d4c.get("evidence_remaining") != []: errors.append("D4-C current evidence must remain exactly 9/9")
+    if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open": errors.append("D4-D must remain open/unselected")
+    if d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != []: errors.append("D4-D current evidence must be exactly 5/5")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 26: errors.append("D4-wide evidence must be exactly 26/26 in current promoted state")
     return errors
 
 
@@ -57,30 +53,22 @@ def _historical_projection(state: dict) -> dict:
 
 
 def validate(root: Path) -> list[str]:
-    state = json.loads((root / STATE).read_text(encoding="utf-8"))
-    current = _current_errors(state)
-    if current:
-        return current
+    state = json.loads((root / STATE).read_text(encoding="utf-8")); current = _current_errors(state)
+    if current: return current
     original = historical.load
     try:
         def projected_load(inner_root: Path, path: Path) -> dict:
-            value = _legacy_load(inner_root, path)
-            return _historical_projection(value) if path == STATE else value
+            value = _legacy_load(inner_root, path); return _historical_projection(value) if path == STATE else value
         historical.load = projected_load
         return historical.validate(root)
-    finally:
-        historical.load = original
+    finally: historical.load = original
 
 
 def main(argv: list[str]) -> int:
-    root = Path(argv[1]).resolve() if len(argv) > 1 else Path.cwd()
-    errors = validate(root)
+    root = Path(argv[1]).resolve() if len(argv) > 1 else Path.cwd(); errors = validate(root)
     if errors:
-        for error in errors:
-            print(f"D4C_EVAL_ERROR: {error}", file=sys.stderr)
+        for error in errors: print(f"D4C_EVAL_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_candidate_evaluation_plan=PASS historical_baseline_oracle=preserved current_d4c=9_of_9 current_d4d=4_of_5 selection=not_selected d4wide=25/26")
+    print("d4c_candidate_evaluation_plan=PASS historical_baseline_oracle=preserved current_d4c=9_of_9 current_d4d=5_of_5 selection=not_selected d4wide=26/26")
     return 0
-
-if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+if __name__ == "__main__": raise SystemExit(main(sys.argv))

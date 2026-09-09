@@ -11,6 +11,11 @@ BASE = "860dbf5ffab465504f75ae7a13f13a13ed3bcd7f"
 MANIFEST = ROOT / "implementation/wave-4-monitoring-authorization/AUTHORIZATION_MANIFEST.json"
 DOC = ROOT / "implementation/wave-4-monitoring-authorization/AUTHORIZATION.md"
 
+EXPECTED_CAPABILITY_SCOPE = {
+    "accepted_monitoring_track_a_domain_api_and_event_contracts",
+    "accepted_d2_track_b_customer_telemetry_durable_acceptance_projection_profile",
+    "accepted_monitoring_zabbix_read_only_provider_and_normalization_subprofile",
+}
 EXPECTED_AUTHORIZED_SLICES = [
     {"slice_id": "impl.customer-telemetry@1", "scope": "accepted_d2_track_b_profile_only"},
     {"slice_id": "impl.provider-integration@1", "scope": "accepted_monitoring_zabbix_subprofile_only"},
@@ -29,6 +34,14 @@ EXPECTED_RUNTIME = {
     "runtime.worker@1",
     "worker.customer-telemetry@1",
     "worker.provider-integration@1",
+}
+EXPECTED_CONTRACT_SURFACES = {
+    "docs/03-domains/monitoring-domain-contract.md",
+    "docs/09-api-contracts/monitoring-domain-api-contract.md",
+    "docs/10-event-contracts/monitoring-domain-event-contracts.md",
+    "docs/09-api-contracts/zabbix-monitoring-source-provider-contract.md",
+    "docs/09-api-contracts/zabbix-monitoring-normalization-profile.md",
+    "docs/08-data/telemetry-plane.md",
 }
 EXPECTED_EXCLUSIONS = {
     "alerting_product_vertical",
@@ -76,10 +89,16 @@ def validate_manifest(data: dict) -> None:
     req(data.get("authorization_id") == "wave4.monitoring-zabbix.vertical@1", "authorization id drift")
     req(data.get("canonical_base_main_commit") == BASE, "canonical base drift")
     req(data.get("authorization_state") == "proposed_exact_scope_authorization", "authorization state drift")
+    req(data.get("effective_rule") == "becomes_canonical_only_after_exact_head_review_and_separately_authorized_merge", "effective rule drift")
+    req(data.get("canonical_effect_after_merge") == "authorized_to_implement_exact_scoped_monitoring_vertical_only", "canonical effect drift")
     req(data.get("authorized_product_vertical") == "monitoring", "product vertical drift")
+    req(set(data.get("authorized_capability_scope", [])) == EXPECTED_CAPABILITY_SCOPE, "authorized capability scope drift")
     req(data.get("authorized_slices") == EXPECTED_AUTHORIZED_SLICES, "authorized slices drift")
     req(set(data.get("consumed_existing_substrate", [])) == EXPECTED_CONSUMED, "consumed substrate drift")
     req(set(data.get("authorized_runtime_roles", [])) == EXPECTED_RUNTIME, "runtime role drift")
+    req(set(data.get("authorized_contract_surfaces", [])) == EXPECTED_CONTRACT_SURFACES, "authorized contract surface drift")
+    for relative in EXPECTED_CONTRACT_SURFACES:
+        req((ROOT / relative).is_file(), f"authorized contract surface missing: {relative}")
     req(data.get("production_authority") == "none", "production authority escalation")
     req(data.get("c3_production_state") == "open", "C3 production state escalation")
     req(data.get("frontend_authority") == "not_granted_by_this_gate", "frontend authority escalation")
@@ -144,7 +163,7 @@ def main() -> int:
     except AssertionError as exc:
         print(f"wave4_monitoring_authorization=FAIL reason={exc}", file=sys.stderr)
         return 1
-    print("wave4_monitoring_authorization=PASS vertical=monitoring slices=customer-telemetry,provider-integration:zabbix production=none frontend_routes=not_granted")
+    print("wave4_monitoring_authorization=PASS vertical=monitoring capability_scope=3 slices=customer-telemetry,provider-integration:zabbix production=none frontend_routes=not_granted")
     return 0
 
 

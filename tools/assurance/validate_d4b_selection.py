@@ -25,6 +25,7 @@ D4D_CREDITS = [
     "tenant_and_contract_scoped_producer_consumer_authorization",
     "message_protection_key_authority_and_historical_verifier_continuity",
     "secret_credential_payload_exclusion_and_erasure_boundary",
+    "trace_context_observability_only_validation_and_redaction",
 ]
 _legacy_load = historical.load
 
@@ -34,24 +35,14 @@ def _current_sibling_errors(state: dict) -> list[str]:
     tracks = {t.get("track_id"): t for t in state.get("tracks", []) if isinstance(t, dict)}
     d4c = tracks.get("D4-C", {})
     d4d = tracks.get("D4-D", {})
-
     if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
         errors.append("D4-C must remain open/unselected; D4-C current sibling state drift")
-    if not isinstance(d4c.get("evidence_remaining"), list):
-        errors.append("D4-C remaining evidence must be an exact list")
-    elif d4c.get("evidence_completed") != D4C_CREDITS or d4c.get("evidence_remaining") != []:
-        errors.append("D4-C current sibling must remain 9/9")
-
-    if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
-        errors.append("D4-D current sibling state drift")
-    required_d4d = d4d.get("required_evidence", [])
-    if not isinstance(d4d.get("evidence_remaining"), list):
-        errors.append("D4-D remaining evidence must be an exact list")
-    elif d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != [x for x in required_d4d if x not in D4D_CREDITS]:
-        errors.append("D4-D current sibling must be exactly 4/5")
-
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 25:
-        errors.append("D4-wide current evidence must be exactly 25/26")
+    if not isinstance(d4c.get("evidence_remaining"), list): errors.append("D4-C remaining evidence must be an exact list")
+    elif d4c.get("evidence_completed") != D4C_CREDITS or d4c.get("evidence_remaining") != []: errors.append("D4-C current sibling must remain 9/9")
+    if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open": errors.append("D4-D current sibling state drift")
+    if not isinstance(d4d.get("evidence_remaining"), list): errors.append("D4-D remaining evidence must be an exact list")
+    elif d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != []: errors.append("D4-D current sibling must be exactly 5/5")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 26: errors.append("D4-wide current evidence must be exactly 26/26")
     return errors
 
 
@@ -65,30 +56,22 @@ def _historical_projection(state: dict) -> dict:
 
 
 def validate(root: Path) -> list[str]:
-    state = json.loads((root / STATE).read_text(encoding="utf-8"))
-    current = _current_sibling_errors(state)
-    if current:
-        return current
+    state = json.loads((root / STATE).read_text(encoding="utf-8")); current = _current_sibling_errors(state)
+    if current: return current
     original_load = historical.load
     try:
         def projected_load(inner_root: Path, path: Path) -> dict:
-            value = _legacy_load(inner_root, path)
-            return _historical_projection(value) if path == STATE else value
+            value = _legacy_load(inner_root, path); return _historical_projection(value) if path == STATE else value
         historical.load = projected_load
         return historical.validate(root)
-    finally:
-        historical.load = original_load
+    finally: historical.load = original_load
 
 
 def main(argv: list[str]) -> int:
-    root = Path(argv[1]).resolve() if len(argv) > 1 else Path.cwd()
-    errors = validate(root)
+    root = Path(argv[1]).resolve() if len(argv) > 1 else Path.cwd(); errors = validate(root)
     if errors:
-        for error in errors:
-            print(f"D4B_SELECTION_ERROR: {error}", file=sys.stderr)
+        for error in errors: print(f"D4B_SELECTION_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_selection=PASS historical_oracle=preserved current_sibling_d4c=9_of_9 current_sibling_d4d=4_of_5 d4wide=25_of_26")
+    print("d4b_selection=PASS historical_oracle=preserved current_sibling_d4c=9_of_9 current_sibling_d4d=5_of_5 d4wide=26_of_26")
     return 0
-
-if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+if __name__ == "__main__": raise SystemExit(main(sys.argv))

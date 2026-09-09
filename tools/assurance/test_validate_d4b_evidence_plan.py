@@ -157,14 +157,14 @@ def main() -> int:
     must_fail(inject_duplicate_rogue_d4c, "D4 track identities must be exactly")
     must_fail(lambda d: track(d, "D4-C")["evidence_completed"].append(track(d, "D4-C")["required_evidence"][0]), "D4-C current sibling must remain exactly 9/9")
     must_fail(lambda d: track(d, "D4-D").__setitem__("candidate", "candidate-x"), "D4-D current sibling selected security profile drift")
-    must_fail(lambda d: d[validator.STATE].__setitem__("gate_state", "separately_accepted"), "D4 must remain scoped")
+    must_fail(lambda d: d[validator.STATE].__setitem__("gate_state", "scoped"), "D4 current gate must remain separately_accepted")
     must_fail(lambda d: d[validator.STATE].__setitem__("production_authority", "granted"), "production authority must remain none")
 
     print(
         "d4b_ledger_falsification=PASS exact_credit=locked current_selection=locked historical_promotion_selection=locked "
         "exact_promotion_schema=locked duplicate_json_members=blocked duplicate_track_identity=blocked source_workflow_identity=blocked "
         "provenance_tamper=blocked source_mutation=blocked d4a_exact_membership=blocked cross_track_substitution=blocked "
-        "d4c_d_leak=blocked full_d4_acceptance=blocked authority_escalation=blocked"
+        "d4c_d_leak=blocked historical_gate=scoped current_gate=separately_accepted authority_escalation=blocked"
     )
     return 0
 

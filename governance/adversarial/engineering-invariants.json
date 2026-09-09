@@ -38,8 +38,8 @@
     },
     {
       "id": "INV-PROOF-002",
-      "statement": "Proofs bind semantic identity rather than incidental serialization unless the serialization itself is explicitly the governed object.",
-      "enforcement": ["semantic_binding_probe", "legitimate_representation_change_probe"]
+      "statement": "Proofs bind semantic identity rather than incidental serialization unless a representation component is explicitly governed; when an authenticated representation companion is used to make a transformation idempotent, that companion must itself be authenticated and must distinguish already-governed representation from newly introduced raw representation.",
+      "enforcement": ["semantic_binding_probe", "legitimate_representation_change_probe", "authenticated_representation_companion", "idempotent_authenticated_transform_probe"]
     },
     {
       "id": "INV-TENANT-001",
@@ -58,8 +58,8 @@
     },
     {
       "id": "INV-LEARNING-002",
-      "statement": "A learning-ledger guardrail is creditable only when its declared identifier resolves through a registered mechanism to a check that is actually executed; raw textual occurrence is never evidence of executable enforcement.",
-      "enforcement": ["executable_check_resolution", "exact_check_identity", "incidental_substring_falsification"]
+      "statement": "A learning-ledger guardrail is creditable only when its declared identifier resolves through a registered mechanism to a check that is actually executable and reachable from the CI entrypoint; raw textual occurrence, nested dead code, conditional dead code, or calls after unconditional termination are never evidence of executable enforcement.",
+      "enforcement": ["executable_check_resolution", "exact_check_identity", "reachable_entrypoint_call", "incidental_substring_falsification", "unreachable_call_falsification"]
     }
   ]
 }

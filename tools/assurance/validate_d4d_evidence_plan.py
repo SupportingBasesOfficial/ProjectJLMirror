@@ -19,8 +19,10 @@ REQUIRED=[E1,E2,E3,E4,E5]
 SHA1='005b3943f7638e136150758d10d4ec6af1c6852d4e658127c7258ff546dce0ae'; SHA2='e22455580bba6eb71877a8308d5068d0d2a8caf895f9c1ce2c3aeadb724a7025'; SHA3='8d33a50b8748382586aa5b13e2e7427a57b66d8319066acf09f0e09a4ca31c35'; SHA4='5639d4a5b70d89fd10c874689cd87346ca4742e9474763fd89bf809959664da1'; SHA5='2b80305593ebc06d10e4ae7862411518cdd250f7f35d21b52c8a2322950f1e49'
 def load(root,p): return json.loads((root/p).read_text())
 def digest(p): return hashlib.sha256(p.read_bytes()).hexdigest()
-def authority_ok(p):
- return p.get('selection_state')=='not_selected' and p.get('selection_authority')=='not_granted' and p.get('d4_gate_state')=='scoped' and p.get('d4_transport_authority')=='selected_not_granted' and p.get('canonical_product_implementation_authority')=='not_granted' and p.get('wave4_implementation_authority')=='not_granted' and p.get('production_authority')=='none' and p.get('c3_numeric_topology_authority')=='not_selected' and p.get('separate_selection_required') is True and p.get('separate_d4_acceptance_required') is True
+AUTHORITY_EXPECTED={
+ 'selection_state':'not_selected','selection_authority':'not_granted','d4_gate_state':'scoped','d4_transport_authority':'selected_not_granted','canonical_product_implementation_authority':'not_granted','wave4_implementation_authority':'not_granted','production_authority':'none','c3_numeric_topology_authority':'not_selected','separate_selection_required':True,'separate_d4_acceptance_required':True,
+}
+def authority_ok(p): return all(p.get(k)==v for k,v in AUTHORITY_EXPECTED.items())
 PROMOTIONS=[
  (P1,{
   'schema_version':1,'promotion_id':'d4-d-open-evt-016-promotion-v1','gate_id':'D4','track_id':'D4-D','promotion_base':'491c99784637d20189034807a1722371a90a54ee','source_pr':108,'source_reviewed_head':'4442b4f2ca398eb92833c89abecc835a47598b59','source_merge_commit':'491c99784637d20189034807a1722371a90a54ee',
@@ -48,8 +50,13 @@ PROMOTIONS=[
   'source_workflow':{'workflow_id':353438165,'workflow_path':'.github/workflows/d4-d-trace-context-source-evidence.yml','workflow_event':'pull_request','source_head_branch':'d4d/open-evt-018-trace-context-source','run_id':34308388920,'run_attempt':1,'job_id':102329740568,'job_name':'D4-D trace context source evidence','artifact_id':10087468670,'artifact_name':'d4-d-trace-context-source-7522036e91582c8aeb95c34097be497d0e1c7ca1-34308388920-1','artifact_digest':'sha256:9d5fc172a8324372ba37a5bae0a51ffdab9e5c16bc6208a195659148b80a8696'},
   'source_manifest':{'path':str(S5),'sha256':SHA5},'credited_evidence':REQUIRED,'newly_credited_evidence':E5,'credit_count':5}),
 ]
+def expected_promotion_keys(expected):
+ keys=set(expected)|set(AUTHORITY_EXPECTED)
+ if expected['newly_credited_evidence'] is None: keys.remove('newly_credited_evidence')
+ return keys
 def promotion_identity_errors(label,p,expected):
  errors=[]
+ if set(p)!=expected_promotion_keys(expected): errors.append(f'{label} promotion top-level schema drift')
  for field in ('schema_version','promotion_id','gate_id','track_id','promotion_base','source_pr','source_reviewed_head','source_merge_commit'):
   if p.get(field)!=expected[field]: errors.append(f'{label} promotion {field} drift')
  if p.get('source_review')!=expected['source_review']: errors.append(f'{label} promotion source review envelope drift')
@@ -57,7 +64,7 @@ def promotion_identity_errors(label,p,expected):
  if p.get('source_manifest')!=expected['source_manifest']: errors.append(f'{label} promotion source manifest envelope drift')
  if p.get('credited_evidence')!=expected['credited_evidence'] or p.get('credit_count')!=expected['credit_count']: errors.append(f'{label} promotion credit envelope drift')
  if expected['newly_credited_evidence'] is None:
-  if p.get('newly_credited_evidence') is not None: errors.append(f'{label} promotion unexpected newly credited evidence')
+  if 'newly_credited_evidence' in p: errors.append(f'{label} promotion unexpected newly credited evidence field')
  elif p.get('newly_credited_evidence')!=expected['newly_credited_evidence']: errors.append(f'{label} promotion newly credited evidence drift')
  if not authority_ok(p): errors.append(f'{label} promotion authority/separation leakage')
  return errors
@@ -84,4 +91,4 @@ if __name__=='__main__':
  root=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else Path.cwd(); errors=validate(root)
  [print('D4D_LEDGER_ERROR:',x,file=sys.stderr) for x in errors]
  if errors: raise SystemExit(1)
- print('d4d_evidence_plan=PASS ledger=5_of_5 d4wide=26/26 selection=not_selected source_snapshots=0_of_5,1_of_5,2_of_5,3_of_5,4_of_5 promotion_chain=P1-P5-complete-identity-bound authorities=unchanged separation=preserved')
+ print('d4d_evidence_plan=PASS ledger=5_of_5 d4wide=26/26 selection=not_selected source_snapshots=0_of_5,1_of_5,2_of_5,3_of_5,4_of_5 promotion_chain=P1-P5-closed-complete-identity-bound authorities=unchanged separation=preserved')

@@ -19,6 +19,8 @@ Every material defect or review finding SHALL complete this sequence before clos
 
 A review finding SHALL NOT be considered fully resolved if the same defect class can predictably recur in an adjacent field or boundary that was not audited.
 
+A declared executable guardrail SHALL NOT receive learning credit from textual presence alone. The repository must be able to resolve the declared check through a registered mechanism to an executable check that is reachable from the CI entrypoint. Dead conditional calls, unused nested functions, and calls after unconditional termination do not constitute execution evidence.
+
 ## Boundary invariants
 
 ### Untrusted until validated
@@ -55,6 +57,8 @@ A proof or attestation SHALL NOT be issuable independently of the operation it c
 
 Proofs SHALL bind semantic identity rather than incidental serialization. Legitimate representation changes that preserve the governed identity must not invalidate the proof unless the representation itself is the governed object.
 
+When idempotent processing needs to distinguish an already-governed exported representation from a newly introduced raw representation, a proof MAY also bind the minimum required representation companion. That companion must itself be authenticated, must not become business or authorization authority, and must be refreshed whenever the governed representation changes. Raw byte appearance or deterministic prefixes remain insufficient proof that the transformation already occurred.
+
 ### Tenant isolation at observable representation
 
 Tenant isolation SHALL hold on the raw/exported representation visible to telemetry backends, logs, caches, indexes, providers, and operators. A helper that checks tenant IDs is insufficient if globally correlatable bytes remain exposed elsewhere.
@@ -76,7 +80,9 @@ Before requesting external review, the internal review SHALL answer at least:
 - Can optional metadata consume unbounded CPU, memory or latency even if business semantics remain unchanged?
 - Can the same raw or derived value correlate two tenants outside application helpers?
 - Can a proof be issued for a value that did not actually pass the protected transformation?
-- Is the proof bound to semantic identity or to an incidental serialization that legitimate hops must change?
+- Is the proof bound to semantic identity, and is any representation companion both necessary and authenticated?
+- Can an already-governed representation be transformed again because the proof cannot distinguish forwarding from newly introduced representation?
+- Does every declared falsifier actually execute from the CI entrypoint, or is it merely syntactically present?
 - Does the test suite falsify malformed runtime types, oversized values and resource-amplification cases, not only semantically invalid well-typed values?
 - Does a local fix require auditing the entire boundary object or adjacent trust boundary?
 

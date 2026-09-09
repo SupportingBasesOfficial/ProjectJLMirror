@@ -38,7 +38,9 @@ def _current_errors(state: dict) -> list[str]:
     if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 26:
         errors.append("D4-wide current state must be 26/26")
     if (state.get("gate_state"), state.get("d4_transport_authority"), state.get("canonical_product_implementation_authority"), state.get("wave4_implementation_authority"), state.get("production_authority"), state.get("c3_numeric_topology_authority")) != ("scoped", "selected_not_granted", "not_granted", "not_granted", "none", "not_selected"):
-        errors.append("authority boundary drift")
+        for field, (expected, message) in {'gate_state': ('scoped', 'D4 gate escalation'), 'd4_transport_authority': ('selected_not_granted', 'transport authority escalation'), 'canonical_product_implementation_authority': ('not_granted', 'Product authority escalation'), 'wave4_implementation_authority': ('not_granted', 'Wave4 authority escalation'), 'production_authority': ('none', 'production authority escalation'), 'c3_numeric_topology_authority': ('not_selected', 'C3 authority escalation')}.items():
+            if state.get(field) != expected:
+                errors.append(message)
     return errors
 
 

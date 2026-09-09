@@ -71,6 +71,7 @@ def _project_ledger(ledger: dict) -> dict:
     projected["candidate"] = None
     projected["candidate_status"] = "not_selected"
     projected["selection_state"] = "not_selected"
+    projected["selection_authority"] = "not_granted"
     return projected
 
 

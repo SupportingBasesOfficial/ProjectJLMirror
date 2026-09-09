@@ -5,6 +5,10 @@ The validator intentionally has no network access and performs no mutation. It
 produces exact-run evidence for a bounded set of mechanically falsifiable
 properties. A clean result is evidence for these checks only; it is never
 normative approval or merge authorization.
+
+One narrowly scoped exception is admitted for the adversarial-learning
+reconciliation workflow: it may publish commit statuses to the resolved PR HEAD.
+It receives no contents/issues/PR mutation authority and no other write command.
 """
 
 from __future__ import annotations
@@ -19,6 +23,8 @@ PROFILE_ID = "jlmirror-deterministic-assurance/v1"
 
 WORKFLOW_SUFFIXES = {".yml", ".yaml"}
 TEXT_SUFFIXES = {".md", ".yml", ".yaml", ".py", ".json", ".toml", ".txt"}
+STATUS_PUBLISHER_WORKFLOW = ".github/workflows/adversarial-learning-reconciliation.yml"
+STATUS_ENDPOINT_MARKER = "statuses/${PR_HEAD_SHA}"
 
 ACTION_USE_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*([^\s#]+)\s*(?:#.*)?$", re.MULTILINE)
 IMMUTABLE_ACTION_RE = re.compile(r"^[^@]+@[0-9a-fA-F]{40}$")
@@ -46,6 +52,10 @@ CONTINUE_ON_ERROR_RE = re.compile(r"^\s*continue-on-error:\s*true\s*(?:#.*)?$", 
 UNSAFE_CHECKOUT_TRUE_RE = re.compile(r"^\s*allow-unsafe-pr-checkout:\s*true\s*(?:#.*)?$", re.IGNORECASE | re.MULTILINE)
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 FENCE_RE = re.compile(r"^\s*```", re.MULTILINE)
+GH_API_WRITE_RE = re.compile(
+    r"\bgh\s+api\b[^\n]*(?:-X|--method)\s*(?:POST|PUT|PATCH|DELETE)\b",
+    re.IGNORECASE,
+)
 
 MUTATING_COMMANDS = [
     (re.compile(r"\bgit\s+push\b", re.IGNORECASE), "git push"),
@@ -53,13 +63,7 @@ MUTATING_COMMANDS = [
     (re.compile(r"\bgh\s+pr\s+(?:merge|create|close|edit)\b", re.IGNORECASE), "gh pr mutation"),
     (re.compile(r"\bgh\s+issue\s+(?:create|close|edit)\b", re.IGNORECASE), "gh issue mutation"),
     (re.compile(r"\bgh\s+release\s+create\b", re.IGNORECASE), "gh release create"),
-    (
-        re.compile(
-            r"\bgh\s+api\b[^\n]*(?:-X|--method)\s*(?:POST|PUT|PATCH|DELETE)\b",
-            re.IGNORECASE,
-        ),
-        "gh api write method",
-    ),
+    (GH_API_WRITE_RE, "gh api write method"),
     (
         re.compile(
             r"\bcurl\b[^\n]*(?:-X|--request)\s*(?:POST|PUT|PATCH|DELETE)\b",
@@ -92,17 +96,46 @@ def _workflow_files(root: Path) -> list[Path]:
     )
 
 
+def _status_publisher_policy_errors(text: str) -> list[str]:
+    errors: list[str] = []
+    write_permissions = [match.group(0).strip().lower() for match in WRITE_PERMISSION_RE.finditer(text)]
+    if write_permissions != ["statuses: write"]:
+        errors.append("status publisher may grant exactly statuses: write and no other write permission")
+    if INLINE_WRITE_PERMISSION_RE.search(text) or WRITE_ALL_RE.search(text):
+        errors.append("status publisher may not use inline write permissions or write-all")
+    writes = list(GH_API_WRITE_RE.finditer(text))
+    if len(writes) != 2:
+        errors.append("status publisher must perform exactly two GitHub API write calls")
+    for match in writes:
+        line = text.splitlines()[_line_for_offset(text, match.start()) - 1]
+        if "--method POST" not in line or STATUS_ENDPOINT_MARKER not in line:
+            errors.append("status publisher write calls may only POST commit status to the resolved PR HEAD")
+    if text.count(STATUS_ENDPOINT_MARKER) != 2 or "statuses/${GITHUB_SHA}" in text:
+        errors.append("status publisher must bind both pending and final result only to PR_HEAD_SHA")
+    return errors
+
+
 def _check_workflow_policy(root: Path) -> list[Finding]:
     findings: list[Finding] = []
 
     for path in _workflow_files(root):
         rel = path.relative_to(root).as_posix()
         text = path.read_text(encoding="utf-8")
+        is_status_publisher = rel == STATUS_PUBLISHER_WORKFLOW
+
+        if is_status_publisher:
+            for message in _status_publisher_policy_errors(text):
+                findings.append(Finding(rel, message))
+        else:
+            for regex, message in (
+                (WRITE_ALL_RE, "workflow grants permissions: write-all; observer-only workflows must not have canonical mutation authority"),
+                (WRITE_PERMISSION_RE, "workflow grants a write permission; the v1 assurance profile is read-only"),
+                (INLINE_WRITE_PERMISSION_RE, "workflow grants an inline write permission; the v1 assurance profile is read-only"),
+            ):
+                for match in regex.finditer(text):
+                    findings.append(Finding(rel, message, _line_for_offset(text, match.start())))
 
         for regex, message in (
-            (WRITE_ALL_RE, "workflow grants permissions: write-all; observer-only workflows must not have canonical mutation authority"),
-            (WRITE_PERMISSION_RE, "workflow grants a write permission; the v1 assurance profile is read-only"),
-            (INLINE_WRITE_PERMISSION_RE, "workflow grants an inline write permission; the v1 assurance profile is read-only"),
             (PULL_REQUEST_TARGET_RE, "pull_request_target is forbidden in the v1 assurance profile because untrusted PR content must not gain privileged execution context"),
             (SECRET_REFERENCE_RE, "workflow references a GitHub secret; the v1 pull-request assurance profile is secretless"),
             (SECRET_INHERIT_RE, "workflow inherits secrets; the v1 assurance profile is secretless"),
@@ -159,6 +192,10 @@ def _check_workflow_policy(root: Path) -> list[Finding]:
 
         for regex, label in MUTATING_COMMANDS:
             for match in regex.finditer(text):
+                if is_status_publisher and label == "gh api write method":
+                    line = lines[_line_for_offset(text, match.start()) - 1]
+                    if "--method POST" in line and STATUS_ENDPOINT_MARKER in line:
+                        continue
                 findings.append(
                     Finding(
                         rel,

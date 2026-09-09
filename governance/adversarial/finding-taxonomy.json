@@ -34,8 +34,8 @@
     {
       "id": "ADV-TENANT-CORRELATION-LEAK",
       "name": "Cross-tenant correlation channel",
-      "description": "A raw or derived observable value remains globally joinable across tenant boundaries despite application-level tenant checks.",
-      "invariant_ids": ["INV-TENANT-001", "INV-OBS-002"]
+      "description": "A raw or derived observable value remains globally joinable across tenant boundaries despite application-level tenant checks, including when a proof authenticates only a subset of the exported correlation representation.",
+      "invariant_ids": ["INV-TENANT-001", "INV-OBS-002", "INV-PROOF-002"]
     },
     {
       "id": "ADV-REPRESENTATION-AS-AUTHORITY",
@@ -58,8 +58,8 @@
     {
       "id": "ADV-CANONICALIZATION-GAP",
       "name": "Incomplete canonical validation",
-      "description": "Input is structurally accepted while unsupported versions, duplicate fields, invalid grammar or non-canonical representations remain possible.",
-      "invariant_ids": ["INV-BOUNDARY-002", "INV-PROVENANCE-001"]
+      "description": "Input is structurally accepted while unsupported versions, duplicate fields, invalid grammar, non-encodable text or other non-canonical representations remain possible and may escape the intended fail-closed observability path.",
+      "invariant_ids": ["INV-BOUNDARY-002", "INV-PROVENANCE-001", "INV-OBS-001"]
     },
     {
       "id": "ADV-TRUST-CONTEXT-GAP",

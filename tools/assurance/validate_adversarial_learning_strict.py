@@ -15,11 +15,25 @@ MATERIAL_RE = re.compile(r'(?:\bP[012]\s+Badge\b|\[P[012]\])')
 MAINTAINER_LOGINS = {'SupportingBasesOfficial'}
 NEGATIVE_HELPERS = {
     Path('tools/assurance/test_validate_d4d_selection.py'): {'must_fail'},
+    Path('tools/assurance/test_validate_d4c_selection.py'): {'must_fail'},
     Path('tools/assurance/d4b_wire_schema/test_source_evidence.py'): {'must_fail'},
-
     Path('tools/assurance/test_validate_adversarial_learning.py'): {'expect_failure', 'expect_repository_failure'},
     Path('tools/assurance/test_validate_d4d_trace_context_source.py'): {'mutate_and_expect_failure'},
 }
+D4C_STALE_CURRENT_MARKERS = (
+    "d4c['candidate'] is None",
+    'd4c["candidate"] is None',
+    "tracks['D4-C']['candidate'] is None",
+    'tracks["D4-C"]["candidate"] is None',
+    "d4c['candidate_status']=='not_selected'",
+    'd4c["candidate_status"]=="not_selected"',
+    "tracks['D4-C']['candidate_status']=='not_selected'",
+    'tracks["D4-C"]["candidate_status"]=="not_selected"',
+    "d4c['state']=='candidate_selection_open'",
+    'd4c["state"]=="candidate_selection_open"',
+    "tracks['D4-C']['state']=='candidate_selection_open'",
+    'tracks["D4-C"]["state"]=="candidate_selection_open"',
+)
 
 
 def _flatten(value: Any) -> list[dict[str, Any]]:
@@ -82,6 +96,22 @@ def _validate_falsifier_effects(root: Path) -> list[str]:
     return errors
 
 
+def _validate_d4c_current_workflow_projections(root: Path) -> list[str]:
+    workflow_root = root / '.github/workflows'
+    if not workflow_root.is_dir():
+        return ['workflow directory missing for D4-C current projection validation']
+    errors: list[str] = []
+    for path in sorted(workflow_root.glob('*.yml')):
+        text = path.read_text(encoding='utf-8')
+        if 'implementation/d4-eventing-async/state-manifest.json' not in text:
+            continue
+        for marker in D4C_STALE_CURRENT_MARKERS:
+            if marker in text:
+                rel = path.relative_to(root)
+                errors.append(f'stale D4-C current-state workflow projection: {rel}:{marker}')
+    return errors
+
+
 def _validate_head_status_workflow(root: Path) -> list[str]:
     path = root / HEAD_STATUS_WORKFLOW
     if not path.is_file():
@@ -133,11 +163,9 @@ def _strict_material_ids(review_comments: Path) -> set[int]:
 
 def validate(root: Path, review_comments: Path | None = None) -> list[str]:
     root = root.resolve()
-    # Static graph validation is delegated to the base validator. Dynamic review
-    # reconciliation is performed only here so renderer formats and reviewer
-    # identity have one strict source of truth.
     errors = list(base.validate(root, None))
     errors.extend(_validate_head_status_workflow(root))
+    errors.extend(_validate_d4c_current_workflow_projections(root))
     errors.extend(_validate_falsifier_effects(root))
 
     if review_comments is not None:
@@ -168,7 +196,7 @@ def main() -> None:
         print('ADVERSARIAL_LEARNING_STRICT_ERROR:', error)
     if errors:
         raise SystemExit(1)
-    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix falsifier_effects=guaranteed-negative-helper')
+    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal falsifier_effects=guaranteed-negative-helper')
 
 
 if __name__ == '__main__':

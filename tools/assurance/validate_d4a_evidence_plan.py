@@ -26,6 +26,13 @@ D4D_CREDITS = [
     "secret_credential_payload_exclusion_and_erasure_boundary",
     "trace_context_observability_only_validation_and_redaction",
 ]
+D4D_SELECTED_PROFILE = {
+    "workload_identity_to_broker_credential_adapter": "derived_short_lived_broker_native_credential_adapter",
+    "tenant_and_contract_scoped_producer_consumer_authorization": "broker_acl_projection_adapter",
+    "message_protection_key_authority_and_historical_verifier_continuity": "kms_backed_envelope_or_transport_protection_profile",
+    "secret_credential_payload_exclusion_and_erasure_boundary": "reference_only_secret_authority_profile",
+    "trace_context_observability_only_validation_and_redaction": "w3c_trace_context_bounded_profile",
+}
 _legacy_validate_objects = historical.validate_objects
 
 
@@ -42,8 +49,8 @@ def _current_sibling_errors(entry: dict) -> list[str]:
         errors.append("D4-C current sibling credit must be exactly all nine reviewed D4-C obligations")
     if d4c.get("evidence_remaining") != expected_remaining:
         errors.append("D4-C current sibling remaining evidence drift")
-    if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
-        errors.append("D4-D current sibling state must remain open/unselected")
+    if d4d.get("candidate") != D4D_SELECTED_PROFILE or d4d.get("candidate_status") != "selected_c2_security_profile" or d4d.get("state") != "selected_candidate":
+        errors.append("D4-D current sibling selected security profile drift")
     if d4d.get("evidence_completed") != D4D_CREDITS:
         errors.append("D4-D current sibling credit must be exactly the five separately reviewed obligations")
     if d4d.get("evidence_remaining") != []:
@@ -59,6 +66,9 @@ def _historical_projection(entry: dict) -> dict:
     d4d = next(t for t in projected["tracks"] if t.get("track_id") == "D4-D")
     d4c["evidence_completed"] = []
     d4c["evidence_remaining"] = list(d4c["required_evidence"])
+    d4d["candidate"] = None
+    d4d["candidate_status"] = "not_selected"
+    d4d["state"] = "candidate_selection_open"
     d4d["evidence_completed"] = []
     d4d["evidence_remaining"] = list(d4d["required_evidence"])
     return projected
@@ -91,7 +101,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4A_PLAN_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4a_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=9_of_9 current_sibling_d4d=5_of_5 d4wide=26_of_26")
+    print("d4a_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=9_of_9 current_sibling_d4d=5_of_5_selected d4wide=26_of_26")
     return 0
 
 

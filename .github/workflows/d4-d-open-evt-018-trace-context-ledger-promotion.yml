@@ -58,7 +58,29 @@ jobs:
           python3 tools/assurance/validate_d4d_candidate_evaluation_plan.py .
       - name: Preserve Phase 10 contract suite
         run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
+      - name: Determine whether this PR changes OPEN-EVT-018 promotion authority
+        id: promotion_delta
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE_SHA" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "d4d_open_evt_018_promotion_delta=steady_state reason=no_pull_request_base"
+            exit 0
+          fi
+          python3 - <<'PY'
+          import os, subprocess
+          from pathlib import Path
+          base_sha=os.environ['BASE_SHA']; promotion_path='implementation/d4-eventing-async/ledger-promotions/d4-d-open-evt-018-trace-context-promotion-v1.json'
+          proc=subprocess.run(['git','show',f'{base_sha}:{promotion_path}'],check=False,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+          changed=(proc.stdout if proc.returncode==0 else None)!=Path(promotion_path).read_bytes()
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as output: output.write(f"changed={'true' if changed else 'false'}\n")
+          print(f"d4d_open_evt_018_promotion_delta={'changed' if changed else 'steady_state'} authority_source=own_promotion_record aggregate_ledger_ignored=true")
+          PY
       - name: Admit exact reviewed fifth source from live GitHub state
+        if: steps.promotion_delta.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -97,6 +119,23 @@ jobs:
           assert hashlib.sha256(src.read_bytes()).hexdigest()==p['source_manifest']['sha256']==prov['source_manifest_sha256']
           sm=json.loads(src.read_text()); assert sm['source_time_state']['d4d']=='4_of_5_unselected' and sm['source_time_state']['d4wide']=='25_of_26' and sm['ledger_credit']==[] and sm['current_run_auto_credit'] is False
           print('d4d_fifth_credit_live_admission=PASS source_pr=118 baseline_review=bound probes=81 artifact=bound source_snapshot=4_of_5_25_of_26')
+          PY
+      - name: Validate steady-state durable OPEN-EVT-018 promotion provenance
+        if: steps.promotion_delta.outputs.changed == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          promotion=Path('implementation/d4-eventing-async/ledger-promotions/d4-d-open-evt-018-trace-context-promotion-v1.json')
+          p=json.loads(promotion.read_text()); src=Path(p['source_manifest']['path'])
+          assert hashlib.sha256(src.read_bytes()).hexdigest()==p['source_manifest']['sha256']
+          sm=json.loads(src.read_text())
+          assert sm['source_time_state']['d4d']=='4_of_5_unselected' and sm['source_time_state']['d4wide']=='25_of_26'
+          assert sm['ledger_credit']==[] and sm['current_run_auto_credit'] is False
+          assert p['separate_selection_required'] is True and p['separate_d4_acceptance_required'] is True
+          print('d4d_open_evt_018_steady_state=PASS promotion_unchanged=true artifact_retention_dependency=false durable_record=validated source_manifest_digest=validated')
           PY
       - name: Assert promotion grants exactly fifth D4-D credit
         run: |

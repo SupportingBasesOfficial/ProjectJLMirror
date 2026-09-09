@@ -142,10 +142,12 @@ class PromotionFalsificationTests(unittest.TestCase):
             d4c["evidence_remaining"] = [CREDIT_025]
         self._reject(self._mutate_json(STATE, change), "D4-C state credit drift")
 
-    def test_sibling_credit_leakage_is_rejected(self):
+    def test_sibling_credit_regression_is_rejected(self):
         def change(s):
             d4d = next(t for t in s["tracks"] if t["track_id"] == "D4-D")
-            d4d["evidence_completed"] = [d4d["evidence_remaining"].pop(0)]
+            fifth = "trace_context_observability_only_validation_and_redaction"
+            d4d["evidence_completed"].remove(fifth)
+            d4d["evidence_remaining"] = [fifth]
         self._reject(self._mutate_json(STATE, change), "D4-D state/credit leakage")
 
     def test_duplicate_track_id_is_rejected(self):

@@ -56,7 +56,7 @@ def _current_errors(state: dict) -> list[str]:
     if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 26:
         errors.append("D4-wide current state must be 26/26")
     expected_authority = {
-        'gate_state': ('separately_accepted', 'D4 current gate acceptance drift'),
+        'gate_state': ('separately_accepted', 'D4 gate escalation'),
         'd4_transport_authority': ('selected_not_granted', 'transport authority escalation'),
         'canonical_product_implementation_authority': ('not_granted', 'Product authority escalation'),
         'wave4_implementation_authority': ('not_granted', 'Wave4 authority escalation'),

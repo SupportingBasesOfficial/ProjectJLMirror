@@ -9,7 +9,13 @@ from pathlib import Path
 import validate_source_evidence_historical_current as historical
 from validate_source_evidence_historical_current import *  # noqa: F401,F403
 
-D4D_CREDIT = "workload_identity_to_broker_credential_adapter_least_privilege"
+D4D_CREDITS = [
+    "workload_identity_to_broker_credential_adapter_least_privilege",
+    "tenant_and_contract_scoped_producer_consumer_authorization",
+    "message_protection_key_authority_and_historical_verifier_continuity",
+    "secret_credential_payload_exclusion_and_erasure_boundary",
+    "trace_context_observability_only_validation_and_redaction",
+]
 _legacy_load = historical.load
 
 
@@ -27,10 +33,10 @@ def _current_errors(state: dict) -> list[str]:
         errors.append("D4-C current 9/9 drift")
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
         errors.append("D4-D current selection drift")
-    if d4d.get("evidence_completed") != [D4D_CREDIT] or d4d.get("evidence_remaining") != [x for x in d4d.get("required_evidence", []) if x != D4D_CREDIT]:
-        errors.append("D4-D current state must be exactly 1/5")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 22:
-        errors.append("D4-wide current state must be 22/26")
+    if d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != []:
+        errors.append("D4-D current state must be exactly 5/5")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 26:
+        errors.append("D4-wide current state must be 26/26")
     if (state.get("gate_state"), state.get("d4_transport_authority"), state.get("canonical_product_implementation_authority"), state.get("wave4_implementation_authority"), state.get("production_authority"), state.get("c3_numeric_topology_authority")) != ("scoped", "selected_not_granted", "not_granted", "not_granted", "none", "not_selected"):
         errors.append("authority boundary drift")
     return errors
@@ -85,7 +91,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_WIRE_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_wire_schema_source=PASS historical_oracle=preserved current_d4b=5_of_5_selected current_d4c=9_of_9 current_d4d=1_of_5 d4wide=22_of_26")
+    print("d4b_wire_schema_source=PASS historical_oracle=preserved current_d4b=5_of_5_selected current_d4c=9_of_9 current_d4d=5_of_5 d4wide=26_of_26")
     return 0
 
 if __name__ == "__main__":

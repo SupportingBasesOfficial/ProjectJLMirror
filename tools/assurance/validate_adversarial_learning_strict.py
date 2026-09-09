@@ -30,13 +30,37 @@ def _flatten(value: Any) -> list[dict[str, Any]]:
     return out
 
 
-def _has_negative_check(function: ast.AST, helpers: set[str]) -> bool:
-    for node in ast.walk(function):
-        if isinstance(node, ast.Assert):
+def _statements_have_negative_check(statements: list[ast.stmt], helpers: set[str]) -> bool:
+    for statement in statements:
+        if isinstance(statement, (ast.Return, ast.Raise)):
+            return False
+        if isinstance(statement, ast.Assert):
             return True
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in helpers:
-            return True
+        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
+            call = statement.value
+            if isinstance(call.func, ast.Name) and call.func.id in helpers:
+                return True
+        if isinstance(statement, (ast.For, ast.AsyncFor, ast.While)):
+            if _statements_have_negative_check(statement.body, helpers) or _statements_have_negative_check(statement.orelse, helpers):
+                return True
+        elif isinstance(statement, ast.If):
+            if _statements_have_negative_check(statement.body, helpers) or _statements_have_negative_check(statement.orelse, helpers):
+                return True
+        elif isinstance(statement, (ast.With, ast.AsyncWith)):
+            if _statements_have_negative_check(statement.body, helpers):
+                return True
+        elif isinstance(statement, ast.Try):
+            if _statements_have_negative_check(statement.body, helpers) or _statements_have_negative_check(statement.orelse, helpers) or _statements_have_negative_check(statement.finalbody, helpers):
+                return True
+            if any(_statements_have_negative_check(handler.body, helpers) for handler in statement.handlers):
+                return True
     return False
+
+
+def _has_negative_check(function: ast.AST, helpers: set[str]) -> bool:
+    if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return False
+    return _statements_have_negative_check(function.body, helpers)
 
 
 def _validate_falsifier_effects(root: Path) -> list[str]:
@@ -54,7 +78,7 @@ def _validate_falsifier_effects(root: Path) -> list[str]:
         for name in sorted(credited):
             function = functions.get(name)
             if function is None or not _has_negative_check(function, helpers):
-                errors.append(f'credited falsifier performs no negative check: {rel}:{name}')
+                errors.append(f'credited falsifier performs no reachable negative check: {rel}:{name}')
     return errors
 
 
@@ -127,7 +151,7 @@ def main() -> None:
         print('ADVERSARIAL_LEARNING_STRICT_ERROR:', error)
     if errors:
         raise SystemExit(1)
-    print('adversarial_learning_strict=PASS head_status=bound material_formats=badge+priority-prefix falsifier_effects=verified')
+    print('adversarial_learning_strict=PASS head_status=bound material_formats=badge+priority-prefix falsifier_effects=reachable')
 
 
 if __name__ == '__main__':

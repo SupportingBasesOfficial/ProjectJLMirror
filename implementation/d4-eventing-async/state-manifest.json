@@ -30,8 +30,8 @@
     {
       "track_id":"D4-D","name":"broker_auth_message_protection_and_trace_context","source_decisions":["OPEN-EVT-016","OPEN-EVT-017","OPEN-EVT-018"],"candidate":null,"candidate_status":"not_selected","state":"candidate_selection_open",
       "required_evidence":["workload_identity_to_broker_credential_adapter_least_privilege","tenant_and_contract_scoped_producer_consumer_authorization","message_protection_key_authority_and_historical_verifier_continuity","secret_credential_payload_exclusion_and_erasure_boundary","trace_context_observability_only_validation_and_redaction"],
-      "evidence_completed":["workload_identity_to_broker_credential_adapter_least_privilege","tenant_and_contract_scoped_producer_consumer_authorization","message_protection_key_authority_and_historical_verifier_continuity","secret_credential_payload_exclusion_and_erasure_boundary"],
-      "evidence_remaining":["trace_context_observability_only_validation_and_redaction"]
+      "evidence_completed":["workload_identity_to_broker_credential_adapter_least_privilege","tenant_and_contract_scoped_producer_consumer_authorization","message_protection_key_authority_and_historical_verifier_continuity","secret_credential_payload_exclusion_and_erasure_boundary","trace_context_observability_only_validation_and_redaction"],
+      "evidence_remaining":[]
     }
   ],
   "explicit_c3_exclusions":["OPEN-EVT-006","OPEN-EVT-007","OPEN-EVT-019","OPEN-EVT-026","OPEN-EVT-027","OPEN-EVT-028","OPEN-REL-012.B","production_partition_counts","production_retry_backoff_jitter_numerics","production_retention_lag_replay_quarantine_horizons","production_realtime_buffer_session_numerics"],

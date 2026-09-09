@@ -74,7 +74,12 @@ def _validate_head_status_workflow(root: Path) -> list[str]:
         'job result binding': 'JOB_STATUS: ${{ job.status }}',
         'strict reconciliation': 'validate_adversarial_learning_strict.py',
     }
-    return [f'head-associated reconciliation workflow missing {name}' for name, marker in markers.items() if marker not in text]
+    errors = [f'head-associated reconciliation workflow missing {name}' for name, marker in markers.items() if marker not in text]
+    if text.count('statuses/${PR_HEAD_SHA}') != 2:
+        errors.append('head-associated reconciliation must publish both pending and final status to the resolved PR head')
+    if 'statuses/${GITHUB_SHA}' in text:
+        errors.append('head-associated reconciliation must never publish review status to the event/default-branch SHA')
+    return errors
 
 
 def _strict_material_ids(review_comments: Path) -> set[int]:

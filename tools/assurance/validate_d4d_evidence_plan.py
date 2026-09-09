@@ -87,10 +87,10 @@ def validate(root):
  if d.get('candidate')!=CURRENT_PROFILE or d.get('candidate_status')!='selected_c2_security_profile' or d.get('state')!='selected_candidate': e.append('D4-D current selected profile state drift')
  if sum(len(t.get('evidence_completed',[])) for t in tracks.values())!=26: e.append('D4-wide current state must be exactly 26/26')
  authority=(state.get('gate_state'),state.get('d4_transport_authority'),state.get('canonical_product_implementation_authority'),state.get('wave4_implementation_authority'),state.get('production_authority'),state.get('c3_numeric_topology_authority'))
- if authority!=('scoped','selected_not_granted','not_granted','not_granted','none','not_selected'): e.append('authority boundary changed')
+ if authority!=('separately_accepted','selected_not_granted','not_granted','not_granted','none','not_selected'): e.append('authority boundary changed')
  return e
 if __name__=='__main__':
  root=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else Path.cwd(); errors=validate(root)
  [print('D4D_LEDGER_ERROR:',x,file=sys.stderr) for x in errors]
  if errors: raise SystemExit(1)
- print('d4d_evidence_plan=PASS ledger=5_of_5 d4wide=26/26 selection=selected_c2_security_profile source_snapshots=0_of_5,1_of_5,2_of_5,3_of_5,4_of_5 promotion_chain=P1-P5-closed-complete-identity-bound authorities=unchanged acceptance=separate')
+ print('d4d_evidence_plan=PASS ledger=5_of_5 d4wide=26/26 selection=selected_c2_security_profile historical_promotion_gate=scoped current_gate=separately_accepted source_snapshots=0_of_5,1_of_5,2_of_5,3_of_5,4_of_5 promotion_chain=P1-P5-closed-complete-identity-bound authorities=unchanged')

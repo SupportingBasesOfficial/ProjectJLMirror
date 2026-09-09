@@ -7,7 +7,7 @@
   "candidate": null,
   "candidate_status": "not_selected",
   "source_evidence_state": "reviewed_source_run_available",
-  "ledger_credit_state": "four_of_five",
+  "ledger_credit_state": "five_of_five",
   "required_evidence": [
     "workload_identity_to_broker_credential_adapter_least_privilege",
     "tenant_and_contract_scoped_producer_consumer_authorization",
@@ -19,12 +19,11 @@
     "workload_identity_to_broker_credential_adapter_least_privilege",
     "tenant_and_contract_scoped_producer_consumer_authorization",
     "message_protection_key_authority_and_historical_verifier_continuity",
-    "secret_credential_payload_exclusion_and_erasure_boundary"
-  ],
-  "remaining_evidence": [
+    "secret_credential_payload_exclusion_and_erasure_boundary",
     "trace_context_observability_only_validation_and_redaction"
   ],
-  "latest_promotion": "implementation/d4-eventing-async/ledger-promotions/d4-d-open-evt-017-secret-exclusion-promotion-v1.json",
+  "remaining_evidence": [],
+  "latest_promotion": "implementation/d4-eventing-async/ledger-promotions/d4-d-open-evt-018-trace-context-promotion-v1.json",
   "current_run_auto_credit": false,
   "selection_state": "not_selected",
   "selection_authority": "not_granted",

@@ -17,7 +17,7 @@ D4C_CREDITS = [
     "outbox_claim_dispatch_ack_ambiguity_and_recovery_continuity",
     "producer_generation_nonresurrection_across_failover_restore",
     "privileged_bounded_replay_with_original_identity_and_effect_safety",
-    "historical_reader_upcaster_semantic_and_equivalence_profile_continuity",
+    "historical_reader_upcaster_semantic_and_equivalence_continuity",
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
 D4D_CREDITS = [

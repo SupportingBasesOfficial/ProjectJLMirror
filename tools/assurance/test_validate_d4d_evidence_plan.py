@@ -5,7 +5,7 @@ from pathlib import Path
 import validate_d4d_evidence_plan as target
 ROOT=Path(__file__).resolve().parents[2]
 def clone(root):
- for p in (target.PLAN,target.STATE,target.P1,target.P2,target.P3,target.P4,target.P5,target.S1,target.S2,target.S3,target.S4,target.S5):
+ for p in (target.PLAN,target.STATE,target.SELECTION,target.P1,target.P2,target.P3,target.P4,target.P5,target.S1,target.S2,target.S3,target.S4,target.S5):
   dst=root/p; dst.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(ROOT/p,dst)
 def mutate(root,p,fn):
  q=root/p; v=json.loads(q.read_text()); fn(v); q.write_text(json.dumps(v,indent=2)+'\n')
@@ -16,8 +16,11 @@ def main():
  assert target.validate(ROOT)==[],target.validate(ROOT)
  reject('regress_fifth_credit',target.PLAN,lambda p:(p['credited_evidence'].pop(),p.__setitem__('remaining_evidence',[target.E5]),p.__setitem__('ledger_credit_state','four_of_five')))
  reject('duplicate_fifth_credit',target.PLAN,lambda p:p['credited_evidence'].append(target.E5))
- reject('silent_candidate_selection',target.PLAN,lambda p:p.__setitem__('candidate','implicit-trace-profile'))
+ reject('regress_current_selection',target.PLAN,lambda p:(p.__setitem__('candidate',None),p.__setitem__('candidate_status','not_selected'),p.__setitem__('selection_state','not_selected'),p.__setitem__('selection_authority','not_granted'),p.__setitem__('separate_selection_required',True)))
+ reject('selected_profile_drift',target.PLAN,lambda p:p['candidate'].__setitem__('trace_context_observability_only_validation_and_redaction','vendor_neutral_trace_correlation_profile'))
+ reject('selection_record_binding_drift',target.PLAN,lambda p:p.__setitem__('selection_record','implementation/d4-eventing-async/other-selection-record.json'))
  reject('selection_authority_leakage',target.PLAN,lambda p:p.__setitem__('selection_authority','granted'))
+ reject('premature_d4_acceptance',target.PLAN,lambda p:p.__setitem__('separate_d4_acceptance_required',False))
  reject('wrong_fifth_source_review',target.P5,lambda p:p['source_review'].__setitem__('review_id',1))
  reject('wrong_fifth_source_head',target.P5,lambda p:p.__setitem__('source_reviewed_head','0'*40))
  reject('wrong_fifth_source_merge',target.P5,lambda p:p.__setitem__('source_merge_commit','0'*40))
@@ -37,5 +40,7 @@ def main():
   mutate(root,target.STATE,regress); assert target.validate(root); print('regress_current_state_fifth_credit=REJECTED')
  with tempfile.TemporaryDirectory() as td:
   root=Path(td); clone(root); mutate(root,target.STATE,lambda s:next(t for t in s['tracks'] if t['track_id']=='D4-D')['evidence_completed'].append(target.E5)); assert target.validate(root); print('duplicate_current_state_credit=REJECTED')
- print('d4d_evidence_plan_falsification=PASS cumulative_history=P1-P5-bound fifth_credit=bound source_snapshot=immutable auto_credit=blocked selection=blocked authorities=blocked')
+ with tempfile.TemporaryDirectory() as td:
+  root=Path(td); clone(root); mutate(root,target.STATE,lambda s:next(t for t in s['tracks'] if t['track_id']=='D4-D').__setitem__('candidate',None)); assert target.validate(root); print('regress_current_state_selection=REJECTED')
+ print('d4d_evidence_plan_falsification=PASS cumulative_history=P1-P5-bound fifth_credit=bound source_snapshot=immutable auto_credit=blocked selected_profile=bound acceptance=separate authorities=blocked')
 if __name__=='__main__': main()

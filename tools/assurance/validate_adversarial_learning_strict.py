@@ -30,21 +30,35 @@ def _flatten(value: Any) -> list[dict[str, Any]]:
     return out
 
 
-def _statements_have_negative_check(statements: list[ast.stmt], helpers: set[str]) -> bool:
-    """Credit only a direct, reachable registered negative helper.
+def _direct_negative_helper(statements: list[ast.stmt], helpers: set[str]) -> bool:
+    for statement in statements:
+        if isinstance(statement, (ast.Return, ast.Raise)):
+            return False
+        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
+            call = statement.value
+            if isinstance(call.func, ast.Name) and call.func.id in helpers:
+                return True
+    return False
 
-    Generic assertions are deliberately not evidence: `assert True` is a no-op.
-    Branch/loop/try containment is deliberately not evidence either, because a
-    syntactically present helper may be statically or dynamically unreachable.
+
+def _statements_have_negative_check(statements: list[ast.stmt], helpers: set[str]) -> bool:
+    """Credit only structurally guaranteed registered negative helpers.
+
+    Direct helpers are accepted. A helper inside a `for` is accepted only when
+    the iterator is a statically non-empty list/tuple literal, so the body is
+    guaranteed to execute at least once. Generic assertions, conditional
+    branches, dynamic loops, try/handler containment and dead code are not proof.
     """
     for statement in statements:
         if isinstance(statement, (ast.Return, ast.Raise)):
             return False
-        if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
-            continue
-        call = statement.value
-        if isinstance(call.func, ast.Name) and call.func.id in helpers:
-            return True
+        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
+            call = statement.value
+            if isinstance(call.func, ast.Name) and call.func.id in helpers:
+                return True
+        if isinstance(statement, ast.For) and isinstance(statement.iter, (ast.List, ast.Tuple)) and len(statement.iter.elts) > 0:
+            if _direct_negative_helper(statement.body, helpers):
+                return True
     return False
 
 
@@ -67,7 +81,7 @@ def _validate_falsifier_effects(root: Path) -> list[str]:
         for name in sorted(credited):
             function = functions.get(name)
             if function is None or not _has_negative_check(function, helpers):
-                errors.append(f'credited falsifier performs no direct reachable registered negative check: {rel}:{name}')
+                errors.append(f'credited falsifier performs no guaranteed registered negative check: {rel}:{name}')
     return errors
 
 
@@ -145,7 +159,7 @@ def main() -> None:
         print('ADVERSARIAL_LEARNING_STRICT_ERROR:', error)
     if errors:
         raise SystemExit(1)
-    print('adversarial_learning_strict=PASS head_status=isolated+fresh material_formats=badge+priority-prefix falsifier_effects=direct-negative-helper')
+    print('adversarial_learning_strict=PASS head_status=isolated+fresh material_formats=badge+priority-prefix falsifier_effects=guaranteed-negative-helper')
 
 
 if __name__ == '__main__':

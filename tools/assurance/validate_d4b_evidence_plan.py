@@ -53,6 +53,8 @@ def _current_sibling_errors(state: dict) -> list[str]:
     d4c = tracks.get("D4-C", {})
     d4d = tracks.get("D4-D", {})
     errors: list[str] = []
+    if state.get("gate_state") != "separately_accepted":
+        errors.append("D4 current gate must remain separately_accepted")
     if d4c.get("candidate") != D4C_SELECTED_PROFILE or d4c.get("candidate_status") != "selected_c2_delivery_recovery_profile" or d4c.get("state") != "selected_candidate":
         errors.append("D4-C current selected sibling state drift")
     if d4c.get("evidence_completed") != D4C_CREDITS or d4c.get("evidence_remaining") != []:
@@ -73,6 +75,7 @@ def _current_total_errors(state: dict) -> list[str]:
 
 def _project(state: dict) -> dict:
     result = copy.deepcopy(state)
+    result["gate_state"] = "scoped"
     d4c = next(t for t in result["tracks"] if t.get("track_id") == "D4-C")
     d4c["candidate"] = None
     d4c["candidate_status"] = "not_selected"
@@ -114,7 +117,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_PLAN_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=9_of_9_selected current_sibling_d4d=5_of_5_selected d4wide=26_of_26")
+    print("d4b_evidence_plan=PASS historical_oracle=preserved historical_gate=scoped current_gate=separately_accepted current_sibling_d4c=9_of_9_selected current_sibling_d4d=5_of_5_selected d4wide=26_of_26")
     return 0
 
 if __name__ == "__main__":

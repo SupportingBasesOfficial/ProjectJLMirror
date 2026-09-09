@@ -23,7 +23,7 @@ FALSIFICATION_PATHS = {
     Path("tools/assurance/test_validate_d4d_trace_context_source.py"),
     Path("tools/assurance/test_validate_adversarial_learning.py"),
 }
-MATERIAL_BADGE = re.compile(r"\bP[012] Badge\b")
+MATERIAL_BADGE = re.compile(r"(?:\bP[012]\s+Badge\b|\[P[012]\])")
 
 
 def _load(path: Path) -> Any:
@@ -87,6 +87,8 @@ def _entrypoint_invokes_main(tree: ast.Module) -> bool:
         if not isinstance(statement, ast.If) or not _is_main_entrypoint_guard(statement):
             continue
         for body_statement in statement.body:
+            if isinstance(body_statement, (ast.Return, ast.Raise)):
+                break
             if not isinstance(body_statement, ast.Expr) or not isinstance(body_statement.value, ast.Call):
                 continue
             call = body_statement.value
@@ -173,6 +175,7 @@ def validate_review_surface_coverage(root: Path) -> list[str]:
         "top-level issue comment collection": "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100",
         "issue-comment PR number resolution": "github.event.pull_request.number || github.event.issue.number",
         "issue-comment exact PR head lookup": "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}",
+        "strict material finding reconciliation": "validate_adversarial_learning_strict.py --root . --review-comments",
     }
     return [f"learning reconciliation workflow missing {name}" for name, marker in required_markers.items() if marker not in text]
 
@@ -346,7 +349,6 @@ def validate(root: Path, review_comments: Path | None = None) -> list[str]:
         missing = sorted(material - review_ids - exception_ids)
         if missing:
             errors.append("material PR review findings missing from learning ledger or exact bootstrap exception: " + ",".join(map(str, missing)))
-
     return errors
 
 

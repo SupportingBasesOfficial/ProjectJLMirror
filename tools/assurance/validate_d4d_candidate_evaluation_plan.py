@@ -40,9 +40,9 @@ def validate(root):
  if d.get('source_decisions')!=EXPECTED_SOURCE_DECISIONS or d.get('candidate')!=D4D_SELECTED_PROFILE or d.get('candidate_status')!='selected_c2_security_profile' or d.get('state')!='selected_candidate': e.append('D4-D state boundary drift')
  if d.get('required_evidence')!=D4D_REQUIRED or d.get('evidence_completed')!=D4D_CREDITS or d.get('evidence_remaining')!=[]: e.append('current D4-D state must reflect exactly five separately promoted credits')
  if sum(len(t.get('evidence_completed',[])) for t in tracks.values())!=26: e.append('D4-wide evidence must be exactly 26/26')
- if (state.get('gate_state'),state.get('d4_transport_authority'),state.get('canonical_product_implementation_authority'),state.get('wave4_implementation_authority'),state.get('production_authority'),state.get('c3_numeric_topology_authority'))!=('scoped','selected_not_granted','not_granted','not_granted','none','not_selected'): e.append('global authority boundary changed')
+ if (state.get('gate_state'),state.get('d4_transport_authority'),state.get('canonical_product_implementation_authority'),state.get('wave4_implementation_authority'),state.get('production_authority'),state.get('c3_numeric_topology_authority'))!=('separately_accepted','selected_not_granted','not_granted','not_granted','none','not_selected'): e.append('global authority boundary changed')
  return e
 if __name__=='__main__':
  root=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else Path.cwd(); errors=validate(root); [print('D4D_EVAL_ERROR:',x,file=sys.stderr) for x in errors]
  if errors: raise SystemExit(1)
- print('d4d_candidate_evaluation_plan=PASS historical_selection=not_selected current_d4c=9_of_9_selected current_d4d=5_of_5_selected d4wide=26/26 authorities=unchanged')
+ print('d4d_candidate_evaluation_plan=PASS historical_gate=scoped historical_selection=not_selected current_gate=separately_accepted current_d4c=9_of_9_selected current_d4d=5_of_5_selected d4wide=26/26 authorities=unchanged')

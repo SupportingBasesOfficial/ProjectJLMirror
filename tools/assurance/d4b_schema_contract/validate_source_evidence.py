@@ -129,13 +129,13 @@ def main() -> int:
     assert d4d["evidence_completed"] == D4D_CREDITS
     assert d4d["evidence_remaining"] == []
     assert sum(len(track["evidence_completed"]) for track in state_tracks) == 26
-    assert state["gate_state"] == "scoped"
+    assert state["gate_state"] == "separately_accepted"
     assert state["d4_transport_authority"] == "selected_not_granted"
     assert state["canonical_product_implementation_authority"] == "not_granted"
     assert state["wave4_implementation_authority"] == "not_granted"
     assert state["production_authority"] == "none"
     assert state["c3_numeric_topology_authority"] == "not_selected"
-    print("d4b_schema_contract_source_manifest=PASS evidence_ids=5 source_history=not_selected current_selection=selected_c2_profile d4a=7_of_7 d4c=9_of_9_selected d4d=5_of_5 d4wide=26/26 authorities=not_granted")
+    print("d4b_schema_contract_source_manifest=PASS evidence_ids=5 source_history=not_selected current_gate=separately_accepted current_selection=selected_c2_profile d4a=7_of_7 d4c=9_of_9_selected d4d=5_of_5 d4wide=26/26 authorities=not_granted")
     return 0
 
 if __name__ == "__main__":

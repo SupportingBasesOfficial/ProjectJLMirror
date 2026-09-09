@@ -63,11 +63,23 @@ def _current_errors(state: dict) -> list[str]:
         errors.append("current D4-D evidence must be exactly 5/5")
     if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 26:
         errors.append("D4-wide evidence must be exactly 26/26 in current promoted state")
+    if state.get("gate_state") != "separately_accepted":
+        errors.append("D4 current gate acceptance drift")
+    for field, expected in {
+        "d4_transport_authority": "selected_not_granted",
+        "canonical_product_implementation_authority": "not_granted",
+        "wave4_implementation_authority": "not_granted",
+        "production_authority": "none",
+        "c3_numeric_topology_authority": "not_selected",
+    }.items():
+        if state.get(field) != expected:
+            errors.append(f"D4 current authority drift: {field}")
     return errors
 
 
 def _project(state: dict) -> dict:
     result = copy.deepcopy(state)
+    result["gate_state"] = "scoped"
     d4c = next(t for t in result["tracks"] if t.get("track_id") == "D4-C")
     d4c["candidate"] = None
     d4c["candidate_status"] = "not_selected"
@@ -106,7 +118,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_EVAL_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_candidate_evaluation=PASS historical_oracle=preserved current_sibling_d4c=9_of_9_selected current_sibling_d4d=5_of_5_selected d4wide=26_of_26")
+    print("d4b_candidate_evaluation=PASS historical_gate=scoped historical_oracle=preserved current_gate=separately_accepted current_sibling_d4c=9_of_9_selected current_sibling_d4d=5_of_5_selected d4wide=26_of_26 authorities=unchanged")
     return 0
 
 

@@ -58,13 +58,13 @@ jobs:
         run: python3 tools/assurance/test_validate_d4c_selection.py
       - name: Validate selected D4-C delivery recovery profile
         run: python3 tools/assurance/validate_d4c_selection.py .
-      - name: Preserve global D4 scoped state
+      - name: Preserve separately accepted D4 gate and terminal track state
         run: |
           python3 tools/assurance/test_validate_d4_eventing_async_state.py
           python3 tools/assurance/validate_d4_eventing_async_state.py .
       - name: Preserve Phase 10 contracts
         run: python3 -m unittest discover tools/contracts/tests -p 'test_*.py'
-      - name: Assert terminal D4-C disposition without D4 acceptance
+      - name: Assert terminal D4-C disposition with separate D4 gate acceptance
         shell: bash
         run: |
           set -euo pipefail
@@ -83,9 +83,9 @@ jobs:
           assert all(t['state']=='selected_candidate' for t in tracks.values())
           assert evaluation['selection_state']=='not_selected' and evaluation['selection_authority']=='not_granted'
           assert sum(len(t['evidence_completed']) for t in state['tracks'])==26
-          assert state['gate_state']=='scoped' and state['d4_transport_authority']=='selected_not_granted'
+          assert state['gate_state']=='separately_accepted' and state['d4_transport_authority']=='selected_not_granted'
           assert state['canonical_product_implementation_authority']=='not_granted' and state['wave4_implementation_authority']=='not_granted'
           assert state['production_authority']=='none' and state['c3_numeric_topology_authority']=='not_selected'
-          assert selection['separate_d4_acceptance_required'] is True
-          print('d4c_selection_boundary=PASS profile=selected_c2_delivery_recovery_profile evidence=9/9 d4wide=26/26 all_tracks_terminal=true d4=scoped acceptance=separate authorities=unchanged')
+          assert selection['d4_gate_state']=='scoped' and selection['separate_d4_acceptance_required'] is True
+          print('d4c_selection_boundary=PASS profile=selected_c2_delivery_recovery_profile evidence=9/9 d4wide=26/26 all_tracks_terminal=true d4=separately_accepted historical_selection_gate=scoped implementation_authority=not_granted')
           PY

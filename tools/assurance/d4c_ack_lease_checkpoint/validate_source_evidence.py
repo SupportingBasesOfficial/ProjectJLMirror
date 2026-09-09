@@ -55,10 +55,21 @@ def _current_errors(state: dict) -> list[str]:
     if d4d.get("candidate")!=D4D_SELECTED_PROFILE or d4d.get("candidate_status")!="selected_c2_security_profile" or d4d.get("state")!="selected_candidate": errors.append("D4-D current selected profile drift")
     if d4d.get("evidence_completed")!=D4D_CREDITS or d4d.get("evidence_remaining")!=[]: errors.append("D4-D current ledger must be exactly five-of-five")
     if sum(len(t.get("evidence_completed",[])) for t in tracks.values())!=26: errors.append("D4-wide evidence count drift")
+    if state.get("gate_state")!="separately_accepted": errors.append("D4 current gate acceptance drift")
+    expected_authority={
+        "d4_transport_authority":"selected_not_granted",
+        "canonical_product_implementation_authority":"not_granted",
+        "wave4_implementation_authority":"not_granted",
+        "production_authority":"none",
+        "c3_numeric_topology_authority":"not_selected",
+    }
+    for field,expected in expected_authority.items():
+        if state.get(field)!=expected: errors.append(f"D4 current authority drift: {field}")
     return errors
 
 def _project(state:dict)->dict:
     result=copy.deepcopy(state)
+    result["gate_state"]="scoped"
     d4c=next(x for x in result["tracks"] if x.get("track_id")=="D4-C")
     d4c.update(candidate=None,candidate_status="not_selected",state="candidate_selection_open")
     d4c["evidence_completed"]=[]; d4c["evidence_remaining"]=list(d4c["required_evidence"])
@@ -86,6 +97,6 @@ def main()->int:
     if errors:
         for error in errors: print(f"ERROR: {error}")
         return 1
-    print("d4c_ack_lease_checkpoint_source=PASS source_auto_credit=false historical_oracle=preserved current_d4c=9_of_9_selected current_d4d=5_of_5_selected d4wide=26_of_26")
+    print("d4c_ack_lease_checkpoint_source=PASS source_auto_credit=false historical_gate=scoped historical_oracle=preserved current_gate=separately_accepted current_d4c=9_of_9_selected current_d4d=5_of_5_selected d4wide=26_of_26 authorities=unchanged")
     return 0
 if __name__=="__main__": raise SystemExit(main())

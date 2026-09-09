@@ -66,11 +66,24 @@ def _current_sibling_errors(entry: dict) -> list[str]:
         errors.append("D4-D current sibling remaining evidence must be empty")
     if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 26:
         errors.append("D4-wide current evidence must remain 26/26")
+    if entry.get("gate_state") != "separately_accepted":
+        errors.append("D4 current gate acceptance drift")
+    expected_authority = {
+        "d4_transport_authority": "selected_not_granted",
+        "canonical_product_implementation_authority": "not_granted",
+        "wave4_implementation_authority": "not_granted",
+        "production_authority": "none",
+        "c3_numeric_topology_authority": "not_selected",
+    }
+    for field, expected in expected_authority.items():
+        if entry.get(field) != expected:
+            errors.append(f"D4 current authority drift: {field}")
     return errors
 
 
 def _historical_projection(entry: dict) -> dict:
     projected = copy.deepcopy(entry)
+    projected["gate_state"] = "scoped"
     d4c = next(t for t in projected["tracks"] if t.get("track_id") == "D4-C")
     d4c["candidate"] = None
     d4c["candidate_status"] = "not_selected"
@@ -113,7 +126,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4A_PLAN_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4a_evidence_plan=PASS historical_oracle=preserved current_sibling_d4c=9_of_9_selected current_sibling_d4d=5_of_5_selected d4wide=26_of_26")
+    print("d4a_evidence_plan=PASS historical_gate=scoped historical_oracle=preserved current_gate=separately_accepted current_sibling_d4c=9_of_9_selected current_sibling_d4d=5_of_5_selected d4wide=26_of_26 authorities=unchanged")
     return 0
 
 

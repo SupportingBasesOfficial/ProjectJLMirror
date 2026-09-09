@@ -58,11 +58,21 @@ def _current_errors(state: dict) -> list[str]:
     if d4d.get('candidate') != D4D_SELECTED_PROFILE or d4d.get('candidate_status') != 'selected_c2_security_profile' or d4d.get('state') != 'selected_candidate': errors.append("D4-D current selected profile drift")
     if d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != []: errors.append("D4-D current evidence must be exactly 5/5")
     if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 26: errors.append("D4-wide evidence must be exactly 26/26 in current promoted state")
+    if state.get("gate_state") != "separately_accepted": errors.append("D4 current gate acceptance drift")
+    for field, expected in {
+        "d4_transport_authority": "selected_not_granted",
+        "canonical_product_implementation_authority": "not_granted",
+        "wave4_implementation_authority": "not_granted",
+        "production_authority": "none",
+        "c3_numeric_topology_authority": "not_selected",
+    }.items():
+        if state.get(field) != expected: errors.append(f"D4 current authority drift: {field}")
     return errors
 
 
 def _historical_projection(state: dict) -> dict:
     projected = copy.deepcopy(state)
+    projected["gate_state"] = "scoped"
     d4c = next(t for t in projected["tracks"] if t.get("track_id") == "D4-C")
     d4c.update(candidate=None, candidate_status='not_selected', state='candidate_selection_open')
     d4c["evidence_completed"] = []
@@ -91,6 +101,6 @@ def main(argv: list[str]) -> int:
     if errors:
         for error in errors: print(f"D4C_EVAL_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4c_candidate_evaluation_plan=PASS historical_baseline_oracle=preserved current_d4c=9_of_9_selected current_d4d=5_of_5_selected d4wide=26/26")
+    print("d4c_candidate_evaluation_plan=PASS historical_gate=scoped historical_baseline_oracle=preserved current_gate=separately_accepted current_d4c=9_of_9_selected current_d4d=5_of_5_selected d4wide=26/26 authorities=unchanged")
     return 0
 if __name__ == "__main__": raise SystemExit(main(sys.argv))

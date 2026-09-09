@@ -26,10 +26,10 @@ def main():
  must_fail(regress_credit,'current ledger evidence drift')
  def grant_transport(selection,ledger,state,evaluation): state['d4_transport_authority']='granted'
  must_fail(grant_transport,'transport authority escalation')
- def accept_d4(selection,ledger,state,evaluation): state['gate_state']='separately_accepted'
- must_fail(accept_d4,'state D4 gate authority escalation')
+ def regress_d4_acceptance(selection,ledger,state,evaluation): state['gate_state']='scoped'
+ must_fail(regress_d4_acceptance,'state D4 gate authority drift')
  falsify_selection_record_product_authority()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked separate_acceptance=preserved')
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked')
  return 0
 if __name__=='__main__':
  main()

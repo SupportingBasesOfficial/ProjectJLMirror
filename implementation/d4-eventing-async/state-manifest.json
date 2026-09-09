@@ -4,7 +4,7 @@
   "gate_name": "eventing_async_transport_c2",
   "canonical_base": "ee8775fc5e7a25b1c4e166a8bb48b53438f6bd42",
   "predecessor": {"gate_id":"D3","state":"separately_accepted","canonical_commit":"ee8775fc5e7a25b1c4e166a8bb48b53438f6bd42"},
-  "gate_state": "scoped",
+  "gate_state": "separately_accepted",
   "canonical_product_implementation_authority": "not_granted",
   "wave4_implementation_authority": "not_granted",
   "production_authority": "none",

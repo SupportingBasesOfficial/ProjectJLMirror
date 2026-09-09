@@ -52,15 +52,16 @@ def _current_errors(state: dict) -> list[str]:
         errors.append("D4-D current selected profile drift")
     if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 26:
         errors.append("D4-wide current credit count must be 26/26")
-    expected_authority={"gate_state":"scoped","d4_transport_authority":"selected_not_granted","canonical_product_implementation_authority":"not_granted","wave4_implementation_authority":"not_granted","production_authority":"none","c3_numeric_topology_authority":"not_selected"}
+    expected_authority={"gate_state":"separately_accepted","d4_transport_authority":"selected_not_granted","canonical_product_implementation_authority":"not_granted","wave4_implementation_authority":"not_granted","production_authority":"none","c3_numeric_topology_authority":"not_selected"}
     for key,expected in expected_authority.items():
         if state.get(key)!=expected:
-            errors.append(f"authority drift: {key}")
+            errors.append(f"current authority drift: {key}")
     return errors
 
 
 def _historical_state(state: dict) -> dict:
     projected=copy.deepcopy(state)
+    projected["gate_state"]="scoped"
     d4c=next(t for t in projected["tracks"] if t.get("track_id")=="D4-C")
     d4c.update(candidate=None,candidate_status="not_selected",state="candidate_selection_open")
     d4d=next(t for t in projected["tracks"] if t.get("track_id")=="D4-D")
@@ -104,7 +105,7 @@ def main() -> int:
     finally:
         historical.load=original
     if result==0:
-        print("d4c_open_evt_013_current_projection=PASS current_d4c=9/9_selected current_d4d=5/5_selected current_d4wide=26/26 historical_oracle=state_and_ledger_preserved")
+        print("d4c_open_evt_013_current_projection=PASS current_gate=separately_accepted current_d4c=9/9_selected current_d4d=5/5_selected current_d4wide=26/26 historical_gate=scoped historical_oracle=state_and_ledger_preserved")
     return result
 
 if __name__=="__main__":

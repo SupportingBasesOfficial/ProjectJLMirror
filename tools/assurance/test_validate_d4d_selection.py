@@ -107,9 +107,13 @@ def main() -> int:
         ledger['d4_transport_authority'] = 'granted'
     must_fail(grant_transport, 'ledger transport authority escalation')
 
-    def accept_d4(selection, ledger, state, evaluation, sources):
-        state['gate_state'] = 'separately_accepted'
-    must_fail(accept_d4, 'D4 must remain scoped')
+    def regress_d4_acceptance(selection, ledger, state, evaluation, sources):
+        state['gate_state'] = 'scoped'
+    must_fail(regress_d4_acceptance, 'current D4 gate acceptance drift')
+
+    def rewrite_historical_selection_gate(selection, ledger, state, evaluation, sources):
+        selection['d4_gate_state'] = 'separately_accepted'
+    must_fail(rewrite_historical_selection_gate, 'historical D4-D selection gate drift')
 
     def select_kms_vendor(selection, ledger, state, evaluation, sources):
         selection['profile']['message_protection_key_authority_and_historical_verifier_continuity']['kms_product'] = 'vendor-x'
@@ -130,7 +134,7 @@ def main() -> int:
 
     falsify_selected_profile_contract()
 
-    print('d4d_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked authority_escalation=blocked product_binding=blocked evidence_regression=blocked audit_summary=bound')
+    print('d4d_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked authority_escalation=blocked gate_acceptance_regression=blocked historical_gate=locked evidence_regression=blocked audit_summary=bound')
     return 0
 
 

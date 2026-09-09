@@ -88,7 +88,7 @@ def main() -> int:
     must_fail("state selection rollback", lambda p,e,r,s: d4a(e).update(state="evidence_complete_selection_pending"))
     must_fail("transport selection rollback", lambda p,e,r,s: e.update(d4_transport_authority="not_selected_not_granted"))
     must_fail("transport authority grant", lambda p,e,r,s: e.update(d4_transport_authority="granted"))
-    must_fail("full D4 gate acceptance", lambda p,e,r,s: e.update(gate_state="separately_accepted"))
+    must_fail("D4 gate acceptance regression", lambda p,e,r,s: e.update(gate_state="scoped"))
     must_fail("sibling candidate leak", lambda p,e,r,s: e["tracks"][1].update(candidate="protobuf"))
 
     # Historical promotion facts must remain exactly pre-selection.
@@ -136,7 +136,7 @@ def main() -> int:
     must_fail_bytes("tamper previous promotion record", PREVIOUS_PROMOTION_REL, flip_first_byte)
     must_fail_bytes("tamper semantic-boundary promotion record", SEMANTIC_PROMOTION_REL, flip_first_byte)
     must_fail_bytes("tamper data-topology source manifest", DATA_SOURCE_REL, flip_first_byte)
-    print("d4a_evidence_plan_negative_controls=PASS ledger_credit=7 selection=kafka bounded_c2=locked historical_promotion=immutable full_d4_acceptance=blocked transport_grant=blocked product_wave4_production=blocked c3=blocked provenance_full_chain_tamper=blocked")
+    print("d4a_evidence_plan_negative_controls=PASS ledger_credit=7 selection=kafka bounded_c2=locked historical_promotion=immutable current_d4_acceptance=preserved transport_grant=blocked product_wave4_production=blocked c3=blocked provenance_full_chain_tamper=blocked")
     return 0
 
 

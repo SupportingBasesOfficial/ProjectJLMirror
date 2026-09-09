@@ -138,14 +138,14 @@ def main() -> int:
     must_fail(lambda d: track(d, "D4-C").__setitem__("candidate", "some_profile"), "D4-C current selected profile drift")
     must_fail(lambda d: track(d, "D4-C")["evidence_completed"].append(track(d, "D4-C")["required_evidence"][0]), "D4-C current evidence must remain exactly 9/9")
     must_fail(regress_promoted_d4d_fifth_credit, "D4-D current evidence must be exactly 5/5")
-    must_fail(lambda d: obj(d, validator.STATE).__setitem__("gate_state", "separately_accepted"), "D4 gate must remain scoped")
-    must_fail(lambda d: obj(d, validator.STATE).__setitem__("d4_transport_authority", "granted"), "D4 transport authority drift")
-    must_fail(lambda d: obj(d, validator.STATE).__setitem__("canonical_product_implementation_authority", "granted"), "Product authority escalation")
-    must_fail(lambda d: obj(d, validator.STATE).__setitem__("wave4_implementation_authority", "granted"), "Wave4 authority escalation")
-    must_fail(lambda d: obj(d, validator.STATE).__setitem__("production_authority", "granted"), "production authority escalation")
-    must_fail(lambda d: obj(d, validator.STATE).__setitem__("c3_numeric_topology_authority", "selected"), "C3 authority escalation")
+    must_fail(lambda d: obj(d, validator.STATE).__setitem__("gate_state", "scoped"), "D4 current gate acceptance drift")
+    must_fail(lambda d: obj(d, validator.STATE).__setitem__("d4_transport_authority", "granted"), "D4 current authority drift: d4_transport_authority")
+    must_fail(lambda d: obj(d, validator.STATE).__setitem__("canonical_product_implementation_authority", "granted"), "D4 current authority drift: canonical_product_implementation_authority")
+    must_fail(lambda d: obj(d, validator.STATE).__setitem__("wave4_implementation_authority", "granted"), "D4 current authority drift: wave4_implementation_authority")
+    must_fail(lambda d: obj(d, validator.STATE).__setitem__("production_authority", "granted"), "D4 current authority drift: production_authority")
+    must_fail(lambda d: obj(d, validator.STATE).__setitem__("c3_numeric_topology_authority", "selected"), "D4 current authority drift: c3_numeric_topology_authority")
 
-    print("d4c_candidate_evaluation_falsification=PASS duplicate_json=blocked historical_selection=preserved current_selected_profile_drift=blocked axis_removal=blocked hidden_preference=blocked candidate_collapse=blocked non_string_collection=blocked proof_removal=blocked proof_substitution=blocked fixed_phase10_proof_omissions=blocked evidence_binding_drift=blocked source_decision_drift=blocked output_escalation=blocked d4a_d4b_regression=blocked d4c_credit_leak=blocked d4d_fifth_credit_regression=blocked authority_escalation=blocked")
+    print("d4c_candidate_evaluation_falsification=PASS duplicate_json=blocked historical_selection=preserved current_selected_profile_drift=blocked axis_removal=blocked hidden_preference=blocked candidate_collapse=blocked non_string_collection=blocked proof_removal=blocked proof_substitution=blocked fixed_phase10_proof_omissions=blocked evidence_binding_drift=blocked source_decision_drift=blocked output_escalation=blocked d4a_d4b_regression=blocked d4c_credit_leak=blocked d4d_fifth_credit_regression=blocked gate_acceptance_regression=blocked authority_escalation=blocked")
     return 0
 
 if __name__ == "__main__":

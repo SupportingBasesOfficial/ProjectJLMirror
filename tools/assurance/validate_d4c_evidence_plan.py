@@ -64,13 +64,14 @@ def _current_errors(state: dict, plan: dict) -> list[str]:
     if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 26:
         errors.append("D4-wide credited evidence must be exactly 26/26")
     authority = (state.get("gate_state"),state.get("d4_transport_authority"),state.get("canonical_product_implementation_authority"),state.get("wave4_implementation_authority"),state.get("production_authority"),state.get("c3_numeric_topology_authority"))
-    if authority != ("scoped", "selected_not_granted", "not_granted", "not_granted", "none", "not_selected"):
+    if authority != ("separately_accepted", "selected_not_granted", "not_granted", "not_granted", "none", "not_selected"):
         errors.append("global authority drift")
     return errors
 
 
 def _historical_state(state: dict) -> dict:
     projected = copy.deepcopy(state)
+    projected["gate_state"] = "scoped"
     d4c = next(t for t in projected["tracks"] if t.get("track_id") == "D4-C")
     d4c["candidate"] = None
     d4c["candidate_status"] = "not_selected"
@@ -123,6 +124,6 @@ def main() -> int:
         for error in errors:
             print(f"D4C_PROMOTION_ERROR: {error}")
         return 1
-    print("d4c_open_evt_025_promotion=PASS historical_oracle=byte_preserved d4c=9_of_9_selected d4d=5_of_5_selected d4wide=26_of_26 authorities=unchanged acceptance=separate")
+    print("d4c_open_evt_025_promotion=PASS historical_gate=scoped historical_oracle=byte_preserved current_gate=separately_accepted d4c=9_of_9_selected d4d=5_of_5_selected d4wide=26_of_26 authorities=unchanged")
     return 0
 if __name__ == "__main__": raise SystemExit(main())

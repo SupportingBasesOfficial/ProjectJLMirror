@@ -59,7 +59,7 @@ jobs:
           python3 tools/assurance/validate_d4b_candidate_evaluation_plan.py .
           python3 tools/assurance/test_validate_d4b_selection.py
           python3 tools/assurance/validate_d4b_selection.py .
-      - name: Preserve global D4 scoped state
+      - name: Preserve separately accepted D4 gate
         shell: bash
         run: |
           set -euo pipefail
@@ -89,6 +89,6 @@ jobs:
           d4d=tracks['D4-D']; assert d4d['candidate']=={'workload_identity_to_broker_credential_adapter': 'derived_short_lived_broker_native_credential_adapter', 'tenant_and_contract_scoped_producer_consumer_authorization': 'broker_acl_projection_adapter', 'message_protection_key_authority_and_historical_verifier_continuity': 'kms_backed_envelope_or_transport_protection_profile', 'secret_credential_payload_exclusion_and_erasure_boundary': 'reference_only_secret_authority_profile', 'trace_context_observability_only_validation_and_redaction': 'w3c_trace_context_bounded_profile'} and d4d['candidate_status']=='selected_c2_security_profile' and d4d['state']=='selected_candidate'
           assert d4d['evidence_completed']==d4d_credits and d4d['evidence_remaining']==[]
           assert sum(len(t['evidence_completed']) for t in state['tracks'])==26
-          assert state['gate_state']=='scoped' and state['d4_transport_authority']=='selected_not_granted' and state['canonical_product_implementation_authority']=='not_granted' and state['wave4_implementation_authority']=='not_granted' and state['production_authority']=='none' and state['c3_numeric_topology_authority']=='not_selected'
-          print('d4b_candidate_evaluation_boundary=PASS historical_plan=not_selected current_selection=selected_c2_profile evidence=5_of_5 d4a=kafka_7_of_7 d4c=9_of_9_selected d4d=5_of_5 d4wide=26/26 d4=scoped authorities=not_granted')
+          assert state['gate_state']=='separately_accepted' and state['d4_transport_authority']=='selected_not_granted' and state['canonical_product_implementation_authority']=='not_granted' and state['wave4_implementation_authority']=='not_granted' and state['production_authority']=='none' and state['c3_numeric_topology_authority']=='not_selected'
+          print('d4b_candidate_evaluation_boundary=PASS historical_gate=scoped historical_plan=not_selected current_gate=separately_accepted current_selection=selected_c2_profile evidence=5_of_5 d4a=kafka_7_of_7 d4c=9_of_9_selected d4d=5_of_5 d4wide=26/26 authorities=not_granted')
           PY

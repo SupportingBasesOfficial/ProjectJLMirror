@@ -51,8 +51,8 @@
     },
     {
       "id": "ADV-PROOF-BINDING-MISMATCH",
-      "name": "Proof bound to incidental representation",
-      "description": "A proof authenticates incidental serialization instead of the semantic identity that must survive legitimate representation changes.",
+      "name": "Proof bound to the wrong semantic or representation identity",
+      "description": "A proof authenticates the wrong object or omits an explicitly governed representation companion, so legitimate representation changes break continuity or already-governed representation is transformed again.",
       "invariant_ids": ["INV-PROOF-002"]
     },
     {
@@ -75,8 +75,8 @@
     },
     {
       "id": "ADV-GUARDRAIL-ATTESTATION-GAP",
-      "name": "Declared learning guardrail is not proven executable",
-      "description": "The learning ledger can claim a permanent guardrail using a textual token or incidental symbol that is present in a file but is not an executed probe or falsification check.",
+      "name": "Declared learning guardrail is not proven executable and reachable",
+      "description": "The learning ledger can claim a permanent guardrail using a textual token, incidental symbol, or syntactically present but unreachable falsifier call that is not guaranteed to execute from the CI entrypoint.",
       "invariant_ids": ["INV-LEARNING-002"]
     }
   ]

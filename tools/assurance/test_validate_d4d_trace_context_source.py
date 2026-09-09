@@ -3,6 +3,7 @@ from __future__ import annotations
 import json,tempfile
 from pathlib import Path
 import validate_d4d_trace_context_source as v
+import validate_d4d_evidence_plan as ledger
 ROOT=Path(__file__).resolve().parents[2]
 def clone(tmp):
     for p in [v.MANIFEST,v.STATE,v.PLAN]:
@@ -21,6 +22,13 @@ def falsify_source_time_state_exactness():
     for field,bad in [('d4_transport_authority','granted'),('canonical_product_implementation_authority','granted'),('wave4_implementation_authority','granted'),('production_authority','granted'),('c3_numeric_topology_authority','selected')]:
         mutate_and_expect_failure(lambda r,field=field,bad=bad:mutate_json(r,v.MANIFEST,lambda d,field=field,bad=bad:d['source_time_state'].__setitem__(field,bad)))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d['source_time_state'].__setitem__('unexpected_authority','granted')))
+def falsify_promotion_separation_flags():
+    for promotion_path in (ledger.P1,ledger.P2,ledger.P3,ledger.P4,ledger.P5):
+        original=json.loads((ROOT/promotion_path).read_text())
+        assert ledger.authority_ok(original), f'canonical promotion separation invalid: {promotion_path}'
+        for flag in ('separate_selection_required','separate_d4_acceptance_required'):
+            mutated=dict(original); mutated[flag]=False
+            assert not ledger.authority_ok(mutated), f'{promotion_path} accepted {flag}=false'
 def main():
     assert not v.validate(ROOT)
     falsify_immutable_identity_envelope()
@@ -38,5 +46,6 @@ def main():
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('selection_authority','granted')))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.STATE,lambda d:d.__setitem__('canonical_product_implementation_authority','granted')))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.STATE,lambda d:d.__setitem__('production_authority','granted')))
-    print('d4d_trace_context_source_falsification=PASS source_identity=exact source_snapshot=4_of_5_25_of_26_exact current_state=5_of_5_26_of_26 authorities_exact auto_credit=blocked selection=blocked authority_leakage=blocked')
+    falsify_promotion_separation_flags()
+    print('d4d_trace_context_source_falsification=PASS source_identity=exact source_snapshot=4_of_5_25_of_26_exact current_state=5_of_5_26_of_26 authorities_exact promotion_separation=bound auto_credit=blocked selection=blocked authority_leakage=blocked')
 if __name__=='__main__': main()

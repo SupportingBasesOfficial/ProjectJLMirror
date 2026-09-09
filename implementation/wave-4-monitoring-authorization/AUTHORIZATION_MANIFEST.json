@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "authorization_id": "wave4.monitoring-zabbix.vertical@1",
+  "canonical_base_main_commit": "860dbf5ffab465504f75ae7a13f13a13ed3bcd7f",
+  "authorization_state": "proposed_exact_scope_authorization",
+  "effective_rule": "becomes_canonical_only_after_exact_head_review_and_separately_authorized_merge",
+  "authorized_product_vertical": "monitoring",
+  "authorized_slices": [
+    {
+      "slice_id": "impl.customer-telemetry@1",
+      "scope": "accepted_d2_track_b_profile_only"
+    },
+    {
+      "slice_id": "impl.provider-integration@1",
+      "scope": "accepted_monitoring_zabbix_subprofile_only"
+    }
+  ],
+  "consumed_existing_substrate": [
+    "impl.identity-bff@1",
+    "impl.control-plane@1",
+    "impl.platform-runtime@1",
+    "impl.cell-data-runtime@1",
+    "impl.async-core@1",
+    "impl.observability@1",
+    "impl.release-supply-chain@1"
+  ],
+  "authorized_runtime_roles": [
+    "runtime.api@1",
+    "runtime.worker@1",
+    "worker.customer-telemetry@1",
+    "worker.provider-integration@1"
+  ],
+  "authorized_contract_surfaces": [
+    "docs/03-domains/monitoring-domain-contract.md",
+    "docs/09-api-contracts/monitoring-domain-api-contract.md",
+    "docs/10-event-contracts/monitoring-domain-event-contracts.md",
+    "docs/09-api-contracts/zabbix-monitoring-source-provider-contract.md",
+    "docs/09-api-contracts/zabbix-monitoring-normalization-profile.md",
+    "docs/08-data/telemetry-plane.md"
+  ],
+  "required_predecessor_authority": {
+    "monitoring_track_a": "accepted",
+    "open_rel_030_track_b": "accepted_selected_and_conformed",
+    "d3_identity_security": "separately_accepted",
+    "d4_eventing_async": "separately_accepted"
+  },
+  "production_authority": "none",
+  "c3_production_state": "open",
+  "frontend_authority": "not_granted_by_this_gate",
+  "frontend_route_policy": "backend_entity_table_endpoint_or_use_case_does_not_imply_frontend_route",
+  "frontend_future_design_rule": "navigation_must_be_task_workflow_and_context_driven_with_progressive_disclosure",
+  "explicitly_not_authorized": [
+    "alerting_product_vertical",
+    "itsm_product_vertical",
+    "automation_product_vertical",
+    "aiops_product_vertical",
+    "finops_product_vertical",
+    "commercial_product_vertical",
+    "unrelated_provider_subprofiles",
+    "provider_write_back",
+    "public_or_outbound_monitoring_webhooks",
+    "browser_realtime_activation",
+    "public_sdk_or_public_projection_families",
+    "privileged_direct_query_surface",
+    "production_deployment",
+    "production_capacity_numerics",
+    "production_partition_topology",
+    "production_retry_backoff_numerics",
+    "production_retention_replay_quarantine_horizons",
+    "frontend_route_generation_from_backend_shape"
+  ],
+  "historical_authority_rule": "d2_d3_d4_not_granted_snapshots_remain_immutable_source_time_truth_and_are_not_rewritten_by_this_successor_authorization",
+  "implementation_boundary_rule": "canonical_monitoring_code_may_begin_only_after_this_exact_scope_authorization_becomes_canonical",
+  "merge_authorization": "not_granted"
+}

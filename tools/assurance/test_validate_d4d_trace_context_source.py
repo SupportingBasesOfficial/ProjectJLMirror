@@ -6,13 +6,14 @@ import validate_d4d_trace_context_source as v
 import validate_d4d_evidence_plan as ledger
 ROOT=Path(__file__).resolve().parents[2]
 def clone(tmp):
-    for p in [v.MANIFEST,v.STATE,v.PLAN]:
+    paths=[v.MANIFEST,v.STATE,v.PLAN,ledger.PLAN,ledger.P1,ledger.P2,ledger.P3,ledger.P4,ledger.P5,ledger.S1,ledger.S2,ledger.S3,ledger.S4,ledger.S5]
+    for p in dict.fromkeys(paths):
         dst=tmp/p; dst.parent.mkdir(parents=True,exist_ok=True); dst.write_text((ROOT/p).read_text())
 def mutate_json(root,path,fn):
     p=root/path; d=json.loads(p.read_text()); fn(d); p.write_text(json.dumps(d))
-def mutate_and_expect_failure(mutator):
+def mutate_and_expect_failure(mutator,validator=v.validate):
     with tempfile.TemporaryDirectory() as td:
-        root=Path(td); clone(root); mutator(root); assert v.validate(root),'mutation unexpectedly accepted'
+        root=Path(td); clone(root); mutator(root); assert validator(root),'mutation unexpectedly accepted'
 def falsify_immutable_identity_envelope():
     for field,bad in [('schema_version',2),('gate_id','D3'),('track_id','D4-C'),('source_decision','OPEN-EVT-017'),('evidence_id','wrong-evidence'),('mode','promotion'),('source_base','0'*40)]:
         mutate_and_expect_failure(lambda r,field=field,bad=bad:mutate_json(r,v.MANIFEST,lambda d,field=field,bad=bad:d.__setitem__(field,bad)))
@@ -23,12 +24,17 @@ def falsify_source_time_state_exactness():
         mutate_and_expect_failure(lambda r,field=field,bad=bad:mutate_json(r,v.MANIFEST,lambda d,field=field,bad=bad:d['source_time_state'].__setitem__(field,bad)))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d['source_time_state'].__setitem__('unexpected_authority','granted')))
 def falsify_promotion_separation_flags():
-    for promotion_path in (ledger.P1,ledger.P2,ledger.P3,ledger.P4,ledger.P5):
-        original=json.loads((ROOT/promotion_path).read_text())
-        assert ledger.authority_ok(original), f'canonical promotion separation invalid: {promotion_path}'
-        for flag in ('separate_selection_required','separate_d4_acceptance_required'):
-            mutated=dict(original); mutated[flag]=False
-            assert not ledger.authority_ok(mutated), f'{promotion_path} accepted {flag}=false'
+    for promotion_path,flag in (
+        (ledger.P1,'separate_selection_required'),(ledger.P1,'separate_d4_acceptance_required'),
+        (ledger.P2,'separate_selection_required'),(ledger.P2,'separate_d4_acceptance_required'),
+        (ledger.P3,'separate_selection_required'),(ledger.P3,'separate_d4_acceptance_required'),
+        (ledger.P4,'separate_selection_required'),(ledger.P4,'separate_d4_acceptance_required'),
+        (ledger.P5,'separate_selection_required'),(ledger.P5,'separate_d4_acceptance_required'),
+    ):
+        mutate_and_expect_failure(
+            lambda r,promotion_path=promotion_path,flag=flag:mutate_json(r,promotion_path,lambda d,flag=flag:d.__setitem__(flag,False)),
+            validator=ledger.validate,
+        )
 def main():
     assert not v.validate(ROOT)
     falsify_immutable_identity_envelope()

@@ -74,7 +74,7 @@ def main() -> int:
     assert set(d4a["evidence_completed"]).isdisjoint(d4a["evidence_remaining"])
     assert d4a["state"] == "selected_candidate"
     assert d4a["candidate_status"] == "selected_c2_candidate"
-    assert state["gate_state"] == "scoped"
+    assert state["gate_state"] == "separately_accepted"
     assert state["d4_transport_authority"] == "selected_not_granted"
     assert state["canonical_product_implementation_authority"] == "not_granted"
     assert state["wave4_implementation_authority"] == "not_granted"
@@ -83,7 +83,7 @@ def main() -> int:
 
     print(
         "d4a_semantic_source_manifest=PASS evidence_ids=2 source_ledger_credit=0 "
-        f"promoted_ledger_credit={len(promoted)} historical_kafka_selection=not_selected current_kafka_selection=selected "
+        f"promoted_ledger_credit={len(promoted)} historical_gate=scoped historical_kafka_selection=not_selected current_gate=separately_accepted current_kafka_selection=selected "
         "transport_authority=not_granted provenance=runtime_artifact_required effect_guard=executable"
     )
     return 0

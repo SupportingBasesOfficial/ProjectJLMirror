@@ -10,6 +10,14 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools' / 'assurance'))
 import validate_d4d_selection as validator
 
+CURRENT_SUMMARY_WORKFLOWS = [
+    Path('.github/workflows/d4-d-open-evt-016-ledger-promotion.yml'),
+    Path('.github/workflows/d4-d-open-evt-016-tenant-contract-ledger-promotion.yml'),
+    Path('.github/workflows/d4-d-open-evt-017-message-protection-ledger-promotion.yml'),
+    Path('.github/workflows/d4-d-open-evt-017-secret-exclusion-ledger-promotion.yml'),
+    Path('.github/workflows/d4-d-open-evt-018-trace-context-ledger-promotion.yml'),
+]
+
 
 def baseline():
     return (
@@ -27,6 +35,14 @@ def must_fail(mutator, fragment: str) -> None:
     errors = validator.validate_records(*values)
     if not any(fragment in error for error in errors):
         raise AssertionError(f'expected failure containing {fragment!r}, got {errors!r}')
+
+
+def validate_current_selection_audit_summaries() -> None:
+    expected = 'current_selection=selected_c2_security_profile'
+    for path in CURRENT_SUMMARY_WORKFLOWS:
+        text = (ROOT / path).read_text(encoding='utf-8')
+        if expected not in text:
+            raise AssertionError(f'{path}: current D4-D selection audit summary drift')
 
 
 def falsify_selected_profile_contract() -> None:
@@ -48,12 +64,13 @@ def falsify_selected_profile_contract() -> None:
         must_fail(remove_production, 'production authority escalation')
 
 
-
 def main() -> int:
     values = baseline()
     errors = validator.validate_records(*values)
     if errors:
         raise AssertionError(f'canonical D4-D selection failed validation: {errors!r}')
+
+    validate_current_selection_audit_summaries()
 
     def mutate_profile(selection, ledger, state, evaluation, sources):
         selection['profile']['trace_context_observability_only_validation_and_redaction']['mechanism_class'] = 'vendor_neutral_trace_correlation_profile'
@@ -113,7 +130,7 @@ def main() -> int:
 
     falsify_selected_profile_contract()
 
-    print('d4d_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked authority_escalation=blocked product_binding=blocked evidence_regression=blocked')
+    print('d4d_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked authority_escalation=blocked product_binding=blocked evidence_regression=blocked audit_summary=bound')
     return 0
 
 

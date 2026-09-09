@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR121-001",
+      "pr": 121,
+      "source": "external_review",
+      "review_comment_id": 3971896964,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "Multiple state-manifest-triggered workflows duplicated a source-time D4-C not-selected assertion as if it were permanent current-state truth, so the governed terminal D4-C selection made otherwise valid exact-HEAD checks fail and exposed temporal coupling between historical evidence and current projection.",
+      "horizontal_audit": [
+        "D4 entry workflow current-state assertions",
+        "D4-D selection workflow sibling-state assertions",
+        "state-manifest-triggered current projection checks",
+        "historical source-time assertions versus current-state assertions",
+        "future terminal track transitions"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_stale_d4c_current_workflow_projection"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 8
+    },
+    {
+      "id": "LEARN-PR121-002",
+      "pr": 121,
+      "source": "external_review",
+      "review_comment_id": 3971896974,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The D4-C selection falsifier mutated Product implementation authority on the selection record, but the initial validator checked that authority only on the global state record, leaving a cross-record authority inconsistency undetected and making the negative test fail for the wrong reason.",
+      "horizontal_audit": [
+        "selection-record authority fields",
+        "current ledger authority fields",
+        "global state authority fields",
+        "cross-record authority equality",
+        "negative tests that mutate the record they claim to protect"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_selection_record_product_authority"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 9
+    }
+  ]
+}

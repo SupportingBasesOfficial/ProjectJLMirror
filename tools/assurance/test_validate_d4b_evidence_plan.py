@@ -155,7 +155,7 @@ def main() -> int:
     must_fail(lambda d: track(d, "D4-A")["evidence_completed"].pop(), "D4-A exact 7/7 evidence membership drift")
     must_fail(substitute_d4a_with_d4b_evidence, "D4-A exact 7/7 evidence membership drift")
     must_fail(inject_duplicate_rogue_d4c, "D4 track identities must be exactly")
-    must_fail(lambda d: track(d, "D4-C")["evidence_completed"].append(track(d, "D4-C")["required_evidence"][0]), "D4-C must remain uncredited")
+    must_fail(lambda d: track(d, "D4-C")["evidence_completed"].append(track(d, "D4-C")["required_evidence"][0]), "D4-C current sibling must remain exactly 9/9")
     must_fail(lambda d: track(d, "D4-D").__setitem__("candidate", "candidate-x"), "D4-D current sibling selected security profile drift")
     must_fail(lambda d: d[validator.STATE].__setitem__("gate_state", "separately_accepted"), "D4 must remain scoped")
     must_fail(lambda d: d[validator.STATE].__setitem__("production_authority", "granted"), "production authority must remain none")

@@ -33,6 +33,17 @@ CREDITS = [
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
+D4C_SELECTED_PROFILE = {
+    "ack_visibility_lease_and_checkpoint": "durable_inbox_claim_then_broker_ack_profile",
+    "quarantine_and_redrive": "hybrid_platform_quarantine_store_plus_broker_dlq",
+    "bounded_message_payload_batch_and_compression": "layered_transport_and_application_bounds_profile",
+    "scoped_content_equivalence_authority": "hybrid_equivalence_authority_profile",
+    "outbox_claim_dispatch_and_ack_ambiguity": "compare_and_swap_lease_claim_profile",
+    "producer_source_generation": "authority_issued_epoch_generation",
+    "privileged_replay_and_event_history": "hybrid_history_archive_plus_replay_controller_profile",
+    "historical_reader_and_upcaster": "in_process_versioned_reader_upcaster_registry",
+    "recovery_generation_reconciliation_and_activation": "hybrid_generation_manifest_plus_multi_store_reconciler_profile",
+}
 D4D_CREDITS = [
     "workload_identity_to_broker_credential_adapter_least_privilege",
     "tenant_and_contract_scoped_producer_consumer_authorization",
@@ -116,7 +127,7 @@ class SourceEvidenceTests(unittest.TestCase):
 
     def test_current_global_state_is_not_modified_by_source_run(self):
         state=json.loads(STATE.read_text(encoding="utf-8")); tracks={t["track_id"]:t for t in state["tracks"]}; d4c=tracks["D4-C"]; d4d=tracks["D4-D"]
-        self.assertEqual(d4c["evidence_completed"],CREDITS); self.assertEqual(d4c["evidence_remaining"],[x for x in d4c["required_evidence"] if x not in CREDITS]); self.assertEqual(d4c["evidence_remaining"],[]); self.assertIsNone(d4c["candidate"]); self.assertEqual(d4c["candidate_status"],"not_selected")
+        self.assertEqual(d4c["evidence_completed"],CREDITS); self.assertEqual(d4c["evidence_remaining"],[]); self.assertEqual(d4c["candidate"],D4C_SELECTED_PROFILE); self.assertEqual(d4c["candidate_status"],"selected_c2_delivery_recovery_profile"); self.assertEqual(d4c["state"],"selected_candidate")
         self.assertEqual(d4d['candidate'],{'workload_identity_to_broker_credential_adapter': 'derived_short_lived_broker_native_credential_adapter', 'tenant_and_contract_scoped_producer_consumer_authorization': 'broker_acl_projection_adapter', 'message_protection_key_authority_and_historical_verifier_continuity': 'kms_backed_envelope_or_transport_protection_profile', 'secret_credential_payload_exclusion_and_erasure_boundary': 'reference_only_secret_authority_profile', 'trace_context_observability_only_validation_and_redaction': 'w3c_trace_context_bounded_profile'}); self.assertEqual(d4d['candidate_status'],'selected_c2_security_profile'); self.assertEqual(d4d['state'],'selected_candidate'); self.assertEqual(d4d["evidence_completed"],D4D_CREDITS); self.assertEqual(d4d["evidence_remaining"],[])
         self.assertEqual(sum(len(t["evidence_completed"]) for t in state["tracks"]),26); self.assertEqual(state["gate_state"],"scoped"); self.assertEqual(state["canonical_product_implementation_authority"],"not_granted"); self.assertEqual(state["wave4_implementation_authority"],"not_granted"); self.assertEqual(state["production_authority"],"none"); self.assertEqual(state["c3_numeric_topology_authority"],"not_selected")
 

@@ -122,9 +122,9 @@ def main() -> int:
     must_fail(lambda d: d[validator.STATE].__setitem__("merge_rule", "automatic_merge_allowed"), "D4 merge rule drift")
     must_fail(lambda d: track(d, "D4-B").__setitem__("evidence_completed", as_keyed_object(track(d, "D4-B")["evidence_completed"])), "D4-B completed evidence must be an exact list")
     must_fail(lambda d: track(d, "D4-C").__setitem__("evidence_remaining", as_keyed_object(track(d, "D4-C")["evidence_remaining"])), "D4-C remaining evidence must be an exact list")
-    must_fail(lambda d: track(d, "D4-C").__setitem__("candidate", "rabbitmq"), "D4-C must remain open/unselected")
+    must_fail(lambda d: track(d, "D4-C").__setitem__("candidate", "rabbitmq"), "D4-C current selected sibling state drift")
 
-    print("d4b_selection_falsification=PASS duplicate_json=blocked exact_authoritative_schemas=locked hidden_authority=blocked authoritative_integers=typed_exact provenance_paths=bound authoritative_arrays=typed acceptance_merge_rules=locked predecessor=locked internal_surface_swap=blocked webhook_surface_swap=blocked realtime_coupling=blocked divergence_rule=locked catalog_swap=blocked registry_role_escalation=blocked registry_vendor_selection=blocked contract_version_swap=blocked version_ordering_authority=blocked non_authority_rule=locked source_history_rewrite=blocked unsupported_selection=blocked evidence_credit_drift=blocked full_d4_acceptance=blocked product_wave4_production=blocked c3_scope_leak=blocked sibling_selection=blocked")
+    print("d4b_selection_falsification=PASS duplicate_json=blocked exact_authoritative_schemas=locked hidden_authority=blocked authoritative_integers=typed_exact provenance_paths=bound authoritative_arrays=typed acceptance_merge_rules=locked predecessor=locked internal_surface_swap=blocked webhook_surface_swap=blocked realtime_coupling=blocked divergence_rule=locked catalog_swap=blocked registry_role_escalation=blocked registry_vendor_selection=blocked contract_version_swap=blocked version_ordering_authority=blocked non_authority_rule=locked source_history_rewrite=blocked unsupported_selection=blocked evidence_credit_drift=blocked full_d4_acceptance=blocked product_wave4_production=blocked c3_scope_leak=blocked sibling_selection_drift=blocked")
     return 0
 
 

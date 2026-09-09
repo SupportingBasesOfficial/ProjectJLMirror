@@ -24,6 +24,17 @@ EXPECTED_PROFILE = {
     'secret_credential_payload_exclusion_and_erasure_boundary': 'reference_only_secret_authority_profile',
     'trace_context_observability_only_validation_and_redaction': 'w3c_trace_context_bounded_profile',
 }
+EXPECTED_D4C_PROFILE = {
+    'ack_visibility_lease_and_checkpoint': 'durable_inbox_claim_then_broker_ack_profile',
+    'quarantine_and_redrive': 'hybrid_platform_quarantine_store_plus_broker_dlq',
+    'bounded_message_payload_batch_and_compression': 'layered_transport_and_application_bounds_profile',
+    'scoped_content_equivalence_authority': 'hybrid_equivalence_authority_profile',
+    'outbox_claim_dispatch_and_ack_ambiguity': 'compare_and_swap_lease_claim_profile',
+    'producer_source_generation': 'authority_issued_epoch_generation',
+    'privileged_replay_and_event_history': 'hybrid_history_archive_plus_replay_controller_profile',
+    'historical_reader_and_upcaster': 'in_process_versioned_reader_upcaster_registry',
+    'recovery_generation_reconciliation_and_activation': 'hybrid_generation_manifest_plus_multi_store_reconciler_profile',
+}
 EXPECTED_PROFILE_RECORDS = {'workload_identity_to_broker_credential_adapter': {'selection_state': 'selected',
                                                     'mechanism_class': 'derived_short_lived_broker_native_credential_adapter',
                                                     'canonical_workload_identity_authority': 'IR-D-002',
@@ -173,7 +184,8 @@ def validate_records(selection: dict, ledger: dict, state: dict, evaluation: dic
     req(d4d.get('candidate_status') == 'selected_c2_security_profile' and d4d.get('state') == 'selected_candidate', 'D4-D state selection drift')
     req(d4d.get('evidence_completed') == EXPECTED_CREDITS and d4d.get('evidence_remaining') == [], 'D4-D state evidence drift')
     d4c = tracks.get('D4-C', {})
-    req(d4c.get('candidate') is None and d4c.get('candidate_status') == 'not_selected' and d4c.get('state') == 'candidate_selection_open', 'D4-C sibling state must remain unchanged')
+    req(d4c.get('candidate') == EXPECTED_D4C_PROFILE and d4c.get('candidate_status') == 'selected_c2_delivery_recovery_profile' and d4c.get('state') == 'selected_candidate', 'D4-C current selected sibling projection drift')
+    req(len(d4c.get('evidence_completed', [])) == 9 and d4c.get('evidence_remaining') == [], 'D4-C current evidence projection drift')
     req(sum(len(t.get('evidence_completed', [])) for t in tracks.values()) == 26, 'D4-wide evidence must remain 26/26')
 
     for obj, label in ((selection, 'selection'), (ledger, 'ledger'), (state, 'state')):
@@ -204,7 +216,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f'D4D_SELECTION_ERROR: {error}', file=sys.stderr)
         return 1
-    print('d4d_selection=PASS profile=selected_c2_security_profile evidence=5_of_5 d4wide=26_of_26 d4=scoped acceptance=separate authorities=unchanged')
+    print('d4d_selection=PASS profile=selected_c2_security_profile evidence=5_of_5 d4wide=26_of_26 d4c=current_selected d4=scoped acceptance=separate authorities=unchanged')
     return 0
 
 if __name__ == '__main__':

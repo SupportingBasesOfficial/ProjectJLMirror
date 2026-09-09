@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR119-001",
+      "pr": 119,
+      "source": "external_review",
+      "review_comment_id": 3964551037,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": ["INV-PROVENANCE-001", "INV-AUTH-001"],
+      "root_cause": "The cumulative D4-D promotion validator bound authority strings and current-plan separation but did not bind the durable separation flags on each historical promotion record, allowing a promotion artifact to claim candidate selection or D4 acceptance need not remain separate while validation still passed.",
+      "horizontal_audit": [
+        "P1 workload identity promotion separation flags",
+        "P2 tenant authorization promotion separation flags",
+        "P3 message protection promotion separation flags",
+        "P4 secret exclusion promotion separation flags",
+        "P5 trace context promotion separation flags",
+        "current D4-D plan separation boundary"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4d_trace_context_source.py",
+          "probe": "falsify_promotion_separation_flags"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 3
+    }
+  ]
+}

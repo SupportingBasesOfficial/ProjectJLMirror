@@ -20,29 +20,57 @@ on:
       - submitted
       - edited
       - dismissed
+  issue_comment:
+    types:
+      - created
+      - edited
+      - deleted
   workflow_dispatch:
 
 permissions:
   contents: read
   pull-requests: read
+  issues: read
 
 jobs:
   deterministic-assurance:
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request != null
     name: Deterministic assurance v1
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    env:
-      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
+      - name: Resolve exact analyzed HEAD
+        id: analyzed-head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "issue_comment" ]]; then
+            resolved_sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+          elif [[ -n "${PR_HEAD_SHA}" ]]; then
+            resolved_sha="${PR_HEAD_SHA}"
+          else
+            resolved_sha="${EVENT_SHA}"
+          fi
+          test -n "$resolved_sha"
+          printf 'sha=%s\n' "$resolved_sha" >> "$GITHUB_OUTPUT"
+
       - name: Checkout exact analyzed HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ steps.analyzed-head.outputs.sha }}
           fetch-depth: 0
           persist-credentials: false
           allow-unsafe-pr-checkout: false
 
       - name: Verify exact commit identity
+        env:
+          EXPECTED_SHA: ${{ steps.analyzed-head.outputs.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -59,14 +87,17 @@ jobs:
         run: python3 tools/assurance/validate_adversarial_learning.py --root .
 
       - name: Collect all PR review findings for learning reconciliation
-        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment' || github.event_name == 'pull_request_review'
+        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment' || github.event_name == 'pull_request_review' || github.event_name == 'issue_comment'
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p runtime-evidence
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
+            > runtime-evidence/top-level-pr-comments.json
           gh api --paginate --slurp \
             "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/comments?per_page=100" \
             > runtime-evidence/inline-review-comments.json
@@ -76,13 +107,14 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
+          top_level=json.loads(Path('runtime-evidence/top-level-pr-comments.json').read_text())
           inline=json.loads(Path('runtime-evidence/inline-review-comments.json').read_text())
           reviews=json.loads(Path('runtime-evidence/formal-reviews.json').read_text())
-          Path('runtime-evidence/pr-review-findings.json').write_text(json.dumps([inline,reviews]))
+          Path('runtime-evidence/pr-review-findings.json').write_text(json.dumps([top_level,inline,reviews]))
           PY
 
       - name: Require every material PR finding to be internalized
-        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment' || github.event_name == 'pull_request_review'
+        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment' || github.event_name == 'pull_request_review' || github.event_name == 'issue_comment'
         shell: bash
         run: python3 tools/assurance/validate_adversarial_learning.py --root . --review-comments runtime-evidence/pr-review-findings.json
 

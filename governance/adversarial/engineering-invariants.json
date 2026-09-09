@@ -50,6 +50,16 @@
       "id": "INV-PROVENANCE-001",
       "statement": "Evidence identity, source lineage, authority snapshots and canonical representations are validated as complete exact envelopes; partial equality is insufficient.",
       "enforcement": ["exact_envelope_validation", "mutation_falsification"]
+    },
+    {
+      "id": "INV-LEARNING-001",
+      "statement": "Every material review surface that can introduce a finding must feed the same reconciliation gate, and event-driven reconciliation must analyze the exact current pull-request head rather than an incidental default-branch revision.",
+      "enforcement": ["all_review_surface_collection", "review_event_trigger_coverage", "exact_pr_head_resolution", "surface_omission_falsification"]
+    },
+    {
+      "id": "INV-LEARNING-002",
+      "statement": "A learning-ledger guardrail is creditable only when its declared identifier resolves through a registered mechanism to a check that is actually executed; raw textual occurrence is never evidence of executable enforcement.",
+      "enforcement": ["executable_check_resolution", "exact_check_identity", "incidental_substring_falsification"]
     }
   ]
 }

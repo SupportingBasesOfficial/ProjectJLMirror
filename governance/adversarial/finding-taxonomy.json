@@ -66,6 +66,18 @@
       "name": "Missing boundary trust context",
       "description": "A propagated field is validated without the boundary-owned source, trust, classification, hop-scope or egress decision needed by policy.",
       "invariant_ids": ["INV-BOUNDARY-002", "INV-AUTH-001"]
+    },
+    {
+      "id": "ADV-LEARNING-SURFACE-OMISSION",
+      "name": "Material review surface omitted from learning reconciliation",
+      "description": "A channel capable of carrying a material review finding is not collected or does not trigger exact-head reconciliation, allowing a valid finding to exist while the automatic learning gate still reports complete coverage.",
+      "invariant_ids": ["INV-LEARNING-001"]
+    },
+    {
+      "id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "name": "Declared learning guardrail is not proven executable",
+      "description": "The learning ledger can claim a permanent guardrail using a textual token or incidental symbol that is present in a file but is not an executed probe or falsification check.",
+      "invariant_ids": ["INV-LEARNING-002"]
     }
   ]
 }

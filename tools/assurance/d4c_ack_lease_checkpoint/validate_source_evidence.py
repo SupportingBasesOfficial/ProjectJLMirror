@@ -18,6 +18,18 @@ D4C_CREDIT_013 = "producer_generation_nonresurrection_across_failover_restore"
 D4C_CREDIT_014 = "privileged_bounded_replay_with_original_identity_and_effect_safety"
 D4C_CREDIT_015 = "historical_reader_upcaster_semantic_and_equivalence_continuity"
 D4C_CREDIT_025 = "recovery_generation_rf_inventory_reconciliation_and_activation_gates"
+CURRENT_CREDITS = [D4C_CREDIT_008,D4C_CREDIT_009,D4C_CREDIT_010,D4C_CREDIT_011,D4C_CREDIT_012,D4C_CREDIT_013,D4C_CREDIT_014,D4C_CREDIT_015,D4C_CREDIT_025]
+D4C_SELECTED_PROFILE = {
+    "ack_visibility_lease_and_checkpoint": "durable_inbox_claim_then_broker_ack_profile",
+    "quarantine_and_redrive": "hybrid_platform_quarantine_store_plus_broker_dlq",
+    "bounded_message_payload_batch_and_compression": "layered_transport_and_application_bounds_profile",
+    "scoped_content_equivalence_authority": "hybrid_equivalence_authority_profile",
+    "outbox_claim_dispatch_and_ack_ambiguity": "compare_and_swap_lease_claim_profile",
+    "producer_source_generation": "authority_issued_epoch_generation",
+    "privileged_replay_and_event_history": "hybrid_history_archive_plus_replay_controller_profile",
+    "historical_reader_and_upcaster": "in_process_versioned_reader_upcaster_registry",
+    "recovery_generation_reconciliation_and_activation": "hybrid_generation_manifest_plus_multi_store_reconciler_profile",
+}
 D4D_CREDITS = [
     "workload_identity_to_broker_credential_adapter_least_privilege",
     "tenant_and_contract_scoped_producer_consumer_authorization",
@@ -25,23 +37,35 @@ D4D_CREDITS = [
     "secret_credential_payload_exclusion_and_erasure_boundary",
     "trace_context_observability_only_validation_and_redaction",
 ]
-CURRENT_CREDITS = [D4C_CREDIT_008,D4C_CREDIT_009,D4C_CREDIT_010,D4C_CREDIT_011,D4C_CREDIT_012,D4C_CREDIT_013,D4C_CREDIT_014,D4C_CREDIT_015,D4C_CREDIT_025]
+D4D_SELECTED_PROFILE = {
+    "workload_identity_to_broker_credential_adapter": "derived_short_lived_broker_native_credential_adapter",
+    "tenant_and_contract_scoped_producer_consumer_authorization": "broker_acl_projection_adapter",
+    "message_protection_key_authority_and_historical_verifier_continuity": "kms_backed_envelope_or_transport_protection_profile",
+    "secret_credential_payload_exclusion_and_erasure_boundary": "reference_only_secret_authority_profile",
+    "trace_context_observability_only_validation_and_redaction": "w3c_trace_context_bounded_profile",
+}
 _legacy_load_json = historical.load_json
 
 def _current_errors(state: dict) -> list[str]:
-    tracks={t.get("track_id"):t for t in state.get("tracks",[]) if isinstance(t,dict)}; d4c=tracks.get("D4-C",{}); d4d=tracks.get("D4-D",{}); required=d4c.get("required_evidence",[]); errors=[]
-    if d4c.get("candidate") is not None or d4c.get("candidate_status")!="not_selected" or d4c.get("state")!="candidate_selection_open": errors.append("D4-C selection leakage")
-    if d4c.get("evidence_completed")!=CURRENT_CREDITS or d4c.get("evidence_remaining")!=[x for x in required if x not in CURRENT_CREDITS]: errors.append("D4-C current ledger drift beyond separately promoted nine reviewed obligations")
-    if d4d.get('candidate') != {'workload_identity_to_broker_credential_adapter': 'derived_short_lived_broker_native_credential_adapter', 'tenant_and_contract_scoped_producer_consumer_authorization': 'broker_acl_projection_adapter', 'message_protection_key_authority_and_historical_verifier_continuity': 'kms_backed_envelope_or_transport_protection_profile', 'secret_credential_payload_exclusion_and_erasure_boundary': 'reference_only_secret_authority_profile', 'trace_context_observability_only_validation_and_redaction': 'w3c_trace_context_bounded_profile'} or d4d.get('candidate_status') != 'selected_c2_security_profile' or d4d.get('state') != 'selected_candidate': errors.append("D4-D selection leakage")
+    tracks={t.get("track_id"):t for t in state.get("tracks",[]) if isinstance(t,dict)}
+    if set(tracks)!={"D4-A","D4-B","D4-C","D4-D"}: return ["D4 track inventory drift"]
+    d4c=tracks["D4-C"]; d4d=tracks["D4-D"]; errors=[]
+    if d4c.get("candidate")!=D4C_SELECTED_PROFILE or d4c.get("candidate_status")!="selected_c2_delivery_recovery_profile" or d4c.get("state")!="selected_candidate": errors.append("D4-C current selected profile drift")
+    if d4c.get("evidence_completed")!=CURRENT_CREDITS or d4c.get("evidence_remaining")!=[]: errors.append("D4-C current ledger drift beyond separately promoted nine reviewed obligations")
+    if d4d.get("candidate")!=D4D_SELECTED_PROFILE or d4d.get("candidate_status")!="selected_c2_security_profile" or d4d.get("state")!="selected_candidate": errors.append("D4-D current selected profile drift")
     if d4d.get("evidence_completed")!=D4D_CREDITS or d4d.get("evidence_remaining")!=[]: errors.append("D4-D current ledger must be exactly five-of-five")
     if sum(len(t.get("evidence_completed",[])) for t in tracks.values())!=26: errors.append("D4-wide evidence count drift")
     return errors
 
 def _project(state:dict)->dict:
     result=copy.deepcopy(state)
-    for tid in ("D4-C","D4-D"):
-        t=next(x for x in result["tracks"] if x.get("track_id")==tid); t["evidence_completed"]=[]; t["evidence_remaining"]=list(t["required_evidence"])
-    _d4d = next(t for t in result['tracks'] if t.get('track_id') == 'D4-D'); _d4d.update(candidate=None, candidate_status='not_selected', state='candidate_selection_open'); return result
+    d4c=next(x for x in result["tracks"] if x.get("track_id")=="D4-C")
+    d4c.update(candidate=None,candidate_status="not_selected",state="candidate_selection_open")
+    d4c["evidence_completed"]=[]; d4c["evidence_remaining"]=list(d4c["required_evidence"])
+    d4d=next(x for x in result["tracks"] if x.get("track_id")=="D4-D")
+    d4d.update(candidate=None,candidate_status="not_selected",state="candidate_selection_open")
+    d4d["evidence_completed"]=[]; d4d["evidence_remaining"]=list(d4d["required_evidence"])
+    return result
 
 def validate(root:Path)->list[str]:
     state=json.loads((root/STATE_PATH).read_text(encoding="utf-8")); current=_current_errors(state)
@@ -62,6 +86,6 @@ def main()->int:
     if errors:
         for error in errors: print(f"ERROR: {error}")
         return 1
-    print("d4c_ack_lease_checkpoint_source=PASS source_auto_credit=false historical_oracle=preserved current_d4c=9_of_9 current_d4d=5_of_5 d4wide=26_of_26 selection=not_selected")
+    print("d4c_ack_lease_checkpoint_source=PASS source_auto_credit=false historical_oracle=preserved current_d4c=9_of_9_selected current_d4d=5_of_5_selected d4wide=26_of_26")
     return 0
 if __name__=="__main__": raise SystemExit(main())

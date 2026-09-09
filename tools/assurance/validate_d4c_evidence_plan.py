@@ -42,13 +42,17 @@ D4D_SELECTED_PROFILE = {
 }
 
 
-def _current_errors(state: dict) -> list[str]:
+def _current_errors(state: dict, plan: dict) -> list[str]:
     errors: list[str] = []
     tracks = {t.get("track_id"): t for t in state.get("tracks", []) if isinstance(t, dict)}
     if set(tracks) != {"D4-A", "D4-B", "D4-C", "D4-D"}:
         return ["D4 track inventory drift"]
     d4c = tracks["D4-C"]
     d4d = tracks["D4-D"]
+    if plan.get("candidate") != D4C_SELECTED_PROFILE or plan.get("candidate_status") != "selected_c2_delivery_recovery_profile" or plan.get("selection_state") != "selected" or plan.get("selection_authority") != "selection_record" or plan.get("separate_selection_required") is not False:
+        errors.append("D4-C current ledger selection drift")
+    if plan.get("credited_evidence") != historical.CREDITS or plan.get("remaining_evidence") != [] or plan.get("ledger_credit_state") != "nine_of_nine":
+        errors.append("D4-C current ledger evidence drift")
     if d4c.get("candidate") != D4C_SELECTED_PROFILE or d4c.get("candidate_status") != "selected_c2_delivery_recovery_profile" or d4c.get("state") != "selected_candidate":
         errors.append("D4-C current selected profile drift")
     if d4c.get("evidence_completed") != historical.CREDITS or d4c.get("evidence_remaining") != []:
@@ -65,7 +69,7 @@ def _current_errors(state: dict) -> list[str]:
     return errors
 
 
-def _historical_projection(state: dict) -> dict:
+def _historical_state(state: dict) -> dict:
     projected = copy.deepcopy(state)
     d4c = next(t for t in projected["tracks"] if t.get("track_id") == "D4-C")
     d4c["candidate"] = None
@@ -80,15 +84,32 @@ def _historical_projection(state: dict) -> dict:
     return projected
 
 
+def _historical_plan(plan: dict) -> dict:
+    projected = copy.deepcopy(plan)
+    projected["candidate"] = None
+    projected["candidate_status"] = "not_selected"
+    projected["selection_state"] = "not_selected"
+    projected["selection_authority"] = "not_granted"
+    projected["separate_selection_required"] = True
+    projected.pop("selection_record", None)
+    return projected
+
+
 def validate(root: Path) -> list[str]:
     state = json.loads((root / STATE).read_text(encoding="utf-8"))
-    current = _current_errors(state)
-    if current: return current
+    plan = json.loads((root / PLAN).read_text(encoding="utf-8"))
+    current = _current_errors(state, plan)
+    if current:
+        return current
     original_load = historical.load
     try:
         def projected_load(path: Path):
             value = original_load(path)
-            return _historical_projection(value) if path == root / STATE else value
+            if path == root / STATE:
+                return _historical_state(value)
+            if path == root / PLAN:
+                return _historical_plan(value)
+            return value
         historical.load = projected_load
         return historical.validate(root)
     finally:
@@ -99,7 +120,8 @@ def main() -> int:
     root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
     errors = validate(root)
     if errors:
-        for error in errors: print(f"D4C_PROMOTION_ERROR: {error}")
+        for error in errors:
+            print(f"D4C_PROMOTION_ERROR: {error}")
         return 1
     print("d4c_open_evt_025_promotion=PASS historical_oracle=byte_preserved d4c=9_of_9_selected d4d=5_of_5_selected d4wide=26_of_26 authorities=unchanged acceptance=separate")
     return 0

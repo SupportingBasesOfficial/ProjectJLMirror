@@ -20,8 +20,8 @@ def main():
  must_fail(lambda s:s.__setitem__('production_authority','granted'),'must not grant production')
  must_fail(lambda s:s.__setitem__('c3_numeric_topology_authority','selected'),'must not select C3')
  for tid in ['D4-A','D4-B','D4-C','D4-D']:
-  must_fail(lambda s,t=tid:track(s,t).__setitem__('state','selected_candidate'),t+' accepted state drift')
-  must_fail(lambda s,t=tid:track(s,t)['evidence_completed'].pop(),t+' completed evidence drift')
+  must_fail(lambda s,t=tid:track(s,t).__setitem__('state','selected_candidate'),tid+' accepted state drift')
+  must_fail(lambda s,t=tid:track(s,t)['evidence_completed'].pop(),tid+' completed evidence drift')
  must_fail(lambda s:track(s,'D4-A').__setitem__('candidate','rabbitmq'),'D4-A accepted candidate drift')
  must_fail(lambda s:track(s,'D4-B').__setitem__('candidate',None),'D4-B accepted profile drift')
  must_fail(lambda s:track(s,'D4-C').__setitem__('candidate',None),'D4-C accepted profile drift')

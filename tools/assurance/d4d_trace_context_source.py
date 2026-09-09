@@ -14,6 +14,7 @@ MAX_ATTRS = 16
 MAX_ATTR_KEY = 64
 MAX_ATTR_VALUE = 128
 MAX_SCOPE_TENANT_ID_CHARS = 128
+MAX_PROPAGATION_CONTEXT_FIELD_CHARS = 64
 
 ATTRIBUTE_PROFILES = {
     "component": {
@@ -113,8 +114,8 @@ def _validate_propagation_context(context: object) -> PropagationContext:
     if not isinstance(context, PropagationContext):
         raise TraceContextRejected("propagation context object invalid")
     string_fields = (context.source, context.trust_level, context.classification, context.hop_scope)
-    if any(not isinstance(field, str) or not field for field in string_fields):
-        raise TraceContextRejected("propagation context string field invalid")
+    if any(not isinstance(field, str) or not field or len(field) > MAX_PROPAGATION_CONTEXT_FIELD_CHARS for field in string_fields):
+        raise TraceContextRejected("propagation context string field invalid or out of bounds")
     if not isinstance(context.leaving_jlmirror, bool):
         raise TraceContextRejected("propagation context egress flag invalid")
     return context
@@ -382,6 +383,17 @@ def run_probes() -> dict[str, bool]:
     for field, malformed_context in malformed_contexts.items():
         candidate = process_message(env, traceparent=valid, attributes={"component": "consumer"}, propagation_context=malformed_context)
         checks[f"malformed_propagation_context_{field}_does_not_abort_business_processing"] = _isolated_from_business(env, candidate)
+
+    oversized_value = "x" * (MAX_PROPAGATION_CONTEXT_FIELD_CHARS + 1)
+    oversized_contexts = {
+        "source": PropagationContext(oversized_value, "authenticated_internal", "internal", "local_async_boundary", False),
+        "trust_level": PropagationContext("consumer", oversized_value, "internal", "local_async_boundary", False),
+        "classification": PropagationContext("consumer", "authenticated_internal", oversized_value, "local_async_boundary", False),
+        "hop_scope": PropagationContext("consumer", "authenticated_internal", "internal", oversized_value, False),
+    }
+    for field, oversized_context in oversized_contexts.items():
+        candidate = process_message(env, traceparent=valid, attributes={"component": "consumer"}, propagation_context=oversized_context)
+        checks[f"oversized_propagation_context_{field}_does_not_abort_business_processing"] = _isolated_from_business(env, candidate)
 
     tenant_a_2 = process_message(BusinessEnvelope("tenant-a", "msg-2", "idem-2", "order-2", "payload-v2", "at_least_once"), traceparent=same_trace_other_parent, scope_authority=scope_authority)
     tenant_b = process_message(BusinessEnvelope("tenant-b", "msg-3", "idem-3", "order-3", "payload-v3", "at_least_once"), traceparent=same_trace_other_parent, scope_authority=scope_authority)

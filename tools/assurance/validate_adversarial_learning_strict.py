@@ -13,7 +13,7 @@ import validate_adversarial_learning as base
 HEAD_STATUS_WORKFLOW = Path('.github/workflows/adversarial-learning-reconciliation.yml')
 MATERIAL_RE = re.compile(r'(?:\bP[012]\s+Badge\b|\[P[012]\])')
 NEGATIVE_HELPERS = {
-    Path('tools/assurance/test_validate_adversarial_learning.py'): {'expect_failure'},
+    Path('tools/assurance/test_validate_adversarial_learning.py'): {'expect_failure', 'expect_repository_failure'},
     Path('tools/assurance/test_validate_d4d_trace_context_source.py'): {'mutate_and_expect_failure'},
 }
 
@@ -31,36 +31,25 @@ def _flatten(value: Any) -> list[dict[str, Any]]:
 
 
 def _statements_have_negative_check(statements: list[ast.stmt], helpers: set[str]) -> bool:
+    """Credit only a direct, reachable registered negative helper.
+
+    Generic assertions are deliberately not evidence: `assert True` is a no-op.
+    Branch/loop/try containment is deliberately not evidence either, because a
+    syntactically present helper may be statically or dynamically unreachable.
+    """
     for statement in statements:
         if isinstance(statement, (ast.Return, ast.Raise)):
             return False
-        if isinstance(statement, ast.Assert):
+        if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
+            continue
+        call = statement.value
+        if isinstance(call.func, ast.Name) and call.func.id in helpers:
             return True
-        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
-            call = statement.value
-            if isinstance(call.func, ast.Name) and call.func.id in helpers:
-                return True
-        if isinstance(statement, (ast.For, ast.AsyncFor, ast.While)):
-            if _statements_have_negative_check(statement.body, helpers) or _statements_have_negative_check(statement.orelse, helpers):
-                return True
-        elif isinstance(statement, ast.If):
-            if _statements_have_negative_check(statement.body, helpers) or _statements_have_negative_check(statement.orelse, helpers):
-                return True
-        elif isinstance(statement, (ast.With, ast.AsyncWith)):
-            if _statements_have_negative_check(statement.body, helpers):
-                return True
-        elif isinstance(statement, ast.Try):
-            if _statements_have_negative_check(statement.body, helpers) or _statements_have_negative_check(statement.orelse, helpers) or _statements_have_negative_check(statement.finalbody, helpers):
-                return True
-            if any(_statements_have_negative_check(handler.body, helpers) for handler in statement.handlers):
-                return True
     return False
 
 
 def _has_negative_check(function: ast.AST, helpers: set[str]) -> bool:
-    if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        return False
-    return _statements_have_negative_check(function.body, helpers)
+    return isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)) and _statements_have_negative_check(function.body, helpers)
 
 
 def _validate_falsifier_effects(root: Path) -> list[str]:
@@ -78,7 +67,7 @@ def _validate_falsifier_effects(root: Path) -> list[str]:
         for name in sorted(credited):
             function = functions.get(name)
             if function is None or not _has_negative_check(function, helpers):
-                errors.append(f'credited falsifier performs no reachable negative check: {rel}:{name}')
+                errors.append(f'credited falsifier performs no direct reachable registered negative check: {rel}:{name}')
     return errors
 
 
@@ -89,18 +78,23 @@ def _validate_head_status_workflow(root: Path) -> list[str]:
     text = path.read_text(encoding='utf-8')
     markers = {
         'issue_comment trigger': 'issue_comment:',
-        'status write permission': 'statuses: write',
+        'per-PR concurrency': 'group: adversarial-learning-${{ github.event.issue.number }}',
+        'superseded-run cancellation': 'cancel-in-progress: true',
+        'zero workflow-level permissions': 'permissions: {}',
+        'trusted resolve job': '  resolve:',
+        'isolated pending publisher': '  publish-pending:',
+        'read-only analysis job': '  analyze:',
+        'isolated final publisher': '  publish-final:',
         'resolved PR head lookup': 'pulls/${PR_NUMBER}',
         'head status endpoint': 'statuses/${PR_HEAD_SHA}',
         'stable status context': 'JLMIRROR / adversarial-learning-reconciliation',
-        'pending publication': 'state=pending',
-        'always final publication': 'if: always()',
-        'job result binding': 'JOB_STATUS: ${{ job.status }}',
         'strict reconciliation': 'validate_adversarial_learning_strict.py',
     }
     errors = [f'head-associated reconciliation workflow missing {name}' for name, marker in markers.items() if marker not in text]
+    if 'workflow_dispatch:' in text:
+        errors.append('head-associated reconciliation must not expose an unbound manual dispatch path')
     if text.count('statuses/${PR_HEAD_SHA}') != 2:
-        errors.append('head-associated reconciliation must publish both pending and final status to the resolved PR head')
+        errors.append('head-associated reconciliation must publish pending and final status to the resolved PR head exactly twice')
     if 'statuses/${GITHUB_SHA}' in text:
         errors.append('head-associated reconciliation must never publish review status to the event/default-branch SHA')
     return errors
@@ -151,7 +145,7 @@ def main() -> None:
         print('ADVERSARIAL_LEARNING_STRICT_ERROR:', error)
     if errors:
         raise SystemExit(1)
-    print('adversarial_learning_strict=PASS head_status=bound material_formats=badge+priority-prefix falsifier_effects=reachable')
+    print('adversarial_learning_strict=PASS head_status=isolated+fresh material_formats=badge+priority-prefix falsifier_effects=direct-negative-helper')
 
 
 if __name__ == '__main__':

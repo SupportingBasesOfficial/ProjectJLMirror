@@ -56,9 +56,9 @@ def validate_records(selection,ledger,state,evaluation):
  e.extend(validate_authorities(ledger,'ledger ','d4_gate_state')) if 'd4_gate_state' in ledger else e.extend(validate_authorities({**ledger,'d4_gate_state':'scoped'},'ledger ','d4_gate_state'))
  tracks={t.get('track_id'):t for t in state.get('tracks',[]) if isinstance(t,dict)}; c=tracks.get('D4-C',{})
  req(c.get('candidate')==EXPECTED_PROFILE,'state selected profile drift')
- req(c.get('candidate_status')=='selected_c2_delivery_recovery_profile' and c.get('state')=='accepted_candidate','state D4-C accepted disposition drift')
+ req(c.get('candidate_status')=='selected_c2_delivery_recovery_profile' and c.get('state')=='selected_candidate','state D4-C terminal disposition drift')
  req(c.get('evidence_completed')==EXPECTED_EVIDENCE and c.get('evidence_remaining')==[],'state D4-C evidence drift')
- req(all(tracks.get(tid,{}).get('state')=='accepted_candidate' for tid in ('D4-A','D4-B','D4-C','D4-D')),'current D4 track acceptance projection drift')
+ req(all(tracks.get(tid,{}).get('state')=='selected_candidate' for tid in ('D4-A','D4-B','D4-C','D4-D')),'current D4 terminal track projection drift')
  e.extend(validate_authorities(state,'state ','gate_state','separately_accepted'))
  req(evaluation.get('selection_state')=='not_selected' and evaluation.get('selection_authority')=='not_granted' and evaluation.get('separate_selection_required') is True,'historical evaluation plan must remain not_selected')
  req(selection.get('separate_d4_acceptance_required') is True and ledger.get('separate_d4_acceptance_required') is True,'historical selection/ledger acceptance separation drift')
@@ -69,6 +69,6 @@ def main():
  errors=validate_records(*vals)
  for x in errors: print('D4C_SELECTION_ERROR:',x,file=sys.stderr)
  if errors:return 1
- print('d4c_selection=PASS evidence=9_of_9 d4wide=26_of_26 current_d4=separately_accepted historical_selection=preserved authorities=unchanged')
+ print('d4c_selection=PASS evidence=9_of_9 d4wide=26_of_26 current_d4=separately_accepted terminal_track=selected historical_selection=preserved authorities=unchanged')
  return 0
 if __name__=='__main__': raise SystemExit(main())

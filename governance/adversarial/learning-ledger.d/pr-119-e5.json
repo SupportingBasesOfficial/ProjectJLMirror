@@ -54,6 +54,33 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 4
+    },
+    {
+      "id": "LEARN-PR119-003",
+      "pr": 119,
+      "source": "external_review",
+      "review_comment_id": 3967407348,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": ["INV-PROVENANCE-001", "INV-AUTH-001"],
+      "root_cause": "The generation-4 validator bound every known durable promotion value but still treated the top-level JSON object as an open schema, so contradictory authority or acceptance claims could be added under unknown keys without invalidating the otherwise exact promotion identity envelope.",
+      "horizontal_audit": [
+        "P1 workload identity promotion top-level key set with historical no-newly-credited exception",
+        "P2 tenant authorization promotion top-level key set",
+        "P3 message protection promotion top-level key set",
+        "P4 secret exclusion promotion top-level key set",
+        "P5 trace context promotion top-level key set",
+        "unknown acceptance_state authority implementation production and candidate claim channels",
+        "exact declared authority and separation key set",
+        "nested source_review source_workflow and source_manifest already closed by exact object equality"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4d_trace_context_source.py",
+          "probe": "falsify_promotion_unknown_fields"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 5
     }
   ]
 }

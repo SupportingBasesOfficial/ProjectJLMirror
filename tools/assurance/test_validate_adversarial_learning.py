@@ -6,14 +6,17 @@ import tempfile
 from pathlib import Path
 
 import validate_adversarial_learning as v
+import validate_adversarial_learning_strict as s
 
 ROOT = Path(__file__).resolve().parents[2]
 FILES = [v.TAXONOMY, v.INVARIANTS, v.LEDGER, v.BOOTSTRAP_EXCEPTIONS, v.STOP_POLICY]
 GUARDRAIL_FILES = [
     v.WORKFLOW,
+    s.HEAD_STATUS_WORKFLOW,
     Path("tools/assurance/d4d_trace_context_source.py"),
     Path("tools/assurance/test_validate_d4d_trace_context_source.py"),
     Path("tools/assurance/test_validate_adversarial_learning.py"),
+    Path("tools/assurance/validate_adversarial_learning_strict.py"),
 ]
 
 
@@ -54,7 +57,7 @@ def expect_failure(mutator, *, comments=None) -> None:
         if comments is not None:
             review_comments = root / "comments.json"
             review_comments.write_text(json.dumps(comments), encoding="utf-8")
-        assert v.validate(root, review_comments), "mutation unexpectedly accepted"
+        assert s.validate(root, review_comments), "mutation unexpectedly accepted"
 
 
 def falsify_top_level_review_surface_coverage() -> None:
@@ -100,6 +103,35 @@ def falsify_missing_falsifier_entrypoint() -> None:
     expect_failure(mutate)
 
 
+def falsify_head_status_publication() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            s.HEAD_STATUS_WORKFLOW,
+            'statuses/${PR_HEAD_SHA}',
+            'statuses/${GITHUB_SHA}',
+        )
+    )
+
+
+def falsify_noop_falsifier_body() -> None:
+    def mutate(root: Path) -> None:
+        mutate_text(
+            root,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            'def falsify_incidental_guardrail_substring() -> None:\n    expect_failure(',
+            'def falsify_incidental_guardrail_substring() -> None:\n    return\n    expect_failure(',
+        )
+    expect_failure(mutate)
+
+
+def falsify_priority_prefixed_material_finding() -> None:
+    expect_failure(
+        lambda r: None,
+        comments=[[{"id": 9999999998, "body": "[P1] unmapped material finding"}]],
+    )
+
+
 def falsify_bootstrap_exception_scope() -> None:
     expect_failure(
         lambda r: mutate_json(
@@ -121,7 +153,7 @@ def falsify_stop_policy_relaxation() -> None:
 
 
 def main() -> None:
-    assert not v.validate(ROOT)
+    assert not s.validate(ROOT)
 
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0].__setitem__("class_id", "UNKNOWN")))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0].__setitem__("invariant_ids", ["UNKNOWN"])))
@@ -133,6 +165,9 @@ def main() -> None:
     falsify_incidental_guardrail_substring()
     falsify_unreachable_guardrail_call()
     falsify_missing_falsifier_entrypoint()
+    falsify_head_status_publication()
+    falsify_noop_falsifier_body()
+    falsify_priority_prefixed_material_finding()
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][1].__setitem__("review_comment_id", 3961647090)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][6].__setitem__("guardrail_generation", 1)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0].__setitem__("systemic_guardrail_updated", False)))
@@ -149,16 +184,16 @@ def main() -> None:
         clone(root)
         comments = root / "comments.json"
         comments.write_text(json.dumps([[[{"id": 3961647090, "body": "**P1 Badge** mapped finding"}]]]), encoding="utf-8")
-        assert not v.validate(root, comments)
+        assert not s.validate(root, comments)
 
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         clone(root)
         comments = root / "comments.json"
         comments.write_text(json.dumps([[{"id": 3963734258, "body": "**P1 Badge** exact bootstrap finding"}]]), encoding="utf-8")
-        assert not v.validate(root, comments)
+        assert not s.validate(root, comments)
 
-    print("adversarial_learning_falsification=PASS unknown_class=blocked invariant_drift=blocked weak_root_cause=blocked missing_horizontal_audit=blocked missing_guardrail=blocked nonexistent_guardrail=blocked fictional_probe=blocked incidental_substring=blocked unreachable_guardrail_call=blocked missing_falsifier_entrypoint=blocked duplicate_review_identity=blocked recurrence_without_guardrail_advance=blocked top_level_review_surface_omission=blocked bootstrap_exception_scope=exact stop_policy_relaxation=blocked unmapped_material_finding=blocked nested_review_pages=handled")
+    print("adversarial_learning_falsification=PASS unknown_class=blocked invariant_drift=blocked weak_root_cause=blocked missing_horizontal_audit=blocked missing_guardrail=blocked nonexistent_guardrail=blocked fictional_probe=blocked incidental_substring=blocked unreachable_guardrail_call=blocked missing_falsifier_entrypoint=blocked head_status_binding=blocked noop_falsifier=blocked priority_prefix=recognized duplicate_review_identity=blocked recurrence_without_guardrail_advance=blocked top_level_review_surface_omission=blocked bootstrap_exception_scope=exact stop_policy_relaxation=blocked unmapped_material_finding=blocked nested_review_pages=handled")
 
 
 if __name__ == "__main__":

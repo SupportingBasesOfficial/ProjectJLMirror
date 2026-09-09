@@ -49,13 +49,22 @@ def _current_errors(state:dict)->list[str]:
     return errors
 
 
-def _project(state:dict)->dict:
+def _project_state(state:dict)->dict:
     out=copy.deepcopy(state)
     c=next(t for t in out["tracks"] if t.get("track_id")=="D4-C")
     c.update(candidate=None,candidate_status="not_selected",state="candidate_selection_open")
     d=next(t for t in out["tracks"] if t.get("track_id")=="D4-D")
-    d["evidence_completed"]=list(D4D_HISTORICAL_CURRENT); d["evidence_remaining"]=[x for x in d["required_evidence"] if x not in D4D_HISTORICAL_CURRENT]
+    d["evidence_completed"]=list(D4D_HISTORICAL_CURRENT)
+    d["evidence_remaining"]=[x for x in d["required_evidence"] if x not in D4D_HISTORICAL_CURRENT]
     d.update(candidate=None,candidate_status="not_selected",state="candidate_selection_open")
+    return out
+
+
+def _project_plan(plan:dict)->dict:
+    out=copy.deepcopy(plan)
+    out["candidate"]=None
+    out["candidate_status"]="not_selected"
+    out["selection_state"]="not_selected"
     return out
 
 
@@ -72,13 +81,15 @@ def main()->int:
         def projected_load(path:Path):
             value=_original_load(path)
             try:
-                if path.resolve()==STATE.resolve(): return _project(value)
+                resolved=path.resolve()
+                if resolved==STATE.resolve(): return _project_state(value)
+                if resolved==PLAN.resolve(): return _project_plan(value)
             except Exception: pass
             return value
         historical.load=projected_load
         result=historical.main()
     finally: historical.load=original
-    if result==0: print("d4c_open_evt_014_current_projection=PASS current_d4c=9/9_selected current_d4d=5/5_selected current_d4wide=26/26 historical_current_oracle=byte_preserved")
+    if result==0: print("d4c_open_evt_014_current_projection=PASS current_d4c=9/9_selected current_d4d=5/5_selected current_d4wide=26/26 historical_oracle=state_and_ledger_preserved")
     return result
 
 if __name__=="__main__": raise SystemExit(main())

@@ -53,13 +53,18 @@
     },
     {
       "id": "INV-LEARNING-001",
-      "statement": "Every material review surface that can introduce a finding must feed the same reconciliation gate, and event-driven reconciliation must analyze the exact current pull-request head rather than an incidental default-branch revision.",
-      "enforcement": ["all_review_surface_collection", "review_event_trigger_coverage", "exact_pr_head_resolution", "surface_omission_falsification"]
+      "statement": "Every material review surface and supported reconciliation trigger must feed the same strict reconciliation gate for the exact current pull-request head, and stale or superseded reconciliation runs must never be able to overwrite a newer failing result with success.",
+      "enforcement": ["all_review_surface_collection", "review_event_trigger_coverage", "exact_pr_head_resolution", "surface_omission_falsification", "per_pr_concurrency", "strict_material_format_reconciliation"]
     },
     {
       "id": "INV-LEARNING-002",
-      "statement": "A learning-ledger guardrail is creditable only when its declared identifier resolves through a registered mechanism to a check that is actually executable and reachable from the CI entrypoint; raw textual occurrence, nested dead code, conditional dead code, or calls after unconditional termination are never evidence of executable enforcement.",
-      "enforcement": ["executable_check_resolution", "exact_check_identity", "reachable_entrypoint_call", "incidental_substring_falsification", "unreachable_call_falsification"]
+      "statement": "A learning-ledger guardrail is creditable only when its declared identifier resolves to a check that is actually reachable from the real CI entrypoint and performs a direct registered negative test; raw textual occurrence, generic assertions, statically dead branches, calls after unconditional termination, or no-op falsifier bodies are never evidence.",
+      "enforcement": ["executable_check_resolution", "exact_check_identity", "reachable_entrypoint_call", "registered_negative_helper", "incidental_substring_falsification", "termination_falsification", "dead_branch_falsification", "noop_assertion_falsification"]
+    },
+    {
+      "id": "INV-LEARNING-003",
+      "statement": "Assurance code controlled by a pull request must never execute, source, or share mutable runner state with a job that receives write authority; write permissions are isolated to trusted publication jobs, and mutation commands are semantically parsed and restricted to exact allowlisted methods and endpoints.",
+      "enforcement": ["job_level_permission_isolation", "no_pr_checkout_in_privileged_job", "no_shared_runner_state", "semantic_gh_api_parsing", "exact_status_endpoint_allowlist", "implicit_write_detection"]
     }
   ]
 }

@@ -48,15 +48,23 @@ def _current_errors(state: dict) -> list[str]:
         errors.append("D4-D current state must be exactly 5/5")
     if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 26:
         errors.append("D4-wide current state must be 26/26")
-    if (state.get("gate_state"), state.get("d4_transport_authority"), state.get("canonical_product_implementation_authority"), state.get("wave4_implementation_authority"), state.get("production_authority"), state.get("c3_numeric_topology_authority")) != ("scoped", "selected_not_granted", "not_granted", "not_granted", "none", "not_selected"):
-        for field, (expected, message) in {'gate_state': ('scoped', 'D4 gate escalation'), 'd4_transport_authority': ('selected_not_granted', 'transport authority escalation'), 'canonical_product_implementation_authority': ('not_granted', 'Product authority escalation'), 'wave4_implementation_authority': ('not_granted', 'Wave4 authority escalation'), 'production_authority': ('none', 'production authority escalation'), 'c3_numeric_topology_authority': ('not_selected', 'C3 authority escalation')}.items():
-            if state.get(field) != expected:
-                errors.append(message)
+    expected_authority = {
+        'gate_state': ('separately_accepted', 'D4 gate acceptance drift'),
+        'd4_transport_authority': ('selected_not_granted', 'transport authority escalation'),
+        'canonical_product_implementation_authority': ('not_granted', 'Product authority escalation'),
+        'wave4_implementation_authority': ('not_granted', 'Wave4 authority escalation'),
+        'production_authority': ('none', 'production authority escalation'),
+        'c3_numeric_topology_authority': ('not_selected', 'C3 authority escalation'),
+    }
+    for field, (expected, message) in expected_authority.items():
+        if state.get(field) != expected:
+            errors.append(message)
     return errors
 
 
 def _historical_state(state: dict) -> dict:
     projected = copy.deepcopy(state)
+    projected["gate_state"] = "scoped"
     by = {t["track_id"]: t for t in projected["tracks"]}
     d4b = by["D4-B"]
     d4b["candidate"] = None
@@ -110,7 +118,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_CATALOG_SOURCE_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_catalog_tooling_source=PASS historical_oracle=preserved current_d4b=5_of_5_selected current_d4c=9_of_9_selected current_d4d=5_of_5 d4wide=26_of_26")
+    print("d4b_catalog_tooling_source=PASS historical_oracle=preserved current_d4=separately_accepted current_d4b=5_of_5_selected current_d4c=9_of_9_selected current_d4d=5_of_5 d4wide=26_of_26")
     return 0
 
 if __name__ == "__main__":

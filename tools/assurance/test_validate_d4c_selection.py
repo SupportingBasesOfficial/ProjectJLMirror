@@ -8,6 +8,9 @@ def baseline(): return [validator.load(ROOT,p) for p in (validator.SELECTION,val
 def must_fail(mutator,fragment):
  values=[copy.deepcopy(x) for x in baseline()]; mutator(*values); errors=validator.validate_records(*values)
  if not any(fragment in x for x in errors): raise AssertionError(f'expected failure containing {fragment!r}, got {errors!r}')
+def falsify_selection_record_product_authority():
+ def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
+ must_fail(grant_product,'Product authority escalation')
 def main():
  values=baseline(); errors=validator.validate_records(*values)
  if errors: raise AssertionError(f'canonical D4-C selection failed validation: {errors!r}')
@@ -25,8 +28,7 @@ def main():
  must_fail(grant_transport,'transport authority escalation')
  def accept_d4(selection,ledger,state,evaluation): state['gate_state']='separately_accepted'
  must_fail(accept_d4,'state D4 gate authority escalation')
- def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
- must_fail(grant_product,'Product authority escalation')
+ falsify_selection_record_product_authority()
  print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked separate_acceptance=preserved')
  return 0
 if __name__=='__main__': raise SystemExit(main())

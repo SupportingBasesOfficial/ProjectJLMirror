@@ -17,12 +17,7 @@
         "P5 trace context promotion separation flags",
         "current D4-D plan separation boundary"
       ],
-      "guardrails": [
-        {
-          "path": "tools/assurance/test_validate_d4d_trace_context_source.py",
-          "probe": "falsify_promotion_separation_flags"
-        }
-      ],
+      "guardrails": [{"path": "tools/assurance/test_validate_d4d_trace_context_source.py", "probe": "falsify_promotion_separation_flags"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 3
     },
@@ -46,12 +41,7 @@
         "source_manifest path and SHA-256 binding",
         "cumulative credits and authority/separation binding"
       ],
-      "guardrails": [
-        {
-          "path": "tools/assurance/test_validate_d4d_trace_context_source.py",
-          "probe": "falsify_promotion_identity_envelopes"
-        }
-      ],
+      "guardrails": [{"path": "tools/assurance/test_validate_d4d_trace_context_source.py", "probe": "falsify_promotion_identity_envelopes"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 4
     },
@@ -73,14 +63,32 @@
         "exact declared authority and separation key set",
         "nested source_review source_workflow and source_manifest already closed by exact object equality"
       ],
-      "guardrails": [
-        {
-          "path": "tools/assurance/test_validate_d4d_trace_context_source.py",
-          "probe": "falsify_promotion_unknown_fields"
-        }
-      ],
+      "guardrails": [{"path": "tools/assurance/test_validate_d4d_trace_context_source.py", "probe": "falsify_promotion_unknown_fields"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 5
+    },
+    {
+      "id": "LEARN-PR119-004",
+      "pr": 119,
+      "source": "external_review",
+      "review_comment_id": 3967649356,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": ["INV-PROVENANCE-001", "INV-AUTH-001"],
+      "root_cause": "Assurance migration updated the canonical D4-D ledger and many current-state wrappers but did not inventory every executable adapter that combines a historical source oracle with the live state projection, leaving three D4-B current adapters pinned to the obsolete 1-of-5 and 22-of-26 projection while exact-head CI exercised other migrated paths.",
+      "horizontal_audit": [
+        "D4-B catalog tooling current adapter versus immutable historical oracle",
+        "D4-B contract version current adapter versus immutable historical oracle",
+        "D4-B wire schema current adapter versus immutable historical oracle",
+        "D4-C wrapper families that already validate current 5-of-5 and 26-of-26 before projecting historical source state",
+        "standalone historical oracle modules preserved as source-time truth rather than rewritten as current state",
+        "current D4-D five-credit set and empty remaining evidence",
+        "current D4-wide 26-of-26 count",
+        "candidate selection and global authority boundaries across current projection adapters",
+        "adapter inventory coverage so newly added historical-current D4-B wrappers cannot evade deterministic execution"
+      ],
+      "guardrails": [{"path": "tools/assurance/test_validate_d4d_trace_context_source.py", "probe": "falsify_current_projection_adapters"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 6
     }
   ]
 }

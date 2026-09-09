@@ -62,18 +62,18 @@ class PromotionFalsificationTests(unittest.TestCase):
         def change(p):
             p["credited_evidence"].remove(CREDIT_025)
             p["remaining_evidence"] = [CREDIT_025]
-        self._reject(self._mutate_json(PLAN, change), "credited evidence")
+        self._reject(self._mutate_json(PLAN, change), "D4-C current ledger evidence drift")
 
     def test_extra_credit_or_duplicate_is_rejected(self):
         self._reject(
             self._mutate_json(PLAN, lambda p: p["credited_evidence"].append(CREDIT_025)),
-            "credited evidence",
+            "D4-C current ledger evidence drift",
         )
 
     def test_required_credit_order_is_exact(self):
         self._reject(
             self._mutate_json(PLAN, lambda p: p.__setitem__("credited_evidence", list(reversed(p["credited_evidence"])))),
-            "credited evidence",
+            "D4-C current ledger evidence drift",
         )
 
     def test_plan_hidden_field_is_rejected(self):
@@ -82,11 +82,22 @@ class PromotionFalsificationTests(unittest.TestCase):
             "exact key schema drift",
         )
 
-    def test_selection_leakage_is_rejected(self):
+    def test_selected_ledger_regression_is_rejected(self):
         self._reject(
-            self._mutate_json(PLAN, lambda p: p.__setitem__("selection_state", "selected")),
-            "plan scalar drift: selection_state",
+            self._mutate_json(PLAN, lambda p: p.__setitem__("selection_state", "not_selected")),
+            "D4-C current ledger selection drift",
         )
+
+    def test_selection_authority_drift_is_rejected(self):
+        self._reject(
+            self._mutate_json(PLAN, lambda p: p.__setitem__("selection_authority", "implicit")),
+            "D4-C current ledger selection drift",
+        )
+
+    def test_selected_candidate_profile_drift_is_rejected(self):
+        def change(p):
+            p["candidate"]["quarantine_and_redrive"] = "broker_native_dlq_with_canonical_platform_quarantine_index"
+        self._reject(self._mutate_json(PLAN, change), "D4-C current ledger selection drift")
 
     def test_historical_promotion_bytes_are_pinned(self):
         rel = next(iter(HISTORICAL_PROMOTIONS))

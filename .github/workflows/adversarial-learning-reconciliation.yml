@@ -78,7 +78,7 @@ jobs:
           PY
 
       - name: Reconcile material findings against learning ledger
-        run: python3 tools/assurance/validate_adversarial_learning.py --root . --review-comments runtime-evidence/pr-review-findings.json
+        run: python3 tools/assurance/validate_adversarial_learning_strict.py --root . --review-comments runtime-evidence/pr-review-findings.json
 
       - name: Publish reconciliation result on PR HEAD
         if: always() && github.event_name == 'issue_comment'

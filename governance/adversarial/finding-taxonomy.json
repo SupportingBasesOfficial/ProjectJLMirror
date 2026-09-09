@@ -32,6 +32,12 @@
       "invariant_ids": ["INV-PROVENANCE-001", "INV-AUTH-001"]
     },
     {
+      "id": "ADV-EPHEMERAL-EVIDENCE-LIVENESS",
+      "name": "Durable assurance depends on expiring external evidence",
+      "description": "A durable promotion or accepted evidence state remains permanently dependent on temporary external artifacts or retention-limited live resources after admission, so unchanged steady-state validation can fail when those resources naturally expire.",
+      "invariant_ids": ["INV-PROVENANCE-002"]
+    },
+    {
       "id": "ADV-TENANT-CORRELATION-LEAK",
       "name": "Cross-tenant correlation channel",
       "description": "A raw or derived observable value remains globally joinable across tenant boundaries despite application-level tenant checks, including when a proof authenticates only a subset of the exported correlation representation.",

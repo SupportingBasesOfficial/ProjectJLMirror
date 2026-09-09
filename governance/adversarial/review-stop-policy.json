@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "merge_blocking_severities": ["P0", "P1"],
+  "p2_default_disposition": "backlog_unless_gate_correctness_or_security_invariant",
+  "external_red_team_rounds_after_internal_clean": 1,
+  "rules": [
+    "A P0 or P1 finding that violates security, tenant isolation, authority boundaries, data integrity, or the gate contract blocks merge until remediated and internally falsified.",
+    "A P2 finding blocks the current PR only when it demonstrates gate incorrectness, security-invariant failure, silent authority expansion, or failure of the learning enforcement itself; otherwise it is recorded as follow-up backlog.",
+    "Findings from the same root-cause class are remediated as one horizontal batch rather than one reviewer-comment loop at a time.",
+    "After repository-owned invariants, adversarial matrix, exact-head CI, and horizontal review are clean, routine external red-team review is limited to one final round.",
+    "A final external round with no new P0/P1 material finding closes the review loop; non-blocking residual P2/P3 findings are tracked without recursively restarting the PR.",
+    "Bootstrap limitations that cannot be self-activated by the PR may use only an exact machine-readable one-time exception with compensating controls and an explicit expiry condition."
+  ]
+}

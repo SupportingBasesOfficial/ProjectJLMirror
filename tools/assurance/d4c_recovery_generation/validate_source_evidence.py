@@ -54,7 +54,7 @@ def _current_errors(state: dict) -> list[str]:
     return errors
 
 
-def _project(state: dict) -> dict:
+def _project_state(state: dict) -> dict:
     projected = copy.deepcopy(state)
     d4c = next(t for t in projected["tracks"] if t.get("track_id") == "D4-C")
     d4c.update(candidate=None, candidate_status="not_selected", state="candidate_selection_open")
@@ -62,6 +62,14 @@ def _project(state: dict) -> dict:
     d4d["evidence_completed"] = []
     d4d["evidence_remaining"] = list(d4d["required_evidence"])
     d4d.update(candidate=None, candidate_status="not_selected", state="candidate_selection_open")
+    return projected
+
+
+def _project_plan(plan: dict) -> dict:
+    projected = copy.deepcopy(plan)
+    projected["candidate"] = None
+    projected["candidate_status"] = "not_selected"
+    projected["selection_state"] = "not_selected"
     return projected
 
 
@@ -76,7 +84,11 @@ def main() -> int:
     try:
         def projected_load(path):
             value = _original_load(path)
-            return _project(value) if path == historical.STATE else value
+            if path == historical.STATE:
+                return _project_state(value)
+            if path == historical.PLAN:
+                return _project_plan(value)
+            return value
         historical.load = projected_load
         result = historical.main()
     finally:

@@ -15,6 +15,17 @@ SOURCE_025 = historical.SOURCE_025
 CREDIT_025 = historical.CREDIT_025
 CREDITS = historical.CREDITS
 HISTORICAL_PROMOTIONS = historical.HISTORICAL_PROMOTIONS
+D4C_SELECTED_PROFILE = {
+    "ack_visibility_lease_and_checkpoint": "durable_inbox_claim_then_broker_ack_profile",
+    "quarantine_and_redrive": "hybrid_platform_quarantine_store_plus_broker_dlq",
+    "bounded_message_payload_batch_and_compression": "layered_transport_and_application_bounds_profile",
+    "scoped_content_equivalence_authority": "hybrid_equivalence_authority_profile",
+    "outbox_claim_dispatch_and_ack_ambiguity": "compare_and_swap_lease_claim_profile",
+    "producer_source_generation": "authority_issued_epoch_generation",
+    "privileged_replay_and_event_history": "hybrid_history_archive_plus_replay_controller_profile",
+    "historical_reader_and_upcaster": "in_process_versioned_reader_upcaster_registry",
+    "recovery_generation_reconciliation_and_activation": "hybrid_generation_manifest_plus_multi_store_reconciler_profile",
+}
 D4D_CREDITS = [
     "workload_identity_to_broker_credential_adapter_least_privilege",
     "tenant_and_contract_scoped_producer_consumer_authorization",
@@ -38,8 +49,8 @@ def _current_errors(state: dict) -> list[str]:
         return ["D4 track inventory drift"]
     d4c = tracks["D4-C"]
     d4d = tracks["D4-D"]
-    if d4c.get("candidate") is not None or d4c.get("candidate_status") != "not_selected" or d4c.get("state") != "candidate_selection_open":
-        errors.append("D4-C selection/state leakage")
+    if d4c.get("candidate") != D4C_SELECTED_PROFILE or d4c.get("candidate_status") != "selected_c2_delivery_recovery_profile" or d4c.get("state") != "selected_candidate":
+        errors.append("D4-C current selected profile drift")
     if d4c.get("evidence_completed") != historical.CREDITS or d4c.get("evidence_remaining") != []:
         errors.append("D4-C state credit drift: must remain exactly 9/9")
     if d4d.get("candidate") != D4D_SELECTED_PROFILE or d4d.get("candidate_status") != "selected_c2_security_profile" or d4d.get("state") != "selected_candidate":
@@ -56,6 +67,10 @@ def _current_errors(state: dict) -> list[str]:
 
 def _historical_projection(state: dict) -> dict:
     projected = copy.deepcopy(state)
+    d4c = next(t for t in projected["tracks"] if t.get("track_id") == "D4-C")
+    d4c["candidate"] = None
+    d4c["candidate_status"] = "not_selected"
+    d4c["state"] = "candidate_selection_open"
     d4d = next(t for t in projected["tracks"] if t.get("track_id") == "D4-D")
     d4d["candidate"] = None
     d4d["candidate_status"] = "not_selected"
@@ -86,6 +101,6 @@ def main() -> int:
     if errors:
         for error in errors: print(f"D4C_PROMOTION_ERROR: {error}")
         return 1
-    print("d4c_open_evt_025_promotion=PASS historical_oracle=byte_preserved d4c=9_of_9 d4d=5_of_5_selected d4wide=26_of_26 authorities=unchanged acceptance=separate")
+    print("d4c_open_evt_025_promotion=PASS historical_oracle=byte_preserved d4c=9_of_9_selected d4d=5_of_5_selected d4wide=26_of_26 authorities=unchanged acceptance=separate")
     return 0
 if __name__ == "__main__": raise SystemExit(main())

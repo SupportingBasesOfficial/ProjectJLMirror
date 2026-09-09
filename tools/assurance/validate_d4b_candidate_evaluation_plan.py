@@ -25,6 +25,7 @@ D4D_CREDITS = [
     "tenant_and_contract_scoped_producer_consumer_authorization",
     "message_protection_key_authority_and_historical_verifier_continuity",
     "secret_credential_payload_exclusion_and_erasure_boundary",
+    "trace_context_observability_only_validation_and_redaction",
 ]
 _legacy_load = historical.load
 
@@ -40,10 +41,10 @@ def _current_errors(state: dict) -> list[str]:
         errors.append("current D4-C evidence must remain exactly 9/9")
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
         errors.append("D4-D current selection/state drift")
-    if d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != [x for x in d4d.get("required_evidence", []) if x not in D4D_CREDITS]:
-        errors.append("current D4-D evidence must be exactly 4/5")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 25:
-        errors.append("D4-wide evidence must be exactly 25/26 in current promoted state")
+    if d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != []:
+        errors.append("current D4-D evidence must be exactly 5/5")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 26:
+        errors.append("D4-wide evidence must be exactly 26/26 in current promoted state")
     return errors
 
 
@@ -81,7 +82,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f"D4B_EVAL_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_candidate_evaluation=PASS historical_oracle=preserved current_sibling_d4c=9_of_9 current_sibling_d4d=4_of_5 d4wide=25_of_26")
+    print("d4b_candidate_evaluation=PASS historical_oracle=preserved current_sibling_d4c=9_of_9 current_sibling_d4d=5_of_5 d4wide=26_of_26")
     return 0
 
 

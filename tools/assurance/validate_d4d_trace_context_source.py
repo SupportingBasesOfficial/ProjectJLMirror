@@ -52,6 +52,7 @@ EXPECTED_PROBES = {
     'observable_export_discards_tracestate',
     'allowlisted_trace_attributes_preserved',
     'missing_trace_context_preserves_business_and_delivery_semantics',
+    'tenant_scoped_export_requires_secret_authority',
     'malformed_traceparent_1_rejected',
     'malformed_traceparent_2_rejected',
     'malformed_traceparent_3_rejected',
@@ -118,6 +119,7 @@ EXPECTED_PROBES = {
     'scope_and_issue_rejects_untrusted_attribute_context',
     'scope_and_issue_rejects_duplicate_attribute_keys',
     'scope_and_issue_rejects_noncanonical_attribute_order',
+    'cross_tenant_rescope_is_not_publicly_derivable',
     'trace_change_does_not_change_business_or_delivery_semantics',
 }
 
@@ -179,4 +181,4 @@ if __name__ == '__main__':
     [print('D4D_TRACE_CONTEXT_SOURCE_ERROR:', error, file=sys.stderr) for error in errors]
     if errors:
         raise SystemExit(1)
-    print('d4d_trace_context_source=PASS source_identity=exact source_snapshot=4_of_5 source_auto_credit=false current_d4d=4_of_5 d4wide=25/26 selection=not_selected authorities=unchanged probes=79')
+    print('d4d_trace_context_source=PASS source_identity=exact source_snapshot=4_of_5 source_auto_credit=false current_d4d=4_of_5 d4wide=25/26 selection=not_selected authorities=unchanged probes=81')

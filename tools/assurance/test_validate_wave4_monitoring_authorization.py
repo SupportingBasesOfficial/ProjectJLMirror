@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import copy
+import importlib.util
+import json
+import tempfile
+from pathlib import Path
+
+MODULE_PATH = Path(__file__).with_name("validate_wave4_monitoring_authorization.py")
+spec = importlib.util.spec_from_file_location("wave4_auth", MODULE_PATH)
+assert spec and spec.loader
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+
+def expect_failure(mutator, expected: str) -> None:
+    data = mod.load()
+    candidate = copy.deepcopy(data)
+    mutator(candidate)
+    try:
+        mod.validate_manifest(candidate)
+    except AssertionError as exc:
+        if expected not in str(exc):
+            raise AssertionError(f"expected {expected!r}, got {str(exc)!r}") from exc
+        return
+    raise AssertionError(f"mutation unexpectedly passed: {expected}")
+
+
+def main() -> int:
+    mod.validate()
+
+    expect_failure(lambda d: d.__setitem__("authorized_product_vertical", "all_products"), "product vertical drift")
+    expect_failure(lambda d: d.__setitem__("production_authority", "granted"), "production authority escalation")
+    expect_failure(lambda d: d.__setitem__("c3_production_state", "closed"), "C3 production state escalation")
+    expect_failure(lambda d: d.__setitem__("frontend_authority", "granted"), "frontend authority escalation")
+    expect_failure(lambda d: d.__setitem__("merge_authorization", "granted"), "merge authority escalation")
+
+    def add_alerting_slice(d):
+        d["authorized_slices"].append({"slice_id": "impl.alerting@1", "scope": "all"})
+    expect_failure(add_alerting_slice, "authorized slices drift")
+
+    def widen_provider(d):
+        d["authorized_slices"][1]["scope"] = "all_providers"
+    expect_failure(widen_provider, "authorized slices drift")
+
+    def drop_frontend_guard(d):
+        d["explicitly_not_authorized"].remove("frontend_route_generation_from_backend_shape")
+    expect_failure(drop_frontend_guard, "explicit exclusion drift")
+
+    def drop_realtime_guard(d):
+        d["explicitly_not_authorized"].remove("browser_realtime_activation")
+    expect_failure(drop_realtime_guard, "explicit exclusion drift")
+
+    def change_predecessor(d):
+        d["required_predecessor_authority"]["d4_eventing_async"] = "scoped"
+    expect_failure(change_predecessor, "predecessor authority drift")
+
+    print("wave4_monitoring_authorization_falsification=PASS cases=10")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

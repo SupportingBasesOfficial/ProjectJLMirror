@@ -23,7 +23,7 @@
         }
       ],
       "systemic_guardrail_updated": true,
-      "guardrail_generation": 1
+      "guardrail_generation": 8
     },
     {
       "id": "LEARN-PR121-002",
@@ -47,7 +47,7 @@
         }
       ],
       "systemic_guardrail_updated": true,
-      "guardrail_generation": 1
+      "guardrail_generation": 9
     }
   ]
 }

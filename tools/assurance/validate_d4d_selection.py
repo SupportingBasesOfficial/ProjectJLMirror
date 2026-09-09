@@ -194,8 +194,9 @@ def validate_records(selection: dict, ledger: dict, state: dict, evaluation: dic
         req(obj.get('wave4_implementation_authority') == 'not_granted', f'{label} Wave4 authority escalation')
         req(obj.get('production_authority') == 'none', f'{label} production authority escalation')
         req(obj.get('c3_numeric_topology_authority') == 'not_selected', f'{label} C3 authority escalation')
-    req(selection.get('d4_gate_state') == 'scoped' and state.get('gate_state') == 'scoped', 'D4 must remain scoped')
-    req(selection.get('separate_d4_acceptance_required') is True, 'D4 acceptance must remain separate')
+    req(selection.get('d4_gate_state') == 'scoped', 'historical D4-D selection gate drift')
+    req(state.get('gate_state') == 'separately_accepted', 'current D4 gate acceptance drift')
+    req(selection.get('separate_d4_acceptance_required') is True, 'historical D4-D selection must preserve separate acceptance requirement')
     return errors
 
 
@@ -216,7 +217,7 @@ def main(argv: list[str]) -> int:
         for error in errors:
             print(f'D4D_SELECTION_ERROR: {error}', file=sys.stderr)
         return 1
-    print('d4d_selection=PASS profile=selected_c2_security_profile evidence=5_of_5 d4wide=26_of_26 d4c=current_selected d4=scoped acceptance=separate authorities=unchanged')
+    print('d4d_selection=PASS profile=selected_c2_security_profile evidence=5_of_5 d4wide=26_of_26 d4c=current_selected d4=separately_accepted historical_selection_gate=scoped authorities=unchanged')
     return 0
 
 if __name__ == '__main__':

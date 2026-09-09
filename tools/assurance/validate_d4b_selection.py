@@ -54,8 +54,8 @@ def _current_sibling_errors(state: dict) -> list[str]:
     if state.get("gate_state") != "separately_accepted":
         errors.append("D4 current gate must remain separately accepted")
     for tid in ("D4-A", "D4-B", "D4-C", "D4-D"):
-        if tracks.get(tid, {}).get("state") != "accepted_candidate":
-            errors.append(f"{tid} current accepted state drift")
+        if tracks.get(tid, {}).get("state") != "selected_candidate":
+            errors.append(f"{tid} current terminal selected state drift")
     d4c = tracks.get("D4-C", {})
     d4d = tracks.get("D4-D", {})
     if d4c.get("candidate") != D4C_SELECTED_PROFILE or d4c.get("candidate_status") != "selected_c2_delivery_recovery_profile":
@@ -72,10 +72,6 @@ def _current_sibling_errors(state: dict) -> list[str]:
 def _historical_projection(state: dict) -> dict:
     projected = copy.deepcopy(state)
     projected["gate_state"] = "scoped"
-    d4a = next(t for t in projected["tracks"] if t.get("track_id") == "D4-A")
-    d4a["state"] = "selected_candidate"
-    d4b = next(t for t in projected["tracks"] if t.get("track_id") == "D4-B")
-    d4b["state"] = "selected_candidate"
     d4c = next(t for t in projected["tracks"] if t.get("track_id") == "D4-C")
     d4c["candidate"] = None
     d4c["candidate_status"] = "not_selected"
@@ -108,6 +104,6 @@ def main(argv: list[str]) -> int:
     if errors:
         for error in errors: print(f"D4B_SELECTION_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_selection=PASS historical_oracle=preserved current_d4=separately_accepted current_tracks=accepted d4c=9_of_9 d4d=5_of_5 d4wide=26_of_26")
+    print("d4b_selection=PASS historical_oracle=preserved current_d4=separately_accepted current_tracks=terminal_selected d4c=9_of_9 d4d=5_of_5 d4wide=26_of_26")
     return 0
 if __name__ == "__main__": raise SystemExit(main(sys.argv))

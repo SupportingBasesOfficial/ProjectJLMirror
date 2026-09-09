@@ -116,7 +116,7 @@ jobs:
       - name: Require every material PR finding to be internalized
         if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment' || github.event_name == 'pull_request_review' || github.event_name == 'issue_comment'
         shell: bash
-        run: python3 tools/assurance/validate_adversarial_learning.py --root . --review-comments runtime-evidence/pr-review-findings.json
+        run: python3 tools/assurance/validate_adversarial_learning_strict.py --root . --review-comments runtime-evidence/pr-review-findings.json
 
       - name: Falsify validator policy
         shell: bash

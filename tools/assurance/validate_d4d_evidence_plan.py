@@ -4,6 +4,7 @@ import hashlib,json,sys
 from pathlib import Path
 PLAN=Path('implementation/d4-eventing-async/d4-d-evidence-plan.json')
 STATE=Path('implementation/d4-eventing-async/state-manifest.json')
+SELECTION=Path('implementation/d4-eventing-async/d4-d-selection-record.json')
 P1=Path('implementation/d4-eventing-async/ledger-promotions/d4-d-open-evt-016-promotion-v1.json')
 P2=Path('implementation/d4-eventing-async/ledger-promotions/d4-d-open-evt-016-tenant-contract-promotion-v1.json')
 P3=Path('implementation/d4-eventing-async/ledger-promotions/d4-d-open-evt-017-message-protection-promotion-v1.json')
@@ -16,6 +17,7 @@ S4=Path('implementation/d4-eventing-async/source-evidence/d4-d-secret-credential
 S5=Path('implementation/d4-eventing-async/source-evidence/d4-d-trace-context-observability/source-evidence-manifest.json')
 E1='workload_identity_to_broker_credential_adapter_least_privilege'; E2='tenant_and_contract_scoped_producer_consumer_authorization'; E3='message_protection_key_authority_and_historical_verifier_continuity'; E4='secret_credential_payload_exclusion_and_erasure_boundary'; E5='trace_context_observability_only_validation_and_redaction'
 REQUIRED=[E1,E2,E3,E4,E5]
+CURRENT_PROFILE={'workload_identity_to_broker_credential_adapter':'derived_short_lived_broker_native_credential_adapter','tenant_and_contract_scoped_producer_consumer_authorization':'broker_acl_projection_adapter','message_protection_key_authority_and_historical_verifier_continuity':'kms_backed_envelope_or_transport_protection_profile','secret_credential_payload_exclusion_and_erasure_boundary':'reference_only_secret_authority_profile','trace_context_observability_only_validation_and_redaction':'w3c_trace_context_bounded_profile'}
 SHA1='005b3943f7638e136150758d10d4ec6af1c6852d4e658127c7258ff546dce0ae'; SHA2='e22455580bba6eb71877a8308d5068d0d2a8caf895f9c1ce2c3aeadb724a7025'; SHA3='8d33a50b8748382586aa5b13e2e7427a57b66d8319066acf09f0e09a4ca31c35'; SHA4='5639d4a5b70d89fd10c874689cd87346ca4742e9474763fd89bf809959664da1'; SHA5='2b80305593ebc06d10e4ae7862411518cdd250f7f35d21b52c8a2322950f1e49'
 def load(root,p): return json.loads((root/p).read_text())
 def digest(p): return hashlib.sha256(p.read_bytes()).hexdigest()
@@ -72,8 +74,8 @@ def validate(root):
  e=[]; plan=load(root,PLAN); state=load(root,STATE); promotions=[load(root,p) for p,_ in PROMOTIONS]; s1=load(root,S1); s2=load(root,S2); s3=load(root,S3); s4=load(root,S4); s5=load(root,S5)
  if plan.get('credited_evidence')!=REQUIRED or plan.get('remaining_evidence')!=[] or plan.get('ledger_credit_state')!='five_of_five': e.append('D4-D ledger must be exactly five-of-five')
  if plan.get('latest_promotion')!=str(P5): e.append('latest promotion pointer drift')
- if plan.get('candidate') is not None or plan.get('candidate_status')!='not_selected' or plan.get('selection_state')!='not_selected' or plan.get('selection_authority')!='not_granted': e.append('D4-D candidate selection leakage')
- if plan.get('current_run_auto_credit') is not False or plan.get('separate_selection_required') is not True or plan.get('separate_d4_acceptance_required') is not True: e.append('D4-D separation boundary drift')
+ if plan.get('candidate')!=CURRENT_PROFILE or plan.get('candidate_status')!='selected_c2_security_profile' or plan.get('selection_state')!='selected' or plan.get('selection_authority')!='selection_record' or plan.get('selection_record')!=str(SELECTION): e.append('D4-D current selected profile drift')
+ if plan.get('current_run_auto_credit') is not False or plan.get('separate_selection_required') is not False or plan.get('separate_d4_acceptance_required') is not True: e.append('D4-D current selection/acceptance separation drift')
  snapshots=[(s1,E1,'0_of_5_unselected',None,SHA1,'first',S1),(s2,E2,'1_of_5_unselected','22_of_26',SHA2,'second',S2),(s3,E3,'2_of_5_unselected','23_of_26',SHA3,'third',S3),(s4,E4,'3_of_5_unselected','24_of_26',SHA4,'fourth',S4),(s5,E5,'4_of_5_unselected','25_of_26',SHA5,'fifth',S5)]
  for s,eid,d4d,d4wide,sha,label,path in snapshots:
   if s.get('evidence_id')!=eid or s.get('ledger_credit')!=[] or s.get('current_run_auto_credit') is not False or s.get('source_time_state',{}).get('d4d')!=d4d or (d4wide is not None and s.get('source_time_state',{}).get('d4wide')!=d4wide) or digest(root/path)!=sha: e.append(label+' source snapshot drift')
@@ -82,7 +84,7 @@ def validate(root):
  for index,((_,expected),promotion) in enumerate(zip(PROMOTIONS,promotions),start=1): e.extend(promotion_identity_errors(f'P{index}',promotion,expected))
  tracks={t['track_id']:t for t in state.get('tracks',[])}; d=tracks.get('D4-D',{})
  if d.get('required_evidence')!=REQUIRED or d.get('evidence_completed')!=REQUIRED or d.get('evidence_remaining')!=[]: e.append('D4-D current state must be exactly five-of-five')
- if d.get('candidate') is not None or d.get('candidate_status')!='not_selected' or d.get('state')!='candidate_selection_open': e.append('D4-D current candidate boundary drift')
+ if d.get('candidate')!=CURRENT_PROFILE or d.get('candidate_status')!='selected_c2_security_profile' or d.get('state')!='selected_candidate': e.append('D4-D current selected profile state drift')
  if sum(len(t.get('evidence_completed',[])) for t in tracks.values())!=26: e.append('D4-wide current state must be exactly 26/26')
  authority=(state.get('gate_state'),state.get('d4_transport_authority'),state.get('canonical_product_implementation_authority'),state.get('wave4_implementation_authority'),state.get('production_authority'),state.get('c3_numeric_topology_authority'))
  if authority!=('scoped','selected_not_granted','not_granted','not_granted','none','not_selected'): e.append('authority boundary changed')
@@ -91,4 +93,4 @@ if __name__=='__main__':
  root=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else Path.cwd(); errors=validate(root)
  [print('D4D_LEDGER_ERROR:',x,file=sys.stderr) for x in errors]
  if errors: raise SystemExit(1)
- print('d4d_evidence_plan=PASS ledger=5_of_5 d4wide=26/26 selection=not_selected source_snapshots=0_of_5,1_of_5,2_of_5,3_of_5,4_of_5 promotion_chain=P1-P5-closed-complete-identity-bound authorities=unchanged separation=preserved')
+ print('d4d_evidence_plan=PASS ledger=5_of_5 d4wide=26/26 selection=selected_c2_security_profile source_snapshots=0_of_5,1_of_5,2_of_5,3_of_5,4_of_5 promotion_chain=P1-P5-closed-complete-identity-bound authorities=unchanged acceptance=separate')

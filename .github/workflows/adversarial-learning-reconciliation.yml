@@ -1,0 +1,131 @@
+name: JLMIRROR Adversarial Learning Reconciliation
+
+on:
+  issue_comment:
+    types: [created, edited, deleted]
+
+concurrency:
+  group: adversarial-learning-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  resolve:
+    if: github.event.issue.pull_request != null
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      pull-requests: read
+    outputs:
+      pr_head_sha: ${{ steps.head.outputs.sha }}
+      pr_number: ${{ steps.head.outputs.pr_number }}
+    steps:
+      - name: Resolve exact PR HEAD from trusted GitHub API
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PR_NUMBER"
+          sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+          test -n "$sha"
+          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+          printf 'pr_number=%s\n' "$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+  publish-pending:
+    needs: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      statuses: write
+    steps:
+      - name: Publish pending reconciliation status on resolved PR HEAD
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ needs.resolve.outputs.pr_head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PR_HEAD_SHA"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}" \
+            -f state=pending \
+            -f context='JLMIRROR / adversarial-learning-reconciliation' \
+            -f description='Reconciling material PR review findings'
+
+  analyze:
+    needs: [resolve, publish-pending]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - name: Checkout exact PR HEAD without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.resolve.outputs.pr_head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact PR HEAD
+        env:
+          EXPECTED_SHA: ${{ needs.resolve.outputs.pr_head_sha }}
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Collect all PR review surfaces read-only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" > runtime-evidence/top-level-pr-comments.json
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/comments?per_page=100" > runtime-evidence/inline-review-comments.json
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews?per_page=100" > runtime-evidence/formal-reviews.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          payload = [
+              json.loads(Path('runtime-evidence/top-level-pr-comments.json').read_text()),
+              json.loads(Path('runtime-evidence/inline-review-comments.json').read_text()),
+              json.loads(Path('runtime-evidence/formal-reviews.json').read_text()),
+          ]
+          Path('runtime-evidence/pr-review-findings.json').write_text(json.dumps(payload))
+          PY
+
+      - name: Reconcile material findings against learning ledger
+        run: python3 tools/assurance/validate_adversarial_learning_strict.py --root . --review-comments runtime-evidence/pr-review-findings.json
+
+  publish-final:
+    if: always() && needs.resolve.result == 'success'
+    needs: [resolve, publish-pending, analyze]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      statuses: write
+    steps:
+      - name: Publish final reconciliation status on resolved PR HEAD
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ needs.resolve.outputs.pr_head_sha }}
+          ANALYZE_RESULT: ${{ needs.analyze.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PR_HEAD_SHA"
+          case "$ANALYZE_RESULT" in
+            success) state=success; description='All material review findings reconciled' ;;
+            cancelled) state=error; description='Adversarial learning reconciliation cancelled' ;;
+            *) state=failure; description='Material review findings require reconciliation' ;;
+          esac
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}" \
+            -f state="$state" \
+            -f context='JLMIRROR / adversarial-learning-reconciliation' \
+            -f description="$description"

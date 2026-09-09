@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "classes": [
+    {
+      "id": "ADV-BOUNDARY-RUNTIME-TYPE",
+      "name": "Unvalidated runtime boundary shape",
+      "description": "A value reachable from parsing, deserialization, transport, plugins, providers, persistence or another process reaches an operation that assumes a runtime type or shape before validation.",
+      "invariant_ids": ["INV-BOUNDARY-001", "INV-OBS-001"]
+    },
+    {
+      "id": "ADV-BOUNDARY-RESOURCE-BOUND",
+      "name": "Unbounded work from untrusted boundary metadata",
+      "description": "Untrusted or optional metadata can trigger allocation, encoding, hashing, HMAC, parsing, iteration or other work proportional to attacker-controlled length before a cheap canonical bound is enforced.",
+      "invariant_ids": ["INV-BOUNDARY-003", "INV-OBS-001"]
+    },
+    {
+      "id": "ADV-SEMANTIC-ALLOWLIST-BYPASS",
+      "name": "Semantic policy bypass through alternate representation or entry point",
+      "description": "Structurally valid data bypasses deny-by-default semantic classification, allowlisting, redaction, trust or egress policy through an alternate construction or call path.",
+      "invariant_ids": ["INV-BOUNDARY-002", "INV-OBS-002"]
+    },
+    {
+      "id": "ADV-OPTIONAL-CONTEXT-LIVENESS",
+      "name": "Optional context owns business liveness",
+      "description": "Malformed or absent observability/diagnostic context can abort, suppress, duplicate, reorder or otherwise change a valid business effect or delivery behavior.",
+      "invariant_ids": ["INV-OBS-001"]
+    },
+    {
+      "id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "name": "Evidence or authority provenance drift",
+      "description": "An evidence artifact, manifest, authority snapshot or immutable identity envelope can drift while validation still reports success.",
+      "invariant_ids": ["INV-PROVENANCE-001", "INV-AUTH-001"]
+    },
+    {
+      "id": "ADV-TENANT-CORRELATION-LEAK",
+      "name": "Cross-tenant correlation channel",
+      "description": "A raw or derived observable value remains globally joinable across tenant boundaries despite application-level tenant checks, including when a proof authenticates only a subset of the exported correlation representation.",
+      "invariant_ids": ["INV-TENANT-001", "INV-OBS-002", "INV-PROOF-002"]
+    },
+    {
+      "id": "ADV-REPRESENTATION-AS-AUTHORITY",
+      "name": "Representation mistaken for authority",
+      "description": "Formatting, equality, prefixes, origin, type or successful parsing is treated as proof of tenant scope, trust, authorization, provenance or identity.",
+      "invariant_ids": ["INV-AUTH-001", "INV-TENANT-001"]
+    },
+    {
+      "id": "ADV-PROOF-ISSUANCE-BYPASS",
+      "name": "Proof issuance detached from protected operation",
+      "description": "A proof or attestation can be issued for caller-chosen state without proving that the protected transformation or validation actually occurred.",
+      "invariant_ids": ["INV-PROOF-001", "INV-AUTH-001"]
+    },
+    {
+      "id": "ADV-PROOF-BINDING-MISMATCH",
+      "name": "Proof bound to the wrong semantic or representation identity",
+      "description": "A proof authenticates the wrong object or omits an explicitly governed representation companion, so legitimate representation changes break continuity or already-governed representation is transformed again.",
+      "invariant_ids": ["INV-PROOF-002"]
+    },
+    {
+      "id": "ADV-CANONICALIZATION-GAP",
+      "name": "Incomplete canonical validation",
+      "description": "Input is structurally accepted while unsupported versions, duplicate fields, invalid grammar, non-encodable text or other non-canonical representations remain possible and may escape the intended fail-closed observability path or reach encoding work without canonical shape validation.",
+      "invariant_ids": ["INV-BOUNDARY-002", "INV-PROVENANCE-001", "INV-OBS-001", "INV-BOUNDARY-003"]
+    },
+    {
+      "id": "ADV-TRUST-CONTEXT-GAP",
+      "name": "Missing boundary trust context",
+      "description": "A propagated field is validated without the boundary-owned source, trust, classification, hop-scope or egress decision needed by policy.",
+      "invariant_ids": ["INV-BOUNDARY-002", "INV-AUTH-001"]
+    },
+    {
+      "id": "ADV-LEARNING-SURFACE-OMISSION",
+      "name": "Learning reconciliation surface, trigger or freshness gap",
+      "description": "A channel or trigger capable of carrying a material review finding is omitted, misbound, non-strict, unusable, or allowed to publish stale success after newer evidence, so the learning gate can report coverage that does not correspond to the latest complete review state.",
+      "invariant_ids": ["INV-LEARNING-001"]
+    },
+    {
+      "id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "name": "Declared learning guardrail is not proven executable and effective",
+      "description": "The learning ledger can claim a permanent guardrail using textual presence, generic assertions, statically dead branches, no-op bodies, or entrypoint/call paths that are syntactically present but do not execute a registered negative test.",
+      "invariant_ids": ["INV-LEARNING-002"]
+    },
+    {
+      "id": "ADV-ASSURANCE-PRIVILEGE-BOUNDARY",
+      "name": "Assurance write authority exposed to pull-request-controlled execution",
+      "description": "A workflow, runner state, command parser or endpoint allowlist permits pull-request-controlled execution to influence a context with write authority, or permits an implicit or spoofed mutation to escape the exact trusted publication boundary.",
+      "invariant_ids": ["INV-LEARNING-003"]
+    }
+  ]
+}

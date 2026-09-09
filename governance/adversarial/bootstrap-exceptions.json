@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "exceptions": [
+    {
+      "id": "BOOTSTRAP-PR118-ISSUE-COMMENT-001",
+      "pr": 118,
+      "review_comment_id": 3963734258,
+      "bootstrap_only": true,
+      "reason": "PR118 is the change that introduces issue_comment reconciliation into deterministic-assurance, while GitHub evaluates issue_comment workflow availability from the default branch; the trigger therefore cannot protect the same PR before that workflow has landed on main.",
+      "compensating_controls": [
+        "Immediately before merge eligibility, fetch and reconcile top-level PR comments, inline review comments, and formal reviews against the exact current PR head.",
+        "Do not merge PR118 while any material P0/P1 finding is unresolved or while the exact-head CI matrix is not fully successful."
+      ],
+      "expires_when": "deterministic-assurance issue_comment trigger is present on default branch after PR118 merge"
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "invariants": [
+    {
+      "id": "INV-BOUNDARY-001",
+      "statement": "Runtime types and shapes are never trusted from annotations, constructors, SDK models or caller intent; every externally reachable boundary validates before type-dependent operations.",
+      "enforcement": ["runtime_validation", "negative_falsification"]
+    },
+    {
+      "id": "INV-BOUNDARY-002",
+      "statement": "Every public or indirectly callable entry point that can emit governed data must enforce the same structural and semantic policy as the canonical safe path.",
+      "enforcement": ["alternate_entrypoint_audit", "semantic_allowlist_validation"]
+    },
+    {
+      "id": "INV-BOUNDARY-003",
+      "statement": "Untrusted or optional metadata must be cheaply size-bounded before allocation, encoding, hashing, HMAC, parsing, iteration, or any other work proportional to attacker-controlled input length.",
+      "enforcement": ["cheap_preflight_bound", "resource_exhaustion_probe", "sibling_expensive_operation_audit"]
+    },
+    {
+      "id": "INV-OBS-001",
+      "statement": "Observability and other optional diagnostic context cannot own business liveness, authorization, identity, idempotency, ordering or delivery semantics.",
+      "enforcement": ["business_isolation_probe", "fail_closed_context_only"]
+    },
+    {
+      "id": "INV-OBS-002",
+      "statement": "Observable and exported context is deny-by-default, bounded, classified and redacted, and cannot expose protected or globally correlatable cross-tenant state.",
+      "enforcement": ["allowlist", "redaction", "export_surface_audit"]
+    },
+    {
+      "id": "INV-AUTH-001",
+      "statement": "Representation, formatting, equality, prefixes, object type, origin or successful parsing never constitute authority or provenance by themselves.",
+      "enforcement": ["explicit_authority", "negative_authority_probe"]
+    },
+    {
+      "id": "INV-PROOF-001",
+      "statement": "A proof or attestation cannot be issued independently of the protected transformation or validation it claims occurred.",
+      "enforcement": ["operation_coupled_issuance", "bypass_probe"]
+    },
+    {
+      "id": "INV-PROOF-002",
+      "statement": "Proofs bind semantic identity rather than incidental serialization unless a representation component is explicitly governed; when an authenticated representation companion is used to make a transformation idempotent, that companion must itself be authenticated and must distinguish already-governed representation from newly introduced raw representation.",
+      "enforcement": ["semantic_binding_probe", "legitimate_representation_change_probe", "authenticated_representation_companion", "idempotent_authenticated_transform_probe"]
+    },
+    {
+      "id": "INV-TENANT-001",
+      "statement": "Tenant isolation holds at the raw observable/exported representation, not only inside application helper predicates or query filters.",
+      "enforcement": ["cross_tenant_raw_representation_probe", "export_surface_audit"]
+    },
+    {
+      "id": "INV-PROVENANCE-001",
+      "statement": "Evidence identity, source lineage, authority snapshots and canonical representations are validated as complete exact envelopes; partial equality is insufficient.",
+      "enforcement": ["exact_envelope_validation", "mutation_falsification"]
+    },
+    {
+      "id": "INV-LEARNING-001",
+      "statement": "Every material review surface and supported reconciliation trigger must feed the same strict reconciliation gate for the exact current pull-request head, and stale or superseded reconciliation runs must never be able to overwrite a newer failing result with success.",
+      "enforcement": ["all_review_surface_collection", "review_event_trigger_coverage", "exact_pr_head_resolution", "surface_omission_falsification", "per_pr_concurrency", "strict_material_format_reconciliation"]
+    },
+    {
+      "id": "INV-LEARNING-002",
+      "statement": "A learning-ledger guardrail is creditable only when its declared identifier resolves to a check that is actually reachable from the real CI entrypoint and performs a direct registered negative test; raw textual occurrence, generic assertions, statically dead branches, calls after unconditional termination, or no-op falsifier bodies are never evidence.",
+      "enforcement": ["executable_check_resolution", "exact_check_identity", "reachable_entrypoint_call", "registered_negative_helper", "incidental_substring_falsification", "termination_falsification", "dead_branch_falsification", "noop_assertion_falsification"]
+    },
+    {
+      "id": "INV-LEARNING-003",
+      "statement": "Assurance code controlled by a pull request must never execute, source, or share mutable runner state with a job that receives write authority; write permissions are isolated to trusted publication jobs, and mutation commands are semantically parsed and restricted to exact allowlisted methods and endpoints.",
+      "enforcement": ["job_level_permission_isolation", "no_pr_checkout_in_privileged_job", "no_shared_runner_state", "semantic_gh_api_parsing", "exact_status_endpoint_allowlist", "implicit_write_detection"]
+    }
+  ]
+}

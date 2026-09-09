@@ -21,7 +21,7 @@ EXPECTED_ID = 'trace_context_observability_only_validation_and_redaction'
 EXPECTED_MODE = 'source_evidence_only'
 EXPECTED_SOURCE_BASE = '98fb99cc04fcf42e795596f68939149463645799'
 REQUIRED = [E1, E2, E3, E4, EXPECTED_ID]
-CURRENT_CREDITED = [E1, E2, E3, E4]
+CURRENT_CREDITED = list(REQUIRED)
 EXPECTED_SOURCE_TIME_STATE = {
     'd4a': '7_of_7_selected', 'd4b': '5_of_5_selected', 'd4c': '9_of_9_unselected',
     'd4d': '4_of_5_unselected', 'd4wide': '25_of_26',
@@ -40,145 +40,37 @@ EXPECTED_MUST = {
     'missing_trace_context_does_not_change_business_effect_or_delivery_semantics',
 }
 EXPECTED_PROBES = {
-    'trace_context_is_observability_only',
-    'trace_context_not_tenant_authority',
-    'trace_context_not_idempotency_authority',
-    'trace_context_not_ordering_authority',
-    'trace_context_not_message_identity_authority',
-    'trace_context_not_delivery_authority',
-    'valid_traceparent_accepted',
-    'accepted_traceparent_is_tenant_scoped',
-    'bounded_canonical_tracestate_validated_on_ingress',
-    'observable_export_discards_tracestate',
-    'allowlisted_trace_attributes_preserved',
-    'missing_trace_context_preserves_business_and_delivery_semantics',
-    'tenant_scoped_export_requires_secret_authority',
-    'malformed_traceparent_1_rejected',
-    'malformed_traceparent_2_rejected',
-    'malformed_traceparent_3_rejected',
-    'malformed_traceparent_4_rejected',
-    'malformed_traceparent_5_rejected',
-    'unsupported_traceparent_version_rejected',
-    'orphan_tracestate_rejected',
-    'non_string_tracestate_rejected',
-    'oversized_tracestate_rejected',
-    'malformed_tracestate_member_rejected',
-    'duplicate_tracestate_key_rejected',
-    'excess_tracestate_members_rejected',
-    'excess_trace_attributes_rejected',
-    'unknown_trace_attribute_rejected',
-    'sensitive_value_under_allowlisted_key_rejected',
-    'non_string_trace_attributes_rejected',
-    'attribute_context_required',
-    'component_source_impersonation_rejected',
-    'untrusted_attribute_source_rejected',
-    'protected_classification_attribute_rejected',
-    'wrong_hop_scope_attribute_rejected',
-    'egress_attribute_rejected',
-    'malformed_traceparent_does_not_abort_business_processing',
-    'malformed_tracestate_does_not_abort_business_processing',
-    'malformed_attribute_does_not_abort_business_processing',
-    'malformed_propagation_context_source_does_not_abort_business_processing',
-    'malformed_propagation_context_trust_level_does_not_abort_business_processing',
-    'malformed_propagation_context_classification_does_not_abort_business_processing',
-    'malformed_propagation_context_hop_scope_does_not_abort_business_processing',
-    'malformed_propagation_context_leaving_jlmirror_does_not_abort_business_processing',
-    'oversized_propagation_context_source_does_not_abort_business_processing',
-    'oversized_propagation_context_trust_level_does_not_abort_business_processing',
-    'oversized_propagation_context_classification_does_not_abort_business_processing',
-    'oversized_propagation_context_hop_scope_does_not_abort_business_processing',
-    'same_tenant_trace_correlation_allowed',
-    'cross_tenant_trace_correlation_blocked',
-    'same_input_trace_id_is_stable_within_tenant',
-    'same_input_trace_id_is_different_across_tenants',
-    'copied_tracestate_is_not_exported_across_tenants',
-    'authenticated_scope_preserves_same_tenant_multi_hop_trace',
-    'authenticated_exact_context_preserves_parent_id_without_rescoping',
-    'authenticated_scope_is_rescoped_at_different_tenant_boundary',
-    'raw_scoped_bytes_are_not_scope_authority',
-    'forged_scope_proof_is_rejected_without_business_abort',
-    'known_short_marker_collision_cannot_bypass_tenant_rescoping',
-    'scope_proof_issuance_scopes_before_attesting',
-    'authenticated_trace_identity_allows_child_span_parent_change',
-    'authenticated_child_parent_id_is_tenant_scoped_before_export',
-    'same_child_parent_id_is_different_across_tenants',
-    'authenticated_child_export_is_idempotent_on_forwarding',
-    'malformed_scope_proof_tenant_id_does_not_abort_business_processing',
-    'malformed_scope_proof_trace_id_does_not_abort_business_processing',
-    'malformed_scope_proof_parent_id_does_not_abort_business_processing',
-    'malformed_scope_proof_mac_hex_does_not_abort_business_processing',
-    'oversized_scope_proof_tenant_id_does_not_abort_business_processing',
-    'non_utf8_scope_proof_tenant_id_does_not_abort_business_processing',
-    'scope_and_issue_runtime_boundary_fail_closed',
-    'scope_and_issue_rejects_oversized_tenant_id_before_hashing',
-    'scope_and_issue_rejects_non_utf8_tenant_id_before_encoding',
-    'scope_and_issue_requires_context_for_attributes',
-    'scope_and_issue_rejects_unallowlisted_attributes',
-    'scope_and_issue_rejects_sensitive_allowlisted_value',
-    'scope_and_issue_rejects_component_source_impersonation',
-    'scope_and_issue_rejects_untrusted_attribute_context',
-    'scope_and_issue_rejects_duplicate_attribute_keys',
-    'scope_and_issue_rejects_noncanonical_attribute_order',
-    'cross_tenant_rescope_is_not_publicly_derivable',
-    'trace_change_does_not_change_business_or_delivery_semantics',
+    'trace_context_is_observability_only','trace_context_not_tenant_authority','trace_context_not_idempotency_authority','trace_context_not_ordering_authority','trace_context_not_message_identity_authority','trace_context_not_delivery_authority','valid_traceparent_accepted','accepted_traceparent_is_tenant_scoped','bounded_canonical_tracestate_validated_on_ingress','observable_export_discards_tracestate','allowlisted_trace_attributes_preserved','missing_trace_context_preserves_business_and_delivery_semantics','tenant_scoped_export_requires_secret_authority','malformed_traceparent_1_rejected','malformed_traceparent_2_rejected','malformed_traceparent_3_rejected','malformed_traceparent_4_rejected','malformed_traceparent_5_rejected','unsupported_traceparent_version_rejected','orphan_tracestate_rejected','non_string_tracestate_rejected','oversized_tracestate_rejected','malformed_tracestate_member_rejected','duplicate_tracestate_key_rejected','excess_tracestate_members_rejected','excess_trace_attributes_rejected','unknown_trace_attribute_rejected','sensitive_value_under_allowlisted_key_rejected','non_string_trace_attributes_rejected','attribute_context_required','component_source_impersonation_rejected','untrusted_attribute_source_rejected','protected_classification_attribute_rejected','wrong_hop_scope_attribute_rejected','egress_attribute_rejected','malformed_traceparent_does_not_abort_business_processing','malformed_tracestate_does_not_abort_business_processing','malformed_attribute_does_not_abort_business_processing','malformed_propagation_context_source_does_not_abort_business_processing','malformed_propagation_context_trust_level_does_not_abort_business_processing','malformed_propagation_context_classification_does_not_abort_business_processing','malformed_propagation_context_hop_scope_does_not_abort_business_processing','malformed_propagation_context_leaving_jlmirror_does_not_abort_business_processing','oversized_propagation_context_source_does_not_abort_business_processing','oversized_propagation_context_trust_level_does_not_abort_business_processing','oversized_propagation_context_classification_does_not_abort_business_processing','oversized_propagation_context_hop_scope_does_not_abort_business_processing','same_tenant_trace_correlation_allowed','cross_tenant_trace_correlation_blocked','same_input_trace_id_is_stable_within_tenant','same_input_trace_id_is_different_across_tenants','copied_tracestate_is_not_exported_across_tenants','authenticated_scope_preserves_same_tenant_multi_hop_trace','authenticated_exact_context_preserves_parent_id_without_rescoping','authenticated_scope_is_rescoped_at_different_tenant_boundary','raw_scoped_bytes_are_not_scope_authority','forged_scope_proof_is_rejected_without_business_abort','known_short_marker_collision_cannot_bypass_tenant_rescoping','scope_proof_issuance_scopes_before_attesting','authenticated_trace_identity_allows_child_span_parent_change','authenticated_child_parent_id_is_tenant_scoped_before_export','same_child_parent_id_is_different_across_tenants','authenticated_child_export_is_idempotent_on_forwarding','malformed_scope_proof_tenant_id_does_not_abort_business_processing','malformed_scope_proof_trace_id_does_not_abort_business_processing','malformed_scope_proof_parent_id_does_not_abort_business_processing','malformed_scope_proof_mac_hex_does_not_abort_business_processing','oversized_scope_proof_tenant_id_does_not_abort_business_processing','non_utf8_scope_proof_tenant_id_does_not_abort_business_processing','scope_and_issue_runtime_boundary_fail_closed','scope_and_issue_rejects_oversized_tenant_id_before_hashing','scope_and_issue_rejects_non_utf8_tenant_id_before_encoding','scope_and_issue_requires_context_for_attributes','scope_and_issue_rejects_unallowlisted_attributes','scope_and_issue_rejects_sensitive_allowlisted_value','scope_and_issue_rejects_component_source_impersonation','scope_and_issue_rejects_untrusted_attribute_context','scope_and_issue_rejects_duplicate_attribute_keys','scope_and_issue_rejects_noncanonical_attribute_order','cross_tenant_rescope_is_not_publicly_derivable','trace_change_does_not_change_business_or_delivery_semantics',
 }
-
 
 def validate(root: Path) -> list[str]:
     errors: list[str] = []
     manifest = json.loads((root / MANIFEST).read_text())
     state = json.loads((root / STATE).read_text())
     plan = json.loads((root / PLAN).read_text())
-    identity = {
-        'schema_version': manifest.get('schema_version'), 'gate_id': manifest.get('gate_id'),
-        'track_id': manifest.get('track_id'), 'source_decision': manifest.get('source_decision'),
-        'evidence_id': manifest.get('evidence_id'), 'mode': manifest.get('mode'),
-        'source_base': manifest.get('source_base'),
-    }
-    expected_identity = {
-        'schema_version': EXPECTED_SCHEMA_VERSION, 'gate_id': EXPECTED_GATE,
-        'track_id': EXPECTED_TRACK, 'source_decision': EXPECTED_DECISION,
-        'evidence_id': EXPECTED_ID, 'mode': EXPECTED_MODE,
-        'source_base': EXPECTED_SOURCE_BASE,
-    }
-    if identity != expected_identity:
-        errors.append('source evidence immutable identity envelope drift')
-    if set(manifest.get('must_prove', [])) != EXPECTED_MUST:
-        errors.append('must_prove drift')
-    if manifest.get('trace_context_authority') != 'observability_only_validated_bounded_and_redacted':
-        errors.append('trace context authority drift')
-    if manifest.get('current_run_auto_credit') is not False or manifest.get('ledger_credit') != []:
-        errors.append('source evidence must remain non-promoting at source time')
-    if manifest.get('candidate') is not None or manifest.get('candidate_status') != 'not_selected' or manifest.get('selection_authority') != 'not_granted':
-        errors.append('source evidence must not select D4-D')
-    if manifest.get('source_time_state', {}) != EXPECTED_SOURCE_TIME_STATE:
-        errors.append('source-time snapshot or authority state drift')
+    identity = {'schema_version':manifest.get('schema_version'),'gate_id':manifest.get('gate_id'),'track_id':manifest.get('track_id'),'source_decision':manifest.get('source_decision'),'evidence_id':manifest.get('evidence_id'),'mode':manifest.get('mode'),'source_base':manifest.get('source_base')}
+    expected_identity = {'schema_version':EXPECTED_SCHEMA_VERSION,'gate_id':EXPECTED_GATE,'track_id':EXPECTED_TRACK,'source_decision':EXPECTED_DECISION,'evidence_id':EXPECTED_ID,'mode':EXPECTED_MODE,'source_base':EXPECTED_SOURCE_BASE}
+    if identity != expected_identity: errors.append('source evidence immutable identity envelope drift')
+    if set(manifest.get('must_prove', [])) != EXPECTED_MUST: errors.append('must_prove drift')
+    if manifest.get('trace_context_authority') != 'observability_only_validated_bounded_and_redacted': errors.append('trace context authority drift')
+    if manifest.get('current_run_auto_credit') is not False or manifest.get('ledger_credit') != []: errors.append('source evidence must remain non-promoting at source time')
+    if manifest.get('candidate') is not None or manifest.get('candidate_status') != 'not_selected' or manifest.get('selection_authority') != 'not_granted': errors.append('source evidence must not select D4-D')
+    if manifest.get('source_time_state', {}) != EXPECTED_SOURCE_TIME_STATE: errors.append('source-time snapshot or authority state drift')
     axis = plan['axes'][EXPECTED_ID]
-    if axis.get('decision') != EXPECTED_DECISION or set(axis.get('must_prove', [])) != EXPECTED_MUST:
-        errors.append('candidate-plan/source must_prove mismatch')
-    tracks = {track['track_id']: track for track in state['tracks']}
-    d4d = tracks['D4-D']
-    if d4d.get('candidate') is not None or d4d.get('candidate_status') != 'not_selected' or d4d.get('state') != 'candidate_selection_open':
-        errors.append('D4-D state must remain open/unselected')
-    if d4d.get('required_evidence') != REQUIRED or d4d.get('evidence_completed') != CURRENT_CREDITED or d4d.get('evidence_remaining') != [EXPECTED_ID]:
-        errors.append('current D4-D state must remain exactly four separately promoted credits plus E5 remaining')
-    if sum(len(track.get('evidence_completed', [])) for track in state['tracks']) != 25:
-        errors.append('D4-wide current state must remain 25/26')
-    if state.get('gate_state') != 'scoped' or state.get('d4_transport_authority') != 'selected_not_granted' or state.get('canonical_product_implementation_authority') != 'not_granted' or state.get('wave4_implementation_authority') != 'not_granted' or state.get('production_authority') != 'none' or state.get('c3_numeric_topology_authority') != 'not_selected':
-        errors.append('authority leakage')
+    if axis.get('decision') != EXPECTED_DECISION or set(axis.get('must_prove', [])) != EXPECTED_MUST: errors.append('candidate-plan/source must_prove mismatch')
+    tracks = {track['track_id']: track for track in state['tracks']}; d4d = tracks['D4-D']
+    if d4d.get('candidate') is not None or d4d.get('candidate_status') != 'not_selected' or d4d.get('state') != 'candidate_selection_open': errors.append('D4-D state must remain open/unselected')
+    if d4d.get('required_evidence') != REQUIRED or d4d.get('evidence_completed') != CURRENT_CREDITED or d4d.get('evidence_remaining') != []: errors.append('current D4-D state must reflect five separately promoted credits while source snapshot remains four-of-five')
+    if sum(len(track.get('evidence_completed', [])) for track in state['tracks']) != 26: errors.append('D4-wide current state must remain 26/26')
+    if state.get('gate_state') != 'scoped' or state.get('d4_transport_authority') != 'selected_not_granted' or state.get('canonical_product_implementation_authority') != 'not_granted' or state.get('wave4_implementation_authority') != 'not_granted' or state.get('production_authority') != 'none' or state.get('c3_numeric_topology_authority') != 'not_selected': errors.append('authority leakage')
     proofs = run_probes()
-    if set(proofs) != EXPECTED_PROBES:
-        errors.append('executed probe set drift')
+    if set(proofs) != EXPECTED_PROBES: errors.append('executed probe set drift')
     bad = [name for name, ok in proofs.items() if not ok]
-    if bad:
-        errors.append('behavior probes failed: ' + ','.join(bad))
+    if bad: errors.append('behavior probes failed: ' + ','.join(bad))
     return errors
 
-
 if __name__ == '__main__':
-    root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
-    errors = validate(root)
+    root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd(); errors = validate(root)
     [print('D4D_TRACE_CONTEXT_SOURCE_ERROR:', error, file=sys.stderr) for error in errors]
-    if errors:
-        raise SystemExit(1)
-    print('d4d_trace_context_source=PASS source_identity=exact source_snapshot=4_of_5 source_auto_credit=false current_d4d=4_of_5 d4wide=25/26 selection=not_selected authorities=unchanged probes=81')
+    if errors: raise SystemExit(1)
+    print('d4d_trace_context_source=PASS source_identity=exact source_snapshot=4_of_5 source_auto_credit=false current_d4d=5_of_5 d4wide=26/26 selection=not_selected authorities=unchanged probes=81')

@@ -52,6 +52,11 @@
       "enforcement": ["exact_envelope_validation", "mutation_falsification"]
     },
     {
+      "id": "INV-PROVENANCE-002",
+      "statement": "Ephemeral external evidence may be required to admit or change a durable promotion, but steady-state validation of an unchanged durable promotion must remain reproducible after temporary artifacts expire by relying on immutable records, pinned identities and local content digests.",
+      "enforcement": ["admission_time_live_evidence", "promotion_delta_gate", "steady_state_durable_validation", "artifact_retention_liveness_falsification"]
+    },
+    {
       "id": "INV-LEARNING-001",
       "statement": "Every material review surface and supported reconciliation trigger must feed the same strict reconciliation gate for the exact current pull-request head, and stale or superseded reconciliation runs must never be able to overwrite a newer failing result with success.",
       "enforcement": ["all_review_surface_collection", "review_event_trigger_coverage", "exact_pr_head_resolution", "surface_omission_falsification", "per_pr_concurrency", "strict_material_format_reconciliation"]

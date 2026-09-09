@@ -14,6 +14,7 @@ D4D_CREDITS = [
     "tenant_and_contract_scoped_producer_consumer_authorization",
     "message_protection_key_authority_and_historical_verifier_continuity",
     "secret_credential_payload_exclusion_and_erasure_boundary",
+    "trace_context_observability_only_validation_and_redaction",
 ]
 _original_load = historical.load
 
@@ -30,9 +31,9 @@ def _current_errors(state: dict) -> list[str]:
     if d4d.get("candidate") is not None or d4d.get("candidate_status") != "not_selected" or d4d.get("state") != "candidate_selection_open":
         errors.append("D4-D state/credit leakage: selection changed")
     if d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != [x for x in required if x not in D4D_CREDITS]:
-        errors.append("D4-D state/credit leakage: current state must be exactly 4/5")
-    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 25:
-        errors.append("D4-wide evidence count must be exactly 25/26")
+        errors.append("D4-D state/credit leakage: current state must be exactly 5/5")
+    if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 26:
+        errors.append("D4-wide evidence count must be exactly 26/26")
     return errors
 
 
@@ -66,7 +67,7 @@ def main() -> int:
     finally:
         historical.load = original
     if result == 0:
-        print("d4c_open_evt_011_current_projection=PASS d4c=9_of_9 d4d=4_of_5 d4wide=25_of_26")
+        print("d4c_open_evt_011_current_projection=PASS d4c=9_of_9 d4d=5_of_5 d4wide=26_of_26")
     return result
 
 if __name__ == "__main__":

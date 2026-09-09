@@ -14,6 +14,7 @@ D4D_CURRENT = [
     "tenant_and_contract_scoped_producer_consumer_authorization",
     "message_protection_key_authority_and_historical_verifier_continuity",
     "secret_credential_payload_exclusion_and_erasure_boundary",
+    "trace_context_observability_only_validation_and_redaction",
 ]
 D4D_HISTORICAL_CURRENT = ["workload_identity_to_broker_credential_adapter_least_privilege"]
 _original_load = historical.load
@@ -22,10 +23,10 @@ _original_load = historical.load
 def _current_errors(state: dict) -> list[str]:
     tracks={t.get("track_id"):t for t in state.get("tracks",[]) if isinstance(t,dict)}
     if set(tracks)!={"D4-A","D4-B","D4-C","D4-D"}: return ["global D4 track identity drift"]
-    d4d=tracks["D4-D"]; required=d4d.get("required_evidence",[]); errors=[]
+    d4d=tracks["D4-D"]; errors=[]
     if d4d.get("candidate") is not None or d4d.get("candidate_status")!="not_selected" or d4d.get("state")!="candidate_selection_open": errors.append("D4-D current state/selection drift")
-    if d4d.get("evidence_completed")!=D4D_CURRENT or d4d.get("evidence_remaining")!=[x for x in required if x not in D4D_CURRENT]: errors.append("D4-D current state must be exactly 4/5")
-    if sum(len(t.get("evidence_completed",[])) for t in tracks.values())!=25: errors.append("D4-wide evidence count must be exactly 25/26")
+    if d4d.get("evidence_completed")!=D4D_CURRENT or d4d.get("evidence_remaining")!=[]: errors.append("D4-D current state must be exactly 5/5")
+    if sum(len(t.get("evidence_completed",[])) for t in tracks.values())!=26: errors.append("D4-wide evidence count must be exactly 26/26")
     return errors
 
 
@@ -56,7 +57,7 @@ def main(argv: list[str]) -> int:
     if errors:
         for error in errors: print(f"D4C_OPEN_EVT_010_SOURCE_ERROR: {error}",file=sys.stderr)
         return 1
-    print("d4c_open_evt_010_source=PASS historical_current_oracle=byte_preserved current_d4d=4_of_5 current_d4wide=25_of_26")
+    print("d4c_open_evt_010_source=PASS historical_current_oracle=byte_preserved current_d4d=5_of_5 current_d4wide=26_of_26")
     return 0
 
 if __name__=="__main__": raise SystemExit(main(sys.argv))

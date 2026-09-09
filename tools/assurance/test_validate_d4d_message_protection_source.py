@@ -23,13 +23,13 @@ def main():
             t=d['tracks'][3]; fourth=v.FOURTH; t['evidence_completed'].remove(fourth); t['evidence_remaining'].insert(0,fourth)
         mutate_json(r,v.STATE,fn)
     mutate_and_expect_failure(regress_fourth)
-    def grant_fifth(r):
+    def regress_fifth(r):
         def fn(d):
-            t=d['tracks'][3]; fifth=v.FIFTH; t['evidence_remaining'].remove(fifth); t['evidence_completed'].append(fifth)
+            t=d['tracks'][3]; fifth=v.FIFTH; t['evidence_completed'].remove(fifth); t['evidence_remaining'].append(fifth)
         mutate_json(r,v.STATE,fn)
-    mutate_and_expect_failure(grant_fifth)
+    mutate_and_expect_failure(regress_fifth)
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d['source_time_state'].__setitem__('d4d','3_of_5_unselected')))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:(d.__setitem__('candidate',{'kind':'kms_profile'}),d.__setitem__('candidate_status','selected'))))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.STATE,lambda d:d.__setitem__('production_authority','granted')))
-    print('d4d_message_protection_source_falsification=PASS source_snapshot=2_of_5_23_of_26_preserved current_fourth_credit=required fifth_credit_without_promotion=blocked authority_leakage=blocked')
+    print('d4d_message_protection_source_falsification=PASS source_snapshot=2_of_5_23_of_26_preserved current_fourth_credit=required current_fifth_credit=required regression=blocked authority_leakage=blocked')
 if __name__=='__main__': main()

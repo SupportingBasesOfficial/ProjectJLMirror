@@ -22,6 +22,7 @@ D4D_CREDITS = [
     "tenant_and_contract_scoped_producer_consumer_authorization",
     "message_protection_key_authority_and_historical_verifier_continuity",
     "secret_credential_payload_exclusion_and_erasure_boundary",
+    "trace_context_observability_only_validation_and_redaction",
 ]
 EXPECTED_IDS = {
     "canonical_bounded_serialization_profile",
@@ -115,15 +116,15 @@ def main() -> int:
     assert d4c["evidence_completed"] == D4C_CREDITS and d4c["evidence_remaining"] == []
     assert d4d["candidate"] is None and d4d["candidate_status"] == "not_selected" and d4d["state"] == "candidate_selection_open"
     assert d4d["evidence_completed"] == D4D_CREDITS
-    assert d4d["evidence_remaining"] == [x for x in d4d["required_evidence"] if x not in D4D_CREDITS]
-    assert sum(len(track["evidence_completed"]) for track in state_tracks) == 25
+    assert d4d["evidence_remaining"] == []
+    assert sum(len(track["evidence_completed"]) for track in state_tracks) == 26
     assert state["gate_state"] == "scoped"
     assert state["d4_transport_authority"] == "selected_not_granted"
     assert state["canonical_product_implementation_authority"] == "not_granted"
     assert state["wave4_implementation_authority"] == "not_granted"
     assert state["production_authority"] == "none"
     assert state["c3_numeric_topology_authority"] == "not_selected"
-    print("d4b_schema_contract_source_manifest=PASS evidence_ids=5 source_history=not_selected current_selection=selected_c2_profile d4a=7_of_7 d4c=9_of_9 d4d=4_of_5 d4wide=25/26 authorities=not_granted")
+    print("d4b_schema_contract_source_manifest=PASS evidence_ids=5 source_history=not_selected current_selection=selected_c2_profile d4a=7_of_7 d4c=9_of_9 d4d=5_of_5 d4wide=26/26 authorities=not_granted")
     return 0
 
 if __name__ == "__main__":

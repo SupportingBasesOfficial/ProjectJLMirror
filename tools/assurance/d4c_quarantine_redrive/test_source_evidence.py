@@ -38,6 +38,7 @@ D4D_CREDITS = [
     "tenant_and_contract_scoped_producer_consumer_authorization",
     "message_protection_key_authority_and_historical_verifier_continuity",
     "secret_credential_payload_exclusion_and_erasure_boundary",
+    "trace_context_observability_only_validation_and_redaction",
 ]
 TENANT = "tenant:t1"
 
@@ -116,7 +117,7 @@ class SourceEvidenceTests(unittest.TestCase):
     def test_current_global_state_is_not_modified_by_source_run(self):
         state=json.loads(STATE.read_text(encoding="utf-8")); tracks={t["track_id"]:t for t in state["tracks"]}; d4c=tracks["D4-C"]; d4d=tracks["D4-D"]
         self.assertEqual(d4c["evidence_completed"],CREDITS); self.assertEqual(d4c["evidence_remaining"],[x for x in d4c["required_evidence"] if x not in CREDITS]); self.assertEqual(d4c["evidence_remaining"],[]); self.assertIsNone(d4c["candidate"]); self.assertEqual(d4c["candidate_status"],"not_selected")
-        self.assertIsNone(d4d["candidate"]); self.assertEqual(d4d["candidate_status"],"not_selected"); self.assertEqual(d4d["state"],"candidate_selection_open"); self.assertEqual(d4d["evidence_completed"],D4D_CREDITS); self.assertEqual(d4d["evidence_remaining"],[x for x in d4d["required_evidence"] if x not in D4D_CREDITS])
-        self.assertEqual(sum(len(t["evidence_completed"]) for t in state["tracks"]),25); self.assertEqual(state["gate_state"],"scoped"); self.assertEqual(state["canonical_product_implementation_authority"],"not_granted"); self.assertEqual(state["wave4_implementation_authority"],"not_granted"); self.assertEqual(state["production_authority"],"none"); self.assertEqual(state["c3_numeric_topology_authority"],"not_selected")
+        self.assertIsNone(d4d["candidate"]); self.assertEqual(d4d["candidate_status"],"not_selected"); self.assertEqual(d4d["state"],"candidate_selection_open"); self.assertEqual(d4d["evidence_completed"],D4D_CREDITS); self.assertEqual(d4d["evidence_remaining"],[])
+        self.assertEqual(sum(len(t["evidence_completed"]) for t in state["tracks"]),26); self.assertEqual(state["gate_state"],"scoped"); self.assertEqual(state["canonical_product_implementation_authority"],"not_granted"); self.assertEqual(state["wave4_implementation_authority"],"not_granted"); self.assertEqual(state["production_authority"],"none"); self.assertEqual(state["c3_numeric_topology_authority"],"not_selected")
 
 if __name__ == "__main__": unittest.main(verbosity=2)

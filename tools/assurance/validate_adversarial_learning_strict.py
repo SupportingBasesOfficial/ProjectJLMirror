@@ -14,6 +14,9 @@ HEAD_STATUS_WORKFLOW = Path('.github/workflows/adversarial-learning-reconciliati
 MATERIAL_RE = re.compile(r'(?:\bP[012]\s+Badge\b|\[P[012]\])')
 MAINTAINER_LOGINS = {'SupportingBasesOfficial'}
 NEGATIVE_HELPERS = {
+    Path('tools/assurance/test_validate_d4d_selection.py'): {'must_fail'},
+    Path('tools/assurance/d4b_wire_schema/test_source_evidence.py'): {'must_fail'},
+
     Path('tools/assurance/test_validate_adversarial_learning.py'): {'expect_failure', 'expect_repository_failure'},
     Path('tools/assurance/test_validate_d4d_trace_context_source.py'): {'mutate_and_expect_failure'},
 }

@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "selection_id": "d4-d-bounded-c2-security-profile-selection-v1",
+  "gate_id": "D4",
+  "track_id": "D4-D",
+  "selection_base_main_commit": "4b76249e351a1fe18e425541af6d10ae540b0af1",
+  "source_decisions": [
+    "OPEN-EVT-016",
+    "OPEN-EVT-017",
+    "OPEN-EVT-018"
+  ],
+  "evidence_completion": {
+    "required_evidence_count": 5,
+    "credited_evidence_count": 5,
+    "evidence_plan_path": "implementation/d4-eventing-async/d4-d-evidence-plan.json",
+    "candidate_evaluation_plan_path": "implementation/d4-eventing-async/d4-d-candidate-evaluation-plan.json",
+    "source_manifest_paths": [
+      "implementation/d4-eventing-async/source-evidence/d4-d-workload-identity/source-evidence-manifest.json",
+      "implementation/d4-eventing-async/source-evidence/d4-d-tenant-contract-authorization/source-evidence-manifest.json",
+      "implementation/d4-eventing-async/source-evidence/d4-d-message-protection-key-authority/source-evidence-manifest.json",
+      "implementation/d4-eventing-async/source-evidence/d4-d-secret-credential-exclusion/source-evidence-manifest.json",
+      "implementation/d4-eventing-async/source-evidence/d4-d-trace-context-observability/source-evidence-manifest.json"
+    ]
+  },
+  "selection_state": "selected",
+  "selection_scope": "bounded_c2_security_profile_selection_only",
+  "track_state": "selected_candidate",
+  "profile": {
+    "workload_identity_to_broker_credential_adapter": {
+      "selection_state": "selected",
+      "mechanism_class": "derived_short_lived_broker_native_credential_adapter",
+      "canonical_workload_identity_authority": "IR-D-002",
+      "credential_role": "replaceable_least_privilege_broker_credential_only",
+      "identity_provider_product": null,
+      "unselected_eligible_alternatives": [
+        "workload_identity_mtls_broker_adapter",
+        "workload_oidc_token_exchange_broker_adapter",
+        "equivalent_reviewed_derived_credential_adapter"
+      ]
+    },
+    "tenant_and_contract_scoped_producer_consumer_authorization": {
+      "selection_state": "selected",
+      "mechanism_class": "broker_acl_projection_adapter",
+      "authority_source": "current_platform_authority_projection",
+      "projection_scope": "tenant_service_domain_role_and_contract",
+      "broker_or_policy_product": null,
+      "unselected_eligible_alternatives": [
+        "broker_policy_engine_authorization_adapter",
+        "scoped_token_or_credential_claim_authorization_adapter",
+        "equivalent_reviewed_broker_authorization_adapter"
+      ]
+    },
+    "message_protection_key_authority_and_historical_verifier_continuity": {
+      "selection_state": "selected",
+      "mechanism_class": "kms_backed_envelope_or_transport_protection_profile",
+      "key_authority": "secret_or_kms_authority",
+      "historical_verifier_reference": "non_secret_profile_and_key_generation_reference",
+      "historical_verifier_loss_behavior": "fail_closed_for_duplicate_sensitive_effects",
+      "kms_product": null,
+      "crypto_algorithm": null,
+      "rotation_interval": null,
+      "unselected_eligible_alternatives": [
+        "secret_authority_backed_authenticated_equivalence_profile",
+        "broker_native_encryption_plus_external_historical_verifier_profile",
+        "equivalent_reviewed_key_and_verifier_profile"
+      ]
+    },
+    "secret_credential_payload_exclusion_and_erasure_boundary": {
+      "selection_state": "selected",
+      "mechanism_class": "reference_only_secret_authority_profile",
+      "ordinary_payload_secret_material": "forbidden",
+      "historical_correctness_reference": "non_secret_reference_only",
+      "secret_reference_bearer_authority": false,
+      "secret_store_product": null,
+      "unselected_eligible_alternatives": [
+        "opaque_key_generation_reference_profile",
+        "protected_external_secret_handle_profile",
+        "equivalent_reviewed_secret_exclusion_profile"
+      ]
+    },
+    "trace_context_observability_only_validation_and_redaction": {
+      "selection_state": "selected",
+      "mechanism_class": "w3c_trace_context_bounded_profile",
+      "traceparent_profile": "w3c_version_00_bounded_validated",
+      "tracestate_policy": "bounded_canonical_and_removed_from_tenant_scoped_export",
+      "attribute_policy": "deny_by_default_allowlisted_bounded_redacted",
+      "business_or_security_authority": "none",
+      "tracing_product": null,
+      "unselected_eligible_alternatives": [
+        "vendor_neutral_trace_correlation_profile",
+        "broker_header_trace_adapter_profile",
+        "equivalent_reviewed_trace_context_profile"
+      ]
+    }
+  },
+  "cross_axis_rules": [
+    "broker_vendor_identity_never_becomes_platform_workload_or_tenant_identity",
+    "broker_authorization_remains_projection_of_current_platform_authority",
+    "internal_network_or_broker_presence_never_establishes_trust",
+    "secret_key_or_credential_material_never_enters_ordinary_messages_inbox_logs_trace_or_quarantine",
+    "historical_verifier_continuity_survives_rotation_or_requires_equality_preserving_governed_migration",
+    "trace_context_remains_observability_only_and_never_business_or_security_authority",
+    "selected_mechanism_classes_remain_replaceable_adapters_not_platform_business_authority"
+  ],
+  "d4_gate_state": "scoped",
+  "d4_transport_authority": "selected_not_granted",
+  "canonical_product_implementation_authority": "not_granted",
+  "wave4_implementation_authority": "not_granted",
+  "production_authority": "none",
+  "c3_numeric_topology_authority": "not_selected",
+  "separate_d4_acceptance_required": true,
+  "historical_evidence_rule": "The five D4-D source manifests and the candidate-evaluation plan remain immutable historical evidence with candidate null/not_selected, selection_authority not_granted, current_run_auto_credit false and source-time ledger truth; this selection record is the current bounded C2 selection authority and must not rewrite earlier evidence truth.",
+  "non_authority_rule": "Selecting the D4-D bounded C2 security profile does not accept D4, grant transport implementation authority, select concrete identity/KMS/secret/tracing products, choose cryptographic algorithms or production numerics, grant canonical Product or Wave 4 implementation authority, grant production deployment authority, or select C3 numeric/topology authority."
+}

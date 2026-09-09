@@ -59,7 +59,7 @@ def validate(root: Path) -> list[str]:
     axis = plan['axes'][EXPECTED_ID]
     if axis.get('decision') != EXPECTED_DECISION or set(axis.get('must_prove', [])) != EXPECTED_MUST: errors.append('candidate-plan/source must_prove mismatch')
     tracks = {track['track_id']: track for track in state['tracks']}; d4d = tracks['D4-D']
-    if d4d.get('candidate') is not None or d4d.get('candidate_status') != 'not_selected' or d4d.get('state') != 'candidate_selection_open': errors.append('D4-D state must remain open/unselected')
+    if d4d.get('candidate') != {'workload_identity_to_broker_credential_adapter': 'derived_short_lived_broker_native_credential_adapter', 'tenant_and_contract_scoped_producer_consumer_authorization': 'broker_acl_projection_adapter', 'message_protection_key_authority_and_historical_verifier_continuity': 'kms_backed_envelope_or_transport_protection_profile', 'secret_credential_payload_exclusion_and_erasure_boundary': 'reference_only_secret_authority_profile', 'trace_context_observability_only_validation_and_redaction': 'w3c_trace_context_bounded_profile'} or d4d.get('candidate_status') != 'selected_c2_security_profile' or d4d.get('state') != 'selected_candidate': errors.append('D4-D selected security profile drift')
     if d4d.get('required_evidence') != REQUIRED or d4d.get('evidence_completed') != CURRENT_CREDITED or d4d.get('evidence_remaining') != []: errors.append('current D4-D state must reflect five separately promoted credits while source snapshot remains four-of-five')
     if sum(len(track.get('evidence_completed', [])) for track in state['tracks']) != 26: errors.append('D4-wide current state must remain 26/26')
     if state.get('gate_state') != 'scoped' or state.get('d4_transport_authority') != 'selected_not_granted' or state.get('canonical_product_implementation_authority') != 'not_granted' or state.get('wave4_implementation_authority') != 'not_granted' or state.get('production_authority') != 'none' or state.get('c3_numeric_topology_authority') != 'not_selected': errors.append('authority leakage')
@@ -73,4 +73,4 @@ if __name__ == '__main__':
     root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd(); errors = validate(root)
     [print('D4D_TRACE_CONTEXT_SOURCE_ERROR:', error, file=sys.stderr) for error in errors]
     if errors: raise SystemExit(1)
-    print('d4d_trace_context_source=PASS source_identity=exact source_snapshot=4_of_5 source_auto_credit=false current_d4d=5_of_5 d4wide=26/26 selection=not_selected authorities=unchanged probes=81')
+    print('d4d_trace_context_source=PASS source_identity=exact source_snapshot=4_of_5 source_auto_credit=false current_d4d=5_of_5 d4wide=26/26 historical_selection=not_selected current_selection=selected_c2_security_profile authorities=unchanged probes=81')

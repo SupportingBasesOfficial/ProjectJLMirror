@@ -84,7 +84,7 @@ jobs:
           assert tracks['D4-C']['candidate'] is None and tracks['D4-C']['candidate_status']=='not_selected'
           assert tracks['D4-C']['evidence_completed']==plan['credited_evidence']
           assert tracks['D4-C']['evidence_remaining']==[]
-          assert tracks['D4-D']['candidate'] is None and tracks['D4-D']['candidate_status']=='not_selected' and tracks['D4-D']['state']=='candidate_selection_open'
+          assert tracks['D4-D']['candidate']=={'workload_identity_to_broker_credential_adapter': 'derived_short_lived_broker_native_credential_adapter', 'tenant_and_contract_scoped_producer_consumer_authorization': 'broker_acl_projection_adapter', 'message_protection_key_authority_and_historical_verifier_continuity': 'kms_backed_envelope_or_transport_protection_profile', 'secret_credential_payload_exclusion_and_erasure_boundary': 'reference_only_secret_authority_profile', 'trace_context_observability_only_validation_and_redaction': 'w3c_trace_context_bounded_profile'} and tracks['D4-D']['candidate_status']=='selected_c2_security_profile' and tracks['D4-D']['state']=='selected_candidate'
           assert tracks['D4-D']['evidence_completed']==d4d_credits
           assert tracks['D4-D']['evidence_remaining']==[]
           assert sum(len(t['evidence_completed']) for t in state['tracks'])==26

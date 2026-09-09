@@ -114,7 +114,7 @@ def main() -> int:
     assert d4c["candidate"] is None and d4c["candidate_status"] == "not_selected"
     assert d4c["state"] == "candidate_selection_open"
     assert d4c["evidence_completed"] == D4C_CREDITS and d4c["evidence_remaining"] == []
-    assert d4d["candidate"] is None and d4d["candidate_status"] == "not_selected" and d4d["state"] == "candidate_selection_open"
+    assert d4d['candidate'] == {'workload_identity_to_broker_credential_adapter': 'derived_short_lived_broker_native_credential_adapter', 'tenant_and_contract_scoped_producer_consumer_authorization': 'broker_acl_projection_adapter', 'message_protection_key_authority_and_historical_verifier_continuity': 'kms_backed_envelope_or_transport_protection_profile', 'secret_credential_payload_exclusion_and_erasure_boundary': 'reference_only_secret_authority_profile', 'trace_context_observability_only_validation_and_redaction': 'w3c_trace_context_bounded_profile'} and d4d['candidate_status'] == 'selected_c2_security_profile' and d4d['state'] == 'selected_candidate'
     assert d4d["evidence_completed"] == D4D_CREDITS
     assert d4d["evidence_remaining"] == []
     assert sum(len(track["evidence_completed"]) for track in state_tracks) == 26

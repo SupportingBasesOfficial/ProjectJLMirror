@@ -32,7 +32,7 @@ def _current_errors(state: dict) -> list[str]:
     tracks={t.get("track_id"):t for t in state.get("tracks",[]) if isinstance(t,dict)}; d4c=tracks.get("D4-C",{}); d4d=tracks.get("D4-D",{}); required=d4c.get("required_evidence",[]); errors=[]
     if d4c.get("candidate") is not None or d4c.get("candidate_status")!="not_selected" or d4c.get("state")!="candidate_selection_open": errors.append("D4-C selection leakage")
     if d4c.get("evidence_completed")!=CURRENT_CREDITS or d4c.get("evidence_remaining")!=[x for x in required if x not in CURRENT_CREDITS]: errors.append("D4-C current ledger drift beyond separately promoted nine reviewed obligations")
-    if d4d.get("candidate") is not None or d4d.get("candidate_status")!="not_selected" or d4d.get("state")!="candidate_selection_open": errors.append("D4-D selection leakage")
+    if d4d.get('candidate') != {'workload_identity_to_broker_credential_adapter': 'derived_short_lived_broker_native_credential_adapter', 'tenant_and_contract_scoped_producer_consumer_authorization': 'broker_acl_projection_adapter', 'message_protection_key_authority_and_historical_verifier_continuity': 'kms_backed_envelope_or_transport_protection_profile', 'secret_credential_payload_exclusion_and_erasure_boundary': 'reference_only_secret_authority_profile', 'trace_context_observability_only_validation_and_redaction': 'w3c_trace_context_bounded_profile'} or d4d.get('candidate_status') != 'selected_c2_security_profile' or d4d.get('state') != 'selected_candidate': errors.append("D4-D selection leakage")
     if d4d.get("evidence_completed")!=D4D_CREDITS or d4d.get("evidence_remaining")!=[]: errors.append("D4-D current ledger must be exactly five-of-five")
     if sum(len(t.get("evidence_completed",[])) for t in tracks.values())!=26: errors.append("D4-wide evidence count drift")
     return errors
@@ -41,7 +41,7 @@ def _project(state:dict)->dict:
     result=copy.deepcopy(state)
     for tid in ("D4-C","D4-D"):
         t=next(x for x in result["tracks"] if x.get("track_id")==tid); t["evidence_completed"]=[]; t["evidence_remaining"]=list(t["required_evidence"])
-    return result
+    _d4d = next(t for t in result['tracks'] if t.get('track_id') == 'D4-D'); _d4d.update(candidate=None, candidate_status='not_selected', state='candidate_selection_open'); return result
 
 def validate(root:Path)->list[str]:
     state=json.loads((root/STATE_PATH).read_text(encoding="utf-8")); current=_current_errors(state)

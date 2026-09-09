@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR120-001",
+      "pr": 120,
+      "source": "internal_audit",
+      "review_comment_id": null,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": [
+        "INV-PROVENANCE-001",
+        "INV-AUTH-001"
+      ],
+      "root_cause": "Current D4-D selection was only partially propagated into sibling assurance. Historical projections could mask invalid current D4-B ledger selection, and nested D4-D profile claims were not completely bound. Validate current authority before projection and bind the entire selected profile contract.",
+      "horizontal_audit": [
+        "All current D4 workflow state assertions",
+        "D4-B/C current-state wrappers and in-memory historical projections",
+        "D4-D source versus current selection separation",
+        "All five selected profile axes and forbidden production claims"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4d_selection.py",
+          "probe": "falsify_selected_profile_contract"
+        },
+        {
+          "path": "tools/assurance/d4b_wire_schema/test_source_evidence.py",
+          "probe": "falsify_current_ledger_before_projection"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 7
+    }
+  ]
+}

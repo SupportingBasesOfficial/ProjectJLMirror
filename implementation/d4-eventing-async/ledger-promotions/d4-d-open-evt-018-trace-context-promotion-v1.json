@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "promotion_id": "d4-d-open-evt-018-trace-context-promotion-v1",
+  "gate_id": "D4",
+  "track_id": "D4-D",
+  "promotion_base": "5f5e231ae72f13f406a1420497bb7956e6c3cdf9",
+  "source_pr": 118,
+  "source_reviewed_head": "7522036e91582c8aeb95c34097be497d0e1c7ca1",
+  "source_merge_commit": "5f5e231ae72f13f406a1420497bb7956e6c3cdf9",
+  "source_review": {
+    "review_id": 5149543760,
+    "review_mode": "exact_head_assurance_baseline_v1_clean_after_external_red_team_remediation",
+    "material_threads_unresolved": 0
+  },
+  "source_workflow": {
+    "workflow_id": 353438165,
+    "workflow_path": ".github/workflows/d4-d-trace-context-source-evidence.yml",
+    "workflow_event": "pull_request",
+    "source_head_branch": "d4d/open-evt-018-trace-context-source",
+    "run_id": 34308388920,
+    "run_attempt": 1,
+    "job_id": 102329740568,
+    "job_name": "D4-D trace context source evidence",
+    "artifact_id": 10087468670,
+    "artifact_name": "d4-d-trace-context-source-7522036e91582c8aeb95c34097be497d0e1c7ca1-34308388920-1",
+    "artifact_digest": "sha256:9d5fc172a8324372ba37a5bae0a51ffdab9e5c16bc6208a195659148b80a8696"
+  },
+  "source_manifest": {
+    "path": "implementation/d4-eventing-async/source-evidence/d4-d-trace-context-observability/source-evidence-manifest.json",
+    "sha256": "2b80305593ebc06d10e4ae7862411518cdd250f7f35d21b52c8a2322950f1e49"
+  },
+  "credited_evidence": [
+    "workload_identity_to_broker_credential_adapter_least_privilege",
+    "tenant_and_contract_scoped_producer_consumer_authorization",
+    "message_protection_key_authority_and_historical_verifier_continuity",
+    "secret_credential_payload_exclusion_and_erasure_boundary",
+    "trace_context_observability_only_validation_and_redaction"
+  ],
+  "newly_credited_evidence": "trace_context_observability_only_validation_and_redaction",
+  "credit_count": 5,
+  "selection_state": "not_selected",
+  "selection_authority": "not_granted",
+  "d4_gate_state": "scoped",
+  "d4_transport_authority": "selected_not_granted",
+  "canonical_product_implementation_authority": "not_granted",
+  "wave4_implementation_authority": "not_granted",
+  "production_authority": "none",
+  "c3_numeric_topology_authority": "not_selected",
+  "separate_selection_required": true,
+  "separate_d4_acceptance_required": true
+}

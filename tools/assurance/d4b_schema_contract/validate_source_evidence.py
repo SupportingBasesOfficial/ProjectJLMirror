@@ -17,6 +17,17 @@ D4C_CREDITS = [
     "historical_reader_upcaster_semantic_and_equivalence_continuity",
     "recovery_generation_rf_inventory_reconciliation_and_activation_gates",
 ]
+D4C_SELECTED_PROFILE = {
+    "ack_visibility_lease_and_checkpoint": "durable_inbox_claim_then_broker_ack_profile",
+    "quarantine_and_redrive": "hybrid_platform_quarantine_store_plus_broker_dlq",
+    "bounded_message_payload_batch_and_compression": "layered_transport_and_application_bounds_profile",
+    "scoped_content_equivalence_authority": "hybrid_equivalence_authority_profile",
+    "outbox_claim_dispatch_and_ack_ambiguity": "compare_and_swap_lease_claim_profile",
+    "producer_source_generation": "authority_issued_epoch_generation",
+    "privileged_replay_and_event_history": "hybrid_history_archive_plus_replay_controller_profile",
+    "historical_reader_and_upcaster": "in_process_versioned_reader_upcaster_registry",
+    "recovery_generation_reconciliation_and_activation": "hybrid_generation_manifest_plus_multi_store_reconciler_profile",
+}
 D4D_CREDITS = [
     "workload_identity_to_broker_credential_adapter_least_privilege",
     "tenant_and_contract_scoped_producer_consumer_authorization",
@@ -111,8 +122,8 @@ def main() -> int:
     assert set(d4b["required_evidence"]) == EXPECTED_IDS and len(d4b["required_evidence"]) == 5
     assert set(d4b["evidence_completed"]) == EXPECTED_IDS and len(d4b["evidence_completed"]) == 5
     assert d4b["evidence_remaining"] == []
-    assert d4c["candidate"] is None and d4c["candidate_status"] == "not_selected"
-    assert d4c["state"] == "candidate_selection_open"
+    assert d4c["candidate"] == D4C_SELECTED_PROFILE and d4c["candidate_status"] == "selected_c2_delivery_recovery_profile"
+    assert d4c["state"] == "selected_candidate"
     assert d4c["evidence_completed"] == D4C_CREDITS and d4c["evidence_remaining"] == []
     assert d4d['candidate'] == {'workload_identity_to_broker_credential_adapter': 'derived_short_lived_broker_native_credential_adapter', 'tenant_and_contract_scoped_producer_consumer_authorization': 'broker_acl_projection_adapter', 'message_protection_key_authority_and_historical_verifier_continuity': 'kms_backed_envelope_or_transport_protection_profile', 'secret_credential_payload_exclusion_and_erasure_boundary': 'reference_only_secret_authority_profile', 'trace_context_observability_only_validation_and_redaction': 'w3c_trace_context_bounded_profile'} and d4d['candidate_status'] == 'selected_c2_security_profile' and d4d['state'] == 'selected_candidate'
     assert d4d["evidence_completed"] == D4D_CREDITS
@@ -124,7 +135,7 @@ def main() -> int:
     assert state["wave4_implementation_authority"] == "not_granted"
     assert state["production_authority"] == "none"
     assert state["c3_numeric_topology_authority"] == "not_selected"
-    print("d4b_schema_contract_source_manifest=PASS evidence_ids=5 source_history=not_selected current_selection=selected_c2_profile d4a=7_of_7 d4c=9_of_9 d4d=5_of_5 d4wide=26/26 authorities=not_granted")
+    print("d4b_schema_contract_source_manifest=PASS evidence_ids=5 source_history=not_selected current_selection=selected_c2_profile d4a=7_of_7 d4c=9_of_9_selected d4d=5_of_5 d4wide=26/26 authorities=not_granted")
     return 0
 
 if __name__ == "__main__":

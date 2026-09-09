@@ -20,20 +20,14 @@ SHA1='005b3943f7638e136150758d10d4ec6af1c6852d4e658127c7258ff546dce0ae'; SHA2='e
 def load(root,p): return json.loads((root/p).read_text())
 def digest(p): return hashlib.sha256(p.read_bytes()).hexdigest()
 def authority_ok(p):
- return p.get('selection_state')=='not_selected' and p.get('selection_authority')=='not_granted' and p.get('d4_gate_state')=='scoped' and p.get('d4_transport_authority')=='selected_not_granted' and p.get('canonical_product_implementation_authority')=='not_granted' and p.get('wave4_implementation_authority')=='not_granted' and p.get('production_authority')=='none' and p.get('c3_numeric_topology_authority')=='not_selected'
+ return p.get('selection_state')=='not_selected' and p.get('selection_authority')=='not_granted' and p.get('d4_gate_state')=='scoped' and p.get('d4_transport_authority')=='selected_not_granted' and p.get('canonical_product_implementation_authority')=='not_granted' and p.get('wave4_implementation_authority')=='not_granted' and p.get('production_authority')=='none' and p.get('c3_numeric_topology_authority')=='not_selected' and p.get('separate_selection_required') is True and p.get('separate_d4_acceptance_required') is True
 def validate(root):
  e=[]; plan=load(root,PLAN); state=load(root,STATE); p1=load(root,P1); p2=load(root,P2); p3=load(root,P3); p4=load(root,P4); p5=load(root,P5); s1=load(root,S1); s2=load(root,S2); s3=load(root,S3); s4=load(root,S4); s5=load(root,S5)
  if plan.get('credited_evidence')!=REQUIRED or plan.get('remaining_evidence')!=[] or plan.get('ledger_credit_state')!='five_of_five': e.append('D4-D ledger must be exactly five-of-five')
  if plan.get('latest_promotion')!=str(P5): e.append('latest promotion pointer drift')
  if plan.get('candidate') is not None or plan.get('candidate_status')!='not_selected' or plan.get('selection_state')!='not_selected' or plan.get('selection_authority')!='not_granted': e.append('D4-D candidate selection leakage')
  if plan.get('current_run_auto_credit') is not False or plan.get('separate_selection_required') is not True or plan.get('separate_d4_acceptance_required') is not True: e.append('D4-D separation boundary drift')
- snapshots=[
-  (s1,E1,'0_of_5_unselected',None,SHA1,'first'),
-  (s2,E2,'1_of_5_unselected','22_of_26',SHA2,'second'),
-  (s3,E3,'2_of_5_unselected','23_of_26',SHA3,'third'),
-  (s4,E4,'3_of_5_unselected','24_of_26',SHA4,'fourth'),
-  (s5,E5,'4_of_5_unselected','25_of_26',SHA5,'fifth'),
- ]
+ snapshots=[(s1,E1,'0_of_5_unselected',None,SHA1,'first'),(s2,E2,'1_of_5_unselected','22_of_26',SHA2,'second'),(s3,E3,'2_of_5_unselected','23_of_26',SHA3,'third'),(s4,E4,'3_of_5_unselected','24_of_26',SHA4,'fourth'),(s5,E5,'4_of_5_unselected','25_of_26',SHA5,'fifth')]
  for s,eid,d4d,d4wide,sha,label in snapshots:
   if s.get('evidence_id')!=eid or s.get('ledger_credit')!=[] or s.get('current_run_auto_credit') is not False or s.get('source_time_state',{}).get('d4d')!=d4d or (d4wide is not None and s.get('source_time_state',{}).get('d4wide')!=d4wide) or digest(root/{'first':S1,'second':S2,'third':S3,'fourth':S4,'fifth':S5}[label])!=sha: e.append(label+' source snapshot drift')
  lineage=s4.get('correction_lineage',{})
@@ -68,10 +62,10 @@ def validate(root):
  authority=(state.get('gate_state'),state.get('d4_transport_authority'),state.get('canonical_product_implementation_authority'),state.get('wave4_implementation_authority'),state.get('production_authority'),state.get('c3_numeric_topology_authority'))
  if authority!=('scoped','selected_not_granted','not_granted','not_granted','none','not_selected'): e.append('authority boundary changed')
  for p in (p1,p2,p3,p4,p5):
-  if not authority_ok(p): e.append('promotion authority leakage')
+  if not authority_ok(p): e.append('promotion authority/separation leakage')
  return e
 if __name__=='__main__':
  root=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else Path.cwd(); errors=validate(root)
  [print('D4D_LEDGER_ERROR:',x,file=sys.stderr) for x in errors]
  if errors: raise SystemExit(1)
- print('d4d_evidence_plan=PASS ledger=5_of_5 d4wide=26/26 selection=not_selected source_snapshots=0_of_5,1_of_5,2_of_5,3_of_5,4_of_5 promotion_chain=P1-P5-bound authorities=unchanged')
+ print('d4d_evidence_plan=PASS ledger=5_of_5 d4wide=26/26 selection=not_selected source_snapshots=0_of_5,1_of_5,2_of_5,3_of_5,4_of_5 promotion_chain=P1-P5-bound authorities=unchanged separation=preserved')

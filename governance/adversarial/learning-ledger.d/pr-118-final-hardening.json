@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR118-027",
+      "pr": 118,
+      "source": "external_review",
+      "review_comment_id": 3963734254,
+      "class_id": "ADV-TENANT-CORRELATION-LEAK",
+      "invariant_ids": ["INV-TENANT-001", "INV-OBS-002", "INV-PROOF-002"],
+      "root_cause": "Tenant-scoped trace identifiers were unequal across tenants but were produced by a public deterministic SHA-256 transform, so an observer with one exported identifier and the target tenant identifier could derive the other tenant representation and join protected telemetry.",
+      "horizontal_audit": [
+        "trace-id tenant transformation",
+        "parent-id tenant transformation",
+        "same-tenant stability under keyed derivation",
+        "cross-tenant rescoping from an authenticated prior export",
+        "behavior when no secret tenant-scope authority is available"
+      ],
+      "guardrails": [
+        {"path": "tools/assurance/d4d_trace_context_source.py", "probe": "cross_tenant_rescope_is_not_publicly_derivable"},
+        {"path": "tools/assurance/d4d_trace_context_source.py", "probe": "tenant_scoped_export_requires_secret_authority"}
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 4
+    },
+    {
+      "id": "LEARN-PR118-028",
+      "pr": 118,
+      "source": "external_review",
+      "review_comment_id": 3963734261,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The learning resolver proved reachability of falsifier calls inside main but did not prove that the module execution path actually invokes main, allowing the complete falsification suite to become dead code while still receiving executable guardrail credit.",
+      "horizontal_audit": [
+        "module-level __main__ entrypoint guard",
+        "direct main invocation shape",
+        "dead or altered entrypoint conditions",
+        "reachability inside main after entrypoint reachability",
+        "all registered falsification programs"
+      ],
+      "guardrails": [
+        {"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_missing_falsifier_entrypoint"}
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 3
+    }
+  ]
+}

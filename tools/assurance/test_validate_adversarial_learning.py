@@ -71,6 +71,17 @@ def falsify_incidental_guardrail_substring() -> None:
     )
 
 
+def falsify_unreachable_guardrail_call() -> None:
+    def mutate(root: Path) -> None:
+        mutate_text(
+            root,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_incidental_guardrail_substring()\n",
+            "    if False:\n        falsify_incidental_guardrail_substring()\n",
+        )
+    expect_failure(mutate)
+
+
 def main() -> None:
     assert not v.validate(ROOT)
 
@@ -82,6 +93,7 @@ def main() -> None:
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0]["guardrails"][0].__setitem__("path", "missing/file.py")))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0]["guardrails"][0].__setitem__("probe", "fictional_probe_that_does_not_exist")))
     falsify_incidental_guardrail_substring()
+    falsify_unreachable_guardrail_call()
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][1].__setitem__("review_comment_id", 3961647090)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][6].__setitem__("guardrail_generation", 1)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0].__setitem__("systemic_guardrail_updated", False)))
@@ -98,7 +110,7 @@ def main() -> None:
         comments.write_text(json.dumps([[[{"id": 3961647090, "body": "**P1 Badge** mapped finding"}]]]), encoding="utf-8")
         assert not v.validate(root, comments)
 
-    print("adversarial_learning_falsification=PASS unknown_class=blocked invariant_drift=blocked weak_root_cause=blocked missing_horizontal_audit=blocked missing_guardrail=blocked nonexistent_guardrail=blocked fictional_probe=blocked incidental_substring=blocked duplicate_review_identity=blocked recurrence_without_guardrail_advance=blocked top_level_review_surface_omission=blocked unmapped_material_finding=blocked nested_review_pages=handled")
+    print("adversarial_learning_falsification=PASS unknown_class=blocked invariant_drift=blocked weak_root_cause=blocked missing_horizontal_audit=blocked missing_guardrail=blocked nonexistent_guardrail=blocked fictional_probe=blocked incidental_substring=blocked unreachable_guardrail_call=blocked duplicate_review_identity=blocked recurrence_without_guardrail_advance=blocked top_level_review_surface_omission=blocked unmapped_material_finding=blocked nested_review_pages=handled")
 
 
 if __name__ == "__main__":

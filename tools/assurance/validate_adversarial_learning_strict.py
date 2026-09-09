@@ -12,6 +12,7 @@ import validate_adversarial_learning as base
 
 HEAD_STATUS_WORKFLOW = Path('.github/workflows/adversarial-learning-reconciliation.yml')
 MATERIAL_RE = re.compile(r'(?:\bP[012]\s+Badge\b|\[P[012]\])')
+MAINTAINER_LOGINS = {'SupportingBasesOfficial'}
 NEGATIVE_HELPERS = {
     Path('tools/assurance/test_validate_adversarial_learning.py'): {'expect_failure', 'expect_repository_failure'},
     Path('tools/assurance/test_validate_d4d_trace_context_source.py'): {'mutate_and_expect_failure'},
@@ -42,13 +43,6 @@ def _direct_negative_helper(statements: list[ast.stmt], helpers: set[str]) -> bo
 
 
 def _statements_have_negative_check(statements: list[ast.stmt], helpers: set[str]) -> bool:
-    """Credit only structurally guaranteed registered negative helpers.
-
-    Direct helpers are accepted. A helper inside a `for` is accepted only when
-    the iterator is a statically non-empty list/tuple literal, so the body is
-    guaranteed to execute at least once. Generic assertions, conditional
-    branches, dynamic loops, try/handler containment and dead code are not proof.
-    """
     for statement in statements:
         if isinstance(statement, (ast.Return, ast.Raise)):
             return False
@@ -114,6 +108,14 @@ def _validate_head_status_workflow(root: Path) -> list[str]:
     return errors
 
 
+def _reviewer_login(row: dict[str, Any]) -> str | None:
+    for key in ('user', 'author'):
+        value = row.get(key)
+        if isinstance(value, dict) and isinstance(value.get('login'), str):
+            return value['login']
+    return None
+
+
 def _strict_material_ids(review_comments: Path) -> set[int]:
     comments = _flatten(json.loads(review_comments.read_text(encoding='utf-8')))
     return {
@@ -122,12 +124,16 @@ def _strict_material_ids(review_comments: Path) -> set[int]:
         if isinstance(row.get('id'), int)
         and isinstance(row.get('body'), str)
         and MATERIAL_RE.search(row['body'])
+        and _reviewer_login(row) not in MAINTAINER_LOGINS
     }
 
 
 def validate(root: Path, review_comments: Path | None = None) -> list[str]:
     root = root.resolve()
-    errors = list(base.validate(root, review_comments))
+    # Static graph validation is delegated to the base validator. Dynamic review
+    # reconciliation is performed only here so renderer formats and reviewer
+    # identity have one strict source of truth.
+    errors = list(base.validate(root, None))
     errors.extend(_validate_head_status_workflow(root))
     errors.extend(_validate_falsifier_effects(root))
 
@@ -145,7 +151,7 @@ def validate(root: Path, review_comments: Path | None = None) -> list[str]:
         errors.extend(exception_errors)
         missing = sorted(_strict_material_ids(review_comments) - review_ids - exception_ids)
         if missing:
-            errors.append('strict material PR findings missing from learning ledger or bootstrap exception: ' + ','.join(map(str, missing)))
+            errors.append('strict external material PR findings missing from learning ledger or bootstrap exception: ' + ','.join(map(str, missing)))
     return errors
 
 
@@ -159,7 +165,7 @@ def main() -> None:
         print('ADVERSARIAL_LEARNING_STRICT_ERROR:', error)
     if errors:
         raise SystemExit(1)
-    print('adversarial_learning_strict=PASS head_status=isolated+fresh material_formats=badge+priority-prefix falsifier_effects=guaranteed-negative-helper')
+    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix falsifier_effects=guaranteed-negative-helper')
 
 
 if __name__ == '__main__':

@@ -51,13 +51,18 @@ _legacy_load = historical.load
 def _current_sibling_errors(state: dict) -> list[str]:
     errors: list[str] = []
     tracks = {t.get("track_id"): t for t in state.get("tracks", []) if isinstance(t, dict)}
+    if state.get("gate_state") != "separately_accepted":
+        errors.append("D4 current gate must remain separately accepted")
+    for tid in ("D4-A", "D4-B", "D4-C", "D4-D"):
+        if tracks.get(tid, {}).get("state") != "accepted_candidate":
+            errors.append(f"{tid} current accepted state drift")
     d4c = tracks.get("D4-C", {})
     d4d = tracks.get("D4-D", {})
-    if d4c.get("candidate") != D4C_SELECTED_PROFILE or d4c.get("candidate_status") != "selected_c2_delivery_recovery_profile" or d4c.get("state") != "selected_candidate":
+    if d4c.get("candidate") != D4C_SELECTED_PROFILE or d4c.get("candidate_status") != "selected_c2_delivery_recovery_profile":
         errors.append("D4-C current selected sibling state drift")
     if not isinstance(d4c.get("evidence_remaining"), list): errors.append("D4-C remaining evidence must be an exact list")
     elif d4c.get("evidence_completed") != D4C_CREDITS or d4c.get("evidence_remaining") != []: errors.append("D4-C current sibling must remain 9/9")
-    if d4d.get("candidate") != D4D_SELECTED_PROFILE or d4d.get("candidate_status") != "selected_c2_security_profile" or d4d.get("state") != "selected_candidate": errors.append("D4-D current sibling selected security profile drift")
+    if d4d.get("candidate") != D4D_SELECTED_PROFILE or d4d.get("candidate_status") != "selected_c2_security_profile": errors.append("D4-D current sibling selected security profile drift")
     if not isinstance(d4d.get("evidence_remaining"), list): errors.append("D4-D remaining evidence must be an exact list")
     elif d4d.get("evidence_completed") != D4D_CREDITS or d4d.get("evidence_remaining") != []: errors.append("D4-D current sibling must be exactly 5/5")
     if sum(len(t.get("evidence_completed", [])) for t in tracks.values()) != 26: errors.append("D4-wide current evidence must be exactly 26/26")
@@ -66,6 +71,11 @@ def _current_sibling_errors(state: dict) -> list[str]:
 
 def _historical_projection(state: dict) -> dict:
     projected = copy.deepcopy(state)
+    projected["gate_state"] = "scoped"
+    d4a = next(t for t in projected["tracks"] if t.get("track_id") == "D4-A")
+    d4a["state"] = "selected_candidate"
+    d4b = next(t for t in projected["tracks"] if t.get("track_id") == "D4-B")
+    d4b["state"] = "selected_candidate"
     d4c = next(t for t in projected["tracks"] if t.get("track_id") == "D4-C")
     d4c["candidate"] = None
     d4c["candidate_status"] = "not_selected"
@@ -98,6 +108,6 @@ def main(argv: list[str]) -> int:
     if errors:
         for error in errors: print(f"D4B_SELECTION_ERROR: {error}", file=sys.stderr)
         return 1
-    print("d4b_selection=PASS historical_oracle=preserved current_sibling_d4c=9_of_9_selected current_sibling_d4d=5_of_5_selected d4wide=26_of_26")
+    print("d4b_selection=PASS historical_oracle=preserved current_d4=separately_accepted current_tracks=accepted d4c=9_of_9 d4d=5_of_5 d4wide=26_of_26")
     return 0
 if __name__ == "__main__": raise SystemExit(main(sys.argv))

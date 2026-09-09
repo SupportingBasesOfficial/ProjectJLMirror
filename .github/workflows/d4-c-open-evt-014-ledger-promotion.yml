@@ -99,10 +99,6 @@ jobs:
           unzip -q /tmp/source.zip -d /tmp/source-artifact
           python3 - <<'PY'
           import hashlib, json
-          from pathlib import import Path
-          PY
-          python3 - <<'PY'
-          import hashlib, json
           from pathlib import Path
           p=json.loads(Path('implementation/d4-eventing-async/ledger-promotions/d4-c-open-evt-014-promotion-v1.json').read_text())
           w=p['source_workflow']; source=Path(p['source_manifest']['path'])

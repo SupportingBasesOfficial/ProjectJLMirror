@@ -5,6 +5,7 @@ from pathlib import Path
 import validate_d4d_trace_context_source as v
 import validate_d4d_evidence_plan as ledger
 ROOT=Path(__file__).resolve().parents[2]
+PROMOTION_WORKFLOW=Path('.github/workflows/d4-d-open-evt-018-trace-context-ledger-promotion.yml')
 CURRENT_D4B_ADAPTERS=(
     Path('tools/assurance/d4b_catalog_tooling/validate_source_evidence.py'),
     Path('tools/assurance/d4b_contract_version/validate_source_evidence.py'),
@@ -18,7 +19,7 @@ D4D_CURRENT_IDS=(
     'trace_context_observability_only_validation_and_redaction',
 )
 def clone(tmp):
-    paths=[v.MANIFEST,v.STATE,v.PLAN,ledger.PLAN,ledger.P1,ledger.P2,ledger.P3,ledger.P4,ledger.P5,ledger.S1,ledger.S2,ledger.S3,ledger.S4,ledger.S5,*CURRENT_D4B_ADAPTERS]
+    paths=[v.MANIFEST,v.STATE,v.PLAN,ledger.PLAN,ledger.P1,ledger.P2,ledger.P3,ledger.P4,ledger.P5,ledger.S1,ledger.S2,ledger.S3,ledger.S4,ledger.S5,PROMOTION_WORKFLOW,*CURRENT_D4B_ADAPTERS]
     for p in dict.fromkeys(paths):
         dst=tmp/p; dst.parent.mkdir(parents=True,exist_ok=True); dst.write_text((ROOT/p).read_text())
 def mutate_json(root,path,fn):
@@ -54,6 +55,28 @@ def current_projection_adapter_errors(root,execute=False):
             completed=subprocess.run([sys.executable,str(path),str(root)],cwd=root,text=True,capture_output=True,check=False)
             if completed.returncode!=0:
                 errors.append(f'{rel}: direct current projection entrypoint failed: '+(completed.stderr.strip() or completed.stdout.strip() or f'exit={completed.returncode}'))
+    return errors
+def promotion_artifact_liveness_errors(root):
+    path=root/PROMOTION_WORKFLOW
+    if not path.is_file(): return [f'missing promotion workflow: {PROMOTION_WORKFLOW}']
+    text=path.read_text()
+    markers={
+        'promotion delta detector': 'Determine whether this PR changes OPEN-EVT-018 promotion authority',
+        'promotion record comparison': "promotion_path='implementation/d4-eventing-async/ledger-promotions/d4-d-open-evt-018-trace-context-promotion-v1.json'",
+        'live admission only on changed promotion': "if: steps.promotion_delta.outputs.changed == 'true'",
+        'steady-state validation branch': "if: steps.promotion_delta.outputs.changed == 'false'",
+        'steady-state artifact independence': 'artifact_retention_dependency=false',
+        'steady-state durable record validation': 'durable_record=validated source_manifest_digest=validated',
+    }
+    errors=[f'OPEN-EVT-018 promotion artifact-liveness guard missing {name}' for name,marker in markers.items() if marker not in text]
+    if text.count("if: steps.promotion_delta.outputs.changed == 'true'")!=1:
+        errors.append('OPEN-EVT-018 live admission must have exactly one changed-promotion condition')
+    if text.count("if: steps.promotion_delta.outputs.changed == 'false'")!=1:
+        errors.append('OPEN-EVT-018 steady-state validation must have exactly one unchanged-promotion condition')
+    live=text.find('Admit exact reviewed fifth source from live GitHub state')
+    changed=text.find("if: steps.promotion_delta.outputs.changed == 'true'",live)
+    if live<0 or changed<0 or changed-live>250:
+        errors.append('OPEN-EVT-018 live artifact admission is not locally gated by promotion change')
     return errors
 def falsify_immutable_identity_envelope():
     for field,bad in [('schema_version',2),('gate_id','D3'),('track_id','D4-C'),('source_decision','OPEN-EVT-017'),('evidence_id','wrong-evidence'),('mode','promotion'),('source_base','0'*40)]:
@@ -124,9 +147,23 @@ def falsify_current_projection_adapters():
             lambda r,adapter=adapter,old=old,new=new:mutate_text(r,adapter,old,new),
             validator=lambda root:current_projection_adapter_errors(root,execute=False),
         )
+def falsify_promotion_artifact_retention_liveness():
+    mutate_and_expect_failure(
+        lambda r:mutate_text(r,PROMOTION_WORKFLOW,"if: steps.promotion_delta.outputs.changed == 'true'","if: always()"),
+        validator=promotion_artifact_liveness_errors,
+    )
+    mutate_and_expect_failure(
+        lambda r:mutate_text(r,PROMOTION_WORKFLOW,"if: steps.promotion_delta.outputs.changed == 'false'","if: steps.promotion_delta.outputs.changed == 'true'"),
+        validator=promotion_artifact_liveness_errors,
+    )
+    mutate_and_expect_failure(
+        lambda r:mutate_text(r,PROMOTION_WORKFLOW,'artifact_retention_dependency=false','artifact_retention_dependency=true'),
+        validator=promotion_artifact_liveness_errors,
+    )
 def main():
     assert not v.validate(ROOT)
     assert not current_projection_adapter_errors(ROOT,execute=True)
+    assert not promotion_artifact_liveness_errors(ROOT)
     falsify_immutable_identity_envelope()
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('current_run_auto_credit',True)))
     mutate_and_expect_failure(lambda r:mutate_json(r,v.MANIFEST,lambda d:d.__setitem__('ledger_credit',[v.EXPECTED_ID])))
@@ -146,5 +183,6 @@ def main():
     falsify_promotion_identity_envelopes()
     falsify_promotion_unknown_fields()
     falsify_current_projection_adapters()
-    print('d4d_trace_context_source_falsification=PASS source_identity=exact source_snapshot=4_of_5_25_of_26_exact current_state=5_of_5_26_of_26 authorities_exact promotion_separation=bound promotion_identity=P1-P5-closed-complete-envelope-bound unknown_promotion_fields=blocked current_projection_adapters=inventory+direct-execution+regression-blocked auto_credit=blocked selection=blocked authority_leakage=blocked')
+    falsify_promotion_artifact_retention_liveness()
+    print('d4d_trace_context_source_falsification=PASS source_identity=exact source_snapshot=4_of_5_25_of_26_exact current_state=5_of_5_26_of_26 authorities_exact promotion_separation=bound promotion_identity=P1-P5-closed-complete-envelope-bound unknown_promotion_fields=blocked current_projection_adapters=inventory+direct-execution+regression-blocked artifact_retention_liveness=admission-only+steady-state-durable auto_credit=blocked selection=blocked authority_leakage=blocked')
 if __name__=='__main__': main()

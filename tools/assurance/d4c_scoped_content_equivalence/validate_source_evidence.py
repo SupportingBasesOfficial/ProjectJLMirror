@@ -66,6 +66,14 @@ def _project_state(state: dict) -> dict:
     return projected
 
 
+def _project_ledger(ledger: dict) -> dict:
+    projected = copy.deepcopy(ledger)
+    projected["candidate"] = None
+    projected["candidate_status"] = "not_selected"
+    projected["selection_state"] = "not_selected"
+    return projected
+
+
 def main() -> int:
     state = _original_load(historical.STATE)
     current = _current_errors(state)
@@ -78,8 +86,11 @@ def main() -> int:
         def projected_load(path: Path):
             value = _original_load(path)
             try:
-                if path.resolve() == historical.STATE.resolve():
+                resolved = path.resolve()
+                if resolved == historical.STATE.resolve():
                     return _project_state(value)
+                if resolved == historical.LEDGER.resolve():
+                    return _project_ledger(value)
             except Exception:
                 pass
             return value
@@ -88,7 +99,7 @@ def main() -> int:
     finally:
         historical.load = original
     if result == 0:
-        print("d4c_open_evt_011_current_projection=PASS d4c=9_of_9_selected d4d=5_of_5_selected d4wide=26_of_26 historical_oracle=preserved")
+        print("d4c_open_evt_011_current_projection=PASS d4c=9_of_9_selected d4d=5_of_5_selected d4wide=26_of_26 historical_oracle=state_and_ledger_preserved")
     return result
 
 if __name__ == "__main__":

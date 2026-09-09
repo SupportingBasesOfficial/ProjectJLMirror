@@ -58,8 +58,8 @@
     {
       "id": "ADV-CANONICALIZATION-GAP",
       "name": "Incomplete canonical validation",
-      "description": "Input is structurally accepted while unsupported versions, duplicate fields, invalid grammar, non-encodable text or other non-canonical representations remain possible and may escape the intended fail-closed observability path.",
-      "invariant_ids": ["INV-BOUNDARY-002", "INV-PROVENANCE-001", "INV-OBS-001"]
+      "description": "Input is structurally accepted while unsupported versions, duplicate fields, invalid grammar, non-encodable text or other non-canonical representations remain possible and may escape the intended fail-closed observability path or reach encoding work without canonical shape validation.",
+      "invariant_ids": ["INV-BOUNDARY-002", "INV-PROVENANCE-001", "INV-OBS-001", "INV-BOUNDARY-003"]
     },
     {
       "id": "ADV-TRUST-CONTEXT-GAP",

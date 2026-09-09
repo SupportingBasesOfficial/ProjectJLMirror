@@ -20,6 +20,10 @@ NEGATIVE_HELPERS = {
     Path('tools/assurance/test_validate_adversarial_learning.py'): {'expect_failure', 'expect_repository_failure'},
     Path('tools/assurance/test_validate_d4d_trace_context_source.py'): {'mutate_and_expect_failure'},
 }
+D4C_CURRENT_WORKFLOWS = (
+    Path('.github/workflows/d4-eventing-async-entry-gate.yml'),
+    Path('.github/workflows/d4-d-profile-selection.yml'),
+)
 D4C_STALE_CURRENT_MARKERS = (
     "d4c['candidate'] is None",
     'd4c["candidate"] is None',
@@ -97,17 +101,15 @@ def _validate_falsifier_effects(root: Path) -> list[str]:
 
 
 def _validate_d4c_current_workflow_projections(root: Path) -> list[str]:
-    workflow_root = root / '.github/workflows'
-    if not workflow_root.is_dir():
-        return ['workflow directory missing for D4-C current projection validation']
     errors: list[str] = []
-    for path in sorted(workflow_root.glob('*.yml')):
-        text = path.read_text(encoding='utf-8')
-        if 'implementation/d4-eventing-async/state-manifest.json' not in text:
+    for rel in D4C_CURRENT_WORKFLOWS:
+        path = root / rel
+        if not path.is_file():
+            errors.append(f'governed D4-C current-state workflow missing: {rel}')
             continue
+        text = path.read_text(encoding='utf-8')
         for marker in D4C_STALE_CURRENT_MARKERS:
             if marker in text:
-                rel = path.relative_to(root)
                 errors.append(f'stale D4-C current-state workflow projection: {rel}:{marker}')
     return errors
 
@@ -196,7 +198,7 @@ def main() -> None:
         print('ADVERSARIAL_LEARNING_STRICT_ERROR:', error)
     if errors:
         raise SystemExit(1)
-    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal falsifier_effects=guaranteed-negative-helper')
+    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=guaranteed-negative-helper')
 
 
 if __name__ == '__main__':

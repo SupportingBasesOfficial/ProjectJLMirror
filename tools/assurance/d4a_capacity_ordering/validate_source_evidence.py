@@ -161,7 +161,7 @@ def validate_objects(source: dict, profile: dict, plan: dict, state: dict) -> li
     require(d4a.get("evidence_remaining") == [], "D4-A must have no remaining evidence after final promotion")
     require(d4a.get("state") == "selected_candidate", "D4-A must remain selected candidate")
     require(d4a.get("candidate_status") == "selected_c2_candidate", "D4-A selected candidate status drift")
-    require(state.get("gate_state") == "scoped", "D4 gate must remain scoped")
+    require(state.get("gate_state") == "separately_accepted", "D4 current gate acceptance drift")
     require(state.get("d4_transport_authority") == "selected_not_granted", "state transport must remain selected but ungranted")
     require(state.get("canonical_product_implementation_authority") == "not_granted", "state product authority escalation")
     require(state.get("wave4_implementation_authority") == "not_granted", "state Wave4 authority escalation")
@@ -174,7 +174,7 @@ def main() -> None:
     errors = validate_objects(*load_objects())
     if errors:
         raise AssertionError("; ".join(errors))
-    print("d4a_capacity_ordering_source_manifest=PASS evidence=2 source_credit=0 historical_selection=not_selected historical_result=6 global_credit=7 current_kafka_selection=selected transport_authority=not_granted live_kafka=historically_proven immutable_pin=PASS tiers=3 tenant_device_event_rate=proven ordering_scopes=6")
+    print("d4a_capacity_ordering_source_manifest=PASS evidence=2 source_credit=0 historical_gate=scoped historical_selection=not_selected historical_result=6 global_credit=7 current_gate=separately_accepted current_kafka_selection=selected transport_authority=not_granted live_kafka=historically_proven immutable_pin=PASS tiers=3 tenant_device_event_rate=proven ordering_scopes=6")
 
 
 if __name__ == "__main__":

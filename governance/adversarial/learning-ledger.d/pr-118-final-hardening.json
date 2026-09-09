@@ -9,13 +9,7 @@
       "class_id": "ADV-TENANT-CORRELATION-LEAK",
       "invariant_ids": ["INV-TENANT-001", "INV-OBS-002", "INV-PROOF-002"],
       "root_cause": "Tenant-scoped trace identifiers were unequal across tenants but were produced by a public deterministic SHA-256 transform, so an observer with one exported identifier and the target tenant identifier could derive the other tenant representation and join protected telemetry.",
-      "horizontal_audit": [
-        "trace-id tenant transformation",
-        "parent-id tenant transformation",
-        "same-tenant stability under keyed derivation",
-        "cross-tenant rescoping from an authenticated prior export",
-        "behavior when no secret tenant-scope authority is available"
-      ],
+      "horizontal_audit": ["trace-id tenant transformation", "parent-id tenant transformation", "same-tenant stability under keyed derivation", "cross-tenant rescoping from an authenticated prior export", "behavior when no secret tenant-scope authority is available"],
       "guardrails": [
         {"path": "tools/assurance/d4d_trace_context_source.py", "probe": "cross_tenant_rescope_is_not_publicly_derivable"},
         {"path": "tools/assurance/d4d_trace_context_source.py", "probe": "tenant_scoped_export_requires_secret_authority"}
@@ -31,16 +25,47 @@
       "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
       "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "The learning resolver proved reachability of falsifier calls inside main but did not prove that the module execution path actually invokes main, allowing the complete falsification suite to become dead code while still receiving executable guardrail credit.",
-      "horizontal_audit": [
-        "module-level __main__ entrypoint guard",
-        "direct main invocation shape",
-        "dead or altered entrypoint conditions",
-        "reachability inside main after entrypoint reachability",
-        "all registered falsification programs"
-      ],
-      "guardrails": [
-        {"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_missing_falsifier_entrypoint"}
-      ],
+      "horizontal_audit": ["module-level __main__ entrypoint guard", "direct main invocation shape", "dead or altered entrypoint conditions", "reachability inside main after entrypoint reachability", "all registered falsification programs"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_missing_falsifier_entrypoint"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 3
+    },
+    {
+      "id": "LEARN-PR118-029",
+      "pr": 118,
+      "source": "external_review",
+      "review_comment_id": 3964004625,
+      "class_id": "ADV-LEARNING-SURFACE-OMISSION",
+      "invariant_ids": ["INV-LEARNING-001"],
+      "root_cause": "Issue-comment reconciliation resolved and checked out the pull-request head but the GitHub Actions run itself remained associated with the default-branch SHA, so a failed late reconciliation could leave the earlier green PR-head check untouched.",
+      "horizontal_audit": ["issue_comment GITHUB_SHA semantics", "resolved pull-request head", "commit-status association", "pending/success/failure publication", "stable status context on the reviewed head"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_head_status_publication"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 2
+    },
+    {
+      "id": "LEARN-PR118-030",
+      "pr": 118,
+      "source": "external_review",
+      "review_comment_id": 3964004629,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "A falsifier could remain reachable and named from main while its body was replaced by pass or return, so call-graph reachability alone still allowed a credited guardrail that performed no negative assertion or mutation check.",
+      "horizontal_audit": ["credited falsifier bodies", "negative-check helper invocation", "assertion presence", "no-op return/pass mutation", "all registered falsification programs"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_noop_falsifier_body"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 4
+    },
+    {
+      "id": "LEARN-PR118-031",
+      "pr": 118,
+      "source": "external_review",
+      "review_comment_id": 3964004634,
+      "class_id": "ADV-LEARNING-SURFACE-OMISSION",
+      "invariant_ids": ["INV-LEARNING-001"],
+      "root_cause": "Material-finding detection depended on the Codex renderer-specific phrase P1 Badge, so conventional priority-prefixed review text such as [P1] could bypass ledger reconciliation despite being semantically merge-blocking feedback.",
+      "horizontal_audit": ["Codex badge format", "[P0] prefix", "[P1] prefix", "[P2] prefix", "nested review-page flattening", "unmapped material review identity"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_priority_prefixed_material_finding"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 3
     }

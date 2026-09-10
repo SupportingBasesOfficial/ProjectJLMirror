@@ -18,8 +18,8 @@
       ],
       "guardrails": [
         {
-          "path": "tools/assurance/test_validate_wave4_monitoring_authorization.py",
-          "probe": "falsify_hidden_implementation_under_authorization_path"
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_wave4_authorization_exact_path_allowlist"
         }
       ],
       "systemic_guardrail_updated": true,

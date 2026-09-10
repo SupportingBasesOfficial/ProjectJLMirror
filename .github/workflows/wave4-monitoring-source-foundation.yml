@@ -29,7 +29,7 @@ concurrency:
 jobs:
   monitoring-source-foundation:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -80,7 +80,13 @@ jobs:
       - name: Validate Monitoring pooled-tenant and canonical boundary hardening
         run: python3 tools/wave4/validate_monitoring_boundary_hardening.py
 
-      - name: Test Monitoring source and initial-validation contracts
+      - name: Validate bounded Zabbix host inventory boundary
+        run: python3 tools/wave4/validate_zabbix_host_inventory.py
+
+      - name: Validate Host Inventory provider-worker invocation authority
+        run: python3 tools/wave4/validate_zabbix_host_inventory_invocation_authority.py
+
+      - name: Test Monitoring source, validation, and host inventory contracts
         run: PYTHONPATH=src python3 -m unittest discover -s tests/wave4 -p 'test_*.py'
 
       - name: Execute Monitoring source transaction on pinned PostgreSQL
@@ -93,6 +99,41 @@ jobs:
         env:
           PG_CONTAINER: jlmirror-wave4-monitoring-boundary-postgres
         run: bash tools/wave4/run_monitoring_boundary_hardening_postgres_conformance.sh
+
+      - name: Execute Zabbix host inventory reconciliation on pinned PostgreSQL
+        env:
+          PG_CONTAINER: jlmirror-wave4-host-inventory-postgres
+        run: bash tools/wave4/run_zabbix_host_inventory_postgres_conformance.sh
+
+      - name: Execute Zabbix host inventory poll ordering on pinned PostgreSQL
+        env:
+          PG_CONTAINER: jlmirror-wave4-host-inventory-ordering-postgres
+        run: bash tools/wave4/run_zabbix_host_inventory_ordering_postgres_conformance.sh
+
+      - name: Execute Zabbix host inventory evidence authority on pinned PostgreSQL
+        env:
+          PG_CONTAINER: jlmirror-wave4-host-inventory-authority-postgres
+        run: bash tools/wave4/run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh
+
+      - name: Execute terminal host-inventory operation immutability on pinned PostgreSQL
+        env:
+          PG_CONTAINER: jlmirror-wave4-host-inventory-terminal-postgres
+        run: bash tools/wave4/run_zabbix_host_inventory_terminal_operation_postgres_conformance.sh
+
+      - name: Execute recovery-safe host-inventory authority on pinned PostgreSQL
+        env:
+          PG_CONTAINER: jlmirror-wave4-host-inventory-recovery-postgres
+        run: bash tools/wave4/run_zabbix_host_inventory_recovery_authority_postgres_conformance.sh
+
+      - name: Execute final composed host-inventory schema and logical recovery on pinned PostgreSQL
+        env:
+          PG_CONTAINER: jlmirror-wave4-host-inventory-final-schema-postgres
+        run: bash tools/wave4/run_zabbix_host_inventory_final_schema_postgres_conformance.sh
+
+      - name: Execute superseded host-inventory epoch retirement on final schema
+        env:
+          PG_CONTAINER: jlmirror-wave4-host-inventory-superseded-epoch-postgres
+        run: bash tools/wave4/run_zabbix_host_inventory_superseded_epoch_postgres_conformance.sh
 
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

@@ -171,6 +171,7 @@ class MonitoringSyncOperation:
 class SourceCreationPlan:
     source: MonitoringSource
     sync_operation: MonitoringSyncOperation
+    audit_evidence_id: str
     canonical_request_fingerprint: str
 
 
@@ -190,6 +191,7 @@ def plan_source_creation(
     source_id_factory: Callable[[], str] = lambda: opaque_token("mon-src"),
     generation_factory: Callable[[], str] = lambda: opaque_token("mon-gen"),
     operation_id_factory: Callable[[], str] = lambda: opaque_token("mon-sync"),
+    audit_evidence_id_factory: Callable[[], str] = lambda: opaque_token("mon-audit"),
     now: Callable[[], datetime] = utc_now,
 ) -> SourceCreationPlan:
     if not isinstance(command, CreateMonitoringSourceCommand):
@@ -202,13 +204,16 @@ def plan_source_creation(
     source_id = source_id_factory()
     generation = generation_factory()
     operation_id = operation_id_factory()
-    for field, value in (
+    audit_evidence_id = audit_evidence_id_factory()
+    generated = (
         ("monitoring_source_id", source_id),
         ("source_instance_generation", generation),
         ("monitoring_sync_operation_id", operation_id),
-    ):
+        ("audit_evidence_id", audit_evidence_id),
+    )
+    for field, value in generated:
         _canonical_explicit_text(value, field, max_len=512)
-    if len({source_id, generation, operation_id}) != 3:
+    if len({value for _, value in generated}) != len(generated):
         raise ValueError("generated identities must be distinct")
 
     source = MonitoringSource(
@@ -244,5 +249,6 @@ def plan_source_creation(
     return SourceCreationPlan(
         source=source,
         sync_operation=sync_operation,
+        audit_evidence_id=audit_evidence_id,
         canonical_request_fingerprint=command.canonical_fingerprint(),
     )

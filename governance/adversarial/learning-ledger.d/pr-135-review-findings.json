@@ -49,9 +49,9 @@
       "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
       "root_cause": "Snapshot evidence carried source, configuration, scope and poll-generation fields that were caller writable, while downstream removal authority trusted those fields without proving they matched the claimed running synchronization operation that owned the snapshot.",
       "horizontal_audit": ["all snapshot-evidence tables", "operation-to-evidence ownership", "negative reconciliation authority", "future metrics batch evidence", "future topology and problem snapshot ingestion"],
-      "guardrails": [{"path": "tools/wave4/run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh", "probe": "snapshot_operation_binding=closed"}],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
-      "guardrail_generation": 5
+      "guardrail_generation": 9
     },
     {
       "id": "LEARN-PR135-005",
@@ -62,9 +62,9 @@
       "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
       "root_cause": "Presence transition authority was enforced only for present-to-removed. The inverse removed-to-present transition could therefore reuse historical provider evidence and bypass the active poll, configuration and scope fences.",
       "horizontal_audit": ["all bidirectional state transitions", "resource resurrection", "reconciliation recovery paths", "future health-state projections", "future problem open-close transitions"],
-      "guardrails": [{"path": "tools/wave4/run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh", "probe": "positive_transition=evidence_bound"}],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
-      "guardrail_generation": 6
+      "guardrail_generation": 10
     },
     {
       "id": "LEARN-PR135-006",
@@ -75,9 +75,9 @@
       "invariant_ids": ["INV-PROVENANCE-001"],
       "root_cause": "Provider evidence rows were individually immutable but snapshot membership remained appendable after the owning operation completed. That allowed historical snapshot contents to change after host_count and completion state had become durable evidence.",
       "horizontal_audit": ["snapshot membership closure", "immutable aggregate evidence", "host_count consistency", "future batch evidence containers", "future audit artifact finalization"],
-      "guardrails": [{"path": "tools/wave4/run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh", "probe": "membership_after_completion=closed"}],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
-      "guardrail_generation": 7
+      "guardrail_generation": 11
     },
     {
       "id": "LEARN-PR135-007",
@@ -88,9 +88,9 @@
       "invariant_ids": ["INV-PROVENANCE-001"],
       "root_cause": "The database validated only the lexical shape of evidence_fingerprint and trusted the caller to have hashed normalized_evidence correctly. A malformed caller could therefore persist an integrity token unrelated to the durable evidence it purported to identify.",
       "horizontal_audit": ["derived integrity fields", "caller-supplied hashes", "content-addressed evidence", "future artifact digests", "future metric-batch fingerprints"],
-      "guardrails": [{"path": "tools/wave4/run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh", "probe": "fingerprint=verified"}],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
-      "guardrail_generation": 8
+      "guardrail_generation": 12
     }
   ]
 }

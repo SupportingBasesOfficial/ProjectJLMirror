@@ -1,7 +1,7 @@
 {
   "schema_version": 5,
   "wave": 4,
-  "implementation_id": "wave4.zabbix-monitoring-data-plane@1",
+  "implementation_id": "wave4.zabbix-metric-definitions@1",
   "canonical_authorization_commit": "8e2265a4ee2810ea701166228e8f44ad3bc0d894",
   "authorization_id": "wave4.monitoring-zabbix.vertical@1",
   "host_inventory_authorization_commit": "2986f43ff262ecd5781661dbdee46c896f5019bc",

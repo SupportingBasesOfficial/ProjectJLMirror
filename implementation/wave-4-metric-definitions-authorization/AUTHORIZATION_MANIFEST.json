@@ -20,8 +20,8 @@
     "boolean_not_inferred_from_integer_zero_one",
     "item_get_lastvalue_not_current_state_authority",
     "item_get_not_history_completeness",
-    "item_definition_poll_generation_distinct_from_host_inventory_poll_generation",
-    "shared_recovery_epoch_admission_does_not_imply_shared_endpoint_poll_sequence"
+    "item_definition_poll_authority_independent_from_host_inventory_poll_authority",
+    "shared_recovery_laws_do_not_mean_shared_stream_state"
   ],
   "authorized_behavior": [
     "bounded_read_only_zabbix_item_get",
@@ -35,8 +35,8 @@
     "value_kind_drift_enters_reconciliation_required",
     "retirement_only_from_complete_authoritative_negative_item_snapshot",
     "scope_state_independent_from_definition_state",
-    "reuse_existing_recovery_epoch_and_admission_framework",
-    "distinct_item_definition_poll_generation_stream",
+    "reuse_accepted_recovery_laws_and_trusted_authority_pattern",
+    "independent_item_definition_poll_epoch_generation_and_admission_state",
     "bounded_allowlisted_provider_metadata",
     "no_frontend_route_implication"
   ],
@@ -53,7 +53,7 @@
     "raw_provider_payload_replication",
     "generic_integer_zero_one_boolean_inference",
     "cross_generation_metric_identity_merge",
-    "shared_host_inventory_poll_generation_for_item_definitions",
+    "reuse_host_inventory_poll_epoch_generation_or_runtime_admission_for_item_definitions",
     "provider_disabled_or_unsupported_as_metric_retirement",
     "silent_in_place_value_kind_mutation",
     "automatic_metric_successor_identity_for_value_kind_drift",

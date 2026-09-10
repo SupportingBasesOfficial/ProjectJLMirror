@@ -43,6 +43,7 @@
     "host_inventory_operation_insert_authority",
     "host_inventory_poll_authority_single_owner",
     "host_inventory_superseded_epoch_retirement",
+    "host_inventory_persisted_completion_outcome",
     "host_inventory_presence_evidence_state_authority",
     "host_inventory_scope_state_authority",
     "host_inventory_observation_timestamp_authority",

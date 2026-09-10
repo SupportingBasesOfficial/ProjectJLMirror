@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR125-001",
+      "pr": 125,
+      "source": "external_review",
+      "review_comment_id": 3974871413,
+      "class_id": "ADV-SEMANTIC-ALLOWLIST-BYPASS",
+      "invariant_ids": ["INV-BOUNDARY-002", "INV-OBS-002"],
+      "root_cause": "The product-model governance workflow enumerated changed paths with Git rename detection enabled. A rename from an unauthorized path into an allowed governance prefix could therefore be represented only by the destination path to the allowlist loop, hiding deletion of the unauthorized source path and allowing a semantic scope bypass through an alternate diff representation.",
+      "horizontal_audit": [
+        "governance-only pull-request path allowlists",
+        "authorization-only path gates",
+        "workflow diff enumeration that relies on git diff --name-only",
+        "rename and copy detection across allowed and forbidden repository roots",
+        "future scope-restricted governance and implementation authorization gates"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_organization_provider_commercial_rename_path_gate"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 11
+    }
+  ]
+}

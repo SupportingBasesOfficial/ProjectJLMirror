@@ -11,9 +11,11 @@ SQL = ROOT / "sql/wave4/005_zabbix_host_inventory.sql"
 HARDENING = ROOT / "sql/wave4/006_zabbix_host_inventory_boundary_hardening.sql"
 INTEGRITY = ROOT / "sql/wave4/007_zabbix_host_inventory_integrity_hardening.sql"
 ORDERING = ROOT / "sql/wave4/008_zabbix_host_inventory_poll_ordering_hardening.sql"
+AUTHORITY = ROOT / "sql/wave4/009_zabbix_host_inventory_evidence_authority_hardening.sql"
 TEST = ROOT / "tests/wave4/test_zabbix_host_inventory.py"
 PG = ROOT / "tools/wave4/run_zabbix_host_inventory_postgres_conformance.sh"
 PG_ORDERING = ROOT / "tools/wave4/run_zabbix_host_inventory_ordering_postgres_conformance.sh"
+PG_AUTHORITY = ROOT / "tools/wave4/run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh"
 WORKFLOW = ROOT / ".github/workflows/wave4-monitoring-source-foundation.yml"
 MANIFEST = ROOT / "implementation/wave-4/IMPLEMENTATION_MANIFEST.json"
 AUTH = ROOT / "implementation/wave-4-host-inventory-authorization/AUTHORIZATION_MANIFEST.json"
@@ -25,7 +27,7 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> None:
-    for path in (PY, SQL, HARDENING, INTEGRITY, ORDERING, TEST, PG, PG_ORDERING, WORKFLOW, MANIFEST, AUTH):
+    for path in (PY, SQL, HARDENING, INTEGRITY, ORDERING, AUTHORITY, TEST, PG, PG_ORDERING, PG_AUTHORITY, WORKFLOW, MANIFEST, AUTH):
         require(path.is_file(), f"missing required surface: {path.relative_to(ROOT)}")
 
     ast.parse(PY.read_text(encoding="utf-8"))
@@ -34,8 +36,10 @@ def main() -> None:
     hardening = HARDENING.read_text(encoding="utf-8")
     integrity = INTEGRITY.read_text(encoding="utf-8")
     ordering = ORDERING.read_text(encoding="utf-8")
+    authority = AUTHORITY.read_text(encoding="utf-8")
     base_pg = PG.read_text(encoding="utf-8")
     ordering_pg = PG_ORDERING.read_text(encoding="utf-8")
+    authority_pg = PG_AUTHORITY.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     auth = json.loads(AUTH.read_text(encoding="utf-8"))
@@ -123,6 +127,20 @@ def main() -> None:
         require(marker in ordering, f"host inventory ordering guard missing: {marker}")
     require("wave4_complete_zabbix_host_inventory_pre_poll_fence" not in ordering, "unfenced host inventory completion helper must not exist")
 
+    for marker in (
+        "wave4_guard_host_inventory_snapshot_insert",
+        "not bound to its claimed running operation",
+        "wave4_guard_host_provider_evidence_authority",
+        "open claimed snapshot operation",
+        "wave4_python_canonical_jsonb",
+        "fingerprint does not match normalized evidence",
+        "wave4_deferred_monitoring_resource_presence_authority",
+        "positive presence requires accepted provider snapshot authority",
+        "completed newer authoritative negative poll evidence",
+        "positive presence requires a poll newer than removal authority",
+    ):
+        require(marker in authority, f"host inventory evidence-authority guard missing: {marker}")
+
     require("sql/wave4/008_zabbix_host_inventory_poll_ordering_hardening.sql" in base_pg, "base host inventory conformance does not apply final ordering migration")
     require("poll_order=final-schema" in base_pg, "base host inventory conformance does not assert final schema execution")
     for marker in (
@@ -134,21 +152,36 @@ def main() -> None:
         "poll_generation=presence_authority",
     ):
         require(marker in ordering_pg, f"host inventory ordering PostgreSQL falsifier missing: {marker}")
+    for marker in (
+        "sql/wave4/009_zabbix_host_inventory_evidence_authority_hardening.sql",
+        "snapshot_operation_binding=closed",
+        "membership_after_completion=closed",
+        "positive_transition=evidence_bound",
+        "fingerprint=verified",
+        "negative_transition=completed_operation_bound",
+    ):
+        require(marker in authority_pg, f"host inventory evidence-authority PostgreSQL falsifier missing: {marker}")
 
     require("validate_zabbix_host_inventory.py" in workflow, "workflow does not run host inventory validator")
     require("run_zabbix_host_inventory_postgres_conformance.sh" in workflow, "workflow does not run PostgreSQL host inventory proof")
     require("run_zabbix_host_inventory_ordering_postgres_conformance.sh" in workflow, "workflow does not run host inventory ordering proof")
+    require("run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh" in workflow, "workflow does not run host inventory evidence-authority proof")
     require("src/jlmirror_monitoring/host_inventory.py" in manifest["code_surfaces"], "manifest missing host inventory code surface")
     require("sql/wave4/006_zabbix_host_inventory_boundary_hardening.sql" in manifest["code_surfaces"], "manifest missing host evidence hardening surface")
     require("sql/wave4/007_zabbix_host_inventory_integrity_hardening.sql" in manifest["code_surfaces"], "manifest missing host integrity hardening surface")
     require("sql/wave4/008_zabbix_host_inventory_poll_ordering_hardening.sql" in manifest["code_surfaces"], "manifest missing host ordering hardening surface")
+    require("sql/wave4/009_zabbix_host_inventory_evidence_authority_hardening.sql" in manifest["code_surfaces"], "manifest missing host evidence-authority hardening surface")
     require("host_inventory_ingestion" in manifest["implemented_capability"], "manifest does not declare host inventory capability")
     require("host_inventory_poll_generation_fence" in manifest["implemented_capability"], "manifest does not declare host inventory poll ordering fence")
     require("stale_negative_snapshot_rejection" in manifest["implemented_capability"], "manifest does not declare stale negative rejection")
+    require("host_inventory_snapshot_operation_binding" in manifest["implemented_capability"], "manifest does not declare snapshot operation binding")
+    require("host_inventory_closed_snapshot_membership" in manifest["implemented_capability"], "manifest does not declare closed snapshot membership")
+    require("host_inventory_positive_presence_authority" in manifest["implemented_capability"], "manifest does not declare positive presence authority")
+    require("host_inventory_evidence_fingerprint_verification" in manifest["implemented_capability"], "manifest does not declare evidence fingerprint verification")
     require("host_inventory_ingestion" not in manifest["explicitly_not_implemented"], "manifest still denies implemented host inventory")
     require("canonical_device_classification" in manifest["explicitly_not_implemented"], "implementation must not claim device classification authority")
 
-    print("wave4_zabbix_host_inventory_validation=PASS resource_kind=host provider_object_kind=zabbix_host evidence=bounded+scope-bound+owner-bound identity=immutable removal=poll-ordered tenant_rls=forced stale_authority=fenced poll_generation=single-winner unfenced_helper=absent recovery=validation-authority")
+    print("wave4_zabbix_host_inventory_validation=PASS resource_kind=host provider_object_kind=zabbix_host evidence=bounded+scope-bound+owner-bound+operation-bound+closed-membership+fingerprint-verified identity=immutable presence=positive+negative-authority-bound tenant_rls=forced stale_authority=fenced poll_generation=single-winner unfenced_helper=absent recovery=validation-authority")
 
 
 if __name__ == "__main__":

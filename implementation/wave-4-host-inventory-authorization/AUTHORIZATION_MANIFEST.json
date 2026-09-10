@@ -1,16 +1,36 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "authorization_id": "wave4.monitoring-host-inventory@1",
-  "canonical_base_main_commit": "b2214b498a0360ebf8091fe857ccffc107494ace",
-  "authorization_state": "proposed_product_behavior_not_authorized",
-  "effective_rule": "becomes_implementation_authority_only_after_exact_head_review_and_separately_authorized_merge",
+  "accepted_merge_commit": "f85b01cce8e148123dd980ae6b60f83c707263f5",
+  "authorization_state": "accepted_product_behavior_resource_kind_clarification_pending",
+  "post_merge_finding": {
+    "source_pr": 133,
+    "severity": "P1",
+    "finding": "canonical_monitoring_resource_kind_was_not_explicitly_bound",
+    "implementation_blocked_until_clarified": true
+  },
   "product_vertical": "monitoring",
   "provider_profile": "zabbix",
-  "proposed_slice": "host_inventory_ingestion",
-  "proposed_behavior": [
+  "authorized_slice": "host_inventory_ingestion",
+  "canonical_resource_kind_mapping": {
+    "provider_object_kind": "zabbix_host",
+    "monitoring_resource_kind": "host",
+    "meaning": "broad_canonical_monitoring_resource_class_not_device_taxonomy"
+  },
+  "required_invariants": [
+    "every_resource_created_by_this_slice_uses_resource_kind_host",
+    "resource_kind_host_is_not_server_or_device_taxonomy",
+    "provider_object_kind_zabbix_host_is_separate_from_resource_kind",
+    "resource_identity_not_equal_resource_kind",
+    "resource_kind_not_equal_provider_object_type",
+    "provider_evidence_not_equal_canonical_device_classification",
+    "classification_change_not_equal_resource_identity_change"
+  ],
+  "authorized_behavior": [
     "read_only_zabbix_host_inventory",
     "generation_scoped_canonical_monitoring_resource_identity",
     "provider_hostid_external_reference_only",
+    "canonical_resource_kind_host",
     "provider_object_kind_zabbix_host_not_device_taxonomy",
     "capture_allowlisted_bounded_zabbix_device_evidence",
     "host_inventory_interfaces_groups_templates_and_tags_as_provider_evidence_only",
@@ -25,12 +45,6 @@
     "scope_exclusion_not_equivalent_to_removal",
     "bounded_canonical_data_and_bounded_provider_evidence_only",
     "no_frontend_route_implication"
-  ],
-  "classification_invariants": [
-    "resource_identity_not_equal_provider_object_type",
-    "provider_evidence_not_equal_canonical_device_classification",
-    "classification_change_not_equal_resource_identity_change",
-    "future_classification_may_combine_provider_snmp_lldp_agent_cmdb_cloud_manual_rule_or_ai_evidence_under_separate_authority"
   ],
   "future_classification_dimensions_reserved_but_not_authorized": [
     "canonical_device_class",
@@ -47,6 +61,8 @@
     "classification_confidence_semantics"
   ],
   "explicitly_not_authorized": [
+    "resource_kind_zabbix_host",
+    "resource_kind_server_switch_router_firewall_or_other_device_taxonomy",
     "metric_definition_ingestion",
     "metric_current_state_ingestion",
     "metric_history_ingestion",
@@ -71,8 +87,8 @@
     "docs/09-api-contracts/zabbix-monitoring-normalization-profile.md",
     "implementation/wave-4/IMPLEMENTATION_MANIFEST.json"
   ],
+  "implementation_authority": "blocked_until_this_resource_kind_clarification_is_separately_merged",
   "production_authority": "none",
   "frontend_authority": "not_granted",
-  "implementation_authority": "not_granted_until_this_exact_proposal_is_accepted_and_merged",
   "merge_authorization": "not_granted"
 }

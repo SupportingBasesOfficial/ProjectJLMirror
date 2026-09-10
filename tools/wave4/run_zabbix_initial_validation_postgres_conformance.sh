@@ -75,23 +75,24 @@ stale_state="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postg
 test "$stale_state" = "reconciliation_required|true|execution.stale_authority|reconciliation_required|0"
 
 # Deterministic concurrency falsifier for the late-review TOCTOU race.
-# PostgreSQL sequence state is non-transactional, so a trigger can publish a visible barrier
-# after the completion fence has locked the authoritative source row but before completion
-# performs its evidence/source writes. Only after observing that barrier do we start the
-# concurrent configuration edit. The pre-fix implementation lets that edit finish during
-# the trigger pause; the fixed implementation keeps it blocked on the source row lock.
+# The test-only trigger acquires an uncontended transaction-scoped advisory lock only after
+# the completion function has crossed its authority fence. Pollers probe that lock using
+# pg_try_advisory_lock and immediately release it when they win, so they never block the
+# completion. Once the lock becomes unavailable, we know completion is inside the trigger;
+# with the fix, the authoritative source row is already locked. The pre-fix implementation
+# reaches the same trigger without that row lock, so the concurrent edit finishes and fails
+# this falsifier.
 fp3="cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
 "SELECT * FROM monitoring.create_zabbix_source('tenant-c','create-c','$fp3','source-c','generation-c','binding-c','sync-c','audit-c','principal-c','human_browser_session','cred-gen-c','authz-c','corr-c','Company C','provider-instance:central','https://zabbix.example.test/zabbix','credential-binding:central','{\"host_group_refs\":[\"40\"]}'::jsonb); SELECT monitoring_source_id FROM monitoring.claim_zabbix_initial_validation('tenant-c','sync-c','claim-c');" >/dev/null
 
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
-CREATE SEQUENCE monitoring.wave4_test_race_signal START WITH 1;
 CREATE OR REPLACE FUNCTION monitoring.wave4_test_pause_validation_evidence()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  PERFORM nextval('monitoring.wave4_test_race_signal');
+  PERFORM pg_advisory_xact_lock(424242);
   PERFORM pg_sleep(5);
   RETURN NEW;
 END;
@@ -109,14 +110,14 @@ complete_pid=$!
 
 barrier_seen=0
 for _ in $(seq 1 50); do
-  is_called="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
-  "SELECT is_called FROM monitoring.wave4_test_race_signal;")"
-  if [ "$is_called" = "t" ]; then
+  lock_busy="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
+  "WITH probe AS (SELECT pg_try_advisory_lock(424242) AS acquired), release AS (SELECT CASE WHEN acquired THEN pg_advisory_unlock(424242) ELSE false END AS released FROM probe) SELECT CASE WHEN (SELECT acquired FROM probe) THEN 'f' ELSE 't' END;")"
+  if [ "$lock_busy" = "t" ]; then
     barrier_seen=1
     break
   fi
   if ! kill -0 "$complete_pid" 2>/dev/null; then
-    echo "completion exited before publishing post-fence race barrier" >&2
+    echo "completion exited before publishing post-fence advisory barrier" >&2
     cat /tmp/wave4-race-complete.out >&2 || true
     exit 1
   fi
@@ -141,7 +142,7 @@ wait "$complete_pid"
 wait "$edit_pid"
 
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
-"DROP TRIGGER wave4_test_pause_validation_evidence ON monitoring.monitoring_source_validation_evidence; DROP FUNCTION monitoring.wave4_test_pause_validation_evidence(); DROP SEQUENCE monitoring.wave4_test_race_signal;" >/dev/null
+"DROP TRIGGER wave4_test_pause_validation_evidence ON monitoring.monitoring_source_validation_evidence; DROP FUNCTION monitoring.wave4_test_pause_validation_evidence();" >/dev/null
 
 race_state="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
 "SELECT o.state || '|' || s.configuration_revision || '|' || s.operational_evidence_state || '|' || (SELECT count(*) FROM monitoring.monitoring_source_validation_evidence e WHERE e.tenant_id='tenant-c' AND e.monitoring_sync_operation_id='sync-c') FROM monitoring.monitoring_sync_operation o JOIN monitoring.monitoring_source s ON s.tenant_id=o.tenant_id AND s.monitoring_source_id=o.monitoring_source_id WHERE o.tenant_id='tenant-c' AND o.monitoring_sync_operation_id='sync-c';")"

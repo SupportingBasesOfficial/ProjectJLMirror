@@ -11,6 +11,7 @@ AS $$
 DECLARE
     row JSONB;
     inventory_key TEXT;
+    inventory_value TEXT;
 BEGIN
     IF jsonb_typeof(p_evidence) <> 'object'
        OR p_evidence - ARRAY['technical_name','display_name','inventory','interfaces','groups','templates','tags']::TEXT[] <> '{}'::jsonb
@@ -43,14 +44,20 @@ BEGIN
         RETURN FALSE;
     END IF;
     FOR inventory_key IN SELECT jsonb_object_keys(p_evidence->'inventory') LOOP
-        IF jsonb_typeof(p_evidence->'inventory'->inventory_key) <> 'string'
-           OR p_evidence->'inventory'->>inventory_key = ''
-           OR p_evidence->'inventory'->>inventory_key <> btrim(p_evidence->'inventory'->>inventory_key)
-           OR p_evidence->'inventory'->>inventory_key ~ '[[:cntrl:]]'
-           OR length(p_evidence->'inventory'->>inventory_key) > CASE
-                WHEN inventory_key IN ('device_type_full','os_full','hardware','software') THEN 2048
-                WHEN inventory_key = 'location' THEN 1024
-                ELSE 512 END THEN
+        IF jsonb_typeof(p_evidence->'inventory'->inventory_key) <> 'string' THEN
+            RETURN FALSE;
+        END IF;
+        inventory_value := p_evidence->'inventory'->>inventory_key;
+        IF inventory_value = ''
+           OR inventory_value <> btrim(inventory_value)
+           OR inventory_value ~ '[[:cntrl:]]' THEN
+            RETURN FALSE;
+        END IF;
+        IF inventory_key IN ('device_type_full','os_full','hardware','software') AND length(inventory_value) > 2048 THEN
+            RETURN FALSE;
+        ELSIF inventory_key = 'location' AND length(inventory_value) > 1024 THEN
+            RETURN FALSE;
+        ELSIF inventory_key NOT IN ('device_type_full','os_full','hardware','software','location') AND length(inventory_value) > 512 THEN
             RETURN FALSE;
         END IF;
     END LOOP;

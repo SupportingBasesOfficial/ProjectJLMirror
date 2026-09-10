@@ -50,6 +50,8 @@ ITEM.GET METADATA != METRIC HISTORY
 ITEM.GET LASTVALUE != AUTHORIZED CURRENT-STATE INGESTION IN THIS SLICE
 SCOPE EXCLUSION != METRIC RETIREMENT
 GENERATION RETIREMENT != METRIC RETIREMENT
+PROVIDER DISABLED/UNSUPPORTED != METRIC RETIREMENT
+VALUE-KIND DRIFT != SILENT IN-PLACE COMPATIBILITY
 UNCERTAINTY != NEGATIVE EVIDENCE
 ITEM-DEFINITION POLL GENERATION != HOST-INVENTORY POLL GENERATION
 SHARED RECOVERY EPOCH/ADMISSION FRAMEWORK != SHARED ENDPOINT POLL SEQUENCE
@@ -66,15 +68,17 @@ SHARED RECOVERY EPOCH/ADMISSION FRAMEWORK != SHARED ENDPOINT POLL SEQUENCE
 7. **Unit is metadata, not authority.** Provider unit text may populate the canonical metric unit only after bounded canonical string validation. Unit text does not alter tenant, identity, authorization, scope or value kind.
 8. **Names are provider-derived canonical metadata.** Provider item name may populate canonical `name` only after bounded canonicalization; it is not identity and changes do not create a new metric definition inside the same accepted provider binding.
 9. **Definition lifecycle.** `definition_state` is only `active|retired`. Retirement requires authoritative negative item-inventory evidence under the active source generation/current scope. Missing/incomplete/stale/visibility-degraded provider results preserve the prior definition state and degrade evidence instead of retiring.
-10. **Scope is independent from retirement.** `scope_state=out_of_scope` preserves metric identity/history and does not imply `retired`.
-11. **Generation is independent from retirement.** A prior-generation metric definition becomes operationally historical by derivation and is not rewritten to `retired` merely because source generation changed.
-12. **Snapshot omission is conditional authority.** Negative item evidence is valid only from a bounded complete item snapshot with current provider visibility, current source generation, current configured-scope revision and current platform poll authority.
-13. **Provider metadata is bounded.** The implementation may retain only allowlisted item metadata necessary for binding, normalization, diagnostics and future value ingestion. Raw unrestricted `item.get` payload persistence is forbidden.
-14. **No current-value ingestion.** Although `item.get` exposes `lastvalue/lastclock/lastns`, this slice may parse or validate those fields only if required to prove boundary compatibility; it must not persist or expose `metric_current_state`.
-15. **No historical ingestion.** `history.get`, historical checkpoints/backfill and `metric_observation` storage are explicitly outside this slice.
-16. **No per-item event fanout.** This slice does not create `monitoring.metric-current-state.changed`; definition discovery itself is not the current-state transition contract.
-17. **No frontend implication.** Backend/domain/data support for metric definitions creates no frontend route/navigation authority.
-18. **Shared recovery framework, independent item poll stream.** Item-definition polling reuses the already accepted recovery/placement admission semantics and ordered recovery epoch framework, but it owns a distinct item-definition poll generation stream. Host Inventory and Item Definition polls must never supersede one another merely because their independent endpoint cadences interleave.
+10. **Provider disabled/unsupported state is not retirement.** A Zabbix item that still exists but is disabled, unsupported or otherwise non-collecting remains an existing provider definition. Those native states may be retained as bounded binding/provider evidence and may influence later current-value freshness semantics, but they MUST NOT by themselves set canonical `definition_state=retired`.
+11. **Scope is independent from retirement.** `scope_state=out_of_scope` preserves metric identity/history and does not imply `retired`.
+12. **Generation is independent from retirement.** A prior-generation metric definition becomes operationally historical by derivation and is not rewritten to `retired` merely because source generation changed.
+13. **Snapshot omission is conditional authority.** Negative item evidence is valid only from a bounded complete item snapshot with current provider visibility, current source generation, current configured-scope revision and current platform poll authority.
+14. **Provider metadata is bounded.** The implementation may retain only allowlisted item metadata necessary for binding, normalization, diagnostics and future value ingestion. Raw unrestricted `item.get` payload persistence is forbidden.
+15. **Value-kind drift fails closed.** If the same scoped provider `itemid` is later observed with a native value type that maps to a different canonical `value_kind`, this authorization does not permit silent in-place type mutation, implicit retirement/recreation, or automatic successor identity. The binding/definition enters a visible `reconciliation_required` condition and preserves the last accepted canonical definition until a separately accepted compatibility/migration contract defines the transition.
+16. **No current-value ingestion.** Although `item.get` exposes `lastvalue/lastclock/lastns`, this slice may parse or validate those fields only if required to prove boundary compatibility; it must not persist or expose `metric_current_state`.
+17. **No historical ingestion.** `history.get`, historical checkpoints/backfill and `metric_observation` storage are explicitly outside this slice.
+18. **No per-item event fanout.** This slice does not create `monitoring.metric-current-state.changed`; definition discovery itself is not the current-state transition contract.
+19. **No frontend implication.** Backend/domain/data support for metric definitions creates no frontend route/navigation authority.
+20. **Shared recovery framework, independent item poll stream.** Item-definition polling reuses the already accepted recovery/placement admission semantics and ordered recovery epoch framework, but it owns a distinct item-definition poll generation stream. Host Inventory and Item Definition polls must never supersede one another merely because their independent endpoint cadences interleave.
 
 ## Canonical binding requirements
 
@@ -95,6 +99,10 @@ The binding may additionally retain bounded provider metadata such as `key_`, na
 
 Within one tenant/source/generation, one accepted `itemid` has at most one active canonical binding. Matching `key_`, item name or units do not merge distinct provider item IDs. Reused item IDs across source generations are independent mappings.
 
+Provider-native operational flags are evidence about the binding, not canonical definition lifecycle authority. In particular, Zabbix disabled/unsupported status does not mean the provider item was deleted and does not authorize retirement.
+
+A native value-type change on the same scoped `itemid` is treated as semantic compatibility drift, not ordinary metadata refresh. Until a successor compatibility contract is accepted, the implementation must retain the prior accepted `value_kind`, mark reconciliation required and refuse to manufacture continuity or a successor identity automatically.
+
 ## Item snapshot / reconciliation semantics
 
 The implementation must preserve the same uncertainty discipline established by Host Inventory:
@@ -107,7 +115,9 @@ The implementation must preserve the same uncertainty discipline established by 
 - current platform item-definition poll epoch/generation is the authority for item-definition reconciliation, not Zabbix wall clock;
 - recovery/failover/PITR cannot reuse stale poll authority without the already accepted recovery admission mechanism;
 - the recovery/placement epoch and admission mechanism may be shared with Host Inventory because they express writer/placement continuity for the source;
-- the monotonic item-definition poll generation must be distinct from `host_inventory_poll_generation`, because endpoint-specific cadences are independent and must not cancel unrelated in-flight work.
+- the monotonic item-definition poll generation must be distinct from `host_inventory_poll_generation`, because endpoint-specific cadences are independent and must not cancel unrelated in-flight work;
+- present-but-disabled or present-but-unsupported items remain present definitions and cannot be converted into negative evidence by provider status alone;
+- same-item value-type drift cannot be accepted as a normal metadata update under this authorization.
 
 This split is deliberate: shared recovery authority avoids inventing a second recovery system, while independent endpoint poll streams prevent false supersession between `host.get` and `item.get` cycles.
 
@@ -127,6 +137,9 @@ This authorization does not permit:
 - boolean inference from generic Zabbix integer values;
 - cross-generation metric identity merging;
 - sharing `host_inventory_poll_generation` as the item-definition poll sequence;
+- treating provider disabled/unsupported status as canonical retirement;
+- silent in-place canonical `value_kind` mutation for an existing scoped `itemid`;
+- automatic retirement/recreation or successor identity for value-kind drift;
 - tag/key/name-driven tenant, authorization or policy selection;
 - production polling/retry/capacity numerics beyond hard safety bounds;
 - HTTP route implementation beyond already accepted API contracts;

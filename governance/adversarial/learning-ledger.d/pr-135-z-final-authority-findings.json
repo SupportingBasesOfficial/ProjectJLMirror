@@ -121,26 +121,26 @@
     {
       "id": "LEARN-PR135-026",
       "pr": 135,
-      "source": "external_review",
-      "review_comment_id": 5625977578,
+      "source": "internal_audit",
+      "review_comment_id": null,
       "class_id": "ADV-AUTHORITY-TOCTOU",
       "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
       "root_cause": "Host Inventory enqueue, claim and completion were SECURITY DEFINER functions owned by the guarded executor but remained executable by PUBLIC. That collapsed the runtime specialization boundary: an unrelated same-tenant runtime could invoke the privileged provider-integration path directly, choose claim/completion inputs, and obtain executor-backed evidence mutation without being the authorized provider worker.",
       "horizontal_audit": ["all SECURITY DEFINER Monitoring worker entrypoints", "PUBLIC function ACLs", "runtime.worker specialization to database capability binding", "claim and completion invocation authority", "future metric/problem provider-ingestion entrypoints"],
-      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}, {"path": "tools/wave4/validate_zabbix_host_inventory_invocation_authority.py", "probe": "provider_worker_only_invocation_boundary"}],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 25
     },
     {
       "id": "LEARN-PR135-027",
       "pr": 135,
-      "source": "external_review",
-      "review_comment_id": 5625977578,
+      "source": "internal_audit",
+      "review_comment_id": null,
       "class_id": "ADV-AUTHORITY-TOCTOU",
       "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
       "root_cause": "Operation authority was frozen only after claim, while direct DML could still create lifecycle-clean pending Host Inventory work or rewrite the pending source/generation/configuration/scope tuple. A later legitimate claim validated the adulterated tuple as current and thereby converted attacker-shaped work into authoritative provider execution.",
       "horizontal_audit": ["Host Inventory enqueue versus direct INSERT", "pending-work identity mutation", "pending-to-running authority promotion", "alternate DML command paths around protected functions", "future metric/problem ingestion operation creation and claim lifecycles"],
-      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}, {"path": "tools/wave4/validate_zabbix_host_inventory_invocation_authority.py", "probe": "enqueue_frozen_work_identity"}],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 26
     }

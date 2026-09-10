@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR135-028",
+      "pr": 135,
+      "source": "internal_audit",
+      "review_comment_id": null,
+      "class_id": "ADV-BOUNDARY-RESOURCE-BOUND",
+      "invariant_ids": ["INV-BOUNDARY-003", "INV-OBS-001"],
+      "root_cause": "Host Inventory normalized evidence enforced field and collection cardinality limits in Python but did not enforce the aggregate canonical JSON byte limit required by PostgreSQL. Provider-controlled evidence could therefore pass the application boundary, be classified as a successful snapshot, and only fail inside the persistence completion transaction when the database's 65,536-byte evidence constraint was reached, coupling a boundary-size mismatch to operation liveness.",
+      "horizontal_audit": [
+        "per-field bounds versus aggregate normalized evidence size",
+        "UTF-8 byte length versus character count",
+        "application canonical JSON versus PostgreSQL jsonb text representation",
+        "provider-controlled collection cardinality and field composition",
+        "completion transaction failure and claimed-operation liveness",
+        "future metrics/problems provider evidence aggregate persistence bounds"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_wave4_authority_toctou_guardrail"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 3
+    }
+  ]
+}

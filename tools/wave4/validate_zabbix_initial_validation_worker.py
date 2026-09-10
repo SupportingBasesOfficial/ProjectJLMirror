@@ -48,11 +48,16 @@ def main() -> None:
     require("complete_zabbix_initial_validation" in sql, "completion function missing")
     require("execution.stale_authority" in sql, "stale authority retirement class missing")
     require("state = 'reconciliation_required'" in sql, "stale claim retirement state missing")
+    require("FOR UPDATE OF s" in sql, "authoritative source row is not locked through completion fence")
+    require("TOCTOU" in sql, "completion-fence concurrency rationale missing")
     require("Monitoring source validation evidence is immutable" in sql, "evidence immutability missing")
     require("credential_generation_ref" in sql and "egress_decision_ref" in sql, "safe dependency evidence missing")
     require("api_token" not in sql.lower(), "secret material must not enter persistence schema")
     require("stale=retired_without_source_mutation" in conformance, "stale-retirement conformance marker missing")
     require("execution.stale_authority" in conformance, "stale-retirement error class not exercised")
+    require("race=source_row_lock_blocks_concurrent_edit" in conformance, "completion-fence race falsifier missing")
+    require("wave4_test_pause_validation_evidence" in conformance, "race window test hook missing")
+    require("kill -0 \"$edit_pid\"" in conformance, "concurrent edit blocking assertion missing")
 
     for phrase in (
         "missing configured HostGroup",
@@ -62,7 +67,7 @@ def main() -> None:
     ):
         require(phrase in state, f"state product boundary missing: {phrase}")
 
-    print("wave4_zabbix_initial_validation_worker=PASS hostgroup_only=true credential=port egress=port stale_commit=fenced+retired retry=not_selected ingestion=none")
+    print("wave4_zabbix_initial_validation_worker=PASS hostgroup_only=true credential=port egress=port stale_commit=fenced+retired concurrency=source-row-locked retry=not_selected ingestion=none")
 
 
 if __name__ == "__main__":

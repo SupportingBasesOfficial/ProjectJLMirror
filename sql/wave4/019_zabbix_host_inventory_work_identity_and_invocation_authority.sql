@@ -5,8 +5,10 @@
 -- 2. SECURITY DEFINER host-inventory entrypoints were executable by PUBLIC, allowing
 --    an unrelated same-tenant runtime to enter the privileged executor path directly.
 --
--- Final rule: host-inventory work identity is immutable from enqueue onward, and only
--- the dedicated provider-integration invoker capability may invoke enqueue/claim/complete.
+-- Horizontal closure: direct DML must not be an alternate enqueue surface either.
+-- Final rule: host-inventory work is created only by the guarded executor, its identity
+-- is immutable from enqueue onward, and only the dedicated provider-integration
+-- invoker capability may invoke enqueue/claim/complete.
 
 BEGIN;
 
@@ -47,8 +49,9 @@ BEGIN
 END;
 $$;
 
--- Keep inserted pending work lifecycle-clean. This closes non-authoritative lifecycle
--- residue that could otherwise be injected before the guarded claim transition.
+-- Host Inventory work creation is itself an authority boundary. Direct DML by an
+-- unrelated same-tenant runtime is not a valid substitute for the enqueue entrypoint.
+-- The guarded SECURITY DEFINER enqueue function runs as the dedicated executor.
 CREATE OR REPLACE FUNCTION monitoring.wave4_guard_host_inventory_operation_insert()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -56,6 +59,10 @@ SECURITY INVOKER
 SET search_path = pg_catalog, monitoring AS $$
 BEGIN
     IF NEW.responsibility_kind = 'host_inventory_sync' THEN
+        IF NOT monitoring.wave4_host_inventory_executor_is_current_user() THEN
+            RAISE EXCEPTION 'Host inventory work creation requires guarded executor authority';
+        END IF;
+
         IF NEW.state IS DISTINCT FROM 'pending'
            OR NEW.claim_token IS NOT NULL
            OR NEW.host_inventory_poll_generation IS NOT NULL

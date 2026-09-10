@@ -66,9 +66,14 @@ def main() -> None:
                    'PERFORM monitoring.wave4_retire_missing_metric_definitions', "r.presence_evidence_state='current'"):
         require(marker in m022, f"migration 022 atomicity invariant missing: {marker}")
 
-    for marker in ('RETURNS TABLE (', 'UPDATE monitoring.monitoring_source AS s',
-                   'UPDATE monitoring.monitoring_sync_operation AS o', 'attempt_count=o.attempt_count+1'):
-        require(marker in m023, f"migration 023 claim qualification missing: {marker}")
+    for marker in (
+        'RETURNS TABLE (', 'UPDATE monitoring.monitoring_source AS s',
+        'UPDATE monitoring.monitoring_sync_operation AS o', 'attempt_count=o.attempt_count+1',
+        'g.provider_instance_ref', 'g.provider_base_url', 'g.credential_binding_ref', 'g.configured_provider_scope',
+    ):
+        require(marker in m023, f"migration 023 claim qualification/generation authority missing: {marker}")
+    for forbidden in ('s.provider_base_url', 's.credential_binding_ref', 's.configured_provider_scope'):
+        require(forbidden not in m023, f"metric claim leaked generation-owned configuration onto source row: {forbidden}")
 
     for marker in ('wave4_guard_metric_definition_evidence_insert',
                    'Metric definition evidence creation requires guarded executor authority',
@@ -140,7 +145,7 @@ def main() -> None:
     ):
         require(marker in liveness, f"liveness PostgreSQL conformance marker missing: {marker}")
 
-    print('wave4_zabbix_metric_definitions=PASS schema=020-028 broad=001-027 final_liveness=001-028 scope=item-get-metadata-only authority=item-stream-independent atomic_preflight=required claim=qualified evidence=owner-bound+closed+fingerprint-verified drift=host+value-visible recovery=stale-fenced liveness=terminal-reconciliation')
+    print('wave4_zabbix_metric_definitions=PASS schema=020-028 broad=001-027 final_liveness=001-028 scope=item-get-metadata-only authority=item-stream-independent atomic_preflight=required claim=qualified+generation-owned-config evidence=owner-bound+closed+fingerprint-verified drift=host+value-visible recovery=stale-fenced liveness=terminal-reconciliation')
 
 
 if __name__ == '__main__':

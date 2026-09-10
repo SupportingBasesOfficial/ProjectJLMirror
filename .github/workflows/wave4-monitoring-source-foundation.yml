@@ -80,5 +80,10 @@ jobs:
       - name: Execute Monitoring source transaction on pinned PostgreSQL
         run: bash tools/wave4/run_monitoring_source_postgres_conformance.sh
 
+      - name: Execute Monitoring source hardening under non-superuser runtime role
+        env:
+          PG_CONTAINER: jlmirror-wave4-monitoring-hardening-postgres
+        run: bash tools/wave4/run_monitoring_source_hardening_postgres_conformance.sh
+
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

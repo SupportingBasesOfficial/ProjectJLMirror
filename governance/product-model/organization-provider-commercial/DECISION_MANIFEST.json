@@ -6,6 +6,7 @@
   "accepted_source_head": "ba2817a7586ed43b18eb72a139f1eba8ffeadfa0",
   "accepted_squash_sha": "8c9eb94ebe76a56db85dd1ecbd3e0f8569edfb62",
   "contract": "docs/03-domains/organization-operating-model-contract.md",
+  "acceptance_record": "governance/product-model/organization-provider-commercial/ACCEPTANCE.md",
   "decision_record": "adr/ADR-021-organization-provider-commercial-operating-model.md",
   "monitoring_compatibility_overlay": "governance/product-model/organization-provider-commercial/MONITORING_COMPATIBILITY.md",
   "historical_wave4_authority_rewritten": false,

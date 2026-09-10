@@ -22,6 +22,30 @@ CREATE TABLE monitoring.monitoring_source (
     configuration_revision BIGINT NOT NULL CHECK (configuration_revision > 0),
     scope_revision BIGINT NOT NULL CHECK (scope_revision > 0),
     display_name TEXT NOT NULL CHECK (display_name <> ''),
+    operational_evidence_state TEXT NOT NULL CHECK (operational_evidence_state IN (
+        'current', 'stale', 'incomplete', 'reconciliation_required', 'unavailable'
+    )),
+    replacement_candidate_ref TEXT NULL,
+    last_successful_sync_at TIMESTAMPTZ NULL,
+    last_attempt_at TIMESTAMPTZ NULL,
+    last_sync_operation_id TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT transaction_timestamp(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT transaction_timestamp(),
+    PRIMARY KEY (tenant_id, monitoring_source_id),
+    CHECK (tenant_id <> ''),
+    CHECK (monitoring_source_id <> ''),
+    CHECK (active_source_instance_generation <> ''),
+    CHECK (last_sync_operation_id <> '')
+);
+
+COMMENT ON TABLE monitoring.monitoring_source IS
+'Canonical tenant-scoped logical Monitoring source authority. Provider-native IDs and physical placement are not platform identity or tenant authority.';
+
+CREATE TABLE monitoring.monitoring_source_generation (
+    tenant_id TEXT NOT NULL,
+    monitoring_source_id TEXT NOT NULL,
+    source_instance_generation TEXT NOT NULL,
+    provider_profile TEXT NOT NULL CHECK (provider_profile = 'zabbix'),
     provider_base_url TEXT NOT NULL CHECK (
         provider_base_url LIKE 'https://%'
         AND position('?' IN provider_base_url) = 0
@@ -33,25 +57,26 @@ CREATE TABLE monitoring.monitoring_source (
         AND configured_provider_scope ? 'host_group_refs'
         AND jsonb_typeof(configured_provider_scope->'host_group_refs') = 'array'
     ),
-    operational_evidence_state TEXT NOT NULL CHECK (operational_evidence_state IN (
-        'current', 'stale', 'incomplete', 'reconciliation_required', 'unavailable'
-    )),
-    replacement_candidate_ref TEXT NULL,
-    last_successful_sync_at TIMESTAMPTZ NULL,
-    last_attempt_at TIMESTAMPTZ NULL,
-    last_sync_operation_id TEXT NOT NULL,
+    configuration_revision BIGINT NOT NULL CHECK (configuration_revision > 0),
+    scope_revision BIGINT NOT NULL CHECK (scope_revision > 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT transaction_timestamp(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT transaction_timestamp(),
-    PRIMARY KEY (tenant_id, monitoring_source_id),
-    UNIQUE (tenant_id, monitoring_source_id, active_source_instance_generation),
-    CHECK (tenant_id <> ''),
-    CHECK (monitoring_source_id <> ''),
-    CHECK (active_source_instance_generation <> ''),
-    CHECK (last_sync_operation_id <> '')
+    PRIMARY KEY (tenant_id, monitoring_source_id, source_instance_generation),
+    FOREIGN KEY (tenant_id, monitoring_source_id)
+        REFERENCES monitoring.monitoring_source(tenant_id, monitoring_source_id)
+        DEFERRABLE INITIALLY DEFERRED,
+    CHECK (source_instance_generation <> '')
 );
 
-COMMENT ON TABLE monitoring.monitoring_source IS
-'Canonical tenant-scoped Monitoring source authority. Provider-native IDs and physical placement are not platform identity or tenant authority.';
+COMMENT ON TABLE monitoring.monitoring_source_generation IS
+'Immutable generation-scoped provider identity domain for a logical Monitoring source. Historical generations remain addressable after cutover.';
+
+ALTER TABLE monitoring.monitoring_source
+    ADD CONSTRAINT monitoring_source_active_generation_fk
+    FOREIGN KEY (tenant_id, monitoring_source_id, active_source_instance_generation)
+    REFERENCES monitoring.monitoring_source_generation(
+        tenant_id, monitoring_source_id, source_instance_generation
+    )
+    DEFERRABLE INITIALLY DEFERRED;
 
 CREATE TABLE monitoring.monitoring_sync_operation (
     tenant_id TEXT NOT NULL,
@@ -73,8 +98,8 @@ CREATE TABLE monitoring.monitoring_sync_operation (
     last_error_class TEXT NULL,
     PRIMARY KEY (tenant_id, monitoring_sync_operation_id),
     FOREIGN KEY (tenant_id, monitoring_source_id, source_instance_generation)
-        REFERENCES monitoring.monitoring_source(
-            tenant_id, monitoring_source_id, active_source_instance_generation
+        REFERENCES monitoring.monitoring_source_generation(
+            tenant_id, monitoring_source_id, source_instance_generation
         )
         DEFERRABLE INITIALLY DEFERRED,
     CHECK (tenant_id <> ''),
@@ -142,5 +167,20 @@ $$;
 CREATE TRIGGER wave4_monitoring_source_identity_guard
 BEFORE UPDATE ON monitoring.monitoring_source
 FOR EACH ROW EXECUTE FUNCTION monitoring.wave4_guard_source_identity_update();
+
+CREATE FUNCTION monitoring.wave4_reject_generation_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, monitoring
+AS $$
+BEGIN
+    RAISE EXCEPTION 'Monitoring source generation records are immutable';
+END;
+$$;
+
+CREATE TRIGGER wave4_monitoring_source_generation_immutable
+BEFORE UPDATE OR DELETE ON monitoring.monitoring_source_generation
+FOR EACH ROW EXECUTE FUNCTION monitoring.wave4_reject_generation_update();
 
 COMMIT;

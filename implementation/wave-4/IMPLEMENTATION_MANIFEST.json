@@ -20,13 +20,16 @@
     "stale_generation_configuration_scope_completion_fence",
     "host_inventory_ingestion",
     "generation_scoped_canonical_monitoring_resource_identity",
+    "canonical_resource_identity_immutable_after_creation",
     "canonical_resource_kind_host",
     "provider_object_kind_zabbix_host_separate_from_device_taxonomy",
     "allowlisted_bounded_zabbix_provider_evidence",
     "provider_evidence_provenance_and_immutable_snapshot_lineage",
+    "owner_bound_latest_provider_and_snapshot_evidence_references",
     "configured_scope_membership_required_for_current_inventory",
     "incomplete_snapshot_preserves_presence",
     "complete_authoritative_snapshot_negative_removal",
+    "database_guarded_negative_presence_transition",
     "host_inventory_stale_generation_configuration_scope_completion_fence",
     "forced_rls_for_host_inventory_tenant_tables"
   ],
@@ -41,7 +44,8 @@
     "src/jlmirror_monitoring/host_inventory.py",
     "sql/wave4/003_zabbix_initial_validation_worker.sql",
     "sql/wave4/005_zabbix_host_inventory.sql",
-    "sql/wave4/006_zabbix_host_inventory_boundary_hardening.sql"
+    "sql/wave4/006_zabbix_host_inventory_boundary_hardening.sql",
+    "sql/wave4/007_zabbix_host_inventory_integrity_hardening.sql"
   ],
   "assurance_surfaces": [
     "tests/wave4/test_zabbix_initial_validation_worker.py",

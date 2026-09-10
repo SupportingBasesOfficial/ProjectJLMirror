@@ -31,6 +31,7 @@
     "complete_authoritative_snapshot_negative_removal",
     "database_guarded_negative_presence_transition",
     "host_inventory_stale_generation_configuration_scope_completion_fence",
+    "qualified_plpgsql_claim_identifiers",
     "forced_rls_for_host_inventory_tenant_tables"
   ],
   "authorized_slices_consumed": [
@@ -45,7 +46,8 @@
     "sql/wave4/003_zabbix_initial_validation_worker.sql",
     "sql/wave4/005_zabbix_host_inventory.sql",
     "sql/wave4/006_zabbix_host_inventory_boundary_hardening.sql",
-    "sql/wave4/007_zabbix_host_inventory_integrity_hardening.sql"
+    "sql/wave4/007_zabbix_host_inventory_integrity_hardening.sql",
+    "sql/wave4/008_zabbix_host_inventory_claim_qualification.sql"
   ],
   "assurance_surfaces": [
     "tests/wave4/test_zabbix_initial_validation_worker.py",

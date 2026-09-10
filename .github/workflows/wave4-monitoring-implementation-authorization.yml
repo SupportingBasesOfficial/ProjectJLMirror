@@ -1,0 +1,68 @@
+name: Wave 4 Monitoring Implementation Authorization
+
+on:
+  pull_request:
+    paths:
+      - 'implementation/wave-4-monitoring-authorization/**'
+      - 'tools/assurance/validate_wave4_monitoring_authorization.py'
+      - 'tools/assurance/test_validate_wave4_monitoring_authorization.py'
+      - '.github/workflows/wave4-monitoring-implementation-authorization.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  authorize-monitoring:
+    name: Validate exact-scope Monitoring authorization
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact PR HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Assert exact checked-out commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$actual" = "$expected"
+          echo "exact_head=$actual"
+
+      - name: Falsify authorization escalation
+        run: python3 tools/assurance/test_validate_wave4_monitoring_authorization.py
+
+      - name: Validate bounded Monitoring authorization
+        run: python3 tools/assurance/validate_wave4_monitoring_authorization.py
+
+      - name: Preserve post-D2 readiness history
+        run: python3 tools/assurance/validate_post_d2_wave4_state.py
+
+      - name: Preserve accepted D4 predecessor
+        run: python3 tools/assurance/validate_d4_eventing_async_state.py
+
+      - name: Repository structural validation
+        run: python3 tools/assurance/validate_repository.py
+
+      - name: Assert non-production and frontend boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('implementation/wave-4-monitoring-authorization/AUTHORIZATION_MANIFEST.json')
+          d = json.loads(p.read_text())
+          assert d['production_authority'] == 'none'
+          assert d['c3_production_state'] == 'open'
+          assert d['frontend_authority'] == 'not_granted_by_this_gate'
+          assert d['merge_authorization'] == 'not_granted'
+          assert d['authorized_product_vertical'] == 'monitoring'
+          assert len(d['authorized_slices']) == 2
+          print('wave4_monitoring_boundary=PASS production=none frontend=not_granted slices=2')
+          PY

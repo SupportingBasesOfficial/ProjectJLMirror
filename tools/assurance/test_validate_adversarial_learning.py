@@ -190,6 +190,17 @@ def falsify_non_strict_deterministic_reconciliation() -> None:
     expect_failure(lambda r: mutate_text(r, v.WORKFLOW, "validate_adversarial_learning_strict.py --root . --review-comments", "validate_adversarial_learning.py --root . --review-comments"))
 
 
+def falsify_wave4_authorization_exact_path_allowlist() -> None:
+    validator = ROOT / "tools/assurance/validate_wave4_monitoring_authorization.py"
+    text = validator.read_text(encoding="utf-8")
+    assert "ALLOWED_PR_PATHS = {" in text, "Wave 4 authorization must use an exact path allowlist"
+    assert "ALLOWED_PR_PATH_PREFIXES" not in text, "Wave 4 authorization must not regress to prefix allowlisting"
+    assert "path in ALLOWED_PR_PATHS" in text, "Wave 4 authorization scope check must require exact path membership"
+    assert "implementation/wave-4-monitoring-authorization/AUTHORIZATION.md" in text
+    assert "implementation/wave-4-monitoring-authorization/AUTHORIZATION_MANIFEST.json" in text
+    expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0]["guardrails"][0].__setitem__("probe", "nonexistent_exact_allowlist_probe")))
+
+
 def main() -> None:
     assert not s.validate(ROOT)
 
@@ -216,6 +227,7 @@ def main() -> None:
     falsify_unbound_manual_dispatch()
     falsify_non_strict_deterministic_reconciliation()
     falsify_stale_d4c_current_workflow_projection()
+    falsify_wave4_authorization_exact_path_allowlist()
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][1].__setitem__("review_comment_id", 3961647090)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][6].__setitem__("guardrail_generation", 1)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0].__setitem__("systemic_guardrail_updated", False)))
@@ -238,7 +250,7 @@ def main() -> None:
         comments.write_text(json.dumps([[{"id": 3963734258, "body": "**P1 Badge** exact bootstrap finding"}]]), encoding="utf-8")
         assert not s.validate(root, comments)
 
-    print("adversarial_learning_falsification=PASS entrypoint_termination=blocked no_op_assertion=blocked dead_branch_helper=blocked privileged_job_pr_execution=blocked implicit_api_write=blocked exact_status_endpoint=bound reconciliation_concurrency=fresh manual_dispatch=removed strict_reconciliation=all-surfaces stale_d4c_workflow_projection=blocked d4c_product_authority_guardrail=attested")
+    print("adversarial_learning_falsification=PASS entrypoint_termination=blocked no_op_assertion=blocked dead_branch_helper=blocked privileged_job_pr_execution=blocked implicit_api_write=blocked exact_status_endpoint=bound reconciliation_concurrency=fresh manual_dispatch=removed strict_reconciliation=all-surfaces stale_d4c_workflow_projection=blocked d4c_product_authority_guardrail=attested wave4_exact_path_allowlist=attested")
 
 
 if __name__ == "__main__":

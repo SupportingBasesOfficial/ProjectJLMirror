@@ -205,21 +205,25 @@ BEGIN
         RAISE EXCEPTION 'invalid initial-validation completion input';
     END IF;
 
-    IF NOT EXISTS (
-        SELECT 1
-          FROM monitoring.monitoring_source s
-          JOIN monitoring.monitoring_source_generation g
-            ON g.tenant_id = s.tenant_id
-           AND g.monitoring_source_id = s.monitoring_source_id
-           AND g.source_instance_generation = s.active_source_instance_generation
-         WHERE s.tenant_id = p_tenant_id
-           AND s.monitoring_source_id = v_source_id
-           AND s.active_source_instance_generation = v_generation
-           AND s.configuration_revision = v_configuration_revision
-           AND s.scope_revision = v_scope_revision
-           AND s.provider_scope_tenant_binding_id = p_provider_scope_tenant_binding_id
-           AND g.provider_instance_ref = p_provider_instance_ref
-    ) THEN
+    -- Lock the authoritative source row before validating the completion fence.
+    -- Under READ COMMITTED this closes the TOCTOU window where a configuration/scope
+    -- edit could otherwise commit after the fence check but before the final source update.
+    PERFORM 1
+      FROM monitoring.monitoring_source s
+      JOIN monitoring.monitoring_source_generation g
+        ON g.tenant_id = s.tenant_id
+       AND g.monitoring_source_id = s.monitoring_source_id
+       AND g.source_instance_generation = s.active_source_instance_generation
+     WHERE s.tenant_id = p_tenant_id
+       AND s.monitoring_source_id = v_source_id
+       AND s.active_source_instance_generation = v_generation
+       AND s.configuration_revision = v_configuration_revision
+       AND s.scope_revision = v_scope_revision
+       AND s.provider_scope_tenant_binding_id = p_provider_scope_tenant_binding_id
+       AND g.provider_instance_ref = p_provider_instance_ref
+     FOR UPDATE OF s;
+
+    IF NOT FOUND THEN
         UPDATE monitoring.monitoring_sync_operation
            SET state = 'reconciliation_required',
                completed_at = transaction_timestamp(),
@@ -264,6 +268,6 @@ COMMENT ON FUNCTION monitoring.claim_zabbix_initial_validation(TEXT, TEXT, TEXT)
 'Claims the single initial validation operation only while its source generation remains current. This slice does not define retry cadence.';
 
 COMMENT ON FUNCTION monitoring.complete_zabbix_initial_validation(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, JSONB, TEXT, TEXT) IS
-'Commits hostgroup.get validation evidence only while generation/configuration/scope/binding/provider lineage authority still matches the claim. Stale authority retires its own operation as reconciliation_required without mutating source evidence. Secrets and raw provider payload are excluded.';
+'Locks the authoritative Monitoring source row and commits hostgroup.get validation evidence only while generation/configuration/scope/binding/provider lineage authority still matches the claim. Stale authority retires its own operation as reconciliation_required without mutating source evidence. Secrets and raw provider payload are excluded.';
 
 COMMIT;

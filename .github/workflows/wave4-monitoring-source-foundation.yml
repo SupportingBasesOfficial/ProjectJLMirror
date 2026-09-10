@@ -29,7 +29,7 @@ concurrency:
 jobs:
   monitoring-source-foundation:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -101,6 +101,11 @@ jobs:
         env:
           PG_CONTAINER: jlmirror-wave4-host-inventory-postgres
         run: bash tools/wave4/run_zabbix_host_inventory_postgres_conformance.sh
+
+      - name: Execute Zabbix host inventory poll ordering on pinned PostgreSQL
+        env:
+          PG_CONTAINER: jlmirror-wave4-host-inventory-ordering-postgres
+        run: bash tools/wave4/run_zabbix_host_inventory_ordering_postgres_conformance.sh
 
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

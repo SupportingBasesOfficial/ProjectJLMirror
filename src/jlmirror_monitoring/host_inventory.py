@@ -26,6 +26,8 @@ from .validation_worker import (
     ResolvedZabbixCredential,
 )
 
+# Hard safety ceilings, not throughput/SLO tuning. They prevent provider-controlled
+# cardinality from becoming unbounded work while C3 production numerics remain deferred.
 MAX_HOSTS_PER_SNAPSHOT = 50_000
 MAX_INTERFACES_PER_HOST = 32
 MAX_GROUPS_PER_HOST = 256
@@ -57,6 +59,8 @@ class ZabbixHostInterfaceEvidence:
         _canonical_explicit_text(self.interfaceid, "interfaceid", max_len=256)
         if self.interface_type not in {"agent", "snmp", "ipmi", "jmx", "unknown"}:
             raise ValueError("interface_type must be an allowed normalized Zabbix interface kind")
+        if not isinstance(self.main, bool) or not isinstance(self.use_ip, bool):
+            raise ValueError("interface main/use_ip must be canonical booleans")
         for field_name, value, max_len in (("ip", self.ip, 255), ("dns", self.dns, 255), ("port", self.port, 32)):
             if value is not None:
                 _canonical_explicit_text(value, field_name, max_len=max_len)
@@ -137,14 +141,17 @@ class ZabbixHostEvidence:
         _canonical_explicit_text(self.display_name, "display_name", max_len=512)
         if not isinstance(self.inventory, ZabbixInventoryEvidence):
             raise ValueError("inventory must be normalized Zabbix inventory evidence")
-        for name, values, maximum in (
-            ("interfaces", self.interfaces, MAX_INTERFACES_PER_HOST),
-            ("groups", self.groups, MAX_GROUPS_PER_HOST),
-            ("templates", self.templates, MAX_TEMPLATES_PER_HOST),
-            ("tags", self.tags, MAX_TAGS_PER_HOST),
-        ):
+        collection_specs = (
+            ("interfaces", self.interfaces, MAX_INTERFACES_PER_HOST, ZabbixHostInterfaceEvidence),
+            ("groups", self.groups, MAX_GROUPS_PER_HOST, ZabbixNamedRefEvidence),
+            ("templates", self.templates, MAX_TEMPLATES_PER_HOST, ZabbixNamedRefEvidence),
+            ("tags", self.tags, MAX_TAGS_PER_HOST, ZabbixTagEvidence),
+        )
+        for name, values, maximum, expected_type in collection_specs:
             if not isinstance(values, tuple) or len(values) > maximum:
                 raise ValueError(f"{name} must be an immutable bounded tuple")
+            if any(not isinstance(value, expected_type) for value in values):
+                raise ValueError(f"{name} contains a non-normalized provider evidence value")
         if len({value.interfaceid for value in self.interfaces}) != len(self.interfaces):
             raise ValueError("duplicate interfaceid in host evidence")
         if len({value.ref for value in self.groups}) != len(self.groups):
@@ -173,14 +180,30 @@ class ZabbixHostEvidence:
             "technical_name": self.technical_name,
             "display_name": self.display_name,
             "inventory": inventory,
-            "interfaces": [{"interfaceid": i.interfaceid, "interface_type": i.interface_type, "main": i.main, "use_ip": i.use_ip, **({"ip": i.ip} if i.ip is not None else {}), **({"dns": i.dns} if i.dns is not None else {}), **({"port": i.port} if i.port is not None else {})} for i in self.interfaces],
-            "groups": [{"ref": i.ref, **({"name": i.name} if i.name is not None else {})} for i in self.groups],
-            "templates": [{"ref": i.ref, **({"name": i.name} if i.name is not None else {})} for i in self.templates],
-            "tags": [{"tag": i.tag, "value": i.value} for i in self.tags],
+            "interfaces": [
+                {
+                    "interfaceid": item.interfaceid,
+                    "interface_type": item.interface_type,
+                    "main": item.main,
+                    "use_ip": item.use_ip,
+                    **({"ip": item.ip} if item.ip is not None else {}),
+                    **({"dns": item.dns} if item.dns is not None else {}),
+                    **({"port": item.port} if item.port is not None else {}),
+                }
+                for item in self.interfaces
+            ],
+            "groups": [{"ref": item.ref, **({"name": item.name} if item.name is not None else {})} for item in self.groups],
+            "templates": [{"ref": item.ref, **({"name": item.name} if item.name is not None else {})} for item in self.templates],
+            "tags": [{"tag": item.tag, "value": item.value} for item in self.tags],
         }
 
     def evidence_fingerprint(self) -> str:
-        encoded = json.dumps(self.canonical_evidence(), separators=(",", ":"), sort_keys=True, ensure_ascii=False).encode("utf-8")
+        encoded = json.dumps(
+            self.canonical_evidence(),
+            separators=(",", ":"),
+            sort_keys=True,
+            ensure_ascii=False,
+        ).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
 
@@ -190,8 +213,12 @@ class ZabbixHostSnapshot:
     complete: bool
 
     def __post_init__(self) -> None:
+        if not isinstance(self.complete, bool):
+            raise ValueError("snapshot completeness must be a canonical boolean")
         if not isinstance(self.hosts, tuple) or len(self.hosts) > MAX_HOSTS_PER_SNAPSHOT:
             raise ValueError("hosts must be an immutable bounded tuple")
+        if any(not isinstance(host, ZabbixHostEvidence) for host in self.hosts):
+            raise ValueError("snapshot contains non-normalized host evidence")
         if len({host.hostid for host in self.hosts}) != len(self.hosts):
             raise ValueError("snapshot must not contain duplicate hostid")
 
@@ -228,19 +255,51 @@ class HostInventoryResult:
 
 
 class MonitoringHostInventoryRepository(Protocol):
-    def claim_host_inventory(self, monitoring_sync_operation_id: str, *, claim_token: str) -> HostInventoryClaim: ...
-    def complete_host_inventory(self, claim: HostInventoryClaim, result: HostInventoryResult, *, snapshot_evidence_id: str) -> None: ...
+    def claim_host_inventory(self, monitoring_sync_operation_id: str, *, claim_token: str) -> HostInventoryClaim:
+        ...
+
+    def complete_host_inventory(self, claim: HostInventoryClaim, result: HostInventoryResult, *, snapshot_evidence_id: str) -> None:
+        ...
 
 
 class ZabbixHostReader(Protocol):
-    def host_get(self, endpoint: AdmittedProviderEndpoint, credential: ResolvedZabbixCredential, host_group_refs: Sequence[str], *, max_hosts: int) -> ZabbixHostSnapshot: ...
+    def host_get(
+        self,
+        endpoint: AdmittedProviderEndpoint,
+        credential: ResolvedZabbixCredential,
+        host_group_refs: Sequence[str],
+        *,
+        max_hosts: int,
+    ) -> ZabbixHostSnapshot:
+        ...
 
 
-def _degraded(failure_class: InventoryFailureClass, *, evidence_state: OperationalEvidenceState, hosts: tuple[ZabbixHostEvidence, ...] = (), egress_decision_ref: str | None = None, credential_generation_ref: str | None = None) -> HostInventoryResult:
-    return HostInventoryResult(evidence_state, SyncOperationState.RECONCILIATION_REQUIRED, hosts, False, failure_class, egress_decision_ref, credential_generation_ref)
+def _degraded(
+    failure_class: InventoryFailureClass,
+    *,
+    evidence_state: OperationalEvidenceState,
+    hosts: tuple[ZabbixHostEvidence, ...] = (),
+    egress_decision_ref: str | None = None,
+    credential_generation_ref: str | None = None,
+) -> HostInventoryResult:
+    return HostInventoryResult(
+        evidence_state,
+        SyncOperationState.RECONCILIATION_REQUIRED,
+        hosts,
+        False,
+        failure_class,
+        egress_decision_ref,
+        credential_generation_ref,
+    )
 
 
-def collect_host_inventory(claim: HostInventoryClaim, *, credential_resolver: CredentialResolver, outbound_admission: OutboundAdmission, host_reader: ZabbixHostReader) -> HostInventoryResult:
+def collect_host_inventory(
+    claim: HostInventoryClaim,
+    *,
+    credential_resolver: CredentialResolver,
+    outbound_admission: OutboundAdmission,
+    host_reader: ZabbixHostReader,
+) -> HostInventoryResult:
     try:
         credential = credential_resolver.resolve_zabbix_api_token(claim.credential_binding_ref)
     except CredentialResolutionError:
@@ -248,34 +307,104 @@ def collect_host_inventory(claim: HostInventoryClaim, *, credential_resolver: Cr
     try:
         endpoint = outbound_admission.admit_zabbix_api(claim.provider_configuration)
     except EgressAdmissionError:
-        return _degraded(InventoryFailureClass.EGRESS_NOT_ADMITTED, evidence_state=OperationalEvidenceState.UNAVAILABLE, credential_generation_ref=credential.credential_generation_ref)
+        return _degraded(
+            InventoryFailureClass.EGRESS_NOT_ADMITTED,
+            evidence_state=OperationalEvidenceState.UNAVAILABLE,
+            credential_generation_ref=credential.credential_generation_ref,
+        )
     try:
-        snapshot = host_reader.host_get(endpoint, credential, claim.configured_provider_scope.host_group_refs, max_hosts=MAX_HOSTS_PER_SNAPSHOT)
+        snapshot = host_reader.host_get(
+            endpoint,
+            credential,
+            claim.configured_provider_scope.host_group_refs,
+            max_hosts=MAX_HOSTS_PER_SNAPSHOT,
+        )
     except ProviderAuthenticationError:
-        return _degraded(InventoryFailureClass.PROVIDER_AUTHENTICATION_REJECTED, evidence_state=OperationalEvidenceState.UNAVAILABLE, egress_decision_ref=endpoint.egress_decision_ref, credential_generation_ref=credential.credential_generation_ref)
+        return _degraded(
+            InventoryFailureClass.PROVIDER_AUTHENTICATION_REJECTED,
+            evidence_state=OperationalEvidenceState.UNAVAILABLE,
+            egress_decision_ref=endpoint.egress_decision_ref,
+            credential_generation_ref=credential.credential_generation_ref,
+        )
     except ProviderUnavailableError:
-        return _degraded(InventoryFailureClass.PROVIDER_UNAVAILABLE, evidence_state=OperationalEvidenceState.UNAVAILABLE, egress_decision_ref=endpoint.egress_decision_ref, credential_generation_ref=credential.credential_generation_ref)
-    except (ProviderProtocolError, ValueError):
-        return _degraded(InventoryFailureClass.PROVIDER_PROTOCOL_INVALID, evidence_state=OperationalEvidenceState.UNAVAILABLE, egress_decision_ref=endpoint.egress_decision_ref, credential_generation_ref=credential.credential_generation_ref)
+        return _degraded(
+            InventoryFailureClass.PROVIDER_UNAVAILABLE,
+            evidence_state=OperationalEvidenceState.UNAVAILABLE,
+            egress_decision_ref=endpoint.egress_decision_ref,
+            credential_generation_ref=credential.credential_generation_ref,
+        )
+    except (ProviderProtocolError, ValueError, TypeError):
+        return _degraded(
+            InventoryFailureClass.PROVIDER_PROTOCOL_INVALID,
+            evidence_state=OperationalEvidenceState.UNAVAILABLE,
+            egress_decision_ref=endpoint.egress_decision_ref,
+            credential_generation_ref=credential.credential_generation_ref,
+        )
+
+    if not isinstance(snapshot, ZabbixHostSnapshot):
+        return _degraded(
+            InventoryFailureClass.PROVIDER_PROTOCOL_INVALID,
+            evidence_state=OperationalEvidenceState.UNAVAILABLE,
+            egress_decision_ref=endpoint.egress_decision_ref,
+            credential_generation_ref=credential.credential_generation_ref,
+        )
 
     configured = set(claim.configured_provider_scope.host_group_refs)
     for host in snapshot.hosts:
         if not {group.ref for group in host.groups}.intersection(configured):
-            return _degraded(InventoryFailureClass.SCOPE_EVIDENCE_INVALID, evidence_state=OperationalEvidenceState.INCOMPLETE, egress_decision_ref=endpoint.egress_decision_ref, credential_generation_ref=credential.credential_generation_ref)
+            return _degraded(
+                InventoryFailureClass.SCOPE_EVIDENCE_INVALID,
+                evidence_state=OperationalEvidenceState.INCOMPLETE,
+                egress_decision_ref=endpoint.egress_decision_ref,
+                credential_generation_ref=credential.credential_generation_ref,
+            )
     if not snapshot.complete:
-        return _degraded(InventoryFailureClass.SNAPSHOT_TRUNCATED, evidence_state=OperationalEvidenceState.INCOMPLETE, hosts=snapshot.hosts, egress_decision_ref=endpoint.egress_decision_ref, credential_generation_ref=credential.credential_generation_ref)
-    return HostInventoryResult(OperationalEvidenceState.CURRENT, SyncOperationState.SUCCEEDED, snapshot.hosts, True, None, endpoint.egress_decision_ref, credential.credential_generation_ref)
+        return _degraded(
+            InventoryFailureClass.SNAPSHOT_TRUNCATED,
+            evidence_state=OperationalEvidenceState.INCOMPLETE,
+            hosts=snapshot.hosts,
+            egress_decision_ref=endpoint.egress_decision_ref,
+            credential_generation_ref=credential.credential_generation_ref,
+        )
+    return HostInventoryResult(
+        OperationalEvidenceState.CURRENT,
+        SyncOperationState.SUCCEEDED,
+        snapshot.hosts,
+        True,
+        None,
+        endpoint.egress_decision_ref,
+        credential.credential_generation_ref,
+    )
 
 
 class HostInventoryWorker:
-    def __init__(self, *, repository: MonitoringHostInventoryRepository, credential_resolver: CredentialResolver, outbound_admission: OutboundAdmission, host_reader: ZabbixHostReader) -> None:
+    def __init__(
+        self,
+        *,
+        repository: MonitoringHostInventoryRepository,
+        credential_resolver: CredentialResolver,
+        outbound_admission: OutboundAdmission,
+        host_reader: ZabbixHostReader,
+    ) -> None:
         self._repository = repository
         self._credential_resolver = credential_resolver
         self._outbound_admission = outbound_admission
         self._host_reader = host_reader
 
     def run(self, monitoring_sync_operation_id: str) -> HostInventoryResult:
-        claim = self._repository.claim_host_inventory(monitoring_sync_operation_id, claim_token=opaque_token("mon-host-claim"))
-        result = collect_host_inventory(claim, credential_resolver=self._credential_resolver, outbound_admission=self._outbound_admission, host_reader=self._host_reader)
-        self._repository.complete_host_inventory(claim, result, snapshot_evidence_id=opaque_token("mon-host-snapshot"))
+        claim = self._repository.claim_host_inventory(
+            monitoring_sync_operation_id,
+            claim_token=opaque_token("mon-host-claim"),
+        )
+        result = collect_host_inventory(
+            claim,
+            credential_resolver=self._credential_resolver,
+            outbound_admission=self._outbound_admission,
+            host_reader=self._host_reader,
+        )
+        self._repository.complete_host_inventory(
+            claim,
+            result,
+            snapshot_evidence_id=opaque_token("mon-host-snapshot"),
+        )
         return result

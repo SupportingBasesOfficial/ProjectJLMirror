@@ -27,6 +27,8 @@ class MetricDefinitionsAuthorizationTests(unittest.TestCase):
             "SCOPE EXCLUSION != METRIC RETIREMENT",
             "GENERATION RETIREMENT != METRIC RETIREMENT",
             "UNCERTAINTY != NEGATIVE EVIDENCE",
+            "ITEM-DEFINITION POLL GENERATION != HOST-INVENTORY POLL GENERATION",
+            "SHARED RECOVERY EPOCH/ADMISSION FRAMEWORK != SHARED ENDPOINT POLL SEQUENCE",
             "provider_object_kind = zabbix_item",
             "Boolean is not inferred from integer `0/1`",
         ):
@@ -41,17 +43,24 @@ class MetricDefinitionsAuthorizationTests(unittest.TestCase):
             "trigger_problem_event_ingestion",
             "health_projection",
             "provider_write_back",
+            "shared_host_inventory_poll_generation_for_item_definitions",
             "frontend_route_or_navigation_creation",
             "production_deployment",
         }
         self.assertTrue(forbidden <= set(manifest["explicitly_not_authorized"]))
 
-    def test_binding_is_explicitly_separate_from_definition_identity(self) -> None:
+    def test_binding_and_poll_authority_are_explicitly_separated(self) -> None:
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
         authorized = set(manifest["authorized_behavior"])
+        invariants = set(manifest["required_invariants"])
+
         self.assertIn("separate_zabbix_item_binding_and_provenance", authorized)
         self.assertIn("canonical_resource_ownership_required", authorized)
         self.assertIn("retirement_only_from_complete_authoritative_negative_item_snapshot", authorized)
+        self.assertIn("reuse_existing_recovery_epoch_and_admission_framework", authorized)
+        self.assertIn("distinct_item_definition_poll_generation_stream", authorized)
+        self.assertIn("item_definition_poll_generation_distinct_from_host_inventory_poll_generation", invariants)
+        self.assertIn("shared_recovery_epoch_admission_does_not_imply_shared_endpoint_poll_sequence", invariants)
 
 
 if __name__ == "__main__":

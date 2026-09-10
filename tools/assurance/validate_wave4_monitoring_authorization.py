@@ -68,6 +68,7 @@ ALLOWED_PR_PATHS = {
     "implementation/wave-4-monitoring-authorization/AUTHORIZATION_MANIFEST.json",
     "tools/assurance/validate_wave4_monitoring_authorization.py",
     "tools/assurance/test_validate_wave4_monitoring_authorization.py",
+    "tools/assurance/test_validate_adversarial_learning.py",
     ".github/workflows/wave4-monitoring-implementation-authorization.yml",
     "governance/adversarial/learning-ledger.d/pr-123-review-findings.json",
 }

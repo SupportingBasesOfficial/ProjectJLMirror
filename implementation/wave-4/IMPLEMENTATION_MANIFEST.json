@@ -40,6 +40,7 @@
     "host_inventory_snapshot_operation_binding",
     "host_inventory_closed_snapshot_membership",
     "host_inventory_snapshot_cardinality_closure",
+    "host_inventory_terminal_operation_immutability",
     "host_inventory_positive_presence_authority",
     "host_inventory_evidence_fingerprint_verification",
     "qualified_plpgsql_claim_identifiers",
@@ -60,7 +61,8 @@
     "sql/wave4/007_zabbix_host_inventory_integrity_hardening.sql",
     "sql/wave4/008_zabbix_host_inventory_poll_ordering_hardening.sql",
     "sql/wave4/009_zabbix_host_inventory_evidence_authority_hardening.sql",
-    "sql/wave4/010_zabbix_host_inventory_final_authority_hardening.sql"
+    "sql/wave4/010_zabbix_host_inventory_final_authority_hardening.sql",
+    "sql/wave4/011_zabbix_host_inventory_terminal_operation_hardening.sql"
   ],
   "assurance_surfaces": [
     "tests/wave4/test_zabbix_initial_validation_worker.py",
@@ -71,6 +73,7 @@
     "tools/wave4/run_zabbix_host_inventory_postgres_conformance.sh",
     "tools/wave4/run_zabbix_host_inventory_ordering_postgres_conformance.sh",
     "tools/wave4/run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh",
+    "tools/wave4/run_zabbix_host_inventory_terminal_operation_postgres_conformance.sh",
     ".github/workflows/wave4-monitoring-source-foundation.yml"
   ],
   "explicitly_not_implemented": [

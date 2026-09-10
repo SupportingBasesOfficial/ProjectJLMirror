@@ -13,8 +13,10 @@ M024 = ROOT / "sql/wave4/024_zabbix_metric_definitions_evidence_and_drift_author
 M025 = ROOT / "sql/wave4/025_zabbix_metric_definitions_drift_visibility.sql"
 M026 = ROOT / "sql/wave4/026_zabbix_metric_definitions_provenance_closure.sql"
 M027 = ROOT / "sql/wave4/027_zabbix_metric_definitions_completion_authority.sql"
+M028 = ROOT / "sql/wave4/028_zabbix_metric_definitions_completion_liveness.sql"
 TEST = ROOT / "tests/wave4/test_zabbix_metric_definitions.py"
 CONFORMANCE = ROOT / "tools/wave4/run_zabbix_metric_definitions_postgres_conformance.sh"
+LIVENESS = ROOT / "tools/wave4/run_zabbix_metric_definitions_liveness_postgres_conformance.sh"
 
 
 def require(condition: bool, message: str) -> None:
@@ -23,14 +25,16 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> None:
-    required = (DOMAIN, M020, M021, M022, M023, M024, M025, M026, M027, TEST, CONFORMANCE)
+    required = (DOMAIN, M020, M021, M022, M023, M024, M025, M026, M027, M028, TEST, CONFORMANCE, LIVENESS)
     for path in required:
         require(path.is_file(), f"missing required surface: {path.relative_to(ROOT)}")
 
     domain = DOMAIN.read_text(encoding="utf-8")
-    migrations = {path.name: path.read_text(encoding="utf-8") for path in (M020, M021, M022, M023, M024, M025, M026, M027)}
-    m020, m021, m022, m023, m024, m025, m026, m027 = (migrations[path.name] for path in (M020, M021, M022, M023, M024, M025, M026, M027))
+    migration_paths = (M020, M021, M022, M023, M024, M025, M026, M027, M028)
+    migrations = {path.name: path.read_text(encoding="utf-8") for path in migration_paths}
+    m020, m021, m022, m023, m024, m025, m026, m027, m028 = (migrations[path.name] for path in migration_paths)
     conformance = CONFORMANCE.read_text(encoding="utf-8")
+    liveness = LIVENESS.read_text(encoding="utf-8")
 
     for marker in (
         'class MetricValueKind', 'class ZabbixNativeValueType', 'class ZabbixItemOperationalState',
@@ -77,30 +81,35 @@ def main() -> None:
         require(marker in m025, f"migration 025 drift visibility missing: {marker}")
 
     for marker in (
-        'metric_definition_owner_tuple_unique',
-        'metric_definition_binding_owner_fk',
-        'metric_definition_provider_evidence_owner_fk',
-        'metric_definition_poll_authority_single_owner',
-        'wave4_mark_metric_binding_reconciliation',
-        'wave4_verify_metric_snapshot_closure',
-        'wave4_verify_metric_provider_evidence_closure',
-        'Metric provider evidence fingerprint mismatch',
+        'metric_definition_owner_tuple_unique', 'metric_definition_binding_owner_fk',
+        'metric_definition_provider_evidence_owner_fk', 'metric_definition_poll_authority_single_owner',
+        'wave4_mark_metric_binding_reconciliation', 'wave4_verify_metric_snapshot_closure',
+        'wave4_verify_metric_provider_evidence_closure', 'Metric provider evidence fingerprint mismatch',
         'Metric provider evidence membership does not match normalized evidence',
     ):
         require(marker in m026, f"migration 026 provenance closure missing: {marker}")
 
     for marker in (
-        "execution.stale_metric_definition_authority",
-        "provider.host_association_drift",
+        'execution.stale_metric_definition_authority', 'provider.host_association_drift',
         'v_current_generation IS DISTINCT FROM v_generation',
         'v_current_configuration_revision IS DISTINCT FROM v_configuration_revision',
         'v_current_scope_revision IS DISTINCT FROM v_scope_revision',
         'monitoring.monitoring_metric_definition_runtime_admission AS a',
-        'v_existing_host_ref IS DISTINCT FROM v_hostid',
-        'v_existing_resource_id IS DISTINCT FROM v_resource_id',
+        'v_existing_host_ref IS DISTINCT FROM v_hostid', 'v_existing_resource_id IS DISTINCT FROM v_resource_id',
         'PERFORM monitoring.wave4_mark_metric_binding_reconciliation',
     ):
         require(marker in m027, f"migration 027 completion authority missing: {marker}")
+
+    for marker in (
+        "p_failure_class := 'provider.protocol_invalid'",
+        "p_failure_class := 'provider.host_association_invalid'",
+        "p_operation_state := 'reconciliation_required'",
+        "p_snapshot_complete := FALSE",
+        "UPDATE monitoring.monitoring_sync_operation AS o",
+        "claim_token=NULL",
+        "No canonical definition/binding mutation",
+    ):
+        require(marker in m028, f"migration 028 completion liveness missing: {marker}")
 
     for migration in (
         'sql/wave4/023_zabbix_metric_definitions_qualified_claim.sql',
@@ -109,7 +118,10 @@ def main() -> None:
         'sql/wave4/026_zabbix_metric_definitions_provenance_closure.sql',
         'sql/wave4/027_zabbix_metric_definitions_completion_authority.sql',
     ):
-        require(migration in conformance, f"final composed conformance missing {migration}")
+        require(migration in conformance, f"broad composed conformance missing {migration}")
+
+    require('sql/wave4/028_zabbix_metric_definitions_completion_liveness.sql' in liveness,
+            'final-schema liveness conformance does not apply migration 028')
 
     combined = '\n'.join(migrations.values())
     for marker in ('metric_current_state', 'metric_observation', 'history.get', 'problem_state', 'health_projection'):
@@ -120,9 +132,15 @@ def main() -> None:
         'drift=host+value-visible+atomic', 'poll_stream=independent',
         'recovery=stale-fenced+admission-volatile',
     ):
-        require(marker in conformance, f"PostgreSQL conformance marker missing: {marker}")
+        require(marker in conformance, f"broad PostgreSQL conformance marker missing: {marker}")
 
-    print('wave4_zabbix_metric_definitions=PASS schema=020-027 composed=001-027 scope=item-get-metadata-only authority=item-stream-independent atomic_preflight=required claim=qualified evidence=owner-bound+closed+fingerprint-verified drift=host+value-visible recovery=stale-fenced')
+    for marker in (
+        'schema=001-028', 'malformed=terminal-reconciliation', 'duplicate=terminal-reconciliation',
+        'missing_host=terminal-reconciliation', 'partial_mutation=none', 'claim=retired',
+    ):
+        require(marker in liveness, f"liveness PostgreSQL conformance marker missing: {marker}")
+
+    print('wave4_zabbix_metric_definitions=PASS schema=020-028 broad=001-027 final_liveness=001-028 scope=item-get-metadata-only authority=item-stream-independent atomic_preflight=required claim=qualified evidence=owner-bound+closed+fingerprint-verified drift=host+value-visible recovery=stale-fenced liveness=terminal-reconciliation')
 
 
 if __name__ == '__main__':

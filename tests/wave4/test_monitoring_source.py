@@ -28,11 +28,13 @@ class MonitoringSourceFoundationTests(unittest.TestCase):
             source_id_factory=lambda: "mon-src_platform-id",
             generation_factory=lambda: "mon-gen_high-entropy-generation",
             operation_id_factory=lambda: "mon-sync_initial",
+            audit_evidence_id_factory=lambda: "mon-audit_create",
             now=lambda: now,
         )
         self.assertEqual(plan.source.monitoring_source_id, "mon-src_platform-id")
         self.assertEqual(plan.source.provider_profile, "zabbix")
         self.assertEqual(plan.source.active_source_instance_generation, "mon-gen_high-entropy-generation")
+        self.assertEqual(plan.audit_evidence_id, "mon-audit_create")
         self.assertEqual(plan.source.configuration_revision, 1)
         self.assertEqual(plan.source.scope_revision, 1)
         self.assertEqual(plan.source.operational_evidence_state, OperationalEvidenceState.RECONCILIATION_REQUIRED)
@@ -120,6 +122,15 @@ class MonitoringSourceFoundationTests(unittest.TestCase):
                 source_id_factory=lambda: "same",
                 generation_factory=lambda: "same",
                 operation_id_factory=lambda: "other",
+                audit_evidence_id_factory=lambda: "audit",
+            )
+        with self.assertRaisesRegex(ValueError, "distinct"):
+            plan_source_creation(
+                self.command(),
+                source_id_factory=lambda: "source",
+                generation_factory=lambda: "generation",
+                operation_id_factory=lambda: "operation",
+                audit_evidence_id_factory=lambda: "source",
             )
         with self.assertRaises(ValueError):
             plan_source_creation(self.command(), source_id_factory=lambda: "source\nmalformed")

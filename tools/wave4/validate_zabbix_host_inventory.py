@@ -107,19 +107,22 @@ def main() -> None:
     for marker in (
         "host_inventory_poll_generation BIGINT NOT NULL DEFAULT 0",
         "host_inventory_poll_generation BIGINT NULL",
-        "wave4_complete_zabbix_host_inventory_pre_poll_fence",
+        "CREATE OR REPLACE FUNCTION monitoring.complete_zabbix_host_inventory",
         "host_inventory_poll_generation=s.host_inventory_poll_generation+1",
         "FOR UPDATE OF s,o",
         "execution.superseded_poll_authority",
         "e.observed_at > OLD.last_confirmed_present_at",
         "newer complete authoritative negative snapshot evidence",
+        "no unfenced helper remains callable",
     ):
         require(marker in ordering, f"host inventory ordering guard missing: {marker}")
+    require("wave4_complete_zabbix_host_inventory_pre_poll_fence" not in ordering, "unfenced host inventory completion helper must not exist")
     for marker in (
         "poll_generation=claim_ordered",
         "late_completion=retired_without_mutation",
         "stale_negative=blocked",
         "newer_positive=preserved",
+        "unfenced_helper=absent",
     ):
         require(marker in ordering_pg, f"host inventory ordering PostgreSQL falsifier missing: {marker}")
 
@@ -136,7 +139,7 @@ def main() -> None:
     require("host_inventory_ingestion" not in manifest["explicitly_not_implemented"], "manifest still denies implemented host inventory")
     require("canonical_device_classification" in manifest["explicitly_not_implemented"], "implementation must not claim device classification authority")
 
-    print("wave4_zabbix_host_inventory_validation=PASS resource_kind=host provider_object_kind=zabbix_host evidence=bounded+scope-bound+owner-bound identity=immutable removal=authoritative+newer-only tenant_rls=forced stale_authority=fenced poll_generation=single-winner recovery=validation-authority")
+    print("wave4_zabbix_host_inventory_validation=PASS resource_kind=host provider_object_kind=zabbix_host evidence=bounded+scope-bound+owner-bound identity=immutable removal=authoritative+newer-only tenant_rls=forced stale_authority=fenced poll_generation=single-winner unfenced_helper=absent recovery=validation-authority")
 
 
 if __name__ == "__main__":

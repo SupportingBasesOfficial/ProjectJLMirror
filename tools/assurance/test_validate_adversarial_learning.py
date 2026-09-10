@@ -29,6 +29,7 @@ GUARDRAIL_FILES = [
     Path("tools/assurance/d4b_wire_schema/test_source_evidence.py"),
     Path("tools/wave4/run_zabbix_initial_validation_postgres_conformance.sh"),
     Path("tools/wave4/validate_zabbix_initial_validation_worker.py"),
+    Path("implementation/wave-4-host-inventory-authorization/AUTHORIZATION_MANIFEST.json"),
 ]
 
 
@@ -220,6 +221,26 @@ def falsify_wave4_authority_toctou_guardrail() -> None:
     )
 
 
+def falsify_wave4_host_inventory_authority_transition() -> None:
+    path = Path("implementation/wave-4-host-inventory-authorization/AUTHORIZATION_MANIFEST.json")
+    manifest = json.loads((ROOT / path).read_text(encoding="utf-8"))
+    assert manifest.get("effective_rule") == "this_successor_clarification_becomes_canonical_and_unblocks_exact_host_inventory_implementation_only_after_exact_head_review_and_separately_authorized_merge"
+    assert manifest.get("canonical_effect_after_merge") == "host_inventory_ingestion_authorized_for_exact_accepted_behavior_with_monitoring_resource_kind_host"
+    assert manifest.get("implementation_authority_before_merge") == "blocked"
+    assert manifest.get("implementation_authority_after_merge") == "granted_for_exact_host_inventory_ingestion_slice_only"
+    finding = manifest.get("post_merge_finding") or {}
+    assert finding.get("implementation_blocked_until_this_clarification_is_canonical") is True
+    assert finding.get("canonical_resolution_after_merge") == "resolved_by_binding_monitoring_resource_kind_host_and_preserving_separate_provider_object_kind_and_device_taxonomy"
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_wave4_host_inventory_authority_transition()\n",
+            "",
+        )
+    )
+
+
 def main() -> None:
     assert not s.validate(ROOT)
 
@@ -248,6 +269,7 @@ def main() -> None:
     falsify_stale_d4c_current_workflow_projection()
     falsify_wave4_authorization_exact_path_allowlist()
     falsify_wave4_authority_toctou_guardrail()
+    falsify_wave4_host_inventory_authority_transition()
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][1].__setitem__("review_comment_id", 3961647090)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][6].__setitem__("guardrail_generation", 1)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0].__setitem__("systemic_guardrail_updated", False)))
@@ -270,7 +292,7 @@ def main() -> None:
         comments.write_text(json.dumps([[{"id": 3963734258, "body": "**P1 Badge** exact bootstrap finding"}]]), encoding="utf-8")
         assert not s.validate(root, comments)
 
-    print("adversarial_learning_falsification=PASS entrypoint_termination=blocked no_op_assertion=blocked dead_branch_helper=blocked privileged_job_pr_execution=blocked implicit_api_write=blocked exact_status_endpoint=bound reconciliation_concurrency=fresh manual_dispatch=removed strict_reconciliation=all-surfaces stale_d4c_workflow_projection=blocked d4c_product_authority_guardrail=attested wave4_exact_path_allowlist=attested wave4_authority_toctou=source-row-lock+postgres-race")
+    print("adversarial_learning_falsification=PASS entrypoint_termination=blocked no_op_assertion=blocked dead_branch_helper=blocked privileged_job_pr_execution=blocked implicit_api_write=blocked exact_status_endpoint=bound reconciliation_concurrency=fresh manual_dispatch=removed strict_reconciliation=all-surfaces stale_d4c_workflow_projection=blocked d4c_product_authority_guardrail=attested wave4_exact_path_allowlist=attested wave4_authority_toctou=source-row-lock+postgres-race host_inventory_authority_transition=attested")
 
 
 if __name__ == "__main__":

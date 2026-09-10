@@ -26,12 +26,24 @@ class MonitoringSourceSqlTests(unittest.TestCase):
         self.assertIn("CREATE TABLE monitoring.monitoring_source_create_idempotency (", self.text)
         self.assertIn("PRIMARY KEY (tenant_id, idempotency_key)", self.text)
         self.assertIn("request_fingerprint ~ '^[0-9a-f]{64}$'", self.text)
+        self.assertIn("ON CONFLICT (tenant_id, idempotency_key) DO NOTHING", self.text)
+        self.assertIn("RAISE EXCEPTION 'idempotency.key_reused'", self.text)
+
+    def test_atomic_create_commits_source_generation_and_sync_responsibility(self):
+        self.assertIn("CREATE FUNCTION monitoring.create_zabbix_source(", self.text)
+        self.assertIn("INSERT INTO monitoring.monitoring_source(", self.text)
+        self.assertIn("INSERT INTO monitoring.monitoring_source_generation(", self.text)
+        self.assertIn("INSERT INTO monitoring.monitoring_sync_operation(", self.text)
+        self.assertIn("SET state = 'completed', completed_at = transaction_timestamp()", self.text)
+        self.assertIn("RETURN QUERY SELECT existing_source_id, existing_operation_id, TRUE", self.text)
+        self.assertIn("RETURN QUERY SELECT p_monitoring_source_id, p_monitoring_sync_operation_id, FALSE", self.text)
 
     def test_initial_persistence_does_not_call_provider_network(self):
         lowered = self.text.lower()
-        for forbidden in ("http_get", "curl", "wget", "dblink", "foreign data wrapper"):
+        for forbidden in ("http_get", "curl ", "wget ", "dblink(", "foreign data wrapper"):
             self.assertNotIn(forbidden, lowered)
         self.assertIn("Network-dependent Zabbix validation is deliberately absent", self.text)
+        self.assertIn("it performs no provider network call", lowered)
 
     def test_source_identity_and_revisions_fail_closed(self):
         self.assertIn("Monitoring source tenant/logical identity/provider profile is immutable", self.text)

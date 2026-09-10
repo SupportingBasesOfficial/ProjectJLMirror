@@ -44,7 +44,7 @@ for migration in \
   docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < "$migration" >/dev/null
 done
 
-docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL'
+docker exec -i "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL'
 CREATE ROLE wave4_runtime NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
 GRANT USAGE ON SCHEMA monitoring TO wave4_runtime;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA monitoring TO wave4_runtime;
@@ -73,7 +73,7 @@ create_b="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres
   "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id = 'tenant-b'; SELECT * FROM monitoring.create_zabbix_source('tenant-b','create-b','$fp_b','source-b','generation-b','binding-b','sync-b','audit-b','principal-b','machine_api_principal','credential-generation-b','authz-b','correlation-b','Company B Zabbix','$provider','https://zabbix.example.test:8443/zabbix','provider-access-binding:central','$scope_b'::jsonb); COMMIT;" | tail -n1)"
 test "$create_b" = "source-b|sync-b|completed|f"
 
-docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL'
+docker exec -i "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL'
 INSERT INTO monitoring.monitoring_source_validation_evidence(
     tenant_id, validation_evidence_id, monitoring_sync_operation_id, monitoring_source_id,
     provider_scope_tenant_binding_id, source_instance_generation, configuration_revision,

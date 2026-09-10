@@ -74,10 +74,10 @@ stale_state="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postg
 "SELECT o.state || '|' || (o.validation_evidence_id IS NULL)::text || '|' || coalesce(o.last_error_class,'') || '|' || s.operational_evidence_state || '|' || (SELECT count(*) FROM monitoring.monitoring_source_validation_evidence e WHERE e.tenant_id='tenant-b' AND e.monitoring_sync_operation_id='sync-b') FROM monitoring.monitoring_sync_operation o JOIN monitoring.monitoring_source s ON s.tenant_id=o.tenant_id AND s.monitoring_source_id=o.monitoring_source_id WHERE o.tenant_id='tenant-b' AND o.monitoring_sync_operation_id='sync-b';")"
 test "$stale_state" = "reconciliation_required|true|execution.stale_authority|reconciliation_required|0"
 
-# Concurrency falsifier for the late-review TOCTOU race: delay validation-evidence insertion
-# after the completion fence has been acquired, then prove a concurrent source edit blocks
-# until completion releases the source row lock. The pre-fix implementation allows the edit
-# to commit during this window and therefore fails this probe.
+# Concurrency falsifier for the late-review TOCTOU race. The trigger pauses evidence
+# insertion only after the completion fence has locked the authoritative source row.
+# The harness waits until PostgreSQL itself reports that pg_sleep is active before
+# starting the concurrent edit, eliminating timing heuristics from the race probe.
 fp3="cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
 "SELECT * FROM monitoring.create_zabbix_source('tenant-c','create-c','$fp3','source-c','generation-c','binding-c','sync-c','audit-c','principal-c','human_browser_session','cred-gen-c','authz-c','corr-c','Company C','provider-instance:central','https://zabbix.example.test/zabbix','credential-binding:central','{\"host_group_refs\":[\"40\"]}'::jsonb); SELECT monitoring_source_id FROM monitoring.claim_zabbix_initial_validation('tenant-c','sync-c','claim-c');" >/dev/null
@@ -88,7 +88,7 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  PERFORM pg_sleep(3);
+  PERFORM pg_sleep(5);
   RETURN NEW;
 END;
 $$;
@@ -102,7 +102,23 @@ SQL
   "SELECT monitoring.complete_zabbix_initial_validation('tenant-c','sync-c','claim-c','validation-c','binding-c','provider-instance:central','current','succeeded',NULL,'[\"40\"]'::jsonb,'[]'::jsonb,'egress-decision:3','credential-generation:3');" >/tmp/wave4-race-complete.out 2>&1
 ) &
 complete_pid=$!
-sleep 1
+
+paused=0
+for _ in $(seq 1 50); do
+  active_sleep="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
+  "SELECT count(*) FROM pg_stat_activity WHERE datname='$PG_DATABASE' AND state='active' AND wait_event='PgSleep' AND query LIKE '%complete_zabbix_initial_validation%';")"
+  if [ "$active_sleep" -ge 1 ]; then
+    paused=1
+    break
+  fi
+  if ! kill -0 "$complete_pid" 2>/dev/null; then
+    echo "completion exited before entering deterministic race pause" >&2
+    cat /tmp/wave4-race-complete.out >&2 || true
+    exit 1
+  fi
+  sleep 0.1
+done
+test "$paused" -eq 1
 
 (
   docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \

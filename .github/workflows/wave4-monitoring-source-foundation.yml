@@ -143,5 +143,10 @@ jobs:
           PG_CONTAINER: jlmirror-wave4-metric-definitions-postgres
         run: bash tools/wave4/run_zabbix_metric_definitions_postgres_conformance.sh
 
+      - name: Execute metric-definition completion liveness on final schema 001-028
+        env:
+          PG_CONTAINER: jlmirror-wave4-metric-definitions-liveness-postgres
+        run: bash tools/wave4/run_zabbix_metric_definitions_liveness_postgres_conformance.sh
+
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

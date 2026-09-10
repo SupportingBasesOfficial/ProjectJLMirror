@@ -156,6 +156,58 @@
       "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 15
+    },
+    {
+      "id": "LEARN-PR135-013",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3980957095,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "Poll generation was durable only inside the database image being recovered. PITR, writer failover or relocation could therefore restore a lower local counter and reuse a previously authoritative generation without a recovery/placement-bound successor authority epoch.",
+      "horizontal_audit": ["all current-state poll fences", "PITR and writer failover", "tenant relocation", "future metric/problem/health current-state ingestion", "recovery admission continuity"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 16
+    },
+    {
+      "id": "LEARN-PR135-014",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3980957106,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001"],
+      "root_cause": "The source poll-generation guard rejected rewinds and large jumps but still accepted arbitrary one-step direct increments from a same-tenant runtime writer, allowing unowned writes to supersede legitimate claimed polls.",
+      "horizontal_audit": ["generation counters", "claim-only authority transitions", "runtime direct table mutation", "future metric current-state polling", "single-winner scheduling"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 17
+    },
+    {
+      "id": "LEARN-PR135-015",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3980957117,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": ["INV-PROVENANCE-001", "INV-AUTH-001"],
+      "root_cause": "Resource presence_evidence_state remained directly mutable after snapshot completion, so incomplete provider evidence could be relabeled as current without new authoritative provider evidence or a new accepted poll.",
+      "horizontal_audit": ["derived evidence-state projections", "degraded-to-current transitions", "future metric/problem/health evidence state", "provider snapshot lineage", "direct runtime mutations"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 18
+    },
+    {
+      "id": "LEARN-PR135-016",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3980957132,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "Resource scope_state could be changed directly without a source-scope revision or accepted reconciliation operation, allowing an unrelated runtime writer to hide a currently monitored resource while preserving apparently current provider evidence.",
+      "horizontal_audit": ["scope-state transitions", "scope projection revisions", "future resource classifications", "reconciliation authority", "direct runtime mutations"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 19
     }
   ]
 }

@@ -47,7 +47,9 @@ for migration in \
   sql/wave4/020_zabbix_metric_definitions.sql \
   sql/wave4/021_zabbix_metric_definitions_authority_hardening.sql \
   sql/wave4/022_zabbix_metric_definitions_atomic_preflight.sql \
-  sql/wave4/023_zabbix_metric_definitions_qualified_claim.sql; do
+  sql/wave4/023_zabbix_metric_definitions_qualified_claim.sql \
+  sql/wave4/024_zabbix_metric_definitions_evidence_and_drift_authority.sql \
+  sql/wave4/025_zabbix_metric_definitions_drift_visibility.sql; do
   docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < "$migration" >/dev/null
 done
 
@@ -79,6 +81,12 @@ metric_invoker_acl="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_
 test "$metric_invoker_acl" = "1:1:0"
 
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE jlmirror_wave4_metric_definition_invoker; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_metric_definition_sync('tenant-a','source-metric','metric-op-1'); COMMIT;" >/dev/null
+
+if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; INSERT INTO monitoring.monitoring_metric_definition_snapshot_evidence(tenant_id,metric_definition_snapshot_evidence_id,monitoring_sync_operation_id,monitoring_source_id,source_instance_generation,configuration_revision,scope_revision,item_definition_poll_epoch,item_definition_poll_generation,snapshot_complete,item_count,operational_evidence_state,operation_state,failure_class) VALUES ('tenant-a','forged-snapshot','metric-op-1','source-metric','generation-metric',1,1,1,1,false,0,'incomplete','reconciliation_required','forged'); COMMIT;" >/tmp/wave4-metric-forged-snapshot.out 2>&1; then
+  echo "broad runtime unexpectedly forged metric snapshot evidence" >&2; exit 1
+fi
+grep -F "Metric definition evidence creation requires guarded executor authority" /tmp/wave4-metric-forged-snapshot.out >/dev/null
+
 if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE jlmirror_wave4_metric_definition_invoker; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring_source_id FROM monitoring.claim_zabbix_metric_definitions('tenant-a','metric-op-1','metric-claim-1'); COMMIT;" >/tmp/wave4-metric-no-admission.out 2>&1; then
   echo "metric polling unexpectedly claimed without endpoint-specific recovery admission" >&2; exit 1
 fi
@@ -99,11 +107,18 @@ test "$disabled_state" = "active:disabled"
 value_kinds="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT string_agg(b.provider_external_ref || '=' || d.value_kind,',' ORDER BY b.provider_external_ref) FROM monitoring.metric_definition d JOIN monitoring.metric_definition_provider_binding b USING (tenant_id,metric_definition_id) WHERE d.monitoring_source_id='source-metric';")"
 test "$value_kinds" = "5001=number,5002=integer"
 
+if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; INSERT INTO monitoring.monitoring_metric_definition_provider_evidence(tenant_id,provider_evidence_id,metric_definition_snapshot_evidence_id,metric_definition_id,monitoring_resource_id,monitoring_source_id,source_instance_generation,provider_external_ref,provider_host_ref,evidence_fingerprint,normalized_evidence) SELECT 'tenant-a','forged-provider','metric-snapshot-1',b.metric_definition_id,b.monitoring_resource_id,b.monitoring_source_id,b.source_instance_generation,b.provider_external_ref,b.provider_host_ref,repeat('a',64),'{}'::jsonb FROM monitoring.metric_definition_provider_binding b WHERE b.provider_external_ref='5001'; COMMIT;" >/tmp/wave4-metric-forged-provider.out 2>&1; then
+  echo "broad runtime unexpectedly forged metric provider evidence" >&2; exit 1
+fi
+grep -F "Metric definition evidence creation requires guarded executor authority" /tmp/wave4-metric-forged-provider.out >/dev/null
+
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE jlmirror_wave4_metric_definition_invoker; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_metric_definition_sync('tenant-a','source-metric','metric-op-drift'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_metric_definitions('tenant-a','metric-op-drift','metric-claim-drift'); SELECT monitoring.complete_zabbix_metric_definitions('tenant-a','metric-op-drift','metric-claim-drift','metric-snapshot-drift','current','succeeded',NULL,'egress-metric','credential-generation-metric',true,'[{\"itemid\":\"5001\",\"hostid\":\"101\",\"name\":\"SHOULD NOT APPLY\",\"key\":\"system.cpu.util\",\"unit\":\"%\",\"native_value_type\":\"float\",\"operational_state\":\"enabled\"},{\"itemid\":\"5002\",\"hostid\":\"101\",\"name\":\"Agent state\",\"key\":\"agent.ping\",\"unit\":\"\",\"native_value_type\":\"float\",\"operational_state\":\"enabled\"}]'::jsonb); COMMIT;" >/dev/null
 drift_outcome="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT state || ':' || last_error_class FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='metric-op-drift';")"
 test "$drift_outcome" = "reconciliation_required:provider.value_kind_drift"
 name_after_drift="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT d.name FROM monitoring.metric_definition d JOIN monitoring.metric_definition_provider_binding b USING (tenant_id,metric_definition_id) WHERE b.provider_external_ref='5001';")"
 test "$name_after_drift" = "CPU utilization"
+drift_visibility="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT d.definition_evidence_state || ':' || b.evidence_state || ':' || d.value_kind FROM monitoring.metric_definition d JOIN monitoring.metric_definition_provider_binding b USING (tenant_id,metric_definition_id) WHERE b.provider_external_ref='5002';")"
+test "$drift_visibility" = "reconciliation_required:reconciliation_required:integer"
 
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE jlmirror_wave4_metric_definition_invoker; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_metric_definition_sync('tenant-a','source-metric','metric-op-incomplete'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_metric_definitions('tenant-a','metric-op-incomplete','metric-claim-incomplete'); SELECT monitoring.complete_zabbix_metric_definitions('tenant-a','metric-op-incomplete','metric-claim-incomplete','metric-snapshot-incomplete','incomplete','reconciliation_required','provider.snapshot_truncated','egress-metric','credential-generation-metric',false,'[{\"itemid\":\"5001\",\"hostid\":\"101\",\"name\":\"CPU utilization\",\"key\":\"system.cpu.util\",\"unit\":\"%\",\"native_value_type\":\"float\",\"operational_state\":\"enabled\"}]'::jsonb); COMMIT;" >/dev/null
 still_active="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM monitoring.metric_definition d JOIN monitoring.metric_definition_provider_binding b USING (tenant_id,metric_definition_id) WHERE b.provider_external_ref='5002' AND d.definition_state='active';")"
@@ -121,4 +136,4 @@ grep -F "Metric definition poll authority requires guarded executor authority" /
 dump_acl="$(docker exec "$PG_CONTAINER" sh -lc "pg_dump -U postgres -d '$PG_DATABASE' --data-only --inserts --exclude-table-data=monitoring.monitoring_host_inventory_runtime_admission --exclude-table-data=monitoring.monitoring_metric_definition_runtime_admission | grep -c 'monitoring_metric_definition_runtime_admission' || true")"
 test "$dump_acl" = "0"
 
-echo "wave4_zabbix_metric_definitions_postgres=PASS schema=001-023 canonical_binding=separate disabled=active drift=atomic_fail_closed negative=authoritative poll_stream=independent recovery_admission=volatile"
+echo "wave4_zabbix_metric_definitions_postgres=PASS schema=001-025 canonical_binding=separate disabled=active drift=visible+atomic_fail_closed evidence_insert=executor-only negative=authoritative poll_stream=independent recovery_admission=volatile"

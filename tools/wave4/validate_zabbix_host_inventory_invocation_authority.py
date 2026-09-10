@@ -31,11 +31,17 @@ def main() -> None:
         "jlmirror_wave4_host_inventory_invoker",
         "NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS",
         "Host inventory work identity and source/revision authority are immutable from enqueue",
+        "Host inventory operation lifecycle provenance requires guarded executor authority",
         "Host inventory work creation requires guarded executor authority",
         "NEW.monitoring_source_id IS DISTINCT FROM OLD.monitoring_source_id",
         "NEW.source_instance_generation IS DISTINCT FROM OLD.source_instance_generation",
         "NEW.configuration_revision IS DISTINCT FROM OLD.configuration_revision",
         "NEW.scope_revision IS DISTINCT FROM OLD.scope_revision",
+        "NEW.created_at IS DISTINCT FROM OLD.created_at",
+        "NEW.started_at IS DISTINCT FROM OLD.started_at",
+        "NEW.completed_at IS DISTINCT FROM OLD.completed_at",
+        "NEW.last_error_class IS DISTINCT FROM OLD.last_error_class",
+        "NEW.attempt_count IS DISTINCT FROM OLD.attempt_count",
         "NEW.started_at IS NOT NULL",
         "NEW.completed_at IS NOT NULL",
         "NEW.attempt_count IS DISTINCT FROM 0",
@@ -81,7 +87,7 @@ def main() -> None:
 
     require("validate_zabbix_host_inventory_invocation_authority.py" in workflow, "workflow does not run invocation-authority validator")
 
-    print("wave4_zabbix_host_inventory_invocation_authority=PASS worker=provider-integration public_execute=revoked direct_work_creation=blocked work_identity=enqueue-frozen final_schema=001-019")
+    print("wave4_zabbix_host_inventory_invocation_authority=PASS worker=provider-integration public_execute=revoked direct_work_creation=blocked work_identity=enqueue-frozen lifecycle_provenance=executor-owned final_schema=001-019")
 
 
 if __name__ == "__main__":

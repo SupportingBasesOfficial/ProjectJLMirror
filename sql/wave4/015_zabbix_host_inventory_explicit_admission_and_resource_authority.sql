@@ -44,7 +44,7 @@ BEGIN
         OR NEW.removed_poll_epoch IS DISTINCT FROM OLD.removed_poll_epoch
         OR NEW.latest_provider_evidence_id IS DISTINCT FROM OLD.latest_provider_evidence_id
     ) AND NOT monitoring.wave4_host_inventory_executor_is_current_user() THEN
-        RAISE EXCEPTION 'Monitoring resource authority fields require guarded host-inventory executor';
+        RAISE EXCEPTION 'Monitoring resource authority fields require guarded host-inventory executor; Monitoring resource host-inventory projection requires guarded executor authority';
     END IF;
 
     -- Keep the temporal facts monotonic even on the trusted executor path.

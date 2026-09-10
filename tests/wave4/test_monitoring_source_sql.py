@@ -16,6 +16,18 @@ class MonitoringSourceSqlTests(unittest.TestCase):
         self.assertIn("PRIMARY KEY (tenant_id, monitoring_source_id, source_instance_generation)", self.text)
         self.assertIn("Monitoring source generation records are immutable", self.text)
 
+    def test_mutable_credential_and_scope_live_on_logical_source(self):
+        source_start = self.text.index("CREATE TABLE monitoring.monitoring_source (")
+        generation_start = self.text.index("CREATE TABLE monitoring.monitoring_source_generation (")
+        sync_start = self.text.index("CREATE TABLE monitoring.monitoring_sync_operation (")
+        source_block = self.text[source_start:generation_start]
+        generation_block = self.text[generation_start:sync_start]
+        self.assertIn("credential_binding_ref TEXT NOT NULL", source_block)
+        self.assertIn("configured_provider_scope JSONB NOT NULL", source_block)
+        self.assertNotIn("credential_binding_ref", generation_block)
+        self.assertNotIn("configured_provider_scope", generation_block)
+        self.assertIn("provider_base_url TEXT NOT NULL", generation_block)
+
     def test_sync_operation_binds_exact_generation(self):
         self.assertIn("CREATE TABLE monitoring.monitoring_sync_operation (", self.text)
         self.assertIn("REFERENCES monitoring.monitoring_source_generation(", self.text)
@@ -35,8 +47,8 @@ class MonitoringSourceSqlTests(unittest.TestCase):
         self.assertIn("INSERT INTO monitoring.monitoring_source_generation(", self.text)
         self.assertIn("INSERT INTO monitoring.monitoring_sync_operation(", self.text)
         self.assertIn("SET state = 'completed', completed_at = transaction_timestamp()", self.text)
-        self.assertIn("RETURN QUERY SELECT existing_source_id, existing_operation_id, TRUE", self.text)
-        self.assertIn("RETURN QUERY SELECT p_monitoring_source_id, p_monitoring_sync_operation_id, FALSE", self.text)
+        self.assertIn("RETURN QUERY SELECT existing_source_id, existing_operation_id, existing_state, TRUE", self.text)
+        self.assertIn("RETURN QUERY SELECT p_monitoring_source_id, p_monitoring_sync_operation_id, 'completed'::TEXT, FALSE", self.text)
 
     def test_initial_persistence_does_not_call_provider_network(self):
         lowered = self.text.lower()

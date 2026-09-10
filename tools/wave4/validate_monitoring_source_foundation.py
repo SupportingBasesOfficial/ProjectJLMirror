@@ -22,6 +22,8 @@ ADR021 = ROOT / "adr/ADR-021-monitoring-source-instance-replacement.md"
 EXPECTED_AUTH_COMMIT = "8e2265a4ee2810ea701166228e8f44ad3bc0d894"
 EXPECTED_FOUNDATION_SQUASH = "d642a7f456e042dd02de2c04533c39c748f88aa9"
 EXPECTED_HOST_INVENTORY_AUTH = "2986f43ff262ecd5781661dbdee46c896f5019bc"
+EXPECTED_HOST_INVENTORY_SQUASH = "18581e18b90f1c387d2b175ec4f4dac0fbf677d2"
+EXPECTED_METRIC_DEFINITION_AUTH = "4debb413aad4b1b449fd6e0dcd05f101021d81e3"
 PINNED_POSTGRES_IMAGE = "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280"
 FORBIDDEN_NETWORK_IMPORTS = {"requests", "httpx", "aiohttp", "urllib.request", "socket", "subprocess"}
 
@@ -61,22 +63,51 @@ def validate() -> None:
             "wave4.monitoring-source-foundation@2",
             "wave4.zabbix-initial-validation-worker@1",
             "wave4.zabbix-host-inventory@1",
+            "wave4.zabbix-metric-definitions@1",
         },
         "implementation identity drift",
     )
+
     if impl_id == "wave4.monitoring-source-foundation@2":
         req(impl.get("product_feature_activation") == "monitoring_source_foundation_only", "foundation activation widened")
+    elif impl_id == "wave4.zabbix-initial-validation-worker@1":
+        req(impl.get("canonical_predecessor_commit") == EXPECTED_FOUNDATION_SQUASH, "initial-validation successor lost source-foundation provenance")
+        req(impl.get("product_feature_activation") == "monitoring_source_validation_hostgroup_only", "initial-validation activation widened")
+    elif impl_id == "wave4.zabbix-host-inventory@1":
+        req(impl.get("canonical_predecessor_commit") == EXPECTED_FOUNDATION_SQUASH, "host inventory successor lost source-foundation provenance")
+        req(impl.get("host_inventory_authorization_commit") == EXPECTED_HOST_INVENTORY_AUTH, "host inventory successor lost product authority")
+        req(impl.get("host_inventory_authorization_id") == "wave4.monitoring-host-inventory@1", "host inventory authorization id drift")
+        req(impl.get("product_feature_activation") == "monitoring_source_validation_and_bounded_host_inventory", "host inventory activation drift")
+        req("host_inventory_ingestion" in impl.get("implemented_capability", []), "host inventory successor missing bounded capability")
+        for forbidden in ("metric_ingestion", "problem_ingestion", "history_ingestion", "canonical_device_classification", "browser_frontend", "provider_write_back", "production_deployment"):
+            req(forbidden in impl.get("explicitly_not_implemented", []), f"host inventory successor widened into deferred capability: {forbidden}")
     else:
-        req(impl.get("canonical_predecessor_commit") == EXPECTED_FOUNDATION_SQUASH, "successor lost source-foundation provenance")
-        if impl_id == "wave4.zabbix-initial-validation-worker@1":
-            req(impl.get("product_feature_activation") == "monitoring_source_validation_hostgroup_only", "initial-validation activation widened")
-        else:
-            req(impl.get("host_inventory_authorization_commit") == EXPECTED_HOST_INVENTORY_AUTH, "host inventory successor lost product authority")
-            req(impl.get("host_inventory_authorization_id") == "wave4.monitoring-host-inventory@1", "host inventory authorization id drift")
-            req(impl.get("product_feature_activation") == "monitoring_source_validation_and_bounded_host_inventory", "host inventory activation drift")
-            req("host_inventory_ingestion" in impl.get("implemented_capability", []), "host inventory successor missing bounded capability")
-            for forbidden in ("metric_ingestion", "problem_ingestion", "history_ingestion", "canonical_device_classification", "browser_frontend", "provider_write_back", "production_deployment"):
-                req(forbidden in impl.get("explicitly_not_implemented", []), f"host inventory successor widened into deferred capability: {forbidden}")
+        req(impl.get("canonical_predecessor_commit") == EXPECTED_HOST_INVENTORY_SQUASH, "metric definition successor lost host-inventory provenance")
+        req(impl.get("host_inventory_authorization_commit") == EXPECTED_HOST_INVENTORY_AUTH, "metric definition successor lost host inventory authority")
+        req(impl.get("host_inventory_authorization_id") == "wave4.monitoring-host-inventory@1", "metric definition successor host inventory authorization id drift")
+        req(impl.get("metric_definition_authorization_commit") == EXPECTED_METRIC_DEFINITION_AUTH, "metric definition successor lost product authority")
+        req(impl.get("metric_definition_authorization_id") == "wave4.monitoring-metric-definitions@1", "metric definition authorization id drift")
+        req(impl.get("product_feature_activation") == "monitoring_source_validation_host_inventory_and_bounded_metric_definitions", "metric definition activation drift")
+        capabilities = set(impl.get("implemented_capability", []))
+        for capability in (
+            "host_inventory_ingestion",
+            "zabbix_item_get_bounded_metric_definition_domain",
+            "zabbix_item_binding_separate_from_metric_definition",
+            "metric_definition_independent_poll_epoch_generation_admission",
+            "metric_definition_atomic_snapshot_preflight",
+        ):
+            req(capability in capabilities, f"metric definition successor missing bounded capability: {capability}")
+        deferred = set(impl.get("explicitly_not_implemented", []))
+        for forbidden in (
+            "metric_current_state_ingestion",
+            "metric_history_ingestion",
+            "problem_ingestion",
+            "health_projection",
+            "browser_frontend",
+            "provider_write_back",
+            "production_deployment",
+        ):
+            req(forbidden in deferred, f"metric definition successor widened into deferred capability: {forbidden}")
 
     source_text = SOURCE.read_text(encoding="utf-8")
     tree = ast.parse(source_text, filename=str(SOURCE))

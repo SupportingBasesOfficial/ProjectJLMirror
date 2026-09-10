@@ -26,6 +26,8 @@ class MetricDefinitionsAuthorizationTests(unittest.TestCase):
             "ITEM.GET METADATA != METRIC HISTORY",
             "SCOPE EXCLUSION != METRIC RETIREMENT",
             "GENERATION RETIREMENT != METRIC RETIREMENT",
+            "PROVIDER DISABLED/UNSUPPORTED != METRIC RETIREMENT",
+            "VALUE-KIND DRIFT != SILENT IN-PLACE COMPATIBILITY",
             "UNCERTAINTY != NEGATIVE EVIDENCE",
             "ITEM-DEFINITION POLL GENERATION != HOST-INVENTORY POLL GENERATION",
             "SHARED RECOVERY EPOCH/ADMISSION FRAMEWORK != SHARED ENDPOINT POLL SEQUENCE",
@@ -44,23 +46,37 @@ class MetricDefinitionsAuthorizationTests(unittest.TestCase):
             "health_projection",
             "provider_write_back",
             "shared_host_inventory_poll_generation_for_item_definitions",
+            "provider_disabled_or_unsupported_as_metric_retirement",
+            "silent_in_place_value_kind_mutation",
+            "automatic_metric_successor_identity_for_value_kind_drift",
             "frontend_route_or_navigation_creation",
             "production_deployment",
         }
         self.assertTrue(forbidden <= set(manifest["explicitly_not_authorized"]))
 
-    def test_binding_and_poll_authority_are_explicitly_separated(self) -> None:
+    def test_binding_poll_lifecycle_and_type_drift_are_explicitly_separated(self) -> None:
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
         authorized = set(manifest["authorized_behavior"])
         invariants = set(manifest["required_invariants"])
 
-        self.assertIn("separate_zabbix_item_binding_and_provenance", authorized)
-        self.assertIn("canonical_resource_ownership_required", authorized)
-        self.assertIn("retirement_only_from_complete_authoritative_negative_item_snapshot", authorized)
-        self.assertIn("reuse_existing_recovery_epoch_and_admission_framework", authorized)
-        self.assertIn("distinct_item_definition_poll_generation_stream", authorized)
-        self.assertIn("item_definition_poll_generation_distinct_from_host_inventory_poll_generation", invariants)
-        self.assertIn("shared_recovery_epoch_admission_does_not_imply_shared_endpoint_poll_sequence", invariants)
+        for capability in (
+            "separate_zabbix_item_binding_and_provenance",
+            "canonical_resource_ownership_required",
+            "retirement_only_from_complete_authoritative_negative_item_snapshot",
+            "provider_disabled_or_unsupported_retained_as_binding_evidence",
+            "value_kind_drift_enters_reconciliation_required",
+            "reuse_existing_recovery_epoch_and_admission_framework",
+            "distinct_item_definition_poll_generation_stream",
+        ):
+            self.assertIn(capability, authorized)
+
+        for invariant in (
+            "provider_disabled_or_unsupported_not_metric_retirement",
+            "value_kind_drift_not_silent_in_place_compatibility",
+            "item_definition_poll_generation_distinct_from_host_inventory_poll_generation",
+            "shared_recovery_epoch_admission_does_not_imply_shared_endpoint_poll_sequence",
+        ):
+            self.assertIn(invariant, invariants)
 
 
 if __name__ == "__main__":

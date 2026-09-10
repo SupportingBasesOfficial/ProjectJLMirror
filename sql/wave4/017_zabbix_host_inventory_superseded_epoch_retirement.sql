@@ -72,8 +72,7 @@ BEGIN
 
     -- Recovery/placement epoch is the outer authority fence. Retire stale work
     -- before any snapshot/evidence write so the retirement itself can commit.
-    IF v_poll_epoch IS NULL
-       OR v_poll_epoch <> v_current_poll_epoch
+    IF v_poll_epoch IS NULL OR v_poll_epoch <> v_current_poll_epoch
        OR NOT EXISTS (
            SELECT 1
              FROM monitoring.monitoring_host_inventory_runtime_admission AS a

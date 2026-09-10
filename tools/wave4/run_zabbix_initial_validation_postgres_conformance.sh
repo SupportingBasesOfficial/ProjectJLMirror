@@ -74,4 +74,57 @@ stale_state="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postg
 "SELECT o.state || '|' || (o.validation_evidence_id IS NULL)::text || '|' || coalesce(o.last_error_class,'') || '|' || s.operational_evidence_state || '|' || (SELECT count(*) FROM monitoring.monitoring_source_validation_evidence e WHERE e.tenant_id='tenant-b' AND e.monitoring_sync_operation_id='sync-b') FROM monitoring.monitoring_sync_operation o JOIN monitoring.monitoring_source s ON s.tenant_id=o.tenant_id AND s.monitoring_source_id=o.monitoring_source_id WHERE o.tenant_id='tenant-b' AND o.monitoring_sync_operation_id='sync-b';")"
 test "$stale_state" = "reconciliation_required|true|execution.stale_authority|reconciliation_required|0"
 
-printf '%s\n' "wave4_zabbix_initial_validation_postgres=PASS claim=single-winner completion=fenced stale=retired_without_source_mutation evidence=immutable shared_provider=preserved retry_policy=not_selected"
+# Concurrency falsifier for the late-review TOCTOU race: delay validation-evidence insertion
+# after the completion fence has been acquired, then prove a concurrent source edit blocks
+# until completion releases the source row lock. The pre-fix implementation allows the edit
+# to commit during this window and therefore fails this probe.
+fp3="cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
+"SELECT * FROM monitoring.create_zabbix_source('tenant-c','create-c','$fp3','source-c','generation-c','binding-c','sync-c','audit-c','principal-c','human_browser_session','cred-gen-c','authz-c','corr-c','Company C','provider-instance:central','https://zabbix.example.test/zabbix','credential-binding:central','{\"host_group_refs\":[\"40\"]}'::jsonb); SELECT monitoring_source_id FROM monitoring.claim_zabbix_initial_validation('tenant-c','sync-c','claim-c');" >/dev/null
+
+docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+CREATE OR REPLACE FUNCTION monitoring.wave4_test_pause_validation_evidence()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM pg_sleep(3);
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER wave4_test_pause_validation_evidence
+BEFORE INSERT ON monitoring.monitoring_source_validation_evidence
+FOR EACH ROW EXECUTE FUNCTION monitoring.wave4_test_pause_validation_evidence();
+SQL
+
+(
+  docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
+  "SELECT monitoring.complete_zabbix_initial_validation('tenant-c','sync-c','claim-c','validation-c','binding-c','provider-instance:central','current','succeeded',NULL,'[\"40\"]'::jsonb,'[]'::jsonb,'egress-decision:3','credential-generation:3');" >/tmp/wave4-race-complete.out 2>&1
+) &
+complete_pid=$!
+sleep 1
+
+(
+  docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
+  "UPDATE monitoring.monitoring_source SET configuration_revision=2, credential_binding_ref='credential-binding:rotated-after-fence' WHERE tenant_id='tenant-c' AND monitoring_source_id='source-c';" >/tmp/wave4-race-edit.out 2>&1
+) &
+edit_pid=$!
+sleep 1
+
+if ! kill -0 "$edit_pid" 2>/dev/null; then
+  echo "concurrent configuration edit crossed the completion fence before source lock release" >&2
+  cat /tmp/wave4-race-edit.out >&2 || true
+  exit 1
+fi
+
+wait "$complete_pid"
+wait "$edit_pid"
+
+docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
+"DROP TRIGGER wave4_test_pause_validation_evidence ON monitoring.monitoring_source_validation_evidence; DROP FUNCTION monitoring.wave4_test_pause_validation_evidence();" >/dev/null
+
+race_state="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
+"SELECT o.state || '|' || s.configuration_revision || '|' || s.operational_evidence_state || '|' || (SELECT count(*) FROM monitoring.monitoring_source_validation_evidence e WHERE e.tenant_id='tenant-c' AND e.monitoring_sync_operation_id='sync-c') FROM monitoring.monitoring_sync_operation o JOIN monitoring.monitoring_source s ON s.tenant_id=o.tenant_id AND s.monitoring_source_id=o.monitoring_source_id WHERE o.tenant_id='tenant-c' AND o.monitoring_sync_operation_id='sync-c';")"
+test "$race_state" = "succeeded|2|current|1"
+
+printf '%s\n' "wave4_zabbix_initial_validation_postgres=PASS claim=single-winner completion=fenced stale=retired_without_source_mutation race=source_row_lock_blocks_concurrent_edit evidence=immutable shared_provider=preserved retry_policy=not_selected"

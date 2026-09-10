@@ -42,7 +42,6 @@ GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA monitoring TO wave4_runtime
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA monitoring TO wave4_runtime;
 SQL
 
-# Even after a broad runtime function grant there must be no alternate unfenced completion entry point.
 unfenced_helper_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='monitoring' AND p.proname='wave4_complete_zabbix_host_inventory_pre_poll_fence';")"
 test "$unfenced_helper_count" = "0"
 
@@ -55,31 +54,31 @@ host1_positive='{"monitoring_resource_id":"resource-101","provider_evidence_id":
 host1_new='{"monitoring_resource_id":"resource-101","provider_evidence_id":"provider-evidence-101-new","hostid":"101","display_name":"Core Switch","evidence_fingerprint":"1111111111111111111111111111111111111111111111111111111111111111","normalized_evidence":{"technical_name":"core-sw-01","display_name":"Core Switch","inventory":{"vendor":"Cisco","model":"C9300"},"interfaces":[],"groups":[{"ref":"10","name":"Network"}],"templates":[],"tags":[]}}'
 host2_new='{"monitoring_resource_id":"resource-102","provider_evidence_id":"provider-evidence-102-new","hostid":"102","display_name":"Edge Router","evidence_fingerprint":"2222222222222222222222222222222222222222222222222222222222222222","normalized_evidence":{"technical_name":"edge-rtr-01","display_name":"Edge Router","inventory":{"vendor":"Cisco","model":"ISR"},"interfaces":[],"groups":[{"ref":"10","name":"Network"}],"templates":[],"tags":[]}}'
 
-# Establish an older complete negative snapshot, then a newer positive observation.
+# Establish poll generation 1 as an older complete negative snapshot, then generation 2 as a newer positive observation.
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-a','inventory-base'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-base','claim-base'); SELECT monitoring.complete_zabbix_host_inventory('tenant-a','inventory-base','claim-base','snapshot-base','binding-a','provider-instance:a','current','succeeded',NULL,true,'$empty'::jsonb,'egress-base','credential-generation-a'); COMMIT;" >/dev/null
-sleep 0.02
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-a','inventory-positive'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-positive','claim-positive'); SELECT monitoring.complete_zabbix_host_inventory('tenant-a','inventory-positive','claim-positive','snapshot-positive','binding-a','provider-instance:a','current','succeeded',NULL,true,'[$host1_positive]'::jsonb,'egress-positive','credential-generation-a'); COMMIT;" >/dev/null
 
-# Historical negative evidence must not reverse the newer positive observation.
-if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; UPDATE monitoring.monitoring_resource SET presence_state='removed', removed_at=(SELECT observed_at FROM monitoring.monitoring_host_inventory_snapshot_evidence WHERE host_inventory_snapshot_evidence_id='snapshot-base') WHERE monitoring_resource_id='resource-101'; COMMIT;" >/tmp/wave4-stale-negative.out 2>&1; then
+positive_order="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT (SELECT host_inventory_poll_generation FROM monitoring.monitoring_host_inventory_snapshot_evidence WHERE host_inventory_snapshot_evidence_id='snapshot-base') || '|' || (SELECT host_inventory_poll_generation FROM monitoring.monitoring_host_inventory_snapshot_evidence WHERE host_inventory_snapshot_evidence_id='snapshot-positive') || '|' || (SELECT last_confirmed_present_poll_generation FROM monitoring.monitoring_resource WHERE monitoring_resource_id='resource-101'); COMMIT;" | tail -n1)"
+test "$positive_order" = "1|2|2"
+
+# Historical negative poll generation 1 must not reverse positive generation 2, even with the exact historical observed_at.
+if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; UPDATE monitoring.monitoring_resource SET presence_state='removed', removed_at=(SELECT observed_at FROM monitoring.monitoring_host_inventory_snapshot_evidence WHERE host_inventory_snapshot_evidence_id='snapshot-base'), removed_poll_generation=(SELECT host_inventory_poll_generation FROM monitoring.monitoring_host_inventory_snapshot_evidence WHERE host_inventory_snapshot_evidence_id='snapshot-base') WHERE monitoring_resource_id='resource-101'; COMMIT;" >/tmp/wave4-stale-negative.out 2>&1; then
   echo "historical negative snapshot unexpectedly reversed newer positive presence" >&2
   exit 1
 fi
-grep -F "newer complete authoritative negative snapshot evidence" /tmp/wave4-stale-negative.out >/dev/null
+grep -F "newer complete authoritative negative poll evidence" /tmp/wave4-stale-negative.out >/dev/null
 
-# Claim two polls in order. The later claim supersedes the older completion authority.
+# Claim generations 3 and 4 in order. Generation 4 supersedes generation 3 completion authority.
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-a','inventory-old'); SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-a','inventory-new'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-old','claim-old'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-new','claim-new'); COMMIT;" >/dev/null
 
 ordering="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT (SELECT host_inventory_poll_generation FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='inventory-old') || '|' || (SELECT host_inventory_poll_generation FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='inventory-new') || '|' || (SELECT host_inventory_poll_generation FROM monitoring.monitoring_source WHERE monitoring_source_id='source-a'); COMMIT;" | tail -n1)"
 test "$ordering" = "3|4|4"
 
-# Newer poll completes first and introduces host 102.
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.complete_zabbix_host_inventory('tenant-a','inventory-new','claim-new','snapshot-new','binding-a','provider-instance:a','current','succeeded',NULL,true,'[$host1_new,$host2_new]'::jsonb,'egress-new','credential-generation-a'); COMMIT;" >/dev/null
 
-# Older completion arrives later with an empty snapshot. It must be retired without snapshot/resource mutation.
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.complete_zabbix_host_inventory('tenant-a','inventory-old','claim-old','snapshot-old-late','binding-a','provider-instance:a','current','succeeded',NULL,true,'$empty'::jsonb,'egress-old','credential-generation-a'); COMMIT;" >/dev/null
 
-final_state="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT (SELECT state || ':' || coalesce(last_error_class,'') FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='inventory-old') || '|' || (SELECT count(*) FROM monitoring.monitoring_host_inventory_snapshot_evidence WHERE host_inventory_snapshot_evidence_id='snapshot-old-late') || '|' || (SELECT count(*) FROM monitoring.monitoring_resource WHERE presence_state='present') || '|' || (SELECT count(*) FROM monitoring.monitoring_resource WHERE provider_external_ref='102' AND presence_state='present'); COMMIT;" | tail -n1)"
-test "$final_state" = "reconciliation_required:execution.superseded_poll_authority|0|2|1"
+final_state="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT (SELECT state || ':' || coalesce(last_error_class,'') FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='inventory-old') || '|' || (SELECT count(*) FROM monitoring.monitoring_host_inventory_snapshot_evidence WHERE host_inventory_snapshot_evidence_id='snapshot-old-late') || '|' || (SELECT count(*) FROM monitoring.monitoring_resource WHERE presence_state='present') || '|' || (SELECT count(*) FROM monitoring.monitoring_resource WHERE provider_external_ref='102' AND presence_state='present') || '|' || (SELECT min(last_confirmed_present_poll_generation) FROM monitoring.monitoring_resource WHERE presence_state='present'); COMMIT;" | tail -n1)"
+test "$final_state" = "reconciliation_required:execution.superseded_poll_authority|0|2|1|4"
 
-printf '%s\n' "wave4_zabbix_host_inventory_ordering=PASS poll_generation=claim_ordered late_completion=retired_without_mutation stale_negative=blocked newer_positive=preserved unfenced_helper=absent"
+printf '%s\n' "wave4_zabbix_host_inventory_ordering=PASS poll_generation=claim_ordered late_completion=retired_without_mutation stale_negative=blocked newer_positive=preserved unfenced_helper=absent poll_generation=presence_authority"

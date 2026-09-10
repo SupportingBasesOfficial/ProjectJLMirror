@@ -1,6 +1,8 @@
 -- Wave 4 metric-definition claim identifier hardening.
 -- RETURNS TABLE output names are PL/pgSQL variables; every table column in the
 -- claim mutation path is explicitly qualified to prevent name-resolution ambiguity.
+-- Provider connection/scope configuration is generation-owned and is returned from
+-- the exact active monitoring_source_generation joined below, never from source state.
 
 BEGIN;
 
@@ -92,9 +94,9 @@ BEGIN
            s.item_definition_poll_epoch,
            s.item_definition_poll_generation,
            g.provider_instance_ref,
-           s.provider_base_url,
-           s.credential_binding_ref,
-           s.configured_provider_scope
+           g.provider_base_url,
+           g.credential_binding_ref,
+           g.configured_provider_scope
       FROM monitoring.monitoring_source AS s
       JOIN monitoring.monitoring_source_generation AS g
         ON g.tenant_id=s.tenant_id

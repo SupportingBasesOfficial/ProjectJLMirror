@@ -12,7 +12,7 @@
       "horizontal_audit": ["monitoring source creation versus runtime admission", "logical restore and COPY paths", "tenant relocation source reconstruction", "recovery-safe poll epoch establishment", "future provider source bootstrap side effects"],
       "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
-      "guardrail_generation": 17
+      "guardrail_generation": 20
     },
     {
       "id": "LEARN-PR135-018",
@@ -25,7 +25,7 @@
       "horizontal_audit": ["all host-inventory-derived mutable resource fields", "observation freshness timestamps", "scope and presence projection timestamps", "provider evidence pointers", "future metric/problem current-state freshness projections"],
       "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
-      "guardrail_generation": 18
+      "guardrail_generation": 19
     }
   ]
 }

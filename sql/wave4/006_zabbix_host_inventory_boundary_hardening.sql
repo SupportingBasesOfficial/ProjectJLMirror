@@ -37,7 +37,7 @@ BEGIN
         RETURN FALSE;
     END IF;
 
-    IF p_evidence->'inventory' - ARRAY[
+    IF (p_evidence->'inventory') - ARRAY[
         'device_type','device_type_full','os','os_full','vendor','model',
         'serial_primary','serial_secondary','asset_tag','hardware','software','location'
     ]::TEXT[] <> '{}'::jsonb THEN

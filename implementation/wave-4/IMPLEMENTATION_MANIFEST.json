@@ -24,6 +24,7 @@
     "canonical_resource_kind_host",
     "provider_object_kind_zabbix_host_separate_from_device_taxonomy",
     "allowlisted_bounded_zabbix_provider_evidence",
+    "host_inventory_normalized_evidence_pre_persistence_byte_bound",
     "provider_evidence_provenance_and_immutable_snapshot_lineage",
     "owner_bound_latest_provider_and_snapshot_evidence_references",
     "configured_scope_membership_required_for_current_inventory",
@@ -96,6 +97,7 @@
   "assurance_surfaces": [
     "tests/wave4/test_zabbix_initial_validation_worker.py",
     "tests/wave4/test_zabbix_host_inventory.py",
+    "tests/wave4/test_zabbix_host_inventory_evidence_size.py",
     "tools/wave4/validate_zabbix_initial_validation_worker.py",
     "tools/wave4/validate_zabbix_host_inventory.py",
     "tools/wave4/validate_zabbix_host_inventory_invocation_authority.py",

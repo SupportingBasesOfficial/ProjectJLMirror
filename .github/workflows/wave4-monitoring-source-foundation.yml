@@ -47,7 +47,8 @@ jobs:
           EVENT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if [[ "$EVENT_NAME" == "pull_request" ]];n            resolved_sha="$PR_HEAD_SHA"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            resolved_sha="$PR_HEAD_SHA"
           else
             resolved_sha="$EVENT_SHA"
           fi

@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PY = ROOT / "src/jlmirror_monitoring/host_inventory.py"
 SQL = ROOT / "sql/wave4/005_zabbix_host_inventory.sql"
 HARDENING = ROOT / "sql/wave4/006_zabbix_host_inventory_boundary_hardening.sql"
+INTEGRITY = ROOT / "sql/wave4/007_zabbix_host_inventory_integrity_hardening.sql"
 TEST = ROOT / "tests/wave4/test_zabbix_host_inventory.py"
 PG = ROOT / "tools/wave4/run_zabbix_host_inventory_postgres_conformance.sh"
 WORKFLOW = ROOT / ".github/workflows/wave4-monitoring-source-foundation.yml"
@@ -22,13 +23,14 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> None:
-    for path in (PY, SQL, HARDENING, TEST, PG, WORKFLOW, MANIFEST, AUTH):
+    for path in (PY, SQL, HARDENING, INTEGRITY, TEST, PG, WORKFLOW, MANIFEST, AUTH):
         require(path.is_file(), f"missing required surface: {path.relative_to(ROOT)}")
 
     ast.parse(PY.read_text(encoding="utf-8"))
     py = PY.read_text(encoding="utf-8")
     sql = SQL.read_text(encoding="utf-8")
     hardening = HARDENING.read_text(encoding="utf-8")
+    integrity = INTEGRITY.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     auth = json.loads(AUTH.read_text(encoding="utf-8"))
@@ -87,15 +89,26 @@ def main() -> None:
     for forbidden in ("canonical_device_class", "canonical_device_type", "resource_kind"):
         require(f"'{forbidden}'" not in hardening.split("ARRAY['technical_name'", 1)[1].split("::TEXT[]", 1)[0], f"provider evidence allowlist illegally admits {forbidden}")
 
+    for marker in (
+        "monitoring_resource_latest_provider_evidence_owner_fk",
+        "monitoring_sync_operation_host_inventory_snapshot_owner_fk",
+        "wave4_guard_monitoring_resource_update",
+        "Monitoring resource canonical/provider identity is immutable",
+        "Monitoring resource removal requires complete authoritative negative snapshot evidence",
+        "wave4_is_canonical_zabbix_host_evidence_details",
+    ):
+        require(marker in integrity, f"host inventory integrity guard missing: {marker}")
+
     require("validate_zabbix_host_inventory.py" in workflow, "workflow does not run host inventory validator")
     require("run_zabbix_host_inventory_postgres_conformance.sh" in workflow, "workflow does not run PostgreSQL host inventory proof")
     require("src/jlmirror_monitoring/host_inventory.py" in manifest["code_surfaces"], "manifest missing host inventory code surface")
     require("sql/wave4/006_zabbix_host_inventory_boundary_hardening.sql" in manifest["code_surfaces"], "manifest missing host evidence hardening surface")
+    require("sql/wave4/007_zabbix_host_inventory_integrity_hardening.sql" in manifest["code_surfaces"], "manifest missing host integrity hardening surface")
     require("host_inventory_ingestion" in manifest["implemented_capability"], "manifest does not declare host inventory capability")
     require("host_inventory_ingestion" not in manifest["explicitly_not_implemented"], "manifest still denies implemented host inventory")
     require("canonical_device_classification" in manifest["explicitly_not_implemented"], "implementation must not claim device classification authority")
 
-    print("wave4_zabbix_host_inventory_validation=PASS resource_kind=host provider_object_kind=zabbix_host evidence=bounded+scope-bound removal=authoritative-only tenant_rls=forced stale_authority=fenced recovery=validation-authority")
+    print("wave4_zabbix_host_inventory_validation=PASS resource_kind=host provider_object_kind=zabbix_host evidence=bounded+scope-bound+owner-bound identity=immutable removal=authoritative-only tenant_rls=forced stale_authority=fenced recovery=validation-authority")
 
 
 if __name__ == "__main__":

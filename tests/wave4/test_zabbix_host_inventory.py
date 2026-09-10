@@ -2,6 +2,7 @@ import unittest
 
 from jlmirror_monitoring.host_inventory import (
     HostInventoryClaim,
+    HostInventoryResult,
     HostInventoryWorker,
     InventoryFailureClass,
     MAX_HOSTS_PER_SNAPSHOT,
@@ -24,8 +25,9 @@ from jlmirror_monitoring.validation_worker import (
 
 
 class FakeRepository:
-    def __init__(self):
+    def __init__(self, authoritative_result=None):
         self.completed = []
+        self.authoritative_result = authoritative_result
 
     def claim_host_inventory(self, operation_id, *, claim_token):
         return HostInventoryClaim(
@@ -45,6 +47,7 @@ class FakeRepository:
 
     def complete_host_inventory(self, claim, result, *, snapshot_evidence_id):
         self.completed.append((claim, result, snapshot_evidence_id))
+        return self.authoritative_result if self.authoritative_result is not None else result
 
 
 class Resolver:
@@ -92,9 +95,18 @@ def host(hostid="101", groups=("10",), name="edge-sw-01"):
 
 
 class HostInventoryTests(unittest.TestCase):
-    def run_worker(self, snapshot=None, *, credential_error=None, admission_error=None, reader_error=None, visible_group_refs=("10", "20")):
+    def run_worker(
+        self,
+        snapshot=None,
+        *,
+        credential_error=None,
+        admission_error=None,
+        reader_error=None,
+        visible_group_refs=("10", "20"),
+        authoritative_result=None,
+    ):
         events = []
-        repo = FakeRepository()
+        repo = FakeRepository(authoritative_result)
         worker = HostInventoryWorker(
             repository=repo,
             credential_resolver=Resolver(credential_error),
@@ -115,6 +127,24 @@ class HostInventoryTests(unittest.TestCase):
         self.assertEqual(events[1][0], "hostgroup.get")
         self.assertEqual(events[2][0], "host.get")
         self.assertEqual(events[2][2], MAX_HOSTS_PER_SNAPSHOT)
+
+    def test_worker_returns_persisted_completion_outcome(self):
+        persisted = HostInventoryResult(
+            OperationalEvidenceState.INCOMPLETE,
+            SyncOperationState.RECONCILIATION_REQUIRED,
+            (),
+            False,
+            None,
+            "egress:7",
+            "credential-generation:9",
+        )
+        result, _ = self.run_worker(
+            ZabbixHostSnapshot((host(),), True),
+            authoritative_result=persisted,
+        )
+        self.assertIs(result, persisted)
+        self.assertEqual(result.operation_state, SyncOperationState.RECONCILIATION_REQUIRED)
+        self.assertFalse(result.succeeded)
 
     def test_scope_anchors_are_revalidated_before_host_snapshot(self):
         result, events = self.run_worker(ZabbixHostSnapshot((), True), visible_group_refs=("10",))

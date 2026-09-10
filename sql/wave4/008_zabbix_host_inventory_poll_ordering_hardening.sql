@@ -1,6 +1,7 @@
 -- Wave 4 host-inventory poll ordering hardening.
 -- Closes out-of-order completion and stale-negative evidence races found in PR #135 review.
 -- The public completion function is replaced in place; no unfenced helper remains callable.
+-- Poll generation, not wall-clock time, is the authoritative presence ordering field.
 
 BEGIN;
 
@@ -11,6 +12,18 @@ ALTER TABLE monitoring.monitoring_source
 ALTER TABLE monitoring.monitoring_sync_operation
     ADD COLUMN host_inventory_poll_generation BIGINT NULL
     CHECK (host_inventory_poll_generation IS NULL OR host_inventory_poll_generation > 0);
+
+ALTER TABLE monitoring.monitoring_host_inventory_snapshot_evidence
+    ADD COLUMN host_inventory_poll_generation BIGINT NULL
+    CHECK (host_inventory_poll_generation IS NULL OR host_inventory_poll_generation > 0);
+
+ALTER TABLE monitoring.monitoring_resource
+    ADD COLUMN last_confirmed_present_poll_generation BIGINT NOT NULL DEFAULT 0
+        CHECK (last_confirmed_present_poll_generation >= 0),
+    ADD COLUMN removed_poll_generation BIGINT NULL
+        CHECK (removed_poll_generation IS NULL OR removed_poll_generation > 0),
+    ADD CONSTRAINT monitoring_resource_removed_poll_generation_state
+        CHECK ((presence_state = 'removed') = (removed_poll_generation IS NOT NULL));
 
 CREATE OR REPLACE FUNCTION monitoring.claim_zabbix_host_inventory(
     p_tenant_id TEXT,
@@ -207,17 +220,19 @@ BEGIN
 
     v_host_count := jsonb_array_length(p_hosts);
     INSERT INTO monitoring.monitoring_host_inventory_snapshot_evidence(
-        tenant_id, host_inventory_snapshot_evidence_id, monitoring_sync_operation_id,
-        monitoring_source_id, provider_scope_tenant_binding_id, source_instance_generation,
-        configuration_revision, scope_revision, provider_instance_ref,
-        snapshot_complete, host_count, operational_evidence_state, operation_state,
-        failure_class, egress_decision_ref, credential_generation_ref, observed_at
+        tenant_id,host_inventory_snapshot_evidence_id,monitoring_sync_operation_id,
+        monitoring_source_id,provider_scope_tenant_binding_id,source_instance_generation,
+        configuration_revision,scope_revision,provider_instance_ref,
+        snapshot_complete,host_count,operational_evidence_state,operation_state,
+        failure_class,egress_decision_ref,credential_generation_ref,observed_at,
+        host_inventory_poll_generation
     ) VALUES (
         p_tenant_id,p_snapshot_evidence_id,p_monitoring_sync_operation_id,
         v_source_id,p_provider_scope_tenant_binding_id,v_generation,
         v_configuration_revision,v_scope_revision,p_provider_instance_ref,
         p_snapshot_complete,v_host_count,p_operational_evidence_state,p_operation_state,
-        p_failure_class,p_egress_decision_ref,p_credential_generation_ref,v_observed_at
+        p_failure_class,p_egress_decision_ref,p_credential_generation_ref,v_observed_at,
+        v_poll_generation
     );
 
     FOR v_host IN SELECT value FROM jsonb_array_elements(p_hosts) LOOP
@@ -247,13 +262,14 @@ BEGIN
             resource_kind,provider_object_kind,provider_external_ref,display_name,
             scope_state,scope_projection_revision,scope_evidence_state,
             presence_state,presence_evidence_state,last_observed_at,
-            last_confirmed_present_at,removed_at
+            last_confirmed_present_at,removed_at,last_confirmed_present_poll_generation,
+            removed_poll_generation
         ) VALUES (
             p_tenant_id,v_resource_id,v_source_id,v_generation,
             'host','zabbix_host',v_hostid,v_display_name,
             'in_scope',v_scope_revision,'current',
             'present',CASE WHEN p_snapshot_complete THEN 'current' ELSE 'incomplete' END,
-            v_observed_at,v_observed_at,NULL
+            v_observed_at,v_observed_at,NULL,v_poll_generation,NULL
         )
         ON CONFLICT (tenant_id,monitoring_source_id,source_instance_generation,provider_external_ref)
         DO UPDATE SET
@@ -265,7 +281,9 @@ BEGIN
             presence_evidence_state=CASE WHEN p_snapshot_complete THEN 'current' ELSE 'incomplete' END,
             last_observed_at=v_observed_at,
             last_confirmed_present_at=v_observed_at,
+            last_confirmed_present_poll_generation=v_poll_generation,
             removed_at=NULL,
+            removed_poll_generation=NULL,
             updated_at=v_observed_at
         RETURNING monitoring_resource_id INTO v_resource_id;
 
@@ -291,6 +309,7 @@ BEGIN
            SET presence_state='removed',
                presence_evidence_state='current',
                removed_at=v_observed_at,
+               removed_poll_generation=v_poll_generation,
                updated_at=v_observed_at
          WHERE r.tenant_id=p_tenant_id
            AND r.monitoring_source_id=v_source_id
@@ -298,6 +317,7 @@ BEGIN
            AND r.scope_state='in_scope'
            AND r.scope_projection_revision=v_scope_revision
            AND r.presence_state='present'
+           AND r.last_confirmed_present_poll_generation < v_poll_generation
            AND NOT EXISTS (
                SELECT 1
                  FROM jsonb_array_elements(p_hosts) AS h
@@ -347,8 +367,9 @@ BEGIN
         RAISE EXCEPTION 'Monitoring resource scope projection revision cannot regress';
     END IF;
     IF NEW.last_observed_at < OLD.last_observed_at
-       OR NEW.last_confirmed_present_at < OLD.last_confirmed_present_at THEN
-        RAISE EXCEPTION 'Monitoring resource observation timestamps cannot regress';
+       OR NEW.last_confirmed_present_at < OLD.last_confirmed_present_at
+       OR NEW.last_confirmed_present_poll_generation < OLD.last_confirmed_present_poll_generation THEN
+        RAISE EXCEPTION 'Monitoring resource observation authority cannot regress';
     END IF;
     IF OLD.presence_state <> 'removed' AND NEW.presence_state = 'removed' THEN
         IF NOT EXISTS (
@@ -360,8 +381,9 @@ BEGIN
                AND e.scope_revision=OLD.scope_projection_revision
                AND e.snapshot_complete
                AND e.operation_state='succeeded'
+               AND e.host_inventory_poll_generation=NEW.removed_poll_generation
+               AND e.host_inventory_poll_generation > OLD.last_confirmed_present_poll_generation
                AND e.observed_at=NEW.removed_at
-               AND e.observed_at > OLD.last_confirmed_present_at
                AND NOT EXISTS (
                    SELECT 1
                      FROM monitoring.monitoring_resource_provider_evidence AS pe
@@ -370,7 +392,7 @@ BEGIN
                       AND pe.provider_external_ref=OLD.provider_external_ref
                )
         ) THEN
-            RAISE EXCEPTION 'Monitoring resource removal requires newer complete authoritative negative snapshot evidence';
+            RAISE EXCEPTION 'Monitoring resource removal requires newer complete authoritative negative poll evidence';
         END IF;
     END IF;
     RETURN NEW;

@@ -36,8 +36,8 @@ def main() -> None:
         "PROVIDER DISABLED/UNSUPPORTED != METRIC RETIREMENT",
         "VALUE-KIND DRIFT != SILENT IN-PLACE COMPATIBILITY",
         "UNCERTAINTY != NEGATIVE EVIDENCE",
-        "ITEM-DEFINITION POLL GENERATION != HOST-INVENTORY POLL GENERATION",
-        "SHARED RECOVERY EPOCH/ADMISSION FRAMEWORK != SHARED ENDPOINT POLL SEQUENCE",
+        "ITEM-DEFINITION POLL AUTHORITY != HOST-INVENTORY POLL AUTHORITY",
+        "SHARED RECOVERY LAWS != SHARED STREAM STATE",
         "provider_object_kind = zabbix_item",
         "Boolean is not inferred from integer `0/1`",
     ):
@@ -52,7 +52,7 @@ def main() -> None:
         "trigger_problem_event_ingestion",
         "health_projection",
         "provider_write_back",
-        "shared_host_inventory_poll_generation_for_item_definitions",
+        "reuse_host_inventory_poll_epoch_generation_or_runtime_admission_for_item_definitions",
         "provider_disabled_or_unsupported_as_metric_retirement",
         "silent_in_place_value_kind_mutation",
         "automatic_metric_successor_identity_for_value_kind_drift",
@@ -69,20 +69,20 @@ def main() -> None:
         "retirement_only_from_complete_authoritative_negative_item_snapshot",
         "provider_disabled_or_unsupported_retained_as_binding_evidence",
         "value_kind_drift_enters_reconciliation_required",
-        "reuse_existing_recovery_epoch_and_admission_framework",
-        "distinct_item_definition_poll_generation_stream",
+        "reuse_accepted_recovery_laws_and_trusted_authority_pattern",
+        "independent_item_definition_poll_epoch_generation_and_admission_state",
     ):
         require(capability in authorized, f"missing authorized capability: {capability}")
 
     for invariant in (
         "provider_disabled_or_unsupported_not_metric_retirement",
         "value_kind_drift_not_silent_in_place_compatibility",
-        "item_definition_poll_generation_distinct_from_host_inventory_poll_generation",
-        "shared_recovery_epoch_admission_does_not_imply_shared_endpoint_poll_sequence",
+        "item_definition_poll_authority_independent_from_host_inventory_poll_authority",
+        "shared_recovery_laws_do_not_mean_shared_stream_state",
     ):
         require(invariant in invariants, f"missing invariant: {invariant}")
 
-    print("wave4_metric_definitions_authorization=PASS state=proposed slice=item_get_to_metric_definitions_and_bindings lifecycle=fail-closed poll_stream=item-definition-independent implementation=blocked")
+    print("wave4_metric_definitions_authorization=PASS state=proposed slice=item_get_to_metric_definitions_and_bindings lifecycle=fail-closed poll_authority=item-definition-independent implementation=blocked")
 
 
 if __name__ == "__main__":

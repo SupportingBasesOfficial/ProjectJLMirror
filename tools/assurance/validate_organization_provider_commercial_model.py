@@ -48,8 +48,8 @@ def main() -> None:
         "Entitlement != Permission",
         "Tenant Admin != Provider Admin",
         "Display/TV access SHOULD be represented by an independently attributable non-human display/device principal",
-        "Platform-owner Organization 360 traceability is a product requirement" if False else "Organization 360 traceability requirement",
-        "This contract does not grant implementation, frontend, production, billing-price, or provider-write authority by itself"
+        "Organization 360 traceability requirement",
+        "This contract does not grant implementation, frontend, production, billing-price, or provider-write authority by itself",
     ]
     for phrase in required_contract_phrases:
         require(phrase in contract, f"missing canonical contract phrase: {phrase}")
@@ -59,7 +59,7 @@ def main() -> None:
         "No provider validation/ingestion successor slice should assume `1 Monitoring Source = 1 physical provider = 1 organization`",
         "does **not**",
         "authorize the Zabbix validation worker",
-        "grant production authority"
+        "grant production authority",
     ]
     for phrase in required_state_phrases:
         require(phrase in state, f"missing state boundary: {phrase}")

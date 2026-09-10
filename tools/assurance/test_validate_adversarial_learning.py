@@ -203,6 +203,23 @@ def falsify_wave4_authorization_exact_path_allowlist() -> None:
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0]["guardrails"][0].__setitem__("probe", "nonexistent_exact_allowlist_probe")))
 
 
+def falsify_wave4_authority_toctou_guardrail() -> None:
+    sql = (ROOT / "sql/wave4/003_zabbix_initial_validation_worker.sql").read_text(encoding="utf-8")
+    conformance = (ROOT / "tools/wave4/run_zabbix_initial_validation_postgres_conformance.sh").read_text(encoding="utf-8")
+    validator = (ROOT / "tools/wave4/validate_zabbix_initial_validation_worker.py").read_text(encoding="utf-8")
+    assert "FOR UPDATE OF s" in sql, "Wave 4 completion must hold the authoritative source row lock"
+    assert "race=source_row_lock_blocks_concurrent_edit" in conformance, "Wave 4 concurrency falsifier missing"
+    assert 'require("FOR UPDATE OF s" in sql' in validator, "Wave 4 validator does not require source-row lock"
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_wave4_authority_toctou_guardrail()\n",
+            "",
+        )
+    )
+
+
 def main() -> None:
     assert not s.validate(ROOT)
 
@@ -230,6 +247,7 @@ def main() -> None:
     falsify_non_strict_deterministic_reconciliation()
     falsify_stale_d4c_current_workflow_projection()
     falsify_wave4_authorization_exact_path_allowlist()
+    falsify_wave4_authority_toctou_guardrail()
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][1].__setitem__("review_comment_id", 3961647090)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][6].__setitem__("guardrail_generation", 1)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0].__setitem__("systemic_guardrail_updated", False)))
@@ -252,7 +270,7 @@ def main() -> None:
         comments.write_text(json.dumps([[{"id": 3963734258, "body": "**P1 Badge** exact bootstrap finding"}]]), encoding="utf-8")
         assert not s.validate(root, comments)
 
-    print("adversarial_learning_falsification=PASS entrypoint_termination=blocked no_op_assertion=blocked dead_branch_helper=blocked privileged_job_pr_execution=blocked implicit_api_write=blocked exact_status_endpoint=bound reconciliation_concurrency=fresh manual_dispatch=removed strict_reconciliation=all-surfaces stale_d4c_workflow_projection=blocked d4c_product_authority_guardrail=attested wave4_exact_path_allowlist=attested")
+    print("adversarial_learning_falsification=PASS entrypoint_termination=blocked no_op_assertion=blocked dead_branch_helper=blocked privileged_job_pr_execution=blocked implicit_api_write=blocked exact_status_endpoint=bound reconciliation_concurrency=fresh manual_dispatch=removed strict_reconciliation=all-surfaces stale_d4c_workflow_projection=blocked d4c_product_authority_guardrail=attested wave4_exact_path_allowlist=attested wave4_authority_toctou=source-row-lock+postgres-race")
 
 
 if __name__ == "__main__":

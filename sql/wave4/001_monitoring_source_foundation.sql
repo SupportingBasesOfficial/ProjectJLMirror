@@ -56,6 +56,9 @@ CREATE TABLE monitoring.monitoring_source_generation (
         provider_base_url LIKE 'https://%'
         AND position('?' IN provider_base_url) = 0
         AND position('#' IN provider_base_url) = 0
+        AND position('@' IN provider_base_url) = 0
+        AND position(E'\\' IN provider_base_url) = 0
+        AND provider_base_url !~ '[[:cntrl:][:space:]]'
     ),
     created_at TIMESTAMPTZ NOT NULL DEFAULT transaction_timestamp(),
     PRIMARY KEY (tenant_id, monitoring_source_id, source_instance_generation),
@@ -209,18 +212,56 @@ DECLARE
     existing_operation_id TEXT;
     existing_state TEXT;
     inserted_count BIGINT := 0;
+    scope_count BIGINT;
+    scope_distinct_count BIGINT;
 BEGIN
-    IF p_tenant_id IS NULL OR p_tenant_id = ''
-       OR p_idempotency_key IS NULL OR p_idempotency_key = ''
+    IF p_tenant_id IS NULL OR p_tenant_id = '' OR length(p_tenant_id) > 256
+       OR p_tenant_id ~ '[[:cntrl:]]' OR p_tenant_id <> btrim(p_tenant_id)
+       OR p_idempotency_key IS NULL OR p_idempotency_key = '' OR length(p_idempotency_key) > 512
+       OR p_idempotency_key ~ '[[:cntrl:]]' OR p_idempotency_key <> btrim(p_idempotency_key)
        OR p_request_fingerprint IS NULL OR p_request_fingerprint !~ '^[0-9a-f]{64}$'
-       OR p_monitoring_source_id IS NULL OR p_monitoring_source_id = ''
-       OR p_source_instance_generation IS NULL OR p_source_instance_generation = ''
-       OR p_monitoring_sync_operation_id IS NULL OR p_monitoring_sync_operation_id = ''
-       OR p_display_name IS NULL OR p_display_name = ''
-       OR p_provider_base_url IS NULL OR p_provider_base_url = ''
-       OR p_credential_binding_ref IS NULL OR p_credential_binding_ref = ''
-       OR p_configured_provider_scope IS NULL THEN
+       OR p_monitoring_source_id IS NULL OR p_monitoring_source_id = '' OR length(p_monitoring_source_id) > 512
+       OR p_monitoring_source_id ~ '[[:cntrl:]]' OR p_monitoring_source_id <> btrim(p_monitoring_source_id)
+       OR p_source_instance_generation IS NULL OR p_source_instance_generation = '' OR length(p_source_instance_generation) > 512
+       OR p_source_instance_generation ~ '[[:cntrl:]]' OR p_source_instance_generation <> btrim(p_source_instance_generation)
+       OR p_monitoring_sync_operation_id IS NULL OR p_monitoring_sync_operation_id = '' OR length(p_monitoring_sync_operation_id) > 512
+       OR p_monitoring_sync_operation_id ~ '[[:cntrl:]]' OR p_monitoring_sync_operation_id <> btrim(p_monitoring_sync_operation_id)
+       OR p_display_name IS NULL OR p_display_name = '' OR length(p_display_name) > 512
+       OR p_display_name ~ '[[:cntrl:]]' OR p_display_name <> btrim(p_display_name)
+       OR p_credential_binding_ref IS NULL OR p_credential_binding_ref = '' OR length(p_credential_binding_ref) > 512
+       OR p_credential_binding_ref ~ '[[:cntrl:]]' OR p_credential_binding_ref <> btrim(p_credential_binding_ref)
+       OR p_provider_base_url IS NULL OR p_provider_base_url = '' OR length(p_provider_base_url) > 2048
+       OR p_provider_base_url NOT LIKE 'https://%'
+       OR position('?' IN p_provider_base_url) > 0
+       OR position('#' IN p_provider_base_url) > 0
+       OR position('@' IN p_provider_base_url) > 0
+       OR position(E'\\' IN p_provider_base_url) > 0
+       OR p_provider_base_url ~ '[[:cntrl:][:space:]]'
+       OR p_configured_provider_scope IS NULL
+       OR jsonb_typeof(p_configured_provider_scope) <> 'object'
+       OR NOT (p_configured_provider_scope ? 'host_group_refs')
+       OR p_configured_provider_scope - 'host_group_refs' <> '{}'::jsonb
+       OR jsonb_typeof(p_configured_provider_scope->'host_group_refs') <> 'array' THEN
         RAISE EXCEPTION 'invalid bounded create-source input';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM jsonb_array_elements(p_configured_provider_scope->'host_group_refs') AS element(value)
+         WHERE jsonb_typeof(value) <> 'string'
+            OR value #>> '{}' = ''
+            OR length(value #>> '{}') > 256
+            OR value #>> '{}' <> btrim(value #>> '{}')
+            OR value #>> '{}' ~ '[[:cntrl:]]'
+    ) THEN
+        RAISE EXCEPTION 'invalid configured provider scope';
+    END IF;
+
+    SELECT count(*), count(DISTINCT value #>> '{}')
+      INTO scope_count, scope_distinct_count
+      FROM jsonb_array_elements(p_configured_provider_scope->'host_group_refs') AS element(value);
+    IF scope_count > 256 OR scope_count <> scope_distinct_count THEN
+        RAISE EXCEPTION 'invalid configured provider scope';
     END IF;
 
     INSERT INTO monitoring.monitoring_source_create_idempotency(

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR123-001",
+      "pr": 123,
+      "source": "external_review",
+      "review_comment_id": 3974107877,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The initial Wave 4 authorization scope validator treated the authorization directory as an allowed prefix. That made any nested file under that directory appear governance-safe, even if the nested file implemented frontend, runtime or database behavior, while the separate forbidden-root check only examined repository-root prefixes.",
+      "horizontal_audit": [
+        "authorization-only PR path guards",
+        "directory-prefix allowlists used as authority boundaries",
+        "nested implementation paths beneath governance directories",
+        "frontend/runtime/database exclusion checks",
+        "future implementation-authorization gates"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_wave4_monitoring_authorization.py",
+          "probe": "falsify_hidden_implementation_under_authorization_path"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 10
+    }
+  ]
+}

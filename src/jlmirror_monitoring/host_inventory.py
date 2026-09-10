@@ -260,7 +260,14 @@ class MonitoringHostInventoryRepository(Protocol):
     def claim_host_inventory(self, monitoring_sync_operation_id: str, *, claim_token: str) -> HostInventoryClaim:
         ...
 
-    def complete_host_inventory(self, claim: HostInventoryClaim, result: HostInventoryResult, *, snapshot_evidence_id: str) -> None:
+    def complete_host_inventory(
+        self,
+        claim: HostInventoryClaim,
+        result: HostInventoryResult,
+        *,
+        snapshot_evidence_id: str,
+    ) -> HostInventoryResult:
+        """Persist completion and return the authoritative post-persistence outcome."""
         ...
 
 
@@ -456,15 +463,17 @@ class HostInventoryWorker:
             monitoring_sync_operation_id,
             claim_token=opaque_token("mon-host-claim"),
         )
-        result = collect_host_inventory(
+        collected_result = collect_host_inventory(
             claim,
             credential_resolver=self._credential_resolver,
             outbound_admission=self._outbound_admission,
             host_reader=self._host_reader,
         )
-        self._repository.complete_host_inventory(
+        persisted_result = self._repository.complete_host_inventory(
             claim,
-            result,
+            collected_result,
             snapshot_evidence_id=opaque_token("mon-host-snapshot"),
         )
-        return result
+        if not isinstance(persisted_result, HostInventoryResult):
+            raise TypeError("complete_host_inventory must return the authoritative persisted HostInventoryResult")
+        return persisted_result

@@ -63,12 +63,14 @@ EXPECTED_EXCLUSIONS = {
     "production_retention_replay_quarantine_horizons",
     "frontend_route_generation_from_backend_shape",
 }
-ALLOWED_PR_PATH_PREFIXES = (
-    "implementation/wave-4-monitoring-authorization/",
+ALLOWED_PR_PATHS = {
+    "implementation/wave-4-monitoring-authorization/AUTHORIZATION.md",
+    "implementation/wave-4-monitoring-authorization/AUTHORIZATION_MANIFEST.json",
     "tools/assurance/validate_wave4_monitoring_authorization.py",
     "tools/assurance/test_validate_wave4_monitoring_authorization.py",
     ".github/workflows/wave4-monitoring-implementation-authorization.yml",
-)
+    "governance/adversarial/learning-ledger.d/pr-123-review-findings.json",
+}
 
 
 def req(condition: bool, message: str) -> None:
@@ -138,14 +140,15 @@ def validate_document() -> None:
         req(marker in text, f"authorization document missing marker: {marker}")
 
 
-def validate_pr_scope() -> None:
-    changed = [p for p in git("diff", "--name-only", f"{BASE}...HEAD").splitlines() if p]
+def validate_changed_paths(changed: list[str]) -> None:
     req(changed, "authorization branch must contain an explicit delta")
     for path in changed:
-        req(any(path == prefix or path.startswith(prefix) for prefix in ALLOWED_PR_PATH_PREFIXES), f"authorization PR touched forbidden path: {path}")
-    forbidden_roots = ("src/", "apps/", "packages/", "migrations/", "db/", "frontend/", "web/")
-    for path in changed:
-        req(not path.startswith(forbidden_roots), f"authorization PR must not implement product/runtime/frontend code: {path}")
+        req(path in ALLOWED_PR_PATHS, f"authorization PR touched forbidden path: {path}")
+
+
+def validate_pr_scope() -> None:
+    changed = [p for p in git("diff", "--name-only", f"{BASE}...HEAD").splitlines() if p]
+    validate_changed_paths(changed)
 
 
 def validate() -> None:
@@ -163,7 +166,7 @@ def main() -> int:
     except AssertionError as exc:
         print(f"wave4_monitoring_authorization=FAIL reason={exc}", file=sys.stderr)
         return 1
-    print("wave4_monitoring_authorization=PASS vertical=monitoring capability_scope=3 slices=customer-telemetry,provider-integration:zabbix production=none frontend_routes=not_granted")
+    print("wave4_monitoring_authorization=PASS vertical=monitoring capability_scope=3 slices=customer-telemetry,provider-integration:zabbix production=none frontend_routes=not_granted exact_artifact_allowlist=PASS")
     return 0
 
 

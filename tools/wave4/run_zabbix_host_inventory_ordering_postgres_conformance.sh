@@ -42,6 +42,10 @@ GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA monitoring TO wave4_runtime
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA monitoring TO wave4_runtime;
 SQL
 
+# Even after a broad runtime function grant there must be no alternate unfenced completion entry point.
+unfenced_helper_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='monitoring' AND p.proname='wave4_complete_zabbix_host_inventory_pre_poll_fence';")"
+test "$unfenced_helper_count" = "0"
+
 fp="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 scope='{"host_group_refs":["10"]}'
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT * FROM monitoring.create_zabbix_source('tenant-a','create-a','$fp','source-a','generation-a','binding-a','validation-a','audit-a','principal-a','human_browser_session','credential-generation-a','authz-a','correlation-a','Company A Zabbix','provider-instance:a','https://zabbix.example.test/zabbix','credential-binding:a','$scope'::jsonb); SELECT monitoring_source_id FROM monitoring.claim_zabbix_initial_validation('tenant-a','validation-a','validation-claim-a'); SELECT monitoring.complete_zabbix_initial_validation('tenant-a','validation-a','validation-claim-a','validation-evidence-a','binding-a','provider-instance:a','current','succeeded',NULL,'[\"10\"]'::jsonb,'[]'::jsonb,'egress-validation-a','credential-generation-a'); COMMIT;" >/dev/null
@@ -78,4 +82,4 @@ docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATAB
 final_state="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT (SELECT state || ':' || coalesce(last_error_class,'') FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='inventory-old') || '|' || (SELECT count(*) FROM monitoring.monitoring_host_inventory_snapshot_evidence WHERE host_inventory_snapshot_evidence_id='snapshot-old-late') || '|' || (SELECT count(*) FROM monitoring.monitoring_resource WHERE presence_state='present') || '|' || (SELECT count(*) FROM monitoring.monitoring_resource WHERE provider_external_ref='102' AND presence_state='present'); COMMIT;" | tail -n1)"
 test "$final_state" = "reconciliation_required:execution.superseded_poll_authority|0|2|1"
 
-printf '%s\n' "wave4_zabbix_host_inventory_ordering=PASS poll_generation=claim_ordered late_completion=retired_without_mutation stale_negative=blocked newer_positive=preserved"
+printf '%s\n' "wave4_zabbix_host_inventory_ordering=PASS poll_generation=claim_ordered late_completion=retired_without_mutation stale_negative=blocked newer_positive=preserved unfenced_helper=absent"

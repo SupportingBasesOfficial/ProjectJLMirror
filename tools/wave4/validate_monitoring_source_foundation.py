@@ -11,8 +11,11 @@ AUTH = ROOT / "implementation/wave-4-monitoring-authorization/AUTHORIZATION_MANI
 IMPL = ROOT / "implementation/wave-4/IMPLEMENTATION_MANIFEST.json"
 SOURCE = ROOT / "src/jlmirror_monitoring/source.py"
 SQL = ROOT / "sql/wave4/001_monitoring_source_foundation.sql"
+POSTGRES_CONFORMANCE = ROOT / "tools/wave4/run_monitoring_source_postgres_conformance.sh"
+WORKFLOW = ROOT / ".github/workflows/wave4-monitoring-source-foundation.yml"
 
 EXPECTED_AUTH_COMMIT = "8e2265a4ee2810ea701166228e8f44ad3bc0d894"
+PINNED_POSTGRES_IMAGE = "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280"
 FORBIDDEN_NETWORK_IMPORTS = {
     "requests", "httpx", "aiohttp", "urllib.request", "socket", "subprocess"
 }
@@ -69,6 +72,9 @@ def validate_source_has_no_network_side_effects() -> None:
     text = SOURCE.read_text(encoding="utf-8")
     req("OperationalEvidenceState.RECONCILIATION_REQUIRED" in text, "creation must not fabricate current provider evidence")
     req('responsibility_kind="validation_and_initial_sync"' in text, "initial durable sync responsibility missing")
+    req('if "\\\\" in raw:' in text, "canonical URL backslash rejection missing")
+    req('raw.encode("ascii")' in text, "canonical URL ASCII representation guard missing")
+    req('segment in (".", "..")' in text, "canonical URL dot-segment rejection missing")
 
 
 def validate_sql() -> None:
@@ -87,21 +93,49 @@ def validate_sql() -> None:
     req("CREATE FUNCTION monitoring.create_zabbix_source(" in text, "atomic create-source function missing")
     req("ON CONFLICT (tenant_id, idempotency_key) DO NOTHING" in text, "atomic idempotency claim missing")
     req("RAISE EXCEPTION 'idempotency.key_reused'" in text, "fingerprint mismatch rejection missing")
-    req("RETURN QUERY SELECT existing_source_id, existing_operation_id, TRUE" in text, "same-key replay path missing")
+    req("RETURN QUERY SELECT existing_source_id, existing_operation_id, existing_state, TRUE" in text, "same-key replay path missing")
     req("'reconciliation_required', p_monitoring_sync_operation_id" in text, "local create must start with non-current evidence")
     req("'validation_and_initial_sync', 'pending'" in text, "durable initial sync operation missing")
+    source_start = text.index("CREATE TABLE monitoring.monitoring_source (")
+    generation_start = text.index("CREATE TABLE monitoring.monitoring_source_generation (")
+    sync_start = text.index("CREATE TABLE monitoring.monitoring_sync_operation (")
+    source_block = text[source_start:generation_start]
+    generation_block = text[generation_start:sync_start]
+    req("credential_binding_ref TEXT NOT NULL" in source_block, "mutable credential binding must live on logical source")
+    req("configured_provider_scope JSONB NOT NULL" in source_block, "mutable scope must live on logical source")
+    req("credential_binding_ref" not in generation_block, "credential binding leaked into immutable generation")
+    req("configured_provider_scope" not in generation_block, "scope leaked into immutable generation")
+    req("provider_base_url TEXT NOT NULL" in generation_block, "provider endpoint must be generation-bound")
     lowered = text.lower()
     for marker in ("http_get", "curl ", "wget ", "dblink("):
         req(marker not in lowered, f"network/external side effect leaked into local migration: {marker}")
 
 
+def validate_postgres_proof() -> None:
+    script = POSTGRES_CONFORMANCE.read_text(encoding="utf-8")
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    for marker in (
+        PINNED_POSTGRES_IMAGE,
+        "wave4_monitoring_postgres_conformance=PASS",
+        "idempotency.key_reused",
+        "Monitoring source generation records are immutable",
+        "Monitoring source revisions cannot regress",
+        "duplicate configured scope unexpectedly succeeded",
+    ):
+        req(marker in script, f"PostgreSQL conformance proof missing marker: {marker}")
+    req("bash tools/wave4/run_monitoring_source_postgres_conformance.sh" in workflow, "dedicated CI does not execute PostgreSQL conformance proof")
+    req(PINNED_POSTGRES_IMAGE in workflow, "dedicated CI PostgreSQL image is not digest-pinned")
+    req("allow-unsafe-pr-checkout: false" in workflow, "dedicated CI unsafe PR checkout guard missing")
+
+
 def validate() -> None:
-    for path in (AUTH, IMPL, SOURCE, SQL):
+    for path in (AUTH, IMPL, SOURCE, SQL, POSTGRES_CONFORMANCE, WORKFLOW):
         req(path.is_file(), f"missing governed artifact: {path.relative_to(ROOT)}")
     validate_authority()
     validate_manifest()
     validate_source_has_no_network_side_effects()
     validate_sql()
+    validate_postgres_proof()
 
 
 def main() -> int:
@@ -110,7 +144,7 @@ def main() -> int:
     except AssertionError as exc:
         print(f"wave4_monitoring_source_foundation=FAIL reason={exc}", file=sys.stderr)
         return 1
-    print("wave4_monitoring_source_foundation=PASS source_identity=logical generation=opaque+historical-safe create=idempotent+atomic initial_sync=durable network_in_create=none production=none frontend=deferred")
+    print("wave4_monitoring_source_foundation=PASS source_identity=logical generation=opaque+historical-safe create=idempotent+atomic postgres=executed initial_sync=durable network_in_create=none production=none frontend=deferred")
     return 0
 
 

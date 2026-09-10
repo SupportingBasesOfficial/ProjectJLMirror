@@ -42,7 +42,8 @@ for migration in \
   sql/wave4/014_zabbix_host_inventory_resource_epoch_insert.sql \
   sql/wave4/015_zabbix_host_inventory_explicit_admission_and_resource_authority.sql \
   sql/wave4/016_zabbix_host_inventory_operation_insert_authority.sql \
-  sql/wave4/017_zabbix_host_inventory_superseded_epoch_retirement.sql; do
+  sql/wave4/017_zabbix_host_inventory_superseded_epoch_retirement.sql \
+  sql/wave4/018_zabbix_host_inventory_claim_revision_immutability.sql; do
   docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < "$migration" >/dev/null
 done
 
@@ -80,6 +81,14 @@ if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DA
   exit 1
 fi
 grep -F "Host inventory operation insert must be unclaimed pending work" /tmp/wave4-final-forged-insert.out >/dev/null
+
+# Claim-snapshotted source/revision authority is immutable after claim.
+docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-final','inventory-revision-fence'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-revision-fence','claim-revision-fence'); COMMIT;" >/dev/null
+if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; UPDATE monitoring.monitoring_sync_operation SET monitoring_source_id='forged-source', source_instance_generation='forged-generation', configuration_revision=configuration_revision+1, scope_revision=scope_revision+1 WHERE monitoring_sync_operation_id='inventory-revision-fence'; COMMIT;" >/tmp/wave4-final-claimed-revision.out 2>&1; then
+  echo "runtime writer unexpectedly rewrote claimed host inventory source/revision authority" >&2
+  exit 1
+fi
+grep -F "Claimed host inventory source/revision authority is immutable" /tmp/wave4-final-claimed-revision.out >/dev/null
 
 normalized1='{"technical_name":"core-sw-01","display_name":"Core Switch","inventory":{"vendor":"Cisco","model":"C9300"},"interfaces":[],"groups":[{"ref":"10","name":"Network"}],"templates":[],"tags":[]}'
 normalized2='{"technical_name":"edge-rtr-01","display_name":"Edge Router","inventory":{"vendor":"Cisco","model":"ISR"},"interfaces":[],"groups":[{"ref":"10","name":"Network"}],"templates":[],"tags":[]}'
@@ -145,4 +154,4 @@ recovered_admission_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -
 test "$recovered_source_count" = "1"
 test "$recovered_admission_count" = "0"
 
-printf '%s\n' "wave4_zabbix_host_inventory_final_schema=PASS schema=001-017 complete_snapshot=accepted negative_removal=accepted superseded_poll=retired terminal_reopen=blocked claimed_operation_insert=blocked poll_authority=single-owner observation_forgery=blocked logical_recovery_admission=excluded"
+printf '%s\n' "wave4_zabbix_host_inventory_final_schema=PASS schema=001-018 complete_snapshot=accepted negative_removal=accepted superseded_poll=retired terminal_reopen=blocked claimed_operation_insert=blocked claimed_revision_authority=immutable poll_authority=single-owner observation_forgery=blocked logical_recovery_admission=excluded"

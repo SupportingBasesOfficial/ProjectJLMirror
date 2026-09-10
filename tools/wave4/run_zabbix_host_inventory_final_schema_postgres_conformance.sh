@@ -40,7 +40,8 @@ for migration in \
   sql/wave4/012_zabbix_host_inventory_recovery_authority_hardening.sql \
   sql/wave4/013_zabbix_host_inventory_executor_privileges.sql \
   sql/wave4/014_zabbix_host_inventory_resource_epoch_insert.sql \
-  sql/wave4/015_zabbix_host_inventory_explicit_admission_and_resource_authority.sql; do
+  sql/wave4/015_zabbix_host_inventory_explicit_admission_and_resource_authority.sql \
+  sql/wave4/016_zabbix_host_inventory_operation_insert_authority.sql; do
   docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < "$migration" >/dev/null
 done
 
@@ -72,6 +73,13 @@ docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATAB
 admission_after="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT host_inventory_poll_epoch FROM monitoring.monitoring_host_inventory_runtime_admission WHERE monitoring_source_id='source-final';")"
 test "$admission_after" = "2"
 
+# Direct INSERT cannot mint already-claimed host-inventory authority.
+if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; INSERT INTO monitoring.monitoring_sync_operation(tenant_id,monitoring_sync_operation_id,monitoring_source_id,source_instance_generation,configuration_revision,scope_revision,responsibility_kind,state,started_at,claim_token,attempt_count,host_inventory_poll_generation,host_inventory_poll_epoch) VALUES ('tenant-a','inventory-forged-running','source-final','generation-final',1,1,'host_inventory_sync','running',transaction_timestamp(),'forged-claim',1,0,2); COMMIT;" >/tmp/wave4-final-forged-insert.out 2>&1; then
+  echo "runtime writer unexpectedly inserted claimed host inventory operation" >&2
+  exit 1
+fi
+grep -F "Host inventory operation insert must be unclaimed pending work" /tmp/wave4-final-forged-insert.out >/dev/null
+
 normalized1='{"technical_name":"core-sw-01","display_name":"Core Switch","inventory":{"vendor":"Cisco","model":"C9300"},"interfaces":[],"groups":[{"ref":"10","name":"Network"}],"templates":[],"tags":[]}'
 normalized2='{"technical_name":"edge-rtr-01","display_name":"Edge Router","inventory":{"vendor":"Cisco","model":"ISR"},"interfaces":[],"groups":[{"ref":"10","name":"Network"}],"templates":[],"tags":[]}'
 fp1="$(python3 -c 'import hashlib,json,sys; print(hashlib.sha256(json.dumps(json.loads(sys.argv[1]),separators=(",",":"),sort_keys=True,ensure_ascii=False).encode("utf-8")).hexdigest())' "$normalized1")"
@@ -83,6 +91,19 @@ host2="{\"monitoring_resource_id\":\"resource-final-102\",\"provider_evidence_id
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-final','inventory-present'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-present','claim-present'); SELECT monitoring.complete_zabbix_host_inventory('tenant-a','inventory-present','claim-present','snapshot-present','binding-final','provider-instance:final','current','succeeded',NULL,true,'[$host1,$host2]'::jsonb,'egress-present','credential-generation-final'); COMMIT;" >/dev/null
 present_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT count(*) FROM monitoring.monitoring_resource WHERE monitoring_source_id='source-final' AND presence_state='present'; COMMIT;" | tail -n1)"
 test "$present_count" = "2"
+
+# Same source/epoch/generation authority tuple is single-owner even for privileged SQL.
+current_generation="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT host_inventory_poll_generation FROM monitoring.monitoring_source WHERE tenant_id='tenant-a' AND monitoring_source_id='source-final';")"
+if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL jlmirror.tenant_id='tenant-a'; SET LOCAL ROLE jlmirror_wave4_host_inventory_executor; INSERT INTO monitoring.monitoring_sync_operation(tenant_id,monitoring_sync_operation_id,monitoring_source_id,source_instance_generation,configuration_revision,scope_revision,responsibility_kind,state,started_at,claim_token,attempt_count,host_inventory_poll_generation,host_inventory_poll_epoch) VALUES ('tenant-a','inventory-duplicate-authority','source-final','generation-final',1,1,'host_inventory_sync','running',transaction_timestamp(),'duplicate-claim',1,$current_generation,2); COMMIT;" >/tmp/wave4-final-duplicate-authority.out 2>&1; then
+  echo "duplicate host inventory poll authority tuple unexpectedly inserted" >&2
+  exit 1
+fi
+# Insert guard may reject the manufactured claimed row before uniqueness; prove the
+# uniqueness constraint independently by checking its catalog presence and exact keys.
+duplicate_index="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT indexdef FROM pg_indexes WHERE schemaname='monitoring' AND indexname='monitoring_sync_operation_host_inventory_poll_authority_uniq';")"
+printf '%s' "$duplicate_index" | grep -F "UNIQUE INDEX monitoring_sync_operation_host_inventory_poll_authority_uniq" >/dev/null
+printf '%s' "$duplicate_index" | grep -F "host_inventory_poll_epoch" >/dev/null
+printf '%s' "$duplicate_index" | grep -F "host_inventory_poll_generation" >/dev/null
 
 # Final-schema complete omission has negative authority and removes both resources.
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-final','inventory-empty'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-empty','claim-empty'); SELECT monitoring.complete_zabbix_host_inventory('tenant-a','inventory-empty','claim-empty','snapshot-empty','binding-final','provider-instance:final','current','succeeded',NULL,true,'[]'::jsonb,'egress-empty','credential-generation-final'); COMMIT;" >/dev/null
@@ -125,4 +146,4 @@ recovered_admission_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -
 test "$recovered_source_count" = "1"
 test "$recovered_admission_count" = "0"
 
-printf '%s\n' "wave4_zabbix_host_inventory_final_schema=PASS schema=001-015 complete_snapshot=accepted negative_removal=accepted superseded_poll=retired terminal_reopen=blocked observation_forgery=blocked logical_recovery_admission=excluded"
+printf '%s\n' "wave4_zabbix_host_inventory_final_schema=PASS schema=001-016 complete_snapshot=accepted negative_removal=accepted superseded_poll=retired terminal_reopen=blocked claimed_operation_insert=blocked poll_authority=single-owner observation_forgery=blocked logical_recovery_admission=excluded"

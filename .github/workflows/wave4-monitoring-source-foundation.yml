@@ -77,6 +77,9 @@ jobs:
       - name: Validate Zabbix initial-validation worker boundary
         run: python3 tools/wave4/validate_zabbix_initial_validation_worker.py
 
+      - name: Validate Monitoring pooled-tenant and canonical boundary hardening
+        run: python3 tools/wave4/validate_monitoring_boundary_hardening.py
+
       - name: Test Monitoring source and initial-validation contracts
         run: PYTHONPATH=src python3 -m unittest discover -s tests/wave4 -p 'test_*.py'
 
@@ -85,6 +88,11 @@ jobs:
 
       - name: Execute Zabbix initial-validation fencing on pinned PostgreSQL
         run: bash tools/wave4/run_zabbix_initial_validation_postgres_conformance.sh
+
+      - name: Execute Monitoring boundary hardening under non-superuser runtime role
+        env:
+          PG_CONTAINER: jlmirror-wave4-monitoring-boundary-postgres
+        run: bash tools/wave4/run_monitoring_boundary_hardening_postgres_conformance.sh
 
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "wave": 4,
+  "implementation_id": "wave4.monitoring-source-foundation@1",
+  "canonical_authorization_commit": "8e2265a4ee2810ea701166228e8f44ad3bc0d894",
+  "authorization_id": "wave4.monitoring-zabbix.vertical@1",
+  "state": "implementation_in_progress",
+  "product_feature_activation": "monitoring_source_foundation_only",
+  "implemented_capability": [
+    "local_monitoring_source_creation_plan",
+    "zabbix_static_configuration_validation",
+    "logical_source_and_generation_identity_separation",
+    "durable_initial_validation_and_sync_responsibility_schema",
+    "tenant_scoped_create_source_idempotency_schema"
+  ],
+  "authorized_slices_consumed": [
+    "impl.customer-telemetry@1",
+    "impl.provider-integration@1:accepted_monitoring_zabbix_subprofile_only"
+  ],
+  "runtime_profiles": [
+    "runtime.api@1",
+    "runtime.worker@1"
+  ],
+  "code_surfaces": [
+    "src/jlmirror_monitoring/source.py",
+    "src/jlmirror_monitoring/__init__.py",
+    "sql/wave4/001_monitoring_source_foundation.sql",
+    "tests/wave4/test_monitoring_source.py",
+    "tests/wave4/test_monitoring_source_sql.py"
+  ],
+  "explicitly_not_implemented": [
+    "zabbix_network_client",
+    "zabbix_provider_authentication",
+    "resource_ingestion",
+    "metric_ingestion",
+    "historical_metric_storage_adapter",
+    "problem_normalization",
+    "health_projection",
+    "http_route_adapter",
+    "browser_frontend",
+    "provider_write_back",
+    "browser_realtime",
+    "production_deployment",
+    "c3_production_numerics"
+  ],
+  "next_bounded_step": "implement_worker_owned_zabbix_validation_and_initial_sync_against_persisted_source_generation",
+  "frontend_rule": "backend_entities_tables_endpoints_and_use_cases_do_not_imply_frontend_routes"
+}

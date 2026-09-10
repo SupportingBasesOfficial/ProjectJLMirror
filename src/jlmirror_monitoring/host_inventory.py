@@ -35,6 +35,22 @@ MAX_GROUPS_PER_HOST = 256
 MAX_TEMPLATES_PER_HOST = 256
 MAX_TAGS_PER_HOST = 128
 
+# PostgreSQL has a 65,536-byte hard storage guard for normalized host evidence. Keep
+# the application-side canonical JSON ceiling below that persistence limit so a host
+# accepted by the domain cannot later fail completion solely because jsonb textual
+# rendering adds separator whitespace. This is a safety bound, not C3 throughput tuning.
+PERSISTED_NORMALIZED_EVIDENCE_LIMIT_BYTES = 65_536
+MAX_NORMALIZED_EVIDENCE_BYTES = 60_000
+
+
+def _canonical_json_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        separators=(",", ":"),
+        sort_keys=True,
+        ensure_ascii=False,
+    ).encode("utf-8")
+
 
 class InventoryFailureClass(StrEnum):
     CREDENTIAL_UNAVAILABLE = "credential.unavailable"
@@ -162,6 +178,8 @@ class ZabbixHostEvidence:
             raise ValueError("duplicate template ref in host evidence")
         if len({(value.tag, value.value) for value in self.tags}) != len(self.tags):
             raise ValueError("duplicate tag/value pair in host evidence")
+        if len(_canonical_json_bytes(self.canonical_evidence())) > MAX_NORMALIZED_EVIDENCE_BYTES:
+            raise ValueError("normalized host evidence exceeds application persistence-safe byte ceiling")
 
     def canonical_evidence(self) -> dict[str, object]:
         inventory = {key: value for key, value in (
@@ -200,13 +218,7 @@ class ZabbixHostEvidence:
         }
 
     def evidence_fingerprint(self) -> str:
-        encoded = json.dumps(
-            self.canonical_evidence(),
-            separators=(",", ":"),
-            sort_keys=True,
-            ensure_ascii=False,
-        ).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
+        return hashlib.sha256(_canonical_json_bytes(self.canonical_evidence())).hexdigest()
 
 
 @dataclass(frozen=True)

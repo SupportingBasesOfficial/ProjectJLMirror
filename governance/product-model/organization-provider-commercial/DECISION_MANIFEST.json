@@ -1,9 +1,12 @@
 {
   "schema_version": 1,
   "decision_id": "organization-provider-commercial-model@1",
-  "status": "candidate_for_separate_acceptance",
+  "status": "separately_accepted",
   "canonical_base": "8e2265a4ee2810ea701166228e8f44ad3bc0d894",
+  "accepted_source_head": "ba2817a7586ed43b18eb72a139f1eba8ffeadfa0",
+  "accepted_squash_sha": "8c9eb94ebe76a56db85dd1ecbd3e0f8569edfb62",
   "contract": "docs/03-domains/organization-operating-model-contract.md",
+  "decision_record": "adr/ADR-021-organization-provider-commercial-operating-model.md",
   "monitoring_compatibility_overlay": "governance/product-model/organization-provider-commercial/MONITORING_COMPATIBILITY.md",
   "historical_wave4_authority_rewritten": false,
   "runtime_implementation_authority": "not_granted_by_this_gate",

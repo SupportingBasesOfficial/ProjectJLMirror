@@ -15,6 +15,8 @@ def main() -> None:
     manifest = json.loads((ROOT / "implementation/wave-4/IMPLEMENTATION_MANIFEST.json").read_text(encoding="utf-8"))
     state = (ROOT / "implementation/wave-4/STATE.md").read_text(encoding="utf-8")
     provider = (ROOT / "docs/09-api-contracts/zabbix-monitoring-source-provider-contract.md").read_text(encoding="utf-8")
+    monitoring_api = (ROOT / "docs/09-api-contracts/monitoring-domain-api-contract.md").read_text(encoding="utf-8")
+    accepted_contracts = provider + "\n" + monitoring_api
 
     require(manifest["implementation_id"] == "wave4.zabbix-initial-validation-worker@1", "implementation id drift")
     require(manifest["canonical_predecessor_commit"] == "d642a7f456e042dd02de2c04533c39c748f88aa9", "predecessor drift")
@@ -29,7 +31,7 @@ def main() -> None:
         "SHALL NOT be used",
         "Before each provider use",
     ):
-        require(phrase in provider, f"accepted provider contract phrase missing: {phrase}")
+        require(phrase in accepted_contracts, f"accepted provider/Monitoring contract phrase missing: {phrase}")
 
     for phrase in (
         "CredentialResolver",
@@ -51,7 +53,7 @@ def main() -> None:
     for phrase in (
         "missing configured HostGroup",
         "does not mean all monitored resources disappeared",
-        "no automatic retry cadence",
+        "No automatic retry cadence",
         "provider installation self-identity",
     ):
         require(phrase in state, f"state product boundary missing: {phrase}")

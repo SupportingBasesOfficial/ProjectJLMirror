@@ -83,6 +83,9 @@ jobs:
       - name: Validate bounded Zabbix host inventory boundary
         run: python3 tools/wave4/validate_zabbix_host_inventory.py
 
+      - name: Validate Host Inventory provider-worker invocation authority
+        run: python3 tools/wave4/validate_zabbix_host_inventory_invocation_authority.py
+
       - name: Test Monitoring source, validation, and host inventory contracts
         run: PYTHONPATH=src python3 -m unittest discover -s tests/wave4 -p 'test_*.py'
 

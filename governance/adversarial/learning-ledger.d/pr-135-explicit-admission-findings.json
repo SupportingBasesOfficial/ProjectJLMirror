@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR135-017",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3981195548,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "Monitoring-source row creation was coupled to a privileged AFTER INSERT bootstrap that granted volatile host-inventory runtime admission. Logical restore, relocation, COPY, or replay can legitimately recreate source rows through INSERT, so object existence incorrectly became sufficient evidence of current recovery and placement authority.",
+      "horizontal_audit": ["monitoring source creation versus runtime admission", "logical restore and COPY paths", "tenant relocation source reconstruction", "recovery-safe poll epoch establishment", "future provider source bootstrap side effects"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 17
+    },
+    {
+      "id": "LEARN-PR135-018",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3981195558,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "The host-inventory resource projection protected state and poll-authority fields but omitted provider-derived observation timestamps from the guarded mutation set. A same-tenant direct writer could therefore forge freshness or regress durable observation chronology without accepted provider evidence.",
+      "horizontal_audit": ["all host-inventory-derived mutable resource fields", "observation freshness timestamps", "scope and presence projection timestamps", "provider evidence pointers", "future metric/problem current-state freshness projections"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 18
+    }
+  ]
+}

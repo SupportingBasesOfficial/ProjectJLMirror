@@ -74,11 +74,17 @@ jobs:
       - name: Validate Monitoring source implementation boundary
         run: python3 tools/wave4/validate_monitoring_source_foundation.py
 
-      - name: Test Monitoring source domain and persistence contract
+      - name: Validate Zabbix initial-validation worker boundary
+        run: python3 tools/wave4/validate_zabbix_initial_validation_worker.py
+
+      - name: Test Monitoring source and initial-validation contracts
         run: PYTHONPATH=src python3 -m unittest discover -s tests/wave4 -p 'test_*.py'
 
       - name: Execute Monitoring source transaction on pinned PostgreSQL
         run: bash tools/wave4/run_monitoring_source_postgres_conformance.sh
+
+      - name: Execute Zabbix initial-validation fencing on pinned PostgreSQL
+        run: bash tools/wave4/run_zabbix_initial_validation_postgres_conformance.sh
 
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

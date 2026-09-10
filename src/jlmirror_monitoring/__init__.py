@@ -11,6 +11,21 @@ from .source import (
     opaque_token,
     plan_source_creation,
 )
+from .validation_worker import (
+    AdmittedProviderEndpoint,
+    CredentialResolutionError,
+    EgressAdmissionError,
+    InitialValidationClaim,
+    InitialValidationResult,
+    InitialValidationWorker,
+    ProviderAuthenticationError,
+    ProviderProtocolError,
+    ProviderUnavailableError,
+    ResolvedZabbixCredential,
+    ValidationFailureClass,
+    ZabbixHostGroup,
+    validate_host_group_scope,
+)
 
 __all__ = [
     "ConfiguredProviderScope",
@@ -24,4 +39,17 @@ __all__ = [
     "ZabbixProviderConfiguration",
     "opaque_token",
     "plan_source_creation",
+    "AdmittedProviderEndpoint",
+    "CredentialResolutionError",
+    "EgressAdmissionError",
+    "InitialValidationClaim",
+    "InitialValidationResult",
+    "InitialValidationWorker",
+    "ProviderAuthenticationError",
+    "ProviderProtocolError",
+    "ProviderUnavailableError",
+    "ResolvedZabbixCredential",
+    "ValidationFailureClass",
+    "ZabbixHostGroup",
+    "validate_host_group_scope",
 ]

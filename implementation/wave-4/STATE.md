@@ -1,48 +1,33 @@
-# Wave 4 — Monitoring implementation state
+# Wave 4 — Zabbix initial validation worker state
 
-Current bounded implementation: `wave4.monitoring-source-foundation@2`.
+Current bounded implementation: `wave4.zabbix-initial-validation-worker@1`.
 
-Implementation authority remains `main@8e2265a4ee2810ea701166228e8f44ad3bc0d894`, authorization `wave4.monitoring-zabbix.vertical@1`.
+Canonical predecessor: `main@d642a7f456e042dd02de2c04533c39c748f88aa9`. Implementation authority remains `wave4.monitoring-zabbix.vertical@1`; ADR-022 remains a compatibility constraint rather than a new runtime grant.
 
-Successor compatibility baseline: `main@3c66b5e70e6d12f373315b95e3feefdfbf47e941`, accepted `organization-provider-commercial-model@1`, ADR-022.
+## Product behavior implemented
 
-## What is real in this slice
+After a Monitoring Source is created locally, its durable `validation_and_initial_sync` operation may be claimed exactly once by this bounded worker. The worker resolves the configured credential through an abstract secret boundary, obtains fail-closed outbound admission for the currently bound Zabbix base URL, and performs only `hostgroup.get` for the configured HostGroup references.
 
-- tenant-scoped logical Monitoring source model;
-- opaque source-instance generation separated from logical source identity;
-- explicit `provider_instance_ref` on immutable source-generation lineage;
-- explicit stable `provider_scope_tenant_binding_id` on the tenant-scoped Monitoring source;
-- multiple tenants may reference the same physical/logical provider instance without sharing source identity, binding identity, idempotency or tenant authority;
-- `credential_binding_ref` remains an opaque access/secret-binding reference, never raw credential bytes;
-- configured Zabbix HostGroup scope remains bounded and tenant-source scoped;
-- local source creation starts with `operational_evidence_state=reconciliation_required` and durable `validation_and_initial_sync` work;
-- PostgreSQL source/generation/sync/idempotency/audit creation remains atomic;
-- same-tenant/same-key/same-fingerprint replay returns the original logical result;
-- same-tenant/same-key/different-fingerprint fails as `idempotency.key_reused`;
-- the same idempotency key remains independent across tenants;
-- source-generation records are immutable;
-- mutable credential/scope edits remain source configuration and do not create a fake new physical provider instance;
-- privileged local audit evidence remains append-only and excludes provider URL, credentials, configured provider scope and raw provider payload;
-- no DNS, provider connection, Zabbix authentication or provider network call occurs inside source creation.
+A successful validation means every configured HostGroup anchor is currently visible through the admitted endpoint under the resolved integration identity. The source becomes `current` and the operation becomes `succeeded`.
 
-## Shared-provider invariant
+A missing configured HostGroup, including loss of visibility to one of the configured anchors, produces `incomplete` + `reconciliation_required`. A missing configured HostGroup does not mean all monitored resources disappeared and MUST NOT authorize mass negative inference.
 
-One `provider_instance_ref` MAY be referenced by many independently isolated Monitoring sources, for example one platform-operated Zabbix serving several customer HostGroups.
+Credential resolution failure, provider authentication rejection, provider unavailability, unsafe/unprovable egress, or invalid provider protocol evidence produces `unavailable` + `reconciliation_required`. Existing source identity and any historical monitoring data are not deleted or rewritten by these outcomes.
 
-This does not imply:
+## Fencing
 
-- one tenant owns the shared provider installation;
-- provider visibility is JLMIRROR authorization;
-- one source can populate another tenant;
-- source-instance generation is physical-provider ownership;
-- the provider operator organization is implemented or inferred inside this slice.
+The claim snapshots source-instance generation plus configuration and scope revisions. Completion is accepted only if generation, configuration revision, scope revision, provider-scope tenant binding and provider-instance lineage are still current. An in-flight response from stale authority cannot update current source evidence.
 
-Provider operator, Organization runtime, delegated MSP authority and Commercial runtime remain outside this bounded implementation.
+The worker does not derive physical-provider ownership or replacement from Zabbix numeric IDs. Zabbix does not provide a trusted provider installation self-identity primitive for this purpose; the governed `provider_instance_ref + provider_base_url + source_instance_generation` lineage remains platform authority, and base-URL changes still require ADR-021 replacement flow.
+
+## Secret and network boundaries
+
+The API token exists only as in-memory secret material returned by `CredentialResolver`; this slice does not select or implement the concrete secret manager. Outbound DNS/IP/protocol/redirect/egress enforcement remains behind `OutboundAdmission`; this slice does not select a concrete egress transport or weaken the fail-closed requirement.
+
+No automatic retry cadence is selected here. A failed/degraded initial validation becomes durable `reconciliation_required`; retry scheduling remains separately governed because exact cadence/capacity numerics remain OPEN.
 
 ## Deliberately not implemented
 
-No provider-instance registry runtime, Organization/Commercial runtime, provider-operator resolution, MSP delegation runtime, Zabbix network client, credential secret resolution, DNS/egress decision, provider call, resource/metric/problem ingestion, history adapter, HTTP adapter, browser UI, realtime, provider write-back, central Compliance audit projection/external delivery, production deployment or C3 production numerics are implemented here.
+No host inventory ingestion, resource canonicalization, metric/item/history ingestion, problem ingestion, current-state polling, webhook path, HTTP adapter, frontend, ProviderInstance registry runtime, Organization/Commercial runtime, provider write-back or production/C3 numerics are implemented in this slice.
 
-The next bounded implementation step is worker-owned Zabbix validation and initial synchronization only after this source-lineage successor slice is accepted.
-
-Frontend Product Experience remains separately designed. Backend entity/API/table/use-case shape does not define route/navigation shape.
+The next bounded product behavior to validate before implementation is `host.get` inventory ingestion and the exact rules for creating/updating/retiring canonical monitoring resources without turning provider uncertainty into absence.

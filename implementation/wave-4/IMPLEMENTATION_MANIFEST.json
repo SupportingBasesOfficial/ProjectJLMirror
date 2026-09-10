@@ -42,6 +42,7 @@
     "host_inventory_direct_forward_poll_increment_rejection",
     "host_inventory_operation_insert_authority",
     "host_inventory_poll_authority_single_owner",
+    "host_inventory_superseded_epoch_retirement",
     "host_inventory_presence_evidence_state_authority",
     "host_inventory_scope_state_authority",
     "host_inventory_observation_timestamp_authority",
@@ -82,7 +83,8 @@
     "sql/wave4/013_zabbix_host_inventory_executor_privileges.sql",
     "sql/wave4/014_zabbix_host_inventory_resource_epoch_insert.sql",
     "sql/wave4/015_zabbix_host_inventory_explicit_admission_and_resource_authority.sql",
-    "sql/wave4/016_zabbix_host_inventory_operation_insert_authority.sql"
+    "sql/wave4/016_zabbix_host_inventory_operation_insert_authority.sql",
+    "sql/wave4/017_zabbix_host_inventory_superseded_epoch_retirement.sql"
   ],
   "assurance_surfaces": [
     "tests/wave4/test_zabbix_initial_validation_worker.py",
@@ -95,6 +97,7 @@
     "tools/wave4/run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh",
     "tools/wave4/run_zabbix_host_inventory_terminal_operation_postgres_conformance.sh",
     "tools/wave4/run_zabbix_host_inventory_recovery_authority_postgres_conformance.sh",
+    "tools/wave4/run_zabbix_host_inventory_superseded_epoch_postgres_conformance.sh",
     "tools/wave4/pg_dump_recovery_safe.sh",
     "tools/wave4/run_zabbix_host_inventory_final_schema_postgres_conformance.sh",
     ".github/workflows/wave4-monitoring-source-foundation.yml"

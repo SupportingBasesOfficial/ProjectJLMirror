@@ -15,6 +15,7 @@ AUTHORITY = ROOT / "sql/wave4/009_zabbix_host_inventory_evidence_authority_harde
 FINAL_AUTHORITY = ROOT / "sql/wave4/010_zabbix_host_inventory_final_authority_hardening.sql"
 EXPLICIT_AUTHORITY = ROOT / "sql/wave4/015_zabbix_host_inventory_explicit_admission_and_resource_authority.sql"
 SUPERSEDED_EPOCH = ROOT / "sql/wave4/017_zabbix_host_inventory_superseded_epoch_retirement.sql"
+CLAIM_REVISION = ROOT / "sql/wave4/018_zabbix_host_inventory_claim_revision_immutability.sql"
 TEST = ROOT / "tests/wave4/test_zabbix_host_inventory.py"
 PG = ROOT / "tools/wave4/run_zabbix_host_inventory_postgres_conformance.sh"
 PG_ORDERING = ROOT / "tools/wave4/run_zabbix_host_inventory_ordering_postgres_conformance.sh"
@@ -35,8 +36,9 @@ def require(condition: bool, message: str) -> None:
 def main() -> None:
     for path in (
         PY, SQL, HARDENING, INTEGRITY, ORDERING, AUTHORITY, FINAL_AUTHORITY,
-        EXPLICIT_AUTHORITY, SUPERSEDED_EPOCH, TEST, PG, PG_ORDERING, PG_AUTHORITY,
-        PG_FINAL_SCHEMA, PG_SUPERSEDED_EPOCH, PG_DUMP, WORKFLOW, MANIFEST, AUTH,
+        EXPLICIT_AUTHORITY, SUPERSEDED_EPOCH, CLAIM_REVISION, TEST, PG, PG_ORDERING,
+        PG_AUTHORITY, PG_FINAL_SCHEMA, PG_SUPERSEDED_EPOCH, PG_DUMP, WORKFLOW,
+        MANIFEST, AUTH,
     ):
         require(path.is_file(), f"missing required surface: {path.relative_to(ROOT)}")
 
@@ -50,6 +52,7 @@ def main() -> None:
     final_authority = FINAL_AUTHORITY.read_text(encoding="utf-8")
     explicit_authority = EXPLICIT_AUTHORITY.read_text(encoding="utf-8")
     superseded_epoch = SUPERSEDED_EPOCH.read_text(encoding="utf-8")
+    claim_revision = CLAIM_REVISION.read_text(encoding="utf-8")
     test_py = TEST.read_text(encoding="utf-8")
     base_pg = PG.read_text(encoding="utf-8")
     ordering_pg = PG_ORDERING.read_text(encoding="utf-8")
@@ -195,6 +198,16 @@ def main() -> None:
     ):
         require(marker in superseded_epoch, f"superseded epoch retirement guard missing: {marker}")
 
+    for marker in (
+        "wave4_guard_host_inventory_claim_revision_update",
+        "NEW.monitoring_source_id IS DISTINCT FROM OLD.monitoring_source_id",
+        "NEW.source_instance_generation IS DISTINCT FROM OLD.source_instance_generation",
+        "NEW.configuration_revision IS DISTINCT FROM OLD.configuration_revision",
+        "NEW.scope_revision IS DISTINCT FROM OLD.scope_revision",
+        "Claimed host inventory source/revision authority is immutable",
+    ):
+        require(marker in claim_revision, f"claimed host inventory revision authority guard missing: {marker}")
+
     require("sql/wave4/008_zabbix_host_inventory_poll_ordering_hardening.sql" in base_pg, "base host inventory conformance does not apply ordering migration")
     for marker in (
         "poll_generation=claim_ordered",
@@ -233,14 +246,16 @@ def main() -> None:
         "015_zabbix_host_inventory_explicit_admission_and_resource_authority.sql",
         "016_zabbix_host_inventory_operation_insert_authority.sql",
         "017_zabbix_host_inventory_superseded_epoch_retirement.sql",
+        "018_zabbix_host_inventory_claim_revision_immutability.sql",
     ):
         require(migration in final_schema_pg, f"final-schema conformance omits migration: {migration}")
     for marker in (
-        "schema=001-017",
+        "schema=001-018",
         "complete_snapshot=accepted",
         "negative_removal=accepted",
         "superseded_poll=retired",
         "terminal_reopen=blocked",
+        "claimed_revision_authority=immutable",
         "observation_forgery=blocked",
         "logical_recovery_admission=excluded",
         "pg_dump_recovery_safe.sh",
@@ -272,6 +287,7 @@ def main() -> None:
         "sql/wave4/015_zabbix_host_inventory_explicit_admission_and_resource_authority.sql",
         "sql/wave4/016_zabbix_host_inventory_operation_insert_authority.sql",
         "sql/wave4/017_zabbix_host_inventory_superseded_epoch_retirement.sql",
+        "sql/wave4/018_zabbix_host_inventory_claim_revision_immutability.sql",
     ):
         require(surface in manifest["code_surfaces"], f"manifest missing hardening surface: {surface}")
     for surface in (
@@ -298,12 +314,13 @@ def main() -> None:
         "host_inventory_final_schema_composed_conformance",
         "host_inventory_superseded_epoch_retirement",
         "host_inventory_persisted_completion_outcome",
+        "host_inventory_claim_revision_authority_immutability",
     ):
         require(capability in manifest["implemented_capability"], f"manifest does not declare capability: {capability}")
     require("host_inventory_ingestion" not in manifest["explicitly_not_implemented"], "manifest still denies implemented host inventory")
     require("canonical_device_classification" in manifest["explicitly_not_implemented"], "implementation must not claim device classification authority")
 
-    print("wave4_zabbix_host_inventory_validation=PASS resource_kind=host provider_object_kind=zabbix_host evidence=bounded+scope-bound+owner-bound+operation-bound+closed-membership+cardinality-bound+fingerprint-verified identity=immutable presence=positive+negative-authority-bound tenant_rls=forced stale_authority=fenced poll_generation=single-winner+nonrewind snapshot=current-poll-bound scope_anchor=same-cycle-revalidated recovery=explicit-admission+logical-dump-excluded+superseded-epoch-retired completion=post-persistence-authoritative final_schema=001-017-composed")
+    print("wave4_zabbix_host_inventory_validation=PASS resource_kind=host provider_object_kind=zabbix_host evidence=bounded+scope-bound+owner-bound+operation-bound+closed-membership+cardinality-bound+fingerprint-verified identity=immutable presence=positive+negative-authority-bound tenant_rls=forced stale_authority=fenced poll_generation=single-winner+nonrewind snapshot=current-poll-bound scope_anchor=same-cycle-revalidated recovery=explicit-admission+logical-dump-excluded+superseded-epoch-retired claim_revision=immutable completion=post-persistence-authoritative final_schema=001-018-composed")
 
 
 if __name__ == "__main__":

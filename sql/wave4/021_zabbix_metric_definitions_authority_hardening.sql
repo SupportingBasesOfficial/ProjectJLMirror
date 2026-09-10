@@ -6,8 +6,26 @@
 
 BEGIN;
 
-ALTER TABLE monitoring.monitoring_metric_definition_provider_evidence
-    DROP CONSTRAINT monitoring_metric_definition_provider_evidence_metric_definition_snapshot_evidence_id_fkey;
+DO $$
+DECLARE
+    v_constraint NAME;
+BEGIN
+    SELECT c.conname
+      INTO v_constraint
+      FROM pg_constraint c
+     WHERE c.conrelid='monitoring.monitoring_metric_definition_provider_evidence'::regclass
+       AND c.confrelid='monitoring.monitoring_metric_definition_snapshot_evidence'::regclass
+       AND c.contype='f';
+    IF v_constraint IS NULL THEN
+        RAISE EXCEPTION 'metric definition provider evidence snapshot FK missing';
+    END IF;
+    EXECUTE format(
+        'ALTER TABLE monitoring.monitoring_metric_definition_provider_evidence DROP CONSTRAINT %I',
+        v_constraint
+    );
+END;
+$$;
+
 ALTER TABLE monitoring.monitoring_metric_definition_provider_evidence
     ADD CONSTRAINT monitoring_metric_definition_provider_evidence_snapshot_fk
     FOREIGN KEY (tenant_id, metric_definition_snapshot_evidence_id)
@@ -74,8 +92,6 @@ REVOKE EXECUTE ON FUNCTION monitoring.reestablish_metric_definition_runtime_admi
 GRANT EXECUTE ON FUNCTION monitoring.reestablish_metric_definition_runtime_admission(TEXT,TEXT,BIGINT,TEXT,TEXT,TEXT)
     TO jlmirror_wave4_recovery_authority;
 
--- Replace completion so authoritative negative retirement also proves the owning host
--- remains a current, present, in-scope member of the same source/generation/scope domain.
 CREATE OR REPLACE FUNCTION monitoring.wave4_retire_missing_metric_definitions(
     p_tenant_id TEXT,
     p_monitoring_source_id TEXT,

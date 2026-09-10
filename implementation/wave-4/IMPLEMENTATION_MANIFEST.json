@@ -41,6 +41,7 @@
     "host_inventory_guarded_executor_authority",
     "host_inventory_direct_forward_poll_increment_rejection",
     "host_inventory_operation_insert_authority",
+    "host_inventory_claim_revision_authority_immutability",
     "host_inventory_poll_authority_single_owner",
     "host_inventory_superseded_epoch_retirement",
     "host_inventory_persisted_completion_outcome",
@@ -85,7 +86,8 @@
     "sql/wave4/014_zabbix_host_inventory_resource_epoch_insert.sql",
     "sql/wave4/015_zabbix_host_inventory_explicit_admission_and_resource_authority.sql",
     "sql/wave4/016_zabbix_host_inventory_operation_insert_authority.sql",
-    "sql/wave4/017_zabbix_host_inventory_superseded_epoch_retirement.sql"
+    "sql/wave4/017_zabbix_host_inventory_superseded_epoch_retirement.sql",
+    "sql/wave4/018_zabbix_host_inventory_claim_revision_immutability.sql"
   ],
   "assurance_surfaces": [
     "tests/wave4/test_zabbix_initial_validation_worker.py",

@@ -29,7 +29,7 @@ concurrency:
 jobs:
   monitoring-source-foundation:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     permissions:
       contents: read
     env:
@@ -80,7 +80,10 @@ jobs:
       - name: Validate Monitoring pooled-tenant and canonical boundary hardening
         run: python3 tools/wave4/validate_monitoring_boundary_hardening.py
 
-      - name: Test Monitoring source and initial-validation contracts
+      - name: Validate bounded Zabbix host inventory boundary
+        run: python3 tools/wave4/validate_zabbix_host_inventory.py
+
+      - name: Test Monitoring source, validation, and host inventory contracts
         run: PYTHONPATH=src python3 -m unittest discover -s tests/wave4 -p 'test_*.py'
 
       - name: Execute Monitoring source transaction on pinned PostgreSQL
@@ -93,6 +96,11 @@ jobs:
         env:
           PG_CONTAINER: jlmirror-wave4-monitoring-boundary-postgres
         run: bash tools/wave4/run_monitoring_boundary_hardening_postgres_conformance.sh
+
+      - name: Execute Zabbix host inventory reconciliation on pinned PostgreSQL
+        env:
+          PG_CONTAINER: jlmirror-wave4-host-inventory-postgres
+        run: bash tools/wave4/run_zabbix_host_inventory_postgres_conformance.sh
 
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

@@ -10,7 +10,8 @@ MANIFEST = ROOT / "governance/product-model/organization-provider-commercial/DEC
 STATE = ROOT / "governance/product-model/organization-provider-commercial/STATE.md"
 ACCEPTANCE = ROOT / "governance/product-model/organization-provider-commercial/ACCEPTANCE.md"
 COMPAT = ROOT / "governance/product-model/organization-provider-commercial/MONITORING_COMPATIBILITY.md"
-ADR = ROOT / "adr/ADR-021-organization-provider-commercial-operating-model.md"
+ADR = ROOT / "adr/ADR-022-organization-provider-commercial-operating-model.md"
+ADR021 = ROOT / "adr/ADR-021-monitoring-source-instance-replacement.md"
 DECISION_INDEX = ROOT / "docs/06-architecture/decision-index.md"
 WORKFLOW = ROOT / ".github/workflows/organization-provider-commercial-model.yml"
 
@@ -31,6 +32,7 @@ def main() -> None:
     acceptance = ACCEPTANCE.read_text(encoding="utf-8")
     compat = COMPAT.read_text(encoding="utf-8")
     adr = ADR.read_text(encoding="utf-8")
+    adr021 = ADR021.read_text(encoding="utf-8")
     decision_index = DECISION_INDEX.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
@@ -39,11 +41,7 @@ def main() -> None:
     require(manifest["canonical_base"] == EXPECTED_BASE, "canonical base drift")
     require(manifest["accepted_source_head"] == EXPECTED_SOURCE_HEAD, "accepted source head drift")
     require(manifest["accepted_squash_sha"] == EXPECTED_SQUASH, "accepted squash drift")
-    require(
-        manifest["acceptance_record"]
-        == "governance/product-model/organization-provider-commercial/ACCEPTANCE.md",
-        "acceptance record binding drift",
-    )
+    require(manifest["acceptance_record"] == "governance/product-model/organization-provider-commercial/ACCEPTANCE.md", "acceptance record binding drift")
     require(f"main@{EXPECTED_BASE}" in state, "STATE canonical base mismatch")
     require(EXPECTED_SOURCE_HEAD in state, "STATE source head mismatch")
     require(EXPECTED_SQUASH in state, "STATE accepted squash mismatch")
@@ -52,28 +50,21 @@ def main() -> None:
     require(EXPECTED_SOURCE_HEAD in acceptance, "acceptance source head mismatch")
     require(EXPECTED_SQUASH in acceptance, "acceptance squash mismatch")
     require("proposed-for-separate-acceptance" in contract, "historical contract source status was unexpectedly rewritten")
-    require(
-        "intentionally retains its authored `proposed-for-separate-acceptance` header as historical source evidence"
-        in acceptance,
-        "acceptance overlay does not explain preserved source-time contract state",
-    )
-    require(
-        manifest["decision_record"] == "adr/ADR-021-organization-provider-commercial-operating-model.md",
-        "ADR binding drift",
-    )
-    require("**Status:** accepted" in adr, "ADR-021 is not accepted")
+    require("intentionally retains its authored `proposed-for-separate-acceptance` header as historical source evidence" in acceptance, "acceptance overlay does not explain preserved source-time contract state")
+    require(manifest["decision_record"] == "adr/ADR-022-organization-provider-commercial-operating-model.md", "ADR binding drift")
+    require("# ADR-022 — Organization, Provider and Commercial Operating Model" in adr, "ADR-022 identity drift")
+    require("**Status:** accepted" in adr, "ADR-022 is not accepted")
     require(EXPECTED_SOURCE_HEAD in adr and EXPECTED_SQUASH in adr, "ADR acceptance provenance mismatch")
-    require("| ADR-021 | Organization, provider and commercial operating model | accepted |" in decision_index, "ADR-021 missing from decision index")
+    require("# ADR-021 — Monitoring Source-Instance Replacement" in adr021, "existing Monitoring ADR-021 was lost or overwritten")
+    require("| ADR-021 | Monitoring Source-Instance Replacement: staged candidate and atomic cutover | accepted |" in decision_index, "Monitoring ADR-021 missing from decision index")
+    require("| ADR-022 | Organization, provider and commercial operating model | accepted |" in decision_index, "ADR-022 missing from decision index")
+    require(not (ROOT / "adr/ADR-021-organization-provider-commercial-operating-model.md").exists(), "colliding organization ADR-021 file still exists")
 
     require(manifest["runtime_implementation_authority"] == "not_granted_by_this_gate", "runtime authority granted")
     require(manifest["frontend_authority"] == "not_granted_by_this_gate", "frontend authority granted")
     require(manifest["production_authority"] == "none", "production authority granted")
     require(manifest["historical_wave4_authority_rewritten"] is False, "historical Wave 4 truth rewritten")
-    require(
-        manifest["monitoring_compatibility_overlay"]
-        == "governance/product-model/organization-provider-commercial/MONITORING_COMPATIBILITY.md",
-        "Monitoring compatibility overlay not bound",
-    )
+    require(manifest["monitoring_compatibility_overlay"] == "governance/product-model/organization-provider-commercial/MONITORING_COMPATIBILITY.md", "Monitoring compatibility overlay not bound")
 
     decisions = manifest["decisions"]
     require(decisions["organization_model"] == "stable_entity_with_contextual_relationships_not_rigid_type", "organization model drift")
@@ -84,13 +75,9 @@ def main() -> None:
     require(decisions["ownership_ambiguity"] == "fail_closed_reconciliation_required", "ownership conflict no longer fail-closed")
     require(decisions["contract_entitlement_permission_usage"] == "independent_concepts", "commercial/authority concepts conflated")
     require(decisions["platform_cross_tenant_access"] == "explicit_privileged_attributable_audited_authority", "platform cross-tenant governance weakened")
-    require(
-        decisions["accepted_monitoring_source_compatibility"]
-        == "tenant_source_may_reference_shared_provider_instance_without_transferring_provider_ownership_or_weakening_tenant_identity_scope",
-        "Monitoring Source compatibility drift",
-    )
+    require(decisions["accepted_monitoring_source_compatibility"] == "tenant_source_may_reference_shared_provider_instance_without_transferring_provider_ownership_or_weakening_tenant_identity_scope", "Monitoring Source compatibility drift")
 
-    required_contract_phrases = [
+    for phrase in (
         "Organization is not a rigid organization type",
         "Tenant remains an isolation boundary",
         "Delegation does not merge tenants",
@@ -103,47 +90,35 @@ def main() -> None:
         "Display/TV access SHOULD be represented by an independently attributable non-human display/device principal",
         "Organization 360 traceability requirement",
         "This contract does not grant implementation, frontend, production, billing-price, or provider-write authority by itself",
-    ]
-    for phrase in required_contract_phrases:
+    ):
         require(phrase in contract, f"missing canonical contract phrase: {phrase}")
 
-    required_state_phrases = [
+    for phrase in (
         "SEPARATELY_ACCEPTED",
         "No provider validation/ingestion successor slice should assume `1 Monitoring Source = 1 physical provider = 1 organization`",
         "does **not**",
         "authorize the Zabbix validation worker",
         "grant production authority",
-    ]
-    for phrase in required_state_phrases:
+    ):
         require(phrase in state, f"missing state boundary: {phrase}")
 
-    required_compat_phrases = [
+    for phrase in (
         "every tenant owns the physical Zabbix installation it reads from",
         "Multiple tenant-scoped Monitoring Sources/bindings MAY reference the same `ProviderInstance`",
         "The accepted `observation_identity_scope = (tenant_id, monitoring_source_id, \"zabbix\", zabbix_instance_generation)` remains valid",
         "Both Monitoring Sources may resolve to the same provider endpoint while remaining distinct tenant authorities and identity scopes",
         "The accepted rule that an ordinary Monitoring Source base-URL edit requires the explicit source-instance replacement workflow remains intact",
-    ]
-    for phrase in required_compat_phrases:
+    ):
         require(phrase in compat, f"missing Monitoring compatibility invariant: {phrase}")
 
     require("git diff --no-renames --name-only" in workflow, "rename-safe path gate not enforced")
     require("Falsify rename path-gate bypass" in workflow, "rename-bypass regression test not wired")
 
     deferred = set(manifest["explicitly_deferred"])
-    for required in {
-        "exact_commercial_prices",
-        "production_quotas_and_capacity_numerics",
-        "frontend_navigation_and_information_architecture",
-        "provider_write_back",
-        "production_deployment",
-    }:
+    for required in {"exact_commercial_prices", "production_quotas_and_capacity_numerics", "frontend_navigation_and_information_architecture", "provider_write_back", "production_deployment"}:
         require(required in deferred, f"missing deferred boundary: {required}")
 
-    print(
-        "organization_provider_commercial_model=PASS "
-        "state=separately_accepted provenance=pinned runtime=not_granted production=none"
-    )
+    print("organization_provider_commercial_model=PASS state=separately_accepted adr=022 adr021_monitoring=preserved provenance=pinned runtime=not_granted production=none")
 
 
 if __name__ == "__main__":

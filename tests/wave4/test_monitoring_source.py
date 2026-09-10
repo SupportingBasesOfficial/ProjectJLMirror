@@ -40,8 +40,17 @@ class MonitoringSourceFoundationTests(unittest.TestCase):
         self.assertEqual(plan.sync_operation.state, SyncOperationState.PENDING)
         self.assertEqual(plan.sync_operation.responsibility_kind, "validation_and_initial_sync")
         self.assertEqual(plan.sync_operation.source_instance_generation, plan.source.active_source_instance_generation)
+        self.assertEqual(plan.source.created_at, now)
         self.assertIsNone(plan.source.last_successful_sync_at)
         self.assertIsNone(plan.source.last_attempt_at)
+
+    def test_creation_clock_is_normalized_to_utc(self):
+        from datetime import timedelta, timezone as tz
+
+        local_time = datetime(2026, 9, 9, 21, 0, tzinfo=tz(timedelta(hours=-3)))
+        plan = plan_source_creation(self.command(), now=lambda: local_time)
+        self.assertEqual(plan.source.created_at, datetime(2026, 9, 10, 0, 0, tzinfo=timezone.utc))
+        self.assertEqual(plan.sync_operation.created_at, plan.source.created_at)
 
     def test_tenant_is_authority_scope_not_fingerprint_body(self):
         a = self.command(tenant_id="tenant-a")
@@ -49,11 +58,15 @@ class MonitoringSourceFoundationTests(unittest.TestCase):
         self.assertEqual(a.canonical_fingerprint(), b.canonical_fingerprint())
         self.assertNotEqual(a.tenant_id, b.tenant_id)
 
-    def test_scope_is_bounded_and_duplicate_free(self):
+    def test_scope_is_bounded_duplicate_free_and_control_safe(self):
         with self.assertRaisesRegex(ValueError, "duplicates"):
             ConfiguredProviderScope.from_refs(("same", "same"))
         with self.assertRaisesRegex(ValueError, "bounded cardinality"):
             ConfiguredProviderScope.from_refs(str(i) for i in range(257))
+        for invalid in ("", " group", "group\nadmin"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    ConfiguredProviderScope.from_refs((invalid,))
 
     def test_zabbix_url_is_static_https_only_and_canonical(self):
         for invalid in (
@@ -62,6 +75,12 @@ class MonitoringSourceFoundationTests(unittest.TestCase):
             "https://zabbix.example.test?a=1",
             "https://zabbix.example.test#fragment",
             "https://ZABBIX.example.test",
+            "https://zabbix.example.test./zabbix",
+            "https://zabbix.example.test/./zabbix",
+            "https://zabbix.example.test/a/../zabbix",
+            "https://zabbix.example.test\\zabbix",
+            "https://zabbix.example.test/\nadmin",
+            "https://zábbix.example.test/zabbix",
         ):
             with self.subTest(invalid=invalid):
                 with self.assertRaises(ValueError):
@@ -70,6 +89,22 @@ class MonitoringSourceFoundationTests(unittest.TestCase):
             ZabbixProviderConfiguration("https://zabbix.example.test:8443/zabbix").base_url,
             "https://zabbix.example.test:8443/zabbix",
         )
+        self.assertEqual(
+            ZabbixProviderConfiguration("https://[2001:db8::1]:8443/zabbix").base_url,
+            "https://[2001:db8::1]:8443/zabbix",
+        )
+
+    def test_command_text_fields_reject_control_or_alternate_whitespace(self):
+        with self.assertRaises(ValueError):
+            self.command(tenant_id="tenant-a\nother")
+        with self.assertRaises(ValueError):
+            CreateMonitoringSourceCommand(
+                tenant_id="tenant-a",
+                display_name=" Primary Zabbix",
+                provider_configuration=ZabbixProviderConfiguration("https://zabbix.example.test"),
+                credential_binding_ref="secret-binding:zabbix-primary",
+                configured_provider_scope=ConfiguredProviderScope.from_refs(()),
+            )
 
     def test_raw_secret_is_not_part_of_command_shape(self):
         fields = set(CreateMonitoringSourceCommand.__dataclass_fields__)
@@ -78,7 +113,7 @@ class MonitoringSourceFoundationTests(unittest.TestCase):
         self.assertNotIn("password", fields)
         self.assertNotIn("secret", fields)
 
-    def test_generated_identities_must_be_distinct(self):
+    def test_generated_identities_must_be_distinct_and_canonical(self):
         with self.assertRaisesRegex(ValueError, "distinct"):
             plan_source_creation(
                 self.command(),
@@ -86,6 +121,8 @@ class MonitoringSourceFoundationTests(unittest.TestCase):
                 generation_factory=lambda: "same",
                 operation_id_factory=lambda: "other",
             )
+        with self.assertRaises(ValueError):
+            plan_source_creation(self.command(), source_id_factory=lambda: "source\nmalformed")
 
     def test_creation_clock_must_be_timezone_aware(self):
         with self.assertRaisesRegex(ValueError, "aware timestamp"):

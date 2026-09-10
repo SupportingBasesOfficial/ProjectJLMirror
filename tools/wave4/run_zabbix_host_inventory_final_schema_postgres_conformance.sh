@@ -41,7 +41,8 @@ for migration in \
   sql/wave4/013_zabbix_host_inventory_executor_privileges.sql \
   sql/wave4/014_zabbix_host_inventory_resource_epoch_insert.sql \
   sql/wave4/015_zabbix_host_inventory_explicit_admission_and_resource_authority.sql \
-  sql/wave4/016_zabbix_host_inventory_operation_insert_authority.sql; do
+  sql/wave4/016_zabbix_host_inventory_operation_insert_authority.sql \
+  sql/wave4/017_zabbix_host_inventory_superseded_epoch_retirement.sql; do
   docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < "$migration" >/dev/null
 done
 
@@ -87,7 +88,7 @@ fp2="$(python3 -c 'import hashlib,json,sys; print(hashlib.sha256(json.dumps(json
 host1="{\"monitoring_resource_id\":\"resource-final-101\",\"provider_evidence_id\":\"provider-evidence-final-101-a\",\"hostid\":\"101\",\"display_name\":\"Core Switch\",\"evidence_fingerprint\":\"$fp1\",\"normalized_evidence\":$normalized1}"
 host2="{\"monitoring_resource_id\":\"resource-final-102\",\"provider_evidence_id\":\"provider-evidence-final-102-a\",\"hostid\":\"102\",\"display_name\":\"Edge Router\",\"evidence_fingerprint\":\"$fp2\",\"normalized_evidence\":$normalized2}"
 
-# Final-schema successful complete snapshot.
+# Final-schema successful complete snapshot through the effective migration 017 completion function.
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-final','inventory-present'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-present','claim-present'); SELECT monitoring.complete_zabbix_host_inventory('tenant-a','inventory-present','claim-present','snapshot-present','binding-final','provider-instance:final','current','succeeded',NULL,true,'[$host1,$host2]'::jsonb,'egress-present','credential-generation-final'); COMMIT;" >/dev/null
 present_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT count(*) FROM monitoring.monitoring_resource WHERE monitoring_source_id='source-final' AND presence_state='present'; COMMIT;" | tail -n1)"
 test "$present_count" = "2"
@@ -98,8 +99,6 @@ if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DA
   echo "duplicate host inventory poll authority tuple unexpectedly inserted" >&2
   exit 1
 fi
-# Insert guard may reject the manufactured claimed row before uniqueness; prove the
-# uniqueness constraint independently by checking its catalog presence and exact keys.
 duplicate_index="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT indexdef FROM pg_indexes WHERE schemaname='monitoring' AND indexname='monitoring_sync_operation_host_inventory_poll_authority_uniq';")"
 printf '%s' "$duplicate_index" | grep -F "UNIQUE INDEX monitoring_sync_operation_host_inventory_poll_authority_uniq" >/dev/null
 printf '%s' "$duplicate_index" | grep -F "host_inventory_poll_epoch" >/dev/null
@@ -146,4 +145,4 @@ recovered_admission_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -
 test "$recovered_source_count" = "1"
 test "$recovered_admission_count" = "0"
 
-printf '%s\n' "wave4_zabbix_host_inventory_final_schema=PASS schema=001-016 complete_snapshot=accepted negative_removal=accepted superseded_poll=retired terminal_reopen=blocked claimed_operation_insert=blocked poll_authority=single-owner observation_forgery=blocked logical_recovery_admission=excluded"
+printf '%s\n' "wave4_zabbix_host_inventory_final_schema=PASS schema=001-017 complete_snapshot=accepted negative_removal=accepted superseded_poll=retired terminal_reopen=blocked claimed_operation_insert=blocked poll_authority=single-owner observation_forgery=blocked logical_recovery_admission=excluded"

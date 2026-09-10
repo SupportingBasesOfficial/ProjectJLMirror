@@ -1,63 +1,91 @@
 # Wave 4 Monitoring — Host Inventory Product Behavior Authorization
 
-**Status:** proposed / not authorized  
-**Canonical base:** `main@b2214b498a0360ebf8091fe857ccffc107494ace`  
+**Status:** accepted via PR #133; implementation remains blocked until post-merge `resource_kind` clarification is canonical  
+**Accepted merge:** `main@f85b01cce8e148123dd980ae6b60f83c707263f5`  
 **Authorization ID:** `wave4.monitoring-host-inventory@1`
 
 ## Purpose
 
-This record defines the exact Product behavior for the next bounded Wave 4 slice identified by the canonical implementation manifest: Zabbix host inventory ingestion with bounded provider evidence capture for future canonical device classification.
+This record defines the exact Product behavior for the bounded Wave 4 Zabbix host inventory slice, including bounded provider-evidence capture for future canonical device classification.
 
-This proposal does **not** implement ingestion. No host inventory code may become canonical until this exact behavior is accepted and separately authorized for merge.
+PR #133 accepted the product direction, but a late post-merge P1 review identified one material omission: the accepted Monitoring contract requires canonical `monitoring_resource.resource_kind`, and the authorization did not explicitly bind its value. No host-inventory implementation may begin until this clarification is canonical.
 
 ## Core product model
 
-The slice separates three concepts that must never be collapsed:
+The slice separates four concepts that must never be collapsed:
 
 ```text
 CANONICAL RESOURCE IDENTITY
   monitoring_resource_id
 
+CANONICAL MONITORING RESOURCE CLASS
+  resource_kind = host
+
 PROVIDER OBJECT IDENTITY / EVIDENCE
   provider_profile = zabbix
-  provider_object_kind = host
+  provider_object_kind = zabbix_host
   hostid + bounded host/inventory/interface/template/group/tag evidence
 
 CANONICAL DEVICE KNOWLEDGE
   future/evolving platform classification and normalized attributes
 ```
 
-A Zabbix `host` is the provider object from which the resource was observed. It is **not** a declaration that the physical or logical device is a generic host/server.
+`resource_kind=host` is the initial broad canonical Monitoring resource class for resources created from the accepted Zabbix host-inventory slice. It means only that the Monitoring resource is a host-class monitored resource. It does **not** classify the actual device as a server or any other physical/logical device type.
 
-The JLMirror canonical resource identity remains stable for the accepted generation-scoped mapping even as knowledge about the resource becomes richer later.
+`provider_object_kind=zabbix_host` describes the provider-native object class from which the resource was observed. It is provider evidence/origin metadata, not canonical device taxonomy.
 
-## Proposed product behavior
+Future canonical device classification such as server, switch, router, firewall, access point, VM, storage, appliance or other classes remains independently governed and may evolve without changing `monitoring_resource_id` or `resource_kind=host` for this accepted slice.
 
-If accepted, the next implementation slice may ingest Zabbix hosts into canonical `monitoring_resource` state under the already accepted Monitoring/Zabbix contracts and may retain a bounded provider-evidence profile useful for later device classification.
+## Exact `resource_kind` mapping
+
+For this initial authorized slice:
+
+```text
+accepted Zabbix host object
+  -> provider_object_kind = zabbix_host
+  -> monitoring_resource.resource_kind = host
+```
+
+Normative rules:
+
+- every canonical `monitoring_resource` created by this slice MUST persist `resource_kind=host`;
+- the implementation MUST NOT choose `zabbix_host`, `server`, `device`, `unknown`, or any other value for `resource_kind` in this slice;
+- `resource_kind` is platform-owned and provider-neutral at the Monitoring domain level;
+- `provider_object_kind` remains separately provider-scoped;
+- future device taxonomy/classification is separate state and cannot silently redefine `resource_kind` semantics;
+- a later expansion of canonical Monitoring resource classes requires a separately accepted compatibility/product contract rather than implementation inference.
+
+This closes the ambiguity identified by the late PR #133 review and makes the accepted domain/API `resource_kind` field implementable without conflating it with device taxonomy.
+
+## Authorized product behavior
+
+The next implementation slice may ingest Zabbix hosts into canonical `monitoring_resource` state under the accepted Monitoring/Zabbix contracts and may retain a bounded provider-evidence profile useful for later device classification.
 
 1. **Read-only provider behavior.** Inventory comes from bounded authenticated Zabbix reads only. No provider write-back is authorized.
 2. **Canonical platform identity.** Each accepted Zabbix host maps to a stable opaque `monitoring_resource_id` inside exactly one `(tenant_id, monitoring_source_id, source_instance_generation)` identity domain. Zabbix `hostid` remains only a scoped external reference.
 3. **No cross-generation identity reuse.** Matching `hostid`, name, address, serial, model or other provider fields across source generations never implicitly reuses a canonical resource identity.
-4. **Provider object kind is not device taxonomy.** The initial provider object kind is `host`/`zabbix_host`. It describes the Zabbix object class only. It MUST NOT by itself classify the real device as server, switch, router, firewall, access point, VM, storage, appliance or any other canonical device type.
-5. **Capture useful Zabbix device evidence now.** The slice may retrieve and persist bounded, normalized provider evidence exposed by accepted Zabbix host reads, including where available: host technical/display names, host inventory fields, interfaces, host groups, linked templates and bounded tags. Exact retained fields must be allowlisted and bounded; unrestricted raw provider payload persistence is forbidden.
-6. **Provider evidence is not canonical truth.** Inventory fields, names, interfaces, groups, templates and tags are evidence about the resource. They cannot automatically select tenant, authorization, business ownership, placement, policy or canonical device classification merely because Zabbix supplied them.
-7. **Classification-ready without premature classification.** The model must preserve enough provenance to support a later independently governed canonical classification layer such as device class/type, vendor, model, operating system, virtualization role or business role. This slice may normalize direct factual attributes only when their semantics are explicitly accepted; heuristic or multi-signal device classification requires a separately accepted classification contract.
-8. **Classification enrichment must not replace identity.** Future SNMP, LLDP/CDP, agent inventory, CMDB, cloud, virtualization, manual operator input, rules or AI-assisted classification may enrich or revise knowledge about the same canonical resource without changing `monitoring_resource_id` within the accepted mapping.
-9. **Provenance is mandatory.** Any retained provider-derived device attribute/evidence must remain attributable to the provider evidence from which it came. A later canonical classification must be able to distinguish provider-reported evidence from platform-derived or operator-asserted knowledge.
-10. **Configured scope governs observation authority.** Only hosts proven within the source's currently configured host-group scope may enter current inventory authority.
-11. **Current inventory defaults to active generation only.** Historical-generation resources remain retained evidence and are not presented as currently monitored unless an explicit historical read is requested under existing authorization rules.
-12. **Presence is fail-closed.** Positive provider evidence may establish/confirm `presence_state=present`. A host missing from an incomplete, visibility-degraded, stale, wrong-generation, stale-scope or otherwise non-authoritative poll remains last-known and the evidence state degrades; absence alone does not mean removal.
-13. **Removal requires authoritative negative evidence.** `presence_state=removed` may be committed only when a complete authoritative inventory snapshot for the active source generation/current scope proves absence according to the accepted provider reconciliation contract.
-14. **Scope exclusion is not removal.** A resource becoming `out_of_scope` preserves identity/history and does not become `removed` solely because of the scope edit.
-15. **Bounded canonical data and bounded evidence only.** This slice may persist canonical resource identity, display name, provider object kind, scoped external references, scope/presence evidence, required synchronization metadata and an allowlisted bounded Zabbix evidence profile. Arbitrary raw provider payload replication remains forbidden.
-16. **No frontend implication.** Implementing host inventory backend/domain/API capability does not create or authorize a frontend route or navigation destination.
+4. **Canonical resource class.** Every accepted resource in this slice uses `resource_kind=host` exactly as defined above.
+5. **Provider object kind is not device taxonomy.** `provider_object_kind=zabbix_host` describes the Zabbix object only and MUST NOT classify the real device.
+6. **Capture useful Zabbix device evidence now.** The slice may retrieve and persist bounded, normalized provider evidence exposed by accepted Zabbix host reads, including where available host technical/display names, host inventory fields, interfaces, host groups, linked templates and bounded tags. Exact retained fields must be allowlisted and bounded; unrestricted raw provider payload persistence is forbidden.
+7. **Provider evidence is not canonical truth.** Inventory fields, names, interfaces, groups, templates and tags cannot automatically select tenant, authorization, business ownership, placement, policy or canonical device classification merely because Zabbix supplied them.
+8. **Classification-ready without premature classification.** The model must preserve provenance for a later independently governed canonical classification layer. Heuristic or multi-signal device classification requires a separately accepted classification contract.
+9. **Classification enrichment must not replace identity.** Future SNMP, LLDP/CDP, agent inventory, CMDB, cloud, virtualization, manual operator input, rules or AI-assisted classification may enrich or revise knowledge about the same canonical resource without changing the accepted resource identity.
+10. **Provenance is mandatory.** Retained provider-derived evidence must remain attributable to its source.
+11. **Configured scope governs observation authority.** Only hosts proven within the source's currently configured host-group scope may enter current inventory authority.
+12. **Current inventory defaults to active generation only.** Historical-generation resources remain retained evidence and are not presented as currently monitored by default.
+13. **Presence is fail-closed.** Incomplete, stale, visibility-degraded, wrong-generation or stale-scope evidence cannot remove a previously known resource.
+14. **Removal requires authoritative negative evidence.** `presence_state=removed` requires a complete authoritative inventory snapshot for the active generation/current scope.
+15. **Scope exclusion is not removal.** `out_of_scope` preserves identity/history and does not imply `removed`.
+16. **Bounded canonical data and bounded evidence only.** Arbitrary raw provider payload replication remains forbidden.
+17. **No frontend implication.** Backend/domain/API host-inventory capability does not create or authorize a frontend route.
 
 ## Classification direction reserved by this authorization
 
-This authorization intentionally prepares, but does not prematurely freeze, a future classification model conceptually capable of expressing:
+Future classification may conceptually express:
 
 ```text
 monitoring_resource_id
+resource_kind
 provider_object_kind
 canonical_device_class
 canonical_device_type
@@ -70,44 +98,21 @@ classification_revision
 classification_evidence_state
 ```
 
-The exact taxonomy, precedence rules, confidence semantics and authority hierarchy for those canonical classification fields are **not** granted by this slice. They require a separate accepted Product/domain classification contract.
+The exact device taxonomy, precedence rules, confidence semantics and authority hierarchy remain outside this slice.
 
-The architectural invariant established now is:
+Architectural invariants:
 
 ```text
-RESOURCE IDENTITY != PROVIDER OBJECT TYPE
+RESOURCE IDENTITY != RESOURCE KIND
+RESOURCE KIND != PROVIDER OBJECT TYPE
 PROVIDER EVIDENCE != CANONICAL DEVICE CLASSIFICATION
 CLASSIFICATION CHANGE != RESOURCE IDENTITY CHANGE
 ```
 
 ## Explicitly outside this slice
 
-This authorization does not permit:
-
-- metric-definition ingestion;
-- metric current-state or history ingestion;
-- problem/event ingestion;
-- health projection;
-- unrestricted raw Zabbix payload replication;
-- treating host inventory, tags, templates, groups, names or interface types as automatic canonical device classification;
-- a finalized global device taxonomy;
-- heuristic/AI classification as canonical authority;
-- tag-driven platform policy;
-- host-to-business-service topology inference;
-- cross-generation resource migration/linkage;
-- provider write-back;
-- retry/backoff production numerics;
-- production deployment;
-- frontend route/navigation creation.
-
-## User-visible meaning if implemented
-
-After implementation, JLMirror can know **which Zabbix hosts are currently part of the authorized monitored inventory** and can retain bounded evidence about what those resources appear to be, without confusing provider metadata with platform truth.
-
-A temporary provider failure or incomplete poll cannot make assets disappear. A scope edit cannot pretend a host was deleted. A source replacement cannot merge two generations just because provider-native IDs happen to match. Future device classification can become progressively richer without forcing canonical resource identities to be recreated.
+This authorization does not permit metric ingestion, problem/event ingestion, health projection, unrestricted raw Zabbix payload replication, automatic canonical device classification from provider metadata, a finalized global device taxonomy, heuristic/AI classification as canonical authority, tag-driven platform policy, business-service topology inference, cross-generation identity migration, provider write-back, production numerics/deployment or frontend route/navigation creation.
 
 ## Acceptance boundary
 
-Acceptance of this proposal authorizes only the behavior above. Implementation must still be delivered in a separate PR with exact-head CI, PostgreSQL/provider falsification, tenant/generation/scope/negative-evidence proofs, bounded-provider-evidence proofs, panoramic/adversarial review and separate merge authorization.
-
-Until this proposal is explicitly accepted, host inventory ingestion remains not authorized.
+PR #133 accepted the host-inventory product direction. This successor clarification must itself pass exact-head CI, panoramic/adversarial review and separate merge authorization. Until it is canonical, host-inventory implementation remains blocked.

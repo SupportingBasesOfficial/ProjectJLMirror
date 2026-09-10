@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR134-001",
+      "pr": 134,
+      "source": "external_review",
+      "review_comment_id": 3976131524,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": ["INV-PROVENANCE-001", "INV-AUTH-001"],
+      "root_cause": "A successor authorization manifest encoded the pre-merge blocked state and the intended semantic correction but omitted an explicit machine-readable post-merge authority transition, allowing the canonical artifact after merge to remain ambiguous about whether host-inventory implementation had actually become authorized.",
+      "horizontal_audit": [
+        "authorization_state before merge",
+        "canonical effect after merge",
+        "implementation authority before and after merge",
+        "post-merge finding resolution state",
+        "future successor authorization manifests with staged authority transitions"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_wave4_host_inventory_authority_transition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 8
+    }
+  ]
+}

@@ -81,7 +81,16 @@
     "metric_definition_complete_snapshot_negative_retirement",
     "metric_definition_retirement_requires_current_host_evidence_domain",
     "metric_definition_atomic_snapshot_preflight",
-    "metric_definition_immutable_provider_evidence"
+    "metric_definition_immutable_provider_evidence",
+    "metric_definition_qualified_claim_identifiers",
+    "metric_definition_evidence_insert_authority",
+    "metric_definition_drift_visibility",
+    "metric_definition_owner_bound_provenance_closure",
+    "metric_definition_provider_evidence_fingerprint_verification",
+    "metric_definition_poll_authority_single_owner",
+    "metric_definition_stale_completion_authority_fence",
+    "metric_definition_host_association_drift_fail_closed",
+    "metric_definition_completion_liveness_terminal_reconciliation"
   ],
   "authorized_slices_consumed": [
     "impl.customer-telemetry@1",
@@ -113,7 +122,13 @@
     "sql/wave4/019_zabbix_host_inventory_work_identity_and_invocation_authority.sql",
     "sql/wave4/020_zabbix_metric_definitions.sql",
     "sql/wave4/021_zabbix_metric_definitions_authority_hardening.sql",
-    "sql/wave4/022_zabbix_metric_definitions_atomic_preflight.sql"
+    "sql/wave4/022_zabbix_metric_definitions_atomic_preflight.sql",
+    "sql/wave4/023_zabbix_metric_definitions_qualified_claim.sql",
+    "sql/wave4/024_zabbix_metric_definitions_evidence_and_drift_authority.sql",
+    "sql/wave4/025_zabbix_metric_definitions_drift_visibility.sql",
+    "sql/wave4/026_zabbix_metric_definitions_provenance_closure.sql",
+    "sql/wave4/027_zabbix_metric_definitions_completion_authority.sql",
+    "sql/wave4/028_zabbix_metric_definitions_completion_liveness.sql"
   ],
   "assurance_surfaces": [
     "tests/wave4/test_zabbix_initial_validation_worker.py",
@@ -133,6 +148,8 @@
     "tools/wave4/run_zabbix_host_inventory_superseded_epoch_postgres_conformance.sh",
     "tools/wave4/pg_dump_recovery_safe.sh",
     "tools/wave4/run_zabbix_host_inventory_final_schema_postgres_conformance.sh",
+    "tools/wave4/run_zabbix_metric_definitions_postgres_conformance.sh",
+    "tools/wave4/run_zabbix_metric_definitions_liveness_postgres_conformance.sh",
     ".github/workflows/wave4-monitoring-source-foundation.yml"
   ],
   "explicitly_not_implemented": [
@@ -155,6 +172,6 @@
     "production_deployment",
     "c3_production_numerics"
   ],
-  "next_bounded_step": "finish_metric_definition_postgres_conformance_and_exact_head_review_before_any_current_or_history_slice",
+  "next_bounded_step": "finish_metric_definition_exact_head_ci_and_codex_review_before_any_current_or_history_slice",
   "frontend_rule": "backend_entities_tables_endpoints_and_use_cases_do_not_imply_frontend_routes"
 }

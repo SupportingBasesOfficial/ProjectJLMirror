@@ -26,37 +26,59 @@ class SyncOperationState(StrEnum):
     FAILED_TERMINAL = "failed_terminal"
 
 
+def _canonical_explicit_text(value: object, field: str, *, max_len: int) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or value != value.strip()
+        or len(value) > max_len
+        or any(ord(char) < 0x20 or ord(char) == 0x7F for char in value)
+    ):
+        raise ValueError(f"{field} must be a bounded canonical non-empty string")
+    return value
+
+
 @dataclass(frozen=True)
 class ZabbixProviderConfiguration:
     base_url: str
 
     def __post_init__(self) -> None:
-        raw = self.base_url.strip()
-        if raw != self.base_url or not raw:
-            raise ValueError("base_url must be a canonical non-empty HTTPS URL")
-        parsed = urlsplit(raw)
+        raw = _canonical_explicit_text(self.base_url, "base_url", max_len=2048)
+        if "\\" in raw:
+            raise ValueError("Zabbix base_url must not contain backslashes")
+        try:
+            raw.encode("ascii")
+        except UnicodeEncodeError as exc:
+            raise ValueError("Zabbix base_url must use an ASCII canonical URI representation") from exc
+        try:
+            parsed = urlsplit(raw)
+            username = parsed.username
+            password = parsed.password
+            port = parsed.port
+            hostname = parsed.hostname
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Zabbix base_url is malformed") from exc
         if parsed.scheme != "https":
             raise ValueError("Zabbix base_url must use https")
-        if not parsed.hostname:
+        if not parsed.netloc or not hostname:
             raise ValueError("Zabbix base_url requires a host")
-        if parsed.username is not None or parsed.password is not None:
+        if username is not None or password is not None:
             raise ValueError("Zabbix base_url must not contain userinfo")
         if parsed.query or parsed.fragment:
             raise ValueError("Zabbix base_url must not contain query or fragment")
-        try:
-            port = parsed.port
-        except ValueError as exc:
-            raise ValueError("Zabbix base_url contains an invalid port") from exc
-        host = parsed.hostname.lower()
+        host = hostname.lower()
+        if host.endswith("."):
+            raise ValueError("Zabbix base_url host must not use a trailing-dot alternate form")
         netloc = f"[{host}]" if ":" in host else host
         if port is not None:
             netloc = f"{netloc}:{port}"
         path = parsed.path or ""
+        segments = path.split("/")
+        if any(segment in (".", "..") for segment in segments):
+            raise ValueError("Zabbix base_url path must not contain dot segments")
         canonical = urlunsplit(("https", netloc, path, "", ""))
         if canonical != raw:
             raise ValueError("Zabbix base_url is not canonical")
-        if len(raw) > 2048:
-            raise ValueError("Zabbix base_url exceeds bounded length")
 
 
 @dataclass(frozen=True)
@@ -71,14 +93,11 @@ class ConfiguredProviderScope:
         normalized: list[str] = []
         seen: set[str] = set()
         for value in values:
-            if not isinstance(value, str) or value != value.strip() or not value:
-                raise ValueError("host_group_ref must be a bounded non-empty canonical string")
-            if len(value) > 256:
-                raise ValueError("host_group_ref exceeds bounded length")
-            if value in seen:
+            text = _canonical_explicit_text(value, "host_group_ref", max_len=256)
+            if text in seen:
                 raise ValueError("host_group_refs must not contain duplicates")
-            seen.add(value)
-            normalized.append(value)
+            seen.add(text)
+            normalized.append(text)
         return cls(tuple(normalized))
 
     def canonical_json(self) -> str:
@@ -94,15 +113,13 @@ class CreateMonitoringSourceCommand:
     configured_provider_scope: ConfiguredProviderScope
 
     def __post_init__(self) -> None:
-        for field_name, value, max_len in (
-            ("tenant_id", self.tenant_id, 256),
-            ("display_name", self.display_name, 512),
-            ("credential_binding_ref", self.credential_binding_ref, 512),
-        ):
-            if not isinstance(value, str) or value != value.strip() or not value:
-                raise ValueError(f"{field_name} must be a canonical non-empty string")
-            if len(value) > max_len:
-                raise ValueError(f"{field_name} exceeds bounded length")
+        _canonical_explicit_text(self.tenant_id, "tenant_id", max_len=256)
+        _canonical_explicit_text(self.display_name, "display_name", max_len=512)
+        _canonical_explicit_text(self.credential_binding_ref, "credential_binding_ref", max_len=512)
+        if not isinstance(self.provider_configuration, ZabbixProviderConfiguration):
+            raise ValueError("provider_configuration must be canonical Zabbix configuration")
+        if not isinstance(self.configured_provider_scope, ConfiguredProviderScope):
+            raise ValueError("configured_provider_scope must be canonical Zabbix scope")
 
     def canonical_fingerprint(self) -> str:
         body = {
@@ -175,17 +192,24 @@ def plan_source_creation(
     operation_id_factory: Callable[[], str] = lambda: opaque_token("mon-sync"),
     now: Callable[[], datetime] = utc_now,
 ) -> SourceCreationPlan:
+    if not isinstance(command, CreateMonitoringSourceCommand):
+        raise ValueError("command must be canonical Monitoring source creation input")
     created_at = now()
     if created_at.tzinfo is None or created_at.utcoffset() is None:
         raise ValueError("creation clock must return an aware timestamp")
+    created_at = created_at.astimezone(timezone.utc)
 
     source_id = source_id_factory()
     generation = generation_factory()
     operation_id = operation_id_factory()
+    for field, value in (
+        ("monitoring_source_id", source_id),
+        ("source_instance_generation", generation),
+        ("monitoring_sync_operation_id", operation_id),
+    ):
+        _canonical_explicit_text(value, field, max_len=512)
     if len({source_id, generation, operation_id}) != 3:
         raise ValueError("generated identities must be distinct")
-    if not source_id or not generation or not operation_id:
-        raise ValueError("generated identities must be non-empty")
 
     source = MonitoringSource(
         tenant_id=command.tenant_id,

@@ -91,6 +91,58 @@
       "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 12
+    },
+    {
+      "id": "LEARN-PR135-008",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3980475630,
+      "class_id": "ADV-TRUST-CONTEXT-GAP",
+      "invariant_ids": ["INV-BOUNDARY-002", "INV-AUTH-001"],
+      "root_cause": "Host inventory treated historical successful scope validation as sufficient visibility authority for a later omission-bearing snapshot, even though configured Zabbix host-group anchors can disappear or become inaccessible without changing the platform source revision.",
+      "horizontal_audit": ["host inventory omission authority", "provider visibility anchors", "item and problem snapshot completeness", "credential permission changes without platform configuration edits", "provider-side deletion of configured anchors"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 100
+    },
+    {
+      "id": "LEARN-PR135-009",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3980475640,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "The source-local poll generation was intended to be monotonic authority but remained directly rewritable by the modeled runtime role, allowing a caller to rewind the source fence until a previously superseded operation became current again.",
+      "horizontal_audit": ["all platform-owned generation counters", "direct runtime table mutation", "poll claim and completion ordering", "future metric current-state fences", "recovery epoch monotonicity"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 5
+    },
+    {
+      "id": "LEARN-PR135-010",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3980475650,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "Snapshot insertion proved agreement with its owning operation but did not prove that the operation's poll generation was still the source's current poll authority, allowing a superseded operation to manufacture apparently well-bound evidence.",
+      "horizontal_audit": ["snapshot insertion authority", "operation versus source authority", "superseded work evidence creation", "future current-state batch snapshots", "all evidence tables that duplicate generation authority"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 13
+    },
+    {
+      "id": "LEARN-PR135-011",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3980475663,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": ["INV-PROVENANCE-001"],
+      "root_cause": "Snapshot membership was closed after completion but the declared host_count was not checked against the final immutable provider-evidence membership, allowing the durable aggregate evidence to misstate its own cardinality.",
+      "horizontal_audit": ["snapshot aggregate cardinality", "immutable evidence containers", "operation finalization", "future metric batch counts", "audit artifacts with declared member counts"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 14
     }
   ]
 }

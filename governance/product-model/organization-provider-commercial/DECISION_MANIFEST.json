@@ -4,6 +4,7 @@
   "status": "candidate_for_separate_acceptance",
   "canonical_base": "8e2265a4ee2810ea701166228e8f44ad3bc0d894",
   "contract": "docs/03-domains/organization-operating-model-contract.md",
+  "monitoring_compatibility_overlay": "governance/product-model/organization-provider-commercial/MONITORING_COMPATIBILITY.md",
   "historical_wave4_authority_rewritten": false,
   "runtime_implementation_authority": "not_granted_by_this_gate",
   "frontend_authority": "not_granted_by_this_gate",
@@ -27,7 +28,8 @@
     "service_provider_transfer": "preserve_target_organization_tenant_identity_and_history",
     "platform_cross_tenant_access": "explicit_privileged_attributable_audited_authority",
     "display_access": "independently_attributable_non_human_principal",
-    "organization_360": "required_platform_owner_traceability_view"
+    "organization_360": "required_platform_owner_traceability_view",
+    "accepted_monitoring_source_compatibility": "tenant_source_may_reference_shared_provider_instance_without_transferring_provider_ownership_or_weakening_tenant_identity_scope"
   },
   "required_traceability_dimensions": [
     "ownership",

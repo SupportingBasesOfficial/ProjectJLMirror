@@ -20,6 +20,12 @@
       "invariant_ids": ["INV-BOUNDARY-002", "INV-OBS-002"]
     },
     {
+      "id": "ADV-AUTHORITY-TOCTOU",
+      "name": "Authority fence time-of-check/time-of-use race",
+      "description": "A protected completion or mutation validates authority against current state without holding the authoritative row or generation stable through the dependent write, allowing concurrent authority changes to cross the fence and make stale work appear current.",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"]
+    },
+    {
       "id": "ADV-OPTIONAL-CONTEXT-LIVENESS",
       "name": "Optional context owns business liveness",
       "description": "Malformed or absent observability/diagnostic context can abort, suppress, duplicate, reorder or otherwise change a valid business effect or delivery behavior.",

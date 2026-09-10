@@ -5,10 +5,11 @@
 -- 2. SECURITY DEFINER host-inventory entrypoints were executable by PUBLIC, allowing
 --    an unrelated same-tenant runtime to enter the privileged executor path directly.
 --
--- Horizontal closure: direct DML must not be an alternate enqueue surface either.
+-- Horizontal closure: direct DML must not be an alternate enqueue surface, identity
+-- rewrite surface, or lifecycle-provenance mutation surface.
 -- Final rule: host-inventory work is created only by the guarded executor, its identity
--- is immutable from enqueue onward, and only the dedicated provider-integration
--- invoker capability may invoke enqueue/claim/complete.
+-- is immutable from enqueue onward, lifecycle provenance is executor-owned, and only
+-- the dedicated provider-integration invoker capability may invoke enqueue/claim/complete.
 
 BEGIN;
 
@@ -25,8 +26,8 @@ GRANT USAGE ON SCHEMA monitoring TO jlmirror_wave4_host_inventory_invoker;
 REVOKE CREATE ON SCHEMA monitoring FROM jlmirror_wave4_host_inventory_invoker;
 
 -- A host-inventory work item's ownership/revision identity is fixed at enqueue.
--- Claim and completion may mutate lifecycle/authority fields, but may never redirect
--- the work to another source or reinterpret it under another revision tuple.
+-- Claim and completion may mutate only their owned lifecycle fields; they may never
+-- redirect work to another source or reinterpret it under another revision tuple.
 CREATE OR REPLACE FUNCTION monitoring.wave4_guard_host_inventory_claim_revision_update()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -43,6 +44,18 @@ BEGIN
            OR NEW.scope_revision IS DISTINCT FROM OLD.scope_revision
        ) THEN
         RAISE EXCEPTION 'Host inventory work identity and source/revision authority are immutable from enqueue';
+    END IF;
+
+    IF OLD.responsibility_kind = 'host_inventory_sync'
+       AND (
+           NEW.created_at IS DISTINCT FROM OLD.created_at
+           OR NEW.started_at IS DISTINCT FROM OLD.started_at
+           OR NEW.completed_at IS DISTINCT FROM OLD.completed_at
+           OR NEW.last_error_class IS DISTINCT FROM OLD.last_error_class
+           OR NEW.attempt_count IS DISTINCT FROM OLD.attempt_count
+       )
+       AND NOT monitoring.wave4_host_inventory_executor_is_current_user() THEN
+        RAISE EXCEPTION 'Host inventory operation lifecycle provenance requires guarded executor authority';
     END IF;
 
     RETURN NEW;

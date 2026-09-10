@@ -117,5 +117,10 @@ jobs:
           PG_CONTAINER: jlmirror-wave4-host-inventory-terminal-postgres
         run: bash tools/wave4/run_zabbix_host_inventory_terminal_operation_postgres_conformance.sh
 
+      - name: Execute recovery-safe host-inventory authority on pinned PostgreSQL
+        env:
+          PG_CONTAINER: jlmirror-wave4-host-inventory-recovery-postgres
+        run: bash tools/wave4/run_zabbix_host_inventory_recovery_authority_postgres_conformance.sh
+
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

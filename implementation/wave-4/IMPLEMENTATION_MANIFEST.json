@@ -31,6 +31,9 @@
     "complete_authoritative_snapshot_negative_removal",
     "database_guarded_negative_presence_transition",
     "host_inventory_stale_generation_configuration_scope_completion_fence",
+    "host_inventory_poll_generation_fence",
+    "late_superseded_poll_completion_retirement",
+    "stale_negative_snapshot_rejection",
     "qualified_plpgsql_claim_identifiers",
     "forced_rls_for_host_inventory_tenant_tables"
   ],
@@ -47,7 +50,7 @@
     "sql/wave4/005_zabbix_host_inventory.sql",
     "sql/wave4/006_zabbix_host_inventory_boundary_hardening.sql",
     "sql/wave4/007_zabbix_host_inventory_integrity_hardening.sql",
-    "sql/wave4/008_zabbix_host_inventory_claim_qualification.sql"
+    "sql/wave4/008_zabbix_host_inventory_poll_ordering_hardening.sql"
   ],
   "assurance_surfaces": [
     "tests/wave4/test_zabbix_initial_validation_worker.py",
@@ -56,6 +59,7 @@
     "tools/wave4/validate_zabbix_host_inventory.py",
     "tools/wave4/run_zabbix_initial_validation_postgres_conformance.sh",
     "tools/wave4/run_zabbix_host_inventory_postgres_conformance.sh",
+    "tools/wave4/run_zabbix_host_inventory_ordering_postgres_conformance.sh",
     ".github/workflows/wave4-monitoring-source-foundation.yml"
   ],
   "explicitly_not_implemented": [

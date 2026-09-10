@@ -43,6 +43,7 @@
     "host_inventory_presence_evidence_state_authority",
     "host_inventory_scope_state_authority",
     "host_inventory_observation_timestamp_authority",
+    "host_inventory_resource_observation_authority",
     "host_inventory_provider_projection_field_authority",
     "host_inventory_current_poll_snapshot_binding",
     "late_superseded_poll_completion_retirement",

@@ -78,6 +78,32 @@
       "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 23
+    },
+    {
+      "id": "LEARN-PR135-023",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3982438864,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": ["INV-PROVENANCE-001", "INV-AUTH-001"],
+      "root_cause": "The application worker returned the provider-read result computed before persistence, even though the database completion path can authoritatively supersede or reject that result and persist reconciliation_required. Application-visible outcome therefore diverged from the durable operation truth.",
+      "horizontal_audit": ["application return values after persistence fences", "worker results after stale generation or epoch retirement", "repository completion contracts", "future metric/problem ingestion completion outcomes", "API/BFF status projection from durable operations"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 21
+    },
+    {
+      "id": "LEARN-PR135-024",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3982438881,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": ["INV-PROVENANCE-001", "INV-AUTH-001"],
+      "root_cause": "The broad final-schema conformance remained pinned through migration 016 even after migration 017 replaced the complete host-inventory function. A narrow 001-to-017 recovery test covered only the superseded-epoch branch, leaving normal success, removal, ordering and logical-recovery behaviors tested against a schema that was no longer the exact shipped schema.",
+      "horizontal_audit": ["exact-head migration composition in broad conformance", "function replacement migrations", "success and removal paths after final hardening", "narrow versus broad conformance coverage", "future migration additions after final-schema harness creation"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 22
     }
   ]
 }

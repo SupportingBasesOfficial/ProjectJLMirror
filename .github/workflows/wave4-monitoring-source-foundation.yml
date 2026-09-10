@@ -127,5 +127,10 @@ jobs:
           PG_CONTAINER: jlmirror-wave4-host-inventory-final-schema-postgres
         run: bash tools/wave4/run_zabbix_host_inventory_final_schema_postgres_conformance.sh
 
+      - name: Execute superseded host-inventory epoch retirement on final schema
+        env:
+          PG_CONTAINER: jlmirror-wave4-host-inventory-superseded-epoch-postgres
+        run: bash tools/wave4/run_zabbix_host_inventory_superseded_epoch_postgres_conformance.sh
+
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

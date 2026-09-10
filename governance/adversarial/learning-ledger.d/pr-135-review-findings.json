@@ -143,6 +143,19 @@
       "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 14
+    },
+    {
+      "id": "LEARN-PR135-012",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3980659189,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "Closing snapshot membership depended on the owning synchronization operation remaining terminal, but a broadly permitted runtime writer could reopen that completed operation while retaining its claim and authority fields. That converted immutable historical authority back into writable work and reopened snapshot membership without rerunning the closure constraint.",
+      "horizontal_audit": ["terminal synchronization operation immutability", "closed snapshot membership", "retry semantics", "future metric and problem batch finalization", "all workflows where terminal authority protects immutable evidence"],
+      "guardrails": [{"path": "tools/wave4/run_zabbix_host_inventory_terminal_operation_postgres_conformance.sh", "probe": "terminal_operation=immutable"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 15
     }
   ]
 }

@@ -44,6 +44,8 @@ def validate_manifest() -> None:
     req(data.get("canonical_authorization_commit") == EXPECTED_AUTH_COMMIT, "authorization commit drift")
     req(data.get("authorization_id") == "wave4.monitoring-zabbix.vertical@1", "implementation authorization id drift")
     req(data.get("product_feature_activation") == "monitoring_source_foundation_only", "feature activation widened")
+    implemented = set(data.get("implemented_capability", []))
+    req("atomic_create_or_observe_monitoring_source_transaction" in implemented, "atomic source creation capability missing")
     forbidden = set(data.get("explicitly_not_implemented", []))
     for marker in (
         "zabbix_network_client", "http_route_adapter", "browser_frontend",
@@ -82,6 +84,12 @@ def validate_sql() -> None:
     req("PRIMARY KEY (tenant_id, monitoring_source_id, source_instance_generation)" in text, "generation tenant/source identity missing")
     req("Monitoring source generation records are immutable" in text, "generation immutability guard missing")
     req("PRIMARY KEY (tenant_id, idempotency_key)" in text, "create idempotency scope missing")
+    req("CREATE FUNCTION monitoring.create_zabbix_source(" in text, "atomic create-source function missing")
+    req("ON CONFLICT (tenant_id, idempotency_key) DO NOTHING" in text, "atomic idempotency claim missing")
+    req("RAISE EXCEPTION 'idempotency.key_reused'" in text, "fingerprint mismatch rejection missing")
+    req("RETURN QUERY SELECT existing_source_id, existing_operation_id, TRUE" in text, "same-key replay path missing")
+    req("'reconciliation_required', p_monitoring_sync_operation_id" in text, "local create must start with non-current evidence")
+    req("'validation_and_initial_sync', 'pending'" in text, "durable initial sync operation missing")
     lowered = text.lower()
     for marker in ("http_get", "curl ", "wget ", "dblink("):
         req(marker not in lowered, f"network/external side effect leaked into local migration: {marker}")
@@ -102,7 +110,7 @@ def main() -> int:
     except AssertionError as exc:
         print(f"wave4_monitoring_source_foundation=FAIL reason={exc}", file=sys.stderr)
         return 1
-    print("wave4_monitoring_source_foundation=PASS source_identity=logical generation=opaque+historical-safe initial_sync=durable network_in_create=none production=none frontend=deferred")
+    print("wave4_monitoring_source_foundation=PASS source_identity=logical generation=opaque+historical-safe create=idempotent+atomic initial_sync=durable network_in_create=none production=none frontend=deferred")
     return 0
 
 

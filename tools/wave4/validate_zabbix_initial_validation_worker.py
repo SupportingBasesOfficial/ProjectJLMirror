@@ -19,11 +19,18 @@ def main() -> None:
     monitoring_api = (ROOT / "docs/09-api-contracts/monitoring-domain-api-contract.md").read_text(encoding="utf-8")
     accepted_contracts = provider + "\n" + monitoring_api
 
-    require(manifest["implementation_id"] == "wave4.zabbix-initial-validation-worker@1", "implementation id drift")
+    implementation_id = manifest["implementation_id"]
+    require(implementation_id in {"wave4.zabbix-initial-validation-worker@1", "wave4.zabbix-host-inventory@1"}, "implementation id drift")
     require(manifest["canonical_predecessor_commit"] == "d642a7f456e042dd02de2c04533c39c748f88aa9", "predecessor drift")
-    require(manifest["product_feature_activation"] == "monitoring_source_validation_hostgroup_only", "slice boundary drift")
-    for forbidden in ("resource_ingestion", "metric_ingestion", "problem_ingestion", "host_inventory_ingestion", "concrete_secret_manager", "concrete_egress_transport"):
-        require(forbidden in manifest["explicitly_not_implemented"], f"missing deferred boundary: {forbidden}")
+    if implementation_id == "wave4.zabbix-initial-validation-worker@1":
+        require(manifest["product_feature_activation"] == "monitoring_source_validation_hostgroup_only", "slice boundary drift")
+        for forbidden in ("resource_ingestion", "metric_ingestion", "problem_ingestion", "host_inventory_ingestion", "concrete_secret_manager", "concrete_egress_transport"):
+            require(forbidden in manifest["explicitly_not_implemented"], f"missing deferred boundary: {forbidden}")
+    else:
+        require(manifest["product_feature_activation"] == "monitoring_source_validation_and_bounded_host_inventory", "host inventory successor activation drift")
+        require("host_inventory_ingestion" in manifest["implemented_capability"], "host inventory successor missing authorized capability")
+        for forbidden in ("metric_ingestion", "problem_ingestion", "history_ingestion", "canonical_device_classification", "concrete_secret_manager", "concrete_egress_transport"):
+            require(forbidden in manifest["explicitly_not_implemented"], f"host inventory successor widened deferred boundary: {forbidden}")
 
     for phrase in (
         "hostgroup.get",
@@ -67,7 +74,7 @@ def main() -> None:
     ):
         require(phrase in state, f"state product boundary missing: {phrase}")
 
-    print("wave4_zabbix_initial_validation_worker=PASS hostgroup_only=true credential=port egress=port stale_commit=fenced+retired concurrency=source-row-locked retry=not_selected ingestion=none")
+    print("wave4_zabbix_initial_validation_worker=PASS hostgroup_validation=preserved credential=port egress=port stale_commit=fenced+retired concurrency=source-row-locked retry=not_selected successor_host_inventory=bounded")
 
 
 if __name__ == "__main__":

@@ -36,10 +36,13 @@
     "host_inventory_poll_generation_rewind_rejection",
     "host_inventory_poll_epoch_recovery_fence",
     "host_inventory_recovery_admission_fail_closed",
+    "host_inventory_explicit_runtime_admission",
     "host_inventory_guarded_executor_authority",
     "host_inventory_direct_forward_poll_increment_rejection",
     "host_inventory_presence_evidence_state_authority",
     "host_inventory_scope_state_authority",
+    "host_inventory_observation_timestamp_authority",
+    "host_inventory_provider_projection_field_authority",
     "host_inventory_current_poll_snapshot_binding",
     "late_superseded_poll_completion_retirement",
     "stale_negative_snapshot_rejection",
@@ -72,7 +75,8 @@
     "sql/wave4/011a_zabbix_host_inventory_executor_roles.sql",
     "sql/wave4/012_zabbix_host_inventory_recovery_authority_hardening.sql",
     "sql/wave4/013_zabbix_host_inventory_executor_privileges.sql",
-    "sql/wave4/014_zabbix_host_inventory_resource_epoch_insert.sql"
+    "sql/wave4/014_zabbix_host_inventory_resource_epoch_insert.sql",
+    "sql/wave4/015_zabbix_host_inventory_explicit_admission_and_resource_authority.sql"
   ],
   "assurance_surfaces": [
     "tests/wave4/test_zabbix_initial_validation_worker.py",

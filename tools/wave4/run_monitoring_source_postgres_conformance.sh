@@ -21,13 +21,24 @@ docker run -d --rm \
   -e POSTGRES_DB="$PG_DATABASE" \
   "$POSTGRES_IMAGE" >/dev/null
 
-for _ in $(seq 1 60); do
-  if docker exec "$PG_CONTAINER" pg_isready -U postgres -d "$PG_DATABASE" >/dev/null 2>&1; then
-    break
+# The official image may expose a temporary init server before switching to the
+# final post-init server. Require several consecutive successful SQL probes so
+# conformance never races that restart window.
+stable_ready=0
+for _ in $(seq 1 90); do
+  if docker inspect -f '{{.State.Running}}' "$PG_CONTAINER" 2>/dev/null | grep -qx 'true' \
+     && docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c 'SELECT 1' 2>/dev/null | grep -qx '1'; then
+    stable_ready=$((stable_ready + 1))
+    if [[ "$stable_ready" -ge 3 ]]; then
+      break
+    fi
+  else
+    stable_ready=0
   fi
   sleep 1
 done
-docker exec "$PG_CONTAINER" pg_isready -U postgres -d "$PG_DATABASE" >/dev/null
+test "$stable_ready" -ge 3
+docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c 'SELECT 1' | grep -qx '1'
 
 for migration in \
   sql/wave4/001_monitoring_source_foundation.sql \

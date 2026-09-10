@@ -19,6 +19,7 @@ from jlmirror_monitoring.validation_worker import (
     EgressAdmissionError,
     ProviderUnavailableError,
     ResolvedZabbixCredential,
+    ZabbixHostGroup,
 )
 
 
@@ -62,7 +63,15 @@ class Admission:
 
 
 class Reader:
-    def __init__(self, events, snapshot=None, error=None): self.events, self.snapshot, self.error = events, snapshot, error
+    def __init__(self, events, snapshot=None, error=None, visible_group_refs=("10", "20")):
+        self.events, self.snapshot, self.error = events, snapshot, error
+        self.visible_group_refs = visible_group_refs
+
+    def hostgroup_get(self, endpoint, credential, refs):
+        self.events.append(("hostgroup.get", tuple(refs)))
+        if self.error: raise self.error()
+        return tuple(ZabbixHostGroup(ref, f"group-{ref}") for ref in self.visible_group_refs)
+
     def host_get(self, endpoint, credential, refs, *, max_hosts):
         self.events.append(("host.get", tuple(refs), max_hosts))
         if self.error: raise self.error()
@@ -83,14 +92,14 @@ def host(hostid="101", groups=("10",), name="edge-sw-01"):
 
 
 class HostInventoryTests(unittest.TestCase):
-    def run_worker(self, snapshot=None, *, credential_error=None, admission_error=None, reader_error=None):
+    def run_worker(self, snapshot=None, *, credential_error=None, admission_error=None, reader_error=None, visible_group_refs=("10", "20")):
         events = []
         repo = FakeRepository()
         worker = HostInventoryWorker(
             repository=repo,
             credential_resolver=Resolver(credential_error),
             outbound_admission=Admission(events, admission_error),
-            host_reader=Reader(events, snapshot, reader_error),
+            host_reader=Reader(events, snapshot, reader_error, visible_group_refs),
         )
         result = worker.run("sync-hosts-a")
         self.assertEqual(len(repo.completed), 1)
@@ -103,8 +112,19 @@ class HostInventoryTests(unittest.TestCase):
         self.assertEqual(result.operational_evidence_state, OperationalEvidenceState.CURRENT)
         self.assertIsNone(result.failure_class)
         self.assertEqual(events[0], "egress")
-        self.assertEqual(events[1][0], "host.get")
-        self.assertEqual(events[1][2], MAX_HOSTS_PER_SNAPSHOT)
+        self.assertEqual(events[1][0], "hostgroup.get")
+        self.assertEqual(events[2][0], "host.get")
+        self.assertEqual(events[2][2], MAX_HOSTS_PER_SNAPSHOT)
+
+    def test_scope_anchors_are_revalidated_before_host_snapshot(self):
+        result, events = self.run_worker(ZabbixHostSnapshot((), True), visible_group_refs=("10",))
+        self.assertFalse(result.snapshot_complete)
+        self.assertEqual(result.operation_state, SyncOperationState.RECONCILIATION_REQUIRED)
+        self.assertEqual(result.operational_evidence_state, OperationalEvidenceState.INCOMPLETE)
+        self.assertEqual(result.failure_class, InventoryFailureClass.SCOPE_ANCHOR_INACCESSIBLE)
+        self.assertEqual(events[0], "egress")
+        self.assertEqual(events[1][0], "hostgroup.get")
+        self.assertFalse(any(event[0] == "host.get" for event in events if isinstance(event, tuple)))
 
     def test_truncated_snapshot_preserves_positive_hosts_but_is_not_negative_authority(self):
         result, _ = self.run_worker(ZabbixHostSnapshot((host(),), False))

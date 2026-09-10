@@ -35,7 +35,9 @@ for migration in \
   sql/wave4/014_zabbix_host_inventory_resource_epoch_insert.sql \
   sql/wave4/015_zabbix_host_inventory_explicit_admission_and_resource_authority.sql \
   sql/wave4/016_zabbix_host_inventory_operation_insert_authority.sql \
-  sql/wave4/017_zabbix_host_inventory_superseded_epoch_retirement.sql; do
+  sql/wave4/017_zabbix_host_inventory_superseded_epoch_retirement.sql \
+  sql/wave4/018_zabbix_host_inventory_claim_revision_immutability.sql \
+  sql/wave4/019_zabbix_host_inventory_work_identity_and_invocation_authority.sql; do
   docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < "$migration" >/dev/null
 done
 
@@ -43,9 +45,7 @@ docker exec -i "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DA
 CREATE ROLE wave4_runtime NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
 GRANT USAGE ON SCHEMA monitoring TO wave4_runtime;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA monitoring TO wave4_runtime;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA monitoring TO wave4_runtime;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON monitoring.monitoring_host_inventory_runtime_admission FROM wave4_runtime;
-REVOKE EXECUTE ON FUNCTION monitoring.reestablish_zabbix_host_inventory_poll_epoch(TEXT,TEXT,BIGINT,BIGINT,TEXT,TEXT,TEXT) FROM wave4_runtime;
 SQL
 
 fp="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -53,10 +53,10 @@ scope='{"host_group_refs":["10"]}'
 
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT * FROM monitoring.create_zabbix_source('tenant-a','create-epoch','$fp','source-epoch','generation-epoch','binding-epoch','validation-epoch','audit-epoch','principal-epoch','human_browser_session','credential-generation-epoch','authz-epoch','correlation-epoch','Epoch Zabbix','provider-instance:epoch','https://zabbix.example.test/zabbix','credential-binding:epoch','$scope'::jsonb); SELECT monitoring_source_id FROM monitoring.claim_zabbix_initial_validation('tenant-a','validation-epoch','validation-claim-epoch'); SELECT monitoring.complete_zabbix_initial_validation('tenant-a','validation-epoch','validation-claim-epoch','validation-evidence-epoch','binding-epoch','provider-instance:epoch','current','succeeded',NULL,'[\"10\"]'::jsonb,'[]'::jsonb,'egress-validation-epoch','credential-generation-epoch'); COMMIT;" >/dev/null
 
-# Explicitly establish epoch 2, then claim one poll under that authority.
+# Explicitly establish epoch 2, then claim one poll under provider-worker authority.
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.reestablish_zabbix_host_inventory_poll_epoch('tenant-a','source-epoch',1,2,'placement-2','recovery-2','admission-2'); COMMIT;" >/dev/null
 
-docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-epoch','inventory-old-epoch'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-old-epoch','claim-old-epoch'); COMMIT;" >/dev/null
+docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE jlmirror_wave4_host_inventory_invoker; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-epoch','inventory-old-epoch'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-old-epoch','claim-old-epoch'); COMMIT;" >/dev/null
 old_authority="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT host_inventory_poll_epoch || ':' || host_inventory_poll_generation FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='inventory-old-epoch';")"
 test "$old_authority" = "2:1"
 
@@ -66,11 +66,11 @@ source_authority="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DA
 test "$source_authority" = "3:1"
 
 # Late completion from epoch 2 must retire cleanly before snapshot insertion.
-docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.complete_zabbix_host_inventory('tenant-a','inventory-old-epoch','claim-old-epoch','snapshot-old-epoch','binding-epoch','provider-instance:epoch','current','succeeded',NULL,true,'[]'::jsonb,'egress-old-epoch','credential-generation-epoch'); COMMIT;" >/dev/null
+docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE jlmirror_wave4_host_inventory_invoker; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.complete_zabbix_host_inventory('tenant-a','inventory-old-epoch','claim-old-epoch','snapshot-old-epoch','binding-epoch','provider-instance:epoch','current','succeeded',NULL,true,'[]'::jsonb,'egress-old-epoch','credential-generation-epoch'); COMMIT;" >/dev/null
 
 retired="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT state || ':' || coalesce(last_error_class,'') || ':' || coalesce(claim_token,'') FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='inventory-old-epoch';")"
 test "$retired" = "reconciliation_required:execution.superseded_poll_epoch_authority:"
 snapshot_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM monitoring.monitoring_host_inventory_snapshot_evidence WHERE host_inventory_snapshot_evidence_id='snapshot-old-epoch';")"
 test "$snapshot_count" = "0"
 
-printf '%s\n' "wave4_zabbix_host_inventory_superseded_epoch=PASS schema=001-017 old_epoch=retired reconciliation=required stale_snapshot=absent"
+printf '%s\n' "wave4_zabbix_host_inventory_superseded_epoch=PASS schema=001-019 old_epoch=retired reconciliation=required stale_snapshot=absent invocation_authority=provider-worker-only"

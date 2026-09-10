@@ -86,7 +86,10 @@ jobs:
       - name: Validate Host Inventory provider-worker invocation authority
         run: python3 tools/wave4/validate_zabbix_host_inventory_invocation_authority.py
 
-      - name: Test Monitoring source, validation, and host inventory contracts
+      - name: Validate bounded Zabbix metric definitions boundary
+        run: python3 tools/wave4/validate_zabbix_metric_definitions.py
+
+      - name: Test Monitoring source, validation, host inventory, and metric definition contracts
         run: PYTHONPATH=src python3 -m unittest discover -s tests/wave4 -p 'test_*.py'
 
       - name: Execute Monitoring source transaction on pinned PostgreSQL
@@ -134,6 +137,11 @@ jobs:
         env:
           PG_CONTAINER: jlmirror-wave4-host-inventory-superseded-epoch-postgres
         run: bash tools/wave4/run_zabbix_host_inventory_superseded_epoch_postgres_conformance.sh
+
+      - name: Execute bounded Zabbix metric definitions on composed schema
+        env:
+          PG_CONTAINER: jlmirror-wave4-metric-definitions-postgres
+        run: bash tools/wave4/run_zabbix_metric_definitions_postgres_conformance.sh
 
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

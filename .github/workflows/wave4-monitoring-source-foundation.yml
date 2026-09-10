@@ -47,8 +47,7 @@ jobs:
           EVENT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if [[ "$EVENT_NAME" == "pull_request" ]]; then
-            resolved_sha="$PR_HEAD_SHA"
+          if [[ "$EVENT_NAME" == "pull_request" ]];n            resolved_sha="$PR_HEAD_SHA"
           else
             resolved_sha="$EVENT_SHA"
           fi
@@ -111,6 +110,11 @@ jobs:
         env:
           PG_CONTAINER: jlmirror-wave4-host-inventory-authority-postgres
         run: bash tools/wave4/run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh
+
+      - name: Execute terminal host-inventory operation immutability on pinned PostgreSQL
+        env:
+          PG_CONTAINER: jlmirror-wave4-host-inventory-terminal-postgres
+        run: bash tools/wave4/run_zabbix_host_inventory_terminal_operation_postgres_conformance.sh
 
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

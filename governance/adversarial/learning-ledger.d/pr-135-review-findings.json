@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR135-001",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3979377683,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "Host-inventory completion fenced generation, configuration and scope authority but had no monotonic poll-order authority. Two operations claimed under the same source revision could therefore complete out of order, allowing an older provider snapshot to overwrite or remove state established by a newer snapshot.",
+      "horizontal_audit": [
+        "host inventory claim and completion authority",
+        "same-revision concurrent provider polling",
+        "resource presence reconciliation",
+        "future metric current-state polling",
+        "future problem and topology snapshot ingestion"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_wave4_authority_toctou_guardrail"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 2
+    },
+    {
+      "id": "LEARN-PR135-002",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3979377691,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "The negative-presence transition guard proved that a complete authoritative snapshot omitted a host, but it did not prove that the negative snapshot was newer than the resource's latest confirmed positive observation. Historical negative evidence could therefore be replayed to reverse a newer positive state.",
+      "horizontal_audit": [
+        "resource present-to-removed transitions",
+        "historical snapshot replay",
+        "last-confirmed-positive ordering",
+        "future metric tombstone and deletion semantics",
+        "future reconciliation paths that consume historical evidence"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_wave4_authority_toctou_guardrail"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 3
+    }
+  ]
+}

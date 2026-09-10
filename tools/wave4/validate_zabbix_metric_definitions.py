@@ -46,7 +46,7 @@ def main() -> None:
         'CREATE TABLE monitoring.metric_definition (',
         'CREATE TABLE monitoring.metric_definition_provider_binding (',
         "provider_object_kind TEXT NOT NULL CHECK (provider_object_kind='zabbix_item')",
-        "provider_external_ref = itemid",
+        'provider_external_ref TEXT NOT NULL',
         'jlmirror_wave4_metric_definition_executor',
         'jlmirror_wave4_metric_definition_invoker',
         'metric_definition_sync',
@@ -57,7 +57,7 @@ def main() -> None:
     for marker in (
         'DEFERRABLE INITIALLY DEFERRED',
         'reestablish_metric_definition_runtime_admission',
-        'Metric definition recovery epoch may advance only',
+        'monitoring.metric_definition_recovery_epoch_must_advance',
         'wave4_retire_missing_metric_definitions',
         "r.presence_state='present'",
         "r.presence_evidence_state='current'",
@@ -67,7 +67,7 @@ def main() -> None:
 
     for marker in (
         'PRECHECK:',
-        "provider.value_kind_drift",
+        'provider.value_kind_drift',
         'No definition/binding/provider-evidence mutation from this snapshot is accepted.',
         'PERFORM monitoring.wave4_retire_missing_metric_definitions',
         "r.presence_evidence_state='current'",

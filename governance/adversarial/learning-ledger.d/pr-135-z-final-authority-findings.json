@@ -52,6 +52,19 @@
       "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 20
+    },
+    {
+      "id": "LEARN-PR135-021",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3981633365,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "Host-inventory operation authority was guarded only on UPDATE. Because the modeled tenant runtime can INSERT monitoring_sync_operation rows, it could manufacture an operation already in running/claimed state with the source's current poll epoch and generation, bypassing the guarded claim transition and reusing current-state authority.",
+      "horizontal_audit": ["operation INSERT versus UPDATE authority", "claimed-work creation across runtime domains", "single ownership of source/epoch/generation tuples", "public completion entry points that trust claimed-operation rows", "future metric/problem ingestion operation lifecycles"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 22
     }
   ]
 }

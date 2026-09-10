@@ -51,6 +51,8 @@ ITEM.GET LASTVALUE != AUTHORIZED CURRENT-STATE INGESTION IN THIS SLICE
 SCOPE EXCLUSION != METRIC RETIREMENT
 GENERATION RETIREMENT != METRIC RETIREMENT
 UNCERTAINTY != NEGATIVE EVIDENCE
+ITEM-DEFINITION POLL GENERATION != HOST-INVENTORY POLL GENERATION
+SHARED RECOVERY EPOCH/ADMISSION FRAMEWORK != SHARED ENDPOINT POLL SEQUENCE
 ```
 
 ## Authorized product behavior
@@ -72,6 +74,7 @@ UNCERTAINTY != NEGATIVE EVIDENCE
 15. **No historical ingestion.** `history.get`, historical checkpoints/backfill and `metric_observation` storage are explicitly outside this slice.
 16. **No per-item event fanout.** This slice does not create `monitoring.metric-current-state.changed`; definition discovery itself is not the current-state transition contract.
 17. **No frontend implication.** Backend/domain/data support for metric definitions creates no frontend route/navigation authority.
+18. **Shared recovery framework, independent item poll stream.** Item-definition polling reuses the already accepted recovery/placement admission semantics and ordered recovery epoch framework, but it owns a distinct item-definition poll generation stream. Host Inventory and Item Definition polls must never supersede one another merely because their independent endpoint cadences interleave.
 
 ## Canonical binding requirements
 
@@ -100,11 +103,13 @@ The implementation must preserve the same uncertainty discipline established by 
 - item enumeration is bounded and completeness is explicit;
 - a truncated or provider-visibility-degraded item snapshot cannot retire previously known metric definitions;
 - a complete authoritative snapshot may retire an omitted active definition only when its owning resource remains within the relevant evidence domain;
-- late/superseded poll completion cannot override newer item-definition state;
-- current platform poll epoch/generation is the authority for current definition reconciliation, not Zabbix wall clock;
-- recovery/failover/PITR cannot reuse stale poll authority without the already accepted recovery admission mechanism.
+- late/superseded item poll completion cannot override newer item-definition state;
+- current platform item-definition poll epoch/generation is the authority for item-definition reconciliation, not Zabbix wall clock;
+- recovery/failover/PITR cannot reuse stale poll authority without the already accepted recovery admission mechanism;
+- the recovery/placement epoch and admission mechanism may be shared with Host Inventory because they express writer/placement continuity for the source;
+- the monotonic item-definition poll generation must be distinct from `host_inventory_poll_generation`, because endpoint-specific cadences are independent and must not cancel unrelated in-flight work.
 
-The implementation should reuse the existing Host Inventory source/recovery poll authority where semantically safe rather than creating a second unrelated ordering system. If implementation discovers that item-definition polling requires distinct authority to avoid starvation/coupling, that is a material architecture change and requires a successor decision before code proceeds.
+This split is deliberate: shared recovery authority avoids inventing a second recovery system, while independent endpoint poll streams prevent false supersession between `host.get` and `item.get` cycles.
 
 ## Explicitly outside this slice
 
@@ -121,6 +126,7 @@ This authorization does not permit:
 - raw provider payload replication;
 - boolean inference from generic Zabbix integer values;
 - cross-generation metric identity merging;
+- sharing `host_inventory_poll_generation` as the item-definition poll sequence;
 - tag/key/name-driven tenant, authorization or policy selection;
 - production polling/retry/capacity numerics beyond hard safety bounds;
 - HTTP route implementation beyond already accepted API contracts;

@@ -1,0 +1,78 @@
+name: Organization Provider Commercial Model
+
+on:
+  pull_request:
+    paths:
+      - 'docs/03-domains/organization-operating-model-contract.md'
+      - 'governance/product-model/organization-provider-commercial/**'
+      - 'tools/assurance/validate_organization_provider_commercial_model.py'
+      - '.github/workflows/organization-provider-commercial-model.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-model:
+    name: Validate organization/provider/commercial product model
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact PR HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Assert exact checked-out commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$actual" = "$expected"
+          echo "exact_head=$actual"
+
+      - name: Validate product model invariants
+        run: python3 tools/assurance/validate_organization_provider_commercial_model.py
+
+      - name: Reject hidden implementation in product-model gate
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          git diff --name-only "$base"...HEAD > /tmp/changed.txt
+          cat /tmp/changed.txt
+          while IFS= read -r path; do
+            case "$path" in
+              docs/03-domains/organization-operating-model-contract.md|\
+              governance/product-model/organization-provider-commercial/*|\
+              tools/assurance/validate_organization_provider_commercial_model.py|\
+              .github/workflows/organization-provider-commercial-model.yml)
+                ;;
+              *)
+                echo "unauthorized path in product-model gate: $path" >&2
+                exit 1
+                ;;
+            esac
+          done < /tmp/changed.txt
+
+      - name: Preserve repository structural assurance
+        run: python3 tools/assurance/validate_repository.py
+
+      - name: Assert authority remains non-implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d = json.loads(Path('governance/product-model/organization-provider-commercial/DECISION_MANIFEST.json').read_text())
+          assert d['runtime_implementation_authority'] == 'not_granted_by_this_gate'
+          assert d['frontend_authority'] == 'not_granted_by_this_gate'
+          assert d['production_authority'] == 'none'
+          assert d['historical_wave4_authority_rewritten'] is False
+          print('authority_boundary=PASS runtime=not_granted frontend=not_granted production=none')
+          PY

@@ -14,7 +14,7 @@ BEGIN
     IF OLD.responsibility_kind='host_inventory_sync'
        AND OLD.state IN ('succeeded','reconciliation_required','failed_terminal')
        AND NEW IS DISTINCT FROM OLD THEN
-        RAISE EXCEPTION 'Terminal host inventory operation is immutable';
+        RAISE EXCEPTION 'Terminal host inventory operation is immutable; Terminal host inventory sync operations are immutable';
     END IF;
 
     IF OLD.responsibility_kind='host_inventory_sync'

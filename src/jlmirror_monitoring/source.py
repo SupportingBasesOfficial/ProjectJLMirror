@@ -85,20 +85,21 @@ class ZabbixProviderConfiguration:
 class ConfiguredProviderScope:
     host_group_refs: tuple[str, ...]
 
-    @classmethod
-    def from_refs(cls, refs: Iterable[str]) -> "ConfiguredProviderScope":
-        values = tuple(refs)
-        if len(values) > 256:
+    def __post_init__(self) -> None:
+        if not isinstance(self.host_group_refs, tuple):
+            raise ValueError("host_group_refs must be an immutable tuple")
+        if len(self.host_group_refs) > 256:
             raise ValueError("host_group_refs exceeds bounded cardinality")
-        normalized: list[str] = []
         seen: set[str] = set()
-        for value in values:
+        for value in self.host_group_refs:
             text = _canonical_explicit_text(value, "host_group_ref", max_len=256)
             if text in seen:
                 raise ValueError("host_group_refs must not contain duplicates")
             seen.add(text)
-            normalized.append(text)
-        return cls(tuple(normalized))
+
+    @classmethod
+    def from_refs(cls, refs: Iterable[str]) -> "ConfiguredProviderScope":
+        return cls(tuple(refs))
 
     def canonical_json(self) -> str:
         return json.dumps({"host_group_refs": list(self.host_group_refs)}, separators=(",", ":"), sort_keys=True)

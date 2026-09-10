@@ -25,6 +25,19 @@ def expect_failure(mutator, expected: str) -> None:
     raise AssertionError(f"mutation unexpectedly passed: {expected}")
 
 
+def falsify_hidden_implementation_under_authorization_path() -> None:
+    changed = sorted(mod.ALLOWED_PR_PATHS | {
+        "implementation/wave-4-monitoring-authorization/frontend/app.py"
+    })
+    try:
+        mod.validate_changed_paths(changed)
+    except AssertionError as exc:
+        if "authorization PR touched forbidden path" not in str(exc):
+            raise AssertionError(f"unexpected hidden-path failure: {exc}") from exc
+        return
+    raise AssertionError("hidden implementation under authorization directory unexpectedly passed")
+
+
 def main() -> int:
     mod.validate()
 
@@ -63,7 +76,9 @@ def main() -> int:
         d["required_predecessor_authority"]["d4_eventing_async"] = "scoped"
     expect_failure(change_predecessor, "predecessor authority drift")
 
-    print("wave4_monitoring_authorization_falsification=PASS cases=13")
+    falsify_hidden_implementation_under_authorization_path()
+
+    print("wave4_monitoring_authorization_falsification=PASS cases=14 hidden_implementation_path=blocked")
     return 0
 
 

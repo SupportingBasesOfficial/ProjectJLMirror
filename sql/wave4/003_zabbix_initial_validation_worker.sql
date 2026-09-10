@@ -220,7 +220,14 @@ BEGIN
            AND s.provider_scope_tenant_binding_id = p_provider_scope_tenant_binding_id
            AND g.provider_instance_ref = p_provider_instance_ref
     ) THEN
-        RAISE EXCEPTION 'monitoring.initial_validation_stale_authority';
+        UPDATE monitoring.monitoring_sync_operation
+           SET state = 'reconciliation_required',
+               completed_at = transaction_timestamp(),
+               last_error_class = 'execution.stale_authority',
+               validation_evidence_id = NULL
+         WHERE tenant_id = p_tenant_id
+           AND monitoring_sync_operation_id = p_monitoring_sync_operation_id;
+        RETURN;
     END IF;
 
     INSERT INTO monitoring.monitoring_source_validation_evidence(
@@ -240,6 +247,7 @@ BEGIN
     UPDATE monitoring.monitoring_sync_operation
        SET state = p_operation_state,
            completed_at = transaction_timestamp(),
+           last_error_class = p_failure_class,
            validation_evidence_id = p_validation_evidence_id
      WHERE tenant_id = p_tenant_id
        AND monitoring_sync_operation_id = p_monitoring_sync_operation_id;
@@ -256,6 +264,6 @@ COMMENT ON FUNCTION monitoring.claim_zabbix_initial_validation(TEXT, TEXT, TEXT)
 'Claims the single initial validation operation only while its source generation remains current. This slice does not define retry cadence.';
 
 COMMENT ON FUNCTION monitoring.complete_zabbix_initial_validation(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, JSONB, TEXT, TEXT) IS
-'Commits hostgroup.get validation evidence only while generation/configuration/scope/binding/provider lineage authority still matches the claim. Secrets and raw provider payload are excluded.';
+'Commits hostgroup.get validation evidence only while generation/configuration/scope/binding/provider lineage authority still matches the claim. Stale authority retires its own operation as reconciliation_required without mutating source evidence. Secrets and raw provider payload are excluded.';
 
 COMMIT;

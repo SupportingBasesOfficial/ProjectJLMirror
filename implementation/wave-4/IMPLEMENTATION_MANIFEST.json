@@ -1,0 +1,69 @@
+{
+  "schema_version": 2,
+  "wave": 4,
+  "implementation_id": "wave4.monitoring-source-foundation@2",
+  "canonical_authorization_commit": "8e2265a4ee2810ea701166228e8f44ad3bc0d894",
+  "authorization_id": "wave4.monitoring-zabbix.vertical@1",
+  "canonical_successor_governance_commit": "3c66b5e70e6d12f373315b95e3feefdfbf47e941",
+  "successor_product_model_decision": "organization-provider-commercial-model@1",
+  "successor_architecture_decision": "ADR-022",
+  "state": "implementation_in_progress",
+  "product_feature_activation": "monitoring_source_foundation_only",
+  "implemented_capability": [
+    "local_monitoring_source_creation_plan",
+    "zabbix_static_configuration_validation",
+    "logical_source_and_generation_identity_separation",
+    "explicit_provider_instance_lineage_reference",
+    "explicit_provider_scope_tenant_binding_identity",
+    "shared_provider_instance_across_isolated_tenants_without_identity_collapse",
+    "durable_initial_validation_and_sync_responsibility_schema",
+    "tenant_scoped_create_source_idempotency_schema",
+    "atomic_create_or_observe_monitoring_source_transaction",
+    "atomic_append_only_privileged_source_creation_audit_evidence",
+    "executable_postgresql_source_creation_conformance"
+  ],
+  "authorized_slices_consumed": [
+    "impl.customer-telemetry@1",
+    "impl.provider-integration@1:accepted_monitoring_zabbix_subprofile_only"
+  ],
+  "runtime_profiles": [
+    "runtime.api@1",
+    "runtime.worker@1"
+  ],
+  "code_surfaces": [
+    "src/jlmirror_monitoring/source.py",
+    "src/jlmirror_monitoring/__init__.py",
+    "sql/wave4/001_monitoring_source_foundation.sql",
+    "sql/wave4/002_monitoring_source_audit_evidence.sql"
+  ],
+  "assurance_surfaces": [
+    "tests/wave4/test_monitoring_source.py",
+    "tests/wave4/test_monitoring_source_sql.py",
+    "tools/wave4/validate_monitoring_source_foundation.py",
+    "tools/wave4/run_monitoring_source_postgres_conformance.sh",
+    ".github/workflows/wave4-monitoring-source-foundation.yml"
+  ],
+  "explicitly_not_implemented": [
+    "provider_instance_registry_runtime",
+    "organization_runtime",
+    "commercial_runtime",
+    "provider_operator_resolution_runtime",
+    "delegated_msp_authority_runtime",
+    "zabbix_network_client",
+    "zabbix_provider_authentication",
+    "resource_ingestion",
+    "metric_ingestion",
+    "historical_metric_storage_adapter",
+    "problem_normalization",
+    "health_projection",
+    "http_route_adapter",
+    "browser_frontend",
+    "provider_write_back",
+    "browser_realtime",
+    "production_deployment",
+    "c3_production_numerics",
+    "central_compliance_audit_projection_or_external_delivery"
+  ],
+  "next_bounded_step": "worker_owned_zabbix_validation_and_initial_sync_after_source_lineage_acceptance",
+  "frontend_rule": "backend_entities_tables_endpoints_and_use_cases_do_not_imply_frontend_routes"
+}

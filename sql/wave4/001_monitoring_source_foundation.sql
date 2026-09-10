@@ -142,7 +142,7 @@ CREATE TABLE monitoring.monitoring_source_create_idempotency (
 );
 
 COMMENT ON TABLE monitoring.monitoring_source_create_idempotency IS
-'Durable create-source idempotency ownership. Uniqueness is tenant_id + idempotency_key; request fingerprint mismatch must be rejected by the owning application transaction.';
+'Durable create-source idempotency ownership. Uniqueness is tenant_id + idempotency_key; request fingerprint mismatch is rejected by the owning transaction.';
 
 CREATE FUNCTION monitoring.wave4_guard_source_identity_update()
 RETURNS trigger
@@ -182,5 +182,108 @@ $$;
 CREATE TRIGGER wave4_monitoring_source_generation_immutable
 BEFORE UPDATE OR DELETE ON monitoring.monitoring_source_generation
 FOR EACH ROW EXECUTE FUNCTION monitoring.wave4_reject_generation_update();
+
+CREATE FUNCTION monitoring.create_zabbix_source(
+    p_tenant_id TEXT,
+    p_idempotency_key TEXT,
+    p_request_fingerprint TEXT,
+    p_monitoring_source_id TEXT,
+    p_source_instance_generation TEXT,
+    p_monitoring_sync_operation_id TEXT,
+    p_display_name TEXT,
+    p_provider_base_url TEXT,
+    p_credential_binding_ref TEXT,
+    p_configured_provider_scope JSONB
+)
+RETURNS TABLE (
+    monitoring_source_id TEXT,
+    monitoring_sync_operation_id TEXT,
+    replayed BOOLEAN
+)
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, monitoring
+AS $$
+DECLARE
+    existing_fingerprint TEXT;
+    existing_source_id TEXT;
+    existing_operation_id TEXT;
+    inserted_claim BOOLEAN := FALSE;
+BEGIN
+    IF p_tenant_id IS NULL OR p_tenant_id = ''
+       OR p_idempotency_key IS NULL OR p_idempotency_key = ''
+       OR p_request_fingerprint !~ '^[0-9a-f]{64}$'
+       OR p_monitoring_source_id IS NULL OR p_monitoring_source_id = ''
+       OR p_source_instance_generation IS NULL OR p_source_instance_generation = ''
+       OR p_monitoring_sync_operation_id IS NULL OR p_monitoring_sync_operation_id = '' THEN
+        RAISE EXCEPTION 'invalid bounded create-source identity or idempotency input';
+    END IF;
+
+    INSERT INTO monitoring.monitoring_source_create_idempotency(
+        tenant_id, idempotency_key, request_fingerprint,
+        monitoring_source_id, monitoring_sync_operation_id, state
+    ) VALUES (
+        p_tenant_id, p_idempotency_key, p_request_fingerprint,
+        p_monitoring_source_id, p_monitoring_sync_operation_id, 'in_progress'
+    )
+    ON CONFLICT (tenant_id, idempotency_key) DO NOTHING;
+
+    GET DIAGNOSTICS inserted_claim = ROW_COUNT;
+
+    IF NOT inserted_claim THEN
+        SELECT request_fingerprint, monitoring_source_id, monitoring_sync_operation_id
+          INTO existing_fingerprint, existing_source_id, existing_operation_id
+          FROM monitoring.monitoring_source_create_idempotency
+         WHERE tenant_id = p_tenant_id AND idempotency_key = p_idempotency_key
+         FOR UPDATE;
+
+        IF existing_fingerprint IS DISTINCT FROM p_request_fingerprint THEN
+            RAISE EXCEPTION 'idempotency.key_reused';
+        END IF;
+
+        RETURN QUERY SELECT existing_source_id, existing_operation_id, TRUE;
+        RETURN;
+    END IF;
+
+    INSERT INTO monitoring.monitoring_source(
+        tenant_id, monitoring_source_id, provider_profile,
+        active_source_instance_generation, configuration_revision, scope_revision,
+        display_name, operational_evidence_state, last_sync_operation_id
+    ) VALUES (
+        p_tenant_id, p_monitoring_source_id, 'zabbix',
+        p_source_instance_generation, 1, 1,
+        p_display_name, 'reconciliation_required', p_monitoring_sync_operation_id
+    );
+
+    INSERT INTO monitoring.monitoring_source_generation(
+        tenant_id, monitoring_source_id, source_instance_generation,
+        provider_profile, provider_base_url, credential_binding_ref,
+        configured_provider_scope, configuration_revision, scope_revision
+    ) VALUES (
+        p_tenant_id, p_monitoring_source_id, p_source_instance_generation,
+        'zabbix', p_provider_base_url, p_credential_binding_ref,
+        p_configured_provider_scope, 1, 1
+    );
+
+    INSERT INTO monitoring.monitoring_sync_operation(
+        tenant_id, monitoring_sync_operation_id, monitoring_source_id,
+        source_instance_generation, configuration_revision, scope_revision,
+        responsibility_kind, state
+    ) VALUES (
+        p_tenant_id, p_monitoring_sync_operation_id, p_monitoring_source_id,
+        p_source_instance_generation, 1, 1,
+        'validation_and_initial_sync', 'pending'
+    );
+
+    UPDATE monitoring.monitoring_source_create_idempotency
+       SET state = 'completed', completed_at = transaction_timestamp()
+     WHERE tenant_id = p_tenant_id AND idempotency_key = p_idempotency_key;
+
+    RETURN QUERY SELECT p_monitoring_source_id, p_monitoring_sync_operation_id, FALSE;
+END;
+$$;
+
+COMMENT ON FUNCTION monitoring.create_zabbix_source(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB) IS
+'Atomic create-or-observe transaction for monitoring.createSource. It commits only local source/generation/idempotency/sync responsibility; it performs no provider network call.';
 
 COMMIT;

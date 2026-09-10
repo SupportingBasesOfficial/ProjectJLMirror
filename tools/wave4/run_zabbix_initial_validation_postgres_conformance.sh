@@ -91,7 +91,7 @@ signals_exist="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U pos
 "SELECT (to_regclass('public.wave4_test_editor_signal') IS NOT NULL)::text || '|' || (to_regclass('public.wave4_test_evidence_signal') IS NOT NULL)::text;")"
 test "$signals_exist" = "true|true"
 
-docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+docker exec -i "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
 CREATE OR REPLACE FUNCTION monitoring.wave4_test_pause_validation_evidence()
 RETURNS trigger
 LANGUAGE plpgsql

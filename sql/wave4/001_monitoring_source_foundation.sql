@@ -22,6 +22,12 @@ CREATE TABLE monitoring.monitoring_source (
     configuration_revision BIGINT NOT NULL CHECK (configuration_revision > 0),
     scope_revision BIGINT NOT NULL CHECK (scope_revision > 0),
     display_name TEXT NOT NULL CHECK (display_name <> ''),
+    credential_binding_ref TEXT NOT NULL CHECK (credential_binding_ref <> ''),
+    configured_provider_scope JSONB NOT NULL CHECK (
+        jsonb_typeof(configured_provider_scope) = 'object'
+        AND configured_provider_scope ? 'host_group_refs'
+        AND jsonb_typeof(configured_provider_scope->'host_group_refs') = 'array'
+    ),
     operational_evidence_state TEXT NOT NULL CHECK (operational_evidence_state IN (
         'current', 'stale', 'incomplete', 'reconciliation_required', 'unavailable'
     )),
@@ -39,7 +45,7 @@ CREATE TABLE monitoring.monitoring_source (
 );
 
 COMMENT ON TABLE monitoring.monitoring_source IS
-'Canonical tenant-scoped logical Monitoring source authority. Provider-native IDs and physical placement are not platform identity or tenant authority.';
+'Canonical tenant-scoped logical Monitoring source authority. Mutable credential/scope configuration lives here; provider-native IDs and physical placement are not platform identity or tenant authority.';
 
 CREATE TABLE monitoring.monitoring_source_generation (
     tenant_id TEXT NOT NULL,
@@ -51,14 +57,6 @@ CREATE TABLE monitoring.monitoring_source_generation (
         AND position('?' IN provider_base_url) = 0
         AND position('#' IN provider_base_url) = 0
     ),
-    credential_binding_ref TEXT NOT NULL CHECK (credential_binding_ref <> ''),
-    configured_provider_scope JSONB NOT NULL CHECK (
-        jsonb_typeof(configured_provider_scope) = 'object'
-        AND configured_provider_scope ? 'host_group_refs'
-        AND jsonb_typeof(configured_provider_scope->'host_group_refs') = 'array'
-    ),
-    configuration_revision BIGINT NOT NULL CHECK (configuration_revision > 0),
-    scope_revision BIGINT NOT NULL CHECK (scope_revision > 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT transaction_timestamp(),
     PRIMARY KEY (tenant_id, monitoring_source_id, source_instance_generation),
     FOREIGN KEY (tenant_id, monitoring_source_id)
@@ -68,7 +66,7 @@ CREATE TABLE monitoring.monitoring_source_generation (
 );
 
 COMMENT ON TABLE monitoring.monitoring_source_generation IS
-'Immutable generation-scoped provider identity domain for a logical Monitoring source. Historical generations remain addressable after cutover.';
+'Immutable generation-scoped provider identity domain for a logical Monitoring source. Endpoint identity is generation-bound; mutable credential/scope state is not.';
 
 ALTER TABLE monitoring.monitoring_source
     ADD CONSTRAINT monitoring_source_active_generation_fk
@@ -198,6 +196,7 @@ CREATE FUNCTION monitoring.create_zabbix_source(
 RETURNS TABLE (
     monitoring_source_id TEXT,
     monitoring_sync_operation_id TEXT,
+    idempotency_state TEXT,
     replayed BOOLEAN
 )
 LANGUAGE plpgsql
@@ -208,15 +207,20 @@ DECLARE
     existing_fingerprint TEXT;
     existing_source_id TEXT;
     existing_operation_id TEXT;
+    existing_state TEXT;
     inserted_count BIGINT := 0;
 BEGIN
     IF p_tenant_id IS NULL OR p_tenant_id = ''
        OR p_idempotency_key IS NULL OR p_idempotency_key = ''
-       OR p_request_fingerprint !~ '^[0-9a-f]{64}$'
+       OR p_request_fingerprint IS NULL OR p_request_fingerprint !~ '^[0-9a-f]{64}$'
        OR p_monitoring_source_id IS NULL OR p_monitoring_source_id = ''
        OR p_source_instance_generation IS NULL OR p_source_instance_generation = ''
-       OR p_monitoring_sync_operation_id IS NULL OR p_monitoring_sync_operation_id = '' THEN
-        RAISE EXCEPTION 'invalid bounded create-source identity or idempotency input';
+       OR p_monitoring_sync_operation_id IS NULL OR p_monitoring_sync_operation_id = ''
+       OR p_display_name IS NULL OR p_display_name = ''
+       OR p_provider_base_url IS NULL OR p_provider_base_url = ''
+       OR p_credential_binding_ref IS NULL OR p_credential_binding_ref = ''
+       OR p_configured_provider_scope IS NULL THEN
+        RAISE EXCEPTION 'invalid bounded create-source input';
     END IF;
 
     INSERT INTO monitoring.monitoring_source_create_idempotency(
@@ -231,8 +235,10 @@ BEGIN
     GET DIAGNOSTICS inserted_count = ROW_COUNT;
 
     IF inserted_count = 0 THEN
-        SELECT i.request_fingerprint, i.monitoring_source_id, i.monitoring_sync_operation_id
-          INTO existing_fingerprint, existing_source_id, existing_operation_id
+        SELECT i.request_fingerprint, i.monitoring_source_id,
+               i.monitoring_sync_operation_id, i.state
+          INTO existing_fingerprint, existing_source_id,
+               existing_operation_id, existing_state
           FROM monitoring.monitoring_source_create_idempotency AS i
          WHERE i.tenant_id = p_tenant_id AND i.idempotency_key = p_idempotency_key
          FOR UPDATE;
@@ -241,28 +247,28 @@ BEGIN
             RAISE EXCEPTION 'idempotency.key_reused';
         END IF;
 
-        RETURN QUERY SELECT existing_source_id, existing_operation_id, TRUE;
+        RETURN QUERY SELECT existing_source_id, existing_operation_id, existing_state, TRUE;
         RETURN;
     END IF;
 
     INSERT INTO monitoring.monitoring_source(
         tenant_id, monitoring_source_id, provider_profile,
         active_source_instance_generation, configuration_revision, scope_revision,
-        display_name, operational_evidence_state, last_sync_operation_id
+        display_name, credential_binding_ref, configured_provider_scope,
+        operational_evidence_state, last_sync_operation_id
     ) VALUES (
         p_tenant_id, p_monitoring_source_id, 'zabbix',
         p_source_instance_generation, 1, 1,
-        p_display_name, 'reconciliation_required', p_monitoring_sync_operation_id
+        p_display_name, p_credential_binding_ref, p_configured_provider_scope,
+        'reconciliation_required', p_monitoring_sync_operation_id
     );
 
     INSERT INTO monitoring.monitoring_source_generation(
         tenant_id, monitoring_source_id, source_instance_generation,
-        provider_profile, provider_base_url, credential_binding_ref,
-        configured_provider_scope, configuration_revision, scope_revision
+        provider_profile, provider_base_url
     ) VALUES (
         p_tenant_id, p_monitoring_source_id, p_source_instance_generation,
-        'zabbix', p_provider_base_url, p_credential_binding_ref,
-        p_configured_provider_scope, 1, 1
+        'zabbix', p_provider_base_url
     );
 
     INSERT INTO monitoring.monitoring_sync_operation(
@@ -279,7 +285,7 @@ BEGIN
        SET state = 'completed', completed_at = transaction_timestamp()
      WHERE i.tenant_id = p_tenant_id AND i.idempotency_key = p_idempotency_key;
 
-    RETURN QUERY SELECT p_monitoring_source_id, p_monitoring_sync_operation_id, FALSE;
+    RETURN QUERY SELECT p_monitoring_source_id, p_monitoring_sync_operation_id, 'completed'::TEXT, FALSE;
 END;
 $$;
 

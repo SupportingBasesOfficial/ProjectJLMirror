@@ -32,7 +32,8 @@ for migration in \
   sql/wave4/006_zabbix_host_inventory_boundary_hardening.sql \
   sql/wave4/007_zabbix_host_inventory_integrity_hardening.sql \
   sql/wave4/008_zabbix_host_inventory_poll_ordering_hardening.sql \
-  sql/wave4/009_zabbix_host_inventory_evidence_authority_hardening.sql; do
+  sql/wave4/009_zabbix_host_inventory_evidence_authority_hardening.sql \
+  sql/wave4/010_zabbix_host_inventory_final_authority_hardening.sql; do
   docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < "$migration" >/dev/null
 done
 
@@ -58,7 +59,7 @@ if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DA
   echo "unbound snapshot evidence unexpectedly accepted" >&2
   exit 1
 fi
-grep -F "not bound to its claimed running operation" /tmp/wave4-binding.out >/dev/null
+grep -E "not bound to its claimed running operation|requires current claimed poll authority" /tmp/wave4-binding.out >/dev/null
 
 # Complete one legitimate positive snapshot with a fingerprint derived from normalized evidence.
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.complete_zabbix_host_inventory('tenant-a','inventory-bind','claim-bind','snapshot-positive','binding-a','provider-instance:a','current','succeeded',NULL,true,'[$host_positive]'::jsonb,'egress-positive','credential-generation-a'); COMMIT;" >/dev/null
@@ -93,4 +94,31 @@ if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DA
 fi
 grep -F "positive presence requires a poll newer than removal authority" /tmp/wave4-positive-authority.out >/dev/null
 
-printf '%s\n' "wave4_zabbix_host_inventory_evidence_authority=PASS snapshot_operation_binding=closed membership_after_completion=closed positive_transition=evidence_bound fingerprint=verified negative_transition=completed_operation_bound"
+# The source-local poll fence cannot be rewound by a direct same-tenant runtime write.
+current_poll="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT host_inventory_poll_generation FROM monitoring.monitoring_source WHERE monitoring_source_id='source-a'; COMMIT;" | tail -n1)"
+if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; UPDATE monitoring.monitoring_source SET host_inventory_poll_generation=$current_poll-1 WHERE monitoring_source_id='source-a'; COMMIT;" >/tmp/wave4-poll-rewind.out 2>&1; then
+  echo "poll generation rewind unexpectedly accepted" >&2
+  exit 1
+fi
+grep -F "poll generation cannot rewind" /tmp/wave4-poll-rewind.out >/dev/null
+
+# A superseded operation cannot insert snapshot evidence merely because it matches its own old poll generation.
+docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-a','inventory-old'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-old','claim-old'); SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-a','inventory-new'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-new','claim-new'); COMMIT;" >/dev/null
+old_poll="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT host_inventory_poll_generation FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='inventory-old'; COMMIT;" | tail -n1)"
+if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; INSERT INTO monitoring.monitoring_host_inventory_snapshot_evidence(tenant_id,host_inventory_snapshot_evidence_id,monitoring_sync_operation_id,monitoring_source_id,provider_scope_tenant_binding_id,source_instance_generation,configuration_revision,scope_revision,provider_instance_ref,snapshot_complete,host_count,operational_evidence_state,operation_state,failure_class,egress_decision_ref,credential_generation_ref,observed_at,host_inventory_poll_generation) SELECT 'tenant-a','snapshot-superseded','inventory-old','source-a','binding-a','generation-a',configuration_revision,scope_revision,'provider-instance:a',true,0,'current','succeeded',NULL,'egress-old','credential-generation-a',transaction_timestamp(),$old_poll FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='inventory-old'; COMMIT;" >/tmp/wave4-current-poll.out 2>&1; then
+  echo "superseded operation snapshot unexpectedly accepted" >&2
+  exit 1
+fi
+grep -F "requires current claimed poll authority" /tmp/wave4-current-poll.out >/dev/null
+
+# A snapshot cannot close with a host_count different from final provider evidence membership.
+docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.complete_zabbix_host_inventory('tenant-a','inventory-new','claim-new','snapshot-new','binding-a','provider-instance:a','current','succeeded',NULL,true,'[]'::jsonb,'egress-new','credential-generation-a'); COMMIT;" >/dev/null
+docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-a','inventory-count'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-count','claim-count'); COMMIT;" >/dev/null
+count_poll="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT host_inventory_poll_generation FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='inventory-count'; COMMIT;" | tail -n1)"
+if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; INSERT INTO monitoring.monitoring_host_inventory_snapshot_evidence(tenant_id,host_inventory_snapshot_evidence_id,monitoring_sync_operation_id,monitoring_source_id,provider_scope_tenant_binding_id,source_instance_generation,configuration_revision,scope_revision,provider_instance_ref,snapshot_complete,host_count,operational_evidence_state,operation_state,failure_class,egress_decision_ref,credential_generation_ref,observed_at,host_inventory_poll_generation) SELECT 'tenant-a','snapshot-count-mismatch','inventory-count','source-a','binding-a','generation-a',configuration_revision,scope_revision,'provider-instance:a',true,1,'current','succeeded',NULL,'egress-count','credential-generation-a',transaction_timestamp(),$count_poll FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='inventory-count'; UPDATE monitoring.monitoring_sync_operation SET state='succeeded',completed_at=transaction_timestamp(),host_inventory_snapshot_evidence_id='snapshot-count-mismatch' WHERE monitoring_sync_operation_id='inventory-count'; COMMIT;" >/tmp/wave4-host-count.out 2>&1; then
+  echo "snapshot host_count mismatch unexpectedly accepted" >&2
+  exit 1
+fi
+grep -F "host_count must equal final provider evidence membership" /tmp/wave4-host-count.out >/dev/null
+
+printf '%s\n' "wave4_zabbix_host_inventory_evidence_authority=PASS snapshot_operation_binding=closed membership_after_completion=closed positive_transition=evidence_bound fingerprint=verified negative_transition=completed_operation_bound poll_rewind=blocked superseded_snapshot=current-poll-bound host_count=final-membership-verified"

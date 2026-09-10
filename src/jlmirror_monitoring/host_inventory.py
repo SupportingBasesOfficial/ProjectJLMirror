@@ -24,6 +24,7 @@ from .validation_worker import (
     ProviderProtocolError,
     ProviderUnavailableError,
     ResolvedZabbixCredential,
+    ZabbixHostGroup,
 )
 
 # Hard safety ceilings, not throughput/SLO tuning. They prevent provider-controlled
@@ -43,6 +44,7 @@ class InventoryFailureClass(StrEnum):
     PROVIDER_PROTOCOL_INVALID = "provider.protocol_invalid"
     SNAPSHOT_TRUNCATED = "provider.snapshot_truncated"
     SCOPE_EVIDENCE_INVALID = "provider.scope_evidence_invalid"
+    SCOPE_ANCHOR_INACCESSIBLE = "provider.scope_anchor_inaccessible"
 
 
 @dataclass(frozen=True)
@@ -263,6 +265,14 @@ class MonitoringHostInventoryRepository(Protocol):
 
 
 class ZabbixHostReader(Protocol):
+    def hostgroup_get(
+        self,
+        endpoint: AdmittedProviderEndpoint,
+        credential: ResolvedZabbixCredential,
+        host_group_refs: Sequence[str],
+    ) -> Sequence[ZabbixHostGroup]:
+        ...
+
     def host_get(
         self,
         endpoint: AdmittedProviderEndpoint,
@@ -312,11 +322,61 @@ def collect_host_inventory(
             evidence_state=OperationalEvidenceState.UNAVAILABLE,
             credential_generation_ref=credential.credential_generation_ref,
         )
+
+    configured_refs = claim.configured_provider_scope.host_group_refs
+    try:
+        visible_groups = tuple(host_reader.hostgroup_get(endpoint, credential, configured_refs))
+    except ProviderAuthenticationError:
+        return _degraded(
+            InventoryFailureClass.PROVIDER_AUTHENTICATION_REJECTED,
+            evidence_state=OperationalEvidenceState.UNAVAILABLE,
+            egress_decision_ref=endpoint.egress_decision_ref,
+            credential_generation_ref=credential.credential_generation_ref,
+        )
+    except ProviderUnavailableError:
+        return _degraded(
+            InventoryFailureClass.PROVIDER_UNAVAILABLE,
+            evidence_state=OperationalEvidenceState.UNAVAILABLE,
+            egress_decision_ref=endpoint.egress_decision_ref,
+            credential_generation_ref=credential.credential_generation_ref,
+        )
+    except (ProviderProtocolError, ValueError, TypeError):
+        return _degraded(
+            InventoryFailureClass.PROVIDER_PROTOCOL_INVALID,
+            evidence_state=OperationalEvidenceState.UNAVAILABLE,
+            egress_decision_ref=endpoint.egress_decision_ref,
+            credential_generation_ref=credential.credential_generation_ref,
+        )
+
+    if any(not isinstance(group, ZabbixHostGroup) for group in visible_groups):
+        return _degraded(
+            InventoryFailureClass.PROVIDER_PROTOCOL_INVALID,
+            evidence_state=OperationalEvidenceState.UNAVAILABLE,
+            egress_decision_ref=endpoint.egress_decision_ref,
+            credential_generation_ref=credential.credential_generation_ref,
+        )
+    returned_refs = tuple(group.groupid for group in visible_groups)
+    configured_set = set(configured_refs)
+    if len(returned_refs) != len(set(returned_refs)) or any(ref not in configured_set for ref in returned_refs):
+        return _degraded(
+            InventoryFailureClass.PROVIDER_PROTOCOL_INVALID,
+            evidence_state=OperationalEvidenceState.UNAVAILABLE,
+            egress_decision_ref=endpoint.egress_decision_ref,
+            credential_generation_ref=credential.credential_generation_ref,
+        )
+    if any(ref not in set(returned_refs) for ref in configured_refs):
+        return _degraded(
+            InventoryFailureClass.SCOPE_ANCHOR_INACCESSIBLE,
+            evidence_state=OperationalEvidenceState.INCOMPLETE,
+            egress_decision_ref=endpoint.egress_decision_ref,
+            credential_generation_ref=credential.credential_generation_ref,
+        )
+
     try:
         snapshot = host_reader.host_get(
             endpoint,
             credential,
-            claim.configured_provider_scope.host_group_refs,
+            configured_refs,
             max_hosts=MAX_HOSTS_PER_SNAPSHOT,
         )
     except ProviderAuthenticationError:
@@ -349,7 +409,7 @@ def collect_host_inventory(
             credential_generation_ref=credential.credential_generation_ref,
         )
 
-    configured = set(claim.configured_provider_scope.host_group_refs)
+    configured = set(configured_refs)
     for host in snapshot.hosts:
         if not {group.ref for group in host.groups}.intersection(configured):
             return _degraded(

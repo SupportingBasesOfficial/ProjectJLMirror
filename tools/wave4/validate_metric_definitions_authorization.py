@@ -26,7 +26,7 @@ def main() -> None:
     require(manifest["implementation_authority_before_merge"] == "blocked", "implementation must remain blocked before merge")
     require(manifest["merge_authorization"] == "not_granted", "merge cannot be pre-authorized")
 
-    required_auth_markers = (
+    for marker in (
         "METRIC DEFINITION IDENTITY != PROVIDER ITEM ID",
         "METRIC DEFINITION != PROVIDER BINDING",
         "ITEM.GET LASTVALUE != AUTHORIZED CURRENT-STATE INGESTION IN THIS SLICE",
@@ -34,16 +34,14 @@ def main() -> None:
         "SCOPE EXCLUSION != METRIC RETIREMENT",
         "GENERATION RETIREMENT != METRIC RETIREMENT",
         "UNCERTAINTY != NEGATIVE EVIDENCE",
+        "ITEM-DEFINITION POLL GENERATION != HOST-INVENTORY POLL GENERATION",
+        "SHARED RECOVERY EPOCH/ADMISSION FRAMEWORK != SHARED ENDPOINT POLL SEQUENCE",
         "provider_object_kind = zabbix_item",
         "Boolean is not inferred from integer `0/1`",
-        "metric_current_state",
-        "history.get",
-        "frontend route or navigation creation",
-    )
-    for marker in required_auth_markers:
+    ):
         require(marker in auth, f"missing authorization invariant: {marker}")
 
-    forbidden_authorized = {
+    forbidden = {
         "metric_current_state_persistence",
         "item_get_lastvalue_as_current_state",
         "metric_history_ingestion",
@@ -52,18 +50,27 @@ def main() -> None:
         "trigger_problem_event_ingestion",
         "health_projection",
         "provider_write_back",
+        "shared_host_inventory_poll_generation_for_item_definitions",
         "frontend_route_or_navigation_creation",
         "production_deployment",
     }
-    not_authorized = set(manifest["explicitly_not_authorized"])
-    require(forbidden_authorized <= not_authorized, "explicit exclusion set is incomplete")
+    require(forbidden <= set(manifest["explicitly_not_authorized"]), "explicit exclusion set is incomplete")
 
     authorized = set(manifest["authorized_behavior"])
-    require("separate_zabbix_item_binding_and_provenance" in authorized, "binding separation missing")
-    require("canonical_resource_ownership_required" in authorized, "resource ownership requirement missing")
-    require("retirement_only_from_complete_authoritative_negative_item_snapshot" in authorized, "negative evidence rule missing")
+    invariants = set(manifest["required_invariants"])
+    for capability in (
+        "separate_zabbix_item_binding_and_provenance",
+        "canonical_resource_ownership_required",
+        "retirement_only_from_complete_authoritative_negative_item_snapshot",
+        "reuse_existing_recovery_epoch_and_admission_framework",
+        "distinct_item_definition_poll_generation_stream",
+    ):
+        require(capability in authorized, f"missing authorized capability: {capability}")
 
-    print("wave4_metric_definitions_authorization=PASS state=proposed slice=item_get_to_metric_definitions_and_bindings implementation=blocked")
+    require("item_definition_poll_generation_distinct_from_host_inventory_poll_generation" in invariants, "item poll stream isolation missing")
+    require("shared_recovery_epoch_admission_does_not_imply_shared_endpoint_poll_sequence" in invariants, "recovery/poll authority separation missing")
+
+    print("wave4_metric_definitions_authorization=PASS state=proposed slice=item_get_to_metric_definitions_and_bindings poll_stream=item-definition-independent implementation=blocked")
 
 
 if __name__ == "__main__":

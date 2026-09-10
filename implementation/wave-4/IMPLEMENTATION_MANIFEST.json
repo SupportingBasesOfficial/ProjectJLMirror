@@ -14,7 +14,11 @@
     "tenant_scoped_create_source_idempotency_schema",
     "atomic_create_or_observe_monitoring_source_transaction",
     "atomic_append_only_privileged_source_creation_audit_evidence",
-    "executable_postgresql_source_creation_conformance"
+    "fail_closed_postgresql_rls_for_all_wave4_tenant_tables",
+    "atomic_configured_scope_revision_guard",
+    "sql_boundary_canonical_zabbix_endpoint_validation",
+    "executable_postgresql_source_creation_conformance",
+    "executable_non_superuser_runtime_hardening_conformance"
   ],
   "authorized_slices_consumed": [
     "impl.customer-telemetry@1",
@@ -28,13 +32,16 @@
     "src/jlmirror_monitoring/source.py",
     "src/jlmirror_monitoring/__init__.py",
     "sql/wave4/001_monitoring_source_foundation.sql",
-    "sql/wave4/002_monitoring_source_audit_evidence.sql"
+    "sql/wave4/002_monitoring_source_audit_evidence.sql",
+    "sql/wave4/003_monitoring_source_tenant_and_canonical_hardening.sql"
   ],
   "assurance_surfaces": [
     "tests/wave4/test_monitoring_source.py",
     "tests/wave4/test_monitoring_source_sql.py",
+    "tests/wave4/test_monitoring_source_hardening.py",
     "tools/wave4/validate_monitoring_source_foundation.py",
     "tools/wave4/run_monitoring_source_postgres_conformance.sh",
+    "tools/wave4/run_monitoring_source_hardening_postgres_conformance.sh",
     ".github/workflows/wave4-monitoring-source-foundation.yml"
   ],
   "explicitly_not_implemented": [

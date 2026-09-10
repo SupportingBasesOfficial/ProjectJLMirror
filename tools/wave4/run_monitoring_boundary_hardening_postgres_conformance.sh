@@ -111,8 +111,8 @@ scope_revision="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U po
 test "$scope_revision" = "2"
 
 canonical_matrix="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
-  "SELECT monitoring.wave4_is_canonical_zabbix_base_url('https://zabbix.example.test/zabbix') || '|' || monitoring.wave4_is_canonical_zabbix_base_url('https://[2001:db8::1]:8443/zabbix') || '|' || monitoring.wave4_is_canonical_zabbix_base_url('https://zabbix.example.test/a/../admin') || '|' || monitoring.wave4_is_canonical_zabbix_base_url('https://ZABBIX.example.test') || '|' || monitoring.wave4_is_canonical_zabbix_base_url('https://zabbix.example.test:0443');")"
-test "$canonical_matrix" = "t|t|f|f|f"
+  "SELECT (CASE WHEN monitoring.wave4_is_canonical_zabbix_base_url('https://zabbix.example.test/zabbix') THEN '1' ELSE '0' END) || '|' || (CASE WHEN monitoring.wave4_is_canonical_zabbix_base_url('https://[2001:db8::1]:8443/zabbix') THEN '1' ELSE '0' END) || '|' || (CASE WHEN monitoring.wave4_is_canonical_zabbix_base_url('https://zabbix.example.test/a/../admin') THEN '1' ELSE '0' END) || '|' || (CASE WHEN monitoring.wave4_is_canonical_zabbix_base_url('https://ZABBIX.example.test') THEN '1' ELSE '0' END) || '|' || (CASE WHEN monitoring.wave4_is_canonical_zabbix_base_url('https://zabbix.example.test:0443') THEN '1' ELSE '0' END);")"
+test "$canonical_matrix" = "1|1|0|0|0"
 
 if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
   "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id = 'tenant-c'; SELECT * FROM monitoring.create_zabbix_source('tenant-c','bad-url','$fp_a','source-c','generation-c','binding-c','sync-c','audit-c','principal-c','human_browser_session','credential-generation-c','authz-c','correlation-c','Bad URL','$provider','https://zabbix.example.test/a/../admin','provider-access-binding:c','$scope_a'::jsonb); COMMIT;" >/tmp/wave4-boundary-url.out 2>&1; then

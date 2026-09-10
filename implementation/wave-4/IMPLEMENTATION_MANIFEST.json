@@ -1,13 +1,15 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "wave": 4,
-  "implementation_id": "wave4.zabbix-initial-validation-worker@1",
+  "implementation_id": "wave4.zabbix-host-inventory@1",
   "canonical_authorization_commit": "8e2265a4ee2810ea701166228e8f44ad3bc0d894",
   "authorization_id": "wave4.monitoring-zabbix.vertical@1",
+  "host_inventory_authorization_commit": "2986f43ff262ecd5781661dbdee46c896f5019bc",
+  "host_inventory_authorization_id": "wave4.monitoring-host-inventory@1",
   "canonical_predecessor_commit": "d642a7f456e042dd02de2c04533c39c748f88aa9",
   "successor_architecture_decision": "ADR-022",
   "state": "implementation_in_progress",
-  "product_feature_activation": "monitoring_source_validation_hostgroup_only",
+  "product_feature_activation": "monitoring_source_validation_and_bounded_host_inventory",
   "implemented_capability": [
     "single_winner_initial_validation_claim",
     "credential_resolution_boundary_without_secret_persistence",
@@ -15,29 +17,47 @@
     "zabbix_hostgroup_scope_validation_orchestration",
     "missing_scope_anchor_degrades_without_negative_resource_inference",
     "durable_immutable_validation_evidence",
-    "stale_generation_configuration_scope_completion_fence"
+    "stale_generation_configuration_scope_completion_fence",
+    "host_inventory_ingestion",
+    "generation_scoped_canonical_monitoring_resource_identity",
+    "canonical_resource_kind_host",
+    "provider_object_kind_zabbix_host_separate_from_device_taxonomy",
+    "allowlisted_bounded_zabbix_provider_evidence",
+    "provider_evidence_provenance_and_immutable_snapshot_lineage",
+    "configured_scope_membership_required_for_current_inventory",
+    "incomplete_snapshot_preserves_presence",
+    "complete_authoritative_snapshot_negative_removal",
+    "host_inventory_stale_generation_configuration_scope_completion_fence",
+    "forced_rls_for_host_inventory_tenant_tables"
   ],
   "authorized_slices_consumed": [
     "impl.customer-telemetry@1",
-    "impl.provider-integration@1:accepted_monitoring_zabbix_subprofile_only"
+    "impl.provider-integration@1:accepted_monitoring_zabbix_subprofile_only",
+    "wave4.monitoring-host-inventory@1"
   ],
   "runtime_profiles": ["runtime.worker@1"],
   "code_surfaces": [
     "src/jlmirror_monitoring/validation_worker.py",
-    "sql/wave4/003_zabbix_initial_validation_worker.sql"
+    "src/jlmirror_monitoring/host_inventory.py",
+    "sql/wave4/003_zabbix_initial_validation_worker.sql",
+    "sql/wave4/005_zabbix_host_inventory.sql",
+    "sql/wave4/006_zabbix_host_inventory_boundary_hardening.sql"
   ],
   "assurance_surfaces": [
     "tests/wave4/test_zabbix_initial_validation_worker.py",
+    "tests/wave4/test_zabbix_host_inventory.py",
     "tools/wave4/validate_zabbix_initial_validation_worker.py",
+    "tools/wave4/validate_zabbix_host_inventory.py",
     "tools/wave4/run_zabbix_initial_validation_postgres_conformance.sh",
+    "tools/wave4/run_zabbix_host_inventory_postgres_conformance.sh",
     ".github/workflows/wave4-monitoring-source-foundation.yml"
   ],
   "explicitly_not_implemented": [
-    "resource_ingestion",
     "metric_ingestion",
     "problem_ingestion",
-    "host_inventory_ingestion",
     "history_ingestion",
+    "canonical_device_classification",
+    "cross_generation_physical_asset_linkage",
     "concrete_secret_manager",
     "concrete_egress_transport",
     "provider_instance_registry_runtime",
@@ -51,6 +71,6 @@
     "production_deployment",
     "c3_production_numerics"
   ],
-  "next_bounded_step": "host_inventory_ingestion_only_after_separate_product_behavior_validation_and_authorization",
+  "next_bounded_step": "no_additional_monitoring_product_slice_until_host_inventory_exact_head_review_and_separate_merge_acceptance",
   "frontend_rule": "backend_entities_tables_endpoints_and_use_cases_do_not_imply_frontend_routes"
 }

@@ -31,7 +31,8 @@ for migration in \
   sql/wave4/003_zabbix_initial_validation_worker.sql \
   sql/wave4/004_monitoring_boundary_hardening.sql \
   sql/wave4/005_zabbix_host_inventory.sql \
-  sql/wave4/006_zabbix_host_inventory_boundary_hardening.sql; do
+  sql/wave4/006_zabbix_host_inventory_boundary_hardening.sql \
+  sql/wave4/007_zabbix_host_inventory_integrity_hardening.sql; do
   docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < "$migration" >/dev/null
 done
 
@@ -67,6 +68,12 @@ docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATAB
 first_state="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT count(*) || '|' || count(*) FILTER (WHERE resource_kind='host' AND provider_object_kind='zabbix_host' AND presence_state='present') || '|' || count(DISTINCT latest_provider_evidence_id) FROM monitoring.monitoring_resource; COMMIT;" | tail -n1)"
 test "$first_state" = "2|2|2"
 
+# Identity is immutable even for a same-tenant runtime writer.
+if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; UPDATE monitoring.monitoring_resource SET provider_external_ref='999' WHERE monitoring_resource_id='resource-101'; COMMIT;" >/tmp/wave4-host-identity.out 2>&1; then
+  echo "resource identity mutation unexpectedly succeeded" >&2; exit 1
+fi
+grep -F 'Monitoring resource canonical/provider identity is immutable' /tmp/wave4-host-identity.out >/dev/null
+
 # A truncated/incomplete snapshot may confirm returned positives but has no negative-removal authority.
 host1b="${host1/provider-evidence-101-a/provider-evidence-101-b}"
 incomplete_payload="[$host1b]"
@@ -82,6 +89,12 @@ docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATAB
 
 negative_authority="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT provider_external_ref || ':' || presence_state FROM monitoring.monitoring_resource ORDER BY provider_external_ref; COMMIT;" | grep -E '^(101|102):' | paste -sd '|' -)"
 test "$negative_authority" = "101:present|102:removed"
+
+# A direct removal without matching complete negative snapshot evidence is rejected.
+if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; UPDATE monitoring.monitoring_resource SET presence_state='removed',removed_at=transaction_timestamp() WHERE monitoring_resource_id='resource-101'; COMMIT;" >/tmp/wave4-host-direct-removal.out 2>&1; then
+  echo "direct resource removal unexpectedly succeeded" >&2; exit 1
+fi
+grep -F 'Monitoring resource removal requires complete authoritative negative snapshot evidence' /tmp/wave4-host-direct-removal.out >/dev/null
 
 # Provider evidence cannot escape the allowlist or configured scope even through direct SQL.
 if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; INSERT INTO monitoring.monitoring_resource_provider_evidence(tenant_id,provider_evidence_id,host_inventory_snapshot_evidence_id,monitoring_resource_id,monitoring_source_id,source_instance_generation,provider_object_kind,provider_external_ref,evidence_fingerprint,normalized_evidence,observed_at) VALUES ('tenant-a','bad-evidence','snapshot-c','resource-101','source-a','generation-a','zabbix_host','101','3333333333333333333333333333333333333333333333333333333333333333','{\"technical_name\":\"x\",\"display_name\":\"x\",\"inventory\":{},\"interfaces\":[],\"groups\":[{\"ref\":\"999\"}],\"templates\":[],\"tags\":[],\"canonical_device_class\":\"switch\"}'::jsonb,transaction_timestamp()); COMMIT;" >/tmp/wave4-host-bad-evidence.out 2>&1; then
@@ -99,4 +112,4 @@ docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATAB
 stale_state="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT state || '|' || coalesce(last_error_class,'') || '|' || (SELECT count(*) FROM monitoring.monitoring_host_inventory_snapshot_evidence WHERE host_inventory_snapshot_evidence_id='snapshot-stale') FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='inventory-stale'; COMMIT;" | tail -n1)"
 test "$stale_state" = "reconciliation_required|execution.stale_authority|0"
 
-printf '%s\n' "wave4_zabbix_host_inventory_postgres=PASS resources=canonical provider_evidence=bounded tenant_rls=fail_closed truncated_snapshot=no_negative_authority complete_snapshot=removal_authority stale_scope=fenced recovery=available"
+printf '%s\n' "wave4_zabbix_host_inventory_postgres=PASS resources=canonical identity=immutable evidence=bounded+owner-bound tenant_rls=fail_closed truncated_snapshot=no_negative_authority complete_snapshot=removal_authority direct_removal=blocked stale_scope=fenced recovery=available"

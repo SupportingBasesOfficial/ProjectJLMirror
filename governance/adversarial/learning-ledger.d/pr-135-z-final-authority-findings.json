@@ -65,6 +65,19 @@
       "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 22
+    },
+    {
+      "id": "LEARN-PR135-022",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3982032886,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "Completion fenced stale poll generations before evidence insertion but did not fence the outer recovery/placement poll epoch. After recovery advanced the source epoch while preserving local poll generation, an old running operation could reach the snapshot epoch trigger, raise, roll back the completion transaction, and remain permanently running under obsolete authority.",
+      "horizontal_audit": ["completion ordering of outer epoch versus inner generation fences", "recovery successor-epoch transitions with in-flight work", "terminal retirement of stale operations", "snapshot publication before authority revalidation", "future metric/problem ingestion recovery epochs"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 23
     }
   ]
 }

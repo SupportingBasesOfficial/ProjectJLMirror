@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "decision_id": "organization-provider-commercial-model@1",
+  "status": "candidate_for_separate_acceptance",
+  "canonical_base": "8e2265a4ee2810ea701166228e8f44ad3bc0d894",
+  "contract": "docs/03-domains/organization-operating-model-contract.md",
+  "monitoring_compatibility_overlay": "governance/product-model/organization-provider-commercial/MONITORING_COMPATIBILITY.md",
+  "historical_wave4_authority_rewritten": false,
+  "runtime_implementation_authority": "not_granted_by_this_gate",
+  "frontend_authority": "not_granted_by_this_gate",
+  "production_authority": "none",
+  "pricing_numerics_authority": "not_selected",
+  "decisions": {
+    "organization_model": "stable_entity_with_contextual_relationships_not_rigid_type",
+    "tenant_model": "one_monitored_customer_organization_boundary_per_tenant",
+    "msp_customer_isolation": "distinct_customer_tenants_with_delegated_authority",
+    "provider_instance_model": "one_physical_provider_instance_may_serve_many_tenants",
+    "provider_operator_model": "exactly_one_accountable_primary_operator_organization_at_a_time",
+    "provider_visibility_vs_platform_authority": "independent_layers",
+    "provider_scope_mapping": "explicit_revisioned_provider_scope_to_target_tenant_binding",
+    "ownership_ambiguity": "fail_closed_reconciliation_required",
+    "commercial_dimensions": [
+      "beneficiary",
+      "payer_or_billing_responsible",
+      "operator"
+    ],
+    "contract_entitlement_permission_usage": "independent_concepts",
+    "service_provider_transfer": "preserve_target_organization_tenant_identity_and_history",
+    "platform_cross_tenant_access": "explicit_privileged_attributable_audited_authority",
+    "display_access": "independently_attributable_non_human_principal",
+    "organization_360": "required_platform_owner_traceability_view",
+    "accepted_monitoring_source_compatibility": "tenant_source_may_reference_shared_provider_instance_without_transferring_provider_ownership_or_weakening_tenant_identity_scope"
+  },
+  "required_traceability_dimensions": [
+    "ownership",
+    "tenant",
+    "organization",
+    "operator",
+    "administrator",
+    "payer_or_billing_attribution",
+    "entitlement_source",
+    "provider_or_source_lineage",
+    "effective_authority",
+    "current_state",
+    "audit_or_change_lineage"
+  ],
+  "wave4_pre_ingestion_requirements": [
+    "provider_instance_identity_distinct_from_tenant_destination",
+    "provider_operator_organization",
+    "provider_access_binding_identity",
+    "provider_native_scope",
+    "explicit_provider_scope_to_tenant_binding",
+    "delegated_operator_authority_when_operator_differs_from_target_tenant",
+    "fail_closed_ownership_ambiguity",
+    "lineage_sufficient_for_organization_360_and_future_billing_attribution"
+  ],
+  "explicitly_deferred": [
+    "exact_commercial_prices",
+    "production_quotas_and_capacity_numerics",
+    "exact_billing_meter_catalogue",
+    "tax_and_invoice_jurisdiction_rules",
+    "frontend_navigation_and_information_architecture",
+    "display_device_session_protocol",
+    "secret_manager_vendor",
+    "provider_administrator_ui",
+    "provider_write_back",
+    "production_deployment"
+  ]
+}

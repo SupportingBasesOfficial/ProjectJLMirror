@@ -1,14 +1,17 @@
 # Organization / Provider / Commercial Product Model — State
 
 **Decision:** `organization-provider-commercial-model@1`  
-**State:** `CANDIDATE_FOR_SEPARATE_ACCEPTANCE`  
-**Canonical base:** `main@8e2265a4ee2810ea701166228e8f44ad3bc0d894`
+**State:** `SEPARATELY_ACCEPTED`  
+**Canonical base:** `main@8e2265a4ee2810ea701166228e8f44ad3bc0d894`  
+**Reviewed source HEAD:** `ba2817a7586ed43b18eb72a139f1eba8ffeadfa0`  
+**Accepted squash:** `8c9eb94ebe76a56db85dd1ecbd3e0f8569edfb62`  
+**Decision record:** `adr/ADR-021-organization-provider-commercial-operating-model.md`
 
 ## Purpose
 
-Record the candidate canonical product model that separates organization identity, tenant isolation, delegated service-provider authority, provider operation, monitored-organization ownership and commercial/billing attribution before Wave 4 Monitoring provider ingestion proceeds.
+Record the separately accepted canonical product model that separates organization identity, tenant isolation, delegated service-provider authority, provider operation, monitored-organization ownership and commercial/billing attribution before Wave 4 Monitoring provider ingestion proceeds.
 
-## Candidate decisions
+## Accepted decisions
 
 - Organization is a stable entity with contextual responsibilities/relationships, not a rigid mutually-exclusive type.
 - A monitored customer organization keeps its own tenant isolation boundary even when an MSP/service provider administers it or pays for its use.
@@ -41,7 +44,7 @@ Before that successor implementation is authorized, its design must account for:
 
 ## Authority boundaries
 
-This candidate state does **not**:
+This accepted state does **not**:
 
 - merge or modify PR #124;
 - authorize the Zabbix validation worker;
@@ -52,4 +55,4 @@ This candidate state does **not**:
 - grant production authority;
 - rewrite historical D2/D3/D4/Wave 4 authorization source-time truth.
 
-Separate review and acceptance are required before this state becomes canonical.
+Any implementation that consumes this model still requires the applicable separate implementation authority and exact-head review gates.

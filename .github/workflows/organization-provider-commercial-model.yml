@@ -3,9 +3,13 @@ name: Organization Provider Commercial Model
 on:
   pull_request:
     paths:
+      - 'adr/ADR-021-organization-provider-commercial-operating-model.md'
       - 'docs/03-domains/organization-operating-model-contract.md'
+      - 'docs/06-architecture/decision-index.md'
       - 'governance/product-model/organization-provider-commercial/**'
+      - 'governance/adversarial/learning-ledger.d/pr-125-late-review-findings.json'
       - 'tools/assurance/validate_organization_provider_commercial_model.py'
+      - 'tools/assurance/test_organization_provider_commercial_path_gate.py'
       - '.github/workflows/organization-provider-commercial-model.yml'
   workflow_dispatch:
 
@@ -37,19 +41,29 @@ jobs:
       - name: Validate product model invariants
         run: python3 tools/assurance/validate_organization_provider_commercial_model.py
 
+      - name: Falsify rename path-gate bypass
+        run: python3 tools/assurance/test_organization_provider_commercial_path_gate.py
+
       - name: Reject hidden implementation in product-model gate
         if: ${{ github.event_name == 'pull_request' }}
         shell: bash
         run: |
           set -euo pipefail
           base="${{ github.event.pull_request.base.sha }}"
-          git diff --name-only "$base"...HEAD > /tmp/changed.txt
+          # Rename detection is deliberately disabled. A rename then appears as
+          # deletion of the old path plus addition of the new path, so both
+          # endpoints are independently checked against the allowlist.
+          git diff --no-renames --name-only "$base"...HEAD > /tmp/changed.txt
           cat /tmp/changed.txt
           while IFS= read -r path; do
             case "$path" in
+              adr/ADR-021-organization-provider-commercial-operating-model.md|\
               docs/03-domains/organization-operating-model-contract.md|\
+              docs/06-architecture/decision-index.md|\
               governance/product-model/organization-provider-commercial/*|\
+              governance/adversarial/learning-ledger.d/pr-125-late-review-findings.json|\
               tools/assurance/validate_organization_provider_commercial_model.py|\
+              tools/assurance/test_organization_provider_commercial_path_gate.py|\
               .github/workflows/organization-provider-commercial-model.yml)
                 ;;
               *)

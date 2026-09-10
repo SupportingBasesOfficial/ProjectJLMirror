@@ -208,7 +208,7 @@ DECLARE
     existing_fingerprint TEXT;
     existing_source_id TEXT;
     existing_operation_id TEXT;
-    inserted_claim BOOLEAN := FALSE;
+    inserted_count BIGINT := 0;
 BEGIN
     IF p_tenant_id IS NULL OR p_tenant_id = ''
        OR p_idempotency_key IS NULL OR p_idempotency_key = ''
@@ -228,13 +228,13 @@ BEGIN
     )
     ON CONFLICT (tenant_id, idempotency_key) DO NOTHING;
 
-    GET DIAGNOSTICS inserted_claim = ROW_COUNT;
+    GET DIAGNOSTICS inserted_count = ROW_COUNT;
 
-    IF NOT inserted_claim THEN
-        SELECT request_fingerprint, monitoring_source_id, monitoring_sync_operation_id
+    IF inserted_count = 0 THEN
+        SELECT i.request_fingerprint, i.monitoring_source_id, i.monitoring_sync_operation_id
           INTO existing_fingerprint, existing_source_id, existing_operation_id
-          FROM monitoring.monitoring_source_create_idempotency
-         WHERE tenant_id = p_tenant_id AND idempotency_key = p_idempotency_key
+          FROM monitoring.monitoring_source_create_idempotency AS i
+         WHERE i.tenant_id = p_tenant_id AND i.idempotency_key = p_idempotency_key
          FOR UPDATE;
 
         IF existing_fingerprint IS DISTINCT FROM p_request_fingerprint THEN
@@ -275,9 +275,9 @@ BEGIN
         'validation_and_initial_sync', 'pending'
     );
 
-    UPDATE monitoring.monitoring_source_create_idempotency
+    UPDATE monitoring.monitoring_source_create_idempotency AS i
        SET state = 'completed', completed_at = transaction_timestamp()
-     WHERE tenant_id = p_tenant_id AND idempotency_key = p_idempotency_key;
+     WHERE i.tenant_id = p_tenant_id AND i.idempotency_key = p_idempotency_key;
 
     RETURN QUERY SELECT p_monitoring_source_id, p_monitoring_sync_operation_id, FALSE;
 END;

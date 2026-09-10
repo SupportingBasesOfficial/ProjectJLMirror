@@ -11,7 +11,8 @@
     "zabbix_static_configuration_validation",
     "logical_source_and_generation_identity_separation",
     "durable_initial_validation_and_sync_responsibility_schema",
-    "tenant_scoped_create_source_idempotency_schema"
+    "tenant_scoped_create_source_idempotency_schema",
+    "atomic_create_or_observe_monitoring_source_transaction"
   ],
   "authorized_slices_consumed": [
     "impl.customer-telemetry@1",

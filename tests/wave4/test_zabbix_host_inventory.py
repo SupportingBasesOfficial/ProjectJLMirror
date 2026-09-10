@@ -169,6 +169,35 @@ class HostInventoryTests(unittest.TestCase):
                 tags=(),
             )
 
+    def test_snapshot_completeness_requires_real_boolean(self):
+        with self.assertRaises(ValueError):
+            ZabbixHostSnapshot((host(),), "true")  # type: ignore[arg-type]
+
+    def test_interface_boolean_fields_reject_integer_or_text_coercion(self):
+        with self.assertRaises(ValueError):
+            ZabbixHostInterfaceEvidence("1", "snmp", 1, True, "10.0.0.2", None, "161")  # type: ignore[arg-type]
+        with self.assertRaises(ValueError):
+            ZabbixHostInterfaceEvidence("1", "snmp", True, "true", "10.0.0.2", None, "161")  # type: ignore[arg-type]
+
+    def test_non_snapshot_adapter_return_is_protocol_invalid_not_authoritative_empty(self):
+        result, _ = self.run_worker({"hosts": [], "complete": True})
+        self.assertFalse(result.snapshot_complete)
+        self.assertEqual(result.failure_class, InventoryFailureClass.PROVIDER_PROTOCOL_INVALID)
+        self.assertEqual(result.hosts, ())
+
+    def test_non_normalized_collection_members_are_rejected(self):
+        with self.assertRaises(ValueError):
+            ZabbixHostEvidence(
+                hostid="101",
+                technical_name="h",
+                display_name="h",
+                inventory=ZabbixInventoryEvidence(),
+                interfaces=(),
+                groups=("10",),  # type: ignore[arg-type]
+                templates=(),
+                tags=(),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

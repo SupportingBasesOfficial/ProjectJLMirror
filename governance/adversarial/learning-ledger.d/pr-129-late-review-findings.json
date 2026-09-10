@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR129-001",
+      "pr": 129,
+      "source": "external_review",
+      "review_comment_id": 3975203105,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "The initial-validation completion path checked source generation/configuration/scope/binding/provider authority in one READ COMMITTED statement and only acquired the source row lock later during the final source UPDATE. A concurrent configuration or scope edit could therefore commit between the authority check and the dependent write, allowing stale validation evidence to be persisted and applied to newly configured source state.",
+      "horizontal_audit": [
+        "worker completion paths that validate revision or generation before a later mutation",
+        "compare-and-swap and fencing logic implemented as separate check and update statements",
+        "provider synchronization completion and reconciliation paths",
+        "tenant and authority transitions whose validity must remain stable through persistence",
+        "future host inventory, metric, problem and current-state ingestion commits"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/wave4/run_zabbix_initial_validation_postgres_conformance.sh",
+          "probe": "race=source_row_lock_blocks_concurrent_edit"
+        },
+        {
+          "path": "tools/wave4/validate_zabbix_initial_validation_worker.py",
+          "probe": "FOR UPDATE OF s"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 1
+    }
+  ]
+}

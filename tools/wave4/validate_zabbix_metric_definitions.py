@@ -8,7 +8,9 @@ DOMAIN = ROOT / "src/jlmirror_monitoring/metric_definitions.py"
 M020 = ROOT / "sql/wave4/020_zabbix_metric_definitions.sql"
 M021 = ROOT / "sql/wave4/021_zabbix_metric_definitions_authority_hardening.sql"
 M022 = ROOT / "sql/wave4/022_zabbix_metric_definitions_atomic_preflight.sql"
+M023 = ROOT / "sql/wave4/023_zabbix_metric_definitions_qualified_claim.sql"
 TEST = ROOT / "tests/wave4/test_zabbix_metric_definitions.py"
+CONFORMANCE = ROOT / "tools/wave4/run_zabbix_metric_definitions_postgres_conformance.sh"
 
 
 def require(condition: bool, message: str) -> None:
@@ -17,13 +19,15 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> None:
-    for path in (DOMAIN, M020, M021, M022, TEST):
+    for path in (DOMAIN, M020, M021, M022, M023, TEST, CONFORMANCE):
         require(path.is_file(), f"missing required surface: {path.relative_to(ROOT)}")
 
     domain = DOMAIN.read_text(encoding="utf-8")
     m020 = M020.read_text(encoding="utf-8")
     m021 = M021.read_text(encoding="utf-8")
     m022 = M022.read_text(encoding="utf-8")
+    m023 = M023.read_text(encoding="utf-8")
+    conformance = CONFORMANCE.read_text(encoding="utf-8")
 
     for marker in (
         'class MetricValueKind',
@@ -74,12 +78,23 @@ def main() -> None:
     ):
         require(marker in m022, f"migration 022 atomicity invariant missing: {marker}")
 
+    for marker in (
+        'RETURNS TABLE (',
+        'UPDATE monitoring.monitoring_source AS s',
+        'UPDATE monitoring.monitoring_sync_operation AS o',
+        'attempt_count=o.attempt_count+1',
+        'sql/wave4/023_zabbix_metric_definitions_qualified_claim.sql',
+    ):
+        source = m023 if marker != 'sql/wave4/023_zabbix_metric_definitions_qualified_claim.sql' else conformance
+        require(marker in source, f"migration 023/composed-schema invariant missing: {marker}")
+
     forbidden_sql = ('metric_current_state', 'metric_observation', 'history.get', 'problem_state', 'health_projection')
-    combined = '\n'.join((m020, m021, m022))
+    combined = '\n'.join((m020, m021, m022, m023))
     for marker in forbidden_sql:
         require(marker not in combined, f"unauthorized surface leaked into SQL: {marker}")
 
-    print('wave4_zabbix_metric_definitions=PASS schema=020-022 scope=item-get-metadata-only authority=item-stream-independent atomic_preflight=required')
+    require('schema=001-023' in conformance, "PostgreSQL conformance is not pinned to final schema 001-023")
+    print('wave4_zabbix_metric_definitions=PASS schema=020-023 composed=001-023 scope=item-get-metadata-only authority=item-stream-independent atomic_preflight=required claim=qualified')
 
 
 if __name__ == '__main__':

@@ -1,0 +1,84 @@
+name: Wave 4 Monitoring Source Foundation
+
+on:
+  pull_request:
+    paths:
+      - 'src/jlmirror_monitoring/**'
+      - 'sql/wave4/**'
+      - 'tests/wave4/**'
+      - 'tools/wave4/**'
+      - 'implementation/wave-4/**'
+      - '.github/workflows/wave4-monitoring-source-foundation.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/jlmirror_monitoring/**'
+      - 'sql/wave4/**'
+      - 'tests/wave4/**'
+      - 'tools/wave4/**'
+      - 'implementation/wave-4/**'
+      - '.github/workflows/wave4-monitoring-source-foundation.yml'
+
+permissions: {}
+
+concurrency:
+  group: wave4-monitoring-source-foundation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  monitoring-source-foundation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      POSTGRES_IMAGE: postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+      PG_CONTAINER: jlmirror-wave4-monitoring-postgres
+      PG_PASSWORD: wave4-monitoring-password
+      PG_DATABASE: jlmirror
+    steps:
+      - name: Resolve exact analyzed HEAD
+        id: analyzed
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            resolved_sha="$PR_HEAD_SHA"
+          else
+            resolved_sha="$EVENT_SHA"
+          fi
+          test -n "$resolved_sha"
+          printf 'sha=%s\n' "$resolved_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.analyzed.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit identity
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.analyzed.outputs.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Validate Monitoring source implementation boundary
+        run: python3 tools/wave4/validate_monitoring_source_foundation.py
+
+      - name: Test Monitoring source domain and persistence contract
+        run: PYTHONPATH=src python3 -m unittest discover -s tests/wave4 -p 'test_*.py'
+
+      - name: Execute Monitoring source transaction on pinned PostgreSQL
+        run: bash tools/wave4/run_monitoring_source_postgres_conformance.sh
+
+      - name: Validate repository structure and workflow safety
+        run: python3 tools/assurance/validate_repository.py

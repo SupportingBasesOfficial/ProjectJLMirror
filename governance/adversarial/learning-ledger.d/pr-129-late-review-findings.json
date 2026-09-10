@@ -18,12 +18,8 @@
       ],
       "guardrails": [
         {
-          "path": "tools/wave4/run_zabbix_initial_validation_postgres_conformance.sh",
-          "probe": "race=source_row_lock_blocks_concurrent_edit"
-        },
-        {
-          "path": "tools/wave4/validate_zabbix_initial_validation_worker.py",
-          "probe": "FOR UPDATE OF s"
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_wave4_authority_toctou_guardrail"
         }
       ],
       "systemic_guardrail_updated": true,

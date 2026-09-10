@@ -9,19 +9,8 @@
       "class_id": "ADV-AUTHORITY-TOCTOU",
       "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
       "root_cause": "Host-inventory completion fenced generation, configuration and scope authority but had no monotonic poll-order authority. Two operations claimed under the same source revision could therefore complete out of order, allowing an older provider snapshot to overwrite or remove state established by a newer snapshot.",
-      "horizontal_audit": [
-        "host inventory claim and completion authority",
-        "same-revision concurrent provider polling",
-        "resource presence reconciliation",
-        "future metric current-state polling",
-        "future problem and topology snapshot ingestion"
-      ],
-      "guardrails": [
-        {
-          "path": "tools/assurance/test_validate_adversarial_learning.py",
-          "probe": "falsify_wave4_authority_toctou_guardrail"
-        }
-      ],
+      "horizontal_audit": ["host inventory claim and completion authority", "same-revision concurrent provider polling", "resource presence reconciliation", "future metric current-state polling", "future problem and topology snapshot ingestion"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 2
     },
@@ -33,19 +22,8 @@
       "class_id": "ADV-AUTHORITY-TOCTOU",
       "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
       "root_cause": "The negative-presence transition guard proved that a complete authoritative snapshot omitted a host, but it did not prove that the negative snapshot was newer than the resource's latest confirmed positive observation. Historical negative evidence could therefore be replayed to reverse a newer positive state.",
-      "horizontal_audit": [
-        "resource present-to-removed transitions",
-        "historical snapshot replay",
-        "last-confirmed-positive ordering",
-        "future metric tombstone and deletion semantics",
-        "future reconciliation paths that consume historical evidence"
-      ],
-      "guardrails": [
-        {
-          "path": "tools/assurance/test_validate_adversarial_learning.py",
-          "probe": "falsify_wave4_authority_toctou_guardrail"
-        }
-      ],
+      "horizontal_audit": ["resource present-to-removed transitions", "historical snapshot replay", "last-confirmed-positive ordering", "future metric tombstone and deletion semantics", "future reconciliation paths that consume historical evidence"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 3
     },
@@ -57,21 +35,62 @@
       "class_id": "ADV-AUTHORITY-TOCTOU",
       "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
       "root_cause": "The first poll-order remediation wrapped completion by renaming the previously unfenced implementation and delegating to it after checking poll authority. That left an alternate callable SQL entry point which a broadly granted runtime role could invoke directly, bypassing the newly introduced authority fence while preserving otherwise valid tenant context.",
-      "horizontal_audit": [
-        "all SQL helper functions introduced by authority wrappers",
-        "runtime roles receiving broad function execute grants",
-        "completion and reconciliation alternate entry points",
-        "future internal helper extraction around fenced mutations",
-        "provider worker functions whose public surface must equal their authority surface"
-      ],
-      "guardrails": [
-        {
-          "path": "tools/assurance/test_validate_adversarial_learning.py",
-          "probe": "falsify_wave4_authority_toctou_guardrail"
-        }
-      ],
+      "horizontal_audit": ["all SQL helper functions introduced by authority wrappers", "runtime roles receiving broad function execute grants", "completion and reconciliation alternate entry points", "future internal helper extraction around fenced mutations", "provider worker functions whose public surface must equal their authority surface"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 4
+    },
+    {
+      "id": "LEARN-PR135-004",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3980045400,
+      "class_id": "ADV-PROVENANCE-BINDING",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "Snapshot evidence carried source, configuration, scope and poll-generation fields that were caller writable, while downstream removal authority trusted those fields without proving they matched the claimed running synchronization operation that owned the snapshot.",
+      "horizontal_audit": ["all snapshot-evidence tables", "operation-to-evidence ownership", "negative reconciliation authority", "future metrics batch evidence", "future topology and problem snapshot ingestion"],
+      "guardrails": [{"path": "tools/wave4/run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh", "probe": "snapshot_operation_binding=closed"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 5
+    },
+    {
+      "id": "LEARN-PR135-005",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3980045407,
+      "class_id": "ADV-AUTHORITY-BIDIRECTIONAL",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "Presence transition authority was enforced only for present-to-removed. The inverse removed-to-present transition could therefore reuse historical provider evidence and bypass the active poll, configuration and scope fences.",
+      "horizontal_audit": ["all bidirectional state transitions", "resource resurrection", "reconciliation recovery paths", "future health-state projections", "future problem open-close transitions"],
+      "guardrails": [{"path": "tools/wave4/run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh", "probe": "positive_transition=evidence_bound"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 6
+    },
+    {
+      "id": "LEARN-PR135-006",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3980045418,
+      "class_id": "ADV-PROVENANCE-LIFECYCLE",
+      "invariant_ids": ["INV-PROVENANCE-001"],
+      "root_cause": "Provider evidence rows were individually immutable but snapshot membership remained appendable after the owning operation completed. That allowed historical snapshot contents to change after host_count and completion state had become durable evidence.",
+      "horizontal_audit": ["snapshot membership closure", "immutable aggregate evidence", "host_count consistency", "future batch evidence containers", "future audit artifact finalization"],
+      "guardrails": [{"path": "tools/wave4/run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh", "probe": "membership_after_completion=closed"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 7
+    },
+    {
+      "id": "LEARN-PR135-007",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3980045423,
+      "class_id": "ADV-INTEGRITY-DERIVATION",
+      "invariant_ids": ["INV-PROVENANCE-001"],
+      "root_cause": "The database validated only the lexical shape of evidence_fingerprint and trusted the caller to have hashed normalized_evidence correctly. A malformed caller could therefore persist an integrity token unrelated to the durable evidence it purported to identify.",
+      "horizontal_audit": ["derived integrity fields", "caller-supplied hashes", "content-addressed evidence", "future artifact digests", "future metric-batch fingerprints"],
+      "guardrails": [{"path": "tools/wave4/run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh", "probe": "fingerprint=verified"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 8
     }
   ]
 }

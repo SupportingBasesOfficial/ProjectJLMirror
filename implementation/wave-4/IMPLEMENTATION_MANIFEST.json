@@ -42,6 +42,9 @@
     "host_inventory_direct_forward_poll_increment_rejection",
     "host_inventory_operation_insert_authority",
     "host_inventory_claim_revision_authority_immutability",
+    "host_inventory_work_identity_immutable_from_enqueue",
+    "host_inventory_provider_worker_invocation_authority",
+    "host_inventory_direct_work_creation_rejection",
     "host_inventory_poll_authority_single_owner",
     "host_inventory_superseded_epoch_retirement",
     "host_inventory_persisted_completion_outcome",
@@ -68,7 +71,7 @@
     "impl.provider-integration@1:accepted_monitoring_zabbix_subprofile_only",
     "wave4.monitoring-host-inventory@1"
   ],
-  "runtime_profiles": ["runtime.worker@1"],
+  "runtime_profiles": ["runtime.worker@1", "worker.provider-integration@1"],
   "code_surfaces": [
     "src/jlmirror_monitoring/validation_worker.py",
     "src/jlmirror_monitoring/host_inventory.py",
@@ -87,13 +90,15 @@
     "sql/wave4/015_zabbix_host_inventory_explicit_admission_and_resource_authority.sql",
     "sql/wave4/016_zabbix_host_inventory_operation_insert_authority.sql",
     "sql/wave4/017_zabbix_host_inventory_superseded_epoch_retirement.sql",
-    "sql/wave4/018_zabbix_host_inventory_claim_revision_immutability.sql"
+    "sql/wave4/018_zabbix_host_inventory_claim_revision_immutability.sql",
+    "sql/wave4/019_zabbix_host_inventory_work_identity_and_invocation_authority.sql"
   ],
   "assurance_surfaces": [
     "tests/wave4/test_zabbix_initial_validation_worker.py",
     "tests/wave4/test_zabbix_host_inventory.py",
     "tools/wave4/validate_zabbix_initial_validation_worker.py",
     "tools/wave4/validate_zabbix_host_inventory.py",
+    "tools/wave4/validate_zabbix_host_inventory_invocation_authority.py",
     "tools/wave4/run_zabbix_initial_validation_postgres_conformance.sh",
     "tools/wave4/run_zabbix_host_inventory_postgres_conformance.sh",
     "tools/wave4/run_zabbix_host_inventory_ordering_postgres_conformance.sh",

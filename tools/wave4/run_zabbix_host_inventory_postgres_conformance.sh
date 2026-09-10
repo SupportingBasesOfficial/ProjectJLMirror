@@ -32,7 +32,8 @@ for migration in \
   sql/wave4/004_monitoring_boundary_hardening.sql \
   sql/wave4/005_zabbix_host_inventory.sql \
   sql/wave4/006_zabbix_host_inventory_boundary_hardening.sql \
-  sql/wave4/007_zabbix_host_inventory_integrity_hardening.sql; do
+  sql/wave4/007_zabbix_host_inventory_integrity_hardening.sql \
+  sql/wave4/008_zabbix_host_inventory_poll_ordering_hardening.sql; do
   docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < "$migration" >/dev/null
 done
 
@@ -65,16 +66,14 @@ complete_payload="[$host1,$host2]"
 
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-a','inventory-a'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-a','claim-inventory-a'); SELECT monitoring.complete_zabbix_host_inventory('tenant-a','inventory-a','claim-inventory-a','snapshot-a','binding-a','provider-instance:a','current','succeeded',NULL,true,'$complete_payload'::jsonb,'egress-a','credential-generation-a'); COMMIT;" >/dev/null
 
-first_state="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT count(*) || '|' || count(*) FILTER (WHERE resource_kind='host' AND provider_object_kind='zabbix_host' AND presence_state='present') || '|' || count(DISTINCT latest_provider_evidence_id) FROM monitoring.monitoring_resource; COMMIT;" | tail -n1)"
-test "$first_state" = "2|2|2"
+first_state="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT count(*) || '|' || count(*) FILTER (WHERE resource_kind='host' AND provider_object_kind='zabbix_host' AND presence_state='present') || '|' || count(DISTINCT latest_provider_evidence_id) || '|' || min(last_confirmed_present_poll_generation) FROM monitoring.monitoring_resource; COMMIT;" | tail -n1)"
+test "$first_state" = "2|2|2|1"
 
-# Identity is immutable even for a same-tenant runtime writer.
 if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; UPDATE monitoring.monitoring_resource SET provider_external_ref='999' WHERE monitoring_resource_id='resource-101'; COMMIT;" >/tmp/wave4-host-identity.out 2>&1; then
   echo "resource identity mutation unexpectedly succeeded" >&2; exit 1
 fi
 grep -F 'Monitoring resource canonical/provider identity is immutable' /tmp/wave4-host-identity.out >/dev/null
 
-# A truncated/incomplete snapshot may confirm returned positives but has no negative-removal authority.
 host1b="${host1/provider-evidence-101-a/provider-evidence-101-b}"
 incomplete_payload="[$host1b]"
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-a','inventory-b'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-b','claim-inventory-b'); SELECT monitoring.complete_zabbix_host_inventory('tenant-a','inventory-b','claim-inventory-b','snapshot-b','binding-a','provider-instance:a','incomplete','reconciliation_required','provider.snapshot_truncated',false,'$incomplete_payload'::jsonb,'egress-b','credential-generation-a'); COMMIT;" >/dev/null
@@ -82,34 +81,29 @@ docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATAB
 truncated_state="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT count(*) FILTER (WHERE presence_state='removed') || '|' || count(*) FILTER (WHERE presence_state='present') FROM monitoring.monitoring_resource; COMMIT;" | tail -n1)"
 test "$truncated_state" = "0|2"
 
-# Recovery remains possible after an incomplete inventory because source validation authority is independent.
 host1c="${host1/provider-evidence-101-a/provider-evidence-101-c}"
 recovery_payload="[$host1c]"
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-a','inventory-c'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-c','claim-inventory-c'); SELECT monitoring.complete_zabbix_host_inventory('tenant-a','inventory-c','claim-inventory-c','snapshot-c','binding-a','provider-instance:a','current','succeeded',NULL,true,'$recovery_payload'::jsonb,'egress-c','credential-generation-a'); COMMIT;" >/dev/null
 
-negative_authority="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT provider_external_ref || ':' || presence_state FROM monitoring.monitoring_resource ORDER BY provider_external_ref; COMMIT;" | grep -E '^(101|102):' | paste -sd '|' -)"
-test "$negative_authority" = "101:present|102:removed"
+negative_authority="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT provider_external_ref || ':' || presence_state || ':' || coalesce(removed_poll_generation::text,'-') FROM monitoring.monitoring_resource ORDER BY provider_external_ref; COMMIT;" | grep -E '^(101|102):' | paste -sd '|' -)"
+test "$negative_authority" = "101:present:-|102:removed:3"
 
-# A direct removal without matching complete negative snapshot evidence is rejected.
-if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; UPDATE monitoring.monitoring_resource SET presence_state='removed',removed_at=transaction_timestamp() WHERE monitoring_resource_id='resource-101'; COMMIT;" >/tmp/wave4-host-direct-removal.out 2>&1; then
+if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; UPDATE monitoring.monitoring_resource SET presence_state='removed',removed_at=transaction_timestamp(),removed_poll_generation=(SELECT host_inventory_poll_generation+1 FROM monitoring.monitoring_source WHERE monitoring_source_id='source-a') WHERE monitoring_resource_id='resource-101'; COMMIT;" >/tmp/wave4-host-direct-removal.out 2>&1; then
   echo "direct resource removal unexpectedly succeeded" >&2; exit 1
 fi
-grep -F 'Monitoring resource removal requires complete authoritative negative snapshot evidence' /tmp/wave4-host-direct-removal.out >/dev/null
+grep -F 'Monitoring resource removal requires newer complete authoritative negative poll evidence' /tmp/wave4-host-direct-removal.out >/dev/null
 
-# Provider evidence cannot escape the allowlist or configured scope even through direct SQL.
 if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; INSERT INTO monitoring.monitoring_resource_provider_evidence(tenant_id,provider_evidence_id,host_inventory_snapshot_evidence_id,monitoring_resource_id,monitoring_source_id,source_instance_generation,provider_object_kind,provider_external_ref,evidence_fingerprint,normalized_evidence,observed_at) VALUES ('tenant-a','bad-evidence','snapshot-c','resource-101','source-a','generation-a','zabbix_host','101','3333333333333333333333333333333333333333333333333333333333333333','{\"technical_name\":\"x\",\"display_name\":\"x\",\"inventory\":{},\"interfaces\":[],\"groups\":[{\"ref\":\"999\"}],\"templates\":[],\"tags\":[],\"canonical_device_class\":\"switch\"}'::jsonb,transaction_timestamp()); COMMIT;" >/tmp/wave4-host-bad-evidence.out 2>&1; then
   echo "forged provider evidence unexpectedly persisted" >&2; exit 1
 fi
 grep -Ei 'bounded_shape|configured-scope|check constraint' /tmp/wave4-host-bad-evidence.out >/dev/null
 
-# Cross-tenant reads fail closed under the runtime role.
 tenant_b_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-b'; SELECT count(*) FROM monitoring.monitoring_resource; COMMIT;" | tail -n1)"
 test "$tenant_b_count" = "0"
 
-# Completion after a scope-revision change is stale: no snapshot/evidence/resource mutation is accepted.
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.enqueue_zabbix_host_inventory_sync('tenant-a','source-a','inventory-stale'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_host_inventory('tenant-a','inventory-stale','claim-stale'); UPDATE monitoring.monitoring_source SET configured_provider_scope='{\"host_group_refs\":[\"10\"]}'::jsonb,scope_revision=2 WHERE tenant_id='tenant-a' AND monitoring_source_id='source-a'; SELECT monitoring.complete_zabbix_host_inventory('tenant-a','inventory-stale','claim-stale','snapshot-stale','binding-a','provider-instance:a','current','succeeded',NULL,true,'$recovery_payload'::jsonb,'egress-stale','credential-generation-a'); COMMIT;" >/dev/null
 
 stale_state="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_runtime; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT state || '|' || coalesce(last_error_class,'') || '|' || (SELECT count(*) FROM monitoring.monitoring_host_inventory_snapshot_evidence WHERE host_inventory_snapshot_evidence_id='snapshot-stale') FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='inventory-stale'; COMMIT;" | tail -n1)"
 test "$stale_state" = "reconciliation_required|execution.stale_authority|0"
 
-printf '%s\n' "wave4_zabbix_host_inventory_postgres=PASS resources=canonical identity=immutable evidence=bounded+owner-bound tenant_rls=fail_closed truncated_snapshot=no_negative_authority complete_snapshot=removal_authority direct_removal=blocked stale_scope=fenced recovery=available"
+printf '%s\n' "wave4_zabbix_host_inventory_postgres=PASS resources=canonical identity=immutable evidence=bounded+owner-bound tenant_rls=fail_closed truncated_snapshot=no_negative_authority complete_snapshot=removal_authority poll_order=final-schema direct_removal=blocked stale_scope=fenced recovery=available"

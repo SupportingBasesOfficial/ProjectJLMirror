@@ -26,6 +26,32 @@
       "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 19
+    },
+    {
+      "id": "LEARN-PR135-019",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3981399065,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "The runtime-admission table was made UNLOGGED to fail closed across physical recovery, but logical backup semantics were not separately governed. PostgreSQL logical dumps include unlogged-table rows by default, so stale placement and recovery admission could cross a dump/restore boundary and regain current polling authority without successor-epoch re-admission.",
+      "horizontal_audit": ["physical recovery versus logical recovery semantics", "pg_dump and pg_restore relocation paths", "runtime-only authority tables", "future failover and tenant-move tooling", "all ephemeral authority state that must not cross logical copies"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 21
+    },
+    {
+      "id": "LEARN-PR135-020",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3981399082,
+      "class_id": "ADV-PROVENANCE-IDENTITY-DRIFT",
+      "invariant_ids": ["INV-PROVENANCE-001", "INV-AUTH-001"],
+      "root_cause": "Host-inventory conformance was split across migration-era harnesses, allowing green evidence from historical schemas to be interpreted as assurance for the composed exact-head schema. Later executor, recovery-epoch and projection-authority migrations could therefore regress previously proven behavior without those scenarios being replayed against the schema actually shipped.",
+      "horizontal_audit": ["all migration-era PostgreSQL conformance harnesses", "final composed schema execution", "successful complete and negative-removal paths", "poll supersession and terminal immutability", "logical recovery and authority projection guards"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 20
     }
   ]
 }

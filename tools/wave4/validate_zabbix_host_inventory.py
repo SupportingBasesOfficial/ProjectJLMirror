@@ -13,10 +13,13 @@ INTEGRITY = ROOT / "sql/wave4/007_zabbix_host_inventory_integrity_hardening.sql"
 ORDERING = ROOT / "sql/wave4/008_zabbix_host_inventory_poll_ordering_hardening.sql"
 AUTHORITY = ROOT / "sql/wave4/009_zabbix_host_inventory_evidence_authority_hardening.sql"
 FINAL_AUTHORITY = ROOT / "sql/wave4/010_zabbix_host_inventory_final_authority_hardening.sql"
+EXPLICIT_AUTHORITY = ROOT / "sql/wave4/015_zabbix_host_inventory_explicit_admission_and_resource_authority.sql"
 TEST = ROOT / "tests/wave4/test_zabbix_host_inventory.py"
 PG = ROOT / "tools/wave4/run_zabbix_host_inventory_postgres_conformance.sh"
 PG_ORDERING = ROOT / "tools/wave4/run_zabbix_host_inventory_ordering_postgres_conformance.sh"
 PG_AUTHORITY = ROOT / "tools/wave4/run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh"
+PG_FINAL_SCHEMA = ROOT / "tools/wave4/run_zabbix_host_inventory_final_schema_postgres_conformance.sh"
+PG_DUMP = ROOT / "tools/wave4/pg_dump_recovery_safe.sh"
 WORKFLOW = ROOT / ".github/workflows/wave4-monitoring-source-foundation.yml"
 MANIFEST = ROOT / "implementation/wave-4/IMPLEMENTATION_MANIFEST.json"
 AUTH = ROOT / "implementation/wave-4-host-inventory-authorization/AUTHORIZATION_MANIFEST.json"
@@ -28,7 +31,11 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> None:
-    for path in (PY, SQL, HARDENING, INTEGRITY, ORDERING, AUTHORITY, FINAL_AUTHORITY, TEST, PG, PG_ORDERING, PG_AUTHORITY, WORKFLOW, MANIFEST, AUTH):
+    for path in (
+        PY, SQL, HARDENING, INTEGRITY, ORDERING, AUTHORITY, FINAL_AUTHORITY,
+        EXPLICIT_AUTHORITY, TEST, PG, PG_ORDERING, PG_AUTHORITY, PG_FINAL_SCHEMA,
+        PG_DUMP, WORKFLOW, MANIFEST, AUTH,
+    ):
         require(path.is_file(), f"missing required surface: {path.relative_to(ROOT)}")
 
     ast.parse(PY.read_text(encoding="utf-8"))
@@ -39,9 +46,12 @@ def main() -> None:
     ordering = ORDERING.read_text(encoding="utf-8")
     authority = AUTHORITY.read_text(encoding="utf-8")
     final_authority = FINAL_AUTHORITY.read_text(encoding="utf-8")
+    explicit_authority = EXPLICIT_AUTHORITY.read_text(encoding="utf-8")
     base_pg = PG.read_text(encoding="utf-8")
     ordering_pg = PG_ORDERING.read_text(encoding="utf-8")
     authority_pg = PG_AUTHORITY.read_text(encoding="utf-8")
+    final_schema_pg = PG_FINAL_SCHEMA.read_text(encoding="utf-8")
+    dump_pg = PG_DUMP.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     auth = json.loads(AUTH.read_text(encoding="utf-8"))
@@ -160,8 +170,16 @@ def main() -> None:
     ):
         require(marker in final_authority, f"final host inventory authority guard missing: {marker}")
 
-    require("sql/wave4/008_zabbix_host_inventory_poll_ordering_hardening.sql" in base_pg, "base host inventory conformance does not apply final ordering migration")
-    require("poll_order=final-schema" in base_pg, "base host inventory conformance does not assert final schema execution")
+    for marker in (
+        "DROP TRIGGER IF EXISTS wave4_host_inventory_runtime_admission_bootstrap",
+        "last_observed_at IS DISTINCT FROM OLD.last_observed_at",
+        "last_confirmed_present_at IS DISTINCT FROM OLD.last_confirmed_present_at",
+        "removed_at IS DISTINCT FROM OLD.removed_at",
+        "Monitoring resource authority fields require guarded host-inventory executor",
+    ):
+        require(marker in explicit_authority, f"explicit/final resource authority guard missing: {marker}")
+
+    require("sql/wave4/008_zabbix_host_inventory_poll_ordering_hardening.sql" in base_pg, "base host inventory conformance does not apply ordering migration")
     for marker in (
         "poll_generation=claim_ordered",
         "late_completion=retired_without_mutation",
@@ -185,10 +203,38 @@ def main() -> None:
     ):
         require(marker in authority_pg, f"host inventory evidence-authority PostgreSQL falsifier missing: {marker}")
 
+    require("--exclude-table-data=monitoring.monitoring_host_inventory_runtime_admission" in dump_pg, "canonical logical dump must exclude runtime admission data")
+    for migration in (
+        "001_monitoring_source_foundation.sql",
+        "008_zabbix_host_inventory_poll_ordering_hardening.sql",
+        "009_zabbix_host_inventory_evidence_authority_hardening.sql",
+        "010_zabbix_host_inventory_final_authority_hardening.sql",
+        "011_zabbix_host_inventory_terminal_operation_hardening.sql",
+        "011a_zabbix_host_inventory_executor_roles.sql",
+        "012_zabbix_host_inventory_recovery_authority_hardening.sql",
+        "013_zabbix_host_inventory_executor_privileges.sql",
+        "014_zabbix_host_inventory_resource_epoch_insert.sql",
+        "015_zabbix_host_inventory_explicit_admission_and_resource_authority.sql",
+    ):
+        require(migration in final_schema_pg, f"final-schema conformance omits migration: {migration}")
+    for marker in (
+        "complete_snapshot=accepted",
+        "negative_removal=accepted",
+        "superseded_poll=retired",
+        "terminal_reopen=blocked",
+        "observation_forgery=blocked",
+        "logical_recovery_admission=excluded",
+        "pg_dump_recovery_safe.sh",
+        "recovered_admission_count",
+    ):
+        require(marker in final_schema_pg, f"final-schema PostgreSQL proof missing: {marker}")
+
     require("validate_zabbix_host_inventory.py" in workflow, "workflow does not run host inventory validator")
     require("run_zabbix_host_inventory_postgres_conformance.sh" in workflow, "workflow does not run PostgreSQL host inventory proof")
     require("run_zabbix_host_inventory_ordering_postgres_conformance.sh" in workflow, "workflow does not run host inventory ordering proof")
     require("run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh" in workflow, "workflow does not run host inventory evidence-authority proof")
+    require("run_zabbix_host_inventory_final_schema_postgres_conformance.sh" in workflow, "workflow does not run final composed schema proof")
+
     require("src/jlmirror_monitoring/host_inventory.py" in manifest["code_surfaces"], "manifest missing host inventory code surface")
     for surface in (
         "sql/wave4/006_zabbix_host_inventory_boundary_hardening.sql",
@@ -196,8 +242,14 @@ def main() -> None:
         "sql/wave4/008_zabbix_host_inventory_poll_ordering_hardening.sql",
         "sql/wave4/009_zabbix_host_inventory_evidence_authority_hardening.sql",
         "sql/wave4/010_zabbix_host_inventory_final_authority_hardening.sql",
+        "sql/wave4/015_zabbix_host_inventory_explicit_admission_and_resource_authority.sql",
     ):
         require(surface in manifest["code_surfaces"], f"manifest missing hardening surface: {surface}")
+    for surface in (
+        "tools/wave4/pg_dump_recovery_safe.sh",
+        "tools/wave4/run_zabbix_host_inventory_final_schema_postgres_conformance.sh",
+    ):
+        require(surface in manifest["assurance_surfaces"], f"manifest missing assurance/recovery surface: {surface}")
     for capability in (
         "host_inventory_ingestion",
         "host_inventory_poll_generation_fence",
@@ -210,12 +262,16 @@ def main() -> None:
         "host_inventory_poll_generation_rewind_rejection",
         "host_inventory_current_poll_snapshot_binding",
         "host_inventory_snapshot_cardinality_closure",
+        "host_inventory_explicit_runtime_admission",
+        "host_inventory_resource_observation_authority",
+        "host_inventory_logical_recovery_admission_exclusion",
+        "host_inventory_final_schema_composed_conformance",
     ):
         require(capability in manifest["implemented_capability"], f"manifest does not declare capability: {capability}")
     require("host_inventory_ingestion" not in manifest["explicitly_not_implemented"], "manifest still denies implemented host inventory")
     require("canonical_device_classification" in manifest["explicitly_not_implemented"], "implementation must not claim device classification authority")
 
-    print("wave4_zabbix_host_inventory_validation=PASS resource_kind=host provider_object_kind=zabbix_host evidence=bounded+scope-bound+owner-bound+operation-bound+closed-membership+cardinality-bound+fingerprint-verified identity=immutable presence=positive+negative-authority-bound tenant_rls=forced stale_authority=fenced poll_generation=single-winner+nonrewind snapshot=current-poll-bound scope_anchor=same-cycle-revalidated unfenced_helper=absent recovery=validation-authority")
+    print("wave4_zabbix_host_inventory_validation=PASS resource_kind=host provider_object_kind=zabbix_host evidence=bounded+scope-bound+owner-bound+operation-bound+closed-membership+cardinality-bound+fingerprint-verified identity=immutable presence=positive+negative-authority-bound tenant_rls=forced stale_authority=fenced poll_generation=single-winner+nonrewind snapshot=current-poll-bound scope_anchor=same-cycle-revalidated recovery=explicit-admission+logical-dump-excluded final_schema=001-015-composed")
 
 
 if __name__ == "__main__":

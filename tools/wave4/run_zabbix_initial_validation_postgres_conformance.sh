@@ -67,14 +67,11 @@ docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DAT
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
 "UPDATE monitoring.monitoring_source SET configuration_revision=2, credential_binding_ref='credential-binding:rotated' WHERE tenant_id='tenant-b' AND monitoring_source_id='source-b';" >/dev/null
 
-if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
-"SELECT monitoring.complete_zabbix_initial_validation('tenant-b','sync-b','claim-b','validation-b','binding-b','provider-instance:central','current','succeeded',NULL,'[\"30\"]'::jsonb,'[]'::jsonb,'egress-decision:2','credential-generation:2');" >/tmp/wave4-stale-complete.out 2>&1; then
-  echo "stale validation completion unexpectedly succeeded" >&2; exit 1
-fi
-grep -F "monitoring.initial_validation_stale_authority" /tmp/wave4-stale-complete.out >/dev/null
+docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
+"SELECT monitoring.complete_zabbix_initial_validation('tenant-b','sync-b','claim-b','validation-b','binding-b','provider-instance:central','current','succeeded',NULL,'[\"30\"]'::jsonb,'[]'::jsonb,'egress-decision:2','credential-generation:2');" >/dev/null
 
 stale_state="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
-"SELECT state || '|' || (validation_evidence_id IS NULL)::text FROM monitoring.monitoring_sync_operation WHERE tenant_id='tenant-b' AND monitoring_sync_operation_id='sync-b';")"
-test "$stale_state" = "running|true"
+"SELECT o.state || '|' || (o.validation_evidence_id IS NULL)::text || '|' || coalesce(o.last_error_class,'') || '|' || s.operational_evidence_state || '|' || (SELECT count(*) FROM monitoring.monitoring_source_validation_evidence e WHERE e.tenant_id='tenant-b' AND e.monitoring_sync_operation_id='sync-b') FROM monitoring.monitoring_sync_operation o JOIN monitoring.monitoring_source s ON s.tenant_id=o.tenant_id AND s.monitoring_source_id=o.monitoring_source_id WHERE o.tenant_id='tenant-b' AND o.monitoring_sync_operation_id='sync-b';")"
+test "$stale_state" = "reconciliation_required|true|execution.stale_authority|reconciliation_required|0"
 
-printf '%s\n' "wave4_zabbix_initial_validation_postgres=PASS claim=single-winner completion=fenced evidence=immutable shared_provider=preserved retry_policy=not_selected"
+printf '%s\n' "wave4_zabbix_initial_validation_postgres=PASS claim=single-winner completion=fenced stale=retired_without_source_mutation evidence=immutable shared_provider=preserved retry_policy=not_selected"

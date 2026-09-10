@@ -1,4 +1,4 @@
-# ADR-021 — Organization, Provider and Commercial Operating Model
+# ADR-022 — Organization, Provider and Commercial Operating Model
 
 **Status:** accepted  
 **Date:** 2026-09-09  
@@ -125,10 +125,11 @@ Related accepted authorities:
 - `adr/ADR-003-tenant-isolation.md`
 - `adr/ADR-005-identity-and-authorization.md`
 - `adr/ADR-013-external-provider-adapters.md`
+- `adr/ADR-021-monitoring-source-instance-replacement.md`
 - `docs/03-domains/monitoring-domain-contract.md`
 - `docs/09-api-contracts/zabbix-monitoring-source-provider-contract.md`
 - `docs/02-requirements/business-rules.md`
 
 ## Authority boundary
 
-ADR-021 does not authorize runtime implementation, frontend/navigation, provider write-back, production deployment, production capacity numerics or exact commercial prices. Those remain governed by their respective implementation/product/production gates.
+ADR-022 does not authorize runtime implementation, frontend/navigation, provider write-back, production deployment, production capacity numerics or exact commercial prices. Those remain governed by their respective implementation/product/production gates.

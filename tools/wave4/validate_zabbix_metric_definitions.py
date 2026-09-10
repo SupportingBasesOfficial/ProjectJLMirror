@@ -9,6 +9,8 @@ M020 = ROOT / "sql/wave4/020_zabbix_metric_definitions.sql"
 M021 = ROOT / "sql/wave4/021_zabbix_metric_definitions_authority_hardening.sql"
 M022 = ROOT / "sql/wave4/022_zabbix_metric_definitions_atomic_preflight.sql"
 M023 = ROOT / "sql/wave4/023_zabbix_metric_definitions_qualified_claim.sql"
+M024 = ROOT / "sql/wave4/024_zabbix_metric_definitions_evidence_and_drift_authority.sql"
+M025 = ROOT / "sql/wave4/025_zabbix_metric_definitions_drift_visibility.sql"
 TEST = ROOT / "tests/wave4/test_zabbix_metric_definitions.py"
 CONFORMANCE = ROOT / "tools/wave4/run_zabbix_metric_definitions_postgres_conformance.sh"
 
@@ -19,7 +21,7 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> None:
-    for path in (DOMAIN, M020, M021, M022, M023, TEST, CONFORMANCE):
+    for path in (DOMAIN, M020, M021, M022, M023, M024, M025, TEST, CONFORMANCE):
         require(path.is_file(), f"missing required surface: {path.relative_to(ROOT)}")
 
     domain = DOMAIN.read_text(encoding="utf-8")
@@ -27,6 +29,8 @@ def main() -> None:
     m021 = M021.read_text(encoding="utf-8")
     m022 = M022.read_text(encoding="utf-8")
     m023 = M023.read_text(encoding="utf-8")
+    m024 = M024.read_text(encoding="utf-8")
+    m025 = M025.read_text(encoding="utf-8")
     conformance = CONFORMANCE.read_text(encoding="utf-8")
 
     for marker in (
@@ -83,18 +87,46 @@ def main() -> None:
         'UPDATE monitoring.monitoring_source AS s',
         'UPDATE monitoring.monitoring_sync_operation AS o',
         'attempt_count=o.attempt_count+1',
-        'sql/wave4/023_zabbix_metric_definitions_qualified_claim.sql',
     ):
-        source = m023 if marker != 'sql/wave4/023_zabbix_metric_definitions_qualified_claim.sql' else conformance
-        require(marker in source, f"migration 023/composed-schema invariant missing: {marker}")
+        require(marker in m023, f"migration 023 claim qualification missing: {marker}")
+
+    for marker in (
+        'wave4_guard_metric_definition_evidence_insert',
+        'Metric definition evidence creation requires guarded executor authority',
+        'wave4_mark_metric_value_kind_drift',
+        "definition_evidence_state='reconciliation_required'",
+        "evidence_state='reconciliation_required'",
+    ):
+        require(marker in m024, f"migration 024 evidence/drift authority missing: {marker}")
+
+    for marker in (
+        'v_drift_itemid',
+        'PERFORM monitoring.wave4_mark_metric_value_kind_drift',
+        'p_failure_class := \'provider.value_kind_drift\'',
+        'IF p_operation_state=\'succeeded\' THEN',
+    ):
+        require(marker in m025, f"migration 025 drift visibility missing: {marker}")
+
+    for migration in (
+        'sql/wave4/023_zabbix_metric_definitions_qualified_claim.sql',
+        'sql/wave4/024_zabbix_metric_definitions_evidence_and_drift_authority.sql',
+        'sql/wave4/025_zabbix_metric_definitions_drift_visibility.sql',
+    ):
+        require(migration in conformance, f"final composed conformance missing {migration}")
 
     forbidden_sql = ('metric_current_state', 'metric_observation', 'history.get', 'problem_state', 'health_projection')
-    combined = '\n'.join((m020, m021, m022, m023))
+    combined = '\n'.join((m020, m021, m022, m023, m024, m025))
     for marker in forbidden_sql:
         require(marker not in combined, f"unauthorized surface leaked into SQL: {marker}")
 
-    require('schema=001-023' in conformance, "PostgreSQL conformance is not pinned to final schema 001-023")
-    print('wave4_zabbix_metric_definitions=PASS schema=020-023 composed=001-023 scope=item-get-metadata-only authority=item-stream-independent atomic_preflight=required claim=qualified')
+    for marker in (
+        'schema=001-025',
+        'evidence_insert=executor-only',
+        'drift=visible+atomic_fail_closed',
+    ):
+        require(marker in conformance, f"PostgreSQL conformance marker missing: {marker}")
+
+    print('wave4_zabbix_metric_definitions=PASS schema=020-025 composed=001-025 scope=item-get-metadata-only authority=item-stream-independent atomic_preflight=required claim=qualified evidence_insert=executor-only drift=visible')
 
 
 if __name__ == '__main__':

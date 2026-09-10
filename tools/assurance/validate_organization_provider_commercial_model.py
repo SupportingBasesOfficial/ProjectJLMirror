@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "docs/03-domains/organization-operating-model-contract.md"
 MANIFEST = ROOT / "governance/product-model/organization-provider-commercial/DECISION_MANIFEST.json"
 STATE = ROOT / "governance/product-model/organization-provider-commercial/STATE.md"
+ACCEPTANCE = ROOT / "governance/product-model/organization-provider-commercial/ACCEPTANCE.md"
 COMPAT = ROOT / "governance/product-model/organization-provider-commercial/MONITORING_COMPATIBILITY.md"
 ADR = ROOT / "adr/ADR-021-organization-provider-commercial-operating-model.md"
 DECISION_INDEX = ROOT / "docs/06-architecture/decision-index.md"
@@ -27,6 +28,7 @@ def main() -> None:
     contract = CONTRACT.read_text(encoding="utf-8")
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     state = STATE.read_text(encoding="utf-8")
+    acceptance = ACCEPTANCE.read_text(encoding="utf-8")
     compat = COMPAT.read_text(encoding="utf-8")
     adr = ADR.read_text(encoding="utf-8")
     decision_index = DECISION_INDEX.read_text(encoding="utf-8")
@@ -37,10 +39,24 @@ def main() -> None:
     require(manifest["canonical_base"] == EXPECTED_BASE, "canonical base drift")
     require(manifest["accepted_source_head"] == EXPECTED_SOURCE_HEAD, "accepted source head drift")
     require(manifest["accepted_squash_sha"] == EXPECTED_SQUASH, "accepted squash drift")
+    require(
+        manifest["acceptance_record"]
+        == "governance/product-model/organization-provider-commercial/ACCEPTANCE.md",
+        "acceptance record binding drift",
+    )
     require(f"main@{EXPECTED_BASE}" in state, "STATE canonical base mismatch")
     require(EXPECTED_SOURCE_HEAD in state, "STATE source head mismatch")
     require(EXPECTED_SQUASH in state, "STATE accepted squash mismatch")
     require("SEPARATELY_ACCEPTED" in state, "STATE is not separately accepted")
+    require("**Status:** accepted" in acceptance, "acceptance overlay is not accepted")
+    require(EXPECTED_SOURCE_HEAD in acceptance, "acceptance source head mismatch")
+    require(EXPECTED_SQUASH in acceptance, "acceptance squash mismatch")
+    require("proposed-for-separate-acceptance" in contract, "historical contract source status was unexpectedly rewritten")
+    require(
+        "intentionally retains its authored `proposed-for-separate-acceptance` header as historical source evidence"
+        in acceptance,
+        "acceptance overlay does not explain preserved source-time contract state",
+    )
     require(
         manifest["decision_record"] == "adr/ADR-021-organization-provider-commercial-operating-model.md",
         "ADR binding drift",

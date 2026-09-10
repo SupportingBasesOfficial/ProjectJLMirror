@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import json
 import unittest
 
 from jlmirror_monitoring.host_inventory import (
+    MAX_GROUPS_PER_HOST,
+    MAX_INTERFACES_PER_HOST,
     MAX_NORMALIZED_EVIDENCE_BYTES,
+    MAX_TAGS_PER_HOST,
+    MAX_TEMPLATES_PER_HOST,
+    PERSISTED_NORMALIZED_EVIDENCE_LIMIT_BYTES,
     ZabbixHostEvidence,
+    ZabbixHostInterfaceEvidence,
     ZabbixInventoryEvidence,
     ZabbixNamedRefEvidence,
+    ZabbixTagEvidence,
 )
 
 
@@ -63,7 +71,63 @@ class HostInventoryEvidenceSizeTests(unittest.TestCase):
                 tags=(),
             )
 
-        self.assertLess(MAX_NORMALIZED_EVIDENCE_BYTES, 65_536)
+    def test_application_ceiling_covers_maximum_jsonb_separator_overhead(self) -> None:
+        # PostgreSQL jsonb::text adds separator spaces compared with the compact JSON
+        # used for fingerprints. Separator overhead depends on structure, not string
+        # lengths. Build the maximum allowed structure using tiny values and prove the
+        # entire possible formatting overhead still fits inside the reserved margin.
+        host = ZabbixHostEvidence(
+            hostid="max-structure",
+            technical_name="h",
+            display_name="h",
+            inventory=ZabbixInventoryEvidence(
+                device_type="x",
+                device_type_full="x",
+                os="x",
+                os_full="x",
+                vendor="x",
+                model="x",
+                serial_primary="x",
+                serial_secondary="x",
+                asset_tag="x",
+                hardware="x",
+                software="x",
+                location="x",
+            ),
+            interfaces=tuple(
+                ZabbixHostInterfaceEvidence(
+                    interfaceid=f"i{index}",
+                    interface_type="agent",
+                    main=False,
+                    use_ip=True,
+                    ip="1",
+                    dns="d",
+                    port="1",
+                )
+                for index in range(MAX_INTERFACES_PER_HOST)
+            ),
+            groups=tuple(
+                ZabbixNamedRefEvidence(ref=f"g{index}", name="n")
+                for index in range(MAX_GROUPS_PER_HOST)
+            ),
+            templates=tuple(
+                ZabbixNamedRefEvidence(ref=f"t{index}", name="n")
+                for index in range(MAX_TEMPLATES_PER_HOST)
+            ),
+            tags=tuple(
+                ZabbixTagEvidence(tag=f"k{index}", value="v")
+                for index in range(MAX_TAGS_PER_HOST)
+            ),
+        )
+        evidence = host.canonical_evidence()
+        compact_len = len(json.dumps(evidence, separators=(",", ":"), sort_keys=True, ensure_ascii=False).encode("utf-8"))
+        spaced_len = len(json.dumps(evidence, sort_keys=True, ensure_ascii=False).encode("utf-8"))
+        maximum_separator_overhead = spaced_len - compact_len
+
+        self.assertLessEqual(
+            MAX_NORMALIZED_EVIDENCE_BYTES + maximum_separator_overhead,
+            PERSISTED_NORMALIZED_EVIDENCE_LIMIT_BYTES,
+        )
 
 
 if __name__ == "__main__":

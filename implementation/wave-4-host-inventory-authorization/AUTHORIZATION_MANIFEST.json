@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "authorization_id": "wave4.monitoring-host-inventory@1",
+  "canonical_base_main_commit": "b2214b498a0360ebf8091fe857ccffc107494ace",
+  "authorization_state": "proposed_product_behavior_not_authorized",
+  "effective_rule": "becomes_implementation_authority_only_after_exact_head_review_and_separately_authorized_merge",
+  "product_vertical": "monitoring",
+  "provider_profile": "zabbix",
+  "proposed_slice": "host_inventory_ingestion",
+  "proposed_behavior": [
+    "read_only_zabbix_host_inventory",
+    "generation_scoped_canonical_monitoring_resource_identity",
+    "provider_hostid_external_reference_only",
+    "resource_kind_host_without_richer_inference",
+    "current_inventory_active_generation_only_by_default",
+    "configured_scope_required_for_current_inventory_authority",
+    "positive_presence_from_accepted_provider_evidence",
+    "negative_removal_only_from_complete_authoritative_snapshot",
+    "incomplete_or_stale_evidence_preserves_last_known_presence",
+    "scope_exclusion_not_equivalent_to_removal",
+    "bounded_canonical_provider_metadata_only",
+    "no_frontend_route_implication"
+  ],
+  "explicitly_not_authorized": [
+    "metric_definition_ingestion",
+    "metric_current_state_ingestion",
+    "metric_history_ingestion",
+    "problem_or_event_ingestion",
+    "health_projection",
+    "host_interface_canonical_domain_model",
+    "arbitrary_zabbix_inventory_replication",
+    "tag_driven_platform_policy",
+    "business_service_topology_inference",
+    "cross_generation_resource_identity_migration",
+    "provider_write_back",
+    "production_retry_backoff_numerics",
+    "production_deployment",
+    "frontend_route_or_navigation_creation"
+  ],
+  "contract_surfaces": [
+    "docs/03-domains/monitoring-domain-contract.md",
+    "docs/09-api-contracts/monitoring-domain-api-contract.md",
+    "docs/09-api-contracts/zabbix-monitoring-source-provider-contract.md",
+    "docs/09-api-contracts/zabbix-monitoring-normalization-profile.md",
+    "implementation/wave-4/IMPLEMENTATION_MANIFEST.json"
+  ],
+  "production_authority": "none",
+  "frontend_authority": "not_granted",
+  "implementation_authority": "not_granted_until_this_exact_proposal_is_accepted_and_merged",
+  "merge_authorization": "not_granted"
+}

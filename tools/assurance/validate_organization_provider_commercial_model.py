@@ -9,6 +9,13 @@ CONTRACT = ROOT / "docs/03-domains/organization-operating-model-contract.md"
 MANIFEST = ROOT / "governance/product-model/organization-provider-commercial/DECISION_MANIFEST.json"
 STATE = ROOT / "governance/product-model/organization-provider-commercial/STATE.md"
 COMPAT = ROOT / "governance/product-model/organization-provider-commercial/MONITORING_COMPATIBILITY.md"
+ADR = ROOT / "adr/ADR-021-organization-provider-commercial-operating-model.md"
+DECISION_INDEX = ROOT / "docs/06-architecture/decision-index.md"
+WORKFLOW = ROOT / ".github/workflows/organization-provider-commercial-model.yml"
+
+EXPECTED_BASE = "8e2265a4ee2810ea701166228e8f44ad3bc0d894"
+EXPECTED_SOURCE_HEAD = "ba2817a7586ed43b18eb72a139f1eba8ffeadfa0"
+EXPECTED_SQUASH = "8c9eb94ebe76a56db85dd1ecbd3e0f8569edfb62"
 
 
 def require(condition: bool, message: str) -> None:
@@ -21,9 +28,27 @@ def main() -> None:
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     state = STATE.read_text(encoding="utf-8")
     compat = COMPAT.read_text(encoding="utf-8")
+    adr = ADR.read_text(encoding="utf-8")
+    decision_index = DECISION_INDEX.read_text(encoding="utf-8")
+    workflow = WORKFLOW.read_text(encoding="utf-8")
 
     require(manifest["decision_id"] == "organization-provider-commercial-model@1", "unexpected decision_id")
-    require(manifest["status"] == "candidate_for_separate_acceptance", "candidate state widened")
+    require(manifest["status"] == "separately_accepted", "accepted state drift")
+    require(manifest["canonical_base"] == EXPECTED_BASE, "canonical base drift")
+    require(manifest["accepted_source_head"] == EXPECTED_SOURCE_HEAD, "accepted source head drift")
+    require(manifest["accepted_squash_sha"] == EXPECTED_SQUASH, "accepted squash drift")
+    require(f"main@{EXPECTED_BASE}" in state, "STATE canonical base mismatch")
+    require(EXPECTED_SOURCE_HEAD in state, "STATE source head mismatch")
+    require(EXPECTED_SQUASH in state, "STATE accepted squash mismatch")
+    require("SEPARATELY_ACCEPTED" in state, "STATE is not separately accepted")
+    require(
+        manifest["decision_record"] == "adr/ADR-021-organization-provider-commercial-operating-model.md",
+        "ADR binding drift",
+    )
+    require("**Status:** accepted" in adr, "ADR-021 is not accepted")
+    require(EXPECTED_SOURCE_HEAD in adr and EXPECTED_SQUASH in adr, "ADR acceptance provenance mismatch")
+    require("| ADR-021 | Organization, provider and commercial operating model | accepted |" in decision_index, "ADR-021 missing from decision index")
+
     require(manifest["runtime_implementation_authority"] == "not_granted_by_this_gate", "runtime authority granted")
     require(manifest["frontend_authority"] == "not_granted_by_this_gate", "frontend authority granted")
     require(manifest["production_authority"] == "none", "production authority granted")
@@ -67,7 +92,7 @@ def main() -> None:
         require(phrase in contract, f"missing canonical contract phrase: {phrase}")
 
     required_state_phrases = [
-        "CANDIDATE_FOR_SEPARATE_ACCEPTANCE",
+        "SEPARATELY_ACCEPTED",
         "No provider validation/ingestion successor slice should assume `1 Monitoring Source = 1 physical provider = 1 organization`",
         "does **not**",
         "authorize the Zabbix validation worker",
@@ -86,6 +111,9 @@ def main() -> None:
     for phrase in required_compat_phrases:
         require(phrase in compat, f"missing Monitoring compatibility invariant: {phrase}")
 
+    require("git diff --no-renames --name-only" in workflow, "rename-safe path gate not enforced")
+    require("Falsify rename path-gate bypass" in workflow, "rename-bypass regression test not wired")
+
     deferred = set(manifest["explicitly_deferred"])
     for required in {
         "exact_commercial_prices",
@@ -96,7 +124,10 @@ def main() -> None:
     }:
         require(required in deferred, f"missing deferred boundary: {required}")
 
-    print("organization_provider_commercial_model=PASS state=candidate runtime=not_granted production=none")
+    print(
+        "organization_provider_commercial_model=PASS "
+        "state=separately_accepted provenance=pinned runtime=not_granted production=none"
+    )
 
 
 if __name__ == "__main__":

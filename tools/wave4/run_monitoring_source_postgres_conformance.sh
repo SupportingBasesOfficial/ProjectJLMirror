@@ -29,30 +29,37 @@ for _ in $(seq 1 60); do
 done
 docker exec "$PG_CONTAINER" pg_isready -U postgres -d "$PG_DATABASE" >/dev/null
 
-docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" \
-  < sql/wave4/001_monitoring_source_foundation.sql >/dev/null
+for migration in \
+  sql/wave4/001_monitoring_source_foundation.sql \
+  sql/wave4/002_monitoring_source_audit_evidence.sql; do
+  docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < "$migration" >/dev/null
+done
+
+old_signature="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
+  "SELECT to_regprocedure('monitoring.create_zabbix_source(text,text,text,text,text,text,text,text,text,jsonb)') IS NULL;")"
+test "$old_signature" = "t"
 
 fp_a="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 fp_b="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 scope='{"host_group_refs":["group-linux","group-network"]}'
 
 create_result="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
-  "SELECT * FROM monitoring.create_zabbix_source('tenant-a','create-1','$fp_a','source-a','generation-a','sync-a','Primary Zabbix','https://zabbix.example.test/zabbix','secret-binding:zabbix-primary','$scope'::jsonb);")"
+  "SELECT * FROM monitoring.create_zabbix_source('tenant-a','create-1','$fp_a','source-a','generation-a','sync-a','audit-a','principal-a','human_browser_session','credential-generation-a','authz-decision-a','correlation-a','Primary Zabbix','https://zabbix.example.test/zabbix','secret-binding:zabbix-primary','$scope'::jsonb);")"
 test "$create_result" = "source-a|sync-a|completed|f"
 
 replay_result="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
-  "SELECT * FROM monitoring.create_zabbix_source('tenant-a','create-1','$fp_a','ignored-source','ignored-generation','ignored-sync','Primary Zabbix','https://zabbix.example.test/zabbix','secret-binding:zabbix-primary','$scope'::jsonb);")"
+  "SELECT * FROM monitoring.create_zabbix_source('tenant-a','create-1','$fp_a','ignored-source','ignored-generation','ignored-sync','ignored-audit','principal-b','machine_api_principal','credential-generation-b','authz-decision-b','correlation-b','Primary Zabbix','https://zabbix.example.test/zabbix','secret-binding:zabbix-primary','$scope'::jsonb);")"
 test "$replay_result" = "source-a|sync-a|completed|t"
 
 if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
-  "SELECT * FROM monitoring.create_zabbix_source('tenant-a','create-1','$fp_b','other-source','other-generation','other-sync','Different intent','https://zabbix.example.test/zabbix','secret-binding:other','$scope'::jsonb);" >/tmp/wave4-mismatch.out 2>&1; then
+  "SELECT * FROM monitoring.create_zabbix_source('tenant-a','create-1','$fp_b','other-source','other-generation','other-sync','other-audit','principal-a','human_browser_session','credential-generation-a','authz-decision-a','correlation-a','Different intent','https://zabbix.example.test/zabbix','secret-binding:other','$scope'::jsonb);" >/tmp/wave4-mismatch.out 2>&1; then
   echo "same-key/different-fingerprint unexpectedly succeeded" >&2
   exit 1
 fi
 grep -F "idempotency.key_reused" /tmp/wave4-mismatch.out >/dev/null
 
 other_tenant_result="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
-  "SELECT * FROM monitoring.create_zabbix_source('tenant-b','create-1','$fp_a','source-a','generation-a','sync-a','Primary Zabbix','https://zabbix.example.test/zabbix','secret-binding:zabbix-primary','$scope'::jsonb);")"
+  "SELECT * FROM monitoring.create_zabbix_source('tenant-b','create-1','$fp_a','source-a','generation-a','sync-a','audit-a','principal-b','machine_api_principal','credential-generation-b','authz-decision-b','correlation-b','Primary Zabbix','https://zabbix.example.test/zabbix','secret-binding:zabbix-primary','$scope'::jsonb);")"
 test "$other_tenant_result" = "source-a|sync-a|completed|f"
 
 state_result="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
@@ -60,8 +67,16 @@ state_result="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U post
 test "$state_result" = "reconciliation_required|pending|1|1"
 
 counts="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
-  "SELECT (SELECT count(*) FROM monitoring.monitoring_source) || '|' || (SELECT count(*) FROM monitoring.monitoring_source_generation) || '|' || (SELECT count(*) FROM monitoring.monitoring_sync_operation) || '|' || (SELECT count(*) FROM monitoring.monitoring_source_create_idempotency);")"
-test "$counts" = "2|2|2|2"
+  "SELECT (SELECT count(*) FROM monitoring.monitoring_source) || '|' || (SELECT count(*) FROM monitoring.monitoring_source_generation) || '|' || (SELECT count(*) FROM monitoring.monitoring_sync_operation) || '|' || (SELECT count(*) FROM monitoring.monitoring_source_create_idempotency) || '|' || (SELECT count(*) FROM monitoring.monitoring_source_audit_evidence);")"
+test "$counts" = "2|2|2|2|2"
+
+audit_result="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
+  "SELECT actor_principal_id || '|' || actor_principal_kind || '|' || actor_credential_generation || '|' || action || '|' || audit_class || '|' || monitoring_source_id || '|' || outcome || '|' || authorization_decision_ref || '|' || request_correlation_id || '|' || safe_summary::text FROM monitoring.monitoring_source_audit_evidence WHERE tenant_id='tenant-a' AND audit_evidence_id='audit-a';")"
+test "$audit_result" = 'principal-a|human_browser_session|credential-generation-a|monitoring.source.manage|privileged|source-a|local_creation_committed|authz-decision-a|correlation-a|{"mutation": "create", "provider_profile": "zabbix"}'
+
+replay_audit_count="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
+  "SELECT count(*) FROM monitoring.monitoring_source_audit_evidence WHERE tenant_id='tenant-a';")"
+test "$replay_audit_count" = "1"
 
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
   "UPDATE monitoring.monitoring_source SET credential_binding_ref='secret-binding:zabbix-rotated', configuration_revision=2 WHERE tenant_id='tenant-a' AND monitoring_source_id='source-a';" >/dev/null
@@ -81,6 +96,20 @@ fi
 grep -F "Monitoring source generation records are immutable" /tmp/wave4-generation.out >/dev/null
 
 if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
+  "UPDATE monitoring.monitoring_source_audit_evidence SET outcome='changed' WHERE tenant_id='tenant-a' AND audit_evidence_id='audit-a';" >/tmp/wave4-audit-update.out 2>&1; then
+  echo "immutable audit evidence unexpectedly updated" >&2
+  exit 1
+fi
+grep -F "Monitoring source audit evidence is immutable" /tmp/wave4-audit-update.out >/dev/null
+
+if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
+  "DELETE FROM monitoring.monitoring_source_audit_evidence WHERE tenant_id='tenant-a' AND audit_evidence_id='audit-a';" >/tmp/wave4-audit-delete.out 2>&1; then
+  echo "immutable audit evidence unexpectedly deleted" >&2
+  exit 1
+fi
+grep -F "Monitoring source audit evidence is immutable" /tmp/wave4-audit-delete.out >/dev/null
+
+if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
   "UPDATE monitoring.monitoring_source SET configuration_revision=1 WHERE tenant_id='tenant-a' AND monitoring_source_id='source-a';" >/tmp/wave4-regression.out 2>&1; then
   echo "source revision regression unexpectedly succeeded" >&2
   exit 1
@@ -88,17 +117,17 @@ fi
 grep -F "Monitoring source revisions cannot regress" /tmp/wave4-regression.out >/dev/null
 
 if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
-  "SELECT * FROM monitoring.create_zabbix_source('tenant-c','bad-url','$fp_a','source-c','generation-c','sync-c','Bad URL','https://user@zabbix.example.test','secret-binding:x','$scope'::jsonb);" >/tmp/wave4-bad-url.out 2>&1; then
+  "SELECT * FROM monitoring.create_zabbix_source('tenant-c','bad-url','$fp_a','source-c','generation-c','sync-c','audit-c','principal-c','human_browser_session','credential-generation-c','authz-decision-c','correlation-c','Bad URL','https://user@zabbix.example.test','secret-binding:x','$scope'::jsonb);" >/tmp/wave4-bad-url.out 2>&1; then
   echo "forbidden userinfo URL unexpectedly succeeded" >&2
   exit 1
 fi
 grep -F "invalid bounded create-source input" /tmp/wave4-bad-url.out >/dev/null
 
 if docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c \
-  "SELECT * FROM monitoring.create_zabbix_source('tenant-c','bad-scope','$fp_a','source-c','generation-c','sync-c','Bad Scope','https://zabbix.example.test','secret-binding:x','{\"host_group_refs\":[\"same\",\"same\"]}'::jsonb);" >/tmp/wave4-bad-scope.out 2>&1; then
+  "SELECT * FROM monitoring.create_zabbix_source('tenant-c','bad-scope','$fp_a','source-c','generation-c','sync-c','audit-c','principal-c','human_browser_session','credential-generation-c','authz-decision-c','correlation-c','Bad Scope','https://zabbix.example.test','secret-binding:x','{\"host_group_refs\":[\"same\",\"same\"]}'::jsonb);" >/tmp/wave4-bad-scope.out 2>&1; then
   echo "duplicate configured scope unexpectedly succeeded" >&2
   exit 1
 fi
 grep -F "invalid configured provider scope" /tmp/wave4-bad-scope.out >/dev/null
 
-printf '%s\n' "wave4_monitoring_postgres_conformance=PASS create=atomic replay=same-result tenant_scope=isolated generation=immutable mutable_config=allowed network=absent"
+printf '%s\n' "wave4_monitoring_postgres_conformance=PASS create=atomic replay=same-result tenant_scope=isolated generation=immutable audit=atomic+immutable mutable_config=allowed network=absent"

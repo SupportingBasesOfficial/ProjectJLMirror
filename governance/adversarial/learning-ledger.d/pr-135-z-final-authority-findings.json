@@ -104,6 +104,19 @@
       "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 22
+    },
+    {
+      "id": "LEARN-PR135-025",
+      "pr": 135,
+      "source": "external_review",
+      "review_comment_id": 3983260269,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "Claim-time authority froze poll epoch/generation but left the operation's monitoring_source_id, source_instance_generation, configuration_revision and scope_revision mutable while running. A same-tenant writer could therefore rewrite an in-flight provider read onto newer source/revision authority before completion, defeating stale-authority checks that trusted the claimed operation row.",
+      "horizontal_audit": ["all claim-snapshotted ownership and revision fields", "pending-to-running claim transitions", "running-operation direct UPDATE permissions", "completion stale-authority predicates", "future metric/problem ingestion claim snapshots"],
+      "guardrails": [{"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 24
     }
   ]
 }

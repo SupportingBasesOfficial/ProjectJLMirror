@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'status=$?; echo "wave4_monitoring_boundary_hardening=FAIL line=$LINENO status=$status" >&2; exit "$status"' ERR
 
 POSTGRES_IMAGE="${POSTGRES_IMAGE:-postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280}"
 PG_CONTAINER="${PG_CONTAINER:-jlmirror-wave4-monitoring-boundary-postgres}"

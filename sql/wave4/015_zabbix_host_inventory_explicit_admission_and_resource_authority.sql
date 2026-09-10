@@ -17,6 +17,74 @@ DROP TRIGGER IF EXISTS wave4_host_inventory_runtime_admission_bootstrap
     ON monitoring.monitoring_source;
 DROP FUNCTION IF EXISTS monitoring.wave4_bootstrap_host_inventory_runtime_admission();
 
+-- Terminality is an absolute historical-evidence invariant. Evaluate it before caller
+-- authority so the final composed schema cannot turn a closed operation back into
+-- writable work even for the dedicated executor path.
+CREATE OR REPLACE FUNCTION monitoring.wave4_guard_sync_operation_poll_generation_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, monitoring
+AS $$
+DECLARE
+    v_epoch BIGINT;
+BEGIN
+    IF OLD.responsibility_kind='host_inventory_sync'
+       AND OLD.state IN ('succeeded','reconciliation_required','failed_terminal')
+       AND NEW IS DISTINCT FROM OLD THEN
+        RAISE EXCEPTION 'Terminal host inventory operation is immutable; Terminal host inventory sync operations are immutable';
+    END IF;
+
+    IF (OLD.responsibility_kind='host_inventory_sync' OR NEW.responsibility_kind='host_inventory_sync')
+       AND (
+           NEW.state IS DISTINCT FROM OLD.state
+           OR NEW.claim_token IS DISTINCT FROM OLD.claim_token
+           OR NEW.responsibility_kind IS DISTINCT FROM OLD.responsibility_kind
+           OR NEW.host_inventory_poll_generation IS DISTINCT FROM OLD.host_inventory_poll_generation
+           OR NEW.host_inventory_poll_epoch IS DISTINCT FROM OLD.host_inventory_poll_epoch
+           OR NEW.host_inventory_snapshot_evidence_id IS DISTINCT FROM OLD.host_inventory_snapshot_evidence_id
+       )
+       AND NOT monitoring.wave4_host_inventory_executor_is_current_user() THEN
+        RAISE EXCEPTION 'Host inventory operation authority requires guarded executor authority';
+    END IF;
+
+    IF OLD.responsibility_kind='host_inventory_sync'
+       AND NEW.responsibility_kind IS DISTINCT FROM OLD.responsibility_kind THEN
+        RAISE EXCEPTION 'Host inventory operation responsibility is immutable';
+    END IF;
+
+    IF OLD.responsibility_kind='host_inventory_sync'
+       AND OLD.host_inventory_poll_generation IS NOT NULL
+       AND NEW.host_inventory_poll_generation IS DISTINCT FROM OLD.host_inventory_poll_generation THEN
+        RAISE EXCEPTION 'Host inventory operation poll generation is immutable after claim';
+    END IF;
+
+    IF OLD.responsibility_kind='host_inventory_sync'
+       AND OLD.host_inventory_poll_epoch IS NOT NULL
+       AND NEW.host_inventory_poll_epoch IS DISTINCT FROM OLD.host_inventory_poll_epoch THEN
+        RAISE EXCEPTION 'Host inventory operation poll epoch is immutable after claim';
+    END IF;
+
+    IF OLD.responsibility_kind='host_inventory_sync'
+       AND OLD.host_inventory_poll_generation IS NULL
+       AND NEW.host_inventory_poll_generation IS NOT NULL THEN
+        IF NOT (OLD.state='pending' AND NEW.state='running' AND NEW.claim_token IS NOT NULL) THEN
+            RAISE EXCEPTION 'Host inventory operation poll authority may be assigned only by claim transition';
+        END IF;
+        SELECT s.host_inventory_poll_epoch INTO v_epoch
+          FROM monitoring.monitoring_source AS s
+         WHERE s.tenant_id=NEW.tenant_id
+           AND s.monitoring_source_id=NEW.monitoring_source_id;
+        IF v_epoch IS NULL THEN
+            RAISE EXCEPTION 'Host inventory claim source authority missing';
+        END IF;
+        NEW.host_inventory_poll_epoch := v_epoch;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
 -- Protect the entire mutable provider-derived host-inventory projection, rather than
 -- only the particular timestamp named by the review. This makes direct same-tenant
 -- UPDATE incapable of laundering freshness, scope, presence, provider identity

@@ -48,6 +48,30 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 3
+    },
+    {
+      "id": "LEARN-PR135-003",
+      "pr": 135,
+      "source": "internal_audit",
+      "review_comment_id": null,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "The first poll-order remediation wrapped completion by renaming the previously unfenced implementation and delegating to it after checking poll authority. That left an alternate callable SQL entry point which a broadly granted runtime role could invoke directly, bypassing the newly introduced authority fence while preserving otherwise valid tenant context.",
+      "horizontal_audit": [
+        "all SQL helper functions introduced by authority wrappers",
+        "runtime roles receiving broad function execute grants",
+        "completion and reconciliation alternate entry points",
+        "future internal helper extraction around fenced mutations",
+        "provider worker functions whose public surface must equal their authority surface"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_wave4_authority_toctou_guardrail"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 4
     }
   ]
 }

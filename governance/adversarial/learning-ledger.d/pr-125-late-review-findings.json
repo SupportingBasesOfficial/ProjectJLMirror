@@ -19,7 +19,7 @@
       "guardrails": [
         {
           "path": "tools/assurance/test_validate_adversarial_learning.py",
-          "probe": "falsify_organization_provider_commercial_rename_path_gate"
+          "probe": "falsify_wave4_authorization_exact_path_allowlist"
         }
       ],
       "systemic_guardrail_updated": true,

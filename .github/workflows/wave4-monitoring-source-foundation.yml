@@ -107,5 +107,10 @@ jobs:
           PG_CONTAINER: jlmirror-wave4-host-inventory-ordering-postgres
         run: bash tools/wave4/run_zabbix_host_inventory_ordering_postgres_conformance.sh
 
+      - name: Execute Zabbix host inventory evidence authority on pinned PostgreSQL
+        env:
+          PG_CONTAINER: jlmirror-wave4-host-inventory-authority-postgres
+        run: bash tools/wave4/run_zabbix_host_inventory_evidence_authority_postgres_conformance.sh
+
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

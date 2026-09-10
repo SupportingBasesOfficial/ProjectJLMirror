@@ -1,13 +1,16 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "authorization_id": "wave4.monitoring-host-inventory@1",
   "accepted_merge_commit": "f85b01cce8e148123dd980ae6b60f83c707263f5",
-  "authorization_state": "accepted_product_behavior_resource_kind_clarification_pending",
+  "authorization_state": "accepted_product_behavior_resource_kind_clarification_proposed",
+  "effective_rule": "this_successor_clarification_becomes_canonical_and_unblocks_exact_host_inventory_implementation_only_after_exact_head_review_and_separately_authorized_merge",
+  "canonical_effect_after_merge": "host_inventory_ingestion_authorized_for_exact_accepted_behavior_with_monitoring_resource_kind_host",
   "post_merge_finding": {
     "source_pr": 133,
     "severity": "P1",
     "finding": "canonical_monitoring_resource_kind_was_not_explicitly_bound",
-    "implementation_blocked_until_clarified": true
+    "implementation_blocked_until_this_clarification_is_canonical": true,
+    "canonical_resolution_after_merge": "resolved_by_binding_monitoring_resource_kind_host_and_preserving_separate_provider_object_kind_and_device_taxonomy"
   },
   "product_vertical": "monitoring",
   "provider_profile": "zabbix",
@@ -87,7 +90,8 @@
     "docs/09-api-contracts/zabbix-monitoring-normalization-profile.md",
     "implementation/wave-4/IMPLEMENTATION_MANIFEST.json"
   ],
-  "implementation_authority": "blocked_until_this_resource_kind_clarification_is_separately_merged",
+  "implementation_authority_before_merge": "blocked",
+  "implementation_authority_after_merge": "granted_for_exact_host_inventory_ingestion_slice_only",
   "production_authority": "none",
   "frontend_authority": "not_granted",
   "merge_authorization": "not_granted"

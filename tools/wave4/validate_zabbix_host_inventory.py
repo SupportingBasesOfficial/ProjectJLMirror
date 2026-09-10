@@ -34,6 +34,7 @@ def main() -> None:
     hardening = HARDENING.read_text(encoding="utf-8")
     integrity = INTEGRITY.read_text(encoding="utf-8")
     ordering = ORDERING.read_text(encoding="utf-8")
+    base_pg = PG.read_text(encoding="utf-8")
     ordering_pg = PG_ORDERING.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -106,23 +107,31 @@ def main() -> None:
 
     for marker in (
         "host_inventory_poll_generation BIGINT NOT NULL DEFAULT 0",
-        "host_inventory_poll_generation BIGINT NULL",
+        "last_confirmed_present_poll_generation BIGINT NOT NULL DEFAULT 0",
+        "removed_poll_generation BIGINT NULL",
         "CREATE OR REPLACE FUNCTION monitoring.complete_zabbix_host_inventory",
         "host_inventory_poll_generation=s.host_inventory_poll_generation+1",
         "FOR UPDATE OF s,o",
         "execution.superseded_poll_authority",
-        "e.observed_at > OLD.last_confirmed_present_at",
-        "newer complete authoritative negative snapshot evidence",
+        "last_confirmed_present_poll_generation=v_poll_generation",
+        "removed_poll_generation=v_poll_generation",
+        "e.host_inventory_poll_generation > OLD.last_confirmed_present_poll_generation",
+        "newer complete authoritative negative poll evidence",
+        "Poll generation, not wall-clock time, is the authoritative presence ordering field",
         "no unfenced helper remains callable",
     ):
         require(marker in ordering, f"host inventory ordering guard missing: {marker}")
     require("wave4_complete_zabbix_host_inventory_pre_poll_fence" not in ordering, "unfenced host inventory completion helper must not exist")
+
+    require("sql/wave4/008_zabbix_host_inventory_poll_ordering_hardening.sql" in base_pg, "base host inventory conformance does not apply final ordering migration")
+    require("poll_order=final-schema" in base_pg, "base host inventory conformance does not assert final schema execution")
     for marker in (
         "poll_generation=claim_ordered",
         "late_completion=retired_without_mutation",
         "stale_negative=blocked",
         "newer_positive=preserved",
         "unfenced_helper=absent",
+        "poll_generation=presence_authority",
     ):
         require(marker in ordering_pg, f"host inventory ordering PostgreSQL falsifier missing: {marker}")
 
@@ -139,7 +148,7 @@ def main() -> None:
     require("host_inventory_ingestion" not in manifest["explicitly_not_implemented"], "manifest still denies implemented host inventory")
     require("canonical_device_classification" in manifest["explicitly_not_implemented"], "implementation must not claim device classification authority")
 
-    print("wave4_zabbix_host_inventory_validation=PASS resource_kind=host provider_object_kind=zabbix_host evidence=bounded+scope-bound+owner-bound identity=immutable removal=authoritative+newer-only tenant_rls=forced stale_authority=fenced poll_generation=single-winner unfenced_helper=absent recovery=validation-authority")
+    print("wave4_zabbix_host_inventory_validation=PASS resource_kind=host provider_object_kind=zabbix_host evidence=bounded+scope-bound+owner-bound identity=immutable removal=poll-ordered tenant_rls=forced stale_authority=fenced poll_generation=single-winner unfenced_helper=absent recovery=validation-authority")
 
 
 if __name__ == "__main__":

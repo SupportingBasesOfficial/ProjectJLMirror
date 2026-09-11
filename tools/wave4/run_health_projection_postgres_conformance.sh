@@ -48,6 +48,12 @@ SELECT
   has_table_privilege('jlmirror_wave4_health_projection_invoker','monitoring.health_projection','UPDATE')::int;")"
 test "$acl" = "1:1:0:0"
 
+function_acl="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
+SELECT
+  has_function_privilege('jlmirror_wave4_health_projection_invoker','monitoring.recompute_health_projection(text,text,text)','EXECUTE')::int || ':' ||
+  has_function_privilege('PUBLIC','monitoring.recompute_health_projection(text,text,text)','EXECUTE')::int;")"
+test "$function_acl" = "1:0"
+
 constraints="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
 SELECT
   (EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='monitoring.health_projection'::regclass AND tgname='health_projection_guard' AND NOT tgisinternal))::int || ':' ||
@@ -55,11 +61,20 @@ SELECT
   (EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='monitoring.health_projection_transition'::regclass AND contype='u'))::int;")"
 test "$constraints" = "1:1:1"
 
-body="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT pg_get_functiondef('monitoring.wave4_guard_health_projection_mutation()'::regprocedure);")"
-grep -q "snapshot_complete" <<<"$body"
-grep -q "active_source_instance_generation" <<<"$body"
-grep -q "presence_state='present'" <<<"$body"
-grep -q "scope_state='in_scope'" <<<"$body"
-grep -q "Healthy cannot coexist with an active health-affecting canonical problem" <<<"$body"
+guard_body="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT pg_get_functiondef('monitoring.wave4_guard_health_projection_mutation()'::regprocedure);")"
+grep -q "snapshot_complete" <<<"$guard_body"
+grep -q "active_source_instance_generation" <<<"$guard_body"
+grep -q "presence_state='present'" <<<"$guard_body"
+grep -q "scope_state='in_scope'" <<<"$guard_body"
+grep -q "Healthy cannot coexist with an active health-affecting canonical problem" <<<"$guard_body"
+
+apply_body="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT pg_get_functiondef('monitoring.recompute_health_projection(text,text,text)'::regprocedure);")"
+grep -q "FROM monitoring.monitoring_source AS s" <<<"$apply_body"
+grep -q "FOR UPDATE" <<<"$apply_body"
+grep -q "problem_poll_generation" <<<"$apply_body"
+grep -q "v_snapshot_operation_state='succeeded'" <<<"$apply_body"
+grep -q "v_existing.health_class=v_health" <<<"$apply_body"
+grep -q "last_changed_at=CASE WHEN v_existing.health_class IS DISTINCT FROM v_health" <<<"$apply_body"
+! grep -q "p_health_class" <<<"$apply_body"
 
 echo "wave4_health_projection_postgres=PASS"

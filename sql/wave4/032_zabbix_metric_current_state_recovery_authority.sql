@@ -1,5 +1,8 @@
 -- Wave 4 Metric Current State recovery/readmission authority.
 -- Concrete mutable authority remains stream-local; only the accepted recovery laws are reused.
+-- The lifecycle mutation itself is delegated to a narrowly-scoped SECURITY DEFINER
+-- helper installed by the final least-privilege migration; recovery receives no
+-- direct monitoring_sync_operation DML authority.
 
 BEGIN;
 
@@ -33,15 +36,12 @@ BEGIN
         RAISE EXCEPTION 'monitoring.metric_current_state_recovery_epoch_must_advance';
     END IF;
 
-    -- A claimed operation from the old epoch can never regain current authority after recovery.
-    UPDATE monitoring.monitoring_sync_operation AS o
-       SET state='reconciliation_required',completed_at=transaction_timestamp(),
-           last_error_class='execution.superseded_current_state_poll_authority',claim_token=NULL
-     WHERE o.tenant_id=p_tenant_id
-       AND o.monitoring_source_id=p_monitoring_source_id
-       AND o.responsibility_kind='metric_current_state_sync'
-       AND o.state='running'
-       AND o.current_state_poll_epoch=v_current_epoch;
+    -- The final schema installs this helper with executor ownership and grants
+    -- EXECUTE only to recovery authority.  Recovery never receives generic DML
+    -- privileges on monitoring_sync_operation.
+    PERFORM monitoring.wave4_terminalize_superseded_metric_current_state_claims(
+        p_tenant_id,p_monitoring_source_id,v_current_epoch
+    );
 
     UPDATE monitoring.monitoring_source AS s
        SET current_state_poll_epoch=p_successor_poll_epoch,

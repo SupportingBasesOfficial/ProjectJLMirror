@@ -1,7 +1,34 @@
 -- Exception-safe totalization for claimed Metric Current State completion input.
--- No malformed payload shape/value may strand a legitimate claim in running state.
+-- No malformed payload shape/value/provider timestamp may strand a legitimate
+-- claim in running state.
 
 BEGIN;
+
+CREATE OR REPLACE FUNCTION monitoring.wave4_current_provider_timestamp_is_valid(
+    p_provider_clock BIGINT,
+    p_provider_ns INTEGER
+) RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path=pg_catalog,monitoring AS $$
+DECLARE
+    v_observed_at TIMESTAMPTZ;
+BEGIN
+    IF p_provider_clock IS NULL OR p_provider_clock<=0
+       OR p_provider_ns IS NULL OR p_provider_ns<0 OR p_provider_ns>999999999 THEN
+        RETURN FALSE;
+    END IF;
+
+    BEGIN
+        v_observed_at:=to_timestamp(p_provider_clock)
+            + (p_provider_ns::DOUBLE PRECISION / 1000000000.0) * interval '1 second';
+    EXCEPTION
+        WHEN datetime_field_overflow OR numeric_value_out_of_range THEN
+            RETURN FALSE;
+    END;
+    RETURN v_observed_at IS NOT NULL;
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION monitoring.complete_zabbix_metric_current_state(
     p_tenant_id TEXT,
@@ -89,6 +116,20 @@ BEGIN
             SELECT 1 FROM jsonb_array_elements(p_observations) AS e(value)
              WHERE (e.value->>'provider_clock')::NUMERIC > 9223372036854775807::NUMERIC
                 OR (e.value->>'provider_ns')::INTEGER > 999999999
+        ) THEN
+            v_invalid:=TRUE;
+        END IF;
+    END IF;
+
+    IF NOT v_invalid THEN
+        -- BIGINT-valid provider time can still be outside PostgreSQL timestamptz.
+        -- Prove conversion safety before delegating to the mutation phase.
+        IF EXISTS (
+            SELECT 1 FROM jsonb_array_elements(p_observations) AS e(value)
+             WHERE NOT monitoring.wave4_current_provider_timestamp_is_valid(
+                 (e.value->>'provider_clock')::BIGINT,
+                 (e.value->>'provider_ns')::INTEGER
+             )
         ) THEN
             v_invalid:=TRUE;
         END IF;

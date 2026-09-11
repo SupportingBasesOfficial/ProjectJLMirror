@@ -4,8 +4,12 @@ on:
   pull_request:
     paths:
       - 'src/jlmirror_monitoring/health_projection.py'
+      - 'src/jlmirror_monitoring/health_reads.py'
       - 'sql/wave4/047_health_projection.sql'
+      - 'sql/wave4/048_health_projection_application.sql'
+      - 'sql/wave4/049_health_projection_lock_order_hardening.sql'
       - 'tests/wave4/test_health_projection.py'
+      - 'tests/wave4/test_health_reads.py'
       - 'tests/wave4/test_health_projection_authorization.py'
       - 'tools/wave4/validate_health_projection_authorization.py'
       - 'tools/wave4/run_health_projection_postgres_conformance.sh'
@@ -15,8 +19,12 @@ on:
       - main
     paths:
       - 'src/jlmirror_monitoring/health_projection.py'
+      - 'src/jlmirror_monitoring/health_reads.py'
       - 'sql/wave4/047_health_projection.sql'
+      - 'sql/wave4/048_health_projection_application.sql'
+      - 'sql/wave4/049_health_projection_lock_order_hardening.sql'
       - 'tests/wave4/test_health_projection.py'
+      - 'tests/wave4/test_health_reads.py'
       - 'tests/wave4/test_health_projection_authorization.py'
       - 'tools/wave4/validate_health_projection_authorization.py'
       - 'tools/wave4/run_health_projection_postgres_conformance.sh'
@@ -80,7 +88,8 @@ jobs:
         run: |
           PYTHONPATH=src python3 -m unittest \
             tests.wave4.test_health_projection_authorization \
-            tests.wave4.test_health_projection
+            tests.wave4.test_health_projection \
+            tests.wave4.test_health_reads
 
       - name: Execute Health Projection composed PostgreSQL conformance
         run: bash tools/wave4/run_health_projection_postgres_conformance.sh

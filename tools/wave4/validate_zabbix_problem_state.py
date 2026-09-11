@@ -4,7 +4,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DOMAIN = ROOT / "src/jlmirror_monitoring/problem_state.py"
-SQL = ROOT / "sql/wave4/042_zabbix_problem_state.sql"
+SQL_PATHS = [
+    ROOT / "sql/wave4/042_zabbix_problem_state.sql",
+    ROOT / "sql/wave4/043_zabbix_problem_state_lifecycle.sql",
+    ROOT / "sql/wave4/044_zabbix_problem_state_snapshot_authority.sql",
+    ROOT / "sql/wave4/045_zabbix_problem_state_recovery_authority.sql",
+]
 AUTH = ROOT / "implementation/wave-4-problem-state-authorization/AUTHORIZATION.md"
 
 
@@ -15,7 +20,7 @@ def require(condition: bool, message: str) -> None:
 
 def main() -> None:
     domain = DOMAIN.read_text(encoding="utf-8")
-    sql = SQL.read_text(encoding="utf-8")
+    sql = "\n".join(path.read_text(encoding="utf-8") for path in SQL_PATHS)
     lower = sql.lower()
     auth = AUTH.read_text(encoding="utf-8")
 
@@ -32,6 +37,19 @@ def main() -> None:
     require("provider acknowledgement is metadata only" in lower, "provider acknowledgement non-authority marker missing")
     require("resolved problem cannot be reopened" in lower, "resolved identity reopen guard missing")
     require("ABSENCE FROM INCOMPLETE problem.get != RESOLVED" in auth, "fail-closed negative resolution law missing")
+
+    for marker in (
+        "enqueue_zabbix_problem_state_sync",
+        "claim_zabbix_problem_state",
+        "complete_zabbix_problem_state_with_evidence",
+        "monitoring_problem_snapshot_evidence",
+        "authoritative negative resolution may consume only snapshot_complete=true evidence",
+        "revoke execute on function monitoring.complete_zabbix_problem_state",
+        "wave4_terminalize_superseded_problem_state_claims",
+        "monitoring.problem_state_recovery_epoch_must_advance",
+        "revoke update on monitoring.monitoring_source from jlmirror_wave4_problem_state_executor",
+    ):
+        require(marker in lower, f"Problem State hardening marker missing: {marker}")
 
     for forbidden in (
         "insert into monitoring.health",

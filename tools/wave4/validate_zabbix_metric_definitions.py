@@ -124,6 +124,7 @@ def main() -> None:
         "v_input_failure := 'execution.invalid_completion_shape'",
         "metric-reconciliation-", 'claim_token=NULL',
         'FROM PUBLIC,jlmirror_wave4_metric_definition_invoker',
+        'Degraded evidence identity is derived from the operation authority',
     ):
         require(marker in m029, f"migration 029 claimed-input liveness missing: {marker}")
 
@@ -159,12 +160,12 @@ def main() -> None:
 
     for marker in (
         'schema=001-029', 'null=terminal', 'nonarray=terminal', 'overbound=terminal',
-        'invalid_shape=terminal', 'missing_snapshot=fallback-id', 'helper=executor-only',
-        'partial_mutation=none', 'claim=retired',
+        'invalid_shape=terminal', 'missing_snapshot=fallback-id', 'collision=owner-derived',
+        'helper=executor-only', 'partial_mutation=none', 'claim=retired',
     ):
         require(marker in claimed_input_liveness, f"claimed-input PostgreSQL conformance marker missing: {marker}")
 
-    print('wave4_zabbix_metric_definitions=PASS schema=020-029 broad=001-027 item_liveness=001-028 claimed_input_liveness=001-029 scope=item-get-metadata-only authority=item-stream-independent atomic_preflight=required claim=qualified+split-field-authority evidence=owner-bound+closed+fingerprint-verified drift=host+value-visible recovery=stale-fenced liveness=terminal-reconciliation+claimed-input-total')
+    print('wave4_zabbix_metric_definitions=PASS schema=020-029 broad=001-027 item_liveness=001-028 claimed_input_liveness=001-029 scope=item-get-metadata-only authority=item-stream-independent atomic_preflight=required claim=qualified+split-field-authority evidence=owner-bound+closed+fingerprint-verified drift=host+value-visible recovery=stale-fenced liveness=terminal-reconciliation+claimed-input-total+owner-derived-degraded-evidence')
 
 
 if __name__ == '__main__':

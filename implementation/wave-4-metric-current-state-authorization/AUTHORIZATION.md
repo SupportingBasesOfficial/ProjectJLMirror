@@ -43,6 +43,8 @@ CURRENT STATE != HEALTH
 PROVIDER EVENT TIME != CURRENT-STATE ORDERING AUTHORITY
 ACCEPTANCE TIME != PROVIDER EVENT TIME
 LATER POLL GENERATION != SEMANTIC VALUE CHANGE
+POSITIVE PER-OBJECT EVIDENCE != GLOBAL SNAPSHOT COMPLETENESS
+OMISSION != NEGATIVE AUTHORITY WITHOUT KNOWN COVERAGE
 LAST-KNOWN VALUE != CURRENT EVIDENCE
 UNCERTAINTY != NULL/ABSENT VALUE
 CURRENT-STATE POLL AUTHORITY != ITEM-DEFINITION POLL AUTHORITY
@@ -75,6 +77,9 @@ STALE SCOPE != CURRENT AUTHORITY
 20. **Transition publication is bounded.** A genuine current-value transition may create the already-contracted Monitoring current-state transition/outbox obligation, but simple evidence refresh/no-op must not fan out duplicate transitions.
 21. **Recovery fails closed.** PITR/failover/relocation cannot restore volatile current-state admission or allow stale pre-recovery claims to regain current authority.
 22. **No frontend implication.** Backend/domain/data support for current state creates no frontend route/navigation authority.
+23. **Positive per-object evidence is independently admissible.** A successfully returned, authority-valid item may refresh its own current projection even if another bounded page/partition in the same broader cycle fails. Global snapshot completeness is not required for trustworthy positive evidence about that specific item.
+24. **Omission has no authority without proven coverage.** A missing item/value in an incomplete, truncated, timed-out or otherwise uncertain cycle cannot clear the stored value or invent a negative current-state transition. It may degrade evidence only when the implementation can prove the metric belonged to the attempted coverage domain; otherwise prior last-known state is preserved without fabricated inference.
+25. **Provider sample time must be structurally valid.** When Zabbix `lastclock/lastns` contributes to current observation identity/evidence, `lastclock` must represent a valid provider sample time and `lastns` must be a valid nanosecond component. Missing/zero/invalid sample-time evidence cannot be promoted to fresh current truth merely because a `lastvalue` string is present.
 
 ## Evidence-state semantics
 
@@ -91,10 +96,13 @@ unavailable
 Rules:
 
 - `current` requires active generation, current scope, compatible active definition/binding, current poll authority/admission and valid bounded provider value evidence;
+- positive object-specific evidence may become current without requiring unrelated partitions to complete, provided that object's request/evidence and authority are individually trustworthy;
+- omitted objects in incomplete/uncertain coverage do not acquire negative authority and their values are not cleared;
 - stale/incomplete/unavailable provider execution never fabricates a fresh value;
 - reconciliation-required definition/binding/scope prevents fresh current authority;
 - historical generation has no current authority even if the stored projection's last accepted evidence had once been `current`;
-- evidence degradation may update evidence classification without advancing `last_changed_at` when the canonical value itself did not change.
+- evidence degradation may update evidence classification without advancing `last_changed_at` when the canonical value itself did not change;
+- invalid/missing provider sample time cannot be represented as freshly current observation evidence.
 
 ## Ordering / idempotency semantics
 
@@ -141,6 +149,8 @@ This authorization does not permit:
 - `accepted_at` as provider occurrence time;
 - duplicate transition publication for same-value/no-op refresh;
 - implicit current value from missing/invalid evidence;
+- clearing current value from incomplete/unproven omission;
+- treating global snapshot completeness as prerequisite for accepting trustworthy positive per-object current evidence;
 - production polling/retry/capacity numerics beyond hard safety bounds;
 - frontend route or navigation creation;
 - production deployment.

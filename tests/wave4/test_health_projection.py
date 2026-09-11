@@ -16,7 +16,12 @@ from jlmirror_monitoring.health_projection import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-SQL = (ROOT / "sql/wave4/047_health_projection.sql").read_text(encoding="utf-8")
+SQL_PATHS = [
+    ROOT / "sql/wave4/047_health_projection.sql",
+    ROOT / "sql/wave4/048_health_projection_application.sql",
+    ROOT / "sql/wave4/049_health_projection_lock_order_hardening.sql",
+]
+SQL = "\n".join(path.read_text(encoding="utf-8") for path in SQL_PATHS)
 AUTH = (ROOT / "implementation/wave-4-health-projection-authorization/AUTHORIZATION.md").read_text(encoding="utf-8")
 
 
@@ -127,6 +132,26 @@ class HealthProjectionPersistenceTests(unittest.TestCase):
             "scope_projection_revision=e.scope_revision",
         ):
             self.assertIn(marker, self.lower)
+
+    def test_health_class_is_recomputed_inside_postgres(self) -> None:
+        self.assertIn("create or replace function monitoring.recompute_health_projection", self.lower)
+        self.assertNotIn("p_health_class", self.lower)
+        self.assertIn("p_health_transition_id text", self.lower)
+        self.assertIn("p.severity_class='critical'", self.lower)
+        self.assertIn("p.severity_class in ('warning','degraded')", self.lower)
+
+    def test_lock_order_serializes_against_problem_state(self) -> None:
+        self.assertIn("problem state claim/completion also serializes on this source row", self.lower)
+        self.assertIn("from monitoring.monitoring_source as s", self.lower)
+        self.assertIn("for update;", self.lower)
+        self.assertIn("resource_revalidation_failed", self.lower)
+        self.assertIn("v_snapshot_operation_state='succeeded'", self.lower)
+
+    def test_exact_replay_does_not_advance_revision(self) -> None:
+        self.assertIn("v_existing.health_class=v_health", self.lower)
+        self.assertIn("v_existing.evidence_state=v_evidence", self.lower)
+        self.assertIn("return v_existing.projection_revision", self.lower)
+        self.assertIn("last_changed_at=case when v_existing.health_class is distinct from v_health", self.lower)
 
     def test_healthy_rejects_active_health_affecting_problem(self) -> None:
         self.assertIn("healthy cannot coexist with an active health-affecting canonical problem", self.lower)

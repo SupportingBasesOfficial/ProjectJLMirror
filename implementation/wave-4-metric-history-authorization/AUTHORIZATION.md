@@ -72,6 +72,8 @@ HISTORY CHECKPOINT AUTHORITY != ITEM-DEFINITION POLL AUTHORITY
 HISTORY CHECKPOINT AUTHORITY != HOST-INVENTORY POLL AUTHORITY
 UNCERTAINTY != COMPLETE
 RETENTION LOSS != SUCCESSFUL BACKFILL
+HISTORY API CURSOR != HIDDEN AUTHORITY SNAPSHOT
+CURSOR POSSESSION != READ AUTHORITY
 ```
 
 ## Authorized product behavior
@@ -100,11 +102,13 @@ RETENTION LOSS != SUCCESSFUL BACKFILL
 22. **Checkpoint advancement is crash-safe.** Durable observations and safe checkpoint advancement must be ordered/atomic or otherwise recoverably journaled so a crash cannot advance the checkpoint past observations that were never durably projected.
 23. **Replay is idempotent.** Recovery/reconciliation may replay windows and accepted obligations arbitrarily; canonical observation identity suppresses duplicates without suppressing equal provider-local IDs from different authoritative scopes.
 24. **Bounded historical reads are authorized.** Backend history query contracts may read by canonical tenant/resource/metric identity over explicit bounded time ranges with deterministic pagination. Unbounded full-retention scans are not authorized by this slice.
-25. **Physical storage remains behind the telemetry port.** This authorization fixes canonical history semantics and persistence obligations, not an irreversible production storage vendor. PostgreSQL may serve bounded implementation/conformance where repository contracts permit, but production specialization/capacity remains evidence-driven.
-26. **No general broker requirement for raw history.** High-volume `metric_observation` rows are not forced through the general integration-event broker merely because they are historical telemetry.
-27. **Tenant isolation is mandatory.** Historical persistence, checkpoint state and reads remain tenant-bound and cannot use provider-local IDs as cross-tenant keys.
-28. **Recovery/relocation remains generation-aware.** Replay after relocation/PITR/failover preserves canonical observation scope, source generation and accepted safe checkpoint/floor; stale placement cannot manufacture newer history authority.
-29. **No frontend implication.** Backend/domain/data support for historical metrics creates no frontend route/navigation authority.
+25. **History cursor follows the accepted anchor profile.** `metric-observations` pagination uses opaque non-sensitive `observation_id` as the anchor. Every continuation re-establishes current authentication, tenant placement and authorization; revalidates the same canonical metric/from/to/generation filters/window; resolves the anchor inside that current authorized scope; derives its deterministic `observed_at` tie position from authoritative data; and returns only rows after that position. Cross-tenant, wrong-filter, wrong-window or wrong-generation anchors fail sparsely without existence leakage. Cursor possession grants no authority and no hidden protected continuation snapshot/state is introduced.
+26. **History responses are `no_store`.** Historical customer metric values follow the accepted Monitoring API cache profile and must not become shared-cache authority.
+27. **Physical storage remains behind the telemetry port.** This authorization fixes canonical history semantics and persistence obligations, not an irreversible production storage vendor. PostgreSQL may serve bounded implementation/conformance where repository contracts permit, but production specialization/capacity remains evidence-driven.
+28. **No general broker requirement for raw history.** High-volume `metric_observation` rows are not forced through the general integration-event broker merely because they are historical telemetry.
+29. **Tenant isolation is mandatory.** Historical persistence, checkpoint state and reads remain tenant-bound and cannot use provider-local IDs as cross-tenant keys.
+30. **Recovery/relocation remains generation-aware.** Replay after relocation/PITR/failover preserves canonical observation scope, source generation and accepted safe checkpoint/floor; stale placement cannot manufacture newer history authority.
+31. **No frontend implication.** Backend/domain/data support for historical metrics creates no frontend route/navigation authority.
 
 ## Checkpoint and completeness semantics
 
@@ -156,6 +160,25 @@ A crash may leave `pending` projection lag, but it must not produce either of th
 
 History projection of a sample that was already accepted by Current does not create a Current transition. History ingestion of a late/backfill sample does not acquire Current authority.
 
+## API read semantics
+
+The accepted Monitoring API contract applies unchanged:
+
+```text
+GET metric history
+  tenant-scoped
+  explicit canonical metric identity
+  explicit bounded from/to window
+  deterministic ordering
+  opaque observation_id anchor cursor
+  next page revalidates current authorization + identical filters/window/generation
+  anchor derives observed_at tie position from authoritative row
+  finite row limit + finite serialized response-byte budget
+  cache = no_store
+```
+
+The cursor is an anchor, not a capability token. It must not encode/sign/encrypt hidden tenant authority, confidential predicates or a reusable privileged query snapshot. Wrong tenant/filter/window/generation anchors fail without leaking cross-scope existence.
+
 ## Explicitly outside this slice
 
 This authorization does not permit:
@@ -174,6 +197,8 @@ This authorization does not permit:
 - collapsing observation identity across tenant/source/generation boundaries;
 - raw-provider payload replication as canonical history;
 - unbounded history API scans;
+- hidden protected cursor payload/state for metric history;
+- shared/public cache authority for metric history;
 - irreversible production telemetry-store selection without benchmark/capacity evidence;
 - Problems/Triggers/Events ingestion;
 - Health projection;

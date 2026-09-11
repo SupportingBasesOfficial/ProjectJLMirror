@@ -116,7 +116,10 @@
     "metric_current_state_recovery_terminalizes_superseded_claims",
     "metric_current_state_logical_recovery_admission_exclusion",
     "metric_current_state_least_privilege_source_poll_mutation",
-    "metric_current_state_final_schema_composed_conformance"
+    "metric_current_state_final_schema_composed_conformance",
+    "metric_current_state_provider_timestamp_exception_safe_totalization",
+    "metric_current_state_recovery_operation_dml_helper_isolation",
+    "metric_current_state_hardening_postgres_conformance"
   ],
   "authorized_slices_consumed": [
     "impl.customer-telemetry@1",
@@ -196,6 +199,7 @@
     "tools/wave4/run_zabbix_metric_definitions_liveness_postgres_conformance.sh",
     "tools/wave4/run_zabbix_metric_definitions_claimed_input_liveness_postgres_conformance.sh",
     "tools/wave4/run_zabbix_metric_current_state_postgres_conformance.sh",
+    "tools/wave4/run_zabbix_metric_current_state_hardening_postgres_conformance.sh",
     ".github/workflows/wave4-monitoring-source-foundation.yml"
   ],
   "explicitly_not_implemented": [

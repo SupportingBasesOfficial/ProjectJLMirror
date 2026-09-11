@@ -15,8 +15,13 @@ from jlmirror_monitoring.problem_state import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-SQL_FOUNDATION = ROOT / "sql/wave4/042_zabbix_problem_state.sql"
-SQL_LIFECYCLE = ROOT / "sql/wave4/043_zabbix_problem_state_lifecycle.sql"
+SQL_PATHS = [
+    ROOT / "sql/wave4/042_zabbix_problem_state.sql",
+    ROOT / "sql/wave4/043_zabbix_problem_state_lifecycle.sql",
+    ROOT / "sql/wave4/044_zabbix_problem_state_snapshot_authority.sql",
+    ROOT / "sql/wave4/045_zabbix_problem_state_recovery_authority.sql",
+    ROOT / "sql/wave4/046_zabbix_problem_state_hardening.sql",
+]
 AUTH = ROOT / "implementation/wave-4-problem-state-authorization/AUTHORIZATION.md"
 
 
@@ -59,9 +64,7 @@ class ProblemStateDomainTests(unittest.TestCase):
 class ProblemStatePersistenceContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.foundation = SQL_FOUNDATION.read_text(encoding="utf-8")
-        cls.lifecycle = SQL_LIFECYCLE.read_text(encoding="utf-8")
-        cls.sql = cls.foundation + "\n" + cls.lifecycle
+        cls.sql = "\n".join(path.read_text(encoding="utf-8") for path in SQL_PATHS)
         cls.lower = cls.sql.lower()
         cls.auth = AUTH.read_text(encoding="utf-8")
 
@@ -92,6 +95,7 @@ class ProblemStatePersistenceContractTests(unittest.TestCase):
             "monitoring.monitoring_problem_provider_binding",
             "monitoring.monitoring_problem",
             "monitoring.monitoring_problem_transition",
+            "monitoring.monitoring_problem_snapshot_evidence",
         ):
             self.assertIn(f"alter table {table} enable row level security", self.lower)
             self.assertIn(f"alter table {table} force row level security", self.lower)
@@ -100,7 +104,7 @@ class ProblemStatePersistenceContractTests(unittest.TestCase):
         for marker in (
             "enqueue_zabbix_problem_state_sync",
             "claim_zabbix_problem_state",
-            "complete_zabbix_problem_state",
+            "complete_zabbix_problem_state_with_evidence",
             "reestablish_problem_state_runtime_admission",
             "monitoring.problem_state_recovery_admission_required",
         ):
@@ -111,6 +115,21 @@ class ProblemStatePersistenceContractTests(unittest.TestCase):
         self.assertIn("evidence_state='reconciliation_required'", self.lower)
         self.assertIn("monitoring.problem_snapshot_incomplete", self.lower)
         self.assertIn("ABSENCE FROM INCOMPLETE problem.get != RESOLVED", self.auth)
+
+    def test_complete_snapshot_at_provider_ceiling_is_not_authoritative(self) -> None:
+        self.assertIn("not snapshot_complete or active_problem_count < 20000", self.lower)
+
+    def test_active_confirmation_time_is_platform_acceptance_time(self) -> None:
+        self.assertIn("wave4_guard_problem_confirmation_semantics", self.lower)
+        self.assertIn("new.last_confirmed_at:=transaction_timestamp()", self.lower)
+        self.assertIn("problem opened_at provider evidence is immutable", self.lower)
+
+    def test_recovery_cannot_precede_opening(self) -> None:
+        self.assertIn("resolved_at is null or resolved_at >= opened_at", self.lower)
+
+    def test_provider_metadata_is_bounded_object(self) -> None:
+        self.assertIn("jsonb_typeof(provider_metadata)='object'", self.lower)
+        self.assertIn("octet_length(provider_metadata::text) <= 131072", self.lower)
 
     def test_recovery_is_same_scoped_provider_identity(self) -> None:
         self.assertIn("monitoring.problem_state_recovery_without_known_problem", self.lower)

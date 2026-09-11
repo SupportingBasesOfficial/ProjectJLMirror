@@ -1,0 +1,18 @@
+{
+  "authorization_id": "wave4.monitoring-problem-state@1",
+  "status": "proposed_bounded_implementation_authorization",
+  "canonical_base": "4908e5124f2d182146d0366030c1dd64c778a423",
+  "provider_profile": "zabbix",
+  "authorized_reads": ["problem.get", "event.get", "trigger.get:bounded-association-metadata"],
+  "canonical_problem_state": ["active", "resolved"],
+  "canonical_severity_class": ["unknown", "informational", "warning", "degraded", "critical"],
+  "requires_independent_poll_authority": true,
+  "negative_resolution_requires_authoritative_evidence": true,
+  "provider_acknowledgement_is_metadata_only": true,
+  "health_projection_authorized": false,
+  "alerting_authorized": false,
+  "itsm_authorized": false,
+  "provider_writeback_authorized": false,
+  "frontend_authorized": false,
+  "production_authority": "none"
+}

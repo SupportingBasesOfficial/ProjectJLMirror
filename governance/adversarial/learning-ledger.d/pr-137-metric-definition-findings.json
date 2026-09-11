@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR137-001",
+      "pr": 137,
+      "source": "internal_audit",
+      "review_comment_id": null,
+      "class_id": "ADV-BOUNDARY-RUNTIME-TYPE",
+      "invariant_ids": ["INV-BOUNDARY-001", "INV-OBS-001"],
+      "root_cause": "Metric-definition completion validated gross runtime payload shape and completion coherence before resolving a legitimately running claim. NULL, non-array, over-bound or incoherent completion input could therefore raise at the persistence boundary before a durable terminal outcome was written, allowing malformed provider/runtime input to own operation liveness and leave claimed work indefinitely running.",
+      "horizontal_audit": [
+        "all completion entry points that accept provider-controlled or deserialized payloads after work is claimed",
+        "claim resolution ordering relative to runtime type, shape and cardinality validation",
+        "terminalization behavior for NULL, wrong-type, over-bound and incoherent completion inputs",
+        "degraded evidence identity when caller-provided snapshot identifiers are absent or collide",
+        "helper function EXECUTE privileges after wrapping an older completion implementation",
+        "PostgreSQL harness stdin paths to ensure adversarial payloads are actually executed",
+        "future metric current/history/problem completion paths with claimed work and provider-controlled payloads"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_wave4_metric_definition_claimed_input_liveness_guardrail"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 4
+    }
+  ]
+}

@@ -2,6 +2,8 @@ from pathlib import Path
 import json
 
 ROOT = Path(__file__).resolve().parents[2]
+HOST_SQUASH = "18581e18b90f1c387d2b175ec4f4dac0fbf677d2"
+METRIC_AUTH = "4debb413aad4b1b449fd6e0dcd05f101021d81e3"
 
 
 def require(condition: bool, message: str) -> None:
@@ -20,17 +22,46 @@ def main() -> None:
     accepted_contracts = provider + "\n" + monitoring_api
 
     implementation_id = manifest["implementation_id"]
-    require(implementation_id in {"wave4.zabbix-initial-validation-worker@1", "wave4.zabbix-host-inventory@1"}, "implementation id drift")
-    require(manifest["canonical_predecessor_commit"] == "d642a7f456e042dd02de2c04533c39c748f88aa9", "predecessor drift")
+    require(implementation_id in {
+        "wave4.zabbix-initial-validation-worker@1",
+        "wave4.zabbix-host-inventory@1",
+        "wave4.zabbix-metric-definitions@1",
+    }, "implementation id drift")
+
     if implementation_id == "wave4.zabbix-initial-validation-worker@1":
+        require(manifest["canonical_predecessor_commit"] == "d642a7f456e042dd02de2c04533c39c748f88aa9", "predecessor drift")
         require(manifest["product_feature_activation"] == "monitoring_source_validation_hostgroup_only", "slice boundary drift")
         for forbidden in ("resource_ingestion", "metric_ingestion", "problem_ingestion", "host_inventory_ingestion", "concrete_secret_manager", "concrete_egress_transport"):
             require(forbidden in manifest["explicitly_not_implemented"], f"missing deferred boundary: {forbidden}")
-    else:
+    elif implementation_id == "wave4.zabbix-host-inventory@1":
+        require(manifest["canonical_predecessor_commit"] == "d642a7f456e042dd02de2c04533c39c748f88aa9", "host inventory predecessor drift")
         require(manifest["product_feature_activation"] == "monitoring_source_validation_and_bounded_host_inventory", "host inventory successor activation drift")
         require("host_inventory_ingestion" in manifest["implemented_capability"], "host inventory successor missing authorized capability")
         for forbidden in ("metric_ingestion", "problem_ingestion", "history_ingestion", "canonical_device_classification", "concrete_secret_manager", "concrete_egress_transport"):
             require(forbidden in manifest["explicitly_not_implemented"], f"host inventory successor widened deferred boundary: {forbidden}")
+    else:
+        require(manifest["canonical_predecessor_commit"] == HOST_SQUASH, "metric successor lost host-inventory predecessor")
+        require(manifest.get("metric_definition_authorization_commit") == METRIC_AUTH, "metric successor lost metric authorization")
+        require(manifest.get("metric_definition_authorization_id") == "wave4.monitoring-metric-definitions@1", "metric authorization id drift")
+        require(manifest["product_feature_activation"] == "monitoring_source_validation_host_inventory_and_bounded_metric_definitions", "metric successor activation drift")
+        capabilities = set(manifest["implemented_capability"])
+        for capability in (
+            "host_inventory_ingestion",
+            "zabbix_item_get_bounded_metric_definition_domain",
+            "zabbix_item_binding_separate_from_metric_definition",
+            "metric_definition_independent_poll_epoch_generation_admission",
+        ):
+            require(capability in capabilities, f"metric successor missing bounded capability: {capability}")
+        for forbidden in (
+            "metric_current_state_ingestion",
+            "metric_history_ingestion",
+            "problem_ingestion",
+            "health_projection",
+            "canonical_device_classification",
+            "concrete_secret_manager",
+            "concrete_egress_transport",
+        ):
+            require(forbidden in manifest["explicitly_not_implemented"], f"metric successor widened deferred boundary: {forbidden}")
 
     for phrase in (
         "hostgroup.get",
@@ -74,7 +105,7 @@ def main() -> None:
     ):
         require(phrase in state, f"state product boundary missing: {phrase}")
 
-    print("wave4_zabbix_initial_validation_worker=PASS hostgroup_validation=preserved credential=port egress=port stale_commit=fenced+retired concurrency=source-row-locked retry=not_selected successor_host_inventory=bounded")
+    print("wave4_zabbix_initial_validation_worker=PASS hostgroup_validation=preserved credential=port egress=port stale_commit=fenced+retired concurrency=source-row-locked retry=not_selected successor=bounded")
 
 
 if __name__ == "__main__":

@@ -5,13 +5,28 @@ from enum import StrEnum
 from typing import Protocol, Sequence
 
 from .metric_definitions import MetricValueKind
-from .source import OperationalEvidenceState, SyncOperationState, opaque_token
+from .source import OperationalEvidenceState, SyncOperationState, ZabbixProviderConfiguration, opaque_token
+from .validation_worker import (
+    AdmittedProviderEndpoint,
+    CredentialResolutionError,
+    CredentialResolver,
+    EgressAdmissionError,
+    OutboundAdmission,
+    ProviderAuthenticationError,
+    ProviderProtocolError,
+    ProviderUnavailableError,
+    ResolvedZabbixCredential,
+)
 
 MAX_CURRENT_SAMPLES_PER_BATCH = 200_000
 MAX_RAW_CURRENT_VALUE_LENGTH = 65_536
 
 
 class CurrentStateFailureClass(StrEnum):
+    CREDENTIAL_UNAVAILABLE = "credential.unavailable"
+    PROVIDER_AUTHENTICATION_REJECTED = "provider.authentication_rejected"
+    EGRESS_NOT_ADMITTED = "provider.egress_not_admitted"
+    PROVIDER_UNAVAILABLE = "provider.unavailable"
     PROVIDER_PROTOCOL_INVALID = "provider.protocol_invalid"
     PROVIDER_SAMPLE_TIME_INVALID = "provider.sample_time_invalid"
     VALUE_PARSE_INVALID = "provider.value_parse_invalid"
@@ -58,6 +73,9 @@ class MetricCurrentStateClaim:
     scope_revision: int
     current_state_poll_epoch: int
     current_state_poll_generation: int
+    provider_instance_ref: str
+    provider_configuration: ZabbixProviderConfiguration
+    credential_binding_ref: str
     targets: tuple[CurrentMetricTarget, ...]
 
 
@@ -79,6 +97,8 @@ class MetricCurrentStateResult:
     operational_evidence_state: OperationalEvidenceState
     accepted_observations: tuple[AcceptedCurrentObservation, ...]
     failure_class: CurrentStateFailureClass | None
+    egress_decision_ref: str | None = None
+    credential_generation_ref: str | None = None
 
     @property
     def succeeded(self) -> bool:
@@ -105,11 +125,30 @@ class MonitoringMetricCurrentStateRepository(Protocol):
 class ZabbixCurrentValueReader(Protocol):
     def read_current_values(
         self,
+        endpoint: AdmittedProviderEndpoint,
+        credential: ResolvedZabbixCredential,
         itemids: Sequence[str],
         *,
         max_items: int,
     ) -> Sequence[ZabbixCurrentValueEvidence]:
         ...
+
+
+def _degraded(
+    failure_class: CurrentStateFailureClass,
+    *,
+    evidence_state: OperationalEvidenceState,
+    egress_decision_ref: str | None = None,
+    credential_generation_ref: str | None = None,
+) -> MetricCurrentStateResult:
+    return MetricCurrentStateResult(
+        SyncOperationState.RECONCILIATION_REQUIRED,
+        evidence_state,
+        (),
+        failure_class,
+        egress_decision_ref,
+        credential_generation_ref,
+    )
 
 
 def parse_canonical_value(kind: MetricValueKind, raw: str) -> int | float | str | bool:
@@ -136,63 +175,97 @@ def parse_canonical_value(kind: MetricValueKind, raw: str) -> int | float | str 
 def collect_metric_current_state(
     claim: MetricCurrentStateClaim,
     *,
+    credential_resolver: CredentialResolver,
+    outbound_admission: OutboundAdmission,
     reader: ZabbixCurrentValueReader,
 ) -> MetricCurrentStateResult:
     if len(claim.targets) > MAX_CURRENT_SAMPLES_PER_BATCH:
-        return MetricCurrentStateResult(
-            SyncOperationState.RECONCILIATION_REQUIRED,
-            OperationalEvidenceState.RECONCILIATION_REQUIRED,
-            (),
+        return _degraded(
             CurrentStateFailureClass.PROVIDER_PROTOCOL_INVALID,
+            evidence_state=OperationalEvidenceState.RECONCILIATION_REQUIRED,
         )
 
     by_itemid = {target.provider_external_ref: target for target in claim.targets}
     if len(by_itemid) != len(claim.targets):
-        return MetricCurrentStateResult(
-            SyncOperationState.RECONCILIATION_REQUIRED,
-            OperationalEvidenceState.RECONCILIATION_REQUIRED,
-            (),
+        return _degraded(
             CurrentStateFailureClass.PROVIDER_PROTOCOL_INVALID,
+            evidence_state=OperationalEvidenceState.RECONCILIATION_REQUIRED,
+        )
+
+    try:
+        credential = credential_resolver.resolve_zabbix_api_token(claim.credential_binding_ref)
+    except CredentialResolutionError:
+        return _degraded(
+            CurrentStateFailureClass.CREDENTIAL_UNAVAILABLE,
+            evidence_state=OperationalEvidenceState.UNAVAILABLE,
+        )
+
+    try:
+        endpoint = outbound_admission.admit_zabbix_api(claim.provider_configuration)
+    except EgressAdmissionError:
+        return _degraded(
+            CurrentStateFailureClass.EGRESS_NOT_ADMITTED,
+            evidence_state=OperationalEvidenceState.UNAVAILABLE,
+            credential_generation_ref=credential.credential_generation_ref,
         )
 
     try:
         returned = tuple(
-            reader.read_current_values(tuple(by_itemid), max_items=MAX_CURRENT_SAMPLES_PER_BATCH)
+            reader.read_current_values(
+                endpoint,
+                credential,
+                tuple(by_itemid),
+                max_items=MAX_CURRENT_SAMPLES_PER_BATCH,
+            )
         )
-    except (TypeError, ValueError):
-        return MetricCurrentStateResult(
-            SyncOperationState.RECONCILIATION_REQUIRED,
-            OperationalEvidenceState.UNAVAILABLE,
-            (),
+    except ProviderAuthenticationError:
+        return _degraded(
+            CurrentStateFailureClass.PROVIDER_AUTHENTICATION_REJECTED,
+            evidence_state=OperationalEvidenceState.UNAVAILABLE,
+            egress_decision_ref=endpoint.egress_decision_ref,
+            credential_generation_ref=credential.credential_generation_ref,
+        )
+    except ProviderUnavailableError:
+        return _degraded(
+            CurrentStateFailureClass.PROVIDER_UNAVAILABLE,
+            evidence_state=OperationalEvidenceState.UNAVAILABLE,
+            egress_decision_ref=endpoint.egress_decision_ref,
+            credential_generation_ref=credential.credential_generation_ref,
+        )
+    except (ProviderProtocolError, TypeError, ValueError):
+        return _degraded(
             CurrentStateFailureClass.PROVIDER_PROTOCOL_INVALID,
+            evidence_state=OperationalEvidenceState.UNAVAILABLE,
+            egress_decision_ref=endpoint.egress_decision_ref,
+            credential_generation_ref=credential.credential_generation_ref,
         )
 
     if len(returned) > MAX_CURRENT_SAMPLES_PER_BATCH or len({row.itemid for row in returned}) != len(returned):
-        return MetricCurrentStateResult(
-            SyncOperationState.RECONCILIATION_REQUIRED,
-            OperationalEvidenceState.RECONCILIATION_REQUIRED,
-            (),
+        return _degraded(
             CurrentStateFailureClass.PROVIDER_PROTOCOL_INVALID,
+            evidence_state=OperationalEvidenceState.RECONCILIATION_REQUIRED,
+            egress_decision_ref=endpoint.egress_decision_ref,
+            credential_generation_ref=credential.credential_generation_ref,
         )
 
     accepted: list[AcceptedCurrentObservation] = []
     for row in returned:
         target = by_itemid.get(row.itemid)
         if target is None:
-            return MetricCurrentStateResult(
-                SyncOperationState.RECONCILIATION_REQUIRED,
-                OperationalEvidenceState.RECONCILIATION_REQUIRED,
-                (),
+            return _degraded(
                 CurrentStateFailureClass.PROVIDER_PROTOCOL_INVALID,
+                evidence_state=OperationalEvidenceState.RECONCILIATION_REQUIRED,
+                egress_decision_ref=endpoint.egress_decision_ref,
+                credential_generation_ref=credential.credential_generation_ref,
             )
         try:
             canonical_value = parse_canonical_value(target.value_kind, row.raw_value)
         except (TypeError, ValueError, OverflowError):
-            return MetricCurrentStateResult(
-                SyncOperationState.RECONCILIATION_REQUIRED,
-                OperationalEvidenceState.RECONCILIATION_REQUIRED,
-                (),
+            return _degraded(
                 CurrentStateFailureClass.VALUE_PARSE_INVALID,
+                evidence_state=OperationalEvidenceState.RECONCILIATION_REQUIRED,
+                egress_decision_ref=endpoint.egress_decision_ref,
+                credential_generation_ref=credential.credential_generation_ref,
             )
         accepted.append(
             AcceptedCurrentObservation(
@@ -214,12 +287,23 @@ def collect_metric_current_state(
         OperationalEvidenceState.CURRENT,
         tuple(accepted),
         None,
+        endpoint.egress_decision_ref,
+        credential.credential_generation_ref,
     )
 
 
 class MetricCurrentStateWorker:
-    def __init__(self, *, repository: MonitoringMetricCurrentStateRepository, reader: ZabbixCurrentValueReader) -> None:
+    def __init__(
+        self,
+        *,
+        repository: MonitoringMetricCurrentStateRepository,
+        credential_resolver: CredentialResolver,
+        outbound_admission: OutboundAdmission,
+        reader: ZabbixCurrentValueReader,
+    ) -> None:
         self._repository = repository
+        self._credential_resolver = credential_resolver
+        self._outbound_admission = outbound_admission
         self._reader = reader
 
     def run(self, monitoring_sync_operation_id: str) -> MetricCurrentStateResult:
@@ -227,7 +311,12 @@ class MetricCurrentStateWorker:
             monitoring_sync_operation_id,
             claim_token=opaque_token("mon-current-claim"),
         )
-        collected = collect_metric_current_state(claim, reader=self._reader)
+        collected = collect_metric_current_state(
+            claim,
+            credential_resolver=self._credential_resolver,
+            outbound_admission=self._outbound_admission,
+            reader=self._reader,
+        )
         persisted = self._repository.complete_metric_current_state(claim, collected)
         if not isinstance(persisted, MetricCurrentStateResult):
             raise TypeError("complete_metric_current_state must return authoritative persisted result")

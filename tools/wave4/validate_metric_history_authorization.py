@@ -44,6 +44,8 @@ def main() -> None:
         "history_checkpoint_authority_independent_from_host_inventory_poll_authority",
         "uncertainty_not_complete",
         "retention_loss_not_successful_backfill",
+        "history_api_cursor_not_hidden_authority_snapshot",
+        "cursor_possession_not_read_authority",
     }:
         require(invariant in required, f"missing invariant: {invariant}")
 
@@ -66,6 +68,8 @@ def main() -> None:
         "crash_safe_observation_projection_and_checkpoint_advance",
         "idempotent_window_replay",
         "bounded_time_range_history_reads",
+        "observation_id_anchor_cursor_with_metric_window_generation_revalidation",
+        "history_response_no_store",
         "historical_generation_backfill_without_current_authority",
         "telemetry_port_storage_abstraction_preserved",
     }:
@@ -84,6 +88,8 @@ def main() -> None:
         "hidden_provider_retention_gap",
         "rewrite_immutable_historical_observation",
         "unbounded_history_api_scan",
+        "hidden_protected_history_cursor_state",
+        "shared_public_history_cache",
         "irreversible_production_telemetry_store_selection",
         "health_projection",
         "frontend_route_or_navigation_creation",
@@ -99,6 +105,8 @@ def main() -> None:
         "CLOCK SECOND != SAFE CURSOR BY ITSELF",
         "CURRENT PENDING HISTORY OBLIGATION != PROJECTED HISTORY",
         "HISTORY CHECKPOINT AUTHORITY != CURRENT POLL AUTHORITY",
+        "HISTORY API CURSOR != HIDDEN AUTHORITY SNAPSHOT",
+        "CURSOR POSSESSION != READ AUTHORITY",
         "Historical generation is valid history",
         "Single durable acceptance boundary",
         "Current-created obligations are first-class",
@@ -108,6 +116,8 @@ def main() -> None:
         "Finalization is evidence-bound",
         "Retention loss becomes a visible gap",
         "Checkpoint advancement is crash-safe",
+        "History cursor follows the accepted anchor profile",
+        "History responses are `no_store`",
         "Physical storage remains behind the telemetry port",
     ):
         require(marker in auth, f"authorization marker missing: {marker}")
@@ -124,6 +134,7 @@ def main() -> None:
     for surface in {
         "docs/03-domains/monitoring-domain-contract.md",
         "docs/08-data/telemetry-plane.md",
+        "docs/09-api-contracts/monitoring-domain-api-contract.md",
         "docs/09-api-contracts/zabbix-monitoring-source-provider-contract.md",
         "docs/16-implementation-readiness/16-wave-4-monitoring-entry-gate.md",
     }:
@@ -134,7 +145,8 @@ def main() -> None:
         "id=wave4.monitoring-metric-history@1 "
         "history_get=authorized observation=owner-bound replay=idempotent "
         "checkpoint=per-stream late_arrival=reconciled completeness=evidence-bound "
-        "current_mutation=blocked frontend=blocked production=blocked"
+        "api_cursor=observation-anchor cache=no-store current_mutation=blocked "
+        "frontend=blocked production=blocked"
     )
 
 

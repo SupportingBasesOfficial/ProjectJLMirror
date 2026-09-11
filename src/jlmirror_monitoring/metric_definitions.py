@@ -34,6 +34,7 @@ MAX_ITEM_UNIT_LENGTH = 255
 class MetricValueKind(StrEnum):
     NUMBER = "number"
     INTEGER = "integer"
+    BOOLEAN = "boolean"
     STRING = "string"
     TEXT = "text"
     LOG = "log"

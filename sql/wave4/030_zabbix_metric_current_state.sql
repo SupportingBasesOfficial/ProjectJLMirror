@@ -132,26 +132,33 @@ CREATE TABLE monitoring.metric_current_state (
     CHECK (octet_length(canonical_value::text) <= 131072)
 );
 
-CREATE TABLE monitoring.monitoring_metric_current_state_transition_intent (
+CREATE TABLE monitoring.monitoring_metric_current_state_transition (
     tenant_id TEXT NOT NULL,
-    transition_id TEXT NOT NULL,
+    current_state_transition_id TEXT NOT NULL,
     metric_definition_id TEXT NOT NULL,
+    monitoring_resource_id TEXT NOT NULL,
     monitoring_source_id TEXT NOT NULL,
     source_instance_generation TEXT NOT NULL,
     from_observation_id TEXT NULL,
     to_observation_id TEXT NOT NULL,
-    transition_kind TEXT NOT NULL CHECK (transition_kind='current_state_changed'),
-    publication_state TEXT NOT NULL DEFAULT 'pending' CHECK (publication_state IN ('pending','published')),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT transaction_timestamp(),
-    PRIMARY KEY (tenant_id, transition_id),
+    projection_revision BIGINT NOT NULL CHECK (projection_revision > 0),
+    evidence_state TEXT NOT NULL CHECK (evidence_state IN ('current','stale','incomplete','reconciliation_required','unavailable')),
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT transaction_timestamp(),
+    PRIMARY KEY (tenant_id, current_state_transition_id),
     UNIQUE (tenant_id, metric_definition_id, to_observation_id),
     FOREIGN KEY (tenant_id, metric_definition_id)
         REFERENCES monitoring.metric_definition(tenant_id, metric_definition_id),
     FOREIGN KEY (tenant_id, to_observation_id)
         REFERENCES monitoring.monitoring_metric_observation_acceptance(tenant_id, observation_id),
+    FOREIGN KEY (tenant_id, monitoring_resource_id)
+        REFERENCES monitoring.monitoring_resource(tenant_id, monitoring_resource_id),
     FOREIGN KEY (tenant_id, monitoring_source_id, source_instance_generation)
-        REFERENCES monitoring.monitoring_source_generation(tenant_id, monitoring_source_id, source_instance_generation)
+        REFERENCES monitoring.monitoring_source_generation(tenant_id, monitoring_source_id, source_instance_generation),
+    CHECK (current_state_transition_id <> '' AND length(current_state_transition_id) <= 512)
 );
+
+COMMENT ON TABLE monitoring.monitoring_metric_current_state_transition IS
+'Immutable owner-domain transition evidence. Publication attempt state belongs only to the canonical Wave 2 system.async_outbox_* substrate.';
 
 ALTER TABLE monitoring.monitoring_metric_current_state_runtime_admission ENABLE ROW LEVEL SECURITY;
 ALTER TABLE monitoring.monitoring_metric_current_state_runtime_admission FORCE ROW LEVEL SECURITY;
@@ -159,33 +166,30 @@ ALTER TABLE monitoring.monitoring_metric_observation_acceptance ENABLE ROW LEVEL
 ALTER TABLE monitoring.monitoring_metric_observation_acceptance FORCE ROW LEVEL SECURITY;
 ALTER TABLE monitoring.metric_current_state ENABLE ROW LEVEL SECURITY;
 ALTER TABLE monitoring.metric_current_state FORCE ROW LEVEL SECURITY;
-ALTER TABLE monitoring.monitoring_metric_current_state_transition_intent ENABLE ROW LEVEL SECURITY;
-ALTER TABLE monitoring.monitoring_metric_current_state_transition_intent FORCE ROW LEVEL SECURITY;
+ALTER TABLE monitoring.monitoring_metric_current_state_transition ENABLE ROW LEVEL SECURITY;
+ALTER TABLE monitoring.monitoring_metric_current_state_transition FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY metric_current_state_runtime_admission_tenant_policy
 ON monitoring.monitoring_metric_current_state_runtime_admission
 USING (tenant_id = NULLIF(current_setting('jlmirror.tenant_id', true), ''))
 WITH CHECK (tenant_id = NULLIF(current_setting('jlmirror.tenant_id', true), ''));
-
 CREATE POLICY metric_observation_acceptance_tenant_policy
 ON monitoring.monitoring_metric_observation_acceptance
 USING (tenant_id = NULLIF(current_setting('jlmirror.tenant_id', true), ''))
 WITH CHECK (tenant_id = NULLIF(current_setting('jlmirror.tenant_id', true), ''));
-
 CREATE POLICY metric_current_state_tenant_policy
 ON monitoring.metric_current_state
 USING (tenant_id = NULLIF(current_setting('jlmirror.tenant_id', true), ''))
 WITH CHECK (tenant_id = NULLIF(current_setting('jlmirror.tenant_id', true), ''));
-
 CREATE POLICY metric_current_state_transition_tenant_policy
-ON monitoring.monitoring_metric_current_state_transition_intent
+ON monitoring.monitoring_metric_current_state_transition
 USING (tenant_id = NULLIF(current_setting('jlmirror.tenant_id', true), ''))
 WITH CHECK (tenant_id = NULLIF(current_setting('jlmirror.tenant_id', true), ''));
 
 REVOKE ALL ON monitoring.monitoring_metric_current_state_runtime_admission,
     monitoring.monitoring_metric_observation_acceptance,
     monitoring.metric_current_state,
-    monitoring.monitoring_metric_current_state_transition_intent FROM PUBLIC;
+    monitoring.monitoring_metric_current_state_transition FROM PUBLIC;
 
 GRANT SELECT ON monitoring.monitoring_source,
     monitoring.monitoring_source_generation,
@@ -197,9 +201,10 @@ TO jlmirror_wave4_metric_current_state_executor;
 
 GRANT SELECT, INSERT, UPDATE ON monitoring.monitoring_sync_operation,
     monitoring.monitoring_source,
-    monitoring.monitoring_metric_observation_acceptance,
-    monitoring.metric_current_state,
-    monitoring.monitoring_metric_current_state_transition_intent
+    monitoring.metric_current_state
+TO jlmirror_wave4_metric_current_state_executor;
+GRANT SELECT, INSERT ON monitoring.monitoring_metric_observation_acceptance,
+    monitoring.monitoring_metric_current_state_transition
 TO jlmirror_wave4_metric_current_state_executor;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON monitoring.monitoring_metric_current_state_runtime_admission
@@ -210,27 +215,67 @@ RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY INVOKER SET search_path=pg_catalog,
     SELECT current_user='jlmirror_wave4_metric_current_state_executor'
 $$;
 
-CREATE OR REPLACE FUNCTION monitoring.wave4_guard_metric_current_state_dml()
+CREATE OR REPLACE FUNCTION monitoring.wave4_guard_metric_current_state_acceptance_insert()
 RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,monitoring AS $$
 BEGIN
     IF NOT monitoring.wave4_metric_current_state_executor_is_current_user() THEN
-        RAISE EXCEPTION 'Metric Current State mutation requires guarded executor authority';
+        RAISE EXCEPTION 'Metric observation acceptance requires guarded Current executor authority';
     END IF;
     RETURN NEW;
 END;
 $$;
-
 CREATE TRIGGER metric_observation_acceptance_executor_guard
-BEFORE INSERT OR UPDATE OR DELETE ON monitoring.monitoring_metric_observation_acceptance
-FOR EACH ROW EXECUTE FUNCTION monitoring.wave4_guard_metric_current_state_dml();
+BEFORE INSERT ON monitoring.monitoring_metric_observation_acceptance
+FOR EACH ROW EXECUTE FUNCTION monitoring.wave4_guard_metric_current_state_acceptance_insert();
 
-CREATE TRIGGER metric_current_state_executor_guard
-BEFORE INSERT OR UPDATE OR DELETE ON monitoring.metric_current_state
-FOR EACH ROW EXECUTE FUNCTION monitoring.wave4_guard_metric_current_state_dml();
+CREATE OR REPLACE FUNCTION monitoring.wave4_reject_metric_current_state_immutable_mutation()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,monitoring AS $$
+BEGIN
+    RAISE EXCEPTION 'Metric Current State immutable evidence cannot be updated or deleted by this slice';
+END;
+$$;
+CREATE TRIGGER metric_observation_acceptance_immutable_guard
+BEFORE UPDATE OR DELETE ON monitoring.monitoring_metric_observation_acceptance
+FOR EACH ROW EXECUTE FUNCTION monitoring.wave4_reject_metric_current_state_immutable_mutation();
+CREATE TRIGGER metric_current_state_transition_immutable_guard
+BEFORE UPDATE OR DELETE ON monitoring.monitoring_metric_current_state_transition
+FOR EACH ROW EXECUTE FUNCTION monitoring.wave4_reject_metric_current_state_immutable_mutation();
 
-CREATE TRIGGER metric_current_state_transition_executor_guard
-BEFORE INSERT OR UPDATE OR DELETE ON monitoring.monitoring_metric_current_state_transition_intent
-FOR EACH ROW EXECUTE FUNCTION monitoring.wave4_guard_metric_current_state_dml();
+CREATE OR REPLACE FUNCTION monitoring.wave4_guard_metric_current_state_projection_mutation()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,monitoring AS $$
+BEGIN
+    IF NOT monitoring.wave4_metric_current_state_executor_is_current_user() THEN
+        RAISE EXCEPTION 'Metric Current State projection mutation requires guarded executor authority';
+    END IF;
+    IF TG_OP='UPDATE' AND (
+        NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+        OR NEW.metric_definition_id IS DISTINCT FROM OLD.metric_definition_id
+        OR NEW.monitoring_resource_id IS DISTINCT FROM OLD.monitoring_resource_id
+        OR NEW.monitoring_source_id IS DISTINCT FROM OLD.monitoring_source_id
+        OR NEW.source_instance_generation IS DISTINCT FROM OLD.source_instance_generation
+        OR NEW.value_kind IS DISTINCT FROM OLD.value_kind
+    ) THEN
+        RAISE EXCEPTION 'Metric Current State projection ownership/value kind is immutable';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+CREATE TRIGGER metric_current_state_projection_guard
+BEFORE INSERT OR UPDATE ON monitoring.metric_current_state
+FOR EACH ROW EXECUTE FUNCTION monitoring.wave4_guard_metric_current_state_projection_mutation();
+
+CREATE OR REPLACE FUNCTION monitoring.wave4_guard_metric_current_state_transition_insert()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,monitoring AS $$
+BEGIN
+    IF NOT monitoring.wave4_metric_current_state_executor_is_current_user() THEN
+        RAISE EXCEPTION 'Metric Current State transition creation requires guarded executor authority';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+CREATE TRIGGER metric_current_state_transition_insert_guard
+BEFORE INSERT ON monitoring.monitoring_metric_current_state_transition
+FOR EACH ROW EXECUTE FUNCTION monitoring.wave4_guard_metric_current_state_transition_insert();
 
 CREATE OR REPLACE FUNCTION monitoring.wave4_guard_current_state_source_poll_authority()
 RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,monitoring AS $$
@@ -244,13 +289,30 @@ BEGIN
     IF NEW.current_state_poll_epoch < OLD.current_state_poll_epoch THEN
         RAISE EXCEPTION 'Metric Current State poll epoch cannot rewind';
     END IF;
-    IF NEW.current_state_poll_epoch = OLD.current_state_poll_epoch
-       AND NEW.current_state_poll_generation < OLD.current_state_poll_generation THEN
-        RAISE EXCEPTION 'Metric Current State poll generation cannot rewind';
-    END IF;
-    IF NEW.current_state_poll_epoch > OLD.current_state_poll_epoch
-       AND current_user <> 'jlmirror_wave4_recovery_authority' THEN
-        RAISE EXCEPTION 'Metric Current State poll epoch may advance only through recovery authority';
+    IF NEW.current_state_poll_epoch = OLD.current_state_poll_epoch THEN
+        IF NEW.current_state_poll_generation < OLD.current_state_poll_generation THEN
+            RAISE EXCEPTION 'Metric Current State poll generation cannot rewind';
+        END IF;
+        IF NEW.current_state_poll_generation > OLD.current_state_poll_generation + 1 THEN
+            RAISE EXCEPTION 'Metric Current State poll generation may advance only one generation at a time';
+        END IF;
+        IF NEW.current_state_poll_generation > OLD.current_state_poll_generation
+           AND NOT EXISTS (
+               SELECT 1
+                 FROM monitoring.monitoring_metric_current_state_runtime_admission AS a
+                WHERE a.tenant_id=NEW.tenant_id
+                  AND a.monitoring_source_id=NEW.monitoring_source_id
+                  AND a.current_state_poll_epoch=NEW.current_state_poll_epoch
+           ) THEN
+            RAISE EXCEPTION 'Metric Current State polling requires current recovery/placement admission';
+        END IF;
+    ELSE
+        IF current_user <> 'jlmirror_wave4_recovery_authority' THEN
+            RAISE EXCEPTION 'Metric Current State poll epoch may advance only through recovery authority';
+        END IF;
+        IF NEW.current_state_poll_generation IS DISTINCT FROM OLD.current_state_poll_generation THEN
+            RAISE EXCEPTION 'Metric Current State recovery epoch transition must preserve local generation';
+        END IF;
     END IF;
     RETURN NEW;
 END;

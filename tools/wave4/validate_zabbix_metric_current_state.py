@@ -19,6 +19,7 @@ MIGRATIONS = [ROOT / f"sql/wave4/{name}" for name in (
 TEST = ROOT / "tests/wave4/test_zabbix_metric_current_state.py"
 AUTH = ROOT / "implementation/wave-4-metric-current-state-authorization/AUTHORIZATION_MANIFEST.json"
 CONFORMANCE = ROOT / "tools/wave4/run_zabbix_metric_current_state_postgres_conformance.sh"
+HARDENING = ROOT / "tools/wave4/run_zabbix_metric_current_state_hardening_postgres_conformance.sh"
 RECOVERY_DUMP = ROOT / "tools/wave4/pg_dump_recovery_safe.sh"
 WORKFLOW = ROOT / ".github/workflows/wave4-monitoring-source-foundation.yml"
 
@@ -34,7 +35,7 @@ def executable_sql(text: str) -> str:
 
 
 def main() -> None:
-    for path in (DOMAIN, *MIGRATIONS, TEST, AUTH, CONFORMANCE, RECOVERY_DUMP, WORKFLOW):
+    for path in (DOMAIN, *MIGRATIONS, TEST, AUTH, CONFORMANCE, HARDENING, RECOVERY_DUMP, WORKFLOW):
         require(path.is_file(), f"missing required surface: {path.relative_to(ROOT)}")
 
     domain = DOMAIN.read_text(encoding="utf-8")
@@ -51,6 +52,7 @@ def main() -> None:
     sql037 = migration_text["037_zabbix_metric_current_state_supersession.sql"]
     sql038 = migration_text["038_zabbix_metric_current_state_least_privilege.sql"]
     conformance = CONFORMANCE.read_text(encoding="utf-8")
+    hardening = HARDENING.read_text(encoding="utf-8")
     recovery_dump = RECOVERY_DUMP.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
@@ -97,8 +99,6 @@ def main() -> None:
     require("item_definition_poll_epoch BIGINT NOT NULL DEFAULT" not in sql030, "must not create/reuse Item Definition poll authority")
     require("host_inventory_poll_epoch BIGINT NOT NULL DEFAULT" not in sql030, "must not create/reuse Host Inventory poll authority")
 
-    # Current may document the deferred History boundary in comments, but it must not
-    # materialize or invoke History surfaces in executable SQL.
     for forbidden in (
         "create table monitoring.metric_observation",
         "create table monitoring.metric_history",
@@ -122,7 +122,9 @@ def main() -> None:
     require("Recovery authority may only terminalize superseded Metric Current State claims" in sql034, "operation guard must retain narrow recovery defense")
     require("wave4_current_value_matches_kind" in sql, "database must enforce value-kind/value shape compatibility")
     require("jsonb_typeof(p_observations)<>'array'" in sql036, "claimed-input totalization must validate array shape")
-    require("9223372036854775807::NUMERIC" in sql036, "provider clock conversion must be exception-safe")
+    require("9223372036854775807::NUMERIC" in sql036, "provider clock must be bounded before BIGINT cast")
+    require("wave4_current_provider_timestamp_is_valid" in sql036, "provider timestamp conversion must be exception-safe")
+    require("WHEN datetime_field_overflow OR numeric_value_out_of_range" in sql036, "provider timestamp overflow must fail closed")
     require("old_o.current_state_poll_generation<v_poll_generation" in sql037, "new Current claim must supersede older in-flight generations")
     require("s.current_state_poll_generation=o.current_state_poll_generation" in sql037, "target listing must revalidate current poll fence")
 
@@ -140,6 +142,7 @@ def main() -> None:
 
     require("--exclude-table-data=monitoring.monitoring_metric_current_state_runtime_admission" in recovery_dump, "recovery dump must exclude Current runtime admission")
     require("run_zabbix_metric_current_state_postgres_conformance.sh" in workflow, "Wave4 workflow must execute Current PostgreSQL conformance")
+    require("run_zabbix_metric_current_state_hardening_postgres_conformance.sh" in workflow, "Wave4 workflow must execute Current hardening PostgreSQL conformance")
     require("sql/wave4/038_zabbix_metric_current_state_least_privilege.sql" in conformance, "conformance must execute final Current schema through 038")
     for marker in (
         "exact_replay=idempotent",
@@ -151,7 +154,18 @@ def main() -> None:
     ):
         require(marker in conformance, f"conformance marker missing: {marker}")
 
-    print("wave4_metric_current_state=PASS schema=030-038 current_projection=enabled durable_acceptance=enabled transition=semantic-change-only replay=idempotent trust_boundary=explicit recovery=helper-isolated history_materialization=blocked")
+    require("sql/wave4/038_zabbix_metric_current_state_least_privilege.sql" in hardening,
+            "hardening conformance must execute final Current schema through 038")
+    for marker in (
+        "9223372036854775807",
+        "provider_timestamp=exception-safe",
+        "recovery_operation_dml=none",
+        "recovery_bridge=narrow",
+        "0:0:0:1",
+    ):
+        require(marker in hardening, f"hardening PostgreSQL marker missing: {marker}")
+
+    print("wave4_metric_current_state=PASS schema=030-038 current_projection=enabled durable_acceptance=enabled transition=semantic-change-only replay=idempotent trust_boundary=explicit recovery=helper-isolated provider_timestamp=exception-safe history_materialization=blocked")
 
 
 if __name__ == "__main__":

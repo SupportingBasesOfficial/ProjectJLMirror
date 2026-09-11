@@ -1,0 +1,50 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+DOMAIN = ROOT / "src/jlmirror_monitoring/problem_state.py"
+SQL = ROOT / "sql/wave4/042_zabbix_problem_state.sql"
+AUTH = ROOT / "implementation/wave-4-problem-state-authorization/AUTHORIZATION.md"
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise SystemExit(message)
+
+
+def main() -> None:
+    domain = DOMAIN.read_text(encoding="utf-8")
+    sql = SQL.read_text(encoding="utf-8")
+    lower = sql.lower()
+    auth = AUTH.read_text(encoding="utf-8")
+
+    require("wave4.monitoring-problem-state@1" in sql, "wrong problem-state authority")
+    require("problem.get" in domain or "read_active_problems" in domain, "problem.get boundary missing")
+    require("read_recovery_events" in domain, "event.get recovery boundary missing")
+    require("MAX_PROBLEMS_PER_POLL" in domain, "problem polling must be bounded")
+    require("MAX_TRIGGER_METADATA_PER_REQUEST" in domain, "trigger metadata must be bounded")
+    require("monitoring_problem_provider_binding" in lower, "canonical/provider identity binding missing")
+    require("monitoring_problem_state_runtime_admission" in lower, "independent runtime admission missing")
+    require("problem_poll_epoch" in lower and "problem_poll_generation" in lower, "independent poll authority missing")
+    require("force row level security" in lower, "Problem State persistence must force RLS")
+    require("provider_acknowledged boolean" in lower, "provider acknowledgement metadata missing")
+    require("provider acknowledgement is metadata only" in lower, "provider acknowledgement non-authority marker missing")
+    require("resolved problem cannot be reopened" in lower, "resolved identity reopen guard missing")
+    require("ABSENCE FROM INCOMPLETE problem.get != RESOLVED" in auth, "fail-closed negative resolution law missing")
+
+    for forbidden in (
+        "insert into monitoring.health",
+        "update monitoring.health",
+        "insert into alerting.",
+        "update alerting.",
+        "insert into itsm.",
+        "update itsm.",
+    ):
+        require(forbidden not in lower, f"forbidden downstream authority leaked: {forbidden}")
+
+    print("wave4_zabbix_problem_state=PASS")
+
+
+if __name__ == "__main__":
+    main()

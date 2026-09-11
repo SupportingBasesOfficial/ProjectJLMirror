@@ -4,6 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DOMAIN = ROOT / "src/jlmirror_monitoring/problem_state.py"
+READS = ROOT / "src/jlmirror_monitoring/problem_reads.py"
 SQL_PATHS = [
     ROOT / "sql/wave4/042_zabbix_problem_state.sql",
     ROOT / "sql/wave4/043_zabbix_problem_state_lifecycle.sql",
@@ -20,6 +21,7 @@ def require(condition: bool, message: str) -> None:
 
 def main() -> None:
     domain = DOMAIN.read_text(encoding="utf-8")
+    reads = READS.read_text(encoding="utf-8")
     sql = "\n".join(path.read_text(encoding="utf-8") for path in SQL_PATHS)
     lower = sql.lower()
     auth = AUTH.read_text(encoding="utf-8")
@@ -50,6 +52,18 @@ def main() -> None:
         "revoke update on monitoring.monitoring_source from jlmirror_wave4_problem_state_executor",
     ):
         require(marker in lower, f"Problem State hardening marker missing: {marker}")
+
+    for marker in (
+        "MAX_PROBLEM_PAGE_SIZE = 200",
+        "MAX_PROBLEM_RESPONSE_BYTES = 1_048_576",
+        "generation_state: ProblemGenerationState = ProblemGenerationState.ACTIVE",
+        "authorize_problem_read(filters.tenant_id)",
+        "resolve_problem_anchor(filters, cursor)",
+        "validation.cursor_invalid",
+        "cache_control: str = \"no-store\"",
+        "opened_at DESC, problem_id ASC",
+    ):
+        require(marker in reads, f"Problem read contract marker missing: {marker}")
 
     for forbidden in (
         "insert into monitoring.health",

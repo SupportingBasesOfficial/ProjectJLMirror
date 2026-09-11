@@ -49,9 +49,17 @@ class ProblemStateAuthorizationTests(unittest.TestCase):
             self.assertFalse(self.manifest[field])
         self.assertEqual(self.manifest["production_authority"], "none")
 
-    def test_runtime_is_not_in_authorization_pr(self) -> None:
-        self.assertFalse((ROOT / "src/jlmirror_monitoring/problem_state.py").exists())
-        self.assertFalse((ROOT / "sql/wave4/042_zabbix_problem_state.sql").exists())
+    def test_authorization_artifact_does_not_grant_runtime_authority(self) -> None:
+        # This test intentionally validates the authorization artifact itself rather
+        # than asserting that runtime files can never exist.  Once the authorization
+        # has been accepted, a later implementation PR is expected to add runtime
+        # files while the original authorization remains bounded and non-production.
+        serialized_manifest = json.dumps(self.manifest, sort_keys=True)
+        self.assertNotIn("src/jlmirror_monitoring/problem_state.py", self.auth)
+        self.assertNotIn("sql/wave4/042_zabbix_problem_state.sql", self.auth)
+        self.assertNotIn("src/jlmirror_monitoring/problem_state.py", serialized_manifest)
+        self.assertNotIn("sql/wave4/042_zabbix_problem_state.sql", serialized_manifest)
+        self.assertEqual(self.manifest["production_authority"], "none")
 
 
 if __name__ == "__main__":

@@ -8,4 +8,5 @@ set -euo pipefail
 exec pg_dump \
   --exclude-table-data=monitoring.monitoring_host_inventory_runtime_admission \
   --exclude-table-data=monitoring.monitoring_metric_definition_runtime_admission \
+  --exclude-table-data=monitoring.monitoring_metric_current_state_runtime_admission \
   "$@"

@@ -30,10 +30,15 @@ REVOKE EXECUTE ON FUNCTION monitoring.wave4_terminalize_superseded_problem_state
 GRANT EXECUTE ON FUNCTION monitoring.wave4_terminalize_superseded_problem_state_claims(TEXT,TEXT,BIGINT)
     TO jlmirror_wave4_recovery_authority;
 
+-- Preserve the parameter ABI established by 043.  PostgreSQL does not permit
+-- CREATE OR REPLACE to rename input parameters, and callers bind this contract
+-- by position/type.  The semantic hardening is that p_problem_poll_epoch is now
+-- required to be a strictly newer successor epoch rather than merely the current
+-- epoch being re-admitted.
 CREATE OR REPLACE FUNCTION monitoring.reestablish_problem_state_runtime_admission(
     p_tenant_id TEXT,
     p_monitoring_source_id TEXT,
-    p_successor_poll_epoch BIGINT,
+    p_problem_poll_epoch BIGINT,
     p_placement_version TEXT,
     p_recovery_generation TEXT,
     p_recovery_admission_ref TEXT
@@ -42,7 +47,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,monitoring AS $$
 DECLARE
     v_current_epoch BIGINT;
 BEGIN
-    IF p_successor_poll_epoch IS NULL OR p_successor_poll_epoch<=0
+    IF p_problem_poll_epoch IS NULL OR p_problem_poll_epoch<=0
        OR p_placement_version IS NULL OR p_placement_version=''
        OR p_recovery_generation IS NULL OR p_recovery_generation=''
        OR p_recovery_admission_ref IS NULL OR p_recovery_admission_ref='' THEN
@@ -57,7 +62,7 @@ BEGIN
     IF NOT FOUND THEN
         RAISE EXCEPTION 'monitoring.problem_state_recovery_source_missing';
     END IF;
-    IF p_successor_poll_epoch<=v_current_epoch THEN
+    IF p_problem_poll_epoch<=v_current_epoch THEN
         RAISE EXCEPTION 'monitoring.problem_state_recovery_epoch_must_advance';
     END IF;
 
@@ -66,7 +71,7 @@ BEGIN
     );
 
     UPDATE monitoring.monitoring_source AS s
-       SET problem_poll_epoch=p_successor_poll_epoch,
+       SET problem_poll_epoch=p_problem_poll_epoch,
            updated_at=transaction_timestamp()
      WHERE s.tenant_id=p_tenant_id
        AND s.monitoring_source_id=p_monitoring_source_id;
@@ -75,7 +80,7 @@ BEGIN
         tenant_id,monitoring_source_id,problem_poll_epoch,
         placement_version,recovery_generation,recovery_admission_ref
     ) VALUES (
-        p_tenant_id,p_monitoring_source_id,p_successor_poll_epoch,
+        p_tenant_id,p_monitoring_source_id,p_problem_poll_epoch,
         p_placement_version,p_recovery_generation,p_recovery_admission_ref
     )
     ON CONFLICT (tenant_id,monitoring_source_id) DO UPDATE

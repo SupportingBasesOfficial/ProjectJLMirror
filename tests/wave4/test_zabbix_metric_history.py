@@ -16,6 +16,7 @@ from jlmirror_monitoring.metric_history import (
 
 ROOT = Path(__file__).resolve().parents[2]
 SQL = ROOT / "sql/wave4/040_zabbix_metric_history.sql"
+AUTHORITY_SQL = ROOT / "sql/wave4/041_zabbix_metric_history_authority.sql"
 
 
 class MetricHistoryDomainTests(unittest.TestCase):
@@ -55,13 +56,16 @@ class MetricHistoryPersistenceContractTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.sql = SQL.read_text(encoding="utf-8")
         cls.lower = cls.sql.lower()
+        cls.authority_sql = AUTHORITY_SQL.read_text(encoding="utf-8")
+        cls.authority_lower = cls.authority_sql.lower()
 
     def test_materializes_history_without_current_mutation(self) -> None:
-        self.assertIn("create table monitoring.metric_observation", self.lower)
-        self.assertIn("create table monitoring.metric_history_stream_state", self.lower)
-        self.assertNotIn("update monitoring.metric_current_state", self.lower)
-        self.assertNotIn("insert into monitoring.metric_current_state", self.lower)
-        self.assertNotIn("delete from monitoring.metric_current_state", self.lower)
+        combined = self.lower + "\n" + self.authority_lower
+        self.assertIn("create table monitoring.metric_observation", combined)
+        self.assertIn("create table monitoring.metric_history_stream_state", combined)
+        self.assertNotIn("update monitoring.metric_current_state", combined)
+        self.assertNotIn("insert into monitoring.metric_current_state", combined)
+        self.assertNotIn("delete from monitoring.metric_current_state", combined)
 
     def test_history_reuses_durable_acceptance_identity(self) -> None:
         self.assertIn(
@@ -85,6 +89,23 @@ class MetricHistoryPersistenceContractTests(unittest.TestCase):
             self.assertIn(marker, self.lower)
         self.assertIn("metric history safe checkpoint cannot rewind", self.lower)
 
+    def test_history_has_independent_recovery_safe_poll_authority(self) -> None:
+        for marker in (
+            "history_poll_epoch bigint",
+            "history_poll_generation bigint",
+            "create unlogged table monitoring.monitoring_metric_history_runtime_admission",
+            "metric history poll epoch cannot rewind",
+            "metric history polling requires current recovery/placement admission",
+            "reestablish_metric_history_runtime_admission",
+        ):
+            self.assertIn(marker, self.authority_lower)
+        for forbidden in (
+            "host_inventory_poll_generation=",
+            "item_definition_poll_generation=",
+            "current_state_poll_generation=",
+        ):
+            self.assertNotIn(forbidden, self.authority_lower)
+
     def test_gap_evidence_is_explicit_and_immutable(self) -> None:
         self.assertIn("create table monitoring.metric_history_gap_evidence", self.lower)
         self.assertIn("provider_retention_loss", self.lower)
@@ -99,6 +120,10 @@ class MetricHistoryPersistenceContractTests(unittest.TestCase):
         ):
             self.assertIn(f"alter table {table} enable row level security", self.lower)
             self.assertIn(f"alter table {table} force row level security", self.lower)
+        self.assertIn(
+            "alter table monitoring.monitoring_metric_history_runtime_admission force row level security",
+            self.authority_lower,
+        )
 
 
 if __name__ == "__main__":

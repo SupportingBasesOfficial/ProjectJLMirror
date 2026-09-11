@@ -10,6 +10,7 @@ SQL_PATHS = [
     ROOT / "sql/wave4/043_zabbix_problem_state_lifecycle.sql",
     ROOT / "sql/wave4/044_zabbix_problem_state_snapshot_authority.sql",
     ROOT / "sql/wave4/045_zabbix_problem_state_recovery_authority.sql",
+    ROOT / "sql/wave4/046_zabbix_problem_state_hardening.sql",
 ]
 AUTH = ROOT / "implementation/wave-4-problem-state-authorization/AUTHORIZATION.md"
 
@@ -50,6 +51,11 @@ def main() -> None:
         "wave4_terminalize_superseded_problem_state_claims",
         "monitoring.problem_state_recovery_epoch_must_advance",
         "revoke update on monitoring.monitoring_source from jlmirror_wave4_problem_state_executor",
+        "not snapshot_complete or active_problem_count < 20000",
+        "new.last_confirmed_at:=transaction_timestamp()",
+        "problem opened_at provider evidence is immutable",
+        "resolved_at is null or resolved_at >= opened_at",
+        "jsonb_typeof(provider_metadata)='object'",
     ):
         require(marker in lower, f"Problem State hardening marker missing: {marker}")
 

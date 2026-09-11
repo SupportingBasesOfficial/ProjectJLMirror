@@ -25,7 +25,9 @@
     "history_checkpoint_authority_independent_from_item_definition_poll_authority",
     "history_checkpoint_authority_independent_from_host_inventory_poll_authority",
     "uncertainty_not_complete",
-    "retention_loss_not_successful_backfill"
+    "retention_loss_not_successful_backfill",
+    "history_api_cursor_not_hidden_authority_snapshot",
+    "cursor_possession_not_read_authority"
   ],
   "authorized_behavior": [
     "bounded_read_only_zabbix_history_get",
@@ -47,6 +49,8 @@
     "crash_safe_observation_projection_and_checkpoint_advance",
     "idempotent_window_replay",
     "bounded_time_range_history_reads",
+    "observation_id_anchor_cursor_with_metric_window_generation_revalidation",
+    "history_response_no_store",
     "telemetry_port_storage_abstraction_preserved",
     "historical_generation_backfill_without_current_authority",
     "tenant_isolated_history_and_checkpoint_state",
@@ -67,6 +71,8 @@
     "cross_tenant_source_generation_identity_collapse",
     "raw_provider_payload_replication_as_canonical_history",
     "unbounded_history_api_scan",
+    "hidden_protected_history_cursor_state",
+    "shared_public_history_cache",
     "irreversible_production_telemetry_store_selection",
     "trigger_problem_event_ingestion",
     "health_projection",

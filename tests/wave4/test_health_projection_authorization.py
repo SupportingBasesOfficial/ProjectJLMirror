@@ -31,6 +31,20 @@ class HealthProjectionAuthorizationTests(unittest.TestCase):
         self.assertIn("active `unknown`-severity problem prevents the resource from being proven `healthy`", self.auth)
         self.assertIn("informational-only active problems may coexist with `healthy`", self.auth)
 
+    def test_healthy_requires_durable_current_problem_completeness(self) -> None:
+        self.assertTrue(self.manifest["healthy_requires_authoritative_problem_completeness"])
+        self.assertFalse(self.manifest["problem_absence_without_completeness_can_prove_healthy"])
+        self.assertIn("durable_problem_state_snapshot_completeness_evidence", self.manifest["authorized_inputs"])
+        self.assertIn("PROBLEM ABSENCE WITHOUT AUTHORITATIVE COMPLETENESS != HEALTHY", self.auth)
+        self.assertIn("`healthy` requires **durable current authoritative Problem State completeness evidence**", self.auth)
+        self.assertIn("A complete provider request is not automatically global health completeness", self.auth)
+
+    def test_current_health_requires_present_current_resource(self) -> None:
+        self.assertTrue(self.manifest["current_health_requires_present_resource"])
+        self.assertFalse(self.manifest["removed_resource_current_health_authority"])
+        self.assertIn("REMOVED RESOURCE != CURRENT HEALTH AUTHORITY", self.auth)
+        self.assertIn("`presence_state=present` with current authoritative presence evidence", self.auth)
+
     def test_health_is_derived_not_provider_polling(self) -> None:
         self.assertFalse(self.manifest["provider_polling_authorized"])
         self.assertIn("HEALTH DERIVATION != PROVIDER POLLING AUTHORITY", self.auth)

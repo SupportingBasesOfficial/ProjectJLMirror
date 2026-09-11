@@ -65,6 +65,7 @@ class ProblemCursorAnchor:
 
 @dataclass(frozen=True)
 class ProblemReadRow:
+    tenant_id: str
     problem_id: str
     monitoring_source_id: str
     monitoring_resource_id: str
@@ -81,6 +82,7 @@ class ProblemReadRow:
 
     def __post_init__(self) -> None:
         for name, value, ceiling in (
+            ("tenant_id", self.tenant_id, 256),
             ("problem_id", self.problem_id, 512),
             ("monitoring_source_id", self.monitoring_source_id, 512),
             ("monitoring_resource_id", self.monitoring_resource_id, 512),
@@ -113,8 +115,8 @@ class ProblemReadPage:
 
 
 class ProblemReadAuthorizer(Protocol):
-    def authorize_problem_read(self, tenant_id: str) -> None:
-        """Re-establish current authentication/placement/authorization for this page."""
+    def authorize_problem_read(self, filters: ProblemListFilters) -> None:
+        """Re-establish current auth/placement/owning authorization for this exact page/filter set."""
         ...
 
 
@@ -143,6 +145,8 @@ def _sort_key(row: ProblemReadRow) -> tuple[int, str]:
 
 
 def _matches_filters(row: ProblemReadRow, filters: ProblemListFilters) -> bool:
+    if row.tenant_id != filters.tenant_id:
+        return False
     if filters.monitoring_source_id is not None and row.monitoring_source_id != filters.monitoring_source_id:
         return False
     if filters.monitoring_resource_id is not None and row.monitoring_resource_id != filters.monitoring_resource_id:
@@ -179,9 +183,9 @@ def list_problem_page(
     if cursor is not None and (not cursor or len(cursor) > 512):
         raise ProblemCursorInvalidError("validation.cursor_invalid")
 
-    # Possession of an anchor never carries authority.  This call is deliberately
-    # performed on every initial page and continuation request.
-    authorizer.authorize_problem_read(filters.tenant_id)
+    # Possession of an anchor never carries authority. Current tenant/source/resource
+    # ownership and generation eligibility are re-established for every page.
+    authorizer.authorize_problem_read(filters)
 
     anchor: ProblemCursorAnchor | None = None
     if cursor is not None:

@@ -92,7 +92,8 @@
     "metric_definition_stale_completion_authority_fence",
     "metric_definition_host_association_drift_fail_closed",
     "metric_definition_completion_liveness_terminal_reconciliation",
-    "metric_definition_claimed_input_liveness_totalization"
+    "metric_definition_claimed_input_liveness_totalization",
+    "metric_definition_degraded_evidence_owner_derived_identity"
   ],
   "authorized_slices_consumed": [
     "impl.customer-telemetry@1",

@@ -24,6 +24,8 @@ EXPECTED_FOUNDATION_SQUASH = "d642a7f456e042dd02de2c04533c39c748f88aa9"
 EXPECTED_HOST_INVENTORY_AUTH = "2986f43ff262ecd5781661dbdee46c896f5019bc"
 EXPECTED_HOST_INVENTORY_SQUASH = "18581e18b90f1c387d2b175ec4f4dac0fbf677d2"
 EXPECTED_METRIC_DEFINITION_AUTH = "4debb413aad4b1b449fd6e0dcd05f101021d81e3"
+EXPECTED_METRIC_DEFINITION_SQUASH = "84e9111dadaaca5823b8e696efc1c0764596e269"
+EXPECTED_METRIC_CURRENT_STATE_AUTH = "e897bf276f1f737cf7dd174e71f26ee19e3608b6"
 PINNED_POSTGRES_IMAGE = "postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280"
 FORBIDDEN_NETWORK_IMPORTS = {"requests", "httpx", "aiohttp", "urllib.request", "socket", "subprocess"}
 
@@ -64,6 +66,7 @@ def validate() -> None:
             "wave4.zabbix-initial-validation-worker@1",
             "wave4.zabbix-host-inventory@1",
             "wave4.zabbix-metric-definitions@1",
+            "wave4.zabbix-metric-current-state@1",
         },
         "implementation identity drift",
     )
@@ -81,7 +84,7 @@ def validate() -> None:
         req("host_inventory_ingestion" in impl.get("implemented_capability", []), "host inventory successor missing bounded capability")
         for forbidden in ("metric_ingestion", "problem_ingestion", "history_ingestion", "canonical_device_classification", "browser_frontend", "provider_write_back", "production_deployment"):
             req(forbidden in impl.get("explicitly_not_implemented", []), f"host inventory successor widened into deferred capability: {forbidden}")
-    else:
+    elif impl_id == "wave4.zabbix-metric-definitions@1":
         req(impl.get("canonical_predecessor_commit") == EXPECTED_HOST_INVENTORY_SQUASH, "metric definition successor lost host-inventory provenance")
         req(impl.get("host_inventory_authorization_commit") == EXPECTED_HOST_INVENTORY_AUTH, "metric definition successor lost host inventory authority")
         req(impl.get("host_inventory_authorization_id") == "wave4.monitoring-host-inventory@1", "metric definition successor host inventory authorization id drift")
@@ -108,6 +111,36 @@ def validate() -> None:
             "production_deployment",
         ):
             req(forbidden in deferred, f"metric definition successor widened into deferred capability: {forbidden}")
+    else:
+        req(impl.get("schema_version") == 6, "metric current-state manifest schema drift")
+        req(impl.get("canonical_predecessor_commit") == EXPECTED_METRIC_DEFINITION_SQUASH, "metric current-state successor lost metric-definition provenance")
+        req(impl.get("metric_definition_authorization_commit") == EXPECTED_METRIC_DEFINITION_AUTH, "metric current-state successor lost metric-definition authority")
+        req(impl.get("metric_definition_authorization_id") == "wave4.monitoring-metric-definitions@1", "metric current-state predecessor authorization id drift")
+        req(impl.get("metric_current_state_authorization_commit") == EXPECTED_METRIC_CURRENT_STATE_AUTH, "metric current-state successor lost product authority")
+        req(impl.get("metric_current_state_authorization_id") == "wave4.monitoring-metric-current-state@1", "metric current-state authorization id drift")
+        req(impl.get("product_feature_activation") == "monitoring_source_validation_host_inventory_metric_definitions_and_bounded_metric_current_state", "metric current-state activation drift")
+        capabilities = set(impl.get("implemented_capability", []))
+        for capability in (
+            "host_inventory_ingestion",
+            "zabbix_item_get_bounded_metric_definition_domain",
+            "zabbix_item_get_bounded_metric_current_state_domain",
+            "metric_current_state_durable_observation_acceptance_envelope",
+            "metric_current_state_pending_history_projection_obligation",
+            "metric_current_state_independent_poll_epoch_generation_admission",
+            "metric_current_state_final_schema_composed_conformance",
+        ):
+            req(capability in capabilities, f"metric current-state successor missing bounded capability: {capability}")
+        deferred = set(impl.get("explicitly_not_implemented", []))
+        for forbidden in (
+            "metric_history_ingestion",
+            "metric_observation_history_materialization",
+            "problem_ingestion",
+            "health_projection",
+            "browser_frontend",
+            "provider_write_back",
+            "production_deployment",
+        ):
+            req(forbidden in deferred, f"metric current-state successor widened into deferred capability: {forbidden}")
 
     source_text = SOURCE.read_text(encoding="utf-8")
     tree = ast.parse(source_text, filename=str(SOURCE))

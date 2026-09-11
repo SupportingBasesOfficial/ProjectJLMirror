@@ -76,6 +76,9 @@ BEGIN
         v_item_count := jsonb_array_length(p_items);
         IF v_item_count > 200000 THEN
             v_input_failure := 'provider.protocol_invalid';
+            -- item_count is accepted evidence membership, not rejected input size.
+            -- A wholly rejected over-bound payload therefore closes with zero members.
+            v_item_count := 0;
         END IF;
     END IF;
 

@@ -21,6 +21,7 @@ def row(
     problem_id: str,
     opened_at: int,
     *,
+    tenant_id: str = "tenant-a",
     source_generation: str = "gen-active",
     active_generation: str = "gen-active",
     state: CanonicalProblemState = CanonicalProblemState.ACTIVE,
@@ -28,6 +29,7 @@ def row(
     size: int = 100,
 ) -> ProblemReadRow:
     return ProblemReadRow(
+        tenant_id=tenant_id,
         problem_id=problem_id,
         monitoring_source_id="source-a",
         monitoring_resource_id="resource-a",
@@ -46,10 +48,10 @@ def row(
 
 class FakeAuthorizer(ProblemReadAuthorizer):
     def __init__(self) -> None:
-        self.calls: list[str] = []
+        self.calls: list[ProblemListFilters] = []
 
-    def authorize_problem_read(self, tenant_id: str) -> None:
-        self.calls.append(tenant_id)
+    def authorize_problem_read(self, filters: ProblemListFilters) -> None:
+        self.calls.append(filters)
 
 
 class FakeRepository(MonitoringProblemReadRepository):
@@ -64,7 +66,11 @@ class FakeRepository(MonitoringProblemReadRepository):
     ) -> ProblemCursorAnchor | None:
         self.resolve_calls += 1
         for item in self.rows:
-            if item.problem_id == problem_id and item.generation_state is filters.generation_state:
+            if (
+                item.problem_id == problem_id
+                and item.tenant_id == filters.tenant_id
+                and item.generation_state is filters.generation_state
+            ):
                 return ProblemCursorAnchor(item.problem_id, item.opened_at_epoch_seconds)
         return None
 
@@ -102,7 +108,7 @@ class ProblemReadContractTests(unittest.TestCase):
         )
         self.assertEqual([item.problem_id for item in second.items], ["c"])
         self.assertIsNone(second.next_cursor)
-        self.assertEqual(authorizer.calls, ["tenant-a", "tenant-a"])
+        self.assertEqual(authorizer.calls, [filters, filters])
         self.assertEqual(repository.resolve_calls, 1)
 
     def test_cursor_is_only_anchor_identity_and_wrong_generation_fails_sparsely(self) -> None:
@@ -116,6 +122,17 @@ class ProblemReadContractTests(unittest.TestCase):
                 authorizer=FakeAuthorizer(),
                 repository=repository,
                 cursor="historical",
+            )
+
+    def test_cross_tenant_anchor_fails_sparsely(self) -> None:
+        repository = FakeRepository((row("foreign", 100, tenant_id="tenant-b"),))
+        filters = ProblemListFilters("tenant-a")
+        with self.assertRaisesRegex(ProblemCursorInvalidError, "validation.cursor_invalid"):
+            list_problem_page(
+                filters,
+                authorizer=FakeAuthorizer(),
+                repository=repository,
+                cursor="foreign",
             )
 
     def test_default_generation_is_active_only(self) -> None:
@@ -171,6 +188,15 @@ class ProblemReadContractTests(unittest.TestCase):
                 authorizer=FakeAuthorizer(),
                 repository=repository,
                 limit=2,
+            )
+
+    def test_repository_cannot_return_cross_tenant_row(self) -> None:
+        repository = FakeRepository((row("foreign", 100, tenant_id="tenant-b"),))
+        with self.assertRaisesRegex(ValueError, "outside current filters"):
+            list_problem_page(
+                ProblemListFilters("tenant-a"),
+                authorizer=FakeAuthorizer(),
+                repository=repository,
             )
 
     def test_repository_cannot_return_rows_outside_requested_filters(self) -> None:

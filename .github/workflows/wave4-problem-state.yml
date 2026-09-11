@@ -4,11 +4,14 @@ on:
   pull_request:
     paths:
       - 'src/jlmirror_monitoring/problem_state.py'
+      - 'src/jlmirror_monitoring/problem_reads.py'
       - 'sql/wave4/042_zabbix_problem_state.sql'
       - 'sql/wave4/043_zabbix_problem_state_lifecycle.sql'
       - 'sql/wave4/044_zabbix_problem_state_snapshot_authority.sql'
       - 'sql/wave4/045_zabbix_problem_state_recovery_authority.sql'
       - 'tests/wave4/test_zabbix_problem_state.py'
+      - 'tests/wave4/test_zabbix_problem_reads.py'
+      - 'tests/wave4/test_problem_state_authorization.py'
       - 'tools/wave4/validate_zabbix_problem_state.py'
       - 'tools/wave4/run_zabbix_problem_state_postgres_conformance.sh'
       - '.github/workflows/wave4-problem-state.yml'
@@ -17,11 +20,14 @@ on:
       - main
     paths:
       - 'src/jlmirror_monitoring/problem_state.py'
+      - 'src/jlmirror_monitoring/problem_reads.py'
       - 'sql/wave4/042_zabbix_problem_state.sql'
       - 'sql/wave4/043_zabbix_problem_state_lifecycle.sql'
       - 'sql/wave4/044_zabbix_problem_state_snapshot_authority.sql'
       - 'sql/wave4/045_zabbix_problem_state_recovery_authority.sql'
       - 'tests/wave4/test_zabbix_problem_state.py'
+      - 'tests/wave4/test_zabbix_problem_reads.py'
+      - 'tests/wave4/test_problem_state_authorization.py'
       - 'tools/wave4/validate_zabbix_problem_state.py'
       - 'tools/wave4/run_zabbix_problem_state_postgres_conformance.sh'
       - '.github/workflows/wave4-problem-state.yml'
@@ -81,7 +87,11 @@ jobs:
         run: python3 tools/wave4/validate_zabbix_problem_state.py
 
       - name: Test bounded Problem State contracts
-        run: PYTHONPATH=src python3 -m unittest tests.wave4.test_zabbix_problem_state
+        run: |
+          PYTHONPATH=src python3 -m unittest \
+            tests.wave4.test_problem_state_authorization \
+            tests.wave4.test_zabbix_problem_state \
+            tests.wave4.test_zabbix_problem_reads
 
       - name: Execute Problem State composed PostgreSQL conformance
         run: bash tools/wave4/run_zabbix_problem_state_postgres_conformance.sh

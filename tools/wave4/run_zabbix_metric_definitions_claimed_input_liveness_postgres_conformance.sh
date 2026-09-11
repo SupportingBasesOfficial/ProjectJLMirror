@@ -81,7 +81,7 @@ claim_op() {
 
 assert_terminal() {
   local op="$1" expected="$2"
-  actual="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT state||':'||last_error_class||':'||(claim_token IS NULL)::int||':'||(completed_at IS NOT NULL)::int FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='$op';")"
+  actual="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT COALESCE(state,'<null>')||':'||COALESCE(last_error_class,'<null>')||':'||(claim_token IS NULL)::int||':'||(completed_at IS NOT NULL)::int FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='$op';")"
   echo "claimed_input_case=$op actual=$actual expected=reconciliation_required:$expected:1:1"
   test "$actual" = "reconciliation_required:$expected:1:1"
 }

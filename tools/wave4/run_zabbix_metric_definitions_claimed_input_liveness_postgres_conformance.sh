@@ -113,7 +113,7 @@ echo "claimed_input_fallback_snapshot=$fallback_snapshot"
 test "$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM monitoring.monitoring_metric_definition_snapshot_evidence WHERE metric_definition_snapshot_evidence_id='$fallback_snapshot' AND item_count=0;")" = "1"
 
 claim_op 'metric-input-overbound' 'metric-input-overbound-claim'
-docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+docker exec -i "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
 BEGIN;
 SET LOCAL ROLE jlmirror_wave4_metric_definition_invoker;
 SET LOCAL jlmirror.tenant_id='tenant-a';

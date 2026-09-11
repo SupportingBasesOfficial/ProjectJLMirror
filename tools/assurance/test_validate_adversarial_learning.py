@@ -241,6 +241,30 @@ def falsify_wave4_host_inventory_authority_transition() -> None:
     )
 
 
+def falsify_wave4_metric_definition_claimed_input_liveness_guardrail() -> None:
+    migration = (ROOT / "sql/wave4/029_zabbix_metric_definitions_claimed_input_liveness.sql").read_text(encoding="utf-8")
+    conformance = (ROOT / "tools/wave4/run_zabbix_metric_definitions_claimed_input_liveness_postgres_conformance.sh").read_text(encoding="utf-8")
+    validator = (ROOT / "tools/wave4/validate_zabbix_metric_definitions.py").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/wave4-monitoring-source-foundation.yml").read_text(encoding="utf-8")
+    claim_marker = "FROM monitoring.monitoring_sync_operation AS o"
+    input_marker = "p_items IS NULL OR jsonb_typeof(p_items) IS DISTINCT FROM 'array'"
+    assert claim_marker in migration and input_marker in migration
+    assert migration.index(claim_marker) < migration.index(input_marker), "claimed-input validation must occur only after resolving running claim authority"
+    assert "metric-reconciliation-" in migration and "claim_token=NULL" in migration
+    assert "docker exec -i \"$PG_CONTAINER\" psql" in conformance, "overbound stdin falsifier must actually execute in PostgreSQL"
+    assert "schema=001-029" in conformance and "overbound=terminal" in conformance and "collision=owner-derived" in conformance
+    assert "M029" in validator and "CLAIMED_INPUT_LIVENESS" in validator and "claimed_input_liveness=001-029" in validator
+    assert "Execute claimed metric-definition input liveness on final schema 001-029" in workflow
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_wave4_metric_definition_claimed_input_liveness_guardrail()\n",
+            "",
+        )
+    )
+
+
 def main() -> None:
     assert not s.validate(ROOT)
 
@@ -270,6 +294,7 @@ def main() -> None:
     falsify_wave4_authorization_exact_path_allowlist()
     falsify_wave4_authority_toctou_guardrail()
     falsify_wave4_host_inventory_authority_transition()
+    falsify_wave4_metric_definition_claimed_input_liveness_guardrail()
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][1].__setitem__("review_comment_id", 3961647090)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][6].__setitem__("guardrail_generation", 1)))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0].__setitem__("systemic_guardrail_updated", False)))
@@ -292,7 +317,7 @@ def main() -> None:
         comments.write_text(json.dumps([[{"id": 3963734258, "body": "**P1 Badge** exact bootstrap finding"}]]), encoding="utf-8")
         assert not s.validate(root, comments)
 
-    print("adversarial_learning_falsification=PASS entrypoint_termination=blocked no_op_assertion=blocked dead_branch_helper=blocked privileged_job_pr_execution=blocked implicit_api_write=blocked exact_status_endpoint=bound reconciliation_concurrency=fresh manual_dispatch=removed strict_reconciliation=all-surfaces stale_d4c_workflow_projection=blocked d4c_product_authority_guardrail=attested wave4_exact_path_allowlist=attested wave4_authority_toctou=source-row-lock+postgres-race host_inventory_authority_transition=attested")
+    print("adversarial_learning_falsification=PASS entrypoint_termination=blocked no_op_assertion=blocked dead_branch_helper=blocked privileged_job_pr_execution=blocked implicit_api_write=blocked exact_status_endpoint=bound reconciliation_concurrency=fresh manual_dispatch=removed strict_reconciliation=all-surfaces stale_d4c_workflow_projection=blocked d4c_product_authority_guardrail=attested wave4_exact_path_allowlist=attested wave4_authority_toctou=source-row-lock+postgres-race host_inventory_authority_transition=attested metric_definition_claimed_input_liveness=claim-first+001-029")
 
 
 if __name__ == "__main__":

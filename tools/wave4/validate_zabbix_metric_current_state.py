@@ -15,6 +15,7 @@ MIGRATIONS = [ROOT / f"sql/wave4/{name}" for name in (
     "036_zabbix_metric_current_state_completion_totalization.sql",
     "037_zabbix_metric_current_state_supersession.sql",
     "038_zabbix_metric_current_state_least_privilege.sql",
+    "039_zabbix_metric_current_state_owner_and_lock_order_hardening.sql",
 )]
 TEST = ROOT / "tests/wave4/test_zabbix_metric_current_state.py"
 AUTH = ROOT / "implementation/wave-4-metric-current-state-authorization/AUTHORIZATION_MANIFEST.json"
@@ -51,6 +52,7 @@ def main() -> None:
     sql036 = migration_text["036_zabbix_metric_current_state_completion_totalization.sql"]
     sql037 = migration_text["037_zabbix_metric_current_state_supersession.sql"]
     sql038 = migration_text["038_zabbix_metric_current_state_least_privilege.sql"]
+    sql039 = migration_text["039_zabbix_metric_current_state_owner_and_lock_order_hardening.sql"]
     conformance = CONFORMANCE.read_text(encoding="utf-8")
     hardening = HARDENING.read_text(encoding="utf-8")
     recovery_dump = RECOVERY_DUMP.read_text(encoding="utf-8")
@@ -140,10 +142,33 @@ def main() -> None:
     require("has_column_privilege" in sql038 and "must not hold direct monitoring_sync_operation UPDATE" in sql038,
             "migration-time negative privilege assurance missing")
 
+    for marker in (
+        "metric_definition_binding_current_owner_ref_unique",
+        "metric_current_acceptance_definition_owner_fk",
+        "metric_current_acceptance_binding_owner_fk",
+        "metric_current_acceptance_owner_tuple_unique",
+        "metric_current_state_definition_owner_fk",
+        "metric_current_state_observation_owner_fk",
+        "metric_current_transition_definition_owner_fk",
+        "metric_current_transition_to_observation_owner_fk",
+        "metric_current_transition_from_observation_owner_fk",
+        "claim_zabbix_metric_current_state_v037_internal",
+        "complete_zabbix_metric_current_state_v036_internal",
+    ):
+        require(marker in sql039, f"final Current hardening marker missing: {marker}")
+    require("FROM monitoring.monitoring_source AS s" in sql039 and "FOR UPDATE" in sql039,
+            "final Current entrypoints must serialize on monitoring_source before inner operation locks")
+    require("REVOKE EXECUTE ON FUNCTION monitoring.claim_zabbix_metric_current_state_v037_internal" in sql039,
+            "internal claim implementation must be sealed from invoker")
+    require("REVOKE EXECUTE ON FUNCTION monitoring.complete_zabbix_metric_current_state_v036_internal" in sql039,
+            "internal completion implementation must be sealed from invoker")
+
     require("--exclude-table-data=monitoring.monitoring_metric_current_state_runtime_admission" in recovery_dump, "recovery dump must exclude Current runtime admission")
     require("run_zabbix_metric_current_state_postgres_conformance.sh" in workflow, "Wave4 workflow must execute Current PostgreSQL conformance")
     require("run_zabbix_metric_current_state_hardening_postgres_conformance.sh" in workflow, "Wave4 workflow must execute Current hardening PostgreSQL conformance")
-    require("sql/wave4/038_zabbix_metric_current_state_least_privilege.sql" in conformance, "conformance must execute final Current schema through 038")
+    require("sql/wave4/038_zabbix_metric_current_state_least_privilege.sql" in conformance, "baseline conformance must execute Current schema through 038")
+    require("sql/wave4/039_zabbix_metric_current_state_owner_and_lock_order_hardening.sql" in hardening,
+            "hardening conformance must execute final Current schema through 039")
     for marker in (
         "exact_replay=idempotent",
         "same_value=no-transition",
@@ -154,18 +179,17 @@ def main() -> None:
     ):
         require(marker in conformance, f"conformance marker missing: {marker}")
 
-    require("sql/wave4/038_zabbix_metric_current_state_least_privilege.sql" in hardening,
-            "hardening conformance must execute final Current schema through 038")
     for marker in (
-        "9223372036854775807",
         "provider_timestamp=exception-safe",
         "recovery_operation_dml=none",
         "recovery_bridge=narrow",
-        "0:0:0:1",
+        "owner_tuple=storage-enforced",
+        "lock_order=source-first",
+        "internal_entrypoints=sealed",
     ):
         require(marker in hardening, f"hardening PostgreSQL marker missing: {marker}")
 
-    print("wave4_metric_current_state=PASS schema=030-038 current_projection=enabled durable_acceptance=enabled transition=semantic-change-only replay=idempotent trust_boundary=explicit recovery=helper-isolated provider_timestamp=exception-safe history_materialization=blocked")
+    print("wave4_metric_current_state=PASS schema=030-039 current_projection=enabled durable_acceptance=enabled transition=semantic-change-only replay=idempotent trust_boundary=explicit recovery=helper-isolated provider_timestamp=exception-safe owner_tuple=storage-enforced lock_order=source-first history_materialization=blocked")
 
 
 if __name__ == "__main__":

@@ -32,19 +32,22 @@ SELECT
   (to_regclass('monitoring.monitoring_problem_provider_binding') IS NOT NULL)::int || ':' ||
   (to_regclass('monitoring.monitoring_problem_transition') IS NOT NULL)::int || ':' ||
   (to_regclass('monitoring.monitoring_problem_state_runtime_admission') IS NOT NULL)::int || ':' ||
+  (to_regclass('monitoring.monitoring_problem_snapshot_evidence') IS NOT NULL)::int || ':' ||
   (SELECT relforcerowsecurity::int FROM pg_class WHERE oid='monitoring.monitoring_problem'::regclass) || ':' ||
   (SELECT relforcerowsecurity::int FROM pg_class WHERE oid='monitoring.monitoring_problem_provider_binding'::regclass) || ':' ||
   (SELECT relforcerowsecurity::int FROM pg_class WHERE oid='monitoring.monitoring_problem_transition'::regclass) || ':' ||
-  (SELECT relforcerowsecurity::int FROM pg_class WHERE oid='monitoring.monitoring_problem_state_runtime_admission'::regclass);")"
-test "$state" = "1:1:1:1:1:1:1:1"
+  (SELECT relforcerowsecurity::int FROM pg_class WHERE oid='monitoring.monitoring_problem_state_runtime_admission'::regclass) || ':' ||
+  (SELECT relforcerowsecurity::int FROM pg_class WHERE oid='monitoring.monitoring_problem_snapshot_evidence'::regclass);")"
+test "$state" = "1:1:1:1:1:1:1:1:1:1"
 
 columns="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
 SELECT
   (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='monitoring' AND table_name='monitoring_source' AND column_name='problem_poll_epoch'))::int || ':' ||
   (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='monitoring' AND table_name='monitoring_source' AND column_name='problem_poll_generation'))::int || ':' ||
   (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='monitoring' AND table_name='monitoring_sync_operation' AND column_name='problem_poll_epoch'))::int || ':' ||
-  (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='monitoring' AND table_name='monitoring_sync_operation' AND column_name='problem_poll_generation'))::int;")"
-test "$columns" = "1:1:1:1"
+  (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='monitoring' AND table_name='monitoring_sync_operation' AND column_name='problem_poll_generation'))::int || ':' ||
+  (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='monitoring' AND table_name='monitoring_sync_operation' AND column_name='problem_snapshot_evidence_id'))::int;")"
+test "$columns" = "1:1:1:1:1"
 
 roles="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
 SELECT string_agg(rolname || ':' || rolsuper::int || ':' || rolbypassrls::int, ',' ORDER BY rolname)
@@ -66,5 +69,26 @@ SELECT
   has_table_privilege('jlmirror_wave4_problem_state_invoker','monitoring.monitoring_problem','INSERT')::int || ':' ||
   has_table_privilege('jlmirror_wave4_problem_state_invoker','monitoring.monitoring_problem','UPDATE')::int;")"
 test "$acl" = "1:1:0:0"
+
+function_acl="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
+SELECT
+  has_function_privilege('jlmirror_wave4_problem_state_invoker','monitoring.complete_zabbix_problem_state(text,text,text,jsonb,jsonb,boolean)','EXECUTE')::int || ':' ||
+  has_function_privilege('jlmirror_wave4_problem_state_invoker','monitoring.complete_zabbix_problem_state_with_evidence(text,text,text,text,jsonb,jsonb,boolean,text,text)','EXECUTE')::int || ':' ||
+  has_function_privilege('jlmirror_wave4_problem_state_invoker','monitoring.reestablish_problem_state_runtime_admission(text,text,bigint,text,text,text)','EXECUTE')::int || ':' ||
+  has_function_privilege('jlmirror_wave4_recovery_authority','monitoring.reestablish_problem_state_runtime_admission(text,text,bigint,text,text,text)','EXECUTE')::int;")"
+test "$function_acl" = "0:1:0:1"
+
+column_acl="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
+SELECT
+  has_column_privilege('jlmirror_wave4_problem_state_executor','monitoring.monitoring_source','problem_poll_generation','UPDATE')::int || ':' ||
+  has_column_privilege('jlmirror_wave4_problem_state_executor','monitoring.monitoring_source','problem_poll_epoch','UPDATE')::int || ':' ||
+  has_column_privilege('jlmirror_wave4_recovery_authority','monitoring.monitoring_source','problem_poll_epoch','UPDATE')::int;")"
+test "$column_acl" = "1:0:1"
+
+snapshot_checks="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
+SELECT
+  (EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='monitoring.monitoring_problem_snapshot_evidence'::regclass AND contype='u'))::int || ':' ||
+  (EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='monitoring.monitoring_problem_snapshot_evidence'::regclass AND tgname='problem_snapshot_evidence_immutable_guard' AND NOT tgisinternal))::int;")"
+test "$snapshot_checks" = "1:1"
 
 echo "wave4_zabbix_problem_state_postgres=PASS"

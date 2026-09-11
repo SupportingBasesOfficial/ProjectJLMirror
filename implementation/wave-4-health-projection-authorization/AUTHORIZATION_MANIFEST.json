@@ -1,0 +1,29 @@
+{
+  "authorization_id": "wave4.monitoring-health-projection@1",
+  "status": "proposed_bounded_implementation_authorization",
+  "canonical_base": "1da4350cb860d759549b6302e575a02af6f07b09",
+  "projection_owner": "monitoring",
+  "authorized_inputs": [
+    "monitoring_resource",
+    "monitoring_source_current_generation",
+    "resource_scope_presence_evidence",
+    "canonical_active_problem_state"
+  ],
+  "canonical_health_class": ["unknown", "healthy", "degraded", "unhealthy"],
+  "canonical_evidence_state": ["current", "stale", "incomplete", "reconciliation_required", "unavailable"],
+  "provider_polling_authorized": false,
+  "historical_generation_current_authority": false,
+  "stale_evidence_can_prove_healthy": false,
+  "provider_acknowledgement_health_authority": false,
+  "health_read_action": "monitoring.health.read",
+  "health_cache_class": "private_revalidate",
+  "health_cursor_anchor": "monitoring_resource_id",
+  "cross_domain_health_event_authorized": false,
+  "alerting_authorized": false,
+  "itsm_authorized": false,
+  "automation_authorized": false,
+  "aiops_authorized": false,
+  "provider_writeback_authorized": false,
+  "frontend_authorized": false,
+  "production_authority": "none"
+}

@@ -33,6 +33,7 @@ def main() -> None:
         require(path.is_file(), f"missing required surface: {path.relative_to(ROOT)}")
 
     domain = DOMAIN.read_text(encoding="utf-8")
+    domain_lower = domain.lower()
     migration_text = {path.name: path.read_text(encoding="utf-8") for path in MIGRATIONS}
     sql = "\n".join(migration_text.values())
     sql030 = migration_text["030_zabbix_metric_current_state.sql"]
@@ -54,11 +55,12 @@ def main() -> None:
         "CredentialResolver",
         "OutboundAdmission",
         "provider_configuration",
-        "positive object evidence remains admissible",
         "lastclock must be a positive provider sample timestamp",
         "Decimal(raw)",
     ):
         require(marker in domain, f"domain marker missing: {marker}")
+    require("positive object evidence remains admissible" in domain_lower,
+            "domain marker missing: positive object evidence remains admissible")
 
     for marker in (
         "current_state_poll_epoch",

@@ -113,7 +113,7 @@ echo "claimed_input_fallback_snapshot=$fallback_snapshot"
 test "$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM monitoring.monitoring_metric_definition_snapshot_evidence WHERE metric_definition_snapshot_evidence_id='$fallback_snapshot' AND item_count=0;")" = "1"
 
 claim_op 'metric-input-overbound' 'metric-input-overbound-claim'
-docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+overbound_result="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL'
 BEGIN;
 SET LOCAL ROLE jlmirror_wave4_metric_definition_invoker;
 SET LOCAL jlmirror.tenant_id='tenant-a';
@@ -121,13 +121,17 @@ WITH payload AS (
     SELECT jsonb_agg('{}'::jsonb) AS items
       FROM generate_series(1,200001)
 )
-SELECT monitoring.complete_zabbix_metric_definitions(
+SELECT jsonb_array_length(items)::text || ':' || monitoring.complete_zabbix_metric_definitions(
     'tenant-a','metric-input-overbound','metric-input-overbound-claim',
     'metric-input-overbound-snapshot','current','succeeded',NULL,
-    'egress-input-live','credential-generation-input-live',true,(SELECT items FROM payload)
-);
+    'egress-input-live','credential-generation-input-live',true,items
+)
+FROM payload;
 COMMIT;
 SQL
+)"
+echo "claimed_input_overbound_call=$overbound_result expected=200001:reconciliation_required"
+test "$overbound_result" = "200001:reconciliation_required"
 assert_terminal 'metric-input-overbound' 'provider.protocol_invalid'
 overbound_snapshot="$(snapshot_for 'metric-input-overbound')"
 echo "claimed_input_overbound_snapshot=$overbound_snapshot"
@@ -136,8 +140,6 @@ overbound_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DAT
 echo "claimed_input_overbound_accepted_item_count=$overbound_count"
 test "$overbound_count" = "0"
 
-# A caller-supplied snapshot id that already belongs to another operation cannot
-# collide with degraded completion because degraded identity is operation-derived.
 claim_op 'metric-input-collision' 'metric-input-collision-claim'
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE jlmirror_wave4_metric_definition_invoker; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.complete_zabbix_metric_definitions('tenant-a','metric-input-collision','metric-input-collision-claim','$null_snapshot','current','succeeded',NULL,'egress-input-live','credential-generation-input-live',true,'{}'::jsonb); COMMIT;" >/dev/null
 assert_terminal 'metric-input-collision' 'provider.protocol_invalid'

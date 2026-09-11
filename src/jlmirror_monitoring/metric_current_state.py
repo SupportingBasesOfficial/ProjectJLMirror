@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Protocol, Sequence
 
@@ -79,6 +80,9 @@ class MetricCurrentStateClaim:
     targets: tuple[CurrentMetricTarget, ...]
 
 
+CanonicalMetricValue = int | Decimal | str | bool
+
+
 @dataclass(frozen=True)
 class AcceptedCurrentObservation:
     metric_definition_id: str
@@ -88,7 +92,7 @@ class AcceptedCurrentObservation:
     observed_at_epoch_seconds: int
     observed_at_nanoseconds: int
     value_kind: MetricValueKind
-    canonical_value: int | float | str | bool
+    canonical_value: CanonicalMetricValue
 
 
 @dataclass(frozen=True)
@@ -151,10 +155,15 @@ def _degraded(
     )
 
 
-def parse_canonical_value(kind: MetricValueKind, raw: str) -> int | float | str | bool:
+def parse_canonical_value(kind: MetricValueKind, raw: str) -> CanonicalMetricValue:
     if kind is MetricValueKind.NUMBER:
-        value = float(raw)
-        if value != value or value in (float("inf"), float("-inf")):
+        if raw.strip() != raw or not raw:
+            raise ValueError("number current value must be canonical bounded text")
+        try:
+            value = Decimal(raw)
+        except InvalidOperation as exc:
+            raise ValueError("number current value must be decimal") from exc
+        if not value.is_finite():
             raise ValueError("number must be finite")
         return value
     if kind is MetricValueKind.INTEGER:

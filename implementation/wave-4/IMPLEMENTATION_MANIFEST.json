@@ -119,6 +119,10 @@
     "metric_current_state_final_schema_composed_conformance",
     "metric_current_state_provider_timestamp_exception_safe_totalization",
     "metric_current_state_recovery_operation_dml_helper_isolation",
+    "metric_current_state_owner_tuple_storage_closure",
+    "metric_current_state_provider_binding_owner_ref_storage_closure",
+    "metric_current_state_source_first_claim_completion_lock_order",
+    "metric_current_state_internal_entrypoints_sealed",
     "metric_current_state_hardening_postgres_conformance"
   ],
   "authorized_slices_consumed": [
@@ -172,7 +176,8 @@
     "sql/wave4/035_zabbix_metric_current_state_claimed_input_liveness.sql",
     "sql/wave4/036_zabbix_metric_current_state_completion_totalization.sql",
     "sql/wave4/037_zabbix_metric_current_state_supersession.sql",
-    "sql/wave4/038_zabbix_metric_current_state_least_privilege.sql"
+    "sql/wave4/038_zabbix_metric_current_state_least_privilege.sql",
+    "sql/wave4/039_zabbix_metric_current_state_owner_and_lock_order_hardening.sql"
   ],
   "assurance_surfaces": [
     "tests/wave4/test_zabbix_initial_validation_worker.py",
@@ -227,6 +232,6 @@
     "production_deployment",
     "c3_production_numerics"
   ],
-  "next_bounded_step": "finish_metric_current_state_exact_head_ci_postgres_conformance_and_hardening_before_any_history_slice",
+  "next_bounded_step": "complete_metric_current_state_exact_head_ci_and_final_adversarial_review_before_any_history_slice",
   "frontend_rule": "backend_entities_tables_endpoints_and_use_cases_do_not_imply_frontend_routes"
 }

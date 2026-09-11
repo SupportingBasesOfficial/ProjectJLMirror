@@ -15,7 +15,8 @@ from jlmirror_monitoring.problem_state import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-SQL = ROOT / "sql/wave4/042_zabbix_problem_state.sql"
+SQL_FOUNDATION = ROOT / "sql/wave4/042_zabbix_problem_state.sql"
+SQL_LIFECYCLE = ROOT / "sql/wave4/043_zabbix_problem_state_lifecycle.sql"
 AUTH = ROOT / "implementation/wave-4-problem-state-authorization/AUTHORIZATION.md"
 
 
@@ -58,7 +59,9 @@ class ProblemStateDomainTests(unittest.TestCase):
 class ProblemStatePersistenceContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.sql = SQL.read_text(encoding="utf-8")
+        cls.foundation = SQL_FOUNDATION.read_text(encoding="utf-8")
+        cls.lifecycle = SQL_LIFECYCLE.read_text(encoding="utf-8")
+        cls.sql = cls.foundation + "\n" + cls.lifecycle
         cls.lower = cls.sql.lower()
         cls.auth = AUTH.read_text(encoding="utf-8")
 
@@ -93,6 +96,32 @@ class ProblemStatePersistenceContractTests(unittest.TestCase):
             self.assertIn(f"alter table {table} enable row level security", self.lower)
             self.assertIn(f"alter table {table} force row level security", self.lower)
 
+    def test_guarded_lifecycle_exists(self) -> None:
+        for marker in (
+            "enqueue_zabbix_problem_state_sync",
+            "claim_zabbix_problem_state",
+            "complete_zabbix_problem_state",
+            "reestablish_problem_state_runtime_admission",
+            "monitoring.problem_state_recovery_admission_required",
+        ):
+            self.assertIn(marker, self.lower)
+
+    def test_incomplete_snapshot_cannot_resolve_by_omission(self) -> None:
+        self.assertIn("if p_complete_snapshot then", self.lower)
+        self.assertIn("evidence_state='reconciliation_required'", self.lower)
+        self.assertIn("monitoring.problem_snapshot_incomplete", self.lower)
+        self.assertIn("ABSENCE FROM INCOMPLETE problem.get != RESOLVED", self.auth)
+
+    def test_recovery_is_same_scoped_provider_identity(self) -> None:
+        self.assertIn("monitoring.problem_state_recovery_without_known_problem", self.lower)
+        self.assertIn("monitoring.problem_state_conflicting_recovery_evidence", self.lower)
+        self.assertIn("provider_recovery", self.lower)
+
+    def test_exact_replay_does_not_create_duplicate_identity(self) -> None:
+        self.assertIn("on conflict do nothing", self.lower)
+        self.assertIn("monitoring.problem_state_provider_identity_collision", self.lower)
+        self.assertIn("unique (tenant_id, problem_id, projection_revision)", self.lower)
+
     def test_downstream_authorities_do_not_leak_into_slice(self) -> None:
         self.assertNotIn("insert into alert", self.lower)
         self.assertNotIn("update alert", self.lower)
@@ -103,6 +132,7 @@ class ProblemStatePersistenceContractTests(unittest.TestCase):
 
     def test_resolved_identity_does_not_reopen(self) -> None:
         self.assertIn("resolved problem cannot be reopened under the same canonical provider event identity", self.lower)
+        self.assertIn("monitoring.problem_state_resolved_event_reappeared", self.lower)
 
 
 if __name__ == "__main__":

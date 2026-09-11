@@ -28,6 +28,11 @@ def require(condition: bool, message: str) -> None:
         raise SystemExit(f"WAVE4_METRIC_CURRENT_STATE_ERROR: {message}")
 
 
+def executable_sql(text: str) -> str:
+    """Remove SQL line comments before checking forbidden executable surfaces."""
+    return "\n".join(line.split("--", 1)[0] for line in text.splitlines())
+
+
 def main() -> None:
     for path in (DOMAIN, *MIGRATIONS, TEST, AUTH, CONFORMANCE, RECOVERY_DUMP, WORKFLOW):
         require(path.is_file(), f"missing required surface: {path.relative_to(ROOT)}")
@@ -36,6 +41,7 @@ def main() -> None:
     domain_lower = domain.lower()
     migration_text = {path.name: path.read_text(encoding="utf-8") for path in MIGRATIONS}
     sql = "\n".join(migration_text.values())
+    executable = executable_sql(sql).lower()
     sql030 = migration_text["030_zabbix_metric_current_state.sql"]
     sql031 = migration_text["031_zabbix_metric_current_state_completion.sql"]
     sql032 = migration_text["032_zabbix_metric_current_state_recovery_authority.sql"]
@@ -90,8 +96,21 @@ def main() -> None:
     require("monitoring_metric_current_state_transition_intent" not in sql, "parallel Current publication-intent table is forbidden")
     require("item_definition_poll_epoch BIGINT NOT NULL DEFAULT" not in sql030, "must not create/reuse Item Definition poll authority")
     require("host_inventory_poll_epoch BIGINT NOT NULL DEFAULT" not in sql030, "must not create/reuse Host Inventory poll authority")
-    require("CREATE TABLE monitoring.metric_observation" not in sql, "history materialization leaked into current slice")
-    require("history.get" not in sql.lower(), "history.get leaked into current slice")
+
+    # Current may document the deferred History boundary in comments, but it must not
+    # materialize or invoke History surfaces in executable SQL.
+    for forbidden in (
+        "create table monitoring.metric_observation",
+        "create table monitoring.metric_history",
+        "create table monitoring.metric_history_checkpoint",
+        "create function monitoring.history_",
+        "create or replace function monitoring.history_",
+        "create function monitoring.metric_history_",
+        "create or replace function monitoring.metric_history_",
+        "history.get(",
+        "history_get(",
+    ):
+        require(forbidden not in executable, f"History implementation leaked into Current slice: {forbidden}")
 
     require("b.provider_operational_state='enabled'" in sql031, "disabled/unsupported binding must not gain fresh Current authority")
     require("d.scope_projection_revision=v_operation.scope_revision" in sql031, "Current target must be proven against claim scope revision")

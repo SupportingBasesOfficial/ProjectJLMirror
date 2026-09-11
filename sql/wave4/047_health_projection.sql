@@ -49,7 +49,7 @@ CREATE TABLE monitoring.health_projection (
     CHECK (jsonb_typeof(reason_refs)='array'),
     CHECK (jsonb_array_length(reason_refs) <= 64),
     CHECK (octet_length(reason_refs::text) <= 65536),
-    CHECK (last_evidence_at >= last_changed_at OR health_class IS NOT NULL)
+    CHECK (last_evidence_at >= last_changed_at)
 );
 
 COMMENT ON TABLE monitoring.health_projection IS
@@ -141,13 +141,16 @@ BEGIN
         RAISE EXCEPTION 'Health projection revision must advance exactly once';
     END IF;
 
-    IF NEW.health_class='healthy' THEN
-        IF NEW.evidence_state <> 'current' OR NEW.problem_snapshot_evidence_id IS NULL THEN
-            RAISE EXCEPTION 'Healthy requires current evidence and durable Problem State completeness evidence';
-        END IF;
-        IF NOT EXISTS (
+    IF NEW.evidence_state='current' THEN
+        IF NEW.problem_snapshot_evidence_id IS NULL OR NOT EXISTS (
             SELECT 1
               FROM monitoring.monitoring_problem_snapshot_evidence AS e
+              JOIN monitoring.monitoring_source AS s
+                ON s.tenant_id=e.tenant_id
+               AND s.monitoring_source_id=e.monitoring_source_id
+              JOIN monitoring.monitoring_resource AS r
+                ON r.tenant_id=NEW.tenant_id
+               AND r.monitoring_resource_id=NEW.monitoring_resource_id
              WHERE e.tenant_id=NEW.tenant_id
                AND e.problem_snapshot_evidence_id=NEW.problem_snapshot_evidence_id
                AND e.monitoring_source_id=NEW.monitoring_source_id
@@ -155,8 +158,37 @@ BEGIN
                AND e.snapshot_complete
                AND e.operation_state='succeeded'
                AND e.operational_evidence_state='current'
+               AND s.active_source_instance_generation=NEW.source_instance_generation
+               AND s.configuration_revision=e.configuration_revision
+               AND s.scope_revision=e.scope_revision
+               AND s.operational_evidence_state='current'
+               AND r.monitoring_source_id=NEW.monitoring_source_id
+               AND r.source_instance_generation=NEW.source_instance_generation
+               AND r.presence_state='present'
+               AND r.presence_evidence_state='current'
+               AND r.scope_state='in_scope'
+               AND r.scope_evidence_state='current'
+               AND r.scope_projection_revision=e.scope_revision
         ) THEN
-            RAISE EXCEPTION 'Healthy Problem State completeness evidence is not authoritative';
+            RAISE EXCEPTION 'Current Health requires current source/resource/scope and durable complete Problem State evidence';
+        END IF;
+    END IF;
+
+    IF NEW.health_class='healthy' THEN
+        IF NEW.evidence_state <> 'current' THEN
+            RAISE EXCEPTION 'Healthy cannot be projected from non-current evidence';
+        END IF;
+        IF EXISTS (
+            SELECT 1
+              FROM monitoring.monitoring_problem AS p
+             WHERE p.tenant_id=NEW.tenant_id
+               AND p.monitoring_source_id=NEW.monitoring_source_id
+               AND p.source_instance_generation=NEW.source_instance_generation
+               AND p.monitoring_resource_id=NEW.monitoring_resource_id
+               AND p.problem_state='active'
+               AND p.severity_class IN ('unknown','warning','degraded','critical')
+        ) THEN
+            RAISE EXCEPTION 'Healthy cannot coexist with an active health-affecting canonical problem';
         END IF;
     END IF;
 

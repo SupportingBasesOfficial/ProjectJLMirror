@@ -116,16 +116,27 @@ def main() -> None:
     require("d.scope_projection_revision=v_operation.scope_revision" in sql031, "Current target must be proven against claim scope revision")
     require("s.current_state_poll_generation=v_operation.current_state_poll_generation" in sql031, "completion must revalidate current poll fence")
     require("reestablish_metric_current_state_runtime_admission" in sql032, "missing Current recovery readmission")
-    require("execution.superseded_current_state_poll_authority" in sql032, "recovery must terminalize stale claims")
+    require("wave4_terminalize_superseded_metric_current_state_claims" in sql032, "recovery must cross narrow Current terminalization helper")
+    require("UPDATE monitoring.monitoring_sync_operation AS o" not in sql032, "recovery function must not directly mutate monitoring_sync_operation")
     require("g.provider_instance_ref,g.provider_base_url,s.credential_binding_ref" in sql033, "Current claim fields must come from owning generation/source records")
-    require("Recovery authority may only terminalize superseded Metric Current State claims" in sql034, "recovery lifecycle authority must be narrow")
+    require("Recovery authority may only terminalize superseded Metric Current State claims" in sql034, "operation guard must retain narrow recovery defense")
     require("wave4_current_value_matches_kind" in sql, "database must enforce value-kind/value shape compatibility")
     require("jsonb_typeof(p_observations)<>'array'" in sql036, "claimed-input totalization must validate array shape")
     require("9223372036854775807::NUMERIC" in sql036, "provider clock conversion must be exception-safe")
     require("old_o.current_state_poll_generation<v_poll_generation" in sql037, "new Current claim must supersede older in-flight generations")
     require("s.current_state_poll_generation=o.current_state_poll_generation" in sql037, "target listing must revalidate current poll fence")
+
     require("REVOKE INSERT,UPDATE ON monitoring.monitoring_source" in sql038, "executor source privilege must be narrowed")
     require("GRANT UPDATE (current_state_poll_generation,updated_at)" in sql038, "executor may update only its poll generation bookkeeping")
+    require("REVOKE ALL ON monitoring.monitoring_sync_operation" in sql038, "recovery must have no direct operation-table authority")
+    require("CREATE OR REPLACE FUNCTION monitoring.wave4_terminalize_superseded_metric_current_state_claims" in sql038, "narrow recovery terminalization helper missing")
+    require("AND o.responsibility_kind='metric_current_state_sync'" in sql038, "recovery helper must be responsibility-bound")
+    require("AND o.state='running'" in sql038, "recovery helper must be running-state-bound")
+    require("AND o.current_state_poll_epoch=p_current_poll_epoch" in sql038, "recovery helper must be old-epoch-bound")
+    require("OWNER TO jlmirror_wave4_metric_current_state_executor" in sql038, "recovery helper must execute under Current executor authority")
+    require("GRANT EXECUTE ON FUNCTION monitoring.wave4_terminalize_superseded_metric_current_state_claims" in sql038, "recovery helper execute bridge missing")
+    require("has_column_privilege" in sql038 and "must not hold direct monitoring_sync_operation UPDATE" in sql038,
+            "migration-time negative privilege assurance missing")
 
     require("--exclude-table-data=monitoring.monitoring_metric_current_state_runtime_admission" in recovery_dump, "recovery dump must exclude Current runtime admission")
     require("run_zabbix_metric_current_state_postgres_conformance.sh" in workflow, "Wave4 workflow must execute Current PostgreSQL conformance")
@@ -140,7 +151,7 @@ def main() -> None:
     ):
         require(marker in conformance, f"conformance marker missing: {marker}")
 
-    print("wave4_metric_current_state=PASS schema=030-038 current_projection=enabled durable_acceptance=enabled transition=semantic-change-only replay=idempotent trust_boundary=explicit recovery=stream-local history_materialization=blocked")
+    print("wave4_metric_current_state=PASS schema=030-038 current_projection=enabled durable_acceptance=enabled transition=semantic-change-only replay=idempotent trust_boundary=explicit recovery=helper-isolated history_materialization=blocked")
 
 
 if __name__ == "__main__":

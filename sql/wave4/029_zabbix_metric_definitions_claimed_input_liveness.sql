@@ -1,10 +1,10 @@
 -- Wave 4 metric-definition claimed-input liveness hardening.
 -- A legitimately claimed operation must never remain running merely because the
 -- completion payload is NULL, not an array, above the bounded cardinality, the
--- caller supplied an incoherent completion shape, or the caller omitted its snapshot
--- evidence id. Resolve authority first, persist a degraded snapshot, and retire the
--- claim. The v028 implementation remains an executor-only helper for structurally
--- valid completion requests.
+-- caller supplied an incoherent completion shape, or the caller omitted/collided its
+-- snapshot evidence id. Resolve authority first, persist a degraded snapshot under
+-- an operation-derived identity, and retire the claim. The v028 implementation
+-- remains an executor-only helper for structurally valid completion requests.
 
 BEGIN;
 
@@ -93,15 +93,17 @@ BEGIN
     IF p_metric_definition_snapshot_evidence_id IS NULL
        OR p_metric_definition_snapshot_evidence_id='' THEN
         v_input_failure := COALESCE(v_input_failure,'execution.invalid_completion_shape');
+    END IF;
+
+    IF v_input_failure IS NOT NULL THEN
+        -- Degraded evidence identity is derived from the operation authority, never
+        -- from caller input. This prevents a duplicate/foreign caller-supplied
+        -- snapshot id from turning an input fault back into a transaction abort.
         v_snapshot_id := 'metric-reconciliation-' || encode(sha256(convert_to(
             p_tenant_id || ':' || p_monitoring_sync_operation_id || ':' || COALESCE(p_claim_token,''),
             'UTF8'
         )),'hex');
-    ELSE
-        v_snapshot_id := p_metric_definition_snapshot_evidence_id;
-    END IF;
 
-    IF v_input_failure IS NOT NULL THEN
         INSERT INTO monitoring.monitoring_metric_definition_snapshot_evidence(
             tenant_id,metric_definition_snapshot_evidence_id,monitoring_sync_operation_id,
             monitoring_source_id,source_instance_generation,configuration_revision,scope_revision,
@@ -126,6 +128,9 @@ BEGIN
         RETURN 'reconciliation_required';
     END IF;
 
+    -- Valid completions retain the caller-provided evidence id because it is part of
+    -- the normal worker/repository idempotency contract proved by v028.
+    v_snapshot_id := p_metric_definition_snapshot_evidence_id;
     RETURN monitoring.complete_zabbix_metric_definitions_v028(
         p_tenant_id,
         p_monitoring_sync_operation_id,

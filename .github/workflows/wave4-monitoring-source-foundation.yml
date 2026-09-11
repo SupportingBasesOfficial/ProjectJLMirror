@@ -156,12 +156,12 @@ jobs:
           PG_CONTAINER: jlmirror-wave4-metric-definitions-claimed-input-postgres
         run: bash tools/wave4/run_zabbix_metric_definitions_claimed_input_liveness_postgres_conformance.sh
 
-      - name: Execute bounded Zabbix metric current state on final schema 001-038
+      - name: Execute bounded Zabbix metric current state on baseline schema 001-038
         env:
           PG_CONTAINER: jlmirror-wave4-metric-current-state-postgres
         run: bash tools/wave4/run_zabbix_metric_current_state_postgres_conformance.sh
 
-      - name: Execute Metric Current State hardening on final schema 001-038
+      - name: Execute Metric Current State hardening on final schema 001-039
         env:
           PG_CONTAINER: jlmirror-wave4-metric-current-state-hardening-postgres
         run: bash tools/wave4/run_zabbix_metric_current_state_hardening_postgres_conformance.sh

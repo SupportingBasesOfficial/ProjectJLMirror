@@ -34,7 +34,10 @@ def main() -> None:
         "metric_current_state_separate_from_history",
         "provider_event_time_not_current_state_ordering_authority",
         "later_poll_generation_not_semantic_value_change",
+        "positive_per_object_evidence_not_global_snapshot_completeness",
+        "omission_not_negative_authority_without_known_coverage",
         "last_known_value_not_current_evidence",
+        "provider_sample_time_must_be_structurally_valid_for_fresh_current",
         "current_state_poll_authority_independent_from_item_definition_poll_authority",
         "current_state_poll_authority_independent_from_host_inventory_poll_authority",
         "active_generation_required_for_current_authority",
@@ -47,8 +50,10 @@ def main() -> None:
         "canonical_metric_current_state_projection",
         "endpoint_specific_current_state_poll_epoch_generation_and_admission",
         "poll_generation_as_precedence_and_fence_authority",
+        "positive_object_specific_current_acceptance_without_global_snapshot_completion",
         "same_value_semantic_noop_without_last_changed_transition",
         "last_known_value_retained_with_noncurrent_evidence",
+        "coverage_proven_omission_may_degrade_evidence_without_clearing_value",
         "bounded_current_state_transition_outbox_on_genuine_change_only",
         "recovery_safe_fail_closed_current_authority",
     }:
@@ -64,6 +69,8 @@ def main() -> None:
         "reuse_host_inventory_poll_epoch_generation_or_admission_for_current",
         "provider_timestamp_as_sole_ordering_authority",
         "duplicate_transition_for_same_value_refresh",
+        "clear_current_value_from_incomplete_or_unproven_omission",
+        "global_snapshot_completeness_required_for_positive_object_current_evidence",
         "frontend_route_or_navigation_creation",
         "production_deployment",
     }:
@@ -73,9 +80,14 @@ def main() -> None:
         "CURRENT STATE != HISTORY",
         "PROVIDER EVENT TIME != CURRENT-STATE ORDERING AUTHORITY",
         "LATER POLL GENERATION != SEMANTIC VALUE CHANGE",
+        "POSITIVE PER-OBJECT EVIDENCE != GLOBAL SNAPSHOT COMPLETENESS",
+        "OMISSION != NEGATIVE AUTHORITY WITHOUT KNOWN COVERAGE",
         "CURRENT-STATE POLL AUTHORITY != ITEM-DEFINITION POLL AUTHORITY",
         "CURRENT-STATE POLL AUTHORITY != HOST-INVENTORY POLL AUTHORITY",
         "Poll generation is precedence/fence authority",
+        "Positive per-object evidence is independently admissible",
+        "Omission has no authority without proven coverage",
+        "Provider sample time must be structurally valid",
         "Last-known survives uncertainty without masquerading as current",
         "No history obligation from this slice",
         "Recovery fails closed",
@@ -91,7 +103,7 @@ def main() -> None:
     for text in forbidden_authority:
         require(text not in auth, f"forbidden authority leaked into authorization: {text}")
 
-    print("wave4_metric_current_state_authorization=PASS id=wave4.monitoring-metric-current-state@1 scope=current-only history=blocked poll_stream=independent frontend=blocked production=blocked")
+    print("wave4_metric_current_state_authorization=PASS id=wave4.monitoring-metric-current-state@1 scope=current-only history=blocked poll_stream=independent positive=per-object omission=coverage-bound frontend=blocked production=blocked")
 
 
 if __name__ == "__main__":

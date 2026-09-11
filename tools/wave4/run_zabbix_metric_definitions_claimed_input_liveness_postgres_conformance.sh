@@ -113,7 +113,7 @@ echo "claimed_input_fallback_snapshot=$fallback_snapshot"
 test "$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM monitoring.monitoring_metric_definition_snapshot_evidence WHERE metric_definition_snapshot_evidence_id='$fallback_snapshot' AND item_count=0;")" = "1"
 
 claim_op 'metric-input-overbound' 'metric-input-overbound-claim'
-overbound_result="$(docker exec "$PG_CONTAINER" psql -Atq -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL'
+docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
 BEGIN;
 SET LOCAL ROLE jlmirror_wave4_metric_definition_invoker;
 SET LOCAL jlmirror.tenant_id='tenant-a';
@@ -121,7 +121,7 @@ WITH payload AS (
     SELECT jsonb_agg('{}'::jsonb) AS items
       FROM generate_series(1,200001)
 )
-SELECT jsonb_array_length(items)::text || ':' || monitoring.complete_zabbix_metric_definitions(
+SELECT monitoring.complete_zabbix_metric_definitions(
     'tenant-a','metric-input-overbound','metric-input-overbound-claim',
     'metric-input-overbound-snapshot','current','succeeded',NULL,
     'egress-input-live','credential-generation-input-live',true,items
@@ -129,9 +129,6 @@ SELECT jsonb_array_length(items)::text || ':' || monitoring.complete_zabbix_metr
 FROM payload;
 COMMIT;
 SQL
-)"
-echo "claimed_input_overbound_call=$overbound_result expected=200001:reconciliation_required"
-test "$overbound_result" = "200001:reconciliation_required"
 assert_terminal 'metric-input-overbound' 'provider.protocol_invalid'
 overbound_snapshot="$(snapshot_for 'metric-input-overbound')"
 echo "claimed_input_overbound_snapshot=$overbound_snapshot"

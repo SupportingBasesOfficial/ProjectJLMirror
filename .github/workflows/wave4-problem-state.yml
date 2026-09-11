@@ -1,0 +1,84 @@
+name: Wave 4 Problem State
+
+on:
+  pull_request:
+    paths:
+      - 'src/jlmirror_monitoring/problem_state.py'
+      - 'sql/wave4/042_zabbix_problem_state.sql'
+      - 'tests/wave4/test_zabbix_problem_state.py'
+      - 'tools/wave4/validate_zabbix_problem_state.py'
+      - 'tools/wave4/run_zabbix_problem_state_postgres_conformance.sh'
+      - '.github/workflows/wave4-problem-state.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/jlmirror_monitoring/problem_state.py'
+      - 'sql/wave4/042_zabbix_problem_state.sql'
+      - 'tests/wave4/test_zabbix_problem_state.py'
+      - 'tools/wave4/validate_zabbix_problem_state.py'
+      - 'tools/wave4/run_zabbix_problem_state_postgres_conformance.sh'
+      - '.github/workflows/wave4-problem-state.yml'
+
+permissions: {}
+
+concurrency:
+  group: wave4-problem-state-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  problem-state:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      POSTGRES_IMAGE: postgres@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+      PG_CONTAINER: jlmirror-wave4-problem-state-postgres
+      PG_PASSWORD: wave4-monitoring-password
+      PG_DATABASE: jlmirror
+    steps:
+      - name: Resolve exact analyzed HEAD
+        id: analyzed
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            resolved_sha="$PR_HEAD_SHA"
+          else
+            resolved_sha="$EVENT_SHA"
+          fi
+          test -n "$resolved_sha"
+          printf 'sha=%s\n' "$resolved_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.analyzed.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit identity
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.analyzed.outputs.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Validate bounded Zabbix Problem State boundary
+        run: python3 tools/wave4/validate_zabbix_problem_state.py
+
+      - name: Test bounded Problem State contracts
+        run: PYTHONPATH=src python3 -m unittest tests.wave4.test_zabbix_problem_state
+
+      - name: Execute Problem State composed PostgreSQL conformance
+        run: bash tools/wave4/run_zabbix_problem_state_postgres_conformance.sh
+
+      - name: Validate repository structure and workflow safety
+        run: python3 tools/assurance/validate_repository.py

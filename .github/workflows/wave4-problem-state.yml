@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/jlmirror_monitoring/problem_state.py'
       - 'sql/wave4/042_zabbix_problem_state.sql'
+      - 'sql/wave4/043_zabbix_problem_state_lifecycle.sql'
       - 'tests/wave4/test_zabbix_problem_state.py'
       - 'tools/wave4/validate_zabbix_problem_state.py'
       - 'tools/wave4/run_zabbix_problem_state_postgres_conformance.sh'
@@ -15,6 +16,7 @@ on:
     paths:
       - 'src/jlmirror_monitoring/problem_state.py'
       - 'sql/wave4/042_zabbix_problem_state.sql'
+      - 'sql/wave4/043_zabbix_problem_state_lifecycle.sql'
       - 'tests/wave4/test_zabbix_problem_state.py'
       - 'tools/wave4/validate_zabbix_problem_state.py'
       - 'tools/wave4/run_zabbix_problem_state_postgres_conformance.sh'

@@ -74,35 +74,31 @@ def derive_health(value: HealthInput) -> HealthDecision:
         and value.problem_completeness_is_current
         and value.evidence_state is EvidenceState.CURRENT
     )
+    effective_evidence = (
+        EvidenceState.CURRENT
+        if current_authority
+        else (
+            EvidenceState.RECONCILIATION_REQUIRED
+            if value.evidence_state is EvidenceState.CURRENT
+            else value.evidence_state
+        )
+    )
 
     severities = set(value.active_problem_severities)
 
     if SeverityClass.CRITICAL in severities:
-        return HealthDecision(
-            HealthClass.UNHEALTHY,
-            EvidenceState.CURRENT if current_authority else value.evidence_state,
-            reasons,
-        )
+        return HealthDecision(HealthClass.UNHEALTHY, effective_evidence, reasons)
 
     if SeverityClass.WARNING in severities or SeverityClass.DEGRADED in severities:
-        return HealthDecision(
-            HealthClass.DEGRADED,
-            EvidenceState.CURRENT if current_authority else value.evidence_state,
-            reasons,
-        )
+        return HealthDecision(HealthClass.DEGRADED, effective_evidence, reasons)
 
     if SeverityClass.UNKNOWN in severities:
-        return HealthDecision(
-            HealthClass.UNKNOWN,
-            EvidenceState.CURRENT if current_authority else value.evidence_state,
-            reasons,
-        )
+        return HealthDecision(HealthClass.UNKNOWN, effective_evidence, reasons)
 
-    # Positive healthy authority is intentionally the strictest branch.
     if current_authority:
         return HealthDecision(HealthClass.HEALTHY, EvidenceState.CURRENT, reasons)
 
-    return HealthDecision(HealthClass.UNKNOWN, value.evidence_state, reasons)
+    return HealthDecision(HealthClass.UNKNOWN, effective_evidence, reasons)
 
 
 def semantic_health_change(previous: HealthDecision | None, current: HealthDecision) -> bool:

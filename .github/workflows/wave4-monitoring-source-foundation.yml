@@ -89,7 +89,10 @@ jobs:
       - name: Validate bounded Zabbix metric definitions boundary
         run: python3 tools/wave4/validate_zabbix_metric_definitions.py
 
-      - name: Test Monitoring source, validation, host inventory, and metric definition contracts
+      - name: Validate bounded Zabbix metric current state boundary
+        run: python3 tools/wave4/validate_zabbix_metric_current_state.py
+
+      - name: Test Monitoring source, validation, host inventory, metric definition, and current-state contracts
         run: PYTHONPATH=src python3 -m unittest discover -s tests/wave4 -p 'test_*.py'
 
       - name: Execute Monitoring source transaction on pinned PostgreSQL
@@ -152,6 +155,11 @@ jobs:
         env:
           PG_CONTAINER: jlmirror-wave4-metric-definitions-claimed-input-postgres
         run: bash tools/wave4/run_zabbix_metric_definitions_claimed_input_liveness_postgres_conformance.sh
+
+      - name: Execute bounded Zabbix metric current state on final schema 001-038
+        env:
+          PG_CONTAINER: jlmirror-wave4-metric-current-state-postgres
+        run: bash tools/wave4/run_zabbix_metric_current_state_postgres_conformance.sh
 
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

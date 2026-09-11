@@ -4,6 +4,8 @@ import json
 ROOT = Path(__file__).resolve().parents[2]
 HOST_SQUASH = "18581e18b90f1c387d2b175ec4f4dac0fbf677d2"
 METRIC_AUTH = "4debb413aad4b1b449fd6e0dcd05f101021d81e3"
+METRIC_DEFINITION_SQUASH = "84e9111dadaaca5823b8e696efc1c0764596e269"
+CURRENT_AUTH = "e897bf276f1f737cf7dd174e71f26ee19e3608b6"
 
 
 def require(condition: bool, message: str) -> None:
@@ -26,6 +28,7 @@ def main() -> None:
         "wave4.zabbix-initial-validation-worker@1",
         "wave4.zabbix-host-inventory@1",
         "wave4.zabbix-metric-definitions@1",
+        "wave4.zabbix-metric-current-state@1",
     }, "implementation id drift")
 
     if implementation_id == "wave4.zabbix-initial-validation-worker@1":
@@ -39,7 +42,7 @@ def main() -> None:
         require("host_inventory_ingestion" in manifest["implemented_capability"], "host inventory successor missing authorized capability")
         for forbidden in ("metric_ingestion", "problem_ingestion", "history_ingestion", "canonical_device_classification", "concrete_secret_manager", "concrete_egress_transport"):
             require(forbidden in manifest["explicitly_not_implemented"], f"host inventory successor widened deferred boundary: {forbidden}")
-    else:
+    elif implementation_id == "wave4.zabbix-metric-definitions@1":
         require(manifest["canonical_predecessor_commit"] == HOST_SQUASH, "metric successor lost host-inventory predecessor")
         require(manifest.get("metric_definition_authorization_commit") == METRIC_AUTH, "metric successor lost metric authorization")
         require(manifest.get("metric_definition_authorization_id") == "wave4.monitoring-metric-definitions@1", "metric authorization id drift")
@@ -62,6 +65,31 @@ def main() -> None:
             "concrete_egress_transport",
         ):
             require(forbidden in manifest["explicitly_not_implemented"], f"metric successor widened deferred boundary: {forbidden}")
+    else:
+        require(manifest["canonical_predecessor_commit"] == METRIC_DEFINITION_SQUASH, "current-state successor lost metric-definition predecessor")
+        require(manifest.get("metric_definition_authorization_commit") == METRIC_AUTH, "current-state successor lost metric-definition authority")
+        require(manifest.get("metric_current_state_authorization_commit") == CURRENT_AUTH, "current-state successor lost current-state authorization")
+        require(manifest.get("metric_current_state_authorization_id") == "wave4.monitoring-metric-current-state@1", "current-state authorization id drift")
+        require(manifest["product_feature_activation"] == "monitoring_source_validation_host_inventory_metric_definitions_and_bounded_metric_current_state", "current-state successor activation drift")
+        capabilities = set(manifest["implemented_capability"])
+        for capability in (
+            "host_inventory_ingestion",
+            "zabbix_item_get_bounded_metric_definition_domain",
+            "zabbix_item_get_bounded_metric_current_state_domain",
+            "metric_current_state_credential_and_egress_admission_per_poll",
+            "metric_current_state_independent_poll_epoch_generation_admission",
+        ):
+            require(capability in capabilities, f"current-state successor missing bounded capability: {capability}")
+        for forbidden in (
+            "metric_history_ingestion",
+            "metric_observation_history_materialization",
+            "problem_ingestion",
+            "health_projection",
+            "canonical_device_classification",
+            "concrete_secret_manager",
+            "concrete_egress_transport",
+        ):
+            require(forbidden in manifest["explicitly_not_implemented"], f"current-state successor widened deferred boundary: {forbidden}")
 
     for phrase in (
         "hostgroup.get",

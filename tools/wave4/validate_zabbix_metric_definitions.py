@@ -45,7 +45,10 @@ def main() -> None:
         'MetricDefinitionWorker', 'complete_metric_definitions must return authoritative persisted MetricDefinitionResult',
     ):
         require(marker in domain, f"domain invariant missing: {marker}")
-    require('BOOLEAN = "boolean"' not in domain, "generic Zabbix integer must not become boolean")
+    require('ZabbixNativeValueType.UNSIGNED: MetricValueKind.INTEGER' in domain,
+            "generic Zabbix unsigned value must remain integer; boolean requires explicit canonical mapping")
+    require('ZabbixNativeValueType.UNSIGNED: MetricValueKind.BOOLEAN' not in domain,
+            "generic Zabbix unsigned value must not infer boolean")
     require('lastvalue' not in domain and 'history_get' not in domain, "current/history ingestion leaked into bounded slice")
 
     for marker in (

@@ -83,6 +83,7 @@
     "metric_definition_atomic_snapshot_preflight",
     "metric_definition_immutable_provider_evidence",
     "metric_definition_qualified_claim_identifiers",
+    "metric_definition_split_source_generation_claim_authority",
     "metric_definition_evidence_insert_authority",
     "metric_definition_drift_visibility",
     "metric_definition_owner_bound_provenance_closure",
@@ -90,7 +91,8 @@
     "metric_definition_poll_authority_single_owner",
     "metric_definition_stale_completion_authority_fence",
     "metric_definition_host_association_drift_fail_closed",
-    "metric_definition_completion_liveness_terminal_reconciliation"
+    "metric_definition_completion_liveness_terminal_reconciliation",
+    "metric_definition_claimed_input_liveness_totalization"
   ],
   "authorized_slices_consumed": [
     "impl.customer-telemetry@1",
@@ -128,7 +130,8 @@
     "sql/wave4/025_zabbix_metric_definitions_drift_visibility.sql",
     "sql/wave4/026_zabbix_metric_definitions_provenance_closure.sql",
     "sql/wave4/027_zabbix_metric_definitions_completion_authority.sql",
-    "sql/wave4/028_zabbix_metric_definitions_completion_liveness.sql"
+    "sql/wave4/028_zabbix_metric_definitions_completion_liveness.sql",
+    "sql/wave4/029_zabbix_metric_definitions_claimed_input_liveness.sql"
   ],
   "assurance_surfaces": [
     "tests/wave4/test_zabbix_initial_validation_worker.py",
@@ -150,6 +153,7 @@
     "tools/wave4/run_zabbix_host_inventory_final_schema_postgres_conformance.sh",
     "tools/wave4/run_zabbix_metric_definitions_postgres_conformance.sh",
     "tools/wave4/run_zabbix_metric_definitions_liveness_postgres_conformance.sh",
+    "tools/wave4/run_zabbix_metric_definitions_claimed_input_liveness_postgres_conformance.sh",
     ".github/workflows/wave4-monitoring-source-foundation.yml"
   ],
   "explicitly_not_implemented": [
@@ -172,6 +176,6 @@
     "production_deployment",
     "c3_production_numerics"
   ],
-  "next_bounded_step": "finish_metric_definition_exact_head_ci_and_codex_review_before_any_current_or_history_slice",
+  "next_bounded_step": "finish_metric_definition_exact_head_ci_and_final_review_before_any_current_or_history_slice",
   "frontend_rule": "backend_entities_tables_endpoints_and_use_cases_do_not_imply_frontend_routes"
 }

@@ -68,27 +68,19 @@ done
 
 normal_ts="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT monitoring.wave4_current_provider_timestamp_is_valid(1700000000,123)::int;")"
 test "$normal_ts" = "1"
-
-# BIGINT-valid but timestamptz-invalid provider time must be classified, never raise.
 overflow_ts="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT monitoring.wave4_current_provider_timestamp_is_valid(9223372036854775807,0)::int;")"
 test "$overflow_ts" = "0"
 
-# Recovery has only the dedicated function bridge, never direct operation DML.
 recovery_acl="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT has_table_privilege('jlmirror_wave4_recovery_authority','monitoring.monitoring_sync_operation','UPDATE')::int||':'||has_column_privilege('jlmirror_wave4_recovery_authority','monitoring.monitoring_sync_operation','state','UPDATE')::int||':'||has_column_privilege('jlmirror_wave4_recovery_authority','monitoring.monitoring_sync_operation','claim_token','UPDATE')::int||':'||has_function_privilege('jlmirror_wave4_recovery_authority','monitoring.wave4_terminalize_superseded_metric_current_state_claims(text,text,bigint)','EXECUTE')::int;" )"
 test "$recovery_acl" = "0:0:0:1"
-
 invoker_bridge="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT has_function_privilege('jlmirror_wave4_metric_current_state_invoker','monitoring.wave4_terminalize_superseded_metric_current_state_claims(text,text,bigint)','EXECUTE')::int;")"
 test "$invoker_bridge" = "0"
 
-# Final schema must storage-enforce the canonical owner tuple all the way through
-# accepted provider evidence, Current projection and transition evidence.
 owner_fk_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM pg_constraint WHERE conname IN ('metric_current_acceptance_definition_owner_fk','metric_current_acceptance_binding_owner_fk','metric_current_state_definition_owner_fk','metric_current_state_observation_owner_fk','metric_current_transition_definition_owner_fk','metric_current_transition_to_observation_owner_fk','metric_current_transition_from_observation_owner_fk') AND contype='f' AND convalidated;")"
 test "$owner_fk_count" = "7"
 owner_unique_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM pg_constraint WHERE conname IN ('metric_definition_binding_current_owner_ref_unique','metric_current_acceptance_owner_tuple_unique') AND contype='u' AND convalidated;")"
 test "$owner_unique_count" = "2"
 
-# Public Current invoker may call only the source-first wrappers; v036/v037 internals
-# remain executor-owned implementation details.
 entry_acl="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT has_function_privilege('jlmirror_wave4_metric_current_state_invoker','monitoring.claim_zabbix_metric_current_state(text,text,text)','EXECUTE')::int||':'||has_function_privilege('jlmirror_wave4_metric_current_state_invoker','monitoring.complete_zabbix_metric_current_state(text,text,text,jsonb)','EXECUTE')::int||':'||has_function_privilege('jlmirror_wave4_metric_current_state_invoker','monitoring.claim_zabbix_metric_current_state_v037_internal(text,text,text)','EXECUTE')::int||':'||has_function_privilege('jlmirror_wave4_metric_current_state_invoker','monitoring.complete_zabbix_metric_current_state_v036_internal(text,text,text,jsonb)','EXECUTE')::int;")"
 test "$entry_acl" = "1:1:0:0"
 
@@ -97,4 +89,27 @@ test "$claim_order" = "1"
 completion_order="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "WITH d AS (SELECT pg_get_functiondef('monitoring.complete_zabbix_metric_current_state(text,text,text,jsonb)'::regprocedure) AS f) SELECT ((strpos(f,'FROM monitoring.monitoring_source')>0) AND (strpos(f,'FOR UPDATE')>strpos(f,'FROM monitoring.monitoring_source')) AND (strpos(f,'complete_zabbix_metric_current_state_v036_internal')>strpos(f,'FOR UPDATE')))::int FROM d;")"
 test "$completion_order" = "1"
 
-echo "wave4_zabbix_metric_current_state_hardening_postgres=PASS schema=001-039 provider_timestamp=exception-safe recovery_operation_dml=none recovery_bridge=narrow owner_tuple=storage-enforced lock_order=source-first internal_entrypoints=sealed"
+# Runtime smoke across the final 039 wrappers: valid source -> recovery admission ->
+# enqueue -> public claim wrapper -> public completion wrapper.  Empty observations are
+# valid positive-object semantics and should close the operation successfully.
+docker exec -i "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL'
+CREATE ROLE wave4_hardening_runtime NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+GRANT USAGE ON SCHEMA monitoring TO wave4_hardening_runtime;
+GRANT SELECT,INSERT,UPDATE ON ALL TABLES IN SCHEMA monitoring TO wave4_hardening_runtime;
+REVOKE INSERT,UPDATE,DELETE,TRUNCATE ON monitoring.monitoring_host_inventory_runtime_admission FROM wave4_hardening_runtime;
+REVOKE INSERT,UPDATE,DELETE,TRUNCATE ON monitoring.monitoring_metric_definition_runtime_admission FROM wave4_hardening_runtime;
+REVOKE INSERT,UPDATE,DELETE,TRUNCATE ON monitoring.monitoring_metric_current_state_runtime_admission FROM wave4_hardening_runtime;
+SQL
+
+fp="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+scope='{"host_group_refs":["10"]}'
+docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE wave4_hardening_runtime; SET LOCAL jlmirror.tenant_id='tenant-hard'; SELECT * FROM monitoring.create_zabbix_source('tenant-hard','create-hard','$fp','source-hard','generation-hard','binding-hard','validation-hard','audit-hard','principal-hard','human_browser_session','credential-generation-hard','authz-hard','correlation-hard','Hardening Zabbix','provider-instance:hard','https://zabbix.example.test/zabbix','credential-binding:hard','$scope'::jsonb); SELECT monitoring_source_id FROM monitoring.claim_zabbix_initial_validation('tenant-hard','validation-hard','validation-claim-hard'); SELECT monitoring.complete_zabbix_initial_validation('tenant-hard','validation-hard','validation-claim-hard','validation-evidence-hard','binding-hard','provider-instance:hard','current','succeeded',NULL,'[\"10\"]'::jsonb,'[]'::jsonb,'egress-validation-hard','credential-generation-hard'); COMMIT;" >/dev/null
+
+docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE jlmirror_wave4_recovery_authority; SET LOCAL jlmirror.tenant_id='tenant-hard'; SELECT monitoring.reestablish_metric_current_state_runtime_admission('tenant-hard','source-hard',2,'placement-hard','recovery-hard','admission-hard'); COMMIT;" >/dev/null
+
+docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE jlmirror_wave4_metric_current_state_invoker; SET LOCAL jlmirror.tenant_id='tenant-hard'; SELECT monitoring.enqueue_zabbix_metric_current_state_sync('tenant-hard','source-hard','current-hard-op'); SELECT monitoring_source_id FROM monitoring.claim_zabbix_metric_current_state('tenant-hard','current-hard-op','current-hard-claim'); COMMIT;" >/dev/null
+final_result="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE jlmirror_wave4_metric_current_state_invoker; SET LOCAL jlmirror.tenant_id='tenant-hard'; SELECT monitoring.complete_zabbix_metric_current_state('tenant-hard','current-hard-op','current-hard-claim','[]'::jsonb); COMMIT;")"
+test "$final_result" = "succeeded"
+test "$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT state||':'||(claim_token IS NULL)::int FROM monitoring.monitoring_sync_operation WHERE tenant_id='tenant-hard' AND monitoring_sync_operation_id='current-hard-op';")" = "succeeded:1"
+
+echo "wave4_zabbix_metric_current_state_hardening_postgres=PASS schema=001-039 provider_timestamp=exception-safe recovery_operation_dml=none recovery_bridge=narrow owner_tuple=storage-enforced lock_order=source-first internal_entrypoints=sealed final_entrypoints=runtime-proven"

@@ -29,11 +29,19 @@ def main() -> None:
         manifest["canonical_evidence_state"] == ["current", "stale", "incomplete", "reconciliation_required", "unavailable"],
         "canonical evidence states drifted",
     )
+    require(manifest["healthy_requires_authoritative_problem_completeness"] is True, "healthy must require Problem State completeness")
+    require(manifest["current_health_requires_present_resource"] is True, "current health must require present resource authority")
+    require(
+        "durable_problem_state_snapshot_completeness_evidence" in manifest["authorized_inputs"],
+        "Problem State completeness evidence missing from authorized inputs",
+    )
 
     for field in (
         "provider_polling_authorized",
         "historical_generation_current_authority",
         "stale_evidence_can_prove_healthy",
+        "problem_absence_without_completeness_can_prove_healthy",
+        "removed_resource_current_health_authority",
         "provider_acknowledgement_health_authority",
         "cross_domain_health_event_authorized",
         "alerting_authorized",
@@ -53,11 +61,14 @@ def main() -> None:
     for marker in (
         "HEALTH DERIVATION != PROVIDER POLLING AUTHORITY",
         "STALE/INCOMPLETE EVIDENCE != PROVEN HEALTHY",
+        "PROBLEM ABSENCE WITHOUT AUTHORITATIVE COMPLETENESS != HEALTHY",
         "HISTORICAL GENERATION != CURRENT HEALTH AUTHORITY",
+        "REMOVED RESOURCE != CURRENT HEALTH AUTHORITY",
         "PROVIDER ACKNOWLEDGED != HEALTH AUTHORITY",
         "HEALTH PROJECTION != ALERTING STATE",
         "HEALTH PROJECTION != ITSM STATE",
         "HEALTH PROJECTION != AIOPS FINDING",
+        "`healthy` requires **durable current authoritative Problem State completeness evidence**",
         "active `critical` problem requires `unhealthy`",
         "active `unknown`-severity problem prevents the resource from being proven `healthy`",
         "informational-only active problems may coexist with `healthy`",

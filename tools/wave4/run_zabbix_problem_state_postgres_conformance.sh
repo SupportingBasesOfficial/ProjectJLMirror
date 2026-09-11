@@ -88,7 +88,15 @@ test "$column_acl" = "1:0:1"
 snapshot_checks="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
 SELECT
   (EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='monitoring.monitoring_problem_snapshot_evidence'::regclass AND contype='u'))::int || ':' ||
-  (EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='monitoring.monitoring_problem_snapshot_evidence'::regclass AND tgname='problem_snapshot_evidence_immutable_guard' AND NOT tgisinternal))::int;")"
-test "$snapshot_checks" = "1:1"
+  (EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='monitoring.monitoring_problem_snapshot_evidence'::regclass AND tgname='problem_snapshot_evidence_immutable_guard' AND NOT tgisinternal))::int || ':' ||
+  (EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='monitoring.monitoring_problem_snapshot_evidence'::regclass AND conname='problem_snapshot_complete_below_provider_ceiling_check' AND contype='c'))::int;")"
+test "$snapshot_checks" = "1:1:1"
+
+problem_hardening="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
+SELECT
+  (EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='monitoring.monitoring_problem'::regclass AND conname='monitoring_problem_provider_metadata_object_check' AND contype='c'))::int || ':' ||
+  (EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='monitoring.monitoring_problem'::regclass AND conname='monitoring_problem_resolution_not_before_open_check' AND contype='c'))::int || ':' ||
+  (EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='monitoring.monitoring_problem'::regclass AND tgname='problem_confirmation_semantics_guard' AND NOT tgisinternal))::int;")"
+test "$problem_hardening" = "1:1:1"
 
 echo "wave4_zabbix_problem_state_postgres=PASS"

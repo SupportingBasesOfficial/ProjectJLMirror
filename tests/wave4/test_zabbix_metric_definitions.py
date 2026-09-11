@@ -17,10 +17,11 @@ class ZabbixMetricDefinitionTests(unittest.TestCase):
     def test_native_value_types_map_without_boolean_inference(self) -> None:
         self.assertEqual(canonical_value_kind(ZabbixNativeValueType.FLOAT), MetricValueKind.NUMBER)
         self.assertEqual(canonical_value_kind(ZabbixNativeValueType.UNSIGNED), MetricValueKind.INTEGER)
+        self.assertNotEqual(canonical_value_kind(ZabbixNativeValueType.UNSIGNED), MetricValueKind.BOOLEAN)
         self.assertEqual(canonical_value_kind(ZabbixNativeValueType.CHARACTER), MetricValueKind.STRING)
         self.assertEqual(canonical_value_kind(ZabbixNativeValueType.TEXT), MetricValueKind.TEXT)
         self.assertEqual(canonical_value_kind(ZabbixNativeValueType.LOG), MetricValueKind.LOG)
-        self.assertNotIn(MetricValueKind.BOOLEAN if hasattr(MetricValueKind, "BOOLEAN") else "boolean", set(MetricValueKind))
+        self.assertIn(MetricValueKind.BOOLEAN, set(MetricValueKind))
 
     def test_provider_disabled_and_unsupported_are_valid_presence_evidence(self) -> None:
         for state in (ZabbixItemOperationalState.DISABLED, ZabbixItemOperationalState.UNSUPPORTED):

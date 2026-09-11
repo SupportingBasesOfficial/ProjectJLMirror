@@ -164,11 +164,11 @@
     "sql/wave4/030_zabbix_metric_current_state.sql",
     "sql/wave4/031_zabbix_metric_current_state_completion.sql",
     "sql/wave4/032_zabbix_metric_current_state_recovery_authority.sql",
-    "sql/wave4/033_zabbix_metric_current_state_claim_authority.sql",
-    "sql/wave4/034_zabbix_metric_current_state_recovery_completion_authority.sql",
+    "sql/wave4/033_zabbix_metric_current_state_provider_authority.sql",
+    "sql/wave4/034_zabbix_metric_current_state_recovery_lifecycle.sql",
     "sql/wave4/035_zabbix_metric_current_state_claimed_input_liveness.sql",
-    "sql/wave4/036_zabbix_metric_current_state_claimed_input_cast_safety.sql",
-    "sql/wave4/037_zabbix_metric_current_state_poll_supersession.sql",
+    "sql/wave4/036_zabbix_metric_current_state_completion_totalization.sql",
+    "sql/wave4/037_zabbix_metric_current_state_supersession.sql",
     "sql/wave4/038_zabbix_metric_current_state_least_privilege.sql"
   ],
   "assurance_surfaces": [

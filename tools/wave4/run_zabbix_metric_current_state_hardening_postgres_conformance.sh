@@ -61,7 +61,8 @@ for migration in \
   sql/wave4/035_zabbix_metric_current_state_claimed_input_liveness.sql \
   sql/wave4/036_zabbix_metric_current_state_completion_totalization.sql \
   sql/wave4/037_zabbix_metric_current_state_supersession.sql \
-  sql/wave4/038_zabbix_metric_current_state_least_privilege.sql; do
+  sql/wave4/038_zabbix_metric_current_state_least_privilege.sql \
+  sql/wave4/039_zabbix_metric_current_state_owner_and_lock_order_hardening.sql; do
   docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < "$migration" >/dev/null
 done
 
@@ -79,4 +80,21 @@ test "$recovery_acl" = "0:0:0:1"
 invoker_bridge="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT has_function_privilege('jlmirror_wave4_metric_current_state_invoker','monitoring.wave4_terminalize_superseded_metric_current_state_claims(text,text,bigint)','EXECUTE')::int;")"
 test "$invoker_bridge" = "0"
 
-echo "wave4_zabbix_metric_current_state_hardening_postgres=PASS schema=001-038 provider_timestamp=exception-safe recovery_operation_dml=none recovery_bridge=narrow"
+# Final schema must storage-enforce the canonical owner tuple all the way through
+# accepted provider evidence, Current projection and transition evidence.
+owner_fk_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM pg_constraint WHERE conname IN ('metric_current_acceptance_definition_owner_fk','metric_current_acceptance_binding_owner_fk','metric_current_state_definition_owner_fk','metric_current_state_observation_owner_fk','metric_current_transition_definition_owner_fk','metric_current_transition_to_observation_owner_fk','metric_current_transition_from_observation_owner_fk') AND contype='f' AND convalidated;")"
+test "$owner_fk_count" = "7"
+owner_unique_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM pg_constraint WHERE conname IN ('metric_definition_binding_current_owner_ref_unique','metric_current_acceptance_owner_tuple_unique') AND contype='u' AND convalidated;")"
+test "$owner_unique_count" = "2"
+
+# Public Current invoker may call only the source-first wrappers; v036/v037 internals
+# remain executor-owned implementation details.
+entry_acl="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT has_function_privilege('jlmirror_wave4_metric_current_state_invoker','monitoring.claim_zabbix_metric_current_state(text,text,text)','EXECUTE')::int||':'||has_function_privilege('jlmirror_wave4_metric_current_state_invoker','monitoring.complete_zabbix_metric_current_state(text,text,text,jsonb)','EXECUTE')::int||':'||has_function_privilege('jlmirror_wave4_metric_current_state_invoker','monitoring.claim_zabbix_metric_current_state_v037_internal(text,text,text)','EXECUTE')::int||':'||has_function_privilege('jlmirror_wave4_metric_current_state_invoker','monitoring.complete_zabbix_metric_current_state_v036_internal(text,text,text,jsonb)','EXECUTE')::int;")"
+test "$entry_acl" = "1:1:0:0"
+
+claim_order="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "WITH d AS (SELECT pg_get_functiondef('monitoring.claim_zabbix_metric_current_state(text,text,text)'::regprocedure) AS f) SELECT ((strpos(f,'FROM monitoring.monitoring_source')>0) AND (strpos(f,'FOR UPDATE')>strpos(f,'FROM monitoring.monitoring_source')) AND (strpos(f,'claim_zabbix_metric_current_state_v037_internal')>strpos(f,'FOR UPDATE')))::int FROM d;")"
+test "$claim_order" = "1"
+completion_order="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "WITH d AS (SELECT pg_get_functiondef('monitoring.complete_zabbix_metric_current_state(text,text,text,jsonb)'::regprocedure) AS f) SELECT ((strpos(f,'FROM monitoring.monitoring_source')>0) AND (strpos(f,'FOR UPDATE')>strpos(f,'FROM monitoring.monitoring_source')) AND (strpos(f,'complete_zabbix_metric_current_state_v036_internal')>strpos(f,'FOR UPDATE')))::int FROM d;")"
+test "$completion_order" = "1"
+
+echo "wave4_zabbix_metric_current_state_hardening_postgres=PASS schema=001-039 provider_timestamp=exception-safe recovery_operation_dml=none recovery_bridge=narrow owner_tuple=storage-enforced lock_order=source-first internal_entrypoints=sealed"

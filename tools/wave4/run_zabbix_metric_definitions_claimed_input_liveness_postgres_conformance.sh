@@ -86,9 +86,15 @@ assert_terminal() {
   test "$actual" = "reconciliation_required:$expected:1:1"
 }
 
+snapshot_for() {
+  docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT metric_definition_snapshot_evidence_id FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='$1';"
+}
+
 claim_op 'metric-input-null' 'metric-input-null-claim'
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE jlmirror_wave4_metric_definition_invoker; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.complete_zabbix_metric_definitions('tenant-a','metric-input-null','metric-input-null-claim','metric-input-null-snapshot','current','succeeded',NULL,'egress-input-live','credential-generation-input-live',true,NULL::jsonb); COMMIT;" >/dev/null
 assert_terminal 'metric-input-null' 'provider.protocol_invalid'
+null_snapshot="$(snapshot_for 'metric-input-null')"
+[[ "$null_snapshot" == metric-reconciliation-* ]]
 
 claim_op 'metric-input-object' 'metric-input-object-claim'
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE jlmirror_wave4_metric_definition_invoker; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.complete_zabbix_metric_definitions('tenant-a','metric-input-object','metric-input-object-claim','metric-input-object-snapshot','current','succeeded',NULL,'egress-input-live','credential-generation-input-live',true,'{}'::jsonb); COMMIT;" >/dev/null
@@ -101,7 +107,7 @@ assert_terminal 'metric-input-shape' 'execution.invalid_completion_shape'
 claim_op 'metric-input-no-snapshot' 'metric-input-no-snapshot-claim'
 docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE jlmirror_wave4_metric_definition_invoker; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.complete_zabbix_metric_definitions('tenant-a','metric-input-no-snapshot','metric-input-no-snapshot-claim',NULL,'current','succeeded',NULL,'egress-input-live','credential-generation-input-live',true,'[]'::jsonb); COMMIT;" >/dev/null
 assert_terminal 'metric-input-no-snapshot' 'execution.invalid_completion_shape'
-fallback_snapshot="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT metric_definition_snapshot_evidence_id FROM monitoring.monitoring_sync_operation WHERE monitoring_sync_operation_id='metric-input-no-snapshot';")"
+fallback_snapshot="$(snapshot_for 'metric-input-no-snapshot')"
 echo "claimed_input_fallback_snapshot=$fallback_snapshot"
 [[ "$fallback_snapshot" == metric-reconciliation-* ]]
 test "$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM monitoring.monitoring_metric_definition_snapshot_evidence WHERE metric_definition_snapshot_evidence_id='$fallback_snapshot' AND item_count=0;")" = "1"
@@ -123,12 +129,25 @@ SELECT monitoring.complete_zabbix_metric_definitions(
 COMMIT;
 SQL
 assert_terminal 'metric-input-overbound' 'provider.protocol_invalid'
-overbound_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT item_count FROM monitoring.monitoring_metric_definition_snapshot_evidence WHERE metric_definition_snapshot_evidence_id='metric-input-overbound-snapshot';")"
+overbound_snapshot="$(snapshot_for 'metric-input-overbound')"
+echo "claimed_input_overbound_snapshot=$overbound_snapshot"
+[[ "$overbound_snapshot" == metric-reconciliation-* ]]
+overbound_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT item_count FROM monitoring.monitoring_metric_definition_snapshot_evidence WHERE metric_definition_snapshot_evidence_id='$overbound_snapshot';")"
 echo "claimed_input_overbound_accepted_item_count=$overbound_count"
 test "$overbound_count" = "0"
+
+# A caller-supplied snapshot id that already belongs to another operation cannot
+# collide with degraded completion because degraded identity is operation-derived.
+claim_op 'metric-input-collision' 'metric-input-collision-claim'
+docker exec "$PG_CONTAINER" psql -q -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" -c "BEGIN; SET LOCAL ROLE jlmirror_wave4_metric_definition_invoker; SET LOCAL jlmirror.tenant_id='tenant-a'; SELECT monitoring.complete_zabbix_metric_definitions('tenant-a','metric-input-collision','metric-input-collision-claim','$null_snapshot','current','succeeded',NULL,'egress-input-live','credential-generation-input-live',true,'{}'::jsonb); COMMIT;" >/dev/null
+assert_terminal 'metric-input-collision' 'provider.protocol_invalid'
+collision_snapshot="$(snapshot_for 'metric-input-collision')"
+echo "claimed_input_collision_snapshot=$collision_snapshot supplied_existing=$null_snapshot"
+[[ "$collision_snapshot" == metric-reconciliation-* ]]
+test "$collision_snapshot" != "$null_snapshot"
 
 canonical_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM monitoring.metric_definition WHERE monitoring_source_id='source-input-live';")"
 echo "claimed_input_canonical_metric_count=$canonical_count"
 test "$canonical_count" = "0"
 
-echo "wave4_zabbix_metric_definitions_claimed_input_liveness=PASS schema=001-029 null=terminal nonarray=terminal overbound=terminal invalid_shape=terminal missing_snapshot=fallback-id helper=executor-only partial_mutation=none claim=retired"
+echo "wave4_zabbix_metric_definitions_claimed_input_liveness=PASS schema=001-029 null=terminal nonarray=terminal overbound=terminal invalid_shape=terminal missing_snapshot=fallback-id collision=owner-derived helper=executor-only partial_mutation=none claim=retired"

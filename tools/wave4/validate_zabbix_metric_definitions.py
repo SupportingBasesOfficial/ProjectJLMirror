@@ -14,9 +14,11 @@ M025 = ROOT / "sql/wave4/025_zabbix_metric_definitions_drift_visibility.sql"
 M026 = ROOT / "sql/wave4/026_zabbix_metric_definitions_provenance_closure.sql"
 M027 = ROOT / "sql/wave4/027_zabbix_metric_definitions_completion_authority.sql"
 M028 = ROOT / "sql/wave4/028_zabbix_metric_definitions_completion_liveness.sql"
+M029 = ROOT / "sql/wave4/029_zabbix_metric_definitions_claimed_input_liveness.sql"
 TEST = ROOT / "tests/wave4/test_zabbix_metric_definitions.py"
 CONFORMANCE = ROOT / "tools/wave4/run_zabbix_metric_definitions_postgres_conformance.sh"
 LIVENESS = ROOT / "tools/wave4/run_zabbix_metric_definitions_liveness_postgres_conformance.sh"
+CLAIMED_INPUT_LIVENESS = ROOT / "tools/wave4/run_zabbix_metric_definitions_claimed_input_liveness_postgres_conformance.sh"
 
 
 def require(condition: bool, message: str) -> None:
@@ -25,16 +27,17 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> None:
-    required = (DOMAIN, M020, M021, M022, M023, M024, M025, M026, M027, M028, TEST, CONFORMANCE, LIVENESS)
+    required = (DOMAIN, M020, M021, M022, M023, M024, M025, M026, M027, M028, M029, TEST, CONFORMANCE, LIVENESS, CLAIMED_INPUT_LIVENESS)
     for path in required:
         require(path.is_file(), f"missing required surface: {path.relative_to(ROOT)}")
 
     domain = DOMAIN.read_text(encoding="utf-8")
-    migration_paths = (M020, M021, M022, M023, M024, M025, M026, M027, M028)
+    migration_paths = (M020, M021, M022, M023, M024, M025, M026, M027, M028, M029)
     migrations = {path.name: path.read_text(encoding="utf-8") for path in migration_paths}
-    m020, m021, m022, m023, m024, m025, m026, m027, m028 = (migrations[path.name] for path in migration_paths)
+    m020, m021, m022, m023, m024, m025, m026, m027, m028, m029 = (migrations[path.name] for path in migration_paths)
     conformance = CONFORMANCE.read_text(encoding="utf-8")
     liveness = LIVENESS.read_text(encoding="utf-8")
+    claimed_input_liveness = CLAIMED_INPUT_LIVENESS.read_text(encoding="utf-8")
 
     for marker in (
         'class MetricValueKind', 'class ZabbixNativeValueType', 'class ZabbixItemOperationalState',
@@ -107,15 +110,22 @@ def main() -> None:
         require(marker in m027, f"migration 027 completion authority missing: {marker}")
 
     for marker in (
-        "p_failure_class := 'provider.protocol_invalid'",
-        "p_failure_class := 'provider.host_association_invalid'",
-        "p_operation_state := 'reconciliation_required'",
-        "p_snapshot_complete := FALSE",
-        "UPDATE monitoring.monitoring_sync_operation AS o",
-        "claim_token=NULL",
+        "p_failure_class := 'provider.protocol_invalid'", "p_failure_class := 'provider.host_association_invalid'",
+        "p_operation_state := 'reconciliation_required'", "p_snapshot_complete := FALSE",
+        "UPDATE monitoring.monitoring_sync_operation AS o", "claim_token=NULL",
         "No canonical definition/binding mutation",
     ):
         require(marker in m028, f"migration 028 completion liveness missing: {marker}")
+
+    for marker in (
+        'complete_zabbix_metric_definitions_v028',
+        "p_items IS NULL OR jsonb_typeof(p_items) IS DISTINCT FROM 'array'",
+        'v_item_count > 200000', 'v_item_count := 0',
+        "v_input_failure := 'execution.invalid_completion_shape'",
+        "metric-reconciliation-", 'claim_token=NULL',
+        'FROM PUBLIC,jlmirror_wave4_metric_definition_invoker',
+    ):
+        require(marker in m029, f"migration 029 claimed-input liveness missing: {marker}")
 
     for migration in (
         'sql/wave4/023_zabbix_metric_definitions_qualified_claim.sql',
@@ -128,6 +138,8 @@ def main() -> None:
 
     require('sql/wave4/028_zabbix_metric_definitions_completion_liveness.sql' in liveness,
             'final-schema liveness conformance does not apply migration 028')
+    require('sql/wave4/029_zabbix_metric_definitions_claimed_input_liveness.sql' in claimed_input_liveness,
+            'claimed-input liveness conformance does not apply migration 029')
 
     combined = '\n'.join(migrations.values())
     for marker in ('metric_current_state', 'metric_observation', 'history.get', 'problem_state', 'health_projection'):
@@ -135,8 +147,7 @@ def main() -> None:
 
     for marker in (
         'schema=001-027', 'canonical_binding=owner-bound', 'evidence=closed+fingerprint-verified',
-        'drift=host+value-visible+atomic', 'poll_stream=independent',
-        'recovery=stale-fenced+admission-volatile',
+        'drift=host+value-visible+atomic', 'poll_stream=independent', 'recovery=stale-fenced+admission-volatile',
     ):
         require(marker in conformance, f"broad PostgreSQL conformance marker missing: {marker}")
 
@@ -146,7 +157,14 @@ def main() -> None:
     ):
         require(marker in liveness, f"liveness PostgreSQL conformance marker missing: {marker}")
 
-    print('wave4_zabbix_metric_definitions=PASS schema=020-028 broad=001-027 final_liveness=001-028 scope=item-get-metadata-only authority=item-stream-independent atomic_preflight=required claim=qualified+split-field-authority evidence=owner-bound+closed+fingerprint-verified drift=host+value-visible recovery=stale-fenced liveness=terminal-reconciliation')
+    for marker in (
+        'schema=001-029', 'null=terminal', 'nonarray=terminal', 'overbound=terminal',
+        'invalid_shape=terminal', 'missing_snapshot=fallback-id', 'helper=executor-only',
+        'partial_mutation=none', 'claim=retired',
+    ):
+        require(marker in claimed_input_liveness, f"claimed-input PostgreSQL conformance marker missing: {marker}")
+
+    print('wave4_zabbix_metric_definitions=PASS schema=020-029 broad=001-027 item_liveness=001-028 claimed_input_liveness=001-029 scope=item-get-metadata-only authority=item-stream-independent atomic_preflight=required claim=qualified+split-field-authority evidence=owner-bound+closed+fingerprint-verified drift=host+value-visible recovery=stale-fenced liveness=terminal-reconciliation+claimed-input-total')
 
 
 if __name__ == '__main__':

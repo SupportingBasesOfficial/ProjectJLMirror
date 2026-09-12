@@ -50,6 +50,12 @@ class MonitoringAlertingPublicationAuthorizationTests(unittest.TestCase):
         self.assertIn("deliberately omits `health_class` and `health_evidence_state`", self.auth)
         self.assertIn("problem/health semantic state values in event payloads", self.auth)
 
+    def test_publication_is_bound_to_exact_durable_transition_record(self) -> None:
+        self.assertIn("`problem_transition_id` MUST reference that exact immutable Monitoring transition record", self.auth)
+        self.assertIn("`health_transition_id` MUST reference that exact immutable Monitoring transition record", self.auth)
+        self.assertIn("pure re-confirmation, evidence refresh, stale/incomplete marking, metadata refresh or projection update", self.auth)
+        self.assertIn("creates **no** `monitoring.problem-state.changed` event", self.auth)
+
     def test_alerting_business_authority_remains_blocked(self) -> None:
         for field in (
             "alert_lifecycle_authorized",

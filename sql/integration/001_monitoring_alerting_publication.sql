@@ -60,6 +60,8 @@ AS $$
 DECLARE
     v_keys TEXT[];
     v_message_id TEXT;
+    v_correlation_id TEXT;
+    v_causation_id TEXT;
     v_producer_scope TEXT;
     v_payload_bytes BYTEA;
     v_equivalence_bytes BYTEA;
@@ -102,11 +104,19 @@ BEGIN
         RAISE EXCEPTION 'monitoring.publication_contract_not_authorized';
     END IF;
 
-    -- Stable compact logical identity. md5 is used only as a deterministic
-    -- compaction function; any collision with non-equivalent immutable meaning
-    -- is detected below and fails closed rather than being accepted as duplicate.
+    -- Stable compact identities. md5 is used only as deterministic compaction;
+    -- full immutable equivalence is checked below, so a compaction collision with
+    -- different meaning fails closed rather than becoming duplicate success.
     v_producer_scope := 'monitoring:tenant:' || md5(p_tenant_id);
     v_message_id := p_contract_name || '@1:' || md5(p_tenant_id || chr(31) || p_transition_id);
+    v_correlation_id := 'monitoring-correlation:' || md5(p_tenant_id || chr(31) || p_transition_id);
+    v_causation_id := 'monitoring-transition:' || md5(
+        p_contract_name || chr(31) || p_tenant_id || chr(31) || p_transition_id
+    );
+
+    IF v_message_id=v_correlation_id OR v_message_id=v_causation_id OR v_correlation_id=v_causation_id THEN
+        RAISE EXCEPTION 'monitoring.publication_envelope_identity_collision';
+    END IF;
 
     v_payload_bytes := convert_to(p_payload::TEXT, 'UTF8');
     IF octet_length(v_payload_bytes)>16384 THEN
@@ -123,8 +133,8 @@ BEGIN
         'subject_id',p_subject_id,
         'message_id',v_message_id,
         'occurred_at_epoch',extract(epoch FROM p_occurred_at),
-        'correlation_id',v_message_id,
-        'causation_id',NULL,
+        'correlation_id',v_correlation_id,
+        'causation_id',v_causation_id,
         'data_classification','confidential_tenant',
         'payload',p_payload
     )::TEXT, 'UTF8');
@@ -139,7 +149,7 @@ BEGIN
     ) VALUES (
         v_producer_scope,v_message_id,'integration_event',p_contract_name,'1',
         'Monitoring',NULL,'tenant',p_tenant_id,p_subject_type,p_subject_id,
-        p_occurred_at,NULL,NULL,NULL,NULL,v_message_id,NULL,
+        p_occurred_at,NULL,NULL,NULL,NULL,v_correlation_id,v_causation_id,
         'confidential_tenant','jsonb-text-utf8@1',v_payload_bytes,
         'monitoring-invalidation-equivalence','1','canonical-jsonb-envelope-payload',
         NULL,v_equivalence_bytes
@@ -168,8 +178,8 @@ BEGIN
            OR v_existing.operation_id IS NOT NULL
            OR v_existing.not_before IS NOT NULL
            OR v_existing.deadline IS NOT NULL
-           OR v_existing.correlation_id IS DISTINCT FROM v_message_id
-           OR v_existing.causation_id IS NOT NULL
+           OR v_existing.correlation_id IS DISTINCT FROM v_correlation_id
+           OR v_existing.causation_id IS DISTINCT FROM v_causation_id
            OR v_existing.data_classification IS DISTINCT FROM 'confidential_tenant'
            OR v_existing.serialization_profile_id IS DISTINCT FROM 'jsonb-text-utf8@1'
            OR v_existing.encoded_payload IS DISTINCT FROM v_payload_bytes
@@ -185,7 +195,7 @@ BEGIN
 
     -- Dispatch bookkeeping is recoverable. The Wave 2 AFTER INSERT trigger normally
     -- creates this row atomically; this insert repairs missing restored bookkeeping
-    -- without changing the immutable logical message.
+    -- without changing the immutable logical message or resetting existing state.
     INSERT INTO system.async_outbox_dispatch(outbox_record_id)
     VALUES (v_outbox_id)
     ON CONFLICT (outbox_record_id) DO NOTHING;

@@ -1,0 +1,72 @@
+name: Wave 4 Monitoring Alerting Publication Authorization
+
+on:
+  pull_request:
+    paths:
+      - 'implementation/wave-4-monitoring-alerting-publication-authorization/**'
+      - 'tools/wave4/validate_monitoring_alerting_publication_authorization.py'
+      - 'tests/wave4/test_monitoring_alerting_publication_authorization.py'
+      - '.github/workflows/wave4-monitoring-alerting-publication-authorization.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'implementation/wave-4-monitoring-alerting-publication-authorization/**'
+      - 'tools/wave4/validate_monitoring_alerting_publication_authorization.py'
+      - 'tests/wave4/test_monitoring_alerting_publication_authorization.py'
+      - '.github/workflows/wave4-monitoring-alerting-publication-authorization.yml'
+
+permissions: {}
+
+concurrency:
+  group: wave4-monitoring-alerting-publication-authorization-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  authorization:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve exact analyzed HEAD
+        id: analyzed
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            resolved_sha="$PR_HEAD_SHA"
+          else
+            resolved_sha="$EVENT_SHA"
+          fi
+          test -n "$resolved_sha"
+          printf 'sha=%s\n' "$resolved_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact analyzed HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.analyzed.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          allow-unsafe-pr-checkout: false
+
+      - name: Verify exact commit identity
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.analyzed.outputs.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Validate bounded publication authorization
+        run: python3 tools/wave4/validate_monitoring_alerting_publication_authorization.py
+
+      - name: Test bounded publication authorization
+        run: python3 -m unittest tests.wave4.test_monitoring_alerting_publication_authorization
+
+      - name: Validate repository structure and workflow safety
+        run: python3 tools/assurance/validate_repository.py

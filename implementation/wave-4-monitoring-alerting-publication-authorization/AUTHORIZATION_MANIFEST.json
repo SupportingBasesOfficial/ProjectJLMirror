@@ -8,6 +8,9 @@
   "contract_version": 1,
   "delivery": "at_least_once",
   "data_classification": "confidential_tenant",
+  "inherits_phase10_logical_envelope": true,
+  "stable_message_id_required": true,
+  "redelivery_reuses_same_message_id": true,
   "contracts": [
     "monitoring.problem-state.changed",
     "monitoring.health-projection.changed"

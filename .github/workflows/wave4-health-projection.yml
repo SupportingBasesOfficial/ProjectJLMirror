@@ -11,6 +11,7 @@ on:
       - 'sql/wave4/050_health_projection_current_poll_guard.sql'
       - 'sql/wave4/051_health_projection_exact_class_guard.sql'
       - 'tests/wave4/test_health_projection.py'
+      - 'tests/wave4/test_health_projection_hardening.py'
       - 'tests/wave4/test_health_reads.py'
       - 'tests/wave4/test_health_projection_authorization.py'
       - 'tools/wave4/validate_health_projection_authorization.py'
@@ -28,6 +29,7 @@ on:
       - 'sql/wave4/050_health_projection_current_poll_guard.sql'
       - 'sql/wave4/051_health_projection_exact_class_guard.sql'
       - 'tests/wave4/test_health_projection.py'
+      - 'tests/wave4/test_health_projection_hardening.py'
       - 'tests/wave4/test_health_reads.py'
       - 'tests/wave4/test_health_projection_authorization.py'
       - 'tools/wave4/validate_health_projection_authorization.py'
@@ -93,6 +95,7 @@ jobs:
           PYTHONPATH=src python3 -m unittest \
             tests.wave4.test_health_projection_authorization \
             tests.wave4.test_health_projection \
+            tests.wave4.test_health_projection_hardening \
             tests.wave4.test_health_reads
 
       - name: Execute Health Projection composed PostgreSQL conformance

@@ -31,16 +31,24 @@ class MonitoringAlertingPublicationAuthorizationTests(unittest.TestCase):
     def test_events_are_invalidation_not_state_replication(self) -> None:
         self.assertTrue(self.manifest["events_are_invalidation_not_state_replication"])
         self.assertTrue(self.manifest["consumer_must_reread_monitoring"])
+        self.assertFalse(self.manifest["semantic_state_values_allowed_in_payload"])
         self.assertFalse(self.manifest["broker_order_is_authority"])
         self.assertIn("EVENT ARRIVAL != CURRENT STATE AUTHORITY", self.auth)
         self.assertIn("BROKER ORDER != OWNER-DOMAIN ORDER", self.auth)
+        self.assertIn("EVENT PAYLOAD != CURRENT PROBLEM/HEALTH STATE REPLICA", self.auth)
 
-    def test_problem_payload_excludes_provider_authority(self) -> None:
+    def test_problem_payload_excludes_provider_and_semantic_state_authority(self) -> None:
         self.assertFalse(self.manifest["provider_ids_allowed_in_payload"])
         self.assertFalse(self.manifest["provider_payload_allowed"])
         self.assertFalse(self.manifest["metric_values_allowed"])
+        self.assertIn("deliberately omits `problem_state` and `severity_class`", self.auth)
         self.assertIn("MUST NOT include provider-native event/trigger IDs", self.auth)
         self.assertIn("summary/free text", self.auth)
+
+    def test_health_payload_excludes_semantic_state_authority(self) -> None:
+        self.assertFalse(self.manifest["semantic_state_values_allowed_in_payload"])
+        self.assertIn("deliberately omits `health_class` and `health_evidence_state`", self.auth)
+        self.assertIn("problem/health semantic state values in event payloads", self.auth)
 
     def test_alerting_business_authority_remains_blocked(self) -> None:
         for field in (

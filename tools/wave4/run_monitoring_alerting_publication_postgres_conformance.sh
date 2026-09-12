@@ -132,10 +132,23 @@ INSERT INTO health_transition_fixture VALUES(
 );
 SQL
 
-outbox_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM system.async_outbox_message;")"
-test "$outbox_count" = "2"
-dispatch_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM system.async_outbox_dispatch WHERE state='pending';")"
-test "$dispatch_count" = "2"
+bridge_where="contract_name IN ('monitoring.problem-state.changed','monitoring.health-projection.changed')"
+outbox_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM system.async_outbox_message WHERE $bridge_where;")"
+if [[ "$outbox_count" != "2" ]]; then
+  echo "publication_bridge_outbox_count=$outbox_count expected=2" >&2
+  docker exec "$PG_CONTAINER" psql -U postgres -d "$PG_DATABASE" -c "SELECT outbox_record_id,contract_name,message_id,tenant_id,subject_type,subject_id FROM system.async_outbox_message WHERE $bridge_where ORDER BY outbox_record_id;" >&2
+  exit 1
+fi
+
+dispatch_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
+SELECT count(*)
+FROM system.async_outbox_dispatch d
+JOIN system.async_outbox_message m USING(outbox_record_id)
+WHERE $bridge_where AND d.state='pending';")"
+if [[ "$dispatch_count" != "2" ]]; then
+  echo "publication_bridge_pending_dispatch_count=$dispatch_count expected=2" >&2
+  exit 1
+fi
 
 problem_ok="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
 WITH m AS (
@@ -173,13 +186,21 @@ SELECT
 FROM m;")"
 test "$health_ok" = "1:1:1:1:1:1:1:1:1"
 
-# Prove exact replay did not duplicate the logical event and the dispatch relation
-# remains one-to-one with immutable outbox messages.
+# Prove exact replay did not duplicate either bridge logical event and each bridge
+# outbox record still has exactly one dispatch record. Other composed-substrate
+# messages are intentionally outside this slice's count.
 identity_ok="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
+WITH bridge AS (
+  SELECT * FROM system.async_outbox_message WHERE $bridge_where
+)
 SELECT
  (count(*)=count(DISTINCT producer_message_scope || chr(31) || message_id))::int || ':' ||
- (count(*)=(SELECT count(*) FROM system.async_outbox_dispatch))::int
-FROM system.async_outbox_message;")"
+ (count(*)=(
+    SELECT count(*)
+    FROM system.async_outbox_dispatch d
+    JOIN bridge b USING(outbox_record_id)
+ ))::int
+FROM bridge;")"
 test "$identity_ok" = "1:1"
 
 echo "wave4_monitoring_alerting_publication_postgres=PASS"

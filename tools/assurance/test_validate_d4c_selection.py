@@ -15,6 +15,8 @@ def falsify_monitoring_alerting_composed_workflow_dependencies():
  workflow=(ROOT/'.github/workflows/wave4-monitoring-alerting-publication-runtime.yml').read_text(encoding='utf-8')
  assert workflow.count("- 'sql/wave2/001_async_correctness.sql'")==2, 'composed publication gate must observe Wave 2 outbox substrate on PR and push'
  assert workflow.count("- 'sql/wave4/**'")==2, 'composed publication gate must observe all Wave 4 transition substrate changes on PR and push'
+ def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
+ must_fail(grant_product,'Product authority escalation')
 def main():
  values=baseline(); errors=validator.validate_records(*values)
  if errors: raise AssertionError(f'canonical D4-C selection failed validation: {errors!r}')

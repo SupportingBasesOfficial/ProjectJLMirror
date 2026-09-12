@@ -49,10 +49,17 @@ SELECT
 test "$acl" = "1:1:0:0"
 
 function_acl="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
+WITH f AS (
+  SELECT oid,proacl,proowner FROM pg_proc
+  WHERE oid='monitoring.recompute_health_projection(text,text,text)'::regprocedure
+)
 SELECT
   has_function_privilege('jlmirror_wave4_health_projection_invoker','monitoring.recompute_health_projection(text,text,text)','EXECUTE')::int || ':' ||
-  has_function_privilege('PUBLIC','monitoring.recompute_health_projection(text,text,text)','EXECUTE')::int;")"
-test "$function_acl" = "1:0"
+  (NOT EXISTS (
+    SELECT 1 FROM f, LATERAL aclexplode(COALESCE(f.proacl,acldefault('f',f.proowner))) AS a
+    WHERE a.grantee=0 AND a.privilege_type='EXECUTE'
+  ))::int;")"
+test "$function_acl" = "1:1"
 
 constraints="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
 SELECT
@@ -76,5 +83,15 @@ grep -q "v_snapshot_operation_state='succeeded'" <<<"$apply_body"
 grep -q "v_existing.health_class=v_health" <<<"$apply_body"
 grep -q "last_changed_at=CASE WHEN v_existing.health_class IS DISTINCT FROM v_health" <<<"$apply_body"
 ! grep -q "p_health_class" <<<"$apply_body"
+
+# Prove the SECURITY DEFINER owner can actually acquire the row locks used by the
+# recomputation function. WHERE false avoids fixture data while preserving ACL checks.
+docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" >/dev/null <<'SQL'
+BEGIN;
+SET LOCAL ROLE jlmirror_wave4_health_projection_executor;
+SELECT monitoring_source_id FROM monitoring.monitoring_source WHERE false FOR UPDATE;
+SELECT monitoring_resource_id FROM monitoring.monitoring_resource WHERE false FOR UPDATE;
+ROLLBACK;
+SQL
 
 echo "wave4_health_projection_postgres=PASS"

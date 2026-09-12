@@ -3,6 +3,8 @@ name: Wave 4 Monitoring Alerting Publication Runtime
 on:
   pull_request:
     paths:
+      - 'sql/wave2/001_async_correctness.sql'
+      - 'sql/wave4/**'
       - 'sql/integration/001_monitoring_alerting_publication.sql'
       - 'implementation/wave-4-monitoring-alerting-publication-runtime/**'
       - 'tools/wave4/validate_monitoring_alerting_publication_runtime.py'
@@ -13,6 +15,8 @@ on:
     branches:
       - main
     paths:
+      - 'sql/wave2/001_async_correctness.sql'
+      - 'sql/wave4/**'
       - 'sql/integration/001_monitoring_alerting_publication.sql'
       - 'implementation/wave-4-monitoring-alerting-publication-runtime/**'
       - 'tools/wave4/validate_monitoring_alerting_publication_runtime.py'

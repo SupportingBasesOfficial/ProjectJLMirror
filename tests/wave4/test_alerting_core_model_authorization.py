@@ -26,6 +26,21 @@ class AlertingCoreModelAuthorizationTests(unittest.TestCase):
         self.assertFalse(self.manifest["same_alert_id_reopen_authorized"])
         self.assertIn("A resolved `alert_id` never reopens", self.auth)
 
+    def test_source_family_is_closed_and_unambiguous(self) -> None:
+        self.assertEqual(
+            self.manifest["source_kinds"],
+            ["monitoring_problem", "monitoring_health_projection"],
+        )
+        self.assertFalse(self.manifest["mixed_source_family_authorized"])
+        self.assertIn("one Alert occurrence has exactly one source evidence family", self.auth)
+        self.assertIn("MUST NOT carry `problem_id`", self.auth)
+
+    def test_policy_identity_version_is_mandatory_for_future_effects(self) -> None:
+        self.assertTrue(self.manifest["policy_identity_version_required_for_effectful_transition"])
+        self.assertFalse(self.manifest["policyless_lifecycle_transition_authorized"])
+        self.assertIn("There is no policy-less create/resolve path", self.auth)
+        self.assertIn("later edit/new version of a policy cannot retroactively change", self.auth)
+
     def test_monitoring_does_not_become_alert_authority(self) -> None:
         self.assertFalse(self.manifest["monitoring_event_is_alert"])
         self.assertFalse(self.manifest["monitoring_state_is_alert_state"])

@@ -101,11 +101,19 @@ class MonitoringAlertingPublicationRuntimeTests(unittest.TestCase):
         self.assertNotIn("UPDATE alerting.", self.sql)
         self.assertNotIn("DELETE FROM alerting.", self.sql)
 
-    def test_dedicated_executor_is_nonlogin_and_nonbypass(self) -> None:
+    def test_dedicated_executor_is_fail_closed_and_nonprivileged(self) -> None:
         self.assertIn(
-            "NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS",
+            "NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS",
             self.sql,
         )
+        self.assertIn(
+            "rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole OR rolinherit OR rolreplication OR rolbypassrls",
+            self.sql,
+        )
+        self.assertIn("monitoring.publication_executor_unsafe_attributes", self.sql)
+        self.assertIn("monitoring.publication_executor_unsafe_membership", self.sql)
+        self.assertIn("FROM pg_auth_members", self.sql)
+        self.assertIn("roleid=v_executor_oid OR member=v_executor_oid", self.sql)
         self.assertIn("OWNER TO jlmirror_wave4_monitoring_publication_executor", self.sql)
 
 

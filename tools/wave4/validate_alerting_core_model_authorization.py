@@ -21,8 +21,12 @@ def main() -> None:
     require(manifest["canonical_base"] == "e7cb9512846926f01429d3fbc4c6d6b0a2a9db71", "wrong canonical base")
     require(manifest["owner_domain"] == "alerting", "Alerting must own alert state")
     require(manifest["lifecycle_states"] == ["active", "resolved"], "lifecycle state drift")
+    require(manifest["source_kinds"] == ["monitoring_problem", "monitoring_health_projection"], "source-kind drift")
     require(manifest["resolved_is_terminal"] is True, "resolved must be terminal")
     require(manifest["same_alert_id_reopen_authorized"] is False, "same alert reopen must remain blocked")
+    require(manifest["policy_identity_version_required_for_effectful_transition"] is True, "policy identity/version must be required")
+    require(manifest["policyless_lifecycle_transition_authorized"] is False, "policy-less lifecycle transition must remain blocked")
+    require(manifest["mixed_source_family_authorized"] is False, "mixed source family must remain blocked")
     require(manifest["transition_history_immutable"] is True, "transition history must be immutable")
     require(manifest["tenant_isolation_required"] is True, "tenant isolation required")
     require(manifest["source_currentness_required_for_future_effects"] is True, "source currentness law missing")
@@ -61,8 +65,12 @@ def main() -> None:
         "ALERT != ITSM INCIDENT",
         "PROVIDER ID != ALERT ID",
         "EVENT ARRIVAL != ALERT CREATION AUTHORITY",
+        "POLICY VERSION != MUTABLE LOOKUP AT EXECUTION TIME",
         "active | resolved",
         "A resolved `alert_id` never reopens",
+        "source_kind = monitoring_problem | monitoring_health_projection",
+        "one Alert occurrence has exactly one source evidence family",
+        "There is no policy-less create/resolve path",
         "there is **no automatic Alert creation or resolution authority**",
         "Acknowledgement and suppression are explicitly separate concerns from lifecycle",
         "automatic alert creation/resolution remains blocked",

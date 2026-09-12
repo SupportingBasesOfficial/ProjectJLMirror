@@ -65,9 +65,9 @@ SELECT
 test "$recovery_acl" = "1:1:1:1"
 
 # Exercise the exact trigger functions against temporary transition fixtures. They
-# reference only immutable NEW fields, so this proves the runtime publication law
-# without manufacturing unrelated Monitoring parent-state fixtures.
-docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" >/dev/null <<'SQL'
+# reference only immutable NEW fields, so this proves the publication hook without
+# manufacturing unrelated Monitoring parent-state fixtures.
+docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL'
 CREATE TEMP TABLE problem_transition_fixture(
   tenant_id text NOT NULL,
   problem_transition_id text NOT NULL,
@@ -82,6 +82,20 @@ CREATE TRIGGER problem_fixture_outbox
 AFTER INSERT ON problem_transition_fixture
 FOR EACH ROW EXECUTE FUNCTION monitoring.wave4_publish_problem_transition();
 
+CREATE TEMP TABLE health_transition_fixture(
+  tenant_id text NOT NULL,
+  health_transition_id text NOT NULL,
+  monitoring_resource_id text NOT NULL,
+  monitoring_source_id text NOT NULL,
+  source_instance_generation text NOT NULL,
+  projection_revision bigint NOT NULL,
+  occurred_at timestamptz NOT NULL
+);
+CREATE TRIGGER health_fixture_outbox
+AFTER INSERT ON health_transition_fixture
+FOR EACH ROW EXECUTE FUNCTION monitoring.wave4_publish_health_transition();
+
+BEGIN;
 INSERT INTO problem_transition_fixture VALUES(
   'tenant-a','problem-transition-001','problem-001','source-001','generation-001',
   'resource-001',7,'2026-09-12 12:00:00+00'
@@ -109,46 +123,65 @@ BEGIN
 END;
 $$;
 
-CREATE TEMP TABLE health_transition_fixture(
-  tenant_id text NOT NULL,
-  health_transition_id text NOT NULL,
-  monitoring_resource_id text NOT NULL,
-  monitoring_source_id text NOT NULL,
-  source_instance_generation text NOT NULL,
-  projection_revision bigint NOT NULL,
-  occurred_at timestamptz NOT NULL
+INSERT INTO health_transition_fixture VALUES(
+  'tenant-a','health-transition-001','resource-001','source-001','generation-001',
+  11,'2026-09-12 12:01:00+00'
 );
-CREATE TRIGGER health_fixture_outbox
-AFTER INSERT ON health_transition_fixture
-FOR EACH ROW EXECUTE FUNCTION monitoring.wave4_publish_health_transition();
+INSERT INTO health_transition_fixture VALUES(
+  'tenant-a','health-transition-001','resource-001','source-001','generation-001',
+  11,'2026-09-12 12:01:00+00'
+);
 
-INSERT INTO health_transition_fixture VALUES(
-  'tenant-a','health-transition-001','resource-001','source-001','generation-001',
-  11,'2026-09-12 12:01:00+00'
+DO $$
+DECLARE v_count bigint;
+BEGIN
+  SELECT count(*) INTO v_count FROM system.async_outbox_message
+   WHERE contract_name IN ('monitoring.problem-state.changed','monitoring.health-projection.changed');
+  IF v_count <> 2 THEN
+    RAISE EXCEPTION 'publication bridge expected 2 in-transaction outbox rows, got %',v_count;
+  END IF;
+END;
+$$;
+COMMIT;
+
+-- Atomicity proof in the opposite direction: a rolled-back owner transition must
+-- leave no durable publication obligation.
+BEGIN;
+INSERT INTO problem_transition_fixture VALUES(
+  'tenant-a','problem-transition-rollback','problem-rollback','source-001','generation-001',
+  'resource-001',1,'2026-09-12 12:02:00+00'
 );
-INSERT INTO health_transition_fixture VALUES(
-  'tenant-a','health-transition-001','resource-001','source-001','generation-001',
-  11,'2026-09-12 12:01:00+00'
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+      SELECT 1 FROM system.async_outbox_message
+       WHERE contract_name='monitoring.problem-state.changed'
+         AND convert_from(encoded_payload,'UTF8')::jsonb->>'problem_transition_id'='problem-transition-rollback'
+  ) THEN
+    RAISE EXCEPTION 'rollback probe publication was not atomic with transition insert';
+  END IF;
+END;
+$$;
+ROLLBACK;
 SQL
 
 bridge_where="contract_name IN ('monitoring.problem-state.changed','monitoring.health-projection.changed')"
 outbox_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM system.async_outbox_message WHERE $bridge_where;")"
 if [[ "$outbox_count" != "2" ]]; then
   echo "publication_bridge_outbox_count=$outbox_count expected=2" >&2
-  docker exec "$PG_CONTAINER" psql -U postgres -d "$PG_DATABASE" -c "SELECT outbox_record_id,contract_name,message_id,tenant_id,subject_type,subject_id FROM system.async_outbox_message WHERE $bridge_where ORDER BY outbox_record_id;" >&2
+  docker exec "$PG_CONTAINER" psql -U postgres -d "$PG_DATABASE" -c "SELECT outbox_record_id,contract_name,message_id,correlation_id,causation_id,tenant_id,subject_type,subject_id FROM system.async_outbox_message WHERE $bridge_where ORDER BY outbox_record_id;" >&2
   exit 1
 fi
+
+rollback_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM system.async_outbox_message WHERE $bridge_where AND convert_from(encoded_payload,'UTF8')::jsonb->>'problem_transition_id'='problem-transition-rollback';")"
+test "$rollback_count" = "0"
 
 dispatch_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
 SELECT count(*)
 FROM system.async_outbox_dispatch d
 JOIN system.async_outbox_message m USING(outbox_record_id)
 WHERE $bridge_where AND d.state='pending';")"
-if [[ "$dispatch_count" != "2" ]]; then
-  echo "publication_bridge_pending_dispatch_count=$dispatch_count expected=2" >&2
-  exit 1
-fi
+test "$dispatch_count" = "2"
 
 problem_ok="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
 WITH m AS (
@@ -162,11 +195,13 @@ SELECT
  (scope_class='tenant' AND tenant_id='tenant-a')::int || ':' ||
  (subject_type='monitoring_problem' AND subject_id='problem-001')::int || ':' ||
  (data_classification='confidential_tenant')::int || ':' ||
+ (correlation_id<>message_id)::int || ':' ||
+ (causation_id IS NOT NULL AND causation_id<>message_id AND causation_id<>correlation_id)::int || ':' ||
  (p='{"problem_id":"problem-001","monitoring_source_id":"source-001","source_instance_generation":"generation-001","monitoring_resource_id":"resource-001","projection_revision":7,"problem_transition_id":"problem-transition-001"}'::jsonb)::int || ':' ||
  (NOT (p ?| ARRAY['problem_state','severity_class','provider_acknowledged','summary','provider_eventid','provider_trigger_ref']))::int || ':' ||
  (octet_length(comparison_evidence)>0)::int
 FROM m;")"
-test "$problem_ok" = "1:1:1:1:1:1:1:1:1"
+test "$problem_ok" = "1:1:1:1:1:1:1:1:1:1:1"
 
 health_ok="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "
 WITH m AS (
@@ -180,11 +215,13 @@ SELECT
  (scope_class='tenant' AND tenant_id='tenant-a')::int || ':' ||
  (subject_type='monitoring_resource' AND subject_id='resource-001')::int || ':' ||
  (data_classification='confidential_tenant')::int || ':' ||
+ (correlation_id<>message_id)::int || ':' ||
+ (causation_id IS NOT NULL AND causation_id<>message_id AND causation_id<>correlation_id)::int || ':' ||
  (p='{"monitoring_source_id":"source-001","source_instance_generation":"generation-001","monitoring_resource_id":"resource-001","projection_revision":11,"health_transition_id":"health-transition-001"}'::jsonb)::int || ':' ||
  (NOT (p ?| ARRAY['health_class','health_evidence_state','reason_refs','provider_acknowledged','severity_class']))::int || ':' ||
  (octet_length(comparison_evidence)>0)::int
 FROM m;")"
-test "$health_ok" = "1:1:1:1:1:1:1:1:1"
+test "$health_ok" = "1:1:1:1:1:1:1:1:1:1:1"
 
 # Prove exact replay did not duplicate either bridge logical event and each bridge
 # outbox record still has exactly one dispatch record. Other composed-substrate

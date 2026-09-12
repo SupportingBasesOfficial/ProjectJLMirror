@@ -26,6 +26,9 @@ def main() -> None:
     require(manifest["contract_version"] == 1, "wrong contract version")
     require(manifest["delivery"] == "at_least_once", "wrong delivery law")
     require(manifest["data_classification"] == "confidential_tenant", "wrong data class")
+    require(manifest["inherits_phase10_logical_envelope"] is True, "Phase 10 envelope inheritance missing")
+    require(manifest["stable_message_id_required"] is True, "stable message identity missing")
+    require(manifest["redelivery_reuses_same_message_id"] is True, "redelivery identity reuse missing")
     require(
         manifest["contracts"] == [
             "monitoring.problem-state.changed",
@@ -71,6 +74,11 @@ def main() -> None:
         "monitoring.problem-state.changed",
         "monitoring.health-projection.changed",
         "invalidation/resync signals rather than state replication",
+        "message_id            stable immutable logical event identity",
+        "occurred_at           authoritative local transition commit time",
+        "correlation_id        required",
+        "causation_id          nullable only for accepted root transition",
+        "Publish ambiguity, dispatcher retry and redelivery MUST reuse the same logical `message_id`",
         "deliberately omits `problem_state` and `severity_class`",
         "deliberately omits `health_class` and `health_evidence_state`",
         "`problem_transition_id` MUST reference that exact immutable Monitoring transition record",

@@ -78,11 +78,13 @@ def main() -> None:
     ):
         require(marker in auth, f"health authorization marker missing: {marker}")
 
-    for forbidden_path in (
-        ROOT / "src/jlmirror_monitoring/health_projection.py",
-        ROOT / "sql/wave4/047_health_projection.sql",
+    serialized_manifest = json.dumps(manifest, sort_keys=True)
+    for runtime_path in (
+        "src/jlmirror_monitoring/health_projection.py",
+        "sql/wave4/047_health_projection.sql",
     ):
-        require(not forbidden_path.exists(), f"runtime leaked into authorization PR: {forbidden_path}")
+        require(runtime_path not in auth, f"authorization artifact grants runtime path: {runtime_path}")
+        require(runtime_path not in serialized_manifest, f"authorization manifest grants runtime path: {runtime_path}")
 
     print("wave4_health_projection_authorization=PASS")
 

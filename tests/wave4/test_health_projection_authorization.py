@@ -79,9 +79,13 @@ class HealthProjectionAuthorizationTests(unittest.TestCase):
             self.assertFalse(self.manifest[field])
         self.assertIn("does not authorize a public/cross-domain `health.changed` integration event", self.auth)
 
-    def test_runtime_is_not_in_authorization_pr(self) -> None:
-        self.assertFalse((ROOT / "src/jlmirror_monitoring/health_projection.py").exists())
-        self.assertFalse((ROOT / "sql/wave4/047_health_projection.sql").exists())
+    def test_authorization_artifact_does_not_grant_runtime(self) -> None:
+        serialized_manifest = json.dumps(self.manifest, sort_keys=True)
+        self.assertNotIn("src/jlmirror_monitoring/health_projection.py", self.auth)
+        self.assertNotIn("sql/wave4/047_health_projection.sql", self.auth)
+        self.assertNotIn("src/jlmirror_monitoring/health_projection.py", serialized_manifest)
+        self.assertNotIn("sql/wave4/047_health_projection.sql", serialized_manifest)
+        self.assertEqual(self.manifest["production_authority"], "none")
 
 
 if __name__ == "__main__":

@@ -35,6 +35,7 @@ class MonitoringAlertingPublicationRuntimeTests(unittest.TestCase):
         self.assertIn("AFTER INSERT ON monitoring.monitoring_problem_transition", self.sql)
         self.assertIn("AFTER INSERT ON monitoring.health_projection_transition", self.sql)
         self.assertTrue(self.manifest["same_transaction_publication"])
+        self.assertTrue(self.manifest["rollback_removes_publication_obligation"])
 
     def test_problem_payload_is_invalidation_only(self) -> None:
         problem = self.sql[
@@ -69,11 +70,22 @@ class MonitoringAlertingPublicationRuntimeTests(unittest.TestCase):
         for forbidden in ("'health_class'", "'health_evidence_state'", "'reason_refs'", "'provider_acknowledged'"):
             self.assertNotIn(forbidden, health)
 
+    def test_phase10_envelope_identities_are_distinct(self) -> None:
+        self.assertTrue(self.manifest["message_id_not_correlation_id"])
+        self.assertTrue(self.manifest["causation_bound_to_owning_transition"])
+        self.assertIn("v_correlation_id := 'monitoring-correlation:'", self.sql)
+        self.assertIn("v_causation_id := 'monitoring-transition:'", self.sql)
+        self.assertIn("v_correlation_id,v_causation_id", self.sql)
+        self.assertIn("monitoring.publication_envelope_identity_collision", self.sql)
+        self.assertNotIn("p_occurred_at,NULL,NULL,NULL,NULL,v_message_id,NULL", self.sql)
+
     def test_same_identity_conflict_fails_closed(self) -> None:
         self.assertTrue(self.manifest["non_equivalent_identity_collision_fails_closed"])
         self.assertIn("monitoring.publication_identity_conflict", self.sql)
         self.assertIn("comparison_evidence IS DISTINCT FROM v_equivalence_bytes", self.sql)
         self.assertIn("encoded_payload IS DISTINCT FROM v_payload_bytes", self.sql)
+        self.assertIn("correlation_id IS DISTINCT FROM v_correlation_id", self.sql)
+        self.assertIn("causation_id IS DISTINCT FROM v_causation_id", self.sql)
 
     def test_recovery_reuses_exact_transition(self) -> None:
         self.assertTrue(self.manifest["recovery_reuses_transition_identity"])

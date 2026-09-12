@@ -31,6 +31,7 @@ ALERT != NOTIFICATION DELIVERY
 ALERT != AIOPS FINDING
 PROVIDER ID != ALERT ID
 EVENT ARRIVAL != ALERT CREATION AUTHORITY
+POLICY VERSION != MUTABLE LOOKUP AT EXECUTION TIME
 ```
 
 ## Canonical identity
@@ -68,15 +69,15 @@ The canonical Alert projection may contain only bounded, platform-owned semantic
 tenant_id
 alert_id
 lifecycle_state = active | resolved
-source_kind
+source_kind = monitoring_problem | monitoring_health_projection
 monitoring_source_id
 source_instance_generation
-monitoring_resource_id nullable
-problem_id nullable
+monitoring_resource_id nullable by source kind
+problem_id nullable by source kind
 source_projection_revision
 source_transition_id
-policy_id nullable
-policy_version nullable
+policy_id
+policy_version
 opened_at
 resolved_at nullable
 last_confirmed_at
@@ -85,7 +86,13 @@ created_by_transition_id
 last_transition_id
 ```
 
-`source_kind` identifies the canonical evidence family without embedding provider-specific semantics. Exact policy/evaluation schemas remain a later authorization.
+The source discriminant is closed:
+
+- `monitoring_problem` requires `problem_id`; `monitoring_resource_id` may also be retained when the accepted Monitoring problem association proves it;
+- `monitoring_health_projection` requires `monitoring_resource_id` and MUST NOT carry `problem_id` as if Health were a Problem occurrence;
+- one Alert occurrence has exactly one source evidence family; Problem and Health evidence are never merged into an ambiguous source tuple.
+
+`policy_id` and immutable `policy_version` are required on every v1 effectful lifecycle transition once policy evaluation is separately authorized. There is no policy-less create/resolve path in this lifecycle version.
 
 ## Source evidence law
 
@@ -95,6 +102,7 @@ last_transition_id
 4. Source evidence retained on an Alert is evidence of the decision that was accepted; it is not a writable mirror of Monitoring.
 5. A later Monitoring change does not rewrite historical Alert transition evidence.
 6. If source currentness cannot be proven, future policy/evaluation logic must fail closed or defer; this core-model authorization does not permit optimistic creation/resolution.
+7. Source family, canonical source identity, source generation, source transition/revision, `policy_id` and immutable `policy_version` are part of the accepted decision evidence and cannot be silently rewritten after the transition commits.
 
 ## Transition model
 
@@ -106,8 +114,10 @@ alert_id
 from_state nullable for create
 to_state
 transition_reason
+source_kind
 source_transition_id/source_projection_revision
-policy_id/policy_version nullable
+policy_id
+policy_version
 occurred_at = authoritative Alerting commit time
 correlation_id
 causation_id nullable only for accepted root transition
@@ -123,7 +133,9 @@ Rules:
 6. `resolved_at >= opened_at`;
 7. `projection_revision` advances exactly once for each accepted semantic Alert projection change;
 8. transition history is immutable/append-only;
-9. platform commit/acceptance time governs lifecycle ordering, not provider event time.
+9. platform commit/acceptance time governs lifecycle ordering, not provider event time;
+10. every create/resolve transition requires the exact immutable policy identity/version whose separately authorized evaluation produced the decision;
+11. a later edit/new version of a policy cannot retroactively change the meaning of a committed Alert transition.
 
 ## Policy boundary
 
@@ -140,7 +152,7 @@ A separate accepted authorization is required before runtime may decide:
 - whether a current condition opens a new Alert;
 - whether source recovery resolves an Alert.
 
-Until that gate is accepted, there is **no automatic Alert creation or resolution authority**.
+Until that gate is accepted, there is **no automatic Alert creation or resolution authority** and therefore no valid runtime producer of the required `policy_id/policy_version` lifecycle evidence.
 
 ## Acknowledgement and suppression
 
@@ -190,6 +202,8 @@ Any future implementation of this authorized model must provide:
 - least-privilege execution roles;
 - immutable tenant/alert identity ownership;
 - bounded source/policy references;
+- exact source-kind integrity constraints;
+- immutable policy identity/version evidence on lifecycle transitions;
 - no direct Alerting mutation authority over Monitoring tables;
 - no direct Monitoring mutation authority over Alerting tables.
 
@@ -201,11 +215,13 @@ Any future implementation of this authorized model must provide:
 4. Missing restored consumer metadata cannot be treated as proof that an Alert transition never committed.
 5. Stale restored Monitoring generation/event evidence cannot regain current Alerting decision authority.
 6. Same logical transition is represented by one stable transition identity across ambiguous retry/recovery.
+7. Recovery must retain the exact source-kind/source evidence and policy identity/version that authorized the original transition; it cannot reevaluate historical transitions under a newer policy version and call them equivalent.
 
 ## Explicitly outside this slice
 
 - alert-policy/rule DSL or evaluation runtime;
 - automatic Alert creation/resolution from Monitoring events;
+- policy-less or ad-hoc Alert create/resolve;
 - acknowledgement;
 - suppression;
 - routing;

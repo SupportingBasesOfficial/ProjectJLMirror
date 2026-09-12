@@ -7,6 +7,8 @@
 BEGIN;
 
 DO $$
+DECLARE
+    v_executor_oid OID;
 BEGIN
     IF to_regclass('system.async_outbox_message') IS NULL
        OR to_regclass('system.async_outbox_dispatch') IS NULL THEN
@@ -21,7 +23,28 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='jlmirror_wave4_monitoring_publication_executor') THEN
         CREATE ROLE jlmirror_wave4_monitoring_publication_executor
-            NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+            NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+    END IF;
+
+    SELECT oid INTO v_executor_oid
+      FROM pg_roles
+     WHERE rolname='jlmirror_wave4_monitoring_publication_executor';
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_roles
+         WHERE oid=v_executor_oid
+           AND (rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole OR rolinherit OR rolreplication OR rolbypassrls)
+    ) THEN
+        RAISE EXCEPTION 'monitoring.publication_executor_unsafe_attributes';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM pg_auth_members
+         WHERE roleid=v_executor_oid OR member=v_executor_oid
+    ) THEN
+        RAISE EXCEPTION 'monitoring.publication_executor_unsafe_membership';
     END IF;
 END;
 $$;

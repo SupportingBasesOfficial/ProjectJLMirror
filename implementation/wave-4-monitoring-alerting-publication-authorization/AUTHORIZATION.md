@@ -33,6 +33,7 @@ OUTBOX DELIVERY != BUSINESS TRANSITION COMMIT
 PUBLIC WEBHOOK != INTERNAL INTEGRATION EVENT
 BROWSER REALTIME != INTERNAL INTEGRATION EVENT
 HISTORICAL GENERATION != CURRENT ALERTING INPUT AUTHORITY
+EVENT PAYLOAD != CURRENT PROBLEM/HEALTH STATE REPLICA
 ```
 
 ## Contract A — `monitoring.problem-state.changed`
@@ -66,15 +67,13 @@ problem_id
 monitoring_source_id
 source_instance_generation
 monitoring_resource_id
-problem_state
-severity_class
 projection_revision
 problem_transition_id
 ```
 
-The payload MUST NOT include provider-native event/trigger IDs, provider acknowledgement, summary/free text, tags, endpoint URLs, credentials, provider payloads or metric values.
+The payload deliberately omits `problem_state` and `severity_class`. It MUST NOT include provider-native event/trigger IDs, provider acknowledgement, summary/free text, tags, endpoint URLs, credentials, provider payloads or metric values.
 
-The payload is not sufficient to decide Alerting side effects. A consumer needing protected current state re-establishes current tenant/placement/service authority and reads Monitoring using the canonical subject.
+The payload is intentionally insufficient to decide Alerting side effects. A consumer needing protected current state re-establishes current tenant/placement/service authority and reads Monitoring using the canonical subject.
 
 ## Contract B — `monitoring.health-projection.changed`
 
@@ -100,13 +99,11 @@ A semantic class transition always qualifies. An evidence/currentness transition
 monitoring_source_id
 source_instance_generation
 monitoring_resource_id
-health_class
-health_evidence_state
 projection_revision
 health_transition_id
 ```
 
-The payload MUST NOT include problem summaries, provider IDs, raw provider severity, provider acknowledgement, reason text/tags, endpoint/configuration details, credentials or raw telemetry.
+The payload deliberately omits `health_class` and `health_evidence_state`. It MUST NOT include problem summaries, provider IDs, raw provider severity, provider acknowledgement, reason text/tags, endpoint/configuration details, credentials or raw telemetry.
 
 ## Producer authority and atomicity
 
@@ -176,6 +173,7 @@ The only consumer effect authorized by this record is a bounded, durable **inval
 - Automation execution;
 - provider acknowledgement/write-back;
 - provider-native IDs in event payloads;
+- problem/health semantic state values in event payloads;
 - raw monitoring observations/metric values;
 - browser realtime publication;
 - public webhooks or SDK exposure;

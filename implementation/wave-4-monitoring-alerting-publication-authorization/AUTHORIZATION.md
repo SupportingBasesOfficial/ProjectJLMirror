@@ -21,6 +21,24 @@ monitoring.health-projection.changed
 
 Both are `integration_event` class, contract version `1`, producer `Monitoring`, tenant-confidential, at-least-once, and **invalidation/resync signals rather than state replication**.
 
+They inherit the accepted Phase 10 logical envelope without weakening or redefining it:
+
+```text
+message_class        integration_event
+contract_version     1
+producer             Monitoring
+tenant_id             required trusted tenant identity
+subject               contract-specific canonical JLMIRROR subject
+message_id            stable immutable logical event identity
+occurred_at           authoritative local transition commit time
+correlation_id        required
+causation_id          nullable only for accepted root transition
+data_classification   confidential_tenant
+delivery              at-least-once
+```
+
+Publish ambiguity, dispatcher retry and redelivery MUST reuse the same logical `message_id`. Same trusted scoped `message_id` with non-equivalent immutable contract/version/subject/payload meaning is an integrity failure, never a normal duplicate.
+
 Shared invariants:
 
 ```text

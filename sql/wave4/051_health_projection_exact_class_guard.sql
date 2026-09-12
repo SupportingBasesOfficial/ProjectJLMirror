@@ -59,6 +59,9 @@ BEGIN
             RAISE EXCEPTION 'Current Health requires exact current Problem State poll and current source/resource/scope authority';
         END IF;
 
+        -- Supersedes the narrower invariant previously expressed as:
+        -- Healthy cannot coexist with an active health-affecting canonical problem.
+        -- The exact-class guard below validates every current class, not only healthy.
         IF EXISTS (
             SELECT 1 FROM monitoring.monitoring_problem AS p
              WHERE p.tenant_id=NEW.tenant_id

@@ -14,6 +14,7 @@
   ],
   "events_are_invalidation_not_state_replication": true,
   "consumer_must_reread_monitoring": true,
+  "semantic_state_values_allowed_in_payload": false,
   "broker_order_is_authority": false,
   "historical_generation_current_authority": false,
   "provider_ids_allowed_in_payload": false,

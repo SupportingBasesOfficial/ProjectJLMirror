@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR148-001",
+      "pr": 148,
+      "source": "external_review",
+      "review_comment_id": 3997051534,
+      "class_id": "ADV-LEARNING-SURFACE-OMISSION",
+      "invariant_ids": ["INV-LEARNING-001"],
+      "root_cause": "The composed Monitoring-to-Alerting publication conformance executed the accepted Wave 2 outbox migration and all Wave 4 Monitoring migrations, but its workflow path filters watched only bridge-local files. A substrate change could therefore invalidate the composed runtime while the bridge-specific gate was never scheduled.",
+      "horizontal_audit": [
+        "pull-request workflow path filters",
+        "push workflow path filters",
+        "Wave 2 outbox substrate dependency",
+        "all Wave 4 Monitoring transition dependencies",
+        "composed PostgreSQL conformance inputs",
+        "future cross-wave integration gates"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_monitoring_alerting_composed_workflow_dependencies"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 7
+    }
+  ]
+}

@@ -35,6 +35,7 @@ def main() -> None:
     )
     require(manifest["events_are_invalidation_not_state_replication"] is True, "events must be invalidation signals")
     require(manifest["consumer_must_reread_monitoring"] is True, "consumer reread requirement missing")
+    require(manifest["semantic_state_values_allowed_in_payload"] is False, "semantic Monitoring state leaked into payload")
     require(manifest["authorized_consumer_effect"] == "durable_invalidation_resync_responsibility_only", "consumer effect widened")
 
     for field in (
@@ -66,9 +67,12 @@ def main() -> None:
         "EVENT ARRIVAL != CURRENT STATE AUTHORITY",
         "BROKER ORDER != OWNER-DOMAIN ORDER",
         "HISTORICAL GENERATION != CURRENT ALERTING INPUT AUTHORITY",
+        "EVENT PAYLOAD != CURRENT PROBLEM/HEALTH STATE REPLICA",
         "monitoring.problem-state.changed",
         "monitoring.health-projection.changed",
         "invalidation/resync signals rather than state replication",
+        "deliberately omits `problem_state` and `severity_class`",
+        "deliberately omits `health_class` and `health_evidence_state`",
         "re-establishes current tenant/placement/service authority",
         "stop without creating Alerting/ITSM/AIOps/Automation business state",
         "No new broker, outbox substrate or telemetry stream is authorized",

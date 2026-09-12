@@ -31,7 +31,10 @@ def main() -> None:
     require(manifest["reuses_wave2_outbox"] is True, "Wave 2 outbox reuse must be explicit")
     require(manifest["creates_new_outbox_substrate"] is False, "parallel outbox substrate forbidden")
     require(manifest["same_transaction_publication"] is True, "atomic publication binding required")
+    require(manifest["rollback_removes_publication_obligation"] is True, "rollback atomicity law missing")
     require(manifest["stable_message_identity"] is True, "stable message identity required")
+    require(manifest["message_id_not_correlation_id"] is True, "message id must not be correlation id")
+    require(manifest["causation_bound_to_owning_transition"] is True, "causation must bind owning transition")
     require(manifest["non_equivalent_identity_collision_fails_closed"] is True, "identity conflict must fail closed")
     require(manifest["payload_contains_semantic_problem_or_health_state"] is False, "semantic state replication forbidden")
     require(manifest["alerting_business_mutation_authorized"] is False, "Alerting business mutation must remain blocked")
@@ -51,6 +54,9 @@ def main() -> None:
         "monitoring.recover_problem_state_publication",
         "monitoring.recover_health_projection_publication",
         "monitoring.publication_identity_conflict",
+        "monitoring.publication_envelope_identity_collision",
+        "v_correlation_id",
+        "v_causation_id",
         "confidential_tenant",
         "integration_event",
         "canonical-jsonb-envelope-payload",
@@ -63,6 +69,9 @@ def main() -> None:
     require("on conflict (outbox_record_id) do nothing" in lower, "dispatch recovery missing")
     require("owner to jlmirror_wave4_monitoring_publication_executor" in lower, "publication functions need dedicated NOLOGIN owner")
     require("to jlmirror_wave4_recovery_authority" in lower, "recovery entry points must bind existing recovery authority")
+    require("v_existing.correlation_id is distinct from v_correlation_id" in lower, "correlation equivalence check missing")
+    require("v_existing.causation_id is distinct from v_causation_id" in lower, "causation equivalence check missing")
+    require("v_correlation_id,v_causation_id" in lower, "outbox must persist distinct correlation/causation identities")
 
     forbidden_payload_tokens = (
         "'problem_state'",
@@ -91,6 +100,7 @@ def main() -> None:
         "It does not create Alert state",
         "does **not** duplicate the outbox schema inside Wave 4",
         "They never synthesize a new transition identity",
+        "`message_id` is never overloaded as `correlation_id` or `causation_id`",
     ):
         require(marker in doc, f"implementation documentation marker missing: {marker}")
 

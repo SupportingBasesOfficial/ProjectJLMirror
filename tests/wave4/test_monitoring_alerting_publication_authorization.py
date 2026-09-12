@@ -28,6 +28,19 @@ class MonitoringAlertingPublicationAuthorizationTests(unittest.TestCase):
         self.assertIn("subject_type    monitoring_problem", self.auth)
         self.assertIn("subject_type    monitoring_resource", self.auth)
 
+    def test_phase10_envelope_is_inherited_without_weakened_identity(self) -> None:
+        self.assertTrue(self.manifest["inherits_phase10_logical_envelope"])
+        self.assertTrue(self.manifest["stable_message_id_required"])
+        self.assertTrue(self.manifest["redelivery_reuses_same_message_id"])
+        for marker in (
+            "message_id            stable immutable logical event identity",
+            "occurred_at           authoritative local transition commit time",
+            "correlation_id        required",
+            "causation_id          nullable only for accepted root transition",
+            "Publish ambiguity, dispatcher retry and redelivery MUST reuse the same logical `message_id`",
+        ):
+            self.assertIn(marker, self.auth)
+
     def test_events_are_invalidation_not_state_replication(self) -> None:
         self.assertTrue(self.manifest["events_are_invalidation_not_state_replication"])
         self.assertTrue(self.manifest["consumer_must_reread_monitoring"])

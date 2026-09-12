@@ -40,7 +40,7 @@ EVENT PAYLOAD != CURRENT PROBLEM/HEALTH STATE REPLICA
 
 ### Meaning
 
-One canonical Monitoring Problem State transition committed for one tenant-owned `problem_id`.
+One durable canonical Monitoring Problem State transition committed for one tenant-owned `problem_id`.
 
 ```text
 contract_name   monitoring.problem-state.changed
@@ -50,15 +50,16 @@ subject_id      problem_id
 
 ### Authorized trigger
 
-The event/outbox obligation may exist only when an authoritative canonical Problem State transition commits, including:
+The event/outbox obligation may exist only when the corresponding durable canonical Problem State transition record commits, including:
 
 - problem creation/activation from accepted current provider evidence;
 - canonical severity-class transition;
 - explicit provider recovery accepted for the exact provider event binding;
-- authoritative complete-negative resolution;
-- evidence/currentness transition when the accepted implementation determines that consumers must resync protected owner state.
+- authoritative complete-negative resolution.
 
-Replay of the same canonical transition does not create a second logical event. A poll that re-confirms the same meaning without a semantic/evidence transition creates no new logical publication.
+`problem_transition_id` MUST reference that exact immutable Monitoring transition record. A pure re-confirmation, evidence refresh, stale/incomplete marking, metadata refresh or projection update that does not create a canonical Problem State transition record creates **no** `monitoring.problem-state.changed` event under v1.
+
+Replay of the same canonical transition does not create a second logical event. A poll that re-confirms the same meaning without a canonical transition creates no new logical publication.
 
 ### Payload v1
 
@@ -89,9 +90,9 @@ subject_id      monitoring_resource_id
 
 ### Authorized trigger
 
-The event/outbox obligation may exist only when a durable Health Projection transition commits. Re-evaluating the same canonical class/evidence/snapshot/reason meaning is idempotent and creates no second logical event.
+The event/outbox obligation may exist only when a durable Health Projection transition commits. `health_transition_id` MUST reference that exact immutable Monitoring transition record. Re-evaluating the same canonical class/evidence/snapshot/reason meaning is idempotent and creates no second logical event.
 
-A semantic class transition always qualifies. An evidence/currentness transition may qualify when it changes consumer resync meaning. Merely observing a later wall-clock time or rerunning derivation with equivalent canonical meaning does not qualify.
+A semantic class transition always qualifies. An evidence/currentness transition may qualify only when the canonical Health implementation created a durable transition record for that revision. Merely observing a later wall-clock time or rerunning derivation with equivalent canonical meaning does not qualify.
 
 ### Payload v1
 
@@ -108,8 +109,8 @@ The payload deliberately omits `health_class` and `health_evidence_state`. It MU
 ## Producer authority and atomicity
 
 1. Monitoring remains the sole semantic owner/producer of both contracts.
-2. Event existence is tied to the already-authoritative Monitoring transition, not to worker memory, broker acknowledgement or consumer state.
-3. Publication obligation is atomic with the owning transition or deterministically recoverable from one durable authoritative transition record under the accepted outbox/recovery law.
+2. Event existence is tied to the already-authoritative immutable Monitoring transition, not to worker memory, broker acknowledgement or consumer state.
+3. Publication obligation is atomic with the owning transition or deterministically recoverable from that exact durable authoritative transition record under the accepted outbox/recovery law.
 4. Publish ambiguity/redelivery reuses the same stable logical `message_id`; it never invents a second semantic event.
 5. Same trusted scoped event identity with different immutable contract/version/subject/payload meaning is an integrity failure, not a normal duplicate.
 6. No new broker, outbox substrate or telemetry stream is authorized by this record. Implementation reuses the already accepted Phase 10 publication/outbox authority.
@@ -179,7 +180,8 @@ The only consumer effect authorized by this record is a bounded, durable **inval
 - public webhooks or SDK exposure;
 - frontend behavior;
 - production deployment/topology/C3 numeric sizing;
-- treating event arrival/order as current Monitoring state.
+- treating event arrival/order as current Monitoring state;
+- synthesizing publication from a Problem/Health refresh that has no durable canonical transition record.
 
 ## Acceptance boundary
 

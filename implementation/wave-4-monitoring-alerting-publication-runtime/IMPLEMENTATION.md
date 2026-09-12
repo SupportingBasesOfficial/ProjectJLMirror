@@ -36,17 +36,19 @@ OUTBOX DELIVERY     != BUSINESS TRANSITION COMMIT
 
 Pure Problem/Health refreshes that create no transition record create no publication.
 
-## Logical identity
+## Logical envelope identity
 
-Each logical message uses a deterministic compact `message_id` derived from:
+Each logical message uses three distinct deterministic identities:
 
-- exact contract;
-- trusted tenant identity;
-- exact immutable transition identity.
+- `message_id` identifies the immutable integration event;
+- `correlation_id` is a distinct correlation identity bound to the owning Monitoring transition context;
+- `causation_id` is non-null and identifies the exact owning Monitoring transition as the immediate logical cause of publication.
 
-The compaction digest is not used as security evidence. If the same scoped `message_id` is ever observed with different immutable meaning, the bridge compares the full expected envelope/payload equivalence evidence and fails closed with `monitoring.publication_identity_conflict`.
+`message_id` is never overloaded as `correlation_id` or `causation_id`. This preserves the Phase 10 envelope law while keeping recovery deterministic.
 
-Redelivery or recovery therefore reuses one logical message identity.
+The IDs are compacted deterministically from trusted tenant/contract/transition inputs. The compaction digest is not used as security or semantic-equivalence evidence. If the same scoped `message_id` is ever observed with different immutable meaning, the bridge compares the full expected envelope/payload equivalence evidence and fails closed with `monitoring.publication_identity_conflict`.
+
+Redelivery or recovery therefore reuses one logical message identity and one immutable envelope meaning.
 
 ## Payloads
 
@@ -80,7 +82,7 @@ Two recovery entry points are granted only to the existing Wave 4 recovery autho
 - `monitoring.recover_problem_state_publication(...)`
 - `monitoring.recover_health_projection_publication(...)`
 
-They re-read the exact immutable transition and ensure the same logical outbox record exists. They never synthesize a new transition identity. If mutable dispatch bookkeeping was lost while the immutable outbox message survived, the bridge recreates only the missing dispatch row.
+They re-read the exact immutable transition and ensure the same logical outbox record exists. They never synthesize a new transition identity. If mutable dispatch bookkeeping was lost while the immutable outbox message survived, the bridge recreates only the missing dispatch row and never resets an existing published/quarantined/claimed state.
 
 ## Still not authorized
 

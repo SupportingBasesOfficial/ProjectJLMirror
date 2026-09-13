@@ -85,7 +85,9 @@ GENERIC_BLOCK_START_RE = re.compile(
 RAW_PROCESSING_OPEN_RE = re.compile(r"^[ ]{0,3}<\?")
 RAW_CDATA_OPEN_RE = re.compile(r"^[ ]{0,3}<!\[CDATA\[")
 RAW_DECLARATION_OPEN_RE = re.compile(r"^[ ]{0,3}<![A-Z]")
-RAW_GENERIC_COMPLETE_TAG_RE = re.compile(r"^[ ]{0,3}</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>[ \t]*$")
+RAW_GENERIC_COMPLETE_TAG_RE = re.compile(
+    r"^[ ]{0,3}</?[A-Za-z][A-Za-z0-9-]*(?:\s+(?:[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s\"'=<>`]+))?))*\s*/?>[ \t]*$"
+)
 
 
 def require(cond: bool, msg: str) -> None:

@@ -33,6 +33,10 @@ def falsify_project_memory_review_guardrails():
  must_fail(lambda: project_memory.validate_project_memory_workflow(explicit_disabled),'project_memory_workflow_condition_not_allowed')
  job_disabled=workflow.replace('  project-memory:\n','  project-memory:\n    if: ${{ false }}\n',1)
  must_fail(lambda: project_memory.validate_project_memory_workflow(job_disabled),'project_memory_workflow_job_condition_not_allowed')
+ wrong_pr_head=workflow.replace('${{ github.event.pull_request.head.sha }}','${{ github.event.pull_request.base.sha }}',1)
+ must_fail(lambda: project_memory.validate_project_memory_workflow(wrong_pr_head),'project_memory_workflow_job_env_binding_invalid')
+ continue_on_error=workflow.replace('      - name: Falsify canonical project-memory guardrails\n','      - name: Falsify canonical project-memory guardrails\n        continue-on-error: ${{ true }}\n',1)
+ must_fail(lambda: project_memory.validate_project_memory_workflow(continue_on_error),'project_memory_workflow_continue_on_error_not_allowed')
  required='run: PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py'
  env_decoy=workflow.replace('      - name: Falsify canonical project-memory guardrails\n        '+required+'\n',"      - name: Falsify canonical project-memory guardrails\n        run: 'true'\n        env:\n          "+required+'\n',1)
  must_fail(lambda: project_memory.validate_project_memory_workflow(env_decoy),'project_memory_workflow_missing_executable_step:Falsify canonical project-memory guardrails')
@@ -52,6 +56,7 @@ def falsify_project_memory_review_guardrails():
   '<![CDATA[\n'+'\n'.join(rows)+'\n]]>',
   '<!DECLARATION\n'+'\n'.join(rows)+'\n>',
   '<custom hidden>\n'+'\n'.join(rows)+'\n\n',
+  '<custom hidden data=">">\n'+'\n'.join(rows)+'\n\n',
  ):
   must_fail(lambda sample=hidden_html: project_memory.validate_decision_register(sample),'project_memory_missing_baseline_decision:JLM-DEC-001')
  unescaped=list(rows); unescaped[11]=unescaped[11].replace('\\|','|',1)
@@ -85,9 +90,7 @@ def main():
  must_fail(grant_transport,'state transport authority escalation')
  def regress_d4_acceptance(selection,ledger,state,evaluation): state['gate_state']='scoped'
  must_fail(regress_d4_acceptance,'state D4 gate authority drift')
- falsify_selection_record_product_authority()
- falsify_project_memory_review_guardrails()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked project_memory_review_guardrails=rendered-authority+exact-head-structural-workflow-negative-tested')
+ falsify_selection_record_product_authority(); falsify_project_memory_review_guardrails()
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked project_memory_review_guardrails=rendered-authority+exact-head-env+continue-on-error+structural-workflow-negative-tested')
  return 0
-if __name__=='__main__':
- main()
+if __name__=='__main__': main()

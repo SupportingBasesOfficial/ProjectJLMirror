@@ -116,6 +116,26 @@ class ProjectMemoryTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "project_memory_missing_baseline_decision:JLM-DEC-001"):
             validator.validate_decision_register(hidden)
 
+    def test_processing_instruction_does_not_expose_rows(self) -> None:
+        hidden = "<?hidden\n" + "\n".join(baseline_rows()) + "\n?>"
+        with self.assertRaisesRegex(AssertionError, "project_memory_missing_baseline_decision:JLM-DEC-001"):
+            validator.validate_decision_register(hidden)
+
+    def test_cdata_block_does_not_expose_rows(self) -> None:
+        hidden = "<![CDATA[\n" + "\n".join(baseline_rows()) + "\n]]>"
+        with self.assertRaisesRegex(AssertionError, "project_memory_missing_baseline_decision:JLM-DEC-001"):
+            validator.validate_decision_register(hidden)
+
+    def test_declaration_block_does_not_expose_rows(self) -> None:
+        hidden = "<!DECLARATION\n" + "\n".join(baseline_rows()) + "\n>"
+        with self.assertRaisesRegex(AssertionError, "project_memory_missing_baseline_decision:JLM-DEC-001"):
+            validator.validate_decision_register(hidden)
+
+    def test_generic_complete_html_tag_region_does_not_expose_rows(self) -> None:
+        hidden = "<custom hidden>\n" + "\n".join(baseline_rows()) + "\n\n"
+        with self.assertRaisesRegex(AssertionError, "project_memory_missing_baseline_decision:JLM-DEC-001"):
+            validator.validate_decision_register(hidden)
+
     def test_malformed_seeded_decision_id_is_rejected_as_missing(self) -> None:
         rows = baseline_rows()
         rows[16] = "| JLM-DEC-O17 | malformed | current | accepted |"
@@ -210,6 +230,16 @@ class ProjectMemoryTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "project_memory_workflow_condition_not_allowed"):
             validator.validate_project_memory_workflow(mutated)
 
+    def test_job_level_condition_is_not_accepted(self) -> None:
+        workflow = validator.WORKFLOW.read_text(encoding="utf-8")
+        mutated = workflow.replace(
+            "  project-memory:\n",
+            "  project-memory:\n    if: ${{ false }}\n",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "project_memory_workflow_job_condition_not_allowed"):
+            validator.validate_project_memory_workflow(mutated)
+
     def test_required_run_decoy_under_env_is_not_accepted(self) -> None:
         workflow = validator.WORKFLOW.read_text(encoding="utf-8")
         required = "run: PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py"
@@ -219,6 +249,34 @@ class ProjectMemoryTests(unittest.TestCase):
             1,
         )
         with self.assertRaisesRegex(AssertionError, "project_memory_workflow_missing_executable_step:Falsify canonical project-memory guardrails"):
+            validator.validate_project_memory_workflow(mutated)
+
+    def test_checkout_ref_decoy_outside_with_is_not_accepted(self) -> None:
+        workflow = validator.WORKFLOW.read_text(encoding="utf-8")
+        mutated = workflow.replace(
+            "          ref: ${{ steps.target.outputs.sha }}\n",
+            "          ref: main\n",
+            1,
+        ).replace(
+            "      - name: Validate canonical project memory\n",
+            "      - name: Validate canonical project memory\n        env:\n          ref: ${{ steps.target.outputs.sha }}\n",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "project_memory_workflow_checkout_binding_invalid"):
+            validator.validate_project_memory_workflow(mutated)
+
+    def test_verify_exact_head_command_is_bound_to_verify_step(self) -> None:
+        workflow = validator.WORKFLOW.read_text(encoding="utf-8")
+        mutated = workflow.replace(
+            '          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"\n',
+            "          true\n",
+            1,
+        ).replace(
+            "      - name: Validate canonical project memory\n",
+            '      - name: Validate canonical project memory\n        env:\n          DECOY: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"\n',
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "project_memory_workflow_verify_head_binding_invalid"):
             validator.validate_project_memory_workflow(mutated)
 
 

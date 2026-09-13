@@ -23,7 +23,7 @@ def falsify_project_memory_review_guardrails():
  must_fail(lambda: project_memory.validate_human_operations(human.replace('authoritative visibility','verified awareness',1)),'project_memory_human_model_missing:authoritative visibility')
  workflow=project_memory.WORKFLOW.read_text(encoding='utf-8')
  must_fail(lambda: project_memory.validate_project_memory_workflow(workflow.replace('run: python3 tools/assurance/validate_repository.py','# run: python3 tools/assurance/validate_repository.py',1)),'project_memory_workflow_missing_executable_step:Validate repository structure and workflow safety')
- must_fail(lambda: project_memory.validate_project_memory_workflow(workflow.replace('allow-unsafe-pr-checkout: false','# allow-unsafe-pr-checkout: false',1)),'project_memory_workflow_missing_active_line')
+ must_fail(lambda: project_memory.validate_project_memory_workflow(workflow.replace('allow-unsafe-pr-checkout: false','# allow-unsafe-pr-checkout: false',1)),'project_memory_workflow_checkout_binding_invalid')
  must_fail(lambda: project_memory.validate_project_memory_workflow(workflow.replace('run: PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py','# run: PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py',1)),'project_memory_workflow_missing_executable_step:Falsify canonical project-memory guardrails')
  disabled=workflow.replace('      - name: Falsify canonical project-memory guardrails\n','      - name: Falsify canonical project-memory guardrails\n        if: ${{ false }}\n',1)
  must_fail(lambda: project_memory.validate_project_memory_workflow(disabled),'project_memory_workflow_condition_not_allowed')
@@ -31,9 +31,15 @@ def falsify_project_memory_review_guardrails():
  must_fail(lambda: project_memory.validate_project_memory_workflow(quoted_disabled),'project_memory_workflow_condition_not_allowed')
  explicit_disabled=workflow.replace('      - name: Falsify canonical project-memory guardrails\n','      - name: Falsify canonical project-memory guardrails\n        ? if\n        : ${{ false }}\n',1)
  must_fail(lambda: project_memory.validate_project_memory_workflow(explicit_disabled),'project_memory_workflow_condition_not_allowed')
+ job_disabled=workflow.replace('  project-memory:\n','  project-memory:\n    if: ${{ false }}\n',1)
+ must_fail(lambda: project_memory.validate_project_memory_workflow(job_disabled),'project_memory_workflow_job_condition_not_allowed')
  required='run: PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py'
  env_decoy=workflow.replace('      - name: Falsify canonical project-memory guardrails\n        '+required+'\n',"      - name: Falsify canonical project-memory guardrails\n        run: 'true'\n        env:\n          "+required+'\n',1)
  must_fail(lambda: project_memory.validate_project_memory_workflow(env_decoy),'project_memory_workflow_missing_executable_step:Falsify canonical project-memory guardrails')
+ checkout_decoy=workflow.replace('          ref: ${{ steps.target.outputs.sha }}\n','          ref: main\n',1).replace('      - name: Validate canonical project memory\n','      - name: Validate canonical project memory\n        env:\n          ref: ${{ steps.target.outputs.sha }}\n',1)
+ must_fail(lambda: project_memory.validate_project_memory_workflow(checkout_decoy),'project_memory_workflow_checkout_binding_invalid')
+ verify_decoy=workflow.replace('          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"\n','          true\n',1).replace('      - name: Validate canonical project memory\n','      - name: Validate canonical project memory\n        env:\n          DECOY: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"\n',1)
+ must_fail(lambda: project_memory.validate_project_memory_workflow(verify_decoy),'project_memory_workflow_verify_head_binding_invalid')
  rows=[f'| {decision_id} | {meaning} | current | accepted |' for decision_id,meaning in project_memory.BASELINE_DECISION_MEANINGS.items()]
  hidden='<!--\n'+'\n'.join(rows)+'\n-->'
  must_fail(lambda: project_memory.validate_decision_register(hidden),'project_memory_missing_baseline_decision:JLM-DEC-001')
@@ -41,6 +47,13 @@ def falsify_project_memory_review_guardrails():
  must_fail(lambda: project_memory.validate_decision_register(fenced),'project_memory_missing_baseline_decision:JLM-DEC-001')
  raw_html='<script type="text/plain">\n'+'\n'.join(rows)+'\n</script>'
  must_fail(lambda: project_memory.validate_decision_register(raw_html),'project_memory_missing_baseline_decision:JLM-DEC-001')
+ for hidden_html in (
+  '<?hidden\n'+'\n'.join(rows)+'\n?>',
+  '<![CDATA[\n'+'\n'.join(rows)+'\n]]>',
+  '<!DECLARATION\n'+'\n'.join(rows)+'\n>',
+  '<custom hidden>\n'+'\n'.join(rows)+'\n\n',
+ ):
+  must_fail(lambda sample=hidden_html: project_memory.validate_decision_register(sample),'project_memory_missing_baseline_decision:JLM-DEC-001')
  unescaped=list(rows); unescaped[11]=unescaped[11].replace('\\|','|',1)
  must_fail(lambda: project_memory.validate_decision_register('\n'.join(unescaped)),'project_memory_baseline_decision_meaning_changed:JLM-DEC-012')
  missing=list(rows); missing.pop(16)
@@ -74,7 +87,7 @@ def main():
  must_fail(regress_d4_acceptance,'state D4 gate authority drift')
  falsify_selection_record_product_authority()
  falsify_project_memory_review_guardrails()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked project_memory_review_guardrails=rendered-authority+structural-workflow-negative-tested')
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked project_memory_review_guardrails=rendered-authority+exact-head-structural-workflow-negative-tested')
  return 0
 if __name__=='__main__':
  main()

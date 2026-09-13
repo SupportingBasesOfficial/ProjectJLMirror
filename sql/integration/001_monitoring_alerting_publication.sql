@@ -439,4 +439,70 @@ REVOKE ALL ON FUNCTION monitoring.recover_health_projection_publication(TEXT,TEX
 GRANT EXECUTE ON FUNCTION monitoring.recover_health_projection_publication(TEXT,TEXT)
     TO jlmirror_wave4_recovery_authority;
 
+-- A first-time CREATE FUNCTION can inherit named EXECUTE grants from the
+-- installer role's ALTER DEFAULT PRIVILEGES. Preflight cannot see a function
+-- that does not exist yet, so verify the effective installed ACL for every
+-- privileged function before this transaction is allowed to commit.
+DO $$
+DECLARE
+    v_executor_oid OID;
+    v_recovery_oid OID;
+    v_row RECORD;
+    v_proc_oid OID;
+BEGIN
+    SELECT oid INTO v_executor_oid
+      FROM pg_roles
+     WHERE rolname='jlmirror_wave4_monitoring_publication_executor';
+    SELECT oid INTO v_recovery_oid
+      FROM pg_roles
+     WHERE rolname='jlmirror_wave4_recovery_authority';
+
+    FOR v_row IN
+        SELECT *
+          FROM (VALUES
+              ('monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb)', false),
+              ('monitoring.wave4_publish_problem_transition()', false),
+              ('monitoring.wave4_publish_health_transition()', false),
+              ('monitoring.recover_problem_state_publication(text,text)', true),
+              ('monitoring.recover_health_projection_publication(text,text)', true)
+          ) AS guarded(signature, allow_recovery_authority)
+    LOOP
+        v_proc_oid := to_regprocedure(v_row.signature);
+        IF v_proc_oid IS NULL THEN
+            RAISE EXCEPTION 'monitoring.publication_installed_function_missing:%', v_row.signature;
+        END IF;
+
+        IF EXISTS (
+            SELECT 1
+              FROM pg_proc p
+             WHERE p.oid=v_proc_oid
+               AND (p.proowner<>v_executor_oid OR NOT p.prosecdef)
+        ) THEN
+            RAISE EXCEPTION 'monitoring.publication_installed_function_definition_unsafe:%', v_row.signature;
+        END IF;
+
+        IF EXISTS (
+            SELECT 1
+              FROM pg_proc p,
+                   LATERAL aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a
+             WHERE p.oid=v_proc_oid
+               AND a.privilege_type='EXECUTE'
+               AND (
+                    a.grantee=0
+                    OR (
+                        a.grantee<>p.proowner
+                        AND (
+                            NOT v_row.allow_recovery_authority
+                            OR a.grantee<>v_recovery_oid
+                            OR a.is_grantable
+                        )
+                    )
+               )
+        ) THEN
+            RAISE EXCEPTION 'monitoring.publication_installed_function_acl_unsafe:%', v_row.signature;
+        END IF;
+    END LOOP;
+END;
+$$;
+
 COMMIT;

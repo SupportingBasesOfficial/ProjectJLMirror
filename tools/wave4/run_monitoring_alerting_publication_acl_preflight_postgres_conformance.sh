@@ -179,6 +179,60 @@ DROP FUNCTION monitoring.wave4_ensure_monitoring_invalidation(text,text,text,tex
 DROP ROLE jlmirror_wave4_monitoring_publication_executor;
 SQL
 
+# Case 0e: prove the problem recovery entry point is also fenced against a
+# retained expression dependency on its preserved OID.
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+CREATE ROLE jlmirror_wave4_monitoring_publication_executor
+    NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE TABLE monitoring.jlmirror_retained_problem_recovery_probe(a text NOT NULL,b text NOT NULL);
+CREATE FUNCTION monitoring.recover_problem_state_publication(text,text)
+RETURNS bigint
+LANGUAGE sql
+IMMUTABLE
+AS 'SELECT 1::bigint';
+REVOKE ALL ON FUNCTION monitoring.recover_problem_state_publication(text,text) FROM PUBLIC;
+CREATE INDEX jlmirror_retained_problem_recovery_probe_idx
+ON monitoring.jlmirror_retained_problem_recovery_probe ((monitoring.recover_problem_state_publication(a,b)));
+SQL
+
+run_expected_acl_rejection 'monitoring.publication_existing_function_dependency_unsafe:monitoring.recover_problem_state_publication(text,text):'
+
+executor_privs="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','SELECT')::int || ':' || has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','INSERT')::int;")"
+test "$executor_privs" = "0:0"
+
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+DROP TABLE monitoring.jlmirror_retained_problem_recovery_probe;
+DROP FUNCTION monitoring.recover_problem_state_publication(text,text);
+DROP ROLE jlmirror_wave4_monitoring_publication_executor;
+SQL
+
+# Case 0f: prove the health recovery entry point independently, so neither
+# recovery signature can silently fall out of the dependency-fence VALUES list.
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+CREATE ROLE jlmirror_wave4_monitoring_publication_executor
+    NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE TABLE monitoring.jlmirror_retained_health_recovery_probe(a text NOT NULL,b text NOT NULL);
+CREATE FUNCTION monitoring.recover_health_projection_publication(text,text)
+RETURNS bigint
+LANGUAGE sql
+IMMUTABLE
+AS 'SELECT 1::bigint';
+REVOKE ALL ON FUNCTION monitoring.recover_health_projection_publication(text,text) FROM PUBLIC;
+CREATE INDEX jlmirror_retained_health_recovery_probe_idx
+ON monitoring.jlmirror_retained_health_recovery_probe ((monitoring.recover_health_projection_publication(a,b)));
+SQL
+
+run_expected_acl_rejection 'monitoring.publication_existing_function_dependency_unsafe:monitoring.recover_health_projection_publication(text,text):'
+
+executor_privs="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','SELECT')::int || ':' || has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','INSERT')::int;")"
+test "$executor_privs" = "0:0"
+
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+DROP TABLE monitoring.jlmirror_retained_health_recovery_probe;
+DROP FUNCTION monitoring.recover_health_projection_publication(text,text);
+DROP ROLE jlmirror_wave4_monitoring_publication_executor;
+SQL
+
 # Case 1: unrelated named EXECUTE grant on an internal helper must be rejected
 # before the function can become SECURITY DEFINER.
 docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
@@ -234,4 +288,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA monitoring
 DROP ROLE jlmirror_acl_probe;
 SQL
 
-echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=PASS executor_owned_routine=blocked executor_owned_view=blocked retained_trigger_dependency=blocked retained_helper_expression_dependency=blocked retained_named_execute=blocked recovery_grant_option=blocked default_execute_grant=blocked transactional_acl_fence=proven"
+echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=PASS executor_owned_routine=blocked executor_owned_view=blocked retained_trigger_dependency=blocked retained_helper_expression_dependency=blocked retained_problem_recovery_dependency=blocked retained_health_recovery_dependency=blocked retained_named_execute=blocked recovery_grant_option=blocked default_execute_grant=blocked transactional_acl_fence=proven"

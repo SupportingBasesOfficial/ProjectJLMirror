@@ -2,160 +2,102 @@
   "schema_version": 1,
   "entries": [
     {
-      "id": "LEARN-PR151-001",
-      "pr": 151,
-      "source": "external_review",
-      "review_comment_id": 3998111066,
-      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
-      "invariant_ids": ["INV-LEARNING-002"],
+      "id": "LEARN-PR151-001", "pr": 151, "source": "external_review", "review_comment_id": 3998111066,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP", "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "The project-memory validator required an exact canonical visibility term that the governed human-operations document did not itself contain, so a supposedly self-consistent memory gate was born permanently failing due to vocabulary drift between authority text and validator expectations.",
       "horizontal_audit": ["canonical memory vocabulary","human-operations authority wording","validator required markers","future terminology migrations","project-memory tests"],
-      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
-      "systemic_guardrail_updated": true,
-      "guardrail_generation": 11
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_project_memory_review_guardrails"}], "systemic_guardrail_updated": true, "guardrail_generation": 11
     },
     {
-      "id": "LEARN-PR151-002",
-      "pr": 151,
-      "source": "external_review",
-      "review_comment_id": 3998111069,
-      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
-      "invariant_ids": ["INV-LEARNING-002"],
+      "id": "LEARN-PR151-002", "pr": 151, "source": "external_review", "review_comment_id": 3998111069,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP", "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "The new memory workflow referenced a repository-validation path that did not exist instead of reusing the already canonical validator path used by the repository, making the governance gate structurally incapable of succeeding.",
       "horizontal_audit": ["workflow command paths","canonical repository validator","existing workflow conventions","new governance workflows","tool path drift"],
-      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
-      "systemic_guardrail_updated": true,
-      "guardrail_generation": 12
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_project_memory_review_guardrails"}], "systemic_guardrail_updated": true, "guardrail_generation": 12
     },
     {
-      "id": "LEARN-PR151-003",
-      "pr": 151,
-      "source": "external_review",
-      "review_comment_id": 3998111071,
-      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
-      "invariant_ids": ["INV-LEARNING-002"],
+      "id": "LEARN-PR151-003", "pr": 151, "source": "external_review", "review_comment_id": 3998111071,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP", "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "The initial project-memory checkout step omitted the repository-mandated explicit unsafe-PR-checkout denial and did not bind its analysis as strongly as the established exact-head pattern, so the new governance workflow violated the repository's own workflow-safety contract.",
       "horizontal_audit": ["actions checkout safety","pull-request exact-head resolution","credential persistence","repository workflow policy","future governance workflows"],
-      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
-      "systemic_guardrail_updated": true,
-      "guardrail_generation": 13
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_project_memory_review_guardrails"}], "systemic_guardrail_updated": true, "guardrail_generation": 13
     },
     {
-      "id": "LEARN-PR151-004",
-      "pr": 151,
-      "source": "external_review",
-      "review_comment_id": 3998111072,
-      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
-      "invariant_ids": ["INV-LEARNING-002"],
+      "id": "LEARN-PR151-004", "pr": 151, "source": "external_review", "review_comment_id": 3998111072,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP", "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "Decision-ID uniqueness was checked across every textual reference instead of only canonical decision-definition rows, so the documented supersession mechanism would eventually be rejected by its own validator when a successor ID was both referenced and legitimately defined.",
       "horizontal_audit": ["decision definition identity","supersession references","duplicate decision detection","future decision-register links","canonical-memory evolution"],
-      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
-      "systemic_guardrail_updated": true,
-      "guardrail_generation": 14
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_project_memory_review_guardrails"}], "systemic_guardrail_updated": true, "guardrail_generation": 14
     },
     {
-      "id": "LEARN-PR151-005",
-      "pr": 151,
-      "source": "external_review",
-      "review_comment_id": 3998133052,
-      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
-      "invariant_ids": ["INV-LEARNING-002"],
+      "id": "LEARN-PR151-005", "pr": 151, "source": "external_review", "review_comment_id": 3998133052,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP", "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "The decision register correctly separated supersession references from definition identity, but the validator did not verify that each supersession target actually resolved to one canonical defined decision, allowing broken or misspelled audit links to remain accepted.",
       "horizontal_audit": ["decision supersession targets","dangling decision references","decision definition uniqueness","future decision replacement chains","project-memory reconstruction integrity"],
-      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
-      "systemic_guardrail_updated": true,
-      "guardrail_generation": 15
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_project_memory_review_guardrails"}], "systemic_guardrail_updated": true, "guardrail_generation": 15
     },
     {
-      "id": "LEARN-PR151-006",
-      "pr": 151,
-      "source": "external_review",
-      "review_comment_id": 3998133053,
-      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
-      "invariant_ids": ["INV-LEARNING-002"],
+      "id": "LEARN-PR151-006", "pr": 151, "source": "external_review", "review_comment_id": 3998133053,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP", "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "The project-memory learning guardrail relied mainly on positive substring assertions and used an unrelated D4-C negative mutation to satisfy the strict negative-helper requirement, so the credited guardrail could stay green even if governed project-memory behavior stopped rejecting dangerous mutations.",
       "horizontal_audit": ["credited project-memory guardrails","negative mutation effectiveness","commented workflow commands","unsafe checkout configuration","dangling supersession targets","duplicate decision definitions"],
-      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
-      "systemic_guardrail_updated": true,
-      "guardrail_generation": 16
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_project_memory_review_guardrails"}], "systemic_guardrail_updated": true, "guardrail_generation": 16
     },
     {
-      "id": "LEARN-PR151-007",
-      "pr": 151,
-      "source": "external_review",
-      "review_comment_id": 3998819890,
-      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
-      "invariant_ids": ["INV-LEARNING-002"],
+      "id": "LEARN-PR151-007", "pr": 151, "source": "external_review", "review_comment_id": 3998819890,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP", "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "The authoritative-visibility lesson remained protected only by a positive assertion that the current human-operations document contained the phrase. If the validator stopped enforcing that concept while the document remained unchanged, the credited guardrail would still pass and fail to detect loss of the requirement.",
       "horizontal_audit": ["human-operations authoritative visibility","validator enforcement","internal awareness evidence","customer-side awareness evidence","negative vocabulary mutation","future human-operation terminology changes"],
-      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
-      "systemic_guardrail_updated": true,
-      "guardrail_generation": 17
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_project_memory_review_guardrails"}], "systemic_guardrail_updated": true, "guardrail_generation": 17
     },
     {
-      "id": "LEARN-PR151-008",
-      "pr": 151,
-      "source": "external_review",
-      "review_comment_id": 3998819893,
-      "class_id": "ADV-LEARNING-SURFACE-OMISSION",
-      "invariant_ids": ["INV-LEARNING-001"],
+      "id": "LEARN-PR151-008", "pr": 151, "source": "external_review", "review_comment_id": 3998819893,
+      "class_id": "ADV-LEARNING-SURFACE-OMISSION", "invariant_ids": ["INV-LEARNING-001"],
       "root_cause": "The project-memory ledger credited an executable falsifier stored in the D4-C assurance file, but the project-memory workflow did not invoke that falsifier and the D4-C workflow was not triggered by project-memory-only changes. A future memory regression could therefore remove the permanent rejection check without exercising it in the affected PR.",
       "horizontal_audit": ["project-memory workflow execution surface","credited falsifier scheduling","project-memory document changes","project-memory validator changes","ledger shard changes","future domain-specific permanent guardrails"],
-      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
-      "systemic_guardrail_updated": true,
-      "guardrail_generation": 8
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_project_memory_review_guardrails"}], "systemic_guardrail_updated": true, "guardrail_generation": 8
     },
     {
-      "id": "LEARN-PR151-009",
-      "pr": 151,
-      "source": "external_review",
-      "review_comment_id": 3998864912,
-      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
-      "invariant_ids": ["INV-LEARNING-002"],
+      "id": "LEARN-PR151-009", "pr": 151, "source": "external_review", "review_comment_id": 3998864912,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP", "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "Decision supersession validation checked only that each referenced target existed, but it did not preserve source-to-target edges or reason about the resulting graph. Self-references and multi-node cycles could therefore be accepted even though no terminal current authority could be reached by following the audit chain.",
       "horizontal_audit": ["decision supersession graph","self-supersession","multi-node cycles","terminal current authority","future decision replacement chains","recovery reconstruction"],
-      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
-      "systemic_guardrail_updated": true,
-      "guardrail_generation": 18
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_project_memory_review_guardrails"}], "systemic_guardrail_updated": true, "guardrail_generation": 18
     },
     {
-      "id": "LEARN-PR151-010",
-      "pr": 151,
-      "source": "external_review",
-      "review_comment_id": 3998880009,
-      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
-      "invariant_ids": ["INV-LEARNING-002"],
+      "id": "LEARN-PR151-010", "pr": 151, "source": "external_review", "review_comment_id": 3998880009,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP", "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "Supersession extraction matched only already-valid canonical IDs. A malformed clause such as superseded by JLM-DEC-99 or JLM-DEC-O02 produced no match at all, so validation silently treated the row as current instead of rejecting a broken audit-chain declaration.",
       "horizontal_audit": ["supersession clause parsing","malformed decision IDs","dangling targets","decision graph construction","audit-chain integrity","future parser changes"],
-      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
-      "systemic_guardrail_updated": true,
-      "guardrail_generation": 19
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_project_memory_review_guardrails"}], "systemic_guardrail_updated": true, "guardrail_generation": 19
     },
     {
-      "id": "LEARN-PR151-011",
-      "pr": 151,
-      "source": "external_review",
-      "review_comment_id": 3999086113,
-      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
-      "invariant_ids": ["INV-LEARNING-002"],
+      "id": "LEARN-PR151-011", "pr": 151, "source": "external_review", "review_comment_id": 3999086113,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP", "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "The Decision Register validator enforced only a weak minimum definition count, so deleting or corrupting one of the seeded canonical decision IDs could still leave enough rows to pass. That violated the append-or-supersede history contract by allowing accepted decision identity to disappear silently instead of remaining reconstructable.",
       "horizontal_audit": ["seeded JLM-DEC-001 through JLM-DEC-017 identities","decision deletion","malformed seeded IDs","append-only future decisions","supersession instead of destructive replacement","project reconstruction integrity"],
-      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
-      "systemic_guardrail_updated": true,
-      "guardrail_generation": 20
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_project_memory_review_guardrails"}], "systemic_guardrail_updated": true, "guardrail_generation": 20
     },
     {
-      "id": "LEARN-PR151-012",
-      "pr": 151,
-      "source": "external_review",
-      "review_comment_id": 3999105960,
-      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
-      "invariant_ids": ["INV-LEARNING-002"],
+      "id": "LEARN-PR151-012", "pr": 151, "source": "external_review", "review_comment_id": 3999105960,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP", "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "Preserving only seeded decision IDs did not preserve their accepted meanings. A row could keep JLM-DEC-017 while reversing its proposition, silently rewriting project history without creating a successor decision or supersession edge.",
       "horizontal_audit": ["seeded decision propositions","JLM-DEC-001 through JLM-DEC-017 meaning immutability","append-or-supersede history","decision text rewrites","future canonical-memory migrations","reconstruction semantics"],
-      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
-      "systemic_guardrail_updated": true,
-      "guardrail_generation": 21
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_project_memory_review_guardrails"}], "systemic_guardrail_updated": true, "guardrail_generation": 21
+    },
+    {
+      "id": "LEARN-PR151-013", "pr": 151, "source": "external_review", "review_comment_id": 4000311437,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP", "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "Decision rows were parsed from physical Markdown lines without excluding non-rendered regions. Wrapping the canonical decision table in an HTML comment therefore preserved all IDs and meanings for the validator while removing them from the rendered project-memory document a human or recovery agent would actually read.",
+      "horizontal_audit": ["rendered decision authority","HTML comment blocks","fenced-code decision rows","visible canonical tables","recovery-agent reconstruction","future Markdown semantic validators"],
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_project_memory_review_guardrails"}], "systemic_guardrail_updated": true, "guardrail_generation": 22
+    },
+    {
+      "id": "LEARN-PR151-014", "pr": 151, "source": "external_review", "review_comment_id": 4000311441,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP", "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "Workflow validation proved that mandatory run lines existed but did not prove they would execute. A required governance step could be decorated with `if: ${{ false }}` and remain textually present while GitHub Actions skipped the permanent guardrail.",
+      "horizontal_audit": ["project-memory workflow step execution","conditional GitHub Actions steps","job-level disabling conditions","credited falsifier scheduling","exact-head governance gates","future authority workflows"],
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_project_memory_review_guardrails"}], "systemic_guardrail_updated": true, "guardrail_generation": 23
     }
   ]
 }

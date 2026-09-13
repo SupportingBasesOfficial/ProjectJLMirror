@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR152-021",
+      "pr": 152,
+      "source": "external_review",
+      "review_comment_id": 4001309710,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "A broad rewrite of the shared adversarial-learning falsifier preserved invocation of the historical Wave 4 authorization guard but removed the assertions that proved authorization scope used an exact path allowlist rather than prefixes. The credited guardrail could therefore remain callable while its historical invariant disappeared.",
+      "horizontal_audit": ["Wave 4 authorization exact path allowlist", "historical guardrail preservation", "shared assurance-file rewrites", "PR123 and PR125 learning credit", "future refactors of credited falsifiers"],
+      "guardrails": [{"path":"tools/assurance/test_validate_adversarial_learning.py","probe":"falsify_wave4_authorization_exact_path_allowlist"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 31
+    },
+    {
+      "id": "LEARN-PR152-022",
+      "pr": 152,
+      "source": "external_review",
+      "review_comment_id": 4001309717,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The same shared assurance rewrite reduced the Wave 4 source-authority TOCTOU guard to self-invocation liveness and removed its cross-artifact assertions for the authoritative source-row lock, pinned PostgreSQL race proof, and validator requirement. Historical concurrency safety could therefore regress while learning reconciliation stayed green.",
+      "horizontal_audit": ["FOR UPDATE OF s authority lock", "source-row-lock PostgreSQL race proof", "initial-validation validator binding", "historical TOCTOU guardrails", "future shared assurance refactors"],
+      "guardrails": [{"path":"tools/assurance/test_validate_adversarial_learning.py","probe":"falsify_wave4_authority_toctou_guardrail"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 32
+    },
+    {
+      "id": "LEARN-PR152-023",
+      "pr": 152,
+      "source": "external_review",
+      "review_comment_id": 4001309724,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The AI-E2E generic raw-HTML recognizer used a character class that rejected angle brackets inside quoted attribute values even though GitHub-flavored Markdown permits them in complete type-7 HTML tags. Hidden canonical headings could therefore be treated as rendered governance structure.",
+      "horizontal_audit": ["type-7 raw HTML tags", "quoted HTML attributes", "rendered G0-G14 heading authority", "rendered S0-S10 heading authority", "future Markdown semantic validators"],
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_ai_e2e_delivery_heading_binding"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 33
+    }
+  ]
+}

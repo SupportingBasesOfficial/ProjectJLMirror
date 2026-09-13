@@ -51,9 +51,9 @@ def validate() -> tuple[int, int, int]:
     roadmap = texts["PRODUCT-EXECUTION-ROADMAP.md"]
     for gate in [f"G{i}" for i in range(15)]:
         require(gate in roadmap, f"roadmap_gate_missing:{gate}")
-    require("Monitoring Source onboarding" in roadmap, "roadmap_missing_monitoring_source")
-    require("Alert policy + lifecycle golden path" in roadmap, "roadmap_missing_alert_policy")
-    require("Production release gate" in roadmap, "roadmap_missing_production_gate")
+    require("G2 — Monitoring source onboarding golden path" in roadmap, "roadmap_missing_monitoring_source")
+    require("G7 — Alert policy + lifecycle golden path" in roadmap, "roadmap_missing_alert_policy")
+    require("G14 — Production release gate" in roadmap, "roadmap_missing_production_gate")
 
     bootstrap = texts["DAY-1-IMPLEMENTATION-BOOTSTRAP.md"]
     for token in (

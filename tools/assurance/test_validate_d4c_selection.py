@@ -30,7 +30,9 @@ def falsify_project_memory_review_guardrails():
  quoted_disabled=workflow.replace('      - name: Falsify canonical project-memory guardrails\n','      - name: Falsify canonical project-memory guardrails\n        "if": ${{ false }}\n',1)
  must_fail(lambda: project_memory.validate_project_memory_workflow(quoted_disabled),'project_memory_workflow_condition_not_allowed')
  explicit_disabled=workflow.replace('      - name: Falsify canonical project-memory guardrails\n','      - name: Falsify canonical project-memory guardrails\n        ? if\n        : ${{ false }}\n',1)
- must_fail(lambda: project_memory.validate_project_memory_workflow(explicit_disabled),'project_memory_workflow_condition_not_allowed')
+ must_fail(lambda: project_memory.validate_project_memory_workflow(explicit_disabled),'project_memory_workflow_step_explicit_key_not_allowed')
+ folded_step_key=workflow.replace('      - name: Falsify canonical project-memory guardrails\n','      - name: Falsify canonical project-memory guardrails\n        ? >-\n          if\n        : ${{ false }}\n',1)
+ must_fail(lambda: project_memory.validate_project_memory_workflow(folded_step_key),'project_memory_workflow_step_explicit_key_not_allowed')
  job_disabled=workflow.replace('  project-memory:\n','  project-memory:\n    if: ${{ false }}\n',1)
  must_fail(lambda: project_memory.validate_project_memory_workflow(job_disabled),'project_memory_workflow_job_condition_not_allowed')
  folded_job_key=workflow.replace('  project-memory:\n','  project-memory:\n    ? >-\n      if\n    : ${{ false }}\n',1)
@@ -75,6 +77,8 @@ def falsify_project_memory_review_guardrails():
  must_fail(lambda: project_memory.validate_decision_register('\n'.join(malformed)),'project_memory_malformed_supersession:JLM-DEC-001')
  cyclic=list(rows); cyclic[0]='| JLM-DEC-001 | JLMirror is provider-neutral, not a Zabbix UI | superseded by JLM-DEC-002 | accepted |'; cyclic[1]='| JLM-DEC-002 | Tenant isolation is foundational | superseded by JLM-DEC-001 | accepted |'
  must_fail(lambda: project_memory.validate_decision_register('\n'.join(cyclic)),'project_memory_supersession_cycle')
+ backward=list(rows); backward[16]='| JLM-DEC-017 | Repository truth outranks assistant/chat memory | superseded by JLM-DEC-001 | accepted |'
+ must_fail(lambda: project_memory.validate_decision_register('\n'.join(backward)),'project_memory_supersession_target_not_newer:JLM-DEC-017->JLM-DEC-001')
  duplicate=list(rows); duplicate.append('| JLM-DEC-017 | Repository truth outranks assistant/chat memory | current | accepted |')
  must_fail(lambda: project_memory.validate_decision_register('\n'.join(duplicate)),'project_memory_duplicate_decision_definition_id')
 def main():
@@ -95,6 +99,6 @@ def main():
  def regress_d4_acceptance(selection,ledger,state,evaluation): state['gate_state']='scoped'
  must_fail(regress_d4_acceptance,'state D4 gate authority drift')
  falsify_selection_record_product_authority(); falsify_project_memory_review_guardrails()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked project_memory_review_guardrails=rendered-authority+canonical-resolver+explicit-job-key+exact-head-env+continue-on-error-negative-tested')
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked project_memory_review_guardrails=rendered-authority+canonical-resolver+explicit-job-and-step-keys+supersession-order+exact-head-env+continue-on-error-negative-tested')
  return 0
 if __name__=='__main__': main()

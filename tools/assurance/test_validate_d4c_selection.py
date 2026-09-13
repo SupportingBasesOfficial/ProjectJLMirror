@@ -7,6 +7,12 @@ import validate_d4c_selection as validator
 import validate_project_memory as project_memory
 def baseline(): return [validator.load(ROOT,p) for p in (validator.SELECTION,validator.LEDGER,validator.STATE,validator.EVALUATION)]
 def must_fail(mutator,fragment):
+ if fragment.startswith('project_memory_'):
+  try: mutator()
+  except AssertionError as exc:
+   if fragment not in str(exc): raise AssertionError(f'expected project-memory failure containing {fragment!r}, got {exc!r}')
+   return
+  raise AssertionError(f'expected project-memory failure containing {fragment!r}, but mutation was accepted')
  values=[copy.deepcopy(x) for x in baseline()]; mutator(*values); errors=validator.validate_records(*values)
  if not any(fragment in x for x in errors): raise AssertionError(f'expected failure containing {fragment!r}, got {errors!r}')
 def falsify_selection_record_product_authority():
@@ -14,16 +20,15 @@ def falsify_selection_record_product_authority():
  must_fail(grant_product,'Product authority escalation')
 def falsify_project_memory_review_guardrails():
  human=(ROOT/'docs/00-foundation/project-memory/HUMAN-OPERATIONS-MODEL.md').read_text(encoding='utf-8')
- workflow=(ROOT/'.github/workflows/project-memory-governance.yml').read_text(encoding='utf-8')
- validator_text=(ROOT/'tools/project_memory/validate_project_memory.py').read_text(encoding='utf-8')
  assert 'authoritative visibility' in human, 'project memory must use the canonical authoritative-visibility term'
- assert 'tools/assurance/validate_repository.py' in workflow, 'project-memory workflow must invoke the canonical repository validator'
- assert 'allow-unsafe-pr-checkout: false' in workflow, 'project-memory checkout must remain fail-closed for unsafe PR checkout'
- assert 'DECISION_DEFINITION_RE' in validator_text and 'decision_definition_ids' in validator_text, 'decision uniqueness must apply to definitions, not references'
- sample='| JLM-DEC-017 | old | superseded by JLM-DEC-018 | accepted |\n| JLM-DEC-018 | replacement | current | accepted |\n'
- assert project_memory.decision_definition_ids(sample)==['JLM-DEC-017','JLM-DEC-018'], 'supersession references must not count as duplicate definitions'
- def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
- must_fail(grant_product,'Product authority escalation')
+ workflow=project_memory.WORKFLOW.read_text(encoding='utf-8')
+ must_fail(lambda: project_memory.validate_project_memory_workflow(workflow.replace('run: python3 tools/assurance/validate_repository.py','# run: python3 tools/assurance/validate_repository.py',1)),'project_memory_workflow_missing_active_line')
+ must_fail(lambda: project_memory.validate_project_memory_workflow(workflow.replace('allow-unsafe-pr-checkout: false','# allow-unsafe-pr-checkout: false',1)),'project_memory_workflow_missing_active_line')
+ rows=[f'| JLM-DEC-{i:03d} | decision | current | accepted |' for i in range(1,11)]
+ rows[0]='| JLM-DEC-001 | decision | superseded by JLM-DEC-999 | accepted |'
+ must_fail(lambda: project_memory.validate_decision_register('\n'.join(rows)),'project_memory_missing_supersession_target:JLM-DEC-999')
+ duplicate=list(rows); duplicate[0]='| JLM-DEC-002 | duplicate | current | accepted |'
+ must_fail(lambda: project_memory.validate_decision_register('\n'.join(duplicate)),'project_memory_duplicate_decision_definition_id')
 def main():
  values=baseline(); errors=validator.validate_records(*values)
  if errors: raise AssertionError(f'canonical D4-C selection failed validation: {errors!r}')
@@ -43,7 +48,7 @@ def main():
  must_fail(regress_d4_acceptance,'state D4 gate authority drift')
  falsify_selection_record_product_authority()
  falsify_project_memory_review_guardrails()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked project_memory_review_guardrails=attested')
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked project_memory_review_guardrails=negative-tested')
  return 0
 if __name__=='__main__':
  main()

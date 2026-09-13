@@ -65,6 +65,32 @@
       "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_ai_e2e_delivery_heading_binding"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 15
+    },
+    {
+      "id": "LEARN-PR152-006",
+      "pr": 152,
+      "source": "external_review",
+      "review_comment_id": 3998859937,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "Slice-stage completeness was checked using bare S0-S10 identifiers, so a required stage such as S1 could disappear while its token remained embedded in S10. The validator therefore did not prove that the full canonical vertical-slice execution sequence remained present.",
+      "horizontal_audit": ["all S0-S10 canonical stage headings","substring collisions among stage IDs","vertical-slice stage deletion","execution-model document integrity","future stage renaming"],
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_ai_e2e_delivery_heading_binding"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 16
+    },
+    {
+      "id": "LEARN-PR152-007",
+      "pr": 152,
+      "source": "external_review",
+      "review_comment_id": 3998859939,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The manifest carried a separate authority prerequisite for G8 Human Operations, but the validator enforced only generic gate shape and one G7 unit assertion. Removing or mutating the G8 prerequisite could therefore silently authorize responsibility, ACK, and visibility work without the separately accepted authority the roadmap requires.",
+      "horizontal_audit": ["G7 Alert Policy authority prerequisite","G8 Human Operations authority prerequisite","responsibility ACK visibility boundary","machine-readable implementation blocks","future authority-gated product stages"],
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_ai_e2e_delivery_heading_binding"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 17
     }
   ]
 }

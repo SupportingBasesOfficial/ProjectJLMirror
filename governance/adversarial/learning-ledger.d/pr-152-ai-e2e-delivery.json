@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR152-001",
+      "pr": 152,
+      "source": "external_review",
+      "review_comment_id": 3998479188,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The new AI E2E delivery validator depended on a case-sensitive free-form substring that did not exactly match the canonical roadmap heading, so the governance gate rejected its own accepted document despite the intended concept being present.",
+      "horizontal_audit": [
+        "roadmap gate heading identifiers",
+        "validator-to-document vocabulary bindings",
+        "G2 Monitoring source onboarding",
+        "G7 Alert policy lifecycle",
+        "G14 Production release gate",
+        "future governance validators that bind prose to executable checks"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_ai_e2e_delivery_heading_binding"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 11
+    }
+  ]
+}

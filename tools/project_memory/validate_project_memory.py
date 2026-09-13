@@ -57,6 +57,19 @@ def validate_decision_register(decisions: str) -> int:
     return len(ids)
 
 
+def validate_human_operations(human: str) -> None:
+    for token in (
+        "Internal and customer-side authority",
+        "authoritative visibility",
+        "JLMirror-controlled authenticated surface",
+        "continue tracking and presenting whether/when the customer has viewed",
+        "RESPONSIBLE PERSON != CURRENT ACTION OWNER",
+        "DELIVERED != VIEWED",
+    ):
+        if token not in human:
+            raise AssertionError(f"project_memory_human_model_missing:{token}")
+
+
 def validate_project_memory_workflow(workflow: str) -> None:
     active_lines = {line.strip() for line in workflow.splitlines() if line.strip() and not line.lstrip().startswith("#")}
     required_lines = {
@@ -65,6 +78,7 @@ def validate_project_memory_workflow(workflow: str) -> None:
         "ref: ${{ steps.target.outputs.sha }}",
         "run: python3 tools/project_memory/validate_project_memory.py",
         "run: python3 -m unittest discover -s tests/project_memory -p 'test_*.py'",
+        "run: PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py",
         "run: python3 tools/assurance/validate_repository.py",
     }
     missing = sorted(required_lines - active_lines)
@@ -115,17 +129,7 @@ def validate() -> tuple[int, int]:
         if token not in state:
             raise AssertionError(f"project_memory_state_missing:{token}")
 
-    human = texts["HUMAN-OPERATIONS-MODEL.md"]
-    for token in (
-        "Internal and customer-side authority",
-        "authoritative visibility",
-        "JLMirror-controlled authenticated surface",
-        "continue tracking and presenting whether/when the customer has viewed",
-        "RESPONSIBLE PERSON != CURRENT ACTION OWNER",
-        "DELIVERED != VIEWED",
-    ):
-        if token not in human:
-            raise AssertionError(f"project_memory_human_model_missing:{token}")
+    validate_human_operations(texts["HUMAN-OPERATIONS-MODEL.md"])
 
     recovery = texts["RECOVERY-PLAYBOOK-FOR-NEW-CHAT.md"]
     for name in (

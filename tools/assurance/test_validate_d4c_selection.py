@@ -15,6 +15,9 @@ def falsify_monitoring_alerting_composed_workflow_dependencies():
  workflow=(ROOT/'.github/workflows/wave4-monitoring-alerting-publication-runtime.yml').read_text(encoding='utf-8')
  assert workflow.count("- 'sql/wave2/001_async_correctness.sql'")==2, 'composed publication gate must observe Wave 2 outbox substrate on PR and push'
  assert workflow.count("- 'sql/wave4/**'")==2, 'composed publication gate must observe all Wave 4 transition substrate changes on PR and push'
+ assert workflow.count("- 'tools/assurance/test_validate_d4c_selection.py'")==2, 'publication falsifier source must trigger publication gate on PR and push'
+ assert 'Falsify permanent publication guardrails' in workflow
+ assert 'PYTHONPATH=tools/assurance python3 tools/assurance/test_validate_d4c_selection.py' in workflow
  def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
  must_fail(grant_product,'Product authority escalation')
 def falsify_monitoring_alerting_privileged_acl_preflight():
@@ -24,7 +27,9 @@ def falsify_monitoring_alerting_privileged_acl_preflight():
  assert 'monitoring.publication_existing_function_acl_unsafe' in sql
  assert "aclexplode(COALESCE(p.proacl, ARRAY[]::aclitem[]))" in sql
  assert "a.privilege_type='EXECUTE'" in sql and 'a.grantee<>p.proowner' in sql
+ assert 'OR a.is_grantable' in sql, 'recovery authority must never retain EXECUTE WITH GRANT OPTION'
  assert 'jlmirror_acl_probe' in conformance and 'retained_named_execute=blocked' in conformance
+ assert 'WITH GRANT OPTION' in conformance and 'recovery_grant_option=blocked' in conformance
  assert 'Prove privileged function ACL preflight' in workflow
  def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
  must_fail(grant_product,'Product authority escalation')
@@ -48,7 +53,7 @@ def main():
  falsify_selection_record_product_authority()
  falsify_monitoring_alerting_composed_workflow_dependencies()
  falsify_monitoring_alerting_privileged_acl_preflight()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked publication_composed_dependencies=bound publication_acl_preflight=attested')
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked publication_composed_dependencies=bound publication_acl_preflight=grant-option+execution-attested')
  return 0
 if __name__=='__main__':
  main()

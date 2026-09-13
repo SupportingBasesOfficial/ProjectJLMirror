@@ -27,9 +27,15 @@ def falsify_project_memory_review_guardrails():
  must_fail(lambda: project_memory.validate_project_memory_workflow(workflow.replace('run: PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py','# run: PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py',1)),'project_memory_workflow_missing_active_line')
  disabled=workflow.replace('      - name: Falsify canonical project-memory guardrails\n','      - name: Falsify canonical project-memory guardrails\n        if: ${{ false }}\n',1)
  must_fail(lambda: project_memory.validate_project_memory_workflow(disabled),'project_memory_workflow_condition_not_allowed')
+ quoted_disabled=workflow.replace('      - name: Falsify canonical project-memory guardrails\n','      - name: Falsify canonical project-memory guardrails\n        "if": ${{ false }}\n',1)
+ must_fail(lambda: project_memory.validate_project_memory_workflow(quoted_disabled),'project_memory_workflow_condition_not_allowed')
  rows=[f'| {decision_id} | {meaning} | current | accepted |' for decision_id,meaning in project_memory.BASELINE_DECISION_MEANINGS.items()]
  hidden='<!--\n'+'\n'.join(rows)+'\n-->'
  must_fail(lambda: project_memory.validate_decision_register(hidden),'project_memory_missing_baseline_decision:JLM-DEC-001')
+ fenced='```markdown\n    ```\n'+'\n'.join(rows)+'\n```'
+ must_fail(lambda: project_memory.validate_decision_register(fenced),'project_memory_missing_baseline_decision:JLM-DEC-001')
+ unescaped=list(rows); unescaped[11]=unescaped[11].replace('\\|','|',1)
+ must_fail(lambda: project_memory.validate_decision_register('\n'.join(unescaped)),'project_memory_baseline_decision_meaning_changed:JLM-DEC-012')
  missing=list(rows); missing.pop(16)
  must_fail(lambda: project_memory.validate_decision_register('\n'.join(missing)),'project_memory_missing_baseline_decision:JLM-DEC-017')
  rewritten=list(rows); rewritten[16]='| JLM-DEC-017 | Chat memory outranks repository truth | current | accepted |'
@@ -56,12 +62,12 @@ def main():
  def regress_credit(selection,ledger,state,evaluation): ledger['credited_evidence'].pop(); ledger['remaining_evidence']=[validator.EXPECTED_EVIDENCE[-1]]
  must_fail(regress_credit,'current ledger evidence drift')
  def grant_transport(selection,ledger,state,evaluation): state['d4_transport_authority']='granted'
- must_fail(grant_transport,'transport authority escalation')
+ must_fail(grant_transport,'D4 transport authority escalation')
  def regress_d4_acceptance(selection,ledger,state,evaluation): state['gate_state']='scoped'
  must_fail(regress_d4_acceptance,'state D4 gate authority drift')
  falsify_selection_record_product_authority()
  falsify_project_memory_review_guardrails()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked project_memory_review_guardrails=negative-tested')
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked project_memory_review_guardrails=rendering+workflow-negative-tested')
  return 0
 if __name__=='__main__':
  main()

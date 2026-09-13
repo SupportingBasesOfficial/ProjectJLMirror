@@ -143,6 +143,43 @@ BEGIN
 END;
 $$;
 
+-- The Wave 4 recovery authority is intentionally shared across accepted recovery
+-- slices and legitimately owns their closed SECURITY DEFINER entry points. Before
+-- this bridge delegates two additional recovery functions to that role, prove that
+-- none of its existing owned routines is callable by PUBLIC or any other grantee.
+-- PL/pgSQL runtime-resolved calls do not require a persistent pg_depend edge, so
+-- this owner/callability closure is required in addition to the OID dependency
+-- fence above. Owner-only EXECUTE remains valid; any proxy surface fails closed.
+DO $$
+DECLARE
+    v_recovery_oid OID;
+    v_proxy TEXT;
+BEGIN
+    SELECT oid INTO v_recovery_oid
+      FROM pg_roles
+     WHERE rolname='jlmirror_wave4_recovery_authority';
+
+    SELECT format(
+               'routine=%s,grantee=%s,grantable=%s',
+               p.oid::regprocedure::TEXT,
+               CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,
+               a.is_grantable
+           )
+      INTO v_proxy
+      FROM pg_proc p
+      CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a
+     WHERE p.proowner=v_recovery_oid
+       AND a.privilege_type='EXECUTE'
+       AND a.grantee<>p.proowner
+     ORDER BY p.oid,a.grantee
+     LIMIT 1;
+
+    IF v_proxy IS NOT NULL THEN
+        RAISE EXCEPTION 'monitoring.publication_recovery_authority_callable_proxy_unsafe:%', v_proxy;
+    END IF;
+END;
+$$;
+
 GRANT USAGE ON SCHEMA monitoring, system
 TO jlmirror_wave4_monitoring_publication_executor;
 REVOKE CREATE ON SCHEMA monitoring, system

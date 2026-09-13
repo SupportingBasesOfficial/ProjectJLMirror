@@ -1,0 +1,39 @@
+name: JLMIRROR Canonical Project Memory
+
+on:
+  pull_request:
+    paths:
+      - 'docs/00-foundation/project-memory/**'
+      - 'tools/project_memory/**'
+      - 'tests/project_memory/**'
+      - '.github/workflows/project-memory-governance.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/00-foundation/project-memory/**'
+      - 'tools/project_memory/**'
+      - 'tests/project_memory/**'
+      - '.github/workflows/project-memory-governance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  project-memory:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Validate canonical project memory
+        run: python3 tools/project_memory/validate_project_memory.py
+
+      - name: Test canonical project memory
+        run: python3 -m unittest discover -s tests/project_memory -p 'test_*.py'
+
+      - name: Validate repository structure and workflow safety
+        run: python3 tools/validate_repo.py

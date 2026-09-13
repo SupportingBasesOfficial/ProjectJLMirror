@@ -219,6 +219,17 @@ def falsify_reconciliation_concurrency() -> None:
     )
 
 
+def falsify_unbound_manual_dispatch() -> None:
+    expect_failure(
+        lambda r: mutate_text(
+            r,
+            s.HEAD_STATUS_WORKFLOW,
+            "  issue_comment:\n",
+            "  workflow_dispatch:\n  issue_comment:\n",
+        )
+    )
+
+
 def falsify_non_strict_deterministic_reconciliation() -> None:
     expect_failure(
         lambda r: mutate_text(
@@ -349,6 +360,7 @@ def main() -> None:
     falsify_implicit_gh_api_write()
     falsify_spoofed_status_endpoint()
     falsify_reconciliation_concurrency()
+    falsify_unbound_manual_dispatch()
     falsify_non_strict_deterministic_reconciliation()
     falsify_stale_d4c_current_workflow_projection()
     falsify_wave4_authorization_exact_path_allowlist()

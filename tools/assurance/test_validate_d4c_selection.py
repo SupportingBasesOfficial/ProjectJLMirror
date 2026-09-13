@@ -2,13 +2,26 @@
 from __future__ import annotations
 import copy,sys
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[2]; sys.path.insert(0,str(ROOT/'tools'/'assurance'))
+ROOT=Path(__file__).resolve().parents[2]; sys.path.insert(0,str(ROOT/'tools'/'assurance')); sys.path.insert(0,str(ROOT/'tools'/'project_memory'))
 import validate_d4c_selection as validator
+import validate_project_memory as project_memory
 def baseline(): return [validator.load(ROOT,p) for p in (validator.SELECTION,validator.LEDGER,validator.STATE,validator.EVALUATION)]
 def must_fail(mutator,fragment):
  values=[copy.deepcopy(x) for x in baseline()]; mutator(*values); errors=validator.validate_records(*values)
  if not any(fragment in x for x in errors): raise AssertionError(f'expected failure containing {fragment!r}, got {errors!r}')
 def falsify_selection_record_product_authority():
+ def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
+ must_fail(grant_product,'Product authority escalation')
+def falsify_project_memory_review_guardrails():
+ human=(ROOT/'docs/00-foundation/project-memory/HUMAN-OPERATIONS-MODEL.md').read_text(encoding='utf-8')
+ workflow=(ROOT/'.github/workflows/project-memory-governance.yml').read_text(encoding='utf-8')
+ validator_text=(ROOT/'tools/project_memory/validate_project_memory.py').read_text(encoding='utf-8')
+ assert 'authoritative visibility' in human, 'project memory must use the canonical authoritative-visibility term'
+ assert 'tools/assurance/validate_repository.py' in workflow, 'project-memory workflow must invoke the canonical repository validator'
+ assert 'allow-unsafe-pr-checkout: false' in workflow, 'project-memory checkout must remain fail-closed for unsafe PR checkout'
+ assert 'DECISION_DEFINITION_RE' in validator_text and 'decision_definition_ids' in validator_text, 'decision uniqueness must apply to definitions, not references'
+ sample='| JLM-DEC-017 | old | superseded by JLM-DEC-018 | accepted |\n| JLM-DEC-018 | replacement | current | accepted |\n'
+ assert project_memory.decision_definition_ids(sample)==['JLM-DEC-017','JLM-DEC-018'], 'supersession references must not count as duplicate definitions'
  def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
  must_fail(grant_product,'Product authority escalation')
 def main():
@@ -29,7 +42,8 @@ def main():
  def regress_d4_acceptance(selection,ledger,state,evaluation): state['gate_state']='scoped'
  must_fail(regress_d4_acceptance,'state D4 gate authority drift')
  falsify_selection_record_product_authority()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked')
+ falsify_project_memory_review_guardrails()
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked project_memory_review_guardrails=attested')
  return 0
 if __name__=='__main__':
  main()

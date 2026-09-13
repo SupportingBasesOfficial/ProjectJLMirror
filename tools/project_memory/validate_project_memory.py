@@ -38,6 +38,16 @@ RAW_HTML_DECLARATION_OPEN_RE=re.compile(r"^[ ]{0,3}<![A-Z]")
 RAW_HTML_GENERIC_TAG_RE=re.compile(
     r"^[ ]{0,3}</?[A-Za-z][A-Za-z0-9-]*(?:\s+(?:[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s\"'=<>`]+))?))*\s*/?>[ \t]*$"
 )
+CANONICAL_RESOLVE_BODY = "\n".join((
+    "set -euo pipefail",
+    'if [[ "$EVENT_NAME" == "pull_request" ]]; then',
+    '  resolved_sha="$PR_HEAD_SHA"',
+    "else",
+    '  resolved_sha="$EVENT_SHA"',
+    "fi",
+    'test -n "$resolved_sha"',
+    "printf 'sha=%s\\n' \"$resolved_sha\" >> \"$GITHUB_OUTPUT\"",
+))
 
 def read(name:str)->str:
     path=MEMORY/name
@@ -164,13 +174,13 @@ def _project_memory_job_lines(workflow:str)->list[str]:
         if line.strip() and len(line)-len(line.lstrip(" "))<=2: end=i; break
     return lines[start+1:end]
 def _project_memory_job_keys(workflow:str)->set[str]:
-    keys=set(); pending=None
+    keys=set()
     for line in _project_memory_job_lines(workflow):
         indent=len(line)-len(line.lstrip(" ")); stripped=line.strip()
         if indent!=4 or not stripped or stripped.startswith("#"): continue
-        if stripped.startswith("? "): pending=_normalize_yaml_key(stripped[2:].strip()); keys.add(pending); continue
-        if stripped.startswith(":") and pending is not None: pending=None; continue
-        pending=None; pair=_yaml_key_value(stripped)
+        if stripped.startswith("?"):
+            raise AssertionError("project_memory_workflow_job_explicit_key_not_allowed")
+        pair=_yaml_key_value(stripped)
         if pair: keys.add(pair[0])
     return keys
 def _project_memory_job_mapping(workflow:str,parent:str)->dict[str,str]:
@@ -178,6 +188,7 @@ def _project_memory_job_mapping(workflow:str,parent:str)->dict[str,str]:
     for line in lines:
         indent=len(line)-len(line.lstrip(" ")); stripped=line.strip()
         if indent==4:
+            if stripped.startswith("?"): raise AssertionError("project_memory_workflow_job_explicit_key_not_allowed")
             pair=_yaml_key_value(stripped) if stripped and not stripped.startswith("#") else None
             in_parent=bool(pair and pair[0]==parent and pair[1]=="")
             continue
@@ -240,9 +251,8 @@ def validate_project_memory_workflow(workflow:str)->None:
     if any("if" in s for s in steps): raise AssertionError("project_memory_workflow_condition_not_allowed")
     if any("continue-on-error" in s for s in steps): raise AssertionError("project_memory_workflow_continue_on_error_not_allowed")
     resolve=_unique_step(steps,"Resolve exact analyzed HEAD"); body=resolve.get("run.body","")
-    for token in ('if [[ "$EVENT_NAME" == "pull_request" ]]; then','resolved_sha="$PR_HEAD_SHA"','resolved_sha="$EVENT_SHA"','test -n "$resolved_sha"',"printf 'sha=%s\\n' \"$resolved_sha\" >> \"$GITHUB_OUTPUT\""):
-        if token not in body: raise AssertionError("project_memory_workflow_resolve_head_binding_invalid")
-    if resolve.get("id")!="target" or resolve.get("shell")!="bash": raise AssertionError("project_memory_workflow_resolve_head_binding_invalid")
+    if resolve.get("id")!="target" or resolve.get("shell")!="bash" or body!=CANONICAL_RESOLVE_BODY:
+        raise AssertionError("project_memory_workflow_resolve_head_binding_invalid")
     checkout=_unique_step(steps,"Checkout exact analyzed HEAD")
     if checkout.get("uses")!="actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" or checkout.get("with.ref")!="${{ steps.target.outputs.sha }}" or checkout.get("with.persist-credentials")!="false" or checkout.get("with.fetch-depth")!="0" or checkout.get("with.allow-unsafe-pr-checkout")!="false": raise AssertionError("project_memory_workflow_checkout_binding_invalid")
     verify=_unique_step(steps,"Verify exact commit identity"); verify_body=verify.get("run.body","")
@@ -274,4 +284,4 @@ def validate()->tuple[int,int]:
     validate_project_memory_workflow(WORKFLOW.read_text(encoding="utf-8")); return len(REQUIRED_FILES),decision_count
 
 if __name__=="__main__":
-    files,decisions=validate(); print(f"project_memory=PASS files={files} decisions={decisions}")
+    files,decisions=validate(); print(f"project_memory=PASS files={files} decisions={decisions})")

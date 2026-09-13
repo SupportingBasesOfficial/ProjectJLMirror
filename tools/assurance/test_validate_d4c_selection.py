@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import copy,sys
+import copy,shutil,sys,tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]; sys.path.insert(0,str(ROOT/'tools'/'assurance'))
 import validate_d4c_selection as validator
+import validate_ai_e2e_delivery as delivery_validator
 def baseline(): return [validator.load(ROOT,p) for p in (validator.SELECTION,validator.LEDGER,validator.STATE,validator.EVALUATION)]
 def must_fail(mutator,fragment):
  values=[copy.deepcopy(x) for x in baseline()]; mutator(*values); errors=validator.validate_records(*values)
@@ -11,13 +12,32 @@ def must_fail(mutator,fragment):
 def falsify_selection_record_product_authority():
  def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
  must_fail(grant_product,'Product authority escalation')
+def _delivery_clone(root: Path) -> None:
+ for rel in (
+  Path('docs/00-foundation/ai-e2e-delivery'),
+  Path('implementation/e2e-delivery'),
+ ):
+  shutil.copytree(ROOT/rel,root/rel)
+def _delivery_must_fail(mutator,fragment):
+ with tempfile.TemporaryDirectory() as td:
+  root=Path(td); _delivery_clone(root); mutator(root)
+  try: delivery_validator.validate(root)
+  except AssertionError as exc:
+   if fragment not in str(exc): raise AssertionError(f'expected delivery failure containing {fragment!r}, got {exc!r}')
+  else: raise AssertionError(f'delivery mutation unexpectedly accepted: {fragment}')
 def falsify_ai_e2e_delivery_heading_binding():
- roadmap=(ROOT/'docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md').read_text(encoding='utf-8')
- delivery_validator=(ROOT/'tools/assurance/validate_ai_e2e_delivery.py').read_text(encoding='utf-8')
- assert 'G2 — Monitoring source onboarding golden path' in roadmap
- assert 'require("G2 — Monitoring source onboarding golden path" in roadmap' in delivery_validator
- assert 'require("G7 — Alert policy + lifecycle golden path" in roadmap' in delivery_validator
- assert 'require("G14 — Production release gate" in roadmap' in delivery_validator
+ def remove_g2_heading(root):
+  path=root/'docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md'; text=path.read_text(encoding='utf-8')
+  path.write_text(text.replace('### G2 — Monitoring source onboarding golden path','### renamed monitoring source section',1),encoding='utf-8')
+ _delivery_must_fail(remove_g2_heading,'roadmap_heading_missing:G2 — Monitoring source onboarding golden path')
+ def replace_layer(root):
+  import json
+  path=root/'implementation/e2e-delivery/EXECUTION_MANIFEST.json'; data=json.loads(path.read_text(encoding='utf-8')); data['required_layers'][0]='junk-layer'; path.write_text(json.dumps(data),encoding='utf-8')
+ _delivery_must_fail(replace_layer,'manifest_e2e16_exact_layers')
+ def remove_dependency(root):
+  import json
+  path=root/'implementation/e2e-delivery/EXECUTION_MANIFEST.json'; data=json.loads(path.read_text(encoding='utf-8')); data['gates'][7]['depends_on']=[]; path.write_text(json.dumps(data),encoding='utf-8')
+ _delivery_must_fail(remove_dependency,'gate_dependencies_exact:G7')
  def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
  must_fail(grant_product,'Product authority escalation')
 def main():
@@ -39,7 +59,7 @@ def main():
  must_fail(regress_d4_acceptance,'state D4 gate authority drift')
  falsify_selection_record_product_authority()
  falsify_ai_e2e_delivery_heading_binding()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked ai_e2e_heading_binding=attested')
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked ai_e2e_governance=negative-mutated')
  return 0
 if __name__=='__main__':
  main()

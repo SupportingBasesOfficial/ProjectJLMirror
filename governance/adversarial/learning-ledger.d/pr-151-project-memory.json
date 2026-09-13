@@ -143,6 +143,19 @@
       "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 20
+    },
+    {
+      "id": "LEARN-PR151-012",
+      "pr": 151,
+      "source": "external_review",
+      "review_comment_id": 3999105960,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "Preserving only seeded decision IDs did not preserve their accepted meanings. A row could keep JLM-DEC-017 while reversing its proposition, silently rewriting project history without creating a successor decision or supersession edge.",
+      "horizontal_audit": ["seeded decision propositions","JLM-DEC-001 through JLM-DEC-017 meaning immutability","append-or-supersede history","decision text rewrites","future canonical-memory migrations","reconstruction semantics"],
+      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 21
     }
   ]
 }

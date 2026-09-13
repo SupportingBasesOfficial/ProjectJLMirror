@@ -13,11 +13,18 @@ validator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(validator)
 
 
+def baseline_rows(extra: int = 0) -> list[str]:
+    return [
+        f"| JLM-DEC-{i:03d} | decision | current | accepted |"
+        for i in range(1, 18 + extra)
+    ]
+
+
 class ProjectMemoryTests(unittest.TestCase):
     def test_validator_passes(self) -> None:
         files, decisions = validator.validate()
         self.assertEqual(files, 12)
-        self.assertGreaterEqual(decisions, 10)
+        self.assertGreaterEqual(decisions, len(validator.BASELINE_DECISION_IDS))
 
     def test_required_corpus_is_exactly_declared(self) -> None:
         self.assertEqual(len(validator.REQUIRED_FILES), 12)
@@ -35,42 +42,54 @@ class ProjectMemoryTests(unittest.TestCase):
         self.assertIn("internal operator", text)
         self.assertIn("customer-side responsible person", text)
 
-    def test_decision_references_do_not_count_as_definitions(self) -> None:
-        sample = """
-| JLM-DEC-017 | old decision | superseded by JLM-DEC-018 | accepted |
-| JLM-DEC-018 | replacement decision | current authority | accepted |
-| JLM-DEC-019 | extra | current | accepted |
-| JLM-DEC-020 | extra | current | accepted |
-| JLM-DEC-021 | extra | current | accepted |
-| JLM-DEC-022 | extra | current | accepted |
-| JLM-DEC-023 | extra | current | accepted |
-| JLM-DEC-024 | extra | current | accepted |
-| JLM-DEC-025 | extra | current | accepted |
-| JLM-DEC-026 | extra | current | accepted |
-"""
+    def test_seeded_decision_ids_are_exactly_declared(self) -> None:
         self.assertEqual(
-            validator.decision_definition_ids(sample)[:2],
-            ["JLM-DEC-017", "JLM-DEC-018"],
+            validator.BASELINE_DECISION_IDS,
+            tuple(f"JLM-DEC-{i:03d}" for i in range(1, 18)),
         )
+
+    def test_decision_references_do_not_count_as_definitions(self) -> None:
+        rows = baseline_rows(extra=1)
+        rows[16] = "| JLM-DEC-017 | old decision | superseded by JLM-DEC-018 | accepted |"
+        rows[17] = "| JLM-DEC-018 | replacement decision | current authority | accepted |"
+        sample = "\n".join(rows)
+        ids = validator.decision_definition_ids(sample)
+        self.assertEqual(ids[-2:], ["JLM-DEC-017", "JLM-DEC-018"])
         self.assertEqual(validator.decision_supersession_targets(sample), ["JLM-DEC-018"])
-        self.assertEqual(validator.validate_decision_register(sample), 10)
+        self.assertEqual(validator.validate_decision_register(sample), 18)
 
     def test_duplicate_decision_definitions_remain_detectable(self) -> None:
-        sample = """
-| JLM-DEC-018 | first definition | x | accepted |
-| JLM-DEC-018 | duplicate definition | y | accepted |
-"""
-        ids = validator.decision_definition_ids(sample)
+        rows = baseline_rows()
+        rows.append("| JLM-DEC-017 | duplicate definition | current | accepted |")
+        ids = validator.decision_definition_ids("\n".join(rows))
         self.assertNotEqual(len(ids), len(set(ids)))
+        with self.assertRaisesRegex(AssertionError, "project_memory_duplicate_decision_definition_id"):
+            validator.validate_decision_register("\n".join(rows))
+
+    def test_missing_seeded_decision_is_rejected(self) -> None:
+        rows = baseline_rows()
+        rows.pop(16)
+        with self.assertRaisesRegex(AssertionError, "project_memory_missing_baseline_decision:JLM-DEC-017"):
+            validator.validate_decision_register("\n".join(rows))
+
+    def test_malformed_seeded_decision_id_is_rejected_as_missing(self) -> None:
+        rows = baseline_rows()
+        rows[16] = "| JLM-DEC-O17 | malformed | current | accepted |"
+        with self.assertRaisesRegex(AssertionError, "project_memory_missing_baseline_decision:JLM-DEC-017"):
+            validator.validate_decision_register("\n".join(rows))
+
+    def test_new_decisions_may_be_appended(self) -> None:
+        rows = baseline_rows(extra=2)
+        self.assertEqual(validator.validate_decision_register("\n".join(rows)), 19)
 
     def test_dangling_supersession_target_is_rejected(self) -> None:
-        rows = [f"| JLM-DEC-{i:03d} | decision | current | accepted |" for i in range(1, 11)]
+        rows = baseline_rows()
         rows[0] = "| JLM-DEC-001 | decision | superseded by JLM-DEC-999 | accepted |"
         with self.assertRaisesRegex(AssertionError, "project_memory_missing_supersession_target:JLM-DEC-999"):
             validator.validate_decision_register("\n".join(rows))
 
     def test_malformed_supersession_target_is_rejected(self) -> None:
-        rows = [f"| JLM-DEC-{i:03d} | decision | current | accepted |" for i in range(1, 11)]
+        rows = baseline_rows()
         for malformed in ("JLM-DEC-99", "JLM-DEC-O02"):
             mutated = list(rows)
             mutated[0] = f"| JLM-DEC-001 | decision | superseded by {malformed} | accepted |"
@@ -78,13 +97,13 @@ class ProjectMemoryTests(unittest.TestCase):
                 validator.validate_decision_register("\n".join(mutated))
 
     def test_self_supersession_is_rejected(self) -> None:
-        rows = [f"| JLM-DEC-{i:03d} | decision | current | accepted |" for i in range(1, 11)]
+        rows = baseline_rows()
         rows[0] = "| JLM-DEC-001 | decision | superseded by JLM-DEC-001 | accepted |"
         with self.assertRaisesRegex(AssertionError, "project_memory_supersession_self_reference:JLM-DEC-001"):
             validator.validate_decision_register("\n".join(rows))
 
     def test_supersession_cycle_is_rejected(self) -> None:
-        rows = [f"| JLM-DEC-{i:03d} | decision | current | accepted |" for i in range(1, 11)]
+        rows = baseline_rows()
         rows[0] = "| JLM-DEC-001 | decision | superseded by JLM-DEC-002 | accepted |"
         rows[1] = "| JLM-DEC-002 | decision | superseded by JLM-DEC-001 | accepted |"
         with self.assertRaisesRegex(AssertionError, "project_memory_supersession_cycle"):

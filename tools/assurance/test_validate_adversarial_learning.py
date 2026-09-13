@@ -326,7 +326,8 @@ def falsify_wave4_metric_definition_claimed_input_liveness_guardrail() -> None:
 
 
 def main() -> None:
-    assert not s.validate(ROOT)
+    baseline_errors = s.validate(ROOT)
+    assert not baseline_errors, "strict baseline errors:\n" + "\n".join(baseline_errors)
 
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0].__setitem__("class_id", "UNKNOWN")))
     expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0].__setitem__("invariant_ids", ["UNKNOWN"])))

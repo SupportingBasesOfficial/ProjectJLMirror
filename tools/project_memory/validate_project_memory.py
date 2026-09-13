@@ -48,6 +48,11 @@ DECISION_SUPERSESSION_CLAUSE_RE = re.compile(r"\bsuperseded\s+by\b", re.IGNORECA
 DECISION_SUPERSESSION_TARGET_RE = re.compile(r"\bsuperseded\s+by\s+([^\s|,;.]+)", re.IGNORECASE)
 FENCE_OPEN_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})")
 FENCE_CLOSE_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})[ \t]*$")
+RAW_HTML_CONTAINER_OPEN_RE = re.compile(r"^[ ]{0,3}<(?P<tag>script|pre|style|textarea)(?:\s|>|$)", re.IGNORECASE)
+RAW_HTML_BLOCK_OPEN_RE = re.compile(
+    r"^[ ]{0,3}</?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?:\s|/?>|$)",
+    re.IGNORECASE,
+)
 
 
 def read(name: str) -> str:
@@ -61,13 +66,23 @@ def read(name: str) -> str:
 
 
 def _visible_markdown_lines(text: str) -> list[str]:
-    """Return rendered-line candidates, excluding fenced code and HTML comments."""
+    """Return rendered-line candidates, excluding non-rendered Markdown regions."""
     visible: list[str] = []
     in_comment = False
     fence_char: str | None = None
     fence_len = 0
+    raw_html_container: str | None = None
+    raw_html_until_blank = False
 
     for raw in text.splitlines():
+        if raw_html_container is not None:
+            if re.search(rf"</{re.escape(raw_html_container)}\s*>", raw, re.IGNORECASE):
+                raw_html_container = None
+            continue
+        if raw_html_until_blank:
+            if not raw.strip():
+                raw_html_until_blank = False
+            continue
         if fence_char is not None:
             closing = FENCE_CLOSE_RE.match(raw)
             if closing:
@@ -75,6 +90,16 @@ def _visible_markdown_lines(text: str) -> list[str]:
                 if marker[0] == fence_char and len(marker) >= fence_len:
                     fence_char = None
                     fence_len = 0
+            continue
+
+        container = RAW_HTML_CONTAINER_OPEN_RE.match(raw)
+        if container:
+            tag = container.group("tag").lower()
+            if re.search(rf"</{re.escape(tag)}\s*>", raw, re.IGNORECASE) is None:
+                raw_html_container = tag
+            continue
+        if RAW_HTML_BLOCK_OPEN_RE.match(raw):
+            raw_html_until_blank = True
             continue
 
         remainder = raw
@@ -201,16 +226,8 @@ def validate_human_operations(human: str) -> None:
             raise AssertionError(f"project_memory_human_model_missing:{token}")
 
 
-def _yaml_mapping_key(line: str) -> str | None:
-    candidate = line.lstrip(" ")
-    if not candidate or candidate.startswith("#"):
-        return None
-    if candidate.startswith("- "):
-        candidate = candidate[2:].lstrip(" ")
-    match = re.match(r"(?P<key>'(?:''|[^'])*'|\"(?:\\.|[^\"])*\"|[^:#][^:]*?)\s*:", candidate)
-    if not match:
-        return None
-    raw_key = match.group("key").strip()
+def _normalize_yaml_key(raw_key: str) -> str:
+    raw_key = raw_key.strip()
     if raw_key.startswith("'") and raw_key.endswith("'"):
         return raw_key[1:-1].replace("''", "'")
     if raw_key.startswith('"') and raw_key.endswith('"'):
@@ -222,29 +239,102 @@ def _yaml_mapping_key(line: str) -> str | None:
     return raw_key
 
 
+def _yaml_mapping_key(line: str) -> str | None:
+    candidate = line.lstrip(" ")
+    if not candidate or candidate.startswith("#"):
+        return None
+    if candidate.startswith("- "):
+        candidate = candidate[2:].lstrip(" ")
+    if candidate.startswith("? "):
+        return _normalize_yaml_key(candidate[2:].strip())
+    match = re.match(r"(?P<key>'(?:''|[^'])*'|\"(?:\\.|[^\"])*\"|[^:#][^:]*?)\s*:", candidate)
+    if not match:
+        return None
+    return _normalize_yaml_key(match.group("key"))
+
+
+def _yaml_key_value(candidate: str) -> tuple[str, str] | None:
+    match = re.match(r"(?P<key>'(?:''|[^'])*'|\"(?:\\.|[^\"])*\"|[^:#][^:]*?)\s*:\s*(?P<value>.*)$", candidate)
+    if not match:
+        return None
+    return _normalize_yaml_key(match.group("key")), match.group("value").strip()
+
+
+def _project_memory_workflow_steps(workflow: str) -> list[dict[str, str]]:
+    lines = workflow.splitlines()
+    job_start = next((i for i, line in enumerate(lines) if line == "  project-memory:"), None)
+    if job_start is None:
+        raise AssertionError("project_memory_workflow_job_missing")
+    steps_start = next((i for i in range(job_start + 1, len(lines)) if lines[i] == "    steps:"), None)
+    if steps_start is None:
+        raise AssertionError("project_memory_workflow_steps_missing")
+
+    steps: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    pending_explicit_key: str | None = None
+    for line in lines[steps_start + 1 :]:
+        if line.strip() and len(line) - len(line.lstrip(" ")) <= 4:
+            break
+        indent = len(line) - len(line.lstrip(" "))
+        stripped = line.strip()
+        if indent == 6 and stripped.startswith("- "):
+            if current is not None:
+                steps.append(current)
+            current = {}
+            pending_explicit_key = None
+            pair = _yaml_key_value(stripped[2:].strip())
+            if pair:
+                current[pair[0]] = pair[1]
+            continue
+        if current is None or not stripped or stripped.startswith("#"):
+            continue
+        if indent != 8:
+            continue
+        if stripped.startswith("? "):
+            pending_explicit_key = _normalize_yaml_key(stripped[2:].strip())
+            continue
+        if stripped.startswith(":") and pending_explicit_key is not None:
+            current[pending_explicit_key] = stripped[1:].strip()
+            pending_explicit_key = None
+            continue
+        pending_explicit_key = None
+        pair = _yaml_key_value(stripped)
+        if pair:
+            current[pair[0]] = pair[1]
+    if current is not None:
+        steps.append(current)
+    return steps
+
+
 def validate_project_memory_workflow(workflow: str) -> None:
     active_lines = {
         line.strip()
         for line in workflow.splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     }
-    required_lines = {
+    required_checkout_lines = {
         "allow-unsafe-pr-checkout: false",
         "persist-credentials: false",
         "ref: ${{ steps.target.outputs.sha }}",
-        "run: python3 tools/project_memory/validate_project_memory.py",
-        "run: python3 -m unittest discover -s tests/project_memory -p 'test_*.py'",
-        "run: PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py",
-        "run: python3 tools/assurance/validate_repository.py",
     }
-    missing = sorted(required_lines - active_lines)
-    if missing:
-        raise AssertionError("project_memory_workflow_missing_active_line:" + ",".join(missing))
+    missing_checkout = sorted(required_checkout_lines - active_lines)
+    if missing_checkout:
+        raise AssertionError("project_memory_workflow_missing_active_line:" + ",".join(missing_checkout))
 
-    # This governance job is an authority gate. No semantic YAML `if` key is
-    # allowed anywhere in it, including quoted spellings such as "if": false.
-    if any(_yaml_mapping_key(line) == "if" for line in workflow.splitlines()):
+    steps = _project_memory_workflow_steps(workflow)
+    if any("if" in step for step in steps):
         raise AssertionError("project_memory_workflow_condition_not_allowed")
+
+    required_step_runs = {
+        "Validate canonical project memory": "python3 tools/project_memory/validate_project_memory.py",
+        "Test canonical project memory": "python3 -m unittest discover -s tests/project_memory -p 'test_*.py'",
+        "Falsify canonical project-memory guardrails": "PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py",
+        "Validate repository structure and workflow safety": "python3 tools/assurance/validate_repository.py",
+    }
+    for name, expected_run in required_step_runs.items():
+        matches = [step for step in steps if step.get("name") == name]
+        if len(matches) != 1 or matches[0].get("run") != expected_run:
+            raise AssertionError(f"project_memory_workflow_missing_executable_step:{name}")
 
 
 def validate() -> tuple[int, int]:

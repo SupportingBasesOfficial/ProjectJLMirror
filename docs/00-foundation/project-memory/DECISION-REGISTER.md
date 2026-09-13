@@ -17,7 +17,7 @@ This register is a reconstruction index. Detailed authority remains in accepted 
 | JLM-DEC-009 | Healthy requires authoritative completeness | missing/incomplete/stale evidence cannot be converted into healthy | Health authorization/implementation accepted |
 | JLM-DEC-010 | Monitoring->Alerting events are invalidation/resync only | payload must not replicate semantic state; consumers re-read current owner truth | PR #146 accepted |
 | JLM-DEC-011 | Alert is platform-owned actionable occurrence | Problem/Health/event/provider IDs are source evidence, not Alert identity | PR #147 accepted |
-| JLM-DEC-012 | Alert v1 lifecycle is `active | resolved`; resolved is terminal | repeated future occurrence gets a new `alert_id` unless a future accepted version changes semantics | PR #147 accepted |
+| JLM-DEC-012 | Alert v1 lifecycle is `active \| resolved`; resolved is terminal | repeated future occurrence gets a new `alert_id` unless a future accepted version changes semantics | PR #147 accepted |
 | JLM-DEC-013 | Effectful Alert lifecycle transitions require immutable policy ID/version | prevents policy-less mutation and retroactive reinterpretation | PR #147 hardening accepted |
 | JLM-DEC-014 | Alert source family is explicit | `monitoring_problem` and `monitoring_health_projection` cannot be ambiguously mixed | PR #147 hardening accepted |
 | JLM-DEC-015 | Human operations use orthogonal state dimensions, not one giant status | responsibility, ACK, delivery, view, response, approval and next action must remain independently truthful | Issue #149 canonical requirement; authorization pending |

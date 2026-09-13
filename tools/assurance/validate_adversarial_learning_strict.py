@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import importlib.util
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -68,24 +70,48 @@ def _has_negative_check(function: ast.AST, helpers: set[str]) -> bool:
     return isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)) and _statements_have_negative_check(function.body, helpers)
 
 
-def _validate_delivery_negative_helper(functions: dict[str, ast.AST]) -> list[str]:
-    helper = functions.get('_delivery_must_fail')
-    if not isinstance(helper, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        return ['registered delivery negative helper missing: _delivery_must_fail']
-    invokes_validator = any(
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == 'delivery_validator'
-        and node.func.attr == 'validate'
-        for node in ast.walk(helper)
-    )
-    guaranteed_failure_on_accept = any(isinstance(node, ast.Raise) for node in ast.walk(helper))
+def _validate_delivery_negative_helper(root: Path, path: Path) -> list[str]:
+    """Execute the registered helper against both rejection and acceptance paths."""
+    module_name = '_jlmirror_delivery_negative_helper_probe'
     errors: list[str] = []
-    if not invokes_validator:
-        errors.append('registered delivery negative helper does not invoke delivery_validator.validate')
-    if not guaranteed_failure_on_accept:
-        errors.append('registered delivery negative helper does not fail when mutation is accepted')
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, path)
+        if spec is None or spec.loader is None:
+            return ['cannot load registered delivery negative helper module']
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        helper = getattr(module, '_delivery_must_fail', None)
+        if not callable(helper):
+            return ['registered delivery negative helper missing: _delivery_must_fail']
+
+        def corrupt_manifest(probe_root: Path) -> None:
+            manifest = probe_root / 'implementation/e2e-delivery/EXECUTION_MANIFEST.json'
+            data = json.loads(manifest.read_text(encoding='utf-8'))
+            data['required_layers'][0] = '__strict_invalid_layer__'
+            manifest.write_text(json.dumps(data), encoding='utf-8')
+
+        try:
+            helper(corrupt_manifest, 'manifest_e2e16_exact_layers')
+        except Exception as exc:
+            errors.append(f'registered delivery negative helper rejects known-invalid probe incorrectly: {type(exc).__name__}: {exc}')
+
+        def no_op(_probe_root: Path) -> None:
+            return None
+
+        try:
+            helper(no_op, '__strict_acceptance_probe__')
+        except AssertionError as exc:
+            if 'delivery mutation unexpectedly accepted' not in str(exc):
+                errors.append('registered delivery negative helper acceptance-path failure is not authoritative')
+        except Exception as exc:
+            errors.append(f'registered delivery negative helper acceptance probe failed unexpectedly: {type(exc).__name__}: {exc}')
+        else:
+            errors.append('registered delivery negative helper does not fail when mutation is accepted')
+    except Exception as exc:
+        errors.append(f'registered delivery negative helper could not execute: {type(exc).__name__}: {exc}')
+    finally:
+        sys.modules.pop(module_name, None)
     return errors
 
 
@@ -100,7 +126,7 @@ def _validate_falsifier_effects(root: Path) -> list[str]:
             continue
         functions = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
         if rel == D4C_SELECTION_TEST:
-            errors.extend(_validate_delivery_negative_helper(functions))
+            errors.extend(_validate_delivery_negative_helper(root, path))
         credited, credited_errors = base._reachable_main_falsifiers(path)
         errors.extend(credited_errors)
         for name in sorted(credited):
@@ -171,6 +197,6 @@ def main() -> None:
     errors=validate(args.root,args.review_comments)
     for error in errors: print('ADVERSARIAL_LEARNING_STRICT_ERROR:',error)
     if errors: raise SystemExit(1)
-    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=guaranteed-negative-helper')
+    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper')
 
 if __name__=='__main__': main()

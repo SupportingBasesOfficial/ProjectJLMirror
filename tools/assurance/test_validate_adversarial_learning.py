@@ -276,19 +276,23 @@ def falsify_stop_policy_relaxation() -> None:
 
 
 def falsify_wave4_authorization_exact_path_allowlist() -> None:
-    manifest = ROOT / "implementation/wave-4-host-inventory-authorization/AUTHORIZATION_MANIFEST.json"
-    assert manifest.is_file()
-    expect_failure(
-        lambda r: mutate_text(
-            r,
-            Path("tools/assurance/test_validate_adversarial_learning.py"),
-            "    falsify_wave4_authorization_exact_path_allowlist()\n",
-            "",
-        )
-    )
+    validator = ROOT / "tools/assurance/validate_wave4_monitoring_authorization.py"
+    text = validator.read_text(encoding="utf-8")
+    assert "ALLOWED_PR_PATHS = {" in text, "Wave 4 authorization must use an exact path allowlist"
+    assert "ALLOWED_PR_PATH_PREFIXES" not in text, "Wave 4 authorization must not regress to prefix allowlisting"
+    assert "path in ALLOWED_PR_PATHS" in text, "Wave 4 authorization scope check must require exact path membership"
+    assert "implementation/wave-4-monitoring-authorization/AUTHORIZATION.md" in text
+    assert "implementation/wave-4-monitoring-authorization/AUTHORIZATION_MANIFEST.json" in text
+    expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0]["guardrails"][0].__setitem__("probe", "nonexistent_exact_allowlist_probe")))
 
 
 def falsify_wave4_authority_toctou_guardrail() -> None:
+    sql = (ROOT / "sql/wave4/003_zabbix_initial_validation_worker.sql").read_text(encoding="utf-8")
+    conformance = (ROOT / "tools/wave4/run_zabbix_initial_validation_postgres_conformance.sh").read_text(encoding="utf-8")
+    validator = (ROOT / "tools/wave4/validate_zabbix_initial_validation_worker.py").read_text(encoding="utf-8")
+    assert "FOR UPDATE OF s" in sql, "Wave 4 completion must hold the authoritative source row lock"
+    assert "race=source_row_lock_blocks_concurrent_edit" in conformance, "Wave 4 concurrency falsifier missing"
+    assert 'require("FOR UPDATE OF s" in sql' in validator, "Wave 4 validator does not require source-row lock"
     expect_failure(
         lambda r: mutate_text(
             r,

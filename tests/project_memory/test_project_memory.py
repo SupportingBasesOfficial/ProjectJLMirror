@@ -35,6 +35,24 @@ class ProjectMemoryTests(unittest.TestCase):
         self.assertIn("internal operator", text)
         self.assertIn("customer-side responsible person", text)
 
+    def test_decision_references_do_not_count_as_definitions(self) -> None:
+        sample = """
+| JLM-DEC-017 | old decision | superseded by JLM-DEC-018 | accepted |
+| JLM-DEC-018 | replacement decision | current authority | accepted |
+"""
+        self.assertEqual(
+            validator.decision_definition_ids(sample),
+            ["JLM-DEC-017", "JLM-DEC-018"],
+        )
+
+    def test_duplicate_decision_definitions_remain_detectable(self) -> None:
+        sample = """
+| JLM-DEC-018 | first definition | x | accepted |
+| JLM-DEC-018 | duplicate definition | y | accepted |
+"""
+        ids = validator.decision_definition_ids(sample)
+        self.assertNotEqual(len(ids), len(set(ids)))
+
 
 if __name__ == "__main__":
     unittest.main()

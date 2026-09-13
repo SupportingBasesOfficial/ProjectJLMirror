@@ -26,8 +26,12 @@ def falsify_project_memory_review_guardrails():
  must_fail(lambda: project_memory.validate_project_memory_workflow(workflow.replace('allow-unsafe-pr-checkout: false','# allow-unsafe-pr-checkout: false',1)),'project_memory_workflow_missing_active_line')
  must_fail(lambda: project_memory.validate_project_memory_workflow(workflow.replace('run: PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py','# run: PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py',1)),'project_memory_workflow_missing_active_line')
  rows=[f'| JLM-DEC-{i:03d} | decision | current | accepted |' for i in range(1,11)]
- rows[0]='| JLM-DEC-001 | decision | superseded by JLM-DEC-999 | accepted |'
- must_fail(lambda: project_memory.validate_decision_register('\n'.join(rows)),'project_memory_missing_supersession_target:JLM-DEC-999')
+ dangling=list(rows); dangling[0]='| JLM-DEC-001 | decision | superseded by JLM-DEC-999 | accepted |'
+ must_fail(lambda: project_memory.validate_decision_register('\n'.join(dangling)),'project_memory_missing_supersession_target:JLM-DEC-999')
+ malformed=list(rows); malformed[0]='| JLM-DEC-001 | decision | superseded by JLM-DEC-99 | accepted |'
+ must_fail(lambda: project_memory.validate_decision_register('\n'.join(malformed)),'project_memory_malformed_supersession:JLM-DEC-001')
+ cyclic=list(rows); cyclic[0]='| JLM-DEC-001 | decision | superseded by JLM-DEC-002 | accepted |'; cyclic[1]='| JLM-DEC-002 | decision | superseded by JLM-DEC-001 | accepted |'
+ must_fail(lambda: project_memory.validate_decision_register('\n'.join(cyclic)),'project_memory_supersession_cycle')
  duplicate=list(rows); duplicate[0]='| JLM-DEC-002 | duplicate | current | accepted |'
  must_fail(lambda: project_memory.validate_decision_register('\n'.join(duplicate)),'project_memory_duplicate_decision_definition_id')
 def main():

@@ -16,13 +16,17 @@ def falsify_monitoring_alerting_composed_workflow_dependencies():
  assert workflow.count("- 'sql/wave2/001_async_correctness.sql'")==2, 'composed publication gate must observe Wave 2 outbox substrate on PR and push'
  assert workflow.count("- 'sql/wave4/**'")==2, 'composed publication gate must observe all Wave 4 transition substrate changes on PR and push'
  assert workflow.count("- 'tools/assurance/test_validate_d4c_selection.py'")==2, 'publication falsifier source must trigger publication gate on PR and push'
+ assert workflow.count("- 'tools/wave4/run_monitoring_alerting_publication_recovery_proxy_postgres_conformance.sh'")==2, 'recovery proxy conformance must trigger publication gate on PR and push'
  assert 'Falsify permanent publication guardrails' in workflow
  assert 'PYTHONPATH=tools/assurance python3 tools/assurance/test_validate_d4c_selection.py' in workflow
+ assert 'Prove recovery trigger proxy rejection' in workflow
+ assert 'bash tools/wave4/run_monitoring_alerting_publication_recovery_proxy_postgres_conformance.sh' in workflow
  def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
  must_fail(grant_product,'Product authority escalation')
 def falsify_monitoring_alerting_privileged_acl_preflight():
  sql=(ROOT/'sql/integration/001_monitoring_alerting_publication.sql').read_text(encoding='utf-8')
  conformance=(ROOT/'tools/wave4/run_monitoring_alerting_publication_acl_preflight_postgres_conformance.sh').read_text(encoding='utf-8')
+ recovery_dependency_conformance=(ROOT/'tools/wave4/run_monitoring_alerting_publication_recovery_proxy_postgres_conformance.sh').read_text(encoding='utf-8')
  workflow=(ROOT/'.github/workflows/wave4-monitoring-alerting-publication-runtime.yml').read_text(encoding='utf-8')
  assert 'monitoring.publication_executor_unexpected_owned_object' in sql
  assert 'FROM pg_shdepend d' in sql and "d.deptype='o'" in sql
@@ -46,10 +50,12 @@ def falsify_monitoring_alerting_privileged_acl_preflight():
  recovery_proxy_fence_end=sql.index('GRANT USAGE ON SCHEMA monitoring, system',recovery_proxy_fence_start)
  recovery_proxy_fence=sql[recovery_proxy_fence_start:recovery_proxy_fence_end]
  assert 'monitoring.publication_recovery_authority_callable_proxy_unsafe' in recovery_proxy_fence
+ assert 'monitoring.publication_recovery_authority_dependency_proxy_unsafe' in recovery_proxy_fence
  assert 'p.proowner=v_recovery_oid' in recovery_proxy_fence
  assert "a.privilege_type='EXECUTE'" in recovery_proxy_fence
  assert 'a.grantee<>p.proowner' in recovery_proxy_fence
  assert "aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner)))" in recovery_proxy_fence
+ assert "JOIN pg_depend d" in recovery_proxy_fence and "d.refclassid='pg_proc'::regclass" in recovery_proxy_fence and 'd.refobjid=p.oid' in recovery_proxy_fence
  assert 'monitoring.publication_existing_function_acl_unsafe' in sql
  assert 'monitoring.publication_installed_function_acl_unsafe' in sql
  assert "aclexplode(COALESCE(p.proacl, ARRAY[]::aclitem[]))" in sql
@@ -80,7 +86,17 @@ def falsify_monitoring_alerting_privileged_acl_preflight():
  assert 'WITH GRANT OPTION' in conformance and 'recovery_grant_option=blocked' in conformance
  assert 'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA monitoring' in conformance
  assert 'default_execute_grant=blocked' in conformance and 'transactional_acl_fence=proven' in conformance
+ assert 'jlmirror_recovery_trigger_proxy_probe' in recovery_dependency_conformance
+ assert 'CREATE TRIGGER jlmirror_recovery_trigger_proxy' in recovery_dependency_conformance
+ assert 'OWNER TO jlmirror_wave4_recovery_authority' in recovery_dependency_conformance
+ assert 'REVOKE ALL ON FUNCTION monitoring.jlmirror_recovery_trigger_proxy() FROM PUBLIC' in recovery_dependency_conformance
+ assert "PERFORM monitoring.recover_problem_state_publication(NEW.tenant_id,NEW.transition_id)" in recovery_dependency_conformance
+ assert 'monitoring.publication_recovery_authority_dependency_proxy_unsafe:' in recovery_dependency_conformance
+ assert "grep -Fq 'class=pg_trigger'" in recovery_dependency_conformance
+ assert 'trigger_callable_owner_only_proxy=blocked' in recovery_dependency_conformance
+ assert 'runtime_resolved_recovery_call=no-pg-depend' in recovery_dependency_conformance
  assert 'Prove privileged function ACL preflight' in workflow
+ assert 'Prove recovery trigger proxy rejection' in workflow
  def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
  must_fail(grant_product,'Product authority escalation')
 def main():
@@ -103,7 +119,7 @@ def main():
  falsify_selection_record_product_authority()
  falsify_monitoring_alerting_composed_workflow_dependencies()
  falsify_monitoring_alerting_privileged_acl_preflight()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked publication_composed_dependencies=bound publication_acl_preflight=recovery-proxy+all-privileged-owner+dependency+pre+post-install-attested')
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked publication_composed_dependencies=bound publication_acl_preflight=recovery-acl+dependency-proxy+all-privileged-owner+dependency+pre+post-install-attested')
  return 0
 if __name__=='__main__':
  main()

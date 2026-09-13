@@ -36,4 +36,4 @@ jobs:
         run: python3 -m unittest discover -s tests/project_memory -p 'test_*.py'
 
       - name: Validate repository structure and workflow safety
-        run: python3 tools/validate_repo.py
+        run: python3 tools/assurance/validate_repository.py

@@ -62,7 +62,7 @@ def main():
  def regress_credit(selection,ledger,state,evaluation): ledger['credited_evidence'].pop(); ledger['remaining_evidence']=[validator.EXPECTED_EVIDENCE[-1]]
  must_fail(regress_credit,'current ledger evidence drift')
  def grant_transport(selection,ledger,state,evaluation): state['d4_transport_authority']='granted'
- must_fail(grant_transport,'D4 transport authority escalation')
+ must_fail(grant_transport,'state transport authority escalation')
  def regress_d4_acceptance(selection,ledger,state,evaluation): state['gate_state']='scoped'
  must_fail(regress_d4_acceptance,'state D4 gate authority drift')
  falsify_selection_record_product_authority()

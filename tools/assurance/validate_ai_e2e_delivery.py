@@ -44,6 +44,23 @@ EXPECTED_GATE_HEADINGS = (
     "G13 — Commercial/FinOps/product administration",
     "G14 — Production release gate",
 )
+EXPECTED_GATE_NAMES = (
+    "Developer/runtime bootstrap",
+    "Identity + tenant + protected application shell",
+    "Monitoring Source onboarding",
+    "Resource inventory",
+    "Metrics current + history",
+    "Problem + Health",
+    "Monitoring to Alerting transport",
+    "Alert policy + lifecycle",
+    "Human operations",
+    "Notification + delivery",
+    "ITSM golden path",
+    "Automation golden path",
+    "AIOps golden path",
+    "Commercial FinOps product administration",
+    "Production release gate",
+)
 EXPECTED_AUTHORITY_PREREQUISITES = {
     "G7": "separate_alert_policy_evaluation_authorization",
     "G8": "responsibility_ack_visibility_authorization",
@@ -53,7 +70,16 @@ EXPECTED_LAYERS = (
     "api_bff","frontend","unit_tests","integration_tests","e2e_tests","adversarial_tests",
     "observability","runtime","deployment","exact_head_evidence",
 )
-FENCE_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})")
+FENCE_OPEN_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})")
+FENCE_CLOSE_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})[ \t]*$")
+RAW_CONTAINER_START_RE = re.compile(
+    r"^[ ]{0,3}<(?P<tag>script|pre|style|textarea|xmp|iframe|noembed|noframes|plaintext)(?:\s|>|$)",
+    re.IGNORECASE,
+)
+GENERIC_BLOCK_START_RE = re.compile(
+    r"^[ ]{0,3}</?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|legend|li|link|main|menu|menuitem|nav|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?:\s|/?>|$)",
+    re.IGNORECASE,
+)
 
 
 def require(cond: bool, msg: str) -> None:
@@ -62,16 +88,34 @@ def require(cond: bool, msg: str) -> None:
 
 
 def _visible_markdown_lines(text: str) -> list[str]:
+    """Return Markdown lines that can participate in rendered semantic structure."""
     lines: list[str] = []
     fence_char: str | None = None
     fence_len = 0
     in_comment = False
+    raw_container: str | None = None
+    generic_html_block = False
+
     for raw in text.splitlines():
         if fence_char is not None:
-            stripped = raw.lstrip(" ")
-            if stripped.startswith(fence_char * fence_len) and not stripped[fence_len:].strip():
-                fence_char = None
-                fence_len = 0
+            closing = FENCE_CLOSE_RE.match(raw)
+            if closing:
+                marker = closing.group(1)
+                if marker[0] == fence_char and len(marker) >= fence_len:
+                    fence_char = None
+                    fence_len = 0
+            continue
+
+        if raw_container is not None:
+            if raw_container == "plaintext":
+                continue
+            if re.search(rf"</{re.escape(raw_container)}\s*>", raw, re.IGNORECASE):
+                raw_container = None
+            continue
+
+        if generic_html_block:
+            if not raw.strip():
+                generic_html_block = False
             continue
 
         remainder = raw
@@ -95,12 +139,26 @@ def _visible_markdown_lines(text: str) -> list[str]:
 
         if not rendered.strip():
             continue
-        fence = FENCE_RE.match(rendered)
+
+        fence = FENCE_OPEN_RE.match(rendered)
         if fence:
             marker = fence.group(1)
             fence_char = marker[0]
             fence_len = len(marker)
             continue
+
+        raw_start = RAW_CONTAINER_START_RE.match(rendered)
+        if raw_start:
+            tag = raw_start.group("tag").lower()
+            if tag != "plaintext" and re.search(rf"</{re.escape(tag)}\s*>", rendered, re.IGNORECASE):
+                continue
+            raw_container = tag
+            continue
+
+        if GENERIC_BLOCK_START_RE.match(rendered):
+            generic_html_block = True
+            continue
+
         lines.append(rendered.rstrip())
     return lines
 
@@ -108,10 +166,14 @@ def _visible_markdown_lines(text: str) -> list[str]:
 def _validate_heading_sequence(text: str, expected: tuple[str, ...], prefix: str, missing_prefix: str, order_error: str) -> None:
     visible = _visible_markdown_lines(text)
     expected_lines = [f"### {heading}" for heading in expected]
+    expected_ids = [heading.split(" ", 1)[0] for heading in expected]
     for heading, line in zip(expected, expected_lines):
         require(line in visible, f"{missing_prefix}:{heading}")
-    candidates = [line for line in visible if line.startswith(f"### {prefix}") and line in set(expected_lines)]
-    require(candidates == expected_lines, order_error)
+
+    identifier_re = re.compile(rf"^###\s+({re.escape(prefix)}\d+)\b")
+    identified = [(match.group(1), line) for line in visible if (match := identifier_re.match(line))]
+    require([item[0] for item in identified] == expected_ids, order_error)
+    require([item[1] for item in identified] == expected_lines, order_error)
 
 
 def validate(root: Path = ROOT) -> tuple[int, int, int]:
@@ -161,6 +223,7 @@ def validate(root: Path = ROOT) -> tuple[int, int, int]:
     require(ids == [f"G{i}" for i in range(15)], "manifest_gate_order")
     for index, gate in enumerate(gates):
         gate_id = f"G{index}"
+        require(gate.get("name") == EXPECTED_GATE_NAMES[index], f"gate_name_exact:{gate_id}")
         expected_deps = [] if index == 0 else [f"G{index - 1}"]
         require(gate.get("depends_on") == expected_deps, f"gate_dependencies_exact:{gate_id}")
         require(gate.get("requires_e2e") is True, f"gate_requires_e2e:{gate_id}")

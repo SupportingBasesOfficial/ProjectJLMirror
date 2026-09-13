@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -34,7 +35,7 @@ BASELINE_DECISION_MEANINGS = {
     "JLM-DEC-009": "Healthy requires authoritative completeness",
     "JLM-DEC-010": "Monitoring->Alerting events are invalidation/resync only",
     "JLM-DEC-011": "Alert is platform-owned actionable occurrence",
-    "JLM-DEC-012": "Alert v1 lifecycle is `active | resolved`; resolved is terminal",
+    "JLM-DEC-012": "Alert v1 lifecycle is `active \\| resolved`; resolved is terminal",
     "JLM-DEC-013": "Effectful Alert lifecycle transitions require immutable policy ID/version",
     "JLM-DEC-014": "Alert source family is explicit",
     "JLM-DEC-015": "Human operations use orthogonal state dimensions, not one giant status",
@@ -45,7 +46,8 @@ BASELINE_DECISION_IDS = tuple(BASELINE_DECISION_MEANINGS)
 DECISION_ID_RE = re.compile(r"JLM-DEC-\d{3}")
 DECISION_SUPERSESSION_CLAUSE_RE = re.compile(r"\bsuperseded\s+by\b", re.IGNORECASE)
 DECISION_SUPERSESSION_TARGET_RE = re.compile(r"\bsuperseded\s+by\s+([^\s|,;.]+)", re.IGNORECASE)
-FENCE_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})")
+FENCE_OPEN_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})")
+FENCE_CLOSE_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})[ \t]*$")
 
 
 def read(name: str) -> str:
@@ -67,10 +69,12 @@ def _visible_markdown_lines(text: str) -> list[str]:
 
     for raw in text.splitlines():
         if fence_char is not None:
-            stripped = raw.lstrip()
-            if stripped.startswith(fence_char * fence_len) and not stripped[fence_len:].strip():
-                fence_char = None
-                fence_len = 0
+            closing = FENCE_CLOSE_RE.match(raw)
+            if closing:
+                marker = closing.group(1)
+                if marker[0] == fence_char and len(marker) >= fence_len:
+                    fence_char = None
+                    fence_len = 0
             continue
 
         remainder = raw
@@ -94,7 +98,7 @@ def _visible_markdown_lines(text: str) -> list[str]:
 
         if not rendered.strip():
             continue
-        fence = FENCE_RE.match(rendered)
+        fence = FENCE_OPEN_RE.match(rendered)
         if fence:
             marker = fence.group(1)
             fence_char = marker[0]
@@ -197,6 +201,27 @@ def validate_human_operations(human: str) -> None:
             raise AssertionError(f"project_memory_human_model_missing:{token}")
 
 
+def _yaml_mapping_key(line: str) -> str | None:
+    candidate = line.lstrip(" ")
+    if not candidate or candidate.startswith("#"):
+        return None
+    if candidate.startswith("- "):
+        candidate = candidate[2:].lstrip(" ")
+    match = re.match(r"(?P<key>'(?:''|[^'])*'|\"(?:\\.|[^\"])*\"|[^:#][^:]*?)\s*:", candidate)
+    if not match:
+        return None
+    raw_key = match.group("key").strip()
+    if raw_key.startswith("'") and raw_key.endswith("'"):
+        return raw_key[1:-1].replace("''", "'")
+    if raw_key.startswith('"') and raw_key.endswith('"'):
+        try:
+            parsed = ast.literal_eval(raw_key)
+        except (SyntaxError, ValueError):
+            return raw_key
+        return parsed if isinstance(parsed, str) else raw_key
+    return raw_key
+
+
 def validate_project_memory_workflow(workflow: str) -> None:
     active_lines = {
         line.strip()
@@ -216,9 +241,9 @@ def validate_project_memory_workflow(workflow: str) -> None:
     if missing:
         raise AssertionError("project_memory_workflow_missing_active_line:" + ",".join(missing))
 
-    # This governance job is an authority gate. None of its exact-head, memory,
-    # falsification, test, or repository-safety steps may be made conditional.
-    if any(line.startswith("if:") for line in active_lines):
+    # This governance job is an authority gate. No semantic YAML `if` key is
+    # allowed anywhere in it, including quoted spellings such as "if": false.
+    if any(_yaml_mapping_key(line) == "if" for line in workflow.splitlines()):
         raise AssertionError("project_memory_workflow_condition_not_allowed")
 
 

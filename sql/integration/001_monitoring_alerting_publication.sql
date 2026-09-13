@@ -50,9 +50,11 @@ END;
 $$;
 
 -- The executor is a dedicated capability owner. Before granting it any outbox
--- authority, prove that it owns no routine outside this bridge's five canonical
--- signatures. This closes the case where a pre-existing SECURITY DEFINER owned
--- by the same role would silently gain outbox power when the grants below land.
+-- authority, prove via PostgreSQL ownership dependencies that it owns no
+-- persistent object of any class outside this bridge's five canonical routines.
+-- This closes owner-mediated authority through views, materialized views,
+-- relations, sequences, schemas, types, or any other object class as well as
+-- unrelated SECURITY DEFINER routines.
 DO $$
 DECLARE
     v_executor_oid OID;
@@ -62,27 +64,35 @@ BEGIN
       FROM pg_roles
      WHERE rolname='jlmirror_wave4_monitoring_publication_executor';
 
-    SELECT format('%I.%I(%s)', n.nspname, p.proname, pg_get_function_identity_arguments(p.oid))
+    WITH allowed_proc_oids AS (
+        SELECT to_regprocedure(signature) AS proc_oid
+          FROM (VALUES
+              ('monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb)'),
+              ('monitoring.wave4_publish_problem_transition()'),
+              ('monitoring.wave4_publish_health_transition()'),
+              ('monitoring.recover_problem_state_publication(text,text)'),
+              ('monitoring.recover_health_projection_publication(text,text)')
+          ) AS allowed(signature)
+    )
+    SELECT format('class=%s,objid=%s,dbid=%s', d.classid::regclass::TEXT, d.objid, d.dbid)
       INTO v_unexpected
-      FROM pg_proc p
-      JOIN pg_namespace n ON n.oid=p.pronamespace
-     WHERE p.proowner=v_executor_oid
-       AND NOT EXISTS (
-            SELECT 1
-              FROM (VALUES
-                  ('monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb)'),
-                  ('monitoring.wave4_publish_problem_transition()'),
-                  ('monitoring.wave4_publish_health_transition()'),
-                  ('monitoring.recover_problem_state_publication(text,text)'),
-                  ('monitoring.recover_health_projection_publication(text,text)')
-              ) AS allowed(signature)
-             WHERE to_regprocedure(allowed.signature)=p.oid
+      FROM pg_shdepend d
+     WHERE d.refclassid='pg_authid'::regclass
+       AND d.refobjid=v_executor_oid
+       AND d.deptype='o'
+       AND NOT (
+            d.classid='pg_proc'::regclass
+            AND d.objid IN (
+                SELECT proc_oid
+                  FROM allowed_proc_oids
+                 WHERE proc_oid IS NOT NULL
+            )
        )
-     ORDER BY n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)
+     ORDER BY d.dbid,d.classid,d.objid
      LIMIT 1;
 
     IF v_unexpected IS NOT NULL THEN
-        RAISE EXCEPTION 'monitoring.publication_executor_unexpected_owned_routine:%', v_unexpected;
+        RAISE EXCEPTION 'monitoring.publication_executor_unexpected_owned_object:%', v_unexpected;
     END IF;
 END;
 $$;

@@ -37,6 +37,41 @@ class AiE2EDeliveryTests(unittest.TestCase):
         manifest = json.loads(validator.MANIFEST.read_text(encoding="utf-8"))
         self.assertTrue(all(g["requires_e2e"] is True for g in manifest["gates"]))
 
+    def test_visible_markdown_excludes_fences_and_html_comments(self) -> None:
+        sample = "\n".join((
+            "### G0 — visible",
+            "<!--",
+            "### G1 — hidden-comment",
+            "-->",
+            "```text",
+            "### G2 — hidden-fence",
+            "```",
+            "### G3 — visible",
+        ))
+        self.assertEqual(
+            validator._visible_markdown_lines(sample),
+            ["### G0 — visible", "### G3 — visible"],
+        )
+
+    def test_heading_sequence_rejects_duplicate_and_reordered_sections(self) -> None:
+        expected = ("S0 — zero", "S1 — one")
+        with self.assertRaisesRegex(AssertionError, "order_or_duplicate"):
+            validator._validate_heading_sequence(
+                "### S1 — one\n### S0 — zero",
+                expected,
+                "S",
+                "missing",
+                "order_or_duplicate",
+            )
+        with self.assertRaisesRegex(AssertionError, "order_or_duplicate"):
+            validator._validate_heading_sequence(
+                "### S0 — zero\n### S1 — one\n### S1 — one",
+                expected,
+                "S",
+                "missing",
+                "order_or_duplicate",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

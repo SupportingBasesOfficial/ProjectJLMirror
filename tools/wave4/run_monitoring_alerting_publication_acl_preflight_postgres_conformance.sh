@@ -41,10 +41,18 @@ REVOKE ALL ON FUNCTION monitoring.wave4_ensure_monitoring_invalidation(text,text
 GRANT EXECUTE ON FUNCTION monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb) TO jlmirror_acl_probe;
 SQL
 
+# This command is expected to fail. Temporarily remove ERR handling as well as
+# errexit so the expected PostgreSQL rejection can be captured and inspected
+# instead of being mistaken for a harness failure.
+acl_log="$(mktemp)"
+trap - ERR
 set +e
-acl_output="$(docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < sql/integration/001_monitoring_alerting_publication.sql 2>&1)"
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < sql/integration/001_monitoring_alerting_publication.sql >"$acl_log" 2>&1
 acl_status=$?
 set -e
+trap 'status=$?; echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=FAIL line=$LINENO status=$status" >&2; exit "$status"' ERR
+acl_output="$(cat "$acl_log")"
+rm -f "$acl_log"
 if [[ "$acl_status" -eq 0 ]]; then
   echo "unsafe retained EXECUTE ACL was unexpectedly accepted" >&2
   exit 1

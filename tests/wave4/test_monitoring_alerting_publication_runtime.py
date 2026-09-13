@@ -116,6 +116,17 @@ class MonitoringAlertingPublicationRuntimeTests(unittest.TestCase):
         self.assertIn("roleid=v_executor_oid OR member=v_executor_oid", self.sql)
         self.assertIn("OWNER TO jlmirror_wave4_monitoring_publication_executor", self.sql)
 
+    def test_security_definer_replacement_rejects_retained_named_execute_acl(self) -> None:
+        self.assertIn("CREATE OR REPLACE FUNCTION preserves existing ACLs", self.sql)
+        self.assertIn("aclexplode(COALESCE(p.proacl, ARRAY[]::aclitem[]))", self.sql)
+        self.assertIn("a.privilege_type='EXECUTE'", self.sql)
+        self.assertIn("a.grantee<>0", self.sql)
+        self.assertIn("a.grantee<>p.proowner", self.sql)
+        self.assertIn("monitoring.publication_existing_function_acl_unsafe", self.sql)
+        self.assertIn("monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb)", self.sql)
+        self.assertIn("monitoring.recover_problem_state_publication(text,text)", self.sql)
+        self.assertIn("monitoring.recover_health_projection_publication(text,text)", self.sql)
+
 
 if __name__ == "__main__":
     unittest.main()

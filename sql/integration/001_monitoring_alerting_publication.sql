@@ -70,7 +70,8 @@ TO jlmirror_wave4_monitoring_publication_executor;
 -- CREATE OR REPLACE FUNCTION preserves existing ACLs. Because the following
 -- functions become SECURITY DEFINER under a privileged NOLOGIN owner, any
 -- unexpected retained named EXECUTE grant must be rejected before the body is
--- replaced. Recovery functions may retain only the canonical recovery authority.
+-- replaced. Recovery functions may retain only a non-grantable EXECUTE for the
+-- canonical recovery authority; WITH GRANT OPTION is never accepted.
 DO $$
 DECLARE
     v_recovery_oid OID;
@@ -104,7 +105,11 @@ BEGIN
                AND a.privilege_type='EXECUTE'
                AND a.grantee<>0
                AND a.grantee<>p.proowner
-               AND (NOT v_row.allow_recovery_authority OR a.grantee<>v_recovery_oid)
+               AND (
+                    NOT v_row.allow_recovery_authority
+                    OR a.grantee<>v_recovery_oid
+                    OR a.is_grantable
+               )
         ) THEN
             RAISE EXCEPTION 'monitoring.publication_existing_function_acl_unsafe:%', v_row.signature;
         END IF;

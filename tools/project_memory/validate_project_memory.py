@@ -22,8 +22,10 @@ REQUIRED_FILES = (
     "RECOVERY-PLAYBOOK-FOR-NEW-CHAT.md",
 )
 
+DECISION_ID_RE = re.compile(r"JLM-DEC-\d{3}")
 DECISION_DEFINITION_RE = re.compile(r"^\|\s*(JLM-DEC-\d{3})\s*\|", re.MULTILINE)
-DECISION_SUPERSESSION_RE = re.compile(r"superseded by\s+(JLM-DEC-\d{3})")
+DECISION_SUPERSESSION_CLAUSE_RE = re.compile(r"\bsuperseded\s+by\b", re.IGNORECASE)
+DECISION_SUPERSESSION_TARGET_RE = re.compile(r"\bsuperseded\s+by\s+([^\s|,;.]+)", re.IGNORECASE)
 
 
 def read(name: str) -> str:
@@ -40,8 +42,52 @@ def decision_definition_ids(decisions: str) -> list[str]:
     return DECISION_DEFINITION_RE.findall(decisions)
 
 
+def _decision_definition_rows(decisions: str) -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
+    for line in decisions.splitlines():
+        match = re.match(r"^\|\s*(JLM-DEC-\d{3})\s*\|", line)
+        if match:
+            rows.append((match.group(1), line))
+    return rows
+
+
+def decision_supersession_edges(decisions: str) -> dict[str, str]:
+    edges: dict[str, str] = {}
+    for source, row in _decision_definition_rows(decisions):
+        clauses = DECISION_SUPERSESSION_CLAUSE_RE.findall(row)
+        if not clauses:
+            continue
+        targets = DECISION_SUPERSESSION_TARGET_RE.findall(row)
+        if len(clauses) != 1 or len(targets) != 1 or not DECISION_ID_RE.fullmatch(targets[0]):
+            raise AssertionError(f"project_memory_malformed_supersession:{source}")
+        edges[source] = targets[0]
+    return edges
+
+
 def decision_supersession_targets(decisions: str) -> list[str]:
-    return DECISION_SUPERSESSION_RE.findall(decisions)
+    return list(decision_supersession_edges(decisions).values())
+
+
+def _validate_supersession_acyclic(edges: dict[str, str]) -> None:
+    state: dict[str, int] = {}
+
+    def visit(node: str) -> None:
+        marker = state.get(node, 0)
+        if marker == 1:
+            raise AssertionError(f"project_memory_supersession_cycle:{node}")
+        if marker == 2:
+            return
+        state[node] = 1
+        target = edges.get(node)
+        if target is not None:
+            if target == node:
+                raise AssertionError(f"project_memory_supersession_self_reference:{node}")
+            if target in edges:
+                visit(target)
+        state[node] = 2
+
+    for source in edges:
+        visit(source)
 
 
 def validate_decision_register(decisions: str) -> int:
@@ -51,9 +97,11 @@ def validate_decision_register(decisions: str) -> int:
     if len(ids) != len(set(ids)):
         raise AssertionError("project_memory_duplicate_decision_definition_id")
     defined = set(ids)
-    for target in decision_supersession_targets(decisions):
+    edges = decision_supersession_edges(decisions)
+    for target in edges.values():
         if target not in defined:
             raise AssertionError(f"project_memory_missing_supersession_target:{target}")
+    _validate_supersession_acyclic(edges)
     return len(ids)
 
 

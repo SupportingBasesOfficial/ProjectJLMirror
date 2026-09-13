@@ -39,11 +39,21 @@ class ProjectMemoryTests(unittest.TestCase):
         sample = """
 | JLM-DEC-017 | old decision | superseded by JLM-DEC-018 | accepted |
 | JLM-DEC-018 | replacement decision | current authority | accepted |
+| JLM-DEC-019 | extra | current | accepted |
+| JLM-DEC-020 | extra | current | accepted |
+| JLM-DEC-021 | extra | current | accepted |
+| JLM-DEC-022 | extra | current | accepted |
+| JLM-DEC-023 | extra | current | accepted |
+| JLM-DEC-024 | extra | current | accepted |
+| JLM-DEC-025 | extra | current | accepted |
+| JLM-DEC-026 | extra | current | accepted |
 """
         self.assertEqual(
-            validator.decision_definition_ids(sample),
+            validator.decision_definition_ids(sample)[:2],
             ["JLM-DEC-017", "JLM-DEC-018"],
         )
+        self.assertEqual(validator.decision_supersession_targets(sample), ["JLM-DEC-018"])
+        self.assertEqual(validator.validate_decision_register(sample), 10)
 
     def test_duplicate_decision_definitions_remain_detectable(self) -> None:
         sample = """
@@ -52,6 +62,22 @@ class ProjectMemoryTests(unittest.TestCase):
 """
         ids = validator.decision_definition_ids(sample)
         self.assertNotEqual(len(ids), len(set(ids)))
+
+    def test_dangling_supersession_target_is_rejected(self) -> None:
+        rows = [f"| JLM-DEC-{i:03d} | decision | current | accepted |" for i in range(1, 11)]
+        rows[0] = "| JLM-DEC-001 | decision | superseded by JLM-DEC-999 | accepted |"
+        with self.assertRaisesRegex(AssertionError, "project_memory_missing_supersession_target:JLM-DEC-999"):
+            validator.validate_decision_register("\n".join(rows))
+
+    def test_commented_out_workflow_command_is_not_accepted(self) -> None:
+        workflow = validator.WORKFLOW.read_text(encoding="utf-8")
+        mutated = workflow.replace(
+            "run: python3 tools/assurance/validate_repository.py",
+            "# run: python3 tools/assurance/validate_repository.py",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "project_memory_workflow_missing_active_line"):
+            validator.validate_project_memory_workflow(mutated)
 
 
 if __name__ == "__main__":

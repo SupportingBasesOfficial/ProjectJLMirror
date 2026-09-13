@@ -53,5 +53,8 @@ jobs:
       - name: Test canonical project memory
         run: python3 -m unittest discover -s tests/project_memory -p 'test_*.py'
 
+      - name: Falsify canonical project-memory guardrails
+        run: PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py
+
       - name: Validate repository structure and workflow safety
         run: python3 tools/assurance/validate_repository.py

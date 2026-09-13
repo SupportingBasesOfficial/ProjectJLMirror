@@ -78,6 +78,32 @@
       "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 16
+    },
+    {
+      "id": "LEARN-PR151-007",
+      "pr": 151,
+      "source": "external_review",
+      "review_comment_id": 3998819890,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The authoritative-visibility lesson remained protected only by a positive assertion that the current human-operations document contained the phrase. If the validator stopped enforcing that concept while the document remained unchanged, the credited guardrail would still pass and fail to detect loss of the requirement.",
+      "horizontal_audit": ["human-operations authoritative visibility","validator enforcement","internal awareness evidence","customer-side awareness evidence","negative vocabulary mutation","future human-operation terminology changes"],
+      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 17
+    },
+    {
+      "id": "LEARN-PR151-008",
+      "pr": 151,
+      "source": "external_review",
+      "review_comment_id": 3998819893,
+      "class_id": "ADV-LEARNING-SURFACE-OMISSION",
+      "invariant_ids": ["INV-LEARNING-001"],
+      "root_cause": "The project-memory ledger credited an executable falsifier stored in the D4-C assurance file, but the project-memory workflow did not invoke that falsifier and the D4-C workflow was not triggered by project-memory-only changes. A future memory regression could therefore remove the permanent rejection check without exercising it in the affected PR.",
+      "horizontal_audit": ["project-memory workflow execution surface","credited falsifier scheduling","project-memory document changes","project-memory validator changes","ledger shard changes","future domain-specific permanent guardrails"],
+      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 8
     }
   ]
 }

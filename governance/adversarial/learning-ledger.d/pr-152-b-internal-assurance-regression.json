@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR152-017",
+      "pr": 152,
+      "source": "internal_audit",
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "A broad rewrite of the shared adversarial-learning falsifier file preserved the new AI-E2E checks but accidentally removed one historical probe and weakened several sibling probes so their mutations no longer exercised the authority they claimed to protect. Exact-head deterministic assurance exposed the regression before acceptance.",
+      "horizontal_audit": [
+        "manual-dispatch rejection",
+        "privileged job PR-content execution rejection",
+        "implicit GitHub API write rejection",
+        "exact status-endpoint binding",
+        "D4-C stale current-state projection rejection",
+        "merge-blocking stop-policy preservation",
+        "future edits to shared falsifier files"
+      ],
+      "guardrails": [
+        {"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_unbound_manual_dispatch"},
+        {"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_privileged_job_executes_pr_content"},
+        {"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_stale_d4c_current_workflow_projection"},
+        {"path": "tools/assurance/test_validate_adversarial_learning.py", "probe": "falsify_stop_policy_relaxation"}
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 27
+    }
+  ]
+}

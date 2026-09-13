@@ -104,6 +104,32 @@
       "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 8
+    },
+    {
+      "id": "LEARN-PR151-009",
+      "pr": 151,
+      "source": "external_review",
+      "review_comment_id": 3998864912,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "Decision supersession validation checked only that each referenced target existed, but it did not preserve source-to-target edges or reason about the resulting graph. Self-references and multi-node cycles could therefore be accepted even though no terminal current authority could be reached by following the audit chain.",
+      "horizontal_audit": ["decision supersession graph","self-supersession","multi-node cycles","terminal current authority","future decision replacement chains","recovery reconstruction"],
+      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 18
+    },
+    {
+      "id": "LEARN-PR151-010",
+      "pr": 151,
+      "source": "external_review",
+      "review_comment_id": 3998880009,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "Supersession extraction matched only already-valid canonical IDs. A malformed clause such as superseded by JLM-DEC-99 or JLM-DEC-O02 produced no match at all, so validation silently treated the row as current instead of rejecting a broken audit-chain declaration.",
+      "horizontal_audit": ["supersession clause parsing","malformed decision IDs","dangling targets","decision graph construction","audit-chain integrity","future parser changes"],
+      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 19
     }
   ]
 }

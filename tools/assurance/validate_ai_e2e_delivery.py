@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+DOCS = ROOT / "docs" / "00-foundation" / "ai-e2e-delivery"
+MANIFEST = ROOT / "implementation" / "e2e-delivery" / "EXECUTION_MANIFEST.json"
 REQUIRED_DOCS = (
     "AI-E2E-DELIVERY-CONSTITUTION.md",
     "VERTICAL-SLICE-DELIVERY-MODEL.md",

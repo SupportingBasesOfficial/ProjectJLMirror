@@ -113,6 +113,7 @@ def _decision_definition_rows(decisions:str)->list[tuple[str,str]]:
     return rows
 
 def decision_definition_ids(decisions:str)->list[str]: return [x for x,_ in _decision_definition_rows(decisions)]
+def _decision_number(decision_id:str)->int: return int(decision_id.rsplit("-",1)[1])
 def _validate_baseline_decision_meanings(decisions:str)->None:
     rows=dict(_decision_definition_rows(decisions))
     for did,meaning in BASELINE_DECISION_MEANINGS.items():
@@ -126,7 +127,9 @@ def decision_supersession_edges(decisions:str)->dict[str,str]:
         if not clauses: continue
         targets=DECISION_SUPERSESSION_TARGET_RE.findall(row)
         if len(clauses)!=1 or len(targets)!=1 or not DECISION_ID_RE.fullmatch(targets[0]): raise AssertionError(f"project_memory_malformed_supersession:{source}")
-        edges[source]=targets[0]
+        target=targets[0]
+        if _decision_number(target)<=_decision_number(source): raise AssertionError(f"project_memory_supersession_target_not_newer:{source}->{target}")
+        edges[source]=target
     return edges
 def decision_supersession_targets(decisions:str)->list[str]: return list(decision_supersession_edges(decisions).values())
 def _validate_supersession_acyclic(edges:dict[str,str])->None:
@@ -178,8 +181,7 @@ def _project_memory_job_keys(workflow:str)->set[str]:
     for line in _project_memory_job_lines(workflow):
         indent=len(line)-len(line.lstrip(" ")); stripped=line.strip()
         if indent!=4 or not stripped or stripped.startswith("#"): continue
-        if stripped.startswith("?"):
-            raise AssertionError("project_memory_workflow_job_explicit_key_not_allowed")
+        if stripped.startswith("?"): raise AssertionError("project_memory_workflow_job_explicit_key_not_allowed")
         pair=_yaml_key_value(stripped)
         if pair: keys.add(pair[0])
     return keys
@@ -210,7 +212,7 @@ def _project_memory_workflow_steps(workflow:str)->list[dict[str,str]]:
     if current is not None: blocks.append(current)
     steps=[]
     for block in blocks:
-        current={"__block__":"\n".join(block)}; pending=None; nested=None; block_key=None; block_body=[]
+        current={"__block__":"\n".join(block)}; nested=None; block_key=None; block_body=[]
         for idx,line in enumerate(block):
             indent=len(line)-len(line.lstrip(" ")); stripped=line.strip()
             if idx==0:
@@ -223,9 +225,8 @@ def _project_memory_workflow_steps(workflow:str)->list[dict[str,str]]:
             if not stripped or stripped.startswith("#"): continue
             if indent==8:
                 nested=None
-                if stripped.startswith("? "): pending=_normalize_yaml_key(stripped[2:].strip()); continue
-                if stripped.startswith(":") and pending is not None: current[pending]=stripped[1:].strip(); pending=None; continue
-                pending=None; pair=_yaml_key_value(stripped)
+                if stripped.startswith("?"): raise AssertionError("project_memory_workflow_step_explicit_key_not_allowed")
+                pair=_yaml_key_value(stripped)
                 if pair:
                     current[pair[0]]=pair[1]
                     if pair[1]=="": nested=pair[0]
@@ -251,8 +252,7 @@ def validate_project_memory_workflow(workflow:str)->None:
     if any("if" in s for s in steps): raise AssertionError("project_memory_workflow_condition_not_allowed")
     if any("continue-on-error" in s for s in steps): raise AssertionError("project_memory_workflow_continue_on_error_not_allowed")
     resolve=_unique_step(steps,"Resolve exact analyzed HEAD"); body=resolve.get("run.body","")
-    if resolve.get("id")!="target" or resolve.get("shell")!="bash" or body!=CANONICAL_RESOLVE_BODY:
-        raise AssertionError("project_memory_workflow_resolve_head_binding_invalid")
+    if resolve.get("id")!="target" or resolve.get("shell")!="bash" or body!=CANONICAL_RESOLVE_BODY: raise AssertionError("project_memory_workflow_resolve_head_binding_invalid")
     checkout=_unique_step(steps,"Checkout exact analyzed HEAD")
     if checkout.get("uses")!="actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" or checkout.get("with.ref")!="${{ steps.target.outputs.sha }}" or checkout.get("with.persist-credentials")!="false" or checkout.get("with.fetch-depth")!="0" or checkout.get("with.allow-unsafe-pr-checkout")!="false": raise AssertionError("project_memory_workflow_checkout_binding_invalid")
     verify=_unique_step(steps,"Verify exact commit identity"); verify_body=verify.get("run.body","")
@@ -284,4 +284,4 @@ def validate()->tuple[int,int]:
     validate_project_memory_workflow(WORKFLOW.read_text(encoding="utf-8")); return len(REQUIRED_FILES),decision_count
 
 if __name__=="__main__":
-    files,decisions=validate(); print(f"project_memory=PASS files={files} decisions={decisions})")
+    files,decisions=validate(); print(f"project_memory=PASS files={files} decisions={decisions}")

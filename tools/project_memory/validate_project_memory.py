@@ -21,6 +21,8 @@ REQUIRED_FILES = (
     "RECOVERY-PLAYBOOK-FOR-NEW-CHAT.md",
 )
 
+DECISION_DEFINITION_RE = re.compile(r"^\|\s*(JLM-DEC-\d{3})\s*\|", re.MULTILINE)
+
 
 def read(name: str) -> str:
     path = MEMORY / name
@@ -30,6 +32,15 @@ def read(name: str) -> str:
     if len(text.strip()) < 200:
         raise AssertionError(f"project_memory_file_too_small:{name}")
     return text
+
+
+def decision_definition_ids(decisions: str) -> list[str]:
+    """Return only decision IDs defined in the register's first table column.
+
+    References such as `superseded by JLM-DEC-018` are intentionally excluded:
+    they are audit links, not duplicate definitions.
+    """
+    return DECISION_DEFINITION_RE.findall(decisions)
 
 
 def validate() -> tuple[int, int]:
@@ -67,11 +78,11 @@ def validate() -> tuple[int, int]:
             raise AssertionError(f"project_memory_invariant_missing:{token}")
 
     decisions = texts["DECISION-REGISTER.md"]
-    ids = re.findall(r"JLM-DEC-\d{3}", decisions)
+    ids = decision_definition_ids(decisions)
     if len(ids) < 10:
         raise AssertionError("project_memory_decision_register_too_small")
     if len(ids) != len(set(ids)):
-        raise AssertionError("project_memory_duplicate_decision_id")
+        raise AssertionError("project_memory_duplicate_decision_definition_id")
 
     state = texts["IMPLEMENTATION-STATE.md"]
     if not re.search(r"Canonical main SHA at this snapshot: `([0-9a-f]{40})`", state):
@@ -111,7 +122,7 @@ def validate() -> tuple[int, int]:
     if "automatic Alert create/resolve remains blocked" not in deferred:
         raise AssertionError("project_memory_deferred_missing_alert_block")
 
-    return len(REQUIRED_FILES), len(set(ids))
+    return len(REQUIRED_FILES), len(ids)
 
 
 if __name__ == "__main__":

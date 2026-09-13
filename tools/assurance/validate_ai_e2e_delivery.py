@@ -5,14 +5,46 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-DOCS = ROOT / "docs" / "00-foundation" / "ai-e2e-delivery"
-MANIFEST = ROOT / "implementation" / "e2e-delivery" / "EXECUTION_MANIFEST.json"
-
 REQUIRED_DOCS = (
     "AI-E2E-DELIVERY-CONSTITUTION.md",
     "VERTICAL-SLICE-DELIVERY-MODEL.md",
     "PRODUCT-EXECUTION-ROADMAP.md",
     "DAY-1-IMPLEMENTATION-BOOTSTRAP.md",
+)
+EXPECTED_GATE_HEADINGS = (
+    "G0 — Developer/runtime bootstrap",
+    "G1 — Identity + tenant + shell golden path",
+    "G2 — Monitoring source onboarding golden path",
+    "G3 — Resource inventory golden path",
+    "G4 — Metrics golden path",
+    "G5 — Problem + Health golden path",
+    "G6 — Monitoring -> Alerting transport golden path",
+    "G7 — Alert policy + lifecycle golden path",
+    "G8 — Human operations golden path",
+    "G9 — Notification/delivery golden path",
+    "G10 — ITSM golden path",
+    "G11 — Automation golden path",
+    "G12 — AIOps golden path",
+    "G13 — Commercial/FinOps/product administration",
+    "G14 — Production release gate",
+)
+EXPECTED_LAYERS = (
+    "authority",
+    "data_model",
+    "migration",
+    "tenant_isolation",
+    "domain",
+    "application",
+    "api_bff",
+    "frontend",
+    "unit_tests",
+    "integration_tests",
+    "e2e_tests",
+    "adversarial_tests",
+    "observability",
+    "runtime",
+    "deployment",
+    "exact_head_evidence",
 )
 
 
@@ -21,10 +53,14 @@ def require(cond: bool, msg: str) -> None:
         raise AssertionError(msg)
 
 
-def validate() -> tuple[int, int, int]:
+def validate(root: Path = ROOT) -> tuple[int, int, int]:
+    root = root.resolve()
+    docs_dir = root / "docs" / "00-foundation" / "ai-e2e-delivery"
+    manifest_path = root / "implementation" / "e2e-delivery" / "EXECUTION_MANIFEST.json"
+
     texts = {}
     for name in REQUIRED_DOCS:
-        path = DOCS / name
+        path = docs_dir / name
         require(path.is_file(), f"missing_delivery_doc:{name}")
         text = path.read_text(encoding="utf-8")
         require(len(text.strip()) >= 800, f"delivery_doc_too_small:{name}")
@@ -49,11 +85,8 @@ def validate() -> tuple[int, int, int]:
         require(token in model, f"slice_model_missing:{token}")
 
     roadmap = texts["PRODUCT-EXECUTION-ROADMAP.md"]
-    for gate in [f"G{i}" for i in range(15)]:
-        require(gate in roadmap, f"roadmap_gate_missing:{gate}")
-    require("G2 — Monitoring source onboarding golden path" in roadmap, "roadmap_missing_monitoring_source")
-    require("G7 — Alert policy + lifecycle golden path" in roadmap, "roadmap_missing_alert_policy")
-    require("G14 — Production release gate" in roadmap, "roadmap_missing_production_gate")
+    for heading in EXPECTED_GATE_HEADINGS:
+        require(f"### {heading}" in roadmap, f"roadmap_heading_missing:{heading}")
 
     bootstrap = texts["DAY-1-IMPLEMENTATION-BOOTSTRAP.md"]
     for token in (
@@ -65,7 +98,7 @@ def validate() -> tuple[int, int, int]:
     ):
         require(token in bootstrap, f"bootstrap_missing:{token}")
 
-    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     require(manifest.get("schema_version") == 1, "manifest_schema")
     require(manifest.get("program_id") == "jlmirror.ai-e2e-delivery@1", "manifest_program")
     require(manifest.get("delivery_model") == "vertical_slice", "manifest_delivery_model")
@@ -76,21 +109,19 @@ def validate() -> tuple[int, int, int]:
     require(isinstance(gates, list) and len(gates) == 15, "manifest_gate_count")
     ids = [g.get("id") for g in gates]
     require(ids == [f"G{i}" for i in range(15)], "manifest_gate_order")
-    seen = set()
-    for gate in gates:
+    for index, gate in enumerate(gates):
+        gate_id = f"G{index}"
         deps = gate.get("depends_on")
-        require(isinstance(deps, list), f"gate_dependencies:{gate.get('id')}")
-        require(set(deps).issubset(seen), f"gate_forward_dependency:{gate.get('id')}")
-        require(gate.get("requires_e2e") is True, f"gate_requires_e2e:{gate.get('id')}")
-        seen.add(gate["id"])
+        expected_deps = [] if index == 0 else [f"G{index - 1}"]
+        require(deps == expected_deps, f"gate_dependencies_exact:{gate_id}")
+        require(gate.get("requires_e2e") is True, f"gate_requires_e2e:{gate_id}")
 
     stages = manifest.get("slice_stages")
     require(stages == [f"S{i}" for i in range(11)], "manifest_slice_stages")
 
     required_layers = manifest.get("required_layers")
-    require(isinstance(required_layers, list) and len(required_layers) == 16, "manifest_e2e16_layers")
-    for layer in ("data_model", "domain", "api_bff", "frontend", "integration_tests", "e2e_tests", "deployment", "exact_head_evidence"):
-        require(layer in required_layers, f"manifest_missing_layer:{layer}")
+    require(required_layers == list(EXPECTED_LAYERS), "manifest_e2e16_exact_layers")
+    require(len(set(required_layers)) == 16, "manifest_e2e16_unique_layers")
 
     return len(REQUIRED_DOCS), len(gates), len(required_layers)
 

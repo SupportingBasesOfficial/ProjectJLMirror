@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR151-029",
+      "pr": 151,
+      "source": "external_review",
+      "review_comment_id": 4001338208,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "Job-level explicit YAML keys had been fail-closed, but step parsing still attempted to interpret explicit mapping syntax and therefore accepted a folded block-scalar key whose semantic value was `if`. A required governance step could be skipped while the authority validator remained green.",
+      "horizontal_audit": ["step-level YAML mapping grammar", "folded explicit keys", "required governance step conditions", "falsifier execution authority", "future workflow parsers"],
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_project_memory_review_guardrails"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 38
+    },
+    {
+      "id": "LEARN-PR151-030",
+      "pr": 151,
+      "source": "external_review",
+      "review_comment_id": 4001338209,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "Supersession validation proved target existence and acyclicity but did not enforce the register's append-only replacement rule. An accepted decision could point backward to an older unrelated ID and falsely present it as the successor without appending a new replacement decision.",
+      "horizontal_audit": ["append-only decision register", "supersession source-target ordering", "historical decision immutability", "replacement decision identity", "future decision governance"],
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_project_memory_review_guardrails"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 39
+    }
+  ]
+}

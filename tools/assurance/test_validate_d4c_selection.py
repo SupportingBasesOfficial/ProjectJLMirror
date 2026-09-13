@@ -11,6 +11,13 @@ def must_fail(mutator,fragment):
 def falsify_selection_record_product_authority():
  def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
  must_fail(grant_product,'Product authority escalation')
+def falsify_ai_e2e_delivery_heading_binding():
+ roadmap=(ROOT/'docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md').read_text(encoding='utf-8')
+ delivery_validator=(ROOT/'tools/assurance/validate_ai_e2e_delivery.py').read_text(encoding='utf-8')
+ assert 'G2 — Monitoring source onboarding golden path' in roadmap
+ assert 'require("G2 — Monitoring source onboarding golden path" in roadmap' in delivery_validator
+ assert 'require("G7 — Alert policy + lifecycle golden path" in roadmap' in delivery_validator
+ assert 'require("G14 — Production release gate" in roadmap' in delivery_validator
 def main():
  values=baseline(); errors=validator.validate_records(*values)
  if errors: raise AssertionError(f'canonical D4-C selection failed validation: {errors!r}')
@@ -29,7 +36,8 @@ def main():
  def regress_d4_acceptance(selection,ledger,state,evaluation): state['gate_state']='scoped'
  must_fail(regress_d4_acceptance,'state D4 gate authority drift')
  falsify_selection_record_product_authority()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked')
+ falsify_ai_e2e_delivery_heading_binding()
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked ai_e2e_heading_binding=attested')
  return 0
 if __name__=='__main__':
  main()

@@ -25,11 +25,12 @@ class AiE2EDeliveryTests(unittest.TestCase):
         manifest = json.loads(validator.MANIFEST.read_text(encoding="utf-8"))
         self.assertEqual(manifest["first_full_stack_target"], "G1")
 
-    def test_alert_policy_requires_separate_authority(self) -> None:
+    def test_authority_gated_stages_require_exact_separate_authority(self) -> None:
         import json
         manifest = json.loads(validator.MANIFEST.read_text(encoding="utf-8"))
-        g7 = next(g for g in manifest["gates"] if g["id"] == "G7")
-        self.assertEqual(g7["authority_prerequisite"], "separate_alert_policy_evaluation_authorization")
+        gates = {g["id"]: g for g in manifest["gates"]}
+        self.assertEqual(gates["G7"]["authority_prerequisite"], "separate_alert_policy_evaluation_authorization")
+        self.assertEqual(gates["G8"]["authority_prerequisite"], "responsibility_ack_visibility_authorization")
 
     def test_every_gate_requires_e2e_proof(self) -> None:
         import json

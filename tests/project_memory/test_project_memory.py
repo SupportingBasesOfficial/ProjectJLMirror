@@ -106,6 +106,16 @@ class ProjectMemoryTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "project_memory_missing_baseline_decision:JLM-DEC-001"):
             validator.validate_decision_register(hidden)
 
+    def test_script_raw_html_block_does_not_expose_rows(self) -> None:
+        hidden = '<script type="text/plain">\n' + "\n".join(baseline_rows()) + "\n</script>"
+        with self.assertRaisesRegex(AssertionError, "project_memory_missing_baseline_decision:JLM-DEC-001"):
+            validator.validate_decision_register(hidden)
+
+    def test_block_html_region_does_not_expose_rows(self) -> None:
+        hidden = "<div>\n" + "\n".join(baseline_rows()) + "\n</div>\n"
+        with self.assertRaisesRegex(AssertionError, "project_memory_missing_baseline_decision:JLM-DEC-001"):
+            validator.validate_decision_register(hidden)
+
     def test_malformed_seeded_decision_id_is_rejected_as_missing(self) -> None:
         rows = baseline_rows()
         rows[16] = "| JLM-DEC-O17 | malformed | current | accepted |"
@@ -167,7 +177,7 @@ class ProjectMemoryTests(unittest.TestCase):
             "# run: python3 tools/assurance/validate_repository.py",
             1,
         )
-        with self.assertRaisesRegex(AssertionError, "project_memory_workflow_missing_active_line"):
+        with self.assertRaisesRegex(AssertionError, "project_memory_workflow_missing_executable_step"):
             validator.validate_project_memory_workflow(mutated)
 
     def test_conditionally_disabled_workflow_step_is_not_accepted(self) -> None:
@@ -188,6 +198,27 @@ class ProjectMemoryTests(unittest.TestCase):
             1,
         )
         with self.assertRaisesRegex(AssertionError, "project_memory_workflow_condition_not_allowed"):
+            validator.validate_project_memory_workflow(mutated)
+
+    def test_explicit_mapping_condition_key_is_not_accepted(self) -> None:
+        workflow = validator.WORKFLOW.read_text(encoding="utf-8")
+        mutated = workflow.replace(
+            "      - name: Falsify canonical project-memory guardrails\n",
+            "      - name: Falsify canonical project-memory guardrails\n        ? if\n        : ${{ false }}\n",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "project_memory_workflow_condition_not_allowed"):
+            validator.validate_project_memory_workflow(mutated)
+
+    def test_required_run_decoy_under_env_is_not_accepted(self) -> None:
+        workflow = validator.WORKFLOW.read_text(encoding="utf-8")
+        required = "run: PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py"
+        mutated = workflow.replace(
+            "      - name: Falsify canonical project-memory guardrails\n        " + required + "\n",
+            "      - name: Falsify canonical project-memory guardrails\n        run: 'true'\n        env:\n          " + required + "\n",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "project_memory_workflow_missing_executable_step:Falsify canonical project-memory guardrails"):
             validator.validate_project_memory_workflow(mutated)
 
 

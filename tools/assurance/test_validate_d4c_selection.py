@@ -38,10 +38,18 @@ def falsify_monitoring_alerting_privileged_acl_preflight():
   'monitoring.recover_health_projection_publication(text,text)',
  )
  dependency_fence_start=sql.index('-- CREATE OR REPLACE preserves a function OID.')
- dependency_fence_end=sql.index('GRANT USAGE ON SCHEMA monitoring, system',dependency_fence_start)
+ dependency_fence_end=sql.index('-- The Wave 4 recovery authority is intentionally shared',dependency_fence_start)
  dependency_fence=sql[dependency_fence_start:dependency_fence_end]
  for signature in privileged_signatures:
   assert f"('{signature}')" in dependency_fence, f'privileged signature missing from inbound dependency fence: {signature}'
+ recovery_proxy_fence_start=sql.index('-- The Wave 4 recovery authority is intentionally shared')
+ recovery_proxy_fence_end=sql.index('GRANT USAGE ON SCHEMA monitoring, system',recovery_proxy_fence_start)
+ recovery_proxy_fence=sql[recovery_proxy_fence_start:recovery_proxy_fence_end]
+ assert 'monitoring.publication_recovery_authority_callable_proxy_unsafe' in recovery_proxy_fence
+ assert 'p.proowner=v_recovery_oid' in recovery_proxy_fence
+ assert "a.privilege_type='EXECUTE'" in recovery_proxy_fence
+ assert 'a.grantee<>p.proowner' in recovery_proxy_fence
+ assert "aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner)))" in recovery_proxy_fence
  assert 'monitoring.publication_existing_function_acl_unsafe' in sql
  assert 'monitoring.publication_installed_function_acl_unsafe' in sql
  assert "aclexplode(COALESCE(p.proacl, ARRAY[]::aclitem[]))" in sql
@@ -49,6 +57,10 @@ def falsify_monitoring_alerting_privileged_acl_preflight():
  assert "a.privilege_type='EXECUTE'" in sql and 'a.grantee<>p.proowner' in sql
  assert 'a.grantee=0' in sql, 'post-install ACL fence must reject PUBLIC EXECUTE'
  assert 'OR a.is_grantable' in sql, 'recovery authority must never retain EXECUTE WITH GRANT OPTION'
+ assert 'jlmirror_recovery_proxy_probe' in conformance and 'recovery_authority_callable_proxy=blocked' in conformance
+ assert "EXECUTE 'SELECT monitoring.recover_problem_state_publication($1,$2)'" in conformance
+ assert 'proxy_dependency_count' in conformance and 'test "$proxy_dependency_count" = "0"' in conformance
+ assert 'monitoring.publication_recovery_authority_callable_proxy_unsafe:routine=monitoring.jlmirror_recovery_proxy_probe(text,text),grantee=PUBLIC' in conformance
  assert 'jlmirror_executor_probe' in conformance and 'executor_owned_routine=blocked' in conformance
  assert 'jlmirror_executor_view_probe' in conformance and 'executor_owned_view=blocked' in conformance
  assert 'SET ROLE jlmirror_view_probe' in conformance and 'permission denied' in conformance
@@ -91,7 +103,7 @@ def main():
  falsify_selection_record_product_authority()
  falsify_monitoring_alerting_composed_workflow_dependencies()
  falsify_monitoring_alerting_privileged_acl_preflight()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked publication_composed_dependencies=bound publication_acl_preflight=all-privileged-owner+dependency+pre+post-install-attested')
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked publication_composed_dependencies=bound publication_acl_preflight=recovery-proxy+all-privileged-owner+dependency+pre+post-install-attested')
  return 0
 if __name__=='__main__':
  main()

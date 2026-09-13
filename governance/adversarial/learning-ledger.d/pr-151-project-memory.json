@@ -130,6 +130,19 @@
       "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 19
+    },
+    {
+      "id": "LEARN-PR151-011",
+      "pr": 151,
+      "source": "external_review",
+      "review_comment_id": 3999086113,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The Decision Register validator enforced only a weak minimum definition count, so deleting or corrupting one of the seeded canonical decision IDs could still leave enough rows to pass. That violated the append-or-supersede history contract by allowing accepted decision identity to disappear silently instead of remaining reconstructable.",
+      "horizontal_audit": ["seeded JLM-DEC-001 through JLM-DEC-017 identities","decision deletion","malformed seeded IDs","append-only future decisions","supersession instead of destructive replacement","project reconstruction integrity"],
+      "guardrails": [{"path": "tools/assurance/test_validate_d4c_selection.py","probe": "falsify_project_memory_review_guardrails"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 20
     }
   ]
 }

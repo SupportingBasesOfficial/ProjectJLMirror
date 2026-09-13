@@ -30,8 +30,15 @@ def falsify_monitoring_alerting_privileged_acl_preflight():
  assert "d.classid='pg_proc'::regclass" in sql
  assert 'monitoring.publication_existing_function_dependency_unsafe' in sql
  assert 'FROM pg_depend d' in sql and "d.refclassid='pg_proc'::regclass" in sql
- assert "('monitoring.wave4_publish_problem_transition()')" in sql
- assert "('monitoring.wave4_publish_health_transition()')" in sql
+ privileged_signatures=(
+  'monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb)',
+  'monitoring.wave4_publish_problem_transition()',
+  'monitoring.wave4_publish_health_transition()',
+  'monitoring.recover_problem_state_publication(text,text)',
+  'monitoring.recover_health_projection_publication(text,text)',
+ )
+ for signature in privileged_signatures:
+  assert sql.count(f"('{signature}')")>=2, f'all privileged functions must participate in pre-grant owner/dependency closure: {signature}'
  assert 'monitoring.publication_existing_function_acl_unsafe' in sql
  assert 'monitoring.publication_installed_function_acl_unsafe' in sql
  assert "aclexplode(COALESCE(p.proacl, ARRAY[]::aclitem[]))" in sql
@@ -45,6 +52,10 @@ def falsify_monitoring_alerting_privileged_acl_preflight():
  assert 'jlmirror_retained_trigger_probe' in conformance and 'retained_trigger_dependency=blocked' in conformance
  assert 'monitoring.publication_existing_function_dependency_unsafe:monitoring.wave4_publish_problem_transition():class=pg_trigger' in conformance
  assert 'JOIN pg_trigger t ON t.tgfoid=p.oid' in conformance
+ assert 'jlmirror_retained_helper_probe' in conformance and 'retained_helper_expression_dependency=blocked' in conformance
+ assert 'CREATE INDEX jlmirror_retained_helper_probe_idx' in conformance
+ assert 'monitoring.publication_existing_function_dependency_unsafe:monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb):' in conformance
+ assert "JOIN pg_depend d ON d.refclassid='pg_proc'::regclass AND d.refobjid=p.oid" in conformance
  assert 'has_table_privilege' in conformance and 'system.async_outbox_message' in conformance
  assert 'jlmirror_acl_probe' in conformance and 'retained_named_execute=blocked' in conformance
  assert 'WITH GRANT OPTION' in conformance and 'recovery_grant_option=blocked' in conformance
@@ -73,7 +84,7 @@ def main():
  falsify_selection_record_product_authority()
  falsify_monitoring_alerting_composed_workflow_dependencies()
  falsify_monitoring_alerting_privileged_acl_preflight()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked publication_composed_dependencies=bound publication_acl_preflight=cross-class-owner-closure+dependency-closure+pre+post-install-attested')
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked publication_composed_dependencies=bound publication_acl_preflight=all-privileged-owner+dependency+pre+post-install-attested')
  return 0
 if __name__=='__main__':
  main()

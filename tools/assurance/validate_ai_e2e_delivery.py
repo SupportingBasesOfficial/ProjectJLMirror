@@ -72,8 +72,31 @@ def require(cond: bool, msg: str) -> None:
         raise AssertionError(msg)
 
 
-def _markdown_lines(text: str) -> set[str]:
-    return {line.rstrip() for line in text.splitlines()}
+def _markdown_heading_lines(text: str) -> set[str]:
+    headings: set[str] = set()
+    fence_char: str | None = None
+    fence_len = 0
+    for raw in text.splitlines():
+        stripped = raw.lstrip(" ")
+        indent = len(raw) - len(stripped)
+        if indent <= 3 and stripped:
+            char = stripped[0]
+            if char in ("`", "~"):
+                run = 0
+                while run < len(stripped) and stripped[run] == char:
+                    run += 1
+                if run >= 3:
+                    if fence_char is None:
+                        fence_char = char
+                        fence_len = run
+                        continue
+                    if char == fence_char and run >= fence_len and stripped[run:].strip() == "":
+                        fence_char = None
+                        fence_len = 0
+                        continue
+        if fence_char is None:
+            headings.add(raw.rstrip())
+    return headings
 
 
 def validate(root: Path = ROOT) -> tuple[int, int, int]:
@@ -102,14 +125,14 @@ def validate(root: Path = ROOT) -> tuple[int, int, int]:
         require(token in constitution, f"constitution_missing:{token}")
 
     model = texts["VERTICAL-SLICE-DELIVERY-MODEL.md"]
-    model_lines = _markdown_lines(model)
+    model_lines = _markdown_heading_lines(model)
     for heading in EXPECTED_SLICE_HEADINGS:
         require(f"### {heading}" in model_lines, f"slice_heading_missing:{heading}")
     for token in ("database_scope", "api_scope", "frontend_scope", "browser E2E", "AI task packet"):
         require(token in model, f"slice_model_missing:{token}")
 
     roadmap = texts["PRODUCT-EXECUTION-ROADMAP.md"]
-    roadmap_lines = _markdown_lines(roadmap)
+    roadmap_lines = _markdown_heading_lines(roadmap)
     for heading in EXPECTED_GATE_HEADINGS:
         require(f"### {heading}" in roadmap_lines, f"roadmap_heading_missing:{heading}")
 

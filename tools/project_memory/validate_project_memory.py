@@ -127,9 +127,7 @@ def decision_supersession_edges(decisions:str)->dict[str,str]:
         if not clauses: continue
         targets=DECISION_SUPERSESSION_TARGET_RE.findall(row)
         if len(clauses)!=1 or len(targets)!=1 or not DECISION_ID_RE.fullmatch(targets[0]): raise AssertionError(f"project_memory_malformed_supersession:{source}")
-        target=targets[0]
-        if _decision_number(target)<=_decision_number(source): raise AssertionError(f"project_memory_supersession_target_not_newer:{source}->{target}")
-        edges[source]=target
+        edges[source]=targets[0]
     return edges
 def decision_supersession_targets(decisions:str)->list[str]: return list(decision_supersession_edges(decisions).values())
 def _validate_supersession_acyclic(edges:dict[str,str])->None:
@@ -152,7 +150,10 @@ def validate_decision_register(decisions:str)->int:
     _validate_baseline_decision_meanings(decisions); edges=decision_supersession_edges(decisions)
     for target in edges.values():
         if target not in defined: raise AssertionError(f"project_memory_missing_supersession_target:{target}")
-    _validate_supersession_acyclic(edges); return len(ids)
+    _validate_supersession_acyclic(edges)
+    for source,target in edges.items():
+        if _decision_number(target)<=_decision_number(source): raise AssertionError(f"project_memory_supersession_target_not_newer:{source}->{target}")
+    return len(ids)
 def validate_human_operations(human:str)->None:
     for token in ("Internal and customer-side authority","authoritative visibility","JLMirror-controlled authenticated surface","continue tracking and presenting whether/when the customer has viewed","RESPONSIBLE PERSON != CURRENT ACTION OWNER","DELIVERED != VIEWED"):
         if token not in human: raise AssertionError(f"project_memory_human_model_missing:{token}")

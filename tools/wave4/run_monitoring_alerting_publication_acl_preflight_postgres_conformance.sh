@@ -105,6 +105,38 @@ DROP ROLE jlmirror_view_probe;
 DROP ROLE jlmirror_wave4_monitoring_publication_executor;
 SQL
 
+# Case 0c: CREATE OR REPLACE preserves a function OID and an already-installed
+# trigger keeps its tgfoid. A same-signature publication trigger function that
+# is attached to any pre-existing table must therefore be rejected before the
+# function can be replaced/elevated and before the executor receives outbox ACLs.
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+CREATE ROLE jlmirror_wave4_monitoring_publication_executor
+    NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE TABLE monitoring.jlmirror_retained_trigger_probe(id bigint);
+CREATE FUNCTION monitoring.wave4_publish_problem_transition()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$ BEGIN RETURN NEW; END $$;
+REVOKE ALL ON FUNCTION monitoring.wave4_publish_problem_transition() FROM PUBLIC;
+CREATE TRIGGER jlmirror_retained_trigger_probe
+BEFORE INSERT ON monitoring.jlmirror_retained_trigger_probe
+FOR EACH ROW EXECUTE FUNCTION monitoring.wave4_publish_problem_transition();
+SQL
+
+run_expected_acl_rejection 'monitoring.publication_existing_function_dependency_unsafe:monitoring.wave4_publish_problem_transition():class=pg_trigger'
+
+executor_privs="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','SELECT')::int || ':' || has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','INSERT')::int;")"
+test "$executor_privs" = "0:0"
+
+retained_trigger_state="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT pg_get_userbyid(p.proowner) || ':' || p.prosecdef::int || ':' || count(t.oid) FROM pg_proc p JOIN pg_trigger t ON t.tgfoid=p.oid WHERE p.oid='monitoring.wave4_publish_problem_transition()'::regprocedure AND t.tgname='jlmirror_retained_trigger_probe' GROUP BY p.proowner,p.prosecdef;")"
+test "$retained_trigger_state" = "postgres:0:1"
+
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+DROP TABLE monitoring.jlmirror_retained_trigger_probe;
+DROP FUNCTION monitoring.wave4_publish_problem_transition();
+DROP ROLE jlmirror_wave4_monitoring_publication_executor;
+SQL
+
 # Case 1: unrelated named EXECUTE grant on an internal helper must be rejected
 # before the function can become SECURITY DEFINER.
 docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
@@ -160,4 +192,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA monitoring
 DROP ROLE jlmirror_acl_probe;
 SQL
 
-echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=PASS executor_owned_routine=blocked executor_owned_view=blocked retained_named_execute=blocked recovery_grant_option=blocked default_execute_grant=blocked transactional_acl_fence=proven"
+echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=PASS executor_owned_routine=blocked executor_owned_view=blocked retained_trigger_dependency=blocked retained_named_execute=blocked recovery_grant_option=blocked default_execute_grant=blocked transactional_acl_fence=proven"

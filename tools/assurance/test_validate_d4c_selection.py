@@ -34,6 +34,10 @@ def falsify_ai_e2e_delivery_heading_binding():
   path=root/'docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md'; text=path.read_text(encoding='utf-8')
   path.write_text(text.replace('### G2 — Monitoring source onboarding golden path','#### G2 — Monitoring source onboarding golden path',1),encoding='utf-8')
  _delivery_must_fail(demote_g2_heading,'roadmap_heading_missing:G2 — Monitoring source onboarding golden path')
+ def fence_g2_heading(root):
+  path=root/'docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md'; text=path.read_text(encoding='utf-8')
+  path.write_text(text.replace('### G2 — Monitoring source onboarding golden path','```text\n### G2 — Monitoring source onboarding golden path\n```',1),encoding='utf-8')
+ _delivery_must_fail(fence_g2_heading,'roadmap_heading_missing:G2 — Monitoring source onboarding golden path')
  def remove_s1_heading(root):
   path=root/'docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md'; text=path.read_text(encoding='utf-8')
   path.write_text(text.replace('### S1 — Contract skeleton','### renamed contract stage',1),encoding='utf-8')
@@ -42,6 +46,10 @@ def falsify_ai_e2e_delivery_heading_binding():
   path=root/'docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md'; text=path.read_text(encoding='utf-8')
   path.write_text(text.replace('### S1 — Contract skeleton','#### S1 — Contract skeleton',1),encoding='utf-8')
  _delivery_must_fail(demote_s1_heading,'slice_heading_missing:S1 — Contract skeleton')
+ def fence_s1_heading(root):
+  path=root/'docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md'; text=path.read_text(encoding='utf-8')
+  path.write_text(text.replace('### S1 — Contract skeleton','~~~text\n### S1 — Contract skeleton\n~~~',1),encoding='utf-8')
+ _delivery_must_fail(fence_s1_heading,'slice_heading_missing:S1 — Contract skeleton')
  def replace_layer(root):
   import json
   path=root/'implementation/e2e-delivery/EXECUTION_MANIFEST.json'; data=json.loads(path.read_text(encoding='utf-8')); data['required_layers'][0]='junk-layer'; path.write_text(json.dumps(data),encoding='utf-8')

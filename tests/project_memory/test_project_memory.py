@@ -82,6 +82,16 @@ class ProjectMemoryTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "project_memory_missing_baseline_decision:JLM-DEC-017"):
             validator.validate_decision_register("\n".join(rows))
 
+    def test_hidden_seeded_decisions_do_not_count(self) -> None:
+        hidden = "<!--\n" + "\n".join(baseline_rows()) + "\n-->"
+        with self.assertRaisesRegex(AssertionError, "project_memory_missing_baseline_decision:JLM-DEC-001"):
+            validator.validate_decision_register(hidden)
+
+    def test_fenced_seeded_decisions_do_not_count(self) -> None:
+        hidden = "```markdown\n" + "\n".join(baseline_rows()) + "\n```"
+        with self.assertRaisesRegex(AssertionError, "project_memory_missing_baseline_decision:JLM-DEC-001"):
+            validator.validate_decision_register(hidden)
+
     def test_malformed_seeded_decision_id_is_rejected_as_missing(self) -> None:
         rows = baseline_rows()
         rows[16] = "| JLM-DEC-O17 | malformed | current | accepted |"
@@ -138,6 +148,16 @@ class ProjectMemoryTests(unittest.TestCase):
             1,
         )
         with self.assertRaisesRegex(AssertionError, "project_memory_workflow_missing_active_line"):
+            validator.validate_project_memory_workflow(mutated)
+
+    def test_conditionally_disabled_workflow_step_is_not_accepted(self) -> None:
+        workflow = validator.WORKFLOW.read_text(encoding="utf-8")
+        mutated = workflow.replace(
+            "      - name: Falsify canonical project-memory guardrails\n",
+            "      - name: Falsify canonical project-memory guardrails\n        if: ${{ false }}\n",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "project_memory_workflow_condition_not_allowed"):
             validator.validate_project_memory_workflow(mutated)
 
 

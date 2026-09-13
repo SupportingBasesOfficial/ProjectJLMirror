@@ -52,6 +52,19 @@
       "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_monitoring_alerting_composed_workflow_dependencies"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 8
+    },
+    {
+      "id": "LEARN-PR148-005",
+      "pr": 148,
+      "source": "external_review",
+      "review_comment_id": 3999079023,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "Pre-elevation ACL validation covered only functions that already existed. On a first-time CREATE FUNCTION, the installer role's ALTER DEFAULT PRIVILEGES could inject a named EXECUTE grant before ownership transfer; revoking only PUBLIC afterward would preserve that unexpected authority through COMMIT on the new SECURITY DEFINER function.",
+      "horizontal_audit": ["installer default function privileges","first-time privileged function creation","post-install effective ACLs","named EXECUTE grants","PUBLIC EXECUTE","SECURITY DEFINER ownership","transaction commit boundary"],
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_monitoring_alerting_privileged_acl_preflight"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 29
     }
   ]
 }

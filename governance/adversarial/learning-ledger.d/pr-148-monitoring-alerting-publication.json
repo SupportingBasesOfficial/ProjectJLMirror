@@ -25,6 +25,31 @@
       ],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 7
+    },
+    {
+      "id": "LEARN-PR148-002",
+      "pr": 148,
+      "source": "external_review",
+      "review_comment_id": 3998823518,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "The bridge upgraded same-signature functions to SECURITY DEFINER with CREATE OR REPLACE and revoked only PUBLIC afterward. PostgreSQL preserves explicit function ACLs across CREATE OR REPLACE, so a pre-existing named EXECUTE grantee could retain direct invocation authority over the newly privileged publication helper and forge tenant-scoped integration events.",
+      "horizontal_audit": [
+        "all CREATE OR REPLACE SECURITY DEFINER migrations",
+        "pre-existing function ACLs and named EXECUTE grants",
+        "publication helper direct invocation authority",
+        "recovery function expected-grantee allowlists",
+        "migration-time privilege elevation ordering",
+        "future privileged function replacement migrations"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_monitoring_alerting_privileged_acl_preflight"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 8
     }
   ]
 }

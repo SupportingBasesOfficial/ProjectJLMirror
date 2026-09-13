@@ -24,7 +24,7 @@ def _delivery_must_fail(mutator,fragment):
   else: raise AssertionError(f'delivery mutation unexpectedly accepted: {fragment}')
 def falsify_ai_e2e_delivery_heading_binding():
  def mutate_doc(root,rel,old,new):
-  path=root/rel; text=path.read_text(encoding='utf-8'); path.write_text(text.replace(old,new,1),encoding='utf-8')
+  path=root/rel; text=path.read_text(encoding='utf-8'); assert old in text; path.write_text(text.replace(old,new,1),encoding='utf-8')
  roadmap=Path('docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md')
  slices=Path('docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md')
  def remove_g2(root): mutate_doc(root,roadmap,'### G2 — Monitoring source onboarding golden path','### renamed monitoring source section')
@@ -37,6 +37,12 @@ def falsify_ai_e2e_delivery_heading_binding():
  _delivery_must_fail(comment_g2,'roadmap_heading_missing:G2 — Monitoring source onboarding golden path')
  def raw_html_g2(root): mutate_doc(root,roadmap,'### G2 — Monitoring source onboarding golden path','<script>\n### G2 — Monitoring source onboarding golden path\n</script>')
  _delivery_must_fail(raw_html_g2,'roadmap_heading_missing:G2 — Monitoring source onboarding golden path')
+ def processing_g2(root): mutate_doc(root,roadmap,'### G2 — Monitoring source onboarding golden path','<?hidden\n### G2 — Monitoring source onboarding golden path\n?>')
+ _delivery_must_fail(processing_g2,'roadmap_heading_missing:G2 — Monitoring source onboarding golden path')
+ def cdata_g2(root): mutate_doc(root,roadmap,'### G2 — Monitoring source onboarding golden path','<![CDATA[\n### G2 — Monitoring source onboarding golden path\n]]>')
+ _delivery_must_fail(cdata_g2,'roadmap_heading_missing:G2 — Monitoring source onboarding golden path')
+ def declaration_g2(root): mutate_doc(root,roadmap,'### G2 — Monitoring source onboarding golden path','<!DECLARATION\n### G2 — Monitoring source onboarding golden path\n>')
+ _delivery_must_fail(declaration_g2,'roadmap_heading_missing:G2 — Monitoring source onboarding golden path')
  def reorder_gates(root):
   path=root/roadmap; text=path.read_text(encoding='utf-8'); g1='### G1 — Identity + tenant + shell golden path'; g2='### G2 — Monitoring source onboarding golden path'; text=text.replace(g1,'### __TMP_GATE__',1).replace(g2,g1,1).replace('### __TMP_GATE__',g2,1); path.write_text(text,encoding='utf-8')
  _delivery_must_fail(reorder_gates,'roadmap_heading_order_or_duplicate')
@@ -79,6 +85,12 @@ def falsify_ai_e2e_delivery_heading_binding():
   import json
   path=root/'implementation/e2e-delivery/EXECUTION_MANIFEST.json'; data=json.loads(path.read_text(encoding='utf-8')); data['gates'][8]['authority_prerequisite']='missing_authority'; path.write_text(json.dumps(data),encoding='utf-8')
  _delivery_must_fail(corrupt_g8,'gate_authority_prerequisite_exact:G8')
+ def corrupt_optimization_target(root):
+  import json
+  path=root/'implementation/e2e-delivery/EXECUTION_MANIFEST.json'; data=json.loads(path.read_text(encoding='utf-8')); data['optimization_target']='maximize_parallel_agent_count'; path.write_text(json.dumps(data),encoding='utf-8')
+ _delivery_must_fail(corrupt_optimization_target,'manifest_optimization_target')
+ def rewrite_optimization_sentence(root): mutate_doc(root,roadmap,'Optimize for **lead time from accepted requirement to verified executable user outcome**, not lines of code, commit count or number of parallel agents.','Optimize for raw commit throughput.')
+ _delivery_must_fail(rewrite_optimization_sentence,'roadmap_optimization_target_missing')
 def main():
  values=baseline(); errors=validator.validate_records(*values)
  if errors: raise AssertionError(f'canonical D4-C selection failed validation: {errors!r}')
@@ -98,6 +110,6 @@ def main():
  must_fail(regress_d4_acceptance,'state D4 gate authority drift')
  falsify_selection_record_product_authority()
  falsify_ai_e2e_delivery_heading_binding()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked ai_e2e_governance=semantic-negative-mutated')
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked ai_e2e_governance=semantic-negative-mutated+raw-html-complete+optimization-bound')
  return 0
 if __name__=='__main__': main()

@@ -22,7 +22,26 @@ REQUIRED_FILES = (
     "RECOVERY-PLAYBOOK-FOR-NEW-CHAT.md",
 )
 
-BASELINE_DECISION_IDS = tuple(f"JLM-DEC-{i:03d}" for i in range(1, 18))
+BASELINE_DECISION_MEANINGS = {
+    "JLM-DEC-001": "JLMirror is provider-neutral, not a Zabbix UI",
+    "JLM-DEC-002": "Tenant isolation is foundational",
+    "JLM-DEC-003": "Provider identity is not platform identity",
+    "JLM-DEC-004": "Source generation participates in provider-evidence scope",
+    "JLM-DEC-005": "PostgreSQL is durable business truth",
+    "JLM-DEC-006": "Async delivery is at-least-once",
+    "JLM-DEC-007": "Browser access crosses mandatory BFF boundary",
+    "JLM-DEC-008": "Problem State and Health Projection are distinct Monitoring concepts",
+    "JLM-DEC-009": "Healthy requires authoritative completeness",
+    "JLM-DEC-010": "Monitoring->Alerting events are invalidation/resync only",
+    "JLM-DEC-011": "Alert is platform-owned actionable occurrence",
+    "JLM-DEC-012": "Alert v1 lifecycle is `active | resolved`; resolved is terminal",
+    "JLM-DEC-013": "Effectful Alert lifecycle transitions require immutable policy ID/version",
+    "JLM-DEC-014": "Alert source family is explicit",
+    "JLM-DEC-015": "Human operations use orthogonal state dimensions, not one giant status",
+    "JLM-DEC-016": "Critical human workflows must provide authoritative visibility evidence",
+    "JLM-DEC-017": "Repository truth outranks assistant/chat memory",
+}
+BASELINE_DECISION_IDS = tuple(BASELINE_DECISION_MEANINGS)
 DECISION_ID_RE = re.compile(r"JLM-DEC-\d{3}")
 DECISION_DEFINITION_RE = re.compile(r"^\|\s*(JLM-DEC-\d{3})\s*\|", re.MULTILINE)
 DECISION_SUPERSESSION_CLAUSE_RE = re.compile(r"\bsuperseded\s+by\b", re.IGNORECASE)
@@ -50,6 +69,17 @@ def _decision_definition_rows(decisions: str) -> list[tuple[str, str]]:
         if match:
             rows.append((match.group(1), line))
     return rows
+
+
+def _validate_baseline_decision_meanings(decisions: str) -> None:
+    rows = dict(_decision_definition_rows(decisions))
+    for decision_id, expected_meaning in BASELINE_DECISION_MEANINGS.items():
+        row = rows.get(decision_id)
+        if row is None:
+            continue
+        pattern = rf"^\|\s*{re.escape(decision_id)}\s*\|\s*{re.escape(expected_meaning)}\s*\|"
+        if re.match(pattern, row) is None:
+            raise AssertionError(f"project_memory_baseline_decision_meaning_changed:{decision_id}")
 
 
 def decision_supersession_edges(decisions: str) -> dict[str, str]:
@@ -99,6 +129,7 @@ def validate_decision_register(decisions: str) -> int:
     missing_baseline = [decision_id for decision_id in BASELINE_DECISION_IDS if decision_id not in defined]
     if missing_baseline:
         raise AssertionError("project_memory_missing_baseline_decision:" + ",".join(missing_baseline))
+    _validate_baseline_decision_meanings(decisions)
     edges = decision_supersession_edges(decisions)
     for target in edges.values():
         if target not in defined:

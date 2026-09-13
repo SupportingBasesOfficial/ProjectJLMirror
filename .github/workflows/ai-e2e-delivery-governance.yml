@@ -6,6 +6,7 @@ on:
       - 'docs/00-foundation/ai-e2e-delivery/**'
       - 'implementation/e2e-delivery/**'
       - 'tools/assurance/validate_ai_e2e_delivery.py'
+      - 'tools/assurance/test_validate_d4c_selection.py'
       - 'tests/assurance/test_ai_e2e_delivery.py'
       - '.github/workflows/ai-e2e-delivery-governance.yml'
   push:
@@ -15,6 +16,7 @@ on:
       - 'docs/00-foundation/ai-e2e-delivery/**'
       - 'implementation/e2e-delivery/**'
       - 'tools/assurance/validate_ai_e2e_delivery.py'
+      - 'tools/assurance/test_validate_d4c_selection.py'
       - 'tests/assurance/test_ai_e2e_delivery.py'
       - '.github/workflows/ai-e2e-delivery-governance.yml'
 
@@ -60,6 +62,9 @@ jobs:
 
       - name: Test AI E2E delivery governance
         run: python3 -m unittest tests.assurance.test_ai_e2e_delivery
+
+      - name: Falsify AI E2E delivery governance
+        run: PYTHONPATH=tools/assurance python3 tools/assurance/test_validate_d4c_selection.py
 
       - name: Validate repository safety
         run: python3 tools/assurance/validate_repository.py

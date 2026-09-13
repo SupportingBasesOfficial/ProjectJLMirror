@@ -20,10 +20,11 @@ def falsify_selection_record_product_authority():
  must_fail(grant_product,'Product authority escalation')
 def falsify_project_memory_review_guardrails():
  human=(ROOT/'docs/00-foundation/project-memory/HUMAN-OPERATIONS-MODEL.md').read_text(encoding='utf-8')
- assert 'authoritative visibility' in human, 'project memory must use the canonical authoritative-visibility term'
+ must_fail(lambda: project_memory.validate_human_operations(human.replace('authoritative visibility','non-authoritative visibility',1)),'project_memory_human_model_missing:authoritative visibility')
  workflow=project_memory.WORKFLOW.read_text(encoding='utf-8')
  must_fail(lambda: project_memory.validate_project_memory_workflow(workflow.replace('run: python3 tools/assurance/validate_repository.py','# run: python3 tools/assurance/validate_repository.py',1)),'project_memory_workflow_missing_active_line')
  must_fail(lambda: project_memory.validate_project_memory_workflow(workflow.replace('allow-unsafe-pr-checkout: false','# allow-unsafe-pr-checkout: false',1)),'project_memory_workflow_missing_active_line')
+ must_fail(lambda: project_memory.validate_project_memory_workflow(workflow.replace('run: PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py','# run: PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py',1)),'project_memory_workflow_missing_active_line')
  rows=[f'| JLM-DEC-{i:03d} | decision | current | accepted |' for i in range(1,11)]
  rows[0]='| JLM-DEC-001 | decision | superseded by JLM-DEC-999 | accepted |'
  must_fail(lambda: project_memory.validate_decision_register('\n'.join(rows)),'project_memory_missing_supersession_target:JLM-DEC-999')

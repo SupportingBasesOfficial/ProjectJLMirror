@@ -14,10 +14,13 @@ spec.loader.exec_module(validator)
 
 
 def baseline_rows(extra: int = 0) -> list[str]:
-    return [
-        f"| JLM-DEC-{i:03d} | decision | current | accepted |"
-        for i in range(1, 18 + extra)
+    rows = [
+        f"| {decision_id} | {meaning} | current | accepted |"
+        for decision_id, meaning in validator.BASELINE_DECISION_MEANINGS.items()
     ]
+    for i in range(18, 18 + extra):
+        rows.append(f"| JLM-DEC-{i:03d} | appended decision {i} | current | accepted |")
+    return rows
 
 
 class ProjectMemoryTests(unittest.TestCase):
@@ -48,9 +51,16 @@ class ProjectMemoryTests(unittest.TestCase):
             tuple(f"JLM-DEC-{i:03d}" for i in range(1, 18)),
         )
 
+    def test_seeded_decision_meanings_are_exactly_declared(self) -> None:
+        self.assertEqual(len(validator.BASELINE_DECISION_MEANINGS), 17)
+        self.assertEqual(
+            validator.BASELINE_DECISION_MEANINGS["JLM-DEC-017"],
+            "Repository truth outranks assistant/chat memory",
+        )
+
     def test_decision_references_do_not_count_as_definitions(self) -> None:
         rows = baseline_rows(extra=1)
-        rows[16] = "| JLM-DEC-017 | old decision | superseded by JLM-DEC-018 | accepted |"
+        rows[16] = "| JLM-DEC-017 | Repository truth outranks assistant/chat memory | superseded by JLM-DEC-018 | accepted |"
         rows[17] = "| JLM-DEC-018 | replacement decision | current authority | accepted |"
         sample = "\n".join(rows)
         ids = validator.decision_definition_ids(sample)
@@ -60,7 +70,7 @@ class ProjectMemoryTests(unittest.TestCase):
 
     def test_duplicate_decision_definitions_remain_detectable(self) -> None:
         rows = baseline_rows()
-        rows.append("| JLM-DEC-017 | duplicate definition | current | accepted |")
+        rows.append("| JLM-DEC-017 | Repository truth outranks assistant/chat memory | current | accepted |")
         ids = validator.decision_definition_ids("\n".join(rows))
         self.assertNotEqual(len(ids), len(set(ids)))
         with self.assertRaisesRegex(AssertionError, "project_memory_duplicate_decision_definition_id"):
@@ -78,13 +88,24 @@ class ProjectMemoryTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "project_memory_missing_baseline_decision:JLM-DEC-017"):
             validator.validate_decision_register("\n".join(rows))
 
+    def test_seeded_decision_meaning_rewrite_is_rejected(self) -> None:
+        rows = baseline_rows()
+        rows[16] = "| JLM-DEC-017 | Chat memory outranks repository truth | current | accepted |"
+        with self.assertRaisesRegex(AssertionError, "project_memory_baseline_decision_meaning_changed:JLM-DEC-017"):
+            validator.validate_decision_register("\n".join(rows))
+
+    def test_seeded_decision_may_be_explicitly_superseded_without_rewrite(self) -> None:
+        rows = baseline_rows(extra=1)
+        rows[16] = "| JLM-DEC-017 | Repository truth outranks assistant/chat memory | superseded by JLM-DEC-018 | accepted |"
+        self.assertEqual(validator.validate_decision_register("\n".join(rows)), 18)
+
     def test_new_decisions_may_be_appended(self) -> None:
         rows = baseline_rows(extra=2)
         self.assertEqual(validator.validate_decision_register("\n".join(rows)), 19)
 
     def test_dangling_supersession_target_is_rejected(self) -> None:
         rows = baseline_rows()
-        rows[0] = "| JLM-DEC-001 | decision | superseded by JLM-DEC-999 | accepted |"
+        rows[0] = "| JLM-DEC-001 | JLMirror is provider-neutral, not a Zabbix UI | superseded by JLM-DEC-999 | accepted |"
         with self.assertRaisesRegex(AssertionError, "project_memory_missing_supersession_target:JLM-DEC-999"):
             validator.validate_decision_register("\n".join(rows))
 
@@ -92,20 +113,20 @@ class ProjectMemoryTests(unittest.TestCase):
         rows = baseline_rows()
         for malformed in ("JLM-DEC-99", "JLM-DEC-O02"):
             mutated = list(rows)
-            mutated[0] = f"| JLM-DEC-001 | decision | superseded by {malformed} | accepted |"
+            mutated[0] = f"| JLM-DEC-001 | JLMirror is provider-neutral, not a Zabbix UI | superseded by {malformed} | accepted |"
             with self.assertRaisesRegex(AssertionError, "project_memory_malformed_supersession:JLM-DEC-001"):
                 validator.validate_decision_register("\n".join(mutated))
 
     def test_self_supersession_is_rejected(self) -> None:
         rows = baseline_rows()
-        rows[0] = "| JLM-DEC-001 | decision | superseded by JLM-DEC-001 | accepted |"
+        rows[0] = "| JLM-DEC-001 | JLMirror is provider-neutral, not a Zabbix UI | superseded by JLM-DEC-001 | accepted |"
         with self.assertRaisesRegex(AssertionError, "project_memory_supersession_self_reference:JLM-DEC-001"):
             validator.validate_decision_register("\n".join(rows))
 
     def test_supersession_cycle_is_rejected(self) -> None:
         rows = baseline_rows()
-        rows[0] = "| JLM-DEC-001 | decision | superseded by JLM-DEC-002 | accepted |"
-        rows[1] = "| JLM-DEC-002 | decision | superseded by JLM-DEC-001 | accepted |"
+        rows[0] = "| JLM-DEC-001 | JLMirror is provider-neutral, not a Zabbix UI | superseded by JLM-DEC-002 | accepted |"
+        rows[1] = "| JLM-DEC-002 | Tenant isolation is foundational | superseded by JLM-DEC-001 | accepted |"
         with self.assertRaisesRegex(AssertionError, "project_memory_supersession_cycle"):
             validator.validate_decision_register("\n".join(rows))
 

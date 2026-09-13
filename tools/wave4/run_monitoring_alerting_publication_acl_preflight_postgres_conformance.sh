@@ -46,9 +46,8 @@ run_expected_acl_rejection() {
   grep -Fq "$expected" <<<"$output"
 }
 
-# Case 0: the dedicated publication executor must not already own any routine
-# outside the five canonical bridge signatures. Otherwise granting outbox access
-# to that owner could immediately empower an unrelated SECURITY DEFINER routine.
+# Case 0a: the publication executor is a dedicated owner. An unrelated routine
+# already owned by it must block the migration before outbox grants land.
 docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
 CREATE ROLE jlmirror_wave4_monitoring_publication_executor
     NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
@@ -61,13 +60,42 @@ ALTER FUNCTION monitoring.jlmirror_executor_probe(text)
     OWNER TO jlmirror_wave4_monitoring_publication_executor;
 SQL
 
-run_expected_acl_rejection 'monitoring.publication_executor_unexpected_owned_routine:monitoring.jlmirror_executor_probe(text)'
+run_expected_acl_rejection 'monitoring.publication_executor_unexpected_owned_object:'
 
 executor_privs="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','SELECT')::int || ':' || has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','INSERT')::int;")"
 test "$executor_privs" = "0:0"
 
 docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
 DROP FUNCTION monitoring.jlmirror_executor_probe(text);
+SQL
+
+# Case 0b: owner-mediated relations are closed too. A pre-existing view owned by
+# the executor and granted to another role must not become a read-through into
+# tenant-confidential outbox data after executor storage grants are applied.
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+CREATE ROLE jlmirror_view_probe NOLOGIN;
+CREATE VIEW monitoring.jlmirror_executor_view_probe AS
+SELECT producer_message_scope,message_id FROM system.async_outbox_message;
+ALTER VIEW monitoring.jlmirror_executor_view_probe
+    OWNER TO jlmirror_wave4_monitoring_publication_executor;
+GRANT SELECT ON monitoring.jlmirror_executor_view_probe TO jlmirror_view_probe;
+SQL
+
+run_expected_acl_rejection 'monitoring.publication_executor_unexpected_owned_object:'
+
+executor_privs="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','SELECT')::int || ':' || has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','INSERT')::int;")"
+test "$executor_privs" = "0:0"
+
+set +e
+view_probe_output="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SET ROLE jlmirror_view_probe; SELECT count(*) FROM monitoring.jlmirror_executor_view_probe;" 2>&1)"
+view_probe_status=$?
+set -e
+test "$view_probe_status" -ne 0
+grep -Fq 'permission denied' <<<"$view_probe_output"
+
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+DROP VIEW monitoring.jlmirror_executor_view_probe;
+DROP ROLE jlmirror_view_probe;
 DROP ROLE jlmirror_wave4_monitoring_publication_executor;
 SQL
 
@@ -126,4 +154,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA monitoring
 DROP ROLE jlmirror_acl_probe;
 SQL
 
-echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=PASS executor_owner_closure=blocked retained_named_execute=blocked recovery_grant_option=blocked default_execute_grant=blocked transactional_acl_fence=proven"
+echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=PASS executor_owned_routine=blocked executor_owned_view=blocked retained_named_execute=blocked recovery_grant_option=blocked default_execute_grant=blocked transactional_acl_fence=proven"

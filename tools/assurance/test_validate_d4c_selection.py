@@ -13,10 +13,7 @@ def falsify_selection_record_product_authority():
  def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
  must_fail(grant_product,'Product authority escalation')
 def _delivery_clone(root: Path) -> None:
- for rel in (
-  Path('docs/00-foundation/ai-e2e-delivery'),
-  Path('implementation/e2e-delivery'),
- ):
+ for rel in (Path('docs/00-foundation/ai-e2e-delivery'),Path('implementation/e2e-delivery')):
   shutil.copytree(ROOT/rel,root/rel)
 def _delivery_must_fail(mutator,fragment):
  with tempfile.TemporaryDirectory() as td:
@@ -26,30 +23,32 @@ def _delivery_must_fail(mutator,fragment):
    if fragment not in str(exc): raise AssertionError(f'expected delivery failure containing {fragment!r}, got {exc!r}')
   else: raise AssertionError(f'delivery mutation unexpectedly accepted: {fragment}')
 def falsify_ai_e2e_delivery_heading_binding():
- def remove_g2_heading(root):
-  path=root/'docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md'; text=path.read_text(encoding='utf-8')
-  path.write_text(text.replace('### G2 — Monitoring source onboarding golden path','### renamed monitoring source section',1),encoding='utf-8')
- _delivery_must_fail(remove_g2_heading,'roadmap_heading_missing:G2 — Monitoring source onboarding golden path')
- def demote_g2_heading(root):
-  path=root/'docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md'; text=path.read_text(encoding='utf-8')
-  path.write_text(text.replace('### G2 — Monitoring source onboarding golden path','#### G2 — Monitoring source onboarding golden path',1),encoding='utf-8')
- _delivery_must_fail(demote_g2_heading,'roadmap_heading_missing:G2 — Monitoring source onboarding golden path')
- def fence_g2_heading(root):
-  path=root/'docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md'; text=path.read_text(encoding='utf-8')
-  path.write_text(text.replace('### G2 — Monitoring source onboarding golden path','```text\n### G2 — Monitoring source onboarding golden path\n```',1),encoding='utf-8')
- _delivery_must_fail(fence_g2_heading,'roadmap_heading_missing:G2 — Monitoring source onboarding golden path')
- def remove_s1_heading(root):
-  path=root/'docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md'; text=path.read_text(encoding='utf-8')
-  path.write_text(text.replace('### S1 — Contract skeleton','### renamed contract stage',1),encoding='utf-8')
- _delivery_must_fail(remove_s1_heading,'slice_heading_missing:S1 — Contract skeleton')
- def demote_s1_heading(root):
-  path=root/'docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md'; text=path.read_text(encoding='utf-8')
-  path.write_text(text.replace('### S1 — Contract skeleton','#### S1 — Contract skeleton',1),encoding='utf-8')
- _delivery_must_fail(demote_s1_heading,'slice_heading_missing:S1 — Contract skeleton')
- def fence_s1_heading(root):
-  path=root/'docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md'; text=path.read_text(encoding='utf-8')
-  path.write_text(text.replace('### S1 — Contract skeleton','~~~text\n### S1 — Contract skeleton\n~~~',1),encoding='utf-8')
- _delivery_must_fail(fence_s1_heading,'slice_heading_missing:S1 — Contract skeleton')
+ def mutate_doc(root,rel,old,new):
+  path=root/rel; text=path.read_text(encoding='utf-8'); path.write_text(text.replace(old,new,1),encoding='utf-8')
+ def remove_g2(root): mutate_doc(root,Path('docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md'),'### G2 — Monitoring source onboarding golden path','### renamed monitoring source section')
+ _delivery_must_fail(remove_g2,'roadmap_heading_missing:G2 — Monitoring source onboarding golden path')
+ def demote_g2(root): mutate_doc(root,Path('docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md'),'### G2 — Monitoring source onboarding golden path','#### G2 — Monitoring source onboarding golden path')
+ _delivery_must_fail(demote_g2,'roadmap_heading_missing:G2 — Monitoring source onboarding golden path')
+ def fence_g2(root): mutate_doc(root,Path('docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md'),'### G2 — Monitoring source onboarding golden path','```text\n### G2 — Monitoring source onboarding golden path\n```')
+ _delivery_must_fail(fence_g2,'roadmap_heading_missing:G2 — Monitoring source onboarding golden path')
+ def comment_g2(root): mutate_doc(root,Path('docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md'),'### G2 — Monitoring source onboarding golden path','<!--\n### G2 — Monitoring source onboarding golden path\n-->')
+ _delivery_must_fail(comment_g2,'roadmap_heading_missing:G2 — Monitoring source onboarding golden path')
+ def reorder_gates(root):
+  path=root/'docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md'; text=path.read_text(encoding='utf-8'); g1='### G1 — Identity + tenant + shell golden path'; g2='### G2 — Monitoring source onboarding golden path'; text=text.replace(g1,'### __TMP_GATE__',1).replace(g2,g1,1).replace('### __TMP_GATE__',g2,1); path.write_text(text,encoding='utf-8')
+ _delivery_must_fail(reorder_gates,'roadmap_heading_order_or_duplicate')
+ def duplicate_g2(root): mutate_doc(root,Path('docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md'),'### G2 — Monitoring source onboarding golden path','### G2 — Monitoring source onboarding golden path\n### G2 — Monitoring source onboarding golden path')
+ _delivery_must_fail(duplicate_g2,'roadmap_heading_order_or_duplicate')
+ def remove_s1(root): mutate_doc(root,Path('docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md'),'### S1 — Contract skeleton','### renamed contract stage')
+ _delivery_must_fail(remove_s1,'slice_heading_missing:S1 — Contract skeleton')
+ def demote_s1(root): mutate_doc(root,Path('docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md'),'### S1 — Contract skeleton','#### S1 — Contract skeleton')
+ _delivery_must_fail(demote_s1,'slice_heading_missing:S1 — Contract skeleton')
+ def fence_s1(root): mutate_doc(root,Path('docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md'),'### S1 — Contract skeleton','~~~text\n### S1 — Contract skeleton\n~~~')
+ _delivery_must_fail(fence_s1,'slice_heading_missing:S1 — Contract skeleton')
+ def comment_s1(root): mutate_doc(root,Path('docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md'),'### S1 — Contract skeleton','<!--\n### S1 — Contract skeleton\n-->')
+ _delivery_must_fail(comment_s1,'slice_heading_missing:S1 — Contract skeleton')
+ def reorder_slices(root):
+  path=root/'docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md'; text=path.read_text(encoding='utf-8'); s0='### S0 — Authority ready'; s1='### S1 — Contract skeleton'; text=text.replace(s0,'### __TMP_SLICE__',1).replace(s1,s0,1).replace('### __TMP_SLICE__',s1,1); path.write_text(text,encoding='utf-8')
+ _delivery_must_fail(reorder_slices,'slice_heading_order_or_duplicate')
  def replace_layer(root):
   import json
   path=root/'implementation/e2e-delivery/EXECUTION_MANIFEST.json'; data=json.loads(path.read_text(encoding='utf-8')); data['required_layers'][0]='junk-layer'; path.write_text(json.dumps(data),encoding='utf-8')
@@ -58,16 +57,14 @@ def falsify_ai_e2e_delivery_heading_binding():
   import json
   path=root/'implementation/e2e-delivery/EXECUTION_MANIFEST.json'; data=json.loads(path.read_text(encoding='utf-8')); data['gates'][7]['depends_on']=[]; path.write_text(json.dumps(data),encoding='utf-8')
  _delivery_must_fail(remove_dependency,'gate_dependencies_exact:G7')
- def corrupt_g7_authority(root):
+ def corrupt_g7(root):
   import json
   path=root/'implementation/e2e-delivery/EXECUTION_MANIFEST.json'; data=json.loads(path.read_text(encoding='utf-8')); data['gates'][7]['authority_prerequisite']='missing_authority'; path.write_text(json.dumps(data),encoding='utf-8')
- _delivery_must_fail(corrupt_g7_authority,'gate_authority_prerequisite_exact:G7')
- def corrupt_g8_authority(root):
+ _delivery_must_fail(corrupt_g7,'gate_authority_prerequisite_exact:G7')
+ def corrupt_g8(root):
   import json
   path=root/'implementation/e2e-delivery/EXECUTION_MANIFEST.json'; data=json.loads(path.read_text(encoding='utf-8')); data['gates'][8]['authority_prerequisite']='missing_authority'; path.write_text(json.dumps(data),encoding='utf-8')
- _delivery_must_fail(corrupt_g8_authority,'gate_authority_prerequisite_exact:G8')
- def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
- must_fail(grant_product,'Product authority escalation')
+ _delivery_must_fail(corrupt_g8,'gate_authority_prerequisite_exact:G8')
 def main():
  values=baseline(); errors=validator.validate_records(*values)
  if errors: raise AssertionError(f'canonical D4-C selection failed validation: {errors!r}')
@@ -89,5 +86,4 @@ def main():
  falsify_ai_e2e_delivery_heading_binding()
  print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked ai_e2e_governance=negative-mutated')
  return 0
-if __name__=='__main__':
- main()
+if __name__=='__main__': main()

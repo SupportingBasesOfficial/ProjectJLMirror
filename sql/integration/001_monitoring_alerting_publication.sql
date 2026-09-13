@@ -97,12 +97,12 @@ BEGIN
 END;
 $$;
 
--- CREATE OR REPLACE preserves a function OID. Any pre-existing database object
--- that depends on either trigger-function OID would therefore remain attached
--- after the function is replaced and elevated to SECURITY DEFINER. Reject every
--- inbound persistent dependency before outbox grants land; this includes
--- pg_trigger bindings and also rules/defaults/generated expressions/indexes or
--- other catalog objects that could retain an invocation path to the old OID.
+-- CREATE OR REPLACE preserves a function OID. Any pre-existing persistent object
+-- that depends on one of the five functions that will become SECURITY DEFINER
+-- would therefore remain attached after replacement. Reject every inbound
+-- dependency before outbox grants land. This closes triggers, expression indexes,
+-- rules/defaults/generated expressions/policies and other persistent invocation
+-- paths that would otherwise retain the old OID across privilege elevation.
 DO $$
 DECLARE
     v_row RECORD;
@@ -112,8 +112,11 @@ BEGIN
     FOR v_row IN
         SELECT signature
           FROM (VALUES
+              ('monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb)'),
               ('monitoring.wave4_publish_problem_transition()'),
-              ('monitoring.wave4_publish_health_transition()')
+              ('monitoring.wave4_publish_health_transition()'),
+              ('monitoring.recover_problem_state_publication(text,text)'),
+              ('monitoring.recover_health_projection_publication(text,text)')
           ) AS guarded(signature)
     LOOP
         v_proc_oid := to_regprocedure(v_row.signature);

@@ -18,6 +18,8 @@ def falsify_ai_e2e_delivery_heading_binding():
  assert 'require("G2 — Monitoring source onboarding golden path" in roadmap' in delivery_validator
  assert 'require("G7 — Alert policy + lifecycle golden path" in roadmap' in delivery_validator
  assert 'require("G14 — Production release gate" in roadmap' in delivery_validator
+ def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
+ must_fail(grant_product,'Product authority escalation')
 def main():
  values=baseline(); errors=validator.validate_records(*values)
  if errors: raise AssertionError(f'canonical D4-C selection failed validation: {errors!r}')

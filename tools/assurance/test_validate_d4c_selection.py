@@ -20,7 +20,7 @@ def falsify_selection_record_product_authority():
  must_fail(grant_product,'Product authority escalation')
 def falsify_project_memory_review_guardrails():
  human=(ROOT/'docs/00-foundation/project-memory/HUMAN-OPERATIONS-MODEL.md').read_text(encoding='utf-8')
- must_fail(lambda: project_memory.validate_human_operations(human.replace('authoritative visibility','non-authoritative visibility',1)),'project_memory_human_model_missing:authoritative visibility')
+ must_fail(lambda: project_memory.validate_human_operations(human.replace('authoritative visibility','verified awareness',1)),'project_memory_human_model_missing:authoritative visibility')
  workflow=project_memory.WORKFLOW.read_text(encoding='utf-8')
  must_fail(lambda: project_memory.validate_project_memory_workflow(workflow.replace('run: python3 tools/assurance/validate_repository.py','# run: python3 tools/assurance/validate_repository.py',1)),'project_memory_workflow_missing_active_line')
  must_fail(lambda: project_memory.validate_project_memory_workflow(workflow.replace('allow-unsafe-pr-checkout: false','# allow-unsafe-pr-checkout: false',1)),'project_memory_workflow_missing_active_line')
@@ -44,7 +44,7 @@ def main():
  def regress_credit(selection,ledger,state,evaluation): ledger['credited_evidence'].pop(); ledger['remaining_evidence']=[validator.EXPECTED_EVIDENCE[-1]]
  must_fail(regress_credit,'current ledger evidence drift')
  def grant_transport(selection,ledger,state,evaluation): state['d4_transport_authority']='granted'
- must_fail(grant_transport,'transport authority escalation')
+ must_fail(grant_transport,'Product authority escalation') if False else must_fail(lambda s,l,st,e: st.__setitem__('d4_transport_authority','granted'),'transport authority escalation')
  def regress_d4_acceptance(selection,ledger,state,evaluation): state['gate_state']='scoped'
  must_fail(regress_d4_acceptance,'state D4 gate authority drift')
  falsify_selection_record_product_authority()

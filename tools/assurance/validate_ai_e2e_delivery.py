@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -48,23 +49,11 @@ EXPECTED_AUTHORITY_PREREQUISITES = {
     "G8": "responsibility_ack_visibility_authorization",
 }
 EXPECTED_LAYERS = (
-    "authority",
-    "data_model",
-    "migration",
-    "tenant_isolation",
-    "domain",
-    "application",
-    "api_bff",
-    "frontend",
-    "unit_tests",
-    "integration_tests",
-    "e2e_tests",
-    "adversarial_tests",
-    "observability",
-    "runtime",
-    "deployment",
-    "exact_head_evidence",
+    "authority","data_model","migration","tenant_isolation","domain","application",
+    "api_bff","frontend","unit_tests","integration_tests","e2e_tests","adversarial_tests",
+    "observability","runtime","deployment","exact_head_evidence",
 )
+FENCE_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})")
 
 
 def require(cond: bool, msg: str) -> None:
@@ -72,38 +61,63 @@ def require(cond: bool, msg: str) -> None:
         raise AssertionError(msg)
 
 
-def _markdown_heading_lines(text: str) -> set[str]:
-    headings: set[str] = set()
+def _visible_markdown_lines(text: str) -> list[str]:
+    lines: list[str] = []
     fence_char: str | None = None
     fence_len = 0
+    in_comment = False
     for raw in text.splitlines():
-        stripped = raw.lstrip(" ")
-        indent = len(raw) - len(stripped)
-        if indent <= 3 and stripped:
-            char = stripped[0]
-            if char in ("`", "~"):
-                run = 0
-                while run < len(stripped) and stripped[run] == char:
-                    run += 1
-                if run >= 3:
-                    if fence_char is None:
-                        fence_char = char
-                        fence_len = run
-                        continue
-                    if char == fence_char and run >= fence_len and stripped[run:].strip() == "":
-                        fence_char = None
-                        fence_len = 0
-                        continue
-        if fence_char is None:
-            headings.add(raw.rstrip())
-    return headings
+        if fence_char is not None:
+            stripped = raw.lstrip(" ")
+            if stripped.startswith(fence_char * fence_len) and not stripped[fence_len:].strip():
+                fence_char = None
+                fence_len = 0
+            continue
+
+        remainder = raw
+        rendered = ""
+        while remainder:
+            if in_comment:
+                end = remainder.find("-->")
+                if end < 0:
+                    remainder = ""
+                    break
+                remainder = remainder[end + 3 :]
+                in_comment = False
+                continue
+            start = remainder.find("<!--")
+            if start < 0:
+                rendered += remainder
+                break
+            rendered += remainder[:start]
+            remainder = remainder[start + 4 :]
+            in_comment = True
+
+        if not rendered.strip():
+            continue
+        fence = FENCE_RE.match(rendered)
+        if fence:
+            marker = fence.group(1)
+            fence_char = marker[0]
+            fence_len = len(marker)
+            continue
+        lines.append(rendered.rstrip())
+    return lines
+
+
+def _validate_heading_sequence(text: str, expected: tuple[str, ...], prefix: str, missing_prefix: str, order_error: str) -> None:
+    visible = _visible_markdown_lines(text)
+    expected_lines = [f"### {heading}" for heading in expected]
+    for heading, line in zip(expected, expected_lines):
+        require(line in visible, f"{missing_prefix}:{heading}")
+    candidates = [line for line in visible if line.startswith(f"### {prefix}") and line in set(expected_lines)]
+    require(candidates == expected_lines, order_error)
 
 
 def validate(root: Path = ROOT) -> tuple[int, int, int]:
     root = root.resolve()
     docs_dir = root / "docs" / "00-foundation" / "ai-e2e-delivery"
     manifest_path = root / "implementation" / "e2e-delivery" / "EXECUTION_MANIFEST.json"
-
     texts = {}
     for name in REQUIRED_DOCS:
         path = docs_dir / name
@@ -115,34 +129,23 @@ def validate(root: Path = ROOT) -> tuple[int, int, int]:
     constitution = texts["AI-E2E-DELIVERY-CONSTITUTION.md"]
     for token in (
         "schema/migration -> persistence authority -> domain logic -> application/service -> API/BFF -> frontend",
-        "Definition of Done: E2E-16",
-        "Tenant isolation",
-        "E2E tests",
-        "Adversarial tests",
-        "Deployment",
+        "Definition of Done: E2E-16","Tenant isolation","E2E tests","Adversarial tests","Deployment",
         "READY_FOR_MERGE is not merge authorization",
     ):
         require(token in constitution, f"constitution_missing:{token}")
 
     model = texts["VERTICAL-SLICE-DELIVERY-MODEL.md"]
-    model_lines = _markdown_heading_lines(model)
-    for heading in EXPECTED_SLICE_HEADINGS:
-        require(f"### {heading}" in model_lines, f"slice_heading_missing:{heading}")
+    _validate_heading_sequence(model, EXPECTED_SLICE_HEADINGS, "S", "slice_heading_missing", "slice_heading_order_or_duplicate")
     for token in ("database_scope", "api_scope", "frontend_scope", "browser E2E", "AI task packet"):
         require(token in model, f"slice_model_missing:{token}")
 
     roadmap = texts["PRODUCT-EXECUTION-ROADMAP.md"]
-    roadmap_lines = _markdown_heading_lines(roadmap)
-    for heading in EXPECTED_GATE_HEADINGS:
-        require(f"### {heading}" in roadmap_lines, f"roadmap_heading_missing:{heading}")
+    _validate_heading_sequence(roadmap, EXPECTED_GATE_HEADINGS, "G", "roadmap_heading_missing", "roadmap_heading_order_or_duplicate")
 
     bootstrap = texts["DAY-1-IMPLEMENTATION-BOOTSTRAP.md"]
     for token in (
-        "Do not begin by asking the AI to \"build JLMirror\"",
-        "Connect the real frontend",
-        "Run the slice locally E2E",
-        "Container proof",
-        "Stop at merge gate",
+        "Do not begin by asking the AI to \"build JLMirror\"","Connect the real frontend",
+        "Run the slice locally E2E","Container proof","Stop at merge gate",
     ):
         require(token in bootstrap, f"bootstrap_missing:{token}")
 
@@ -152,30 +155,24 @@ def validate(root: Path = ROOT) -> tuple[int, int, int]:
     require(manifest.get("delivery_model") == "vertical_slice", "manifest_delivery_model")
     require(manifest.get("definition_of_done") == "E2E-16", "manifest_dod")
     require(manifest.get("merge_authority") == "separate_explicit_owner_authorization", "manifest_merge_authority")
-
     gates = manifest.get("gates")
     require(isinstance(gates, list) and len(gates) == 15, "manifest_gate_count")
     ids = [g.get("id") for g in gates]
     require(ids == [f"G{i}" for i in range(15)], "manifest_gate_order")
     for index, gate in enumerate(gates):
         gate_id = f"G{index}"
-        deps = gate.get("depends_on")
         expected_deps = [] if index == 0 else [f"G{index - 1}"]
-        require(deps == expected_deps, f"gate_dependencies_exact:{gate_id}")
+        require(gate.get("depends_on") == expected_deps, f"gate_dependencies_exact:{gate_id}")
         require(gate.get("requires_e2e") is True, f"gate_requires_e2e:{gate_id}")
         expected_authority = EXPECTED_AUTHORITY_PREREQUISITES.get(gate_id)
         if expected_authority is None:
             require("authority_prerequisite" not in gate, f"gate_unexpected_authority_prerequisite:{gate_id}")
         else:
             require(gate.get("authority_prerequisite") == expected_authority, f"gate_authority_prerequisite_exact:{gate_id}")
-
-    stages = manifest.get("slice_stages")
-    require(stages == [f"S{i}" for i in range(11)], "manifest_slice_stages")
-
+    require(manifest.get("slice_stages") == [f"S{i}" for i in range(11)], "manifest_slice_stages")
     required_layers = manifest.get("required_layers")
     require(required_layers == list(EXPECTED_LAYERS), "manifest_e2e16_exact_layers")
     require(len(set(required_layers)) == 16, "manifest_e2e16_unique_layers")
-
     return len(REQUIRED_DOCS), len(gates), len(required_layers)
 
 

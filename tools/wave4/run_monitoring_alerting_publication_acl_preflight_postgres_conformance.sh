@@ -27,6 +27,10 @@ while IFS= read -r migration; do
   docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < "$migration" >/dev/null
 done < <(find sql/wave4 -maxdepth 1 -type f -name '*.sql' | sort)
 
+restore_err_trap() {
+  trap 'status=$?; echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=FAIL line=$LINENO status=$status" >&2; exit "$status"' ERR
+}
+
 run_expected_acl_rejection() {
   local expected="$1"
   local log status output
@@ -36,7 +40,7 @@ run_expected_acl_rejection() {
   docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < sql/integration/001_monitoring_alerting_publication.sql >"$log" 2>&1
   status=$?
   set -e
-  trap 'status=$?; echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=FAIL line=$LINENO status=$status" >&2; exit "$status"' ERR
+  restore_err_trap
   output="$(cat "$log")"
   rm -f "$log"
   if [[ "$status" -eq 0 ]]; then
@@ -86,10 +90,12 @@ run_expected_acl_rejection 'monitoring.publication_executor_unexpected_owned_obj
 executor_privs="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','SELECT')::int || ':' || has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','INSERT')::int;")"
 test "$executor_privs" = "0:0"
 
+trap - ERR
 set +e
 view_probe_output="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SET ROLE jlmirror_view_probe; SELECT count(*) FROM monitoring.jlmirror_executor_view_probe;" 2>&1)"
 view_probe_status=$?
 set -e
+restore_err_trap
 test "$view_probe_status" -ne 0
 grep -Fq 'permission denied' <<<"$view_probe_output"
 

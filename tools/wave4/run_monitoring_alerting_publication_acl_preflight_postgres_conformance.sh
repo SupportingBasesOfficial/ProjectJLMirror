@@ -40,11 +40,36 @@ run_expected_acl_rejection() {
   output="$(cat "$log")"
   rm -f "$log"
   if [[ "$status" -eq 0 ]]; then
-    echo "unsafe function ACL was unexpectedly accepted" >&2
+    echo "unsafe function authority was unexpectedly accepted" >&2
     exit 1
   fi
   grep -Fq "$expected" <<<"$output"
 }
+
+# Case 0: the dedicated publication executor must not already own any routine
+# outside the five canonical bridge signatures. Otherwise granting outbox access
+# to that owner could immediately empower an unrelated SECURITY DEFINER routine.
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+CREATE ROLE jlmirror_wave4_monitoring_publication_executor
+    NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE FUNCTION monitoring.jlmirror_executor_probe(text)
+RETURNS text
+LANGUAGE sql
+SECURITY DEFINER
+AS 'SELECT $1';
+ALTER FUNCTION monitoring.jlmirror_executor_probe(text)
+    OWNER TO jlmirror_wave4_monitoring_publication_executor;
+SQL
+
+run_expected_acl_rejection 'monitoring.publication_executor_unexpected_owned_routine:monitoring.jlmirror_executor_probe(text)'
+
+executor_privs="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','SELECT')::int || ':' || has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','INSERT')::int;")"
+test "$executor_privs" = "0:0"
+
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+DROP FUNCTION monitoring.jlmirror_executor_probe(text);
+DROP ROLE jlmirror_wave4_monitoring_publication_executor;
+SQL
 
 # Case 1: unrelated named EXECUTE grant on an internal helper must be rejected
 # before the function can become SECURITY DEFINER.
@@ -101,4 +126,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA monitoring
 DROP ROLE jlmirror_acl_probe;
 SQL
 
-echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=PASS retained_named_execute=blocked recovery_grant_option=blocked default_execute_grant=blocked transactional_acl_fence=proven"
+echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=PASS executor_owner_closure=blocked retained_named_execute=blocked recovery_grant_option=blocked default_execute_grant=blocked transactional_acl_fence=proven"

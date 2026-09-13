@@ -13,6 +13,19 @@ REQUIRED_DOCS = (
     "PRODUCT-EXECUTION-ROADMAP.md",
     "DAY-1-IMPLEMENTATION-BOOTSTRAP.md",
 )
+EXPECTED_SLICE_HEADINGS = (
+    "S0 — Authority ready",
+    "S1 — Contract skeleton",
+    "S2 — Persistence",
+    "S3 — Domain/application",
+    "S4 — API/BFF",
+    "S5 — Frontend",
+    "S6 — Integration",
+    "S7 — Browser/user E2E",
+    "S8 — Adversarial/recovery",
+    "S9 — Runtime/deployment",
+    "S10 — HARDEN and merge gate",
+)
 EXPECTED_GATE_HEADINGS = (
     "G0 — Developer/runtime bootstrap",
     "G1 — Identity + tenant + shell golden path",
@@ -30,6 +43,10 @@ EXPECTED_GATE_HEADINGS = (
     "G13 — Commercial/FinOps/product administration",
     "G14 — Production release gate",
 )
+EXPECTED_AUTHORITY_PREREQUISITES = {
+    "G7": "separate_alert_policy_evaluation_authorization",
+    "G8": "responsibility_ack_visibility_authorization",
+}
 EXPECTED_LAYERS = (
     "authority",
     "data_model",
@@ -81,8 +98,8 @@ def validate(root: Path = ROOT) -> tuple[int, int, int]:
         require(token in constitution, f"constitution_missing:{token}")
 
     model = texts["VERTICAL-SLICE-DELIVERY-MODEL.md"]
-    for stage in [f"S{i}" for i in range(11)]:
-        require(stage in model, f"slice_stage_missing:{stage}")
+    for heading in EXPECTED_SLICE_HEADINGS:
+        require(f"### {heading}" in model, f"slice_heading_missing:{heading}")
     for token in ("database_scope", "api_scope", "frontend_scope", "browser E2E", "AI task packet"):
         require(token in model, f"slice_model_missing:{token}")
 
@@ -117,6 +134,11 @@ def validate(root: Path = ROOT) -> tuple[int, int, int]:
         expected_deps = [] if index == 0 else [f"G{index - 1}"]
         require(deps == expected_deps, f"gate_dependencies_exact:{gate_id}")
         require(gate.get("requires_e2e") is True, f"gate_requires_e2e:{gate_id}")
+        expected_authority = EXPECTED_AUTHORITY_PREREQUISITES.get(gate_id)
+        if expected_authority is None:
+            require("authority_prerequisite" not in gate, f"gate_unexpected_authority_prerequisite:{gate_id}")
+        else:
+            require(gate.get("authority_prerequisite") == expected_authority, f"gate_authority_prerequisite_exact:{gate_id}")
 
     stages = manifest.get("slice_stages")
     require(stages == [f"S{i}" for i in range(11)], "manifest_slice_stages")

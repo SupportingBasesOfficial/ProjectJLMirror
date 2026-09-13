@@ -40,7 +40,7 @@ run_expected_acl_rejection() {
   output="$(cat "$log")"
   rm -f "$log"
   if [[ "$status" -eq 0 ]]; then
-    echo "unsafe retained function ACL was unexpectedly accepted" >&2
+    echo "unsafe function ACL was unexpectedly accepted" >&2
     exit 1
   fi
   grep -Fq "$expected" <<<"$output"
@@ -64,8 +64,7 @@ run_expected_acl_rejection 'monitoring.publication_existing_function_acl_unsafe:
 probe_state="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT pg_get_userbyid(proowner) || ':' || prosecdef::int || ':' || has_function_privilege('jlmirror_acl_probe','monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb)','EXECUTE')::int FROM pg_proc WHERE oid='monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb)'::regprocedure;")"
 test "$probe_state" = "postgres:0:1"
 
-# Remove the first intentionally unsafe ACL so the next rejection proves the
-# recovery-authority grant-option rule rather than re-hitting the first case.
+# Case 2: even the canonical recovery authority must not retain WITH GRANT OPTION.
 docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
 REVOKE EXECUTE ON FUNCTION monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb) FROM jlmirror_acl_probe;
 CREATE FUNCTION monitoring.recover_problem_state_publication(text,text)
@@ -81,4 +80,25 @@ run_expected_acl_rejection 'monitoring.publication_existing_function_acl_unsafe:
 grantable_state="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT pg_get_userbyid(p.proowner) || ':' || p.prosecdef::int || ':' || a.is_grantable::int FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, ARRAY[]::aclitem[])) a JOIN pg_roles r ON r.oid=a.grantee WHERE p.oid='monitoring.recover_problem_state_publication(text,text)'::regprocedure AND r.rolname='jlmirror_wave4_recovery_authority' AND a.privilege_type='EXECUTE';")"
 test "$grantable_state" = "postgres:0:1"
 
-echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=PASS retained_named_execute=blocked recovery_grant_option=blocked pre_elevation=proven"
+# Case 3: first-time CREATE FUNCTION can inherit a named EXECUTE from the
+# installer's ALTER DEFAULT PRIVILEGES. The post-install fence must catch this
+# before COMMIT even though preflight had no existing function to inspect.
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+DROP FUNCTION monitoring.recover_problem_state_publication(text,text);
+DROP FUNCTION monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb);
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA monitoring
+    GRANT EXECUTE ON FUNCTIONS TO jlmirror_acl_probe;
+SQL
+
+run_expected_acl_rejection 'monitoring.publication_installed_function_acl_unsafe:monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb)'
+
+rolled_back_functions="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM pg_proc WHERE oid IN (to_regprocedure('monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb)'),to_regprocedure('monitoring.wave4_publish_problem_transition()'),to_regprocedure('monitoring.wave4_publish_health_transition()'),to_regprocedure('monitoring.recover_problem_state_publication(text,text)'),to_regprocedure('monitoring.recover_health_projection_publication(text,text)'));" )"
+test "$rolled_back_functions" = "0"
+
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA monitoring
+    REVOKE EXECUTE ON FUNCTIONS FROM jlmirror_acl_probe;
+DROP ROLE jlmirror_acl_probe;
+SQL
+
+echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=PASS retained_named_execute=blocked recovery_grant_option=blocked default_execute_grant=blocked transactional_acl_fence=proven"

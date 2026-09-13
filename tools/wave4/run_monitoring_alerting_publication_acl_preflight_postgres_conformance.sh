@@ -27,9 +27,27 @@ while IFS= read -r migration; do
   docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < "$migration" >/dev/null
 done < <(find sql/wave4 -maxdepth 1 -type f -name '*.sql' | sort)
 
-# Simulate a pre-existing same-signature helper that was granted to an unrelated
-# role before this migration. CREATE OR REPLACE would preserve that named ACL,
-# so the migration must reject the state before installing the SECURITY DEFINER body.
+run_expected_acl_rejection() {
+  local expected="$1"
+  local log status output
+  log="$(mktemp)"
+  trap - ERR
+  set +e
+  docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < sql/integration/001_monitoring_alerting_publication.sql >"$log" 2>&1
+  status=$?
+  set -e
+  trap 'status=$?; echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=FAIL line=$LINENO status=$status" >&2; exit "$status"' ERR
+  output="$(cat "$log")"
+  rm -f "$log"
+  if [[ "$status" -eq 0 ]]; then
+    echo "unsafe retained function ACL was unexpectedly accepted" >&2
+    exit 1
+  fi
+  grep -Fq "$expected" <<<"$output"
+}
+
+# Case 1: unrelated named EXECUTE grant on an internal helper must be rejected
+# before the function can become SECURITY DEFINER.
 docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
 CREATE ROLE jlmirror_acl_probe NOLOGIN;
 CREATE FUNCTION monitoring.wave4_ensure_monitoring_invalidation(
@@ -41,26 +59,26 @@ REVOKE ALL ON FUNCTION monitoring.wave4_ensure_monitoring_invalidation(text,text
 GRANT EXECUTE ON FUNCTION monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb) TO jlmirror_acl_probe;
 SQL
 
-# This command is expected to fail. Temporarily remove ERR handling as well as
-# errexit so the expected PostgreSQL rejection can be captured and inspected
-# instead of being mistaken for a harness failure.
-acl_log="$(mktemp)"
-trap - ERR
-set +e
-docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" < sql/integration/001_monitoring_alerting_publication.sql >"$acl_log" 2>&1
-acl_status=$?
-set -e
-trap 'status=$?; echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=FAIL line=$LINENO status=$status" >&2; exit "$status"' ERR
-acl_output="$(cat "$acl_log")"
-rm -f "$acl_log"
-if [[ "$acl_status" -eq 0 ]]; then
-  echo "unsafe retained EXECUTE ACL was unexpectedly accepted" >&2
-  exit 1
-fi
-grep -Fq 'monitoring.publication_existing_function_acl_unsafe:monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb)' <<<"$acl_output"
+run_expected_acl_rejection 'monitoring.publication_existing_function_acl_unsafe:monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb)'
 
-# The failed transaction must not have replaced the probe body or changed owner.
 probe_state="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT pg_get_userbyid(proowner) || ':' || prosecdef::int || ':' || has_function_privilege('jlmirror_acl_probe','monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb)','EXECUTE')::int FROM pg_proc WHERE oid='monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb)'::regprocedure;")"
 test "$probe_state" = "postgres:0:1"
 
-echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=PASS retained_named_execute=blocked pre_elevation=proven"
+# Remove the first intentionally unsafe ACL so the next rejection proves the
+# recovery-authority grant-option rule rather than re-hitting the first case.
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+REVOKE EXECUTE ON FUNCTION monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb) FROM jlmirror_acl_probe;
+CREATE FUNCTION monitoring.recover_problem_state_publication(text,text)
+RETURNS bigint
+LANGUAGE sql
+AS 'SELECT 1::bigint';
+REVOKE ALL ON FUNCTION monitoring.recover_problem_state_publication(text,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION monitoring.recover_problem_state_publication(text,text) TO jlmirror_wave4_recovery_authority WITH GRANT OPTION;
+SQL
+
+run_expected_acl_rejection 'monitoring.publication_existing_function_acl_unsafe:monitoring.recover_problem_state_publication(text,text)'
+
+grantable_state="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT pg_get_userbyid(p.proowner) || ':' || p.prosecdef::int || ':' || a.is_grantable::int FROM pg_proc p CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, ARRAY[]::aclitem[])) a JOIN pg_roles r ON r.oid=a.grantee WHERE p.oid='monitoring.recover_problem_state_publication(text,text)'::regprocedure AND r.rolname='jlmirror_wave4_recovery_authority' AND a.privilege_type='EXECUTE';")"
+test "$grantable_state" = "postgres:0:1"
+
+echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=PASS retained_named_execute=blocked recovery_grant_option=blocked pre_elevation=proven"

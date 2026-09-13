@@ -251,14 +251,9 @@ def falsify_non_strict_deterministic_reconciliation() -> None:
 
 
 def falsify_stale_d4c_current_workflow_projection() -> None:
-    expect_failure(
-        lambda r: mutate_text(
-            r,
-            D4C_CURRENT_WORKFLOWS[0],
-            "candidate_status",
-            "candidate_status=='not_selected' # candidate_status",
-        )
-    )
+    current = "d4c['candidate_status']=='selected_c2_delivery_recovery_profile'"
+    stale = "d4c['candidate_status']=='not_selected'"
+    expect_failure(lambda r: mutate_text(r, D4C_CURRENT_WORKFLOWS[0], current, stale))
 
 
 def falsify_top_level_review_surface_coverage() -> None:
@@ -277,7 +272,7 @@ def falsify_bootstrap_exception_scope() -> None:
 
 
 def falsify_stop_policy_relaxation() -> None:
-    expect_failure(lambda r: mutate_json(r, v.STOP_POLICY, lambda d: d.__setitem__("stop_condition", "best_effort")))
+    expect_failure(lambda r: mutate_json(r, v.STOP_POLICY, lambda d: d.__setitem__("merge_blocking_severities", ["P0"])))
 
 
 def falsify_wave4_authorization_exact_path_allowlist() -> None:
@@ -398,7 +393,7 @@ def main() -> None:
         comments.write_text(json.dumps([[{"id": 3963734258, "body": "**P1 Badge** exact bootstrap finding"}]]), encoding="utf-8")
         assert not s.validate(root, comments)
 
-    print("adversarial_learning_falsification=PASS strict_static_graph=guarded review_surface=issues+inline+reviews top_level_comments=covered priority_prefix=covered head_status=fresh+isolated+concurrent+unspoofable privileged_pr_exec=denied")
+    print("adversarial_learning_falsification=PASS strict_static_graph=guarded review_surface=issues+inline+reviews top_level_comments=covered priority_prefix=covered head_status=fresh+isolated+concurrent+unspoofable privileged_pr_exec=denied stale_d4c_workflow_projection=blocked stop_policy=merge-blocking-preserved")
 
 
 if __name__ == "__main__":

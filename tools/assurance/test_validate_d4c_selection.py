@@ -37,8 +37,11 @@ def falsify_monitoring_alerting_privileged_acl_preflight():
   'monitoring.recover_problem_state_publication(text,text)',
   'monitoring.recover_health_projection_publication(text,text)',
  )
+ dependency_fence_start=sql.index('-- CREATE OR REPLACE preserves a function OID.')
+ dependency_fence_end=sql.index('GRANT USAGE ON SCHEMA monitoring, system',dependency_fence_start)
+ dependency_fence=sql[dependency_fence_start:dependency_fence_end]
  for signature in privileged_signatures:
-  assert sql.count(f"('{signature}')")>=2, f'all privileged functions must participate in pre-grant owner/dependency closure: {signature}'
+  assert f"('{signature}')" in dependency_fence, f'privileged signature missing from inbound dependency fence: {signature}'
  assert 'monitoring.publication_existing_function_acl_unsafe' in sql
  assert 'monitoring.publication_installed_function_acl_unsafe' in sql
  assert "aclexplode(COALESCE(p.proacl, ARRAY[]::aclitem[]))" in sql
@@ -56,6 +59,10 @@ def falsify_monitoring_alerting_privileged_acl_preflight():
  assert 'CREATE INDEX jlmirror_retained_helper_probe_idx' in conformance
  assert 'monitoring.publication_existing_function_dependency_unsafe:monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb):' in conformance
  assert "JOIN pg_depend d ON d.refclassid='pg_proc'::regclass AND d.refobjid=p.oid" in conformance
+ assert 'jlmirror_retained_problem_recovery_probe' in conformance and 'retained_problem_recovery_dependency=blocked' in conformance
+ assert 'jlmirror_retained_health_recovery_probe' in conformance and 'retained_health_recovery_dependency=blocked' in conformance
+ assert 'monitoring.publication_existing_function_dependency_unsafe:monitoring.recover_problem_state_publication(text,text):' in conformance
+ assert 'monitoring.publication_existing_function_dependency_unsafe:monitoring.recover_health_projection_publication(text,text):' in conformance
  assert 'has_table_privilege' in conformance and 'system.async_outbox_message' in conformance
  assert 'jlmirror_acl_probe' in conformance and 'retained_named_execute=blocked' in conformance
  assert 'WITH GRANT OPTION' in conformance and 'recovery_grant_option=blocked' in conformance

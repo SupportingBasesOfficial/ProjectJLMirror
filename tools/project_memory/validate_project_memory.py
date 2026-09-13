@@ -43,9 +43,9 @@ BASELINE_DECISION_MEANINGS = {
 }
 BASELINE_DECISION_IDS = tuple(BASELINE_DECISION_MEANINGS)
 DECISION_ID_RE = re.compile(r"JLM-DEC-\d{3}")
-DECISION_DEFINITION_RE = re.compile(r"^\|\s*(JLM-DEC-\d{3})\s*\|", re.MULTILINE)
 DECISION_SUPERSESSION_CLAUSE_RE = re.compile(r"\bsuperseded\s+by\b", re.IGNORECASE)
 DECISION_SUPERSESSION_TARGET_RE = re.compile(r"\bsuperseded\s+by\s+([^\s|,;.]+)", re.IGNORECASE)
+FENCE_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})")
 
 
 def read(name: str) -> str:
@@ -58,17 +58,63 @@ def read(name: str) -> str:
     return text
 
 
-def decision_definition_ids(decisions: str) -> list[str]:
-    return DECISION_DEFINITION_RE.findall(decisions)
+def _visible_markdown_lines(text: str) -> list[str]:
+    """Return rendered-line candidates, excluding fenced code and HTML comments."""
+    visible: list[str] = []
+    in_comment = False
+    fence_char: str | None = None
+    fence_len = 0
+
+    for raw in text.splitlines():
+        if fence_char is not None:
+            stripped = raw.lstrip()
+            if stripped.startswith(fence_char * fence_len) and not stripped[fence_len:].strip():
+                fence_char = None
+                fence_len = 0
+            continue
+
+        remainder = raw
+        rendered = ""
+        while remainder:
+            if in_comment:
+                end = remainder.find("-->")
+                if end < 0:
+                    remainder = ""
+                    break
+                remainder = remainder[end + 3 :]
+                in_comment = False
+                continue
+            start = remainder.find("<!--")
+            if start < 0:
+                rendered += remainder
+                break
+            rendered += remainder[:start]
+            remainder = remainder[start + 4 :]
+            in_comment = True
+
+        if not rendered.strip():
+            continue
+        fence = FENCE_RE.match(rendered)
+        if fence:
+            marker = fence.group(1)
+            fence_char = marker[0]
+            fence_len = len(marker)
+            continue
+        visible.append(rendered.rstrip())
+    return visible
 
 
 def _decision_definition_rows(decisions: str) -> list[tuple[str, str]]:
     rows: list[tuple[str, str]] = []
-    for line in decisions.splitlines():
+    for line in _visible_markdown_lines(decisions):
         match = re.match(r"^\|\s*(JLM-DEC-\d{3})\s*\|", line)
         if match:
             rows.append((match.group(1), line))
     return rows
+
+
+def decision_definition_ids(decisions: str) -> list[str]:
+    return [decision_id for decision_id, _ in _decision_definition_rows(decisions)]
 
 
 def _validate_baseline_decision_meanings(decisions: str) -> None:
@@ -152,7 +198,11 @@ def validate_human_operations(human: str) -> None:
 
 
 def validate_project_memory_workflow(workflow: str) -> None:
-    active_lines = {line.strip() for line in workflow.splitlines() if line.strip() and not line.lstrip().startswith("#")}
+    active_lines = {
+        line.strip()
+        for line in workflow.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
     required_lines = {
         "allow-unsafe-pr-checkout: false",
         "persist-credentials: false",
@@ -165,6 +215,11 @@ def validate_project_memory_workflow(workflow: str) -> None:
     missing = sorted(required_lines - active_lines)
     if missing:
         raise AssertionError("project_memory_workflow_missing_active_line:" + ",".join(missing))
+
+    # This governance job is an authority gate. None of its exact-head, memory,
+    # falsification, test, or repository-safety steps may be made conditional.
+    if any(line.startswith("if:") for line in active_lines):
+        raise AssertionError("project_memory_workflow_condition_not_allowed")
 
 
 def validate() -> tuple[int, int]:

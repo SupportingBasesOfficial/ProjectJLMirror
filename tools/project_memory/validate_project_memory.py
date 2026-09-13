@@ -53,6 +53,12 @@ RAW_HTML_BLOCK_OPEN_RE = re.compile(
     r"^[ ]{0,3}</?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?:\s|/?>|$)",
     re.IGNORECASE,
 )
+RAW_HTML_PROCESSING_OPEN_RE = re.compile(r"^[ ]{0,3}<\?")
+RAW_HTML_CDATA_OPEN_RE = re.compile(r"^[ ]{0,3}<!\[CDATA\[")
+RAW_HTML_DECLARATION_OPEN_RE = re.compile(r"^[ ]{0,3}<![A-Z]")
+RAW_HTML_GENERIC_TAG_RE = re.compile(
+    r"^[ ]{0,3}</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>[ \t]*$"
+)
 
 
 def read(name: str) -> str:
@@ -73,11 +79,16 @@ def _visible_markdown_lines(text: str) -> list[str]:
     fence_len = 0
     raw_html_container: str | None = None
     raw_html_until_blank = False
+    raw_html_until_token: str | None = None
 
     for raw in text.splitlines():
         if raw_html_container is not None:
             if re.search(rf"</{re.escape(raw_html_container)}\s*>", raw, re.IGNORECASE):
                 raw_html_container = None
+            continue
+        if raw_html_until_token is not None:
+            if raw_html_until_token in raw:
+                raw_html_until_token = None
             continue
         if raw_html_until_blank:
             if not raw.strip():
@@ -98,7 +109,19 @@ def _visible_markdown_lines(text: str) -> list[str]:
             if re.search(rf"</{re.escape(tag)}\s*>", raw, re.IGNORECASE) is None:
                 raw_html_container = tag
             continue
-        if RAW_HTML_BLOCK_OPEN_RE.match(raw):
+        if RAW_HTML_CDATA_OPEN_RE.match(raw):
+            if "]] >".replace(" ", "") not in raw:
+                raw_html_until_token = "]] >".replace(" ", "")
+            continue
+        if RAW_HTML_PROCESSING_OPEN_RE.match(raw):
+            if "?>" not in raw:
+                raw_html_until_token = "?>"
+            continue
+        if RAW_HTML_DECLARATION_OPEN_RE.match(raw):
+            if ">" not in raw:
+                raw_html_until_token = ">"
+            continue
+        if RAW_HTML_BLOCK_OPEN_RE.match(raw) or RAW_HTML_GENERIC_TAG_RE.match(raw):
             raw_html_until_blank = True
             continue
 
@@ -239,20 +262,6 @@ def _normalize_yaml_key(raw_key: str) -> str:
     return raw_key
 
 
-def _yaml_mapping_key(line: str) -> str | None:
-    candidate = line.lstrip(" ")
-    if not candidate or candidate.startswith("#"):
-        return None
-    if candidate.startswith("- "):
-        candidate = candidate[2:].lstrip(" ")
-    if candidate.startswith("? "):
-        return _normalize_yaml_key(candidate[2:].strip())
-    match = re.match(r"(?P<key>'(?:''|[^'])*'|\"(?:\\.|[^\"])*\"|[^:#][^:]*?)\s*:", candidate)
-    if not match:
-        return None
-    return _normalize_yaml_key(match.group("key"))
-
-
 def _yaml_key_value(candidate: str) -> tuple[str, str] | None:
     match = re.match(r"(?P<key>'(?:''|[^'])*'|\"(?:\\.|[^\"])*\"|[^:#][^:]*?)\s*:\s*(?P<value>.*)$", candidate)
     if not match:
@@ -260,70 +269,162 @@ def _yaml_key_value(candidate: str) -> tuple[str, str] | None:
     return _normalize_yaml_key(match.group("key")), match.group("value").strip()
 
 
-def _project_memory_workflow_steps(workflow: str) -> list[dict[str, str]]:
+def _project_memory_job_lines(workflow: str) -> list[str]:
     lines = workflow.splitlines()
     job_start = next((i for i, line in enumerate(lines) if line == "  project-memory:"), None)
     if job_start is None:
         raise AssertionError("project_memory_workflow_job_missing")
-    steps_start = next((i for i in range(job_start + 1, len(lines)) if lines[i] == "    steps:"), None)
-    if steps_start is None:
-        raise AssertionError("project_memory_workflow_steps_missing")
-
-    steps: list[dict[str, str]] = []
-    current: dict[str, str] | None = None
-    pending_explicit_key: str | None = None
-    for line in lines[steps_start + 1 :]:
-        if line.strip() and len(line) - len(line.lstrip(" ")) <= 4:
+    end = len(lines)
+    for i in range(job_start + 1, len(lines)):
+        line = lines[i]
+        if line.strip() and len(line) - len(line.lstrip(" ")) <= 2:
+            end = i
             break
+    return lines[job_start + 1 : end]
+
+
+def _project_memory_job_keys(workflow: str) -> set[str]:
+    keys: set[str] = set()
+    pending_explicit_key: str | None = None
+    for line in _project_memory_job_lines(workflow):
         indent = len(line) - len(line.lstrip(" "))
         stripped = line.strip()
-        if indent == 6 and stripped.startswith("- "):
-            if current is not None:
-                steps.append(current)
-            current = {}
-            pending_explicit_key = None
-            pair = _yaml_key_value(stripped[2:].strip())
-            if pair:
-                current[pair[0]] = pair[1]
-            continue
-        if current is None or not stripped or stripped.startswith("#"):
-            continue
-        if indent != 8:
+        if indent != 4 or not stripped or stripped.startswith("#"):
             continue
         if stripped.startswith("? "):
             pending_explicit_key = _normalize_yaml_key(stripped[2:].strip())
+            keys.add(pending_explicit_key)
             continue
         if stripped.startswith(":") and pending_explicit_key is not None:
-            current[pending_explicit_key] = stripped[1:].strip()
             pending_explicit_key = None
             continue
         pending_explicit_key = None
         pair = _yaml_key_value(stripped)
         if pair:
-            current[pair[0]] = pair[1]
-    if current is not None:
+            keys.add(pair[0])
+    return keys
+
+
+def _project_memory_workflow_steps(workflow: str) -> list[dict[str, str]]:
+    job_lines = _project_memory_job_lines(workflow)
+    steps_start = next((i for i, line in enumerate(job_lines) if line == "    steps:"), None)
+    if steps_start is None:
+        raise AssertionError("project_memory_workflow_steps_missing")
+
+    step_blocks: list[list[str]] = []
+    current_block: list[str] | None = None
+    for line in job_lines[steps_start + 1 :]:
+        indent = len(line) - len(line.lstrip(" "))
+        stripped = line.strip()
+        if indent == 6 and stripped.startswith("- "):
+            if current_block is not None:
+                step_blocks.append(current_block)
+            current_block = [line]
+            continue
+        if current_block is not None:
+            current_block.append(line)
+    if current_block is not None:
+        step_blocks.append(current_block)
+
+    steps: list[dict[str, str]] = []
+    for block in step_blocks:
+        current: dict[str, str] = {"__block__": "\n".join(block)}
+        pending_explicit_key: str | None = None
+        nested_parent: str | None = None
+        block_key: str | None = None
+        block_body: list[str] = []
+        for idx, line in enumerate(block):
+            indent = len(line) - len(line.lstrip(" "))
+            stripped = line.strip()
+            if idx == 0:
+                pair = _yaml_key_value(stripped[2:].strip())
+                if pair:
+                    current[pair[0]] = pair[1]
+                continue
+            if block_key is not None:
+                if indent >= 10:
+                    block_body.append(line[10:] if len(line) >= 10 else "")
+                    continue
+                current[f"{block_key}.body"] = "\n".join(block_body)
+                block_key = None
+                block_body = []
+            if not stripped or stripped.startswith("#"):
+                continue
+            if indent == 8:
+                nested_parent = None
+                if stripped.startswith("? "):
+                    pending_explicit_key = _normalize_yaml_key(stripped[2:].strip())
+                    continue
+                if stripped.startswith(":") and pending_explicit_key is not None:
+                    current[pending_explicit_key] = stripped[1:].strip()
+                    pending_explicit_key = None
+                    continue
+                pending_explicit_key = None
+                pair = _yaml_key_value(stripped)
+                if pair:
+                    current[pair[0]] = pair[1]
+                    if pair[1] == "":
+                        nested_parent = pair[0]
+                    if pair[1] in {"|", "|-", ">", ">-"}:
+                        block_key = pair[0]
+                continue
+            if indent == 10 and nested_parent is not None:
+                pair = _yaml_key_value(stripped)
+                if pair:
+                    current[f"{nested_parent}.{pair[0]}"] = pair[1]
+        if block_key is not None:
+            current[f"{block_key}.body"] = "\n".join(block_body)
         steps.append(current)
     return steps
 
 
+def _unique_step(steps: list[dict[str, str]], name: str) -> dict[str, str]:
+    matches = [step for step in steps if step.get("name") == name]
+    if len(matches) != 1:
+        raise AssertionError(f"project_memory_workflow_step_identity_invalid:{name}")
+    return matches[0]
+
+
 def validate_project_memory_workflow(workflow: str) -> None:
-    active_lines = {
-        line.strip()
-        for line in workflow.splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    }
-    required_checkout_lines = {
-        "allow-unsafe-pr-checkout: false",
-        "persist-credentials: false",
-        "ref: ${{ steps.target.outputs.sha }}",
-    }
-    missing_checkout = sorted(required_checkout_lines - active_lines)
-    if missing_checkout:
-        raise AssertionError("project_memory_workflow_missing_active_line:" + ",".join(missing_checkout))
+    if "if" in _project_memory_job_keys(workflow):
+        raise AssertionError("project_memory_workflow_job_condition_not_allowed")
 
     steps = _project_memory_workflow_steps(workflow)
     if any("if" in step for step in steps):
         raise AssertionError("project_memory_workflow_condition_not_allowed")
+
+    resolve = _unique_step(steps, "Resolve exact analyzed HEAD")
+    resolve_body = resolve.get("run.body", "")
+    for token in (
+        'if [[ "$EVENT_NAME" == "pull_request" ]]; then',
+        'resolved_sha="$PR_HEAD_SHA"',
+        'resolved_sha="$EVENT_SHA"',
+        'test -n "$resolved_sha"',
+        "printf 'sha=%s\\n' \"$resolved_sha\" >> \"$GITHUB_OUTPUT\"",
+    ):
+        if token not in resolve_body:
+            raise AssertionError("project_memory_workflow_resolve_head_binding_invalid")
+    if resolve.get("id") != "target" or resolve.get("shell") != "bash":
+        raise AssertionError("project_memory_workflow_resolve_head_binding_invalid")
+
+    checkout = _unique_step(steps, "Checkout exact analyzed HEAD")
+    if (
+        checkout.get("uses") != "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        or checkout.get("with.ref") != "${{ steps.target.outputs.sha }}"
+        or checkout.get("with.persist-credentials") != "false"
+        or checkout.get("with.fetch-depth") != "0"
+        or checkout.get("with.allow-unsafe-pr-checkout") != "false"
+    ):
+        raise AssertionError("project_memory_workflow_checkout_binding_invalid")
+
+    verify = _unique_step(steps, "Verify exact commit identity")
+    verify_body = verify.get("run.body", "")
+    if (
+        verify.get("env.EXPECTED_SHA") != "${{ steps.target.outputs.sha }}"
+        or verify.get("shell") != "bash"
+        or 'test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"' not in verify_body
+    ):
+        raise AssertionError("project_memory_workflow_verify_head_binding_invalid")
 
     required_step_runs = {
         "Validate canonical project memory": "python3 tools/project_memory/validate_project_memory.py",
@@ -332,8 +433,8 @@ def validate_project_memory_workflow(workflow: str) -> None:
         "Validate repository structure and workflow safety": "python3 tools/assurance/validate_repository.py",
     }
     for name, expected_run in required_step_runs.items():
-        matches = [step for step in steps if step.get("name") == name]
-        if len(matches) != 1 or matches[0].get("run") != expected_run:
+        step = _unique_step(steps, name)
+        if step.get("run") != expected_run:
             raise AssertionError(f"project_memory_workflow_missing_executable_step:{name}")
 
 

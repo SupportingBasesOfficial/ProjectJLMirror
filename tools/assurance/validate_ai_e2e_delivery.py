@@ -72,6 +72,10 @@ def require(cond: bool, msg: str) -> None:
         raise AssertionError(msg)
 
 
+def _markdown_lines(text: str) -> set[str]:
+    return {line.rstrip() for line in text.splitlines()}
+
+
 def validate(root: Path = ROOT) -> tuple[int, int, int]:
     root = root.resolve()
     docs_dir = root / "docs" / "00-foundation" / "ai-e2e-delivery"
@@ -98,14 +102,16 @@ def validate(root: Path = ROOT) -> tuple[int, int, int]:
         require(token in constitution, f"constitution_missing:{token}")
 
     model = texts["VERTICAL-SLICE-DELIVERY-MODEL.md"]
+    model_lines = _markdown_lines(model)
     for heading in EXPECTED_SLICE_HEADINGS:
-        require(f"### {heading}" in model, f"slice_heading_missing:{heading}")
+        require(f"### {heading}" in model_lines, f"slice_heading_missing:{heading}")
     for token in ("database_scope", "api_scope", "frontend_scope", "browser E2E", "AI task packet"):
         require(token in model, f"slice_model_missing:{token}")
 
     roadmap = texts["PRODUCT-EXECUTION-ROADMAP.md"]
+    roadmap_lines = _markdown_lines(roadmap)
     for heading in EXPECTED_GATE_HEADINGS:
-        require(f"### {heading}" in roadmap, f"roadmap_heading_missing:{heading}")
+        require(f"### {heading}" in roadmap_lines, f"roadmap_heading_missing:{heading}")
 
     bootstrap = texts["DAY-1-IMPLEMENTATION-BOOTSTRAP.md"]
     for token in (

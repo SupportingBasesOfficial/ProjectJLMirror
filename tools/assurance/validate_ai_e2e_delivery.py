@@ -70,6 +70,8 @@ EXPECTED_LAYERS = (
     "api_bff","frontend","unit_tests","integration_tests","e2e_tests","adversarial_tests",
     "observability","runtime","deployment","exact_head_evidence",
 )
+EXPECTED_OPTIMIZATION_TARGET = "lead_time_from_accepted_requirement_to_verified_executable_user_outcome"
+EXPECTED_OPTIMIZATION_SENTENCE = "Optimize for **lead time from accepted requirement to verified executable user outcome**, not lines of code, commit count or number of parallel agents."
 FENCE_OPEN_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})")
 FENCE_CLOSE_RE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})[ \t]*$")
 RAW_CONTAINER_START_RE = re.compile(
@@ -80,6 +82,10 @@ GENERIC_BLOCK_START_RE = re.compile(
     r"^[ ]{0,3}</?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|legend|li|link|main|menu|menuitem|nav|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?:\s|/?>|$)",
     re.IGNORECASE,
 )
+RAW_PROCESSING_OPEN_RE = re.compile(r"^[ ]{0,3}<\?")
+RAW_CDATA_OPEN_RE = re.compile(r"^[ ]{0,3}<!\[CDATA\[")
+RAW_DECLARATION_OPEN_RE = re.compile(r"^[ ]{0,3}<![A-Z]")
+RAW_GENERIC_COMPLETE_TAG_RE = re.compile(r"^[ ]{0,3}</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>[ \t]*$")
 
 
 def require(cond: bool, msg: str) -> None:
@@ -95,6 +101,7 @@ def _visible_markdown_lines(text: str) -> list[str]:
     in_comment = False
     raw_container: str | None = None
     generic_html_block = False
+    raw_until_token: str | None = None
 
     for raw in text.splitlines():
         if fence_char is not None:
@@ -104,6 +111,11 @@ def _visible_markdown_lines(text: str) -> list[str]:
                 if marker[0] == fence_char and len(marker) >= fence_len:
                     fence_char = None
                     fence_len = 0
+            continue
+
+        if raw_until_token is not None:
+            if raw_until_token in raw:
+                raw_until_token = None
             continue
 
         if raw_container is not None:
@@ -155,7 +167,20 @@ def _visible_markdown_lines(text: str) -> list[str]:
             raw_container = tag
             continue
 
-        if GENERIC_BLOCK_START_RE.match(rendered):
+        if RAW_PROCESSING_OPEN_RE.match(rendered):
+            if "?>" not in rendered:
+                raw_until_token = "?>"
+            continue
+        if RAW_CDATA_OPEN_RE.match(rendered):
+            if "]]>" not in rendered:
+                raw_until_token = "]]>"
+            continue
+        if RAW_DECLARATION_OPEN_RE.match(rendered):
+            if ">" not in rendered:
+                raw_until_token = ">"
+            continue
+
+        if GENERIC_BLOCK_START_RE.match(rendered) or RAW_GENERIC_COMPLETE_TAG_RE.match(rendered):
             generic_html_block = True
             continue
 
@@ -203,6 +228,7 @@ def validate(root: Path = ROOT) -> tuple[int, int, int]:
 
     roadmap = texts["PRODUCT-EXECUTION-ROADMAP.md"]
     _validate_heading_sequence(roadmap, EXPECTED_GATE_HEADINGS, "G", "roadmap_heading_missing", "roadmap_heading_order_or_duplicate")
+    require(EXPECTED_OPTIMIZATION_SENTENCE in roadmap, "roadmap_optimization_target_missing")
 
     bootstrap = texts["DAY-1-IMPLEMENTATION-BOOTSTRAP.md"]
     for token in (
@@ -217,6 +243,7 @@ def validate(root: Path = ROOT) -> tuple[int, int, int]:
     require(manifest.get("delivery_model") == "vertical_slice", "manifest_delivery_model")
     require(manifest.get("definition_of_done") == "E2E-16", "manifest_dod")
     require(manifest.get("merge_authority") == "separate_explicit_owner_authorization", "manifest_merge_authority")
+    require(manifest.get("optimization_target") == EXPECTED_OPTIMIZATION_TARGET, "manifest_optimization_target")
     gates = manifest.get("gates")
     require(isinstance(gates, list) and len(gates) == 15, "manifest_gate_count")
     ids = [g.get("id") for g in gates]

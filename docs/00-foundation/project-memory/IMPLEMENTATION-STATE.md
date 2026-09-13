@@ -5,6 +5,7 @@ Last reconstructed: 2026-09-12
 Canonical main SHA at this snapshot: `fb7d2e6309df432b133105aa081dc1ef37784820`
 Latest accepted PR at this snapshot: `#147`
 Current implementation PR in progress: `#148`
+Current governance PR in progress: `#151`
 Canonical memory requirement issue: `#150`
 Human-operations requirement issue: `#149`
 
@@ -48,16 +49,20 @@ Human-operations requirement issue: `#149`
 | Commercial | FUTURE | plans/contracts/invoices/billing |
 | Frontend/NOC experience | FUTURE / incomplete | UI must project, never define, business truth |
 | Production/C3 | BLOCKED / incomplete | deploy/HA/performance/DR/security operations require separate evidence |
+| Canonical project-memory system | IN PROGRESS | PR #151; repository-backed continuity, validator and recovery playbook |
 
 ## Exact dependency-safe next sequence
 1. finish and accept PR #148 Monitoring->Alerting publication runtime;
-2. authorize Alert Policy/Evaluation semantics;
-3. implement Alerting consumption + policy evaluation + Alert lifecycle runtime;
-4. authorize/implement human responsibility and JLMirror ACK;
-5. authorize/implement notification intent, delivery and authoritative visibility evidence;
-6. authorize/implement response/waiting and approval workflows;
-7. implement escalation/realtime as separately governed capabilities;
-8. continue ITSM, Automation, Infrastructure, AIOps and remaining product/production layers.
+2. finish and accept the canonical project-memory governance PR #151 independently;
+3. authorize Alert Policy/Evaluation semantics;
+4. implement Alerting consumption + policy evaluation + Alert lifecycle runtime;
+5. authorize/implement human responsibility and JLMirror ACK;
+6. authorize/implement notification intent, delivery and authoritative visibility evidence;
+7. authorize/implement response/waiting and approval workflows;
+8. implement escalation/realtime as separately governed capabilities;
+9. continue ITSM, Automation, Infrastructure, AIOps and remaining product/production layers.
+
+The relative merge order of #148 and #151 is independent because #151 changes governance memory only; whichever merges second must rebase/reconcile its snapshot metadata to current `main` before acceptance.
 
 ## Scope guard
 Do not treat a document/authorization as runtime implementation. Do not treat runtime implementation as production readiness. Do not advance to automatic Alert mutation while Alert Policy/Evaluation remains unauthorized.

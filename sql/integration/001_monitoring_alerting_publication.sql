@@ -97,6 +97,49 @@ BEGIN
 END;
 $$;
 
+-- CREATE OR REPLACE preserves a function OID. Any pre-existing database object
+-- that depends on either trigger-function OID would therefore remain attached
+-- after the function is replaced and elevated to SECURITY DEFINER. Reject every
+-- inbound persistent dependency before outbox grants land; this includes
+-- pg_trigger bindings and also rules/defaults/generated expressions/indexes or
+-- other catalog objects that could retain an invocation path to the old OID.
+DO $$
+DECLARE
+    v_row RECORD;
+    v_proc_oid OID;
+    v_dependency TEXT;
+BEGIN
+    FOR v_row IN
+        SELECT signature
+          FROM (VALUES
+              ('monitoring.wave4_publish_problem_transition()'),
+              ('monitoring.wave4_publish_health_transition()')
+          ) AS guarded(signature)
+    LOOP
+        v_proc_oid := to_regprocedure(v_row.signature);
+        IF v_proc_oid IS NULL THEN
+            CONTINUE;
+        END IF;
+
+        SELECT format(
+                   'class=%s,objid=%s,objsubid=%s,deptype=%s',
+                   d.classid::regclass::TEXT,d.objid,d.objsubid,d.deptype
+               )
+          INTO v_dependency
+          FROM pg_depend d
+         WHERE d.refclassid='pg_proc'::regclass
+           AND d.refobjid=v_proc_oid
+         ORDER BY d.classid,d.objid,d.objsubid,d.deptype
+         LIMIT 1;
+
+        IF v_dependency IS NOT NULL THEN
+            RAISE EXCEPTION 'monitoring.publication_existing_function_dependency_unsafe:%:%',
+                v_row.signature,v_dependency;
+        END IF;
+    END LOOP;
+END;
+$$;
+
 GRANT USAGE ON SCHEMA monitoring, system
 TO jlmirror_wave4_monitoring_publication_executor;
 REVOKE CREATE ON SCHEMA monitoring, system

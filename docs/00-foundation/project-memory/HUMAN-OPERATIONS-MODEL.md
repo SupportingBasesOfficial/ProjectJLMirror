@@ -25,7 +25,7 @@ The system must be able to establish technical authority for awareness/visibilit
 - internal operator/NOC/technician/responsible principal;
 - customer-side responsible person, service owner or approver.
 
-A critical workflow must not accept indefinite `view_status_unknown` as its planned end state when proof of awareness is required.
+This is an **authoritative visibility** requirement, not a best-effort UX hint. A critical workflow must not accept indefinite `view_status_unknown` as its planned end state when proof of awareness is required.
 
 ## Channel admission rule
 Every communication channel/integration must declare capabilities such as:

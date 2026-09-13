@@ -67,6 +67,51 @@ GRANT SELECT ON monitoring.monitoring_problem_transition,
     monitoring.health_projection_transition
 TO jlmirror_wave4_monitoring_publication_executor;
 
+-- CREATE OR REPLACE FUNCTION preserves existing ACLs. Because the following
+-- functions become SECURITY DEFINER under a privileged NOLOGIN owner, any
+-- unexpected retained named EXECUTE grant must be rejected before the body is
+-- replaced. Recovery functions may retain only the canonical recovery authority.
+DO $$
+DECLARE
+    v_recovery_oid OID;
+    v_row RECORD;
+    v_proc_oid OID;
+BEGIN
+    SELECT oid INTO v_recovery_oid
+      FROM pg_roles
+     WHERE rolname='jlmirror_wave4_recovery_authority';
+
+    FOR v_row IN
+        SELECT *
+          FROM (VALUES
+              ('monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb)', false),
+              ('monitoring.wave4_publish_problem_transition()', false),
+              ('monitoring.wave4_publish_health_transition()', false),
+              ('monitoring.recover_problem_state_publication(text,text)', true),
+              ('monitoring.recover_health_projection_publication(text,text)', true)
+          ) AS guarded(signature, allow_recovery_authority)
+    LOOP
+        v_proc_oid := to_regprocedure(v_row.signature);
+        IF v_proc_oid IS NULL THEN
+            CONTINUE;
+        END IF;
+
+        IF EXISTS (
+            SELECT 1
+              FROM pg_proc p,
+                   LATERAL aclexplode(COALESCE(p.proacl, ARRAY[]::aclitem[])) a
+             WHERE p.oid=v_proc_oid
+               AND a.privilege_type='EXECUTE'
+               AND a.grantee<>0
+               AND a.grantee<>p.proowner
+               AND (NOT v_row.allow_recovery_authority OR a.grantee<>v_recovery_oid)
+        ) THEN
+            RAISE EXCEPTION 'monitoring.publication_existing_function_acl_unsafe:%', v_row.signature;
+        END IF;
+    END LOOP;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION monitoring.wave4_ensure_monitoring_invalidation(
     p_tenant_id TEXT,
     p_contract_name TEXT,

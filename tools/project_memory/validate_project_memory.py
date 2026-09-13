@@ -22,6 +22,7 @@ REQUIRED_FILES = (
     "RECOVERY-PLAYBOOK-FOR-NEW-CHAT.md",
 )
 
+BASELINE_DECISION_IDS = tuple(f"JLM-DEC-{i:03d}" for i in range(1, 18))
 DECISION_ID_RE = re.compile(r"JLM-DEC-\d{3}")
 DECISION_DEFINITION_RE = re.compile(r"^\|\s*(JLM-DEC-\d{3})\s*\|", re.MULTILINE)
 DECISION_SUPERSESSION_CLAUSE_RE = re.compile(r"\bsuperseded\s+by\b", re.IGNORECASE)
@@ -92,11 +93,12 @@ def _validate_supersession_acyclic(edges: dict[str, str]) -> None:
 
 def validate_decision_register(decisions: str) -> int:
     ids = decision_definition_ids(decisions)
-    if len(ids) < 10:
-        raise AssertionError("project_memory_decision_register_too_small")
     if len(ids) != len(set(ids)):
         raise AssertionError("project_memory_duplicate_decision_definition_id")
     defined = set(ids)
+    missing_baseline = [decision_id for decision_id in BASELINE_DECISION_IDS if decision_id not in defined]
+    if missing_baseline:
+        raise AssertionError("project_memory_missing_baseline_decision:" + ",".join(missing_baseline))
     edges = decision_supersession_edges(decisions)
     for target in edges.values():
         if target not in defined:

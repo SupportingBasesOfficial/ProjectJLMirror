@@ -50,6 +50,48 @@ run_expected_acl_rejection() {
   grep -Fq "$expected" <<<"$output"
 }
 
+# Case 0: the shared recovery authority may legitimately own closed recovery
+# routines, but it must not own any routine callable by PUBLIC/another grantee
+# before this bridge delegates two new cross-tenant recovery entry points. The
+# proxy uses dynamic PL/pgSQL resolution so no persistent pg_depend edge exists.
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+CREATE ROLE jlmirror_wave4_monitoring_publication_executor
+    NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE FUNCTION monitoring.jlmirror_recovery_proxy_probe(text,text)
+RETURNS bigint
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=pg_catalog,monitoring
+AS $$
+DECLARE
+    v_result bigint;
+BEGIN
+    EXECUTE 'SELECT monitoring.recover_problem_state_publication($1,$2)'
+       INTO v_result
+       USING $1,$2;
+    RETURN v_result;
+END;
+$$;
+ALTER FUNCTION monitoring.jlmirror_recovery_proxy_probe(text,text)
+    OWNER TO jlmirror_wave4_recovery_authority;
+GRANT EXECUTE ON FUNCTION monitoring.jlmirror_recovery_proxy_probe(text,text) TO PUBLIC;
+SQL
+
+proxy_dependency_count="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT count(*) FROM pg_depend d WHERE d.classid='pg_proc'::regclass AND d.objid='monitoring.jlmirror_recovery_proxy_probe(text,text)'::regprocedure AND d.refclassid='pg_proc'::regclass AND d.refobjid=to_regprocedure('monitoring.recover_problem_state_publication(text,text)');")"
+test "$proxy_dependency_count" = "0"
+
+run_expected_acl_rejection 'monitoring.publication_recovery_authority_callable_proxy_unsafe:routine=monitoring.jlmirror_recovery_proxy_probe(text,text),grantee=PUBLIC'
+
+executor_privs="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','SELECT')::int || ':' || has_table_privilege('jlmirror_wave4_monitoring_publication_executor','system.async_outbox_message','INSERT')::int;")"
+test "$executor_privs" = "0:0"
+proxy_state="$(docker exec "$PG_CONTAINER" psql -Atq -U postgres -d "$PG_DATABASE" -c "SELECT pg_get_userbyid(p.proowner) || ':' || p.prosecdef::int || ':' || has_function_privilege('public','monitoring.jlmirror_recovery_proxy_probe(text,text)','EXECUTE')::int FROM pg_proc p WHERE p.oid='monitoring.jlmirror_recovery_proxy_probe(text,text)'::regprocedure;")"
+test "$proxy_state" = "jlmirror_wave4_recovery_authority:1:1"
+
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
+DROP FUNCTION monitoring.jlmirror_recovery_proxy_probe(text,text);
+DROP ROLE jlmirror_wave4_monitoring_publication_executor;
+SQL
+
 # Case 0a: the publication executor is a dedicated owner. An unrelated routine
 # already owned by it must block the migration before outbox grants land.
 docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PG_DATABASE" <<'SQL' >/dev/null
@@ -288,4 +330,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA monitoring
 DROP ROLE jlmirror_acl_probe;
 SQL
 
-echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=PASS executor_owned_routine=blocked executor_owned_view=blocked retained_trigger_dependency=blocked retained_helper_expression_dependency=blocked retained_problem_recovery_dependency=blocked retained_health_recovery_dependency=blocked retained_named_execute=blocked recovery_grant_option=blocked default_execute_grant=blocked transactional_acl_fence=proven"
+echo "wave4_monitoring_alerting_publication_acl_preflight_postgres=PASS recovery_authority_callable_proxy=blocked executor_owned_routine=blocked executor_owned_view=blocked retained_trigger_dependency=blocked retained_helper_expression_dependency=blocked retained_problem_recovery_dependency=blocked retained_health_recovery_dependency=blocked retained_named_execute=blocked recovery_grant_option=blocked default_execute_grant=blocked transactional_acl_fence=proven"

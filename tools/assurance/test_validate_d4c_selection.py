@@ -24,9 +24,10 @@ def falsify_monitoring_alerting_privileged_acl_preflight():
  sql=(ROOT/'sql/integration/001_monitoring_alerting_publication.sql').read_text(encoding='utf-8')
  conformance=(ROOT/'tools/wave4/run_monitoring_alerting_publication_acl_preflight_postgres_conformance.sh').read_text(encoding='utf-8')
  workflow=(ROOT/'.github/workflows/wave4-monitoring-alerting-publication-runtime.yml').read_text(encoding='utf-8')
- assert 'monitoring.publication_executor_unexpected_owned_routine' in sql
- assert 'pg_get_function_identity_arguments' in sql
- assert 'to_regprocedure(allowed.signature)=p.oid' in sql
+ assert 'monitoring.publication_executor_unexpected_owned_object' in sql
+ assert 'FROM pg_shdepend d' in sql and "d.deptype='o'" in sql
+ assert "d.refclassid='pg_authid'::regclass" in sql
+ assert "d.classid='pg_proc'::regclass" in sql
  assert 'monitoring.publication_existing_function_acl_unsafe' in sql
  assert 'monitoring.publication_installed_function_acl_unsafe' in sql
  assert "aclexplode(COALESCE(p.proacl, ARRAY[]::aclitem[]))" in sql
@@ -34,7 +35,9 @@ def falsify_monitoring_alerting_privileged_acl_preflight():
  assert "a.privilege_type='EXECUTE'" in sql and 'a.grantee<>p.proowner' in sql
  assert 'a.grantee=0' in sql, 'post-install ACL fence must reject PUBLIC EXECUTE'
  assert 'OR a.is_grantable' in sql, 'recovery authority must never retain EXECUTE WITH GRANT OPTION'
- assert 'jlmirror_executor_probe' in conformance and 'executor_owner_closure=blocked' in conformance
+ assert 'jlmirror_executor_probe' in conformance and 'executor_owned_routine=blocked' in conformance
+ assert 'jlmirror_executor_view_probe' in conformance and 'executor_owned_view=blocked' in conformance
+ assert 'SET ROLE jlmirror_view_probe' in conformance and 'permission denied' in conformance
  assert 'has_table_privilege' in conformance and 'system.async_outbox_message' in conformance
  assert 'jlmirror_acl_probe' in conformance and 'retained_named_execute=blocked' in conformance
  assert 'WITH GRANT OPTION' in conformance and 'recovery_grant_option=blocked' in conformance
@@ -63,7 +66,7 @@ def main():
  falsify_selection_record_product_authority()
  falsify_monitoring_alerting_composed_workflow_dependencies()
  falsify_monitoring_alerting_privileged_acl_preflight()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked publication_composed_dependencies=bound publication_acl_preflight=owner-closure+pre+post-install-attested')
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked publication_composed_dependencies=bound publication_acl_preflight=cross-class-owner-closure+pre+post-install-attested')
  return 0
 if __name__=='__main__':
  main()

@@ -83,6 +83,15 @@ def expect_failure(mutator, *, comments=None) -> None:
         assert errors, "adversarial learning mutation unexpectedly passed"
 
 
+def expect_repository_failure(mutator) -> None:
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        clone(root)
+        mutator(root)
+        errors = vr.validate_repository(root)
+        assert errors, "repository-policy mutation unexpectedly passed"
+
+
 def falsify_incidental_guardrail_substring() -> None:
     expect_failure(
         lambda r: mutate_text(
@@ -176,36 +185,36 @@ def falsify_priority_prefixed_material_finding() -> None:
 
 
 def falsify_privileged_job_executes_pr_content() -> None:
-    expect_failure(
-        lambda r: mutate_text(
-            r,
+    def mutate(root: Path) -> None:
+        mutate_text(
+            root,
             s.HEAD_STATUS_WORKFLOW,
-            "  publish-final:\n",
-            "  publish-final:\n    steps:\n      - run: ./untrusted-pr-script.sh\n",
+            "      - name: Publish pending reconciliation status on resolved PR HEAD\n",
+            "      - name: Unsafe PR-controlled execution\n        run: python3 tools/assurance/validate_adversarial_learning.py\n      - name: Publish pending reconciliation status on resolved PR HEAD\n",
         )
-    )
+    expect_repository_failure(mutate)
 
 
 def falsify_implicit_gh_api_write() -> None:
-    expect_failure(
-        lambda r: mutate_text(
-            r,
+    def mutate(root: Path) -> None:
+        mutate_text(
+            root,
             s.HEAD_STATUS_WORKFLOW,
-            "statuses/${PR_HEAD_SHA}",
-            "issues/${PR_NUMBER}/comments",
+            "          gh api --paginate --slurp \"repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100\" > runtime-evidence/top-level-pr-comments.json\n",
+            "          gh api \"repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}\" -f state=success\n          gh api --paginate --slurp \"repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100\" > runtime-evidence/top-level-pr-comments.json\n",
         )
-    )
+    expect_repository_failure(mutate)
 
 
 def falsify_spoofed_status_endpoint() -> None:
-    expect_failure(
-        lambda r: mutate_text(
-            r,
+    def mutate(root: Path) -> None:
+        mutate_text(
+            root,
             s.HEAD_STATUS_WORKFLOW,
-            "statuses/${PR_HEAD_SHA}",
-            "statuses/${GITHUB_SHA}",
+            'gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}"',
+            'gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/0000000000000000000000000000000000000000" # statuses/${PR_HEAD_SHA}',
         )
-    )
+    expect_repository_failure(mutate)
 
 
 def falsify_reconciliation_concurrency() -> None:

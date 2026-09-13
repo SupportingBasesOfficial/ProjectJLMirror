@@ -54,9 +54,18 @@ class ProjectMemoryTests(unittest.TestCase):
     def test_seeded_decision_meanings_are_exactly_declared(self) -> None:
         self.assertEqual(len(validator.BASELINE_DECISION_MEANINGS), 17)
         self.assertEqual(
+            validator.BASELINE_DECISION_MEANINGS["JLM-DEC-012"],
+            "Alert v1 lifecycle is `active \\| resolved`; resolved is terminal",
+        )
+        self.assertEqual(
             validator.BASELINE_DECISION_MEANINGS["JLM-DEC-017"],
             "Repository truth outranks assistant/chat memory",
         )
+
+    def test_decision_register_escapes_lifecycle_pipe(self) -> None:
+        text = (validator.MEMORY / "DECISION-REGISTER.md").read_text(encoding="utf-8")
+        self.assertIn("`active \\| resolved`", text)
+        self.assertNotIn("`active | resolved`", text)
 
     def test_decision_references_do_not_count_as_definitions(self) -> None:
         rows = baseline_rows(extra=1)
@@ -92,6 +101,11 @@ class ProjectMemoryTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "project_memory_missing_baseline_decision:JLM-DEC-001"):
             validator.validate_decision_register(hidden)
 
+    def test_overindented_pseudo_closing_fence_does_not_expose_rows(self) -> None:
+        hidden = "```markdown\n    ```\n" + "\n".join(baseline_rows()) + "\n```"
+        with self.assertRaisesRegex(AssertionError, "project_memory_missing_baseline_decision:JLM-DEC-001"):
+            validator.validate_decision_register(hidden)
+
     def test_malformed_seeded_decision_id_is_rejected_as_missing(self) -> None:
         rows = baseline_rows()
         rows[16] = "| JLM-DEC-O17 | malformed | current | accepted |"
@@ -102,6 +116,12 @@ class ProjectMemoryTests(unittest.TestCase):
         rows = baseline_rows()
         rows[16] = "| JLM-DEC-017 | Chat memory outranks repository truth | current | accepted |"
         with self.assertRaisesRegex(AssertionError, "project_memory_baseline_decision_meaning_changed:JLM-DEC-017"):
+            validator.validate_decision_register("\n".join(rows))
+
+    def test_unescaped_lifecycle_pipe_is_rejected(self) -> None:
+        rows = baseline_rows()
+        rows[11] = rows[11].replace("\\|", "|", 1)
+        with self.assertRaisesRegex(AssertionError, "project_memory_baseline_decision_meaning_changed:JLM-DEC-012"):
             validator.validate_decision_register("\n".join(rows))
 
     def test_seeded_decision_may_be_explicitly_superseded_without_rewrite(self) -> None:
@@ -155,6 +175,16 @@ class ProjectMemoryTests(unittest.TestCase):
         mutated = workflow.replace(
             "      - name: Falsify canonical project-memory guardrails\n",
             "      - name: Falsify canonical project-memory guardrails\n        if: ${{ false }}\n",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "project_memory_workflow_condition_not_allowed"):
+            validator.validate_project_memory_workflow(mutated)
+
+    def test_quoted_condition_key_is_not_accepted(self) -> None:
+        workflow = validator.WORKFLOW.read_text(encoding="utf-8")
+        mutated = workflow.replace(
+            "      - name: Falsify canonical project-memory guardrails\n",
+            "      - name: Falsify canonical project-memory guardrails\n        \"if\": ${{ false }}\n",
             1,
         )
         with self.assertRaisesRegex(AssertionError, "project_memory_workflow_condition_not_allowed"):

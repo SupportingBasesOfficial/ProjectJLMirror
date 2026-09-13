@@ -104,6 +104,19 @@
       "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_ai_e2e_delivery_heading_binding"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 18
+    },
+    {
+      "id": "LEARN-PR152-009",
+      "pr": 152,
+      "source": "external_review",
+      "review_comment_id": 3999108326,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "Whole-line heading validation still treated every physical Markdown line as semantic structure. A required heading copied into a fenced code example could satisfy the guard even after the real section heading was removed, so code samples could impersonate governance structure.",
+      "horizontal_audit": ["Markdown fenced-code exclusion","G0-G14 semantic headings","S0-S10 semantic headings","backtick fences","tilde fences","future document-structure validators"],
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_ai_e2e_delivery_heading_binding"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 19
     }
   ]
 }

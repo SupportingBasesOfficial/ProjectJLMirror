@@ -33,8 +33,12 @@ def falsify_project_memory_review_guardrails():
  must_fail(lambda: project_memory.validate_project_memory_workflow(explicit_disabled),'project_memory_workflow_condition_not_allowed')
  job_disabled=workflow.replace('  project-memory:\n','  project-memory:\n    if: ${{ false }}\n',1)
  must_fail(lambda: project_memory.validate_project_memory_workflow(job_disabled),'project_memory_workflow_job_condition_not_allowed')
+ folded_job_key=workflow.replace('  project-memory:\n','  project-memory:\n    ? >-\n      if\n    : ${{ false }}\n',1)
+ must_fail(lambda: project_memory.validate_project_memory_workflow(folded_job_key),'project_memory_workflow_job_explicit_key_not_allowed')
  wrong_pr_head=workflow.replace('${{ github.event.pull_request.head.sha }}','${{ github.event.pull_request.base.sha }}',1)
  must_fail(lambda: project_memory.validate_project_memory_workflow(wrong_pr_head),'project_memory_workflow_job_env_binding_invalid')
+ resolve_comment_decoy=workflow.replace('            resolved_sha="$PR_HEAD_SHA"\n','            resolved_sha="$EVENT_SHA"\n            # resolved_sha="$PR_HEAD_SHA"\n',1)
+ must_fail(lambda: project_memory.validate_project_memory_workflow(resolve_comment_decoy),'project_memory_workflow_resolve_head_binding_invalid')
  continue_on_error=workflow.replace('      - name: Falsify canonical project-memory guardrails\n','      - name: Falsify canonical project-memory guardrails\n        continue-on-error: ${{ true }}\n',1)
  must_fail(lambda: project_memory.validate_project_memory_workflow(continue_on_error),'project_memory_workflow_continue_on_error_not_allowed')
  required='run: PYTHONPATH=tools/assurance:tools/project_memory python3 tools/assurance/test_validate_d4c_selection.py'
@@ -91,6 +95,6 @@ def main():
  def regress_d4_acceptance(selection,ledger,state,evaluation): state['gate_state']='scoped'
  must_fail(regress_d4_acceptance,'state D4 gate authority drift')
  falsify_selection_record_product_authority(); falsify_project_memory_review_guardrails()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked project_memory_review_guardrails=rendered-authority+exact-head-env+continue-on-error+structural-workflow-negative-tested')
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked project_memory_review_guardrails=rendered-authority+canonical-resolver+explicit-job-key+exact-head-env+continue-on-error-negative-tested')
  return 0
 if __name__=='__main__': main()

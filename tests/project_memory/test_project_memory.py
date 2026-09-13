@@ -69,6 +69,27 @@ class ProjectMemoryTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "project_memory_missing_supersession_target:JLM-DEC-999"):
             validator.validate_decision_register("\n".join(rows))
 
+    def test_malformed_supersession_target_is_rejected(self) -> None:
+        rows = [f"| JLM-DEC-{i:03d} | decision | current | accepted |" for i in range(1, 11)]
+        for malformed in ("JLM-DEC-99", "JLM-DEC-O02"):
+            mutated = list(rows)
+            mutated[0] = f"| JLM-DEC-001 | decision | superseded by {malformed} | accepted |"
+            with self.assertRaisesRegex(AssertionError, "project_memory_malformed_supersession:JLM-DEC-001"):
+                validator.validate_decision_register("\n".join(mutated))
+
+    def test_self_supersession_is_rejected(self) -> None:
+        rows = [f"| JLM-DEC-{i:03d} | decision | current | accepted |" for i in range(1, 11)]
+        rows[0] = "| JLM-DEC-001 | decision | superseded by JLM-DEC-001 | accepted |"
+        with self.assertRaisesRegex(AssertionError, "project_memory_supersession_self_reference:JLM-DEC-001"):
+            validator.validate_decision_register("\n".join(rows))
+
+    def test_supersession_cycle_is_rejected(self) -> None:
+        rows = [f"| JLM-DEC-{i:03d} | decision | current | accepted |" for i in range(1, 11)]
+        rows[0] = "| JLM-DEC-001 | decision | superseded by JLM-DEC-002 | accepted |"
+        rows[1] = "| JLM-DEC-002 | decision | superseded by JLM-DEC-001 | accepted |"
+        with self.assertRaisesRegex(AssertionError, "project_memory_supersession_cycle"):
+            validator.validate_decision_register("\n".join(rows))
+
     def test_commented_out_workflow_command_is_not_accepted(self) -> None:
         workflow = validator.WORKFLOW.read_text(encoding="utf-8")
         mutated = workflow.replace(

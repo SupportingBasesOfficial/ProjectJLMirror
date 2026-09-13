@@ -9,22 +9,62 @@
       "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
       "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "The new AI E2E delivery validator depended on a case-sensitive free-form substring that did not exactly match the canonical roadmap heading, so the governance gate rejected its own accepted document despite the intended concept being present.",
-      "horizontal_audit": [
-        "roadmap gate heading identifiers",
-        "validator-to-document vocabulary bindings",
-        "G2 Monitoring source onboarding",
-        "G7 Alert policy lifecycle",
-        "G14 Production release gate",
-        "future governance validators that bind prose to executable checks"
-      ],
-      "guardrails": [
-        {
-          "path": "tools/assurance/test_validate_d4c_selection.py",
-          "probe": "falsify_ai_e2e_delivery_heading_binding"
-        }
-      ],
+      "horizontal_audit": ["roadmap gate heading identifiers","validator-to-document vocabulary bindings","G2 Monitoring source onboarding","G7 Alert policy lifecycle","G14 Production release gate","future governance validators that bind prose to executable checks"],
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_ai_e2e_delivery_heading_binding"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 11
+    },
+    {
+      "id": "LEARN-PR152-002",
+      "pr": 152,
+      "source": "external_review",
+      "review_comment_id": 3998814015,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The credited delivery falsifier only asserted source substrings and then invoked an unrelated D4-C negative helper. It did not mutate delivery authority or execute the delivery validator, so learning credit could survive even if the actual delivery guard stopped enforcing the roadmap.",
+      "horizontal_audit": ["credited falsifier semantic relevance","delivery-validator negative mutation","roadmap heading removal","workflow scheduling for credited probes","future cross-domain assurance probes"],
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_ai_e2e_delivery_heading_binding"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 12
+    },
+    {
+      "id": "LEARN-PR152-003",
+      "pr": 152,
+      "source": "external_review",
+      "review_comment_id": 3998814018,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The E2E-16 validator required only eight named layers plus a total length of sixteen. The remaining required layers could be replaced with arbitrary strings while preserving length, allowing authority, migration, tenant isolation, adversarial testing or observability to silently disappear from the delivery contract.",
+      "horizontal_audit": ["complete E2E-16 layer identity","ordered layer contract","duplicate layer detection","manifest schema drift","future Definition-of-Done revisions"],
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_ai_e2e_delivery_heading_binding"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 13
+    },
+    {
+      "id": "LEARN-PR152-004",
+      "pr": 152,
+      "source": "external_review",
+      "review_comment_id": 3998814021,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "Gate dependency validation rejected only forward references and therefore accepted empty dependency lists. A governance edit could erase the declared G0-to-G14 execution chain without failing exact-head CI.",
+      "horizontal_audit": ["gate predecessor relationships","sequential product execution ordering","dependency removal","parallelization safety","future roadmap graph evolution"],
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_ai_e2e_delivery_heading_binding"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 14
+    },
+    {
+      "id": "LEARN-PR152-005",
+      "pr": 152,
+      "source": "external_review",
+      "review_comment_id": 3998814022,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "Roadmap completeness was checked using bare gate IDs, so identifiers such as G1 could survive as substrings inside G10-G14 or cross-references after the canonical section itself was deleted. The validator therefore did not prove that every declared gate heading remained present.",
+      "horizontal_audit": ["all G0-G14 canonical headings","substring collisions among gate IDs","roadmap section deletion","manifest-to-roadmap binding","future gate renaming"],
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_ai_e2e_delivery_heading_binding"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 15
     }
   ]
 }

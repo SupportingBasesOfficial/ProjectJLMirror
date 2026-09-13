@@ -49,6 +49,44 @@ BEGIN
 END;
 $$;
 
+-- The executor is a dedicated capability owner. Before granting it any outbox
+-- authority, prove that it owns no routine outside this bridge's five canonical
+-- signatures. This closes the case where a pre-existing SECURITY DEFINER owned
+-- by the same role would silently gain outbox power when the grants below land.
+DO $$
+DECLARE
+    v_executor_oid OID;
+    v_unexpected TEXT;
+BEGIN
+    SELECT oid INTO v_executor_oid
+      FROM pg_roles
+     WHERE rolname='jlmirror_wave4_monitoring_publication_executor';
+
+    SELECT format('%I.%I(%s)', n.nspname, p.proname, pg_get_function_identity_arguments(p.oid))
+      INTO v_unexpected
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid=p.pronamespace
+     WHERE p.proowner=v_executor_oid
+       AND NOT EXISTS (
+            SELECT 1
+              FROM (VALUES
+                  ('monitoring.wave4_ensure_monitoring_invalidation(text,text,text,text,text,timestamptz,jsonb)'),
+                  ('monitoring.wave4_publish_problem_transition()'),
+                  ('monitoring.wave4_publish_health_transition()'),
+                  ('monitoring.recover_problem_state_publication(text,text)'),
+                  ('monitoring.recover_health_projection_publication(text,text)')
+              ) AS allowed(signature)
+             WHERE to_regprocedure(allowed.signature)=p.oid
+       )
+     ORDER BY n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)
+     LIMIT 1;
+
+    IF v_unexpected IS NOT NULL THEN
+        RAISE EXCEPTION 'monitoring.publication_executor_unexpected_owned_routine:%', v_unexpected;
+    END IF;
+END;
+$$;
+
 GRANT USAGE ON SCHEMA monitoring, system
 TO jlmirror_wave4_monitoring_publication_executor;
 REVOKE CREATE ON SCHEMA monitoring, system

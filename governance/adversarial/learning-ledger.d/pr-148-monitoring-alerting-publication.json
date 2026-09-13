@@ -78,6 +78,19 @@
       "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_monitoring_alerting_privileged_acl_preflight"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 30
+    },
+    {
+      "id": "LEARN-PR148-007",
+      "pr": 148,
+      "source": "external_review",
+      "review_comment_id": 4000315406,
+      "class_id": "ADV-AUTHORITY-TOCTOU",
+      "invariant_ids": ["INV-AUTH-001", "INV-PROVENANCE-001"],
+      "root_cause": "The dedicated-owner closure inspected only pg_proc. A pre-existing view or other owner-mediated object owned by the executor could therefore remain shared to another role and begin exercising newly granted outbox authority through owner privilege as soon as the migration granted storage access.",
+      "horizontal_audit": ["cross-class role ownership","pg_shdepend ownership dependencies","executor-owned views","materialized views and relations","schemas types sequences and other owner-mediated objects","pre-grant capability closure","future dedicated privileged owners"],
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_monitoring_alerting_privileged_acl_preflight"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 31
     }
   ]
 }

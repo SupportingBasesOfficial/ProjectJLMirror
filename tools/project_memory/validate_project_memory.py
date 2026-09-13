@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MEMORY = ROOT / "docs" / "00-foundation" / "project-memory"
+WORKFLOW = ROOT / ".github" / "workflows" / "project-memory-governance.yml"
 
 REQUIRED_FILES = (
     "PROJECT-IDENTITY.md",
@@ -22,6 +23,7 @@ REQUIRED_FILES = (
 )
 
 DECISION_DEFINITION_RE = re.compile(r"^\|\s*(JLM-DEC-\d{3})\s*\|", re.MULTILINE)
+DECISION_SUPERSESSION_RE = re.compile(r"superseded by\s+(JLM-DEC-\d{3})")
 
 
 def read(name: str) -> str:
@@ -35,12 +37,39 @@ def read(name: str) -> str:
 
 
 def decision_definition_ids(decisions: str) -> list[str]:
-    """Return only decision IDs defined in the register's first table column.
-
-    References such as `superseded by JLM-DEC-018` are intentionally excluded:
-    they are audit links, not duplicate definitions.
-    """
     return DECISION_DEFINITION_RE.findall(decisions)
+
+
+def decision_supersession_targets(decisions: str) -> list[str]:
+    return DECISION_SUPERSESSION_RE.findall(decisions)
+
+
+def validate_decision_register(decisions: str) -> int:
+    ids = decision_definition_ids(decisions)
+    if len(ids) < 10:
+        raise AssertionError("project_memory_decision_register_too_small")
+    if len(ids) != len(set(ids)):
+        raise AssertionError("project_memory_duplicate_decision_definition_id")
+    defined = set(ids)
+    for target in decision_supersession_targets(decisions):
+        if target not in defined:
+            raise AssertionError(f"project_memory_missing_supersession_target:{target}")
+    return len(ids)
+
+
+def validate_project_memory_workflow(workflow: str) -> None:
+    active_lines = {line.strip() for line in workflow.splitlines() if line.strip() and not line.lstrip().startswith("#")}
+    required_lines = {
+        "allow-unsafe-pr-checkout: false",
+        "persist-credentials: false",
+        "ref: ${{ steps.target.outputs.sha }}",
+        "run: python3 tools/project_memory/validate_project_memory.py",
+        "run: python3 -m unittest discover -s tests/project_memory -p 'test_*.py'",
+        "run: python3 tools/assurance/validate_repository.py",
+    }
+    missing = sorted(required_lines - active_lines)
+    if missing:
+        raise AssertionError("project_memory_workflow_missing_active_line:" + ",".join(missing))
 
 
 def validate() -> tuple[int, int]:
@@ -77,12 +106,7 @@ def validate() -> tuple[int, int]:
         if token not in invariants:
             raise AssertionError(f"project_memory_invariant_missing:{token}")
 
-    decisions = texts["DECISION-REGISTER.md"]
-    ids = decision_definition_ids(decisions)
-    if len(ids) < 10:
-        raise AssertionError("project_memory_decision_register_too_small")
-    if len(ids) != len(set(ids)):
-        raise AssertionError("project_memory_duplicate_decision_definition_id")
+    decision_count = validate_decision_register(texts["DECISION-REGISTER.md"])
 
     state = texts["IMPLEMENTATION-STATE.md"]
     if not re.search(r"Canonical main SHA at this snapshot: `([0-9a-f]{40})`", state):
@@ -122,7 +146,11 @@ def validate() -> tuple[int, int]:
     if "automatic Alert create/resolve remains blocked" not in deferred:
         raise AssertionError("project_memory_deferred_missing_alert_block")
 
-    return len(REQUIRED_FILES), len(ids)
+    if not WORKFLOW.is_file():
+        raise AssertionError("project_memory_workflow_missing")
+    validate_project_memory_workflow(WORKFLOW.read_text(encoding="utf-8"))
+
+    return len(REQUIRED_FILES), decision_count
 
 
 if __name__ == "__main__":

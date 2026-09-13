@@ -25,11 +25,16 @@ def falsify_monitoring_alerting_privileged_acl_preflight():
  conformance=(ROOT/'tools/wave4/run_monitoring_alerting_publication_acl_preflight_postgres_conformance.sh').read_text(encoding='utf-8')
  workflow=(ROOT/'.github/workflows/wave4-monitoring-alerting-publication-runtime.yml').read_text(encoding='utf-8')
  assert 'monitoring.publication_existing_function_acl_unsafe' in sql
+ assert 'monitoring.publication_installed_function_acl_unsafe' in sql
  assert "aclexplode(COALESCE(p.proacl, ARRAY[]::aclitem[]))" in sql
+ assert "aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner)))" in sql
  assert "a.privilege_type='EXECUTE'" in sql and 'a.grantee<>p.proowner' in sql
+ assert 'a.grantee=0' in sql, 'post-install ACL fence must reject PUBLIC EXECUTE'
  assert 'OR a.is_grantable' in sql, 'recovery authority must never retain EXECUTE WITH GRANT OPTION'
  assert 'jlmirror_acl_probe' in conformance and 'retained_named_execute=blocked' in conformance
  assert 'WITH GRANT OPTION' in conformance and 'recovery_grant_option=blocked' in conformance
+ assert 'ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA monitoring' in conformance
+ assert 'default_execute_grant=blocked' in conformance and 'transactional_acl_fence=proven' in conformance
  assert 'Prove privileged function ACL preflight' in workflow
  def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'
  must_fail(grant_product,'Product authority escalation')
@@ -53,7 +58,7 @@ def main():
  falsify_selection_record_product_authority()
  falsify_monitoring_alerting_composed_workflow_dependencies()
  falsify_monitoring_alerting_privileged_acl_preflight()
- print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked publication_composed_dependencies=bound publication_acl_preflight=grant-option+execution-attested')
+ print('d4c_selection_falsification=PASS profile_drift=blocked historical_rewrite=blocked evidence_regression=blocked authority_escalation=blocked gate_acceptance_regression=blocked publication_composed_dependencies=bound publication_acl_preflight=pre+post-install-attested')
  return 0
 if __name__=='__main__':
  main()

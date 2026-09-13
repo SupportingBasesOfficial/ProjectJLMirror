@@ -300,8 +300,10 @@ def falsify_wave4_authority_toctou_guardrail() -> None:
 
 
 def falsify_wave4_host_inventory_authority_transition() -> None:
-    import json as _json
-    manifest = _json.loads((ROOT / "implementation/wave-4-host-inventory-authorization/AUTHORIZATION_MANIFEST.json").read_text(encoding="utf-8"))
+    manifest = json.loads((ROOT / "implementation/wave-4-host-inventory-authorization/AUTHORIZATION_MANIFEST.json").read_text(encoding="utf-8"))
+    assert manifest.get("effective_rule") == "this_successor_clarification_becomes_canonical_and_unblocks_exact_host_inventory_implementation_only_after_exact_head_review_and_separately_authorized_merge"
+    assert manifest.get("canonical_effect_after_merge") == "host_inventory_ingestion_authorized_for_exact_accepted_behavior_with_monitoring_resource_kind_host"
+    assert manifest.get("implementation_authority_before_merge") == "blocked"
     assert manifest.get("implementation_authority_after_merge") == "granted_for_exact_host_inventory_ingestion_slice_only"
     finding = manifest.get("post_merge_finding") or {}
     assert finding.get("implementation_blocked_until_this_clarification_is_canonical") is True
@@ -393,7 +395,7 @@ def main() -> None:
         comments.write_text(json.dumps([[{"id": 3963734258, "body": "**P1 Badge** exact bootstrap finding"}]]), encoding="utf-8")
         assert not s.validate(root, comments)
 
-    print("adversarial_learning_falsification=PASS strict_static_graph=guarded review_surface=issues+inline+reviews top_level_comments=covered priority_prefix=covered head_status=fresh+isolated+concurrent+unspoofable privileged_pr_exec=denied stale_d4c_workflow_projection=blocked stop_policy=merge-blocking-preserved")
+    print("adversarial_learning_falsification=PASS strict_static_graph=guarded review_surface=issues+inline+reviews top_level_comments=covered priority_prefix=covered head_status=fresh+isolated+concurrent+unspoofable privileged_pr_exec=denied stale_d4c_workflow_projection=blocked stop_policy=merge-blocking-preserved host_inventory_premerge_authority=preserved")
 
 
 if __name__ == "__main__":

@@ -146,14 +146,16 @@ $$;
 -- The Wave 4 recovery authority is intentionally shared across accepted recovery
 -- slices and legitimately owns their closed SECURITY DEFINER entry points. Before
 -- this bridge delegates two additional recovery functions to that role, prove that
--- none of its existing owned routines is callable by PUBLIC or any other grantee.
--- PL/pgSQL runtime-resolved calls do not require a persistent pg_depend edge, so
--- this owner/callability closure is required in addition to the OID dependency
--- fence above. Owner-only EXECUTE remains valid; any proxy surface fails closed.
+-- every existing recovery-owned routine is both ACL-closed and free of persistent
+-- inbound invocation dependencies. Owner-only EXECUTE by itself is not sufficient:
+-- an already-attached trigger or expression can invoke a preserved routine OID
+-- without a runtime EXECUTE check, and that routine may dynamically resolve a call
+-- to one of the new recovery entry points after this migration grants it.
 DO $$
 DECLARE
     v_recovery_oid OID;
     v_proxy TEXT;
+    v_dependency TEXT;
 BEGIN
     SELECT oid INTO v_recovery_oid
       FROM pg_roles
@@ -176,6 +178,24 @@ BEGIN
 
     IF v_proxy IS NOT NULL THEN
         RAISE EXCEPTION 'monitoring.publication_recovery_authority_callable_proxy_unsafe:%', v_proxy;
+    END IF;
+
+    SELECT format(
+               'routine=%s,class=%s,objid=%s,objsubid=%s,deptype=%s',
+               p.oid::regprocedure::TEXT,
+               d.classid::regclass::TEXT,d.objid,d.objsubid,d.deptype
+           )
+      INTO v_dependency
+      FROM pg_proc p
+      JOIN pg_depend d
+        ON d.refclassid='pg_proc'::regclass
+       AND d.refobjid=p.oid
+     WHERE p.proowner=v_recovery_oid
+     ORDER BY p.oid,d.classid,d.objid,d.objsubid,d.deptype
+     LIMIT 1;
+
+    IF v_dependency IS NOT NULL THEN
+        RAISE EXCEPTION 'monitoring.publication_recovery_authority_dependency_proxy_unsafe:%', v_dependency;
     END IF;
 END;
 $$;

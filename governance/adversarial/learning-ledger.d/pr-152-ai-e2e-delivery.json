@@ -91,6 +91,19 @@
       "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_ai_e2e_delivery_heading_binding"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 17
+    },
+    {
+      "id": "LEARN-PR152-008",
+      "pr": 152,
+      "source": "external_review",
+      "review_comment_id": 3999083514,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "Canonical roadmap and slice-stage headings were validated with substring membership. Demoting a required Markdown heading from level three to level four still contained the expected `### ...` substring starting at the second hash, so the governance gate accepted a hierarchy change even though the canonical section structure had drifted.",
+      "horizontal_audit": ["G0-G14 Markdown heading levels","S0-S10 Markdown heading levels","whole-line heading identity","heading demotion","document hierarchy semantics","future Markdown structure validators"],
+      "guardrails": [{"path":"tools/assurance/test_validate_d4c_selection.py","probe":"falsify_ai_e2e_delivery_heading_binding"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 18
     }
   ]
 }

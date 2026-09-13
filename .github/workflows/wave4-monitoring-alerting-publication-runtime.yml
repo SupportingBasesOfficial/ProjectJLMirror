@@ -12,6 +12,7 @@ on:
       - 'tools/wave4/validate_monitoring_alerting_publication_runtime.py'
       - 'tools/wave4/run_monitoring_alerting_publication_postgres_conformance.sh'
       - 'tools/wave4/run_monitoring_alerting_publication_acl_preflight_postgres_conformance.sh'
+      - 'tools/wave4/run_monitoring_alerting_publication_recovery_proxy_postgres_conformance.sh'
       - 'tests/wave4/test_monitoring_alerting_publication_runtime.py'
       - '.github/workflows/wave4-monitoring-alerting-publication-runtime.yml'
   push:
@@ -27,6 +28,7 @@ on:
       - 'tools/wave4/validate_monitoring_alerting_publication_runtime.py'
       - 'tools/wave4/run_monitoring_alerting_publication_postgres_conformance.sh'
       - 'tools/wave4/run_monitoring_alerting_publication_acl_preflight_postgres_conformance.sh'
+      - 'tools/wave4/run_monitoring_alerting_publication_recovery_proxy_postgres_conformance.sh'
       - 'tests/wave4/test_monitoring_alerting_publication_runtime.py'
       - '.github/workflows/wave4-monitoring-alerting-publication-runtime.yml'
 
@@ -87,6 +89,9 @@ jobs:
 
       - name: Prove privileged function ACL preflight
         run: bash tools/wave4/run_monitoring_alerting_publication_acl_preflight_postgres_conformance.sh
+
+      - name: Prove recovery trigger proxy rejection
+        run: bash tools/wave4/run_monitoring_alerting_publication_recovery_proxy_postgres_conformance.sh
 
       - name: Execute composed PostgreSQL publication conformance
         run: bash tools/wave4/run_monitoring_alerting_publication_postgres_conformance.sh

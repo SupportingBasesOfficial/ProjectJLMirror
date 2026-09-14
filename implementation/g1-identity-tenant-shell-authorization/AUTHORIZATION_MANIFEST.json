@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "authorization_id": "g1.identity-tenant-protected-shell@1",
+  "canonical_base_main_commit": "7c20c9301711e9a4bf355517d7aa23faad7a05b7",
+  "authorization_state": "proposed_exact_scope_authorization",
+  "effective_rule": "becomes_canonical_only_after_exact_head_review_and_separately_authorized_merge",
+  "canonical_effect_after_merge": "authorized_to_implement_exact_g1_identity_tenant_protected_shell_only",
+  "authorized_program_gate": "G1",
+  "authorized_slice": {
+    "slice_id": "g1.identity-tenant-protected-shell@1",
+    "capability": "identity_tenant_protected_application_shell"
+  },
+  "authorized_g0_bootstrap_scope": [
+    "g1_local_dependency_stack",
+    "g1_database_bootstrap_or_migration_entrypoint",
+    "g1_backend_bff_start_entrypoint",
+    "g1_frontend_start_entrypoint",
+    "g1_fixture_test_tenant_and_identity",
+    "g1_exact_head_local_ci_parity_commands",
+    "g1_container_runtime_proof"
+  ],
+  "authorized_capability_scope": [
+    "oidc_authorization_code_pkce_s256_through_confidential_bff",
+    "opaque_server_side_bff_session_capability",
+    "current_platform_tenant_admission",
+    "current_membership_and_permission_read_for_shell",
+    "authenticated_bff_shell_route",
+    "protected_application_shell",
+    "forbidden_cross_tenant_browser_e2e",
+    "stale_or_revoked_authority_fail_closed"
+  ],
+  "consumed_existing_authority": [
+    "accepted_wave1_identity_bff_current_authorization_substrate",
+    "d3_identity_security_separately_accepted",
+    "canonical_api_bff_security_contracts",
+    "canonical_tenant_current_authority_rules",
+    "ai_e2e_delivery_constitution",
+    "product_execution_roadmap",
+    "vertical_slice_delivery_model"
+  ],
+  "required_invariants": [
+    "jwt_validity_not_current_authorization",
+    "idp_identity_not_platform_membership_authority",
+    "workload_identity_not_tenant_business_authority",
+    "network_presence_not_trust",
+    "browser_session_handle_not_business_authority",
+    "client_tenant_id_not_tenant_authority"
+  ],
+  "frontend_authority": "g1_protected_shell_only",
+  "production_authority": "none",
+  "c3_production_state": "open",
+  "explicitly_not_authorized": [
+    "g2_monitoring_source_onboarding",
+    "monitoring_product_ui",
+    "resource_metric_problem_health_product_surfaces",
+    "alert_creation_or_alert_policy_evaluation",
+    "ack_notification_escalation",
+    "itsm_product_vertical",
+    "automation_product_vertical",
+    "aiops_product_vertical",
+    "finops_product_vertical",
+    "commercial_product_vertical",
+    "production_deployment",
+    "production_c3_numerics",
+    "provider_native_authorization_truth",
+    "browser_refresh_token_or_long_lived_platform_access_credential",
+    "client_supplied_tenant_as_authorization_proof",
+    "speculative_generic_frontend_information_architecture"
+  ],
+  "historical_authority_rule": "earlier_not_granted_snapshots_remain_immutable_source_time_truth_and_are_not_rewritten_by_this_successor_g1_authorization",
+  "implementation_boundary_rule": "canonical_g1_product_code_may_begin_only_after_this_exact_scope_authorization_becomes_canonical",
+  "merge_authorization": "not_granted"
+}

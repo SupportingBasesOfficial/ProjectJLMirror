@@ -52,6 +52,19 @@
       "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_trusted_scope_readiness_execution"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 93
+    },
+    {
+      "id": "LEARN-PR153-026",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4009718362,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "A syntactically correct outer-to-inner readiness delegation was still insufficient because the imported alias could be rebound at runtime before the matching call. Static AST binding plus separate execution of the inner readiness probe did not prove that the ledger-credited outer probe actually invoked the intended delegated guardrail at runtime.",
+      "horizontal_audit": ["runtime alias rebinding","outer probe execution","delegated module identity","sentinel instrumentation","ledger credit to executable effect","static-versus-runtime delegation"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_trusted_scope_readiness_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 94
     }
   ]
 }

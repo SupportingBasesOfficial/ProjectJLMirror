@@ -54,39 +54,74 @@ A PR may exercise this G1 implementation authority only when all of the followin
 - its head contains `implementation/g1-identity-tenant-shell/IMPLEMENTATION_CLAIM.json` with exact schema/version, authorization ID and slice ID;
 - head and base belong to the same canonical repository;
 - the PR base ref equals the repository current default branch;
-- the exact candidate HEAD has a successful trusted scope attestation under the stable status context `JLMIRROR / g1-identity-tenant-shell-implementation-scope`.
+- the PR base SHA equals the current default-branch tip at the time of trusted verification;
+- the exact candidate HEAD has trusted scope evidence under `JLMIRROR / g1-identity-tenant-shell-implementation-scope`;
+- immediately before merge readiness is considered, the exact current HEAD/base also passes the live source-authenticated readiness command and evidence contract described below.
 
-## Trusted scope attestation
+## Trusted scope attestation and live readiness
 
-The authoritative implementation-scope caller is `.github/workflows/g1-identity-tenant-shell-implementation-scope.yml` using the `issue_comment` event. `issue_comment` workflows are loaded from the repository default branch, so a candidate implementation PR cannot replace or skip the caller by editing its own workflow copy.
+The authoritative caller is `.github/workflows/g1-identity-tenant-shell-implementation-scope.yml` using only the `issue_comment` event. `issue_comment` workflows are loaded from the repository default branch, so a candidate implementation PR cannot replace or skip the authoritative caller by editing its own workflow copy.
 
-The canonical command is:
+There are two canonical commands:
 
 ```text
 /jlmirror-g1-scope-attest
+/jlmirror-g1-scope-ready
 ```
 
-When this command is posted on the implementation PR by an authorized repository participant, the default-branch workflow:
+`/jlmirror-g1-scope-attest` performs the bounded implementation-scope proof. The trusted default-branch workflow:
 
-1. resolves the PR number and current repository default branch from the trusted event/API;
-2. reads exact base SHA, exact head SHA, base/head refs, repositories and labels from the GitHub API;
-3. requires the PR base ref to equal the current default branch and requires base/head repositories to equal the canonical repository;
+1. resolves the PR number, current default branch and current default-branch tip through trusted GitHub event/API state;
+2. re-reads exact base SHA, exact head SHA, base/head refs, repositories and labels;
+3. requires the PR base ref to equal the current default branch, base/head repositories to equal the canonical repository, the PR base SHA to equal the current default-branch tip, and the required label to be present now;
 4. publishes `pending` on the exact resolved PR HEAD under `JLMIRROR / g1-identity-tenant-shell-implementation-scope`;
 5. checks out only the trusted default branch and fetches the candidate commits as Git objects/data;
-6. materializes `tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py` from the exact default-branch base commit with `git show`;
+6. materializes `tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py` from the exact current base commit;
 7. executes only that base-owned validator against the exact `base...head` diff with rename detection disabled;
-8. requires branch, label, claim, same-repository rule and complete path allowlist on the explicitly attested PR;
-9. re-reads current PR HEAD/base/ref before final publication and publishes `success` only when HEAD, base SHA and base ref remain unchanged and the base ref is still the default branch; otherwise it publishes failure/stale evidence to the resolved HEAD and requires a new attestation.
+8. requires branch, label, claim, same-repository rule and complete path allowlist;
+9. re-reads current HEAD, base SHA, base ref, current default-branch tip and current labels before final publication;
+10. publishes success only when those live coordinates and mutable authority metadata remain valid, using the coordinate-bound description `G1 scope PASS base=<base_sha> head=<head_sha>`.
 
-Status-write authority is isolated from the analysis job: the jobs that publish pending/final status do not checkout or execute candidate Python. The workflow uses cancellation of superseded runs so older evidence cannot overwrite newer evidence.
+The resulting scope status is **evidence only**. A green status by itself is not merge authority and is not sufficient to establish current readiness.
 
-A later default-branch advance also invalidates previously successful G1 scope evidence automatically. On a trusted `push` to the repository current default branch, the same default-branch-owned workflow scans open PRs targeting that branch, finds heads whose latest `JLMIRROR / g1-identity-tenant-shell-implementation-scope` status is `success`, and replaces that context with `pending` plus a stale/base-advanced description. No candidate code is executed during invalidation. The implementation PR must then rerun `/jlmirror-g1-scope-attest` against the new exact base before merge readiness can be considered.
+`/jlmirror-g1-scope-ready` is the second trusted gate. It exists specifically so readiness does not depend on a skippable `push` workflow or on persistence of an old green status. The default-branch caller materializes `tools/assurance/validate_g1_identity_tenant_shell_scope_readiness.py` from the exact current base object and revalidates live GitHub state. It requires all of the following at verification time:
 
-`pull_request_target` remains forbidden by repository v1 assurance. Candidate-controlled `pull_request` orchestration is not authoritative for the implementation-scope decision.
+- PR remains open;
+- base ref remains the repository default branch;
+- base SHA equals the current default-branch tip, so a default-branch advance is detected even if the advancing commit used an Actions skip directive such as `[skip ci]`;
+- head SHA remains the exact candidate being considered;
+- required `jlmirror-slice:g1-identity-tenant-shell` label is still present;
+- latest trusted scope evidence is `success` and encodes the same exact base/head coordinates;
+- the evidence creator is exactly `github-actions[bot]` with GitHub user ID `41898282`;
+- the evidence `target_url` points to a real GitHub Actions run in this repository;
+- that run is the canonical `JLMIRROR G1 Identity Tenant Shell Implementation Scope` workflow at `.github/workflows/g1-identity-tenant-shell-implementation-scope.yml`;
+- the run event is `issue_comment`, it completed successfully, its head branch is the current default branch, and its workflow head SHA equals the exact current base SHA.
 
-There is no candidate-controlled `relevance=not-g1` success path and no authorization bootstrap exception. Invocation of the trusted default-branch attestation is the independent classifier. Once invoked for an implementation PR, omission of branch, label, claim, repository identity or G1 paths fails closed, including a diff containing only forbidden shared-core changes.
+If those checks pass, final readiness evidence is published under `JLMIRROR / g1-identity-tenant-shell-merge-readiness` with the exact description `G1 ready PASS base=<base_sha> head=<head_sha>`. The final publisher again re-reads current HEAD/base/default-tip/label before it may publish success.
 
-The attestation is exact-head/exact-base evidence. If implementation PR HEAD, base SHA, or base ref changes after resolution, or if the default branch advances afterward, the previous evidence is stale and a new `/jlmirror-g1-scope-attest` run is required before merge readiness may be considered.
+Status-write authority is isolated from analysis/readiness verification: exactly two publisher jobs have `statuses: write`; they do not checkout or execute candidate code. Scope analysis and live readiness verification remain read-only. `pull_request_target` remains forbidden. Candidate-controlled `pull_request` orchestration is not authoritative.
+
+A status with the right context but wrong creator, wrong creator ID, stale coordinates, noncanonical `target_url`, wrong workflow path/name/event, stale base SHA, removed label, changed HEAD or changed default-branch tip is not trusted evidence. A same-repository contributor cannot satisfy the readiness contract merely by publishing a look-alike green status.
+
+There is no candidate-controlled `relevance=not-g1` success path and no authorization bootstrap exception. Invocation of the trusted default-branch attestation is the independent classifier. Once invoked, omission of branch, label, claim, repository identity or any path outside the allowlist fails closed, including a diff containing only forbidden shared-core changes.
+
+## Merge-readiness and merge preflight rule
+
+`/jlmirror-g1-scope-ready` MUST be run on the exact implementation PR state after scope attestation and after all ordinary exact-head CI/review gates are otherwise ready.
+
+A previously successful readiness status is still evidence rather than authority. Immediately before any separately authorized merge, the same live readiness verifier MUST be executed/re-evaluated against current GitHub state and the exact ready evidence. The preflight must again prove current HEAD, current base SHA, current default-branch tip, current required label, trusted creator identity, coordinate-bound ready description, and the real canonical successful workflow run.
+
+Therefore:
+
+```text
+GREEN_STATUS != CURRENT_READINESS
+STATUS_CONTEXT != TRUSTED_PUBLISHER_PROVENANCE
+OLD_SCOPE_PASS != CURRENT_BASE_VALIDATION
+READY_EVIDENCE != MERGE_AUTHORIZATION
+READY_FOR_MERGE != AUTHORIZED_TO_MERGE
+```
+
+This live preflight is what makes a default-branch advance, label removal or stale/spoofed status fail closed even when no automatic invalidation event ran.
 
 ## Allowed G0 bootstrap inside the G1 slice
 

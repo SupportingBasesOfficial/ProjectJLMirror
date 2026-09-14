@@ -3,35 +3,36 @@ name: JLMIRROR G1 Identity Tenant Shell Implementation Scope
 on:
   issue_comment:
     types: [created]
-  push:
 
 permissions: {}
 
 concurrency:
-  group: g1-identity-tenant-shell-scope-${{ github.event_name }}-${{ github.event.issue.number || github.ref_name }}
+  group: g1-identity-tenant-shell-scope-${{ github.event.issue.number }}
   cancel-in-progress: true
 
 env:
   G1_SCOPE_COMMAND: /jlmirror-g1-scope-attest
+  G1_READY_COMMAND: /jlmirror-g1-scope-ready
   G1_SCOPE_VALIDATOR: tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py
+  G1_READINESS_VALIDATOR: tools/assurance/validate_g1_identity_tenant_shell_scope_readiness.py
   G1_SCOPE_STATUS_CONTEXT: JLMIRROR / g1-identity-tenant-shell-implementation-scope
+  G1_READY_STATUS_CONTEXT: JLMIRROR / g1-identity-tenant-shell-merge-readiness
+  G1_REQUIRED_LABEL: jlmirror-slice:g1-identity-tenant-shell
 
 jobs:
   resolve:
     if: >-
-      (github.event_name == 'issue_comment' &&
-       github.event.issue.pull_request != null &&
-       github.event.comment.body == '/jlmirror-g1-scope-attest' &&
-       (github.event.comment.author_association == 'OWNER' ||
-        github.event.comment.author_association == 'MEMBER' ||
-        github.event.comment.author_association == 'COLLABORATOR')) ||
-      (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch)
+      github.event.issue.pull_request != null &&
+      (github.event.comment.body == '/jlmirror-g1-scope-attest' ||
+       github.event.comment.body == '/jlmirror-g1-scope-ready') &&
+      (github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'COLLABORATOR')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: read
       issues: read
-      statuses: read
     outputs:
       mode: ${{ steps.pr.outputs.mode }}
       pr_number: ${{ steps.pr.outputs.pr_number }}
@@ -43,50 +44,29 @@ jobs:
       head_repo: ${{ steps.pr.outputs.head_repo }}
       labels_b64: ${{ steps.pr.outputs.labels_b64 }}
       default_branch: ${{ steps.pr.outputs.default_branch }}
-      invalidate_heads_b64: ${{ steps.pr.outputs.invalidate_heads_b64 }}
     steps:
-      - name: Resolve attestation target or stale heads from trusted GitHub API
+      - name: Resolve exact current PR and default-branch coordinates from trusted GitHub API
         id: pr
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.issue.number }}
+          COMMAND: ${{ github.event.comment.body }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
-          test -n "$DEFAULT_BRANCH"
-          if [[ "$EVENT_NAME" == 'push' ]]; then
-            test "$GITHUB_REF_NAME" = "$DEFAULT_BRANCH"
-            heads=''
-            prs="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=${DEFAULT_BRANCH}&per_page=100")"
-            while IFS= read -r PR_HEAD_SHA; do
-              [[ -n "$PR_HEAD_SHA" ]] || continue
-              statuses="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/commits/${PR_HEAD_SHA}/statuses?per_page=100")"
-              latest="$(jq -r --arg ctx "$G1_SCOPE_STATUS_CONTEXT" '[.[][] | select(.context == $ctx)] | sort_by(.created_at) | last | .state // empty' <<<"$statuses")"
-              if [[ "$latest" == 'success' ]]; then
-                heads+="${PR_HEAD_SHA}"$'\n'
-              fi
-            done < <(jq -r '.[][] | .head.sha' <<<"$prs")
-            INVALIDATE_HEADS_B64="$(printf '%s' "$heads" | base64 -w0)"
-            {
-              printf 'mode=invalidate-base-advance\n'
-              printf 'pr_number=\n'
-              printf 'base_sha=\n'
-              printf 'head_sha=\n'
-              printf 'base_ref=%s\n' "$DEFAULT_BRANCH"
-              printf 'head_ref=\n'
-              printf 'base_repo=%s\n' "$GITHUB_REPOSITORY"
-              printf 'head_repo=\n'
-              printf 'labels_b64=\n'
-              printf 'default_branch=%s\n' "$DEFAULT_BRANCH"
-              printf 'invalidate_heads_b64=%s\n' "$INVALIDATE_HEADS_B64"
-            } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
           test -n "$PR_NUMBER"
+          test -n "$DEFAULT_BRANCH"
+          MODE=''
+          if [[ "$COMMAND" == "$G1_SCOPE_COMMAND" ]]; then
+            MODE='attest'
+          elif [[ "$COMMAND" == "$G1_READY_COMMAND" ]]; then
+            MODE='ready'
+          fi
+          test -n "$MODE"
+
           pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          branch_json="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${DEFAULT_BRANCH}")"
           PR_STATE="$(jq -r '.state' <<<"$pr_json")"
           PR_BASE_SHA="$(jq -r '.base.sha' <<<"$pr_json")"
           PR_HEAD_SHA="$(jq -r '.head.sha' <<<"$pr_json")"
@@ -95,19 +75,20 @@ jobs:
           PR_BASE_REPO="$(jq -r '.base.repo.full_name' <<<"$pr_json")"
           PR_HEAD_REPO="$(jq -r '.head.repo.full_name' <<<"$pr_json")"
           PR_LABELS_JSON="$(jq -c '[.labels[].name]' <<<"$pr_json")"
+          DEFAULT_BRANCH_SHA="$(jq -r '.commit.sha' <<<"$branch_json")"
 
           test "$PR_STATE" = "open"
           test "$PR_BASE_REF" = "$DEFAULT_BRANCH"
           test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"
           test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"
-          test -n "$PR_BASE_SHA"
+          test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"
           test -n "$PR_HEAD_SHA"
           test -n "$PR_HEAD_REF"
-          test -n "$PR_LABELS_JSON"
+          jq -e --arg required "$G1_REQUIRED_LABEL" 'index($required) != null' <<<"$PR_LABELS_JSON" >/dev/null
 
           LABELS_B64="$(printf '%s' "$PR_LABELS_JSON" | base64 -w0)"
           {
-            printf 'mode=attest\n'
+            printf 'mode=%s\n' "$MODE"
             printf 'pr_number=%s\n' "$PR_NUMBER"
             printf 'base_sha=%s\n' "$PR_BASE_SHA"
             printf 'head_sha=%s\n' "$PR_HEAD_SHA"
@@ -117,9 +98,8 @@ jobs:
             printf 'head_repo=%s\n' "$PR_HEAD_REPO"
             printf 'labels_b64=%s\n' "$LABELS_B64"
             printf 'default_branch=%s\n' "$DEFAULT_BRANCH"
-            printf 'invalidate_heads_b64=\n'
           } >> "$GITHUB_OUTPUT"
-          echo "trusted_scope_pr=${PR_NUMBER} base_ref=${PR_BASE_REF} base=${PR_BASE_SHA} head=${PR_HEAD_SHA}"
+          echo "g1_trusted_command=${MODE} pr=${PR_NUMBER} base=${PR_BASE_SHA} head=${PR_HEAD_SHA}"
 
   publish-pending:
     needs: resolve
@@ -127,33 +107,28 @@ jobs:
     permissions:
       statuses: write
     steps:
-      - name: Publish pending status for attestation or default-base invalidation
+      - name: Publish pending evidence on exact resolved PR head
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           MODE: ${{ needs.resolve.outputs.mode }}
           PR_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
-          INVALIDATE_HEADS_B64: ${{ needs.resolve.outputs.invalidate_heads_b64 }}
         run: |
           set -euo pipefail
+          test -n "$PR_HEAD_SHA"
+          context="$G1_SCOPE_STATUS_CONTEXT"
           description='G1 trusted scope attestation in progress'
-          heads="$PR_HEAD_SHA"
-          if [[ "$MODE" == 'invalidate-base-advance' ]]; then
-            description='G1 scope attestation stale after default-branch advance; rerun required'
-            heads="$(printf '%s' "$INVALIDATE_HEADS_B64" | base64 -d)"
+          if [[ "$MODE" == 'ready' ]]; then
+            context="$G1_READY_STATUS_CONTEXT"
+            description='G1 trusted merge-readiness verification in progress'
           else
             test "$MODE" = 'attest'
-            test -n "$PR_HEAD_SHA"
           fi
-
-          while IFS= read -r PR_HEAD_SHA; do
-            [[ -n "$PR_HEAD_SHA" ]] || continue
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}" \
-              -f state=pending \
-              -f context="$G1_SCOPE_STATUS_CONTEXT" \
-              -f description="$description" \
-              -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          done <<<"$heads"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}" \
+            -f state=pending \
+            -f context="$context" \
+            -f description="$description" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
   analyze:
     if: needs.resolve.outputs.mode == 'attest'
@@ -182,7 +157,7 @@ jobs:
           git cat-file -e "${PR_HEAD_SHA}^{commit}"
           test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"
 
-      - name: Materialize trusted evaluator from exact default-branch base object
+      - name: Materialize trusted scope evaluator from exact default-branch base object
         shell: bash
         env:
           PR_BASE_SHA: ${{ needs.resolve.outputs.base_sha }}
@@ -193,7 +168,7 @@ jobs:
           test -s "$trusted_validator"
           printf 'TRUSTED_VALIDATOR=%s\n' "$trusted_validator" >> "$GITHUB_ENV"
 
-      - name: Enforce exact G1 scope on explicitly attested PR
+      - name: Enforce exact G1 implementation scope
         shell: bash
         env:
           PR_BASE_SHA: ${{ needs.resolve.outputs.base_sha }}
@@ -213,49 +188,106 @@ jobs:
             --labels-json "$PR_LABELS_JSON" \
             --head-repo "$PR_HEAD_REPO" \
             --base-repo "$PR_BASE_REPO"
-          echo "g1_trusted_scope_attestation=PASS exact_head=${PR_HEAD_SHA} caller=default_branch_issue_comment"
 
-  publish-final:
-    if: always() && needs.resolve.result == 'success' && needs.resolve.outputs.mode == 'attest' && needs.publish-pending.result == 'success'
-    needs: [resolve, publish-pending, analyze]
+  verify-ready:
+    if: needs.resolve.outputs.mode == 'ready'
+    needs: [resolve, publish-pending]
     runs-on: ubuntu-24.04
     permissions:
+      actions: read
+      contents: read
       pull-requests: read
-      statuses: write
+      statuses: read
     steps:
-      - name: Publish freshness-bound final status on resolved PR head
+      - name: Materialize trusted readiness verifier from exact current base object
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_BASE_SHA: ${{ needs.resolve.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          trusted_readiness="$RUNNER_TEMP/g1-scope-readiness-validator.py"
+          gh api "repos/${GITHUB_REPOSITORY}/contents/${G1_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}" --jq .content | base64 -d > "$trusted_readiness"
+          test -s "$trusted_readiness"
+          printf 'TRUSTED_READINESS_VALIDATOR=%s\n' "$trusted_readiness" >> "$GITHUB_ENV"
+
+      - name: Verify live coordinates and trusted scope-attestation provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+          DEFAULT_BRANCH: ${{ needs.resolve.outputs.default_branch }}
+        run: |
+          set -euo pipefail
+          python3 "$TRUSTED_READINESS_VALIDATOR" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pr-number "$PR_NUMBER" \
+            --default-branch "$DEFAULT_BRANCH" \
+            --server-url "$GITHUB_SERVER_URL"
+
+  publish-final:
+    if: always() && needs.resolve.result == 'success' && needs.publish-pending.result == 'success'
+    needs: [resolve, publish-pending, analyze, verify-ready]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - name: Publish live-coordinate final evidence on resolved PR head
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ needs.resolve.outputs.mode }}
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
           PR_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
           PR_BASE_SHA: ${{ needs.resolve.outputs.base_sha }}
           PR_BASE_REF: ${{ needs.resolve.outputs.base_ref }}
           DEFAULT_BRANCH: ${{ needs.resolve.outputs.default_branch }}
           ANALYZE_RESULT: ${{ needs.analyze.result }}
+          READY_RESULT: ${{ needs.verify-ready.result }}
         run: |
           set -euo pipefail
           current_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          branch_json="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${DEFAULT_BRANCH}")"
           CURRENT_HEAD_SHA="$(jq -r '.head.sha' <<<"$current_json")"
           CURRENT_BASE_SHA="$(jq -r '.base.sha' <<<"$current_json")"
           CURRENT_BASE_REF="$(jq -r '.base.ref' <<<"$current_json")"
+          CURRENT_DEFAULT_SHA="$(jq -r '.commit.sha' <<<"$branch_json")"
+          CURRENT_LABELS_JSON="$(jq -c '[.labels[].name]' <<<"$current_json")"
+
+          context="$G1_SCOPE_STATUS_CONTEXT"
+          result="$ANALYZE_RESULT"
+          description='G1 scope attestation failed'
+          if [[ "$MODE" == 'ready' ]]; then
+            context="$G1_READY_STATUS_CONTEXT"
+            result="$READY_RESULT"
+            description='G1 merge-readiness verification failed'
+          else
+            test "$MODE" = 'attest'
+          fi
 
           state=failure
-          description='G1 scope attestation failed'
-          if [[ "$ANALYZE_RESULT" == 'success' && \
+          if [[ "$result" == 'success' && \
                 "$CURRENT_HEAD_SHA" == "$PR_HEAD_SHA" && \
                 "$CURRENT_BASE_SHA" == "$PR_BASE_SHA" && \
                 "$CURRENT_BASE_REF" == "$PR_BASE_REF" && \
-                "$CURRENT_BASE_REF" == "$DEFAULT_BRANCH" ]]; then
+                "$CURRENT_BASE_REF" == "$DEFAULT_BRANCH" && \
+                "$CURRENT_BASE_SHA" == "$CURRENT_DEFAULT_SHA" ]] && \
+             jq -e --arg required "$G1_REQUIRED_LABEL" 'index($required) != null' <<<"$CURRENT_LABELS_JSON" >/dev/null; then
             state=success
-            description='G1 trusted scope attestation passed on exact head/base'
-          elif [[ "$CURRENT_HEAD_SHA" != "$PR_HEAD_SHA" || "$CURRENT_BASE_SHA" != "$PR_BASE_SHA" || "$CURRENT_BASE_REF" != "$PR_BASE_REF" ]]; then
-            description='G1 scope attestation stale; rerun on current PR head/base'
+            if [[ "$MODE" == 'ready' ]]; then
+              description="G1 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}"
+            else
+              description="G1 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}"
+            fi
+          else
+            description='G1 evidence stale or live authority metadata changed; rerun required'
           fi
 
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}" \
             -f state="$state" \
-            -f context="$G1_SCOPE_STATUS_CONTEXT" \
+            -f context="$context" \
             -f description="$description" \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 

@@ -65,6 +65,32 @@
       "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_trusted_scope_readiness_execution"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 94
+    },
+    {
+      "id": "LEARN-PR153-027",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4009941750,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The runtime delegation proof authenticated only a public exception message. An unrelated pre-delegation helper could raise the same RuntimeError text and satisfy the check without invoking the injected readiness sentinel, so textual exception equality did not establish callback provenance.",
+      "horizontal_audit": ["sentinel provenance","exception identity versus message","pre-delegation failure paths","runtime callback call state","outer probe delegation","ledger-credit execution proof"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_trusted_scope_readiness_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 95
+    },
+    {
+      "id": "LEARN-PR153-028",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4009941759,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The permissive-readiness sabotage accepted any AssertionError from the credited inner probe. A probe could detect the injected permissive verifier and raise immediately, preserving green strict validation without executing the negative readiness cases that were supposed to prove semantic liveness.",
+      "horizontal_audit": ["permissive verifier instrumentation","negative readiness cases","must_reject execution","verifier invocation accounting","early synthetic AssertionError","semantic liveness provenance"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_trusted_scope_readiness_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 96
     }
   ]
 }

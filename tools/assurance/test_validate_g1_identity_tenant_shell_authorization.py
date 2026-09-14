@@ -58,12 +58,15 @@ def falsify_implementation_path_policy() -> None:
 
 
 def falsify_trusted_scope_publication_contract() -> None:
+    must_fail(
+        lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_status_evidence_role", "standalone_merge_authority"),
+        "implementation path policy drift: trusted_scope_status_evidence_role",
+    )
     mutations = [
         (lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_base_ref_policy", "any_writable_branch"), "implementation path policy drift: implementation_pr_base_ref_policy"),
         (lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_source", "default_branch_caller_plus_arbitrary_base_object"), "implementation path policy drift: trusted_evaluator_source"),
         (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_status_context", "optional"), "implementation path policy drift: trusted_scope_status_context"),
         (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_status_publication", "green_status_is_authority"), "implementation path policy drift: trusted_scope_status_publication"),
-        (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_status_evidence_role", "standalone_merge_authority"), "implementation path policy drift: trusted_scope_status_evidence_role"),
         (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_freshness_rule", "push_event_invalidation"), "implementation path policy drift: trusted_scope_freshness_rule"),
         (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_concurrency_rule", "parallel_unordered"), "implementation path policy drift: trusted_scope_concurrency_rule"),
     ]
@@ -72,11 +75,14 @@ def falsify_trusted_scope_publication_contract() -> None:
 
 
 def falsify_trusted_scope_readiness_execution() -> None:
+    must_fail(
+        lambda d: d["implementation_path_policy"].__setitem__("trusted_status_creator_id", 0),
+        "implementation path policy drift: trusted_status_creator_id",
+    )
     mutations = [
         (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_readiness_command", "/optional"), "implementation path policy drift: trusted_scope_readiness_command"),
         (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_readiness_status_context", "optional"), "implementation path policy drift: trusted_scope_readiness_status_context"),
         (lambda d: d["implementation_path_policy"].__setitem__("trusted_status_creator_login", "anyone"), "implementation path policy drift: trusted_status_creator_login"),
-        (lambda d: d["implementation_path_policy"].__setitem__("trusted_status_creator_id", 0), "implementation path policy drift: trusted_status_creator_id"),
         (lambda d: d["implementation_path_policy"].__setitem__("trusted_scope_merge_preflight_rule", "trust_green_status"), "implementation path policy drift: trusted_scope_merge_preflight_rule"),
         (lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_requires_trusted_scope_readiness_on_exact_head_base", False), "implementation path policy drift: implementation_pr_requires_trusted_scope_readiness_on_exact_head_base"),
     ]

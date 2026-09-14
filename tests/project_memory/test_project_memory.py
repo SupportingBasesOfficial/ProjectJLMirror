@@ -227,7 +227,7 @@ class ProjectMemoryTests(unittest.TestCase):
             "      - name: Falsify canonical project-memory guardrails\n        ? if\n        : ${{ false }}\n",
             1,
         )
-        with self.assertRaisesRegex(AssertionError, "project_memory_workflow_condition_not_allowed"):
+        with self.assertRaisesRegex(AssertionError, "project_memory_workflow_step_explicit_key_not_allowed"):
             validator.validate_project_memory_workflow(mutated)
 
     def test_job_level_condition_is_not_accepted(self) -> None:

@@ -18,6 +18,7 @@ env:
   G1_SCOPE_STATUS_CONTEXT: JLMIRROR / g1-identity-tenant-shell-implementation-scope
   G1_READY_STATUS_CONTEXT: JLMIRROR / g1-identity-tenant-shell-merge-readiness
   G1_REQUIRED_LABEL: jlmirror-slice:g1-identity-tenant-shell
+  G1_REQUIRED_HEAD_PREFIX: impl/g1-identity-tenant-protected-shell
 
 jobs:
   resolve:
@@ -45,18 +46,16 @@ jobs:
       labels_b64: ${{ steps.pr.outputs.labels_b64 }}
       default_branch: ${{ steps.pr.outputs.default_branch }}
     steps:
-      - name: Resolve exact current PR and default-branch coordinates from trusted GitHub API
+      - name: Resolve exact current PR and live default-branch coordinates from trusted GitHub API
         id: pr
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.issue.number }}
           COMMAND: ${{ github.event.comment.body }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           test -n "$PR_NUMBER"
-          test -n "$DEFAULT_BRANCH"
           MODE=''
           if [[ "$COMMAND" == "$G1_SCOPE_COMMAND" ]]; then
             MODE='attest'
@@ -65,6 +64,9 @@ jobs:
           fi
           test -n "$MODE"
 
+          repo_json="$(gh api "repos/${GITHUB_REPOSITORY}")"
+          DEFAULT_BRANCH="$(jq -r '.default_branch' <<<"$repo_json")"
+          test -n "$DEFAULT_BRANCH"
           pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
           branch_json="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${DEFAULT_BRANCH}")"
           PR_STATE="$(jq -r '.state' <<<"$pr_json")"
@@ -83,7 +85,7 @@ jobs:
           test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"
           test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"
           test -n "$PR_HEAD_SHA"
-          test -n "$PR_HEAD_REF"
+          [[ "$PR_HEAD_REF" == "$G1_REQUIRED_HEAD_PREFIX"* ]]
           jq -e --arg required "$G1_REQUIRED_LABEL" 'index($required) != null' <<<"$PR_LABELS_JSON" >/dev/null
 
           LABELS_B64="$(printf '%s' "$PR_LABELS_JSON" | base64 -w0)"
@@ -99,7 +101,7 @@ jobs:
             printf 'labels_b64=%s\n' "$LABELS_B64"
             printf 'default_branch=%s\n' "$DEFAULT_BRANCH"
           } >> "$GITHUB_OUTPUT"
-          echo "g1_trusted_command=${MODE} pr=${PR_NUMBER} base=${PR_BASE_SHA} head=${PR_HEAD_SHA}"
+          echo "g1_trusted_command=${MODE} pr=${PR_NUMBER} base=${PR_BASE_SHA} head=${PR_HEAD_SHA} ref=${PR_HEAD_REF} default_branch=${DEFAULT_BRANCH}"
 
   publish-pending:
     needs: resolve
@@ -211,21 +213,20 @@ jobs:
           test -s "$trusted_readiness"
           printf 'TRUSTED_READINESS_VALIDATOR=%s\n' "$trusted_readiness" >> "$GITHUB_ENV"
 
-      - name: Verify live coordinates and trusted scope-attestation provenance
+      - name: Verify live coordinates and exact trusted scope publisher provenance
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
-          DEFAULT_BRANCH: ${{ needs.resolve.outputs.default_branch }}
         run: |
           set -euo pipefail
           python3 "$TRUSTED_READINESS_VALIDATOR" \
             --repo "$GITHUB_REPOSITORY" \
             --pr-number "$PR_NUMBER" \
-            --default-branch "$DEFAULT_BRANCH" \
             --server-url "$GITHUB_SERVER_URL"
 
   publish-final:
+    name: g1-publish-final pr=${{ needs.resolve.outputs.pr_number }} mode=${{ needs.resolve.outputs.mode }} base=${{ needs.resolve.outputs.base_sha }} head=${{ needs.resolve.outputs.head_sha }} ref=${{ needs.resolve.outputs.head_ref }}
     if: always() && needs.resolve.result == 'success' && needs.publish-pending.result == 'success'
     needs: [resolve, publish-pending, analyze, verify-ready]
     runs-on: ubuntu-24.04
@@ -241,16 +242,20 @@ jobs:
           MODE: ${{ needs.resolve.outputs.mode }}
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
           PR_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_HEAD_REF: ${{ needs.resolve.outputs.head_ref }}
           PR_BASE_SHA: ${{ needs.resolve.outputs.base_sha }}
           PR_BASE_REF: ${{ needs.resolve.outputs.base_ref }}
-          DEFAULT_BRANCH: ${{ needs.resolve.outputs.default_branch }}
+          RESOLVED_DEFAULT_BRANCH: ${{ needs.resolve.outputs.default_branch }}
           ANALYZE_RESULT: ${{ needs.analyze.result }}
           READY_RESULT: ${{ needs.verify-ready.result }}
         run: |
           set -euo pipefail
+          repo_json="$(gh api "repos/${GITHUB_REPOSITORY}")"
+          CURRENT_DEFAULT_BRANCH="$(jq -r '.default_branch' <<<"$repo_json")"
           current_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
-          branch_json="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${DEFAULT_BRANCH}")"
+          branch_json="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${CURRENT_DEFAULT_BRANCH}")"
           CURRENT_HEAD_SHA="$(jq -r '.head.sha' <<<"$current_json")"
+          CURRENT_HEAD_REF="$(jq -r '.head.ref' <<<"$current_json")"
           CURRENT_BASE_SHA="$(jq -r '.base.sha' <<<"$current_json")"
           CURRENT_BASE_REF="$(jq -r '.base.ref' <<<"$current_json")"
           CURRENT_DEFAULT_SHA="$(jq -r '.commit.sha' <<<"$branch_json")"
@@ -269,10 +274,13 @@ jobs:
 
           state=failure
           if [[ "$result" == 'success' && \
+                "$CURRENT_DEFAULT_BRANCH" == "$RESOLVED_DEFAULT_BRANCH" && \
                 "$CURRENT_HEAD_SHA" == "$PR_HEAD_SHA" && \
+                "$CURRENT_HEAD_REF" == "$PR_HEAD_REF" && \
+                "$CURRENT_HEAD_REF" == "$G1_REQUIRED_HEAD_PREFIX"* && \
                 "$CURRENT_BASE_SHA" == "$PR_BASE_SHA" && \
                 "$CURRENT_BASE_REF" == "$PR_BASE_REF" && \
-                "$CURRENT_BASE_REF" == "$DEFAULT_BRANCH" && \
+                "$CURRENT_BASE_REF" == "$CURRENT_DEFAULT_BRANCH" && \
                 "$CURRENT_BASE_SHA" == "$CURRENT_DEFAULT_SHA" ]] && \
              jq -e --arg required "$G1_REQUIRED_LABEL" 'index($required) != null' <<<"$CURRENT_LABELS_JSON" >/dev/null; then
             state=success

@@ -190,6 +190,11 @@ def _visible_markdown_lines(text: str) -> list[str]:
     return lines
 
 
+def _visible_markdown_text(text: str) -> str:
+    """Return only rendered/visible Markdown text for normative prose checks."""
+    return "\n".join(_visible_markdown_lines(text))
+
+
 def _validate_heading_sequence(text: str, expected: tuple[str, ...], prefix: str, missing_prefix: str, order_error: str) -> None:
     visible = _visible_markdown_lines(text)
     expected_lines = [f"### {heading}" for heading in expected]
@@ -216,31 +221,36 @@ def validate(root: Path = ROOT) -> tuple[int, int, int]:
         texts[name] = text
 
     constitution = texts["AI-E2E-DELIVERY-CONSTITUTION.md"]
+    constitution_visible = _visible_markdown_text(constitution)
     for token in (
         "schema/migration -> persistence authority -> domain logic -> application/service -> API/BFF -> frontend",
         "Definition of Done: E2E-16","Tenant isolation","E2E tests","Adversarial tests","Deployment",
         "READY_FOR_MERGE is not merge authorization",
     ):
-        require(token in constitution, f"constitution_missing:{token}")
+        require(token in constitution_visible, f"constitution_missing:{token}")
 
     model = texts["VERTICAL-SLICE-DELIVERY-MODEL.md"]
+    model_visible = _visible_markdown_text(model)
     _validate_heading_sequence(model, EXPECTED_SLICE_HEADINGS, "S", "slice_heading_missing", "slice_heading_order_or_duplicate")
     for token in ("database_scope", "api_scope", "frontend_scope", "browser E2E", "AI task packet"):
-        require(token in model, f"slice_model_missing:{token}")
+        require(token in model_visible, f"slice_model_missing:{token}")
 
     roadmap = texts["PRODUCT-EXECUTION-ROADMAP.md"]
+    roadmap_visible = _visible_markdown_text(roadmap)
     _validate_heading_sequence(roadmap, EXPECTED_GATE_HEADINGS, "G", "roadmap_heading_missing", "roadmap_heading_order_or_duplicate")
-    require(EXPECTED_OPTIMIZATION_SENTENCE in roadmap, "roadmap_optimization_target_missing")
+    require(EXPECTED_OPTIMIZATION_SENTENCE in roadmap_visible, "roadmap_optimization_target_missing")
 
     bootstrap = texts["DAY-1-IMPLEMENTATION-BOOTSTRAP.md"]
+    bootstrap_visible = _visible_markdown_text(bootstrap)
     for token in (
         "Do not begin by asking the AI to \"build JLMirror\"","Connect the real frontend",
         "Run the slice locally E2E","Container proof","Stop at merge gate",
     ):
-        require(token in bootstrap, f"bootstrap_missing:{token}")
+        require(token in bootstrap_visible, f"bootstrap_missing:{token}")
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    require(manifest.get("schema_version") == 1, "manifest_schema")
+    schema_version = manifest.get("schema_version")
+    require(type(schema_version) is int and schema_version == 1, "manifest_schema")
     require(manifest.get("program_id") == "jlmirror.ai-e2e-delivery@1", "manifest_program")
     require(manifest.get("delivery_model") == "vertical_slice", "manifest_delivery_model")
     require(manifest.get("definition_of_done") == "E2E-16", "manifest_dod")

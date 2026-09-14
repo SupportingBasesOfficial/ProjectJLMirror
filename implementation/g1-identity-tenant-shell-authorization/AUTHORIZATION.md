@@ -62,6 +62,27 @@ This design intentionally does **not** use `pull_request_target`: the v1 determi
 
 The trusted evaluator loads this policy from the exact base commit, compares the complete `base...head` diff with rename detection disabled, and fails closed on mixed allowed/shared-core changes, missing canonical label, missing canonical branch prefix, missing/malformed implementation claim, cross-repository origin, or any path outside the allowlist.
 
+### Closed one-time authorization bootstrap
+
+This authorization PR is the only historical case where the exact base commit does not yet contain the new scope validator that this PR introduces. The workflow therefore contains one bootstrap condition that is intentionally narrower than G1 implementation authority itself.
+
+The bootstrap is valid only when all of the following are true:
+
+- exact base is `7c20c9301711e9a4bf355517d7aa23faad7a05b7`;
+- exact head ref is `governance/g1-identity-tenant-shell-authorization`;
+- head and base are the same repository;
+- the PR does **not** carry `jlmirror-slice:g1-identity-tenant-shell`;
+- the HEAD does **not** contain `implementation/g1-identity-tenant-shell/IMPLEMENTATION_CLAIM.json`;
+- implementation authority remains `blocked`.
+
+Machine-readable rule:
+
+```text
+bootstrap_authorization_rule = only_when_base_lacks_scope_validator_and_pr_has_no_g1_label_or_implementation_claim
+```
+
+This is not a reusable bypass. After this authorization becomes canonical, future G1 implementation PRs have a base commit that already contains the scope validator and a different base SHA, so the bootstrap branch is unreachable. Future G1 implementation authority is therefore always subject to the base-owned evaluator plus canonical branch, label, claim, same-repository and complete-diff enforcement.
+
 The implementation PR MUST mechanically compare its complete diff against the manifest path policy. A path is authorized only when it matches an allowed prefix or the exact allowed runtime workflow path.
 
 ## Allowed G0 bootstrap inside the G1 slice

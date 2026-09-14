@@ -39,6 +39,19 @@
       "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_trusted_scope_readiness_execution"}],
       "systemic_guardrail_updated": true,
       "guardrail_generation": 92
+    },
+    {
+      "id": "LEARN-PR153-025",
+      "pr": 153,
+      "source": "external_review",
+      "review_comment_id": 4009594362,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The strict learning layer executed the delegated readiness falsifier under a permissive verifier but did not prove that the ledger-credited authorization probe still delegated to that falsifier. Removing the delegation therefore allowed the credited outer probe to remain green even while the readiness validator was weakened, breaking the semantic chain between ledger credit and the executable readiness guardrail.",
+      "horizontal_audit": ["ledger guardrail credit","authorization outer probe delegation","readiness falsifier execution","permissive readiness verifier mutation","strict semantic probe binding","dead or removed delegation paths"],
+      "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_trusted_scope_readiness_execution"}],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 93
     }
   ]
 }

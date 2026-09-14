@@ -217,32 +217,45 @@ def _status_publisher_policy_errors(text: str) -> list[str]:
 def _g1_status_publisher_policy_errors(text: str) -> list[str]:
     errors = _publisher_common_errors(
         text,
-        group_marker="group: g1-identity-tenant-shell-scope-${{ github.event_name }}-${{ github.event.issue.number || github.ref_name }}",
+        group_marker="group: g1-identity-tenant-shell-scope-${{ github.event.issue.number }}",
         head_output="needs.resolve.outputs.head_sha",
     )
     required_markers = (
         "github.event.comment.body == '/jlmirror-g1-scope-attest'",
-        "push:",
-        "github.event_name == 'push' && github.ref_name == github.event.repository.default_branch",
-        "commits/${PR_HEAD_SHA}/statuses?per_page=100",
-        "mode=invalidate-base-advance",
-        "stale after default-branch advance; rerun required",
+        "github.event.comment.body == '/jlmirror-g1-scope-ready'",
         'test "$PR_BASE_REF" = "$DEFAULT_BRANCH"',
         'test "$PR_BASE_REPO" = "$GITHUB_REPOSITORY"',
         'test "$PR_HEAD_REPO" = "$GITHUB_REPOSITORY"',
+        'test "$PR_BASE_SHA" = "$DEFAULT_BRANCH_SHA"',
+        "branches/${DEFAULT_BRANCH}",
+        "G1_REQUIRED_LABEL",
         'git show "${PR_BASE_SHA}:${G1_SCOPE_VALIDATOR}" > "$trusted_validator"',
+        "contents/${G1_READINESS_VALIDATOR}?ref=${PR_BASE_SHA}",
+        'python3 "$TRUSTED_READINESS_VALIDATOR"',
         'test "$(git rev-parse HEAD)" != "$PR_HEAD_SHA"',
         "CURRENT_HEAD_SHA",
         "CURRENT_BASE_SHA",
         "CURRENT_BASE_REF",
+        "CURRENT_DEFAULT_SHA",
+        "CURRENT_LABELS_JSON",
         "JLMIRROR / g1-identity-tenant-shell-implementation-scope",
+        "JLMIRROR / g1-identity-tenant-shell-merge-readiness",
+        "G1 scope PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
+        "G1 ready PASS base=${PR_BASE_SHA} head=${PR_HEAD_SHA}",
         'test "$state" = success',
     )
     for marker in required_markers:
         if marker not in text:
             errors.append(f"G1 status reconciliation missing trusted marker: {marker}")
+    if re.search(r"^\s+push:\s*$", text, re.MULTILINE):
+        errors.append("G1 status reconciliation must not depend on skippable push invalidation")
     if text.count("uses: actions/checkout@") != 1:
-        errors.append("G1 status reconciliation must checkout code only once in read-only analysis")
+        errors.append("G1 status reconciliation must checkout code only once in read-only scope analysis")
+    ready = _job_block(text, "verify-ready")
+    if ready is None:
+        errors.append("G1 status reconciliation missing source-authenticated live readiness job")
+    elif "statuses: write" in ready:
+        errors.append("G1 live readiness verification must remain read-only")
     return errors
 
 

@@ -32,12 +32,20 @@ POLICY = {
     "diff_policy_source": "pull_request_exact_base_commit",
     "trusted_evaluator_event": "issue_comment",
     "trusted_scope_attestation_command": scope.EXPECTED_ATTESTATION_COMMAND,
+    "trusted_scope_readiness_command": scope.EXPECTED_READINESS_COMMAND,
     "trusted_evaluator_source": "default_branch_issue_comment_workflow_plus_exact_default_branch_base_git_object",
     "trusted_scope_status_context": scope.EXPECTED_STATUS_CONTEXT,
-    "trusted_scope_status_publication": "pending_then_final_on_resolved_pr_head",
-    "trusted_scope_freshness_rule": "final_success_requires_unchanged_head_base_sha_and_default_branch_ref",
+    "trusted_scope_readiness_status_context": scope.EXPECTED_READY_CONTEXT,
+    "trusted_scope_status_publication": "pending_then_final_coordinate_bound_evidence_on_resolved_pr_head",
+    "trusted_scope_status_evidence_role": "evidence_only_not_standalone_merge_authority",
+    "trusted_scope_freshness_rule": "merge_readiness_revalidates_live_head_base_default_tip_label_and_trusted_status_run_provenance",
     "trusted_scope_concurrency_rule": "per_pr_cancel_in_progress",
+    "trusted_status_creator_login": "github-actions[bot]",
+    "trusted_status_creator_id": 41898282,
+    "trusted_scope_merge_preflight_rule": "live_revalidate_ready_evidence_current_coordinates_label_and_workflow_run_immediately_before_merge",
+    "trusted_scope_readiness_validator": scope.EXPECTED_READINESS_VALIDATOR,
     "implementation_pr_requires_trusted_scope_attestation_on_exact_head": True,
+    "implementation_pr_requires_trusted_scope_readiness_on_exact_head_base": True,
     "candidate_controlled_relevance_inference": "forbidden",
 }
 REPO = "SupportingBasesOfficial/ProjectJLMirror"
@@ -222,7 +230,7 @@ def main() -> int:
     falsify_real_git_diff_gate()
     falsify_candidate_metadata_fail_closed()
     falsify_all_voluntary_metadata_omission()
-    print("g1_implementation_scope_falsification=PASS shared_core=blocked mixed_diff=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed all_metadata_omission=blocked explicit_trusted_classification=required default_base_policy=required exact_head_status_policy=required allowed_paths=accepted")
+    print("g1_implementation_scope_falsification=PASS shared_core=blocked mixed_diff=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed all_metadata_omission=blocked explicit_trusted_classification=required default_base_policy=required exact_head_status=evidence-only live_readiness=required allowed_paths=accepted")
     return 0
 
 

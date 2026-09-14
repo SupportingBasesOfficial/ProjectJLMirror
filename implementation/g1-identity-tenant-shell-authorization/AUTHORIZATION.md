@@ -49,7 +49,16 @@ Allowed exact path:
 
 All existing shared paths, including `src/jlmirror_authority/**`, accepted Wave 1–3 substrate, shared governance, shared runtime and unrelated contracts, are read-only under this authorization. If G1 cannot be completed without modifying shared existing substrate or any path outside the policy above, implementation MUST stop and obtain a separate successor authorization before that change is made.
 
-The future implementation branch is identified by the prefix `impl/g1-identity-tenant-protected-shell`. Every pull request is observed by `.github/workflows/g1-identity-tenant-shell-implementation-scope.yml`; when the branch or changed paths identify G1, `tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py` loads this policy from the exact pull-request base commit and compares the complete `base...head` diff against it with rename detection disabled. A mixed diff containing any shared or otherwise unauthorized path fails closed.
+A PR may exercise this G1 implementation authority only when all of the following are simultaneously true:
+
+- its head branch starts with `impl/g1-identity-tenant-protected-shell`;
+- the GitHub PR carries the independently supplied label `jlmirror-slice:g1-identity-tenant-shell`;
+- its head contains `implementation/g1-identity-tenant-shell/IMPLEMENTATION_CLAIM.json` with `authorization_id = g1.identity-tenant-protected-shell@1` and `slice_id = g1.identity-tenant-protected-shell@1`;
+- head and base belong to the same canonical repository.
+
+The enforcement workflow is `.github/workflows/g1-identity-tenant-shell-implementation-scope.yml` and uses `pull_request_target`. That is intentional: the workflow definition and `tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py` are executed from the exact trusted PR base commit, while the candidate HEAD is checked out separately and inspected only as data. A candidate PR therefore cannot replace its own evaluator and then claim a green scope gate.
+
+The trusted evaluator loads this policy from the exact base commit, compares the complete `base...head` diff with rename detection disabled, and fails closed on mixed allowed/shared-core changes, missing canonical label, missing canonical branch prefix, missing/malformed implementation claim, cross-repository origin, or any path outside the allowlist.
 
 The implementation PR MUST mechanically compare its complete diff against the manifest path policy. A path is authorized only when it matches an allowed prefix or the exact allowed runtime workflow path.
 

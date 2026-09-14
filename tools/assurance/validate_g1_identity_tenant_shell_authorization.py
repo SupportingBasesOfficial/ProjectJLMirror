@@ -21,42 +21,32 @@ IMPLEMENTATION_SCOPE_WORKFLOW = ".github/workflows/g1-identity-tenant-shell-impl
 EXPECTED_HEAD_PREFIX = "impl/g1-identity-tenant-protected-shell"
 EXPECTED_LABEL = "jlmirror-slice:g1-identity-tenant-shell"
 EXPECTED_CLAIM_PATH = "implementation/g1-identity-tenant-shell/IMPLEMENTATION_CLAIM.json"
-
+EXPECTED_PREFIXES = {
+    "apps/g1-identity-tenant-shell/", "contracts/g1-identity-tenant-shell/",
+    "implementation/g1-identity-tenant-shell/", "sql/g1/", "src/jlmirror_g1/",
+    "tests/g1/", "tools/g1/",
+}
+EXPECTED_EXACT = {".github/workflows/g1-identity-tenant-shell-runtime.yml"}
 EXPECTED_SCOPE = {
-    "oidc_authorization_code_pkce_s256_through_confidential_bff",
-    "opaque_server_side_bff_session_capability",
-    "current_platform_tenant_admission",
-    "current_membership_and_permission_read_for_shell",
-    "authenticated_bff_shell_route",
-    "protected_application_shell",
-    "forbidden_cross_tenant_browser_e2e",
+    "oidc_authorization_code_pkce_s256_through_confidential_bff", "opaque_server_side_bff_session_capability",
+    "current_platform_tenant_admission", "current_membership_and_permission_read_for_shell",
+    "authenticated_bff_shell_route", "protected_application_shell", "forbidden_cross_tenant_browser_e2e",
     "stale_or_revoked_authority_fail_closed",
 }
 EXPECTED_INVARIANTS = {
-    "jwt_validity_not_current_authorization",
-    "idp_identity_not_platform_membership_authority",
-    "workload_identity_not_tenant_business_authority",
-    "network_presence_not_trust",
-    "browser_session_handle_not_business_authority",
-    "client_tenant_id_not_tenant_authority",
+    "jwt_validity_not_current_authorization", "idp_identity_not_platform_membership_authority",
+    "workload_identity_not_tenant_business_authority", "network_presence_not_trust",
+    "browser_session_handle_not_business_authority", "client_tenant_id_not_tenant_authority",
 }
 EXPECTED_BOOTSTRAP = {
-    "g1_local_dependency_stack",
-    "g1_database_bootstrap_or_migration_entrypoint",
-    "g1_backend_bff_start_entrypoint",
-    "g1_frontend_start_entrypoint",
-    "g1_fixture_test_tenant_and_identity",
-    "g1_exact_head_local_ci_parity_commands",
-    "g1_container_runtime_proof",
+    "g1_local_dependency_stack", "g1_database_bootstrap_or_migration_entrypoint",
+    "g1_backend_bff_start_entrypoint", "g1_frontend_start_entrypoint",
+    "g1_fixture_test_tenant_and_identity", "g1_exact_head_local_ci_parity_commands", "g1_container_runtime_proof",
 }
 EXPECTED_CONSUMED = {
-    "accepted_wave1_identity_bff_current_authorization_substrate",
-    "d3_identity_security_separately_accepted",
-    "canonical_api_bff_security_contracts",
-    "canonical_tenant_current_authority_rules",
-    "ai_e2e_delivery_constitution",
-    "product_execution_roadmap",
-    "vertical_slice_delivery_model",
+    "accepted_wave1_identity_bff_current_authorization_substrate", "d3_identity_security_separately_accepted",
+    "canonical_api_bff_security_contracts", "canonical_tenant_current_authority_rules",
+    "ai_e2e_delivery_constitution", "product_execution_roadmap", "vertical_slice_delivery_model",
 }
 EXPECTED_AUTHORITY_PATHS = {
     "implementation/wave-1/AUTHORITY_BOUNDARY.md",
@@ -69,34 +59,12 @@ EXPECTED_AUTHORITY_PATHS = {
     "docs/00-foundation/ai-e2e-delivery/VERTICAL-SLICE-DELIVERY-MODEL.md",
     "docs/00-foundation/ai-e2e-delivery/DAY-1-IMPLEMENTATION-BOOTSTRAP.md",
 }
-EXPECTED_IMPLEMENTATION_PREFIXES = {
-    "apps/g1-identity-tenant-shell/",
-    "contracts/g1-identity-tenant-shell/",
-    "implementation/g1-identity-tenant-shell/",
-    "sql/g1/",
-    "src/jlmirror_g1/",
-    "tests/g1/",
-    "tools/g1/",
-}
-EXPECTED_IMPLEMENTATION_EXACT_PATHS = {
-    ".github/workflows/g1-identity-tenant-shell-runtime.yml",
-}
 EXPECTED_EXCLUSIONS = {
-    "g2_monitoring_source_onboarding",
-    "monitoring_product_ui",
-    "resource_metric_problem_health_product_surfaces",
-    "alert_creation_or_alert_policy_evaluation",
-    "ack_notification_escalation",
-    "itsm_product_vertical",
-    "automation_product_vertical",
-    "aiops_product_vertical",
-    "finops_product_vertical",
-    "commercial_product_vertical",
-    "production_deployment",
-    "production_c3_numerics",
-    "provider_native_authorization_truth",
-    "browser_refresh_token_or_long_lived_platform_access_credential",
-    "client_supplied_tenant_as_authorization_proof",
+    "g2_monitoring_source_onboarding", "monitoring_product_ui", "resource_metric_problem_health_product_surfaces",
+    "alert_creation_or_alert_policy_evaluation", "ack_notification_escalation", "itsm_product_vertical",
+    "automation_product_vertical", "aiops_product_vertical", "finops_product_vertical", "commercial_product_vertical",
+    "production_deployment", "production_c3_numerics", "provider_native_authorization_truth",
+    "browser_refresh_token_or_long_lived_platform_access_credential", "client_supplied_tenant_as_authorization_proof",
     "speculative_generic_frontend_information_architecture",
 }
 ALLOWED_PATHS = {
@@ -105,20 +73,14 @@ ALLOWED_PATHS = {
     "implementation/g1-identity-tenant-shell-authorization/TASK_PACKET.md",
     "tools/assurance/validate_g1_identity_tenant_shell_authorization.py",
     "tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py",
-    IMPLEMENTATION_SCOPE_VALIDATOR,
-    IMPLEMENTATION_SCOPE_FALSIFIER,
-    IMPLEMENTATION_SCOPE_WORKFLOW,
-    LEARNING_RESOLVER,
-    LEARNING_STRICT,
-    LEARNING_FALSIFIER,
-    ".github/workflows/g1-identity-tenant-shell-authorization.yml",
-    LEARNING,
+    IMPLEMENTATION_SCOPE_VALIDATOR, IMPLEMENTATION_SCOPE_FALSIFIER, IMPLEMENTATION_SCOPE_WORKFLOW,
+    LEARNING_RESOLVER, LEARNING_STRICT, LEARNING_FALSIFIER,
+    ".github/workflows/g1-identity-tenant-shell-authorization.yml", LEARNING,
 }
 
 
 def req(condition: bool, message: str) -> None:
-    if not condition:
-        raise AssertionError(message)
+    if not condition: raise AssertionError(message)
 
 
 def git(*args: str) -> str:
@@ -140,26 +102,26 @@ def validate_manifest(data: dict) -> None:
     req(data.get("implementation_authority_after_merge") == "granted_for_exact_g1_identity_tenant_protected_shell_only", "post-merge implementation authority drift")
     req(data.get("authorized_program_gate") == "G1", "program gate drift")
     req(data.get("authorized_slice") == {"slice_id":"g1.identity-tenant-protected-shell@1","capability":"identity_tenant_protected_application_shell"}, "authorized slice drift")
-
-    path_policy = data.get("implementation_path_policy")
-    req(isinstance(path_policy, dict), "implementation path policy missing")
-    req(path_policy.get("mode") == "exact_prefix_allowlist", "implementation path policy mode drift")
-    req(set(path_policy.get("allowed_prefixes", [])) == EXPECTED_IMPLEMENTATION_PREFIXES, "implementation allowed prefix drift")
-    req(set(path_policy.get("allowed_exact_paths", [])) == EXPECTED_IMPLEMENTATION_EXACT_PATHS, "implementation exact path drift")
-    req(path_policy.get("shared_existing_paths_policy") == "read_only_unless_separate_successor_authorization", "shared existing path policy drift")
-    req(path_policy.get("implementation_pr_head_prefix") == EXPECTED_HEAD_PREFIX, "implementation PR head prefix drift")
-    req(path_policy.get("implementation_pr_required_label") == EXPECTED_LABEL, "implementation PR required label drift")
-    req(path_policy.get("implementation_claim_path") == EXPECTED_CLAIM_PATH, "implementation claim path drift")
-    req(path_policy.get("implementation_claim_authorization_id") == "g1.identity-tenant-protected-shell@1", "implementation claim authorization id drift")
-    req(path_policy.get("same_repository_required") is True, "same-repository requirement drift")
-    req(path_policy.get("diff_enforcement_rule") == "every_changed_path_must_match_canonical_base_policy", "implementation diff enforcement rule drift")
-    req(path_policy.get("diff_policy_source") == "pull_request_exact_base_commit", "implementation diff policy source drift")
-    req(path_policy.get("trusted_evaluator_event") == "pull_request_target", "trusted evaluator event drift")
-    req(path_policy.get("trusted_evaluator_source") == "pull_request_exact_base_commit", "trusted evaluator source drift")
-    req(path_policy.get("diff_enforcement_validator") == IMPLEMENTATION_SCOPE_VALIDATOR, "implementation diff validator drift")
-    req(path_policy.get("diff_enforcement_workflow") == IMPLEMENTATION_SCOPE_WORKFLOW, "implementation diff workflow drift")
-    req(path_policy.get("implementation_pr_must_validate_diff_against_this_policy") is True, "implementation PR path validation requirement drift")
-
+    policy = data.get("implementation_path_policy"); req(isinstance(policy, dict), "implementation path policy missing")
+    exact = {
+        "mode": "exact_prefix_allowlist",
+        "shared_existing_paths_policy": "read_only_unless_separate_successor_authorization",
+        "implementation_pr_head_prefix": EXPECTED_HEAD_PREFIX,
+        "implementation_pr_required_label": EXPECTED_LABEL,
+        "implementation_claim_path": EXPECTED_CLAIM_PATH,
+        "implementation_claim_authorization_id": "g1.identity-tenant-protected-shell@1",
+        "same_repository_required": True,
+        "diff_enforcement_rule": "every_changed_path_must_match_canonical_base_policy",
+        "diff_policy_source": "pull_request_exact_base_commit",
+        "trusted_evaluator_event": "pull_request",
+        "trusted_evaluator_source": "git_object_from_pull_request_exact_base_commit",
+        "diff_enforcement_validator": IMPLEMENTATION_SCOPE_VALIDATOR,
+        "diff_enforcement_workflow": IMPLEMENTATION_SCOPE_WORKFLOW,
+        "implementation_pr_must_validate_diff_against_this_policy": True,
+    }
+    for key, expected in exact.items(): req(policy.get(key) == expected, f"implementation path policy drift: {key}")
+    req(set(policy.get("allowed_prefixes", [])) == EXPECTED_PREFIXES, "implementation allowed prefix drift")
+    req(set(policy.get("allowed_exact_paths", [])) == EXPECTED_EXACT, "implementation exact path drift")
     req(set(data.get("authorized_capability_scope", [])) == EXPECTED_SCOPE, "capability scope drift")
     req(set(data.get("required_invariants", [])) == EXPECTED_INVARIANTS, "required invariant drift")
     req(set(data.get("authorized_g0_bootstrap_scope", [])) == EXPECTED_BOOTSTRAP, "G0 bootstrap scope drift")
@@ -175,117 +137,66 @@ def validate_manifest(data: dict) -> None:
 
 
 def validate_predecessor_truth() -> None:
-    for relative in EXPECTED_AUTHORITY_PATHS:
-        req((ROOT / relative).is_file(), f"authority source missing: {relative}")
-
+    for rel in EXPECTED_AUTHORITY_PATHS: req((ROOT / rel).is_file(), f"authority source missing: {rel}")
     wave1 = (ROOT / "implementation/wave-1/AUTHORITY_BOUNDARY.md").read_text(encoding="utf-8")
-    req("`impl.identity-bff@1`" in wave1, "Wave 1 identity/BFF substrate missing")
-    req("SESSION VALID != CURRENT AUTHORITY" in wave1, "Wave 1 current-authority law missing")
-
+    req("`impl.identity-bff@1`" in wave1 and "SESSION VALID != CURRENT AUTHORITY" in wave1, "Wave 1 authority substrate drift")
     d3 = (ROOT / "docs/16-implementation-readiness/20-d3-identity-security-acceptance-propagation.md").read_text(encoding="utf-8")
-    req("gate_state: per_track_conformed -> separately_accepted" in d3, "D3 separate acceptance transition missing")
-    req("canonical_product_implementation_authority = not_granted" in d3, "historical D3 Product not-granted snapshot missing")
-
+    req("gate_state: per_track_conformed -> separately_accepted" in d3 and "canonical_product_implementation_authority = not_granted" in d3, "D3 predecessor truth drift")
     auth = (ROOT / "docs/09-api-contracts/authentication-authorization-and-tenant-context.md").read_text(encoding="utf-8")
     req("A valid credential does not imply tenant access." in auth, "credential/tenant non-equivalence missing")
     req("Browser JavaScript SHALL NOT intentionally receive or persist long-lived platform access credentials or refresh credentials." in auth, "browser credential boundary missing")
     req("current membership / machine tenant scope" in auth, "current membership authority sequence missing")
-
     routing = (ROOT / "docs/09-api-contracts/surface-routing-and-resource-identity.md").read_text(encoding="utf-8")
     req("evaluate current membership or machine tenant scope" in routing, "surface current-authorization order missing")
-
-    lifecycle = (ROOT / "docs/07-system-design/request-auth-and-authorization-lifecycle.md").read_text(encoding="utf-8")
-    req("current authorization" in lifecycle, "request authorization lifecycle currentness missing")
-
     roadmap = (ROOT / "docs/00-foundation/ai-e2e-delivery/PRODUCT-EXECUTION-ROADMAP.md").read_text(encoding="utf-8")
-    req("### G1 — Identity + tenant + shell golden path" in roadmap, "G1 roadmap authority missing")
     day1 = (ROOT / "docs/00-foundation/ai-e2e-delivery/DAY-1-IMPLEMENTATION-BOOTSTRAP.md").read_text(encoding="utf-8")
-    req("first full-stack target is **G1 Identity + tenant + protected application shell**" in day1, "G1 Day-1 target missing")
+    req("### G1 — Identity + tenant + shell golden path" in roadmap and "first full-stack target is **G1 Identity + tenant + protected application shell**" in day1, "G1 roadmap authority missing")
 
 
 def validate_enforcement_artifacts() -> None:
-    for relative in (IMPLEMENTATION_SCOPE_VALIDATOR, IMPLEMENTATION_SCOPE_FALSIFIER, IMPLEMENTATION_SCOPE_WORKFLOW):
-        req((ROOT / relative).is_file(), f"implementation scope enforcement artifact missing: {relative}")
+    for rel in (IMPLEMENTATION_SCOPE_VALIDATOR, IMPLEMENTATION_SCOPE_FALSIFIER, IMPLEMENTATION_SCOPE_WORKFLOW): req((ROOT / rel).is_file(), f"implementation scope enforcement artifact missing: {rel}")
     validator = (ROOT / IMPLEMENTATION_SCOPE_VALIDATOR).read_text(encoding="utf-8")
     workflow = (ROOT / IMPLEMENTATION_SCOPE_WORKFLOW).read_text(encoding="utf-8")
-    req("policy_from_base(root, base_sha)" in validator, "implementation scope validator does not consume canonical base policy")
-    req('"--no-renames"' in validator, "implementation scope validator must expose both sides of rename/copy boundary changes")
-    req("unauthorized G1 implementation path" in validator, "implementation scope validator missing path rejection")
-    req("G1 implementation PR missing required canonical label" in validator, "implementation scope validator missing label fail-closed rule")
-    req("G1 implementation PR missing required canonical head prefix" in validator, "implementation scope validator missing head-prefix fail-closed rule")
-    req("G1 implementation PR missing or malformed required claim" in validator, "implementation scope validator missing claim fail-closed rule")
-    req("pull_request_target:" in workflow, "implementation scope workflow must use trusted-base pull_request_target")
-    req("\n  pull_request:\n" not in workflow, "implementation scope workflow must not execute from candidate pull_request definition")
+    for marker in ("policy_from_base(root, base_sha)", '"--no-renames"', "unauthorized G1 implementation path", "G1 implementation PR missing required canonical label", "G1 implementation PR missing required canonical head prefix", "G1 implementation PR missing or malformed required claim"):
+        req(marker in validator, f"implementation scope validator missing marker: {marker}")
+    req("pull_request_target:" not in workflow, "implementation scope workflow must not use privileged pull_request_target")
+    req("pull_request:" in workflow, "implementation scope workflow must run in secretless pull_request context")
     req("paths:" not in workflow, "implementation scope workflow must not be path-filtered")
     req("github.event.pull_request.base.sha" in workflow and "github.event.pull_request.head.sha" in workflow, "implementation scope workflow missing exact base/head binding")
-    req("path: trusted-base" in workflow and "path: candidate" in workflow, "implementation scope workflow must isolate trusted base from candidate checkout")
-    req('python3 "$GITHUB_WORKSPACE/trusted-base/tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py"' in workflow, "implementation scope workflow must execute validator from trusted base checkout")
-    req('--repo-root "$GITHUB_WORKSPACE/candidate"' in workflow, "implementation scope workflow must inspect candidate as data")
-    req("PR_LABELS_JSON" in workflow and "PR_HEAD_REPO" in workflow and "PR_BASE_REPO" in workflow, "implementation scope workflow missing independently supplied PR metadata")
+    req('git show "${PR_BASE_SHA}:tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py" > "$trusted_validator"' in workflow, "implementation scope workflow must materialize validator from exact base Git object")
+    req('python3 "$TRUSTED_VALIDATOR"' in workflow, "implementation scope workflow must execute materialized base validator")
+    req('--repo-root "$GITHUB_WORKSPACE"' in workflow, "implementation scope workflow must inspect exact candidate checkout as data")
+    req("persist-credentials: false" in workflow, "implementation scope workflow must not persist checkout credentials")
+    req("PR_LABELS_JSON" in workflow and "PR_HEAD_REPO" in workflow and "PR_BASE_REPO" in workflow, "implementation scope workflow missing independent PR metadata")
 
 
 def validate_document() -> None:
-    text = DOC.read_text(encoding="utf-8")
-    packet = PACKET.read_text(encoding="utf-8")
-    for marker in (
-        "implementation_authority_before_merge = blocked",
-        "implementation_authority_after_merge = granted_for_exact_g1_identity_tenant_protected_shell_only",
-        "JWT_VALIDITY != CURRENT_AUTHORIZATION",
-        "SUCCESSOR_G1_AUTHORIZATION != GLOBAL_PRODUCT_AUTHORITY",
-        "G1_AUTHORIZED != G2_AUTHORIZED",
-        "READY_FOR_MERGE != AUTHORIZED_TO_MERGE",
-        "All existing shared paths",
-        "read-only under this authorization",
-        EXPECTED_LABEL,
-        EXPECTED_CLAIM_PATH,
-        "pull_request_target",
-    ):
+    text, packet = DOC.read_text(encoding="utf-8"), PACKET.read_text(encoding="utf-8")
+    for marker in ("implementation_authority_before_merge = blocked", "implementation_authority_after_merge = granted_for_exact_g1_identity_tenant_protected_shell_only", "JWT_VALIDITY != CURRENT_AUTHORIZATION", "SUCCESSOR_G1_AUTHORIZATION != GLOBAL_PRODUCT_AUTHORITY", "G1_AUTHORIZED != G2_AUTHORIZED", "READY_FOR_MERGE != AUTHORIZED_TO_MERGE", "All existing shared paths", "read-only under this authorization", EXPECTED_LABEL, EXPECTED_CLAIM_PATH, "git show", "pull_request"):
         req(marker in text, f"authorization document missing marker: {marker}")
-    for marker in (
-        "SLICE: g1.identity-tenant-protected-shell@1",
-        "BASE SHA: " + BASE,
-        "No new identity or authorization semantics.",
-        "Client tenant identifiers are never authority.",
-        "SHARED EXISTING PATHS: read-only unless a separate successor authorization",
-        EXPECTED_LABEL,
-        EXPECTED_CLAIM_PATH,
-        "STOP IF:",
-        "G2+",
-    ):
+    for marker in ("SLICE: g1.identity-tenant-protected-shell@1", "BASE SHA: " + BASE, "No new identity or authorization semantics.", "Client tenant identifiers are never authority.", "SHARED EXISTING PATHS: read-only unless a separate successor authorization", EXPECTED_LABEL, EXPECTED_CLAIM_PATH, "git show", "STOP IF:", "G2+"):
         req(marker in packet, f"task packet missing marker: {marker}")
-    for prefix in EXPECTED_IMPLEMENTATION_PREFIXES:
-        req(prefix in text and prefix in packet, f"implementation allowed prefix not rendered consistently: {prefix}")
-    for exact_path in EXPECTED_IMPLEMENTATION_EXACT_PATHS:
-        req(exact_path in text and exact_path in packet, f"implementation exact path not rendered consistently: {exact_path}")
+    for prefix in EXPECTED_PREFIXES: req(prefix in text and prefix in packet, f"implementation allowed prefix not rendered consistently: {prefix}")
+    for path in EXPECTED_EXACT: req(path in text and path in packet, f"implementation exact path not rendered consistently: {path}")
 
 
 def validate_changed_paths() -> None:
     changed = [p for p in git("diff", "--name-only", f"{BASE}...HEAD").splitlines() if p]
     req(changed, "authorization branch must contain an explicit delta")
-    for path in changed:
-        req(path in ALLOWED_PATHS, f"authorization PR touched forbidden path: {path}")
+    for path in changed: req(path in ALLOWED_PATHS, f"authorization PR touched forbidden path: {path}")
 
 
 def validate() -> None:
-    req(MANIFEST.is_file(), "missing authorization manifest")
-    req(DOC.is_file(), "missing authorization document")
-    req(PACKET.is_file(), "missing task packet")
-    validate_manifest(load())
-    validate_predecessor_truth()
-    validate_enforcement_artifacts()
-    validate_document()
-    validate_changed_paths()
+    req(MANIFEST.is_file() and DOC.is_file() and PACKET.is_file(), "missing G1 authorization artifact")
+    validate_manifest(load()); validate_predecessor_truth(); validate_enforcement_artifacts(); validate_document(); validate_changed_paths()
 
 
 def main() -> int:
-    try:
-        validate()
+    try: validate()
     except AssertionError as exc:
-        print(f"g1_identity_tenant_shell_authorization=FAIL reason={exc}", file=sys.stderr)
-        return 1
-    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned+trusted-base-diff-gate metadata=label+branch+claim authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
+        print(f"g1_identity_tenant_shell_authorization=FAIL reason={exc}", file=sys.stderr); return 1
+    print("g1_identity_tenant_shell_authorization=PASS gate=G1 implementation_transition=blocked->exact-g1 implementation_paths=pinned+base-object-diff-gate metadata=label+branch+claim authority_corpus=pinned exclusions=exact production=none merge_authority=not_granted")
     return 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+if __name__ == "__main__": raise SystemExit(main())

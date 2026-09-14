@@ -17,6 +17,12 @@ MATERIAL_RE = re.compile(r'(?:\bP[012]\s+Badge\b|\[P[012]\])')
 MAINTAINER_LOGINS = {'SupportingBasesOfficial'}
 D4C_SELECTION_TEST = Path('tools/assurance/test_validate_d4c_selection.py')
 G1_AUTHORIZATION_TEST = Path('tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py')
+G1_SCOPE_TEST = Path('tools/assurance/test_validate_g1_identity_tenant_shell_implementation_scope.py')
+G1_SCOPE_PROBES = (
+    'falsify_real_git_diff_gate',
+    'falsify_candidate_metadata_fail_closed',
+    'falsify_all_voluntary_metadata_omission',
+)
 NEGATIVE_HELPERS = {
     Path('tools/assurance/test_validate_d4d_selection.py'): {'must_fail'},
     D4C_SELECTION_TEST: {'must_fail', '_delivery_must_fail'},
@@ -73,7 +79,6 @@ def _has_negative_check(function: ast.AST, helpers: set[str]) -> bool:
 
 
 def _validate_delivery_negative_helper(root: Path, path: Path) -> list[str]:
-    """Execute the registered helper against both rejection and acceptance paths."""
     module_name = '_jlmirror_delivery_negative_helper_probe'
     errors: list[str] = []
     try:
@@ -118,7 +123,6 @@ def _validate_delivery_negative_helper(root: Path, path: Path) -> list[str]:
 
 
 def _validate_g1_negative_helper(root: Path, path: Path) -> list[str]:
-    """Execute the real G1 must_fail helper against controlled rejection and acceptance paths."""
     module_name = '_jlmirror_g1_negative_helper_probe'
     dependency_name = 'validate_g1_identity_tenant_shell_authorization'
     saved_dependency = sys.modules.pop(dependency_name, None)
@@ -173,6 +177,43 @@ def _validate_g1_negative_helper(root: Path, path: Path) -> list[str]:
     return errors
 
 
+def _validate_g1_scope_probe_effects(root: Path) -> list[str]:
+    """Each scope probe must reject a deliberately permissive trusted evaluator."""
+    path = root / G1_SCOPE_TEST
+    module_name = '_jlmirror_g1_scope_probe_effects'
+    errors: list[str] = []
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, path)
+        if spec is None or spec.loader is None:
+            return ['cannot load credited G1 scope probe module']
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        original_validate = module.scope.validate
+        module.scope.validate = lambda *args, **kwargs: (True, [])
+        try:
+            for probe_name in G1_SCOPE_PROBES:
+                probe = getattr(module, probe_name, None)
+                if not callable(probe):
+                    errors.append(f'credited G1 scope probe missing: {probe_name}')
+                    continue
+                try:
+                    probe()
+                except AssertionError:
+                    pass
+                except Exception as exc:
+                    errors.append(f'credited G1 scope probe failed unexpectedly under permissive evaluator: {probe_name}:{type(exc).__name__}:{exc}')
+                else:
+                    errors.append(f'credited G1 scope probe does not reject permissive evaluator/no-op body: {probe_name}')
+        finally:
+            module.scope.validate = original_validate
+    except Exception as exc:
+        errors.append(f'credited G1 scope probes could not execute: {type(exc).__name__}: {exc}')
+    finally:
+        sys.modules.pop(module_name, None)
+    return errors
+
+
 def _validate_falsifier_effects(root: Path) -> list[str]:
     errors: list[str] = []
     for rel, helpers in NEGATIVE_HELPERS.items():
@@ -187,6 +228,7 @@ def _validate_falsifier_effects(root: Path) -> list[str]:
             errors.extend(_validate_delivery_negative_helper(root, path))
         if rel == G1_AUTHORIZATION_TEST:
             errors.extend(_validate_g1_negative_helper(root, path))
+            errors.extend(_validate_g1_scope_probe_effects(root))
         credited, credited_errors = base._reachable_main_falsifiers(path)
         errors.extend(credited_errors)
         for name in sorted(credited):
@@ -257,6 +299,6 @@ def main() -> None:
     errors=validate(args.root,args.review_comments)
     for error in errors: print('ADVERSARIAL_LEARNING_STRICT_ERROR:',error)
     if errors: raise SystemExit(1)
-    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept')
+    print('adversarial_learning_strict=PASS head_status=isolated+fresh reviewer_identity=external-only material_formats=badge+priority-prefix d4c_current_projection=terminal-governed-surfaces falsifier_effects=executed-negative-helper g1_negative_helper=executed-reject+accept g1_scope_probes=permissive-evaluator-rejected')
 
 if __name__=='__main__': main()

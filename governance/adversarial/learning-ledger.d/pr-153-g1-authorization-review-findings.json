@@ -72,7 +72,7 @@
       "source": "external_review",
       "review_comment_id": 4007362903,
       "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
-      "invariant_ids": ["INV-LEARNING-002", "INV-BOUNDARY-002"],
+      "invariant_ids": ["INV-LEARNING-002"],
       "root_cause": "The authorization manifest declared that future implementation diffs must obey the G1 path policy, but no canonical-base/exact-head workflow actually consumed that policy against a future implementation PR's complete diff. A mixed G1/shared-core PR could therefore violate the reviewed boundary without an executable gate.",
       "horizontal_audit": ["future G1 implementation pull requests", "vertical-slice path policies", "mixed allowed and shared-core diffs", "rename/copy boundary representations", "successor product-slice authorization gates"],
       "guardrails": [{"path":"tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py","probe":"falsify_implementation_path_policy"}],

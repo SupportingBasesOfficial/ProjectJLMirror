@@ -174,11 +174,11 @@ BEGIN
            AND pg_has_role(r.oid,v_recovery_oid,'USAGE')
     )
     SELECT format(
-               'owner=%s,routine=%s,grantee=%s,grantable=%s',
-               pg_get_userbyid(p.proowner),
+               'routine=%s,grantee=%s,grantable=%s,owner=%s',
                p.oid::regprocedure::TEXT,
                CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,
-               a.is_grantable
+               a.is_grantable,
+               pg_get_userbyid(p.proowner)
            )
       INTO v_proxy
       FROM pg_proc p

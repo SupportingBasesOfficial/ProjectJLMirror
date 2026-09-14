@@ -38,7 +38,10 @@
     "trusted_evaluator_source": "git_object_from_pull_request_exact_base_commit",
     "diff_enforcement_validator": "tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py",
     "diff_enforcement_workflow": ".github/workflows/g1-identity-tenant-shell-implementation-scope.yml",
-    "implementation_pr_must_validate_diff_against_this_policy": true
+    "implementation_pr_must_validate_diff_against_this_policy": true,
+    "bootstrap_authorization_base_commit": "7c20c9301711e9a4bf355517d7aa23faad7a05b7",
+    "bootstrap_authorization_head_ref": "governance/g1-identity-tenant-shell-authorization",
+    "bootstrap_authorization_rule": "only_when_base_lacks_scope_validator_and_pr_has_no_g1_label_or_implementation_claim"
   },
   "authorized_g0_bootstrap_scope": [
     "g1_local_dependency_stack",

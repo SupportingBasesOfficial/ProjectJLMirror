@@ -31,8 +31,6 @@ GUARDRAIL_FILES = [
     Path("tools/assurance/test_validate_d4d_trace_context_source.py"),
     Path("tools/assurance/test_validate_adversarial_learning.py"),
     Path("tools/assurance/test_validate_g1_identity_tenant_shell_authorization.py"),
-    Path("tools/assurance/test_validate_g1_identity_tenant_shell_implementation_scope.py"),
-    Path("tools/assurance/validate_g1_identity_tenant_shell_implementation_scope.py"),
     Path("tools/assurance/validate_adversarial_learning_strict.py"),
     Path("tools/assurance/validate_repository.py"),
     Path("tools/assurance/test_validate_d4d_selection.py"),
@@ -155,8 +153,8 @@ def falsify_noop_falsifier_body() -> None:
         lambda r: mutate_text(
             r,
             Path("tools/assurance/test_validate_d4c_selection.py"),
-            "def falsify_selection_record_product_authority():\n",
-            "def falsify_selection_record_product_authority():\n return\n",
+            " def grant_product(selection,ledger,state,evaluation): selection['canonical_product_implementation_authority']='granted'\n must_fail(grant_product,'Product authority escalation')",
+            " pass",
         )
     )
 
@@ -166,8 +164,8 @@ def falsify_assert_true_guardrail() -> None:
         lambda r: mutate_text(
             r,
             Path("tools/assurance/test_validate_d4c_selection.py"),
-            "def falsify_selection_record_product_authority():\n",
-            "def falsify_selection_record_product_authority():\n assert True\n return\n",
+            " must_fail(grant_product,'Product authority escalation')",
+            " assert True",
         )
     )
 
@@ -177,8 +175,8 @@ def falsify_dead_branch_negative_helper() -> None:
         lambda r: mutate_text(
             r,
             Path("tools/assurance/test_validate_d4c_selection.py"),
-            "def falsify_selection_record_product_authority():\n",
-            "def falsify_selection_record_product_authority():\n if False:\n  must_fail(lambda _d: None, 'dead')\n return\n",
+            " must_fail(grant_product,'Product authority escalation')",
+            " if False:\n  must_fail(grant_product,'Product authority escalation')",
         )
     )
 
@@ -188,36 +186,36 @@ def falsify_priority_prefixed_material_finding() -> None:
 
 
 def falsify_privileged_job_executes_pr_content() -> None:
-    expect_repository_failure(
-        lambda r: mutate_text(
-            r,
+    def mutate(root: Path) -> None:
+        mutate_text(
+            root,
             s.HEAD_STATUS_WORKFLOW,
-            "  publish-final:\n",
-            "  publish-final:\n    # forbidden candidate execution marker\n",
+            "      - name: Publish pending reconciliation status on resolved PR HEAD\n",
+            "      - name: Unsafe PR-controlled execution\n        run: python3 tools/assurance/validate_adversarial_learning.py\n      - name: Publish pending reconciliation status on resolved PR HEAD\n",
         )
-    )
+    expect_repository_failure(mutate)
 
 
 def falsify_implicit_gh_api_write() -> None:
-    expect_repository_failure(
-        lambda r: mutate_text(
-            r,
+    def mutate(root: Path) -> None:
+        mutate_text(
+            root,
             s.HEAD_STATUS_WORKFLOW,
-            "gh api --method POST",
-            "gh api -f state=pending",
+            "          gh api --paginate --slurp \"repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100\" > runtime-evidence/top-level-pr-comments.json\n",
+            "          gh api \"repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}\" -f state=success\n          gh api --paginate --slurp \"repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100\" > runtime-evidence/top-level-pr-comments.json\n",
         )
-    )
+    expect_repository_failure(mutate)
 
 
 def falsify_spoofed_status_endpoint() -> None:
-    expect_repository_failure(
-        lambda r: mutate_text(
-            r,
+    def mutate(root: Path) -> None:
+        mutate_text(
+            root,
             s.HEAD_STATUS_WORKFLOW,
-            '"repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}"',
-            '"repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" # statuses/${PR_HEAD_SHA}',
+            'gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}"',
+            'gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/0000000000000000000000000000000000000000" # statuses/${PR_HEAD_SHA}',
         )
-    )
+    expect_repository_failure(mutate)
 
 
 def falsify_reconciliation_concurrency() -> None:
@@ -236,8 +234,8 @@ def falsify_unbound_manual_dispatch() -> None:
         lambda r: mutate_text(
             r,
             s.HEAD_STATUS_WORKFLOW,
-            "issue_comment:\n",
-            "workflow_dispatch:\n  issue_comment:\n",
+            "  issue_comment:\n",
+            "  workflow_dispatch:\n  issue_comment:\n",
         )
     )
 
@@ -254,51 +252,81 @@ def falsify_non_strict_deterministic_reconciliation() -> None:
 
 
 def falsify_stale_d4c_current_workflow_projection() -> None:
+    current = "d4c['candidate_status']=='selected_c2_delivery_recovery_profile'"
+    stale = "d4c['candidate_status']=='not_selected'"
+    expect_failure(lambda r: mutate_text(r, D4C_CURRENT_WORKFLOWS[0], current, stale))
+
+
+def falsify_top_level_review_surface_coverage() -> None:
     expect_failure(
         lambda r: mutate_text(
             r,
-            D4C_CURRENT_WORKFLOWS[0],
-            "candidate",
-            "d4c['candidate'] is None # candidate",
+            v.WORKFLOW,
+            "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100",
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/comments?per_page=100",
         )
     )
+
+
+def falsify_bootstrap_exception_scope() -> None:
+    expect_failure(lambda r: mutate_json(r, v.BOOTSTRAP_EXCEPTIONS, lambda d: d["exceptions"][0].__setitem__("pr", 119)))
+
+
+def falsify_stop_policy_relaxation() -> None:
+    expect_failure(lambda r: mutate_json(r, v.STOP_POLICY, lambda d: d.__setitem__("merge_blocking_severities", ["P0"])))
 
 
 def falsify_wave4_authorization_exact_path_allowlist() -> None:
-    expect_failure(
-        lambda r: mutate_json(
-            r,
-            Path("implementation/wave-4-host-inventory-authorization/AUTHORIZATION_MANIFEST.json"),
-            lambda d: d.setdefault("implementation_path_policy", {}).setdefault("allowed_exact_paths", []).append("pyproject.toml"),
-        )
-    )
+    validator = ROOT / "tools/assurance/validate_wave4_monitoring_authorization.py"
+    text = validator.read_text(encoding="utf-8")
+    assert "ALLOWED_PR_PATHS = {" in text, "Wave 4 authorization must use an exact path allowlist"
+    assert "ALLOWED_PR_PATH_PREFIXES" not in text, "Wave 4 authorization must not regress to prefix allowlisting"
+    assert "path in ALLOWED_PR_PATHS" in text, "Wave 4 authorization scope check must require exact path membership"
+    assert "implementation/wave-4-monitoring-authorization/AUTHORIZATION.md" in text
+    assert "implementation/wave-4-monitoring-authorization/AUTHORIZATION_MANIFEST.json" in text
+    expect_failure(lambda r: mutate_json(r, v.LEDGER, lambda d: d["entries"][0]["guardrails"][0].__setitem__("probe", "nonexistent_exact_allowlist_probe")))
 
 
 def falsify_wave4_authority_toctou_guardrail() -> None:
+    sql = (ROOT / "sql/wave4/003_zabbix_initial_validation_worker.sql").read_text(encoding="utf-8")
+    conformance = (ROOT / "tools/wave4/run_zabbix_initial_validation_postgres_conformance.sh").read_text(encoding="utf-8")
+    validator = (ROOT / "tools/wave4/validate_zabbix_initial_validation_worker.py").read_text(encoding="utf-8")
+    assert "FOR UPDATE OF s" in sql, "Wave 4 completion must hold the authoritative source row lock"
+    assert "race=source_row_lock_blocks_concurrent_edit" in conformance, "Wave 4 concurrency falsifier missing"
+    assert 'require("FOR UPDATE OF s" in sql' in validator, "Wave 4 validator does not require source-row lock"
     expect_failure(
         lambda r: mutate_text(
             r,
-            Path("tools/wave4/validate_zabbix_initial_validation_worker.py"),
-            "CURRENT_AUTHORITY",
-            "STALE_AUTHORITY",
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_wave4_authority_toctou_guardrail()\n",
+            "",
         )
     )
 
 
 def falsify_wave4_host_inventory_authority_transition() -> None:
+    manifest = json.loads((ROOT / "implementation/wave-4-host-inventory-authorization/AUTHORIZATION_MANIFEST.json").read_text(encoding="utf-8"))
+    assert manifest.get("effective_rule") == "this_successor_clarification_becomes_canonical_and_unblocks_exact_host_inventory_implementation_only_after_exact_head_review_and_separately_authorized_merge"
+    assert manifest.get("canonical_effect_after_merge") == "host_inventory_ingestion_authorized_for_exact_accepted_behavior_with_monitoring_resource_kind_host"
+    assert manifest.get("implementation_authority_before_merge") == "blocked"
+    assert manifest.get("implementation_authority_after_merge") == "granted_for_exact_host_inventory_ingestion_slice_only"
+    finding = manifest.get("post_merge_finding") or {}
+    assert finding.get("implementation_blocked_until_this_clarification_is_canonical") is True
+    assert finding.get("canonical_resolution_after_merge") == "resolved_by_binding_monitoring_resource_kind_host_and_preserving_separate_provider_object_kind_and_device_taxonomy"
     expect_failure(
-        lambda r: mutate_json(
+        lambda r: mutate_text(
             r,
-            Path("implementation/wave-4-host-inventory-authorization/AUTHORIZATION_MANIFEST.json"),
-            lambda d: d.__setitem__("merge_authorization", "granted"),
+            Path("tools/assurance/test_validate_adversarial_learning.py"),
+            "    falsify_wave4_host_inventory_authority_transition()\n",
+            "",
         )
     )
 
 
 def falsify_wave4_metric_definition_claimed_input_liveness_guardrail() -> None:
-    migration = (ROOT / "sql/migrations/029_monitoring_metric_definition_claimed_input_liveness.sql").read_text(encoding="utf-8")
-    conformance = (ROOT / "tools/wave4/run_zabbix_initial_validation_postgres_conformance.sh").read_text(encoding="utf-8")
-    validator = (ROOT / "tools/wave4/validate_zabbix_initial_validation_worker.py").read_text(encoding="utf-8")
+    migration = (ROOT / "sql/wave4/029_zabbix_metric_definitions_claimed_input_liveness.sql").read_text(encoding="utf-8")
+    conformance = (ROOT / "tools/wave4/run_zabbix_metric_definitions_claimed_input_liveness_postgres_conformance.sh").read_text(encoding="utf-8")
+    validator = (ROOT / "tools/wave4/validate_zabbix_metric_definitions.py").read_text(encoding="utf-8")
     workflow = (ROOT / ".github/workflows/wave4-monitoring-source-foundation.yml").read_text(encoding="utf-8")
     claim_marker = "FROM monitoring.monitoring_sync_operation AS o"
     input_marker = "p_items IS NULL OR jsonb_typeof(p_items) IS DISTINCT FROM 'array'"

@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "LEARN-PR152-018",
+      "pr": 152,
+      "source": "external_review",
+      "review_comment_id": 4001182769,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "A rewrite of the shared deterministic-assurance falsifier preserved only the post-merge host-inventory authority assertions and silently dropped the historical pre-merge block plus the exact successor rule/effect bindings. Because no independent guard still checked implementation_authority_before_merge, accepted authorization history could be rewritten while assurance remained green.",
+      "horizontal_audit": [
+        "historical authorization transition assertions",
+        "implementation_authority_before_merge",
+        "effective_rule and canonical_effect_after_merge",
+        "shared assurance-file rewrites",
+        "append-only accepted authority history",
+        "future falsifier refactors"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_adversarial_learning.py",
+          "probe": "falsify_wave4_host_inventory_authority_transition"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 28
+    },
+    {
+      "id": "LEARN-PR152-019",
+      "pr": 152,
+      "source": "external_review",
+      "review_comment_id": 4001182773,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The AI E2E Markdown visibility parser excluded comments, fences, container HTML, and common block tags but still treated headings inside CommonMark processing instructions, CDATA, declarations, and generic raw-tag blocks as rendered semantic structure. Hidden text could therefore impersonate canonical G/S headings.",
+      "horizontal_audit": [
+        "CommonMark raw HTML block taxonomy",
+        "processing instructions",
+        "CDATA blocks",
+        "declarations",
+        "generic complete tag blocks",
+        "G0-G14 and S0-S10 rendered heading authority",
+        "future semantic Markdown parsers"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_ai_e2e_delivery_heading_binding"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 29
+    },
+    {
+      "id": "LEARN-PR152-020",
+      "pr": 152,
+      "source": "external_review",
+      "review_comment_id": 4001182776,
+      "class_id": "ADV-GUARDRAIL-ATTESTATION-GAP",
+      "invariant_ids": ["INV-LEARNING-002"],
+      "root_cause": "The machine-readable AI E2E execution manifest exposed an optimization_target consumed by planning automation but the validator did not bind it to the canonical roadmap objective. The field could drift to throughput, commit count, or another objective while all governance gates stayed green.",
+      "horizontal_audit": [
+        "execution manifest top-level contract fields",
+        "optimization_target",
+        "roadmap optimization objective",
+        "AI planning consumers",
+        "lead-time outcome semantics",
+        "future machine-readable planning metadata"
+      ],
+      "guardrails": [
+        {
+          "path": "tools/assurance/test_validate_d4c_selection.py",
+          "probe": "falsify_ai_e2e_delivery_heading_binding"
+        }
+      ],
+      "systemic_guardrail_updated": true,
+      "guardrail_generation": 30
+    }
+  ]
+}

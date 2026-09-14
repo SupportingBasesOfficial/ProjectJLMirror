@@ -42,6 +42,11 @@ def falsify_implementation_path_policy() -> None:
     must_fail(lambda d: d["implementation_path_policy"]["allowed_prefixes"].remove("src/jlmirror_g1/"), "implementation allowed prefix drift")
     must_fail(lambda d: d["implementation_path_policy"]["allowed_exact_paths"].append("pyproject.toml"), "implementation exact path drift")
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("shared_existing_paths_policy", "implementation_pr_may_extend_shared_paths"), "shared existing path policy drift")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_head_prefix", "impl/anything"), "implementation PR head prefix drift")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("diff_enforcement_rule", "implementation_pr_declares_its_own_paths"), "implementation diff enforcement rule drift")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("diff_policy_source", "pull_request_head"), "implementation diff policy source drift")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("diff_enforcement_validator", "tools/g1/self_declared_validator.py"), "implementation diff validator drift")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("diff_enforcement_workflow", ".github/workflows/unbound.yml"), "implementation diff workflow drift")
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_must_validate_diff_against_this_policy", False), "implementation PR path validation requirement drift")
 
 
@@ -78,7 +83,7 @@ def main() -> int:
     falsify_g1_scope_and_invariants()
     falsify_merge_and_production_boundaries()
     falsify_successor_governance_rules()
-    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked successor_transition_weakening=blocked implementation_path_expansion=blocked scope_expansion=blocked invariant_loss=blocked bootstrap_expansion=blocked authority_source_drift=blocked exclusion_removal=blocked successor_rule_weakening=blocked")
+    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked successor_transition_weakening=blocked implementation_path_expansion=blocked implementation_diff_gate_weakening=blocked scope_expansion=blocked invariant_loss=blocked bootstrap_expansion=blocked authority_source_drift=blocked exclusion_removal=blocked successor_rule_weakening=blocked")
     return 0
 
 

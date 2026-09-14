@@ -27,12 +27,18 @@ POLICY = {
     "implementation_claim_path": scope.EXPECTED_CLAIM_PATH,
     "implementation_claim_authorization_id": scope.EXPECTED_AUTHORIZATION_ID,
     "same_repository_required": True,
+    "implementation_pr_base_ref_policy": "must_equal_repository_default_branch",
     "diff_enforcement_rule": scope.EXPECTED_RULE,
     "diff_policy_source": "pull_request_exact_base_commit",
     "trusted_evaluator_event": "issue_comment",
     "trusted_scope_attestation_command": scope.EXPECTED_ATTESTATION_COMMAND,
-    "trusted_evaluator_source": "default_branch_issue_comment_workflow_plus_exact_base_git_object",
+    "trusted_evaluator_source": "default_branch_issue_comment_workflow_plus_exact_default_branch_base_git_object",
+    "trusted_scope_status_context": scope.EXPECTED_STATUS_CONTEXT,
+    "trusted_scope_status_publication": "pending_then_final_on_resolved_pr_head",
+    "trusted_scope_freshness_rule": "final_success_requires_unchanged_head_base_sha_and_default_branch_ref",
+    "trusted_scope_concurrency_rule": "per_pr_cancel_in_progress",
     "implementation_pr_requires_trusted_scope_attestation_on_exact_head": True,
+    "candidate_controlled_relevance_inference": "forbidden",
 }
 REPO = "SupportingBasesOfficial/ProjectJLMirror"
 
@@ -216,7 +222,7 @@ def main() -> int:
     falsify_real_git_diff_gate()
     falsify_candidate_metadata_fail_closed()
     falsify_all_voluntary_metadata_omission()
-    print("g1_implementation_scope_falsification=PASS shared_core=blocked mixed_diff=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed all_metadata_omission=blocked explicit_trusted_classification=required allowed_paths=accepted")
+    print("g1_implementation_scope_falsification=PASS shared_core=blocked mixed_diff=blocked real_git_diff=executed metadata=label+branch+claim_fail_closed all_metadata_omission=blocked explicit_trusted_classification=required default_base_policy=required exact_head_status_policy=required allowed_paths=accepted")
     return 0
 
 

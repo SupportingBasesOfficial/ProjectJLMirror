@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "assurance"))
 import validate_g1_identity_tenant_shell_authorization as validator
+import test_validate_g1_identity_tenant_shell_implementation_scope as scope_falsifier
 
 
 def must_fail(mutator, fragment: str) -> None:
@@ -43,11 +44,26 @@ def falsify_implementation_path_policy() -> None:
     must_fail(lambda d: d["implementation_path_policy"]["allowed_exact_paths"].append("pyproject.toml"), "implementation exact path drift")
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("shared_existing_paths_policy", "implementation_pr_may_extend_shared_paths"), "shared existing path policy drift")
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_head_prefix", "impl/anything"), "implementation PR head prefix drift")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_required_label", "optional"), "implementation PR required label drift")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_claim_path", "implementation/optional.json"), "implementation claim path drift")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_claim_authorization_id", "global"), "implementation claim authorization id drift")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("same_repository_required", False), "same-repository requirement drift")
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("diff_enforcement_rule", "implementation_pr_declares_its_own_paths"), "implementation diff enforcement rule drift")
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("diff_policy_source", "pull_request_head"), "implementation diff policy source drift")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_event", "pull_request"), "trusted evaluator event drift")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_source", "pull_request_head"), "trusted evaluator source drift")
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("diff_enforcement_validator", "tools/g1/self_declared_validator.py"), "implementation diff validator drift")
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("diff_enforcement_workflow", ".github/workflows/unbound.yml"), "implementation diff workflow drift")
     must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_must_validate_diff_against_this_policy", False), "implementation PR path validation requirement drift")
+
+
+def falsify_implementation_scope_gate_execution() -> None:
+    # Keep a direct registered negative helper so the strict learning layer
+    # proves this credited falsifier itself cannot degrade to a no-op.
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("trusted_evaluator_event", "pull_request"), "trusted evaluator event drift")
+    must_fail(lambda d: d["implementation_path_policy"].__setitem__("implementation_pr_required_label", ""), "implementation PR required label drift")
+    scope_falsifier.falsify_real_git_diff_gate()
+    scope_falsifier.falsify_candidate_metadata_fail_closed()
 
 
 def falsify_authority_source_corpus() -> None:
@@ -79,11 +95,12 @@ def main() -> int:
     falsify_effective_rule()
     falsify_exact_exclusion_set()
     falsify_implementation_path_policy()
+    falsify_implementation_scope_gate_execution()
     falsify_authority_source_corpus()
     falsify_g1_scope_and_invariants()
     falsify_merge_and_production_boundaries()
     falsify_successor_governance_rules()
-    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked successor_transition_weakening=blocked implementation_path_expansion=blocked implementation_diff_gate_weakening=blocked scope_expansion=blocked invariant_loss=blocked bootstrap_expansion=blocked authority_source_drift=blocked exclusion_removal=blocked successor_rule_weakening=blocked")
+    print("g1_identity_tenant_shell_authorization_falsification=PASS authority_escalation=blocked successor_transition_weakening=blocked implementation_path_expansion=blocked trusted_base_gate=bound real_git_diff=executed metadata=label+branch+claim_fail_closed scope_expansion=blocked invariant_loss=blocked bootstrap_expansion=blocked authority_source_drift=blocked exclusion_removal=blocked successor_rule_weakening=blocked")
     return 0
 
 
